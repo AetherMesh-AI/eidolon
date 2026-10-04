@@ -63,7 +63,7 @@ def _export_port_health_grace_timeout(config: dict[str, Any]) -> None:
 
 def _check_local_runtime() -> tuple[bool, str | None]:
     """Whether the local embedded stack imports cleanly (older CPUs: NumPy can raise
-    at import, so Hermes degrades instead of retrying a broken backend).
+    at import, so Eidolon degrades instead of retrying a broken backend).
     ``sentence_transformers`` is probed too: ``hindsight`` imports fine with a broken
     embedding stack, and the daemon would then abort on every retain/recall."""
     try:
@@ -87,7 +87,7 @@ def _local_runtime_hint(reason: str | None) -> str:
     if "no module named" in text and any(m in text for m in ("hindsight'", 'hindsight"', "hindsight_embed")):
         return (
             f" Install the embedded runtime with: uv pip install --python "
-            f"{sys.executable} hindsight-all — or run 'hermes memory setup'. "
+            f"{sys.executable} hindsight-all — or run 'eidolon memory setup'. "
             "(local_embedded needs the 'hindsight-all' package, which provides the "
             "top-level 'hindsight' module; 'hindsight-client' alone only covers "
             "cloud / local_external.)"
@@ -97,7 +97,7 @@ def _local_runtime_hint(reason: str | None) -> str:
 
 def _load_simple_env(path) -> dict[str, str]:
     """Parse a KEY=VALUE env file (comments/blank lines ignored). utf-8-sig: also used
-    on the Hermes .env during post_setup, where a Notepad BOM would stick to the first key."""
+    on the Eidolon .env during post_setup, where a Notepad BOM would stick to the first key."""
     if not path.exists():
         return {}
     pairs = (line.split("=", 1) for line in path.read_text(encoding="utf-8-sig", errors="replace").splitlines()

@@ -3,11 +3,11 @@
 Provides ``start_gateway()`` (start all configured adapters) and ``GatewayRunner`` (lifecycle).
 Run via ``python -m gateway.run`` or ``python cli.py --gateway``."""
 
-# hermes_bootstrap must be the very first import (UTF-8 stdio on Windows; no-op on POSIX).
+# eidolon_bootstrap must be the very first import (UTF-8 stdio on Windows; no-op on POSIX).
 try:
-    import hermes_bootstrap  # noqa: F401
+    import eidolon_bootstrap  # noqa: F401
 except ModuleNotFoundError:
-    pass  # a partial ``hermes update`` can leave the bootstrap unregistered; only Windows UTF-8 stdio suffers
+    pass  # a partial ``eidolon update`` can leave the bootstrap unregistered; only Windows UTF-8 stdio suffers
 
 import asyncio
 import concurrent.futures
@@ -39,8 +39,8 @@ from agent.conversation_loop import INTERRUPT_WAITING_FOR_MODEL_PREFIX
 from agent.interrupt_compat import request_hard_interrupt
 from agent.turn_context import compression_made_progress
 from agent.session_activity import ActivityProvenance
-from hermes_cli.config import _is_ssh_remote_tilde_cwd, cfg_get
-from hermes_cli.fallback_config import get_fallback_chain
+from eidolon_cli.config import _is_ssh_remote_tilde_cwd, cfg_get
+from eidolon_cli.fallback_config import get_fallback_chain
 
 # Per-session AIAgent cache bounds (agents are heavy); see _enforce_agent_cache_cap/_session_housekeeping_watcher.
 _AGENT_CACHE_MAX_SIZE = 128
@@ -229,7 +229,7 @@ async def run_codex_hygiene_compaction(
 
     See #73503.
     * Evicting the cached live agent afterwards destroys the only real context: the next turn spawns an
-    EMPTY thread and the model starts blank while Hermes still mirrors a full history (abrupt amnesia — the
+    EMPTY thread and the model starts blank while Eidolon still mirrors a full history (abrupt amnesia — the
     user-facing damage documented on #73503).
     """
     mode = str(auto_mode or "native").lower()
@@ -401,7 +401,7 @@ _GATEWAY_SECRET_PATTERNS = (
 
 
 def _ensure_windows_gateway_venv_imports() -> None:
-    """Make detached Windows gateway runs see the Hermes venv packages.
+    """Make detached Windows gateway runs see the Eidolon venv packages.
 
     Patched before MCP discovery so tool injection does not depend on launchers preserving PYTHONPATH."""
     if sys.platform != "win32":
@@ -876,7 +876,7 @@ def _telegramize_command_mentions(text: str, platform: Any) -> str:
     if platform_value != "telegram":
         return text
 
-    from hermes_cli.commands_platforms import _sanitize_telegram_name
+    from eidolon_cli.commands_platforms import _sanitize_telegram_name
 
     def _replace(match: re.Match[str]) -> str:
         sanitized = _sanitize_telegram_name(match.group(1))
@@ -908,7 +908,7 @@ def _coerce_gateway_timestamp(value: Any) -> Optional[float]:
     if isinstance(value, bool):  # bool is a subclass of int — skip it
         return None
     if isinstance(value, (int, float)):
-        # Some platform events use milliseconds; Hermes state rows use seconds.
+        # Some platform events use milliseconds; Eidolon state rows use seconds.
         return float(value) / 1000.0 if float(value) > 10_000_000_000 else float(value)
     if isinstance(value, str):
         text = value.strip()
@@ -1197,7 +1197,7 @@ def _build_gateway_agent_history(
     """Convert stored gateway transcript rows into agent replay messages.
 
     Observed context stays out of ``conversation_history`` so consecutive-user repair can't merge it in."""
-    from hermes_time import get_timezone as _get_msg_tz
+    from eidolon_time import get_timezone as _get_msg_tz
     from gateway.message_timestamps import (
         render_user_content_with_timestamp as _render_msg_ts,
         strip_leading_message_timestamps as _strip_msg_ts,
@@ -1545,11 +1545,11 @@ def _home_thread_env_var(platform_name: str) -> str:
 
 def _restart_notification_pending() -> bool:
     """Return True when a /restart completion marker is waiting to be delivered."""
-    return (_hermes_home / ".restart_notify.json").exists()
+    return (_eidolon_home / ".restart_notify.json").exists()
 
 
 def _planned_restart_notification_path() -> Path:
-    return _hermes_home / ".restart_pending.json"
+    return _eidolon_home / ".restart_pending.json"
 
 
 def _planned_restart_notification_pending() -> bool:
@@ -1568,13 +1568,13 @@ _ensure_ssl_certs()
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from hermes_constants import get_hermes_home, get_hermes_home_override
-_hermes_home = get_hermes_home()
+from eidolon_constants import get_eidolon_home, get_eidolon_home_override
+_eidolon_home = get_eidolon_home()
 
 # Load ~/.hermes/.env first: user-managed env files must override stale shell exports on restart.
-from hermes_cli.env_loader import load_hermes_dotenv
-_env_path = _hermes_home / '.env'
-load_hermes_dotenv(hermes_home=_hermes_home, project_env=Path(__file__).resolve().parents[1] / '.env')
+from eidolon_cli.env_loader import load_hermes_dotenv
+_env_path = _eidolon_home / '.env'
+load_hermes_dotenv(hermes_home=_eidolon_home, project_env=Path(__file__).resolve().parents[1] / '.env')
 
 
 def _reload_runtime_env_preserving_config_authority() -> None:
@@ -1585,8 +1585,8 @@ def _reload_runtime_env_preserving_config_authority() -> None:
     from agent.secret_scope import is_multiplex_active
     if not is_multiplex_active():
         load_hermes_dotenv(
-            hermes_home=_hermes_home, project_env=Path(__file__).resolve().parents[1] / '.env')
-    _bridge_max_turns_from_config(_hermes_home)
+            hermes_home=_eidolon_home, project_env=Path(__file__).resolve().parents[1] / '.env')
+    _bridge_max_turns_from_config(_eidolon_home)
 
 
 def _bridge_max_turns_from_config(home: "Path") -> None:
@@ -1607,7 +1607,7 @@ def _current_max_iterations() -> int:
     ``agent.max_turns: none``/``unlimited`` (bridged as a string) to the unlimited sentinel, not an
     ``int()`` crash."""
     _reload_runtime_env_preserving_config_authority()
-    from hermes_cli.config import resolve_turn_limit as _resolve_turn_limit
+    from eidolon_cli.config import resolve_turn_limit as _resolve_turn_limit
     return _resolve_turn_limit(os.getenv("HERMES_MAX_ITERATIONS"))
 
 
@@ -1631,7 +1631,7 @@ class HygieneTurnHoldExceeded(Exception):
 
 def _multiplex_profile_homes(config: object) -> list[tuple[str, "Path"]]:
     """Return the authoritative profile set for one multiplex gateway config."""
-    from hermes_cli.profiles import profiles_to_serve
+    from eidolon_cli.profiles import profiles_to_serve
     return list(profiles_to_serve(
         multiplex=True, profile_allowlist=getattr(config, "multiplex_profile_allowlist", None)))
 
@@ -1648,7 +1648,7 @@ def _enable_multiplex_log_routing(config: object) -> bool:
     if not getattr(config, "multiplex_profiles", False):
         return False
     try:
-        from hermes_logging import enable_profile_log_routing
+        from eidolon_logging import enable_profile_log_routing
         return enable_profile_log_routing([home for _name, home in _multiplex_profile_homes(config)])
     except Exception:
         logger.debug("could not enable per-profile log routing", exc_info=True)
@@ -1704,17 +1704,17 @@ def _terminal_scope_cwd(default: str = "") -> str:
 
 def _load_profile_secret_scope(profile_home: "Path") -> dict:
     """Hydrate and load one profile's secrets under its home override."""
-    from hermes_constants import set_hermes_home_override, reset_hermes_home_override
+    from eidolon_constants import set_eidolon_home_override, reset_eidolon_home_override
     # Caller already hydrated external sources off-loop (#99519).
     from agent.secret_scope import build_profile_secret_scope
-    from hermes_cli.env_loader import hydrate_profile_secret_sources
+    from eidolon_cli.env_loader import hydrate_profile_secret_sources
 
-    home_token = set_hermes_home_override(str(profile_home))
+    home_token = set_eidolon_home_override(str(profile_home))
     try:
         hydrate_profile_secret_sources(Path(profile_home))
         return build_profile_secret_scope(Path(profile_home))
     finally:
-        reset_hermes_home_override(home_token)
+        reset_eidolon_home_override(home_token)
 
 
 @_contextmanager
@@ -1722,13 +1722,13 @@ def _profile_runtime_scope(
     profile_home: "Path", prepared_secret_scope: Optional[dict] = None, *,
     hydrate_secrets: bool = True):
     """Scope config/skills/memory AND credentials to a profile for one turn (multiplexed path only).
-    ``set_hermes_home_override`` is a contextvar (reaches the agent worker via ``copy_context()``);
+    ``set_eidolon_home_override`` is a contextvar (reaches the agent worker via ``copy_context()``);
     ``set_secret_scope`` makes the profile ``.env`` the credential source without mutating
     ``os.environ``, so subprocesses never inherit cross-profile secrets."""
-    from hermes_constants import set_hermes_home_override, reset_hermes_home_override
+    from eidolon_constants import set_eidolon_home_override, reset_eidolon_home_override
     from agent.secret_scope import set_secret_scope, reset_secret_scope
 
-    home_token = set_hermes_home_override(str(profile_home))
+    home_token = set_eidolon_home_override(str(profile_home))
     if prepared_secret_scope is not None:
         secrets = prepared_secret_scope
     elif hydrate_secrets:
@@ -1747,7 +1747,7 @@ def _profile_runtime_scope(
             yield
         finally:
             reset_secret_scope(secret_token)
-            reset_hermes_home_override(home_token)
+            reset_eidolon_home_override(home_token)
 
 
 @_asynccontextmanager
@@ -1770,7 +1770,7 @@ def load_gateway_config_for_runner() -> "GatewayConfig":
     if not getattr(cfg, "multiplex_profiles", False):
         return cfg
     try:
-        home = get_hermes_home()
+        home = get_eidolon_home()
     except Exception:
         return cfg
     try:
@@ -1783,7 +1783,7 @@ def load_gateway_config_for_runner() -> "GatewayConfig":
 
 async def _discover_gateway_mcp_tools(config: object) -> None:
     """Run startup MCP discovery for every profile this gateway serves: ``discover_mcp_tools`` reads
-    ``mcp_servers`` from ``get_hermes_home()``'s config, so an unscoped call only connects the launch
+    ``mcp_servers`` from ``get_eidolon_home()``'s config, so an unscoped call only connects the launch
     profile's servers (single-profile gateways keep the unscoped call).
 
     Under multiplex, run it once per served profile inside that profile's ``_profile_runtime_scope`` and
@@ -1833,7 +1833,7 @@ _DOCKER_MEDIA_OUTPUT_CONTAINER_PATHS = {"/output", "/outputs"}
 
 # Internal bridge, not a config source: seed from the canonical default after dotenv so an ambient
 # process/.env value can never control lease safety.
-from hermes_cli.config_defaults import DEFAULT_CONFIG as _DEFAULT_CONFIG
+from eidolon_cli.config_defaults import DEFAULT_CONFIG as _DEFAULT_CONFIG
 os.environ["HERMES_TURN_LEASE_TIMEOUT"] = str(_DEFAULT_CONFIG["agent"]["gateway_turn_lease_timeout"])
 
 # Bridge config.yaml values into env so os.getenv() picks them up. config.yaml unconditionally wins
@@ -1937,7 +1937,7 @@ def _bridge_auxiliary_config_to_env(_auxiliary_cfg: dict) -> None:
     """Bridge auxiliary model/endpoint overrides (vision, approval, plugins); compression reads yaml."""
     _aux_bridged_keys = {"vision", "approval"}
     try:
-        from hermes_cli.plugins import get_plugin_auxiliary_tasks
+        from eidolon_cli.plugins import get_plugin_auxiliary_tasks
         for _entry in get_plugin_auxiliary_tasks():
             _aux_bridged_keys.add(_entry["key"])
     except Exception:
@@ -1969,7 +1969,7 @@ def _bridge_config_to_env(_cfg: dict) -> None:
         _bridge_auxiliary_config_to_env(_auxiliary_cfg)
     # config.yaml is the documented, authoritative source for these settings — it unconditionally wins over
     # .env values. Previously the guards below read `if X not in os.environ` and let stale .env entries
-    # (e.g. HERMES_MAX_ITERATIONS=60 written by an old `hermes setup` run) silently shadow the user's
+    # (e.g. HERMES_MAX_ITERATIONS=60 written by an old `eidolon setup` run) silently shadow the user's
     # current config. See PR #18413 / the 60-vs-500 max_turns incident.
     _agent_cfg = _cfg.get("agent", {})
     _bridge_max_turns_to_env(_agent_cfg)
@@ -1987,7 +1987,7 @@ def _bridge_config_to_env(_cfg: dict) -> None:
     _security_cfg = _cfg.get("security", {})
     if isinstance(_security_cfg, dict) and _security_cfg.get("redact_secrets") is not None:
         os.environ["HERMES_REDACT_SECRETS"] = str(_security_cfg["redact_secrets"]).lower()
-    # Media policy uses the shared bridge so standalone entrypoints (`hermes cron run`) match.
+    # Media policy uses the shared bridge so standalone entrypoints (`eidolon cron run`) match.
     _gateway_cfg = _cfg.get("gateway", {})
     if isinstance(_gateway_cfg, dict):
         from gateway.media_policy import apply_media_policy_env
@@ -2005,19 +2005,19 @@ def _load_bridge_config(config_path: Path) -> dict:
     """Raw config read for the presence-sensitive env bridge, with the managed overlay applied. Raw (not
     defaults-merged) so only keys the user wrote are bridged, else all of DEFAULT_CONFIG would be
     exported; the overlay applies BEFORE bridging so pinned values win in env too."""
-    from hermes_cli.config import _expand_env_vars, read_user_config_raw
+    from eidolon_cli.config import _expand_env_vars, read_user_config_raw
     cfg = _expand_env_vars(read_user_config_raw(config_path))
     if not isinstance(cfg, dict):
         cfg = {}
     try:
-        from hermes_cli import managed_scope
+        from eidolon_cli import managed_scope
         cfg = managed_scope.apply_managed_overlay(cfg)
     except Exception:
         pass
     return cfg
 
 
-_config_path = _hermes_home / 'config.yaml'
+_config_path = _eidolon_home / 'config.yaml'
 _cfg: dict = {}
 if _config_path.exists():
     try:
@@ -2030,12 +2030,12 @@ if _config_path.exists():
             file=sys.stderr)
         print(
             "  Gateway will fall back to .env values, which may not match "
-            "your current config.yaml. Run `hermes doctor` to investigate.",
+            "your current config.yaml. Run `eidolon doctor` to investigate.",
             file=sys.stderr)
 
 # IPv4 preference must apply before any HTTP clients are created.
 try:
-    from hermes_constants import apply_ipv4_preference
+    from eidolon_constants import apply_ipv4_preference
     _network_cfg = _cfg.get("network", {})
     if isinstance(_network_cfg, dict) and _network_cfg.get("force_ipv4"):
         apply_ipv4_preference(force=True)
@@ -2043,13 +2043,13 @@ except Exception as _bootstrap_exc:
     print(f"  Warning: IPv4 preference application failed: {_bootstrap_exc}", file=sys.stderr)
 
 try:
-    from hermes_cli.config import print_config_warnings
+    from eidolon_cli.config import print_config_warnings
     print_config_warnings()
 except Exception as _bootstrap_exc:
     print(f"  Warning: config validation failed: {_bootstrap_exc}", file=sys.stderr)
 
 try:
-    from hermes_cli.config import warn_deprecated_cwd_env_vars
+    from eidolon_cli.config import warn_deprecated_cwd_env_vars
     warn_deprecated_cwd_env_vars()
 except Exception as _bootstrap_exc:
     print(f"  Warning: deprecation check failed: {_bootstrap_exc}", file=sys.stderr)
@@ -2205,9 +2205,9 @@ _CONVERSATION_SCOPED_STATE: tuple = (
 def _resolve_runtime_agent_kwargs() -> dict:
     """Resolve provider credentials for gateway-created AIAgent instances.
     ``resolve_runtime_provider()`` may fall back to env vars; behavioral config is config.yaml only."""
-    from hermes_cli.runtime_provider import (
+    from eidolon_cli.runtime_provider import (
         resolve_runtime_provider, format_runtime_provider_error, _get_model_config)
-    from hermes_cli.auth import AuthError, is_rate_limited_auth_error
+    from eidolon_cli.auth import AuthError, is_rate_limited_auth_error
 
     try:
         runtime = resolve_runtime_provider()
@@ -2284,7 +2284,7 @@ def _resolve_gateway_model_context(model: Optional[str] = None) -> _GatewayModel
             configured_provider = provider = model_cfg.get("provider") or None
             configured_base_url = base_url = model_cfg.get("base_url") or None
         try:
-            from hermes_cli.config import get_compatible_custom_providers
+            from eidolon_cli.config import get_compatible_custom_providers
             custom_providers = get_compatible_custom_providers(data)
         except Exception:
             custom_providers = data.get("custom_providers")
@@ -2298,12 +2298,12 @@ def _resolve_gateway_model_context(model: Optional[str] = None) -> _GatewayModel
 
     def _pin_still_applies() -> bool:
         # Drop a configured context_length pin when the effective route no longer matches (or on error).
-        from hermes_cli.route_identity import should_clear_context_pin
+        from eidolon_cli.route_identity import should_clear_context_pin
         return not should_clear_context_pin(
             configured_model, resolved_model, configured_base_url, base_url, configured_provider, provider)
 
     def _custom_ctx() -> Optional[int]:
-        from hermes_cli.config import get_custom_provider_context_length
+        from eidolon_cli.config import get_custom_provider_context_length
         return get_custom_provider_context_length(
             model=resolved_model, base_url=base_url, custom_providers=custom_providers)
 
@@ -2327,7 +2327,7 @@ def _resolve_gateway_model_context(model: Optional[str] = None) -> _GatewayModel
 
 def _resolve_runtime_agent_kwargs_for_provider(provider: str) -> dict:
     """Resolve runtime credentials for a specific provider (e.g. from channel override)."""
-    from hermes_cli.runtime_provider import resolve_runtime_provider, format_runtime_provider_error
+    from eidolon_cli.runtime_provider import resolve_runtime_provider, format_runtime_provider_error
     try:
         runtime = resolve_runtime_provider(requested=provider)
     except Exception as exc:
@@ -2340,7 +2340,7 @@ def _resolve_runtime_agent_kwargs_for_provider(provider: str) -> dict:
 
 def _deep_merge_request_overrides(base: Optional[dict], override: Optional[dict]) -> dict:
     """Merge request_overrides dicts, deep-merging nested dictionaries."""
-    from hermes_cli.config import _deep_merge
+    from eidolon_cli.config import _deep_merge
     base_dict = dict(base or {})
     override_dict = dict(override or {})
     if not base_dict:
@@ -2363,7 +2363,7 @@ def _credential_pool_for_provider(provider: Optional[str]):
 
 def _try_resolve_fallback_provider() -> dict | None:
     """Attempt to resolve credentials from the fallback_model/fallback_providers config."""
-    from hermes_cli.runtime_provider import resolve_runtime_provider
+    from eidolon_cli.runtime_provider import resolve_runtime_provider
     try:
         # Canonical loader so managed overlay / ${VAR} expansion reach the fallback chain.
         cfg = _load_gateway_runtime_config()
@@ -2372,7 +2372,7 @@ def _try_resolve_fallback_provider() -> dict | None:
             return None
         for entry in fb_list:
             try:
-                from hermes_cli.fallback_config import resolve_entry_api_key
+                from eidolon_cli.fallback_config import resolve_entry_api_key
                 runtime = resolve_runtime_provider(
                     requested=entry.get("provider"), explicit_base_url=entry.get("base_url"),
                     explicit_api_key=resolve_entry_api_key(entry))
@@ -2727,10 +2727,10 @@ def _check_unavailable_skill(command_name: str) -> str | None:
                 if slug == normalized and declared_name in disabled:
                     return (
                         f"The **{command_name}** skill is installed but disabled.\n"
-                        f"Enable it with: `hermes skills config`")
+                        f"Enable it with: `eidolon skills config`")
 
         # Check optional skills (shipped with repo but not installed)
-        from hermes_constants import get_optional_skills_dir
+        from eidolon_constants import get_optional_skills_dir
         repo_root = Path(__file__).resolve().parent.parent
         optional_dir = get_optional_skills_dir(repo_root / "optional-skills")
         if optional_dir.exists():
@@ -2745,7 +2745,7 @@ def _check_unavailable_skill(command_name: str) -> str | None:
                 install_path = f"official/{'/'.join(rel.parts)}"
                 return (
                     f"The **{command_name}** skill is available but not installed.\n"
-                    f"Install it with: `hermes skills install {install_path}`")
+                    f"Install it with: `eidolon skills install {install_path}`")
     except Exception:
         pass
     return None
@@ -2763,21 +2763,21 @@ def _teams_pipeline_plugin_enabled() -> bool:
 
 
 def _gateway_config_home() -> Path:
-    """Return the Hermes home that gateway config reads should use."""
-    override = get_hermes_home_override()
-    return Path(override) if override else _hermes_home
+    """Return the Eidolon home that gateway config reads should use."""
+    override = get_eidolon_home_override()
+    return Path(override) if override else _eidolon_home
 
 
 def _load_gateway_config(config_path: "Path | None" = None) -> dict:
     """Load and parse a gateway config.yaml, returning {} on any error (fail-open).
-    Defaults to the active gateway home (``_hermes_home`` monkeypatches apply); multiplexers pass a path.
+    Defaults to the active gateway home (``_eidolon_home`` monkeypatches apply); multiplexers pass a path.
     """
     if config_path is None:
         config_path = _gateway_config_home() / 'config.yaml'
     raw: dict = {}
     used_canonical = False
     try:
-        from hermes_cli.config import get_config_path, read_raw_config
+        from eidolon_cli.config import get_config_path, read_raw_config
         # Fast path via shared cache when the path is canonical; else direct read (test monkeypatches).
         if config_path == get_config_path():
             raw = read_raw_config()
@@ -2797,7 +2797,7 @@ def _load_gateway_config(config_path: "Path | None" = None) -> dict:
 
     # Neither read_raw_config() nor yaml.safe_load carries the managed merge; overlay on both paths.
     try:
-        from hermes_cli import managed_scope
+        from eidolon_cli import managed_scope
         raw = managed_scope.apply_managed_overlay(raw if isinstance(raw, dict) else {})
     except Exception:
         pass
@@ -2809,7 +2809,7 @@ def _load_gateway_config(config_path: "Path | None" = None) -> dict:
         # The gateway bypasses load_config() (it reads raw YAML for speed), so the normalization that
         # load_config() applies must be replayed here or the gateway would resolve an empty model for
         # ``model: {name: <id>}`` configs while the CLI resolves it correctly. See issue #34500. Fail-open.
-        from hermes_cli.config import _normalize_root_model_keys
+        from eidolon_cli.config import _normalize_root_model_keys
         raw = _normalize_root_model_keys(raw)
     except Exception:
         pass
@@ -2824,7 +2824,7 @@ def _checkpoint_agent_kwargs(config: dict | None) -> dict:
         cp_cfg = {"enabled": cp_cfg}
     elif not isinstance(cp_cfg, dict):
         cp_cfg = {}
-    from hermes_cli.config import DEFAULT_CONFIG
+    from eidolon_cli.config import DEFAULT_CONFIG
     defaults = DEFAULT_CONFIG["checkpoints"]
     return {
         "checkpoints_enabled": cp_cfg.get("enabled", defaults["enabled"]),
@@ -2840,7 +2840,7 @@ def _load_gateway_runtime_config() -> dict:
     cfg = _load_gateway_config()
     if not isinstance(cfg, dict) or not cfg:
         return {}
-    from hermes_cli.config import _expand_env_vars
+    from eidolon_cli.config import _expand_env_vars
     expanded = _expand_env_vars(cfg)
     return expanded if isinstance(expanded, dict) else {}
 
@@ -2883,15 +2883,15 @@ def _get_channel_override(
 
 
 def _resolve_hermes_bin() -> Optional[list[str]]:
-    """Hermes update command argv: ``hermes`` on PATH, else ``python -m hermes_cli.main``, else None."""
+    """Eidolon update command argv: ``hermes`` on PATH, else ``python -m eidolon_cli.main``, else None."""
     import shutil
-    hermes_bin = shutil.which("hermes")
+    hermes_bin = shutil.which("eidolon")
     if hermes_bin:
         return [hermes_bin]
     try:
         import importlib.util
-        if importlib.util.find_spec("hermes_cli") is not None:
-            return [sys.executable, "-m", "hermes_cli.main"]
+        if importlib.util.find_spec("eidolon_cli") is not None:
+            return [sys.executable, "-m", "eidolon_cli.main"]
     except Exception:
         pass
     return None
@@ -3533,7 +3533,7 @@ class GatewayRunner(
         # Manual approvals with no automated assessor (tirith off AND no auxiliary.approval) fail closed
         # on unattended gateways — surface it so operators knowingly enable one.
         try:
-            from hermes_cli.config import load_config as _load_full_config
+            from eidolon_cli.config import load_config as _load_full_config
             # Startup heads-up (#30882): a gateway in manual approval mode with no automated risk assessor
             # (tirith disabled AND no auxiliary.approval model) can only gate dangerous commands /
             # execute_code scripts via live in-chat approval.
@@ -3583,7 +3583,7 @@ class GatewayRunner(
         # nothing (#88235).
         if self._session_db is not None:
             try:
-                from hermes_cli.config import load_config as _load_full_config
+                from eidolon_cli.config import load_config as _load_full_config
                 _sess_cfg = (_load_full_config().get("sessions") or {})
                 if _sess_cfg.get("auto_archive", False):
                     self._session_db._db.maybe_auto_archive(
@@ -3603,12 +3603,12 @@ class GatewayRunner(
 
         # Stale checkpoint repo cleanup; opt-in via checkpoints.auto_prune, idempotent via .last_prune.
         try:
-            from hermes_cli.config import load_config as _load_full_config
+            from eidolon_cli.config import load_config as _load_full_config
             _ckpt_cfg = (_load_full_config().get("checkpoints") or {})
             if _ckpt_cfg.get("auto_prune", False):
                 from tools.checkpoint_manager import maybe_auto_prune_checkpoints
                 # delete_orphans never honoured unattended: a missing workdir is ambiguous (deleted vs.
-                # unmounted share); orphan cleanup is only via explicit `hermes checkpoints prune`.
+                # unmounted share); orphan cleanup is only via explicit `eidolon checkpoints prune`.
                 maybe_auto_prune_checkpoints(
                     retention_days=int(_ckpt_cfg.get("retention_days", 7)),
                     min_interval_hours=int(_ckpt_cfg.get("min_interval_hours", 24)),
@@ -3663,8 +3663,8 @@ class GatewayRunner(
         after recording that recoverable state so ``__init__`` can record ``_session_db_init_error`` for the
         #88235 broadcast.
         """
-        from hermes_state import AsyncSessionDB, _default_db_path
-        from hermes_state_registry import acquire
+        from eidolon_state import AsyncSessionDB, _default_db_path
+        from eidolon_state_registry import acquire
         from gateway.session_db_recovery import RecoverableHandleCache
         path = Path(_default_db_path())
         cache = getattr(self, "_session_db_handle_cache", None)
@@ -3733,7 +3733,7 @@ class GatewayRunner(
                 return
             # Shared instances no-op on close() (the registry owns the lifecycle). Release the refcount
             # instead (#90837).
-            from hermes_state_registry import release_or_close
+            from eidolon_state_registry import release_or_close
             try:
                 release_or_close(inner)
             except Exception as exc:
@@ -3794,7 +3794,7 @@ class GatewayRunner(
             "This is fine if the model already emits host-visible paths, but MEDIA file delivery can fail "
             "for container-local paths like '/workspace/...' or '/output/...'.")
 
-    _VOICE_MODE_PATH = _hermes_home / "gateway_voice_mode.json"
+    _VOICE_MODE_PATH = _eidolon_home / "gateway_voice_mode.json"
 
     should_exit_cleanly = property(lambda self: self._exit_cleanly)
     should_exit_with_failure = property(lambda self: self._exit_with_failure)
@@ -3819,7 +3819,7 @@ class GatewayRunner(
                 _profile = source.profile
             else:
                 try:
-                    from hermes_cli.profiles import get_active_profile_name
+                    from eidolon_cli.profiles import get_active_profile_name
                     _profile = get_active_profile_name() or "default"
                 except Exception:
                     _profile = None
@@ -3937,7 +3937,7 @@ class GatewayRunner(
     def _active_profile_name(self) -> str:
         """Return the profile name this gateway represents."""
         try:
-            from hermes_cli.profiles import get_active_profile_name
+            from eidolon_cli.profiles import get_active_profile_name
             return get_active_profile_name() or "default"
         except Exception:
             return "default"
@@ -4166,7 +4166,7 @@ class GatewayRunner(
             executor = getattr(self, "_executor", None)
             if executor is None or getattr(executor, "_shutdown", False):
                 executor = concurrent.futures.ThreadPoolExecutor(
-                    max_workers=10, thread_name_prefix="hermes-gateway")
+                    max_workers=10, thread_name_prefix="eidolon-gateway")
                 self._executor = executor
             return executor
 
@@ -4294,8 +4294,8 @@ class GatewayRunner(
         """Resolve which profile's HERMES_HOME serves this source: ``source.profile``, then
         ``_profile_name_for_source`` (sources bypassing ``build_source``), then the active profile."""
         from gateway.profile_routing import ProfileRouteRejected
-        from hermes_cli.profiles import get_active_profile_name, get_profile_dir, profile_exists
-        from hermes_constants import get_hermes_home
+        from eidolon_cli.profiles import get_active_profile_name, get_profile_dir, profile_exists
+        from eidolon_constants import get_eidolon_home
         explicit_profile = None  # explicitly requested (source or routing) vs. default fallback
         try:
             name = (source.profile or "").strip() or self._profile_name_for_source(source)
@@ -4309,7 +4309,7 @@ class GatewayRunner(
                     "falling back to global HERMES_HOME",
                     explicit_profile, source.platform.value, source.chat_id,
                     getattr(source, "guild_id", None))
-                return get_hermes_home()
+                return get_eidolon_home()
             return profile_dir
         except ProfileRouteRejected:
             raise
@@ -4319,7 +4319,7 @@ class GatewayRunner(
                 "falling back to global HERMES_HOME: %s",
                 source.platform.value, source.chat_id, getattr(source, "guild_id", None),
                 explicit_profile or "(no profile)", exc_info=True)
-            return get_hermes_home()
+            return get_eidolon_home()
 
     @dataclasses.dataclass
     class _RunAgentDisplay:
@@ -4361,11 +4361,11 @@ def _run_planned_stop_watcher(
     stop_event: threading.Event, runner, loop: asyncio.AbstractEventLoop, shutdown_handler, *,
     poll_interval: float = 0.5) -> None:
     """Poll for the planned-stop marker and trigger graceful shutdown (Windows lacks
-    ``add_signal_handler``, so ``hermes gateway stop`` would never drain). Runs everywhere; on POSIX
+    ``add_signal_handler``, so ``eidolon gateway stop`` would never drain). Runs everywhere; on POSIX
     the signal handler consumes the marker first and ``_running``/``_draining`` guard re-triggers.
 
     On Windows, ``asyncio.add_signal_handler`` raises NotImplementedError for SIGTERM/SIGINT, so the
-    standard signal-driven shutdown path never runs when ``hermes gateway stop`` signals the gateway. The
+    standard signal-driven shutdown path never runs when ``eidolon gateway stop`` signals the gateway. The
     consequence is that the drain loop is skipped — in-flight agent sessions are killed mid-turn and
     ``resume_pending`` is never set, so the next gateway boot has no idea those sessions need to be
     auto-resumed (issue #33778, v0.13.0 session-resume feature broken on native Windows).
@@ -4447,7 +4447,7 @@ def _housekeeping_media_caches() -> None:
 
 
 def _housekeeping_paste_sweep() -> None:
-    from hermes_cli.debug import _sweep_expired_pastes
+    from eidolon_cli.debug import _sweep_expired_pastes
     deleted, remaining = _sweep_expired_pastes()
     if deleted:
         logger.info("Paste sweep: deleted %d expired paste(s), %d pending", deleted, remaining)
@@ -4483,8 +4483,8 @@ def _housekeeping_org_skill_sync() -> None:
 def _housekeeping_auto_archive() -> None:
     """Stale-session auto-archive on a live timer (the startup hook fires once); maybe_auto_archive()
     is gated by sessions.min_interval_hours. Opens its own SessionDB — SQLite connections are thread-bound."""
-    from hermes_cli.config import load_config as _load_full_config
-    from hermes_state_registry import acquire, release_or_close
+    from eidolon_cli.config import load_config as _load_full_config
+    from eidolon_state_registry import acquire, release_or_close
     _sess_cfg = (_load_full_config().get("sessions") or {})
     if _sess_cfg.get("auto_archive", False):
         _adb = acquire()
@@ -4502,7 +4502,7 @@ def _housekeeping_deferred_fts_retry() -> None:
     # Retry here, on the existing tick, against the shared instances this process already holds:
     # non-blocking admission, no new thread, rate-limited inside SessionDB. No-op when nothing is stale (one
     # attribute read per instance). See #100108.
-    from hermes_state_registry import borrow_live_shared_session_dbs
+    from eidolon_state_registry import borrow_live_shared_session_dbs
     with borrow_live_shared_session_dbs() as _session_dbs:
         for _sdb in _session_dbs:
             _retry = getattr(_sdb, "retry_deferred_fts_recovery", None)
@@ -4514,7 +4514,7 @@ def _housekeeping_deferred_fts_retry() -> None:
 
 def _housekeeping_memory_trim() -> None:
     """Messaging-gateway counterpart to the TUI idle reaper; config-gated and rate-limited inside."""
-    from hermes_cli.mem_trim import trim_memory
+    from eidolon_cli.mem_trim import trim_memory
     trim_memory(reason="messaging gateway housekeeping")
 
 
@@ -4535,7 +4535,7 @@ def _drain_restart_safe_cron_deliveries(adapters, loop, runner=None) -> None:
             profile_adapters = getattr(runner, "_profile_adapters", {}).get(profile_name)
         if profile_adapters is None:
             continue
-        with _profile_runtime_scope(profile_home or get_hermes_home()):
+        with _profile_runtime_scope(profile_home or get_eidolon_home()):
             if profile_name is not None and not profile_adapters and adapters:
                 routes = sched_preflight._primary_profile_routes_for_current_home()
                 if routes:
@@ -4681,7 +4681,7 @@ def _replace_target_belongs_to_other_profile(existing_pid: int) -> bool:
     # Exclusion evidence comes from the RAW registration record, not the liveness-validated probe.
     # ``get_running_pid`` (any flags) returns None whenever a record fails validation — start-time mismatch
     # after PID-reuse checks, argv drift, lock hiccups — which is exactly when a healthy standalone gateway
-    # (no service supervisor — e.g. `hermes gateway run` on Windows) is at risk: its PID never joins the
+    # (no service supervisor — e.g. `eidolon gateway run` on Windows) is at risk: its PID never joins the
     # exclusion set and the sweep hard-kills it. On Windows SIGTERM is TerminateProcess, so the gateway's
     # planned-stop watcher never gets a chance to drain. Reading the raw pidfile + lock records (no
     # validation, no unlink side effects) is strictly safer for a KILL exclusion list: a stale recorded PID
@@ -4690,9 +4690,9 @@ def _replace_target_belongs_to_other_profile(existing_pid: int) -> bool:
     # pidfile exists.
     try:
         from gateway.status import (
-            _get_pid_path, _get_process_hermes_home, _get_process_start_time, _pid_from_record,
-            _read_pid_record, _record_looks_like_gateway, _read_process_cmdline, _same_hermes_home)
-        our_home = _get_process_hermes_home()
+            _get_pid_path, _get_process_eidolon_home, _get_process_start_time, _pid_from_record,
+            _read_pid_record, _record_looks_like_gateway, _read_process_cmdline, _same_eidolon_home)
+        our_home = _get_process_eidolon_home()
 
         def refuse(msg: str, *args, level=logging.WARNING) -> bool:
             logger.log(level, "Refusing --replace: " + msg, *args)
@@ -4715,7 +4715,7 @@ def _replace_target_belongs_to_other_profile(existing_pid: int) -> bool:
         if not isinstance(recorded_home, str) or not recorded_home.strip():
             return refuse("pid record predates hermes_home stampings; ownership of PID %s unprovable.",
                           existing_pid)
-        if not _same_hermes_home(recorded_home, our_home):
+        if not _same_eidolon_home(recorded_home, our_home):
             return refuse("pid record belongs to a different HERMES_HOME (%s, ours %s). Remove the stale PID "
                           "record or stop the owning profile explicitly.", recorded_home, our_home,
                           level=logging.ERROR)
@@ -4806,26 +4806,26 @@ async def _start_gateway_replace_existing_instance(existing_pid: int, replace: b
     Returns False when startup must abort (refused, permission denied, target still alive)."""
     from gateway.status import get_process_start_time, remove_pid_file, terminate_pid
     if not replace:
-        hermes_home = str(get_hermes_home())
+        hermes_home = str(get_eidolon_home())
         logger.error(
             "Another gateway instance is already running (PID %d, HERMES_HOME=%s). "
-            "Use 'hermes gateway restart' to replace it, or 'hermes gateway stop' first.",
+            "Use 'eidolon gateway restart' to replace it, or 'eidolon gateway stop' first.",
             existing_pid, hermes_home)
         print(
             f"\n❌ Gateway already running (PID {existing_pid}).\n"
-            f"   Use 'hermes gateway restart' to replace it,\n"
-            f"   or 'hermes gateway stop' to kill it first.\n"
-            f"   Or use 'hermes gateway run --replace' to auto-replace.\n")
+            f"   Use 'eidolon gateway restart' to replace it,\n"
+            f"   or 'eidolon gateway stop' to kill it first.\n"
+            f"   Or use 'eidolon gateway run --replace' to auto-replace.\n")
         return False
 
     # Never signal a process not provably ours (a poisoned PID record → cross-profile restart loop).
     if _replace_target_belongs_to_other_profile(existing_pid):
-        from gateway.status import _get_process_hermes_home
+        from gateway.status import _get_process_eidolon_home
         logger.error(
             "Refusing --replace: PID %d cannot be proven to belong "
             "to this profile's gateway (HERMES_HOME %s). Remove the "
             "stale PID record or stop the owning profile explicitly.",
-            existing_pid, _get_process_hermes_home())
+            existing_pid, _get_process_eidolon_home())
         return False
     existing_start_time = get_process_start_time(existing_pid)
     logger.info("Replacing existing gateway instance (PID %d) with --replace.", existing_pid)
@@ -4875,7 +4875,7 @@ async def _start_gateway_replace_existing_instance(existing_pid: int, replace: b
     remove_pid_file()
     # remove_pid_file() is a no-op when the PID doesn't match; force-unlink covers a crashed old process.
     with suppress(Exception):
-        (get_hermes_home() / "gateway.pid").unlink(missing_ok=True)
+        (get_eidolon_home() / "gateway.pid").unlink(missing_ok=True)
     # The old process may not have consumed the marker (SIGKILL'd before its handler read it).
     _clear_takeover_marker_quiet()
     # Stopped (Ctrl+Z) processes don't release scoped locks on exit; stale lock files block the new gateway.
@@ -4898,18 +4898,18 @@ def _start_gateway_configure_logging(verbosity: Optional[int]) -> None:
     _best_effort(_sync_skills)
 
     # Centralized logging (agent.log INFO+, errors.log WARNING+, gateway.log gateway-only); idempotent.
-    from hermes_logging import setup_logging, _safe_stderr
-    setup_logging(hermes_home=_hermes_home, mode="gateway")
+    from eidolon_logging import setup_logging, _safe_stderr
+    setup_logging(hermes_home=_eidolon_home, mode="gateway")
 
     def _security_audit() -> None:
         # Warn-on-load, never blocks: surfaces root / weak-SSH / unauthenticated-listener exposure.
-        from hermes_cli.security_audit_startup import log_startup_security_warnings
+        from eidolon_cli.security_audit_startup import log_startup_security_warnings
 
         def _raw_cfg():
-            from hermes_cli.config import read_raw_config
+            from eidolon_cli.config import read_raw_config
             return read_raw_config()
 
-        log_startup_security_warnings(hermes_home=_hermes_home, config=_best_effort(_raw_cfg))
+        log_startup_security_warnings(hermes_home=_eidolon_home, config=_best_effort(_raw_cfg))
 
     _best_effort(_security_audit, "Startup security audit failed (non-fatal): %s")
 
@@ -4970,7 +4970,7 @@ def _start_gateway_make_shutdown_signal_handler(runner, _signal_initiated_shutdo
                 # down; bounded by an internal timeout, never blocks.
                 from gateway.shutdown_forensics import spawn_async_diagnostic
                 spawn_async_diagnostic(
-                    _hermes_home / "logs" / "gateway-shutdown-diag.log", _shutdown_ctx["signal"], timeout_seconds=5.0)
+                    _eidolon_home / "logs" / "gateway-shutdown-diag.log", _shutdown_ctx["signal"], timeout_seconds=5.0)
 
             _best_effort(_log_context, "format_context_for_log failed: %s")
             _best_effort(_diagnostic, "spawn_async_diagnostic failed: %s")
@@ -5024,7 +5024,7 @@ async def _start_gateway_start_control_socket(runner):
 
         def _pause_for_update_handler() -> dict:
             try:
-                from hermes_cli.gateway import _get_restart_drain_timeout
+                from eidolon_cli.gateway import _get_restart_drain_timeout
                 _drain = float(_get_restart_drain_timeout())
             except Exception:
                 _drain = 30.0
@@ -5108,7 +5108,7 @@ def _start_gateway_start_cron_and_housekeeping(runner):
                 "loopback HTTP and will all fail (jobs only run when "
                 "triggered manually). Most common cause: API_SERVER_KEY is "
                 "missing from this gateway process's environment. Restart "
-                "the gateway through its supervisor (`hermes gateway "
+                "the gateway through its supervisor (`eidolon gateway "
                 "restart`) so the profile env loads.",
                 getattr(cron_provider, "name", "external"))
 
@@ -5137,7 +5137,7 @@ async def _start_gateway_shutdown_tail(
             logger.debug("Control socket stop failed (non-fatal)", exc_info=True)
 
     def _stop_keepalive() -> None:
-        from hermes_cli.nous_auth_keepalive import stop_nous_auth_keepalive
+        from eidolon_cli.nous_auth_keepalive import stop_nous_auth_keepalive
         stop_nous_auth_keepalive()
 
     _best_effort(_stop_keepalive)
@@ -5177,12 +5177,12 @@ async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = 
     # Shared by the CLI and module entry points; both must record ownership
     # before startup can leave behind an orphan process.
     def _register_identity() -> None:
-        from hermes_cli.process_identity import attach_self_to_kill_on_close_job, register_self
+        from eidolon_cli.process_identity import attach_self_to_kill_on_close_job, register_self
         register_self("gateway")
         attach_self_to_kill_on_close_job()
     _best_effort(_register_identity)
 
-    from hermes_cli.resource_limits import apply_nofile_soft_limit
+    from eidolon_cli.resource_limits import apply_nofile_soft_limit
     apply_nofile_soft_limit()
 
     # Snapshot the revision while sys.modules matches disk so a later `git pull` is detected safely.
@@ -5238,9 +5238,9 @@ async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = 
     else:
         logger.info("Skipping signal handlers (not running in main thread).")
 
-    # Windows has no add_signal_handler, so `hermes gateway stop`'s SIGTERM would never drain; poll the
+    # Windows has no add_signal_handler, so `eidolon gateway stop`'s SIGTERM would never drain; poll the
     # planned-stop marker (written BEFORE the kill) instead. Runs everywhere so masked-SIGTERM drains.
-    # Windows fallback: asyncio.add_signal_handler raises NotImplementedError on Windows, so `hermes gateway
+    # Windows fallback: asyncio.add_signal_handler raises NotImplementedError on Windows, so `eidolon gateway
     # stop`'s SIGTERM (which Python maps to TerminateProcess on Windows) never invokes
     # shutdown_signal_handler. That means the drain loop never runs, mark_resume_pending never fires, and
     # sessions are silently lost across restarts (issue #33778). The fix is a marker-polling thread: `hermes
@@ -5269,7 +5269,7 @@ async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = 
         record_startup()
 
     def _start_keepalive() -> None:
-        from hermes_cli.nous_auth_keepalive import start_nous_auth_keepalive
+        from eidolon_cli.nous_auth_keepalive import start_nous_auth_keepalive
         start_nous_auth_keepalive()
 
     _best_effort(_lifecycle_record_startup, "Lifecycle ledger startup record failed: %s")
@@ -5336,8 +5336,8 @@ async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = 
 def _guard_corrupt_user_config() -> None:
     """Fail closed when the active profile's config.yaml cannot be parsed: nobody can repair it on this
     surface, and defaults would let provider auto-detection adopt ``.env`` credentials the config never
-    named. Same policy and escape hatch (``HERMES_IGNORE_USER_CONFIG=1``) as ``hermes_cli/main.py``."""
-    from hermes_cli.config import InvalidUserConfigError, require_parseable_user_config
+    named. Same policy and escape hatch (``HERMES_IGNORE_USER_CONFIG=1``) as ``eidolon_cli/main.py``."""
+    from eidolon_cli.config import InvalidUserConfigError, require_parseable_user_config
 
     try:
         require_parseable_user_config()
@@ -5351,7 +5351,7 @@ def main():
     # Before any config-dependent startup (watchdog, DB opens, provider resolution).
     _guard_corrupt_user_config()
 
-    # Advertise the harness to children (mirrors _advertise_agent_env in hermes_cli/main.py, inlined to
+    # Advertise the harness to children (mirrors _advertise_agent_env in eidolon_cli/main.py, inlined to
     # avoid its startup side effects). Value must equal registry id ``hermes-agent`` exactly.
     os.environ.setdefault("AI_AGENT", "hermes-agent")
     os.environ.setdefault("HERMES_AGENT", "true")
@@ -5359,19 +5359,19 @@ def main():
     def _arm_watchdog() -> None:
         # Armed before config load / DB opens so a pre-loop deadlock is respawned by the supervisor instead
         # of wedging as a live-PID zombie. GatewayRunner disarms it.
-        from hermes_startup_watchdog import arm_startup_watchdog
+        from eidolon_startup_watchdog import arm_startup_watchdog
         arm_startup_watchdog()
 
     def _utf8_stdio() -> None:
         # Windows: gateway logs and banner would UnicodeEncodeError on cp1252 consoles. No-op on POSIX.
-        from hermes_cli.stdio import configure_windows_stdio
+        from eidolon_cli.stdio import configure_windows_stdio
         configure_windows_stdio()
 
     for _step in (_arm_watchdog, _utf8_stdio):
         _best_effort(_step)
 
     import argparse
-    parser = argparse.ArgumentParser(description="Hermes Gateway - Multi-platform messaging")
+    parser = argparse.ArgumentParser(description="Eidolon Gateway - Multi-platform messaging")
     parser.add_argument("--config", "-c", help="Path to gateway config file")
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
     args = parser.parse_args()
@@ -5439,7 +5439,7 @@ def _exit_after_graceful_shutdown(exit_code: int) -> None:
     def _drain_logs() -> None:
         # os._exit bypasses the listener's atexit drain. Bounded, no restart — NOT flush_log_queue():
         # a listener wedged on the rotation lock would re-freeze shutdown in an unbounded stop() join.
-        from hermes_logging import drain_log_queue
+        from eidolon_logging import drain_log_queue
         drain_log_queue(timeout=1.0)
 
     for _step in (_release_locks, _mark_exited, _drain_logs):
@@ -5517,7 +5517,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

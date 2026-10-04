@@ -7,11 +7,11 @@ import { I18nProvider } from '@/i18n'
 import { $localModelsEnabled } from '@/store/local-models-flag'
 import { $localRuntimeJobs } from '@/store/local-runtime-jobs'
 import { stubMenuDomApis, stubResizeObserver } from '@/test/jsdom'
-import type { LocalRuntimeJob, ModelOptionsResponse } from '@/types/hermes'
+import type { LocalRuntimeJob, ModelOptionsResponse } from '@/types/eidolon'
 
 import { ModelPickerDialog } from './model-picker'
 
-vi.mock('@/hermes', () => ({
+vi.mock('@/eidolon', () => ({
   getLocalModelsStatus: vi.fn().mockResolvedValue({ loading: {} })
 }))
 vi.mock('@/lib/model-options', async importOriginal => ({

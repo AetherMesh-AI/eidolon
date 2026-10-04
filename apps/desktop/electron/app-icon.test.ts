@@ -210,7 +210,7 @@ test('default probe skips missing, directory, throwing and empty images before l
   }
   const decoder = vi.mocked(nativeImage.createFromPath)
   decoder.mockImplementation(p => {
-    if (p === throwing) throw new Error('decode failed')
+    if (p === throwing) {throw new Error('decode failed')}
     return { isEmpty: () => p !== legacy } as ReturnType<typeof nativeImage.createFromPath>
   })
   try {
@@ -226,4 +226,21 @@ test('default probe skips missing, directory, throwing and empty images before l
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
   }
+})
+
+test('macOS runtime Dock override prefers the same rounded artwork as the ICNS generator', () => {
+  const root = '/fixture/app.asar'
+  const candidates = appIconCandidates({
+    isWindows: false,
+    isMac: true,
+    appRoot: root,
+    unpackedPathFor: p => `${p}.unpacked`
+  })
+  const masked = path.join(root, 'assets', 'icon-macos.png')
+  assert.equal(resolveAppIcon(candidates, () => true), masked)
+  assert.equal(
+    resolveAppIcon(candidates, candidate => candidate !== masked),
+    path.join(`${root}.unpacked`, 'assets', 'icon-macos.png')
+  )
+  assert.ok(candidates.indexOf(masked) < candidates.indexOf(path.join(root, 'public', 'icon.png')))
 })

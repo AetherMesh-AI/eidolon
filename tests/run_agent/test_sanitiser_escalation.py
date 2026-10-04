@@ -23,7 +23,7 @@ from agent.agent_runtime_helpers import (
     get_sanitizer_heal_stats,
     repair_empty_non_final_messages,
 )
-from hermes_logging import clear_session_context, set_session_context
+from eidolon_logging import clear_session_context, set_session_context
 
 
 @pytest.fixture(autouse=True)
@@ -202,7 +202,7 @@ class TestOneTimeUserNotice:
         import agent.agent_runtime_helpers as arh
 
         monkeypatch.setattr(
-            "hermes_cli.config.load_config_readonly",
+            "eidolon_cli.config.load_config_readonly",
             lambda: {"agent": {"sanitizer_heal_escalation_threshold": 7}},
         )
         assert arh._heal_escalation_threshold() == 7
@@ -213,7 +213,7 @@ class TestOneTimeUserNotice:
         def _boom():
             raise RuntimeError("no config")
 
-        monkeypatch.setattr("hermes_cli.config.load_config_readonly", _boom)
+        monkeypatch.setattr("eidolon_cli.config.load_config_readonly", _boom)
         assert (
             arh._heal_escalation_threshold() == arh._EMPTY_HEAL_ESCALATE_AFTER
         )
@@ -237,7 +237,7 @@ class TestHealStatsSurface:
 
     def test_debug_report_includes_heal_counters(self, monkeypatch):
         import agent.agent_runtime_helpers as arh
-        from hermes_cli.debug import collect_debug_report, LogSnapshot
+        from eidolon_cli.debug import collect_debug_report, LogSnapshot
 
         monkeypatch.setattr(arh, "_heal_escalation_threshold", lambda: 2)
         set_session_context("sess-report")

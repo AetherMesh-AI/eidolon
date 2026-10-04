@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it } from 'vitest'
+
 import { MemoryWeb } from './memory-web'
 afterEach(cleanup)
 it('projects an interactive 3D web with an accessible inspection list and honest provenance', () => {

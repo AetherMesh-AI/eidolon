@@ -105,9 +105,9 @@ def list_providers() -> list[ProviderProfile]:
 def _user_plugins_dir() -> Path | None:
     """Return ``$HERMES_HOME/plugins/model-providers/`` if it exists."""
     try:
-        from hermes_constants import get_hermes_home
+        from eidolon_constants import get_eidolon_home
 
-        d = get_hermes_home() / "plugins" / "model-providers"
+        d = get_eidolon_home() / "plugins" / "model-providers"
         return d if d.is_dir() else None
     except Exception:
         return None
@@ -121,9 +121,9 @@ def _installed_plugins_dir() -> Path | None:
     :func:`_discover_installed_provider_plugins`.
     """
     try:
-        from hermes_constants import get_hermes_home
+        from eidolon_constants import get_eidolon_home
 
-        d = get_hermes_home() / "plugins"
+        d = get_eidolon_home() / "plugins"
         return d if d.is_dir() else None
     except Exception:
         return None
@@ -243,7 +243,7 @@ def _discover_entry_point_providers() -> None:
     # Same opt-in gate as the general PluginManager: only entry points named
     # in ``plugins.enabled`` load, and ``plugins.disabled`` always wins.
     try:
-        from hermes_cli.plugins import _get_disabled_plugins, _get_enabled_plugins
+        from eidolon_cli.plugins import _get_disabled_plugins, _get_enabled_plugins
 
         enabled = _get_enabled_plugins()  # None = nothing enabled yet (opt-in default)
         disabled = _get_disabled_plugins()
@@ -435,7 +435,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

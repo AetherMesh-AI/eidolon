@@ -95,13 +95,13 @@ def test_run_job_cron_execute_code_deny_does_not_pollute_later_gateway_execute_c
     monkeypatch.setattr(approval_module, "_YOLO_MODE_FROZEN", False)
     monkeypatch.setattr(approval_context, "_get_approval_mode", lambda: "manual")
     monkeypatch.setattr(approval_context, "_get_cron_approval_mode", lambda: "deny")
-    monkeypatch.setattr("hermes_state_registry.acquire", _DummySessionDB)
+    monkeypatch.setattr("eidolon_state_registry.acquire", _DummySessionDB)
     monkeypatch.setattr("run_agent.AIAgent", _FakeCronAgent)
     monkeypatch.setattr(
-        "hermes_constants.resolve_reasoning_config", lambda *_args, **_kwargs: None
+        "eidolon_constants.resolve_reasoning_config", lambda *_args, **_kwargs: None
     )
     monkeypatch.setattr(
-        "hermes_cli.runtime_provider.resolve_runtime_provider",
+        "eidolon_cli.runtime_provider.resolve_runtime_provider",
         lambda **_kwargs: {
             "api_key": "test-key",
             "base_url": None,
@@ -112,7 +112,7 @@ def test_run_job_cron_execute_code_deny_does_not_pollute_later_gateway_execute_c
         },
     )
     monkeypatch.setattr("tools.mcp_tool_discovery.discover_mcp_tools", lambda: [])
-    monkeypatch.setattr(cron_scheduler, "_get_hermes_home", lambda: tmp_path)
+    monkeypatch.setattr(cron_scheduler, "_get_eidolon_home", lambda: tmp_path)
     monkeypatch.setattr(cron_scheduler, "get_fallback_chain", lambda _cfg: [])
     monkeypatch.setattr(
         cron_scheduler, "_guard_job_credential_exfil", lambda _job: None

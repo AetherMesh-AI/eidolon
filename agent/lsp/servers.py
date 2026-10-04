@@ -196,14 +196,14 @@ def _find_pses_bundle(ctx: ServerContext) -> Optional[str]:
     """Locate the PowerShellEditorServices bundle dir (release zip, manual install).  Resolution order:
     ``lsp.servers.powershell.command[0]`` when a directory, ``init_overrides["powershell"]["bundlePath"]``,
     ``PSES_BUNDLE_PATH`` env, then ``<HERMES_HOME>/lsp/PowerShellEditorServices``."""
-    from hermes_constants import get_hermes_home
+    from eidolon_constants import get_eidolon_home
     override = ctx.binary_overrides.get("powershell")
     init = ctx.init_overrides.get("powershell", {})
     candidates = [
         override[0] if override else None,
         str(init["bundlePath"]) if isinstance(init, dict) and init.get("bundlePath") else None,
         os.environ.get("PSES_BUNDLE_PATH"),
-        os.path.join(str(get_hermes_home()), "lsp", "PowerShellEditorServices"),
+        os.path.join(str(get_eidolon_home()), "lsp", "PowerShellEditorServices"),
     ]
     for cand in filter(None, candidates):
         # Accept either the bundle root or the inner module dir.
@@ -238,7 +238,7 @@ def _spawn_powershell_es(root: str, ctx: ServerContext) -> Optional[SpawnSpec]:
         f"-LogPath '{os.path.join(session_dir, 'pses.log')}' "
         f"-SessionDetailsPath '{os.path.join(session_dir, f'pses-session-{os.getpid()}.json')}' "
         f"-FeatureFlags @() -AdditionalModules @() "
-        f"-HostName Hermes -HostProfileId hermes -HostVersion 1.0.0 -Stdio -LogLevel Normal"
+        f"-HostName Eidolon -HostProfileId hermes -HostVersion 1.0.0 -Stdio -LogLevel Normal"
     )
     return SpawnSpec(
         [pwsh, "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", inner],
@@ -249,8 +249,8 @@ def _spawn_powershell_es(root: str, ctx: ServerContext) -> Optional[SpawnSpec]:
 
 def hermes_lsp_session_dir() -> str:
     """Return (and create) the dir for PSES session/log scratch files."""
-    from hermes_constants import get_hermes_home
-    d = os.path.join(str(get_hermes_home()), "lsp", "pses")
+    from eidolon_constants import get_eidolon_home
+    d = os.path.join(str(get_eidolon_home()), "lsp", "pses")
     os.makedirs(d, exist_ok=True)
     return d
 

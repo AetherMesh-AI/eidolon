@@ -92,7 +92,7 @@ def test_client_resolution_prefers_direct_then_pointer(home: Path, tmp_path: Pat
 def test_windows_pipe_name_is_stable_and_home_scoped(tmp_path: Path):
     a = windows_pipe_name(tmp_path / "a")
     b = windows_pipe_name(tmp_path / "b")
-    assert a.startswith(r"\\.\pipe\hermes-gateway-")
+    assert a.startswith(r"\\.\pipe\eidolon-gateway-")
     assert a != b
     assert a == windows_pipe_name(tmp_path / "a")
 
@@ -265,29 +265,29 @@ def _fake_identity(pid: int, sha: str):
         "code_sha": sha,
         "code_version": "9.9.9",
         "supervisor": "systemd",
-        "kind": "hermes-gateway",
+        "kind": "eidolon-gateway",
     }
 
 
 def test_collect_fleet_versions_prefers_socket(tmp_path: Path, monkeypatch):
-    import hermes_cli.update_receipt as ur
+    import eidolon_cli.update_receipt as ur
 
     home = tmp_path / ".hermes"
     home.mkdir()
 
     monkeypatch.setattr(
-        "hermes_cli.build_info.get_code_identity",
+        "eidolon_cli.build_info.get_code_identity",
         lambda refresh=False: {"sha": "HEADSHA", "version": "1.0"},
     )
     monkeypatch.setattr(
-        "hermes_cli.profiles._get_default_hermes_home", lambda: home
+        "eidolon_cli.profiles._get_default_eidolon_home", lambda: home
     )
     monkeypatch.setattr(
-        "hermes_cli.profiles._get_profiles_root", lambda: tmp_path / "no-profiles"
+        "eidolon_cli.profiles._get_profiles_root", lambda: tmp_path / "no-profiles"
     )
     # stale state file that would report a WRONG pid — socket must win
     (home / "gateway_state.json").write_text(
-        json.dumps({"pid": 1, "code_sha": "stalefile", "kind": "hermes-gateway"})
+        json.dumps({"pid": 1, "code_sha": "stalefile", "kind": "eidolon-gateway"})
     )
     monkeypatch.setattr(
         "gateway.control_socket.identify_gateway",
@@ -305,20 +305,20 @@ def test_collect_fleet_versions_prefers_socket(tmp_path: Path, monkeypatch):
 def test_collect_fleet_versions_falls_back_to_state_file(tmp_path: Path, monkeypatch):
     import os
 
-    import hermes_cli.update_receipt as ur
+    import eidolon_cli.update_receipt as ur
 
     home = tmp_path / ".hermes"
     home.mkdir()
 
     monkeypatch.setattr(
-        "hermes_cli.build_info.get_code_identity",
+        "eidolon_cli.build_info.get_code_identity",
         lambda refresh=False: {"sha": "HEADSHA", "version": "1.0"},
     )
     monkeypatch.setattr(
-        "hermes_cli.profiles._get_default_hermes_home", lambda: home
+        "eidolon_cli.profiles._get_default_eidolon_home", lambda: home
     )
     monkeypatch.setattr(
-        "hermes_cli.profiles._get_profiles_root", lambda: tmp_path / "no-profiles"
+        "eidolon_cli.profiles._get_profiles_root", lambda: tmp_path / "no-profiles"
     )
     monkeypatch.setattr(
         "gateway.control_socket.identify_gateway", lambda h, **kw: None
@@ -328,7 +328,7 @@ def test_collect_fleet_versions_falls_back_to_state_file(tmp_path: Path, monkeyp
             {
                 "pid": os.getpid(),  # a live pid so _pid_exists passes
                 "code_sha": "OLDSHA",
-                "kind": "hermes-gateway",
+                "kind": "eidolon-gateway",
             }
         )
     )
@@ -343,7 +343,7 @@ def test_collect_fleet_versions_falls_back_to_state_file(tmp_path: Path, monkeyp
 def test_runtime_inventory_dedupes_same_pid_across_homes(tmp_path: Path, monkeypatch):
     """One multiplex gateway answering identify for two profile homes must
     yield exactly ONE runtime record (reviewer point on #92447)."""
-    import hermes_cli.update_inventory as ui
+    import eidolon_cli.update_inventory as ui
 
     home = tmp_path / ".hermes"
     home.mkdir()
@@ -351,16 +351,16 @@ def test_runtime_inventory_dedupes_same_pid_across_homes(tmp_path: Path, monkeyp
     (profiles_root / "coder").mkdir(parents=True)
 
     monkeypatch.setattr(
-        "hermes_cli.profiles._get_default_hermes_home", lambda: home
+        "eidolon_cli.profiles._get_default_eidolon_home", lambda: home
     )
     monkeypatch.setattr(
-        "hermes_cli.profiles._get_profiles_root", lambda: profiles_root
+        "eidolon_cli.profiles._get_profiles_root", lambda: profiles_root
     )
     monkeypatch.setattr(
-        "hermes_cli.gateway._get_service_pids", lambda all_profiles=False: set()
+        "eidolon_cli.gateway._get_service_pids", lambda all_profiles=False: set()
     )
     monkeypatch.setattr(
-        "hermes_cli.gateway.find_profile_gateway_processes", lambda: []
+        "eidolon_cli.gateway.find_profile_gateway_processes", lambda: []
     )
     monkeypatch.setattr(
         "gateway.control_socket.identify_gateway",
@@ -374,22 +374,22 @@ def test_runtime_inventory_dedupes_same_pid_across_homes(tmp_path: Path, monkeyp
 
 
 def test_runtime_inventory_prefers_socket_supervisor(tmp_path: Path, monkeypatch):
-    import hermes_cli.update_inventory as ui
+    import eidolon_cli.update_inventory as ui
 
     home = tmp_path / ".hermes"
     home.mkdir()
 
     monkeypatch.setattr(
-        "hermes_cli.profiles._get_default_hermes_home", lambda: home
+        "eidolon_cli.profiles._get_default_eidolon_home", lambda: home
     )
     monkeypatch.setattr(
-        "hermes_cli.profiles._get_profiles_root", lambda: tmp_path / "no-profiles"
+        "eidolon_cli.profiles._get_profiles_root", lambda: tmp_path / "no-profiles"
     )
     monkeypatch.setattr(
-        "hermes_cli.gateway._get_service_pids", lambda all_profiles=False: set()
+        "eidolon_cli.gateway._get_service_pids", lambda all_profiles=False: set()
     )
     monkeypatch.setattr(
-        "hermes_cli.gateway.find_profile_gateway_processes", lambda: []
+        "eidolon_cli.gateway.find_profile_gateway_processes", lambda: []
     )
     monkeypatch.setattr(
         "gateway.control_socket.identify_gateway",

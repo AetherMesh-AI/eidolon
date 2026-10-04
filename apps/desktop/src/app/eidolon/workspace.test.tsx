@@ -34,8 +34,10 @@ it.each([['waiting', 'Waiting'], ['needs_input', 'Needs Input'], ['archived', 'A
 it('offers only objective states in the objective filter', () => {
   render(<MemoryRouter initialEntries={['/objectives']}><OrganizationWorkspace adapter={createPrototypeAdapter()} /></MemoryRouter>)
   const filter = within(screen.getByRole('combobox', { name: 'Status' }))
-  for (const label of ['Waiting', 'Needs Input', 'Archived']) expect(filter.getByRole('option', { name: label })).toBeTruthy()
-  for (const label of ['Pending', 'Approved', 'Rejected', 'Recorded']) expect(filter.queryByRole('option', { name: label })).toBeNull()
+
+  for (const label of ['Waiting', 'Needs Input', 'Archived']) {expect(filter.getByRole('option', { name: label })).toBeTruthy()}
+
+  for (const label of ['Pending', 'Approved', 'Rejected', 'Recorded']) {expect(filter.queryByRole('option', { name: label })).toBeNull()}
 })
 
 it('records a user outcome and exposes its scoped artifact', () => {

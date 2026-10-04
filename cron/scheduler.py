@@ -32,16 +32,16 @@ from pathlib import Path
 from typing import Any, Callable, List, Optional, Protocol
 
 # Must precede repo-level imports: standalone invocations (e.g. module reload after
-# `hermes update`) otherwise fail with ModuleNotFoundError for hermes_time et al.
+# `eidolon update`) otherwise fail with ModuleNotFoundError for eidolon_time et al.
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from hermes_constants import get_hermes_home
-from hermes_cli._subprocess_compat import windows_hide_flags
-from hermes_cli.config import (
+from eidolon_constants import get_eidolon_home
+from eidolon_cli._subprocess_compat import windows_hide_flags
+from eidolon_cli.config import (
     _expand_env_vars, cron_model_drift_axes, cron_model_drift_guard_enabled, load_config,
     resolve_cron_model_drift_defaults)
-from hermes_cli.fallback_config import get_fallback_chain
-from hermes_time import now as _hermes_now
+from eidolon_cli.fallback_config import get_fallback_chain
+from eidolon_time import now as _hermes_now
 from agent.interrupt_compat import request_hard_interrupt
 from agent.delegation_context import (
     enter_non_dispatcher_owned_context, exit_non_dispatcher_owned_context)
@@ -60,7 +60,7 @@ def _close_late_session_db_result(future: "concurrent.futures.Future") -> None:
     with contextlib.suppress(Exception):
         db = future.result()
         if db is not None:
-            from hermes_state_registry import release_or_close
+            from eidolon_state_registry import release_or_close
             release_or_close(db)
 
 
@@ -138,7 +138,7 @@ def _failure_streak_nudge(job: dict) -> str:
     job_ref = job.get("name") or job.get("id") or "this job"
     return (
         f"\nThis job has failed {streak} runs in a row — worth a review. "
-        f"Fix its prompt/config, or pause it with `hermes cron pause {job_ref}` "
+        f"Fix its prompt/config, or pause it with `eidolon cron pause {job_ref}` "
         "(resume/remove also available) to stop the noise."
     )
 
@@ -160,7 +160,7 @@ class CronTickYielded(RuntimeError):
     Raised by ``tick()`` BEFORE the tick lock when boot fingerprint ≠ disk, this process does NOT
     own the runtime lock and a fresh process holds it — the stale process must stay out of the
     dispatch race (contention would starve the fresh ticker). Skew ``None`` never yields (fail
-    open). Raised, not returned, so ``record_ticker_error`` sees it and ``hermes cron status``
+    open). Raised, not returned, so ``record_ticker_error`` sees it and ``eidolon cron status``
     isn't green.
     """
 
@@ -229,8 +229,8 @@ def _summarize_cron_failure_for_delivery(job: dict, error: str | None) -> str:
         else:
             job_id = job.get("id") or "<job_id>"
             remediation = (
-                "On the host running Hermes, pin it explicitly: "
-                f"`hermes cron edit {job_id} --provider <provider> "
+                "On the host running Eidolon, pin it explicitly: "
+                f"`eidolon cron edit {job_id} --provider <provider> "
                 "--model <model>`."
             )
         return (
@@ -322,7 +322,7 @@ def _summarize_cron_failure_for_delivery(job: dict, error: str | None) -> str:
     # (message unchanged); no_agent jobs excluded via the same mode gate (a fresh subprocess
     # resolves imports against disk, so its ImportError is the script's own problem).
     # Import-class failures (#95294 part 3): a long-lived gateway whose checkout was updated underneath it
-    # (interrupted `hermes update`, manual git pull) serves MIXED modules — old entries frozen in
+    # (interrupted `eidolon update`, manual git pull) serves MIXED modules — old entries frozen in
     # sys.modules, new files loaded by lazy imports — and every agent cron job then dies with `cannot import
     # name X` / ModuleNotFoundError. The error itself reads like a code bug, so operators debug the wrong
     # thing (2 days on the reporting incident, 15 missed jobs).
@@ -338,7 +338,7 @@ def _summarize_cron_failure_for_delivery(job: dict, error: str | None) -> str:
             message += (
                 f" Likely cause: the gateway is running stale code (booted "
                 f"on {boot_rev}, disk is at {disk_rev}) — run "
-                "`hermes gateway restart` to fix it."
+                "`eidolon gateway restart` to fix it."
             )
 
     return message
@@ -420,8 +420,8 @@ def _merge_mcp_into_per_job_toolsets(per_job: list[str], cfg: dict) -> list[str]
     result = [t for t in per_job if t != "no_mcp"]
     if "no_mcp" in per_job:
         return result
-    # lazy: avoid heavy hermes_cli import at module load; shares MCP-membership with gateway/CLI
-    from hermes_cli.tools_config import enabled_mcp_server_names
+    # lazy: avoid heavy eidolon_cli import at module load; shares MCP-membership with gateway/CLI
+    from eidolon_cli.tools_config import enabled_mcp_server_names
     enabled_mcp = enabled_mcp_server_names(cfg)
     if set(result) & enabled_mcp:
         return result
@@ -447,7 +447,7 @@ def _resolve_cron_enabled_toolsets(job: dict, cfg: dict) -> list[str] | None:
     if per_job:
         return _merge_mcp_into_per_job_toolsets(list(per_job), cfg or {})
     try:
-        from hermes_cli.tools_config import _get_platform_tools  # lazy: avoid heavy import at cron module load
+        from eidolon_cli.tools_config import _get_platform_tools  # lazy: avoid heavy import at cron module load
         return sorted(_get_platform_tools(cfg or {}, "cron"))
     except Exception as exc:
         logger.warning(
@@ -460,7 +460,7 @@ def _resolve_job_reasoning_config(job: dict, cfg: dict, model: str) -> dict | No
     """Effective reasoning config for a cron run. A per-job ``reasoning_effort`` pin beats global
     and per-model config and is model-independent by design (also governs an auth-fallback swap);
     clamping stays with provider transports. An unparseable pin warns and falls back to config."""
-    from hermes_constants import parse_reasoning_effort, resolve_reasoning_config
+    from eidolon_constants import parse_reasoning_effort, resolve_reasoning_config
 
     pinned = job.get("reasoning_effort")
     if pinned is not None:
@@ -709,7 +709,7 @@ def _record_forced_release(job_id: str, name: str, age_seconds: float, allowance
         _forced_releases.append(entry)
         del _forced_releases[:-_FORCED_RELEASE_HISTORY]
     try:
-        path = _get_hermes_home() / "cron" / "inflight_forced_releases.jsonl"
+        path = _get_eidolon_home() / "cron" / "inflight_forced_releases.jsonl"
         _ensure_cron_dir(path.parent)
         with open(path, "a", encoding="utf-8") as fh:
             fh.write(json.dumps(entry) + "\n")
@@ -872,7 +872,7 @@ def mark_running_jobs_interrupted(
         registered_ids = {job_id for _t, job_id, _o, _p in active_fires}
         if only_owners is None:
             active_fires.extend(
-                (None, job_id, None, _get_hermes_home())
+                (None, job_id, None, _get_eidolon_home())
                 for job_id in (
                     _running_job_ids - registered_ids - restart_safe_waiters
                 )
@@ -987,9 +987,9 @@ def _shutdown_parallel_pool() -> None:
 
 
 atexit.register(_shutdown_parallel_pool)
-# Per-fire usage audit log; resolves via _get_hermes_home() so profile-scoped paths work.
+# Per-fire usage audit log; resolves via _get_eidolon_home() so profile-scoped paths work.
 def _usage_audit_path() -> Path:
-    return _get_hermes_home() / "cron" / "usage_audit.jsonl"
+    return _get_eidolon_home() / "cron" / "usage_audit.jsonl"
 
 
 def _utcnow_iso_ms() -> str:
@@ -1016,7 +1016,7 @@ def _interpreter_shutting_down(exc: Optional[BaseException] = None) -> bool:
     futures/asyncio refuse new work, so delivery attempts only pollute errors.log — callers skip
     with a warning. ``exc`` lets an already-raised scheduling error count as a shutdown signal.
 
-    A cron tick can fire while the gateway is tearing down — SIGTERM from ``hermes update`` / ``hermes
+    A cron tick can fire while the gateway is tearing down — SIGTERM from ``eidolon update`` / ``hermes
     gateway stop`` / systemd restart, or an OOM-kill. Once finalization starts, ``concurrent.futures``
     refuses new work with ``RuntimeError: cannot schedule new futures after interpreter shutdown`` and
     asyncio's default executor is gone, so *any* attempt to schedule delivery (live-adapter,
@@ -1029,23 +1029,23 @@ def _interpreter_shutting_down(exc: Optional[BaseException] = None) -> bool:
 
 
 # Module override hook for tests / emergency monkeypatches.
-_hermes_home: Path | None = None
+_eidolon_home: Path | None = None
 
 
-def _get_hermes_home() -> Path:
-    """Hermes home at call time (honouring the test override). Cron is per-profile: never freeze
+def _get_eidolon_home() -> Path:
+    """Eidolon home at call time (honouring the test override). Cron is per-profile: never freeze
     this at import or anchor it at the shared default root — either breaks profile isolation.
 
     Cron is per-profile by design (#4707): the in-process ticker runs inside a profile-scoped gateway, so
     resolving the active HERMES_HOME at call time means a profile's jobs are stored AND executed under that
     profile's home (its .env, config.yaml, scripts, skills).
     """
-    return _hermes_home or get_hermes_home()
+    return _eidolon_home or get_eidolon_home()
 
 
 def _get_lock_paths() -> tuple[Path, Path]:
     """Resolve cron lock paths at call time so profile/env changes are honored."""
-    hermes_home = _get_hermes_home()
+    hermes_home = _get_eidolon_home()
     lock_dir = hermes_home / "cron"
     return lock_dir, lock_dir / ".tick.lock"
 
@@ -1095,7 +1095,7 @@ def _reclaim_fds_best_effort() -> None:
 
         gc.collect()
     with contextlib.suppress(Exception):
-        from hermes_cli.resource_limits import apply_nofile_soft_limit
+        from eidolon_cli.resource_limits import apply_nofile_soft_limit
 
         apply_nofile_soft_limit(None)
 
@@ -1131,7 +1131,7 @@ def _cron_cleanup_timeout_seconds() -> float:
     """Return the wall-clock bound for cron post-run cleanup."""
     default = 10.0
     try:
-        from hermes_cli.config import load_config
+        from eidolon_cli.config import load_config
 
         cfg = load_config() or {}
         cron_cfg = cfg.get("cron", {}) if isinstance(cfg, dict) else {}
@@ -1258,9 +1258,9 @@ def _run_no_agent_job(
     # Load .env first so auto-delivery can resolve *_HOME_CHANNEL: the agent path's per-run dotenv
     # reload never runs for no_agent jobs. Does not override existing values.
     try:
-        from hermes_cli.env_loader import load_hermes_dotenv
+        from eidolon_cli.env_loader import load_hermes_dotenv
 
-        load_hermes_dotenv(hermes_home=_get_hermes_home())
+        load_hermes_dotenv(hermes_home=_get_eidolon_home())
     except Exception:
         logger.debug("Job '%s': no_agent .env reload failed", job_id, exc_info=True)
 
@@ -1356,20 +1356,20 @@ class _CronJobConfig:
 
 def _load_cron_job_config(job: dict, job_id: str, job_name: str) -> _CronJobConfig:
     """Load config.yaml and resolve the run's model: per-job override > cron.model (fleet default) >
-    HERMES_MODEL > config ``model:``. Re-read every tick (no cache) so ``hermes cron edit --model``
+    HERMES_MODEL > config ``model:``. Re-read every tick (no cache) so ``eidolon cron edit --model``
     applies next tick. An axis resolved from cron.model/model_provider is explicit (no drift guard)."""
     model = job.get("model") or os.getenv("HERMES_MODEL") or ""
     _cron_default_provider = ""
     _cfg: dict = {}
     _model_cfg: Any = {}
     try:
-        from hermes_cli.config import read_user_config_raw
-        _cfg_path = str(_get_hermes_home() / "config.yaml")
+        from eidolon_cli.config import read_user_config_raw
+        _cfg_path = str(_get_eidolon_home() / "config.yaml")
         if os.path.exists(_cfg_path):
             _cfg = read_user_config_raw(Path(_cfg_path))
             # Honor administrator-pinned managed scope (fail-open; no-op without managed scope).
             with contextlib.suppress(Exception):
-                from hermes_cli import managed_scope
+                from eidolon_cli import managed_scope
                 _cfg = managed_scope.apply_managed_overlay(_cfg)
             _cfg = _expand_env_vars(_cfg)
             # Coerce null to {} so a falsy default never clobbers a resolved env value.
@@ -1399,12 +1399,12 @@ def _load_cron_job_config(job: dict, job_id: str, job_name: str) -> _CronJobConf
             f"HERMES_MODEL={os.getenv('HERMES_MODEL', '')!r}, "
             "config.yaml model.default missing or empty). "
             f"Set a per-job model via "
-            f"`hermes cron edit {job_id} --model <name>` or set a "
-            "default with `hermes model <name>`."
+            f"`eidolon cron edit {job_id} --model <name>` or set a "
+            "default with `eidolon model <name>`."
         )
 
     with contextlib.suppress(Exception):
-        from hermes_constants import apply_ipv4_preference
+        from eidolon_constants import apply_ipv4_preference
         _net_cfg = _cfg.get("network", {})
         if isinstance(_net_cfg, dict) and _net_cfg.get("force_ipv4"):
             apply_ipv4_preference(force=True)
@@ -1423,7 +1423,7 @@ def _load_prefill_messages(cfg: dict, job_id: str) -> Optional[list]:
         return None
     pfpath = Path(prefill_file).expanduser()
     if not pfpath.is_absolute():
-        pfpath = _get_hermes_home() / pfpath
+        pfpath = _get_eidolon_home() / pfpath
     if not pfpath.exists():
         return None
     try:
@@ -1495,9 +1495,9 @@ def _resolve_job_runtime(
     """Resolve the runtime, walking the fallback chain on auth/transient-network errors. Returns
     ``(runtime, model, primary_provider_for_drift)``; provider+model swap atomically (never swap
     only the provider while keeping a paid primary model)."""
-    from hermes_cli.runtime_provider import (
+    from eidolon_cli.runtime_provider import (
         resolve_runtime_provider, format_runtime_provider_error)
-    from hermes_cli.auth import AuthError
+    from eidolon_cli.auth import AuthError
 
     model = jc.model
     configured_provider_for_drift = (
@@ -1548,7 +1548,7 @@ def _resolve_job_runtime(
             if not fb_provider or not fb_model:
                 continue
             try:
-                from hermes_cli.fallback_config import resolve_entry_api_key
+                from eidolon_cli.fallback_config import resolve_entry_api_key
 
                 fb_kwargs = {"requested": fb_provider, "target_model": fb_model}
                 if entry.get("base_url"):
@@ -1607,8 +1607,8 @@ def _check_model_drift(
         )
     else:
         _remediation = (
-            "To run on the new config, on the host running Hermes pin it explicitly: "
-            f"`hermes cron edit {job_id} --provider <provider> "
+            "To run on the new config, on the host running Eidolon pin it explicitly: "
+            f"`eidolon cron edit {job_id} --provider <provider> "
             "--model <model>` (or pin the original values to keep them)."
         )
     logger.warning(
@@ -1684,7 +1684,7 @@ def _open_cron_session_db(job: dict):
     # timeout proceeds without a session store instead of blocking the run forever.
     _session_db_timeout = _get_session_db_timeout()
     try:
-        from hermes_state_registry import acquire
+        from eidolon_state_registry import acquire
 
         if _session_db_timeout <= 0:
             return acquire()
@@ -1887,7 +1887,7 @@ def _final_response_from_result(result: dict, job_id: str, job_name: str, AIAgen
         # Render every persistence-cause variant or cause-refined text slips through.
         _explainer_variants = []
         try:
-            from hermes_state_errors import PERSISTENCE_ERROR_CAUSES as _causes
+            from eidolon_state_errors import PERSISTENCE_ERROR_CAUSES as _causes
         except Exception:
             _causes = ("locked", "disk", "unknown")
         for _cause in (None, *_causes):
@@ -1964,7 +1964,7 @@ def _finalize_cron_session(session_db, agent, job_id: str, job_name: str, cron_s
     # mid-API-wait, or without any assistant text leaves the last row as a tool result / pending call / user
     # prompt and must not surface as a healthy run. session_lifecycle_statuses is the existing cost-bounded
     # classifier for exactly this shape. Only a POSITIVELY recognized pathological status (see the status
-    # vocabulary in hermes_state's session_lifecycle_statuses docstring — keep the tuple below in sync when
+    # vocabulary in eidolon_state's session_lifecycle_statuses docstring — keep the tuple below in sync when
     # it grows) downgrades the booking: an unknown value (newer classifier shape, test doubles) keeps the
     # historical reason, and so does a failed probe — the booking itself is FAIL-OPEN on probe errors,
     # because classification is best-effort metadata and must not mislabel a healthy run.
@@ -1993,7 +1993,7 @@ def _finalize_cron_session(session_db, agent, job_id: str, job_name: str, cron_s
     except (Exception, KeyboardInterrupt) as e:
         logger.debug("Job '%s': failed to end session: %s", job_id, e)
     try:
-        from hermes_state_registry import release_or_close
+        from eidolon_state_registry import release_or_close
         release_or_close(_session_db)
     except (Exception, KeyboardInterrupt) as e:
         logger.debug("Job '%s': failed to close SQLite session store: %s", job_id, e)
@@ -2022,7 +2022,7 @@ def _prepare_job_prompt(
     # Fail closed on a corrupt config.yaml: defaults would let auto-detection bill a provider the
     # user never chose. no_agent jobs are exempt. Escape hatch: HERMES_IGNORE_USER_CONFIG=1.
     if not job.get("no_agent"):
-        from hermes_cli.config import InvalidUserConfigError, require_parseable_user_config
+        from eidolon_cli.config import InvalidUserConfigError, require_parseable_user_config
 
         try:
             require_parseable_user_config()
@@ -2173,11 +2173,11 @@ def _reload_dotenv_and_publish_delivery_target(job: dict) -> None:
     """Re-read .env for this run and publish the auto-deliver target into the session ContextVars."""
     # Reset the secret-source cache FIRST or a Bitwarden/BSM-backed secret is never re-resolved
     # (only the placeholder reloads -> 401s).
-    from hermes_cli.env_loader import load_hermes_dotenv, reset_secret_source_cache
+    from eidolon_cli.env_loader import load_hermes_dotenv, reset_secret_source_cache
     from gateway.session_context import _VAR_MAP
 
     reset_secret_source_cache()
-    load_hermes_dotenv(hermes_home=_get_hermes_home())
+    load_hermes_dotenv(hermes_home=_get_eidolon_home())
 
     delivery_target = _resolve_delivery_target(job)
     if delivery_target:
@@ -2209,7 +2209,7 @@ def _resolve_cron_agent_setup(job: dict, job_id: str, job_name: str, jc) -> _Cro
     setup.prefill_messages = _load_prefill_messages(_cfg, job_id)
 
     # resolve_turn_limit() honors none/unlimited (sys.maxsize) and explicit 0 / null.
-    from hermes_cli.config import resolve_turn_limit as _resolve_turn_limit
+    from eidolon_cli.config import resolve_turn_limit as _resolve_turn_limit
     _mt = _cfg.get("agent", {}).get("max_turns")
     if _mt is None:
         _mt = _cfg.get("max_turns")
@@ -2552,7 +2552,7 @@ def run_one_job(
     claim = job.get("fire_claim")
     fire_owner = str(claim.get("by") or "") if isinstance(claim, dict) else ""
     execution_token = object()
-    profile_home = _get_hermes_home().resolve()
+    profile_home = _get_eidolon_home().resolve()
     with _running_lock:
         _running_fire_owners.setdefault(job["id"], {})[execution_token] = (
             fire_owner or None, profile_home)
@@ -2924,7 +2924,7 @@ def _run_one_job_body(
 
         # get_secret() fails closed outside a scope; the ticker thread has none. Delivery adapters
         # resolve credentials, so the scope must span delivery too (reset in the outer finally).
-        _scope_token = set_secret_scope(build_profile_secret_scope(_get_hermes_home()))
+        _scope_token = set_secret_scope(build_profile_secret_scope(_get_eidolon_home()))
         # Same for terminal policy (gateway/run.py _profile_runtime_scope): else the ticker reads
         # process-global TERMINAL_* env a concurrent profile pinned. Resolution failure installs a
         # refusal scope — terminal execution raises instead of using the launch process's policy.
@@ -2944,7 +2944,7 @@ def _run_one_job_body(
         from tools.terminal_scope import (
             install_profile_terminal_scope)
 
-        _terminal_scope_token = install_profile_terminal_scope(_get_hermes_home())
+        _terminal_scope_token = install_profile_terminal_scope(_get_eidolon_home())
         # Defer agent teardown until AFTER delivery; closing first races the live send against a
         # torn-down async client. run_job hands the agent back via this list.
         # Defer the cron agent's async-resource teardown until AFTER delivery. run_job normally closes the
@@ -3151,7 +3151,7 @@ def _launch_external_cron_worker(job: dict) -> bool:
     """
     execution_id = str(job["execution_id"])
     job_id = str(job["id"])
-    handoff_dir = _get_hermes_home() / "cron" / "external-workers"
+    handoff_dir = _get_eidolon_home() / "cron" / "external-workers"
     payload_path = handoff_dir / f"{execution_id}.json"
     ack_path = handoff_dir / f"{execution_id}.ready"
     command = [
@@ -3192,7 +3192,7 @@ def _launch_external_cron_worker(job: dict) -> bool:
             json.dump(
                 {
                     "job": job,
-                    "profile_home": str(_get_hermes_home().resolve()),
+                    "profile_home": str(_get_eidolon_home().resolve()),
                     "multiplex_active": multiplex_active,
                 },
                 payload_file,
@@ -3206,7 +3206,7 @@ def _launch_external_cron_worker(job: dict) -> bool:
     worker_env = build_subprocess_env(
         scrub_secrets=multiplex_active,
         inherit_profile_home=True,
-        extra={"HERMES_HOME": str(_get_hermes_home().resolve())},
+        extra={"HERMES_HOME": str(_get_eidolon_home().resolve())},
     )
     try:
         process = subprocess.Popen(
@@ -3329,13 +3329,13 @@ def _run_external_worker_payload(payload_path: Path, ack_path: Path) -> bool:
         set_secret_scope,
     )
     from cron.executions import adopt_claimed_execution
-    from hermes_cli.env_loader import hydrate_profile_secret_sources
-    from hermes_constants import (
-        reset_hermes_home_override,
-        set_hermes_home_override,
+    from eidolon_cli.env_loader import hydrate_profile_secret_sources
+    from eidolon_constants import (
+        reset_eidolon_home_override,
+        set_eidolon_home_override,
     )
 
-    home_token = set_hermes_home_override(profile_home)
+    home_token = set_eidolon_home_override(profile_home)
     previous_multiplex = is_multiplex_active()
     multiplex_active = bool(payload.get("multiplex_active", False))
     set_multiplex_active(multiplex_active)
@@ -3375,7 +3375,7 @@ def _run_external_worker_payload(payload_path: Path, ack_path: Path) -> bool:
     finally:
         reset_secret_scope(secret_token)
         set_multiplex_active(previous_multiplex)
-        reset_hermes_home_override(home_token)
+        reset_eidolon_home_override(home_token)
 
 
 def _notify_provider_jobs_changed() -> None:
@@ -3453,7 +3453,7 @@ def _worktree_maintenance_repos() -> List[str]:
     filtered to those that actually have a ``.worktrees/`` dir."""
     repos: set = set()
 
-    # Hermes source checkout (git installs only; wheel installs have no .git).
+    # Eidolon source checkout (git installs only; wheel installs have no .git).
     with contextlib.suppress(Exception):
         install_root = Path(__file__).resolve().parent.parent
         if (install_root / ".git").exists():
@@ -3562,7 +3562,7 @@ def _maybe_reap_dead_owners() -> None:
     """Dead-owner reclaim: a run that died mid-flight would leave its row 'claimed' forever. Only
     rows whose owner process is proved gone are touched (_owner_is_live). Throttled."""
     # Dead-owner claim reclaim (#86721): execution rows carry their owner pid + process start time, but
-    # recovery previously ran only at scheduler STARTUP. A one-shot `hermes cron run` that claimed a job and
+    # recovery previously ran only at scheduler STARTUP. A one-shot `eidolon cron run` that claimed a job and
     # died mid-run (its runner thread lived in the exiting CLI process) left the row 'claimed' forever while
     # the long-lived gateway ticker kept running — blocking every future run of that job. Reap provably-dead
     # owners periodically so stale claims auto-clear without a gateway restart. Throttled so idle 60s ticks
@@ -3891,9 +3891,9 @@ if __name__ == "__main__":
         # The gateway spawns this worker with stdout/stderr on DEVNULL; without
         # a handler every adoption/ack failure below would be invisible.
         try:
-            from hermes_logging import setup_logging
+            from eidolon_logging import setup_logging
 
-            setup_logging(hermes_home=_get_hermes_home(), mode="cron")
+            setup_logging(hermes_home=_get_eidolon_home(), mode="cron")
         except Exception:
             pass
         raise SystemExit(
@@ -3924,7 +3924,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

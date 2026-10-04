@@ -1,4 +1,4 @@
-import type { HermesSkin } from '@hermes/shared/skin'
+import type { HermesSkin } from '@aethermesh/shared/skin'
 
 import {
   notifyCronChanged,

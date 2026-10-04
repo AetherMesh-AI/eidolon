@@ -17,7 +17,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from hermes_cli.active_sessions import _FileLock
+from eidolon_cli.active_sessions import _FileLock
 
 DELIVERY_DIR_NAME = "bot_live_delivery"
 _OWNER_KEYS = ("profile_home", "session_id", "lease_id", "live_session_id")
@@ -30,8 +30,8 @@ def find_canonical_live_owner(profile_home: Path | str) -> dict[str, Any] | None
     Capability advertisement is mandatory; old Desktop/TUI processes must not
     receive work they cannot consume. Registry errors propagate, failing closed.
     """
-    from hermes_cli.active_sessions import active_session_registry_snapshot
-    from hermes_state import SessionDB
+    from eidolon_cli.active_sessions import active_session_registry_snapshot
+    from eidolon_state import SessionDB
 
     home = Path(profile_home).resolve()
     if not (home / "state.db").is_file():
@@ -157,7 +157,7 @@ def _matches(home: Path | str, record: dict, owner: dict) -> bool:
         return False
     if pinned["session_id"] == owner["session_id"]:
         return True
-    from hermes_state import SessionDB
+    from eidolon_state import SessionDB
 
     db = SessionDB(db_path=Path(home) / "state.db", read_only=True)
     try:

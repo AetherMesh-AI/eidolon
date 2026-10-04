@@ -10,7 +10,7 @@ from urllib.parse import quote
 
 import httpx
 
-from hermes_cli._subprocess_compat import windows_hide_flags
+from eidolon_cli._subprocess_compat import windows_hide_flags
 from tools.skills_guard import TRUSTED_REPOS
 from tools.skills_hub_models import (
     SkillBundle, SkillMeta, SkillSource, _cache_metas, _cached_metas, _dedupe_by_trust,

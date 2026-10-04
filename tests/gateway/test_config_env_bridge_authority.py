@@ -60,7 +60,7 @@ def _run_gateway_import(hermes_home: Path, initial_env: dict[str, str]) -> dict[
     env["HERMES_HOME"] = str(hermes_home)
     # Keep interpreter paths plus the Windows bootstrap variables required by
     # stdlib platform detection and native dependency loading.  The child is
-    # otherwise intentionally clean so stale Hermes settings cannot leak in.
+    # otherwise intentionally clean so stale Eidolon settings cannot leak in.
     for k in (
         "PATH",
         "PYTHONPATH",
@@ -182,7 +182,7 @@ def test_default_turn_lease_timeout_matches_the_runtime_fallback() -> None:
     lease registry's DEFAULT_LEASE_WAIT must move together.
     """
     from gateway.turn_lease import DEFAULT_LEASE_WAIT
-    from hermes_cli.config import DEFAULT_CONFIG
+    from eidolon_cli.config import DEFAULT_CONFIG
 
     assert (
         float(DEFAULT_CONFIG["agent"]["gateway_turn_lease_timeout"])

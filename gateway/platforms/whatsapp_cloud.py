@@ -44,7 +44,7 @@ from gateway.platforms.event import MessageEvent, MessageType
 from gateway.platforms.whatsapp_common import _OPTIN_TRUTHY, WhatsAppBehaviorMixin, _get_wsecret
 from gateway.platforms.media_cache import ext_for_mime
 from gateway import rich_sent_store
-from hermes_constants import get_hermes_dir
+from eidolon_constants import get_hermes_dir
 
 logger = logging.getLogger(__name__)
 
@@ -578,7 +578,7 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
 
     async def send_voice(self, chat_id: str, audio_path: str, caption: Optional[str] = None, reply_to: Optional[str] = None, **kwargs) -> SendResult:
         """Voice message: ``audio/ogg; codecs=opus`` renders as a voice bubble, so a
-        local MP3 (Hermes TTS output) is converted via ffmpeg first; other audio is sent as-is."""
+        local MP3 (Eidolon TTS output) is converted via ffmpeg first; other audio is sent as-is."""
         mime_type: Optional[str] = None
         if not audio_path.startswith(_HTTP_PREFIXES) and audio_path.lower().endswith(".mp3") and os.path.exists(audio_path):
             opus_path = await self._convert_to_opus(audio_path)

@@ -1,4 +1,4 @@
-"""ACP tool-call helpers for mapping hermes tools to ACP ToolKind and building content."""
+"""ACP tool-call helpers for mapping eidolon tools to ACP ToolKind and building content."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from acp.schema import ToolCallLocation, ToolCallProgress, ToolCallStart, ToolKi
 
 logger = logging.getLogger(__name__)
 
-# Hermes tool name -> ACP ToolKind (anything unlisted is "other").
+# Eidolon tool name -> ACP ToolKind (anything unlisted is "other").
 TOOL_KIND_MAP: Dict[str, ToolKind] = {
     name: kind
     for kind, names in {
@@ -144,7 +144,7 @@ def _args_json(arguments: Any) -> str:
 def _json_loads_maybe(value: Optional[str]) -> Any:
     """Decode a JSON string; non-strings pass through, undecodable strings yield None.
 
-    Some Hermes tools append a human hint after the payload (``{...}\\n\\n[Hint: ...]``),
+    Some Eidolon tools append a human hint after the payload (``{...}\\n\\n[Hint: ...]``),
     so fall back to decoding the first JSON value to keep the structured rendering path."""
     if not isinstance(value, str):
         return value
@@ -170,7 +170,7 @@ def _fenced_text(text: str, language: str = "") -> str:
 
 
 def _tool_result_failed(result: Optional[str], tool_name: str | None = None) -> bool:
-    """Return True when a structured Hermes tool result clearly failed.
+    """Return True when a structured Eidolon tool result clearly failed.
 
     Deliberately conservative: plain text may legitimately contain "error", so
     only structured tool-level failures map to ACP failed status."""

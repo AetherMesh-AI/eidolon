@@ -19,10 +19,10 @@ from pathlib import Path
 
 import pytest
 
-from hermes_constants import (
-    get_hermes_home,
-    reset_hermes_home_override,
-    set_hermes_home_override,
+from eidolon_constants import (
+    get_eidolon_home,
+    reset_eidolon_home_override,
+    set_eidolon_home_override,
 )
 
 
@@ -40,11 +40,11 @@ def two_profiles(tmp_path):
 
 def _under_override(home: Path, fn):
     """Run ``fn`` with the profile override set to ``home`` and reset after."""
-    token = set_hermes_home_override(str(home))
+    token = set_eidolon_home_override(str(home))
     try:
         return fn()
     finally:
-        reset_hermes_home_override(token)
+        reset_eidolon_home_override(token)
 
 
 # ---------------------------------------------------------------------------
@@ -124,7 +124,7 @@ class TestThreadContextPropagation:
         seen = {}
 
         def worker():
-            seen["home"] = str(get_hermes_home())
+            seen["home"] = str(get_eidolon_home())
 
         def run():
             t = threading.Thread(target=worker)
@@ -141,7 +141,7 @@ class TestThreadContextPropagation:
         """model_tools._run_async's worker-thread branch must keep the override.
 
         This is the generic sync->async bridge for every async tool; if it
-        leaks, every async tool that resolves get_hermes_home() leaks.
+        leaks, every async tool that resolves get_eidolon_home() leaks.
         """
         import asyncio
 
@@ -149,7 +149,7 @@ class TestThreadContextPropagation:
         import model_tools
 
         async def reads_home():
-            return str(get_hermes_home())
+            return str(get_eidolon_home())
 
         async def driver():
             # Inside a running loop, _run_async spawns a worker thread + loop.

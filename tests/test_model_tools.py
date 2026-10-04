@@ -39,8 +39,8 @@ class TestHandleFunctionCall:
         """
         with (
             patch("model_tools.registry.dispatch", return_value='{"ok":true}'),
-            patch("hermes_cli.plugins.has_hook", return_value=True),
-            patch("hermes_cli.plugins.invoke_hook") as mock_invoke_hook,
+            patch("eidolon_cli.plugins.has_hook", return_value=True),
+            patch("eidolon_cli.plugins.invoke_hook") as mock_invoke_hook,
         ):
             handle_function_call("web_search", {"q": "test"}, task_id="t1")
 
@@ -63,8 +63,8 @@ class TestHandleFunctionCall:
         result = json.dumps({"output": "", "exit_code": 1, "error": None})
         with (
             patch("model_tools.registry.dispatch", return_value=result),
-            patch("hermes_cli.plugins.has_hook", return_value=True),
-            patch("hermes_cli.plugins.invoke_hook") as mock_invoke_hook,
+            patch("eidolon_cli.plugins.has_hook", return_value=True),
+            patch("eidolon_cli.plugins.invoke_hook") as mock_invoke_hook,
         ):
             assert handle_function_call("terminal", {"command": "false"}) == result
 
@@ -86,8 +86,8 @@ class TestHandleFunctionCall:
         """
         with (
             patch("model_tools.registry.dispatch", return_value='{"ok":true}'),
-            patch("hermes_cli.plugins.has_hook", return_value=False),
-            patch("hermes_cli.plugins.invoke_hook") as mock_invoke_hook,
+            patch("eidolon_cli.plugins.has_hook", return_value=False),
+            patch("eidolon_cli.plugins.invoke_hook") as mock_invoke_hook,
         ):
             result = handle_function_call("web_search", {"q": "test"}, task_id="t1")
 
@@ -121,14 +121,14 @@ class TestHandleFunctionCall:
             (),
             {"_middleware": {"tool_request": [fake_invoke_middleware], "tool_execution": [execution_middleware]}},
         )()
-        monkeypatch.setattr("hermes_cli.plugins.invoke_middleware", fake_invoke_middleware)
-        monkeypatch.setattr("hermes_cli.plugins.get_plugin_manager", lambda: manager)
+        monkeypatch.setattr("eidolon_cli.plugins.invoke_middleware", fake_invoke_middleware)
+        monkeypatch.setattr("eidolon_cli.plugins.get_plugin_manager", lambda: manager)
         hook_calls = []
         monkeypatch.setattr(
-            "hermes_cli.plugins.invoke_hook",
+            "eidolon_cli.plugins.invoke_hook",
             lambda hook_name, **kwargs: hook_calls.append((hook_name, kwargs)) or [],
         )
-        monkeypatch.setattr("hermes_cli.plugins.has_hook", lambda name: True)
+        monkeypatch.setattr("eidolon_cli.plugins.has_hook", lambda name: True)
         monkeypatch.setattr("model_tools.registry.dispatch", fake_dispatch)
 
         result = json.loads(
@@ -151,10 +151,10 @@ class TestHandleFunctionCall:
         assert post_call[1]["middleware_trace"] == expected_trace
 
     def test_registry_exception_emits_terminal_tool_hook(self, monkeypatch):
-        from hermes_cli import lifecycle
+        from eidolon_cli import lifecycle
 
         hook_calls = []
-        monkeypatch.setattr("hermes_cli.plugins.invoke_hook", lambda *_args, **_kwargs: [])
+        monkeypatch.setattr("eidolon_cli.plugins.invoke_hook", lambda *_args, **_kwargs: [])
         monkeypatch.setattr(lifecycle, "has_hook", lambda name: name == "post_tool_call")
         monkeypatch.setattr(
             lifecycle,
@@ -183,10 +183,10 @@ class TestHandleFunctionCall:
         assert post_call[1]["duration_ms"] >= 0
 
     def test_acp_edit_denial_emits_blocked_terminal_tool_hook(self, monkeypatch):
-        from hermes_cli import lifecycle
+        from eidolon_cli import lifecycle
 
         hook_calls = []
-        monkeypatch.setattr("hermes_cli.plugins.invoke_hook", lambda *_args, **_kwargs: [])
+        monkeypatch.setattr("eidolon_cli.plugins.invoke_hook", lambda *_args, **_kwargs: [])
         monkeypatch.setattr(lifecycle, "has_hook", lambda name: name == "post_tool_call")
         monkeypatch.setattr(
             lifecycle,
@@ -260,8 +260,8 @@ class TestPreToolCallBlocking:
             dispatch_called = True
             raise AssertionError("dispatch should not run when blocked")
 
-        monkeypatch.setattr("hermes_cli.plugins.invoke_hook", fake_invoke_hook)
-        monkeypatch.setattr("hermes_cli.plugins.has_hook", lambda name: True)
+        monkeypatch.setattr("eidolon_cli.plugins.invoke_hook", fake_invoke_hook)
+        monkeypatch.setattr("eidolon_cli.plugins.has_hook", lambda name: True)
         monkeypatch.setattr("model_tools.registry.dispatch", fake_dispatch)
 
         result = json.loads(handle_function_call("read_file", {"path": "test.txt"}, task_id="t1"))
@@ -281,7 +281,7 @@ class TestPreToolCallBlocking:
                 return [{"action": "block", "message": "Blocked"}]
             return []
 
-        monkeypatch.setattr("hermes_cli.plugins.invoke_hook", fake_invoke_hook)
+        monkeypatch.setattr("eidolon_cli.plugins.invoke_hook", fake_invoke_hook)
         monkeypatch.setattr("model_tools.registry.dispatch",
                             lambda *a, **kw: (_ for _ in ()).throw(AssertionError("should not run")))
         monkeypatch.setattr("tools.file_tools_read_tracking.notify_other_tool_call",
@@ -302,7 +302,7 @@ class TestPreToolCallBlocking:
                 ]
             return []
 
-        monkeypatch.setattr("hermes_cli.plugins.invoke_hook", fake_invoke_hook)
+        monkeypatch.setattr("eidolon_cli.plugins.invoke_hook", fake_invoke_hook)
         monkeypatch.setattr("model_tools.registry.dispatch",
                             lambda *a, **kw: json.dumps({"ok": True}))
 
@@ -330,8 +330,8 @@ class TestPreToolCallBlocking:
             "agent.relay_runtime.apply_tool_request_intercepts",
             rewrite,
         )
-        monkeypatch.setattr("hermes_cli.plugins.invoke_hook", fake_invoke_hook)
-        monkeypatch.setattr("hermes_cli.plugins.has_hook", lambda name: True)
+        monkeypatch.setattr("eidolon_cli.plugins.invoke_hook", fake_invoke_hook)
+        monkeypatch.setattr("eidolon_cli.plugins.has_hook", lambda name: True)
         monkeypatch.setattr("model_tools.registry.dispatch", dispatch)
 
         handle_function_call(

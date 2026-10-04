@@ -14,7 +14,7 @@ from tools.environments.local_env_policy import _HERMES_PROVIDER_ENV_BLOCKLIST, 
 def load_hermes_env_vars() -> dict[str, str]:
     """``~/.hermes/.env`` values, or ``{}`` — a broken .env must not fail command execution."""
     try:
-        from hermes_cli.config import load_env
+        from eidolon_cli.config import load_env
         return load_env() or {}
     except Exception:
         return {}
@@ -26,7 +26,7 @@ def resolve_passthrough_env(explicit_forward: Iterable[str] = (),
     """Values to forward into a remote shell plus the scoped names that must be unset there.
 
     Implicit passthrough (skill ``required_environment_variables`` + ``terminal.env_passthrough``)
-    is filtered through the Hermes provider-credential blocklist and the dynamic internal-secret
+    is filtered through the Eidolon provider-credential blocklist and the dynamic internal-secret
     check; ``explicit_forward`` entries (docker_forward_env) are an operator opt-in that bypasses
     both. Each value is the routed profile's secret when multiplex is active; a name the active
     scope lacks is returned in the unset set so a shared sandbox cannot leak another profile's

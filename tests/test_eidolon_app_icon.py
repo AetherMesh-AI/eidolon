@@ -36,6 +36,9 @@ def test_platform_icon_containers_and_wiring():
     png = (ASSETS / 'icon.png').read_bytes()
     assert struct.unpack('>II', png[16:24]) == (1024, 1024)
     assert (DESKTOP / 'public/icon.png').read_bytes() == png
+    assert (ROOT / 'web/public/favicon.ico').read_bytes() == ico
+    for filename in ('icon.png', 'icon.icns', 'icon.ico'):
+        assert (ROOT / 'apps/bootstrap-installer/src-tauri/icons' / filename).read_bytes() == (ASSETS / filename).read_bytes()
 
 
 def test_supplied_source_preserved():
@@ -44,3 +47,28 @@ def test_supplied_source_preserved():
     assert hashlib.sha256(source).hexdigest() == provenance['source_sha256']
     assert struct.unpack('>II', source[16:24]) == (1254, 1254)
     assert 'source_message' not in provenance
+
+
+def test_macos_icon_has_real_transparent_corners_and_preserves_center_artwork():
+    from PIL import Image
+
+    image = Image.open(ASSETS / 'icon-macos.png').convert('RGBA')
+    alpha = image.getchannel('A')
+    left, top, right, bottom = alpha.getbbox()
+    assert 0 < left < right < image.width
+    assert 0 < top < bottom < image.height
+    assert image.getpixel((left, top))[3] == 0
+    assert image.getpixel((image.width // 2, image.height // 2))[3] == 255
+    resized = Image.open(ASSETS / 'icon.png').convert('RGBA').resize(
+        (right - left, bottom - top), Image.Resampling.LANCZOS
+    )
+    assert image.getpixel((image.width // 2, image.height // 2)) == resized.getpixel(
+        (resized.width // 2, resized.height // 2)
+    )
+    touch = Image.open(DESKTOP / 'public/apple-touch-icon.png').convert('RGBA')
+    assert touch.tobytes() == Image.open(ASSETS / 'icon.png').convert('RGBA').resize(
+        touch.size, Image.Resampling.LANCZOS
+    ).tobytes()
+    icns = Image.open(ASSETS / 'icon.icns')
+    icns.size = image.size
+    assert icns.convert('RGBA').tobytes() == image.tobytes()

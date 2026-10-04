@@ -85,7 +85,7 @@ def _session_home_dir(session: dict, name: str) -> Path:
     the sandbox mounts and the vision host-read allowlist resolve the *session profile's*
     dirs at run time — writing anywhere else means the agent can never see the file."""
     profile_home = session.get("profile_home")
-    return (Path(profile_home) if profile_home else _hermes_home) / name
+    return (Path(profile_home) if profile_home else _eidolon_home) / name
 
 
 def _session_images_dir(session: dict) -> Path:

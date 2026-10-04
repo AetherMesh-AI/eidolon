@@ -48,7 +48,7 @@ class TurnFacadeMixin:
         from agent.review_idle_queue import QUEUE as _review_queue
         from agent.subagent_lifecycle import bind_subagent_parent
         from agent.turn_facade_lease import admit_durable_turn_lease
-        from hermes_cli.observability.relay_shared_metrics import finish_task_run, start_task_run
+        from eidolon_cli.observability.relay_shared_metrics import finish_task_run, start_task_run
 
         effective_task_id = task_id or str(uuid.uuid4())
         session_id = str(getattr(self, "session_id", None) or "")

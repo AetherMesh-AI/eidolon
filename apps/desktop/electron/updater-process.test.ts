@@ -21,7 +21,7 @@ const DAY_MS = 24 * 60 * 60 * 1000
 
 test('stagedUpdaterSupportsPrewrittenMarker rejects installers predating the self-adopt fix', () => {
   // The real-world trap: an installer staged at first install months ago, never
-  // refreshed because copy_self_to_hermes_home no-ops during --update.
+  // refreshed because copy_self_to_eidolon_home no-ops during --update.
   assert.equal(
     stagedUpdaterSupportsPrewrittenMarker('C:\\Hermes\\hermes-setup.exe', {
       stagedMtimeMs: () => MARKER_SELF_ADOPT_EPOCH_MS - 60 * DAY_MS
@@ -62,7 +62,7 @@ test('resolveStagedUpdaterBinary still returns a stale staged updater on Windows
   // once it is allowed to write its own claim.
   assert.equal(
     resolveStagedUpdaterBinary('C:\\Hermes', {
-      fileExists: () => true,
+      fileExists: candidate => candidate.endsWith('hermes-setup.exe'),
       isWindows: true,
       stagedMtimeMs: () => MARKER_SELF_ADOPT_EPOCH_MS - 60 * DAY_MS
     }),
@@ -141,7 +141,7 @@ test('resolveStagedUpdaterBinary hands Windows the staged installer it finds', (
   })
 
   assert.equal(resolved, staged)
-  assert.deepEqual(probed, [staged])
+  assert.deepEqual(probed, [path.join(home, 'eidolon-setup.exe'), staged])
 })
 
 test('resolveStagedUpdaterBinary returns null off Windows even when hermes-setup is staged (#74836)', () => {

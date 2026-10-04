@@ -20,7 +20,7 @@ from agent.conversation_compression import (
     _ensure_compressed_has_user_turn,
     compress_context,
 )
-from hermes_state import SessionDB
+from eidolon_state import SessionDB
 from tools.process_registry_notifications import format_process_notification
 from tools.todo_tool import TODO_INJECTION_HEADER
 

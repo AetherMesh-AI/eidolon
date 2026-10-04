@@ -322,7 +322,7 @@ class TestRunBrowserCommandPathConstruction:
              patch("tools.browser_tool_session._get_session_info", return_value=fake_session), \
              patch("tools.browser_tool._socket_safe_tmpdir", return_value=str(tmp_path)), \
              patch("tools.browser_tool_install._discover_homebrew_node_dirs", return_value=[]), \
-             patch("hermes_constants.Path.home", return_value=tmp_path), \
+             patch("eidolon_constants.Path.home", return_value=tmp_path), \
              patch("subprocess.Popen", side_effect=capture_popen), \
              patch("os.open", return_value=99), \
              patch("os.close"), \
@@ -352,7 +352,7 @@ class TestRunBrowserCommandPathConstruction:
     def test_npx_sentinel_resolves_via_resolve_npx_bin_with_pinned_spec(self, tmp_path):
         """When _find_agent_browser resolves the npx sentinel, the cmd prefix
         must come from _resolve_npx_bin() (not a bare shutil.which("npx"), which
-        could let a broken system npx shadow a healthy Hermes-managed one) and
+        could let a broken system npx shadow a healthy Eidolon-managed one) and
         use the pinned agent-browser npx spec, not a bare "agent-browser"."""
         captured_cmd = None
 
@@ -379,7 +379,7 @@ class TestRunBrowserCommandPathConstruction:
              patch("tools.browser_tool_session._get_session_info", return_value=fake_session), \
              patch("tools.browser_tool._socket_safe_tmpdir", return_value=str(tmp_path)), \
              patch("tools.browser_tool_install._discover_homebrew_node_dirs", return_value=[]), \
-             patch("hermes_constants.Path.home", return_value=tmp_path), \
+             patch("eidolon_constants.Path.home", return_value=tmp_path), \
              patch("subprocess.Popen", side_effect=capture_popen), \
              patch("os.open", return_value=99), \
              patch("os.close"), \
@@ -495,7 +495,7 @@ class TestRunChromeFallbackCommandNpxResolution:
 class TestResolveNpxBinPriority:
     """The extended/managed search must be checked before a bare ambient
     PATH lookup, so a broken/unexpected system npx can't shadow a healthy
-    Hermes-managed one — and each candidate must be validated (actually
+    Eidolon-managed one — and each candidate must be validated (actually
     runs) before being trusted, mirroring _find_agent_browser's own
     validation discipline for agent-browser itself."""
 

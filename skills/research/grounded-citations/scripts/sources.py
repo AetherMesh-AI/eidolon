@@ -41,7 +41,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _hermes_home import get_hermes_home  # noqa: E402
+from _eidolon_home import get_eidolon_home  # noqa: E402
 
 SCHEMA_VERSION = 1
 
@@ -68,7 +68,7 @@ def resolve_ledger_path(explicit: str | None = None) -> Path:
     env = os.environ.get("HERMES_CITATION_LEDGER", "").strip()
     if env:
         return Path(env).expanduser()
-    return get_hermes_home() / "cache" / "citations" / "ledger.json"
+    return get_eidolon_home() / "cache" / "citations" / "ledger.json"
 
 
 def normalize_url(url: str) -> str:

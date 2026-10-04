@@ -15,7 +15,7 @@ description: "4-phase root cause debugging: understand bugs before fixing"
 | | |
 |---|---|
 | Source | Bundled (installed by default) |
-| Path | `skills/software-development\systematic-debugging` |
+| Path | `skills/software-development/systematic-debugging` |
 | Version | `1.1.0` |
 | Author | Hermes Agent (adapted from obra/superpowers) |
 | License | MIT |
@@ -26,7 +26,7 @@ description: "4-phase root cause debugging: understand bugs before fixing"
 ## Reference: full SKILL.md
 
 :::info
-The following is the complete skill definition that Hermes loads when this skill is triggered. This is what the agent sees as instructions when the skill is active.
+The following is the complete skill definition that Eidolon loads when this skill is triggered. This is what the agent sees as instructions when the skill is active.
 :::
 
 # Systematic Debugging
@@ -377,11 +377,11 @@ If you catch yourself thinking:
 | **3. Hypothesis** | Form theory, test minimally, one variable at a time | Confirmed or new hypothesis |
 | **4. Implementation** | Create regression test, fix root cause, verify | Bug resolved, all tests pass |
 
-## Hermes Agent Integration
+## Eidolon Integration
 
 ### Investigation Tools
 
-Use these Hermes tools during Phase 1:
+Use these Eidolon tools during Phase 1:
 
 - **`search_files`** — Find error strings, trace function calls, locate patterns
 - **`read_file`** — Read source code with line numbers for precise analysis

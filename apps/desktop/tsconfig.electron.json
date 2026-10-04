@@ -16,6 +16,14 @@
     "rootDir": "..",
     "outDir": "build/electron-types"
   },
-  "include": ["electron", "../shared/src/data-url-read-max.ts", "../shared/src/translucency.ts"],
-  "exclude": ["src", "electron/**/*.e2e.mts"]
+  "include": [
+    "electron",
+    "../shared/src/data-url-read-max.ts",
+    "../shared/src/translucency.ts",
+    "package.json"
+  ],
+  "exclude": [
+    "src",
+    "electron/**/*.e2e.mts"
+  ]
 }

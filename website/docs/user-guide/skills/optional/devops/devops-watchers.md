@@ -14,8 +14,8 @@ Poll RSS, JSON APIs, and GitHub with watermark dedup.
 
 | | |
 |---|---|
-| Source | Optional — install with `hermes skills install official/devops/watchers` |
-| Path | `optional-skills/devops\watchers` |
+| Source | Optional — install with `eidolon skills install official/devops/watchers` |
+| Path | `optional-skills/devops/watchers` |
 | Version | `1.0.0` |
 | Author | Hermes Agent |
 | License | MIT |
@@ -25,7 +25,7 @@ Poll RSS, JSON APIs, and GitHub with watermark dedup.
 ## Reference: full SKILL.md
 
 :::info
-The following is the complete skill definition that Hermes loads when this skill is triggered. This is what the agent sees as instructions when the skill is active.
+The following is the complete skill definition that Eidolon loads when this skill is triggered. This is what the agent sees as instructions when the skill is active.
 :::
 
 # Watchers
@@ -77,7 +77,7 @@ python $HERMES_HOME/skills/devops/watchers/scripts/watch_rss.py \
   --name hn --url https://news.ycombinator.com/rss --max 5
 ```
 
-Watch a GitHub repo (set `GITHUB_TOKEN` in `${HERMES_HOME:-~/.hermes}/.env` to avoid the 60 req/hr anonymous rate limit):
+Watch a GitHub repo (set `GITHUB_TOKEN` in `${HERMES_HOME:-~/.eidolon}/.env` to avoid the 60 req/hr anonymous rate limit):
 
 ```bash
 python $HERMES_HOME/skills/devops/watchers/scripts/watch_github.py \

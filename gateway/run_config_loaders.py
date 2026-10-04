@@ -25,8 +25,8 @@ from gateway.restart import (
 )
 from gateway.session import SessionSource
 from gateway.session_state import SERVICE_TIER_UNSET as _SERVICE_TIER_UNSET
-from hermes_cli.config import cfg_get, resolve_ephemeral_system_prompt_from_config
-from hermes_cli.fallback_config import get_fallback_chain
+from eidolon_cli.config import cfg_get, resolve_ephemeral_system_prompt_from_config
+from eidolon_cli.fallback_config import get_fallback_chain
 from utils import is_truthy_value
 
 if TYPE_CHECKING:  # string annotations only; never imported at runtime (cycle)
@@ -60,7 +60,7 @@ class GatewayConfigLoadersMixin:
         HERMES_PREFILL_MESSAGES_FILE env wins, then top-level prefill_messages_file in config.yaml,
         then legacy agent.prefill_messages_file. Relative paths resolve from ~/.hermes/.
         """
-        from gateway.run import _hermes_home, _load_gateway_runtime_config
+        from gateway.run import _eidolon_home, _load_gateway_runtime_config
         file_path = os.getenv("HERMES_PREFILL_MESSAGES_FILE", "")
         if not file_path:
             cfg = _load_gateway_runtime_config()
@@ -71,7 +71,7 @@ class GatewayConfigLoadersMixin:
             return []
         path = Path(file_path).expanduser()
         if not path.is_absolute():
-            path = _hermes_home / path
+            path = _eidolon_home / path
         if not path.exists():
             logger.warning("Prefill messages file not found: %s", path)
             return []
@@ -109,12 +109,12 @@ class GatewayConfigLoadersMixin:
     ) -> str:
         """Resolve model for this channel: channel_overrides else global default.
 
-        Precedence lives in :func:`hermes_cli.model_switch.resolve_effective_model` (shared with the
+        Precedence lives in :func:`eidolon_cli.model_switch.resolve_effective_model` (shared with the
         API server so the surfaces cannot diverge). No session tier here: session /model overrides
         are applied later by ``_apply_session_model_override``.
         """
         from gateway.run import _resolve_gateway_model
-        from hermes_cli.model_switch import resolve_effective_model
+        from eidolon_cli.model_switch import resolve_effective_model
         return resolve_effective_model(
             None,  # session tier applied downstream (_apply_session_model_override)
             self._channel_override(platform, chat_id, thread_id, parent_id),
@@ -144,7 +144,7 @@ class GatewayConfigLoadersMixin:
 
     @staticmethod
     def _load_reasoning_config(model: str = "") -> dict | None:
-        """Reasoning effort from config.yaml via :func:`hermes_constants.resolve_reasoning_config`.
+        """Reasoning effort from config.yaml via :func:`eidolon_constants.resolve_reasoning_config`.
 
         Per-model override > global ``agent.reasoning_effort``; YAML False = disabled. Empty
         ``model`` uses ``model.default``.
@@ -152,7 +152,7 @@ class GatewayConfigLoadersMixin:
         Closes #21256.
         """
         from gateway.run import _load_gateway_runtime_config
-        from hermes_constants import resolve_reasoning_config
+        from eidolon_constants import resolve_reasoning_config
         return resolve_reasoning_config(_load_gateway_runtime_config(), model)
 
     @staticmethod
@@ -427,10 +427,10 @@ class GatewayConfigLoadersMixin:
         gateway`` was running never reached messaging sessions even though the same process's cron jobs fell
         back correctly. Fixes #60955.
         """
-        from gateway.run import _hermes_home
+        from gateway.run import _eidolon_home
         try:
-            from hermes_cli.config import read_user_config_raw
-            cfg_path = _hermes_home / "config.yaml"
+            from eidolon_cli.config import read_user_config_raw
+            cfg_path = _eidolon_home / "config.yaml"
             if not cfg_path.exists():
                 self._fallback_model = None
                 return self._fallback_model
@@ -439,10 +439,10 @@ class GatewayConfigLoadersMixin:
             # The overlay/expansion below fixes the managed-scope/${VAR} drift without losing that.
             cfg = read_user_config_raw(cfg_path)
             with suppress(Exception):
-                from hermes_cli import managed_scope
+                from eidolon_cli import managed_scope
                 cfg = managed_scope.apply_managed_overlay(cfg)
             with suppress(Exception):
-                from hermes_cli.config import _expand_env_vars
+                from eidolon_cli.config import _expand_env_vars
                 expanded = _expand_env_vars(cfg)
                 if isinstance(expanded, dict):
                     cfg = expanded

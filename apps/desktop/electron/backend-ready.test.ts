@@ -125,7 +125,7 @@ test('rejects with the timeout message after the deadline', async () => {
   const child = makeFakeChild()
   await assert.rejects(
     waitForDashboardPort(child, 20),
-    /Timed out waiting for Hermes backend port announcement \(20ms\)/
+    /Timed out waiting for Eidolon backend port announcement \(20ms\)/
   )
 })
 
@@ -225,12 +225,12 @@ test('exit-before-announcement error carries the buffered output tail (stdout pa
   const child = makeFakeChild()
 
   const wait = waitForDashboardPortAnnouncement(child, {
-    describeOutputTail: () => '\nRecent backend output:\nModuleNotFoundError: hermes_cli'
+    describeOutputTail: () => '\nRecent backend output:\nModuleNotFoundError: eidolon_cli'
   })
 
   child.emit('exit', 1, null)
 
-  await assert.rejects(wait, /exited before port announcement \(1\)[\s\S]*ModuleNotFoundError: hermes_cli/)
+  await assert.rejects(wait, /exited before port announcement \(1\)[\s\S]*ModuleNotFoundError: eidolon_cli/)
 })
 
 test('exit-before-announcement error carries the buffered output tail (ready-file path)', async () => {

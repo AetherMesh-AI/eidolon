@@ -46,7 +46,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 4004, "empty paste")
     _paste_counter += 1
     line_count = text.count("\n") + 1
-    paste_dir = _hermes_home / "pastes"
+    paste_dir = _eidolon_home / "pastes"
     paste_dir.mkdir(parents=True, exist_ok=True)
     from datetime import datetime
     paste_file = paste_dir / f"paste_{_paste_counter}_{datetime.now().strftime('%H%M%S')}.txt"
@@ -61,7 +61,7 @@ def _profile_mention_items(prefix: str) -> list[dict]:
     is also offered as 'hermes' when no real profile claims that name."""
     out: list[dict] = []
     try:
-        from hermes_cli.profiles import list_profiles
+        from eidolon_cli.profiles import list_profiles
         seen: set[str] = set()
         for p in list_profiles():
             if not (name := (p.name or "").strip()):
@@ -226,7 +226,7 @@ def _(rid, params: dict) -> dict:
     text = params.get("text", "")
     if not text.startswith("/"):
         return _ok(rid, {"items": []})
-    from hermes_cli.commands_completion import SlashCommandCompleter
+    from eidolon_cli.commands_completion import SlashCommandCompleter
     from prompt_toolkit.document import Document
     from prompt_toolkit.formatted_text import to_plain_text
     from agent.skill_commands import get_skill_commands
@@ -279,7 +279,7 @@ def _session_agent(params: dict):
 @_profile_scoped
 @_catch(5033)
 def _(rid, params: dict) -> dict:
-    from hermes_cli.inventory import build_model_options_payload
+    from eidolon_cli.inventory import build_model_options_payload
     # A spawned agent owns the live provider/model/base_url; empty attributes must
     # NOT clobber disk config (with_overrides is truthy-only).
     return _ok(rid, build_model_options_payload(
@@ -291,8 +291,8 @@ def _(rid, params: dict) -> dict:
 @_catch(5034)
 def _(rid, params: dict) -> dict:
     """Save an API key for ``slug``; return its refreshed provider row (model.options shape + ``authenticated``)."""
-    from hermes_cli.auth import PROVIDER_REGISTRY
-    from hermes_cli.config import is_managed
+    from eidolon_cli.auth import PROVIDER_REGISTRY
+    from eidolon_cli.config import is_managed
     slug, api_key = (params.get("slug") or "").strip(), (params.get("api_key") or "").strip()
     if not slug or not api_key:
         return _err(rid, 4001, "slug and api_key are required")
@@ -301,17 +301,17 @@ def _(rid, params: dict) -> dict:
     if not (pconfig := PROVIDER_REGISTRY.get(slug)):
         return _err(rid, 4002, f"unknown provider: {slug}")
     if pconfig.auth_type != "api_key":
-        return _err(rid, 4003, f"{pconfig.name} uses {pconfig.auth_type} auth — run `hermes model` to configure")
+        return _err(rid, 4003, f"{pconfig.name} uses {pconfig.auth_type} auth — run `eidolon model` to configure")
     if not pconfig.api_key_env_vars:
         return _err(rid, 4004, f"no env var defined for {pconfig.name}")
     # Save the key to ~/.hermes/.env via the unified credential lifecycle so any stale config.yaml mirror of
     # the previous key (model.api_key, custom_providers[*].api_key) is rotated in the same action (#62269).
     env_var = pconfig.api_key_env_vars[0]
-    from hermes_cli.credential_lifecycle import save_provider_env_credential  # also rotates stale config.yaml mirrors
+    from eidolon_cli.credential_lifecycle import save_provider_env_credential  # also rotates stale config.yaml mirrors
     save_provider_env_credential(env_var, api_key)
     os.environ[env_var] = api_key  # so the refreshed inventory sees it
     # Shared inventory builder (lock-step with model.options / dashboard); picker_hints carries `authenticated`.
-    from hermes_cli.inventory import build_models_payload
+    from eidolon_cli.inventory import build_models_payload
     payload = build_models_payload(_model_picker_context(_session_agent(params)), picker_hints=True, max_models=50)
     provider_data = next((p for p in payload["providers"] if p["slug"] == slug), None)
     if provider_data is None:  # key saved but provider didn't appear — still success
@@ -324,8 +324,8 @@ def _(rid, params: dict) -> dict:
 @_catch(5035)
 def _(rid, params: dict) -> dict:
     """Remove all credentials (env keys AND OAuth/pool state) for provider ``slug``."""
-    from hermes_cli.auth import PROVIDER_REGISTRY, clear_provider_auth
-    from hermes_cli.credential_lifecycle import remove_provider_env_credential
+    from eidolon_cli.auth import PROVIDER_REGISTRY, clear_provider_auth
+    from eidolon_cli.credential_lifecycle import remove_provider_env_credential
     if not (slug := (params.get("slug") or "").strip()):
         return _err(rid, 4001, "slug is required")
     pconfig = PROVIDER_REGISTRY.get(slug)

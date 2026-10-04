@@ -111,7 +111,7 @@ class TestEAGAINRecurringRedispatches:
         env = wedge_env
         # Point the executions ledger at the throwaway home.
         monkeypatch.setattr(E, "EXECUTIONS_FILE", env["home"] / "cron" / "executions.db")
-        monkeypatch.setattr(S, "_hermes_home", env["home"])
+        monkeypatch.setattr(S, "_eidolon_home", env["home"])
         monkeypatch.setattr(S, "get_due_jobs", S.get_due_jobs)  # no-op, keep real
 
         state = self._make_script_eagain(env, monkeypatch)
@@ -153,7 +153,7 @@ class TestEAGAINRecurringRedispatches:
 
         env = wedge_env
         monkeypatch.setattr(E, "EXECUTIONS_FILE", env["home"] / "cron" / "executions.db")
-        monkeypatch.setattr(S, "_hermes_home", env["home"])
+        monkeypatch.setattr(S, "_eidolon_home", env["home"])
 
         self._make_script_eagain(env, monkeypatch)
         n1 = S.tick(verbose=False, sync=True)

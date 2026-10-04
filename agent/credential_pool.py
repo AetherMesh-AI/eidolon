@@ -16,16 +16,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple
 
-from hermes_constants import OPENROUTER_BASE_URL
-from hermes_cli.config import load_env
+from eidolon_constants import OPENROUTER_BASE_URL
+from eidolon_cli.config import load_env
 from agent.secret_scope import get_secret as _get_secret
 from agent.credential_persistence import (
     fingerprint_secret_value,
     is_borrowed_credential_source,
     sanitize_borrowed_credential_payload,
 )
-import hermes_cli.auth as auth_mod
-from hermes_cli.auth import (
+import eidolon_cli.auth as auth_mod
+from eidolon_cli.auth import (
     CODEX_ACCESS_TOKEN_REFRESH_SKEW_SECONDS,
     PROVIDER_REGISTRY,
     SINGLE_USE_REFRESH_POOL_PROVIDERS,
@@ -57,7 +57,7 @@ def _load_config_safe() -> Optional[dict]:
     that copy the dominant cost of ``model.options``.
     """
     try:
-        from hermes_cli.config import load_config_readonly
+        from eidolon_cli.config import load_config_readonly
 
         return load_config_readonly()
     except Exception:
@@ -65,9 +65,9 @@ def _load_config_safe() -> Optional[dict]:
 
 
 def _is_source_suppressed_fn() -> Callable[[str, str], bool]:
-    """``hermes_cli.auth.is_source_suppressed`` (late-bound), or an always-False stub."""
+    """``eidolon_cli.auth.is_source_suppressed`` (late-bound), or an always-False stub."""
     try:
-        from hermes_cli.auth import is_source_suppressed
+        from eidolon_cli.auth import is_source_suppressed
         return is_source_suppressed
     except ImportError:
         return lambda _p, _s: False
@@ -101,7 +101,7 @@ _TERMINAL_AUTH_REASONS = frozenset({
 CREDENTIAL_PERSIST_FAILED_REASON = "credential_persist_failed"
 
 # DEAD ``manual:*`` entries are pruned after this quiet window — they have no
-# singleton to re-seed from and the user can re-add via ``hermes auth add``.
+# singleton to re-seed from and the user can re-add via ``eidolon auth add``.
 # Singleton-seeded entries (device_code, claude_code) are NOT pruned because
 # ``_seed_from_singletons`` would re-create them from the same stale tokens.
 DEAD_MANUAL_PRUNE_TTL_SECONDS = 24 * 60 * 60
@@ -150,10 +150,10 @@ FAILURE_REASON_BILLING_UNVERIFIED = "billing_unverified"
 # core, and stalled the event loop (Desktop backend readiness timeouts).
 # Credential selection runs on a hot path (every model call, plus auxiliary tasks like
 # compression/moa/titles), so when a pool is empty or fully exhausted the un-throttled log fires on *every*
-# selection. On Windows several Hermes processes share one rotating log guarded by concurrent-log-handler's
+# selection. On Windows several Eidolon processes share one rotating log guarded by concurrent-log-handler's
 # cross-process lock; that per-selection volume storms the lock (``RuntimeError: Cannot acquire lock after
 # 20 attempts``), pegs a core, and stalls the asyncio event loop long enough to fail the Desktop backend
-# readiness handshake ("Timed out connecting to Hermes backend after 15000ms"). Logging the condition at
+# readiness handshake ("Timed out connecting to Eidolon backend after 15000ms"). Logging the condition at
 # most once per window preserves the signal while removing the storm — same class of fix as the warn-once
 # dedup in #58265.
 NO_AVAILABLE_ENTRIES_LOG_THROTTLE_SECONDS = 60.0
@@ -452,7 +452,7 @@ def _iter_custom_providers(config: Optional[dict] = None):
     if config is None:
         return
     try:
-        from hermes_cli.config import get_compatible_custom_providers
+        from eidolon_cli.config import get_compatible_custom_providers
 
         custom_providers = get_compatible_custom_providers(config)
     except Exception:
@@ -497,7 +497,7 @@ def custom_provider_pool_key_candidates(
 ) -> List[str]:
     """Return pool keys to try for a custom endpoint.
 
-    ``hermes auth add <key>`` stores ``providers.<key>`` credentials under the
+    ``eidolon auth add <key>`` stores ``providers.<key>`` credentials under the
     durable config slug; older rows and legacy ``custom_providers:`` entries
     live under ``custom:<display-name>``. Try the slug first, then the legacy
     namespace, so a populated pool is not skipped in favour of the
@@ -740,7 +740,7 @@ def _write_through_provider_state_to_global_root(
     the profile store (the caller already saved that). Swallows all errors —
     a failed write-through degrades to root-stale and must never break the
     profile's own successful save. Mirrors
-    ``hermes_cli.auth._write_through_xai_oauth_to_global_root``.
+    ``eidolon_cli.auth._write_through_xai_oauth_to_global_root``.
 
     See #48415.
     """
@@ -878,7 +878,7 @@ def persist_pool_entries(
 #
 # Providers whose OAuth singleton lives in auth.json ``providers.<id>.tokens``
 # (Codex, xAI): log names (sync-message form, "<name> OAuth" form),
-# ``hermes_cli.auth`` refresh function and terminal-error predicate (looked
+# ``eidolon_cli.auth`` refresh function and terminal-error predicate (looked
 # up at call time so tests can patch them).
 _TOKENS_SINGLETON_PROVIDERS: Dict[str, Tuple[str, str, str, str]] = {
     "openai-codex": ("Codex", "Codex", "refresh_codex_oauth_pure", "_is_terminal_codex_oauth_refresh_error"),
@@ -1216,7 +1216,7 @@ class CredentialPool(CredentialPoolAdminMixin):
     def _sync_entry_from_auth_store(self, entry: PooledCredential) -> PooledCredential:
         """Sync a Codex / xAI device_code entry from auth.json ``providers.<id>.tokens``.
 
-        A fresh ``hermes model`` / ``hermes auth`` login writes new tokens
+        A fresh ``eidolon model`` / ``eidolon auth`` login writes new tokens
         under ``_auth_store_lock`` while the pool entry may sit frozen behind
         a ``last_error_reset_at`` hours in the future; without this sync every
         request fails with "no available entries" despite fresh credentials on
@@ -1387,7 +1387,7 @@ class CredentialPool(CredentialPoolAdminMixin):
             return self._refresh_entry_impl(entry, force=force)
 
         # Single-use refresh tokens: sync -> POST -> write-back must be atomic
-        # across Hermes processes, or two processes adopt the same on-disk
+        # across Eidolon processes, or two processes adopt the same on-disk
         # token, both POST it, and the loser gets ``refresh_token_reused`` /
         # ``invalid_grant`` (for Anthropic sources other than claude_code
         # there was no recovery path at all). Serialize through the shared
@@ -1808,7 +1808,7 @@ class CredentialPool(CredentialPoolAdminMixin):
     def _resync_stale_entry(self, entry: PooledCredential) -> PooledCredential:
         """Re-read an exhausted/DEAD singleton-seeded entry from its token authority.
 
-        The user may have re-authed (``hermes model`` / ``hermes auth``, the
+        The user may have re-authed (``eidolon model`` / ``eidolon auth``, the
         Claude Code CLI, another profile) leaving fresh tokens on disk while
         the pool entry is frozen behind ``last_error_reset_at``.
         """
@@ -1858,7 +1858,7 @@ class CredentialPool(CredentialPoolAdminMixin):
                     if dead_at and now - dead_at > DEAD_MANUAL_PRUNE_TTL_SECONDS:
                         logger.warning(
                             "credential pool: pruning DEAD manual entry %s "
-                            "(reason=%s, age=%.1fh) — re-add via `hermes auth add %s`",
+                            "(reason=%s, age=%.1fh) — re-add via `eidolon auth add %s`",
                             entry.label or entry.id[:8],
                             entry.last_error_reason or "unknown",
                             (now - dead_at) / 3600.0,
@@ -2282,7 +2282,7 @@ class _Seeder:
         self.is_suppressed = _is_source_suppressed_fn()
 
     def upsert(self, source: str, payload: Dict[str, Any]) -> bool:
-        """Upsert unless suppressed (``hermes auth remove`` must stay stable across loads)."""
+        """Upsert unless suppressed (``eidolon auth remove`` must stay stable across loads)."""
         if self.is_suppressed(self.provider, source):
             return False
         self.active_sources.add(source)
@@ -2296,17 +2296,17 @@ class _Seeder:
 
 
 def _seed_anthropic_singletons(seed: _Seeder) -> None:
-    # Only auto-discover external credentials (Claude Code, Hermes PKCE) when
+    # Only auto-discover external credentials (Claude Code, Eidolon PKCE) when
     # the user explicitly configured anthropic; otherwise auxiliary fallback
     # chains would read ~/.claude/.credentials.json without consent (PR #4210).
     try:
-        from hermes_cli.auth import is_provider_explicitly_configured
+        from eidolon_cli.auth import is_provider_explicitly_configured
         if not is_provider_explicitly_configured("anthropic"):
             return
     except ImportError:
         pass
 
-    # API-key vs OAuth is a user-visible choice at `hermes setup`. The API-key
+    # API-key vs OAuth is a user-visible choice at `eidolon setup`. The API-key
     # signal is ANTHROPIC_API_KEY set AND no OAuth env vars (the save_* helpers
     # zero the other side). Then we MUST NOT seed autodiscovered OAuth tokens:
     # rotation on a 401/429 would silently flip the session onto OAuth, which
@@ -2382,7 +2382,7 @@ def _seed_copilot_singleton(seed: _Seeder) -> None:
     # Copilot tokens are resolved dynamically via `gh auth token` or env vars
     # (COPILOT_GITHUB_TOKEN / GH_TOKEN); they don't live in the auth store.
     try:
-        from hermes_cli.copilot_auth import (
+        from eidolon_cli.copilot_auth import (
             COPILOT_ENV_VARS,
             resolve_copilot_token,
             get_copilot_api_token,
@@ -2429,7 +2429,7 @@ def _seed_qwen_singleton(seed: _Seeder) -> None:
     # Qwen OAuth tokens live in ~/.qwen/oauth_creds.json (written by the Qwen
     # CLI). refresh_if_expiring=False avoids network calls during pool loading.
     try:
-        from hermes_cli.auth import resolve_qwen_runtime_credentials
+        from eidolon_cli.auth import resolve_qwen_runtime_credentials
         creds = resolve_qwen_runtime_credentials(refresh_if_expiring=False)
         token = creds.get("api_key", "")
         if token:
@@ -2449,7 +2449,7 @@ def _seed_minimax_singleton(seed: _Seeder) -> None:
     # Read the raw auth.json state rather than resolve_minimax_oauth_runtime_credentials,
     # which always refreshes on expiry (surprise network calls during discovery).
     try:
-        from hermes_cli.auth import get_provider_auth_state
+        from eidolon_cli.auth import get_provider_auth_state
         state = get_provider_auth_state("minimax-oauth")
         if not (state and state.get("access_token")):
             return
@@ -2475,10 +2475,10 @@ def _seed_minimax_singleton(seed: _Seeder) -> None:
 def _seed_tokens_singleton(seed: _Seeder, auth_store: Dict[str, Any]) -> None:
     """Codex / xAI: surface the auth.json ``providers.<id>.tokens`` singleton as ``device_code``.
 
-    Hermes owns its own Codex auth state and does NOT auto-import
+    Eidolon owns its own Codex auth state and does NOT auto-import
     ~/.codex/auth.json: refresh tokens are single-use, so sharing them with
     Codex CLI / VS Code causes refresh_token_reused races. Adoption is an
-    explicit one-time prompt via `hermes auth openai-codex`.
+    explicit one-time prompt via `eidolon auth openai-codex`.
     """
     state = _load_provider_state(auth_store, seed.provider)
     tokens = state.get("tokens") if isinstance(state, dict) else None
@@ -2514,7 +2514,7 @@ def _seed_from_singletons(provider: str, entries: List[PooledCredential]) -> Tup
     elif provider == "minimax-oauth":
         _seed_minimax_singleton(seed)
     elif provider in _TOKENS_SINGLETON_PROVIDERS:
-        # `hermes auth remove openai-codex` suppresses device_code; without
+        # `eidolon auth remove openai-codex` suppresses device_code; without
         # this gate the removal is undone on the next load_pool().
         if provider == "openai-codex" and seed.is_suppressed(provider, "device_code"):
             return seed.result
@@ -2559,7 +2559,7 @@ def _warn_env_ingestion_once(provider: str, env_var: str) -> None:
     logger.warning(
         "Ingested %s from environment into the %s credential pool — this "
         "enables %s spend. Remove the key or run "
-        "hermes auth remove %s <n> to suppress.",
+        "eidolon auth remove %s <n> to suppress.",
         env_var,
         provider,
         "OpenRouter" if provider == "openrouter" else provider,
@@ -2575,7 +2575,7 @@ def _env_payload(*, env_var: str, token: str, base_url: str) -> Dict[str, Any]:
         "label": env_var,
     }
     try:
-        from hermes_cli.env_loader import get_secret_source
+        from eidolon_cli.env_loader import get_secret_source
         source_label = get_secret_source(env_var)
     except Exception:
         source_label = None
@@ -2644,10 +2644,10 @@ def _prune_stale_seeded_entries(
         # ``env:*`` entries are persisted references re-hydrated on every load.
         # A process that merely lacks the env var must NOT delete the on-disk
         # entry for every other process (#9331); prune only when explicitly
-        # requested (an `hermes auth` command that confirmed the source is gone).
+        # requested (an `eidolon auth` command that confirmed the source is gone).
         if entry.source.startswith("env:"):
             return prune_env_sources
-        # File-backed singletons and Hermes PKCE disappear when their backing file is gone.
+        # File-backed singletons and Eidolon PKCE disappear when their backing file is gone.
         return is_borrowed_credential_source(entry.source, entry.provider) or entry.source == "hermes_pkce"
 
     retained = [

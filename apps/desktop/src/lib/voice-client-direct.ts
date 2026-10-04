@@ -1,5 +1,5 @@
 import { profileScoped } from '@/api/client'
-import { getApiRequestConnection, getApiRequestProfile, hermesApi } from '@/hermes'
+import { getApiRequestConnection, getApiRequestProfile, hermesApi } from '@/eidolon'
 
 /**
  * Client-direct voice: call the active profile's STT/TTS providers straight

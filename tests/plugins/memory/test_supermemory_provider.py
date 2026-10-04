@@ -90,12 +90,12 @@ def test_clean_text_for_capture_strips_injected_context():
 def test_format_prefetch_context_deduplicates_overlap():
     result = _format_prefetch_context(
         static_facts=["Jordan prefers short answers"],
-        dynamic_facts=["Jordan prefers short answers", "Uses Hermes"],
-        search_results=[{"memory": "Uses Hermes", "similarity": 0.9}],
+        dynamic_facts=["Jordan prefers short answers", "Uses Eidolon"],
+        search_results=[{"memory": "Uses Eidolon", "similarity": 0.9}],
         max_results=10,
     )
     assert result.count("Jordan prefers short answers") == 1
-    assert result.count("Uses Hermes") == 1
+    assert result.count("Uses Eidolon") == 1
     assert "<supermemory-context>" in result
 
 
@@ -103,7 +103,7 @@ def test_prefetch_includes_profile_on_first_turn(provider):
     provider._client.profile_response = {
         "static": ["Jordan prefers short answers"],
         "dynamic": ["Current project is Supermemory provider"],
-        "search_results": [{"memory": "Working on Hermes memory provider", "similarity": 0.88}],
+        "search_results": [{"memory": "Working on Eidolon memory provider", "similarity": 0.88}],
     }
     provider.on_turn_start(1, "start")
     result = provider.prefetch("what am I working on?")
@@ -142,7 +142,7 @@ def test_on_session_end_ingests_clean_messages(provider):
 
 
 def test_merge_metadata_stamps_sm_source():
-    # sm_source routes Hermes writes into the "Hermes" Space in the Supermemory
+    # sm_source routes Eidolon writes into the "Eidolon" Space in the Supermemory
     # app (functional routing, not telemetry) — must always be present.
     from plugins.memory.supermemory import _SupermemoryClient
 
@@ -414,7 +414,7 @@ def test_post_setup_writes_config_and_prints_summary(monkeypatch, tmp_path, caps
     config: dict = {"memory": {}}
     monkeypatch.setenv("SUPERMEMORY_API_KEY", "")
     monkeypatch.setattr(
-        "hermes_cli.memory_setup._prompt",
+        "eidolon_cli.memory_setup._prompt",
         lambda label, secret=True, default=None: "new-api-key",
     )
     monkeypatch.setattr(
@@ -433,7 +433,7 @@ def test_post_setup_writes_config_and_prints_summary(monkeypatch, tmp_path, caps
     def fake_save_config(cfg):
         saved.update(cfg)
 
-    monkeypatch.setattr("hermes_cli.config.save_config", fake_save_config)
+    monkeypatch.setattr("eidolon_cli.config.save_config", fake_save_config)
 
     SupermemoryMemoryProvider().post_setup(str(tmp_path), config)
 

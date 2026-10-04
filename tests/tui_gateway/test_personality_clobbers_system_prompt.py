@@ -107,7 +107,7 @@ def test_personality_selection_preserves_manual_system_prompt(tmp_path, monkeypa
     """Selecting a personality must NOT overwrite the manual agent.system_prompt."""
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     # Force the server module to pick up the temp home for config reads/writes.
-    monkeypatch.setattr(server, "_hermes_home", Path(tmp_path))
+    monkeypatch.setattr(server, "_eidolon_home", Path(tmp_path))
     monkeypatch.setattr(server, "_cfg_path", None)
     monkeypatch.setattr(server, "_cfg_cache", None)
     _seed_config(str(tmp_path))
@@ -134,7 +134,7 @@ def test_switching_personality_leaves_no_stale_text(tmp_path, monkeypatch):
     in-session ephemeral prompt, not the durable global system prompt).
     """
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-    monkeypatch.setattr(server, "_hermes_home", Path(tmp_path))
+    monkeypatch.setattr(server, "_eidolon_home", Path(tmp_path))
     monkeypatch.setattr(server, "_cfg_path", None)
     monkeypatch.setattr(server, "_cfg_cache", None)
     _seed_config(str(tmp_path))

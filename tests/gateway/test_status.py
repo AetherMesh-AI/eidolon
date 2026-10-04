@@ -20,7 +20,7 @@ class TestGatewayPidState:
 
         payload = json.loads((tmp_path / "gateway.pid").read_text())
         assert payload["pid"] == os.getpid()
-        assert payload["kind"] == "hermes-gateway"
+        assert payload["kind"] == "eidolon-gateway"
         assert isinstance(payload["argv"], list)
         assert payload["argv"]
 
@@ -70,8 +70,8 @@ class TestGatewayPidState:
         def _write_record(pid: int, start_time: int) -> None:
             record = {
                 "pid": pid,
-                "kind": "hermes-gateway",
-                "argv": ["python", "-m", "hermes_cli.main", "gateway"],
+                "kind": "eidolon-gateway",
+                "argv": ["python", "-m", "eidolon_cli.main", "gateway"],
                 "start_time": start_time,
             }
             pid_path.write_text(json.dumps(record))
@@ -103,8 +103,8 @@ class TestGatewayPidState:
         pid_path = tmp_path / "gateway.pid"
         pid_path.write_text(json.dumps({
             "pid": 99999,
-            "kind": "hermes-gateway",
-            "argv": ["python", "-m", "hermes_cli.main", "gateway"],
+            "kind": "eidolon-gateway",
+            "argv": ["python", "-m", "eidolon_cli.main", "gateway"],
             "start_time": 123,
         }))
 
@@ -115,8 +115,8 @@ class TestGatewayPidState:
             "_build_pid_record",
             lambda: {
                 "pid": os.getpid(),
-                "kind": "hermes-gateway",
-                "argv": ["python", "-m", "hermes_cli.main", "gateway"],
+                "kind": "eidolon-gateway",
+                "argv": ["python", "-m", "eidolon_cli.main", "gateway"],
                 "start_time": 123,
             },
         )
@@ -143,7 +143,7 @@ class TestGatewayPidState:
         for a named profile), gateway identity files should still be written to
         the process-level HERMES_HOME, not the profile's directory.  See #56986.
         """
-        from hermes_constants import set_hermes_home_override, reset_hermes_home_override
+        from eidolon_constants import set_eidolon_home_override, reset_eidolon_home_override
 
         process_home = tmp_path / "default"
         process_home.mkdir()
@@ -152,11 +152,11 @@ class TestGatewayPidState:
         monkeypatch.setenv("HERMES_HOME", str(process_home))
 
         # Simulate a profile context override being active during write.
-        token = set_hermes_home_override(str(profile_home))
+        token = set_eidolon_home_override(str(profile_home))
         try:
             status.write_pid_file()
         finally:
-            reset_hermes_home_override(token)
+            reset_eidolon_home_override(token)
 
         # PID file must land in the process-level home, not the profile home.
         assert (process_home / "gateway.pid").exists()
@@ -259,7 +259,7 @@ class TestGatewayRuntimeStatus:
         state_path.write_text(json.dumps({
             "pid": 99999,
             "start_time": 1000.0,
-            "kind": "hermes-gateway",
+            "kind": "eidolon-gateway",
             "platforms": {},
             "updated_at": "2025-01-01T00:00:00Z",
         }))
@@ -277,7 +277,7 @@ class TestGatewayRuntimeStatus:
 
         Per-profile Docker supervision: ``coder``'s gateway died leaving a
         ``gateway_state=running`` record at PID 139.  The OS then recycled 139
-        onto the live *default* gateway (``hermes gateway run``).  The recorded
+        onto the live *default* gateway (``eidolon gateway run``).  The recorded
         ``start_time`` is absent (older state file), so the start-time PID-reuse
         guard does not catch it.  Without the profile scope the live command
         line still ``looks_like_gateway`` and ``coder`` is wrongly reported up.
@@ -285,7 +285,7 @@ class TestGatewayRuntimeStatus:
         payload = {
             "pid": 139,
             "gateway_state": "running",
-            "kind": "hermes-gateway",
+            "kind": "eidolon-gateway",
             "argv": ["hermes", "gateway", "run"],
         }
         coder_home = Path("/opt/data/profiles/coder")
@@ -294,7 +294,7 @@ class TestGatewayRuntimeStatus:
         monkeypatch.setattr(status, "_get_process_start_time", lambda pid: None)
         # PID 139 is now the live DEFAULT gateway (bare, no -p coder).
         monkeypatch.setattr(
-            status, "_read_process_cmdline", lambda pid: "hermes gateway run --replace"
+            status, "_read_process_cmdline", lambda pid: "eidolon gateway run --replace"
         )
 
         assert (
@@ -308,7 +308,7 @@ class TestGatewayRuntimeStatus:
         payload = {
             "pid": 139,
             "gateway_state": "running",
-            "kind": "hermes-gateway",
+            "kind": "eidolon-gateway",
             "argv": ["hermes", "gateway", "run"],
             "start_time": 1000,
         }
@@ -319,7 +319,7 @@ class TestGatewayRuntimeStatus:
         for cmdline in (
             "hermes -p coder gateway run --replace",
             "/opt/hermes/.venv/bin/hermes --profile coder gateway run --replace",
-            "hermes_home=/opt/data/profiles/coder hermes gateway run --replace",
+            "hermes_home=/opt/data/profiles/coder eidolon gateway run --replace",
         ):
             monkeypatch.setattr(status, "_read_process_cmdline", lambda pid, c=cmdline: c)
             assert (
@@ -333,7 +333,7 @@ class TestGatewayRuntimeStatus:
         profile's Path may carry forward slashes (and, on Windows, vice
         versa).  The separator difference must not defeat the match."""
         home = Path("c:/opt/data/profiles/coder")
-        cmdline = r"hermes_home=c:\opt\data\profiles\coder hermes gateway run --replace"
+        cmdline = r"hermes_home=c:\opt\data\profiles\coder eidolon gateway run --replace"
         assert status._command_line_belongs_to_profile(cmdline, home) is True
 
 
@@ -409,7 +409,7 @@ class TestTerminatePid:
 
         # taskkill is spawned with the no-window flag so the windowless
         # pythonw.exe backend doesn't flash a conhost window on force-kill.
-        from hermes_cli._subprocess_compat import windows_hide_flags
+        from eidolon_cli._subprocess_compat import windows_hide_flags
 
         assert calls == [
             (["taskkill", "/PID", "123", "/T", "/F"], True, True, 10, windows_hide_flags())
@@ -477,7 +477,7 @@ class TestScopedLocks:
         lock_path.write_text(json.dumps({
             "pid": 99999,
             "start_time": 123,
-            "kind": "hermes-gateway",
+            "kind": "eidolon-gateway",
         }))
 
         # Post-#21561 the liveness probe routes through
@@ -504,8 +504,8 @@ class TestScopedLocks:
         lock_path.write_text(json.dumps({
             "pid": 873,
             "start_time": None,
-            "kind": "hermes-gateway",
-            "argv": ["/Users/user/.hermes/hermes-agent/hermes_cli/main.py", "gateway", "run", "--replace"],
+            "kind": "eidolon-gateway",
+            "argv": ["/Users/user/.hermes/hermes-agent/eidolon_cli/main.py", "gateway", "run", "--replace"],
         }))
 
         # Post-#21561 the liveness probe routes through
@@ -541,8 +541,8 @@ class TestScopedLocks:
         lock_path.write_text(json.dumps({
             "pid": os.getpid(),
             "start_time": None,
-            "kind": "hermes-gateway",
-            "argv": ["hermes_cli/main.py", "--profile", "milena", "gateway", "run", "--replace"],
+            "kind": "eidolon-gateway",
+            "argv": ["eidolon_cli/main.py", "--profile", "milena", "gateway", "run", "--replace"],
             "scope": "discord-bot-token",
         }))
 
@@ -573,7 +573,7 @@ class TestScopedLocks:
         lock_path.write_text(json.dumps({
             "pid": os.getpid(),
             "start_time": None,
-            "kind": "hermes-gateway",
+            "kind": "eidolon-gateway",
         }))
         monkeypatch.setattr(status, "_get_process_start_time", lambda pid: 987654321)
 
@@ -596,8 +596,8 @@ class TestScopedLocks:
         lock_path.write_text(json.dumps({
             "pid": os.getpid(),
             "start_time": 111,
-            "kind": "hermes-gateway",
-            "argv": ["hermes_cli/main.py", "gateway", "run", "--replace"],
+            "kind": "eidolon-gateway",
+            "argv": ["eidolon_cli/main.py", "gateway", "run", "--replace"],
             "scope": "discord-bot-token",
         }))
 
@@ -624,7 +624,7 @@ class TestScopedLocks:
         stale_record = {
             "pid": 99999,
             "start_time": 123,
-            "kind": "hermes-gateway",
+            "kind": "eidolon-gateway",
         }
         lock_path.write_text(json.dumps(stale_record))
         monkeypatch.setattr(status, "_pid_exists", lambda pid: False)
@@ -632,7 +632,7 @@ class TestScopedLocks:
         winner_record = {
             "pid": 424242,
             "start_time": 456,
-            "kind": "hermes-gateway",
+            "kind": "eidolon-gateway",
             "scope": "telegram-bot-token",
         }
         real_replace = os.replace
@@ -663,7 +663,7 @@ class TestScopedLocks:
         lock_path.write_text(json.dumps({
             "pid": 99999,
             "start_time": 123,
-            "kind": "hermes-gateway",
+            "kind": "eidolon-gateway",
         }))
 
         # Post-#21561: simulate "PID gone" via _pid_exists returning False.
@@ -687,12 +687,12 @@ class TestScopedLocks:
         target_lock.write_text(json.dumps({
             "pid": 111,
             "start_time": 222,
-            "kind": "hermes-gateway",
+            "kind": "eidolon-gateway",
         }))
         other_lock.write_text(json.dumps({
             "pid": 999,
             "start_time": 333,
-            "kind": "hermes-gateway",
+            "kind": "eidolon-gateway",
         }))
 
         removed = status.release_all_scoped_locks(
@@ -783,7 +783,7 @@ class TestScopedLockOwnerLabel:
         }
         assert status.scoped_lock_owner_label(record) == "zerocool"
 
-    def test_owner_label_falls_back_to_hermes_home(self):
+    def test_owner_label_falls_back_to_eidolon_home(self):
         # Locks written before the profile field existed still attribute.
         record = {"pid": 559, "hermes_home": "/opt/data/profiles/zerocool"}
         assert status.scoped_lock_owner_label(record) == "zerocool"
@@ -847,7 +847,7 @@ class TestTakeoverMarker:
         assert not (tmp_path / ".gateway-takeover.json").exists()
 
 
-    def test_write_marker_records_replacer_hermes_home(self, tmp_path, monkeypatch):
+    def test_write_marker_records_replacer_eidolon_home(self, tmp_path, monkeypatch):
         """The marker stamps the replacer's HERMES_HOME for cross-profile guard (#29092)."""
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
         monkeypatch.setattr(status, "_get_process_start_time", lambda pid: 42)
@@ -855,7 +855,7 @@ class TestTakeoverMarker:
         status.write_takeover_marker(target_pid=12345)
 
         payload = json.loads((tmp_path / ".gateway-takeover.json").read_text())
-        assert payload["replacer_hermes_home"] == str(tmp_path)
+        assert payload["replacer_eidolon_home"] == str(tmp_path)
 
     def test_consume_rejects_marker_from_different_profile(self, tmp_path, monkeypatch):
         """Regression (#29092): a marker written by a gateway under a DIFFERENT
@@ -874,7 +874,7 @@ class TestTakeoverMarker:
             "target_pid": os.getpid(),
             "target_start_time": 100,
             "replacer_pid": 99999,
-            "replacer_hermes_home": str(tmp_path / "profiles" / "other"),
+            "replacer_eidolon_home": str(tmp_path / "profiles" / "other"),
             "written_at": datetime.now(timezone.utc).isoformat(),
         }))
 
@@ -884,9 +884,9 @@ class TestTakeoverMarker:
         # Left in place for the correct profile, not griefed away.
         assert marker_path.exists()
 
-    def test_consume_accepts_legacy_marker_without_hermes_home(self, tmp_path, monkeypatch):
-        """Back-compat (#29092): markers written by older Hermes versions have no
-        ``replacer_hermes_home`` field; an absent field is treated as same-home so
+    def test_consume_accepts_legacy_marker_without_eidolon_home(self, tmp_path, monkeypatch):
+        """Back-compat (#29092): markers written by older Eidolon versions have no
+        ``replacer_eidolon_home`` field; an absent field is treated as same-home so
         single-profile setups and mixed old/new deployments keep working.
         """
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
@@ -914,8 +914,8 @@ class TestScopedLockTakeover:
         target_home.mkdir(parents=True, exist_ok=True)
         record = {
             "pid": pid,
-            "kind": "hermes-gateway",
-            "argv": ["python", "-m", "hermes_cli.main", "gateway", "run"],
+            "kind": "eidolon-gateway",
+            "argv": ["python", "-m", "eidolon_cli.main", "gateway", "run"],
             "start_time": start_time,
             "hermes_home": str(target_home),
         }
@@ -937,7 +937,7 @@ class TestScopedLockTakeover:
         monkeypatch.setattr(
             status,
             "_read_process_cmdline",
-            lambda _pid: "python -m hermes_cli.main gateway run",
+            lambda _pid: "python -m eidolon_cli.main gateway run",
         )
         calls = []
 
@@ -945,8 +945,8 @@ class TestScopedLockTakeover:
             marker_path = target_home / ".gateway-takeover.json"
             assert marker_path.exists()
             payload = json.loads(marker_path.read_text())
-            assert payload["target_hermes_home"] == str(target_home)
-            assert payload["replacer_hermes_home"] == str(replacer_home)
+            assert payload["target_eidolon_home"] == str(target_home)
+            assert payload["replacer_eidolon_home"] == str(replacer_home)
             calls.append((pid, force))
 
         monkeypatch.setattr(status, "terminate_pid", terminate)
@@ -973,7 +973,7 @@ class TestScopedLockTakeover:
         monkeypatch.setattr(
             status,
             "_read_process_cmdline",
-            lambda _pid: "python -m hermes_cli.main gateway run",
+            lambda _pid: "python -m eidolon_cli.main gateway run",
         )
         calls = []
         monkeypatch.setattr(
@@ -1013,7 +1013,7 @@ class TestPlannedStopMarker:
         ``_get_process_start_time`` returns None on macOS / native Windows
         (no ``/proc/<pid>/stat``). The planned-stop watcher only runs there,
         so if the authoritative consume required a non-None start_time match
-        it would always return False — and ``hermes gateway stop`` would be
+        it would always return False — and ``eidolon gateway stop`` would be
         misclassified as an unexpected ``UNKNOWN`` exit, exit 1, and revived
         by the service manager (the very crash loop #34597 set out to fix).
         With start_time unavailable on BOTH sides we fall back to PID
@@ -1074,11 +1074,11 @@ class TestReadProcessCmdlinePsFallback:
 
         def fake_read_bytes(self):
             calls.append("proc")
-            return b"python\x00hermes_cli/main.py\x00gateway\x00"
+            return b"python\x00eidolon_cli/main.py\x00gateway\x00"
 
         monkeypatch.setattr(status.Path, "read_bytes", fake_read_bytes)
         result = status._read_process_cmdline(12345)
-        assert "hermes_cli/main.py" in result
+        assert "eidolon_cli/main.py" in result
         assert calls == ["proc"]
 
 
@@ -1164,7 +1164,7 @@ class TestRespawnStormBreaker:
 class TestLaunchdPlistRespawnGovernance:
     def test_plist_has_throttle_interval(self, tmp_path, monkeypatch):
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-        from hermes_cli.gateway import generate_launchd_plist
+        from eidolon_cli.gateway import generate_launchd_plist
 
         plist = generate_launchd_plist()
         assert "<key>ThrottleInterval</key>" in plist
@@ -1449,7 +1449,7 @@ def test_strict_gateway_identity_raises_on_malformed_active_metadata(
 def test_strict_gateway_identity_rejects_reused_pid(tmp_path, monkeypatch):
     pid_path = tmp_path / "gateway.pid"
     lock_path = tmp_path / "gateway.lock"
-    record = {"pid": 123, "start_time": 10.0, "kind": "hermes-gateway"}
+    record = {"pid": 123, "start_time": 10.0, "kind": "eidolon-gateway"}
     pid_path.write_text(json.dumps(record), encoding="utf-8")
     lock_path.write_text(json.dumps(record), encoding="utf-8")
     monkeypatch.setattr(status, "_get_gateway_lock_path", lambda _path=None: lock_path)

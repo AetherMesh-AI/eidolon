@@ -1,6 +1,6 @@
-import { resolveGatewayWsUrl } from '@hermes/shared'
+import { resolveGatewayWsUrl } from '@aethermesh/shared'
 
-import { getApiRequestConnection, getApiRequestProfile, speakText } from '@/hermes'
+import { getApiRequestConnection, getApiRequestProfile, speakText } from '@/eidolon'
 import {
   cutSentences,
   directTtsConfig,

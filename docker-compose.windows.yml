@@ -4,31 +4,32 @@
 # Differences from docker-compose.yml:
 #   - Removes `network_mode: host` (not supported on Docker Desktop for Windows)
 #   - Uses explicit port mappings instead
-#   - Uses Windows-style volume path for ~/.hermes
+#   - Uses Windows-style volume path for ~/.eidolon
 #
 # Usage:
 #   docker compose -f docker-compose.windows.yml up -d
 #
 services:
   gateway:
-    image: nousresearch/hermes-agent:latest
-    container_name: hermes
+    build: .
+    image: eidolon-agent:latest
+    container_name: eidolon
     restart: unless-stopped
     volumes:
-      - ${USERPROFILE}/.hermes:/opt/data
+      - ${USERPROFILE}/.eidolon:/opt/data
     environment:
       - HERMES_UID=10000
       - HERMES_GID=10000
     command: ["gateway", "run"]
 
   dashboard:
-    image: nousresearch/hermes-agent:latest
-    container_name: hermes-dashboard
+    image: eidolon-agent:latest
+    container_name: eidolon-dashboard
     restart: unless-stopped
     depends_on:
       - gateway
     volumes:
-      - ${USERPROFILE}/.hermes:/opt/data
+      - ${USERPROFILE}/.eidolon:/opt/data
     environment:
       - HERMES_UID=10000
       - HERMES_GID=10000

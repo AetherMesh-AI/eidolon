@@ -1,11 +1,11 @@
-# nix/homeManagerModules.nix — the Home Manager module for hermes-agent
+# nix/homeManagerModules.nix — the Home Manager module for eidolon-agent
 #
-# This module is the user-level equivalent of nixosModules.default. Hermes is
+# This module is the user-level equivalent of nixosModules.default. Eidolon is
 # an agent for one person. The credentials, the memory, the sessions and the
 # cron jobs all belong to that person. Thus a user-level module is correct on
 # each distribution, and not only on NixOS.
 #
-# `services.hermes-agent` is the same option set on both modules. All of the
+# `services.eidolon-agent` is the same option set on both modules. All of the
 # options except the system-level ones come from nix/moduleCommon.nix, so an
 # example from the NixOS documentation works here without a change. Only the
 # necessary parts are different:
@@ -17,24 +17,24 @@
 #   changed   systemd.services         -> systemd.user.services or
 #                                        launchd.agents
 #   changed   system.activationScripts -> home.activation
-#   changed   addToSystemPackages      -> programs.hermes-agent.enable and
+#   changed   addToSystemPackages      -> programs.eidolon-agent.enable and
 #                                        home.sessionVariables
-#   added     programs.hermes-agent    the CLI and the desktop application,
+#   added     programs.eidolon-agent    the CLI and the desktop application,
 #                                      because Home Manager separates an
 #                                      installation from a daemon
-#   changed   stateDir (+ "/.hermes")  -> hermesHome, set directly
+#   changed   stateDir (+ "/.eidolon")  -> eidolonHome, set directly
 #
 # To use the module:
-#   imports = [ hermes-agent.homeManagerModules.default ];
-#   programs.hermes-agent = {
-#     enable = true;          # the hermes CLI on your PATH
+#   imports = [ eidolon-agent.homeManagerModules.default ];
+#   programs.eidolon-agent = {
+#     enable = true;          # the eidolon CLI on your PATH
 #     desktop.enable = true;  # the Electron application and a launcher
 #   };
-#   services.hermes-agent = {
+#   services.eidolon-agent = {
 #     enable = true;
 #     gateway.enable = true;
 #     settings.model.default = "anthropic/claude-sonnet-4";
-#     environmentFiles = [ config.sops.secrets."hermes/env".path ];
+#     environmentFiles = [ config.sops.secrets."eidolon/env".path ];
 #   };
 #
 # CAUTION: Enable linger for the account. Without linger, systemd stops the
@@ -54,17 +54,17 @@
     }:
 
     let
-      cfg = config.services.hermes-agent;
-      cfgPrograms = config.programs.hermes-agent;
+      cfg = config.services.eidolon-agent;
+      cfgPrograms = config.programs.eidolon-agent;
       common = import ./moduleCommon.nix { inherit lib; };
 
       effectivePackage = common.effectivePackage cfg;
-      hermes-agent = inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.default;
+      eidolon-agent = inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.default;
 
       inherit (pkgs.stdenv.hostPlatform) isDarwin isLinux;
 
       processEnvironment = common.processEnvironment {
-        inherit (cfg) hermesHome;
+        inherit (cfg) eidolonHome;
         # The CLI reads this value and names it when it refuses a
         # configuration change.
         managedSystem = "home-manager";
@@ -73,8 +73,8 @@
 
       # ── The desktop launcher ───────────────────────────────────────────
       # A GUI launcher reads no shell profile, so home.sessionVariables does
-      # not reach it, and the application would open ~/.hermes while the
-      # services use hermesHome. Thus the launcher carries the value itself.
+      # not reach it, and the application would open ~/.eidolon while the
+      # services use eidolonHome. Thus the launcher carries the value itself.
       #
       # HERMES_MANAGED rides along only when the services are enabled. That
       # variable makes the CLI refuse a configuration change and name the
@@ -82,7 +82,7 @@
       # activation and no managed configuration, so the application must not
       # claim one and refuse an edit that nothing else owns.
       desktopEnvironment = {
-        HERMES_HOME = cfg.hermesHome;
+        HERMES_HOME = cfg.eidolonHome;
       }
       // lib.optionalAttrs cfg.enable {
         inherit (processEnvironment) HERMES_MANAGED;
@@ -105,8 +105,8 @@
           HERMES_DESKTOP_REMOTE_TOKEN="$(tr -d '\r\n' < ${lib.escapeShellArg cfg.backend.sessionTokenFile})"
           export HERMES_DESKTOP_REMOTE_TOKEN
         else
-          echo "hermes-desktop: cannot read the session token at ${cfg.backend.sessionTokenFile}." >&2
-          echo "hermes-desktop: the application starts its own backend instead of the one of the service." >&2
+          echo "eidolon-desktop: cannot read the session token at ${cfg.backend.sessionTokenFile}." >&2
+          echo "eidolon-desktop: the application starts its own backend instead of the one of the service." >&2
         fi
       '';
 
@@ -178,32 +178,32 @@
 
     in
     {
-      # ── programs.hermes-agent — the installation ───────────────────────
+      # ── programs.eidolon-agent — the installation ───────────────────────
       # Home Manager separates "install this application for me" from "run
-      # this daemon". Hermes needs both, and a person can want one without
+      # this daemon". Eidolon needs both, and a person can want one without
       # the other: an application with no gateway, or a headless gateway on
       # a machine with no display.
       #
-      # `services.hermes-agent` stays the authority for the state and the
-      # configuration. This module reads hermesHome and the backend address
+      # `services.eidolon-agent` stays the authority for the state and the
+      # configuration. This module reads eidolonHome and the backend address
       # from it, and never the reverse.
-      options.programs.hermes-agent = {
+      options.programs.eidolon-agent = {
         enable = lib.mkEnableOption ''
-          the Hermes Agent command line application.
+          the Eidolon Agent command line application.
 
-          This adds `hermes` to home.packages, and exports HERMES_HOME with
+          This adds `eidolon` to home.packages, and exports HERMES_HOME with
           home.sessionVariables. An interactive shell then uses the same
-          state as `services.hermes-agent`
+          state as `services.eidolon-agent`
         '';
 
         package = lib.mkOption {
           type = lib.types.package;
           default = effectivePackage;
-          defaultText = lib.literalExpression "config.services.hermes-agent.package";
+          defaultText = lib.literalExpression "config.services.eidolon-agent.package";
           description = ''
-            The hermes-agent package to install.
+            The eidolon-agent package to install.
 
-            The default follows `services.hermes-agent.package`, and applies
+            The default follows `services.eidolon-agent.package`, and applies
             `extraPythonPackages` and `extraDependencyGroups` from that
             module. Thus the command line and the services are one build,
             and a plugin that the services can load is a plugin that your
@@ -213,67 +213,67 @@
 
         desktop = {
           enable = lib.mkEnableOption ''
-            the Hermes Desktop application (Electron).
+            the Eidolon Desktop application (Electron).
 
-            This adds `hermes-desktop` to home.packages, with an XDG
-            launcher entry on Linux. The launcher starts the same Hermes
+            This adds `eidolon-desktop` to home.packages, with an XDG
+            launcher entry on Linux. The launcher starts the same Eidolon
             runtime that `package` gives, and reads the HERMES_HOME of
-            `services.hermes-agent`. Thus the application, the interactive
+            `services.eidolon-agent`. Thus the application, the interactive
             shell and the services share one state directory.
 
-            The Electron application carries its own Hermes runtime with
+            The Electron application carries its own Eidolon runtime with
             the usual distribution. This module gives it the Nix package
             instead, with HERMES_DESKTOP_HERMES. It installs no second copy
-            of Hermes, and it downloads nothing on the first start
+            of Eidolon, and it downloads nothing on the first start
           '';
 
           package = lib.mkOption {
             type = lib.types.package;
-            default = cfgPrograms.package.hermesDesktop;
-            defaultText = lib.literalExpression "config.programs.hermes-agent.package.hermesDesktop";
+            default = cfgPrograms.package.eidolonDesktop;
+            defaultText = lib.literalExpression "config.programs.eidolon-agent.package.eidolonDesktop";
             description = ''
-              The hermes-desktop package to use.
+              The eidolon-desktop package to use.
 
               The default follows `package`, and thus also
-              `services.hermes-agent.extraPythonPackages` and
+              `services.eidolon-agent.extraPythonPackages` and
               `extraDependencyGroups`, because the desktop application is a
               passthru of the agent package. A package that you set here
-              carries its own Hermes runtime, and this module cannot make
+              carries its own Eidolon runtime, and this module cannot make
               it agree with the services.
             '';
           };
         };
       };
 
-      options.services.hermes-agent =
+      options.services.eidolon-agent =
         common.sharedOptions {
-          defaultPackage = hermes-agent;
-          defaultPackageText = lib.literalExpression "hermes-agent.packages.\${system}.default";
+          defaultPackage = eidolon-agent;
+          defaultPackageText = lib.literalExpression "eidolon-agent.packages.\${system}.default";
           defaultWorkingDirectory = config.home.homeDirectory;
           defaultWorkingDirectoryText = lib.literalExpression "config.home.homeDirectory";
         }
         // {
-          hermesHome = lib.mkOption {
+          eidolonHome = lib.mkOption {
             type = lib.types.str;
-            default = "${config.home.homeDirectory}/.hermes";
-            defaultText = lib.literalExpression ''"''${config.home.homeDirectory}/.hermes"'';
+            default = "${config.home.homeDirectory}/.eidolon";
+            defaultText = lib.literalExpression ''"''${config.home.homeDirectory}/.eidolon"'';
             description = ''
               The value of HERMES_HOME. This state directory holds
               config.yaml, .env, auth.json, the sessions, the skills, the
               memory and the cron jobs.
 
-              The NixOS module takes a `stateDir` and adds `/.hermes` to it.
+              The NixOS module takes a `stateDir` and adds `/.eidolon` to it.
               This module sets HERMES_HOME directly. Thus an existing
-              ~/.hermes continues to work, and you can give the directory any
+              ~/.eidolon continues to work, and you can give the directory any
               name.
             '';
-            example = "/home/alice/.hermes-work";
+            example = "/home/alice/.eidolon-work";
           };
 
-          # `installPackage` moved to `programs.hermes-agent.enable`. The
+          # `installPackage` moved to `programs.eidolon-agent.enable`. The
           # option is dead, but it must not be silent: it defaulted to true,
           # so a person who never named it still got the command line, and a
-          # quiet removal gives them a machine with no `hermes` and no
+          # quiet removal gives them a machine with no `eidolon` and no
           # message. mkOption with an assertion, and not
           # mkRemovedOptionModule, because the message must name the exact
           # replacement for the value they set.
@@ -282,7 +282,7 @@
             default = null;
             visible = false;
             description = ''
-              Removed. Use `programs.hermes-agent.enable` instead.
+              Removed. Use `programs.eidolon-agent.enable` instead.
             '';
           };
 
@@ -291,13 +291,13 @@
 
       config = lib.mkMerge [
 
-        # ── programs.hermes-agent — the installation ──────────────────────
+        # ── programs.eidolon-agent — the installation ──────────────────────
         # Outside the `services.enable` guard on purpose. A person can want
         # the command line or the application on a machine that runs no
         # daemon at all.
         (lib.mkIf cfgPrograms.enable {
           home.packages = [ cfgPrograms.package ];
-          home.sessionVariables.HERMES_HOME = cfg.hermesHome;
+          home.sessionVariables.HERMES_HOME = cfg.eidolonHome;
         })
 
         # A launcher from the desktop menu reads no shell profile, so the
@@ -315,7 +315,7 @@
             {
               # `installPackage` was removed in favour of the programs/services
               # split. It defaulted to true, so a quiet removal leaves a person
-              # with no `hermes` on the PATH and no message.
+              # with no `eidolon` on the PATH and no message.
               assertion = cfg.installPackage == null;
               message = common.installPackageRemovedMessage cfg.installPackage;
             }
@@ -327,30 +327,30 @@
 
             # ── Merge MCP servers into settings ────────────────────────────
             (lib.mkIf (cfg.mcpServers != { }) {
-              services.hermes-agent.settings.mcp_servers = common.mcpServersToConfig cfg.mcpServers;
+              services.eidolon-agent.settings.mcp_servers = common.mcpServersToConfig cfg.mcpServers;
             })
 
             {
               assertions =
                 common.pluginNameAssertions {
                   inherit cfg;
-                  optionPath = "services.hermes-agent";
+                  optionPath = "services.eidolon-agent";
                 }
                 ++ common.workspaceFilesAssertions {
                   inherit cfg;
-                  opt = options.services.hermes-agent.workingDirectory;
-                  optionPath = "services.hermes-agent";
+                  opt = options.services.eidolon-agent.workingDirectory;
+                  optionPath = "services.eidolon-agent";
                 }
                 ++ common.backendBindAssertions {
                   inherit cfg;
-                  optionPath = "services.hermes-agent";
+                  optionPath = "services.eidolon-agent";
                 }
                 ++ [
                   {
                     # The interface poll reads `ip`, which iproute2 supplies on
                     # Linux only.
                     assertion = !isDarwin || cfg.backend.waitFor != "interface";
-                    message = "services.hermes-agent.backend.waitFor = \"interface\" works on Linux only. Use \"hostname\" on Darwin.";
+                    message = "services.eidolon-agent.backend.waitFor = \"interface\" works on Linux only. Use \"hostname\" on Darwin.";
                   }
                 ];
             }
@@ -367,7 +367,7 @@
               # symlinks are in place. It also runs after linkGeneration, when
               # Home Manager completes the switch. A secret that the activation
               # entry of sops-nix writes exists at that point.
-              home.activation.hermesAgentSetup =
+              home.activation.eidolonAgentSetup =
                 lib.hm.dag.entryAfter
                   [
                     "writeBoundary"
@@ -376,7 +376,7 @@
                   (
                     common.mkStateScript {
                       inherit pkgs cfg;
-                      inherit (cfg) hermesHome workingDirectory;
+                      inherit (cfg) eidolonHome workingDirectory;
                       run = "$DRY_RUN_CMD ";
                       stateDirs = common.stateSubdirs;
                       managedSystem = "home-manager";
@@ -394,14 +394,14 @@
 
             # ── Linux: systemd user services ───────────────────────────────
             (lib.mkIf (isLinux && cfg.gateway.enable) {
-              systemd.user.services.hermes-agent = mkUnit {
-                description = "Hermes Agent Gateway";
+              systemd.user.services.eidolon-agent = mkUnit {
+                description = "Eidolon Agent Gateway";
                 argv = common.gatewayArgv cfg;
               };
             })
 
             (lib.mkIf (isLinux && cfg.backend.mode != "none") {
-              systemd.user.services.hermes-backend = mkUnit {
+              systemd.user.services.eidolon-backend = mkUnit {
                 description = common.backendDescription cfg;
                 argv = common.backendArgv { inherit pkgs cfg; };
               };
@@ -409,16 +409,16 @@
 
             # ── Darwin: launchd agents ─────────────────────────────────────
             (lib.mkIf (isDarwin && cfg.gateway.enable) {
-              launchd.agents.hermes-agent = mkAgent {
+              launchd.agents.eidolon-agent = mkAgent {
                 argv = common.gatewayArgv cfg;
-                logName = "hermes-agent";
+                logName = "eidolon-agent";
               };
             })
 
             (lib.mkIf (isDarwin && cfg.backend.mode != "none") {
-              launchd.agents.hermes-backend = mkAgent {
+              launchd.agents.eidolon-backend = mkAgent {
                 argv = common.backendArgv { inherit pkgs cfg; };
-                logName = "hermes-backend";
+                logName = "eidolon-backend";
               };
             })
           ]

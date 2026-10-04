@@ -4,7 +4,7 @@ import { useCallback, useEffect } from 'react'
 
 import { useGatewayRequest } from '@/app/gateway/hooks/use-gateway-request'
 import { $pluginRecords } from '@/contrib/plugins-store'
-import { getEnvVars, getHermesConfigSchema } from '@/hermes'
+import { getEnvVars, getHermesConfigSchema } from '@/eidolon'
 import { useI18n } from '@/i18n'
 import { Package, Palette, Settings2, Wrench } from '@/lib/icons'
 import { $agentPlugins, isDesktopRelevantPlugin, loadAgentPlugins } from '@/store/agent-plugins'

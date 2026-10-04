@@ -11,7 +11,7 @@ import textwrap
 
 import pytest
 
-from hermes_constants import get_hermes_home
+from eidolon_constants import get_eidolon_home
 from tools import desktop_ui
 from tools.react_to_message_tool import check_react_requirements
 from tools.tip_tool import check_tips_enabled
@@ -23,7 +23,7 @@ def display_config():
     """Write a ``display:`` section into this test's HERMES_HOME."""
 
     def _write(**flags: bool) -> None:
-        home = get_hermes_home()
+        home = get_eidolon_home()
         home.mkdir(parents=True, exist_ok=True)
         body = "".join(f"  {name}: {str(on).lower()}\n" for name, on in flags.items())
         (home / "config.yaml").write_text(textwrap.dedent("display:\n") + body)

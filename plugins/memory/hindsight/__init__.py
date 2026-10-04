@@ -27,9 +27,9 @@ from typing import Any, Callable, Dict, List, Optional
 
 from agent.memory_provider import MemoryProvider, RecallStatus
 from agent.secret_scope import get_secret
-from hermes_cli.config import cfg_get
-from hermes_constants import get_hermes_home
-from hermes_time import now as _hermes_now
+from eidolon_cli.config import cfg_get
+from eidolon_constants import get_eidolon_home
+from eidolon_time import now as _hermes_now
 from tools.registry import tool_error
 
 from .embedded import (
@@ -48,7 +48,7 @@ from .settings import (
 logger = logging.getLogger(__name__)
 
 _LOCAL_MODES = {"local", "local_embedded"}
-_RETAIN_CONTEXT_DEFAULT = "conversation between Hermes Agent and the User"
+_RETAIN_CONTEXT_DEFAULT = "conversation between Eidolon Agent and the User"
 
 
 def _ensure_client_dependency() -> None:
@@ -236,7 +236,7 @@ REFLECT_SCHEMA = {
 def _load_config() -> dict:
     """$HERMES_HOME/hindsight/config.json (profile-scoped), else ~/.hindsight/config.json
     (legacy, shared), else environment variables."""
-    for path in (get_hermes_home() / "hindsight" / "config.json", Path.home() / ".hindsight" / "config.json"):
+    for path in (get_eidolon_home() / "hindsight" / "config.json", Path.home() / ".hindsight" / "config.json"):
         if path.exists():
             with contextlib.suppress(Exception):
                 return json.loads(path.read_text(encoding="utf-8"))
@@ -256,9 +256,9 @@ def _load_config() -> dict:
 
 
 def _event_timestamp() -> str:
-    """Configured Hermes event time with an explicit UTC offset."""
+    """Configured Eidolon event time with an explicit UTC offset."""
     event_time = _hermes_now()
-    # hermes_time.now() is aware; guard a replacement clock emitting offset-less dates.
+    # eidolon_time.now() is aware; guard a replacement clock emitting offset-less dates.
     if event_time.tzinfo is None or event_time.utcoffset() is None:
         event_time = event_time.astimezone()
     return event_time.isoformat(timespec="seconds")
@@ -431,7 +431,7 @@ class HindsightMemoryProvider(MemoryProvider):
             {"key": "retain_async","description": "Process retain asynchronously on the Hindsight server", "default": True},
             {"key": "prefetch_waits_for_retain", "description": "Have the background next-turn prefetch wait for the just-completed retain to become recall-visible on the server (local queue drain + async operation completion) before recalling, so recall includes the just-completed turn (runs off the reply path, adds no response latency)", "default": True},
             {"key": "prefetch_retain_drain_timeout", "description": "Max seconds the background prefetch waits for the retain to become recall-visible (queue drain + server-side completion) before recalling anyway", "default": 10.0},
-            {"key": "retain_context", "description": "Context label for retained memories", "default": "conversation between Hermes Agent and the User"},
+            {"key": "retain_context", "description": "Context label for retained memories", "default": "conversation between Eidolon Agent and the User"},
             {"key": "recall_max_tokens", "description": "Maximum tokens for recall results", "default": 4096},
             {"key": "recall_max_input_chars", "description": "Maximum input query length for auto-recall", "default": 800},
             {"key": "recall_prompt_preamble", "description": "Custom preamble for recalled memories in context"},
@@ -786,13 +786,13 @@ class HindsightMemoryProvider(MemoryProvider):
         if hasattr(os, "geteuid") and os.geteuid() == 0:
             msg = ("Hindsight local_embedded mode cannot run as root "
                    "(PostgreSQL initdb refuses root). Skipping the embedded "
-                   "memory daemon. Run Hermes as a non-root user, or switch "
-                   "to cloud / local_external mode via 'hermes memory setup'.")
+                   "memory daemon. Run Eidolon as a non-root user, or switch "
+                   "to cloud / local_external mode via 'eidolon memory setup'.")
             logger.warning(msg)
-            # Also print: otherwise the user would only see Hermes get sluggish.
+            # Also print: otherwise the user would only see Eidolon get sluggish.
             with contextlib.suppress(Exception):
                 # Surface to the terminal too — a daemon that never starts would otherwise fail silently and
-                # the user would only see Hermes get sluggish. (issue #13125)
+                # the user would only see Eidolon get sluggish. (issue #13125)
                 print(f"  ⚠ {msg}", file=sys.stderr, flush=True)
             self._mode = "disabled"
             return
@@ -800,7 +800,7 @@ class HindsightMemoryProvider(MemoryProvider):
 
     def _daemon_start_worker(self) -> None:
         import traceback
-        log_path = get_hermes_home() / "logs" / "hindsight-embed.log"
+        log_path = get_eidolon_home() / "logs" / "hindsight-embed.log"
         log_path.parent.mkdir(parents=True, exist_ok=True)
 
         def _log(text: str) -> None:

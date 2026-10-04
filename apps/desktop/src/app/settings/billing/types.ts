@@ -14,7 +14,7 @@ import type {
   SubscriptionTierOption,
   UsageBarData,
   UsageModelData
-} from '@hermes/shared/billing'
+} from '@aethermesh/shared/billing'
 
 export type {
   BillingAutoReload,

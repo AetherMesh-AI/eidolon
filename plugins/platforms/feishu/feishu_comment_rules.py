@@ -12,14 +12,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from hermes_constants import get_hermes_home
+from eidolon_constants import get_eidolon_home
 
 logger = logging.getLogger(__name__)
 
 # Resolved at import time: this module is lazy-imported by the comment event handler,
 # long after profile/HERMES_HOME overrides have been applied, so freezing is safe.
-RULES_FILE = get_hermes_home() / "feishu_comment_rules.json"
-PAIRING_FILE = get_hermes_home() / "feishu_comment_pairing.json"
+RULES_FILE = get_eidolon_home() / "feishu_comment_rules.json"
+PAIRING_FILE = get_eidolon_home() / "feishu_comment_pairing.json"
 
 _VALID_POLICIES = ("allowlist", "pairing")
 
@@ -230,7 +230,7 @@ def _pairing_cmd(args: list) -> int:
 
 def _main() -> int:
     try:
-        __import__("hermes_cli.env_loader", fromlist=["load_hermes_dotenv"]).load_hermes_dotenv()
+        __import__("eidolon_cli.env_loader", fromlist=["load_hermes_dotenv"]).load_hermes_dotenv()
     except Exception:
         pass
     usage = f"""Usage: python -m gateway.platforms.feishu_comment_rules <command> [args]

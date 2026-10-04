@@ -201,3 +201,18 @@ test('minutes-scale elapsed time is formatted as "Nm Ss"', () => {
   assert.ok(conflict)
   assert.match(conflict.message, /2m 5s/)
 })
+
+test('an updater started by a pre-rename fork still blocks launch through its legacy marker', () => {
+  const home = tmpHome('legacy')
+  try {
+    const now = 1_000_000_000_000
+    fs.writeFileSync(path.join(home, '.hermes-update-in-progress'), `4242\n${Math.floor(now / 1000) - 5}\n`)
+    assert.equal(readLiveUpdateMarker(home, { kill: ALIVE, now: () => now })?.pid, 4242)
+    assert.equal(updateHandoffConflict(home, { kill: ALIVE, now: () => now })?.pid, 4242)
+    writeUpdateMarker(home, 4243, { kill: ALIVE, now: () => now })
+    assert.equal(readLiveUpdateMarker(home, { kill: ALIVE, now: () => now })?.pid, 4243)
+    assert.ok(fs.existsSync(path.join(home, '.eidolon-update-in-progress')))
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true })
+  }
+})

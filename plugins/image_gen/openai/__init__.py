@@ -88,8 +88,8 @@ class OpenAIImageGenProvider(StaticImageGenProvider):
         api_key = get_secret("OPENAI_API_KEY")
         if not api_key:
             return error_factory("openai", aspect)(
-                "OPENAI_API_KEY not set. Run `hermes tools` → Image "
-                "Generation → OpenAI to configure, or `hermes setup` "
+                "OPENAI_API_KEY not set. Run `eidolon tools` → Image "
+                "Generation → OpenAI to configure, or `eidolon setup` "
                 "to add the key.",
                 "auth_required")
 
@@ -163,7 +163,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

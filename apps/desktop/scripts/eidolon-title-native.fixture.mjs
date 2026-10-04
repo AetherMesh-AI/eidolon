@@ -41,7 +41,7 @@ globalThis.WebSocket = class extends EventTarget {
     if (scenario === 'missing-starting') text = text.replace('Starting Eidolon…', '')
     if (scenario === 'blank') text = ''
     const body = scenario === 'null-only' || (scenario === 'null-body' && samples === 1) || (['initial-null','initial-about'].includes(scenario) && samples < 3) ? null : { innerText: text }
-    let lines = ['[1970-01-01T00:00:00.000Z] [hermes] [boot] Resolving Eidolon backend']
+    let lines = ['[1970-01-01T00:00:00.000Z] [eidolon] [boot] Resolving Eidolon backend']
     if (['deadline', 'absent', 'late-cdp-stall'].includes(scenario) || (scenario === 'delayed-label' && samples < 3) || (scenario === 'beyond-deadline' && clock <= 20000)) lines = []
     if (scenario === 'old-event') lines = [lines[0].replace('Eidolon', 'Hermes')]
     if (scenario === 'stale') lines = [lines[0].replace('1970-01-01T00:00:00.000Z', '1969-12-31T23:59:59.999Z')]

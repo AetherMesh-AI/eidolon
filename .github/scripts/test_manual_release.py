@@ -74,7 +74,7 @@ class SmokeTests(unittest.TestCase):
 
 class ReplacementTests(unittest.TestCase):
     def setUp(self):
-        identity = patch.object(r, 'verified_build_identity', return_value={'version': '0.1.1'})
+        identity = patch.object(r, 'verified_build_identity', return_value={'version': json.loads((r.DESKTOP / 'package.json').read_text())['version']})
         identity.start()
         self.addCleanup(identity.stop)
 
@@ -88,7 +88,7 @@ class ReplacementTests(unittest.TestCase):
                     r.main()
                 api.assert_not_called()
         # Omitted mode still runs the original absence gate, never replacement lookup.
-        with patch.dict(os.environ, {'RELEASE_TAG': 'alpha-v' + version,
+        with patch.dict(os.environ, {'RELEASE_TAG': 'v' + version,
                                     'RELEASE_CHANGELOG': '# Notes'}, clear=True):
             with patch.object(r.sys, 'argv', ['manual_release.py', 'preflight']), patch.object(r, 'API'):
                 with patch.object(r, 'absent', side_effect=ValueError('already exists')) as absent:
@@ -171,13 +171,13 @@ class ReplacementHandoffTests(unittest.TestCase):
 class PolicyTests(unittest.TestCase):
     def test_version_and_changelog_are_data(self):
         body = '# Changes\n$(touch /tmp/never)\n`whoami`\nEOF\n${{ secrets.TOKEN }}'
-        self.assertEqual(r.validate_inputs('alpha-v0.1.0', body, '0.1.0'), body)
-        for tag in ['v0.1.0', 'alpha-v01.1.0', 'alpha-v0.1.0\n', '../../oops', 'alpha-v0.2.0']:
+        self.assertEqual(r.validate_inputs('v0.2.0-alpha', body, '0.2.0-alpha'), body)
+        for tag in ['v0.2.0', 'v00.2.0-alpha', 'v0.2.0-alpha\n', '../../oops', 'v0.3.0-alpha', 'alpha-v0.2.0']:
             with self.subTest(tag=tag), self.assertRaises(ValueError):
-                r.validate_inputs(tag, body, '0.1.0')
+                r.validate_inputs(tag, body, '0.2.0-alpha')
         for body in ['', ' \n', 'a\0b', 'x' * 60001]:
             with self.assertRaises(ValueError):
-                r.validate_inputs('alpha-v0.1.0', body, '0.1.0')
+                r.validate_inputs('v0.2.0-alpha', body, '0.2.0-alpha')
 
     def test_exact_five_assets(self):
         names = r.asset_names('alpha-v0.1.0')
@@ -227,6 +227,10 @@ class InstallerTests(unittest.TestCase):
     def test_pkg_install_metadata(self):
         good = '<pkg-info identifier="com.aethermesh-ai.eidolon" version="0.1.0" install-location="/Applications" relocatable="false"><bundle path="./Eidolon.app"/></pkg-info>'
         r.validate_pkg_info(good, 'alpha-v0.1.0')
+        current = good.replace('0.1.0', '0.2.0-alpha')
+        r.validate_pkg_info(current, 'v0.2.0-alpha')
+        with self.assertRaises(ValueError):
+            r.validate_pkg_info(current, 'v0.2.1-alpha')
         for bad in [good.replace('/Applications', '/tmp'), good.replace('0.1.0', '0.2.0'),
                     good.replace('Eidolon.app', 'Other.app'), good.replace('false', 'true')]:
             with self.assertRaises(ValueError):
@@ -235,7 +239,7 @@ class InstallerTests(unittest.TestCase):
 
 class PackagingCommandTests(unittest.TestCase):
     def setUp(self):
-        identity = patch.object(r, 'verified_build_identity', return_value={'version': '0.1.1'})
+        identity = patch.object(r, 'verified_build_identity', return_value={'version': json.loads((r.DESKTOP / 'package.json').read_text())['version']})
         identity.start()
         self.addCleanup(identity.stop)
 
@@ -249,7 +253,7 @@ class PackagingCommandTests(unittest.TestCase):
                 self.assertEqual(notes[0].read_bytes(), body.encode('utf-8'))
                 self.assertFalse(notes[0].is_relative_to(r.ROOT))
             version = json.loads((r.DESKTOP / 'package.json').read_text())['version']
-            env = {'RELEASE_TAG': 'alpha-v' + version, 'RELEASE_CHANGELOG': body,
+            env = {'RELEASE_TAG': 'v' + version, 'RELEASE_CHANGELOG': body,
                    'RUNNER_TEMP': td, 'RELEASE_ASSETS': td, 'GITHUB_SHA': 'a' * 40}
             with patch.dict(os.environ, env, clear=True), patch.object(r.sys, 'argv', ['manual_release.py', 'publish']):
                 with patch.object(r, 'API'), patch.object(r, 'publish', side_effect=inspect_notes) as publish:

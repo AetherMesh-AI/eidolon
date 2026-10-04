@@ -1,8 +1,9 @@
-import { expect, it } from 'vitest'
+import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { execFileSync } from 'node:child_process'
+
+import { expect, it } from 'vitest'
 
 // Fixture installer is POSIX; do not simulate Windows stage selection.
 it.skipIf(process.platform === 'win32')('runs the production archive caller and backend selection with disposable transport and installer', () => {

@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from gateway.memory_status import _parse_iso
-from hermes_constants import get_hermes_home
+from eidolon_constants import get_eidolon_home
 from utils import atomic_json_write
 
 _log = logging.getLogger(__name__)
@@ -58,7 +58,7 @@ def current_instantiation_epoch() -> str:
 
 def drain_request_path(home: Optional[Path] = None) -> Path:
     """Absolute path to the drain-request marker, respecting HERMES_HOME."""
-    return Path(home if home is not None else get_hermes_home()) / _DRAIN_REQUEST_FILENAME
+    return Path(home if home is not None else get_eidolon_home()) / _DRAIN_REQUEST_FILENAME
 
 
 def write_drain_request(

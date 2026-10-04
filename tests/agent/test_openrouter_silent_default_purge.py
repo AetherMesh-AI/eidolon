@@ -36,7 +36,7 @@ class TestAuxiliaryOpenrouterDefaultIsFree:
         from agent import auxiliary_client as ac
 
         monkeypatch.setattr(
-            "hermes_cli.config.load_config_readonly",
+            "eidolon_cli.config.load_config_readonly",
             lambda: {"auxiliary": {"openrouter_model": "google/gemini-3.6-flash"}},
         )
         free_only, model = ac._aux_openrouter_settings()
@@ -69,7 +69,7 @@ class TestEnvIngestionWarning:
         ]
         assert warnings, "expected a WARNING for env->pool openrouter ingestion"
         assert "OpenRouter spend" in warnings[0]
-        assert "hermes auth remove openrouter" in warnings[0]
+        assert "eidolon auth remove openrouter" in warnings[0]
 
     def test_warning_once_per_process(self, tmp_path, monkeypatch, caplog):
         self._fresh_home(tmp_path, monkeypatch)

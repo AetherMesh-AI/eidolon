@@ -88,7 +88,7 @@ from gateway.platforms.base import (
 )
 from gateway.platforms.event import MessageEvent, MessageType, ProcessingOutcome
 from gateway.status import acquire_scoped_lock, release_scoped_lock
-from hermes_constants import get_hermes_home
+from eidolon_constants import get_eidolon_home
 from utils import atomic_json_write, env_float, env_int
 
 from gateway.platforms._shared import get_scoped_secret as _get_scoped_secret
@@ -968,7 +968,7 @@ def _strip_edge_self_mentions(text: str, mentions: Sequence[FeishuMentionRef]) -
 # --- Multiplex isolation for the lark_oapi WebSocket client ---
 #
 # ``lark_oapi.ws.client`` keeps the asyncio loop in a *module-level global* (``loop``), and
-# Hermes monkey-patches ``websockets.connect`` on the shared module to inject ping settings.
+# Eidolon monkey-patches ``websockets.connect`` on the shared module to inject ping settings.
 # In multiplex mode N profiles each run a WS client on their own thread, so they overwrite
 # each other's globals (last-write-wins): tasks land on a sibling's loop ("Future attached
 # to a different loop") or a client binds the wrong loop and goes deaf. Fix: install
@@ -983,7 +983,7 @@ def _strip_edge_self_mentions(text: str, mentions: Sequence[FeishuMentionRef]) -
 # lark_oapi WebSocket client (#73779)
 # --------------------------------------------------------------------------- ``lark_oapi.ws.client`` keeps
 # the asyncio loop used by ``Client.start()`` and every coroutine it spawns in a *module-level global*
-# (``loop``), and Hermes also monkey-patches ``websockets.connect`` on the shared ``websockets`` module to
+# (``loop``), and Eidolon also monkey-patches ``websockets.connect`` on the shared ``websockets`` module to
 # inject per-adapter ping settings. In multiplex mode every profile runs its own WS client on a dedicated
 # thread, so the N threads overwrite each other's module globals (last-write-wins): a client ends up
 # scheduling tasks on a sibling profile's loop ("Future attached to a different loop" crashes) or binds to
@@ -1220,7 +1220,7 @@ class FeishuAdapter(BasePlatformAdapter):
         self._webhook_runner = self._webhook_site = self._event_handler = None
         self._seen_message_ids: Dict[str, float] = {}  # message_id → seen_at (time.time())
         self._seen_message_order: List[str] = []
-        self._dedup_state_path = get_hermes_home() / "feishu_seen_message_ids.json"
+        self._dedup_state_path = get_eidolon_home() / "feishu_seen_message_ids.json"
         self._dedup_lock = threading.Lock()
         # Serializes the offloaded dedup-state flushes so two concurrent
         # inbound messages cannot land their writes out of order.
@@ -1422,7 +1422,7 @@ class FeishuAdapter(BasePlatformAdapter):
             if not acquired:
                 owner_pid = existing.get("pid") if isinstance(existing, dict) else None
                 message = (
-                    "Another local Hermes gateway is already using this Feishu app_id"
+                    "Another local Eidolon gateway is already using this Feishu app_id"
                     + (f" (PID {owner_pid})." if owner_pid else ".")
                     + " Stop the other gateway before starting a second Feishu websocket client."
                 )
@@ -1736,7 +1736,7 @@ class FeishuAdapter(BasePlatformAdapter):
 
     @staticmethod
     def _write_update_prompt_response(answer: str) -> None:
-        response_path = get_hermes_home() / ".update_response"
+        response_path = get_eidolon_home() / ".update_response"
         tmp_path = response_path.with_suffix(".tmp")
         tmp_path.write_text(answer, encoding="utf-8")
         tmp_path.replace(response_path)
@@ -2000,7 +2000,7 @@ class FeishuAdapter(BasePlatformAdapter):
         )
 
     def _on_message_read_event(self, data: P2ImMessageMessageReadV1) -> None:
-        """Ignore read-receipt events that Hermes does not act on."""
+        """Ignore read-receipt events that Eidolon does not act on."""
         message = getattr(getattr(data, "event", None), "message", None)
         logger.debug("[Feishu] Ignoring message_read event: %s", getattr(message, "message_id", None) or "")
 
@@ -2725,7 +2725,7 @@ class FeishuAdapter(BasePlatformAdapter):
             return self._webhook_reject(remote_ip, "401-sig", 401, "Invalid signature")
 
         if payload.get("encrypt"):
-            logger.error("[Feishu] Encrypted webhook payloads are not supported by Hermes webhook mode")
+            logger.error("[Feishu] Encrypted webhook payloads are not supported by Eidolon webhook mode")
             return self._webhook_reject(
                 remote_ip, "400-encrypted", 400, json_msg="encrypted webhook payloads are not supported",
             )
@@ -4119,7 +4119,7 @@ def _qr_register_inner(*, initial_domain: str, timeout_seconds: int) -> Optional
 # migrations: a register(ctx) entry point plus hook implementations that replace the per-platform core
 # touchpoints (the Platform.FEISHU elif in gateway/run.py, the feishu_cfg YAML→env block +
 # _PLATFORM_CONNECTED_CHECKERS entry in gateway/config.py, the _setup_feishu wizard + _PLATFORMS["feishu"]
-# static dict in hermes_cli/gateway.py, and the _send_feishu dispatch in tools/send_message_tool.py).
+# static dict in eidolon_cli/gateway.py, and the _send_feishu dispatch in tools/send_message_tool.py).
 # ──────────────────────────────────────────────────────────────────────────
 _MIGRATION_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 _MIGRATION_VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".3gp"}
@@ -4129,7 +4129,7 @@ _MIGRATION_AUDIO_EXTS = {".ogg", ".opus", ".mp3", ".wav", ".m4a", ".flac"}
 async def _standalone_send(pconfig, chat_id, message, *, thread_id=None, media_files=None, force_document=False):
     """standalone_sender_fn: out-of-process delivery (cron without gateway) via a transient adapter."""
     if not await asyncio.to_thread(_load_lark_oapi):
-        return {"error": "Feishu dependencies not installed. Run `hermes setup` to install Feishu support."}
+        return {"error": "Feishu dependencies not installed. Run `eidolon setup` to install Feishu support."}
     try:
         adapter = FeishuAdapter(pconfig)
         adapter._client = adapter._build_lark_client(_sdk_domain(getattr(adapter, "_domain_name", "feishu")))
@@ -4163,9 +4163,9 @@ async def _standalone_send(pconfig, chat_id, message, *, thread_id=None, media_f
 
 def interactive_setup() -> None:
     """Interactive setup for Feishu / Lark — scan-to-create or manual creds (CLI helpers lazy-imported)."""
-    from hermes_cli.config import get_env_value, remove_env_value, save_env_value
-    from hermes_cli.setup import prompt_choice
-    from hermes_cli.cli_output import prompt, prompt_yes_no, print_header, print_info, print_success, print_warning
+    from eidolon_cli.config import get_env_value, remove_env_value, save_env_value
+    from eidolon_cli.setup import prompt_choice
+    from eidolon_cli.cli_output import prompt, prompt_yes_no, print_header, print_info, print_success, print_warning
 
     print_header("Feishu / Lark")
     existing_app_id = get_env_value("FEISHU_APP_ID")
@@ -4306,13 +4306,13 @@ def _build_adapter(config):
 
 
 def register(ctx) -> None:
-    """Plugin entry point — called by the Hermes plugin system."""
+    """Plugin entry point — called by the Eidolon plugin system."""
     ctx.register_platform(
         name="feishu", label="Feishu / Lark", adapter_factory=_build_adapter,
         check_fn=feishu_deps_present, ensure_deps_fn=check_feishu_requirements,
         is_connected=_is_connected, validate_config=_is_connected,
         required_env=["FEISHU_APP_ID", "FEISHU_APP_SECRET"],
-        install_hint="Run `hermes setup` to install Feishu support.", setup_fn=interactive_setup,
+        install_hint="Run `eidolon setup` to install Feishu support.", setup_fn=interactive_setup,
         apply_yaml_config_fn=_apply_yaml_config, allowed_users_env="FEISHU_ALLOWED_USERS",
         allow_all_env="FEISHU_ALLOW_ALL_USERS", cron_deliver_env_var="FEISHU_HOME_CHANNEL",
         standalone_sender_fn=_standalone_send, max_message_length=8000, emoji="🪽",

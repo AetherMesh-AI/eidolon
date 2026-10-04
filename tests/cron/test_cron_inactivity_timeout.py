@@ -230,8 +230,8 @@ class TestInactivityTimeout:
 class TestSysPathOrdering:
     """Test that sys.path is set before repo-level imports."""
 
-    def test_hermes_time_importable(self):
-        """hermes_time should be importable when cron.scheduler loads."""
+    def test_eidolon_time_importable(self):
+        """eidolon_time should be importable when cron.scheduler loads."""
         # This import would fail if sys.path.insert comes after the import
         from cron.scheduler import _hermes_now
         assert callable(_hermes_now)

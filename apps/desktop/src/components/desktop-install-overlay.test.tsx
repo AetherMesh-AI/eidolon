@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DesktopBootstrapEvent, DesktopBootstrapState, DesktopConnectionProbeResult } from '@/global'
 import { TRANSLATIONS } from '@/i18n'
 
-import { DesktopInstallOverlay } from './desktop-install-overlay'
+import { bootstrapLogsPath, DesktopInstallOverlay } from './desktop-install-overlay'
 
 function bootstrapState(overrides: Partial<DesktopBootstrapState> = {}): DesktopBootstrapState {
   return {
@@ -91,6 +91,19 @@ afterEach(() => {
 })
 
 describe('DesktopInstallOverlay first-run setup', () => {
+  it('formats the canonical user-home log fallback for the platform', () => {
+    expect(bootstrapLogsPath('Win32')).toBe('%USERPROFILE%\\.eidolon\\logs\\')
+    expect(bootstrapLogsPath('Linux x86_64')).toBe('~/.eidolon/logs/')
+    expect(bootstrapLogsPath('MacIntel')).toBe('~/.eidolon/logs/')
+  })
+
+  it('shows the canonical log fallback when installation fails', async () => {
+    installDesktopMock(bootstrapState({ error: 'Install step failed' }))
+    render(<DesktopInstallOverlay />)
+
+    expect(await screen.findByText(bootstrapLogsPath(navigator.platform || navigator.userAgent || ''))).toBeTruthy()
+  })
+
   it.each(Object.entries(TRANSLATIONS))(
     'uses Eidolon for desktop setup and restart copy in %s',
     (_locale, messages) => {
@@ -274,7 +287,7 @@ describe('DesktopInstallOverlay first-run setup', () => {
     render(<DesktopInstallOverlay />)
 
     fireEvent.click(await screen.findByText('Connect to existing Eidolon'))
-    fireEvent.change(await screen.findByPlaceholderText('https://gateway.example.com/hermes'), {
+    fireEvent.change(await screen.findByPlaceholderText('https://gateway.example.com/eidolon'), {
       target: { value: 'https://gateway.example.com/hermes' }
     })
 
@@ -333,7 +346,7 @@ describe('DesktopInstallOverlay first-run setup', () => {
     render(<DesktopInstallOverlay />)
 
     fireEvent.click(await screen.findByText('Connect to existing Eidolon'))
-    const urlInput = await screen.findByPlaceholderText('https://gateway.example.com/hermes')
+    const urlInput = await screen.findByPlaceholderText('https://gateway.example.com/eidolon')
     fireEvent.change(urlInput, { target: { value: 'https://gateway.example.com/hermes' } })
 
     await act(async () => {
@@ -386,7 +399,7 @@ describe('DesktopInstallOverlay first-run setup', () => {
     render(<DesktopInstallOverlay />)
 
     fireEvent.click(await screen.findByText('Connect to existing Eidolon'))
-    fireEvent.change(await screen.findByPlaceholderText('https://gateway.example.com/hermes'), {
+    fireEvent.change(await screen.findByPlaceholderText('https://gateway.example.com/eidolon'), {
       target: { value: 'https://gateway.example.com/hermes' }
     })
 
@@ -437,7 +450,7 @@ describe('DesktopInstallOverlay first-run setup', () => {
     render(<DesktopInstallOverlay />)
 
     fireEvent.click(await screen.findByText('Connect to existing Eidolon'))
-    fireEvent.change(await screen.findByPlaceholderText('https://gateway.example.com/hermes'), {
+    fireEvent.change(await screen.findByPlaceholderText('https://gateway.example.com/eidolon'), {
       target: { value: 'https://gateway.example.com/hermes' }
     })
 
@@ -489,7 +502,7 @@ describe('DesktopInstallOverlay first-run setup', () => {
     render(<DesktopInstallOverlay />)
 
     fireEvent.click(await screen.findByText('Connect to existing Eidolon'))
-    fireEvent.change(await screen.findByPlaceholderText('https://gateway.example.com/hermes'), {
+    fireEvent.change(await screen.findByPlaceholderText('https://gateway.example.com/eidolon'), {
       target: { value: 'https://gateway.example.com/hermes' }
     })
 
@@ -569,7 +582,7 @@ describe('DesktopInstallOverlay first-run setup', () => {
       return { mode: 'remote' }
     })
 
-    fireEvent.change(screen.getByPlaceholderText('https://gateway.example.com/hermes'), {
+    fireEvent.change(screen.getByPlaceholderText('https://gateway.example.com/eidolon'), {
       target: { value: 'https://gateway.example.com/hermes' }
     })
 

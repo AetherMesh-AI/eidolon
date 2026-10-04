@@ -39,7 +39,7 @@ def _keygen_block(text: str) -> str:
 
 def _path_guard_functions(text: str) -> str:
     start = text.index("path_has_symlink_component() {")
-    end = text.index("\n\nchown_hermes_tree() {", start)
+    end = text.index("\n\nchown_eidolon_tree() {", start)
     return text[start:end]
 
 
@@ -61,8 +61,8 @@ def _run_keygen(
         "set -eu\n"
         f"{env_setup}"
         f'HERMES_HOME="{home}"\n'
-        # In tests we run unprivileged; as_hermes is a passthrough then.
-        'as_hermes() { "$@"; }\n'
+        # In tests we run unprivileged; as_eidolon is a passthrough then.
+        'as_eidolon() { "$@"; }\n'
         f"{_path_guard_functions(stage2_text)}\n"
         f"{_keygen_block(stage2_text)}\n"
     )
@@ -133,7 +133,7 @@ def test_keygen_skips_when_container_env_provides_key(
 ) -> None:
     """`docker run -e API_SERVER_KEY=...` must win: no generated key.
 
-    Hermes loads $HERMES_HOME/.env with override=True, so a key generated
+    Eidolon loads $HERMES_HOME/.env with override=True, so a key generated
     into .env would silently shadow the operator's env-provided credential
     and 401 every client still using it.
     """

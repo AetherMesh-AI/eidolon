@@ -5,7 +5,7 @@ import type { ClientSessionState } from '@/app/types'
 import { chatMessageText, textPart } from '@/lib/chat-messages'
 import { createClientSessionState } from '@/lib/chat-runtime'
 import { clearSessionTodos } from '@/store/todos'
-import type { RpcEvent } from '@/types/hermes'
+import type { RpcEvent } from '@/types/eidolon'
 
 import { type MessageStreamHarness, renderMessageStream } from './test-harness'
 

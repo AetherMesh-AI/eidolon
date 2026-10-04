@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
 import { Input } from '@/components/ui/input'
 import { Progress } from '@/components/ui/progress'
-import { getGlobalModelOptions } from '@/hermes'
+import { getGlobalModelOptions } from '@/eidolon'
 import { useI18n } from '@/i18n'
 import { Check, ChevronDown, ChevronLeft, KeyRound, Loader2 } from '@/lib/icons'
 import { isProviderSetupErrorMessage } from '@/lib/provider-setup-errors'
@@ -27,11 +27,11 @@ import {
   setOnboardingMode,
   startProviderOAuth
 } from '@/store/onboarding'
-import type { ModelOptionProvider, OAuthProvider } from '@/types/hermes'
+import type { ModelOptionProvider, OAuthProvider } from '@/types/eidolon'
 
 import { DocsLink, FlowPanel, Status } from './flow'
 import {
-  FeaturedProviderRow,
+  AetherMeshComingSoonRow,
   FireworksProviderRow,
   LocalModelsProviderRow,
   OpenRouterProviderRow,
@@ -40,7 +40,7 @@ import {
 } from './providers'
 
 export {
-  FeaturedProviderRow,
+  AetherMeshComingSoonRow,
   FireworksProviderRow,
   KeyProviderRow,
   LocalModelsProviderRow,
@@ -477,9 +477,9 @@ export function Picker({ ctx }: { ctx: OnboardingContext }) {
 
   const select = (p: OAuthProvider) => void startProviderOAuth(p, ctx)
   const featured = ordered.find(p => p.id === FEATURED_ID) ?? null
-  const rest = featured ? ordered.filter(p => p.id !== FEATURED_ID) : ordered
-  // Collapse the secondary providers behind a disclosure whenever Nous Portal
-  // is present to anchor the choice — otherwise show the full list. The
+  const rest = ordered
+  // Keep the existing provider disclosure preference. The network preview
+  // is informational; every real OAuth provider remains in the catalog. The
   // Fireworks/OpenRouter key rows always live behind the disclosure, so the
   // toggle is warranted even when there are no other OAuth providers.
   const collapsible = Boolean(featured)
@@ -503,7 +503,7 @@ export function Picker({ ctx }: { ctx: OnboardingContext }) {
   return (
     <div className="grid gap-2">
       <div className="grid max-h-[60dvh] gap-2 overflow-y-auto p-1">
-        {featured ? <FeaturedProviderRow onSelect={select} provider={featured} /> : null}
+        <AetherMeshComingSoonRow />
         {/* The no-account path: everything runs on this machine. Shipped
             behind the --local launch flag. (Fireworks moved into the
             expanded list on main.) */}

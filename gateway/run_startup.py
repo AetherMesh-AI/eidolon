@@ -706,8 +706,8 @@ class GatewayStartupMixin:
 
     def _open_faulthandler_log(self):
         """Open (append) ``<log_dir>/gateway_faulthandler.log``, creating the directory."""
-        from gateway.run import get_hermes_home
-        log_dir = getattr(self.config, "log_dir", None) or os.path.join(str(get_hermes_home()), "logs")
+        from gateway.run import get_eidolon_home
+        log_dir = getattr(self.config, "log_dir", None) or os.path.join(str(get_eidolon_home()), "logs")
         os.makedirs(log_dir, exist_ok=True)
         return open(os.path.join(log_dir, "gateway_faulthandler.log"), "a", encoding="utf-8")
 
@@ -742,7 +742,7 @@ class GatewayStartupMixin:
             # Loop live: the loop-liveness watchdog takes over from the startup watchdog. Disarm even
             # when loop guards are config-disabled; only inside this branch (no live loop = stay armed).
             with _log_suppressed(logging.DEBUG, "Startup watchdog disarm failed", exc_info=True):
-                from hermes_startup_watchdog import disarm_startup_watchdog
+                from eidolon_startup_watchdog import disarm_startup_watchdog
                 disarm_startup_watchdog()
         logger.info("Session storage: %s", self.config.sessions_dir)
         self._start_log_systemd_timing_alignment()
@@ -770,24 +770,24 @@ class GatewayStartupMixin:
                     "in config.yaml to re-enable.", _redact_raw,
                 )
         with suppress(Exception):
-            from hermes_cli.profiles import get_active_profile_name
+            from eidolon_cli.profiles import get_active_profile_name
             _profile = get_active_profile_name()
             if _profile and _profile != "default":
                 logger.info("Active profile: %s", _profile)
         _write_runtime_status_quiet(gateway_state="starting", exit_reason=None, clear_profile_platforms=True)
         with _log_suppressed(logging.DEBUG, "gateway health OTLP export startup failed", exc_info=True):
-            from hermes_cli.config import load_config
+            from eidolon_cli.config import load_config
             from agent.monitoring.gateway_health_export import start_gateway_health_export
             self._gateway_health_export_runtime = start_gateway_health_export(load_config())
             if getattr(self._gateway_health_export_runtime, "enabled", False):
                 logger.info("Gateway health OTLP export: enabled")
         # Supply-chain advisories: log only (never block startup or surface to users; only the operator can act).
         with _log_suppressed(logging.DEBUG, "security advisory check failed at gateway startup", exc_info=True):
-            from hermes_cli.security_advisories import detect_compromised, gateway_log_message
+            from eidolon_cli.security_advisories import detect_compromised, gateway_log_message
             _adv_msg = gateway_log_message(detect_compromised())
             if _adv_msg:
                 logger.warning("%s", _adv_msg)
-                logger.warning("Run `hermes doctor` on the gateway host for full remediation steps.")
+                logger.warning("Run `eidolon doctor` on the gateway host for full remediation steps.")
 
     def _start_log_systemd_timing_alignment(self) -> None:
         """Warn when systemd's TimeoutStopSec does not cover the drain window (a unit file from before
@@ -802,7 +802,7 @@ class GatewayStartupMixin:
                 logger.warning(
                     "Stale systemd unit detected: %s has TimeoutStopSec=%.0fs but drain_timeout=%.0fs "
                     "cron_drain_timeout=%.0fs (expected >=%.0fs). systemd may SIGKILL the gateway "
-                    "mid-drain. Run `hermes gateway install --force` to regenerate the unit, or shorten "
+                    "mid-drain. Run `eidolon gateway install --force` to regenerate the unit, or shorten "
                     "agent.restart_drain_timeout / agent.cron_drain_timeout.",
                     _alignment.get("unit", "(unknown)"), _alignment["timeout_stop_sec"],
                     _alignment["drain_timeout"],
@@ -867,7 +867,7 @@ class GatewayStartupMixin:
         # Discover plugins before shell hooks (plugin block decisions win ties). Explicit: the gateway
         # lazily imports run_agent, so model_tools' discover_plugins() side-effect may not have run.
         with _log_suppressed(logging.WARNING, "plugin discovery failed at gateway startup", exc_info=True):
-            from hermes_cli.plugins import discover_plugins
+            from eidolon_cli.plugins import discover_plugins
             discover_plugins()
         # Generic relay adapter only if GATEWAY_RELAY_URL / gateway.relay_url is set; no URL -> no-op.
         try:
@@ -893,7 +893,7 @@ class GatewayStartupMixin:
         Never raises (logged at ``level``).
         """
         try:
-            from hermes_cli.config import load_config
+            from eidolon_cli.config import load_config
             from agent.shell_hooks import register_from_config
             from agent.outbound_webhooks import register_from_config as register_outbound_webhooks
             _hooks_cfg = load_config()
@@ -904,7 +904,7 @@ class GatewayStartupMixin:
 
     async def _start_recover_previous_run(self) -> None:
         """Plugins, relay, hooks, then crash/clean-exit recovery of processes and sessions."""
-        from gateway.run import _hermes_home
+        from gateway.run import _eidolon_home
         self._start_register_plugins_relay_hooks()
         self.hooks.discover_and_load()
         # Recover background processes from checkpoint (crash recovery)
@@ -915,7 +915,7 @@ class GatewayStartupMixin:
                 logger.info("Recovered %s background process(es) from previous run", recovered)
         # Recover sessions active at last exit (exact turn markers + 120s recency fallback for
         # marker-less older turns). SKIP after a clean exit — the previous process already drained.
-        _clean_marker = _hermes_home / ".clean_shutdown"
+        _clean_marker = _eidolon_home / ".clean_shutdown"
         if _clean_marker.exists():
             logger.info("Previous gateway exited cleanly — skipping session suspension")
             try:
@@ -1195,7 +1195,7 @@ class GatewayStartupMixin:
 
     async def _start_post_connect_services(self, connected_count: int) -> None:
         """Room worker, heartbeat, gateway:startup hook, channel directory, /update notice."""
-        from gateway.run import _hermes_home
+        from gateway.run import _eidolon_home
         try:
             await self._ensure_hosted_room_worker()
         except Exception:
@@ -1223,7 +1223,7 @@ class GatewayStartupMixin:
         # Restarting after a /update still in progress: keep watching so we notify when it finishes.
         notified = await self._send_update_notification()
         if not notified and any(
-            (_hermes_home / name).exists()
+            (_eidolon_home / name).exists()
             for name in (".update_pending.json", ".update_pending.claimed.json")
         ):
             self._schedule_update_notification_watch()
@@ -1309,7 +1309,7 @@ class GatewayStartupMixin:
 
     async def start(self) -> bool:
         """Start the gateway and all configured platform adapters."""
-        logger.info("Starting Hermes Gateway...")
+        logger.info("Starting Eidolon Gateway...")
         self._start_install_faulthandler()
         self._start_log_startup_environment()
         if await self._abort_startup_if_shutdown_requested():
@@ -1423,7 +1423,7 @@ class GatewayStartupMixin:
         cli_title = row.get("title") or cli_session_id[:8]
         try:
             new_thread_id = await transport.adapter.create_handoff_thread(
-                home_chat_id, f"Hermes — {cli_title}",
+                home_chat_id, f"Eidolon — {cli_title}",
             )
         except Exception as exc:
             logger.debug("Handoff: create_handoff_thread raised on %s: %s", platform_name, exc, exc_info=True)

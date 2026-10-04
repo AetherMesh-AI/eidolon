@@ -28,11 +28,29 @@ def register_synthetic_package(name: str, search_locations: List[str]) -> None:
 def user_plugins_dir() -> Optional[Path]:
     """Return ``$HERMES_HOME/plugins/`` or None if unavailable."""
     try:
-        from hermes_constants import get_hermes_home
-        d = get_hermes_home() / "plugins"
+        from eidolon_constants import get_eidolon_home
+        d = get_eidolon_home() / "plugins"
         return d if d.is_dir() else None
     except Exception:
         return None
+
+
+def project_plugins_dir() -> Optional[Path]:
+    """One opt-in project root, canonical first with a legacy directory fallback.
+
+    General and provider discovery must choose the same root: scanning both can
+    execute a dual-kind plugin twice or select different implementations by name.
+    This never searches the user's unrelated upstream home.
+    """
+    from eidolon_cli.plugins import _env_enabled
+
+    if not _env_enabled("HERMES_ENABLE_PROJECT_PLUGINS"):
+        return None
+    for directory in (".eidolon", ".hermes"):
+        candidate = Path.cwd() / directory / "plugins"
+        if candidate.is_dir():
+            return candidate
+    return None
 
 
 def iter_plugin_dirs(root: Path) -> List[Path]:

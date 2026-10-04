@@ -53,7 +53,7 @@ logger = logging.getLogger(__name__)
 
 # User-Agent prefix (``HermesAgent/<version>``) for platform-partner attribution of API calls.
 try:
-    from hermes_cli import __version__ as _HERMES_VERSION
+    from eidolon_cli import __version__ as _HERMES_VERSION
 except Exception:
     _HERMES_VERSION = "unknown"
 _HERMES_SLACK_USER_AGENT_PREFIX = f"HermesAgent/{_HERMES_VERSION}"
@@ -341,7 +341,7 @@ def _rewrite_known_bang_command(text: str) -> str:
     if not text.startswith("!"):
         return text
     try:
-        from hermes_cli.commands import is_gateway_known_command
+        from eidolon_cli.commands import is_gateway_known_command
         first_token = text[1:].split(maxsplit=1)[0]
         cmd_name = first_token.split("@", 1)[0].lower()
         if cmd_name and "/" not in cmd_name and is_gateway_known_command(cmd_name):
@@ -1482,7 +1482,7 @@ class SlackAdapter(BasePlatformAdapter):
             self._app.event(event_type)(_listener_for(handler))
         # Catch-all ack: unacked envelopes count as failures and past 95%/60-min Slack disables
         # Event Subscriptions (ALL inbound). Registered AFTER all named handlers (first match wins).
-        # Catch-all no-op ack for any other subscribed event type that Hermes has no listener for (e.g.
+        # Catch-all no-op ack for any other subscribed event type that Eidolon has no listener for (e.g.
         # user_change, user_huddle_changed, member_joined_channel, channel_archive, pin_added, etc.). Two
         # reasons this must exist (issues #6572 and the Event Subscriptions auto-disable failure mode): 1.
         # Correctness at scale: without a matching listener, slack-bolt returns HTTP 404 for every unhandled
@@ -1500,20 +1500,20 @@ class SlackAdapter(BasePlatformAdapter):
         async def handle_unhandled_event(event, body, logger):
             logger.debug(
                 "[Slack] Ignoring unhandled event type=%s (no listener registered; subscribed "
-                "events not handled by Hermes can be removed from the Slack app manifest via "
-                "`hermes slack manifest`)",
+                "events not handled by Eidolon can be removed from the Slack app manifest via "
+                "`eidolon slack manifest`)",
                 (event or {}).get("type", (body or {}).get("event", {}).get("type", "unknown")))
 
         # Every COMMAND_REGISTRY command is a native slash via one regex matcher. Commands must
-        # ALSO be declared in the app manifest (`hermes slack manifest`): Socket Mode won't
+        # ALSO be declared in the app manifest (`eidolon slack manifest`): Socket Mode won't
         # deliver undeclared commands at all.
-        from hermes_cli.commands_platforms import slack_native_slashes
+        from eidolon_cli.commands_platforms import slack_native_slashes
         _slash_names = [name for name, _d, _h in slack_native_slashes()]
         if _slash_names:
             _slash_pattern = re.compile(
-                r"^/(?:" + "|".join(re.escape(n) for n in _slash_names) + r")$")
+                r"^/(?:" + "|".join(re.escape(n) for n in dict.fromkeys(["hermes", *_slash_names])) + r")$")
         else:  # pragma: no cover - registry always non-empty
-            _slash_pattern = re.compile(r"^/hermes$")
+            _slash_pattern = re.compile(r"^/(?:eidolon|hermes)$")
 
         @self._app.command(_slash_pattern)
         async def handle_hermes_command(ack, command):
@@ -1544,7 +1544,7 @@ class SlackAdapter(BasePlatformAdapter):
         """Wire ``ctx.register_slack_action_handler`` callbacks; each is wrapped so a plugin
         exception is logged and slack_bolt still sees a clean ack."""
         try:
-            from hermes_cli.plugins import get_plugin_manager
+            from eidolon_cli.plugins import get_plugin_manager
             _plugin_handlers = get_plugin_manager().get_slack_action_handlers()
         except Exception as e:  # pragma: no cover - defensive
             logger.warning("[Slack] Could not load plugin action handlers: %s", e)
@@ -1689,7 +1689,7 @@ class SlackAdapter(BasePlatformAdapter):
             "gateway.", env_name, env_name)
         self._set_fatal_error(
             f"missing_{env_name.lower()}",
-            f"{env_name} not configured. Use `hermes gateway setup` "
+            f"{env_name} not configured. Use `eidolon gateway setup` "
             "or add it to your active profile's ~/.hermes/.env file, then restart the gateway.",
             retryable=False)
 
@@ -1710,7 +1710,7 @@ class SlackAdapter(BasePlatformAdapter):
             logger.info(
                 "[Slack] allow_bots=%s — for bot-to-bot interop also ensure: (a) the Slack "
                 "app manifest subscribes to message.channels / message.groups / message.im as "
-                "appropriate (run 'hermes slack manifest' if unsure), and (b) the other bot's "
+                "appropriate (run 'eidolon slack manifest' if unsure), and (b) the other bot's "
                 "Slack user id is in SLACK_ALLOWED_USERS or GATEWAY_ALLOW_ALL_USERS=true. "
                 "Without these, bot events are silently dropped upstream of the allow_bots "
                 "gate.", _allow_bots_cfg)
@@ -1724,7 +1724,7 @@ class SlackAdapter(BasePlatformAdapter):
             client = self._get_client(parent_chat_id)
             if client is None:
                 return None
-            seed_text = f":thread: Hermes handoff — *{(name or 'session').strip()[:80]}*"
+            seed_text = f":thread: Eidolon handoff — *{(name or 'session').strip()[:80]}*"
             result = await client.chat_postMessage(channel=parent_chat_id, text=seed_text)
             ts = _slack_response_payload(result).get("ts")
             return str(ts) if ts else None
@@ -1894,7 +1894,7 @@ class SlackAdapter(BasePlatformAdapter):
             self._metadata_team_id(metadata), chat_id, str(thread_ts))
 
     async def send_native_task_card_progress(
-        self, chat_id: str, tasks: List[Dict[str, str]], *, title: str = "Hermes is working",
+        self, chat_id: str, tasks: List[Dict[str, str]], *, title: str = "Eidolon is working",
         reply_to: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None,
         fallback_text: Optional[str] = None) -> SendResult:
         """Start or update a Slack-native plan/task progress stream."""
@@ -4772,7 +4772,7 @@ class SlackAdapter(BasePlatformAdapter):
             thread_ts = self._resolve_thread_ts(None, metadata)
 
             try:
-                from hermes_cli.providers import get_label
+                from eidolon_cli.providers import get_label
                 provider_label = get_label(current_provider)
             except Exception:
                 provider_label = current_provider
@@ -4951,7 +4951,7 @@ class SlackAdapter(BasePlatformAdapter):
             state["stage"] = "provider"
             state["selected_provider_slug"] = ""
             try:
-                from hermes_cli.providers import get_label
+                from eidolon_cli.providers import get_label
                 provider_label = get_label(
                     state.get("current_provider", "")
                 )
@@ -5680,10 +5680,10 @@ class SlackAdapter(BasePlatformAdapter):
         ``<subcommand> [args]`` via the registry, else free-form text is a regular question."""
         slash_name = (command.get("command") or "").lstrip("/").strip()
         raw_text = str(command.get("text") or "")
-        if slash_name not in {"hermes", ""}:
+        if slash_name not in {"eidolon", "hermes", ""}:
             return f"/{slash_name}" if not raw_text else f"/{slash_name} {raw_text}"
         legacy_text = raw_text.strip()
-        from hermes_cli.commands_platforms import slack_subcommand_map
+        from eidolon_cli.commands_platforms import slack_subcommand_map
         subcommand_map = slack_subcommand_map()
         subcommand_map["compact"] = "/compress"
         first_word = legacy_text.split()[0] if legacy_text.split() else ""
@@ -6038,7 +6038,7 @@ class SlackAdapter(BasePlatformAdapter):
 # ``interactive_setup``, ``_apply_yaml_config``, ``_is_connected``, ``_build_adapter``) that replace the
 # per-platform core touchpoints (the ``Platform.SLACK`` elif in ``gateway/run.py``, the ``slack_cfg``
 # YAML→env block in ``gateway/config.py``, the ``_setup_slack`` wizard + ``_PLATFORMS["slack"]`` static dict
-# in ``hermes_cli/{setup,gateway}.py``, and the ``_send_slack`` dispatch in ``tools/send_message_tool.py``).
+# in ``eidolon_cli/{setup,gateway}.py``, and the ``_send_slack`` dispatch in ``tools/send_message_tool.py``).
 # ──────────────────────────────────────────────────────────────────────────
 _slack_dm_cache: Dict[str, str] = {}
 _SLACK_DM_CACHE_MAX = 5000
@@ -6062,8 +6062,8 @@ def _load_slack_bot_tokens(raw_token: str, *, quiet: bool) -> List[str]:
     order). ``quiet`` (standalone): no permission warning / per-token INFO; failures swallowed."""
     tokens = [t.strip() for t in raw_token.split(",") if t.strip()]
     try:
-        from hermes_constants import get_hermes_home
-        tokens_file = get_hermes_home() / "slack_tokens.json"
+        from eidolon_constants import get_eidolon_home
+        tokens_file = get_eidolon_home() / "slack_tokens.json"
         present = tokens_file.exists()
     except Exception:
         if quiet:
@@ -6342,7 +6342,7 @@ _SETUP_STEPS = (
     "   3. Install to Workspace: Settings → Install App",
     "   4. After installing, invite the bot to channels: /invite @YourBot",)
 _SETUP_HOME_CHANNEL_HELP = (
-    "📬 Home Channel: where Hermes delivers cron job results,",
+    "📬 Home Channel: where Eidolon delivers cron job results,",
     "   cross-platform messages, and notifications.",
     "   To get a channel ID: open the channel in Slack, then right-click",
     "   the channel name → Copy link — the ID starts with C (e.g. C01ABC2DE3F).",
@@ -6351,13 +6351,13 @@ _SETUP_HOME_CHANNEL_HELP = (
 
 def _write_slack_manifest_and_instruct() -> None:
     """Write the manifest under HERMES_HOME and print paste instructions; non-fatal."""
-    from hermes_cli.cli_output import print_info, print_success, print_warning
+    from eidolon_cli.cli_output import print_info, print_success, print_warning
     try:
-        from hermes_cli.slack_cli import _build_full_manifest
-        from hermes_constants import get_hermes_home
+        from eidolon_cli.slack_cli import _build_full_manifest
+        from eidolon_constants import get_eidolon_home
         manifest = _build_full_manifest(
-            bot_name="Hermes", bot_description="Your Hermes agent on Slack")
-        target = _Path(get_hermes_home()) / "slack-manifest.json"
+            bot_name="Eidolon", bot_description="Your Eidolon agent on Slack")
+        target = _Path(get_eidolon_home()) / "slack-manifest.json"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(
             json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -6367,8 +6367,8 @@ def _write_slack_manifest_and_instruct() -> None:
             "→ App Manifest → Edit, then Save.  Slack will prompt to "
             "reinstall if scopes or slash commands changed.")
         print_info(
-            "   Re-run `hermes slack manifest --write` anytime to refresh after "
-            "Hermes adds new commands.")
+            "   Re-run `eidolon slack manifest --write` anytime to refresh after "
+            "Eidolon adds new commands.")
     except Exception as e:
         print_warning(f"Could not write Slack manifest: {e}")
 
@@ -6376,8 +6376,8 @@ def _write_slack_manifest_and_instruct() -> None:
 def interactive_setup() -> None:
     """Guide the user through Slack bot setup (manifest, tokens, allowlist, home channel).
     CLI helpers are lazy-imported to keep the plugin's import surface small."""
-    from hermes_cli.config import get_env_value, remove_env_value, save_env_value
-    from hermes_cli.cli_output import (
+    from eidolon_cli.config import get_env_value, remove_env_value, save_env_value
+    from eidolon_cli.cli_output import (
         prompt, prompt_yes_no, print_header, print_info, print_success, print_warning)
 
     print_header("Slack")
@@ -6387,7 +6387,7 @@ def interactive_setup() -> None:
             # Still offer a manifest refresh so new commands get registered.
             if prompt_yes_no(
                 "Regenerate the Slack app manifest with the latest command "
-                "list? (recommended after `hermes update`)", True):
+                "list? (recommended after `eidolon update`)", True):
                 _write_slack_manifest_and_instruct()
             return
     for line in _SETUP_STEPS:
@@ -6468,7 +6468,7 @@ def _apply_yaml_config(yaml_cfg: dict, slack_cfg: dict) -> dict | None:
 def _is_connected(config) -> bool:
     """Connected when SLACK_BOT_TOKEN is set. Resolved through ``gateway_mod`` at call
     time (not a bound import) so tests patching ``get_env_value`` take effect."""
-    import hermes_cli.gateway as gateway_mod
+    import eidolon_cli.gateway as gateway_mod
     return bool((gateway_mod.get_env_value("SLACK_BOT_TOKEN") or "").strip())
 
 
@@ -6478,7 +6478,7 @@ def _build_adapter(config):
 
 
 def register(ctx) -> None:
-    """Plugin entry point — called by the Hermes plugin system."""
+    """Plugin entry point — called by the Eidolon plugin system."""
     ctx.register_platform(
         name="slack",
         label="Slack",
@@ -6487,7 +6487,7 @@ def register(ctx) -> None:
         ensure_deps_fn=check_slack_requirements,
         is_connected=_is_connected,
         required_env=["SLACK_BOT_TOKEN", "SLACK_APP_TOKEN"],
-        install_hint="Run `hermes setup` to install Slack support.",
+        install_hint="Run `eidolon setup` to install Slack support.",
         setup_fn=interactive_setup,
         # YAML→env bridge: config.yaml slack: keys → SLACK_* env vars read via os.getenv().
         # YAML→env config bridge — owns the translation of config.yaml slack: keys (require_mention,

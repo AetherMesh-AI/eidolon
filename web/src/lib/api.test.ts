@@ -200,3 +200,23 @@ describe("api OAuth helpers", () => {
     ]);
   });
 });
+
+
+it("uses canonical backend update routes without dropping session authorization", async () => {
+  const fetchMock = jsonFetchMock();
+  vi.stubGlobal("fetch", fetchMock);
+
+  await api.checkHermesUpdate();
+  await api.checkHermesUpdate(true);
+  await api.updateHermes();
+
+  expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+    "/api/eidolon/update/check",
+    "/api/eidolon/update/check?force=true",
+    "/api/eidolon/update",
+  ]);
+  for (const [, options] of fetchMock.mock.calls) {
+    expect(new Headers(options?.headers).get(SESSION_HEADER)).toBe("stale-token");
+  }
+  expect(fetchMock.mock.calls[2][1]?.method).toBe("POST");
+});

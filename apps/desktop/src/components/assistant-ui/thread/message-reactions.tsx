@@ -7,7 +7,7 @@ import { triggerHaptic } from '@/lib/haptics'
 import { Plus } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import { QUICK_REACTIONS } from '@/store/reactions'
-import type { MessageReaction } from '@/types/hermes'
+import type { MessageReaction } from '@/types/eidolon'
 
 // Served from the app's own origin (vite.config.ts `hermes:emojibase-assets`
 // plugin bundles emojibase-data): Electron must work offline, and the app
@@ -197,7 +197,7 @@ export const ReactionBadge: FC<{
           <span
             className="reaction-pop leading-none"
             key={`${reaction.author}-${reaction.emoji}`}
-            title="Reacted by Hermes"
+            title="Reacted by Eidolon"
           >
             {reaction.emoji}
           </span>

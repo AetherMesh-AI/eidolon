@@ -14,22 +14,22 @@ from typing import Optional
 
 
 def _constants_path(getter_name: str) -> Path:
-    """Call ``hermes_constants.<getter_name>()`` (local import avoids cycles); ``~/.hermes`` on any failure."""
+    """Call ``eidolon_constants.<getter_name>()`` (local import avoids cycles); ``~/.hermes`` on any failure."""
     try:
-        import hermes_constants
+        import eidolon_constants
 
-        return getattr(hermes_constants, getter_name)()
+        return getattr(eidolon_constants, getter_name)()
     except Exception:
-        return Path(os.path.expanduser("~/.hermes"))
+        return Path(os.path.expanduser("~/.eidolon"))
 
 
-def _hermes_home_path() -> Path:
+def _eidolon_home_path() -> Path:
     """Active HERMES_HOME (profile-aware). Tests monkeypatch this name."""
-    return _constants_path("get_hermes_home")
+    return _constants_path("get_eidolon_home")
 
 
 def _hermes_root_path() -> Path:
-    """Hermes root dir (parent of any profile, never per-profile)."""
+    """Eidolon root dir (parent of any profile, never per-profile)."""
     return _constants_path("get_default_hermes_root")
 
 
@@ -39,7 +39,7 @@ def _hermes_dirs() -> list[Path]:
     Both are checked so credential stores at <root>/... stay guarded when
     running under a profile (HERMES_HOME = <root>/profiles/<name>).
     """
-    return list(dict.fromkeys(_resolve_each((_hermes_home_path(), _hermes_root_path()))))
+    return list(dict.fromkeys(_resolve_each((_eidolon_home_path(), _hermes_root_path()))))
 
 
 def _resolve_each(paths) -> list[Path]:
@@ -90,7 +90,7 @@ def build_write_denied_paths(home: str) -> set[str]:
     hermes_files = (".env", ".anthropic_oauth.json", os.path.join("cache", "bws_cache.enc.json"))
     paths = [
         *(os.path.join(home, *f) for f in home_files),
-        *(str(base / f) for f in hermes_files for base in (_hermes_home_path(), _hermes_root_path())),
+        *(str(base / f) for f in hermes_files for base in (_eidolon_home_path(), _hermes_root_path())),
         "/etc/sudoers", "/etc/passwd", "/etc/shadow",
     ]
     return {os.path.realpath(p) for p in paths}
@@ -206,16 +206,16 @@ _CREDENTIAL_FILE_NAMES = (
 # of the user's Cookies / Login Data — the same credential class as auth.json.
 _READ_DENIED_DIRS = (
     ("mcp-tokens",
-     "is the Hermes MCP token directory and cannot be read directly.",
-     "is a Hermes MCP token file and cannot be read directly."),
+     "is the Eidolon MCP token directory and cannot be read directly.",
+     "is a Eidolon MCP token file and cannot be read directly."),
     ("browser-profile",
-     "is the Hermes real-profile browser snapshot directory (copied cookies/logins) and cannot be read directly.",
-     "is inside the Hermes real-profile browser snapshot (copied cookies/logins) and cannot be read directly."),
+     "is the Eidolon real-profile browser snapshot directory (copied cookies/logins) and cannot be read directly.",
+     "is inside the Eidolon real-profile browser snapshot (copied cookies/logins) and cannot be read directly."),
 )
 
 
 def get_read_block_error(path: str) -> Optional[str]:
-    """Return an error message when a read targets a denied Hermes path.
+    """Return an error message when a read targets a denied Eidolon path.
 
     Blocked: internal skill-hub caches (prompt-injection carriers), credential
     stores under HERMES_HOME and the global root (exact files, plus anything
@@ -231,12 +231,12 @@ def get_read_block_error(path: str) -> Optional[str]:
     reason = None
     if any(_is_under(resolved, hd / "skills" / ".hub") for hd in hermes_dirs):
         reason = (
-            "is an internal Hermes cache file and cannot be read directly to prevent "
+            "is an internal Eidolon cache file and cannot be read directly to prevent "
             "prompt injection. Use the skills_list or skill_view tools instead."
         )
     elif any(resolved in _resolve_each(hd / name for hd in hermes_dirs) for name in _CREDENTIAL_FILE_NAMES):
         reason = (
-            "is a Hermes credential store and cannot be read directly. Provider tools "
+            "is a Eidolon credential store and cannot be read directly. Provider tools "
             "consume these credentials through internal channels." + _DID_SUFFIX
         )
     else:
@@ -256,7 +256,7 @@ def get_read_block_error(path: str) -> Optional[str]:
 
 
 def raise_if_read_blocked(path: str) -> None:
-    """Raise ``ValueError`` if ``path`` is a denied Hermes read (see ``get_read_block_error``).
+    """Raise ``ValueError`` if ``path`` is a denied Eidolon read (see ``get_read_block_error``).
 
     Shared chokepoint for provider input-loading sites (e.g. image-gen local
     paths). Best-effort: unexpected internal errors no-op rather than break
@@ -274,7 +274,7 @@ def _resolve_active_profile_name() -> str:
     """Active profile name from HERMES_HOME: ``~/.hermes`` -> ``"default"``,
     ``~/.hermes/profiles/X`` -> ``"X"``; ``"default"`` on any resolution failure."""
     try:
-        parts = _hermes_home_path().resolve().relative_to(_hermes_root_path().resolve() / "profiles").parts
+        parts = _eidolon_home_path().resolve().relative_to(_hermes_root_path().resolve() / "profiles").parts
     except (OSError, RuntimeError, ValueError):
         return "default"
     return parts[0] if parts else "default"
@@ -302,7 +302,7 @@ def _mirror_info(target: Path, mirror_root: Path, inner_path: str) -> dict:
 
 
 def classify_sandbox_mirror_target(path: str) -> Optional[dict]:
-    """Classify a write target as a sandbox-mirror of authoritative Hermes state: ``None``
+    """Classify a write target as a sandbox-mirror of authoritative Eidolon state: ``None``
     for non-mirror paths, else ``target_path`` (resolved), ``mirror_root`` (the
     ``…/home/.hermes`` prefix) and ``inner_path`` (what the agent meant on the host)."""
     target = _resolve_target(path)
@@ -332,7 +332,7 @@ def get_sandbox_mirror_warning(path: str) -> Optional[str]:
     return _mirror_warning(
         classify_sandbox_mirror_target(path),
         "a per-task mirror created by a non-local terminal backend (docker/daytona/etc.). "
-        "Writes here land on a copy that the host Hermes process never reads — the "
+        "Writes here land on a copy that the host Eidolon process never reads — the "
         "authoritative file is likely {inner_path!r} under the real HERMES_HOME.",
         "this guard after explicit user direction, retry the call",
     )
@@ -353,7 +353,7 @@ def get_container_mirror_warning(path: str, mirror_prefix: str | None = None) ->
     """Model-facing soft-guard warning when ``path`` lands in the container's mirror, else ``None``."""
     return _mirror_warning(
         classify_container_mirror_target(path, mirror_prefix),
-        "the container's bind-mounted home — a per-task mirror that the host Hermes "
+        "the container's bind-mounted home — a per-task mirror that the host Eidolon "
         "process never reads. The authoritative file is {inner_path!r} under "
         "the real HERMES_HOME.",
         "after explicit user direction, retry",
@@ -371,7 +371,7 @@ def classify_cross_profile_target(path: str) -> Optional[dict]:
     """Classify a write target as cross-profile if it lands in another
     profile's scoped area (skills/plugins/cron/memories).
 
-    Returns ``None`` when the target is outside Hermes scope, or is inside
+    Returns ``None`` when the target is outside Eidolon scope, or is inside
     the ACTIVE profile, or doesn't hit a profile-scoped area. Otherwise
     returns a dict with:
 

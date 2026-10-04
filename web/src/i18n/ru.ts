@@ -326,7 +326,7 @@ export const ru: Translations = {
     enableRuntime: "Включить",
     forceReinstall: "Принудительная переустановка (сначала удалить существующую папку)",
     headline:
-      "Поиск, установка, включение и обновление плагинов Eidolon (аналог `hermes plugins`).",
+      "Поиск, установка, включение и обновление плагинов Eidolon (аналог `eidolon plugins`).",
     identifierLabel: "Git URL или owner/repo",
     inactive: "неактивно",
     installBtn: "Установить",

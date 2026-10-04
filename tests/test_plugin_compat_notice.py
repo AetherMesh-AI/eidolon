@@ -1,4 +1,4 @@
-"""hermes_cli.plugin_compat: detect plugins on old import paths, tell the user, disable after the date.
+"""eidolon_cli.plugin_compat: detect plugins on old import paths, tell the user, disable after the date.
 
 Kept with the compat layer (tests/test_compat_manifest_targets.py); deleted with it.
 """
@@ -12,20 +12,20 @@ from types import SimpleNamespace
 
 import pytest
 
-from hermes_cli import plugin_compat as pc
+from eidolon_cli import plugin_compat as pc
 
 ROOT = Path(__file__).resolve().parent.parent
 pytestmark = pytest.mark.skipif(not (ROOT / "compat_manifest.json").exists(), reason="compat layer removed")
 
 MANIFEST = {"tools.web_tools": {"prefers_gateway": "tools.tool_backend_helpers.prefers_gateway"},
-            "hermes_cli.kanban_db": {"connect": "hermes_cli.kanban_db_connect.connect"}}
+            "eidolon_cli.kanban_db": {"connect": "eidolon_cli.kanban_db_connect.connect"}}
 
 
 @pytest.mark.parametrize("src, expect", [
     ("from tools.web_tools import prefers_gateway\n", ["tools.web_tools.prefers_gateway"]),
     ("import tools.web_tools\nx = tools.web_tools.prefers_gateway()\n", ["tools.web_tools.prefers_gateway"]),
     ("import tools.web_tools as wt\nwt.prefers_gateway()\n", ["tools.web_tools.prefers_gateway"]),
-    ("from unittest.mock import patch\npatch('hermes_cli.kanban_db.connect')\n", ["hermes_cli.kanban_db.connect"]),
+    ("from unittest.mock import patch\npatch('eidolon_cli.kanban_db.connect')\n", ["eidolon_cli.kanban_db.connect"]),
     ("from tools.web_tools import web_search\n", []),                       # live name: not a hit
     ("from tools.tool_backend_helpers import prefers_gateway\n", []),      # already migrated
 ])
@@ -38,7 +38,7 @@ def test_scan_source_finds_every_import_form(src, expect):
 
 def test_scan_plugin_walks_dir_and_skips_tests(tmp_path):
     (tmp_path / "__init__.py").write_text("from tools.web_tools import prefers_gateway\n")
-    (tmp_path / "sub").mkdir(); (tmp_path / "sub" / "m.py").write_text("import hermes_cli.kanban_db as k\nk.connect()\n")
+    (tmp_path / "sub").mkdir(); (tmp_path / "sub" / "m.py").write_text("import eidolon_cli.kanban_db as k\nk.connect()\n")
     (tmp_path / "tests").mkdir(); (tmp_path / "tests" / "t.py").write_text("from tools.web_tools import prefers_gateway\n")
     hits = pc.scan_plugin(tmp_path, MANIFEST)
     assert sorted(h.file for h in hits) == ["__init__.py", "sub/m.py"]
@@ -96,7 +96,7 @@ def test_report_file_written_and_removed(tmp_path, monkeypatch):
 
 def test_loader_skips_hitting_plugin_after_date(tmp_path, monkeypatch):
     """PluginManager records the reason and never imports the plugin."""
-    from hermes_cli.plugins import PluginManager
+    from eidolon_cli.plugins import PluginManager
     monkeypatch.setattr(pc, "load_manifest", lambda: MANIFEST)
     monkeypatch.setattr(pc, "removal_in_effect", lambda today=None: True)
     monkeypatch.setattr(pc, "allow_deprecated_imports", lambda config=None: False)
@@ -110,7 +110,7 @@ def test_loader_skips_hitting_plugin_after_date(tmp_path, monkeypatch):
     """))
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     mgr = PluginManager(scope_key=str(tmp_path))
-    from hermes_cli.plugins_manifest import PluginManifest
+    from eidolon_cli.plugins_manifest import PluginManifest
     real = PluginManifest(name="oldpaths", version="0.1", description="t", source="user", path=str(plugin))
     mgr._load_plugin(real)
     loaded = next(lp for lp in mgr._plugins.values() if lp.manifest.name == "oldpaths")
@@ -120,14 +120,14 @@ def test_loader_skips_hitting_plugin_after_date(tmp_path, monkeypatch):
 def test_discovery_refreshes_report_file(tmp_path, monkeypatch):
     """The Desktop modal reads the report the `serve` backend's discovery wrote — discovery itself must
     write it (not only the CLI banner / doctor / update paths), and clear it once the plugin is fixed."""
-    from hermes_cli.plugins import PluginManager
+    from eidolon_cli.plugins import PluginManager
     monkeypatch.setattr(pc, "load_manifest", lambda: MANIFEST)
     monkeypatch.setattr(pc, "removal_in_effect", lambda today=None: False)
     monkeypatch.setattr(pc, "report_file_path", lambda: tmp_path / "r.json")
     plugin = tmp_path / "plugins" / "oldpaths"; plugin.mkdir(parents=True)
     (plugin / "plugin.yaml").write_text("name: oldpaths\nversion: 0.1\ndescription: t\n")
     (plugin / "__init__.py").write_text("from tools.web_tools import prefers_gateway\ndef register(ctx):\n    pass\n")
-    from hermes_cli.plugins_manifest import PluginManifest
+    from eidolon_cli.plugins_manifest import PluginManifest
     real = PluginManifest(name="oldpaths", version="0.1", description="t", source="user", path=str(plugin))
     mgr = PluginManager(scope_key=str(tmp_path))
     mgr._refresh_plugin_compat_report([real])

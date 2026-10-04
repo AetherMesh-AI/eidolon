@@ -24,27 +24,20 @@ yarn build
 
 This command generates static content into the `build` directory and can be served using any static contents hosting service.
 
-## Deployment
+## Site identity and deployment
 
-> **Inherited upstream deployment instructions.** This site retains the Hermes Agent
-> identity, upstream URL, and NousResearch/hermes-agent deployment configuration in
-> `docusaurus.config.ts`. The recipes below describe that inherited setup, not an
-> authorized Eidolon publication destination. Do not run them as an Eidolon deployment;
-> ownership, destination, and publication authorization must be established separately.
+The site uses Eidolon/AetherMesh branding and local catalogs. `EIDOLON_DOCS_URL`
+sets its deployment origin; the default is `http://localhost:3000`. No public
+Eidolon documentation host is configured or implied. Publishing requires an
+explicitly authorized destination and separate deployment verification.
 
-Using SSH:
+`static/oauth/client-metadata.json` preserves the upstream OAuth client's actual
+identity and registered URLs. It is compatibility data, not an AetherMesh OAuth
+client registration. Do not change its URLs or claim a new OAuth identity just
+because the documentation is hosted elsewhere.
 
-```bash
-USE_SSH=true yarn deploy
-```
-
-Not using SSH:
-
-```bash
-GIT_USER=<Your GitHub username> yarn deploy
-```
-
-If you are using GitHub pages for hosting, this command is a convenient way to build the website and push to the `gh-pages` branch.
+The user-stories page preserves attributed upstream Hermes Agent quotations.
+Those reports are not Eidolon acceptance evidence.
 
 ## Diagram Linting
 

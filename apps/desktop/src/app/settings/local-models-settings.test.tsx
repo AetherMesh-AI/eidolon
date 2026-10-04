@@ -4,13 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { I18nProvider } from '@/i18n'
 import { $localRuntimeJobs } from '@/store/local-runtime-jobs'
-import type { LocalCatalogModel, LocalHardware, LocalModelsStatus, LocalRuntimeJob } from '@/types/hermes'
+import type { LocalCatalogModel, LocalHardware, LocalModelsStatus, LocalRuntimeJob } from '@/types/eidolon'
 
 import { LocalModelsSettings } from './local-models-settings'
 
 // Mock the API layer — the pane's contract is what it RENDERS from these
 // payloads, not transport.
-vi.mock('@/hermes', () => ({
+vi.mock('@/eidolon', () => ({
   activateLocalModel: vi.fn(),
   deleteLocalModel: vi.fn(),
   downloadBrowsedModel: vi.fn(),
@@ -28,7 +28,7 @@ vi.mock('@/hermes', () => ({
   sideloadLocalModel: vi.fn()
 }))
 
-import * as hermes from '@/hermes'
+import * as hermes from '@/eidolon'
 
 const mocked = vi.mocked(hermes)
 

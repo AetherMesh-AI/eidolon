@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
-from hermes_constants import get_hermes_home
+from eidolon_constants import get_eidolon_home
 
 logger = logging.getLogger(__name__)
 
@@ -26,13 +26,13 @@ _LARGE_FILE_BYTES = 500 * 1024 * 1024
 
 def _state_file(name: str) -> Path:
     """``$HERMES_HOME/disk-cleanup/<name>`` — deliberately outside ``$HERMES_HOME/logs/``."""
-    return get_hermes_home() / "disk-cleanup" / name
+    return get_eidolon_home() / "disk-cleanup" / name
 
 
 def is_safe_path(path: Path) -> bool:
     """Accept only paths under HERMES_HOME or ``/tmp/hermes-*`` (rejects /mnt/c etc.)."""
     with contextlib.suppress(ValueError, OSError):
-        path.resolve().relative_to(get_hermes_home())
+        path.resolve().relative_to(get_eidolon_home())
         return True
     parts = path.parts
     return len(parts) >= 3 and parts[1] == "tmp" and parts[2].startswith("hermes-")
@@ -108,7 +108,7 @@ def _protected_cron_paths() -> frozenset:
     ``jobs.json``, ``.tick.lock``) never deleted regardless of stored category (stale tracked.json).
     Never widen to everything under ``cron/output/``: run artifacts there are disposable; only
     wholesale deletion of ``output/`` is fatal."""
-    return frozenset(str(x) for parent in ("cron", "cronjobs") for base in (get_hermes_home() / parent,)
+    return frozenset(str(x) for parent in ("cron", "cronjobs") for base in (get_eidolon_home() / parent,)
                      for x in (base, base / "output", base / "jobs.json", base / ".tick.lock"))
 
 
@@ -247,7 +247,7 @@ def quick() -> Dict[str, Any]:
         else:
             errors.append(err)
             new_tracked.append(item)
-    empty_removed = _sweep_empty_dirs(get_hermes_home())
+    empty_removed = _sweep_empty_dirs(get_eidolon_home())
     save_tracked(new_tracked)
     _log(f"QUICK_SUMMARY: {deleted} files, {empty_removed} dirs, {fmt_size(freed)}")
     return {"deleted": deleted, "empty_dirs": empty_removed, "freed": freed, "errors": errors}
@@ -319,7 +319,7 @@ def guess_category(path: Path) -> Optional[str]:
     if not is_safe_path(path):
         return None
     with contextlib.suppress(ValueError):  # not under HERMES_HOME (/tmp/hermes-*) — name rules only
-        rel = path.resolve().relative_to(get_hermes_home())
+        rel = path.resolve().relative_to(get_eidolon_home())
         top = rel.parts[0] if rel.parts else ""
         if top in _NEVER_TRACK_TOP_LEVEL:
             return None

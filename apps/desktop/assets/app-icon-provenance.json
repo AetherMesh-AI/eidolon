@@ -1,5 +1,4 @@
 {
-
   "source_sha256": "aa9be3d7742c96aafd672e590c445168e45ad54a89e1586e50a6eafb3fba68d9",
   "source_dimensions": [
     1254,
@@ -8,7 +7,7 @@
   "transform": "Pillow LANCZOS proportional resize; entire square source, no crop or redesign",
   "generator": "apps/desktop/scripts/derive-app-icons.py",
   "pillow_version": "12.3.0",
-  "icns": "PNG-backed ICNS with 128 through 1024 pixel representations",
+  "icns": "PNG-backed ICNS with 128 through 1024 pixel representations; original artwork in a 96px transparent inset with antialiased 184px rounded corners",
   "ico": [
     16,
     24,
@@ -17,5 +16,6 @@
     64,
     128,
     256
-  ]
+  ],
+  "web": "Desktop 180px touch icon and dashboard favicon share the original Eidolon artwork"
 }

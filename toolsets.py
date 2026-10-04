@@ -52,7 +52,7 @@ def _ts(description, tools=(), includes=(), **extra):
 
 
 def _bundle(description, extras=()):
-    """A `hermes-*` platform bundle: the shared core tools plus optional platform extras."""
+    """A `eidolon-*` platform bundle: the shared core tools plus optional platform extras."""
     return _ts(description, _HERMES_CORE_TOOLS + list(extras))
 
 
@@ -74,7 +74,7 @@ TOOLSETS = {
         "Search X (Twitter) posts and threads via xAI's built-in x_search Responses "
         "tool. Read-only public X discovery; use the xurl skill for authenticated X "
         "API reads and account actions. Available when xAI credentials are configured "
-        "(SuperGrok OAuth or XAI_API_KEY). Off by default; enable in `hermes tools` → "
+        "(SuperGrok OAuth or XAI_API_KEY). Off by default; enable in `eidolon tools` → "
         "X (Twitter) Search.",
         ["x_search"],
     ),
@@ -85,7 +85,7 @@ TOOLSETS = {
         "Video generation tools. Single ``video_generate`` tool covers text-to-video "
         "(prompt only) and image-to-video (prompt + image_url), plus "
         "reference-to-video. Provider-specific edit/extend workflows may appear as "
-        "separate tools. Configure via ``hermes tools`` → Video Generation.",
+        "separate tools. Configure via ``eidolon tools`` → Video Generation.",
         ["video_generate", "xai_video_edit", "xai_video_extend"],
     ),
     "computer_use": _ts(
@@ -169,7 +169,7 @@ TOOLSETS = {
     # Coding posture, auto-selected in a code workspace (agent/coding_context.py).
     # `desktop_ui` is folded in separately by the GUI gateway for desktop sessions.
     # posture=True: per-session posture, never auto-recovered into platform tool
-    # config (see the non-configurable-toolset recovery loop in hermes_cli/tools_config.py).
+    # config (see the non-configurable-toolset recovery loop in eidolon_cli/tools_config.py).
     "coding": _ts(
         "Coding-focused toolset: files, terminal, search, web docs, skills, todo, "
         "delegate, vision, browser",
@@ -177,61 +177,61 @@ TOOLSETS = {
         posture=True,
     ),
 
-    # Full Hermes toolsets (CLI + messaging platforms). All share the core tools;
-    # there is deliberately no agent-callable send_message tool. hermes-acp is the
+    # Full Eidolon toolsets (CLI + messaging platforms). All share the core tools;
+    # there is deliberately no agent-callable send_message tool. eidolon-acp is the
     # coding posture minus the interactive clarify UI.
-    "hermes-acp": _ts(
+    "eidolon-acp": _ts(
         "Editor integration (VS Code, Zed, JetBrains) — coding-focused tools without "
         "messaging, audio, or clarify UI",
         [t for t in _CODING_TOOLS if t != "clarify"],
     ),
-    "hermes-api-server": _ts(
+    "eidolon-api-server": _ts(
         "OpenAI-compatible API server — full agent tools accessible via HTTP (no "
         "interactive UI tools like clarify or send_message)",
         _core_without("text_to_speech", "clarify", "computer_use", kanban=False),
     ),
-    "hermes-cli": _bundle("Full interactive CLI toolset - all default tools plus cronjob management"),
+    "eidolon-cli": _bundle("Full interactive CLI toolset - all default tools plus cronjob management"),
 
-    # Mirrors hermes-cli; `hermes tools` platform config filters it down and
+    # Mirrors eidolon-cli; `eidolon tools` platform config filters it down and
     # _get_platform_tools() drops _DEFAULT_OFF_TOOLSETS unless user-enabled.
-    "hermes-cron": _bundle("Default cron toolset - same core tools as hermes-cli; gated by `hermes tools`"),
-    "hermes-telegram": _bundle("Telegram bot toolset - full access for personal use (terminal has safety checks)"),
-    "hermes-discord": _bundle(
+    "eidolon-cron": _bundle("Default cron toolset - same core tools as eidolon-cli; gated by `eidolon tools`"),
+    "eidolon-telegram": _bundle("Telegram bot toolset - full access for personal use (terminal has safety checks)"),
+    "eidolon-discord": _bundle(
         "Discord bot toolset - full access (terminal has safety checks via dangerous "
         "command approval)",
         ["discord", "discord_admin"],
     ),
-    "hermes-whatsapp": _bundle("WhatsApp bot toolset - similar to Telegram (personal messaging, more trusted)"),
-    "hermes-slack": _bundle("Slack bot toolset - full access for workspace use (terminal has safety checks)"),
-    "hermes-signal": _bundle("Signal bot toolset - encrypted messaging platform (full access)"),
-    "hermes-bluebubbles": _bundle("BlueBubbles iMessage bot toolset - Apple iMessage via local BlueBubbles server"),
-    "hermes-homeassistant": _bundle("Home Assistant bot toolset - smart home event monitoring and control"),
-    "hermes-email": _bundle("Email bot toolset - interact with Hermes via email (IMAP/SMTP)"),
-    "hermes-mattermost": _bundle("Mattermost bot toolset - self-hosted team messaging (full access)"),
-    "hermes-matrix": _bundle("Matrix bot toolset - decentralized encrypted messaging (full access)"),
-    "hermes-dingtalk": _bundle("DingTalk bot toolset - enterprise messaging platform (full access)"),
-    "hermes-feishu": _bundle("Feishu/Lark bot toolset - enterprise messaging via Feishu/Lark (full access)", _FEISHU_TOOLS),
-    "hermes-weixin": _bundle("Weixin bot toolset - personal WeChat messaging via iLink (full access)"),
-    "hermes-qqbot": _bundle("QQBot toolset - QQ messaging via Official Bot API v2 (full access)"),
-    "hermes-wecom": _bundle("WeCom bot toolset - enterprise WeChat messaging (full access)"),
-    "hermes-wecom-callback": _bundle("WeCom callback toolset - enterprise self-built app messaging (full access)"),
-    "hermes-yuanbao": {
+    "eidolon-whatsapp": _bundle("WhatsApp bot toolset - similar to Telegram (personal messaging, more trusted)"),
+    "eidolon-slack": _bundle("Slack bot toolset - full access for workspace use (terminal has safety checks)"),
+    "eidolon-signal": _bundle("Signal bot toolset - encrypted messaging platform (full access)"),
+    "eidolon-bluebubbles": _bundle("BlueBubbles iMessage bot toolset - Apple iMessage via local BlueBubbles server"),
+    "eidolon-homeassistant": _bundle("Home Assistant bot toolset - smart home event monitoring and control"),
+    "eidolon-email": _bundle("Email bot toolset - interact with Eidolon via email (IMAP/SMTP)"),
+    "eidolon-mattermost": _bundle("Mattermost bot toolset - self-hosted team messaging (full access)"),
+    "eidolon-matrix": _bundle("Matrix bot toolset - decentralized encrypted messaging (full access)"),
+    "eidolon-dingtalk": _bundle("DingTalk bot toolset - enterprise messaging platform (full access)"),
+    "eidolon-feishu": _bundle("Feishu/Lark bot toolset - enterprise messaging via Feishu/Lark (full access)", _FEISHU_TOOLS),
+    "eidolon-weixin": _bundle("Weixin bot toolset - personal WeChat messaging via iLink (full access)"),
+    "eidolon-qqbot": _bundle("QQBot toolset - QQ messaging via Official Bot API v2 (full access)"),
+    "eidolon-wecom": _bundle("WeCom bot toolset - enterprise WeChat messaging (full access)"),
+    "eidolon-wecom-callback": _bundle("WeCom callback toolset - enterprise self-built app messaging (full access)"),
+    "eidolon-yuanbao": {
         "description": "Yuanbao Bot 元宝消息平台工具集 - 群信息、成员查询、私聊、贴纸表情",
         "tools": _HERMES_CORE_TOOLS + _YUANBAO_TOOLS,
         "module": "tools.yuanbao_tools",
         "includes": [],
     },
-    "hermes-sms": _bundle("SMS bot toolset - interact with Hermes via SMS (Twilio)"),
-    "hermes-webhook": _ts("Webhook toolset - receive and process external webhook events", _HERMES_WEBHOOK_SAFE_TOOLS),
-    "hermes-gateway": _ts(
+    "eidolon-sms": _bundle("SMS bot toolset - interact with Eidolon via SMS (Twilio)"),
+    "eidolon-webhook": _ts("Webhook toolset - receive and process external webhook events", _HERMES_WEBHOOK_SAFE_TOOLS),
+    "eidolon-gateway": _ts(
         "Gateway toolset - union of all messaging platform tools",
         [],
         includes=[
-            "hermes-telegram", "hermes-discord", "hermes-whatsapp", "hermes-slack",
-            "hermes-signal", "hermes-bluebubbles", "hermes-homeassistant", "hermes-email",
-            "hermes-sms", "hermes-mattermost", "hermes-matrix", "hermes-dingtalk",
-            "hermes-feishu", "hermes-wecom", "hermes-wecom-callback", "hermes-weixin",
-            "hermes-qqbot", "hermes-webhook", "hermes-yuanbao",
+            "eidolon-telegram", "eidolon-discord", "eidolon-whatsapp", "eidolon-slack",
+            "eidolon-signal", "eidolon-bluebubbles", "eidolon-homeassistant", "eidolon-email",
+            "eidolon-sms", "eidolon-mattermost", "eidolon-matrix", "eidolon-dingtalk",
+            "eidolon-feishu", "eidolon-wecom", "eidolon-wecom-callback", "eidolon-weixin",
+            "eidolon-qqbot", "eidolon-webhook", "eidolon-yuanbao",
         ],
     ),
 }
@@ -259,6 +259,18 @@ def _registry_generation() -> Tuple[int, int]:
     return (id(reg), getattr(reg, "_generation", 0)) if reg is not None else (0, 0)
 
 
+# Stored configurations and external plugins may still use the upstream bundle
+# names. Normalize known built-ins at resolution; list only canonical names.
+_LEGACY_TOOLSET_ALIASES = {
+    "hermes-" + name.removeprefix("eidolon-"): name
+    for name in TOOLSETS if name.startswith("eidolon-")
+}
+
+
+def _canonical_toolset_name(name: str) -> str:
+    return _LEGACY_TOOLSET_ALIASES.get(name, name)
+
+
 def get_toolset(name: str, *, include_registry: bool = True) -> Optional[Dict[str, Any]]:
     """Toolset definition, or None if unknown.
 
@@ -272,6 +284,7 @@ def get_toolset(name: str, *, include_registry: bool = True) -> Optional[Dict[st
     ``_get_platform_tools`` uses False so that a tool registered into a toolset but absent from a platform's
     static composite does not drop the whole toolset from inference. See issue #49622.
     """
+    name = _canonical_toolset_name(name)
     toolset = TOOLSETS.get(name)
     if not include_registry:
         return {**toolset, "tools": list(toolset.get("tools", [])), "includes": list(toolset.get("includes", []))} if toolset else None
@@ -282,6 +295,9 @@ def get_toolset(name: str, *, include_registry: bool = True) -> Optional[Dict[st
 
     if toolset:
         merged_tools = set(toolset.get("tools", [])) | set(registry.get_tool_names_for_toolset(name))
+        for legacy_name, canonical in _LEGACY_TOOLSET_ALIASES.items():
+            if canonical == name:
+                merged_tools.update(registry.get_tool_names_for_toolset(legacy_name))
         # An MCP server named like a built-in toolset ("homeassistant", "browser") registers a bare
         # alias to its `mcp-<name>` toolset; without this union the static entry shadows it and the
         # server's tools never reach the model even though discovery registered them.
@@ -307,7 +323,7 @@ def bundle_non_core_tools(toolset_name: str) -> Set[str]:
     """A bundle's tools minus _HERMES_CORE_TOOLS (one level of includes).
 
     Disabling a `core + extras` bundle must not strip the core tools every other
-    toolset shares. One `includes` pass suffices (only hermes-gateway nests
+    toolset shares. One `includes` pass suffices (only eidolon-gateway nests
     bundles). Unknown names: full resolution minus core.
     """
     core = set(_HERMES_CORE_TOOLS)
@@ -327,11 +343,12 @@ _resolve_toolset_memo: Dict[Tuple[str, bool, int, int], List[str]] = {}
 
 
 def _plugin_platform_bundle(name: str) -> List[str]:
-    """Implicit `hermes-<platform>` bundle for a registered plugin platform: core
+    """Implicit `eidolon-<platform>` bundle for a registered plugin platform: core
     tools plus whatever the plugin registered under the platform name. [] otherwise."""
-    if not name.startswith("hermes-"):
+    prefix = next((p for p in ("eidolon-", "hermes-") if name.startswith(p)), None)
+    if prefix is None:
         return []
-    platform_name = name[len("hermes-"):]
+    platform_name = name[len(prefix):]
     try:
         from gateway.platform_registry import platform_registry
         if not platform_registry.is_registered(platform_name):
@@ -431,7 +448,7 @@ def get_toolset_names() -> List[str]:
 
 
 def validate_toolset(name: str) -> bool:
-    return (name in {"all", "*"} or name in TOOLSETS
+    return (name in {"all", "*"} or _canonical_toolset_name(name) in TOOLSETS
             or name in _get_plugin_toolset_names() or name in _get_registry_toolset_aliases())
 
 

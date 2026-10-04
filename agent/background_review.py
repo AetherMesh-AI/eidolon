@@ -168,7 +168,7 @@ def _background_review_task_config(task_cfg: Optional[Dict[str, Any]] = None) ->
     if task_cfg is not None:
         return task_cfg if isinstance(task_cfg, dict) else {}
     try:
-        from hermes_cli.config import load_config_readonly
+        from eidolon_cli.config import load_config_readonly
         return _task_block(load_config_readonly())
     except Exception:
         return {}
@@ -188,7 +188,7 @@ def load_background_review_settings() -> tuple[bool, Dict[str, Any]]:
     """Single config read -> ``(enabled, task_cfg)``. Fail-open (``enabled=True``) so a broken
     config never silently disables reviews — but WARN so the cost is visible."""
     try:
-        from hermes_cli.config import load_config_readonly
+        from eidolon_cli.config import load_config_readonly
         from utils import is_truthy_value
         task = _task_block(load_config_readonly())
         return is_truthy_value(task.get("enabled"), default=True), task
@@ -226,7 +226,7 @@ def _resolve_review_runtime(agent: Any, task_cfg: Optional[Dict[str, Any]] = Non
     ):
         return parent
     try:
-        from hermes_cli.runtime_provider import resolve_runtime_provider
+        from eidolon_cli.runtime_provider import resolve_runtime_provider
         rp = resolve_runtime_provider(
             requested=task_provider, target_model=task_model,
             explicit_api_key=task_api_key, explicit_base_url=task_base_url,
@@ -432,8 +432,8 @@ _SKILL_REVIEW_PROMPT = (
     "If you notice two existing skills that overlap, note it in your reply — the background "
     "curator handles consolidation at scale.\n\n"
     "Protected skills (DO NOT edit these):\n"
-    "  • Bundled skills (shipped with Hermes, e.g. 'hermes-agent').\n"
-    "  • Hub-installed skills (installed via 'hermes skills install').\n"
+    "  • Bundled skills (shipped with Eidolon, e.g. 'hermes-agent').\n"
+    "  • Hub-installed skills (installed via 'eidolon skills install').\n"
     "  • Skills in skills.external_dirs (externally owned).\n"
     "  • PINNED skills (marked via 'hermes curator pin'). You are an autonomous no-user-present "
     "actor, so pin blocks your writes too — content updates included. Only the user, in a "
@@ -499,8 +499,8 @@ _COMBINED_REVIEW_PROMPT = (
     "If you notice overlapping existing skills, mention it — the background curator handles "
     "consolidation.\n\n"
     "Protected skills (DO NOT edit these):\n"
-    "  • Bundled skills (shipped with Hermes, e.g. 'hermes-agent').\n"
-    "  • Hub-installed skills (installed via 'hermes skills install').\n"
+    "  • Bundled skills (shipped with Eidolon, e.g. 'hermes-agent').\n"
+    "  • Hub-installed skills (installed via 'eidolon skills install').\n"
     "  • Skills in skills.external_dirs (externally owned).\n"
     "  • PINNED skills (marked via 'hermes curator pin'). Pin blocks autonomous writes entirely — "
     "content updates included — because no user is present to consent. Only a foreground session "
@@ -999,7 +999,7 @@ def _run_review_fork(
     so the caller's error path still sees usage and the fork to clean up."""
     st.review_agent, _rt, _routed = build_cache_parity_fork(agent, task_cfg, max_iterations=_REVIEW_MAX_ITERATIONS)
     _track_review_fork(agent, st.review_agent, register=True)
-    from hermes_cli.plugins import set_thread_tool_whitelist, clear_thread_tool_whitelist
+    from eidolon_cli.plugins import set_thread_tool_whitelist, clear_thread_tool_whitelist
     review_whitelist, configured_extra_tools = _review_tool_whitelist(st.review_agent, task_cfg)
     extra_list = ", ".join(sorted(configured_extra_tools))
     deny_extra = f" Configured extra tools also allowed: {extra_list}." if configured_extra_tools else ""
@@ -1068,12 +1068,12 @@ def _run_review_in_thread(
         finish_background_review_run(agent, review_run)
         return
     _set_thread_approval_callback(_bg_review_auto_deny)
-    # A client that can't carry Hermes tool calls back would spawn a fork that cannot write
+    # A client that can't carry Eidolon tool calls back would spawn a fork that cannot write
     # anything. Checked BEFORE the thread-scoped silence so the warning is not swallowed; cheap
     # check first so the normal path never resolves the runtime twice.
     if not _parent_can_emit_tool_calls(agent) and not _resolve_review_runtime(agent, task_cfg).get("routed"):
         logger.warning(
-            "Background review skipped: provider %r cannot emit Hermes tool calls, "
+            "Background review skipped: provider %r cannot emit Eidolon tool calls, "
             "so the review fork could not write memories or skills. Set "
             "auxiliary.background_review.{provider,model} to route the review to a normal model.",
             getattr(agent, "provider", "?"),

@@ -1,5 +1,5 @@
-import type { GatewayWsUrlResult } from '@hermes/shared'
-import type { TranslucencyState } from '@hermes/shared/translucency'
+import type { GatewayWsUrlResult } from '@aethermesh/shared'
+import type { TranslucencyState } from '@aethermesh/shared/translucency'
 
 import type { PoolLimits } from '../electron/pool-limits'
 

@@ -22,7 +22,7 @@ import pytest
 
 import plugins.memory.honcho.client as client_mod
 import plugins.memory.honcho.client_cache as client_cache_mod
-from hermes_constants import reset_hermes_home_override, set_hermes_home_override
+from eidolon_constants import reset_eidolon_home_override, set_eidolon_home_override
 from plugins.memory.honcho.client import (
     HonchoClientConfig,
     get_honcho_client,
@@ -79,19 +79,19 @@ class TestTwoProfileIsolation:
         home_a = _make_profile(tmp_path, "profiles/a", "tenant-a", "key-a")
         home_b = _make_profile(tmp_path, "profiles/b", "tenant-b", "key-b")
 
-        token = set_hermes_home_override(home_a)
+        token = set_eidolon_home_override(home_a)
         try:
             cfg_a = HonchoClientConfig.from_global_config()
             client_a = get_honcho_client(cfg_a)
         finally:
-            reset_hermes_home_override(token)
+            reset_eidolon_home_override(token)
 
-        token = set_hermes_home_override(home_b)
+        token = set_eidolon_home_override(home_b)
         try:
             cfg_b = HonchoClientConfig.from_global_config()
             client_b = get_honcho_client(cfg_b)
         finally:
-            reset_hermes_home_override(token)
+            reset_eidolon_home_override(token)
 
         assert client_a is not client_b
         assert client_a.kwargs["workspace_id"] == "tenant-a"
@@ -102,14 +102,14 @@ class TestTwoProfileIsolation:
     def test_same_profile_reuses_client(self, tmp_path, fake_honcho):
         home_a = _make_profile(tmp_path, "profiles/a", "tenant-a", "key-a")
 
-        token = set_hermes_home_override(home_a)
+        token = set_eidolon_home_override(home_a)
         try:
             cfg1 = HonchoClientConfig.from_global_config()
             c1 = get_honcho_client(cfg1)
             cfg2 = HonchoClientConfig.from_global_config()
             c2 = get_honcho_client(cfg2)
         finally:
-            reset_hermes_home_override(token)
+            reset_eidolon_home_override(token)
 
         assert c1 is c2
         assert len(fake_honcho.instances) == 1
@@ -124,19 +124,19 @@ class TestBackgroundThreadIsolation:
         home_b = _make_profile(tmp_path, "profiles/b", "tenant-b", "key-b")
 
         # Default-profile client exists first (the "pinning" client).
-        token = set_hermes_home_override(home_a)
+        token = set_eidolon_home_override(home_a)
         try:
             cfg_a = HonchoClientConfig.from_global_config()
             get_honcho_client(cfg_a)
         finally:
-            reset_hermes_home_override(token)
+            reset_eidolon_home_override(token)
 
         # Profile B's config resolved inside its scope (as initialize() does).
-        token = set_hermes_home_override(home_b)
+        token = set_eidolon_home_override(home_b)
         try:
             cfg_b = HonchoClientConfig.from_global_config()
         finally:
-            reset_hermes_home_override(token)
+            reset_eidolon_home_override(token)
 
         # A bare thread (empty context — no profile override visible)
         # acquires via the bound config, as manager.honcho now does.
@@ -154,7 +154,7 @@ class TestBackgroundThreadIsolation:
 
     def test_spawn_context_thread_sees_profile_override(self, tmp_path):
         """spawn_context_thread must carry the caller's HERMES_HOME override."""
-        from hermes_constants import get_hermes_home
+        from eidolon_constants import get_eidolon_home
         from plugins.memory.honcho.client import spawn_context_thread
 
         home_b = tmp_path / "profiles" / "b"
@@ -162,37 +162,37 @@ class TestBackgroundThreadIsolation:
         seen: dict = {}
 
         def _probe():
-            seen["home"] = get_hermes_home()
+            seen["home"] = get_eidolon_home()
 
-        token = set_hermes_home_override(home_b)
+        token = set_eidolon_home_override(home_b)
         try:
             t = spawn_context_thread(_probe, name="probe")
             t.start()
             t.join(timeout=10)
         finally:
-            reset_hermes_home_override(token)
+            reset_eidolon_home_override(token)
 
         assert seen["home"] == home_b
 
     def test_plain_thread_does_not_see_override(self, tmp_path):
         """Control: documents WHY propagation is needed — a plain thread
         resolves the process home, not the caller's profile override."""
-        from hermes_constants import get_hermes_home
+        from eidolon_constants import get_eidolon_home
 
         home_b = tmp_path / "profiles" / "b"
         home_b.mkdir(parents=True)
         seen: dict = {}
 
         def _probe():
-            seen["home"] = get_hermes_home()
+            seen["home"] = get_eidolon_home()
 
-        token = set_hermes_home_override(home_b)
+        token = set_eidolon_home_override(home_b)
         try:
             t = threading.Thread(target=_probe)
             t.start()
             t.join(timeout=10)
         finally:
-            reset_hermes_home_override(token)
+            reset_eidolon_home_override(token)
 
         assert seen["home"] != home_b
 
@@ -204,7 +204,7 @@ class TestCredentialIdentity:
         provenance-only cache key cannot close."""
         home = _make_profile(tmp_path, "profiles/a", "tenant-a", "key-account-1")
 
-        token = set_hermes_home_override(home)
+        token = set_eidolon_home_override(home)
         try:
             cfg1 = HonchoClientConfig.from_global_config()
             c1 = get_honcho_client(cfg1)
@@ -216,7 +216,7 @@ class TestCredentialIdentity:
             cfg2 = HonchoClientConfig.from_global_config()
             c2 = get_honcho_client(cfg2)
         finally:
-            reset_hermes_home_override(token)
+            reset_eidolon_home_override(token)
 
         assert c1 is not c2
         assert c2.kwargs["api_key"] == "key-account-2"
@@ -243,7 +243,7 @@ class TestCredentialIdentity:
                                   "oauth": oauth_block}},
         }))
 
-        token = set_hermes_home_override(home)
+        token = set_eidolon_home_override(home)
         try:
             cfg1 = HonchoClientConfig.from_global_config()
             fp1 = client_cache_mod._credential_fingerprint(cfg1)
@@ -262,7 +262,7 @@ class TestCredentialIdentity:
             cfg2 = HonchoClientConfig.from_global_config()
             fp2 = client_cache_mod._credential_fingerprint(cfg2)
         finally:
-            reset_hermes_home_override(token)
+            reset_eidolon_home_override(token)
 
         assert fp1 == fp_rotated, "access-token rotation must not change identity"
         assert fp1 != fp2, "re-auth must change identity"
@@ -271,7 +271,7 @@ class TestCredentialIdentity:
         """The old singleton had an explicit timeout-staleness check; with
         timeout in the key, a change produces a new identity + eviction."""
         home = _make_profile(tmp_path, "profiles/a", "w", "k")
-        token = set_hermes_home_override(home)
+        token = set_eidolon_home_override(home)
         try:
             cfg1 = HonchoClientConfig.from_global_config()
             c1 = get_honcho_client(cfg1)
@@ -282,7 +282,7 @@ class TestCredentialIdentity:
             cfg2 = HonchoClientConfig.from_global_config()
             c2 = get_honcho_client(cfg2)
         finally:
-            reset_hermes_home_override(token)
+            reset_eidolon_home_override(token)
 
         assert c1 is not c2
         assert c2.kwargs["timeout"] == 77.0
@@ -291,11 +291,11 @@ class TestCredentialIdentity:
 class TestProvenance:
     def test_from_global_config_captures_provenance(self, tmp_path):
         home = _make_profile(tmp_path, "profiles/a", "w", "k")
-        token = set_hermes_home_override(home)
+        token = set_eidolon_home_override(home)
         try:
             cfg = HonchoClientConfig.from_global_config()
         finally:
-            reset_hermes_home_override(token)
+            reset_eidolon_home_override(token)
 
         assert cfg.config_path == home / "honcho.json"
         assert cfg.hermes_home == home
@@ -305,11 +305,11 @@ class TestProvenance:
         """The captured path must not drift when read outside the profile
         scope (the daemon-thread situation)."""
         home = _make_profile(tmp_path, "profiles/a", "w", "k")
-        token = set_hermes_home_override(home)
+        token = set_eidolon_home_override(home)
         try:
             cfg = HonchoClientConfig.from_global_config()
         finally:
-            reset_hermes_home_override(token)
+            reset_eidolon_home_override(token)
 
         # Now OUTSIDE the scope — bound path still points at profile a.
         assert cfg.bound_config_path() == home / "honcho.json"

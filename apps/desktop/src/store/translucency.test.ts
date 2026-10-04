@@ -10,7 +10,7 @@ vi.hoisted(() => {
   Object.defineProperty(globalThis.navigator, 'platform', { configurable: true, value: 'MacIntel' })
 })
 
-import { DEFAULT_GLASS_MATERIAL, DEFAULT_GLASS_SCOPE } from '@hermes/shared/translucency'
+import { DEFAULT_GLASS_MATERIAL, DEFAULT_GLASS_SCOPE } from '@aethermesh/shared/translucency'
 
 import { onPersistenceEvent, type PersistenceEvent } from '@/lib/storage'
 

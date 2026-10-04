@@ -11,7 +11,7 @@ import {
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog'
-import { saveHermesConfigRecord } from '@/hermes'
+import { saveHermesConfigRecord } from '@/eidolon'
 import { useI18n } from '@/i18n'
 import { Check, Globe } from '@/lib/icons'
 import { notify, notifyError } from '@/store/notifications'

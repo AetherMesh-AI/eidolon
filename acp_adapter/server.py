@@ -1,4 +1,4 @@
-"""ACP agent server — exposes Hermes Agent via the Agent Client Protocol."""
+"""ACP agent server — exposes Eidolon Agent via the Agent Client Protocol."""
 
 from __future__ import annotations
 
@@ -224,7 +224,7 @@ class _TurnCallbacks:
 
 
 class HermesACPAgent(SlashCommandsMixin, acp.Agent):
-    """ACP Agent implementation wrapping Hermes AIAgent."""
+    """ACP Agent implementation wrapping Eidolon AIAgent."""
 
     _EDIT_APPROVAL_POLICY_CONFIG_ID = "edit_approval_policy"
     _EDIT_APPROVAL_POLICY_DEFAULT = "ask"
@@ -289,8 +289,8 @@ class HermesACPAgent(SlashCommandsMixin, acp.Agent):
         return policy, state.cwd
 
     def _build_model_state(self, state: SessionState) -> SessionModelState | None:
-        """Authenticated providers + models, from the shared Hermes inventory (same substrate
-        as ``hermes model``/TUI/dashboard) so the selector isn't just the current curated list."""
+        """Authenticated providers + models, from the shared Eidolon inventory (same substrate
+        as ``eidolon model``/TUI/dashboard) so the selector isn't just the current curated list."""
         model = str(state.model or getattr(state.agent, "model", "") or "").strip()
         provider = getattr(state.agent, "provider", None) or detect_provider() or "openrouter"
         try:
@@ -310,7 +310,7 @@ class HermesACPAgent(SlashCommandsMixin, acp.Agent):
         """Resolve ``provider:model`` input into the provider and normalized model id."""
         target_provider, new_model = current_provider, raw_model.strip()
         try:
-            from hermes_cli.models import detect_provider_for_model, parse_model_input
+            from eidolon_cli.models import detect_provider_for_model, parse_model_input
 
             target_provider, new_model = parse_model_input(new_model, current_provider)
             if target_provider == current_provider:
@@ -451,7 +451,7 @@ class HermesACPAgent(SlashCommandsMixin, acp.Agent):
         (``agent/turn_context.py``). No-op if discovery finished, join timed out, registry
         unchanged, or session closed."""
         try:
-            from hermes_cli.mcp_startup import mcp_discovery_in_flight
+            from eidolon_cli.mcp_startup import mcp_discovery_in_flight
         except Exception:
             return
         if not mcp_discovery_in_flight():
@@ -460,7 +460,7 @@ class HermesACPAgent(SlashCommandsMixin, acp.Agent):
 
         def _wait_then_refresh() -> None:
             try:
-                from hermes_cli.mcp_startup import join_mcp_discovery
+                from eidolon_cli.mcp_startup import join_mcp_discovery
 
                 if not join_mcp_discovery(timeout=30.0):
                     return
@@ -724,7 +724,7 @@ class HermesACPAgent(SlashCommandsMixin, acp.Agent):
         with contextlib.ExitStack() as stack:
             # HERMES_SESSION_KEY scopes per-session caches (interactive sudo password) to this
             # session, not the reused thread. ``cwd`` pins what the system prompt reports as the
-            # working directory — otherwise it advertises the Hermes workspace while tools are
+            # working directory — otherwise it advertises the Eidolon workspace while tools are
             # rooted at the client's project and edits land outside it. ``cron_session=""`` masks
             # any leaked process-global HERMES_CRON_SESSION.
             def _session_context() -> Callable[[], None]:
@@ -774,7 +774,7 @@ class HermesACPAgent(SlashCommandsMixin, acp.Agent):
                 return {"final_response": f"Error: {e}", "messages": state.history}
 
     async def prompt(self, prompt: list[PromptBlock], session_id: str, **kwargs: Any) -> PromptResponse:
-        """Run Hermes on the user's prompt and stream events back to the editor."""
+        """Run Eidolon on the user's prompt and stream events back to the editor."""
         state = self.session_manager.get_session(session_id)
         if state is None:
             logger.error("prompt: session %s not found", session_id)
@@ -955,7 +955,7 @@ class HermesACPAgent(SlashCommandsMixin, acp.Agent):
     async def set_config_option(
         self, config_id: str, session_id: str, value: str, **kwargs: Any
     ) -> SetSessionConfigOptionResponse | None:
-        """Accept ACP config option updates even when Hermes has no typed ACP config surface yet."""
+        """Accept ACP config option updates even when Eidolon has no typed ACP config surface yet."""
         state = self.session_manager.get_session(session_id)
         if state is None:
             logger.warning("Session %s: config update requested for missing session", session_id)
@@ -1005,7 +1005,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

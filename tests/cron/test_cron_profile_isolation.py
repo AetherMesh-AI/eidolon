@@ -23,10 +23,10 @@ from pathlib import Path
 def _set_profile_env(monkeypatch, root: Path, profile_home: Path) -> None:
     """Pretend the platform default root is ``root`` and the active
     HERMES_HOME is a profile under it (``<root>/profiles/<name>``)."""
-    import hermes_constants
+    import eidolon_constants
 
     monkeypatch.setattr(
-        hermes_constants, "_get_platform_default_hermes_home", lambda: root
+        eidolon_constants, "_get_platform_default_eidolon_home", lambda: root
     )
     monkeypatch.setenv("HERMES_HOME", str(profile_home))
 
@@ -40,13 +40,13 @@ def test_cron_storage_anchors_at_profile_home(tmp_path, monkeypatch):
 
     _set_profile_env(monkeypatch, root, profile_home)
 
-    import hermes_constants
+    import eidolon_constants
 
     # Sanity: the override is wired the way the gateway sees it.
-    assert hermes_constants.get_hermes_home().resolve() == profile_home.resolve()
-    assert hermes_constants.get_default_hermes_root().resolve() == root.resolve()
+    assert eidolon_constants.get_eidolon_home().resolve() == profile_home.resolve()
+    assert eidolon_constants.get_default_hermes_root().resolve() == root.resolve()
 
-    # cron/jobs.py computes HERMES_DIR from get_hermes_home() at import, so a
+    # cron/jobs.py computes HERMES_DIR from get_eidolon_home() at import, so a
     # fresh import under this env anchors the store at <profile>/cron.
     import cron.jobs as jobs
 

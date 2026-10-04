@@ -33,7 +33,7 @@ Camofox 在本 PR 中暂不支持；计划在 `jo-inc/camofox-browser` 提交上
 
 ### CDPSupervisor
 
-每个 Hermes `task_id` 对应一个在后台守护线程中运行的 `asyncio.Task`。持有一个到后端 CDP 端点的持久 WebSocket 连接。维护：
+每个 Eidolon `task_id` 对应一个在后台守护线程中运行的 `asyncio.Task`。持有一个到后端 CDP 端点的持久 WebSocket 连接。维护：
 
 - **对话框队列** — `List[PendingDialog]`，包含 `{id, type, message, default_prompt, session_id, opened_at}`
 - **框架树** — `Dict[frame_id, FrameInfo]`，包含父子关系、URL、origin，以及是否为跨域子会话
@@ -144,7 +144,7 @@ browser_dialog(action, prompt_text=None, dialog_id=None)
   - `browser_snapshot`（约第 1536 行）：将 supervisor 状态合并到返回载荷
   - `/browser connect` 处理器：以新端点重启 supervisor
   - `_cleanup_browser_session` 中的会话拆除钩子
-- `hermes_cli/config.py` — 向 `DEFAULT_CONFIG` 添加 `browser.dialog_policy` 和 `browser.dialog_timeout_s`
+- `eidolon_cli/config.py` — 向 `DEFAULT_CONFIG` 添加 `browser.dialog_policy` 和 `browser.dialog_timeout_s`
 - 文档：`website/docs/user-guide/features/browser.md`、`website/docs/reference/tools-reference.md`、`website/docs/reference/toolsets-reference.md`
 
 ## 非目标

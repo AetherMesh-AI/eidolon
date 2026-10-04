@@ -6,7 +6,7 @@ Owns everything that must be uniform across backends: registration
 order, else registration order; first claim wins), ``override_existing``
 semantics (may beat .env/shell, never another source, never a protected var),
 cross-source conflict warnings, and provenance. Startup entry point:
-:func:`apply_all` via ``hermes_cli.env_loader``; plugins register through
+:func:`apply_all` via ``eidolon_cli.env_loader``; plugins register through
 ``PluginContext.register_secret_source()`` → :func:`register_source`.
 """
 
@@ -24,7 +24,7 @@ from agent.secret_sources.base import (
     SECRET_SOURCE_API_VERSION, ErrorKind, FetchResult, SecretSource, is_valid_env_name,
     reset_source_environment, set_source_environment,
 )
-from hermes_constants import hermes_home_key
+from eidolon_constants import hermes_home_key
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +93,7 @@ def _validate_source(source: SecretSource) -> Optional[str]:
         return f"Ignoring secret source with invalid name {name!r}"
     if source.api_version != SECRET_SOURCE_API_VERSION:
         return (f"Ignoring secret source '{name}': built against secret-source API "
-                f"v{source.api_version}, this Hermes speaks v{SECRET_SOURCE_API_VERSION}")
+                f"v{source.api_version}, this Eidolon speaks v{SECRET_SOURCE_API_VERSION}")
     if source.shape not in ("mapped", "bulk"):
         return f"Ignoring secret source '{name}': shape must be 'mapped' or 'bulk', got {source.shape!r}"
     return None

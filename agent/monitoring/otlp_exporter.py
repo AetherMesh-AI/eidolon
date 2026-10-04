@@ -137,7 +137,7 @@ def _safe_resource_attributes(raw: Any) -> Dict[str, str]:
 def _runtime_resource_attributes(config: Dict[str, Any], *, telemetry_scope: str) -> Dict[str, str]:
     """Build the safe OTLP resource shared by spans, metrics and diagnostic logs."""
     attrs = _safe_resource_attributes(_monitoring_section(config, "gateway_health_export").get("resource_attributes"))
-    attrs["service.name"] = "hermes-gateway"
+    attrs["service.name"] = "eidolon-gateway"
     attrs["service.instance.id"] = _safe_instance_id(_install_id(config))
     attrs["telemetry.scope"] = telemetry_scope
     return attrs

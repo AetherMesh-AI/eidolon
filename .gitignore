@@ -1,6 +1,6 @@
 .DS_Store
 # Generated at build/editable-install time, never per-commit bookkeeping.
-/hermes_cli/_build_identity.json
+/eidolon_cli/_build_identity.json
 /venv/
 /venv.old/
 /venv.stale.runtime-*/
@@ -36,8 +36,8 @@ logs/
 data/
 # Bundled community plugin index seed (shipped as package data) — the bare
 # `data/` pattern above would otherwise swallow it.
-!hermes_cli/data/
-!hermes_cli/data/plugin_index.json
+!eidolon_cli/data/
+!eidolon_cli/data/plugin_index.json
 .pytest_cache/
 test_durations.json
 .pytest-cache/
@@ -83,7 +83,7 @@ ignored/
 environments/benchmarks/evals/
 
 # Web UI build output
-hermes_cli/web_dist/
+eidolon_cli/web_dist/
 # Cross-process web UI build lock (flock target, always empty)
 .web_ui_build.lock
 apps/desktop/build/
@@ -150,8 +150,8 @@ models-dev-upstream/
 opencode.json
 config/mcporter.json
 
-hermes_cli/tui_dist/*
-hermes_cli/scripts/
+eidolon_cli/tui_dist/*
+eidolon_cli/scripts/
 docs/superpowers/*
 # Working directory for the Hermes Agent's session state (~/.hermes/ at runtime;
 # also created in-repo when an agent operates in this checkout). Plans, audit
@@ -222,3 +222,13 @@ native/fts5_cjk/*.so
 
 # Disposable profile created by scripts/probe_active_session_exclusivity.py
 .probe-home/
+
+# Eidolon runtime state (legacy names above remain ignored during upgrades).
+.eidolon/
+.eidolon-bootstrap-complete
+.eidolon-runtime/
+.eidolon-docker/
+.eidolon-sandbox/
+.eidolon-sandbox-e2e*/
+eidolon_agent.egg-info/
+compose.eidolon.local.yml

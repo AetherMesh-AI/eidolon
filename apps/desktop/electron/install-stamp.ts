@@ -1,5 +1,9 @@
 import fs from 'node:fs'
 
+import desktopPackage from '../package.json'
+
+const RELEASE_VERSION = desktopPackage.version
+
 const INSTALL_STAMP_SCHEMA_VERSION = 1
 
 type VersionStamp = {
@@ -17,10 +21,10 @@ function verifiedVersion(stamp: VersionStamp | null): boolean {
       !/^[0-9a-f]{40}$/.test(stamp.baseCommit || '') || /^0+$/.test(stamp.baseCommit || '') ||
       stamp.shortCommit !== stamp.commit?.slice(0, 12) ||
       !Number.isSafeInteger(stamp.distance) || (stamp.distance ?? -1) < 0 ||
-      ![true, false, null].includes(stamp.dirty as boolean | null)) return false
+      ![true, false, null].includes(stamp.dirty as boolean | null)) {return false}
   const base = /^alpha-v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.exec(stamp.baseTag || '')
   return !!base && (stamp.distance === 0) === (stamp.commit === stamp.baseCommit) &&
-    stamp.version === `${base[1]}.${base[2]}.${Number(base[3]) + stamp.distance!}`
+    stamp.version === RELEASE_VERSION
 }
 
 /** Packaged location first, dev build second; unknown dirtiness stays unknown. */
@@ -30,7 +34,7 @@ export function readInstallStampFromPaths(candidates: string[], warn = console.w
       const parsed = JSON.parse(fs.readFileSync(p, 'utf8'))
       if (parsed && typeof parsed === 'object' && typeof parsed.commit === 'string' && parsed.commit.length >= 7) {
         if (parsed.schemaVersion !== INSTALL_STAMP_SCHEMA_VERSION) {
-          warn(`[hermes] install-stamp.json schemaVersion ${parsed.schemaVersion} != expected ${INSTALL_STAMP_SCHEMA_VERSION}; ignoring`)
+          warn(`[eidolon] install-stamp.json schemaVersion ${parsed.schemaVersion} != expected ${INSTALL_STAMP_SCHEMA_VERSION}; ignoring`)
           continue
         }
         return Object.freeze({
@@ -54,7 +58,7 @@ export function readInstallStampFromPaths(candidates: string[], warn = console.w
         })
       }
     } catch (e) {
-      warn(`[hermes] install-stamp.json found at ${p} , but parsing failed with ${e}`)
+      warn(`[eidolon] install-stamp.json found at ${p} , but parsing failed with ${e}`)
     }
   }
   return null
@@ -71,5 +75,5 @@ export function formatInstallVersion(stamp: VersionStamp | null) {
   const exact = typeof commit === 'string' && /^[0-9a-f]{40}$/.test(commit) && !/^0+$/.test(commit)
   const dirty = stamp?.dirty === true ? ' (dirty source)' : stamp?.dirty === false ? '' : ' (source status unknown)'
   const verified = verifiedVersion(stamp)
-  return `${verified ? stamp!.version : '0.1.1'} alpha · ${exact ? commit.slice(0, 12) : 'unknown commit'}${dirty}${verified ? '' : ' (version unavailable/unverified)'}`
+  return `${verified ? stamp!.version : RELEASE_VERSION} · ${exact ? commit.slice(0, 12) : 'unknown commit'}${dirty}${verified ? '' : ' (build provenance unverified)'}`
 }

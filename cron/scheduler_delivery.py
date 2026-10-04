@@ -20,7 +20,7 @@ import sys
 from dataclasses import dataclass
 from typing import Any, List, Optional
 
-from hermes_cli._subprocess_compat import windows_hide_flags
+from eidolon_cli._subprocess_compat import windows_hide_flags
 
 # Log-record parity with the origin module.
 logger = logging.getLogger("cron.scheduler")
@@ -214,7 +214,7 @@ def _open_continuable_cron_thread(job: dict, adapter, chat_id: str, loop) -> Opt
     create_thread = getattr(adapter, "create_handoff_thread", None)
     if not callable(create_thread) or loop is None:
         return None
-    thread_name = f"Hermes — {job.get('name') or job.get('id', 'cron')}"
+    thread_name = f"Eidolon — {job.get('name') or job.get('id', 'cron')}"
     try:
         from agent.async_utils import safe_schedule_threadsafe
         coro = create_thread(str(chat_id), thread_name)
@@ -359,7 +359,7 @@ def _cron_job_origin_log_suffix(job: dict) -> str:
 def _plugin_cron_env_var(platform_name: str) -> str:
     """Cron home-channel env var registered by a plugin ``PlatformEntry.cron_deliver_env_var``."""
     with contextlib.suppress(Exception):
-        from hermes_cli.plugins import discover_plugins
+        from eidolon_cli.plugins import discover_plugins
         discover_plugins()  # idempotent
         from gateway.platform_registry import platform_registry
         entry = platform_registry.get(platform_name.lower())
@@ -469,7 +469,7 @@ def _iter_home_target_platforms():
     """Iterate built-in + plugin platform names that expose a home channel."""
     yield from _HOME_TARGET_ENV_VARS
     with contextlib.suppress(Exception):
-        from hermes_cli.plugins import discover_plugins
+        from eidolon_cli.plugins import discover_plugins
         discover_plugins()  # idempotent
         from gateway.platform_registry import platform_registry
         for entry in platform_registry.plugin_entries():
@@ -516,7 +516,7 @@ def cron_delivery_targets() -> list[dict]:
 
     # Bot Chat targets: one per local profile (machine-local; no gateway config or home channel).
     try:
-        from hermes_cli.profiles import list_profile_names
+        from eidolon_cli.profiles import list_profile_names
         for profile_name in list_profile_names():
             targets.append({
                 "id": f"{BOT_CHAT_PLATFORM}:{profile_name}",
@@ -652,8 +652,8 @@ def _deliver_to_bot_chat(job: dict, content: str, profile: str) -> Optional[str]
     import json
     import tempfile
     import uuid
-    from hermes_constants import get_hermes_home
-    from hermes_cli.profiles import get_profile_dir
+    from eidolon_constants import get_eidolon_home
+    from eidolon_cli.profiles import get_profile_dir
     from tools.bot_live_delivery import (
         deliver_to_live_owner, find_canonical_live_owner, read_delivery_result,
     )
@@ -666,7 +666,7 @@ def _deliver_to_bot_chat(job: dict, content: str, profile: str) -> Optional[str]
         f"for the chat.]\n\n{content}"
     )
     try:
-        source_home = get_hermes_home().resolve()
+        source_home = get_eidolon_home().resolve()
         home = (get_profile_dir(profile) if profile else source_home).resolve()
         # run_one_job/claim_fire attach the durable execution id before delivery. The
         # transient fallback supports direct helper callers, never deduping recurring
@@ -703,18 +703,18 @@ def _deliver_to_bot_chat(job: dict, content: str, profile: str) -> Optional[str]
         # Discovery/admission uncertainty must never open a second-writer fallback.
         return f"bot-chat delivery to profile '{profile_label}' unverified: {exc}"
 
-    hermes_bin = shutil.which("hermes")
+    hermes_bin = shutil.which("eidolon")
     if hermes_bin:
         argv = [hermes_bin]
     else:
         try:
             import importlib.util as _ilu
-            found = _ilu.find_spec("hermes_cli") is not None
+            found = _ilu.find_spec("eidolon_cli") is not None
         except Exception:
             found = False
         if not found:
             return "bot-chat delivery failed: hermes CLI not resolvable"
-        argv = [sys.executable, "-m", "hermes_cli.main"]
+        argv = [sys.executable, "-m", "eidolon_cli.main"]
 
     def _fail(msg: str, **log_kwargs) -> str:
         logger.warning("Job '%s': %s", job_id, msg, **log_kwargs)
@@ -807,7 +807,7 @@ def _resolve_bot_chat_target(job: dict, profile_arg: str) -> Optional[dict]:
     if not profile_arg:
         return {"platform": BOT_CHAT_PLATFORM, "chat_id": "", "thread_id": None}
     try:
-        from hermes_cli.profiles import normalize_profile_name, profile_exists
+        from eidolon_cli.profiles import normalize_profile_name, profile_exists
         canon = normalize_profile_name(profile_arg)
         if not profile_exists(canon):
             logger.warning(
@@ -1665,7 +1665,7 @@ def _deliver_result(
     # Restart-safe workers have no live gateway adapters: hand the send back through a durable
     # queue so the current or replacement gateway performs it with relay/E2EE parity. The execution
     # id is the idempotency key (the queue never retries an uncertain claimed send). Match on THIS
-    # job's own attempt: a worker's script may dispatch another job in-process (`hermes cron run`),
+    # job's own attempt: a worker's script may dispatch another job in-process (`eidolon cron run`),
     # and that nested delivery must not be keyed under the outer execution id.
     external_execution = os.environ.get("_HERMES_CRON_EXTERNAL_WORKER", "")
     if (external_execution and adapters is None
@@ -1691,7 +1691,7 @@ def _deliver_result(
     # Mark live sends FINAL so the platform pushes them (Telegram "important" mode mutes otherwise).
     notify_delivery = _cron_delivery_notify_enabled(user_cfg)
     # Targets acked with NO evidence (bare SendResult(success=True) — Slack/Matrix/Mattermost);
-    # persisted as ``last_delivery_unverified`` so `hermes cron list` shows it.
+    # persisted as ``last_delivery_unverified`` so `eidolon cron list` shows it.
     unverified_targets: list = []
     if wrap_response:
         task_name = job.get("name", job["id"])
@@ -1708,7 +1708,7 @@ def _deliver_result(
 
     from gateway.platforms.base import BasePlatformAdapter
     # Bridge media-policy config into the env vars the path validator reads. The gateway does this
-    # at boot; standalone runs (`hermes cron run`) did not, silently dropping files. Idempotent.
+    # at boot; standalone runs (`eidolon cron run`) did not, silently dropping files. Idempotent.
     from gateway.media_policy import apply_media_policy_env
     apply_media_policy_env(user_cfg)
     media_files, cleaned_delivery_content = BasePlatformAdapter.extract_media(delivery_content)

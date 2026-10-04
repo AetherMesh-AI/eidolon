@@ -6,11 +6,11 @@
     response = agent.run_conversation("Tell me about the latest Python updates")
 """
 
-# hermes_bootstrap must be the very first import (UTF-8 stdio on Windows; no-op on POSIX).
+# eidolon_bootstrap must be the very first import (UTF-8 stdio on Windows; no-op on POSIX).
 try:
-    import hermes_bootstrap  # noqa: F401
+    import eidolon_bootstrap  # noqa: F401
 except ModuleNotFoundError:
-    pass  # partial `hermes update` — only skips the Windows UTF-8 stdio setup
+    pass  # partial `eidolon update` — only skips the Windows UTF-8 stdio setup
 
 import json
 import logging
@@ -26,7 +26,7 @@ from typing import List, Dict, Any, Optional, Callable
 from datetime import datetime
 from pathlib import Path
 
-from hermes_constants import get_hermes_home
+from eidolon_constants import get_eidolon_home
 
 
 def _launch_cwd_for_session(source: str) -> Optional[str]:
@@ -73,7 +73,7 @@ def _gateway_origin_json(agent: "AIAgent") -> Optional[str]:
     profile = getattr(agent, "_profile_name", None)
     if not profile:
         try:
-            from hermes_cli.profiles import get_active_profile_name
+            from eidolon_cli.profiles import get_active_profile_name
             profile = get_active_profile_name()
         except Exception:
             profile = None
@@ -88,11 +88,11 @@ def _gateway_origin_json(agent: "AIAgent") -> Optional[str]:
 
 
 from agent.iteration_budget import IterationBudget
-from hermes_cli.env_loader import load_hermes_dotenv
-from hermes_cli.timeouts import get_provider_request_timeout, get_provider_stale_timeout
+from eidolon_cli.env_loader import load_hermes_dotenv
+from eidolon_cli.timeouts import get_provider_request_timeout, get_provider_stale_timeout
 
-_hermes_home = get_hermes_home()  # read by agent_init via _ra()._hermes_home
-_loaded_env_paths = load_hermes_dotenv(hermes_home=_hermes_home, project_env=Path(__file__).parent / '.env')
+_eidolon_home = get_eidolon_home()  # read by agent_init via _ra()._eidolon_home
+_loaded_env_paths = load_hermes_dotenv(hermes_home=_eidolon_home, project_env=Path(__file__).parent / '.env')
 for _env_path in _loaded_env_paths:
     logger.info("Loaded environment variables from %s", _env_path)
 if not _loaded_env_paths:
@@ -289,7 +289,7 @@ class AIAgent(
         if self._session_db is not None:
             return self._session_db
         try:
-            from hermes_state_registry import acquire
+            from eidolon_state_registry import acquire
 
             self._session_db = acquire()
             self._owns_session_db = True  # we opened it, so close() must release it
@@ -323,7 +323,7 @@ class AIAgent(
             # Persist the profile name explicitly, including "default": profile-keyed consumers treat NULL
             # as unowned.
             try:
-                from hermes_cli.profiles import get_active_profile_name
+                from eidolon_cli.profiles import get_active_profile_name
                 profile_for_session = get_active_profile_name()
             except Exception:
                 # Persist the profile name EXPLICITLY, including "default". NULL used to stand in for the
@@ -450,7 +450,7 @@ class AIAgent(
         if (getattr(self, "lmstudio_load_mode", "explicit") or "explicit").strip().lower() == "jit":
             logger.debug("LM Studio explicit preload skipped: lmstudio_load_mode=jit")
             return None
-        from hermes_cli.models_local import ensure_lmstudio_model_loaded
+        from eidolon_cli.models_local import ensure_lmstudio_model_loaded
 
         if config_context_length is None:
             config_context_length = getattr(self, "_config_context_length", None)
@@ -641,7 +641,7 @@ class AIAgent(
             return False
         if normalized_provider == "copilot":
             try:
-                from hermes_cli.models import _should_use_copilot_responses_api
+                from eidolon_cli.models import _should_use_copilot_responses_api
                 return _should_use_copilot_responses_api(model)
             except Exception:
                 pass  # fall back to the generic GPT-5 rule
@@ -971,7 +971,7 @@ class AIAgent(
     @staticmethod
     def _trim_process_memory() -> None:
         """Return freed heap pages to the OS on glibc; safe no-op elsewhere."""
-        from hermes_cli.mem_trim import trim_memory
+        from eidolon_cli.mem_trim import trim_memory
         trim_memory(force=True, reason="agent close")
 
     def _finalize_owned_session_row(self) -> None:
@@ -987,7 +987,7 @@ class AIAgent(
             self._owns_session_db = False
             # Shared instances no-op on close(); release the refcount so the registry closes on the last caller.
             # See #90837.
-            from hermes_state_registry import release_or_close
+            from eidolon_state_registry import release_or_close
             release_or_close(session_db)
 
     def _hydrate_todo_store(self, history: List[Dict[str, Any]]) -> None:
@@ -1538,7 +1538,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

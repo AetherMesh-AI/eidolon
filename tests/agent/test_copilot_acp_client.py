@@ -197,7 +197,7 @@ def test_run_prompt_preserves_real_home_when_profile_home_available(monkeypatch,
 
     monkeypatch.setenv("HOME", str(real_home))
     monkeypatch.setenv("HERMES_HOME", str(hermes_home))
-    # Hermeticity: an ambient HERMES_REAL_HOME (exported by Hermes' own
+    # Hermeticity: an ambient HERMES_REAL_HOME (exported by Eidolon' own
     # terminal contract on dev boxes) outranks HOME in the candidate ladder,
     # and an ambient TERMINAL_HOME_MODE would change the policy under test.
     monkeypatch.delenv("HERMES_REAL_HOME", raising=False)
@@ -206,7 +206,7 @@ def test_run_prompt_preserves_real_home_when_profile_home_available(monkeypatch,
     # when is_container() is True — on a containerized CI runner that real
     # probe flips the resolution this test asserts. The host/VM branch is the
     # contract under test; pin containment off.
-    monkeypatch.setattr("hermes_constants.is_container", lambda: False)
+    monkeypatch.setattr("eidolon_constants.is_container", lambda: False)
 
     captured = {}
     client = _make_home_client(tmp_path)
@@ -323,7 +323,7 @@ def test_probe_skipped_for_custom_args_without_acp():
 #
 # `copilot --acp` validates but IGNORES the `--model` spawn flag; the ACP
 # session runs the CLI's own default unless the client issues the ACP-native
-# `session/set_model` call. Without it, picking gpt-5.6-terra in Hermes
+# `session/set_model` call. Without it, picking gpt-5.6-terra in Eidolon
 # visibly answers as the CLI's default model.
 
 

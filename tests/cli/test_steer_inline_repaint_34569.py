@@ -31,7 +31,7 @@ ENTER_HANDLERS = ("_tui_handle_enter", "_tui_enter_inline_command", "_tui_enter_
 
 def _load_handle_enter_node() -> ast.Module:
     """Return a synthetic module holding the Enter handler and its phase helpers."""
-    cli_path = Path(__file__).resolve().parents[2] / "hermes_cli" / "cli_tui_mixin.py"
+    cli_path = Path(__file__).resolve().parents[2] / "eidolon_cli" / "cli_tui_mixin.py"
     tree = ast.parse(cli_path.read_text(encoding="utf-8"))
     found = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name in ENTER_HANDLERS]
     assert {n.name for n in found} == set(ENTER_HANDLERS), "Enter handlers not found in cli_tui_mixin.py"

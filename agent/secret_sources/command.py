@@ -151,7 +151,7 @@ class CommandSource(SecretSource):
         ErrorKind.NOT_CONFIGURED: "Set secrets.command.command in config.yaml to a fast, "
                                   "non-interactive helper that prints KEY=VALUE lines.",
         ErrorKind.INTERNAL: "Run the helper manually in a shell to see its real error — "
-                            "Hermes discards helper stderr so diagnostics can't leak "
+                            "Eidolon discards helper stderr so diagnostics can't leak "
                             "secret material.",
     }
 
@@ -377,7 +377,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

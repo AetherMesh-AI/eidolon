@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
 
-import { getLocalModelsStatus } from '@/hermes'
+import { getLocalModelsStatus } from '@/eidolon'
 import { useI18n } from '@/i18n'
 import { modelOptionsQueryKey, requestModelOptions } from '@/lib/model-options'
 import { modelSearchText } from '@/lib/model-search-text'
@@ -10,9 +10,9 @@ import { foldIncludes, normalize } from '@/lib/text'
 import { useStoreSelector } from '@/lib/use-session-slice'
 import { $localModelsEnabled } from '@/store/local-models-flag'
 import { $localRuntimeJobs, runningModelDownloads, watchLocalRuntimeJobs } from '@/store/local-runtime-jobs'
-import type { LocalModelLoadProgress, ModelOptionProvider, ModelPricing } from '@/types/hermes'
+import type { LocalModelLoadProgress, ModelOptionProvider, ModelPricing } from '@/types/eidolon'
 
-import type { HermesGateway } from '../hermes'
+import type { HermesGateway } from '../eidolon'
 import { cn } from '../lib/utils'
 import { startManualOnboarding } from '../store/onboarding'
 

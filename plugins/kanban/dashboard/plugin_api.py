@@ -1,6 +1,6 @@
 """Kanban dashboard plugin — backend API routes, mounted at /api/plugins/kanban/.
 
-Every handler is a thin wrapper around ``hermes_cli.kanban_db`` (the same code paths the CLI
+Every handler is a thin wrapper around ``eidolon_cli.kanban_db`` (the same code paths the CLI
 and gateway ``/kanban`` command use, so the surfaces cannot drift). The ``/events`` WebSocket
 tails the append-only ``task_events`` table on a short poll (WAL reads run alongside the
 dispatcher's write txns); it carries its credential in the query string (browsers can't set
@@ -28,13 +28,13 @@ from fastapi import (
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from hermes_cli import kanban_db
-from hermes_cli import kanban_db_connect as kbc
-from hermes_cli import kanban_db_notify as kbn
-from hermes_cli import kanban_db_dispatch as kbd
-from hermes_cli import kanban_db_workspace as kbw
-from hermes_cli import kanban_diagnostics as kd
-from hermes_cli.kanban_db import KANBAN_ATTACHMENT_MAX_BYTES, _collision_free_path, _safe_attachment_name
+from eidolon_cli import kanban_db
+from eidolon_cli import kanban_db_connect as kbc
+from eidolon_cli import kanban_db_notify as kbn
+from eidolon_cli import kanban_db_dispatch as kbd
+from eidolon_cli import kanban_db_workspace as kbw
+from eidolon_cli import kanban_diagnostics as kd
+from eidolon_cli.kanban_db import KANBAN_ATTACHMENT_MAX_BYTES, _collision_free_path, _safe_attachment_name
 
 log = logging.getLogger(__name__)
 
@@ -50,7 +50,7 @@ def _ws_upgrade_authorized(ws: "WebSocket") -> bool:
     ``?token=`` / ``?ticket=`` / ``?internal=``) so this endpoint can never drift from core
     auth; accepts when the dashboard isn't importable (bare-FastAPI test harness)."""
     try:
-        from hermes_cli import web_server_chat as _ws
+        from eidolon_cli import web_server_chat as _ws
     except Exception:
         return True
     return bool(_ws._ws_auth_ok(ws))
@@ -113,10 +113,10 @@ def _require(getter: Callable, conn: sqlite3.Connection, ident, label: str):
 
 
 def _run_aux(board: Optional[str], module: str, fn: str, task_id: str, author: Optional[str]) -> Any:
-    """Run a slow auxiliary-LLM task helper (``hermes_cli.<module>.<fn>``) with the board pinned;
+    """Run a slow auxiliary-LLM task helper (``eidolon_cli.<module>.<fn>``) with the board pinned;
     the module is imported lazily so a missing aux client can't break plugin load."""
     def _run():
-        return getattr(importlib.import_module(f"hermes_cli.{module}"), fn)(task_id, author=(author or None))
+        return getattr(importlib.import_module(f"eidolon_cli.{module}"), fn)(task_id, author=(author or None))
     return _with_board_pinned(board, _run)
 
 
@@ -196,7 +196,7 @@ def _placeholders(ids: list) -> str:
 def _compute_task_diagnostics(conn: sqlite3.Connection, task_ids: Optional[list[str]] = None) -> dict[str, list[dict]]:
     """``{task_id: [diagnostic_dict, ...]}`` (tasks with none omitted) via three aggregate
     queries (tasks, events, runs) — slurps the board; paginate if profiling shows a hotspot."""
-    from hermes_cli.config import load_config
+    from eidolon_cli.config import load_config
 
     if task_ids is not None and not task_ids:
         return {}
@@ -383,9 +383,9 @@ def create_task(payload: CreateTaskBody, board: Optional[str] = Query(None)):
         # dashboard backend may run under a different HERMES_HOME than the board's profile.
         if task and task.status == "ready" and task.assignee:
             try:
-                from hermes_cli.kanban import _check_dispatcher_presence
-                from hermes_constants import get_hermes_home
-                running, message = _check_dispatcher_presence(hermes_home=get_hermes_home())
+                from eidolon_cli.kanban import _check_dispatcher_presence
+                from eidolon_constants import get_eidolon_home
+                running, message = _check_dispatcher_presence(hermes_home=get_eidolon_home())
                 if not running and message:
                     body["warning"] = message
             except Exception:
@@ -474,7 +474,7 @@ class UpdateTaskBody(BaseModel):
     body: Optional[str] = None
     result: Optional[str] = None
     block_reason: Optional[str] = None
-    # Handoff fields forwarded to complete_task on -> 'done' (parity with ``hermes kanban complete``).
+    # Handoff fields forwarded to complete_task on -> 'done' (parity with ``eidolon kanban complete``).
     summary: Optional[str] = None
     metadata: Optional[dict] = None
     # In a PATCH ``None`` means "field not sent", so ``clear_*=True`` is the explicit clear signal.
@@ -810,7 +810,7 @@ def list_diagnostics(
     board: Optional[str] = _BOARD_Q,
     severity: Optional[str] = Query(None, description="Filter by severity: warning|error|critical")):
     """Tasks with an active diagnostic, highest severity first then most recent; also
-    consumed by ``hermes kanban diagnostics`` when the dashboard runs."""
+    consumed by ``eidolon kanban diagnostics`` when the dashboard runs."""
     with _board_conn(board) as (board, conn):
         diags_by_task = _compute_task_diagnostics(conn, task_ids=None)
         if severity and diags_by_task:
@@ -934,7 +934,7 @@ class ReclaimBody(BaseModel):
 @router.post("/tasks/{task_id}/reclaim")
 def reclaim_task_endpoint(task_id: str, payload: ReclaimBody, board: Optional[str] = Query(None)):
     """Release an active worker claim without waiting for the claim TTL
-    (``hermes kanban reclaim <task_id> --reason ...``)."""
+    (``eidolon kanban reclaim <task_id> --reason ...``)."""
     with _board_conn(board) as (board, conn):
         if not kanban_db.reclaim_task(conn, task_id, reason=payload.reason):
             raise _conflict(f"cannot reclaim {task_id}: not in a claimable state (not running, or unknown id)")
@@ -950,7 +950,7 @@ class SpecifyBody(BaseModel):
 
 @router.post("/tasks/{task_id}/specify")
 def specify_task_endpoint(task_id: str, payload: SpecifyBody, board: Optional[str] = Query(None)):
-    """Flesh out a triage task via the auxiliary LLM (``hermes kanban specify``). Non-OK is NOT
+    """Flesh out a triage task via the auxiliary LLM (``eidolon kanban specify``). Non-OK is NOT
     an HTTP error — the UI renders the reason inline. Sync ``def`` → runs in the threadpool."""
     outcome = _run_aux(board, "kanban_specify", "specify_task", task_id, payload.author)
     return {"ok": bool(outcome.ok), "task_id": outcome.task_id, "reason": outcome.reason, "new_title": outcome.new_title}
@@ -965,7 +965,7 @@ class ReassignBody(BaseModel):
 @router.post("/tasks/{task_id}/reassign")
 def reassign_task_endpoint(task_id: str, payload: ReassignBody, board: Optional[str] = Query(None)):
     """Reassign to another profile, optionally reclaiming first
-    (``hermes kanban reassign <task_id> <profile> [--reclaim]``)."""
+    (``eidolon kanban reassign <task_id> <profile> [--reclaim]``)."""
     with _board_conn(board) as (board, conn):
         ok = kanban_db.reassign_task(
             conn, task_id, payload.profile or None, reclaim_first=bool(payload.reclaim_first), reason=payload.reason)
@@ -1058,7 +1058,7 @@ def _run_estimate(title: str, body: Optional[str]) -> dict:
 
 def _load_config_or_empty() -> dict:
     try:
-        from hermes_cli.config import load_config
+        from eidolon_cli.config import load_config
         return load_config() or {}
     except Exception:
         return {}
@@ -1096,9 +1096,9 @@ def _configured_home_channels() -> list[dict]:
 
 
 def _active_profile_name() -> str:
-    """Current Hermes profile name for notify-sub ownership."""
+    """Current Eidolon profile name for notify-sub ownership."""
     try:
-        from hermes_cli.profiles import get_active_profile_name
+        from eidolon_cli.profiles import get_active_profile_name
         return get_active_profile_name() or "default"
     except Exception:
         return "default"
@@ -1198,10 +1198,10 @@ def dispatch(dry_run: bool = Query(False), max_n: int = Query(8, alias="max"), b
 @router.get("/model-options")
 def model_options():
     """Providers + curated models for the override dropdown via ``inventory.build_models_payload``
-    (same substrate as the Models page) so it can't offer a pair Hermes rejects. Skips pricing
+    (same substrate as the Models page) so it can't offer a pair Eidolon rejects. Skips pricing
     and custom-provider probes: a slow/offline local endpoint must not hang the drawer."""
     try:
-        from hermes_cli.inventory import build_models_payload, load_picker_context
+        from eidolon_cli.inventory import build_models_payload, load_picker_context
 
         payload = build_models_payload(
             load_picker_context(), explicit_only=True, canonical_order=True, probe_custom_providers=False)
@@ -1266,7 +1266,7 @@ def _resolve_project(ref: Optional[str]) -> tuple[Optional[str], Optional[str], 
     if not ref or not ref.strip():
         return None, None, None
     with _errors_to_500("projects unavailable"):
-        from hermes_cli import projects_db as pdb
+        from eidolon_cli import projects_db as pdb
         with pdb.connect_closing() as pconn:
             proj = pdb.get_project(pconn, ref.strip())
     if proj is None:
@@ -1277,7 +1277,7 @@ def _resolve_project(ref: Optional[str]) -> tuple[Optional[str], Optional[str], 
 def _projects_by_id() -> dict[str, Any]:
     """Map every project id -> Project (archived included) for annotation."""
     try:
-        from hermes_cli import projects_db as pdb
+        from eidolon_cli import projects_db as pdb
         with pdb.connect_closing() as pconn:
             return {p.id: p for p in pdb.list_projects(pconn, include_archived=True)}
     except Exception:
@@ -1317,7 +1317,7 @@ def _annotate_board_meta(meta: dict) -> dict:
 def list_kanban_projects():
     """Live (non-archived) projects available for board scoping."""
     with _errors_to_500("failed to list projects"):
-        from hermes_cli import projects_db as pdb
+        from eidolon_cli import projects_db as pdb
         with pdb.connect_closing() as pconn:
             projects = pdb.list_projects(pconn, include_archived=False)
     return {"projects": [
@@ -1420,7 +1420,7 @@ async def _run_transfer(fn, log_label: str):
 @router.post("/boards/{slug}/export")
 async def export_board_endpoint(slug: str, body: ExportBoardBody):
     """Write ``slug`` to a portable archive; return the path written."""
-    from hermes_cli import kanban_transfer
+    from eidolon_cli import kanban_transfer
 
     output = (body.output or "").strip()
     if not output:
@@ -1438,7 +1438,7 @@ async def export_board_endpoint(slug: str, body: ExportBoardBody):
 @router.post("/boards/import")
 async def import_board_endpoint(body: ImportBoardBody):
     """Import a board archive as a NEW board; return the landed board."""
-    from hermes_cli import kanban_transfer
+    from eidolon_cli import kanban_transfer
 
     archive = (body.archive or "").strip()
     if not archive:
@@ -1473,7 +1473,7 @@ def list_profile_roster():
     """Every installed profile with its description (profiles without one are
     still routable on name alone, just less precisely)."""
     with _errors_to_500("failed to list profiles"):
-        from hermes_cli import profiles as profiles_mod
+        from eidolon_cli import profiles as profiles_mod
         profiles = profiles_mod.list_profiles()
     return {"profiles": [
         {"name": p.name, "is_default": bool(p.is_default), "model": p.model or "", "provider": p.provider or "",
@@ -1487,11 +1487,11 @@ def update_profile_description(profile_name: str, payload: DescribeBody):
     """Set (``description_auto: false`` so the auto-describer won't overwrite it
     without ``--overwrite``) or clear (empty string) a profile's description."""
     with _errors_to_500("failed to update profile"):
-        from hermes_cli import profiles as profiles_mod
+        from eidolon_cli import profiles as profiles_mod
         canon = profiles_mod.normalize_profile_name(profile_name)
         if canon == "default":
-            from hermes_constants import get_hermes_home  # type: ignore
-            profile_dir = Path(get_hermes_home())
+            from eidolon_constants import get_eidolon_home  # type: ignore
+            profile_dir = Path(get_eidolon_home())
         else:
             profile_dir = profiles_mod.get_profile_dir(canon)
         if not profile_dir.is_dir():
@@ -1503,10 +1503,10 @@ def update_profile_description(profile_name: str, payload: DescribeBody):
 
 @router.post("/profiles/{profile_name}/describe-auto")
 def auto_describe_profile(profile_name: str, payload: DescribeAutoBody):
-    """``hermes profile describe <name> --auto``: persist with ``description_auto: true``.
+    """``eidolon profile describe <name> --auto``: persist with ``description_auto: true``.
     Non-OK outcomes are NOT HTTP errors — the UI renders the reason inline."""
     with _errors_to_500("describer crashed"):
-        from hermes_cli import profile_describer
+        from eidolon_cli import profile_describer
         outcome = profile_describer.describe_profile(profile_name, overwrite=bool(payload.overwrite))
     return {"ok": bool(outcome.ok), "profile": outcome.profile_name, "reason": outcome.reason, "description": outcome.description}
 
@@ -1519,7 +1519,7 @@ class DecomposeBody(BaseModel):
 
 @router.post("/tasks/{task_id}/decompose")
 def decompose_task_endpoint(task_id: str, payload: DecomposeBody, board: Optional[str] = Query(None)):
-    """Fan a triage task out into child tasks via the auxiliary LLM (``hermes kanban decompose``).
+    """Fan a triage task out into child tasks via the auxiliary LLM (``eidolon kanban decompose``).
     Non-OK is NOT an HTTP error. Sync ``def`` → runs in the threadpool."""
     outcome = _run_aux(board, "kanban_decompose", "decompose_task", task_id, payload.author)
     return {
@@ -1549,7 +1549,7 @@ def get_orchestration_settings():
     explicit = {k: (kanban_cfg.get(k) or "").strip() for k in _PROFILE_SETTINGS}
     resolved = dict(explicit)
     try:
-        from hermes_cli import profiles as profiles_mod
+        from eidolon_cli import profiles as profiles_mod
         active_default = profiles_mod.get_active_profile_name() or "default"
         for k, v in explicit.items():
             if not v or not profiles_mod.profile_exists(v):
@@ -1585,13 +1585,13 @@ def set_orchestration_settings(payload: OrchestrationSettingsBody):
     """Update orchestration knobs in config.yaml. Only fields explicitly passed
     are written; empty profile strings clear the override."""
     with _errors_to_500("failed to load config"):
-        from hermes_cli.config import load_config, save_config
+        from eidolon_cli.config import load_config, save_config
         cfg = load_config() or {}
     kanban_section = cfg.setdefault("kanban", {})
     if not isinstance(kanban_section, dict):
         kanban_section = cfg["kanban"] = {}
     try:
-        from hermes_cli import profiles as profiles_mod
+        from eidolon_cli import profiles as profiles_mod
     except Exception:
         profiles_mod = None  # type: ignore
     # Field order == write order (profiles validated first, then the booleans).

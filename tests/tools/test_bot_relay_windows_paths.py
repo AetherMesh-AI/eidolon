@@ -91,7 +91,7 @@ def test_waiter_raw_prefix_keeps_injection_defense():
 def test_local_delivery_resolves_sibling_hermes(tmp_path, monkeypatch):
     bin_dir = tmp_path / "venv" / "bin"
     bin_dir.mkdir(parents=True)
-    sibling = bin_dir / "hermes"
+    sibling = bin_dir / "eidolon"
     sibling.touch()
     sibling.chmod(0o755)
     monkeypatch.setattr("sys.executable", str(bin_dir / "python"))
@@ -110,7 +110,7 @@ def test_local_delivery_uses_shutil_which_when_no_sibling(tmp_path, monkeypatch)
     monkeypatch.setattr("sys.executable", str(empty / "python"))
     which_hit = str(tmp_path / "usr-local-bin" / "hermes")
     monkeypatch.setattr(
-        bot_relay.shutil, "which", lambda name: which_hit if name == "hermes" else None
+        bot_relay.shutil, "which", lambda name: which_hit if name == "eidolon" else None
     )
 
     argv = bot_relay.local_delivery_command("ops", "query.json")
@@ -124,7 +124,7 @@ def test_local_delivery_falls_back_to_bare_name(tmp_path, monkeypatch):
     monkeypatch.setattr(bot_relay.shutil, "which", lambda name: None)
 
     argv = bot_relay.local_delivery_command("ops", "query.json")
-    assert argv[0] == "hermes"
+    assert argv[0] == "eidolon"
     assert argv[1:3] == ["-p", "ops"]
 
 
@@ -149,7 +149,7 @@ def test_delivery_lock_recognizes_resolved_cli_paths(tmp_path, monkeypatch):
         stdin_file=False,
     ):
         pass
-    with bot_mode_dm._delivery_lock(["hermes", "-p", "ops", "chat"], stdin_file=False):
+    with bot_mode_dm._delivery_lock(["eidolon", "-p", "ops", "chat"], stdin_file=False):
         pass
     with bot_mode_dm._delivery_lock(
         ["C:\\venv\\Scripts\\hermes.exe", "-p", "ops", "chat"], stdin_file=False

@@ -58,7 +58,7 @@ describe("dashboard product identity", () => {
     for (const label of ["update", "plugins", "achievements"]) {
       expect(container.querySelector(`[data-label="${label}"]`)!.textContent).toContain(brand);
     }
-    expect(container.querySelector('[data-label="plugins"]')!.textContent).toContain("hermes plugins");
+    expect(container.querySelector('[data-label="plugins"]')!.textContent).toContain("eidolon plugins");
     expect(container.querySelector('[data-label="config"]')!.textContent).toBe("~/.hermes/config.yaml");
     expect(localStorage.getItem("hermes-locale")).toBe(locale);
   });

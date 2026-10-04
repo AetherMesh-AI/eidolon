@@ -11,7 +11,7 @@ _registry = HandlerRegistry()
 
 def resolve_skin() -> dict:
     try:
-        from hermes_cli.skin_engine import init_skin_from_config, get_active_skin
+        from eidolon_cli.skin_engine import init_skin_from_config, get_active_skin
         init_skin_from_config(_load_cfg())
         skin = get_active_skin()
         # light/dark are paired palettes: the TUI prefers the block matching terminal polarity.
@@ -32,8 +32,8 @@ _last_skin_sig: tuple[str, float | None] | None = None
 
 def _watcher_home() -> Path:
     """Active profile home for the change watcher's signature probes."""
-    override = get_hermes_home_override()
-    return Path(override if isinstance(override, str) and override else _hermes_home)
+    override = get_eidolon_home_override()
+    return Path(override if isinstance(override, str) and override else _eidolon_home)
 
 
 def _watcher_mtime_ns(path: Path):

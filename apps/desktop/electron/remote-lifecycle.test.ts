@@ -71,8 +71,8 @@ function ownedLock(over: any = {}) {
     pid: 333,
     port: 40000,
     profile: '',
-    hermesPath: '~/.local/bin/hermes',
-    hermesHome: '~/.hermes',
+    hermesPath: '~/.local/bin/eidolon',
+    hermesHome: '~/.eidolon',
     logPath: spawnLogPath(OWNERSHIP_ID, SPAWN_NONCE),
     tokenFingerprint: fingerprintToken('stored-token'),
     startedAt: '2026-07-14T00:00:00.000Z',
@@ -131,7 +131,7 @@ function fakeSsh(rules: any[] = []) {
   }
 }
 
-test('POSIX relaunch gate refuses live and uncertain install markers without executing Hermes', async () => {
+test('POSIX relaunch gate refuses live and uncertain install markers without executing Eidolon', async () => {
   for (const observation of ['LIVE:4242', 'UNCERTAIN']) {
     const calls: string[] = []
 
@@ -275,8 +275,8 @@ test('locateHermes throws (no silent fallback) when an EXPLICIT path is not exec
   // command -v WOULD find a different install, but an explicit path must not
   // silently fall back to it — that is the "connected to the wrong hermes" bug.
   const ssh = fakeSsh([
-    [/command -v hermes/, '/home/u/.local/bin/hermes\n'],
-    [/\[ -x .*\.local\/bin\/hermes/, 'OK']
+    [/command -v eidolon/, '/home/u/.local/bin/eidolon\n'],
+    [/\[ -x .*\.local\/bin\/eidolon/, 'OK']
   ])
 
   await assert.rejects(
@@ -292,11 +292,11 @@ test('locateHermes throws (no silent fallback) when an EXPLICIT path is not exec
 
 test('locateHermes falls back to the login-shell command -v probe', async () => {
   const ssh = fakeSsh([
-    [/command -v hermes/, '/home/u/.local/bin/hermes\n'],
-    [/\[ -x .*\.local\/bin\/hermes/, 'OK']
+    [/command -v eidolon/, '/home/u/.local/bin/eidolon\n'],
+    [/\[ -x .*\.local\/bin\/eidolon/, 'OK']
   ])
 
-  assert.equal(await locateHermes(ssh, ''), '/home/u/.local/bin/hermes')
+  assert.equal(await locateHermes(ssh, ''), '/home/u/.local/bin/eidolon')
 })
 
 test('locateHermes preserves an installer wrapper instead of resolving its interpreter', async () => {
@@ -306,14 +306,14 @@ test('locateHermes preserves an installer wrapper instead of resolving its inter
   // `<python> serve --help` failed outright (#74411). The wrapper itself is
   // executable and forwards args correctly — return it untouched.
   const ssh = fakeSsh([
-    [/command -v hermes/, '/home/u/.local/bin/hermes\n'],
-    [/\[ -x .*\.local\/bin\/hermes/, 'OK'],
+    [/command -v eidolon/, '/home/u/.local/bin/eidolon\n'],
+    [/\[ -x .*\.local\/bin\/eidolon/, 'OK'],
     // If the removed python3 wrapper-parser were ever reintroduced, this rule
     // would reward it with an interpreter path and the assertions below fail.
     [/python3 -c/, '/home/u/.hermes/hermes-agent/venv/bin/python\n']
   ])
 
-  assert.equal(await locateHermes(ssh, ''), '/home/u/.local/bin/hermes')
+  assert.equal(await locateHermes(ssh, ''), '/home/u/.local/bin/eidolon')
   assert.ok(
     !ssh.calls.some(cmd => cmd.includes('python3 -c')),
     'locateHermes must not shell out to a python3 parser to rewrite the launcher'
@@ -323,29 +323,29 @@ test('locateHermes preserves an installer wrapper instead of resolving its inter
 test('locateHermes returns an explicit remoteHermesPath unchanged', async () => {
   // The override half of #74411: an explicit remoteHermesPath pointing at a
   // wrapper was also canonicalized to its interpreter, so overriding to
-  // ~/.local/bin/hermes changed nothing for affected users.
+  // ~/.local/bin/eidolon changed nothing for affected users.
   const ssh = fakeSsh([
-    [/\[ -x .*\.local\/bin\/hermes/, 'OK'],
+    [/\[ -x .*\.local\/bin\/eidolon/, 'OK'],
     [/python3 -c/, '/home/u/.hermes/hermes-agent/venv/bin/python\n']
   ])
 
-  assert.equal(await locateHermes(ssh, '~/.local/bin/hermes'), '~/.local/bin/hermes')
+  assert.equal(await locateHermes(ssh, '~/.local/bin/eidolon'), '~/.local/bin/eidolon')
   assert.ok(!ssh.calls.some(cmd => cmd.includes('python3 -c')), 'an explicit remoteHermesPath must never be rewritten')
 })
 
-test('locateHermes falls back to ~/.local/bin/hermes when the login-shell probe misses', async () => {
+test('locateHermes falls back to ~/.local/bin/eidolon when the login-shell probe misses', async () => {
   // ~/.local/bin is the non-root installer's command location (scripts/install.sh).
   const ssh = fakeSsh([
-    [/command -v hermes/, ''],
-    [/\[ -x .*\.local\/bin\/hermes/, 'OK']
+    [/command -v eidolon/, ''],
+    [/\[ -x .*\.local\/bin\/eidolon/, 'OK']
   ])
 
-  assert.equal(await locateHermes(ssh, ''), '~/.local/bin/hermes')
+  assert.equal(await locateHermes(ssh, ''), '~/.local/bin/eidolon')
 })
 
 test('locateHermes tries the conventional venv path last', async () => {
-  const ssh = fakeSsh([[/\[ -x .*venv\/bin\/hermes/, 'OK']])
-  assert.equal(await locateHermes(ssh, ''), '~/.hermes/hermes-agent/venv/bin/hermes')
+  const ssh = fakeSsh([[/\[ -x .*venv\/bin\/eidolon/, 'OK']])
+  assert.equal(await locateHermes(ssh, ''), '~/.eidolon/eidolon-agent/venv/bin/eidolon')
 })
 
 test('locateHermes throws a hermes-not-found error with an install hint', async () => {
@@ -356,7 +356,7 @@ test('locateHermes throws a hermes-not-found error with an install hint', async 
       assert.equal(err.kind, 'hermes-not-found')
       assert.match(err.message, /install/i)
       assert.ok(err.message.includes('https://github.com/AetherMesh-AI/Eidolon/releases'))
-      assert.ok(err.message.includes('existing `hermes` executable'))
+      assert.ok(err.message.includes('existing runtime executable'))
 
       return true
     }
@@ -365,7 +365,7 @@ test('locateHermes throws a hermes-not-found error with an install hint', async 
 
 test('locateHermes uses a login shell for the command -v probe', async () => {
   const ssh = fakeSsh([
-    [/command -v hermes/, '/x/hermes'],
+    [/command -v eidolon/, '/x/hermes'],
     [/\[ -x/, 'OK']
   ])
 
@@ -565,7 +565,7 @@ test('pidIsOurDashboard accepts the venv entrypoint an installer wrapper execs i
   ])
 
   assert.equal(
-    await pidIsOurDashboard(ssh, 5, SPAWN_NONCE, '~/.local/bin/hermes', '/Users/cd9c/.hermes', OWNERSHIP_ID, 'ops'),
+    await pidIsOurDashboard(ssh, 5, SPAWN_NONCE, '~/.local/bin/eidolon', '/Users/cd9c/.hermes', OWNERSHIP_ID, 'ops'),
     true
   )
   assert.match(ownershipProbe, /hermes-agent.*venv.*bin.*hermes/)
@@ -1088,7 +1088,7 @@ test('connect() respawns when the requested remote profile differs from the lock
     [/print\("OWNED"/, 'OWNED\n'],
     [cmd => /pidfd_open/.test(cmd), 'TERMINATED\n'],
     [/kill 333/, ''],
-    [/--version/, 'Hermes Agent v0.18.2\n'],
+    [/--version/, 'Eidolon Agent v0.18.2\n'],
     [/grep -q ssh-session-token-file/, 'YES\n'],
     [/python3 -c/, ''],
     [/setsid/, '890\n'],
@@ -1117,7 +1117,7 @@ test('connect() respawns when the lockfile hermesPath differs from the resolved 
     [/cat .*lock\.json/, JSON.stringify(lock)],
     [/kill -0/, 'ALIVE'],
     [/print\("OWNED"/, 'FOREIGN\n'],
-    [/--version/, 'Hermes Agent v0.18.2\n'],
+    [/--version/, 'Eidolon Agent v0.18.2\n'],
     [/grep -q ssh-session-token-file/, 'YES\n'],
     [/python3 -c/, ''],
     [/setsid/, '890\n'],
@@ -1430,8 +1430,8 @@ test('expandRemotePath expands ~/ to "$HOME"/', () => {
 })
 
 test('expandRemotePath returns quoted absolute paths unchanged', () => {
-  const result = expandRemotePath('/usr/local/bin/hermes')
-  assert.ok(result.includes('/usr/local/bin/hermes'))
+  const result = expandRemotePath('/usr/local/bin/eidolon')
+  assert.ok(result.includes('/usr/local/bin/eidolon'))
   assert.ok(!result.includes('eval'))
 })
 
@@ -1465,7 +1465,7 @@ test('buildSpawnCommand always uses serve, never dashboard', () => {
   assert.doesNotMatch(cmd, /--no-open/)
 })
 
-test('buildSpawnCommand raises the SSH child file limit before execing Hermes', () => {
+test('buildSpawnCommand raises the SSH child file limit before execing Eidolon', () => {
   const cmd = buildSpawnCommand('/x/hermes', '', { logPath: spawnLogPath(OWNERSHIP_ID, SPAWN_NONCE) })
   assert.match(cmd, /ulimit -n 65536 2>\/dev\/null \|\| true; exec env HERMES_DESKTOP=1/)
   assert.ok(cmd.indexOf('ulimit -n 65536') < cmd.indexOf('serve --isolated'))

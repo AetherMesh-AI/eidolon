@@ -660,10 +660,10 @@ class TestSlackModelPickerGatewayIntegration:
         )
 
         import gateway.run as gateway_run
-        monkeypatch.setattr(gateway_run, "_hermes_home", hermes_home)
+        monkeypatch.setattr(gateway_run, "_eidolon_home", hermes_home)
         monkeypatch.setattr("agent.models_dev.fetch_models_dev", lambda: {})
         monkeypatch.setattr(
-            "hermes_cli.model_switch_providers.list_picker_providers",
+            "eidolon_cli.model_switch_providers.list_picker_providers",
             lambda **kw: [{"slug": "openrouter", "name": "OR", "models": ["m1"], "total_models": 1}],
         )
 
@@ -711,10 +711,10 @@ class TestSlackModelPickerGatewayIntegration:
         )
 
         import gateway.run as gateway_run
-        monkeypatch.setattr(gateway_run, "_hermes_home", hermes_home)
+        monkeypatch.setattr(gateway_run, "_eidolon_home", hermes_home)
         monkeypatch.setattr("agent.models_dev.fetch_models_dev", lambda: {})
         monkeypatch.setattr(
-            "hermes_cli.model_switch_providers.list_authenticated_providers",
+            "eidolon_cli.model_switch_providers.list_authenticated_providers",
             lambda **kw: [],
         )
 

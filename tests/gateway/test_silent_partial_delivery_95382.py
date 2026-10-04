@@ -304,7 +304,7 @@ async def _run_turn(monkeypatch, tmp_path, *, consumer_cls=None, session_id):
         monkeypatch.setattr(
             stream_consumer_mod, "GatewayStreamConsumer", consumer_cls
         )
-    monkeypatch.setattr(gateway_run, "_hermes_home", tmp_path)
+    monkeypatch.setattr(gateway_run, "_eidolon_home", tmp_path)
     monkeypatch.setattr(
         gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "***"}
     )

@@ -29,7 +29,7 @@ class GatewayGoalsMixin:
     # ── /goal — persistent cross-turn goals (Ralph-style loop) ──────────
     def _goal_max_turns_from_config(self) -> int:
         """Configured /goal turn budget. GatewayRunner.config is a GatewayConfig dataclass, so the
-        top-level ``goals`` block is only reachable via hermes_cli.config.load_config()."""
+        top-level ``goals`` block is only reachable via eidolon_cli.config.load_config()."""
         try:
             goals_cfg = (
                 (self.config or {}).get("goals", {})
@@ -37,7 +37,7 @@ class GatewayGoalsMixin:
                 else getattr(self.config, "goals", {}) or {}
             )
             if not goals_cfg:
-                from hermes_cli.config import load_config
+                from eidolon_cli.config import load_config
 
                 goals_cfg = (load_config() or {}).get("goals") or {}
             return int(goals_cfg.get("max_turns", 20) or 20)
@@ -49,7 +49,7 @@ class GatewayGoalsMixin:
         init on the loop thread and freezes the loop. The executor hop keeps the profile home
         override alive under multiplex; a failed warm-up is a bounded stall, never a crash."""
         try:
-            from hermes_cli.goals import _get_session_db as _warm_goals_db
+            from eidolon_cli.goals import _get_session_db as _warm_goals_db
 
             await self._run_in_executor_with_context(_warm_goals_db)
         except Exception as exc:
@@ -85,7 +85,7 @@ class GatewayGoalsMixin:
     async def _get_goal_manager_for_event(self, event: "MessageEvent"):
         """Return ``(GoalManager, session_entry)`` for this event, or ``(None, None)``."""
         def _load():
-            from hermes_cli.goals import GoalManager
+            from eidolon_cli.goals import GoalManager
             max_turns = self._goal_max_turns_from_config()
             return lambda sid: GoalManager(session_id=sid, default_max_turns=max_turns)
         return await self._manager_for_event(event, "goal", _load)
@@ -93,7 +93,7 @@ class GatewayGoalsMixin:
     async def _get_heartbeat_manager_for_event(self, event: "MessageEvent"):
         """Return ``(HeartbeatManager, session_entry)`` for this event, or ``(None, None)``."""
         def _load():
-            from hermes_cli.heartbeat import HeartbeatManager
+            from eidolon_cli.heartbeat import HeartbeatManager
             return lambda sid: HeartbeatManager(session_id=sid)
         return await self._manager_for_event(event, "heartbeat", _load)
 
@@ -141,7 +141,7 @@ class GatewayGoalsMixin:
             or self._queue_depth(quick_key, adapter=adapter) > 0
         ):
             return  # keep missed intervals due until user work has drained
-        from hermes_cli.heartbeat import HeartbeatManager
+        from eidolon_cli.heartbeat import HeartbeatManager
 
         mgr = HeartbeatManager(session_id=session_id)
         if not mgr.has_heartbeat():
@@ -172,7 +172,7 @@ class GatewayGoalsMixin:
         if existing is not None and not existing.done():
             return
 
-        from hermes_cli.heartbeat import POLL_SECONDS
+        from eidolon_cli.heartbeat import POLL_SECONDS
 
         async def _poll_loop():
             while True:
@@ -265,7 +265,7 @@ class GatewayGoalsMixin:
         """Run the goal judge after a gateway turn (AFTER delivery) and, if still active, enqueue a
         continuation through the adapter FIFO so a simultaneous real user message takes priority."""
         def _load():
-            from hermes_cli.goals import GoalManager
+            from eidolon_cli.goals import GoalManager
             max_turns = self._goal_max_turns_from_config()
             return lambda sid: GoalManager(session_id=sid, default_max_turns=max_turns)
 
@@ -275,7 +275,7 @@ class GatewayGoalsMixin:
 
         _bg_procs, _active_deleg = None, 0
         with suppress(Exception):
-            from hermes_cli.goals import count_active_delegations, gather_background_processes as _gather_bg
+            from eidolon_cli.goals import count_active_delegations, gather_background_processes as _gather_bg
             # Only THIS session's processes (gateway turns register under turn_ctx.session_id):
             # subagents' pollers must not park the parent's goal.
             _bg_procs = _gather_bg(owner_task_id=getattr(session_entry, "session_id", None) or None)
@@ -350,7 +350,7 @@ class GatewayGoalsMixin:
         (``awaiting_response``, set when the wakeup was injected); applies the LOOP_COMPLETE marker
         / --until judge / caps and schedules the next tick for the idle wakeup watcher."""
         def _load():
-            from hermes_cli.loops import LoopManager
+            from eidolon_cli.loops import LoopManager
             return lambda sid: LoopManager(session_id=sid)
 
         mgr = await self._post_turn_manager(session_entry, "loop completion", "loops", _load)
@@ -367,7 +367,7 @@ class GatewayGoalsMixin:
 
     async def _loop_wakeup_fire_one(self, sid: str, state: Any, now: float, warned_no_route: set) -> None:
         """Inject one due /loop wakeup into its session, applying every deferral rule."""
-        from hermes_cli.loops import LoopManager, goal_blocks_loop_tick
+        from eidolon_cli.loops import LoopManager, goal_blocks_loop_tick
 
         if state.awaiting_response or now < state.next_due_at:
             return
@@ -440,7 +440,7 @@ class GatewayGoalsMixin:
         warned_no_route: set = set()
         while self._running:
             try:
-                from hermes_cli.loops import list_active_loops
+                from eidolon_cli.loops import list_active_loops
 
                 # Warm once per scan: the scan reads every persisted loop and a cold cache would
                 # run the state.db init on the loop thread before the first read.

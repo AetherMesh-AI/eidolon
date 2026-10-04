@@ -16,7 +16,7 @@
 set -e
 
 # Guard against environment leakage when the installer is launched from another
-# Python-driven tool session (e.g. Hermes terminal tool). A pre-set PYTHONPATH
+# Python-driven tool session (e.g. Eidolon terminal tool). A pre-set PYTHONPATH
 # can force pip/entrypoints to import a different checkout than the one being
 # installed, which makes fresh installs appear broken or stale.
 if [ -n "${PYTHONPATH:-}" ]; then
@@ -45,7 +45,9 @@ BOLD='\033[1m'
 # Configuration
 REPO_URL_SSH="git@github.com:AetherMesh-AI/Eidolon.git"
 REPO_URL_HTTPS="https://github.com/AetherMesh-AI/Eidolon.git"
-HERMES_HOME="${HERMES_HOME:-$HOME/.eidolon}"
+export HERMES_HOME="${EIDOLON_HOME:-${HERMES_HOME:-$HOME/.eidolon}}"
+# Consume the public alias before child profile overrides use HERMES_HOME.
+unset EIDOLON_HOME
 # INSTALL_DIR is resolved AFTER arg parsing and OS detection so we can pick an
 # FHS-style layout for root installs.  Track whether the user gave us an
 # explicit directory — if so we never override it.
@@ -60,7 +62,7 @@ PYTHON_VERSION="3.11"
 NODE_VERSION="26"
 
 # FHS-style root install layout (set by resolve_install_layout when applicable):
-#   code at /usr/local/lib/hermes-agent, command at /usr/local/bin/hermes,
+#   code at /usr/local/lib/eidolon-agent, command at /usr/local/bin/eidolon,
 #   data still at /root/.eidolon (HERMES_HOME).  Matches Claude Code / Codex CLI
 #   and keeps Docker bind-mounted /root/ volumes lean.
 ROOT_FHS_LAYOUT=false
@@ -152,7 +154,7 @@ while [[ $# -gt 0 ]]; do
             INSTALL_DIR_EXPLICIT=true
             shift 2
             ;;
-        --hermes-home)
+        --eidolon-home|--hermes-home)
             HERMES_HOME="$2"
             shift 2
             ;;
@@ -173,7 +175,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --skip-computer-use  Skip the cua-driver (Computer Use) install"
             echo "  --no-skills    Start with a blank slate — seed no bundled skills, and"
             echo "                   write \$HERMES_HOME/.no-bundled-skills so future"
-            echo "                   'hermes update' runs never inject bundled skills either"
+            echo "                   'eidolon update' runs never inject bundled skills either"
             echo "  --branch NAME  Git branch to install (default: main)"
             echo "  --commit SHA   Pin checkout to a specific commit after clone/update"
             echo "                   (ignored when it would roll an existing install back)"
@@ -184,19 +186,19 @@ while [[ $# -gt 0 ]]; do
             echo "  --non-interactive  Skip stages that require user input"
             echo "  --include-desktop  Also build the desktop app (apps/desktop -> Eidolon)"
             echo "  --dir PATH     Installation directory"
-            echo "                   default (non-root):  ~/.eidolon/hermes-agent"
-            echo "                   default (root, Linux): /usr/local/lib/hermes-agent"
-            echo "  --hermes-home PATH  Data directory (default: ~/.eidolon, or \$HERMES_HOME)"
+            echo "                   default (non-root):  ~/.eidolon/eidolon-agent"
+            echo "                   default (root, Linux): /usr/local/lib/eidolon-agent"
+            echo "  --eidolon-home PATH  Data directory (default: ~/.eidolon, or \$HERMES_HOME)"
             echo "  -h, --help     Show this help"
             echo ""
             echo "Notes:"
             echo "  When running as root on Linux, Eidolon installs the code under"
-            echo "  /usr/local/lib/hermes-agent and links the command into"
-            echo "  /usr/local/bin/hermes (FHS layout — matches Claude Code / Codex CLI)."
+            echo "  /usr/local/lib/eidolon-agent and links the command into"
+            echo "  /usr/local/bin/eidolon (FHS layout — matches Claude Code / Codex CLI)."
             echo "  Data, config, sessions, and logs still live in \$HERMES_HOME"
             echo "  (default /root/.eidolon).  This keeps Docker bind-mounted volumes"
             echo "  small and ensures the command is on PATH for all shells."
-            echo "  Existing installs at \$HERMES_HOME/hermes-agent are preserved in-place."
+            echo "  Existing installs at \$HERMES_HOME/eidolon-agent are preserved in-place."
             echo "  --ensure DEPS  Install only specified deps (comma-separated)"
             echo "                   Supported: node, browser, ripgrep, ffmpeg"
             echo "                   Does NOT clone repo or create venv"
@@ -251,7 +253,7 @@ json_escape() {
 
 # npm rewrites tracked package-lock.json files non-deterministically during
 # `npm install` / `npm run pack`. On a managed install those diffs are never
-# intentional, but they leave the checkout dirty — which forces `hermes update`
+# intentional, but they leave the checkout dirty — which forces `eidolon update`
 # to autostash on every run and makes branch switches fragile. Restore them so
 # a fresh install ends with a clean tree. Best-effort; only touches lockfiles.
 restore_dirty_lockfiles() {
@@ -320,7 +322,7 @@ EOF
 
 emit_manifest() {
     # Stage-Desktop is included only with --include-desktop, mirroring
-    # install.ps1: the signed bootstrap installer (Hermes-Setup) passes it so
+    # install.ps1: the signed bootstrap installer (Eidolon-Setup) passes it so
     # a GUI install ends up with a launchable app; the Electron app's own
     # first-launch bootstrap and the CLI one-liner omit it (building the
     # desktop from inside the already-running app would clobber it).
@@ -328,7 +330,7 @@ emit_manifest() {
     if [ "$INCLUDE_DESKTOP" = true ]; then
         desktop_stage='{"name":"desktop","title":"Build desktop app","category":"runtime","needs_user_input":false},'
     fi
-    printf '%s' '{"protocol_version":1,"stages":[{"name":"prerequisites","title":"System prerequisites","category":"runtime","needs_user_input":false},{"name":"repository","title":"Download Eidolon","category":"runtime","needs_user_input":false},{"name":"venv","title":"Create Python virtual environment","category":"runtime","needs_user_input":false},{"name":"python-deps","title":"Install Python dependencies","category":"runtime","needs_user_input":false},{"name":"node-deps","title":"Install browser-tool dependencies","category":"runtime","needs_user_input":false},{"name":"path","title":"Install Eidolon CLI (hermes)","category":"runtime","needs_user_input":false},{"name":"config","title":"Prepare config and skills","category":"configuration","needs_user_input":false},{"name":"setup","title":"Configure API keys and settings","category":"configuration","needs_user_input":true},{"name":"gateway","title":"Configure gateway service","category":"configuration","needs_user_input":true},'"$desktop_stage"'{"name":"complete","title":"Finish install","category":"runtime","needs_user_input":false}]}'
+    printf '%s' '{"protocol_version":1,"stages":[{"name":"prerequisites","title":"System prerequisites","category":"runtime","needs_user_input":false},{"name":"repository","title":"Download Eidolon","category":"runtime","needs_user_input":false},{"name":"venv","title":"Create Python virtual environment","category":"runtime","needs_user_input":false},{"name":"python-deps","title":"Install Python dependencies","category":"runtime","needs_user_input":false},{"name":"node-deps","title":"Install browser-tool dependencies","category":"runtime","needs_user_input":false},{"name":"path","title":"Install Eidolon CLI (eidolon)","category":"runtime","needs_user_input":false},{"name":"config","title":"Prepare config and skills","category":"configuration","needs_user_input":false},{"name":"setup","title":"Configure API keys and settings","category":"configuration","needs_user_input":true},{"name":"gateway","title":"Configure gateway service","category":"configuration","needs_user_input":true},'"$desktop_stage"'{"name":"complete","title":"Finish install","category":"runtime","needs_user_input":false}]}'
     printf '\n'
 }
 
@@ -396,18 +398,18 @@ is_termux() {
     [ -n "${TERMUX_VERSION:-}" ] || [[ "${PREFIX:-}" == *"com.termux/files/usr"* ]]
 }
 
-# Decide where the repo checkout + venv live, and where the `hermes` command
+# Decide where the repo checkout + venv live, and where the `eidolon` command
 # symlink goes.  Called after detect_os so $OS/$DISTRO are known.
 #
 # Defaults:
-#   - Non-root, any OS:       INSTALL_DIR = $HERMES_HOME/hermes-agent
+#   - Non-root, any OS:       INSTALL_DIR = $HERMES_HOME/eidolon-agent
 #                             command link in $HOME/.local/bin
-#   - Termux (any uid):       INSTALL_DIR = $HERMES_HOME/hermes-agent
+#   - Termux (any uid):       INSTALL_DIR = $HERMES_HOME/eidolon-agent
 #                             command link in $PREFIX/bin (already on PATH)
-#   - Root on Linux (new):    INSTALL_DIR = /usr/local/lib/hermes-agent
+#   - Root on Linux (new):    INSTALL_DIR = /usr/local/lib/eidolon-agent
 #                             command link in /usr/local/bin
 #                             (unless a legacy install already exists at
-#                              $HERMES_HOME/hermes-agent — then preserve it)
+#                              $HERMES_HOME/eidolon-agent — then preserve it)
 #
 # Always no-op when the user set --dir or $HERMES_INSTALL_DIR.
 resolve_install_layout() {
@@ -416,9 +418,24 @@ resolve_install_layout() {
         return 0
     fi
 
+    # Earlier Eidolon builds used the inherited checkout basename. Reuse only
+    # a fork checkout beneath the selected home; never discover ~/.hermes.
+    local legacy="$HERMES_HOME/hermes-agent"
+    local origin=""
+    if [ ! -e "$HERMES_HOME/eidolon-agent" ] && [ -d "$legacy/.git" ]; then
+        origin="$(git -C "$legacy" config --get remote.origin.url 2>/dev/null | tr '[:upper:]' '[:lower:]')"
+        case "$origin" in
+            https://github.com/aethermesh-ai/eidolon|https://github.com/aethermesh-ai/eidolon.git|git@github.com:aethermesh-ai/eidolon|git@github.com:aethermesh-ai/eidolon.git|ssh://git@github.com/aethermesh-ai/eidolon|ssh://git@github.com/aethermesh-ai/eidolon.git)
+                INSTALL_DIR="$legacy"
+                log_info "Existing Eidolon install detected at $INSTALL_DIR — keeping its selected layout"
+                return
+                ;;
+        esac
+    fi
+
     # Termux: package manager manages /data/data/..., keep code in HERMES_HOME.
     if is_termux; then
-        INSTALL_DIR="$HERMES_HOME/hermes-agent"
+        INSTALL_DIR="$HERMES_HOME/eidolon-agent"
         return 0
     fi
 
@@ -426,31 +443,31 @@ resolve_install_layout() {
     # macOS root installs keep the legacy layout because /usr/local/ on macOS
     # is Homebrew territory and we don't want to fight that.
     if [ "$OS" = "linux" ] && [ "$(id -u)" -eq 0 ]; then
-        if [ -d "$HERMES_HOME/hermes-agent/.git" ]; then
-            INSTALL_DIR="$HERMES_HOME/hermes-agent"
+        if [ -d "$HERMES_HOME/eidolon-agent/.git" ]; then
+            INSTALL_DIR="$HERMES_HOME/eidolon-agent"
             log_info "Existing install detected at $INSTALL_DIR — keeping legacy layout"
-            log_info "  (new root installs use /usr/local/lib/hermes-agent)"
+            log_info "  (new root installs use /usr/local/lib/eidolon-agent)"
             return 0
         fi
-        INSTALL_DIR="/usr/local/lib/hermes-agent"
+        INSTALL_DIR="/usr/local/lib/eidolon-agent"
         ROOT_FHS_LAYOUT=true
         # Place uv-managed Python under /usr/local/share so the venv interpreter
         # is world-readable.  Default uv paths land in /root/.local/share/uv,
         # which non-root users can't traverse — leaving the shared
-        # /usr/local/bin/hermes wrapper unable to exec the bad-interpreter venv
+        # /usr/local/bin/eidolon wrapper unable to exec the bad-interpreter venv
         # python.  See #21457.
         export UV_PYTHON_INSTALL_DIR="${UV_PYTHON_INSTALL_DIR:-/usr/local/share/uv/python}"
         export UV_PYTHON_BIN_DIR="${UV_PYTHON_BIN_DIR:-/usr/local/share/uv/bin}"
         log_info "Root install on Linux — using FHS layout"
         log_info "  Code:    $INSTALL_DIR"
-        log_info "  Command: /usr/local/bin/hermes"
+        log_info "  Command: /usr/local/bin/eidolon"
         log_info "  Data:    $HERMES_HOME (unchanged)"
         log_info "  uv Python: $UV_PYTHON_INSTALL_DIR (world-readable)"
         return 0
     fi
 
     # Default: non-root, non-Termux → legacy user-scoped layout.
-    INSTALL_DIR="$HERMES_HOME/hermes-agent"
+    INSTALL_DIR="$HERMES_HOME/eidolon-agent"
 }
 
 get_command_link_dir() {
@@ -492,13 +509,13 @@ configure_managed_node_npm_prefix() {
     printf 'prefix=%s\n' "$(dirname "$link_dir")" > "$HERMES_HOME/node/etc/npmrc"
 }
 
-get_hermes_command_path() {
+get_eidolon_command_path() {
     local link_dir
     link_dir="$(get_command_link_dir)"
-    if [ -x "$link_dir/hermes" ]; then
-        echo "$link_dir/hermes"
+    if [ -x "$link_dir/eidolon" ]; then
+        echo "$link_dir/eidolon"
     else
-        echo "hermes"
+        echo "eidolon"
     fi
 }
 
@@ -559,10 +576,10 @@ install_uv() {
         return 0
     fi
 
-    # Hermes owns its own uv at $HERMES_HOME/bin/uv.  Always install there —
+    # Eidolon owns its own uv at $HERMES_HOME/bin/uv.  Always install there —
     # no PATH probing, no conda guards, no multi-location resolution chains.
-    # The runtime update path (hermes_cli/managed_uv.py) looks in the same
-    # place, so install.sh and `hermes update` stay in sync.
+    # The runtime update path (eidolon_cli/managed_uv.py) looks in the same
+    # place, so install.sh and `eidolon update` stay in sync.
     local _managed_uv="$HERMES_HOME/bin/uv"
 
     if [ -x "$_managed_uv" ]; then
@@ -579,8 +596,8 @@ install_uv() {
     # `curl | sh` masks curl failures (sh exits 0 on empty stdin)
     # and conflates network errors with installer errors.
     local _uv_install_log _uv_installer
-    _uv_install_log="$(mktemp 2>/dev/null || echo "/tmp/hermes-uv-install.$$.log")"
-    _uv_installer="$(mktemp 2>/dev/null || echo "/tmp/hermes-uv-installer.$$.sh")"
+    _uv_install_log="$(mktemp 2>/dev/null || echo "/tmp/eidolon-uv-install.$$.log")"
+    _uv_installer="$(mktemp 2>/dev/null || echo "/tmp/eidolon-uv-installer.$$.sh")"
     if ! curl -LsSf https://astral.sh/uv/install.sh -o "$_uv_installer" 2>"$_uv_install_log"; then
         log_error "Failed to download uv installer from https://astral.sh/uv/install.sh"
         log_info "curl output:"
@@ -618,7 +635,7 @@ install_uv() {
 check_python() {
     if [ "$DISTRO" = "termux" ]; then
         log_info "Checking Termux Python..."
-        # Hermes currently declares requires-python >=3.11,<3.14.  Termux can
+        # Eidolon currently declares requires-python >=3.11,<3.14.  Termux can
         # expose a newer default `python` before dependencies have compatible
         # wheels, so do not accept the default interpreter until the upper bound
         # is verified. Prefer the project's pinned minor when present, then
@@ -1100,7 +1117,7 @@ install_node_line() {
     fi
 
     # Place into ~/.eidolon/node/ and symlink binaries into the same bin dir
-    # the hermes command uses (get_command_link_dir): /usr/local/bin for root
+    # the eidolon command uses (get_command_link_dir): /usr/local/bin for root
     # FHS installs, $PREFIX/bin on Termux, ~/.local/bin otherwise.
     rm -rf "$HERMES_HOME/node"
     mkdir -p "$HERMES_HOME"
@@ -1469,7 +1486,194 @@ show_manual_install_hint() {
 # Installation
 # ============================================================================
 
+# Earlier fork services still import hermes_cli. Stop before changing their
+# checkout or interpreter so the operator can retire each exact supervisor.
+preflight_legacy_gateway_services() {
+    [ -d "$INSTALL_DIR" ] || return 0
+    local inspector=""
+    for candidate in "$INSTALL_DIR/venv/bin/python" "${PYTHON_PATH:-}" python3 python; do
+        [ -n "$candidate" ] || continue
+        if command -v "$candidate" >/dev/null 2>&1; then
+            inspector="$candidate"
+            break
+        fi
+    done
+    if [ -z "$inspector" ]; then
+        log_error "Cannot check existing gateway services before replacing $INSTALL_DIR: Python is unavailable. Repair Python and rerun the installer."
+        return 1
+    fi
+    "$inspector" -I - "$INSTALL_DIR" "$HERMES_HOME" <<'PY_GATEWAY_PREFLIGHT'
+import os
+from pathlib import Path
+import plistlib
+import re
+import shlex
+import shutil
+import subprocess
+import sys
+
+install = Path(os.path.abspath(sys.argv[1]))
+selected = Path(sys.argv[2]).resolve()
+account = Path.home()
+found = {}
+
+def owned_home(value):
+    if not value:
+        return None
+    path = Path(value).resolve()
+    if path == selected or (path.parent.parent == selected and path.parent.name == "profiles"):
+        return path
+    return None
+
+def owned_command(argv, env):
+    home = owned_home(env.get("EIDOLON_HOME") or env.get("HERMES_HOME"))
+    if home is None or not argv or "gateway" not in argv:
+        return None
+    executable = Path(os.path.abspath(argv[0]))
+    # Resolve directory aliases, but not the final Python symlink (which may
+    # legitimately point out of the venv into the managed interpreter tree).
+    venv_owned = executable.parent.resolve() in ((install / "venv/bin").resolve(), (install / ".venv/bin").resolve())
+    # launchd may wrap the gateway with the same venv's stderr timestamp module.
+    legacy = "hermes_cli.main" in argv or (executable.name == "hermes")
+    return home if venv_owned and legacy else None
+
+def split(value):
+    try:
+        return shlex.split(value)
+    except ValueError:
+        return []
+
+def unit_fields(text):
+    env, argv, user = {}, [], ""
+    for line in text.replace("\\\n", " ").splitlines():
+        key, sep, value = line.strip().partition("=")
+        if not sep:
+            continue
+        if key == "Environment":
+            for item in split(value):
+                name, equals, content = item.partition("=")
+                if equals:
+                    env[name] = content
+        elif key == "ExecStart":
+            # systemctl show exposes the cached command even after its unit
+            # file has been removed. Unit files contain the bare argv.
+            cached = re.search(r"argv\[\]=(.*?)\s*;", value)
+            argv = split(cached.group(1) if cached else value)
+        elif key == "User":
+            user = value
+    return argv, env, user
+
+def record_unit(name, path, text, system):
+    argv, env, user = unit_fields(text)
+    home = owned_command(argv, env)
+    if home is not None:
+        found[("systemd", system, name)] = (home, path, user)
+
+unit_dirs = [(account / ".config/systemd/user", False),
+             (Path(os.environ.get("XDG_CONFIG_HOME", str(account / ".config"))) / "systemd/user", False),
+             (Path("/etc/systemd/user"), False), (Path("/etc/systemd/system"), True),
+             (Path("/run/systemd/system"), True)]
+for directory, system in unit_dirs:
+    for path in directory.glob("hermes-gateway*.service"):
+        if re.fullmatch(r"hermes-gateway(?:-[\w-]+)?\.service", path.name):
+            try:
+                record_unit(path.name, path, path.read_text(), system)
+            except OSError as exc:
+                sys.exit(f"Cannot inspect gateway unit {path}: {exc}. Rerun after restoring read access.")
+
+# A moved/removed definition can still have a live supervisor. Read the
+# manager's cached command before allowing the old namespace to disappear.
+if shutil.which("systemctl"):
+    for system in (False, True):
+        base = ["systemctl", *([] if system else ["--user"])]
+        try:
+            listing = subprocess.run([*base, "list-units", "--all", "--plain", "--no-legend", "--no-pager", "hermes-gateway*.service"], capture_output=True, text=True, timeout=10)
+            for line in listing.stdout.splitlines():
+                name = line.split()[0] if line.split() else ""
+                if not re.fullmatch(r"hermes-gateway(?:-[\w-]+)?\.service", name):
+                    continue
+                details = subprocess.run([*base, "show", name, "--property=ExecStart,Environment,User,FragmentPath,ActiveState"], capture_output=True, text=True, timeout=10)
+                if details.returncode:
+                    sys.exit(f"Cannot inspect loaded gateway {name}. Restore service-manager access and rerun before replacing the install.")
+                # Inactive cached units without a definition cannot respawn.
+                properties = dict(line.partition("=")[::2] for line in details.stdout.splitlines() if "=" in line)
+                fragment = Path(properties["FragmentPath"]) if properties.get("FragmentPath") else None
+                if properties.get("ActiveState") not in ("inactive", "failed") or (fragment and fragment.exists()):
+                    record_unit(name, fragment, details.stdout, system)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            sys.exit(f"Cannot inspect legacy gateway supervisors: {exc}. Stop them and retry before replacing the install.")
+
+plist_dirs = [(account / "Library/LaunchAgents", f"gui/{os.getuid()}"),
+              (Path("/Library/LaunchAgents"), f"gui/{os.getuid()}"),
+              (Path("/Library/LaunchDaemons"), "system")]
+for directory, domain in plist_dirs:
+    for path in directory.glob("ai.hermes.gateway*.plist"):
+        try:
+            with path.open("rb") as stream:
+                data = plistlib.load(stream)
+        except (OSError, plistlib.InvalidFileException) as exc:
+            sys.exit(f"Cannot inspect gateway plist {path}: {exc}. Repair it before rerunning the installer.")
+        label = data.get("Label", "")
+        if not re.fullmatch(r"ai\.hermes\.gateway(?:-[\w-]+)?", label):
+            continue
+        home = owned_command(data.get("ProgramArguments", []), data.get("EnvironmentVariables", {}))
+        if home is not None:
+            found[("launchd", domain, label)] = (home, path, "")
+
+# launchd retains loaded jobs after their plist is moved. Inspect its cached
+# arguments/environment as well, so backing up a plist alone cannot bypass
+# the required bootout. These are read-only launchctl operations.
+if sys.platform == "darwin" and shutil.which("launchctl"):
+    for domain in (f"gui/{os.getuid()}", f"user/{os.getuid()}", "system"):
+        try:
+            listing = subprocess.run(["launchctl", "print", domain], capture_output=True, text=True, timeout=10)
+            labels = set(re.findall(r"\bai\.hermes\.gateway(?:-[\w-]+)?\b", listing.stdout))
+            for label in labels:
+                result = subprocess.run(["launchctl", "print", domain + "/" + label], capture_output=True, text=True, timeout=10)
+                if result.returncode:
+                    sys.exit(f"Cannot inspect loaded gateway {domain}/{label}. Restore launchd access and rerun before replacing the install.")
+                args = re.search(r"^\s*arguments = \{\n(.*?)^\s*\}", result.stdout, re.M | re.S)
+                argv = [line.strip().strip('"') for line in args.group(1).splitlines()] if args else []
+                env = {key: value.strip('"') for key, value in re.findall(r"^\s*(EIDOLON_HOME|HERMES_HOME) => (.*?)\s*$", result.stdout, re.M)}
+                home = owned_command(argv, env)
+                if home is not None:
+                    source = re.search(r"^\s*path = (.*?)\s*$", result.stdout, re.M)
+                    path = Path(source.group(1)) if source else None
+                    found[("launchd", domain, label)] = (home, path if path and path.exists() else None, "")
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            sys.exit(f"Cannot inspect legacy launchd gateways: {exc}. Boot out the selected gateway and retry.")
+
+if found:
+    print("Eidolon installation paused before changing the checkout or virtual environment.", file=sys.stderr)
+    print("Legacy gateway supervisors still target this installation. Messaging settings are preserved.", file=sys.stderr)
+    for (kind, scope, name), (home, path, user) in found.items():
+        print(f"\nGateway: {name}\nProfile home: {home}", file=sys.stderr)
+        if kind == "systemd":
+            control = "sudo systemctl" if scope else "systemctl --user"
+            print(f"  {control} disable --now {shlex.quote(name)}", file=sys.stderr)
+            if path:
+                prefix = "sudo " if scope or not str(path).startswith(str(account) + os.sep) else ""
+                print(f"  {prefix}mv -n {shlex.quote(str(path))} {shlex.quote(str(path) + '.pre-eidolon')}", file=sys.stderr)
+            print(f"  {control} daemon-reload", file=sys.stderr)
+        else:
+            prefix = "sudo " if scope == "system" else ""
+            print(f"  {prefix}launchctl bootout {shlex.quote(scope + '/' + name)}", file=sys.stderr)
+            if path:
+                move_prefix = "sudo " if scope == "system" or not str(path).startswith(str(account) + os.sep) else ""
+                print(f"  {move_prefix}mv -n {shlex.quote(str(path))} {shlex.quote(str(path) + '.pre-eidolon')}", file=sys.stderr)
+        command = shlex.join(["env", f"EIDOLON_HOME={home}", str(install / "venv/bin/eidolon"), "gateway"])
+        service_flags = " --system" if kind == "systemd" and scope else ""
+        identity = " --run-as-user " + shlex.quote(user) if service_flags and user else ""
+        prefix = "sudo " if service_flags or scope == "system" else ""
+        print("After those commands, rerun this installer, then restore this gateway:", file=sys.stderr)
+        print(f"  {prefix}{command} install{service_flags}{identity}", file=sys.stderr)
+        print(f"  {prefix}{command} start{service_flags}", file=sys.stderr)
+    sys.exit(1)
+PY_GATEWAY_PREFLIGHT
+}
+
 clone_repo() {
+    preflight_legacy_gateway_services || return
     log_info "Installing to $INSTALL_DIR..."
 
     # An interrupted previous clone leaves a .git with no initial commit, where
@@ -1499,14 +1703,14 @@ clone_repo() {
                 # the whole install at the repository stage. Clear the conflict
                 # markers with `git reset` first -- this keeps working-tree
                 # changes (they're still stashed just below) and only drops the
-                # index-level conflict state. Mirrors the `hermes update` path
+                # index-level conflict state. Mirrors the `eidolon update` path
                 # (#4735).
                 if [ -n "$(git ls-files --unmerged)" ]; then
                     log_info "Clearing unmerged index entries from a previous conflict..."
                     git reset -q
                 fi
                 local stash_name
-                stash_name="hermes-install-autostash-$(date -u +%Y%m%d-%H%M%S)"
+                stash_name="eidolon-install-autostash-$(date -u +%Y%m%d-%H%M%S)"
                 log_info "Local changes detected, stashing before update..."
                 git stash push --include-untracked -m "$stash_name"
                 autostash_ref="stash@{0}"
@@ -1521,7 +1725,7 @@ clone_repo() {
             git checkout "$BRANCH"
             # Managed installs should follow origin/$BRANCH exactly. If the
             # checkout has diverged (or has local-only commits), ff-only pull
-            # cannot succeed — mirror ``hermes update`` and reset to the
+            # cannot succeed — mirror ``eidolon update`` and reset to the
             # fetched remote so bootstrap/install can recover.
             if ! git pull --ff-only origin "$BRANCH"; then
                 log_warn "Fast-forward not possible; resetting managed install to origin/$BRANCH..."
@@ -1710,6 +1914,7 @@ EOF
 }
 
 setup_venv() {
+    preflight_legacy_gateway_services || return
     if [ "$USE_VENV" = false ]; then
         log_info "Skipping virtual environment (--no-venv)"
         return 0
@@ -1926,7 +2131,7 @@ install_deps() {
         # one subprocess while keeping ambient user/system uv config hidden
         # (redirected to an empty XDG dir), preserving the #21269 guarantee.
         # Runtime code does the same before its locked syncs
-        # (hermes_cli/managed_uv.py).
+        # (eidolon_cli/managed_uv.py).
         if run_locked_uv_sync "$INSTALL_DIR/venv"; then
             log_success "Main package installed (hash-verified via uv.lock)"
             log_success "All dependencies installed"
@@ -1971,7 +2176,7 @@ try:
     specs = data["project"]["optional-dependencies"]["all"]
     extras = []
     for s in specs:
-        m = re.search(r"hermes-agent\[([\w-]+)\]", s)
+        m = re.search(r"eidolon-agent\[([\w-]+)\]", s)
         if m:
             extras.append(m.group(1))
     print(",".join(extras))
@@ -2044,15 +2249,15 @@ PY
 }
 
 setup_path() {
-    log_info "Setting up hermes command..."
+    log_info "Setting up eidolon command..."
 
     if [ "$USE_VENV" = true ]; then
         HERMES_BIN="$INSTALL_DIR/venv/bin/python"
-        HERMES_ENTRYPOINT="$INSTALL_DIR/hermes"
+        HERMES_ENTRYPOINT="$INSTALL_DIR/eidolon"
     else
-        HERMES_BIN="$(which hermes 2>/dev/null || echo "")"
+        HERMES_BIN="$(which eidolon 2>/dev/null || echo "")"
         if [ -z "$HERMES_BIN" ]; then
-            log_warn "hermes not found on PATH after install"
+            log_warn "eidolon not found on PATH after install"
             return 0
         fi
     fi
@@ -2074,88 +2279,88 @@ setup_path() {
     command_link_dir="$(get_command_link_dir)"
     command_link_display_dir="$(get_command_link_display_dir)"
 
-    # Create a user-facing shim for the hermes command.
+    # Create a user-facing shim for the eidolon command.
     # We intentionally clear PYTHONPATH/PYTHONHOME here so inherited env vars
     # can't make this launcher import modules from another checkout.
     mkdir -p "$command_link_dir"
     # Older installs created this path as a symlink to $HERMES_BIN. Without
     # the rm, `cat >` follows the symlink and overwrites the venv pip entry
     # point with this shim — making `exec "$HERMES_BIN"` self-recurse. (#21454)
-    rm -f "$command_link_dir/hermes"
+    rm -f "$command_link_dir/eidolon"
     if [ "$USE_VENV" = true ]; then
         # uv-generated console scripts resolve themselves through `realpath`,
         # which stock macOS does not provide. Run the checked-in entrypoint
         # with the venv interpreter instead, so the public launcher remains
         # independent of non-standard shell utilities.
-        cat > "$command_link_dir/hermes" <<EOF
+        cat > "$command_link_dir/eidolon" <<EOF
 #!/usr/bin/env bash
 unset PYTHONPATH
 unset PYTHONHOME
 exec "$HERMES_BIN" "$HERMES_ENTRYPOINT" "\$@"
 EOF
     else
-        cat > "$command_link_dir/hermes" <<EOF
+        cat > "$command_link_dir/eidolon" <<EOF
 #!/usr/bin/env bash
 unset PYTHONPATH
 unset PYTHONHOME
 exec "$HERMES_BIN" "\$@"
 EOF
     fi
-    chmod +x "$command_link_dir/hermes"
-    log_success "Installed hermes launcher → $command_link_display_dir/hermes"
+    chmod +x "$command_link_dir/eidolon"
+    log_success "Installed eidolon launcher → $command_link_display_dir/eidolon"
 
-    # Also expose `hermes-agent`. The `hermes-agent` console script declared in
+    # Also expose `eidolon-agent`. The `eidolon-agent` console script declared in
     # pyproject.toml's [project.scripts] lives inside the venv, which is not on
     # the login-shell PATH. Without this launcher users can't invoke the agent
     # entrypoint directly from outside the venv. (#74819)
-    rm -f "$command_link_dir/hermes-agent"
+    rm -f "$command_link_dir/eidolon-agent"
     if [ "$USE_VENV" = true ]; then
-        cat > "$command_link_dir/hermes-agent" <<EOF
+        cat > "$command_link_dir/eidolon-agent" <<EOF
 #!/usr/bin/env bash
 unset PYTHONPATH
 unset PYTHONHOME
 exec "$HERMES_BIN" "$INSTALL_DIR/run_agent.py" "\$@"
 EOF
     else
-        cat > "$command_link_dir/hermes-agent" <<EOF
+        cat > "$command_link_dir/eidolon-agent" <<EOF
 #!/usr/bin/env bash
 unset PYTHONPATH
 unset PYTHONHOME
 exec "$HERMES_BIN" run_agent.py "\$@"
 EOF
     fi
-    chmod +x "$command_link_dir/hermes-agent"
-    log_success "Installed hermes-agent launcher → $command_link_display_dir/hermes-agent"
+    chmod +x "$command_link_dir/eidolon-agent"
+    log_success "Installed eidolon-agent launcher → $command_link_display_dir/eidolon-agent"
 
-    # Also expose `hermes-acp`. ACP hosts (Zed, JetBrains, Buzz) resolve the
-    # agent by command name on the login-shell PATH, and the `hermes-acp`
+    # Also expose `eidolon-acp`. ACP hosts (Zed, JetBrains, Buzz) resolve the
+    # agent by command name on the login-shell PATH, and the `eidolon-acp`
     # console script lives inside the venv, which is not on that PATH. Without
-    # this launcher those hosts report Hermes as not installed. (#21454 applies
+    # this launcher those hosts report Eidolon as not installed. (#21454 applies
     # here too: clear the path first so `cat >` cannot follow an old symlink
     # into the venv and overwrite the console script.)
-    rm -f "$command_link_dir/hermes-acp"
+    rm -f "$command_link_dir/eidolon-acp"
     if [ "$USE_VENV" = true ]; then
-        cat > "$command_link_dir/hermes-acp" <<EOF
+        cat > "$command_link_dir/eidolon-acp" <<EOF
 #!/usr/bin/env bash
 unset PYTHONPATH
 unset PYTHONHOME
 exec "$HERMES_BIN" "$HERMES_ENTRYPOINT" acp "\$@"
 EOF
     else
-        cat > "$command_link_dir/hermes-acp" <<EOF
+        cat > "$command_link_dir/eidolon-acp" <<EOF
 #!/usr/bin/env bash
 unset PYTHONPATH
 unset PYTHONHOME
 exec "$HERMES_BIN" acp "\$@"
 EOF
     fi
-    chmod +x "$command_link_dir/hermes-acp"
-    log_success "Installed hermes-acp launcher → $command_link_display_dir/hermes-acp"
+    chmod +x "$command_link_dir/eidolon-acp"
+    log_success "Installed eidolon-acp launcher → $command_link_display_dir/eidolon-acp"
 
     if [ "$DISTRO" = "termux" ]; then
         export PATH="$command_link_dir:$PATH"
         log_info "$command_link_display_dir is the native Termux command path"
-        log_success "hermes command ready"
+        log_success "eidolon command ready"
         return 0
     fi
 
@@ -2170,16 +2375,16 @@ EOF
         # Probe a fresh non-login interactive bash the way the user will use it.
         # `bash -i -c` sources ~/.bashrc but NOT ~/.bash_profile or /etc/profile,
         # which is the exact scenario where RHEL root loses /usr/local/bin.
-        if env -i HOME="$HOME" TERM="${TERM:-dumb}" bash -i -c 'command -v hermes' \
+        if env -i HOME="$HOME" TERM="${TERM:-dumb}" bash -i -c 'command -v eidolon' \
                 >/dev/null 2>&1; then
             log_info "/usr/local/bin is already on PATH for all shells"
-            log_success "hermes command ready"
+            log_success "eidolon command ready"
             return 0
         fi
 
-        log_info "hermes not on PATH in non-login shells (common on RHEL-family)"
+        log_info "eidolon not on PATH in non-login shells (common on RHEL-family)"
         PATH_LINE='export PATH="/usr/local/bin:$PATH"'
-        PATH_COMMENT='# Hermes Agent — ensure /usr/local/bin is on PATH (RHEL non-login shells)'
+        PATH_COMMENT='# Eidolon Agent — ensure /usr/local/bin is on PATH (RHEL non-login shells)'
         for SHELL_CONFIG in "$HOME/.bashrc" "$HOME/.bash_profile"; do
             [ -f "$SHELL_CONFIG" ] || continue
             if ! grep -v '^[[:space:]]*#' "$SHELL_CONFIG" 2>/dev/null \
@@ -2190,7 +2395,7 @@ EOF
                 log_success "Added /usr/local/bin to PATH in $SHELL_CONFIG"
             fi
         done
-        log_success "hermes command ready"
+        log_success "eidolon command ready"
         return 0
     fi
 
@@ -2236,7 +2441,7 @@ EOF
         for SHELL_CONFIG in "${SHELL_CONFIGS[@]}"; do
             if ! grep -v '^[[:space:]]*#' "$SHELL_CONFIG" 2>/dev/null | grep -qE 'PATH=.*\.local/bin'; then
                 echo "" >> "$SHELL_CONFIG"
-                echo "# Hermes Agent — ensure ~/.local/bin is on PATH" >> "$SHELL_CONFIG"
+                echo "# Eidolon Agent — ensure ~/.local/bin is on PATH" >> "$SHELL_CONFIG"
                 echo "$PATH_LINE" >> "$SHELL_CONFIG"
                 log_success "Added ~/.local/bin to PATH in $SHELL_CONFIG"
             fi
@@ -2246,7 +2451,7 @@ EOF
         if [ "$IS_FISH" = "true" ]; then
             if ! grep -q 'fish_add_path.*\.local/bin' "$FISH_CONFIG" 2>/dev/null; then
                 echo "" >> "$FISH_CONFIG"
-                echo "# Hermes Agent — ensure ~/.local/bin is on PATH" >> "$FISH_CONFIG"
+                echo "# Eidolon Agent — ensure ~/.local/bin is on PATH" >> "$FISH_CONFIG"
                 echo 'fish_add_path "$HOME/.local/bin"' >> "$FISH_CONFIG"
                 log_success "Added ~/.local/bin to PATH in $FISH_CONFIG"
             fi
@@ -2260,10 +2465,10 @@ EOF
         log_info "~/.local/bin already on PATH"
     fi
 
-    # Export for current session so hermes works immediately
+    # Export for current session so eidolon works immediately
     export PATH="$command_link_dir:$PATH"
 
-    log_success "hermes command ready"
+    log_success "eidolon command ready"
 }
 
 copy_config_templates() {
@@ -2301,7 +2506,7 @@ copy_config_templates() {
     fi
 
     # Create SOUL.md if it doesn't exist (global persona file).
-    # This MUST match DEFAULT_SOUL_MD in hermes_cli/default_soul.py — the
+    # This MUST match DEFAULT_SOUL_MD in eidolon_cli/default_soul.py — the
     # runtime (_ensure_default_soul_md) treats the old comment-only scaffold as
     # "never customized" and upgrades it to this text on next run, so any drift
     # here is self-healing, but keep them in sync to avoid a churn on first run.
@@ -2317,14 +2522,14 @@ SOUL_EOF
     # Seed bundled skills into ~/.eidolon/skills/ (manifest-based, one-time per skill)
     if [ "$NO_SKILLS" = true ]; then
         # Blank-slate install: write the opt-out marker and skip seeding.
-        # skills_sync.py and `hermes update` both honor this marker, so the
+        # skills_sync.py and `eidolon update` both honor this marker, so the
         # default profile stays empty across future updates too.
         printf '%s\n' \
             "This profile opted out of bundled-skill seeding (installed with --no-skills)." \
-            "Delete this file to re-enable sync on the next 'hermes update'." \
+            "Delete this file to re-enable sync on the next 'eidolon update'." \
             > "$HERMES_HOME/.no-bundled-skills" 2>/dev/null || true
         log_info "Skipping bundled skills (--no-skills). Wrote $HERMES_HOME/.no-bundled-skills"
-        log_info "  Future 'hermes update' runs will not inject bundled skills. Delete the marker to opt back in."
+        log_info "  Future 'eidolon update' runs will not inject bundled skills. Delete the marker to opt back in."
     else
         log_info "Syncing bundled skills to $HERMES_HOME/skills/ ..."
         if "$INSTALL_DIR/venv/bin/python" "$INSTALL_DIR/tools/skills_sync.py" 2>/dev/null; then
@@ -2389,7 +2594,7 @@ strip_snap_browser_override() {
 
     local tmp
     tmp="$(mktemp)" || return 0
-    if grep -Ev '^AGENT_BROWSER_EXECUTABLE_PATH=/snap/|^# Hermes Agent browser tools' "$env_file" > "$tmp"; then
+    if grep -Ev '^AGENT_BROWSER_EXECUTABLE_PATH=/snap/|^# Eidolon Agent browser tools' "$env_file" > "$tmp"; then
         mv "$tmp" "$env_file"
         log_warn "Removed stale Snap browser override (AGENT_BROWSER_EXECUTABLE_PATH=/snap/...) from $env_file"
         log_info "Eidolon will use the bundled Chromium instead."
@@ -2613,7 +2818,7 @@ configure_browser_env_from_system_browser() {
 
     {
         echo ""
-        echo "# Hermes Agent browser tools — explicit browser override."
+        echo "# Eidolon Agent browser tools — explicit browser override."
         echo "AGENT_BROWSER_EXECUTABLE_PATH=$browser_path"
     } >> "$env_file"
     log_success "Configured browser tools to use $browser_path"
@@ -2633,8 +2838,8 @@ configure_browser_env_from_system_browser() {
 # Naming ui-tui/web excludes the unnamed apps/* workspaces, and
 # --include-workspace-root keeps the root's own devDependencies (the shared
 # ESLint flat config each workspace imports) from being pruned by the scoped
-# install — the same closure `hermes update` installs
-# (hermes_cli/main.py::_update_node_dependencies). Prebuilt/partial checkouts
+# install — the same closure `eidolon update` installs
+# (eidolon_cli/main.py::_update_node_dependencies). Prebuilt/partial checkouts
 # can lack a workspace, and naming a missing one makes npm fail hard, so fall
 # back to a root-only install that still skips apps/*.
 node_deps_workspace_args() {
@@ -2807,7 +3012,7 @@ install_node_deps() {
         log_success "TUI dependencies installed"
     fi
 
-    # Keep the checkout clean so `hermes update` doesn't autostash every run.
+    # Keep the checkout clean so `eidolon update` doesn't autostash every run.
     restore_dirty_lockfiles "$INSTALL_DIR"
 }
 
@@ -2816,7 +3021,7 @@ install_browser_use_cli() {
     # (tools/browser_use_cli.py). Provision it here so fresh installs don't
     # silently fall back to the built-in browser tools. Best-effort: any
     # failure is non-fatal because browser_exec can still run via uvx and
-    # `hermes tools` can install it later.
+    # `eidolon tools` can install it later.
     if [ "$SKIP_BROWSER" = true ]; then
         log_info "Skipping Browser Use CLI install (--skip-browser)"
         return 0
@@ -2844,7 +3049,7 @@ install_browser_use_cli() {
         log_success "Browser Use CLI installed"
     else
         log_warn "Browser Use CLI install failed — browser automation falls back to built-in tools."
-        log_info "Install later with: $UV_CMD tool install browser-use  (or via 'hermes tools')"
+        log_info "Install later with: $UV_CMD tool install browser-use  (or via 'eidolon tools')"
     fi
 }
 
@@ -2882,9 +3087,9 @@ cua_driver_runtime_compatible() {
 install_computer_use_driver() {
     # cua-driver powers the computer_use toolset (background desktop control).
     # Provision it at install time so enabling the tool later — via
-    # `hermes tools`, the dashboard, or the desktop app — is a config flip,
+    # `eidolon tools`, the dashboard, or the desktop app — is a config flip,
     # not a surprise multi-minute binary fetch (the confusion this fixes:
-    # users had to discover `hermes computer-use install` on their own).
+    # users had to discover `eidolon computer-use install` on their own).
     # Best-effort and non-fatal: the enable paths still lazy-install via
     # install_cua_driver() when this step was skipped or failed.
     if [ "$SKIP_COMPUTER_USE" = true ]; then
@@ -2911,8 +3116,8 @@ install_computer_use_driver() {
     fi
 
     log_info "Installing Computer Use driver (cua-driver)..."
-    # Same upstream installer `hermes computer-use install` runs; time-boxed
-    # so a stalled GitHub download can't hang the Hermes install. The
+    # Same upstream installer `eidolon computer-use install` runs; time-boxed
+    # so a stalled GitHub download can't hang the Eidolon install. The
     # upstream installer serializes with its own lock (600s stale window),
     # so give it a ceiling above that — matching Hermes'
     # _CUA_INSTALLER_TIMEOUT (660s).
@@ -2921,10 +3126,10 @@ install_computer_use_driver() {
     if run_with_timeout 660 /bin/bash -c \
         'curl -fsSL https://raw.githubusercontent.com/trycua/cua/main/libs/cua-driver/scripts/install.sh | /bin/bash' \
         >"$cua_log" 2>&1; then
-        log_success "Computer Use driver installed (enable via 'hermes tools' → Computer Use)"
+        log_success "Computer Use driver installed (enable via 'eidolon tools' → Computer Use)"
     else
         log_warn "Computer Use driver install failed — it will install on demand when you enable the tool."
-        log_info "Install later with: hermes computer-use install"
+        log_info "Install later with: eidolon computer-use install"
         tail -n 5 "$cua_log" >&2 || true
     fi
     rm -f "$cua_log"
@@ -2945,7 +3150,7 @@ run_setup_wizard() {
     # but opening fails with ENXIO, so the wizard would proceed and
     # then crash on `< /dev/tty` below.
     if ! (: </dev/tty) 2>/dev/null; then
-        log_info "Setup wizard skipped (no terminal available). Run 'hermes setup' after install."
+        log_info "Setup wizard skipped (no terminal available). Run 'eidolon setup' after install."
         return 0
     fi
 
@@ -2955,12 +3160,12 @@ run_setup_wizard() {
 
     cd "$INSTALL_DIR"
 
-    # Run hermes setup using the venv Python directly (no activation needed).
+    # Run eidolon setup using the venv Python directly (no activation needed).
     # Redirect stdin from /dev/tty so interactive prompts work when piped from curl.
     if [ "$USE_VENV" = true ]; then
-        "$INSTALL_DIR/venv/bin/python" -m hermes_cli.main setup < /dev/tty
+        "$INSTALL_DIR/venv/bin/python" -m eidolon_cli.main setup < /dev/tty
     else
-        python -m hermes_cli.main setup < /dev/tty
+        python -m eidolon_cli.main setup < /dev/tty
     fi
 }
 
@@ -2995,14 +3200,14 @@ maybe_start_gateway() {
         if [ "$IS_INTERACTIVE" = true ]; then
             echo ""
             log_info "WhatsApp is enabled but not yet paired."
-            log_info "Running 'hermes whatsapp' to pair via QR code..."
+            log_info "Running 'eidolon whatsapp' to pair via QR code..."
             echo ""
             if prompt_yes_no "Pair WhatsApp now?" "yes"; then
-                HERMES_CMD="$(get_hermes_command_path)"
+                HERMES_CMD="$(get_eidolon_command_path)"
                 $HERMES_CMD whatsapp || true
             fi
         else
-            log_info "WhatsApp pairing skipped (non-interactive). Run 'hermes whatsapp' to pair."
+            log_info "WhatsApp pairing skipped (non-interactive). Run 'eidolon whatsapp' to pair."
         fi
     fi
 
@@ -3010,7 +3215,7 @@ maybe_start_gateway() {
     # in Docker builds where the device node is in the mount namespace
     # but opening fails with ENXIO. See #16746.
     if ! (: </dev/tty) 2>/dev/null; then
-        log_info "Gateway setup skipped (no terminal available). Run 'hermes gateway install' later."
+        log_info "Gateway setup skipped (no terminal available). Run 'eidolon gateway install' later."
         return 0
     fi
 
@@ -3027,7 +3232,7 @@ maybe_start_gateway() {
     fi
 
     if [ "$should_install_gateway" = true ]; then
-        HERMES_CMD="$(get_hermes_command_path)"
+        HERMES_CMD="$(get_eidolon_command_path)"
 
         if [ "$DISTRO" != "termux" ] && command -v systemctl &> /dev/null; then
             log_info "Installing systemd service..."
@@ -3036,10 +3241,10 @@ maybe_start_gateway() {
                 if $HERMES_CMD gateway start 2>/dev/null; then
                     log_success "Gateway started! Your bot is now online."
                 else
-                    log_warn "Service installed but failed to start. Try: hermes gateway start"
+                    log_warn "Service installed but failed to start. Try: eidolon gateway start"
                 fi
             else
-                log_warn "Systemd install failed. You can start manually: hermes gateway"
+                log_warn "Systemd install failed. You can start manually: eidolon gateway"
             fi
         else
             if [ "$DISTRO" = "termux" ]; then
@@ -3051,18 +3256,18 @@ maybe_start_gateway() {
             GATEWAY_PID=$!
             log_success "Gateway started (PID $GATEWAY_PID). Logs: $HERMES_HOME/logs/gateway.log"
             log_info "To stop: kill $GATEWAY_PID"
-            log_info "To restart later: hermes gateway"
+            log_info "To restart later: eidolon gateway"
             if [ "$DISTRO" = "termux" ]; then
                 log_warn "Android may stop background processes when Termux is suspended or the system reclaims resources."
             fi
         fi
     else
-        log_info "Skipped. Start the gateway later with: hermes gateway"
+        log_info "Skipped. Start the gateway later with: eidolon gateway"
     fi
 }
 
 write_bootstrap_marker() {
-    # Writes $INSTALL_DIR/.hermes-bootstrap-complete, which tells the Hermes
+    # Writes $INSTALL_DIR/.eidolon-bootstrap-complete, which tells the Hermes
     # desktop app (apps/desktop/electron/main.ts) and the macOS launcher fast
     # path (apps/bootstrap-installer) "a real install finished here -- don't
     # re-run first-run bootstrap."
@@ -3091,7 +3296,7 @@ write_bootstrap_marker() {
         return 0
     fi
 
-    local marker_path="$INSTALL_DIR/.hermes-bootstrap-complete"
+    local marker_path="$INSTALL_DIR/.eidolon-bootstrap-complete"
     local tmp_path="$marker_path.tmp"
 
     # Atomic publish: the macOS launcher predicate only checks existence, so a
@@ -3123,26 +3328,26 @@ print_success() {
 
     echo -e "${CYAN}─────────────────────────────────────────────────────────${NC}"
     echo ""
-    echo -e "${CYAN}${BOLD}🚀 Eidolon commands (hermes CLI):${NC}"
+    echo -e "${CYAN}${BOLD}🚀 Eidolon commands (eidolon CLI):${NC}"
     echo ""
-    echo -e "   ${GREEN}hermes${NC}              Start chatting"
-    echo -e "   ${GREEN}hermes setup${NC}        Configure API keys & settings"
-    echo -e "   ${GREEN}hermes config${NC}       View/edit configuration"
-    echo -e "   ${GREEN}hermes config edit${NC}  Open config in editor"
-    echo -e "   ${GREEN}hermes gateway install${NC} Install gateway service (messaging + cron)"
-    echo -e "   ${GREEN}hermes update${NC}       Update to latest version"
+    echo -e "   ${GREEN}eidolon${NC}              Start chatting"
+    echo -e "   ${GREEN}eidolon setup${NC}        Configure API keys & settings"
+    echo -e "   ${GREEN}eidolon config${NC}       View/edit configuration"
+    echo -e "   ${GREEN}eidolon config edit${NC}  Open config in editor"
+    echo -e "   ${GREEN}eidolon gateway install${NC} Install gateway service (messaging + cron)"
+    echo -e "   ${GREEN}eidolon update${NC}       Update to latest version"
     echo ""
 
     echo -e "${CYAN}─────────────────────────────────────────────────────────${NC}"
     echo ""
     if [ "$DISTRO" = "termux" ]; then
-        echo -e "${YELLOW}⚡ 'hermes' was linked into $(get_command_link_display_dir), which is already on PATH in Termux.${NC}"
+        echo -e "${YELLOW}⚡ 'eidolon' was linked into $(get_command_link_display_dir), which is already on PATH in Termux.${NC}"
         echo ""
     elif [ "$ROOT_FHS_LAYOUT" = true ]; then
-        echo -e "${YELLOW}⚡ 'hermes' was linked into /usr/local/bin and is ready to use — no shell reload needed.${NC}"
+        echo -e "${YELLOW}⚡ 'eidolon' was linked into /usr/local/bin and is ready to use — no shell reload needed.${NC}"
         echo ""
     else
-        echo -e "${YELLOW}⚡ Reload your shell to use 'hermes' command:${NC}"
+        echo -e "${YELLOW}⚡ Reload your shell to use 'eidolon' command:${NC}"
         echo ""
         LOGIN_SHELL="$(basename "${SHELL:-/bin/bash}")"
         if [ "$LOGIN_SHELL" = "zsh" ]; then
@@ -3204,7 +3409,7 @@ ensure_browser() {
 
     # agent-browser itself is intentionally NOT installed here (#43564 /
     # PR #44772 review): it resolves lazily via `npx agent-browser` instead,
-    # which every consumer (tools/browser_tool.py, `hermes update`'s npx
+    # which every consumer (tools/browser_tool.py, `eidolon update`'s npx
     # cache warm) already goes through. Eagerly npm-installing a second,
     # separately version-pinned copy here -- only reachable via this
     # explicit --ensure browser fallback in the first place -- was redundant
@@ -3282,7 +3487,7 @@ ensure_mode() {
 # extract a tree MISSING the electron binary, so the `electron`->`Hermes` rename
 # dies with ENOENT and every re-run repeats the broken extraction forever. This
 # is the bash sibling of install.ps1's Clear-ElectronBuildCache and the Python
-# _purge_electron_build_cache() used by `hermes desktop`; install.sh was the only
+# _purge_electron_build_cache() used by `eidolon desktop`; install.sh was the only
 # build path lacking it. Echoes the removed paths (one per line); best-effort.
 clear_electron_build_cache() {
     local desktop_dir="$1"
@@ -3541,7 +3746,7 @@ install_desktop() {
     #    Electron download self-heals instead of failing the whole install:
     #      a) plain `npm run pack` (downloads Electron from GitHub),
     #      b) on failure, purge a corrupt cached zip + stale unpacked dir and
-    #         retry (matches install.ps1 / `hermes desktop`),
+    #         retry (matches install.ps1 / `eidolon desktop`),
     #      c) on still-failing, fall back to a public Electron mirror — this is
     #         the GitHub-blocked/throttled case (the repeating "retrying" log).
     log_info "Building desktop app (this takes 1-3 minutes)..."
@@ -3655,7 +3860,7 @@ install_desktop() {
     fi
 
     # macOS: route through the same config-aware signing fixup as
-    # `hermes desktop`, so install/repair and self-update agree about the app's
+    # `eidolon desktop`, so install/repair and self-update agree about the app's
     # identity. The fixup preserves the Electron entitlement plists and signs
     # with a stable Designated Requirement (configured keychain identity, else
     # identifier-pinned ad-hoc), so macOS TCC grants — Full Disk Access,
@@ -3673,7 +3878,7 @@ install_desktop() {
             if HERMES_HOME="$HERMES_HOME" "$config_python" - "$desktop_dir" <<'PYEOF'
 import sys
 from pathlib import Path
-from hermes_cli.main import _desktop_macos_relaunchable_fixup
+from eidolon_cli.main import _desktop_macos_relaunchable_fixup
 ok = _desktop_macos_relaunchable_fixup(
     Path(sys.argv[1]), publisher_signing_configured=False
 )
@@ -3692,7 +3897,7 @@ PYEOF
     fi
 
     # `npm install` + `npm run pack` rewrite lockfiles; restore them so the
-    # checkout stays clean for the next `hermes update`.
+    # checkout stays clean for the next `eidolon update`.
     restore_dirty_lockfiles "$INSTALL_DIR"
 }
 
@@ -3804,7 +4009,7 @@ run_stage_body() {
             # $HERMES_HOME. $HERMES_HOME is a shared data dir (it can be
             # bind-mounted into a Docker gateway too), so a stamp there gets
             # clobbered by the container's 'docker' stamp and wrongly blocks
-            # 'hermes update' on this host install. See detect_install_method().
+            # 'eidolon update' on this host install. See detect_install_method().
             echo "git" > "$INSTALL_DIR/.install_method"
             ;;
         *)
@@ -3893,7 +4098,7 @@ main() {
     # Code-scoped stamp: write next to the install tree, not into $HERMES_HOME.
     # $HERMES_HOME is a shared data dir (it can be bind-mounted into a Docker
     # gateway too), so a stamp there gets clobbered by the container's 'docker'
-    # stamp and wrongly blocks 'hermes update' on this host install.
+    # stamp and wrongly blocks 'eidolon update' on this host install.
     # See detect_install_method().
     echo "git" > "$INSTALL_DIR/.install_method"
 }

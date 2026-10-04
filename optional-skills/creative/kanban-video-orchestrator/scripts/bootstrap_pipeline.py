@@ -98,13 +98,13 @@ def validate_plan(plan: dict) -> list[str]:
                           "responsibilities"]:
                     if k not in t:
                         errors.append(f"team[{i}] missing {k}")
-                # Profile name must match Hermes's regex (lowercase
+                # Profile name must match Eidolon's regex (lowercase
                 # alphanumeric + hyphens + underscores, up to 64 chars).
                 if "profile" in t:
                     if not PROFILE_NAME_RE.match(t["profile"]):
                         errors.append(
                             f"team[{i}].profile {t['profile']!r} must match "
-                            f"[a-z0-9][a-z0-9_-]{{0,63}} per Hermes profile rules"
+                            f"[a-z0-9][a-z0-9_-]{{0,63}} per Eidolon profile rules"
                         )
                     if t["profile"] in seen_profiles:
                         errors.append(
@@ -342,7 +342,7 @@ def render_setup_sh(plan: dict, brief_md: str, team_md: str) -> str:
     profile_creates = []
     for t in plan["team"]:
         profile_creates.append(
-            f'hermes profile create {t["profile"]} --clone 2>/dev/null || true'
+            f'eidolon profile create {t["profile"]} --clone 2>/dev/null || true'
         )
 
     # Profile config — emit JSON arrays so the bash function can pass them

@@ -1,6 +1,6 @@
 """Regression tests for credential-pool OAuth refresh write-through to root.
 
-Companion to ``tests/hermes_cli/test_xai_oauth_writethrough.py``. That file
+Companion to ``tests/eidolon_cli/test_xai_oauth_writethrough.py``. That file
 covers the *non-pool* xAI refresh path (``_save_xai_oauth_tokens``). These
 cover the **credential-pool** refresh path
 (``CredentialPool._sync_device_code_entry_to_auth_store``): when a profile
@@ -29,8 +29,8 @@ from agent.credential_pool import (
     PooledCredential,
     load_pool,
 )
-from hermes_cli import auth as A
-import hermes_cli.auth_codex as auth_codex
+from eidolon_cli import auth as A
+import eidolon_cli.auth_codex as auth_codex
 
 
 def _write_store(path, store):
@@ -173,7 +173,7 @@ def test_global_write_through_preserves_concurrent_root_update(
 def test_codex_pool_refresh_holds_auth_store_lock_across_post(monkeypatch, tmp_path):
     """The Codex OAuth pool refresh must POST under the cross-process auth lock.
 
-    Codex refresh tokens are single-use. If two Hermes processes both read the
+    Codex refresh tokens are single-use. If two Eidolon processes both read the
     same on-disk token and both POST it, the loser gets ``refresh_token_reused``.
     Serializing the sync -> refresh POST -> write-back sequence through the
     shared ``_auth_store_lock`` closes that window: a second process blocks on
@@ -331,7 +331,7 @@ def test_hermes_pkce_refresh_writes_back_to_singleton(tmp_path, monkeypatch):
     hermes_home = tmp_path / "hermes"
     hermes_home.mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("HERMES_HOME", str(hermes_home))
-    monkeypatch.setattr("hermes_cli.auth.is_provider_explicitly_configured", lambda pid: True)
+    monkeypatch.setattr("eidolon_cli.auth.is_provider_explicitly_configured", lambda pid: True)
 
     oauth_file = hermes_home / ".anthropic_oauth.json"
     oauth_file.write_text(
@@ -389,7 +389,7 @@ def test_manual_hermes_pkce_refresh_does_not_create_duplicate_singleton(
     hermes_home = tmp_path / "hermes"
     hermes_home.mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("HERMES_HOME", str(hermes_home))
-    monkeypatch.setattr("hermes_cli.auth.is_provider_explicitly_configured", lambda pid: True)
+    monkeypatch.setattr("eidolon_cli.auth.is_provider_explicitly_configured", lambda pid: True)
     monkeypatch.setattr("agent.anthropic_credentials.read_claude_code_credentials", lambda: None)
     monkeypatch.setattr(
         "agent.anthropic_credentials.refresh_anthropic_oauth_pure",

@@ -19,7 +19,7 @@ import {
   type McpCatalogEntry,
   removeMcpServer,
   setMcpServerEnabled
-} from '@/hermes'
+} from '@/eidolon'
 import { useI18n } from '@/i18n'
 import { triggerHaptic } from '@/lib/haptics'
 import { AlertCircle, CheckCircle2, Loader2 } from '@/lib/icons'

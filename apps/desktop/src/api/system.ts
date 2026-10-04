@@ -11,7 +11,7 @@ import type {
   MemoryProviderConfig,
   MemoryProviderOAuthStatus,
   MemoryStatusResponse
-} from '@/types/hermes'
+} from '@/types/eidolon'
 
 import { capabilityScoped, hermesApi, type ProfileScope, profileScoped } from './client'
 
@@ -146,7 +146,7 @@ export function restartGateway(): Promise<ActionResponse> {
 export function updateHermes(): Promise<ActionResponse> {
   return hermesApi<ActionResponse>({
     ...profileScoped(),
-    path: '/api/hermes/update',
+    path: '/api/eidolon/update',
     method: 'POST'
   })
 }
@@ -157,7 +157,7 @@ export function updateHermes(): Promise<ActionResponse> {
 export function checkHermesUpdate(force = false): Promise<BackendUpdateCheckResponse> {
   return hermesApi<BackendUpdateCheckResponse>({
     ...profileScoped(),
-    path: `/api/hermes/update/check${force ? '?force=true' : ''}`
+    path: `/api/eidolon/update/check${force ? '?force=true' : ''}`
   })
 }
 

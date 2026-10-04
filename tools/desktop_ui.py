@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bridge desktop-only tools to Hermes-desktop renderer events.
+"""Bridge desktop-only tools to Eidolon-desktop renderer events.
 
 The desktop ``tui_gateway`` installs an emitter via :func:`set_emitter`; elsewhere it
 stays ``None`` and tools report "desktop only". Routing keys off ``HERMES_UI_SESSION_ID``
@@ -34,7 +34,7 @@ def user_enabled(setting: str, default: bool) -> bool:
     the schema. Unreadable config -> ``default`` so a shipped-on feature does not vanish
     on a transient read error."""
     try:
-        from hermes_cli.config import load_config_readonly
+        from eidolon_cli.config import load_config_readonly
         display = load_config_readonly().get("display")
     except Exception:
         return default

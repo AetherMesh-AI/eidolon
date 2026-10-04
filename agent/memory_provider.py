@@ -145,7 +145,7 @@ class MemoryProvider(ABC):
         """PARENT-side observation of a completed delegation (the subagent has no provider session)."""
 
     def get_config_schema(self) -> List[Dict[str, Any]]:
-        """Setup fields for ``hermes memory setup`` ([] if none): ``key``, ``description``,
+        """Setup fields for ``eidolon memory setup`` ([] if none): ``key``, ``description``,
         optional ``secret`` (goes to .env), ``required``, ``default``, ``choices``, ``type``
         (text | integer | number | boolean), ``minimum``/``maximum``/``step``, ``url``,
         ``env_var`` (explicit secret env var; default auto-generated)."""

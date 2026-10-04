@@ -571,7 +571,7 @@ class TestDiskFailureMarker:
 # ---------------------------------------------------------------------------
 
 class TestHermesHomeIsolation:
-    def test_hermes_bin_dir_respects_hermes_home(self):
+    def test_hermes_bin_dir_respects_eidolon_home(self):
         """_hermes_bin_dir must use HERMES_HOME, not hardcoded ~/.hermes."""
         from tools.tirith_security import _hermes_bin_dir
         import tempfile

@@ -24,11 +24,11 @@ _IS_WINDOWS = platform.system() == "Windows"
 # See #70716.
 _IS_LINUX = platform.system() == "Linux"
 from tools.environments.local import _find_shell, _resolve_safe_cwd, _sanitize_subprocess_env
-from hermes_cli._subprocess_compat import windows_hide_flags
+from eidolon_cli._subprocess_compat import windows_hide_flags
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from hermes_cli.config import get_hermes_home
+from eidolon_cli.config import get_eidolon_home
 
 from tools.process_registry_notifications import format_process_notification
 from tools.process_registry_checkpoint import ProcessCheckpointMixin
@@ -37,7 +37,7 @@ from tools.process_registry_results import load_completed_results, save_complete
 logger = logging.getLogger(__name__)
 
 # Crash-recovery checkpoint (gateway only)
-CHECKPOINT_PATH = get_hermes_home() / "processes.json"
+CHECKPOINT_PATH = get_eidolon_home() / "processes.json"
 
 MAX_OUTPUT_CHARS = 200_000      # rolling output buffer
 FINISHED_TTL_SECONDS = 1800     # keep finished processes 30 minutes
@@ -187,7 +187,7 @@ def _systemd_run_user_scope_available() -> bool:
 
 
 def _is_supervised_gateway_process() -> bool:
-    """Whether this process is the live, supervised Hermes gateway itself.
+    """Whether this process is the live, supervised Eidolon gateway itself.
     Supervisor markers and ``_HERMES_GATEWAY`` are inherited by every descendant (and
     importing ``gateway.run`` sets the latter), so also require ownership of the live
     gateway PID file — scopes are for the gateway, not terminal children or CLIs."""
@@ -216,7 +216,7 @@ def _build_systemd_scope_argv(shell_argv: List[str], unit_suffix: str) -> List[s
     if binary is None:
         # Caller should have probed availability; never pass None into Popen anyway.
         return shell_argv
-    return _systemd_scope_argv(binary, f"hermes-worker-{unit_suffix}", *shell_argv)
+    return _systemd_scope_argv(binary, f"eidolon-worker-{unit_suffix}", *shell_argv)
 
 
 def restart_safe_gateway_child_argv(
@@ -658,7 +658,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         """``config.yaml`` value for ``section.key``, else the DEFAULT_CONFIG value.
         Raises if config is unreadable; callers wrap with their own hard fallback so
         registry code paths never crash on a broken config file."""
-        from hermes_cli.config import DEFAULT_CONFIG, cfg_get, read_raw_config
+        from eidolon_cli.config import DEFAULT_CONFIG, cfg_get, read_raw_config
 
         val = cfg_get(read_raw_config(), section, key)
         return DEFAULT_CONFIG[section][key] if val is None else val
@@ -773,7 +773,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         # This applies to both pipe mode and the PTY path above. See #70716.
         in_supervised_gateway = _IS_LINUX and _is_supervised_gateway_process()
         if in_supervised_gateway and _systemd_run_user_scope_available():
-            session.systemd_unit = f"hermes-worker-{unit_suffix}.scope"
+            session.systemd_unit = f"eidolon-worker-{unit_suffix}.scope"
             return _build_systemd_scope_argv(argv, unit_suffix=unit_suffix)
         if in_supervised_gateway:
             # Under a supervisor but no private cgroup: a worker OOM can still take
@@ -1227,7 +1227,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         return session_id in self._completion_consumed
 
     def is_session_waiting(self, session_id: str) -> bool:
-        """Whether a goal loop (``hermes_cli.goals`` wait barrier) should stay parked on
+        """Whether a goal loop (``eidolon_cli.goals`` wait barrier) should stay parked on
         this session: still running AND, with ``watch_patterns``, none matched yet (a
         long-lived watcher unblocks on its trigger, not on exit). Unknown/exited/
         already-fired sessions return False so a stale barrier can never wedge the loop."""
@@ -1448,14 +1448,14 @@ class ProcessRegistry(ProcessCheckpointMixin):
     def _reconcile_local_exit(self, session: "ProcessSession") -> None:
         """Reconcile ``session.exited`` against the real child state.
         The reader flips ``exited`` only at EOF; when the direct child has exited but a
-        descendant (e.g. a daemon from ``hermes update``) holds the pipe open, poll()
+        descendant (e.g. a daemon from ``eidolon update``) holds the pipe open, poll()
         would report "running" forever. If ``Popen.poll()`` has an exit code, drain
         readable bytes non-blocking and flip ``exited``. No-op for env/PTY, exited and
         detached sessions.
 
         The reader thread (`_reader_loop`) sets `session.exited = True` only in its `finally` block, which
         runs when `stdout.read()` returns EOF. If the direct `Popen` child has exited but a descendant
-        process (e.g. a daemon spawned by `hermes update` restarting the gateway) is still holding the
+        process (e.g. a daemon spawned by `eidolon update` restarting the gateway) is still holding the
         stdout pipe open, the reader blocks forever and poll() keeps returning "running" indefinitely (issue
         #17327 — 74 polls over 7 minutes on Feishu).
         """
@@ -1771,7 +1771,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         kill the process — output keeps buffering and the tab can be reopened from the
         status stack. Errors when no UI close sink is wired."""
         if self.on_close is None:
-            return {"status": "error", "error": "close_terminal is only available in the Hermes desktop app."}
+            return {"status": "error", "error": "close_terminal is only available in the Eidolon desktop app."}
         # The session may already be finished (or pruned) — the tab can still
         # linger and be closed, so a missing session is not an error here.
         try:

@@ -34,11 +34,11 @@ def test_resolver_follows_reexport_to_defining_sibling(mods):
 
 def test_resolver_keeps_facade_defined_names_on_facade(mods):
     cache: dict = {}
-    src = (ROOT / "hermes_state.py").read_text(encoding="utf-8")
+    src = (ROOT / "eidolon_state.py").read_text(encoding="utf-8")
     own = [n for n, (_, _, node) in bench.top_level_defs(src).items() if not bench._is_alias(node)]
-    assert own, "hermes_state.py should still define something at top level"
+    assert own, "eidolon_state.py should still define something at top level"
     for name in own[:20]:
-        assert bench.resolve_definer(mods, name, "hermes_state", cache) == "hermes_state", name
+        assert bench.resolve_definer(mods, name, "eidolon_state", cache) == "eidolon_state", name
 
 
 def test_tokenizer_falls_back_without_crashing(monkeypatch):

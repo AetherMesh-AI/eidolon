@@ -220,7 +220,7 @@ async def test_busy_change_updates_only_routed_profile(tmp_path, monkeypatch):
     event = _event(profile="research")
     event.text = "/busy steer"
     monkeypatch.setattr(
-        "hermes_cli.profiles.get_profile_dir",
+        "eidolon_cli.profiles.get_profile_dir",
         lambda _profile_name: profile_home,
     )
     # Isolate the wrapper's profile scope; active-session dispatch is covered above.
@@ -393,7 +393,7 @@ def test_profile_route_and_nonmultiplexed_resolution_preserve_boundaries(
 ):
     runner = _runner(default_mode="interrupt")
     monkeypatch.setattr(
-        "hermes_cli.profiles.profiles_to_serve",
+        "eidolon_cli.profiles.profiles_to_serve",
         lambda **_: [("research", tmp_path / "research")],
     )
     runner._snapshot_profile_busy_modes(
@@ -417,7 +417,7 @@ def test_profile_route_and_nonmultiplexed_resolution_preserve_boundaries(
     # before the busy-mode snapshot is consulted. Sibling coverage in
     # tests/gateway/test_profile_resolution.py patches the same seam.
     with patch(
-        "hermes_cli.profiles.profiles_to_serve",
+        "eidolon_cli.profiles.profiles_to_serve",
         return_value=[
             ("default", Path("/profiles/default")),
             ("research", Path("/profiles/research")),
@@ -461,7 +461,7 @@ async def test_primary_adapter_busy_origin_uses_routed_privacy(
     """The primary busy callback bypasses the scoped normal-message handler."""
     from dataclasses import asdict
     from agent.agent_runtime_helpers import apply_pending_steer_to_tool_results
-    from hermes_constants import get_hermes_home_override
+    from eidolon_constants import get_eidolon_home_override
     from run_agent import AIAgent
 
     home = tmp_path / ".hermes"
@@ -469,7 +469,7 @@ async def test_primary_adapter_busy_origin_uses_routed_privacy(
     secondary.mkdir(parents=True)
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setenv("HERMES_HOME", str(home))
-    monkeypatch.setattr("gateway.run._hermes_home", home)
+    monkeypatch.setattr("gateway.run._eidolon_home", home)
     monkeypatch.setenv("HERMES_GATEWAY_BUSY_ACK_ENABLED", "false")
     for directory, privacy in ((home, not secondary_privacy), (secondary, secondary_privacy)):
         (directory / "config.yaml").write_text(
@@ -498,7 +498,7 @@ async def test_primary_adapter_busy_origin_uses_routed_privacy(
     agent._executing_tools = mode == "interrupt"
     runner._session_state(key).turn.agent = agent
     adapter._active_sessions[key] = asyncio.Event()
-    ambient = get_hermes_home_override()
+    ambient = get_eidolon_home_override()
     await adapter._handle_message_while_active(event, key)
     messages = [{"role": "tool", "tool_call_id": "probe", "content": "Tool completed."}]
     apply_pending_steer_to_tool_results(agent, messages, 1)
@@ -507,5 +507,5 @@ async def test_primary_adapter_busy_origin_uses_routed_privacy(
     for value in (event.source.chat_id, event.source.user_id, event.message_id, "research"):
         assert (value not in output) is secondary_privacy
     assert asdict(event.source) == original
-    assert get_hermes_home_override() == ambient
+    assert get_eidolon_home_override() == ambient
     assert key not in adapter._pending_messages

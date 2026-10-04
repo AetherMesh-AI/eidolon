@@ -47,7 +47,7 @@ profile_routes match ──► served-set check ──► SessionSource.profile 
    │                                           (gateway/profile_routing.py)
    ▼
 _profile_runtime_scope(profile_home)           (gateway/run.py)
-   ├── set_hermes_home_override(home)          config / state.db / skills /
+   ├── set_eidolon_home_override(home)          config / state.db / skills /
    │                                           memory / sessions resolve here
    └── set_secret_scope(profile .env + secret sources)
    │                                           provider keys, platform tokens
@@ -93,7 +93,7 @@ B's turns and into every subprocess spawned with `env=dict(os.environ)`.
 Because the per-turn `.env` reload is a no-op under multiplexing, rotated
 credentials are picked up through the profile scope on the next turn — never
 via `os.environ`. This holds at the loader boundary, not just the gateway's
-reload helper: `hermes_cli.env_loader.load_hermes_dotenv` skips the
+reload helper: `eidolon_cli.env_loader.load_hermes_dotenv` skips the
 process-global load whenever multiplexing is active *and* a profile-home
 override is installed (import-time and cron callers hit it mid-turn), while
 still hydrating the profile's external secret sources into its private
@@ -108,11 +108,11 @@ process environment (`#88441`).
 
 ## The HERMES_HOME override
 
-`hermes_constants.py` holds a context-local override consulted by
-`get_hermes_home()` before the `HERMES_HOME` env var. Everything that resolves
+`eidolon_constants.py` holds a context-local override consulted by
+`get_eidolon_home()` before the `HERMES_HOME` env var. Everything that resolves
 paths through it — config, `state.db`, skills, memory, SOUL, sessions, kanban,
 goals, plugin discovery, MCP startup — follows the active profile
-automatically. `get_process_hermes_home()` exists for the few machine-level
+automatically. `get_process_eidolon_home()` exists for the few machine-level
 assets that must not follow the override. `hermes_home_key()` gives
 per-home registries a stable scope key. A one-shot warning (`#18594`) fires if
 profile-scoped code runs without the override where one is expected.
@@ -128,7 +128,7 @@ dropped, not misdelivered). Full schema and matching rules:
 
 ## Serving selected profiles
 
-`profiles_to_serve(multiplex, profile_allowlist)` in `hermes_cli/profiles.py`
+`profiles_to_serve(multiplex, profile_allowlist)` in `eidolon_cli/profiles.py`
 is the single chokepoint for which profiles a multiplexer serves: default plus
 every valid profile directory, optionally filtered by allowlist. A malformed
 allowlist fails safe to default-only. The served set gates adapter startup,
@@ -203,6 +203,6 @@ out of scope for this document.
 - `docs/profile-routing.md` — inbound routing schema and matching rules.
 - `website/docs/user-guide/multi-profile-gateways.md` — user-facing guide,
   including the standalone one-gateway-per-profile alternative.
-- `agent/secret_scope.py`, `hermes_constants.py`, `gateway/profile_routing.py`,
-  `gateway/run.py` (`_profile_runtime_scope`), `hermes_cli/profiles.py`
+- `agent/secret_scope.py`, `eidolon_constants.py`, `gateway/profile_routing.py`,
+  `gateway/run.py` (`_profile_runtime_scope`), `eidolon_cli/profiles.py`
   (`profiles_to_serve`), `gateway/session.py`, `tui_gateway/methods_profiles.py`.

@@ -15,13 +15,13 @@
 
 import { isLayoutNode, normalize } from '@/components/pane-shell/tree/model'
 import { $layoutTree, markActivePreset, persistTree } from '@/components/pane-shell/tree/store'
-import { exportProfileArchive, importProfileArchive } from '@/hermes'
+import { exportProfileArchive, importProfileArchive } from '@/eidolon'
 import { translateNow } from '@/i18n'
 import { modePref, skinPref, type ThemeMode } from '@/themes/context'
 import { BUILTIN_THEMES } from '@/themes/presets'
 import type { DesktopTheme } from '@/themes/types'
 import { $userThemes, installUserTheme, resolveTheme } from '@/themes/user-themes'
-import type { ProfileDesktopOverlay } from '@/types/hermes'
+import type { ProfileDesktopOverlay } from '@/types/eidolon'
 
 import { notify, notifyError } from './notifications'
 import {
@@ -152,7 +152,7 @@ export function activeProfileKey(): string {
 // item all funnel here). Toasts via the shared notification store; strings via
 // translateNow so the flows stay callable from non-React surfaces.
 
-const ARCHIVE_FILTERS = [{ extensions: ['tar.gz', 'tgz'], name: 'Hermes profile' }]
+const ARCHIVE_FILTERS = [{ extensions: ['tar.gz', 'tgz'], name: 'Eidolon profile' }]
 
 /** Pick a save location and export `profile` (default: the active one).
  *  Returns the archive path, or null when the user cancelled. */

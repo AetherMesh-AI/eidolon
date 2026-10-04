@@ -29,25 +29,25 @@ def _reset_modules(prefixes: tuple[str, ...]):
 
 @pytest.fixture(autouse=True)
 def _restore_tool_modules():
-    original_hermes_home = os.environ.get("HERMES_HOME")
+    original_eidolon_home = os.environ.get("HERMES_HOME")
     original_modules = {
         name: module
         for name, module in sys.modules.items()
         if name == "tools"
         or name.startswith("tools.")
-        or name == "hermes_cli"
-        or name.startswith("hermes_cli.")
+        or name == "eidolon_cli"
+        or name.startswith("eidolon_cli.")
         or name == "modal"
         or name.startswith("modal.")
     }
     try:
         yield
     finally:
-        if original_hermes_home is None:
+        if original_eidolon_home is None:
             os.environ.pop("HERMES_HOME", None)
         else:
-            os.environ["HERMES_HOME"] = original_hermes_home
-        _reset_modules(("tools", "hermes_cli", "modal"))
+            os.environ["HERMES_HOME"] = original_eidolon_home
+        _reset_modules(("tools", "eidolon_cli", "modal"))
         sys.modules.update(original_modules)
 
 
@@ -57,15 +57,15 @@ def _install_modal_test_modules(
     fail_on_snapshot_ids: set[str] | None = None,
     snapshot_id: str = "im-fresh",
 ):
-    _reset_modules(("tools", "hermes_cli", "modal"))
+    _reset_modules(("tools", "eidolon_cli", "modal"))
 
-    hermes_cli = types.ModuleType("hermes_cli")
-    hermes_cli.__path__ = [str(REPO_ROOT / "hermes_cli")]  # type: ignore[attr-defined]
-    sys.modules["hermes_cli"] = hermes_cli
+    eidolon_cli = types.ModuleType("eidolon_cli")
+    eidolon_cli.__path__ = [str(REPO_ROOT / "eidolon_cli")]  # type: ignore[attr-defined]
+    sys.modules["eidolon_cli"] = eidolon_cli
     hermes_home = tmp_path / "hermes-home"
     os.environ["HERMES_HOME"] = str(hermes_home)
-    sys.modules["hermes_cli.config"] = types.SimpleNamespace(
-        get_hermes_home=lambda: hermes_home,
+    sys.modules["eidolon_cli.config"] = types.SimpleNamespace(
+        get_eidolon_home=lambda: hermes_home,
     )
 
     tools_package = types.ModuleType("tools")

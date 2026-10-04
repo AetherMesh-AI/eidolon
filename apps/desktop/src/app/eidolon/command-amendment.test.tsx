@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, expect, it } from 'vitest'
+
 import { createPrototypeAdapter } from './adapter'
 import { OrganizationWorkspace } from './workspace'
 afterEach(cleanup)

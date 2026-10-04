@@ -164,7 +164,7 @@ class SessionTranscriptMixin:
                     "pending fallback failed for replaced state.db transcript on %s", session_id,
                     exc_info=True)
         try:
-            from hermes_state import divert_session_transcript_jsonl
+            from eidolon_state import divert_session_transcript_jsonl
             divert_session_transcript_jsonl(session_id, remaining)
         except Exception:
             logger.warning(
@@ -243,8 +243,8 @@ class SessionTranscriptMixin:
             try:
                 self._append_transcript_message(session_id, msg)
             except Exception as exc:
-                from hermes_state import StateDbCorruptError, StateDbReplacedError
-                from hermes_state_errors import CompressionSessionClosedError
+                from eidolon_state import StateDbCorruptError, StateDbReplacedError
+                from eidolon_state_errors import CompressionSessionClosedError
                 if isinstance(exc, (StateDbReplacedError, StateDbCorruptError)):
                     self._divert_transcript_after_db_replaced(session_id, queue_session_id, exc)
                     return
@@ -369,7 +369,7 @@ class SessionTranscriptMixin:
         if "messages_fts" in str(exc).lower():
             return True
         import sqlite3
-        from hermes_state import SessionDB
+        from eidolon_state import SessionDB
         return isinstance(exc, sqlite3.DatabaseError) and SessionDB._is_fts_write_corruption_error(exc)
 
     def _rebuild_fts_once(self) -> bool:

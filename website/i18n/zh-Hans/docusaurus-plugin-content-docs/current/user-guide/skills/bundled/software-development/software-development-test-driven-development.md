@@ -26,7 +26,7 @@ TDD：强制执行 RED-GREEN-REFACTOR，测试先于代码。
 ## 参考：完整 SKILL.md
 
 :::info
-以下是 Hermes 在触发该 skill 时加载的完整 skill 定义。这是 agent 在 skill 激活时所看到的指令内容。
+以下是 Eidolon 在触发该 skill 时加载的完整 skill 定义。这是 agent 在 skill 激活时所看到的指令内容。
 :::
 
 # 测试驱动开发（TDD）
@@ -298,7 +298,7 @@ TDD 本身就是务实的：
 | 必须 mock 所有东西 | 代码耦合度太高。使用依赖注入。 |
 | 测试 setup 很庞大 | 提取辅助函数。仍然复杂？简化设计。 |
 
-## Hermes Agent 集成
+## Eidolon 集成
 
 ### 运行测试
 

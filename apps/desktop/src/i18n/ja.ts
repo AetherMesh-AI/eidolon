@@ -840,7 +840,7 @@ export const ja = defineLocale({
         'このデスクトップシェルをリモートの Eidolon バックエンドに接続します。ホスト型ゲートウェイは OAuth またはユーザー名とパスワードを使用します。自己ホスト型はセッショントークンを使用する場合があります。',
       remoteUrlTitle: 'リモート URL',
       remoteUrlDesc:
-        'リモートダッシュボードバックエンドのベース URL。/hermes などのパスプレフィックスもサポートしています。',
+        'リモートダッシュボードバックエンドのベース URL。/eidolon などのパスプレフィックスもサポートしています。',
       probing: 'このゲートウェイの認証方法を確認中…',
       probeError: 'このゲートウェイにまだ到達できません。URL を確認してください。応答後に認証方法が表示されます。',
       signedIn: 'サインイン済み',
@@ -916,8 +916,8 @@ export const ja = defineLocale({
       sshPortDesc: '空欄 = 22 または ~/.ssh/config のポート。',
       sshKeyTitle: '鍵ファイル',
       sshKeyDesc: '秘密鍵のパス。空欄 = ssh-agent または ~/.ssh/config。',
-      sshHermesPathTitle: 'Hermes パス（任意）',
-      sshHermesPathDesc: 'リモートの hermes バイナリへのフルパス。空欄 = 自動検出。',
+      sshHermesPathTitle: 'Eidolon パス（任意）',
+      sshHermesPathDesc: 'リモートの eidolon バイナリへのフルパス。空欄 = 自動検出。',
       sshHermesPathPlaceholder: '自動検出',
       sshTestConnection: 'SSH をテスト',
       sshConnect: '接続',
@@ -930,7 +930,7 @@ export const ja = defineLocale({
       sshErrHostKey:
         '前回の接続以降、ホスト鍵が変更されています。想定どおりか確認し、ssh-keygen -R <host> を実行してから再接続してください。',
       sshErrNotInstalled:
-        'リモートホストで互換性のあるランタイムが見つかりませんでした。Eidolon のリリース手順（https://github.com/AetherMesh-AI/Eidolon/releases）を確認するか、既存の hermes 実行ファイルへのパスを設定してください。',
+        'リモートホストで互換性のあるランタイムが見つかりませんでした。Eidolon のリリース手順（https://github.com/AetherMesh-AI/Eidolon/releases）を確認するか、既存の eidolon 実行ファイルへのパスを設定してください。',
       sshErrPlatform:
         'サポートされていないリモートプラットフォームです。Eidolon Desktop の SSH モードは Linux、macOS、Windows のリモートホストに対応しています。',
       sshErrTimeout: 'SSH 接続がタイムアウトしました。ホストが到達不能、またはスリープ中の可能性があります。',
@@ -1357,7 +1357,7 @@ export const ja = defineLocale({
     edit: '編集',
     archive: 'アーカイブ',
     skillArchivedTitle: 'スキルをアーカイブしました',
-    skillArchivedMessage: 'hermes curator restore で復元できます。',
+    skillArchivedMessage: 'eidolon curator restore で復元できます。',
     officialCatalog: 'インストール可能',
     officialPill: '公式'
   },
@@ -1668,7 +1668,7 @@ export const ja = defineLocale({
       },
       MATRIX_HOMESERVER: { label: 'ホームサーバー URL', placeholder: 'https://matrix.org' },
       MATRIX_ACCESS_TOKEN: { label: 'アクセストークン' },
-      MATRIX_USER_ID: { label: 'ボットユーザー ID', placeholder: '@hermes:example.org' },
+      MATRIX_USER_ID: { label: 'ボットユーザー ID', placeholder: '@eidolon:example.org' },
       MATRIX_ALLOWED_USERS: {
         label: '許可する Matrix ユーザー ID',
         help: '推奨。@user:server 形式のカンマ区切りユーザー ID。'
@@ -1722,7 +1722,7 @@ export const ja = defineLocale({
       title: (profile: string) => `${profile} をリモートホストに接続`,
       description: 'このプロファイルのセッションは、このパソコンではなく指定したリモートの Eidolon で実行されます。',
       urlLabel: 'リモートアドレス',
-      urlPlaceholder: 'https://hermes.example.com',
+      urlPlaceholder: 'https://eidolon.example.com',
       urlInvalid: 'http:// または https:// で始まる完全なアドレスを入力してください',
       tokenLabel: 'アクセストークン',
       tokenPlaceholder: 'リモートのセッショントークンを貼り付け',
@@ -2239,7 +2239,7 @@ export const ja = defineLocale({
       '/resume': '以前のセッションを再開',
       '/details': 'トランスクリプトの詳細レベルを制御',
       '/copy': '選択または最後のアシスタントメッセージをコピー',
-      '/quit': 'hermes を終了'
+      '/quit': 'Eidolon を終了'
     },
     hotkeyDescs: {
       'composer.mention': 'ファイル、フォルダー、URL、Git を参照',
@@ -2583,7 +2583,7 @@ export const ja = defineLocale({
       'ゲートウェイ URL を入力してください。Eidolon がトークンとブラウザーサインインのどちらが必要かを検出します。',
     remoteUrlTitle: 'ゲートウェイ URL',
     remoteUrlDesc: 'Eidolon ゲートウェイのベース URL を使用します。リモートの場合は https:// を含めてください。',
-    remoteUrlPlaceholder: 'https://gateway.example.com/hermes',
+    remoteUrlPlaceholder: 'https://gateway.example.com/eidolon',
     probing: 'ゲートウェイ認証方式を検出中...',
     probeError: 'その Eidolon ゲートウェイに到達できませんでした。',
     identityProvider: 'ID プロバイダー',
@@ -2608,7 +2608,7 @@ export const ja = defineLocale({
     settingUpTitle: 'Eidolon を設定中',
     finishingTitle: '仕上げ中',
     failedDesc:
-      'インストール手順のいずれかが失敗しました。Windows では、別の Hermes CLI または Eidolon インスタンスが実行中の場合に発生することがあります。実行中の Hermes CLI と Eidolon インスタンスをすべて停止してから再試行してください。詳細は以下またはデスクトップログで確認できます。',
+      'インストール手順のいずれかが失敗しました。Windows では、別の Eidolon CLI または Eidolon インスタンスが実行中の場合に発生することがあります。実行中の Eidolon CLI と Eidolon インスタンスをすべて停止してから再試行してください。詳細は以下またはデスクトップログで確認できます。',
     activeDesc:
       'これは一回限りのセットアップです。Eidolon インストーラーが依存関係をダウンロードしてマシンを設定しています。以降の起動ではこの手順はスキップされます。',
     progress: (completed, total) => `${total} ステップ中 ${completed} 完了`,
@@ -2639,7 +2639,8 @@ export const ja = defineLocale({
     chooseLater: '後でプロバイダーを選択します',
     recommended: '推奨',
     connected: '接続済み',
-    featuredPitch: '1 つのサブスクリプションで 300 以上の最先端モデル — Eidolon を実行するための推奨方法',
+    aetherMeshDescription: 'ピアツーピアの AI ネットワーク。',
+    aetherMeshComingSoon: '近日公開',
     fireworksPitch: '直接モデル API — Fireworks がホストする最先端モデル',
     localModelsTitle: 'モデルをローカルで実行',
     localModelsPitch: 'アカウント不要——モデルをダウンロードしてこのマシンで実行',
@@ -2684,12 +2685,12 @@ export const ja = defineLocale({
     pickDifferentProvider: '別のプロバイダーを選択',
     signInWith: provider => `${provider} でサインイン`,
     openedBrowser: provider => `${provider} をブラウザーで開きました。`,
-    authorizeThere: 'そこで Hermes を承認してください。',
+    authorizeThere: 'そこで Eidolon を承認してください。',
     copyAuthCode: '認証コードをコピーして以下に貼り付けてください。',
     pasteAuthCode: '認証コードを貼り付け',
     reopenAuthPage: '認証ページを再度開く',
     autoBrowser: provider =>
-      `${provider} をブラウザーで開きました。Hermes をそこで承認すれば自動接続されます。コピーや貼り付けは不要です。`,
+      `${provider} をブラウザーで開きました。Eidolon をそこで承認すれば自動接続されます。コピーや貼り付けは不要です。`,
     reopenSignInPage: 'サインインページを再度開く',
     waitingAuthorize: '承認を待っています...',
     externalPending: provider =>
@@ -3149,7 +3150,7 @@ export const ja = defineLocale({
       reject: '拒否',
       alwaysTitle: 'このコマンドを常に許可しますか？',
       alwaysDescription: pattern =>
-        `これにより "${pattern}" パターンが永続的な許可リスト (~/.hermes/config.yaml) に追加されます。Eidolon はこのセッションや将来のセッションで、このようなコマンドについて再度尋ねません。`,
+        `これにより "${pattern}" パターンがこのプロファイルの config.yaml にある永続的な許可リストに追加されます。Eidolon はこのセッションや将来のセッションで、このようなコマンドについて再度尋ねません。`,
       alwaysAllow: '常に許可'
     },
     clarify: {
@@ -3365,7 +3366,7 @@ export const ja = defineLocale({
       success: platform => `${platform} に引き継ぎました。いつでもここで再開できます。`,
       systemNote: platform => `↻ ${platform} に引き継ぎました — いつでもここで再開できます。`,
       failed: error => `引き継ぎに失敗しました: ${error}`,
-      timedOut: 'ゲートウェイの待機がタイムアウトしました。`hermes gateway` は起動していますか？'
+      timedOut: 'ゲートウェイの待機がタイムアウトしました。`eidolon gateway` は起動していますか？'
     }
   },
 

@@ -23,7 +23,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from hermes_constants import reset_hermes_home_override, set_hermes_home_override
+from eidolon_constants import reset_eidolon_home_override, set_eidolon_home_override
 
 
 class _DB:
@@ -65,7 +65,7 @@ def test_bound_override_wins_over_shared_db_home(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(root))
 
     agent = _agent_for(root)  # shared db lives at <root>/state.db
-    token = set_hermes_home_override(str(bot_home))
+    token = set_eidolon_home_override(str(bot_home))
     try:
         assert system_prompt._agent_home(agent) == bot_home
         assert (
@@ -73,7 +73,7 @@ def test_bound_override_wins_over_shared_db_home(tmp_path, monkeypatch):
             == "mybot"
         )
     finally:
-        reset_hermes_home_override(token)
+        reset_eidolon_home_override(token)
 
 
 def test_db_home_wins_on_bare_thread_without_override(tmp_path, monkeypatch):
@@ -148,8 +148,8 @@ def test_full_prompt_scoped_to_bot_on_bare_thread(tmp_path, monkeypatch):
     skills_block = m.group(1) if m else ""
     assert "bot-skill" in skills_block
     assert "leaky-skill" not in skills_block
-    assert "Active Hermes profile: mybot" in prompt
-    assert "Active Hermes profile: default" not in prompt
+    assert "Active Eidolon profile: mybot" in prompt
+    assert "Active Eidolon profile: default" not in prompt
 
 
 def test_plugin_session_info_profile_from_agent_home(tmp_path, monkeypatch):

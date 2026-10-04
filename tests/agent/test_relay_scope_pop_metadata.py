@@ -102,7 +102,7 @@ def test_end_turn_finalization_survives_pop_without_metadata(monkeypatch, caplog
         lease.host.relay.ScopeType.Custom,
         handle=turn.handle,
         input={},
-        metadata={"hermes.test": True},
+        metadata={"eidolon.test": True},
     )
     turn.logical_llm_calls["api-1"] = logical
 

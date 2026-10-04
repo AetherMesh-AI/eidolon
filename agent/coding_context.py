@@ -1,6 +1,6 @@
 """Coding-context awareness: the single place that decides "are we coding?".
 
-In a code workspace on an interactive surface Hermes adopts a **coding posture**: a
+In a code workspace on an interactive surface Eidolon adopts a **coding posture**: a
 frozen :class:`RuntimeMode` built from a :class:`ContextProfile` (pure data). The
 system prompt reads ``system_prompt_parts()``; the toolset collapses ONLY under opt-in
 ``focus`` (never strips a user-enabled toolset). ``agent.coding_context``: ``auto``
@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
-from hermes_cli._subprocess_compat import bounded_git_probe
+from eidolon_cli._subprocess_compat import bounded_git_probe
 
 logger = logging.getLogger("hermes.coding_context")
 
@@ -182,7 +182,7 @@ def _agent_config_value(config: Optional[dict[str, Any]], key: str, default: Any
     """``config["agent"][key]``, loading config when none was passed."""
     if config is None:
         try:
-            from hermes_cli.config import load_config, load_config_readonly
+            from eidolon_cli.config import load_config, load_config_readonly
             config = load_config_readonly() if readonly else load_config()
         except Exception:
             config = {}
@@ -280,8 +280,8 @@ def _detect_profile(mode: str, platform: str, cwd: Path) -> ContextProfile:
 def _enabled_mcp_servers(config: Optional[dict[str, Any]]) -> list[str]:
     """Names of MCP servers the user has enabled — kept in the coding posture."""
     try:
-        from hermes_cli.config import read_raw_config
-        from hermes_cli.tools_config import _parse_enabled_flag
+        from eidolon_cli.config import read_raw_config
+        from eidolon_cli.tools_config import _parse_enabled_flag
         servers = read_raw_config().get("mcp_servers") or {}
         return [
             str(name) for name, cfg in servers.items()
@@ -387,7 +387,7 @@ def resolve_runtime_mode(
 # ── Functional API (thin wrappers over RuntimeMode) ──────────────────────────
 
 def is_coding_context(*, platform: Optional[str] = None, cwd: Optional[str | Path] = None, config: Optional[dict[str, Any]] = None) -> bool:
-    """Whether Hermes should operate in its coding posture right now."""
+    """Whether Eidolon should operate in its coding posture right now."""
     return resolve_runtime_mode(platform=platform, cwd=cwd, config=config).is_coding
 
 

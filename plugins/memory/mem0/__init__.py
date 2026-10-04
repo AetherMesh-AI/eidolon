@@ -2,7 +2,7 @@
 
 Server-side fact extraction and semantic search via the Mem0 Platform API (cloud), a
 self-hosted Mem0 server (MEM0_HOST, HTTP), or OSS Memory. Secrets live in $HERMES_HOME/.env
-(MEM0_API_KEY, MEM0_HOST); settings in $HERMES_HOME/mem0.json via `hermes memory setup`:
+(MEM0_API_KEY, MEM0_HOST); settings in $HERMES_HOME/mem0.json via `eidolon memory setup`:
 mode ("platform"|"oss"), host, user_id (canonical id across gateways; unset → gateway-native
 id), agent_id. MEM0_* env vars remain a fallback.
 """
@@ -52,11 +52,11 @@ def _load_config() -> dict:
     """Env vars provide defaults; $HERMES_HOME/mem0.json overrides individual keys.
     Layering avoids a silent failure when the JSON file exists but lacks fields
     like ``api_key`` that the user set in ``.env``."""
-    from hermes_constants import get_hermes_home
+    from eidolon_constants import get_eidolon_home
     config = {"mode": os.environ.get("MEM0_MODE", "platform"), "api_key": get_secret("MEM0_API_KEY", ""), "host": os.environ.get("MEM0_HOST", ""), "agent_id": os.environ.get("MEM0_AGENT_ID", "hermes"), "oss": {}}
     if os.environ.get("MEM0_USER_ID"):  # only when explicitly configured, so initialize() can fall back to the gateway-native id
         config["user_id"] = os.environ["MEM0_USER_ID"]
-    file_cfg = _read_mem0_json(get_hermes_home() / "mem0.json")
+    file_cfg = _read_mem0_json(get_eidolon_home() / "mem0.json")
     config.update({k: v for k, v in file_cfg.items() if v is not None and v != ""})
     return config
 

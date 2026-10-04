@@ -36,12 +36,12 @@ def _locate_memory(node_id: str) -> tuple[Path, list[str], int]:
     Entries come from ``MemoryStore._read_file`` — the memory tool's own parser —
     so journey indices stay aligned with what the graph renders; a profile card's
     local index is its global index minus the MEMORY.md card count."""
-    from hermes_constants import get_hermes_home
+    from eidolon_constants import get_eidolon_home
     from agent.learning_graph import _memory_cards
     from tools.memory_tool import MemoryStore
 
     source, gidx = _parse_memory_id(node_id)
-    path = get_hermes_home() / "memories" / _MEMORY_FILES[source]
+    path = get_eidolon_home() / "memories" / _MEMORY_FILES[source]
     if not path.exists():
         raise ValueError(f"{path.name} not found")
     chunks = MemoryStore._read_file(path)

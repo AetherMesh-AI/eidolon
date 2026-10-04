@@ -2,7 +2,7 @@ import type { QueryClient } from '@tanstack/react-query'
 import type { MutableRefObject } from 'react'
 
 import type { GatewayEventPayload } from '@/lib/chat-messages'
-import type { RpcEvent } from '@/types/hermes'
+import type { RpcEvent } from '@/types/eidolon'
 
 import type { ClientSessionState } from '../../../../types'
 

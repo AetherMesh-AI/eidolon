@@ -20,7 +20,7 @@ def test_parse_restart_after_turn_timeout_defaults_and_clamps():
 def test_default_restart_after_turn_timeout_is_human_tolerable():
     """The shipped default must not make interactive restarts block for hours.
 
-    A wedged turn must not pin `hermes gateway restart` for 6h — the
+    A wedged turn must not pin `eidolon gateway restart` for 6h — the
     default is a safety valve for hung agents, not a target latency
     (#79133). 900-1800s protects long autonomous turns while keeping
     worst-case interactive restart in human-tolerable territory.
@@ -44,7 +44,7 @@ def test_load_restart_after_turn_timeout_preserves_zero(tmp_path, monkeypatch):
     import gateway.run as gateway_run
 
     monkeypatch.delenv("HERMES_RESTART_AFTER_TURN_TIMEOUT", raising=False)
-    monkeypatch.setattr(gateway_run, "_hermes_home", tmp_path)
+    monkeypatch.setattr(gateway_run, "_eidolon_home", tmp_path)
     (tmp_path / "config.yaml").write_text(
         "agent:\n  restart_after_turn_timeout: 0\n",
         encoding="utf-8",

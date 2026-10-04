@@ -19,7 +19,7 @@ from typing import Any, Dict, Optional
 
 import httpx
 
-from hermes_cli.dashboard_auth import LoginStart, ProviderError, Session
+from eidolon_cli.dashboard_auth import LoginStart, ProviderError, Session
 from plugins.dashboard_auth._shared import (
     JSON_HEADERS,
     TOKEN_ENDPOINT_TIMEOUT_SEC as _TOKEN_ENDPOINT_TIMEOUT_SEC,
@@ -305,10 +305,10 @@ import secrets  # noqa: F401,E402
 
 
 _PLUGIN_COMPAT_LAZY = {
-    'DashboardAuthProvider': ('hermes_cli.dashboard_auth', 'DashboardAuthProvider'),
-    'InvalidCodeError': ('hermes_cli.dashboard_auth', 'InvalidCodeError'),
-    'RefreshExpiredError': ('hermes_cli.dashboard_auth', 'RefreshExpiredError'),
-    'classify_jwks_lookup_error': ('hermes_cli.dashboard_auth', 'classify_jwks_lookup_error'),
+    'DashboardAuthProvider': ('eidolon_cli.dashboard_auth', 'DashboardAuthProvider'),
+    'InvalidCodeError': ('eidolon_cli.dashboard_auth', 'InvalidCodeError'),
+    'RefreshExpiredError': ('eidolon_cli.dashboard_auth', 'RefreshExpiredError'),
+    'classify_jwks_lookup_error': ('eidolon_cli.dashboard_auth', 'classify_jwks_lookup_error'),
 }
 
 
@@ -317,7 +317,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

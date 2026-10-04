@@ -1,6 +1,6 @@
 """Tests for /personality none — clearing personality overlay.
 
-Updated for the single-owner unification (hermes_cli.personality): built-ins
+Updated for the single-owner unification (eidolon_cli.personality): built-ins
 always exist, resolution reads config (agent.personalities overlays), and
 persistence flows exclusively through persist_personality().
 """
@@ -16,7 +16,7 @@ class TestCLIPersonalityNone:
 
     def _make_cli(self, personalities=None):
         from cli import HermesCLI
-        from hermes_cli.personality import available_personalities
+        from eidolon_cli.personality import available_personalities
 
         cli = HermesCLI.__new__(HermesCLI)
         user = personalities or {
@@ -38,7 +38,7 @@ class TestCLIPersonalityNone:
             saves.append(("display.personality", name))
             return True
 
-        with patch("hermes_cli.personality.persist_personality", side_effect=_persist):
+        with patch("eidolon_cli.personality.persist_personality", side_effect=_persist):
             cli._handle_personality_command("/personality helpful")
 
         assert cli.system_prompt == "You are helpful."
@@ -54,9 +54,9 @@ class TestCLIPersonalityNone:
             return True
 
         with (
-            patch("hermes_cli.personality.persist_personality", side_effect=_persist),
+            patch("eidolon_cli.personality.persist_personality", side_effect=_persist),
             patch(
-                "hermes_cli.config.read_raw_config",
+                "eidolon_cli.config.read_raw_config",
                 return_value={"agent": {"system_prompt": "manual forever"}},
             ),
         ):
@@ -67,9 +67,9 @@ class TestCLIPersonalityNone:
         assert not any(k == "agent.system_prompt" for k, _ in saves)
 
     def test_builtin_personality_works_without_config_entry(self):
-        # Built-ins come from hermes_cli.personality, not from config.
+        # Built-ins come from eidolon_cli.personality, not from config.
         cli = self._make_cli(personalities={})
-        with patch("hermes_cli.personality.persist_personality", return_value=True):
+        with patch("eidolon_cli.personality.persist_personality", return_value=True):
             cli._handle_personality_command("/personality kawaii")
         assert "kawaii" in cli.system_prompt.lower()
 
@@ -96,10 +96,10 @@ class TestGatewayPersonalityNone:
 
     def _gateway_env(self, tmp_path):
         # The gateway reads via _load_gateway_config (rooted at
-        # gateway.run._hermes_home) and persists via persist_personality
+        # gateway.run._eidolon_home) and persists via persist_personality
         # (rooted at HERMES_HOME) — point both at the same tmp dir.
         return (
-            patch("gateway.run._hermes_home", tmp_path),
+            patch("gateway.run._eidolon_home", tmp_path),
             patch.dict(os.environ, {"HERMES_HOME": str(tmp_path)}),
         )
 
@@ -187,7 +187,7 @@ class TestPersonalityDictFormat:
 
     def _make_cli(self, personalities):
         from cli import HermesCLI
-        from hermes_cli.personality import available_personalities
+        from eidolon_cli.personality import available_personalities
 
         cli = HermesCLI.__new__(HermesCLI)
         cli.config = {"agent": {"personalities": personalities}}
@@ -206,7 +206,7 @@ class TestPersonalityDictFormat:
                 "style": "concise",
             }
         })
-        with patch("hermes_cli.personality.persist_personality", return_value=True):
+        with patch("eidolon_cli.personality.persist_personality", return_value=True):
             cli._handle_personality_command("/personality coder")
         assert "You are an expert programmer." in cli.system_prompt
 
@@ -217,12 +217,12 @@ class TestPersonalityDictFormat:
                 "style": "use code examples",
             }
         })
-        with patch("hermes_cli.personality.persist_personality", return_value=True):
+        with patch("eidolon_cli.personality.persist_personality", return_value=True):
             cli._handle_personality_command("/personality coder")
         assert "Style: use code examples" in cli.system_prompt
 
     def test_string_personality_still_works(self):
         cli = self._make_cli({"helper": "You are helpful."})
-        with patch("hermes_cli.personality.persist_personality", return_value=True):
+        with patch("eidolon_cli.personality.persist_personality", return_value=True):
             cli._handle_personality_command("/personality helper")
         assert cli.system_prompt == "You are helpful."

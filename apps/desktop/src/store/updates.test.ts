@@ -63,7 +63,7 @@ const checkHermesUpdateSpy = vi.fn()
 const updateHermesSpy = vi.fn()
 const getActionStatusSpy = vi.fn()
 
-vi.mock('@/hermes', () => ({
+vi.mock('@/eidolon', () => ({
   checkHermesUpdate: (...args: unknown[]) => checkHermesUpdateSpy(...args),
   updateHermes: (...args: unknown[]) => updateHermesSpy(...args),
   getActionStatus: (...args: unknown[]) => getActionStatusSpy(...args)

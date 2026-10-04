@@ -15,7 +15,7 @@ import { PassThrough } from 'stream'
 
 import { visualOutDir } from './paths.mjs'
 
-import { Box, renderSync, Text } from '@hermes/ink'
+import { Box, renderSync, Text } from '@aethermesh/ink'
 import React, { type ReactElement } from 'react'
 
 import { GatewayProvider } from '../../src/app/gatewayContext.js'
@@ -49,7 +49,7 @@ const SLATE = {
   status_bar_text: '#C9D1D9'
 }
 
-// The regenerated slate light_colors block from hermes_cli/skin_engine.py
+// The regenerated slate light_colors block from eidolon_cli/skin_engine.py
 // (relight recipe: vivid hue-preserved accents, airy capped-saturation text,
 // darker calm dims).
 

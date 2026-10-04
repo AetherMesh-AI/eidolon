@@ -16,7 +16,7 @@ const gatewayMocks = vi.hoisted(() => ({
   setConnection: vi.fn()
 }))
 
-vi.mock('@/hermes', () => ({
+vi.mock('@/eidolon', () => ({
   setApiRequestConnection: vi.fn(),
   HermesGateway: class {
     connectionState = 'closed'
@@ -52,7 +52,7 @@ const {
   setPrimaryGatewayConnectionId
 } = await import('./gateway')
 
-const { setApiRequestConnection } = await import('@/hermes')
+const { setApiRequestConnection } = await import('@/eidolon')
 
 function installDesktop(): void {
   ;(window as unknown as { hermesDesktop: unknown }).hermesDesktop = {

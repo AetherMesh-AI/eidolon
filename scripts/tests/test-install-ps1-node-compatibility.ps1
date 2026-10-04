@@ -7,7 +7,7 @@
 
 $repoRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path))
 $installScript = Join-Path $repoRoot 'scripts\install.ps1'
-$testRoot = Join-Path $env:TEMP ("hermes-node-compatibility-test-" + [Guid]::NewGuid().ToString('N'))
+$testRoot = Join-Path $env:TEMP ("eidolon-node-compatibility-test-" + [Guid]::NewGuid().ToString('N'))
 $HermesHome = Join-Path $testRoot 'home'
 $InstallDir = Join-Path $testRoot 'missing-checkout'
 . $installScript -HermesHome $HermesHome -InstallDir $InstallDir

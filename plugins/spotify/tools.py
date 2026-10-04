@@ -1,4 +1,4 @@
-"""Native Spotify tools for Hermes (registered via plugins/spotify).
+"""Native Spotify tools for Eidolon (registered via plugins/spotify).
 
 Each tool routes ``args["action"]`` through a dict dispatch table; every entry
 has the signature ``(client, args, action) -> str`` and issues its Spotify Web
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, List, Optional
 
-from hermes_cli.auth import get_auth_status
+from eidolon_cli.auth import get_auth_status
 from plugins.spotify.client import (
     SpotifyClient, SpotifyError, normalize_spotify_id, normalize_spotify_uri, normalize_spotify_uris)
 from tools.registry import tool_error, tool_result
@@ -333,7 +333,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

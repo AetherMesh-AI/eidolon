@@ -72,7 +72,7 @@ try {
     observed.logs = await evaluate(`window.hermesDesktop?.getRecentLogs?.()` )
     assert.ok(observed.logs, 'Missing preload IPC getRecentLogs')
     assert.equal(observed.logs.path, launch.logPath, 'Boot log ownership path mismatch')
-    records = observed.logs.lines.map(line => ({ line, match: /^\[(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z)\] \[hermes\] \[boot\] (Resolving (?:Eidolon|Hermes) backend)$/.exec(line) })).filter(record => record.match)
+    records = observed.logs.lines.map(line => ({ line, match: /^\[(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z)\] \[eidolon\] \[boot\] (Resolving (?:Eidolon|Hermes) backend)$/.exec(line) })).filter(record => record.match)
     evidence = records.find(record => Date.parse(record.match[1]) >= launch.startedAt && Date.parse(record.match[1]) <= Date.now())
     state = observed.text.includes('Desktop boot failed')
       ? observed.text.includes(gate) ? 'isolated-gate-error' : 'unknown-error'

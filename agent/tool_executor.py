@@ -188,7 +188,7 @@ def _flush_session_db_after_tool_progress(agent, messages: list, *, stage: str) 
         return persisted
     except Exception as exc:
         agent._incremental_persistence_failed = True
-        from hermes_state import classify_persistence_error
+        from eidolon_state import classify_persistence_error
         agent._last_persistence_error_cause = classify_persistence_error(exc)
         logger.warning("Incremental tool-call persistence failed after %s: %s", stage, exc)
         return False
@@ -197,7 +197,7 @@ def _flush_session_db_after_tool_progress(agent, messages: list, *, stage: str) 
 def _image_generate_parallel_limit() -> int:
     """Configured image-generation parallelism cap (conservative: backend bursts hit rate limits)."""
     try:
-        from hermes_cli.config import load_config
+        from eidolon_cli.config import load_config
 
         cfg = load_config() or {}
         image_gen = cfg.get("image_gen") if isinstance(cfg, dict) else None
@@ -617,7 +617,7 @@ def _pre_tool_block(agent, ref: _ToolCallRef):
     """Run ``pre_tool_call`` plugin hooks; returns ``(block_message, final_args)`` with any
     hook-modified args applied. Hook failures never block."""
     try:
-        from hermes_cli.plugins import _dispatch_pre_tool_call_hooks
+        from eidolon_cli.plugins import _dispatch_pre_tool_call_hooks
 
         block_msg, modified_args = _dispatch_pre_tool_call_hooks(
             ref.name,
@@ -641,7 +641,7 @@ def _dispatch_authorized_once(
     begin_execution,
     authorization_gate: _ConcurrentToolAuthorizationGate | None,
 ) -> Any:
-    """Hermes policy (scope → plugin pre-hooks → guardrails) then the one real dispatch.
+    """Eidolon policy (scope → plugin pre-hooks → guardrails) then the one real dispatch.
 
     Plugin ``modify`` hooks may rewrite ``ref.args`` (mirrored into ``state.args``).
     ``begin_execution`` (concurrent start-order gate) is advanced exactly once on every
@@ -697,9 +697,9 @@ def _run_agent_tool_execution_middleware(
     begin_execution=None,
     authorization_gate: _ConcurrentToolAuthorizationGate | None = None,
 ) -> _ManagedToolResult:
-    """Run Relay rewrites before Hermes policy and dispatch exactly once."""
+    """Run Relay rewrites before Eidolon policy and dispatch exactly once."""
     from agent import relay_tools
-    from hermes_cli.middleware import (
+    from eidolon_cli.middleware import (
         apply_tool_request_middleware,
         run_tool_execution_middleware,
     )
@@ -711,7 +711,7 @@ def _run_agent_tool_execution_middleware(
     def _authorized_dispatch(final_args: dict[str, Any]) -> Any:
         with dispatch_lock:
             if state.dispatched:
-                raise RuntimeError("Hermes tool execution callback invoked more than once")
+                raise RuntimeError("Eidolon tool execution callback invoked more than once")
             state.dispatched = True
             state.blocked = False
             state.args = final_args

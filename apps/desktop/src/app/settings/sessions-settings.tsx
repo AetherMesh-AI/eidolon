@@ -9,7 +9,7 @@ import {
   listAllProfileSessions,
   saveHermesConfig,
   setSessionArchived
-} from '@/hermes'
+} from '@/eidolon'
 import { useI18n } from '@/i18n'
 import { sessionTitle } from '@/lib/chat-runtime'
 import { pathLeaf } from '@/lib/display-path'
@@ -20,7 +20,7 @@ import { notify, notifyError } from '@/store/notifications'
 import { applyConfiguredDefaultProjectDir, ensureDefaultWorkspaceCwd, setSessions } from '@/store/session'
 import { untombstoneSessions } from '@/store/session-removal'
 import { forgetSessionUnread } from '@/store/session-unread'
-import type { HermesConfigRecord, SessionInfo } from '@/types/hermes'
+import type { HermesConfigRecord, SessionInfo } from '@/types/eidolon'
 
 import { EmptyState, ListRow, SectionHeading, SettingsContent, SettingsSkeleton, ToggleRow } from './primitives'
 import { useDeepLinkHighlight } from './use-deep-link-highlight'

@@ -971,7 +971,7 @@ class TestMultiplexProfileWebhookAuthentication:
         runner.config.multiplex_profiles = True
         adapter.gateway_runner = runner
         monkeypatch.setattr(
-            "hermes_cli.profiles.profiles_to_serve",
+            "eidolon_cli.profiles.profiles_to_serve",
             lambda multiplex, profile_allowlist=None: [
                 ("default", tmp_path),
                 ("worker", tmp_path / "profiles" / "worker"),
@@ -1060,7 +1060,7 @@ class TestMultiplexProfileWebhookAuthentication:
         (worker / "config.yaml").write_text("{}\n")
         (worker / ".env").write_text("")
         monkeypatch.setattr(
-            "hermes_cli.profiles.get_profile_dir", lambda name: tmp_path / "profiles" / name
+            "eidolon_cli.profiles.get_profile_dir", lambda name: tmp_path / "profiles" / name
         )
         route_secret = "worker-route-secret-abc123"
         adapter = _make_adapter(

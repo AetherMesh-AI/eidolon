@@ -97,7 +97,7 @@ def _format_live_history_output(sid: str, session: dict, arg: str) -> str:
     lines = ["Conversation History", "────────────────────────────────────────"]
     for idx, message in enumerate(messages, start=1):
         role = str(message.get("role") or "unknown")
-        label = {"user": "You", "assistant": "Hermes"}.get(role, role.title())
+        label = {"user": "You", "assistant": "Eidolon"}.get(role, role.title())
         text = str(message.get("text") or message.get("context") or "").strip()
         text = f"{text[:400]}..." if len(text) > 400 else text
         lines.append(f"[{label} #{idx}] {text or '(no text)'}")
@@ -160,7 +160,7 @@ def _format_live_tools_output(sid: str, session: dict, arg: str) -> str:
 
 def _format_live_help_output(sid: str, session: dict, arg: str) -> str:
     try:
-        from hermes_cli.commands import COMMANDS_BY_CATEGORY
+        from eidolon_cli.commands import COMMANDS_BY_CATEGORY
         lines = ["Available commands:", ""]
         for category, commands in COMMANDS_BY_CATEGORY.items():
             lines.append(f"{category}:")
@@ -280,7 +280,7 @@ def _mirror_approvals(sid, session, agent, arg) -> None:
 def _mirror_personality(sid, session, agent, arg) -> None:
     if arg and agent:
         pname, new_prompt = _validate_personality(arg, _load_cfg())
-        from hermes_cli.personality import persist_personality  # single owner: no surface drift
+        from eidolon_cli.personality import persist_personality  # single owner: no surface drift
         persist_personality(pname)
         _apply_personality_to_session(sid, session, new_prompt, pname)
 

@@ -17,8 +17,8 @@ from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional
 
 from cron.ledger import ledger_transaction, open_ledger, prepare_ledger
-from hermes_constants import get_hermes_home
-from hermes_time import now as _hermes_now
+from eidolon_constants import get_eidolon_home
+from eidolon_time import now as _hermes_now
 
 # Optional test override. Production resolves the path at transaction time so dashboard operations
 # that temporarily enter another profile cannot leak that profile's records into the import-time
@@ -34,7 +34,7 @@ _PROCESS_ID = uuid.uuid4().hex
 # --- executions ledger --------------------------------------------------------------------------
 
 def _connect() -> sqlite3.Connection:
-    return open_ledger(EXECUTIONS_FILE or (get_hermes_home().resolve() / "cron" / "executions.db"))
+    return open_ledger(EXECUTIONS_FILE or (get_eidolon_home().resolve() / "cron" / "executions.db"))
 
 
 def _initialize_schema(conn: sqlite3.Connection) -> None:
@@ -57,7 +57,7 @@ def _initialize_schema(conn: sqlite3.Connection) -> None:
              error TEXT
            )"""
     )
-    from hermes_cli.sqlite_util import add_column_if_missing
+    from eidolon_cli.sqlite_util import add_column_if_missing
 
     add_column_if_missing(
         conn, "executions", "handoff_pending",

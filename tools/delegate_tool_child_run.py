@@ -153,9 +153,9 @@ def _dump_subagent_timeout_diagnostic(
     response", 0 API calls, nothing to inspect): ``~/.hermes/logs/subagent-timeout-<sid>-<ts>.log`` with the
     child's config, prompt/schema sizes, activity snapshot and worker stack. Path, or None on failure."""
     try:
-        from hermes_constants import get_hermes_home
+        from eidolon_constants import get_eidolon_home
         import datetime as _dt
-        logs_dir = get_hermes_home() / "logs"
+        logs_dir = get_eidolon_home() / "logs"
         try:
             logs_dir.mkdir(parents=True, exist_ok=True)
         except Exception:

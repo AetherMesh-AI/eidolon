@@ -1,4 +1,4 @@
-"""Tests for the secret-source tracking in ``hermes_cli.env_loader``.
+"""Tests for the secret-source tracking in ``eidolon_cli.env_loader``.
 
 These cover the small public surface that lets `hermes model` / `hermes setup`
 label detected credentials with their origin ("from Bitwarden") so users
@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from hermes_cli import env_loader  # noqa: E402
+from eidolon_cli import env_loader  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -181,7 +181,7 @@ def test_single_profile_scoped_load_keeps_override_behavior(tmp_path, monkeypatc
     not on the home override alone -- single-profile ``-p`` runs still load.
     """
     from agent import secret_scope
-    from hermes_constants import reset_hermes_home_override, set_hermes_home_override
+    from eidolon_constants import reset_eidolon_home_override, set_eidolon_home_override
 
     monkeypatch.delenv("HERMES_TEST_SHARED_ADAPTER_CONFIG", raising=False)
     other_home = tmp_path / "other"
@@ -190,12 +190,12 @@ def test_single_profile_scoped_load_keeps_override_behavior(tmp_path, monkeypatc
 
     was_active = secret_scope.is_multiplex_active()
     secret_scope.set_multiplex_active(False)
-    home_token = set_hermes_home_override(other_home)
+    home_token = set_eidolon_home_override(other_home)
     try:
         loaded = env_loader.load_hermes_dotenv(hermes_home=other_home)
     finally:
         secret_scope.set_multiplex_active(was_active)
-        reset_hermes_home_override(home_token)
+        reset_eidolon_home_override(home_token)
 
     try:
         assert os.environ.get("HERMES_TEST_SHARED_ADAPTER_CONFIG") == "second"
@@ -211,9 +211,9 @@ def test_multiplex_dotenv_load_hydrates_sources_without_global_env(
     from agent import secret_scope
     import agent.secret_sources.bitwarden as bw_module
     from agent.secret_sources import registry as reg_module
-    from hermes_constants import (
-        reset_hermes_home_override,
-        set_hermes_home_override,
+    from eidolon_constants import (
+        reset_eidolon_home_override,
+        set_eidolon_home_override,
     )
 
     monkeypatch.delenv("BWS_ACCESS_TOKEN", raising=False)
@@ -238,13 +238,13 @@ def test_multiplex_dotenv_load_hydrates_sources_without_global_env(
     reg_module._reset_registry_for_tests()
 
     was_active = secret_scope.is_multiplex_active()
-    home_token = set_hermes_home_override(tmp_path)
+    home_token = set_eidolon_home_override(tmp_path)
     secret_scope.set_multiplex_active(True)
     try:
         assert env_loader.load_hermes_dotenv(hermes_home=tmp_path) == []
     finally:
         secret_scope.set_multiplex_active(was_active)
-        reset_hermes_home_override(home_token)
+        reset_eidolon_home_override(home_token)
 
     assert env_loader.get_secret_source_values(tmp_path) == {
         "ANTHROPIC_API_KEY": "profile-provider-key"
@@ -344,7 +344,7 @@ def test_apply_external_secret_sources_noop_when_disabled(tmp_path, monkeypatch)
 
 def test_apply_external_secret_sources_dedupes_within_process(tmp_path, monkeypatch):
     """``load_hermes_dotenv()`` is called at module-import time from several
-    hot modules (cli.py, hermes_cli/main.py, run_agent.py, ...).  The
+    hot modules (cli.py, eidolon_cli/main.py, run_agent.py, ...).  The
     Bitwarden status line previously printed once per call — 3-5x per
     startup.  The applied-home guard must short-circuit subsequent calls
     so the heavy work (config re-parse, Bitwarden lookup, status print)
@@ -378,7 +378,7 @@ def test_apply_external_secret_sources_dedupes_within_process(tmp_path, monkeypa
     reg_module._reset_registry_for_tests()
 
     # Five calls in a row, simulating module-import-time invocations from
-    # cli.py, hermes_cli/main.py, run_agent.py, trajectory_compressor.py,
+    # cli.py, eidolon_cli/main.py, run_agent.py, trajectory_compressor.py,
     # gateway/run.py.  Only the first should actually call the backend.
     for _ in range(5):
         env_loader._apply_external_secret_sources(tmp_path)

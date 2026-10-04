@@ -41,7 +41,7 @@ def test_every_old_branch_resolves_to_a_handler():
 
 
 def test_registry_names_resolve_into_the_table():
-    from hermes_cli.commands import COMMAND_REGISTRY, resolve_command
+    from eidolon_cli.commands import COMMAND_REGISTRY, resolve_command
 
     for name in HermesCLI._SLASH_DISPATCH:
         cmd = resolve_command(name)
@@ -62,7 +62,7 @@ def _cli():
 def test_dispatch_return_semantics_and_side_effects():
     c = _cli()
     with patch.object(HermesCLI, "_toggle_yolo", return_value=None) as m, \
-            patch("hermes_cli.plugins.fire_pre_command_hook") as hook:
+            patch("eidolon_cli.plugins.fire_pre_command_hook") as hook:
         assert c.process_command("/yolo") is True
         m.assert_called_once_with()
         hook.assert_called_once()

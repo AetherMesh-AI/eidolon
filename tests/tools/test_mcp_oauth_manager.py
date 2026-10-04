@@ -13,14 +13,14 @@ import pytest
 
 
 def test_manager_isolates_same_named_servers_by_profile_home(tmp_path, monkeypatch):
-    from hermes_constants import reset_hermes_home_override, set_hermes_home_override
+    from eidolon_constants import reset_eidolon_home_override, set_eidolon_home_override
     from tools.mcp_oauth import HermesTokenStorage
     from tools.mcp_oauth_manager import MCPOAuthManager
 
     profile_a = tmp_path / "profile-a"
     profile_b = tmp_path / "profile-b"
     for home, access_token in ((profile_a, "TOKEN_A"), (profile_b, "TOKEN_B")):
-        token = set_hermes_home_override(home)
+        token = set_eidolon_home_override(home)
         try:
             storage = HermesTokenStorage("shared")
             storage._tokens_path().parent.mkdir(parents=True, exist_ok=True)
@@ -29,18 +29,18 @@ def test_manager_isolates_same_named_servers_by_profile_home(tmp_path, monkeypat
                 % access_token
             )
         finally:
-            reset_hermes_home_override(token)
+            reset_eidolon_home_override(token)
 
     manager = MCPOAuthManager()
     providers = []
     for home in (profile_a, profile_b):
-        token = set_hermes_home_override(home)
+        token = set_eidolon_home_override(home)
         try:
             provider = manager.get_or_build_provider("shared", "https://mcp.example/mcp", {})
             asyncio.run(provider._initialize())
             providers.append(provider)
         finally:
-            reset_hermes_home_override(token)
+            reset_eidolon_home_override(token)
 
     assert providers[0] is not providers[1]
     assert providers[0].context.current_tokens.access_token == "TOKEN_A"

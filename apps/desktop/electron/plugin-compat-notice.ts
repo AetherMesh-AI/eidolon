@@ -1,7 +1,7 @@
 /**
  * One-time Desktop notice for plugins that import pre-decomposition module paths (PR #102117).
  *
- * The Python side (hermes_cli/plugin_compat.py) statically scans the user's enabled external plugins on
+ * The Python side (eidolon_cli/plugin_compat.py) statically scans the user's enabled external plugins on
  * every CLI/gateway/TUI start and writes HERMES_HOME/.plugin-compat-report.json when any plugin imports a
  * path scheduled for removal on 2026-09-14 (deleting the file when none do). Desktop reads that file at
  * boot and shows ONE modal, then records the dismissal in userData so the same set of affected plugins is

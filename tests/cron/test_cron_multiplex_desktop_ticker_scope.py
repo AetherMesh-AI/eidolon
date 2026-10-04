@@ -23,7 +23,7 @@ def test_standalone_fallback_pool_keeps_profile_scope(tmp_path, monkeypatch):
         set_multiplex_active,
         set_secret_scope,
     )
-    from hermes_constants import get_hermes_home, set_hermes_home_override
+    from eidolon_constants import get_eidolon_home, set_eidolon_home_override
     import cron.scheduler as sched
     import tools.send_message_tool as smt
 
@@ -39,7 +39,7 @@ def test_standalone_fallback_pool_keeps_profile_scope(tmp_path, monkeypatch):
     seen = {}
 
     async def fake_send(platform, pconfig, chat_id, message, **kwargs):
-        seen["home"] = str(get_hermes_home())
+        seen["home"] = str(get_eidolon_home())
         seen["token"] = get_secret("TELEGRAM_BOT_TOKEN", None)
         return {"success": True, "message_id": "1"}
 
@@ -47,7 +47,7 @@ def test_standalone_fallback_pool_keeps_profile_scope(tmp_path, monkeypatch):
 
     async def _inside_running_loop():
         # Emulate the multiplex ticker's per-profile scope on the caller.
-        set_hermes_home_override(str(sec_home))
+        set_eidolon_home_override(str(sec_home))
         set_secret_scope({"TELEGRAM_BOT_TOKEN": "OPS-TOKEN"})
         return sched._deliver_result(job, "hello", adapters={}, loop=None)
 
@@ -64,7 +64,7 @@ def test_standalone_fallback_pool_keeps_profile_scope(tmp_path, monkeypatch):
 
 def test_multiplex_ticker_profile_gate_skips_rejected_profile(tmp_path):
     from cron.scheduler_provider import InProcessCronScheduler
-    from hermes_constants import get_hermes_home
+    from eidolon_constants import get_eidolon_home
 
     own_gateway = tmp_path / "own-gateway"
     orphan = tmp_path / "orphan"
@@ -75,7 +75,7 @@ def test_multiplex_ticker_profile_gate_skips_rejected_profile(tmp_path):
     ticked: list[str] = []
 
     def _tick(*args, **kwargs):
-        ticked.append(str(get_hermes_home()))
+        ticked.append(str(get_eidolon_home()))
         if len(ticked) >= 3:
             stop.set()
         return 0
@@ -107,14 +107,14 @@ def test_multiplex_ticker_profile_gate_skips_rejected_profile(tmp_path):
 
 def test_desktop_ticker_gates_on_profile_gateway_running(tmp_path, monkeypatch):
     """The desktop ticker wires the gate to ``_check_gateway_running``."""
-    from hermes_cli import web_server
+    from eidolon_cli import web_server
 
     homes = [("default", tmp_path / "default"), ("ops", tmp_path / "ops")]
     monkeypatch.setattr(
-        "hermes_cli.profiles.profiles_to_serve", lambda multiplex=False: list(homes)
+        "eidolon_cli.profiles.profiles_to_serve", lambda multiplex=False: list(homes)
     )
     monkeypatch.setattr(
-        "hermes_cli.profiles._check_gateway_running", lambda home: home.name == "ops"
+        "eidolon_cli.profiles._check_gateway_running", lambda home: home.name == "ops"
     )
     captured = {}
 
@@ -129,7 +129,7 @@ def test_desktop_ticker_gates_on_profile_gateway_running(tmp_path, monkeypatch):
     monkeypatch.setattr(web_server, "resolve_cron_scheduler", lambda: _Provider(), raising=False)
     monkeypatch.setattr(sp, "resolve_cron_scheduler", lambda: _Provider())
     monkeypatch.setattr(sp, "InProcessCronScheduler", _Provider)
-    monkeypatch.setattr("hermes_logging.enable_profile_log_routing", lambda homes: None)
+    monkeypatch.setattr("eidolon_logging.enable_profile_log_routing", lambda homes: None)
 
     web_server._start_desktop_cron_ticker(threading.Event(), interval=0)
 

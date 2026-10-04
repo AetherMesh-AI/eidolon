@@ -1,7 +1,7 @@
-"""Interactive ``hermes memory setup`` wizard for the OpenViking provider.
+"""Interactive ``eidolon memory setup`` wizard for the OpenViking provider.
 
-Pure UI flow: prompts, menus, and persistence of the chosen connection (Hermes
-``.env`` only, or mirrored to an ``ovcli.conf.<name>`` profile that Hermes then
+Pure UI flow: prompts, menus, and persistence of the chosen connection (Eidolon
+``.env`` only, or mirrored to an ``ovcli.conf.<name>`` profile that Eidolon then
 links). Network validation and file writers live in the package ``__init__`` and
 are looked up there at call time so tests can monkeypatch them on the plugin module.
 """
@@ -274,7 +274,7 @@ def _print_openviking_ready(message: str, path: Optional[Path] = None) -> None:
     _say(message)
     if path is not None:
         _say(f"Config file: {path}")
-    print("  Start a new Hermes session to activate.\n")
+    print("  Start a new Eidolon session to activate.\n")
 
 
 def _run_existing_profile_setup(*, profiles: list, select, cancelled, config: dict, provider_config: dict, env_path: Path) -> bool | object:
@@ -343,7 +343,7 @@ def _run_create_profile_setup(*, prompt, select, cancelled, config: dict, provid
         return False
 
     save_choice = select("  Save OpenViking config",
-                         [("Keep in Hermes only", "write values only to Hermes .env"),
+                         [("Keep in Eidolon only", "write values only to Eidolon .env"),
                           ("Mirror to OpenViking store", "write ~/.openviking/ovcli.conf.<name> and link it")],
                          default=1, cancel_returns=cancelled)
     if save_choice == cancelled:
@@ -358,14 +358,14 @@ def _run_create_profile_setup(*, prompt, select, cancelled, config: dict, provid
         return True
 
     _save_hermes_only_config(config=config, provider_config=provider_config, env_path=env_path, values=values)
-    _print_openviking_ready("Connection saved to Hermes .env.")
+    _print_openviking_ready("Connection saved to Eidolon .env.")
     return True
 
 
 def run_setup(hermes_home: str, config: dict) -> None:
     """Entry point for ``OpenVikingMemoryProvider.post_setup``."""
-    from hermes_cli.config import save_config
-    from hermes_cli.memory_setup import _CANCELLED, _curses_select, _print_cancelled_setup, _prompt
+    from eidolon_cli.config import save_config
+    from eidolon_cli.memory_setup import _CANCELLED, _curses_select, _print_cancelled_setup, _prompt
 
     env_path = Path(hermes_home) / ".env"
     if not isinstance(config.get("memory"), dict):

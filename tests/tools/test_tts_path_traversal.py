@@ -38,7 +38,7 @@ def test_output_path_rejects_hermes_oauth_store(tmp_path, monkeypatch):
 
     hermes_home = tmp_path / "hermes-home"
     hermes_home.mkdir()
-    monkeypatch.setattr(file_safety, "_hermes_home_path", lambda: hermes_home)
+    monkeypatch.setattr(file_safety, "_eidolon_home_path", lambda: hermes_home)
     monkeypatch.setattr(file_safety, "_hermes_root_path", lambda: hermes_home)
 
     target = hermes_home / ".anthropic_oauth.json"
@@ -59,7 +59,7 @@ def test_output_path_rejects_mcp_token_directory(tmp_path, monkeypatch):
     hermes_home = tmp_path / "hermes-home"
     token_dir = hermes_home / "mcp-tokens"
     token_dir.mkdir(parents=True)
-    monkeypatch.setattr(file_safety, "_hermes_home_path", lambda: hermes_home)
+    monkeypatch.setattr(file_safety, "_eidolon_home_path", lambda: hermes_home)
     monkeypatch.setattr(file_safety, "_hermes_root_path", lambda: hermes_home)
 
     target = token_dir / "server.mp3"

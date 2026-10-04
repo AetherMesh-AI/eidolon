@@ -790,14 +790,14 @@ _ACCESS_CHOICES = (
     ("Use DM pairing (unknown users request access, you approve with 'hermes pairing approve')", (("WECOM_DM_POLICY", "pairing"),),
      (("success", "DM pairing mode — users will receive a code to request access."), ("info", "Approve with: hermes pairing approve <platform> <code>"))),
     ("Disable direct messages", (("WECOM_DM_POLICY", "disabled"),), (("warning", "Direct messages disabled."),)),
-    ("Skip for now (bot will deny all users until configured)", (), (("info", "Skipped — configure later with 'hermes gateway setup'"),)),
+    ("Skip for now (bot will deny all users until configured)", (), (("info", "Skipped — configure later with 'eidolon gateway setup'"),)),
 )
 
 
 def interactive_setup() -> None:
-    from hermes_cli.config import get_env_value, remove_env_value, save_env_value
-    from hermes_cli.setup import prompt_choice
-    from hermes_cli.cli_output import prompt, prompt_yes_no, print_header, print_info, print_success, print_warning
+    from eidolon_cli.config import get_env_value, remove_env_value, save_env_value
+    from eidolon_cli.setup import prompt_choice
+    from eidolon_cli.cli_output import prompt, prompt_yes_no, print_header, print_info, print_success, print_warning
     print_header("WeCom (Enterprise WeChat)")
     if get_env_value("WECOM_BOT_ID") and get_env_value("WECOM_SECRET"):
         print_success("WeCom is already configured.")
@@ -873,7 +873,7 @@ def _build_callback_adapter(config):
 
 
 def register(ctx) -> None:
-    common = dict(install_hint="Run `hermes setup` to install WeCom support.", emoji="💼", allow_update_command=True)
+    common = dict(install_hint="Run `eidolon setup` to install WeCom support.", emoji="💼", allow_update_command=True)
     ctx.register_platform(
         name="wecom", label="WeCom (Enterprise WeChat)", adapter_factory=_build_adapter, check_fn=check_wecom_requirements,
         is_connected=_is_connected, validate_config=_is_connected, required_env=["WECOM_BOT_ID", "WECOM_SECRET"],
@@ -933,7 +933,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

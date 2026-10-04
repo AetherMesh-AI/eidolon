@@ -12,8 +12,8 @@ def test_collapsed_dock_reserves_one_shaded_row_without_changing_editor():
     from prompt_toolkit.output import DummyOutput
     from prompt_toolkit.styles import Style
     from prompt_toolkit.widgets import TextArea
-    from hermes_cli import cli_subagent_monitor as dock
-    from hermes_cli.skin_engine import get_prompt_toolkit_style_overrides
+    from eidolon_cli import cli_subagent_monitor as dock
+    from eidolon_cli.skin_engine import get_prompt_toolkit_style_overrides
 
     cli = SimpleNamespace(agent=None)
     dock.install_dock(cli)
@@ -74,7 +74,7 @@ def test_collapsed_dock_reserves_one_shaded_row_without_changing_editor():
 
 def test_collapsed_summary_prioritizes_live_count_and_controls_at_small_widths():
     from prompt_toolkit.utils import get_cwidth
-    from hermes_cli.cli_subagent_monitor import SubagentMonitor
+    from eidolon_cli.cli_subagent_monitor import SubagentMonitor
 
     monitor = SubagentMonitor(SimpleNamespace())
     monitor.entries = [dict(goal='Inspect 界 ' * 40, elapsed=12,

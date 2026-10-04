@@ -43,15 +43,15 @@ def test_scrub_on_forwards_extra_like_sanitize_extra_env(monkeypatch):
 
 
 def test_no_scrub_inherit_profile_home_bridges_context_override(tmp_path):
-    from hermes_constants import set_hermes_home_override, reset_hermes_home_override
+    from eidolon_constants import set_eidolon_home_override, reset_eidolon_home_override
 
-    token = set_hermes_home_override(str(tmp_path))
+    token = set_eidolon_home_override(str(tmp_path))
     try:
         env = build_subprocess_env(
             {"PATH": "/bin"}, scrub_secrets=False, inherit_profile_home=True
         )
     finally:
-        reset_hermes_home_override(token)
+        reset_eidolon_home_override(token)
     assert env["HERMES_HOME"] == str(tmp_path)
 
 
@@ -59,7 +59,7 @@ def test_no_scrub_inherit_profile_home_bridges_context_override(tmp_path):
 # E2E: real subprocess sees the factory's contract
 # ---------------------------------------------------------------------------
 
-def test_e2e_child_sees_hermes_home_and_no_planted_secret(tmp_path, monkeypatch):
+def test_e2e_child_sees_eidolon_home_and_no_planted_secret(tmp_path, monkeypatch):
     """A real child spawned with a factory-built env must see HERMES_HOME
     propagated and (with scrub on) a planted provider-style key absent."""
     hermes_home = tmp_path / "hermes-home"

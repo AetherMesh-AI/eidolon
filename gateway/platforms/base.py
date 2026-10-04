@@ -35,7 +35,7 @@ def _consume_detached_handler_exception(task: "asyncio.Task") -> None:
 
 
 # Audio exts for native audio delivery; Telegram's narrower sets stay separate (.m2a is audio to
-# Hermes but not to sendAudio).
+# Eidolon but not to sendAudio).
 _AUDIO_MIME_TYPES = {
     ".ogg": "audio/ogg", ".opus": "audio/opus", ".mp3": "audio/mpeg", ".m2a": "audio/mpeg",
     ".wav": "audio/wav", ".m4a": "audio/m4a", ".flac": "audio/flac"}
@@ -373,7 +373,7 @@ def proxy_kwargs_for_bot(proxy_url: str | None) -> dict:
 def _config_section(name: str) -> dict:
     """Read-only ``config.yaml`` section ``name``; ``{}`` when unreadable/missing/not a dict."""
     try:
-        from hermes_cli.config import load_config_readonly as _load_config
+        from eidolon_cli.config import load_config_readonly as _load_config
         cfg = _load_config()  # read-only: .get() only, never mutated
     except Exception:
         return {}
@@ -433,7 +433,7 @@ from gateway.platforms.helpers import fence_state_after
 from gateway.platforms.event import MessageEvent, MessageType, ProcessingOutcome
 from gateway.session import SessionSource, build_session_key
 from gateway.session_transcript import TranscriptReadError
-from hermes_constants import get_default_hermes_root, get_hermes_dir, get_hermes_home
+from eidolon_constants import get_default_hermes_root, get_hermes_dir, get_eidolon_home
 
 if TYPE_CHECKING:
     from agent.display import ToolPreview
@@ -734,7 +734,7 @@ _CACHE_DIR_IMPORT_DEFAULTS = {
     "VIDEO_CACHE_DIR": VIDEO_CACHE_DIR, "DOCUMENT_CACHE_DIR": DOCUMENT_CACHE_DIR,
     "SCREENSHOT_CACHE_DIR": SCREENSHOT_CACHE_DIR}
 
-_HERMES_HOME = get_hermes_home()
+_HERMES_HOME = get_eidolon_home()
 _HERMES_ROOT = get_default_hermes_root()
 MEDIA_DELIVERY_ALLOW_DIRS_ENV = "HERMES_MEDIA_ALLOW_DIRS"
 MEDIA_DELIVERY_TRUST_RECENT_ENV = "HERMES_MEDIA_TRUST_RECENT_FILES"
@@ -958,7 +958,7 @@ def _docker_sandbox_dir_candidates(session_key: str = "") -> List[str]:
     except Exception:
         return ["default"]
     try:
-        from hermes_cli.profiles import get_active_profile_name
+        from eidolon_cli.profiles import get_active_profile_name
         profile = get_active_profile_name() or "default"
     except Exception:
         profile = "default"
@@ -1016,7 +1016,7 @@ def _default_docker_workspace_host_roots(session_key: str = "") -> List[Path]:
 
 
 def _cache_dir_container_mounts() -> List[Tuple[Path, Path]]:
-    """(host, container) pairs for the auto-mounted Hermes cache dirs (``/root/.hermes/...`` in
+    """(host, container) pairs for the auto-mounted Eidolon cache dirs (``/root/.hermes/...`` in
     MEDIA tags); longer prefixes than the ``/root`` home mount, so longest-prefix match wins."""
     if not _docker_env_active():
         return []
@@ -1046,7 +1046,7 @@ def _translate_docker_container_media_path(candidate: Path, session_key: str = "
     auto-mounted cache dirs (``/root/.hermes/...``), persistent ``/workspace`` and ``/root``."""
     if not candidate.is_absolute():
         return None
-    # In-process gateways (Desktop, `hermes serve`) may not have bridged terminal.* config into
+    # In-process gateways (Desktop, `eidolon serve`) may not have bridged terminal.* config into
     # TERMINAL_* env yet; the bridge is idempotent.
     with contextlib.suppress(Exception):
         from tools.terminal_tool import _ensure_terminal_env_bridged
@@ -1086,7 +1086,7 @@ def validate_media_delivery_path(path: str, session_key: str = "") -> Optional[s
     """Safe absolute file path for native media delivery, else None. Default: any existing
     regular file outside the credential / system denylist (symmetric with inbound). Strict
     (``HERMES_MEDIA_DELIVERY_STRICT=1``, public bots where prompt injection must not exfiltrate
-    host secrets): MUST be under a Hermes cache, an operator root (``HERMES_MEDIA_ALLOW_DIRS``),
+    host secrets): MUST be under a Eidolon cache, an operator root (``HERMES_MEDIA_ALLOW_DIRS``),
     or freshly produced within the recency window. Symlinks are resolved before any check."""
     candidate = _normalize_media_tag_path(path)
     if not candidate:
@@ -1109,7 +1109,7 @@ def validate_media_delivery_path(path: str, session_key: str = "") -> Optional[s
         resolved_root = _resolve_path(root, expand=True)
         if resolved_root is not None and _path_is_within(resolved, resolved_root):
             return str(resolved)
-    # Non-strict (default): anything not denylisted (/etc, /proc, ~/.ssh, Hermes-root secrets).
+    # Non-strict (default): anything not denylisted (/etc, /proc, ~/.ssh, Eidolon-root secrets).
     if os.environ.get(MEDIA_DELIVERY_STRICT_ENV, "0").strip().lower() not in _TRUTHY:
         return None if _path_under_denied_prefix(resolved) else str(resolved)
     # Strict: recency trust for fresh files (pandoc -o /tmp/x.pdf); denylist still applies.
@@ -1794,7 +1794,7 @@ class BasePlatformAdapter(ABC):
     supports_async_delivery: bool = True
     # ``send()`` chunks natively via ``truncate_message()`` -> the router skips its truncation.
     splits_long_messages: bool = False
-    # Prefix users can always TYPE for Hermes commands ("!" where the client eats a leading "/").
+    # Prefix users can always TYPE for Eidolon commands ("!" where the client eats a leading "/").
     typed_command_prefix: str = "/"
     # ``in_channel`` continuable-cron surface: job delivered FLAT, plain replies continue it via
     # the whole-channel bucket ``(platform, chat_id, None)``; needs a flat-reply outbound gate too
@@ -2135,7 +2135,7 @@ class BasePlatformAdapter(ABC):
         with ``(native, adapter)``; adapters call this from ``connect()`` once the native
         client exists. Each factory is isolated so a bad plugin can't block connecting."""
         try:
-            from hermes_cli.plugins import get_plugin_manager
+            from eidolon_cli.plugins import get_plugin_manager
             factories = get_plugin_manager().get_platform_handler_factories(
                 getattr(self.platform, "value", str(self.platform)))
         except Exception as e:  # pragma: no cover - defensive
@@ -3515,7 +3515,7 @@ class BasePlatformAdapter(ABC):
         # Certain commands must bypass the active-session guard and be dispatched directly to the gateway
         # runner. Without this, they are queued as pending messages and either: See #4926.
         cmd = event.get_command()
-        from hermes_cli.commands import (is_interrupt_then_dispatch, should_bypass_active_session)
+        from eidolon_cli.commands import (is_interrupt_then_dispatch, should_bypass_active_session)
         if should_bypass_active_session(cmd):
             try:
                 # /stop, /new, /reset: cancel + response + drain; other bypasses don't cancel.

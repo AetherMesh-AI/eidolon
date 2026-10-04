@@ -11,7 +11,6 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { CountSkeleton } from '@/components/ui/skeleton'
-import type { DesktopRosterAgent } from '@/global'
 import {
   editLearningNode,
   getLearningNode,
@@ -26,7 +25,8 @@ import {
   profileScopeKey,
   setSkillEnabled,
   setToolsetEnabled
-} from '@/hermes'
+} from '@/eidolon'
+import type { DesktopRosterAgent } from '@/global'
 import { useI18n } from '@/i18n'
 import { isDesktopToolsetVisible } from '@/lib/desktop-toolsets'
 import { compactNumber } from '@/lib/format'
@@ -39,7 +39,7 @@ import { $gateway, activeGatewayConnectionId } from '@/store/gateway'
 import { $hubActions, installHubSkill, OFFICIAL_SKILLS_KEY } from '@/store/hub-actions'
 import { notify, notifyError } from '@/store/notifications'
 import { $activeGatewayProfile, normalizeProfileKey } from '@/store/profile'
-import type { OfficialSkillInfo, SkillInfo, ToolsetInfo } from '@/types/hermes'
+import type { OfficialSkillInfo, SkillInfo, ToolsetInfo } from '@/types/eidolon'
 
 import { useOnProfileSwitch } from '../hooks/use-on-profile-switch'
 import { useRefreshHotkey } from '../hooks/use-refresh-hotkey'
@@ -796,7 +796,7 @@ export function SkillsView({
 
     return (profilesData?.profiles ?? []).map(p => ({
       key: p.name,
-      label: p.is_default ? 'Hermes (default)' : p.name,
+      label: p.is_default ? 'Eidolon (default)' : p.name,
       value: p.name
     }))
   }, [multiConnection, profilesData, rosterData])

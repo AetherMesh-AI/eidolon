@@ -82,7 +82,7 @@ def test_explicit_replace_takeover_reacquires_lock_once(adapter):
     """Initial explicit --replace may hand off and re-acquire once (#65176)."""
     existing = {
         "pid": 4242,
-        "kind": "hermes-gateway",
+        "kind": "eidolon-gateway",
         "argv": ["hermes", "gateway", "run"],
         "start_time": 123,
     }
@@ -136,7 +136,7 @@ def test_lock_conflict_names_owning_profile(adapter):
     assert adapter._fatal_error_code == "telegram-bot-token_lock"
 
 
-def test_lock_conflict_infers_profile_from_legacy_hermes_home(adapter):
+def test_lock_conflict_infers_profile_from_legacy_eidolon_home(adapter):
     """Locks written before the profile field existed still attribute via hermes_home."""
     existing = {
         "pid": 559,

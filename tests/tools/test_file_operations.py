@@ -53,8 +53,8 @@ class TestIsWriteDenied:
     )
     def test_oauth_traversal_denied(self, path):
         """Path traversal attempts to protected OAuth files must be blocked."""
-        from hermes_constants import get_hermes_home
-        hermes_home = get_hermes_home()
+        from eidolon_constants import get_eidolon_home
+        hermes_home = get_eidolon_home()
         full_path = str(hermes_home / path)
         assert _is_write_denied(full_path) is True
 
@@ -832,7 +832,7 @@ class TestEscapeNativeToolArg:
     """Regression tests for _escape_native_tool_arg (Windows native-binary paths).
 
     Live failure (Windows, Aug 2026): search_files passed rg the MSYS form
-    (/c/Users/...) that _escape_shell_arg produces, but Hermes sets
+    (/c/Users/...) that _escape_shell_arg produces, but Eidolon sets
     MSYS_NO_PATHCONV=1 / MSYS2_ARG_CONV_EXCL=* for its bash subprocesses,
     so nothing converted the path back for the native (winget) ripgrep
     binary — every search on a drive-letter path failed with

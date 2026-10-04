@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 
-from hermes_constants import get_hermes_home
+from eidolon_constants import get_eidolon_home
 from agent.skill_commands import command_snapshot, diff_command_snapshots, resolve_slash_key, slugify_skill_name as _slugify
 
 logger = logging.getLogger(__name__)
@@ -27,7 +27,7 @@ _bundles_cache_mtime: Optional[float] = None
 def _bundles_dir() -> Path:
     """Bundles directory: ``HERMES_BUNDLES_DIR`` override (tests) or ``<HERMES_HOME>/skill-bundles``."""
     override = os.environ.get("HERMES_BUNDLES_DIR")
-    return Path(override).expanduser() if override else get_hermes_home() / "skill-bundles"
+    return Path(override).expanduser() if override else get_eidolon_home() / "skill-bundles"
 
 
 def _iter_bundle_files() -> List[Path]:

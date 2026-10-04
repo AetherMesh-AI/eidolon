@@ -1,12 +1,12 @@
 ---
 sidebar_position: 5
 title: "Prompt Assembly"
-description: "How Hermes builds the system prompt, preserves cache stability, and injects ephemeral layers"
+description: "How Eidolon builds the system prompt, preserves cache stability, and injects ephemeral layers"
 ---
 
 # Prompt Assembly
 
-Hermes deliberately separates:
+Eidolon deliberately separates:
 
 - **cached system prompt state**
 - **ephemeral API-call-time additions**
@@ -46,7 +46,7 @@ provider cache reuses. A session with no workspace snapshot keeps its trailing g
 tier; the runtime environment block always ends the volatile tier.
 
 Consequence for stored prompts: `_stored_prompt_matches_runtime()` (`agent/conversation_loop.py`) reads
-the first host-info paragraph after the rendered `# Hermes runtime environment` boundary, with a
+the first host-info paragraph after the rendered `# Eidolon runtime environment` boundary, with a
 closing marker at the absolute end distinguishing this layout from legacy prose quoting the heading.
 The runtime boundary follows all project, operator, memory and plugin text, so examples in those
 blocks do not masquerade as the runtime cwd. Model/provider/platform are read before the runtime
@@ -60,8 +60,8 @@ When `skip_context_files` is set (e.g., subagent delegation), SOUL.md is not loa
 Here is a simplified view of what the final system prompt looks like when all layers are present (comments show the source of each section):
 
 ```
-# Layer 1: Agent Identity (from ~/.hermes/SOUL.md)
-You are Hermes, an AI assistant created by Nous Research.
+# Layer 1: Agent Identity (from ~/.eidolon/SOUL.md)
+You are Eidolon, an AI assistant by AetherMesh.
 You are an expert software engineer and researcher.
 You value correctness, clarity, and efficiency.
 ...
@@ -132,7 +132,7 @@ renderable inside a terminal.
 
 ## Customizing platform hints
 
-The platform hint (Layer 10 above) is the per-surface guidance Hermes
+The platform hint (Layer 10 above) is the per-surface guidance Eidolon
 injects for Telegram, WhatsApp, Slack, CLI, and other platforms — for
 example "you are on a terminal, avoid Markdown." The built-in defaults
 live in `PLATFORM_HINTS` (`agent/system_prompt.py`); plugin-provided
@@ -169,12 +169,12 @@ not a live mid-session mutation of a frozen prompt.
 
 ## How SOUL.md appears in the prompt
 
-`SOUL.md` lives at `~/.hermes/SOUL.md` and serves as the agent's identity — the very first section of the system prompt. The loading logic in `prompt_builder.py` works as follows:
+`SOUL.md` lives at `~/.eidolon/SOUL.md` and serves as the agent's identity — the very first section of the system prompt. The loading logic in `prompt_builder.py` works as follows:
 
 ```python
 # From agent/prompt_builder.py (simplified)
 def load_soul_md() -> Optional[str]:
-    soul_path = get_hermes_home() / "SOUL.md"
+    soul_path = get_eidolon_home() / "SOUL.md"
     if not soul_path.exists():
         return None
     content = soul_path.read_text(encoding="utf-8").strip()
@@ -188,7 +188,7 @@ When `load_soul_md()` returns content, it replaces the hardcoded `DEFAULT_AGENT_
 If `SOUL.md` doesn't exist, the system falls back to:
 
 ```
-You are Hermes Agent, built by Nous Research. Be direct: match the length
+You are Eidolon, built by AetherMesh. Be direct: match the length
 of your reply to the weight of the ask — a one-line question gets a
 one-line answer, and finished work gets a short report of what changed,
 what's verified, and what's left, never a replay of the process. No
@@ -242,7 +242,7 @@ def build_context_files_prompt(cwd=None, skip_soul=False):
 
 | Priority | Files | Search scope | Notes |
 |----------|-------|-------------|-------|
-| 1 | `.hermes.md`, `HERMES.md` | CWD up to git root | Hermes-native project config |
+| 1 | `.hermes.md`, `HERMES.md` | CWD up to git root | Eidolon-native project config |
 | 2 | `AGENTS.md` | CWD only | Common agent instruction file |
 | 3 | `CLAUDE.md` | CWD only | Claude Code compatibility |
 | 4 | `.cursorrules`, `.cursor/rules/*.mdc` | CWD only | Cursor compatibility |
@@ -261,7 +261,7 @@ These are intentionally *not* persisted as part of the cached system prompt:
 - gateway-derived session context overlays
 - later-turn Honcho/external recall injected into the current-turn user message
 
-`pre_llm_call` plugin context also lands in this API-call-time path: it is appended to the current turn's **user message**, not written into the cached system prompt. When multiple plugins return context, Hermes concatenates those context blocks (see [Hooks → `pre_llm_call`](../user-guide/features/hooks.md#pre_llm_call)).
+`pre_llm_call` plugin context also lands in this API-call-time path: it is appended to the current turn's **user message**, not written into the cached system prompt. When multiple plugins return context, Eidolon concatenates those context blocks (see [Hooks → `pre_llm_call`](../user-guide/features/hooks.md#pre_llm_call)).
 
 This separation keeps the stable prefix stable for caching.
 
@@ -288,15 +288,15 @@ The skills system contributes a compact skills index to the prompt when skills t
 
 ## Supported prompt customization surfaces
 
-Most users should treat `agent/prompt_builder.py` as implementation code, not a configuration surface. The supported customization path is to change the prompt inputs Hermes already loads, rather than editing Python templates in place.
+Most users should treat `agent/prompt_builder.py` as implementation code, not a configuration surface. The supported customization path is to change the prompt inputs Eidolon already loads, rather than editing Python templates in place.
 
 ### Use these surfaces first
 
-- `~/.hermes/SOUL.md` — replace the built-in default identity block with your own agent persona and standing behavior.
-- `~/.hermes/MEMORY.md` and `~/.hermes/USER.md` — provide durable cross-session facts and user profile data that should be snapshotted into new sessions.
+- `~/.eidolon/SOUL.md` — replace the built-in default identity block with your own agent persona and standing behavior.
+- `~/.eidolon/MEMORY.md` and `~/.eidolon/USER.md` — provide durable cross-session facts and user profile data that should be snapshotted into new sessions.
 - Project context files such as `.hermes.md`, `HERMES.md`, `AGENTS.md`, `CLAUDE.md`, or `.cursorrules` — inject repo-specific working rules.
 - Skills — package reusable workflows and references without editing core prompt code.
-- Optional system prompt config / API overrides — add deployment-specific instruction text without forking Hermes.
+- Optional system prompt config / API overrides — add deployment-specific instruction text without forking Eidolon.
 - Ephemeral overlays such as `HERMES_EPHEMERAL_SYSTEM_PROMPT` or prefill messages — add turn-scoped guidance that should not become part of the cached prompt prefix.
 
 ### When to edit code instead
@@ -308,7 +308,7 @@ In other words:
 - if you want a different assistant identity, edit `SOUL.md`
 - if you want different repo rules, edit project context files
 - if you want reusable operating procedures, add or modify skills
-- if you want to change how Hermes assembles prompts for everyone, change Python and treat it as a code contribution
+- if you want to change how Eidolon assembles prompts for everyone, change Python and treat it as a code contribution
 
 ## Why prompt assembly is split this way
 

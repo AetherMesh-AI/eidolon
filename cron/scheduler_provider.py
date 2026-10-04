@@ -62,7 +62,7 @@ def _existing_profile_homes(profile_homes: list) -> list:
 
     Ticking or heartbeating a deleted home recreates its ``cron/`` workspace (``record_ticker_heartbeat`` ->
     ``ensure_dirs`` -> ``mkdir(parents=True)``) on every 60s cycle, so the "deleted" profile silently comes
-    back on disk and in ``hermes profile list`` (#47368). Filtering on directory existence leaves a deleted
+    back on disk and in ``eidolon profile list`` (#47368). Filtering on directory existence leaves a deleted
     profile's home untouched, which is the correct invariant: a home that does not exist cannot hold jobs to
     fire.
     """
@@ -73,18 +73,18 @@ def _existing_profile_homes(profile_homes: list) -> list:
 def _profile_cron_scope(home):
     """Scope the calling thread to one profile's home + cron store for the block."""
     from cron.jobs import use_cron_store
-    from hermes_constants import set_hermes_home_override, reset_hermes_home_override
+    from eidolon_constants import set_eidolon_home_override, reset_eidolon_home_override
 
     # Record per-profile heartbeat after each tick cycle. Distinguish a COMPLETED cycle (``_tick_error``
     # unset) — where each profile's beat reflects its own outcome, so a yielding profile does not darken
     # healthy siblings — from an aborted one (exception), where no profile completed and all beats are
     # unsuccessful (#32612).
-    home_token = set_hermes_home_override(str(home))
+    home_token = set_eidolon_home_override(str(home))
     try:
         with use_cron_store(home):
             yield
     finally:
-        reset_hermes_home_override(home_token)
+        reset_eidolon_home_override(home_token)
 
 
 class CronScheduler(ABC):
@@ -221,7 +221,7 @@ def provider_supports_split_fire(provider: Any) -> bool:
 def _misfire_grace_minutes() -> float:
     """``cron.misfire_grace_minutes`` from config; non-positive disables the catch-up sweep."""
     try:
-        from hermes_cli.config import cfg_get, load_config
+        from eidolon_cli.config import cfg_get, load_config
 
         config = load_config()
         return float(
@@ -320,7 +320,7 @@ def resolve_cron_scheduler() -> "CronScheduler":
     with a warning — cron must never be left without a trigger."""
     name = ""
     try:
-        from hermes_cli.config import cfg_get, load_config
+        from eidolon_cli.config import cfg_get, load_config
         name = (cfg_get(load_config(), "cron", "provider", default="") or "").strip()
     except Exception:
         pass
@@ -381,7 +381,7 @@ class InProcessCronScheduler(CronScheduler):
         # (multiplex_profiles on), tick EACH profile's cron store on every tick cycle so secondary-profile
         # jobs actually fire instead of languishing in a store no ticker owns (#69377). Without this, only
         # the process-global HERMES_HOME (the default profile) is ticked. Heartbeats and recovery are also
-        # scoped per profile so `hermes cron status` reflects liveness for every profile independently.
+        # scoped per profile so `eidolon cron status` reflects liveness for every profile independently.
         if profile_homes:
             self._start_multiplex(
                 stop_event, profile_homes=profile_homes, adapters=adapters, loop=loop,
@@ -395,7 +395,7 @@ class InProcessCronScheduler(CronScheduler):
             logger.warning(
                 "Marked %d interrupted cron execution(s) unknown after restart", recovered
             )
-        # Heartbeat before the first sleep so `hermes cron status` sees a live ticker immediately.
+        # Heartbeat before the first sleep so `eidolon cron status` sees a live ticker immediately.
         record_ticker_heartbeat()
         # EMFILE backoff: don't hammer the store while fds are exhausted; a clean tick resets it.
         consecutive_failures = 0
@@ -423,7 +423,7 @@ class InProcessCronScheduler(CronScheduler):
                     logger.info("Cron tick yielded: %s", e)
                 else:
                     logger.error("Cron tick error: %s", e, exc_info=True)
-                # Persist the reason so `hermes cron status` (separate process) shows WHY.
+                # Persist the reason so `eidolon cron status` (separate process) shows WHY.
                 record_ticker_error(f"{type(e).__name__}: {e}")
                 consecutive_failures = _note_tick_failure(e, consecutive_failures)
             # Liveness every iteration; success marker only on a clean tick.

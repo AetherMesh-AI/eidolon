@@ -12,8 +12,8 @@ import httpx
 import pytest
 import yaml
 
-from hermes_cli import __version__
-from hermes_constants import reset_hermes_home_override, set_hermes_home_override
+from eidolon_cli import __version__
+from eidolon_constants import reset_eidolon_home_override, set_eidolon_home_override
 
 
 CODEX_URL = "https://chatgpt.com/backend-api/codex"
@@ -34,11 +34,11 @@ def profile(tmp_path, monkeypatch):
     home.mkdir()
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setenv("HERMES_HOME", str(home))
-    token = set_hermes_home_override(home)
+    token = set_eidolon_home_override(home)
     try:
         yield home
     finally:
-        reset_hermes_home_override(token)
+        reset_eidolon_home_override(token)
 
 
 def _set_legacy_attribution(profile, enabled):
@@ -54,7 +54,7 @@ def _set_legacy_attribution(profile, enabled):
 
 @pytest.fixture
 def wire(profile, monkeypatch):
-    """Replace only HTTP transports; use Hermes routing and the real SDK."""
+    """Replace only HTTP transports; use Eidolon routing and the real SDK."""
     from agent import auxiliary_client
     from run_agent import AIAgent
 
@@ -153,7 +153,7 @@ def test_new_identity_is_limited_to_the_official_endpoint(base_url, attributed):
     assert headers["originator"] == ("hermes-agent" if attributed else "codex_cli_rs")
     assert headers["User-Agent"] == (
         f"HermesAgent/{__version__}"
-        if attributed else "codex_cli_rs/0.0.0 (Hermes Agent)"
+        if attributed else "codex_cli_rs/0.0.0 (Eidolon Agent)"
     )
 
 
@@ -262,7 +262,7 @@ def test_credential_pool_custom_endpoint_keeps_existing_identity(
         )
         assert wire[-1].url.host == "proxy.example"
         assert wire[-1].headers["originator"] == "codex_cli_rs"
-        assert wire[-1].headers["user-agent"] == "codex_cli_rs/0.0.0 (Hermes Agent)"
+        assert wire[-1].headers["user-agent"] == "codex_cli_rs/0.0.0 (Eidolon Agent)"
         assert wire[-1].headers["chatgpt-account-id"] == "acct-attribution-test"
     finally:
         client.close()

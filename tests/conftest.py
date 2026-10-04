@@ -6,10 +6,10 @@ Hermetic-test invariants enforced here (see AGENTS.md for rationale):
    (ending in _API_KEY, _TOKEN, _SECRET, _PASSWORD, _CREDENTIALS, etc.)
    are unset before every test. Local developer keys cannot leak in.
 2. **Isolated HERMES_HOME.** HERMES_HOME points to a per-test tempdir so
-   code reading ``~/.hermes/*`` via ``get_hermes_home()`` can't see the
+   code reading ``~/.hermes/*`` via ``get_eidolon_home()`` can't see the
    real one. (We do NOT also redirect HOME — that broke subprocesses in
    CI. Code using ``Path.home() / ".hermes"`` instead of the canonical
-   ``get_hermes_home()`` is a bug to fix at the callsite.)
+   ``get_eidolon_home()`` is a bug to fix at the callsite.)
 3. **Deterministic runtime.** TZ=UTC, LANG=C.UTF-8, PYTHONHASHSEED=0.
 4. **No HERMES_SESSION_* inheritance** — the agent's current gateway
    session must not leak into tests.
@@ -38,8 +38,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 
 # ── Sandbox HERMES_HOME before ANY test module is imported ──────────────────
-# `hermes_cli/main.py` calls `setup_logging()` at MODULE level, which resolves
-# `get_hermes_home()` and attaches rotating file handlers to the ROOT logger.
+# `eidolon_cli/main.py` calls `setup_logging()` at MODULE level, which resolves
+# `get_eidolon_home()` and attaches rotating file handlers to the ROOT logger.
 # So merely importing it - which many test modules do, directly or
 # transitively - points the whole pytest session's logging at the operator's
 # real `~/.hermes/logs/agent.log` and `errors.log`.
@@ -61,13 +61,13 @@ _PRE_SANDBOX_KANBAN_OVERRIDE = os.environ.get("HERMES_KANBAN_HOME", "").strip()
 _PRE_SANDBOX_HERMES_HOME = os.environ.get("HERMES_HOME", "")
 
 
-def _hermes_home_points_at_production(value: str) -> bool:
+def _eidolon_home_points_at_production(value: str) -> bool:
     """True when a pre-set HERMES_HOME resolves to the real production root.
 
     Gateway-launched shells (and developer shells that ``export
     HERMES_HOME=~/.hermes``) hand pytest the PRODUCTION home. Historically
     the session sandbox below honored any pre-set value, so collection-time
-    imports (logging handlers, ``hermes_state.DEFAULT_DB_PATH``) froze paths
+    imports (logging handlers, ``eidolon_state.DEFAULT_DB_PATH``) froze paths
     inside the real ``~/.hermes`` — the escape vector that landed pytest
     fixture rows (chat-1 / wx-chat sessions, /tmp/pytest-of-* routing
     scopes) in the live state.db and flipped its journal mode under the
@@ -87,7 +87,7 @@ def _hermes_home_points_at_production(value: str) -> bool:
     return resolved.parent.name == "profiles" and resolved.parent.parent == real_root
 
 
-if _hermes_home_points_at_production(os.environ.get("HERMES_HOME", "")):
+if _eidolon_home_points_at_production(os.environ.get("HERMES_HOME", "")):
     _SESSION_HERMES_HOME = tempfile.mkdtemp(prefix="hermes-test-home-")
     os.environ["HERMES_HOME"] = _SESSION_HERMES_HOME
     atexit.register(shutil.rmtree, _SESSION_HERMES_HOME, True)
@@ -95,11 +95,11 @@ if _hermes_home_points_at_production(os.environ.get("HERMES_HOME", "")):
 # Subprocess-surviving isolation marker (#82770). PYTEST_CURRENT_TEST /
 # PYTEST_VERSION are pytest's own vars, and tests that spawn children
 # routinely rebuild the child env and strip them ("the subprocess must look
-# like a real CLI") — which used to disarm hermes_state's live-DB guard in
+# like a real CLI") — which used to disarm eidolon_state's live-DB guard in
 # the child at the same moment the child lost the HERMES_HOME redirect.
 # HERMES_TEST_ISOLATION is OUR marker: exported here (before any test module
 # imports), inherited by every child by default, and honored by
-# hermes_state_guard._running_under_pytest() as a test-context signal. A child
+# eidolon_state_guard._running_under_pytest() as a test-context signal. A child
 # that carries it and still resolves the production state.db fails hard.
 # Tests that legitimately need a child to look like a non-test process AND
 # open a real DB must export HERMES_STATE_DB_GUARD_BYPASS=1 in that child's
@@ -258,7 +258,7 @@ _HERMES_BEHAVIORAL_VARS = frozenset({
     # Voice/TTS runtime flags. ``tui_gateway/server.py`` reads these straight
     # off ``os.environ`` at call time (``_voice_mode_enabled`` /
     # ``_voice_tts_enabled``) and, on every completed turn, hands the turn's
-    # final response text to ``hermes_cli.voice.speak_text`` — real synthesis,
+    # final response text to ``eidolon_cli.voice.speak_text`` — real synthesis,
     # real playback, out of the developer's speakers. Blank them per-test so a
     # leak (from the shell, or from an earlier test that drove the
     # ``voice.toggle`` RPC, which writes ``os.environ`` directly) cannot carry
@@ -268,7 +268,7 @@ _HERMES_BEHAVIORAL_VARS = frozenset({
     "HERMES_YOLO_MODE",
     # Injected into subprocess envs by the terminal tool (_make_run_env), so
     # any test run launched FROM a Hermes agent session inherits them and
-    # hermes_constants home-resolution helpers prefer them over monkeypatched
+    # eidolon_constants home-resolution helpers prefer them over monkeypatched
     # HOME (test_subprocess_home_isolation red locally, green on CI).
     "HERMES_REAL_HOME",
     "TERMINAL_HOME_MODE",
@@ -477,43 +477,43 @@ def _hermetic_environment(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HONCHO_HOST", "hermes")
 
     # 3. Redirect HERMES_HOME to a per-test tempdir. Code that reads
-    #    ``~/.hermes/*`` via ``get_hermes_home()`` now gets the tempdir.
+    #    ``~/.hermes/*`` via ``get_eidolon_home()`` now gets the tempdir.
     #
     #    NOTE: We do NOT also redirect HOME. Doing so broke CI because
     #    some tests (and their transitive deps) spawn subprocesses that
     #    inherit HOME and expect it to be stable. If a test genuinely
     #    needs HOME isolated, it should set it explicitly in its own
     #    fixture. Any code in the codebase reading ``~/.hermes/*`` via
-    #    ``Path.home() / ".hermes"`` instead of ``get_hermes_home()``
+    #    ``Path.home() / ".hermes"`` instead of ``get_eidolon_home()``
     #    is a bug to fix at the callsite.
-    fake_hermes_home = tmp_path / "hermes_test"
-    fake_hermes_home.mkdir()
-    (fake_hermes_home / "sessions").mkdir()
-    (fake_hermes_home / "cron").mkdir()
-    (fake_hermes_home / "memories").mkdir()
-    (fake_hermes_home / "skills").mkdir()
-    monkeypatch.setenv("HERMES_HOME", str(fake_hermes_home))
+    fake_eidolon_home = tmp_path / "hermes_test"
+    fake_eidolon_home.mkdir()
+    (fake_eidolon_home / "sessions").mkdir()
+    (fake_eidolon_home / "cron").mkdir()
+    (fake_eidolon_home / "memories").mkdir()
+    (fake_eidolon_home / "skills").mkdir()
+    monkeypatch.setenv("HERMES_HOME", str(fake_eidolon_home))
     # Keep the subprocess-surviving isolation marker pointed at THIS test's
     # home (#82770): children spawned by the test inherit it by default, so
-    # hermes_state's live-DB guard stays armed in them even when the test
+    # eidolon_state's live-DB guard stays armed in them even when the test
     # strips pytest's own PYTEST_* vars from the child env.
-    monkeypatch.setenv("HERMES_TEST_ISOLATION", str(fake_hermes_home))
+    monkeypatch.setenv("HERMES_TEST_ISOLATION", str(fake_eidolon_home))
     # And never let a developer-shell (or leaked child) bypass disarm the
     # guard for in-process code under test.
     monkeypatch.delenv("HERMES_STATE_DB_GUARD_BYPASS", raising=False)
 
-    # 3b. hermes_state computes ``DEFAULT_DB_PATH = get_hermes_home() / "state.db"``
+    # 3b. eidolon_state computes ``DEFAULT_DB_PATH = get_eidolon_home() / "state.db"``
     #     at import time. When the module is first imported at collection (any
-    #     test file with a top-level ``from hermes_state import ...``) that
+    #     test file with a top-level ``from eidolon_state import ...``) that
     #     happens BEFORE this fixture ever runs, so every argless
     #     ``SessionDB()`` in every test opens the developer's REAL state.db —
     #     reading real sessions into assertions and writing test rows into the
     #     real profile. Re-pin the constant to this test's home. (Several test
     #     files already do this locally; this makes it an invariant.)
-    hermes_state_mod = sys.modules.get("hermes_state")
-    if hermes_state_mod is not None and hasattr(hermes_state_mod, "DEFAULT_DB_PATH"):
+    eidolon_state_mod = sys.modules.get("eidolon_state")
+    if eidolon_state_mod is not None and hasattr(eidolon_state_mod, "DEFAULT_DB_PATH"):
         monkeypatch.setattr(
-            hermes_state_mod, "DEFAULT_DB_PATH", fake_hermes_home / "state.db"
+            eidolon_state_mod, "DEFAULT_DB_PATH", fake_eidolon_home / "state.db"
         )
 
     # 4. Deterministic locale / timezone / hashseed. CI runs in UTC with
@@ -549,7 +549,7 @@ def _hermetic_environment(tmp_path, monkeypatch):
     #    ~/.hermes/plugins/ (which, per step 3, is now empty — but the
     #    singleton might still be cached from a previous test).
     try:
-        import hermes_cli.plugins as _plugins_mod
+        import eidolon_cli.plugins as _plugins_mod
         monkeypatch.setattr(_plugins_mod, "_plugin_manager", None)
         # Also clear the keyed per-home manager cache (and any plugin
         # submodules it left in sys.modules) so a manager built for a
@@ -569,7 +569,7 @@ def _hermetic_environment(tmp_path, monkeypatch):
 # Backward-compat alias — old tests reference this fixture name. Keep it
 # as a no-op wrapper so imports don't break.
 @pytest.fixture(autouse=True)
-def _isolate_hermes_home(_hermetic_environment):
+def _isolate_eidolon_home(_hermetic_environment):
     """Alias preserved for any test that yields this name explicitly."""
     return None
 
@@ -590,7 +590,7 @@ def _neutralize_kanban_memory_guard(request, monkeypatch):
     if request.node.get_closest_marker("real_memory_guard"):
         return
     try:
-        from hermes_cli import kanban_db_dispatch as _kbd_mod
+        from eidolon_cli import kanban_db_dispatch as _kbd_mod
     except Exception:
         return
     monkeypatch.setattr(_kbd_mod, "_system_memory_sample", lambda: {}, raising=False)
@@ -668,7 +668,7 @@ def _capture_real_kanban_root() -> Path:
     """
     if _PRE_SANDBOX_KANBAN_OVERRIDE:
         return Path(_PRE_SANDBOX_KANBAN_OVERRIDE).expanduser().resolve()
-    if _PRE_SANDBOX_HERMES_HOME and not _hermes_home_points_at_production(
+    if _PRE_SANDBOX_HERMES_HOME and not _eidolon_home_points_at_production(
         _PRE_SANDBOX_HERMES_HOME
     ):
         # HERMES_HOME was genuinely set to a CUSTOM root before the sandbox
@@ -676,7 +676,7 @@ def _capture_real_kanban_root() -> Path:
         # the env still holds the tempdir and the resolver would be wrong) —
         # honor it via the normal resolver (it may be a profile dir whose
         # root matters).
-        from hermes_constants import get_default_hermes_root
+        from eidolon_constants import get_default_hermes_root
         return get_default_hermes_root().resolve()
     # No pre-existing HERMES_HOME: the real root is the platform default,
     # NOT the sandbox tempdir now sitting in the env.
@@ -695,20 +695,20 @@ def _kanban_write_guard(_hermetic_environment, monkeypatch):
     ``~/.hermes`` captured at import time. Hermetic tests that legitimately
     move HERMES_HOME to sibling tempdirs are unaffected.
 
-    Only patches when ``hermes_cli.kanban_db_connect`` is *already imported*
+    Only patches when ``eidolon_cli.kanban_db_connect`` is *already imported*
     — a ``sys.modules`` probe, not an import — so the guard never drags the
     kanban module into unrelated test processes.
 
     Uses ``monkeypatch.setattr`` so pytest restores ``connect`` automatically
     after each test (no stacked wrappers or state leakage across tests).
     """
-    _kdb = sys.modules.get("hermes_cli.kanban_db")
-    _kdbc = sys.modules.get("hermes_cli.kanban_db_connect")
+    _kdb = sys.modules.get("eidolon_cli.kanban_db")
+    _kdbc = sys.modules.get("eidolon_cli.kanban_db_connect")
     if _kdb is None or _kdbc is None:
         return
 
     # The sys.modules probe can observe the module MID-IMPORT: a fixture
-    # boundary firing while another test's lazy `import hermes_cli.kanban_db`
+    # boundary firing while another test's lazy `import eidolon_cli.kanban_db`
     # is still executing sees a partially initialized module whose `connect`
     # doesn't exist yet (AttributeError flake, caught in a full-suite run).
     # A half-imported module has no callers yet either — nothing to guard
@@ -743,7 +743,7 @@ def _kanban_write_guard(_hermetic_environment, monkeypatch):
 
 # ── Live state.db write guard ───────────────────────────────────────────────
 # Companion to the kanban guard above, for the MAIN state database.
-# ``hermes_state._ensure_test_isolation`` (the single choke point every
+# ``eidolon_state._ensure_test_isolation`` (the single choke point every
 # ``SessionDB()`` construction goes through) refuses, under pytest, any DB
 # path that resolves inside the REAL Hermes root. This fixture wires the
 # test-side knobs:
@@ -753,13 +753,13 @@ def _kanban_write_guard(_hermetic_environment, monkeypatch):
 #     installs where HERMES_HOME is not ~/.hermes) into the guard's
 #     deny-list, mirroring the kanban deny-list capture above.
 # The guard itself is env-activated (PYTEST_CURRENT_TEST / PYTEST_VERSION),
-# so subprocess children that import hermes_state directly are covered even
+# so subprocess children that import eidolon_state directly are covered even
 # without this fixture.
 
 
 @pytest.fixture(autouse=True)
 def _state_db_write_guard(request, monkeypatch):
-    _hs = sys.modules.get("hermes_state")
+    _hs = sys.modules.get("eidolon_state")
     if _hs is None or not hasattr(_hs, "_STATE_DB_GUARD_BYPASS"):
         yield
         return
@@ -768,7 +768,7 @@ def _state_db_write_guard(request, monkeypatch):
         yield
         return
     extra_roots = []
-    if _PRE_SANDBOX_HERMES_HOME and not _hermes_home_points_at_production(
+    if _PRE_SANDBOX_HERMES_HOME and not _eidolon_home_points_at_production(
         _PRE_SANDBOX_HERMES_HOME
     ):
         extra_roots.append(
@@ -884,14 +884,14 @@ def _reset_tui_gateway_server_state():
         mod._db_error = None
 
     # A leaked context-local Hermes home override redirects every later
-    # ``get_hermes_home()`` call (active-session registry, config paths)
+    # ``get_eidolon_home()`` call (active-session registry, config paths)
     # to a stale per-test tmpdir. Force the main-thread ContextVar back
     # to its default.
     try:
-        from hermes_constants import get_hermes_home_override, set_hermes_home_override
+        from eidolon_constants import get_eidolon_home_override, set_eidolon_home_override
 
-        if get_hermes_home_override() is not None:
-            set_hermes_home_override(None)
+        if get_eidolon_home_override() is not None:
+            set_eidolon_home_override(None)
     except Exception:
         pass
 
@@ -977,10 +977,10 @@ def _ensure_current_event_loop(request):
 # (``cmd_update``, ``kill_gateway_processes``, ``stop_profile_gateway``).
 # When a single test forgets to mock either ``os.kill`` or the global
 # ``find_gateway_pids`` helper, the real call leaks out of the hermetic
-# environment and finds the developer's live ``hermes-gateway`` process
+# environment and finds the developer's live ``eidolon-gateway`` process
 # via ``psutil`` — sending it SIGTERM mid-test. The shutdown forensics in
 # PR #23285 caught this happening 5+ times in 3 days, every time
-# correlated with a ``tests/hermes_cli/`` pytest run starting up.
+# correlated with a ``tests/eidolon_cli/`` pytest run starting up.
 #
 # This fixture makes the leak impossible by intercepting the two
 # primitives that actually do damage:
@@ -989,7 +989,7 @@ def _ensure_current_event_loop(request):
 #    a hard ``RuntimeError`` so the offending test gets a stack trace
 #    instead of silently murdering the real gateway.
 #  • ``subprocess.run`` / ``subprocess.Popen`` / ``call`` / ``check_call`` /
-#    ``check_output`` reject any ``systemctl ... <verb> hermes-gateway``
+#    ``check_output`` reject any ``systemctl ... <verb> eidolon-gateway``
 #    invocation that would mutate the live unit. Read-only systemctl
 #    calls (``status``, ``show``, ``list-units``) still pass through.
 #
@@ -1019,13 +1019,13 @@ def _wal_is_usable() -> bool:
     3.50.4 (vulnerable → DELETE) alongside a Hermes managed runtime on 3.53.1
     (fixed → WAL). The same test then passes in one and fails in the other.
 
-    IMPORTANT: this must NOT import ``hermes_state``. That module computes
-    ``DEFAULT_DB_PATH`` from ``get_hermes_home()`` at import time, so importing
-    it during collection — before the per-test ``_isolate_hermes_home`` fixture
+    IMPORTANT: this must NOT import ``eidolon_state``. That module computes
+    ``DEFAULT_DB_PATH`` from ``get_eidolon_home()`` at import time, so importing
+    it during collection — before the per-test ``_isolate_eidolon_home`` fixture
     redirects ``HERMES_HOME`` — permanently caches the DEVELOPER'S REAL
     ``~/.hermes/state.db`` for the whole session. Tests then read live
     production sessions instead of a tempdir. The version predicate is
-    duplicated from ``hermes_state._is_sqlite_wal_reset_vulnerable`` (upstream
+    duplicated from ``eidolon_state._is_sqlite_wal_reset_vulnerable`` (upstream
     fixed ranges, stable) rather than imported, and
     ``test_conftest_wal_gate.py`` pins the two implementations in agreement.
     """
@@ -1059,7 +1059,7 @@ def _wal_is_usable() -> bool:
 #   2. Any later test in that process that drives a turn to completion hits
 #      the TTS dispatch in ``prompt.submit``, which checks
 #      ``_voice_tts_enabled()`` — now true — and fires
-#      ``hermes_cli.voice.speak_text(final_response)`` on a daemon thread.
+#      ``eidolon_cli.voice.speak_text(final_response)`` on a daemon thread.
 #   3. ``speak_text`` needs no API key to be audible: ``tools/tts_tool.py``
 #      defaults to the ``edge`` provider, which is keyless.
 #
@@ -1070,12 +1070,12 @@ def _wal_is_usable() -> bool:
 # live-system guard intercepts ``os.kill`` rather than trusting every caller
 # to mock it:
 #
-#  • ``hermes_cli.voice.speak_text`` — the synth+playback entry point both
+#  • ``eidolon_cli.voice.speak_text`` — the synth+playback entry point both
 #    gateway call sites late-import, so patching the module attribute catches
 #    them wherever they import it from.
-#  • ``hermes_cli.voice.play_audio_file`` — the module-level binding
+#  • ``eidolon_cli.voice.play_audio_file`` — the module-level binding
 #    ``speak_text`` actually plays through. Patching the binding inside
-#    ``hermes_cli.voice`` (not ``tools.voice_mode``) keeps the real function
+#    ``eidolon_cli.voice`` (not ``tools.voice_mode``) keeps the real function
 #    available to the tests that legitimately exercise it with a mocked
 #    audio backend (``tests/tools/test_voice_mode.py``).
 #
@@ -1305,7 +1305,7 @@ def _live_system_guard(request, monkeypatch):
       • pty.spawn
       • asyncio.create_subprocess_exec / create_subprocess_shell
     Subprocess inspection looks at the WHOLE command string (not just
-    tokens[0]), so ``bash -c "systemctl restart hermes-gateway"``,
+    tokens[0]), so ``bash -c "systemctl restart eidolon-gateway"``,
     ``sudo systemctl ...``, ``env systemctl ...``, ``setsid systemctl ...``
     are all caught. ``pkill``/``killall``/``taskkill`` invocations
     targeting hermes/python patterns are also blocked.
@@ -1407,10 +1407,10 @@ def _live_system_guard(request, monkeypatch):
 
     # ── Subprocess command-string inspection (whole-line) ──────────
     _HERMES_TOKENS = (
-        "hermes-gateway",
+        "eidolon-gateway",
         "hermes.service",
-        "hermes_cli.main gateway",
-        "hermes_cli/main.py gateway",
+        "eidolon_cli.main gateway",
+        "eidolon_cli/main.py gateway",
         "gateway/run.py",
         "hermes gateway",
     )
@@ -1484,7 +1484,7 @@ def _live_system_guard(request, monkeypatch):
                 low = cmd_str.lower()
                 # pkill -f pattern: catch hermes-themed patterns + a
                 # plain "python" -f which would catch the live gateway
-                # whose cmdline contains "python -m hermes_cli.main".
+                # whose cmdline contains "python -m eidolon_cli.main".
                 if (
                     "hermes" in low
                     or "gateway" in low
@@ -1498,7 +1498,7 @@ def _live_system_guard(request, monkeypatch):
             raise RuntimeError(
                 f"tests/conftest.py live-system guard: blocked "
                 f"subprocess.{name}({cmd!r}) — would mutate the "
-                "live hermes-gateway systemd unit. Mock "
+                "live eidolon-gateway systemd unit. Mock "
                 "subprocess.run / _run_systemctl in the test, or "
                 "mark with @pytest.mark.live_system_guard_bypass."
             )
@@ -1511,7 +1511,7 @@ def _live_system_guard(request, monkeypatch):
                 "intentional."
             )
         # Block any subprocess that would run `hermes update` (or the
-        # equivalent `python -m hermes_cli.main update`).  These commands
+        # equivalent `python -m eidolon_cli.main update`).  These commands
         # run `git fetch origin + git pull` against the REAL checkout,
         # overwriting files like pyproject.toml mid-test-run and corrupting
         # every subsequent subprocess that reads them.  The corruption is
@@ -1526,8 +1526,8 @@ def _live_system_guard(request, monkeypatch):
             # hermes update / hermes update --gateway / setsid bash -c ... hermes update
             ("hermes" in low and "update" in low.split())
             or
-            # python -m hermes_cli.main update --gateway
-            ("hermes_cli" in low and "update" in low.split())
+            # python -m eidolon_cli.main update --gateway
+            ("eidolon_cli" in low and "update" in low.split())
             or
             # venv/bin/hermes update  (absolute path variant used in tests)
             (".venv/bin/hermes" in low and "update" in low)
@@ -1677,7 +1677,7 @@ def _audio_playback_guard(request, monkeypatch):
         return
 
     try:
-        import hermes_cli.voice as _voice
+        import eidolon_cli.voice as _voice
     except Exception:
         # Optional audio deps missing — nothing importable to speak with.
         yield

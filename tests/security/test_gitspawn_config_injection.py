@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-from hermes_cli._subprocess_compat import (
+from eidolon_cli._subprocess_compat import (
     NO_DRIVER_DIFF_FLAGS,
     harden_git_argv,
     noninteractive_git_env,
@@ -161,14 +161,14 @@ def test_working_diff_is_safe(malicious_repo):
 
 
 def test_goals_fingerprint_is_safe(malicious_repo):
-    from hermes_cli.goals import workspace_fingerprint
+    from eidolon_cli.goals import workspace_fingerprint
     repo, marker = malicious_repo
     workspace_fingerprint(str(repo))
     assert _fired(marker) == []
 
 
 def test_web_git_diff_is_safe(malicious_repo):
-    from hermes_cli import web_git
+    from eidolon_cli import web_git
     repo, marker = malicious_repo
     web_git._git(str(repo), ["status", "--porcelain=v2", "-z"])
     web_git._git_out(str(repo), ["diff", "HEAD"])

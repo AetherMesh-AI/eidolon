@@ -1,4 +1,4 @@
-from hermes_state import AsyncSessionDB, SessionDB
+from eidolon_state import AsyncSessionDB, SessionDB
 """Tests for gateway /status behavior and token persistence."""
 
 from datetime import datetime
@@ -388,7 +388,7 @@ async def test_status_command_bypasses_active_session_guard():
 
     async def fake_handler(event):
         handler_called_with.append(event)
-        return "📊 **Hermes Gateway Status**\n**Agent Running:** Yes ⚡"
+        return "📊 **Eidolon Gateway Status**\n**Agent Running:** Yes ⚡"
 
     # Concrete subclass to avoid abstract method errors
     class _ConcreteAdapter(BasePlatformAdapter):
@@ -502,7 +502,7 @@ async def test_context_command_keeps_configured_window_without_resident_agent():
     with patch("gateway.run._load_gateway_config", return_value=config), patch(
         "gateway.run._resolve_runtime_agent_kwargs", return_value=runtime
     ), patch(
-        "hermes_cli.config.get_compatible_custom_providers",
+        "eidolon_cli.config.get_compatible_custom_providers",
         return_value=config["custom_providers"],
     ), patch(
         "agent.model_metadata.get_model_context_length",

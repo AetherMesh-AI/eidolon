@@ -30,10 +30,11 @@ def validate_inputs(tag, body, version, mode='new-release'):
         raise ValueError('Unknown release mode')
     if mode == 'replacement-build-only' and tag != 'alpha-v0.1.0':
         raise ValueError('Replacement build-only is bounded to alpha-v0.1.0')
-    if not re.fullmatch(r'alpha-v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', tag):
-        raise ValueError('Tag must be alpha-vMAJOR.MINOR.PATCH (no leading zeroes)')
-    if mode == 'new-release' and tag != 'alpha-v' + version:
-        raise ValueError('Tag must match verified Git-derived desktop version')
+    if mode == 'new-release':
+        if not re.fullmatch(r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-alpha', tag):
+            raise ValueError('Tag must be vMAJOR.MINOR.PATCH-alpha (no leading zeroes)')
+        if tag != 'v' + version:
+            raise ValueError('Tag must match the declared desktop release version with verified Git provenance')
     if not body.strip() or '\0' in body or len(body.encode('utf-8')) > 60000:
         raise ValueError('Changelog Markdown must be nonblank, NUL-free and <= 60000 UTF-8 bytes')
     return body
@@ -46,7 +47,7 @@ def verified_build_identity():
     This command is local-only and performs no fetches or metadata writes.
     """
     identity = json.loads(subprocess.check_output([
-        sys.executable, str(ROOT / 'hermes_cli/eidolon_version.py'),
+        sys.executable, str(ROOT / 'eidolon_cli/eidolon_version.py'),
         '--repo-root', str(ROOT), '--require-verified'], cwd=ROOT, text=True))
     sha = os.environ.get('GITHUB_SHA', '')
     if (not re.fullmatch(r'[0-9a-f]{40}', sha) or sha == '0' * 40
@@ -269,7 +270,7 @@ def validate_pkg_info(text, tag):
     info = ET.fromstring(text)
     bundle = info.find('bundle')
     if (info.get('identifier') != 'com.aethermesh-ai.eidolon'
-            or info.get('version') != tag.removeprefix('alpha-v')
+            or info.get('version') != tag.removeprefix('alpha-v').removeprefix('v')
             or info.get('install-location') != '/Applications'
             or bundle is None or bundle.get('path') not in ('Eidolon.app', './Eidolon.app')
             or info.get('relocatable') != 'false' or list(info.findall('relocate/bundle'))):
@@ -377,7 +378,7 @@ def package(tag, platform, arch, temp):
         infos = list(unpacked.rglob('PackageInfo'))
         if len(infos) != 1:
             raise ValueError('Expected exactly one PKG component')
-        validate_pkg_info(infos[0].read_text(), 'alpha-v' + version)
+        validate_pkg_info(infos[0].read_text(), 'v' + version)
     elif platform == 'linux':
         data = artifact.read_bytes()
         if data[8:11] != b'AI\x02' or binary_target(data) != (platform, arch):

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { Settings2, Wrench } from '@/lib/icons'
-import type { ConfigFieldSchema, HermesConfigRecord } from '@/types/hermes'
+import type { ConfigFieldSchema, HermesConfigRecord } from '@/types/eidolon'
 
 import {
   buildConfigSearchEntries,

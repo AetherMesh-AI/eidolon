@@ -5,7 +5,7 @@ import {
   fetchStoredTranscriptAcrossBackends,
   getLatestSessionMessages,
   PROMPT_SUBMIT_REQUEST_TIMEOUT_MS
-} from '@/hermes'
+} from '@/eidolon'
 import { translateNow } from '@/i18n/runtime'
 import { type ChatMessage, chatMessageText, toChatMessages } from '@/lib/chat-messages'
 import { notify } from '@/store/notifications'
@@ -23,7 +23,7 @@ import {
   sessionTileOwnerRoute,
   setSessionTileDelegate
 } from '@/store/session-states'
-import type { SessionResumeResponse } from '@/types/hermes'
+import type { SessionResumeResponse } from '@/types/eidolon'
 
 import type { usePromptActions } from '../../session/hooks/use-prompt-actions'
 import { singleFlightSessionResume } from '../../session/hooks/use-prompt-actions/single-flight-resume'

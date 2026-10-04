@@ -2,7 +2,7 @@ import { useStore } from '@nanostores/react'
 import { memo, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
-import type { ProfileScope } from '@/hermes'
+import type { ProfileScope } from '@/eidolon'
 import { useI18n } from '@/i18n'
 import { Loader2 } from '@/lib/icons'
 import { useStoreSelector } from '@/lib/use-session-slice'

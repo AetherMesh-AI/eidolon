@@ -18,12 +18,12 @@ method = _registry.method
 
 def _relay_root() -> Path:
     """Install root shared by every profile (relay state is install-wide)."""
-    home = Path(os.getenv("HERMES_HOME") or os.path.expanduser("~/.hermes"))
+    home = Path(os.getenv("HERMES_HOME") or os.path.expanduser("~/.eidolon"))
     return home.parent.parent if home.parent.name == "profiles" else home
 
 
 # Per-attempt turn timeout and attempt ceiling for bot_relay.deliver. The Desktop client mirrors
-# both (apps/desktop/src/plugins/hermes-bots/relay.ts: RELAY_TURN_ATTEMPT_MS / RELAY_TURN_MAX_ATTEMPTS)
+# both (apps/desktop/src/plugins/eidolon-bots/relay.ts: RELAY_TURN_ATTEMPT_MS / RELAY_TURN_MAX_ATTEMPTS)
 # and its relay-deliver-budget test reads these two lines, so a change here must be deliberate (#93911).
 TURN_ATTEMPT_TIMEOUT_SECONDS = 600
 TURN_MAX_ATTEMPTS = 2  # first attempt + the policy-gated re-run

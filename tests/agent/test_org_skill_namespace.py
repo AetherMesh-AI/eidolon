@@ -235,7 +235,7 @@ class TestOrgPullIsWiredIn:
 
         main_src = (
             pathlib.Path(__file__).resolve().parents[2]
-            / "hermes_cli"
+            / "eidolon_cli"
             / "main_platform_setup.py"
         ).read_text(encoding="utf-8")
         assert "maybe_pull_org_skills" in main_src, (
@@ -258,8 +258,8 @@ class TestOrgPullIsWiredIn:
 
         root = pathlib.Path(__file__).resolve().parents[2]
         targets = [
-            root / "hermes_cli" / "subcommands" / "sync.py",
-            root / "hermes_cli" / "subcommands" / "skills.py",
+            root / "eidolon_cli" / "subcommands" / "sync.py",
+            root / "eidolon_cli" / "subcommands" / "skills.py",
         ]
         banned = re.compile(
             r"\(M[12]\)|\bHSP\b|HSP/1|§[0-9]|DEV-PHASE|hsp-1-contract"
@@ -289,21 +289,21 @@ class TestSkillSyncIsOneCommand:
         ).read_text(encoding="utf-8")
 
     def test_propose_is_a_sync_subcommand(self):
-        sync_src = self._src("hermes_cli", "subcommands", "sync.py")
+        sync_src = self._src("eidolon_cli", "subcommands", "sync.py")
         assert '"propose"' in sync_src, (
             "`propose` must be a `hermes sync` subcommand."
         )
 
     def test_propose_is_not_under_skills(self):
-        skills_src = self._src("hermes_cli", "subcommands", "skills.py")
+        skills_src = self._src("eidolon_cli", "subcommands", "skills.py")
         assert '"propose"' not in skills_src, (
-            "`propose` must NOT remain under `hermes skills` — Skill Sync is "
+            "`propose` must NOT remain under `eidolon skills` — Skill Sync is "
             "one command for launch."
         )
 
     def test_sync_usage_lists_propose(self):
-        main_src = self._src("hermes_cli", "main_platform_setup.py")
-        usage_start = main_src.index("usage: hermes sync ")
+        main_src = self._src("eidolon_cli", "main_platform_setup.py")
+        usage_start = main_src.index("usage: eidolon sync ")
         usage_block = main_src[usage_start : usage_start + 1400]
         assert "propose" in usage_block, (
             "`hermes sync` usage must list the propose verb."
@@ -377,7 +377,7 @@ class TestLocalEditsSurviveOrgUpdates:
 
         monkeypatch.delenv("HERMES_SYNC_ORG_AUTO_PROPOSE", raising=False)
         monkeypatch.setattr(
-            "hermes_cli.config.load_config", lambda: {}, raising=False
+            "eidolon_cli.config.load_config", lambda: {}, raising=False
         )
         # Default must be OFF: silently pushing every agent edit to the whole
         # organisation is not a safe default.

@@ -6,10 +6,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from hermes_cli.auth import AuthError
-from hermes_cli import main as hermes_main
-import hermes_cli.main_provider_setup as hermes_cli_main_provider_setup
-from hermes_cli import model_setup_flows
+from eidolon_cli.auth import AuthError
+from eidolon_cli import main as hermes_main
+import eidolon_cli.main_provider_setup as eidolon_cli_main_provider_setup
+from eidolon_cli import model_setup_flows
 
 
 # ---------------------------------------------------------------------------
@@ -144,8 +144,8 @@ def test_provider_flag_uses_named_custom_default_model(monkeypatch):
             }
         },
     }
-    monkeypatch.setattr("hermes_cli.config.load_config", lambda: config)
-    monkeypatch.setattr("hermes_cli.runtime_provider.load_config", lambda: config)
+    monkeypatch.setattr("eidolon_cli.config.load_config", lambda: config)
+    monkeypatch.setattr("eidolon_cli.runtime_provider.load_config", lambda: config)
 
     shell = cli.HermesCLI(provider="gmk-lan", compact=True, max_turns=1)
 
@@ -172,8 +172,8 @@ def test_explicit_model_wins_over_provider_default_model(monkeypatch):
             }
         },
     }
-    monkeypatch.setattr("hermes_cli.config.load_config", lambda: config)
-    monkeypatch.setattr("hermes_cli.runtime_provider.load_config", lambda: config)
+    monkeypatch.setattr("eidolon_cli.config.load_config", lambda: config)
+    monkeypatch.setattr("eidolon_cli.runtime_provider.load_config", lambda: config)
 
     shell = cli.HermesCLI(
         provider="gmk-lan",
@@ -198,7 +198,7 @@ def test_provider_flag_logs_when_custom_default_model_cannot_resolve(monkeypatch
         raise RuntimeError("catalog unavailable")
 
     monkeypatch.setattr(
-        "hermes_cli.runtime_provider._get_named_custom_provider",
+        "eidolon_cli.runtime_provider._get_named_custom_provider",
         _boom,
     )
 
@@ -212,7 +212,7 @@ def test_provider_flag_logs_when_custom_default_model_cannot_resolve(monkeypatch
     )
 
 
-def test_hermes_cli_init_does_not_eagerly_resolve_runtime_provider(monkeypatch):
+def test_eidolon_cli_init_does_not_eagerly_resolve_runtime_provider(monkeypatch):
     cli = _import_cli()
     calls = {"count": 0}
 
@@ -220,8 +220,8 @@ def test_hermes_cli_init_does_not_eagerly_resolve_runtime_provider(monkeypatch):
         calls["count"] += 1
         raise AssertionError("resolve_runtime_provider should not be called in HermesCLI.__init__")
 
-    monkeypatch.setattr("hermes_cli.runtime_provider.resolve_runtime_provider", _unexpected_runtime_resolve)
-    monkeypatch.setattr("hermes_cli.runtime_provider.format_runtime_provider_error", lambda exc: str(exc))
+    monkeypatch.setattr("eidolon_cli.runtime_provider.resolve_runtime_provider", _unexpected_runtime_resolve)
+    monkeypatch.setattr("eidolon_cli.runtime_provider.format_runtime_provider_error", lambda exc: str(exc))
 
     shell = cli.HermesCLI(model="gpt-5", compact=True, max_turns=1)
 
@@ -249,8 +249,8 @@ def test_runtime_resolution_failure_is_not_sticky(monkeypatch):
         def __init__(self, *args, **kwargs):
             self.kwargs = kwargs
 
-    monkeypatch.setattr("hermes_cli.runtime_provider.resolve_runtime_provider", _runtime_resolve)
-    monkeypatch.setattr("hermes_cli.runtime_provider.format_runtime_provider_error", lambda exc: str(exc))
+    monkeypatch.setattr("eidolon_cli.runtime_provider.resolve_runtime_provider", _runtime_resolve)
+    monkeypatch.setattr("eidolon_cli.runtime_provider.format_runtime_provider_error", lambda exc: str(exc))
     monkeypatch.setattr("run_agent.AIAgent", _DummyAgent)
 
     shell = cli.HermesCLI(model="gpt-5", compact=True, max_turns=1)
@@ -314,35 +314,35 @@ def test_model_flow_nous_does_not_restore_stale_custom_api_key(tmp_path, monkeyp
     selected_model = "deepseek/deepseek-v4-flash"
 
     monkeypatch.setattr(
-        "hermes_cli.auth.get_provider_auth_state",
+        "eidolon_cli.auth.get_provider_auth_state",
         lambda provider: {
             "access_token": "nous-token",
             "portal_base_url": "https://portal.example.com",
         },
     )
     monkeypatch.setattr(
-        "hermes_cli.auth.resolve_nous_runtime_credentials",
+        "eidolon_cli.auth.resolve_nous_runtime_credentials",
         lambda *args, **kwargs: {
             "base_url": "https://inference-api.nousresearch.com/v1",
             "api_key": "nous-key",
         },
     )
     monkeypatch.setattr(
-        "hermes_cli.models.get_curated_nous_model_ids",
+        "eidolon_cli.models.get_curated_nous_model_ids",
         lambda: [selected_model],
     )
-    monkeypatch.setattr("hermes_cli.models_pricing.get_pricing_for_provider", lambda provider: {})
-    monkeypatch.setattr("hermes_cli.models.check_nous_free_tier", lambda **kwargs: False)
+    monkeypatch.setattr("eidolon_cli.models_pricing.get_pricing_for_provider", lambda provider: {})
+    monkeypatch.setattr("eidolon_cli.models.check_nous_free_tier", lambda **kwargs: False)
     monkeypatch.setattr(
-        "hermes_cli.models.union_with_portal_paid_recommendations",
+        "eidolon_cli.models.union_with_portal_paid_recommendations",
         lambda model_ids, pricing, portal_url: (model_ids, pricing),
     )
     monkeypatch.setattr(
-        "hermes_cli.auth._prompt_model_selection",
+        "eidolon_cli.auth._prompt_model_selection",
         lambda *args, **kwargs: selected_model,
     )
     monkeypatch.setattr(
-        "hermes_cli.nous_subscription.prompt_enable_tool_gateway",
+        "eidolon_cli.nous_subscription.prompt_enable_tool_gateway",
         lambda config: None,
     )
 
@@ -414,11 +414,11 @@ def test_codex_provider_uses_config_model(monkeypatch):
             "source": "env/config",
         }
 
-    monkeypatch.setattr("hermes_cli.runtime_provider.resolve_runtime_provider", _runtime_resolve)
-    monkeypatch.setattr("hermes_cli.runtime_provider.format_runtime_provider_error", lambda exc: str(exc))
+    monkeypatch.setattr("eidolon_cli.runtime_provider.resolve_runtime_provider", _runtime_resolve)
+    monkeypatch.setattr("eidolon_cli.runtime_provider.format_runtime_provider_error", lambda exc: str(exc))
     # Prevent live API call from overriding the config model
     monkeypatch.setattr(
-        "hermes_cli.codex_models.get_codex_model_ids",
+        "eidolon_cli.codex_models.get_codex_model_ids",
         lambda access_token=None: ["gpt-5.2-codex"],
     )
 
@@ -442,16 +442,16 @@ def test_codex_provider_uses_config_model(monkeypatch):
 
 def test_model_flow_custom_saves_verified_v1_base_url(monkeypatch, capsys):
     monkeypatch.setattr(
-        "hermes_cli.config.get_env_value",
+        "eidolon_cli.config.get_env_value",
         lambda key: "" if key in {"OPENAI_BASE_URL", "OPENAI_API_KEY"} else "",
     )
     saved_env = {}
-    monkeypatch.setattr("hermes_cli.config.save_env_value", lambda key, value: saved_env.__setitem__(key, value))
-    monkeypatch.setattr("hermes_cli.auth._save_model_choice", lambda model: saved_env.__setitem__("MODEL", model))
-    monkeypatch.setattr("hermes_cli.auth.deactivate_provider", lambda: None)
-    monkeypatch.setattr("hermes_cli.main_provider_setup._save_custom_provider", lambda *args, **kwargs: None)
+    monkeypatch.setattr("eidolon_cli.config.save_env_value", lambda key, value: saved_env.__setitem__(key, value))
+    monkeypatch.setattr("eidolon_cli.auth._save_model_choice", lambda model: saved_env.__setitem__("MODEL", model))
+    monkeypatch.setattr("eidolon_cli.auth.deactivate_provider", lambda: None)
+    monkeypatch.setattr("eidolon_cli.main_provider_setup._save_custom_provider", lambda *args, **kwargs: None)
     monkeypatch.setattr(
-        "hermes_cli.models.probe_api_models",
+        "eidolon_cli.models.probe_api_models",
         lambda api_key, base_url: {
             "models": ["llm"],
             "probed_url": "http://localhost:8000/v1/models",
@@ -461,17 +461,17 @@ def test_model_flow_custom_saves_verified_v1_base_url(monkeypatch, capsys):
         },
     )
     monkeypatch.setattr(
-        "hermes_cli.config.load_config",
+        "eidolon_cli.config.load_config",
         lambda: {"model": {"default": "", "provider": "custom", "base_url": ""}},
     )
-    monkeypatch.setattr("hermes_cli.config.save_config", lambda cfg: None)
+    monkeypatch.setattr("eidolon_cli.config.save_config", lambda cfg: None)
 
     # After the probe detects a single model ("llm"), the flow asks
     # "Use this model? [Y/n]:" — confirm with Enter, then context length,
     # then display name. The api_mode prompt also runs before model selection.
     answers = iter(["http://localhost:8000", "local-key", "", "", "", "", ""])
     monkeypatch.setattr("builtins.input", lambda _prompt="": next(answers))
-    monkeypatch.setattr("hermes_cli.secret_prompt.masked_secret_prompt", lambda _prompt="": next(answers))
+    monkeypatch.setattr("eidolon_cli.secret_prompt.masked_secret_prompt", lambda _prompt="": next(answers))
 
     hermes_main._model_flow_custom({})
     output = capsys.readouterr().out
@@ -488,13 +488,13 @@ def test_model_flow_custom_persists_selected_api_mode(monkeypatch):
     captured_provider = {}
 
     monkeypatch.setattr(
-        "hermes_cli.config.get_env_value",
+        "eidolon_cli.config.get_env_value",
         lambda key: "" if key in {"OPENAI_BASE_URL", "OPENAI_API_KEY"} else "",
     )
-    monkeypatch.setattr("hermes_cli.auth._save_model_choice", lambda model: None)
-    monkeypatch.setattr("hermes_cli.auth.deactivate_provider", lambda: None)
+    monkeypatch.setattr("eidolon_cli.auth._save_model_choice", lambda model: None)
+    monkeypatch.setattr("eidolon_cli.auth.deactivate_provider", lambda: None)
     monkeypatch.setattr(
-        "hermes_cli.models.probe_api_models",
+        "eidolon_cli.models.probe_api_models",
         lambda api_key, base_url: {
             "models": [],
             "probed_url": f"{base_url.rstrip('/')}/models",
@@ -504,14 +504,14 @@ def test_model_flow_custom_persists_selected_api_mode(monkeypatch):
         },
     )
     saved_env = {}
-    monkeypatch.setattr("hermes_cli.config.load_config", lambda: saved_cfg)
-    monkeypatch.setattr("hermes_cli.config.save_config", lambda cfg: saved_cfg.update(cfg))
+    monkeypatch.setattr("eidolon_cli.config.load_config", lambda: saved_cfg)
+    monkeypatch.setattr("eidolon_cli.config.save_config", lambda cfg: saved_cfg.update(cfg))
     monkeypatch.setattr(
-        "hermes_cli.config.save_env_value",
+        "eidolon_cli.config.save_env_value",
         lambda key, value: saved_env.__setitem__(key, value),
     )
     monkeypatch.setattr(
-        "hermes_cli.main_provider_setup._save_custom_provider",
+        "eidolon_cli.main_provider_setup._save_custom_provider",
         lambda base_url, api_key="", model="", context_length=None, name=None, api_mode=None, key_env="": captured_provider.update(
             {
                 "base_url": base_url,
@@ -535,7 +535,7 @@ def test_model_flow_custom_persists_selected_api_mode(monkeypatch):
         ]
     )
     monkeypatch.setattr("builtins.input", lambda _prompt="": next(answers))
-    monkeypatch.setattr("hermes_cli.secret_prompt.masked_secret_prompt", lambda _prompt="": "test-key")
+    monkeypatch.setattr("eidolon_cli.secret_prompt.masked_secret_prompt", lambda _prompt="": "test-key")
 
     hermes_main._model_flow_custom({"model": {"provider": "custom"}})
 
@@ -553,16 +553,16 @@ def test_model_flow_custom_persists_selected_api_mode(monkeypatch):
 def test_cmd_model_forwards_nous_login_tls_options(monkeypatch):
     monkeypatch.setattr(hermes_main, "_require_tty", lambda *a: None)
     monkeypatch.setattr(
-        "hermes_cli.config.load_config",
+        "eidolon_cli.config.load_config",
         lambda: {"model": {"default": "gpt-5", "provider": "nous"}},
     )
-    monkeypatch.setattr("hermes_cli.config.save_config", lambda cfg: None)
-    monkeypatch.setattr("hermes_cli.config.get_env_value", lambda key: "")
-    monkeypatch.setattr("hermes_cli.config.save_env_value", lambda key, value: None)
-    monkeypatch.setattr("hermes_cli.auth.resolve_provider", lambda requested, **kwargs: "nous")
-    monkeypatch.setattr("hermes_cli.auth.get_provider_auth_state", lambda provider_id: None)
+    monkeypatch.setattr("eidolon_cli.config.save_config", lambda cfg: None)
+    monkeypatch.setattr("eidolon_cli.config.get_env_value", lambda key: "")
+    monkeypatch.setattr("eidolon_cli.config.save_env_value", lambda key, value: None)
+    monkeypatch.setattr("eidolon_cli.auth.resolve_provider", lambda requested, **kwargs: "nous")
+    monkeypatch.setattr("eidolon_cli.auth.get_provider_auth_state", lambda provider_id: None)
     monkeypatch.setattr(hermes_main, "_prompt_provider_choice", lambda choices, **kwargs: 0)
-    monkeypatch.setattr(hermes_cli_main_provider_setup, "_prompt_provider_choice", lambda choices, **kwargs: 0)
+    monkeypatch.setattr(eidolon_cli_main_provider_setup, "_prompt_provider_choice", lambda choices, **kwargs: 0)
 
     captured = {}
 
@@ -576,7 +576,7 @@ def test_cmd_model_forwards_nous_login_tls_options(monkeypatch):
         captured["ca_bundle"] = login_args.ca_bundle
         captured["insecure"] = login_args.insecure
 
-    monkeypatch.setattr("hermes_cli.auth._login_nous", _fake_login)
+    monkeypatch.setattr("eidolon_cli.auth._login_nous", _fake_login)
 
     hermes_main.cmd_model(
         SimpleNamespace(
@@ -608,7 +608,7 @@ def test_cmd_model_forwards_nous_login_tls_options(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_auto_provider_name_localhost():
-    from hermes_cli.main_provider_setup import _auto_provider_name
+    from eidolon_cli.main_provider_setup import _auto_provider_name
     assert _auto_provider_name("http://localhost:11434/v1") == "Local (localhost:11434)"
     assert _auto_provider_name("http://127.0.0.1:1234/v1") == "Local (127.0.0.1:1234)"
 
@@ -620,18 +620,18 @@ def test_auto_provider_name_localhost():
 def test_save_custom_provider_uses_provided_name(monkeypatch, tmp_path):
     """When a display name is passed, it should appear in the saved entry."""
     import yaml
-    from hermes_cli.main_provider_setup import _save_custom_provider
+    from eidolon_cli.main_provider_setup import _save_custom_provider
 
     cfg_path = tmp_path / "config.yaml"
     cfg_path.write_text(yaml.dump({}))
 
     monkeypatch.setattr(
-        "hermes_cli.config.load_config", lambda: yaml.safe_load(cfg_path.read_text()) or {},
+        "eidolon_cli.config.load_config", lambda: yaml.safe_load(cfg_path.read_text()) or {},
     )
     saved = {}
     def _save(cfg):
         saved.update(cfg)
-    monkeypatch.setattr("hermes_cli.config.save_config", _save)
+    monkeypatch.setattr("eidolon_cli.config.save_config", _save)
 
     _save_custom_provider("http://localhost:11434/v1", name="Ollama")
     entries = saved.get("custom_providers", [])
@@ -642,15 +642,15 @@ def test_save_custom_provider_uses_provided_name(monkeypatch, tmp_path):
 def test_save_custom_provider_references_the_key_instead_of_inlining_it(monkeypatch, tmp_path):
     """With key_env set the entry must not carry the secret (#69449)."""
     import yaml
-    from hermes_cli.main_provider_setup import _save_custom_provider
+    from eidolon_cli.main_provider_setup import _save_custom_provider
 
     cfg_path = tmp_path / "config.yaml"
     cfg_path.write_text(yaml.dump({}))
     monkeypatch.setattr(
-        "hermes_cli.config.load_config", lambda: yaml.safe_load(cfg_path.read_text()) or {},
+        "eidolon_cli.config.load_config", lambda: yaml.safe_load(cfg_path.read_text()) or {},
     )
     saved = {}
-    monkeypatch.setattr("hermes_cli.config.save_config", lambda cfg: saved.update(cfg))
+    monkeypatch.setattr("eidolon_cli.config.save_config", lambda cfg: saved.update(cfg))
 
     _save_custom_provider(
         "http://localhost:11434/v1",
@@ -677,7 +677,7 @@ def test_custom_endpoint_key_env_is_a_valid_posix_name_for_ip_endpoints():
     """
     import re
 
-    from hermes_cli.config import _ENV_VAR_NAME_RE, custom_endpoint_key_env
+    from eidolon_cli.config import _ENV_VAR_NAME_RE, custom_endpoint_key_env
 
     for identity in ("127.0.0.1_8080", "0.0.0.0", "10.0.0.7:11434", "", "-–-"):
         assert _ENV_VAR_NAME_RE.match(custom_endpoint_key_env(identity)), identity

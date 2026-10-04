@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-import hermes_state_holders
+import eidolon_state_holders
 
 
 @pytest.mark.linux_only
@@ -21,7 +21,7 @@ def test_foreign_holder_accepts_same_inode_reached_through_an_alias(
         (proc_root / str(pid) / "fd").mkdir(parents=True)
     os.symlink(db_path, proc_root / "222" / "fd" / "3")
 
-    monkeypatch.setattr(hermes_state_holders.os, "getpid", lambda: 111)
+    monkeypatch.setattr(eidolon_state_holders.os, "getpid", lambda: 111)
     real_listdir = os.listdir
 
     def _listdir(path):
@@ -29,22 +29,22 @@ def test_foreign_holder_accepts_same_inode_reached_through_an_alias(
             path = path.replace("/proc", str(proc_root))
         return real_listdir(path)
 
-    monkeypatch.setattr(hermes_state_holders.os, "listdir", _listdir)
+    monkeypatch.setattr(eidolon_state_holders.os, "listdir", _listdir)
 
     def _readlink(path):
         if path == "/proc/222/fd/3":
             return str(alias_path)
         return os.readlink(path.replace("/proc", str(proc_root)))
 
-    monkeypatch.setattr(hermes_state_holders.os, "readlink", _readlink)
+    monkeypatch.setattr(eidolon_state_holders.os, "readlink", _readlink)
     real_stat = os.stat
 
     def _stat(path, *args, **kwargs):
         path = str(path).replace("/proc", str(proc_root))
         return real_stat(path, *args, **kwargs)
 
-    monkeypatch.setattr(hermes_state_holders.os, "stat", _stat)
+    monkeypatch.setattr(eidolon_state_holders.os, "stat", _stat)
 
-    assert hermes_state_holders.foreign_state_db_holders(db_path) == [
+    assert eidolon_state_holders.foreign_state_db_holders(db_path) == [
         (222, str(alias_path))
     ]

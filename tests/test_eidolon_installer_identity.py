@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from hermes_cli.default_soul import DEFAULT_SOUL_MD
+from eidolon_cli.default_soul import DEFAULT_SOUL_MD
 
 
 INSTALL_SH = Path(__file__).resolve().parents[1] / "scripts" / "install.sh"

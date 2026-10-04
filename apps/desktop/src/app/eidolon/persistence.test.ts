@@ -1,4 +1,5 @@
 import { expect, it } from 'vitest'
+
 import { createPrototypeAdapter } from './adapter'
 it('persists local objectives across adapter restart without runtime execution', () => {
  const data = new Map<string,string>()

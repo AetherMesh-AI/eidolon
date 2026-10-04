@@ -11,7 +11,7 @@ from dataclasses import asdict, dataclass, field, fields, is_dataclass
 from typing import Dict, List, Optional, Any, Callable
 from enum import Enum
 
-from hermes_cli.config import get_hermes_home
+from eidolon_cli.config import get_eidolon_home
 from agent.secret_scope import current_secret_scope, get_secret as _get_secret
 from gateway.shutdown_watchdog import (
     DEFAULT_LOOP_WATCHDOG_INTERVAL_S,
@@ -55,7 +55,7 @@ def _normalize_multiplex_profile_allowlist(value: Any) -> Optional[List[str]]:
         )
         return []
 
-    from hermes_cli.profiles import normalize_profile_name, validate_profile_name
+    from eidolon_cli.profiles import normalize_profile_name, validate_profile_name
 
     normalized: List[str] = []
     for entry in value:
@@ -270,7 +270,7 @@ _BUILTIN_PLATFORM_VALUES = frozenset(m.value for m in Platform.__members__.value
 
 # Platforms that bind a host TCP port. In a multiplexer only the default profile owns the
 # shared listener, so a SECONDARY profile enabling one is a misconfiguration (single source
-# of truth for gateway/run.py and hermes_cli/web_server.py validation).
+# of truth for gateway/run.py and eidolon_cli/web_server.py validation).
 PORT_BINDING_PLATFORM_VALUES = frozenset({
     "webhook", "api_server", "msgraph_webhook", "feishu", "wecom_callback",
     "bluebubbles", "sms", "whatsapp_cloud", "line", "teams",
@@ -311,7 +311,7 @@ class HomeChannel:
 
 def persist_home_channel(home: HomeChannel, *, enabled_if_new: bool = False) -> None:
     """Persist a logical home without falsely enabling a Relay-fronted adapter."""
-    from hermes_cli.config import load_config, save_config
+    from eidolon_cli.config import load_config, save_config
     config = load_config()
     platform_config = _dict_slot(_dict_slot(config, "platforms"), home.platform.value)
     if enabled_if_new:
@@ -501,7 +501,7 @@ def _has_usable_api_server_key(key: object) -> bool:
     if not key:
         return False
     try:
-        from hermes_cli.auth import has_usable_secret
+        from eidolon_cli.auth import has_usable_secret
         return has_usable_secret(key, min_length=16)
     except ImportError:
         return len(str(key).strip()) >= 16
@@ -541,7 +541,7 @@ class GatewayConfig:
     platforms: Dict[Platform, PlatformConfig] = field(default_factory=dict)
     reset_triggers: List[str] = field(default_factory=lambda: ["/new", "/reset"])
     quick_commands: Dict[str, Any] = field(default_factory=dict)  # slash commands that bypass the agent loop
-    sessions_dir: Path = field(default_factory=lambda: get_hermes_home() / "sessions")
+    sessions_dir: Path = field(default_factory=lambda: get_eidolon_home() / "sessions")
     # Legacy sessions.json mirror of the routing index (primary: state.db) for external tooling / downgrades.
     # The primary copy lives in state.db (gateway_routing table, #9006). Default True for backward
     # compatibility with external tooling and downgrade safety; set gateway.write_sessions_json: false in
@@ -633,7 +633,7 @@ class GatewayConfig:
                 # into, and the gateway then tries to connect to Discord / Teams / Google Chat with no token
                 # and emits noisy retry-forever errors. ``_platform_status`` was already fixed for the same
                 # bug class in commit 7849a3d73; this is the runtime counterpart.
-                from hermes_cli.plugins import discover_plugins
+                from eidolon_cli.plugins import discover_plugins
                 discover_plugins()
             entry = platform_registry.get(platform.value)
             if entry:
@@ -726,7 +726,7 @@ class GatewayConfig:
             platforms=by_platform("platforms", PlatformConfig.from_dict, dicts_only=True),
             reset_triggers=data.get("reset_triggers", ["/new", "/reset"]),
             quick_commands=_coerce_dict(data.get("quick_commands", {})),
-            sessions_dir=Path(data["sessions_dir"]) if "sessions_dir" in data else get_hermes_home() / "sessions",
+            sessions_dir=Path(data["sessions_dir"]) if "sessions_dir" in data else get_eidolon_home() / "sessions",
             **{name: _coerce_bool(data.get(name), default) for name, default in _TOPLEVEL_BOOL_DEFAULTS.items()},
             stt_enabled=_coerce_bool(stt_setting("stt_enabled", "enabled"), True),
             stt_echo_transcripts=_coerce_bool(stt_setting("stt_echo_transcripts", "echo_transcripts"), True),
@@ -770,7 +770,7 @@ def load_gateway_config() -> GatewayConfig:
     """Load gateway configuration. Priority: env > ~/.hermes/config.yaml > legacy gateway.json > defaults."""
     from gateway import config_loader
 
-    _home = get_hermes_home()
+    _home = get_eidolon_home()
     gw_data = config_loader.load_legacy_gateway_json(_home)
     try:
         config_loader.load_yaml_layer(_home, gw_data)
@@ -801,7 +801,7 @@ def _validate_gateway_config(config: "GatewayConfig") -> None:
         # Reject known-weak placeholder tokens. Ported from openclaw/openclaw#64586: users who copy
         # .env.example without changing placeholder values get a clear startup error instead of a confusing
         # "auth failed" from the platform API.
-        from hermes_cli.auth import has_usable_secret
+        from eidolon_cli.auth import has_usable_secret
     except ImportError:
         has_usable_secret = None
 

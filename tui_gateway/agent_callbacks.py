@@ -163,7 +163,7 @@ def _wire_callbacks(sid: str):
         val = _block("secret.request", sid, pl)
         if not val:
             return {"success": True, "stored_as": env_var, "validated": False, "skipped": True, "message": "skipped"}
-        from hermes_cli.config import save_env_value_secure
+        from eidolon_cli.config import save_env_value_secure
         return {**save_env_value_secure(env_var, val), "skipped": False, "message": "ok"}
 
     set_sudo_password_callback(lambda: _block("sudo.request", sid, {}, timeout=120))
@@ -172,15 +172,15 @@ def _wire_callbacks(sid: str):
 
 
 def _available_personalities(cfg: dict | None = None) -> dict:
-    """Built-ins + user overrides, via hermes_cli.personality (single owner)."""
-    from hermes_cli.personality import available_personalities
+    """Built-ins + user overrides, via eidolon_cli.personality (single owner)."""
+    from eidolon_cli.personality import available_personalities
     return available_personalities(_load_cfg() if cfg is None else cfg)
 
 
 def _validate_personality(value: str, cfg: dict | None = None) -> tuple[str, str]:
     """(name, prompt) for a requested personality or ValueError; like resolve_personality but
     via the module-level _available_personalities so tests keep a single patch point."""
-    from hermes_cli.personality import normalize_personality_name, render_personality_prompt
+    from eidolon_cli.personality import normalize_personality_name, render_personality_prompt
     if not (name := normalize_personality_name(value)):
         return "", ""
     personalities = _available_personalities(cfg)
@@ -191,8 +191,8 @@ def _validate_personality(value: str, cfg: dict | None = None) -> tuple[str, str
 
 
 def _prompt_text(value) -> str:
-    """Normalize config prompt values from YAML for AIAgent (hermes_cli.personality owns this)."""
-    from hermes_cli.personality import prompt_text
+    """Normalize config prompt values from YAML for AIAgent (eidolon_cli.personality owns this)."""
+    from eidolon_cli.personality import prompt_text
     return prompt_text(value)
 
 
@@ -228,7 +228,7 @@ def _apply_personality_to_session(
 
 
 def _cfg_max_turns(cfg: dict, default: int) -> int:
-    from hermes_cli.config import resolve_turn_limit as _resolve_turn_limit
+    from eidolon_cli.config import resolve_turn_limit as _resolve_turn_limit
     # Env override wins; resolve_turn_limit makes "none"/"unlimited"/0 first-class spellings.
     if env_val := os.environ.get("HERMES_TUI_MAX_TURNS"):
         return _resolve_turn_limit(env_val, default=default)
@@ -246,7 +246,7 @@ def _parse_tui_skills_env() -> list[str]:
 def _load_fallback_model():
     """Configured fallback chain via the shared ``get_fallback_chain`` (parity with
     HermesCLI/gateway: ``fallback_providers`` first, legacy ``fallback_model`` merged after)."""
-    from hermes_cli.fallback_config import get_fallback_chain
+    from eidolon_cli.fallback_config import get_fallback_chain
     return get_fallback_chain(_load_cfg())
 
 

@@ -124,10 +124,10 @@ def _render_relay_context(context: Any) -> Optional[str]:
 def _normalize_slack_parent_command(text: str, message_type: MessageType) -> tuple[str, MessageType]:
     """Mirror native Slack ``/hermes`` routing for authenticated relay text."""
     parent_parts = text.strip().split(maxsplit=1)
-    if not parent_parts or parent_parts[0] != "/hermes":
+    if not parent_parts or parent_parts[0] not in {"/eidolon", "/hermes"}:
         return text, message_type
 
-    from hermes_cli.commands_platforms import slack_subcommand_map
+    from eidolon_cli.commands_platforms import slack_subcommand_map
 
     payload = parent_parts[1].strip() if len(parent_parts) > 1 else ""
     subcommand_map = slack_subcommand_map()
@@ -198,7 +198,7 @@ def _event_from_wire(raw: Dict[str, Any]) -> MessageEvent:
         scope_id=src.get("scope_id"),
         parent_chat_id=src.get("parent_chat_id"),
         message_id=src.get("message_id"),
-        # Multiplex mode: the connector stamps the target Hermes profile; None on
+        # Multiplex mode: the connector stamps the target Eidolon profile; None on
         # a single-profile gateway keeps the legacy ``agent:main`` namespace.
         profile=src.get("profile"),
         # Connector-stamped auto-thread markers light the same semantic-rename

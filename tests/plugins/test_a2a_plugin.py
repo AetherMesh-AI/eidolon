@@ -1596,7 +1596,7 @@ class TestV1SpecRegressionFixes:
         fakebin = tmp_path / "bin"
         fakebin.mkdir()
         calls = tmp_path / "calls.jsonl"
-        hermes = fakebin / "hermes"
+        hermes = fakebin / "eidolon"
         hermes.write_text("""#!/usr/bin/env python3
 import json, os, sqlite3, sys, time
 calls = os.environ['FAKE_HERMES_CALLS']
@@ -1707,7 +1707,7 @@ class TestMultiplexConstructionScope:
         assert adapter.port == _DEFAULT_PORT
         assert adapter.agent_name != "default-profile-agent"
         assert adapter._agents[""]["description"] == (
-            "Hermes Agent — a general-purpose agent reachable over A2A."
+            "Eidolon Agent — a general-purpose agent reachable over A2A."
         )
 
     def test_default_profile_unscoped_keeps_env_precedence(

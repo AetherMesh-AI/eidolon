@@ -20,8 +20,8 @@ _WORKTREE = Path(__file__).resolve().parents[2]
 if str(_WORKTREE) not in sys.path:
     sys.path.insert(0, str(_WORKTREE))
 
-from hermes_cli import kanban_db as kb
-from hermes_cli import kanban_db_connect as kbc
+from eidolon_cli import kanban_db as kb
+from eidolon_cli import kanban_db_connect as kbc
 import tools.kanban_tools as kt
 
 
@@ -43,8 +43,8 @@ def worker_home(tmp_path, monkeypatch):
     for var in ("HERMES_KANBAN_DB", "HERMES_KANBAN_WORKSPACES_ROOT", "HERMES_KANBAN_HOME", "HERMES_KANBAN_BOARD"):
         monkeypatch.delenv(var, raising=False)
     try:
-        import hermes_constants
-        hermes_constants._cached_default_hermes_root = None  # type: ignore[attr-defined]
+        import eidolon_constants
+        eidolon_constants._cached_default_hermes_root = None  # type: ignore[attr-defined]
     except Exception:
         pass
     kb._INITIALIZED_PATHS.clear()

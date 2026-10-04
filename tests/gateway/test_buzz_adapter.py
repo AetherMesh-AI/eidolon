@@ -286,9 +286,9 @@ class TestMultiplexProfileScope:
         """The gate must consult the profile's own config.yaml + secret scope,
         not the default profile's env values."""
         import yaml
-        from hermes_constants import (
-            reset_hermes_home_override,
-            set_hermes_home_override,
+        from eidolon_constants import (
+            reset_eidolon_home_override,
+            set_eidolon_home_override,
         )
 
         creds = tmp_path / "creds.json"
@@ -313,24 +313,24 @@ class TestMultiplexProfileScope:
         )
 
         multiplex_scope()
-        token = set_hermes_home_override(str(tmp_path))
+        token = set_eidolon_home_override(str(tmp_path))
         try:
             # The default profile's env relay+key must NOT pass the gate on
             # their own for a profile without a buzz config...
             assert check_requirements() is True  # profile config passes
         finally:
-            reset_hermes_home_override(token)
+            reset_eidolon_home_override(token)
 
         # A profile whose config.yaml has no buzz entry fails closed even
         # though the default profile's env values are present.
         empty_home = tmp_path / "empty-profile"
         empty_home.mkdir()
         multiplex_scope()
-        token = set_hermes_home_override(str(empty_home))
+        token = set_eidolon_home_override(str(empty_home))
         try:
             assert check_requirements() is False
         finally:
-            reset_hermes_home_override(token)
+            reset_eidolon_home_override(token)
 
     def test_env_enablement_scoped_returns_none(self, multiplex_scope, default_profile_env):
         """Scoped env enablement must not fabricate Buzz for a profile from

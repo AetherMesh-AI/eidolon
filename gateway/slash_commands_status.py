@@ -620,7 +620,7 @@ class GatewayStatusCommandsMixin:
                 days = int(flag) if flag.isdigit() else days
                 i += 1
         try:
-            from hermes_state_registry import acquire
+            from eidolon_state_registry import acquire
             from agent.insights import InsightsEngine
 
             def _run_insights():
@@ -629,10 +629,10 @@ class GatewayStatusCommandsMixin:
                     engine = InsightsEngine(db)
                     return engine.format_gateway(engine.generate(days=days, source=source))
                 finally:
-                    from hermes_state_registry import release_or_close
+                    from eidolon_state_registry import release_or_close
                     release_or_close(db)
 
-            # Not a bare hop: ``SessionDB()`` resolves ``get_hermes_home()`` at call time, a
+            # Not a bare hop: ``SessionDB()`` resolves ``get_eidolon_home()`` at call time, a
             # contextvar set by ``_profile_runtime_scope``; a default-executor hop starts with an
             # EMPTY context and would read the DEFAULT profile's state.db.
             return await self._run_in_executor_with_context(_run_insights)

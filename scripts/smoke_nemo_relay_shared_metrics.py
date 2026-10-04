@@ -29,13 +29,13 @@ INSTALLED_SKILL_CANARY = "relay-smoke-private-installed-skill"
 
 def _resolve_hermes_executable(hermes_repo: Path) -> Path:
     for relative_path in (
-        Path(".venv") / "bin" / "hermes",
-        Path(".venv") / "Scripts" / "hermes.exe",
+        Path(".venv") / "bin" / "eidolon",
+        Path(".venv") / "Scripts" / "eidolon.exe",
     ):
         candidate = hermes_repo / relative_path
         if candidate.is_file():
             return candidate
-    discovered = shutil.which("hermes")
+    discovered = shutil.which("eidolon")
     if discovered:
         return Path(discovered)
     raise SystemExit(
@@ -669,7 +669,7 @@ def main() -> int:
             sys.executable,
             "-c",
             "\n".join([
-                "from hermes_cli.observability import relay_shared_metrics",
+                "from eidolon_cli.observability import relay_shared_metrics",
                 "from tools.skill_usage import (",
                 "    STATE_ACTIVE, STATE_ARCHIVED, STATE_STALE, bump_patch,",
                 "    bump_use, record_created, record_installed, set_state,",
@@ -720,10 +720,10 @@ def main() -> int:
     package_paths, packages = _validate_packages(
         telemetry / "outbox",
         hermes_repo
-        / "hermes_cli"
+        / "eidolon_cli"
         / "observability"
         / "schemas"
-        / "hermes.shared_metrics.v2.schema.json",
+        / "eidolon.shared_metrics.v2.schema.json",
     )
 
     print("Hermes -> NeMo Relay shared-metrics smoke test passed")

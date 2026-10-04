@@ -33,7 +33,7 @@ def _load_auxiliary_client() -> None:
         extract_content_or_reasoning = extract_content_or_reasoning or _aux.extract_content_or_reasoning
 
 
-from hermes_constants import get_hermes_dir
+from eidolon_constants import get_hermes_dir
 from tools.debug_helpers import DebugSession
 from tools.website_policy import check_website_access
 from tools.vision_tools_image_prep import (
@@ -53,7 +53,7 @@ _debug = DebugSession("vision_tools", env_var="VISION_TOOLS_DEBUG")
 def _cfg_auxiliary(*keys: str, default=None):
     """``auxiliary.<keys...>`` from config.yaml; ``default`` when config is unavailable."""
     try:
-        from hermes_cli.config import cfg_get, load_config
+        from eidolon_cli.config import cfg_get, load_config
         return cfg_get(load_config(), "auxiliary", *keys, default=default)
     except Exception:
         return default
@@ -457,7 +457,7 @@ def _should_use_native_vision_fast_path() -> bool:
     try:
         from agent.auxiliary_client import _read_main_provider, _read_main_model
         from agent.image_routing import decide_image_input_mode, _lookup_supports_vision
-        from hermes_cli.config import load_config
+        from eidolon_cli.config import load_config
         provider = _read_main_provider()
         model = _read_main_model()
         cfg = load_config()

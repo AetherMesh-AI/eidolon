@@ -37,14 +37,15 @@ export interface HandoffResult {
 }
 
 export function handoffResultPath(hermesHome: string): string {
-  return path.join(hermesHome, '.hermes-update-result.json')
+  return path.join(hermesHome, '.eidolon-update-result.json')
 }
 
 export function readAndConsumeHandoffResult(
   hermesHome: string,
   { now = Date.now, maxAgeMs = HANDOFF_RESULT_MAX_AGE_MS }: { now?: () => number; maxAgeMs?: number } = {}
 ): HandoffResult | null {
-  const file = handoffResultPath(hermesHome)
+  const current = handoffResultPath(hermesHome)
+  const file = fs.existsSync(current) ? current : path.join(hermesHome, '.hermes-update-result.json')
   let raw: string
 
   try {

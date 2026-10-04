@@ -62,8 +62,8 @@ def test_completion_display_keeps_payload_separate_across_surfaces(monkeypatch, 
         from agent.prompt_caching import build_prompt_cache_plan, strip_anthropic_cache_control
         plan = build_prompt_cache_plan([core_message], tools=None)
         assert strip_anthropic_cache_control(plan.messages)[0]["content"] == payload
-        from hermes_cli.cli_agent_setup_mixin import _collect_resume_entries
-        from hermes_state import SessionDB
+        from eidolon_cli.cli_agent_setup_mixin import _collect_resume_entries
+        from eidolon_state import SessionDB
         with SessionDB(tmp_path / f"{status}-{truncated}.db") as db:
             db.create_session(cli.session_id, source="cli")
             db.append_messages_batch(cli.session_id, cli.conversation_history)

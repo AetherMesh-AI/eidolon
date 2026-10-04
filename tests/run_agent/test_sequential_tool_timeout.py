@@ -76,7 +76,7 @@ def _make_agent(tmp_path: Path) -> AIAgent:
         ),
         patch("model_tools.check_toolset_requirements", return_value={}),
         patch("agent.process_bootstrap.OpenAI"),
-        patch("run_agent._hermes_home", tmp_path),
+        patch("run_agent._eidolon_home", tmp_path),
         patch("agent.model_metadata.fetch_model_metadata", return_value={}),
     ):
         agent = AIAgent(
@@ -167,7 +167,7 @@ def test_sequential_tool_timeout_emits_result_and_continues(tmp_path, monkeypatc
 
 
 def test_sequential_tool_timeout_suppresses_late_terminal_event(tmp_path, monkeypatch):
-    import hermes_cli.lifecycle as lifecycle
+    import eidolon_cli.lifecycle as lifecycle
     import model_tools
 
     agent = _make_agent(tmp_path)

@@ -8,7 +8,7 @@ import json
 import os
 from typing import Any, Callable
 
-from hermes_constants import display_hermes_home
+from eidolon_constants import display_eidolon_home
 from gateway.config import Platform, load_gateway_config
 from plugins.teams_pipeline.meetings import (
     enrich_meeting_with_call_record, fetch_preferred_transcript_text, list_recording_artifacts, resolve_meeting_reference)
@@ -82,7 +82,7 @@ def _print_records(noun: str, empty_message: str, records: list[tuple[Any, list[
 
 def _graph_setup_hint() -> str:
     return f"""
-  Microsoft Graph is not configured. Add these to {display_hermes_home()}/.env:
+  Microsoft Graph is not configured. Add these to {display_eidolon_home()}/.env:
 
     MSGRAPH_TENANT_ID=...
     MSGRAPH_CLIENT_ID=...
@@ -336,7 +336,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

@@ -1,18 +1,18 @@
-# web/ + hermes_cli/web_routers/ — the dashboard (`hermes dashboard` → `/chat`)
+# web/ + eidolon_cli/web_routers/ — the dashboard (`eidolon dashboard` → `/chat`)
 
-Applies on top of the root `AGENTS.md`. Backend routers: `hermes_cli/web_routers/*.py`, one file per
-dashboard surface, mounted by `hermes_cli/web_server.py` (+ `web_server_*.py` siblings). Frontend:
-`web/src/`. Shared JSON-RPC/WS client: `apps/shared` (`@hermes/shared`), also used by the desktop.
+Applies on top of the root `AGENTS.md`. Backend routers: `eidolon_cli/web_routers/*.py`, one file per
+dashboard surface, mounted by `eidolon_cli/web_server.py` (+ `web_server_*.py` siblings). Frontend:
+`web/src/`. Shared JSON-RPC/WS client: `apps/shared` (`@aethermesh/shared`), also used by the desktop.
 
-## The dashboard embeds the REAL `hermes --tui` — not a rewrite
+## The dashboard embeds the REAL `eidolon --tui` — not a rewrite
 
-`hermes_cli/pty_bridge.py` + the `@app.websocket("/api/pty")` endpoint in `web_server.py`:
+`eidolon_cli/pty_bridge.py` + the `@app.websocket("/api/pty")` endpoint in `web_server.py`:
 
 - `web/src/pages/ChatPage.tsx` mounts xterm.js `Terminal` with the WebGL renderer, `@xterm/addon-fit`
   (container-driven resize) and `@xterm/addon-unicode11` (wide-character widths).
 - `/api/pty?token=…` upgrades to a WebSocket; auth uses the same ephemeral `_SESSION_TOKEN` as REST,
   passed as a query param because browsers cannot set `Authorization` on a WS upgrade.
-- The server spawns exactly what `hermes --tui` would spawn, through `ptyprocess` (POSIX PTY — WSL
+- The server spawns exactly what `eidolon --tui` would spawn, through `ptyprocess` (POSIX PTY — WSL
   works, native Windows does not).
 - Frames are raw PTY bytes each way; resize travels as `\x1b[RESIZE:<cols>;<rows>]`, intercepted
   on the server and applied with `TIOCSWINSZ`.
@@ -40,6 +40,6 @@ desktop has no build/runtime dependency on this frontend. Details: `apps/desktop
 - Auth: every new REST route and WS endpoint uses the same session token; never a second scheme.
 - Routers are one-file-per-surface; a new surface is a new `web_routers/<surface>.py`, not a growing
   `web_server.py`.
-- Tests: Python in `tests/hermes_cli/` (routers, pty bridge); JS in the `web/` vitest suite. Python
+- Tests: Python in `tests/eidolon_cli/` (routers, pty bridge); JS in the `web/` vitest suite. Python
   tests must not assert about `package.json` / `.tsx` sources (root testing rules). Root TypeScript
   style rules apply.

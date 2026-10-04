@@ -119,7 +119,7 @@ class TestSecurityGating:
         # blocking the user out of their own backends.
         monkeypatch.delenv("HERMES_DISABLE_LAZY_INSTALLS", raising=False)
         monkeypatch.setattr(
-            "hermes_cli.config.load_config",
+            "eidolon_cli.config.load_config",
             lambda: (_ for _ in ()).throw(RuntimeError("config broken")),
         )
         assert ld._allow_lazy_installs() is True
@@ -229,7 +229,7 @@ class TestIsSatisfiedVersionAware:
         huggingface-hub arrives in the venv via the core lock (transformers /
         sentence-transformers for local Hindsight, faster-whisper, tokenizers).
         With the LAZY_DEPS pin held in lockstep with uv.lock, the version the
-        core installs satisfies the trace-upload spec, so the `hermes update`
+        core installs satisfies the trace-upload spec, so the `eidolon update`
         lazy-refresh pass reports "current" instead of reinstalling — the
         downgrade that used to break the Hindsight daemon can't happen.
         """
@@ -294,7 +294,7 @@ class TestIsSatisfiedVersionAware:
 
 
 # ---------------------------------------------------------------------------
-# active_features + refresh_active_features (Piece A — hermes update wiring)
+# active_features + refresh_active_features (Piece A — eidolon update wiring)
 # ---------------------------------------------------------------------------
 
 
@@ -306,7 +306,7 @@ class TestActiveFeatures:
 
     def test_shared_dependency_does_not_activate_feature(self, monkeypatch):
         # asyncpg is a generic dependency that may be installed for unrelated
-        # reasons. It must not make hermes update try to refresh Matrix unless
+        # reasons. It must not make eidolon update try to refresh Matrix unless
         # the Matrix anchor package (mautrix) is present.
         monkeypatch.setattr(
             ld, "_is_present",
@@ -322,7 +322,7 @@ class TestRefreshActiveFeatures:
 
     def test_windows_matrix_refresh_is_skipped_before_pip(self, monkeypatch):
         # Matrix E2EE pulls python-olm, which has no native Windows wheel/build
-        # path. `hermes update` must not retry that doomed install every run.
+        # path. `eidolon update` must not retry that doomed install every run.
         #
         # The subject here is the *consumer* — refresh_active_features honouring
         # the gate before pip — so we monkeypatch lazy_deps' own platform probe
@@ -473,7 +473,7 @@ class TestInstallSpecs:
         monkeypatch.delenv("HERMES_DISABLE_LAZY_INSTALLS", raising=False)
         monkeypatch.delenv(ld._LAZY_TARGET_ENV, raising=False)
         monkeypatch.setattr(
-            "hermes_cli.config.load_config", lambda: {}, raising=False
+            "eidolon_cli.config.load_config", lambda: {}, raising=False
         )
         # Contract: install_specs never raises — even an unexpected installer
         # crash comes back as a failed result the caller can render.
@@ -560,7 +560,7 @@ class TestInstallWarmsBytecode:
         monkeypatch.setattr(ld, "_lazy_install_target", lambda: None)
         monkeypatch.setattr(ld.shutil, "which", lambda name: "uv" if name == "uv" else None)
         monkeypatch.setattr(
-            "hermes_cli.managed_uv.resolve_uv", lambda *a, **kw: "uv", raising=False
+            "eidolon_cli.managed_uv.resolve_uv", lambda *a, **kw: "uv", raising=False
         )
 
         class _Completed:

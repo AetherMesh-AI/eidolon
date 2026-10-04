@@ -123,8 +123,8 @@ def make_startup_runner(tmp_path):
 
 
 def patch_startup_side_effects(monkeypatch, tmp_path):
-    monkeypatch.setattr(gateway_run, "_hermes_home", tmp_path)
-    monkeypatch.setattr("hermes_cli.plugins.discover_plugins", lambda: None)
+    monkeypatch.setattr(gateway_run, "_eidolon_home", tmp_path)
+    monkeypatch.setattr("eidolon_cli.plugins.discover_plugins", lambda: None)
     monkeypatch.setattr("agent.shell_hooks.register_from_config", lambda *args, **kwargs: None)
     monkeypatch.setattr("tools.process_registry.process_registry.recover_from_checkpoint", lambda: 0)
 
@@ -175,7 +175,7 @@ def _patch_aborted_startup(monkeypatch, runner_cls):
     monkeypatch.setattr("gateway.status.remove_pid_file", lambda: None)
     monkeypatch.setattr("gateway.status.release_gateway_runtime_lock", lambda: None)
     monkeypatch.setattr("tools.skills_sync.sync_skills", lambda quiet=True: None)
-    monkeypatch.setattr("hermes_logging.setup_logging", lambda hermes_home, mode: None)
+    monkeypatch.setattr("eidolon_logging.setup_logging", lambda hermes_home, mode: None)
     monkeypatch.setattr("gateway.run.GatewayRunner", runner_cls)
 
 

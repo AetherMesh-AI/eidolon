@@ -24,7 +24,7 @@ import time
 
 import pytest
 
-from hermes_state import SessionDB
+from eidolon_state import SessionDB
 
 
 def _hold_write_lock(db_path, hold_s, started_evt):

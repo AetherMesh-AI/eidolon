@@ -11,7 +11,7 @@ import argparse
 
 import pytest
 
-from hermes_cli.config import get_env_value, save_env_value
+from eidolon_cli.config import get_env_value, save_env_value
 from plugins.platforms.photon.adapter import _env_enablement
 from plugins.platforms.photon import cli
 
@@ -82,7 +82,7 @@ def test_setup_hint_uses_gateway_service_command(monkeypatch: pytest.MonkeyPatch
 
     assert rc == 0
     out = capsys.readouterr().out
-    assert "Start the gateway:  hermes gateway start" in out
+    assert "Start the gateway:  eidolon gateway start" in out
     assert "--platform photon" not in out
     assert "new secret saved" in out
     assert "restart it so the sidecar" in out

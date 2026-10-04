@@ -13,7 +13,7 @@ import time
 from contextvars import ContextVar
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, Iterator, List, Optional, Set
-from hermes_cli import setup_platforms
+from eidolon_cli import setup_platforms
 
 logger = logging.getLogger(__name__)
 
@@ -925,7 +925,7 @@ class TelegramAdapter(BasePlatformAdapter):
 
     @staticmethod
     def _dm_topic_fallback(metadata: Optional[Dict[str, Any]]) -> bool:
-        """True for Hermes private-chat topic lanes (``telegram_dm_topic_reply_fallback``)."""
+        """True for Eidolon private-chat topic lanes (``telegram_dm_topic_reply_fallback``)."""
         return bool(metadata and metadata.get("telegram_dm_topic_reply_fallback"))
 
     @classmethod
@@ -956,15 +956,15 @@ class TelegramAdapter(BasePlatformAdapter):
         """Telegram send kwargs for forum and direct-message topic routing.
 
         Forum topics use ``message_thread_id``; native Bot API DM topics opt in via explicit ``direct_messages_topic_id``
-        metadata; Hermes private-chat topic lanes are marked ``telegram_dm_topic_reply_fallback``. Anchor-less synthetic sends
-        prefer the Hermes topic's ``message_thread_id`` (the native DM-topic id renders in a different chat lane).
+        metadata; Eidolon private-chat topic lanes are marked ``telegram_dm_topic_reply_fallback``. Anchor-less synthetic sends
+        prefer the Eidolon topic's ``message_thread_id`` (the native DM-topic id renders in a different chat lane).
         ``reply_to_mode="off"`` suppresses the anchor but keeps ``message_thread_id``.
 
         Live replies send the private topic thread id together with a reply anchor. Synthetic/resumed sends
         without an anchor (loop wakeups, background-process notifications, queued follow-ups after a gateway
-        restart) prefer the Hermes topic's ``message_thread_id`` so they stay in the active topic lane
+        restart) prefer the Eidolon topic's ``message_thread_id`` so they stay in the active topic lane
         (#87051); ``direct_messages_topic_id`` is only used when no topic thread resolves, since the native
-        DM-topic id does not match the Hermes topic lane and can render the message in a different chat
+        DM-topic id does not match the Eidolon topic lane and can render the message in a different chat
         lane.
         """
         fallback = cls._dm_topic_fallback(metadata)
@@ -972,9 +972,9 @@ class TelegramAdapter(BasePlatformAdapter):
             if reply_to_message_id is None:
                 reply_to_message_id = cls._metadata_reply_to_message_id(metadata)
             if reply_to_message_id is None:
-                # Anchor-less synthetic send: prefer the Hermes topic thread id (see docstring).
+                # Anchor-less synthetic send: prefer the Eidolon topic thread id (see docstring).
                 # Anchor-less synthetic sends (loop wakeups, watch notifications, restart-resumed
-                # follow-ups) must stay in the active topic lane: prefer the Hermes topic thread id when it
+                # follow-ups) must stay in the active topic lane: prefer the Eidolon topic thread id when it
                 # resolves (#87051). Routing via direct_messages_topic_id here sent these to a different
                 # lane than the topic the session runs in.
                 thread_message_id = cls._message_thread_id_for_send(thread_id)
@@ -2304,8 +2304,8 @@ class TelegramAdapter(BasePlatformAdapter):
         message = (
             "Telegram polling could not recover after %d retries (%ds total wait). "
             "The previous gateway session is still held open on Telegram's servers, "
-            "or another process is using the same bot token. To recover: ensure no other Hermes or OpenClaw instance is running "
-            "with this token, then restart the gateway with 'hermes gateway restart'."
+            "or another process is using the same bot token. To recover: ensure no other Eidolon or OpenClaw instance is running "
+            "with this token, then restart the gateway with 'eidolon gateway restart'."
             % (MAX_CONFLICT_RETRIES, sum(10 + i * 10 for i in range(1, MAX_CONFLICT_RETRIES + 1))))
         logger.error("[%s] %s Original error: %s", self.name, message, _redact_telegram_error_text(error))
         # Snapshot whether WE transition to fatal: a concurrent retry task suspended past the entry
@@ -2430,12 +2430,12 @@ class TelegramAdapter(BasePlatformAdapter):
     def _persist_dm_topic_thread_id(self, chat_id: int, topic_name: str, thread_id: int, replace_existing: bool = False) -> None:
         """Save a newly created thread_id back into config.yaml so it survives restarts."""
         try:
-            from hermes_constants import get_hermes_home
-            config_path = get_hermes_home() / "config.yaml"
+            from eidolon_constants import get_eidolon_home
+            config_path = get_eidolon_home() / "config.yaml"
             if not config_path.exists():
                 logger.warning("[%s] Config file not found at %s, cannot persist thread_id", self.name, config_path)
                 return
-            from hermes_cli.config import atomic_config_write, read_user_config_raw
+            from eidolon_cli.config import atomic_config_write, read_user_config_raw
             config = read_user_config_raw(config_path)
             # platforms.telegram.extra.dm_topics — create the path for topics not predeclared in config.yaml.
             dm_topics = config.setdefault("platforms", {}).setdefault("telegram", {}).setdefault("extra", {}).setdefault("dm_topics", [])
@@ -2524,7 +2524,7 @@ class TelegramAdapter(BasePlatformAdapter):
         """Register the command menu (from COMMAND_REGISTRY) in every scope — Telegram picks the
         narrowest matching one per chat type; forum topics are handled lazily by _ensure_forum_commands."""
         from telegram import BotCommand, BotCommandScopeAllPrivateChats, BotCommandScopeAllGroupChats, BotCommandScopeDefault
-        from hermes_cli.commands_platforms import telegram_menu_commands, telegram_menu_max_commands
+        from eidolon_cli.commands_platforms import telegram_menu_commands, telegram_menu_max_commands
         if not self._bot:
             return
         # Telegram allows 100 commands but has an undocumented ~4KB payload limit; default cap 60.
@@ -2574,7 +2574,7 @@ class TelegramAdapter(BasePlatformAdapter):
         if handler is None:
             return
         try:
-            from hermes_cli.lifecycle import has_hook
+            from eidolon_cli.lifecycle import has_hook
             if not has_hook("gateway_platform_event"):
                 return
             event = self._normalize_platform_event(update)
@@ -3855,7 +3855,7 @@ class TelegramAdapter(BasePlatformAdapter):
     @staticmethod
     def _provider_get_label():
         try:
-            from hermes_cli.providers import get_label
+            from eidolon_cli.providers import get_label
         except ImportError:
             def get_label(slug):
                 return slug
@@ -3977,7 +3977,7 @@ class TelegramAdapter(BasePlatformAdapter):
         """Paginated top-level provider keyboard folding provider families (Kimi/Moonshot, MiniMax, xAI…)
         into one ``mpg:<gid>`` button via the shared ``group_providers`` fold; singles are ``mp:<slug>``."""
         try:
-            from hermes_cli.models_catalog_static import group_providers
+            from eidolon_cli.models_catalog_static import group_providers
         except Exception:
             group_providers = None
         by_slug = {p.get("slug"): p for p in providers}
@@ -4119,7 +4119,7 @@ class TelegramAdapter(BasePlatformAdapter):
                 return
             idx, model_id, provider_slug, callback = sel
             try:
-                from hermes_cli.model_selection_guards import combined_selection_warning
+                from eidolon_cli.model_selection_guards import combined_selection_warning
                 # Pricing lookup may hit models.dev on a cache miss — keep it off the event loop.
                 warning = await asyncio.to_thread(combined_selection_warning, model_id, provider=provider_slug)
             except Exception:
@@ -4136,7 +4136,7 @@ class TelegramAdapter(BasePlatformAdapter):
         elif data.startswith("mpg:"):  # provider group selected: show member providers
             group_id = data[4:]
             try:
-                from hermes_cli.models_catalog_static import PROVIDER_GROUPS
+                from eidolon_cli.models_catalog_static import PROVIDER_GROUPS
                 _label, _desc, member_slugs = PROVIDER_GROUPS.get(group_id, ("", "", []))
             except Exception:
                 _label, member_slugs = "", []
@@ -4434,8 +4434,8 @@ class TelegramAdapter(BasePlatformAdapter):
         await query.answer(text=f"Sent '{answer}' to the update process.")
         await self._edit_md_quiet(query, f"⚕ Update prompt answered: *{'Yes' if answer == 'y' else 'No'}*")
         try:
-            from hermes_constants import get_hermes_home
-            response_path = get_hermes_home() / ".update_response"
+            from eidolon_constants import get_eidolon_home
+            response_path = get_eidolon_home() / ".update_response"
             tmp = response_path.with_suffix(".tmp")
             tmp.write_text(answer, encoding="utf-8")
             tmp.replace(response_path)
@@ -4472,7 +4472,7 @@ class TelegramAdapter(BasePlatformAdapter):
             await query.answer(text=f"Unknown verb: {verb}")
             return
         script_name, extra_args, success_label, is_state_verb = entry
-        script_path = _Path.home() / ".hermes" / "scripts" / "gmail-triage" / script_name
+        script_path = _Path.home() / ".eidolon" / "scripts" / "gmail-triage" / script_name
         if not script_path.exists():
             await query.answer(text=f"❌ {script_name} missing")
             logger.error("[%s] gmail-triage script missing: %s", self.name, script_path)
@@ -5609,7 +5609,7 @@ class TelegramAdapter(BasePlatformAdapter):
         # Learn the live handle BEFORE any mention gate routes on it, then drop our own echoed messages.
         # Filter out the bot's own messages (returned by getUpdates in some environments like
         # groups/supergroups where the bot can see its own messages). Without this, outbound messages are
-        # counted as incoming unread in the Hermes inbox (#52363). Otherwise a BotFather rename leaves the
+        # counted as incoming unread in the Eidolon inbox (#52363). Otherwise a BotFather rename leaves the
         # stale handle in place and the exclusive-mention gate reads a message addressed to us as one
         # addressed to some other bot.
         self._observe_bot_identity_from_message(message)
@@ -5649,7 +5649,7 @@ class TelegramAdapter(BasePlatformAdapter):
                 if chat_id in self._forum_command_registered:
                     return
                 from telegram import BotCommand, BotCommandScopeChat
-                from hermes_cli.commands_platforms import telegram_menu_commands, telegram_menu_max_commands
+                from eidolon_cli.commands_platforms import telegram_menu_commands, telegram_menu_max_commands
                 menu_commands, _ = telegram_menu_commands(max_commands=telegram_menu_max_commands())
                 bot_commands = [BotCommand(name, desc) for name, desc in menu_commands]
                 await self._bot.set_my_commands(bot_commands, scope=BotCommandScopeChat(chat_id=chat_id))
@@ -6098,7 +6098,7 @@ class TelegramAdapter(BasePlatformAdapter):
     def _reload_dm_topics_from_config(self) -> None:
         """Re-read dm_topics from config.yaml so externally created topics work without restart."""
         try:
-            from hermes_cli.config import load_config_readonly  # canonical loader: managed overlay + ${VAR}
+            from eidolon_cli.config import load_config_readonly  # canonical loader: managed overlay + ${VAR}
             dm_topics = load_config_readonly().get("platforms", {}).get("telegram", {}).get("extra", {}).get("dm_topics", [])
             if not dm_topics:
                 self._dm_topics_config = []
@@ -6370,7 +6370,7 @@ class TelegramAdapter(BasePlatformAdapter):
 # into this bundled plugin. Mirrors the Discord (#24356) / Slack migrations: a register(ctx) entry point
 # plus hook implementations that replace the per-platform core touchpoints (the Platform.TELEGRAM branch in
 # gateway/run.py, the telegram_cfg YAML→env/extra block in gateway/config.py, the _setup_telegram wizard +
-# _PLATFORMS["telegram"] static dict in hermes_cli/{setup,gateway}.py, and the _send_telegram dispatch in
+# _PLATFORMS["telegram"] static dict in eidolon_cli/{setup,gateway}.py, and the _send_telegram dispatch in
 # tools/send_message_tool.py). Telegram uses the generic token connected check, so no is_connected override
 # is needed. ──────────────────────────────────────────────────────────────────────────
 def _resolve_notifications_mode() -> str:
@@ -6407,7 +6407,7 @@ def _is_connected(config) -> bool:
     not enough or the plugin-enable pass would enable Telegram on any machine with it installed."""
     token = getattr(config, "token", None)
     if not token:
-        import hermes_cli.gateway as gateway_mod
+        import eidolon_cli.gateway as gateway_mod
         token = gateway_mod.get_env_value("TELEGRAM_BOT_TOKEN") or ""
     return bool(str(token).strip())
 
@@ -6428,7 +6428,7 @@ async def _standalone_send(pconfig, chat_id, message, *, thread_id=None, media_f
 
 def interactive_setup() -> None:
     """Configure Telegram credentials and allowlist via the CLI setup wizard (lazy import)."""
-    from hermes_cli import setup as _setup_mod
+    from eidolon_cli import setup as _setup_mod
     setup_platforms._setup_telegram()
 
 
@@ -6516,11 +6516,11 @@ def _apply_yaml_config(yaml_cfg: dict, telegram_cfg: dict) -> dict | None:
 
 
 def register(ctx) -> None:
-    """Plugin entry point — called by the Hermes plugin system."""
+    """Plugin entry point — called by the Eidolon plugin system."""
     ctx.register_platform(
         name="telegram", label="Telegram", adapter_factory=_build_adapter, check_fn=telegram_deps_present,
         ensure_deps_fn=check_telegram_requirements, is_connected=_is_connected, required_env=["TELEGRAM_BOT_TOKEN"],
-        install_hint="Run `hermes setup` to install Telegram support.", setup_fn=interactive_setup, apply_yaml_config_fn=_apply_yaml_config,
+        install_hint="Run `eidolon setup` to install Telegram support.", setup_fn=interactive_setup, apply_yaml_config_fn=_apply_yaml_config,
         allowed_users_env="TELEGRAM_ALLOWED_USERS", allow_all_env="TELEGRAM_ALLOW_ALL_USERS", cron_deliver_env_var="TELEGRAM_HOME_CHANNEL",
         standalone_sender_fn=_standalone_send, max_message_length=4096, emoji="✈️", allow_update_command=True)
 
@@ -6543,7 +6543,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

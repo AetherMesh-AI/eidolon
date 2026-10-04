@@ -1,4 +1,4 @@
-import type { RunExternalProcess } from '@hermes/ink'
+import type { RunExternalProcess } from '@aethermesh/ink'
 
 import type { SetupStatusResponse } from '../gatewayTypes.js'
 import type { LaunchResult } from '../lib/externalCli.js'
@@ -27,7 +27,7 @@ export async function runExternalSetup({ args, ctx, done, launcher, suspend }: R
   })
 
   if (result.error) {
-    transcript.sys(`error launching hermes: ${result.error}`)
+    transcript.sys(`error launching eidolon: ${result.error}`)
     patchUiState({ status: 'setup required' })
 
     return

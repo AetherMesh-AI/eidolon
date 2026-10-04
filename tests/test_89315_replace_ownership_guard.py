@@ -2,7 +2,7 @@
 cannot prove belongs to this HERMES_HOME.
 
 Design contract (v3, after andrexibiza's second review): ownership is decided
-by the persisted identity record ALONE — exact ``_same_hermes_home`` equality
+by the persisted identity record ALONE — exact ``_same_eidolon_home`` equality
 bound to the live target by exact PID + start-time. A readable live argv
 carries no HERMES_HOME, so it can never prove home ownership; it only feeds a
 token-exact CONSISTENCY check that refuses explicit contradictions.
@@ -31,7 +31,7 @@ import pytest
 
 @pytest.fixture()
 def profile_env(tmp_path, monkeypatch):
-    """Isolated HERMES_HOME mirroring tests/hermes_cli/test_profiles.py."""
+    """Isolated HERMES_HOME mirroring tests/eidolon_cli/test_profiles.py."""
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     default_home = tmp_path / ".hermes"
     default_home.mkdir(exist_ok=True)
@@ -42,8 +42,8 @@ def profile_env(tmp_path, monkeypatch):
 def _record(pid=424242, start=111222333, home=None, argv=None):
     return {
         "pid": pid,
-        "kind": "hermes-gateway",
-        "argv": argv or ["python", "-m", "hermes_cli.main", "gateway", "run"],
+        "kind": "eidolon-gateway",
+        "argv": argv or ["python", "-m", "eidolon_cli.main", "gateway", "run"],
         "start_time": start,
         "hermes_home": home,
     }
@@ -68,7 +68,7 @@ class TestRecordAuthority:
             ),
             patch("gateway.status._read_process_cmdline", return_value=None),
             patch(
-                "gateway.status._get_process_hermes_home",
+                "gateway.status._get_process_eidolon_home",
                 return_value=profile_env / ".hermes",
             ),
         ):
@@ -96,7 +96,7 @@ class TestRecordAuthority:
             ),
             patch("gateway.status._read_process_cmdline", return_value=None),
             patch(
-                "gateway.status._get_process_hermes_home",
+                "gateway.status._get_process_eidolon_home",
                 return_value=profile_env / ".hermes" / "profiles" / "tim",
             ),
         ):
@@ -113,7 +113,7 @@ class TestRecordAuthority:
                 return_value=profile_env / ".hermes" / "gateway.pid",
             ),
             patch(
-                "gateway.status._get_process_hermes_home",
+                "gateway.status._get_process_eidolon_home",
                 return_value=profile_env / ".hermes",
             ),
         ):
@@ -140,7 +140,7 @@ class TestRecordAuthority:
                 return_value=111222333,
             ),
             patch(
-                "gateway.status._get_process_hermes_home",
+                "gateway.status._get_process_eidolon_home",
                 return_value=profile_env / ".hermes",
             ),
         ):
@@ -164,7 +164,7 @@ class TestRecordAuthority:
                 return_value=111222333,
             ),
             patch(
-                "gateway.status._get_process_hermes_home",
+                "gateway.status._get_process_eidolon_home",
                 return_value=profile_env / ".hermes",
             ),
         ):
@@ -189,7 +189,7 @@ class TestRecordAuthority:
                 return_value=42,
             ),
             patch(
-                "gateway.status._get_process_hermes_home",
+                "gateway.status._get_process_eidolon_home",
                 return_value=profile_env / ".hermes",
             ),
         ):
@@ -218,16 +218,16 @@ class TestArgvConsistencyCheck:
         tim_home = Path("/home/x/.hermes/profiles/tim")
         # Foreign target advertising timothy — NOT ours.
         assert (
-            conflict("python -m hermes_cli.main --profile timothy gateway run", tim_home)
+            conflict("python -m eidolon_cli.main --profile timothy gateway run", tim_home)
             is True
         )
         # Our own exact name stays consistent.
         assert (
-            conflict("python -m hermes_cli.main --profile tim gateway run", tim_home)
+            conflict("python -m eidolon_cli.main --profile tim gateway run", tim_home)
             is False
         )
         assert (
-            conflict("python -m hermes_cli.main -p tim gateway run", tim_home)
+            conflict("python -m eidolon_cli.main -p tim gateway run", tim_home)
             is False
         )
 
@@ -240,14 +240,14 @@ class TestArgvConsistencyCheck:
         tim_home = Path("/home/x/.hermes/profiles/tim")
         assert (
             conflict(
-                "python -m hermes_cli.main HERMES_HOME=/home/x/.hermes/profiles/timothy gateway run",
+                "python -m eidolon_cli.main HERMES_HOME=/home/x/.hermes/profiles/timothy gateway run",
                 tim_home,
             )
             is True
         )
         assert (
             conflict(
-                "python -m hermes_cli.main --hermes-home /home/x/.hermes/profiles/tim/ gateway run",
+                "python -m eidolon_cli.main --hermes-home /home/x/.hermes/profiles/tim/ gateway run",
                 tim_home,
             )
             is False  # trailing slash normalizes away
@@ -285,10 +285,10 @@ class TestArgvConsistencyCheck:
             ),
             patch(
                 "gateway.status._read_process_cmdline",
-                return_value="python -m hermes_cli.main --profile other-profile gateway run",
+                return_value="python -m eidolon_cli.main --profile other-profile gateway run",
             ),
             patch(
-                "gateway.status._get_process_hermes_home",
+                "gateway.status._get_process_eidolon_home",
                 return_value=profile_env / ".hermes",
             ),
         ):

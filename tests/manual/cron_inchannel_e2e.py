@@ -36,7 +36,7 @@ from pathlib import Path
 
 def _fresh_home():
     """Point HERMES_HOME at a throwaway dir BEFORE importing gateway modules
-    (mirror.py binds _SESSIONS_INDEX from get_hermes_home() at import time)."""
+    (mirror.py binds _SESSIONS_INDEX from get_eidolon_home() at import time)."""
     d = tempfile.mkdtemp(prefix="cron_inchannel_e2e_")
     os.environ["HERMES_HOME"] = d
     return Path(d)
@@ -52,7 +52,7 @@ from gateway.config import GatewayConfig, Platform  # noqa: E402
 from gateway.session import SessionStore, SessionSource, build_session_key  # noqa: E402
 
 # Force mirror.py's module-level index path to our temp home (it may have bound
-# a different get_hermes_home() at import if something imported it earlier).
+# a different get_eidolon_home() at import if something imported it earlier).
 mirror._SESSIONS_DIR = HOME / "sessions"
 mirror._SESSIONS_INDEX = HOME / "sessions" / "sessions.json"
 
@@ -122,7 +122,7 @@ def _brief_in_transcript(store, sid):
     """Best-effort read of the session transcript to confirm the brief landed."""
     # Try the SQLite DB first (the mirror writes both JSONL + SQLite).
     try:
-        from hermes_state import SessionDB
+        from eidolon_state import SessionDB
         db = SessionDB()
         msgs = db.get_messages(sid)
         for m in msgs:

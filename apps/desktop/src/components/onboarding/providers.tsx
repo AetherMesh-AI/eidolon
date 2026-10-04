@@ -1,7 +1,7 @@
 import { RowButton } from '@/components/ui/row-button'
 import { useI18n } from '@/i18n'
-import { Check, ChevronRight, Terminal } from '@/lib/icons'
-import type { OAuthProvider } from '@/types/hermes'
+import { Check, ChevronRight, Network, Terminal } from '@/lib/icons'
+import type { OAuthProvider } from '@/types/eidolon'
 
 const PROVIDER_DISPLAY: Record<string, { order: number; title: string }> = {
   nous: { order: 0, title: 'Nous Portal' },
@@ -15,50 +15,26 @@ const PROVIDER_DISPLAY: Record<string, { order: number; title: string }> = {
   'claude-code': { order: 6, title: 'Anthropic OAuth: Required Extra Usage Credits to Use Subscription' }
 }
 
-const assetPath = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\/+/, '')}`
-
 export const providerTitle = (p: OAuthProvider) => PROVIDER_DISPLAY[p.id]?.title ?? p.name
 const orderOf = (p: OAuthProvider) => PROVIDER_DISPLAY[p.id]?.order ?? 99
 
 export const sortProviders = (providers: OAuthProvider[]) =>
   [...providers].sort((a, b) => orderOf(a) - orderOf(b) || a.name.localeCompare(b.name))
 
-export function FeaturedProviderRow({
-  onSelect,
-  provider
-}: {
-  onSelect: (provider: OAuthProvider) => void
-  provider: OAuthProvider
-}) {
+export function AetherMeshComingSoonRow() {
   const { t } = useI18n()
-  const loggedIn = provider.status?.logged_in
 
   return (
-    <button
-      className="group relative flex w-full items-center justify-between gap-4 rounded-[8px] bg-primary/[0.06] px-3 py-2.5 text-left transition-colors hover:bg-primary/10"
-      onClick={() => onSelect(provider)}
-      type="button"
-    >
-      <span aria-hidden className="arc-border arc-reverse arc-nous" />
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <img alt="" className="size-5 shrink-0 rounded" src={assetPath('apple-touch-icon.png')} />
-          <span className="text-[length:var(--conversation-text-font-size)] font-semibold">
-            {providerTitle(provider)}
-          </span>
-          {loggedIn ? (
-            <ConnectedTag />
-          ) : (
-            <span className="inline-flex items-center gap-1.5 bg-primary px-2 py-0.5 text-[0.64rem] font-semibold uppercase tracking-[0.16em] text-primary-foreground">
-              <span aria-hidden="true" className="dither inline-block size-2 shrink-0" />
-              {t.onboarding.recommended}
-            </span>
-          )}
-        </div>
-        <p className="mt-1 text-xs leading-5 text-muted-foreground">{t.onboarding.featuredPitch}</p>
+    <section aria-label="AetherMesh" className="relative w-full rounded-[8px] bg-primary/[0.06] px-3 py-2.5">
+      <div className="flex items-center gap-2">
+        <Network aria-hidden="true" className="size-5 shrink-0 text-primary" />
+        <span className="text-[length:var(--conversation-text-font-size)] font-semibold">AetherMesh</span>
+        <span className="bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+          {t.onboarding.aetherMeshComingSoon}
+        </span>
       </div>
-      <ChevronRight className="size-4 shrink-0 text-primary transition group-hover:translate-x-0.5" />
-    </button>
+      <p className="mt-1 text-xs leading-5 text-muted-foreground">{t.onboarding.aetherMeshDescription}</p>
+    </section>
   )
 }
 

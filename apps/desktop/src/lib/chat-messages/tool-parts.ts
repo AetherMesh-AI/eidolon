@@ -1,6 +1,6 @@
 import { firstStringField, normalize } from '@/lib/text'
 import { isTodoToolName, parseTodos } from '@/lib/todos'
-import type { SessionMessage } from '@/types/hermes'
+import type { SessionMessage } from '@/types/eidolon'
 
 import type { ChatMessage, ChatMessagePart, GatewayEventPayload } from './types'
 

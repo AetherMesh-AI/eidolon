@@ -1,4 +1,4 @@
-import { JsonRpcGatewayClient } from '@hermes/shared'
+import { JsonRpcGatewayClient } from '@aethermesh/shared'
 
 import type { HermesApiRequest } from '@/global'
 
@@ -28,10 +28,10 @@ export const PROMPT_SUBMIT_REQUEST_TIMEOUT_MS = 1_800_000
 export class HermesGateway extends JsonRpcGatewayClient {
   constructor() {
     super({
-      closedErrorMessage: 'Hermes gateway connection closed',
-      connectErrorMessage: 'Could not connect to Hermes gateway',
+      closedErrorMessage: 'Eidolon gateway connection closed',
+      connectErrorMessage: 'Could not connect to Eidolon gateway',
       createRequestId: nextId => nextId,
-      notConnectedErrorMessage: 'Hermes gateway is not connected',
+      notConnectedErrorMessage: 'Eidolon gateway is not connected',
       requestTimeoutMs: DEFAULT_GATEWAY_REQUEST_TIMEOUT_MS
     })
   }

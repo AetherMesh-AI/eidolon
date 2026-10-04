@@ -38,15 +38,15 @@ _ROOT = os.path.dirname(os.path.abspath(__file__))
 _IN_NIX_BUILD = os.environ.get("HERMES_NIX_BUILD") == "1"
 
 _BLOCK_MESSAGE = (
-    "Building wheels or sdists for hermes-agent is not supported.\n"
-    "Hermes is distributed via the shell installer, Docker image, or Nix.\n"
+    "Building wheels or sdists for eidolon-agent is not supported.\n"
+    "Eidolon is distributed via the shell installer, Docker image, or Nix.\n"
     "See: https://hermes-agent.nousresearch.com/docs/getting-started/installation\n"
     "\n"
     "If you are developing, use an editable install instead:\n"
     "  uv sync          # or: uv pip install -e .\n"
     "\n"
     "If you are building with Nix (uv2nix), this error should not fire —\n"
-    "the Hermes Nix derivation sets HERMES_NIX_BUILD=1. If it does, file a bug."
+    "the Eidolon Nix derivation sets HERMES_NIX_BUILD=1. If it does, file a bug."
 )
 
 
@@ -60,7 +60,7 @@ class _GuardedSdist(sdist):
 def _stamp_identity():
     # Load the stdlib-only owner without importing the installed CLI package.
     spec = importlib.util.spec_from_file_location(
-        "eidolon_build_version", Path(_ROOT) / "hermes_cli/eidolon_version.py")
+        "eidolon_build_version", Path(_ROOT) / "eidolon_cli/eidolon_version.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     module.write_identity(Path(_ROOT))
@@ -100,7 +100,7 @@ try:
 except ImportError:
     pass
 
-# Root single-file modules (``run_agent``, ``hermes_state``, ``toolsets``...)
+# Root single-file modules (``run_agent``, ``eidolon_state``, ``toolsets``...)
 # are invisible to ``packages.find``: that finder sees only directories with an
 # ``__init__.py``. The wheel build needs them on ``py_modules``, so derive the
 # list from the source tree at build time. A static list in ``pyproject.toml``

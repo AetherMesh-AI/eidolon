@@ -2,7 +2,7 @@
 
 Complements ``tests/tools/test_windows_compat.py`` (which does source-level
 pattern linting) with cross-platform-mocked tests that exercise the actual
-code paths Hermes takes on native Windows.
+code paths Eidolon takes on native Windows.
 
 Runs on Linux CI — every test mocks ``sys.platform``, ``subprocess.run``,
 and ``os.kill`` as needed to simulate Windows behavior without requiring a
@@ -29,7 +29,7 @@ import pytest
 
 
 class TestConfigureWindowsStdio:
-    """``hermes_cli.stdio.configure_windows_stdio`` wiring.
+    """``eidolon_cli.stdio.configure_windows_stdio`` wiring.
 
     The function must:
     - be a no-op on non-Windows
@@ -44,23 +44,23 @@ class TestConfigureWindowsStdio:
     def _reset_configured(self, monkeypatch):
         """Reload the module before each test so the _CONFIGURED flag resets."""
         # Remove from sys.modules so import triggers a fresh load
-        sys.modules.pop("hermes_cli.stdio", None)
-        # Fresh import now; tests import from hermes_cli.stdio themselves,
+        sys.modules.pop("eidolon_cli.stdio", None)
+        # Fresh import now; tests import from eidolon_cli.stdio themselves,
         # but this guarantees the module they get is a brand-new copy.
-        import hermes_cli.stdio as _s
+        import eidolon_cli.stdio as _s
         _s._CONFIGURED = False
         yield
-        sys.modules.pop("hermes_cli.stdio", None)
+        sys.modules.pop("eidolon_cli.stdio", None)
 
     def test_no_op_on_posix(self, monkeypatch):
-        from hermes_cli import stdio
+        from eidolon_cli import stdio
 
         monkeypatch.setattr(stdio, "is_windows", lambda: False)
         result = stdio.configure_windows_stdio()
         assert result is False
 
     def test_idempotent(self):
-        from hermes_cli import stdio
+        from eidolon_cli import stdio
 
         stdio.configure_windows_stdio()
         # Second call returns False because _CONFIGURED is set
@@ -69,7 +69,7 @@ class TestConfigureWindowsStdio:
 
     def test_reconfigure_stream_handles_missing_method(self, monkeypatch):
         """StringIO-like objects without .reconfigure() must not blow up."""
-        from hermes_cli import stdio
+        from eidolon_cli import stdio
         import io
 
         buf = io.StringIO()
@@ -196,7 +196,7 @@ class TestSigkillFallback:
     @pytest.mark.parametrize(
         "module_path, line_pattern",
         [
-            ("hermes_cli.kanban_db_dispatch", 'getattr(signal, "SIGKILL", signal.SIGTERM)'),
+            ("eidolon_cli.kanban_db_dispatch", 'getattr(signal, "SIGKILL", signal.SIGTERM)'),
         ],
     )
     def test_module_uses_getattr_fallback(self, module_path, line_pattern):
@@ -366,7 +366,7 @@ class TestWebServerPtyBridgeGuard:
 
     def test_import_guard_present_in_source(self):
         root = Path(__file__).resolve().parents[2]
-        source = (root / "hermes_cli" / "web_server_chat.py").read_text(encoding="utf-8")
+        source = (root / "eidolon_cli" / "web_server_chat.py").read_text(encoding="utf-8")
         assert "_PTY_BRIDGE_AVAILABLE" in source
         assert "except ImportError" in source, (
             "web_server_chat.py must wrap the pty_bridge import in try/except ImportError"
@@ -375,7 +375,7 @@ class TestWebServerPtyBridgeGuard:
     def test_pty_handler_checks_availability_flag(self):
         """The /api/pty handler must short-circuit when the bridge is unavailable."""
         root = Path(__file__).resolve().parents[2]
-        source = (root / "hermes_cli" / "web_routers" / "chat_ws.py").read_text(encoding="utf-8")
+        source = (root / "eidolon_cli" / "web_routers" / "chat_ws.py").read_text(encoding="utf-8")
         assert "if not _PTY_BRIDGE_AVAILABLE" in source, (
             "/api/pty handler must return a friendly error when PTY is unavailable"
         )
@@ -387,17 +387,17 @@ class TestWebServerPtyBridgeGuard:
 
 
 class TestEntryPointsConfigureStdio:
-    """cli.py, hermes_cli/main.py, gateway/run.py must call configure_windows_stdio."""
+    """cli.py, eidolon_cli/main.py, gateway/run.py must call configure_windows_stdio."""
 
     @pytest.mark.parametrize(
         "relpath",
-        ["cli.py", "hermes_cli/main.py", "gateway/run.py"],
+        ["cli.py", "eidolon_cli/main.py", "gateway/run.py"],
     )
     def test_entry_point_calls_configure_stdio(self, relpath):
         root = Path(__file__).resolve().parents[2]
         source = (root / relpath).read_text(encoding="utf-8")
         assert "configure_windows_stdio" in source, (
-            f"{relpath} must call hermes_cli.stdio.configure_windows_stdio() "
+            f"{relpath} must call eidolon_cli.stdio.configure_windows_stdio() "
             "early in startup so Windows consoles render Unicode without crashing"
         )
 
@@ -408,15 +408,15 @@ class TestEntryPointsConfigureStdio:
 
 
 class TestSubprocessCompatHelpers:
-    """hermes_cli/_subprocess_compat.py POSIX + Windows behaviour."""
+    """eidolon_cli/_subprocess_compat.py POSIX + Windows behaviour."""
 
     def test_is_windows_matches_sys_platform(self):
-        from hermes_cli import _subprocess_compat as sc
+        from eidolon_cli import _subprocess_compat as sc
         assert sc.IS_WINDOWS == (sys.platform == "win32")
 
     def test_resolve_node_command_returns_absolute_on_posix(self):
         """On Linux, resolve_node_command('sh', ['-c','echo hi']) picks up /bin/sh."""
-        from hermes_cli._subprocess_compat import resolve_node_command
+        from eidolon_cli._subprocess_compat import resolve_node_command
         # We can't assert "npm is on PATH" portably; use `sh` which is
         # guaranteed on POSIX.  On Windows the test only confirms the
         # no-crash fallback path.
@@ -444,7 +444,7 @@ class TestSubprocessCompatHelpers:
            all descendants inherit (parent-console root cause isolated by
            the desktop backend fix, commit aa2ae36c3f).
         """
-        from hermes_cli import _subprocess_compat as sc
+        from eidolon_cli import _subprocess_compat as sc
         assert not sc.windows_detach_flags() & 0x00000008, (
             "DETACHED_PROCESS must not be in windows_detach_flags(): it makes "
             "CREATE_NO_WINDOW a no-op and re-creates the per-descendant "
@@ -458,7 +458,7 @@ class TestSubprocessCompatHelpers:
     def test_windows_detach_flags_includes_breakaway_from_job(self):
         """CREATE_BREAKAWAY_FROM_JOB is load-bearing for the GUI-driven update path.
 
-        Without it, the gateway-respawn watcher spawned by ``hermes update``
+        Without it, the gateway-respawn watcher spawned by ``eidolon update``
         (which runs under hermes-setup.exe, itself a grandchild of the
         Electron Desktop app) gets reaped when Electron exits and its
         Win32 job object is torn down by the OS.  Result: gateway dies
@@ -469,7 +469,7 @@ class TestSubprocessCompatHelpers:
         ``fix/windows-gateway-reliability`` (PR #40909) and the bit must
         stay in the default bundle going forward.
         """
-        from hermes_cli import _subprocess_compat as sc
+        from eidolon_cli import _subprocess_compat as sc
         assert sc.windows_detach_flags() & 0x01000000, (
             "CREATE_BREAKAWAY_FROM_JOB (0x01000000) must remain in the "
             "default detach flag bundle so the Desktop GUI update flow "
@@ -487,7 +487,7 @@ class TestSubprocessCompatHelpers:
         It must drop ONLY the breakaway bit — DETACHED_PROCESS et al.
         are still required for the child to survive the parent's exit.
         """
-        from hermes_cli import _subprocess_compat as sc
+        from eidolon_cli import _subprocess_compat as sc
         full = sc.windows_detach_flags()
         fallback = sc.windows_detach_flags_without_breakaway()
         # Fallback equals full minus the breakaway bit, nothing else changed.
@@ -541,7 +541,7 @@ class TestTuiGatewayEntrySignalGuards:
 
 
 # ---------------------------------------------------------------------------
-# hermes_cli/kanban_db_dispatch.py waitpid guard
+# eidolon_cli/kanban_db_dispatch.py waitpid guard
 # ---------------------------------------------------------------------------
 
 
@@ -551,7 +551,7 @@ class TestKanbanWaitpidWindowsGuard:
 
     def test_source_gates_waitpid_loop(self):
         root = Path(__file__).resolve().parents[2]
-        source = (root / "hermes_cli" / "kanban_db_dispatch.py").read_text(encoding="utf-8")
+        source = (root / "eidolon_cli" / "kanban_db_dispatch.py").read_text(encoding="utf-8")
         # Find the waitpid call and confirm it's inside a POSIX gate.
         idx = source.find("os.waitpid(-1, os.WNOHANG)")
         assert idx > 0, "waitpid call must exist"
@@ -640,14 +640,14 @@ class TestCronSchedulerBashResolution:
 
 class TestNpmBareSpawnsResolved:
     """Every spawn site that launches ``npm``/``npx`` must resolve via
-    shutil.which / hermes_cli._subprocess_compat.resolve_node_command
+    shutil.which / eidolon_cli._subprocess_compat.resolve_node_command
     so Windows can execute the .cmd batch shims."""
 
     @pytest.mark.parametrize(
         "relpath",
         [
-            "hermes_cli/tools_config.py",
-            "hermes_cli/doctor.py",
+            "eidolon_cli/tools_config.py",
+            "eidolon_cli/doctor.py",
             "plugins/platforms/whatsapp/adapter.py",
             "tools/browser_tool.py",
         ],
@@ -714,12 +714,12 @@ class TestLocalEnvironmentWindowsTempDir:
                 f"POSIX temp dir must start with '/'; got {tmp_dir!r}"
             )
 
-    def test_source_has_windows_branch_using_hermes_home(self):
+    def test_source_has_windows_branch_using_eidolon_home(self):
         root = Path(__file__).resolve().parents[2]
         source = (root / "tools" / "environments" / "local.py").read_text(encoding="utf-8")
         assert "if _IS_WINDOWS:" in source
-        assert "get_hermes_home" in source
-        assert 'get_hermes_home() / "cache" / "terminal"' in source
+        assert "get_eidolon_home" in source
+        assert 'get_eidolon_home() / "cache" / "terminal"' in source
         assert "_default_terminal_temp_dir()" in source
 
 
@@ -749,7 +749,7 @@ class TestGitBashPathNormalization:
 
     def test_posix_noop(self):
         """Must NOT mutate paths on Linux/macOS."""
-        from hermes_cli.worktree_ops import _normalize_git_bash_path
+        from eidolon_cli.worktree_ops import _normalize_git_bash_path
         if sys.platform != "win32":
             assert _normalize_git_bash_path("/home/teknium/foo") == "/home/teknium/foo"
             assert _normalize_git_bash_path("/c/Users/foo") == "/c/Users/foo"
@@ -764,7 +764,7 @@ class TestGitBashPathNormalization:
         ``windows_only``: the function's whole job is producing native
         Windows paths, which is only meaningful where ``os.sep`` is ``\\``.
         """
-        from hermes_cli import worktree_ops as cli_mod
+        from eidolon_cli import worktree_ops as cli_mod
         assert cli_mod._normalize_git_bash_path("/c/Users/foo") == r"C:\Users\foo"
         assert cli_mod._normalize_git_bash_path("/C/Users/foo") == r"C:\Users\foo"
         assert cli_mod._normalize_git_bash_path("/cygdrive/d/data") == r"D:\data"
@@ -783,7 +783,7 @@ class TestWorktreeSymlinkFallback:
 
     def test_source_has_symlink_fallback(self):
         root = Path(__file__).resolve().parents[2]
-        source = (root / "hermes_cli" / "worktree_ops.py").read_text(encoding="utf-8")
+        source = (root / "eidolon_cli" / "worktree_ops.py").read_text(encoding="utf-8")
         # Look for the try/except that handles OSError around os.symlink
         # with a shutil.copytree fallback.
         assert "os.symlink(str(src_resolved), str(dst))" in source
@@ -802,11 +802,11 @@ class TestGatewayDetachedWatcherWindowsFlags:
     launcher must use CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS on
     Windows, not silent start_new_session=True."""
 
-    def test_hermes_cli_gateway_uses_compat_kwargs(self):
+    def test_eidolon_cli_gateway_uses_compat_kwargs(self):
         root = Path(__file__).resolve().parents[2]
-        source = (root / "hermes_cli" / "gateway.py").read_text(encoding="utf-8")
+        source = (root / "eidolon_cli" / "gateway.py").read_text(encoding="utf-8")
         assert "windows_detach_popen_kwargs" in source, (
-            "hermes_cli/gateway.py must use the platform-aware detach helper"
+            "eidolon_cli/gateway.py must use the platform-aware detach helper"
         )
         # The legacy start_new_session=True on the outer Popen should be
         # replaced by **windows_detach_popen_kwargs(). Inside the watcher
@@ -821,21 +821,21 @@ class TestGatewayDetachedWatcherWindowsFlags:
 
         Static check — the watcher source is built at import time and embedded
         verbatim in the module text.  The literal Win32 bits live in
-        hermes_cli._subprocess_compat; the watcher must call that helper from
+        eidolon_cli._subprocess_compat; the watcher must call that helper from
         inside the inlined payload so runtime behavior keeps the breakaway bit.
 
         The bit was added to the inlined payload by PR #40909.  This test
         ensures a future refactor of the dedent block doesn't silently drop it.
         """
         root = Path(__file__).resolve().parents[2]
-        text = (root / "hermes_cli" / "gateway.py").read_text(encoding="utf-8")
+        text = (root / "eidolon_cli" / "gateway.py").read_text(encoding="utf-8")
         marker = "watcher = textwrap.dedent("
         idx = text.find(marker)
         assert idx != -1, "watcher block not found in gateway.py"
         end = text.find(").strip()", idx)
         assert end != -1, "watcher block end not found"
         block = text[idx:end]
-        assert "from hermes_cli._subprocess_compat import" in block
+        assert "from eidolon_cli._subprocess_compat import" in block
         assert "windows_detach_flags" in block
         assert "windows_detach_flags()" in block, (
             "Inlined respawn watcher must call windows_detach_flags() for the "
@@ -869,7 +869,7 @@ class TestGatewayDetachedWatcherWindowsFlags:
         is the regression guard.
         """
         root = Path(__file__).resolve().parents[2]
-        text = (root / "hermes_cli" / "gateway.py").read_text(encoding="utf-8")
+        text = (root / "eidolon_cli" / "gateway.py").read_text(encoding="utf-8")
         assert "windows_detach_flags_without_breakaway" in text, (
             "launch_detached_profile_gateway_restart must import "
             "windows_detach_flags_without_breakaway so it can retry a "
@@ -905,7 +905,7 @@ class TestGatewayDetachedWatcherWindowsFlags:
         the inlined respawn ``Popen``.
         """
         root = Path(__file__).resolve().parents[2]
-        text = (root / "hermes_cli" / "gateway.py").read_text(encoding="utf-8")
+        text = (root / "eidolon_cli" / "gateway.py").read_text(encoding="utf-8")
         assert "windowless_gateway_restart_spec" in text, (
             "_spawn_gateway_restart_watcher must build the respawn via "
             "gateway_windows.windowless_gateway_restart_spec so the gateway "
@@ -934,16 +934,16 @@ class TestWindowlessGatewayRestartSpec:
     overlay)."""
 
     def test_noop_on_non_windows(self):
-        import hermes_cli.gateway_windows as gw
+        import eidolon_cli.gateway_windows as gw
 
-        argv = ["/path/venv/bin/python", "-m", "hermes_cli.main", "gateway", "run"]
+        argv = ["/path/venv/bin/python", "-m", "eidolon_cli.main", "gateway", "run"]
         new_argv, cwd, env = gw.windowless_gateway_restart_spec(list(argv))
         assert new_argv == argv
         assert cwd == ""
         assert env == {}
 
     def test_empty_argv_is_safe(self):
-        import hermes_cli.gateway_windows as gw
+        import eidolon_cli.gateway_windows as gw
 
         new_argv, cwd, env = gw.windowless_gateway_restart_spec([])
         assert new_argv == []
@@ -957,19 +957,19 @@ class TestWindowlessGatewayRestartSpec:
         is preserved verbatim.
 
         ``windows_only``: faking this on Linux needed two more fakes to hold
-        it up — a pre-import so the lazy ``hermes_cli.gateway`` import didn't
+        it up — a pre-import so the lazy ``eidolon_cli.gateway`` import didn't
         re-run ``gateway/status``'s ``import msvcrt`` branch, and a mock of
-        ``get_hermes_home`` because the real one's ``Path.resolve()`` consults
+        ``get_eidolon_home`` because the real one's ``Path.resolve()`` consults
         sysconfig and blew up under the platform patch. Both workarounds were
         symptoms of testing Windows on a host that isn't Windows; on the
         Windows runner neither is needed.
         """
-        import hermes_cli.gateway_windows as gw
+        import eidolon_cli.gateway_windows as gw
 
         argv = [
             "C:/venv/Scripts/python.exe",
             "-m",
-            "hermes_cli.main",
+            "eidolon_cli.main",
             "--profile",
             "work",
             "gateway",
@@ -982,7 +982,7 @@ class TestWindowlessGatewayRestartSpec:
         with mock.patch.object(
             gw, "_stable_gateway_working_dir", return_value="C:/hermes"
         ), mock.patch(
-            "hermes_cli.config.get_hermes_home", return_value="C:/hermes"
+            "eidolon_cli.config.get_eidolon_home", return_value="C:/hermes"
         ):
             new_argv, cwd, env = gw.windowless_gateway_restart_spec(list(argv))
 
@@ -1040,7 +1040,7 @@ class TestGatewayRunRestartWatcherOuterPopenFallback:
 
     def test_outer_watcher_retries_without_breakaway_on_oserror(self, monkeypatch):
         import gateway.run as gr
-        from hermes_cli._subprocess_compat import (
+        from eidolon_cli._subprocess_compat import (
             windows_detach_flags_without_breakaway,
             windows_detach_popen_kwargs,
         )

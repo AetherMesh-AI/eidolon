@@ -187,7 +187,7 @@ def _reap_idle_sessions() -> None:
     # Long-lived processes: gen2 GC rarely runs at steady state and glibc retains freed pages as RSS, so trim
     # every scan to prevent unbounded RSS growth over days/weeks.
     try:
-        from hermes_cli.mem_trim import trim_memory
+        from eidolon_cli.mem_trim import trim_memory
         trim_memory(reason="idle reaper periodic trim")
     except Exception as exc:  # debug, not warning — a persistent failure would repeat every scan.
         logger.debug("idle reaper memory trim failed: %s: %s", type(exc).__name__, exc)
@@ -224,7 +224,7 @@ def _repair_missing_ws_orphan_reaps() -> None:
 def _reclaim_orphaned_leases() -> None:
     """Hand the registry the lease ids we still own so it can drop the rest."""
     try:
-        from hermes_cli.active_sessions import release_orphaned_leases
+        from eidolon_cli.active_sessions import release_orphaned_leases
         if dropped := release_orphaned_leases(_own_live_lease_ids()):
             logger.info("Reclaimed %d orphaned active-session lease(s)", dropped)
     except Exception:
@@ -236,7 +236,7 @@ def _reclaim_orphaned_leases() -> None:
 # never a running / pending / mid-build / live-transport one (reopening re-resumes from the DB). 0/null disables.
 def _max_live_sessions() -> int:
     try:
-        from hermes_cli.active_sessions import coerce_max_concurrent_sessions
+        from eidolon_cli.active_sessions import coerce_max_concurrent_sessions
         cfg = _load_cfg() or {}
         raw = cfg.get("max_live_sessions")
         if raw is None and isinstance(gateway_cfg := cfg.get("gateway"), dict):
@@ -406,7 +406,7 @@ def _start_backend_heartbeat_refresher() -> None:
                 db.clear_backend_heartbeat(_backend_id_for_this_process())
 
     atexit.register(_atexit_clear)
-    threading.Thread(target=_loop, name="hermes-gateway-heartbeat", daemon=True).start()
+    threading.Thread(target=_loop, name="eidolon-gateway-heartbeat", daemon=True).start()
 
 
 def _schedule_startup_orphan_sweep() -> None:

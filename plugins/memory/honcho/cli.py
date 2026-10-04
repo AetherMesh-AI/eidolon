@@ -7,9 +7,9 @@ import os
 import sys
 from pathlib import Path
 
-from hermes_constants import get_hermes_home
+from eidolon_constants import get_eidolon_home
 from plugins.memory.honcho.client import _first_parsed, _host_block, profile_host_key, resolve_active_host, resolve_config_path, HOST
-from hermes_cli.config import cfg_get
+from eidolon_cli.config import cfg_get
 
 RULE = "─" * 40
 REASONING_LEVELS = ("minimal", "low", "medium", "high", "max")
@@ -62,7 +62,7 @@ def _config_path() -> Path:
 
 def _local_config_path() -> Path:
     """Instance-local write path; ~/.honcho/config.json is only a read fallback for cross-app interop."""
-    return get_hermes_home() / "honcho.json"
+    return get_eidolon_home() / "honcho.json"
 
 
 def _read_config() -> dict:
@@ -141,7 +141,7 @@ def _prompt(label: str, default: str | None = None, secret: bool = False) -> str
     sys.stdout.write(f"  {label}{f' [{default}]' if default else ''}: ")
     sys.stdout.flush()
     if secret and sys.stdin.isatty():
-        from hermes_cli.secret_prompt import masked_secret_prompt
+        from eidolon_cli.secret_prompt import masked_secret_prompt
         val = masked_secret_prompt("")
     else:  # non-TTY (piped input, test runners) reads plaintext
         val = sys.stdin.readline().strip()
@@ -229,7 +229,7 @@ def _sync_profiles(verbose: bool) -> int:
     """Clone host blocks for profiles lacking one; returns the count created."""
     say = print if verbose else (lambda *a: None)
     try:
-        from hermes_cli.profiles import list_profiles
+        from eidolon_cli.profiles import list_profiles
         profiles = list_profiles()
     except Exception as e:
         return say(f"  Could not list profiles: {e}\n") or 0
@@ -260,7 +260,7 @@ def cmd_sync(args) -> None:
 
 
 def sync_honcho_profiles_quiet() -> int:
-    """Sync host blocks for all profiles from `hermes update`; no output, no exceptions."""
+    """Sync host blocks for all profiles from `eidolon update`; no output, no exceptions."""
     return _sync_profiles(verbose=False)
 
 
@@ -408,7 +408,7 @@ def _setup_identity_mapping(cfg: dict, hermes_host: dict, current_peer: str) -> 
     else:
         notice, question = (
             ("\n  Gateway identity mapping routes platform users to memory peers.",
-             "Running the Hermes gateway (Telegram/Discord/etc.)? (y/N)") if gw_platforms is None else
+             "Running the Eidolon gateway (Telegram/Discord/etc.)? (y/N)") if gw_platforms is None else
             ("\n  No gateway platforms connected — identity mapping only affects\n"
              "  gateway users, so this step doesn't apply here.", "Configure gateway mapping anyway? (y/N)"))
         print(notice)
@@ -498,9 +498,9 @@ def _device_login_available() -> bool:
 
 
 def _headless() -> tuple[bool, bool]:
-    """(is_remote, can_open_browser) — degrades safely if hermes_cli internals move."""
+    """(is_remote, can_open_browser) — degrades safely if eidolon_cli internals move."""
     try:
-        from hermes_cli.auth import _can_open_graphical_browser, _is_remote_session
+        from eidolon_cli.auth import _can_open_graphical_browser, _is_remote_session
         return _is_remote_session(), _can_open_graphical_browser()
     except Exception:
         return False, True
@@ -706,7 +706,7 @@ def cmd_setup(args) -> None:
     """Interactive Honcho setup wizard."""
     cfg = _read_config()
     write_path, read_path = _local_config_path(), _config_path()
-    print(f"\nHoncho memory setup\n{RULE}\n  Honcho gives Hermes persistent cross-session memory.\n  Config: {write_path}")
+    print(f"\nHoncho memory setup\n{RULE}\n  Honcho gives Eidolon persistent cross-session memory.\n  Config: {write_path}")
     if read_path != write_path and read_path.exists():
         print(f"  (seeding from existing config at {read_path})")
     print()
@@ -747,13 +747,13 @@ def cmd_setup(args) -> None:
     print(f"\n  Config written to {write_path}")
 
     try:  # auto-enable Honcho as memory provider in config.yaml
-        from hermes_cli.config import load_config, save_config
+        from eidolon_cli.config import load_config, save_config
         hermes_config = load_config()
         hermes_config.setdefault("memory", {})["provider"] = "honcho"
         save_config(hermes_config)
         print("  Memory provider set to 'honcho' in config.yaml")
     except Exception as e:
-        print(f"  Could not auto-enable in config.yaml: {e}\n  Run: hermes config set memory.provider honcho")
+        print(f"  Could not auto-enable in config.yaml: {e}\n  Run: eidolon config set memory.provider honcho")
 
     print("  Testing connection... ", end="", flush=True)
     try:
@@ -792,11 +792,11 @@ def cmd_setup(args) -> None:
 # ── status / peers ─────────────────────────────────────────────────────────
 
 def _active_profile_name() -> str:
-    """Active Hermes profile name (respects --target-profile override)."""
+    """Active Eidolon profile name (respects --target-profile override)."""
     if _profile_override:
         return _profile_override
     try:
-        from hermes_cli.profiles import get_active_profile_name
+        from eidolon_cli.profiles import get_active_profile_name
         return get_active_profile_name()
     except Exception:
         return "default"
@@ -805,7 +805,7 @@ def _active_profile_name() -> str:
 def _all_profile_host_configs() -> list[tuple[str, str, dict]]:
     """(profile_name, host_key, host_block) for every known profile, reading honcho.json once."""
     try:
-        from hermes_cli.profiles import list_profiles
+        from eidolon_cli.profiles import list_profiles
         profiles = list_profiles()
     except Exception:
         return [(_active_profile_name(), _host_key(), {})]
@@ -998,7 +998,7 @@ Honcho peers
   User peer:   {_pref(hermes, cfg, 'peerName') or '(not set)'}
     Your identity in Honcho. Messages you send build this peer's card.
   AI peer:     {_pref(hermes, cfg, 'aiPeer') or _host_key()}
-    Hermes' identity in Honcho. Seed with 'hermes honcho identity <file>'.
+    Eidolon' identity in Honcho. Seed with 'hermes honcho identity <file>'.
     Dialectic calls ask this peer questions to warm session context.
 
   Dialectic reasoning:  {_pref(hermes, cfg, 'dialecticReasoningLevel') or 'low'}  ({', '.join(REASONING_LEVELS)})
@@ -1050,7 +1050,7 @@ Honcho budgets
     the user and session, injected directly into the system prompt.
 
   Dialectic   {_pref(hermes, cfg, 'dialecticMaxChars') or 600} chars, reasoning: {_pref(hermes, cfg, 'dialecticReasoningLevel') or 'low'}
-    AI-to-AI inference. Hermes asks Honcho's AI peer a question
+    AI-to-AI inference. Eidolon asks Honcho's AI peer a question
     (e.g. "what were we working on?") and Honcho runs its own model
     to synthesize an answer. Used for first-turn session continuity.
     Level controls how much reasoning Honcho spends on the answer.
@@ -1150,13 +1150,13 @@ def _offer(question: str, action, files: list[Path]) -> None:
 
 
 def cmd_migrate(args) -> None:
-    """Step-by-step migration guide: OpenClaw native memory → Hermes + Honcho."""
+    """Step-by-step migration guide: OpenClaw native memory → Eidolon + Honcho."""
     user_files = _find_memory_files(["USER.md", "MEMORY.md"])  # facts about the user
     agent_files = _find_memory_files(["SOUL.md", "IDENTITY.md", "AGENTS.md", "TOOLS.md", "BOOTSTRAP.md"])
     cfg = _read_config()
     has_key = bool(_resolve_api_key(cfg))
 
-    print("\nHoncho migration: OpenClaw native memory → Hermes\n" + "─" * 50)
+    print("\nHoncho migration: OpenClaw native memory → Eidolon\n" + "─" * 50)
     print("""
   OpenClaw's native memory stores context in local markdown files
   (USER.md, MEMORY.md, SOUL.md, ...) and injects them via QMD search.
@@ -1169,7 +1169,7 @@ Step 1  Create a Honcho account
     if has_key:
         print(f"  Honcho API key already configured: {_mask(cfg['apiKey'])}\n  Skip to Step 2.")
     else:
-        print("""  Honcho is a cloud memory service that gives Hermes persistent memory
+        print("""  Honcho is a cloud memory service that gives Eidolon persistent memory
   across sessions. You need an API key to use it.
 
   1. Get your API key at https://app.honcho.dev
@@ -1207,7 +1207,7 @@ Step 3  Migrate user memory files → Honcho user peer
         print("""
   These are picked up automatically the first time you run 'hermes'
   with Honcho configured and no prior session history.
-  (Hermes calls migrate_memory_files() on first session init.)
+  (Eidolon calls migrate_memory_files() on first session init.)
 
   If you want to migrate them now without starting a session:""")
         print("    hermes honcho migrate  — this step handles it interactively\n" * len(user_files), end="")
@@ -1225,7 +1225,7 @@ Step 4  Seed AI identity files → Honcho AI peer
   agent's character, capabilities, and behavioral rules. In OpenClaw
   these are injected via file search at prompt-build time.
 
-  In Hermes, they are seeded once into Honcho's AI peer through the
+  In Eidolon, they are seeded once into Honcho's AI peer through the
   observation pipeline. Honcho builds a representation from them and
   from every subsequent assistant message (observe_me=True). Over time
   the representation reflects actual behavior, not just declaration.
@@ -1246,17 +1246,17 @@ Step 5  What changes vs. OpenClaw native memory
 
   Storage
     OpenClaw: markdown files on disk, searched via QMD at prompt-build time.
-    Hermes:   cloud-backed Honcho peers. Files can stay on disk as source
+    Eidolon:   cloud-backed Honcho peers. Files can stay on disk as source
               of truth; Honcho holds the live representation.
 
   Context injection
     OpenClaw: file excerpts injected synchronously before each LLM call.
-    Hermes:   Honcho context fetched async at turn end, injected next turn.
+    Eidolon:   Honcho context fetched async at turn end, injected next turn.
               First turn has no Honcho context; subsequent turns are loaded.
 
   Memory growth
     OpenClaw: you edit files manually to update memory.
-    Hermes:   Honcho observes every message and updates representations
+    Eidolon:   Honcho observes every message and updates representations
               automatically. Files become the seed, not the live store.
 
   Honcho tools (available to the agent during conversation)
@@ -1268,7 +1268,7 @@ Step 5  What changes vs. OpenClaw native memory
 
   Session naming
     OpenClaw: no persistent session concept — files are global.
-    Hermes:   per-session by default — each run gets its own session
+    Eidolon:   per-session by default — each run gets its own session
               Map a custom name:  hermes honcho map <session-name>
 
 Step 6  Next steps
@@ -1290,7 +1290,7 @@ Step 6  Next steps
 
 # (subcommand, help, handler, ((arg, kwargs), ...)); order defines --help order.
 _SUBCOMMANDS = (
-    ("setup", "Initial Honcho setup (redirects to hermes memory setup)", None, ()),
+    ("setup", "Initial Honcho setup (redirects to eidolon memory setup)", None, ()),
     ("status", "Show current Honcho config and connection status", cmd_status, (
         ("--all", dict(action="store_true", help="Show config overview across all profiles")),
     )),
@@ -1322,7 +1322,7 @@ _SUBCOMMANDS = (
         ("file", dict(nargs="?", default=None, help="Path to file to seed from (e.g. SOUL.md). Omit to show usage.")),
         ("--show", dict(action="store_true", help="Show current AI peer representation from Honcho")),
     )),
-    ("migrate", "Step-by-step migration guide from openclaw-honcho to Hermes Honcho", cmd_migrate, ()),
+    ("migrate", "Step-by-step migration guide from openclaw-honcho to Eidolon Honcho", cmd_migrate, ()),
     ("enable", "Enable Honcho for the active profile", cmd_enable, ()),
     ("disable", "Disable Honcho for the active profile", cmd_disable, ()),
     ("sync", "Sync Honcho config to all existing profiles", cmd_sync, ()),
@@ -1336,8 +1336,8 @@ def honcho_command(args) -> None:
     _profile_override = getattr(args, "target_profile", None)
     sub = getattr(args, "honcho_command", None)
     if sub == "setup":  # honcho setup goes through the unified memory-provider path
-        print("\n  Honcho is configured via the memory provider system.\n  Running 'hermes memory setup'...\n")
-        from hermes_cli.memory_setup import cmd_setup_provider
+        print("\n  Honcho is configured via the memory provider system.\n  Running 'eidolon memory setup'...\n")
+        from eidolon_cli.memory_setup import cmd_setup_provider
         return cmd_setup_provider("honcho")
     handler = cmd_status if sub is None else _HANDLERS.get(sub)
     if handler is None:

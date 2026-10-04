@@ -88,7 +88,7 @@ async def test_hermes_provider_forwards_asend_values(tmp_path, monkeypatch):
 
     metadata = OAuthClientMetadata(
         redirect_uris=[AnyUrl("http://127.0.0.1:12345/callback")],
-        client_name="Hermes Agent",
+        client_name="Eidolon Agent",
     )
     provider = _HERMES_PROVIDER_CLS(
         server_name="srv",
@@ -168,7 +168,7 @@ async def test_hermes_provider_forwards_401_triggers_refresh(tmp_path, monkeypat
 
     metadata = OAuthClientMetadata(
         redirect_uris=[AnyUrl("http://127.0.0.1:12345/callback")],
-        client_name="Hermes Agent",
+        client_name="Eidolon Agent",
     )
     provider = _HERMES_PROVIDER_CLS(
         server_name="srv",
@@ -216,7 +216,7 @@ async def test_long_lived_resource_request_does_not_block_concurrent_post(
 
     MCP SDK 2.0.0 wraps its entire auth-flow generator in one lock.  Leaving
     the GET response pending then prevents a concurrent POST from even
-    acquiring its Bearer token.  Hermes narrows that lock around resource I/O
+    acquiring its Bearer token.  Eidolon narrows that lock around resource I/O
     while retaining it for OAuth state transitions.
     """
     from tools.mcp_tool import sdk_httpx
@@ -256,7 +256,7 @@ async def test_long_lived_resource_request_does_not_block_concurrent_post(
         server_url="https://example.com/mcp",
         client_metadata=OAuthClientMetadata(
             redirect_uris=[AnyUrl("http://127.0.0.1:12345/callback")],
-            client_name="Hermes Agent",
+            client_name="Eidolon Agent",
         ),
         storage=storage,
         redirect_handler=_noop_redirect,

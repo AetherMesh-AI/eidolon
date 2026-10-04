@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createClientSessionState } from '@/lib/chat-runtime'
 import { $compactingSessions, setSessionCompacting } from '@/store/compaction'
-import type { RpcEvent } from '@/types/hermes'
+import type { RpcEvent } from '@/types/eidolon'
 
 import { type MessageStreamHarness, renderMessageStream } from './test-harness'
 

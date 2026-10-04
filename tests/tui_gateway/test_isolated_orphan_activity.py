@@ -52,7 +52,7 @@ def test_real_child_detached_turn_activity(tmp_path, monkeypatch, mode):
     supervisor = HostSupervisor(
         argv=[sys.executable, str(Path(__file__).resolve()), mode, str(tmp_path)],
         registry_path=tmp_path / "host.json", env={"HERMES_HOME": str(home)},
-        expected_hermes_home=str(home), rpc_sink=server._relay_compute_host_rpc,
+        expected_eidolon_home=str(home), rpc_sink=server._relay_compute_host_rpc,
         heartbeat_secs=1, autostart=False)
     monkeypatch.setattr(server, "_get_compute_host_supervisor", lambda *args: supervisor)
     try:

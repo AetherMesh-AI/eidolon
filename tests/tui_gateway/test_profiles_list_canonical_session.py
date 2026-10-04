@@ -41,7 +41,7 @@ def home(tmp_path, monkeypatch):
 
 
 def _db(profile_dir):
-    from hermes_state import SessionDB
+    from eidolon_state import SessionDB
 
     return SessionDB(db_path=profile_dir / "state.db")
 
@@ -500,21 +500,21 @@ def test_canonical_session_scoped_per_profile_db(home):
 
 def test_profiles_list_opens_session_db_read_only(home, monkeypatch):
     """Roster inspection must not take a writable SessionDB (20s lock patience)."""
-    import hermes_state
+    import eidolon_state
 
     db = _db(home)
     _add_session(db, "bot", title="Bot Chat", ts=1000, text="hello")
     db.close()
 
     seen = []
-    Real = hermes_state.SessionDB
+    Real = eidolon_state.SessionDB
 
     class Spy(Real):
         def __init__(self, *args, **kwargs):
             seen.append(kwargs)
             super().__init__(*args, **kwargs)
 
-    monkeypatch.setattr(hermes_state, "SessionDB", Spy)
+    monkeypatch.setattr(eidolon_state, "SessionDB", Spy)
 
     row = _row(_profiles({}), "default")
     assert row["canonical_session"]["preview"]

@@ -1,9 +1,11 @@
 import fs from 'node:fs'
-import { buildDesktopBackendEnv } from './backend-env'
-import { getVenvSitePackagesEntries } from './windows-hermes-path'
 import path from 'node:path'
+
 import { checkArchiveUpdate, prepareArchiveUpdateWithConsent, preparedSourceBackend } from './archive-update-source'
+import { buildDesktopBackendEnv } from './backend-env'
 import { runBootstrap } from './bootstrap-runner'
+import { hasRuntimeSource, runtimeCliModule } from './eidolon-runtime'
+import { getVenvSitePackagesEntries } from './windows-eidolon-path'
 
 /** Electron supplies only the dialog and progress boundaries. */
 export function createArchiveUpdateCaller(options: {
@@ -97,7 +99,7 @@ export function createSourcePythonBackend(root: string, label: string, backendAr
     kind: 'python',
     label,
     command,
-    args: ['-m', 'hermes_cli.main', ...backendArgs],
+    args: ['-m', runtimeCliModule(root), ...backendArgs],
     env: buildDesktopBackendEnv({
       hermesHome: context.hermesHome,
       pythonPathEntries: [root, ...getVenvSitePackagesEntries(venvRoot)],
@@ -114,12 +116,12 @@ export function selectSourceBackend(options: {
   overrideRoot?: string; packaged: boolean; sourceRepoRoot: string; hermesHome: string
   backendArgs: string[]; findSystemPython: () => string | null
 }) {
-  const create = (root: string, name: string) => fileExists(path.join(root, 'hermes_cli', 'main.py'))
+  const create = (root: string, name: string) => hasRuntimeSource(root)
     ? createSourcePythonBackend(root, `${name} source at ${root}`, options.backendArgs, options) : null
   if (options.overrideRoot) {
     const backend = create(path.resolve(options.overrideRoot), 'Eidolon')
-    if (backend) return backend
+    if (backend) {return backend}
   }
-  if (!options.packaged) return create(options.sourceRepoRoot, 'Eidolon')
+  if (!options.packaged) {return create(options.sourceRepoRoot, 'Eidolon')}
   return preparedSourceBackend(options.hermesHome, root => create(root, 'Eidolon'))
 }

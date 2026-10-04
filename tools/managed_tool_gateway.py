@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import Callable, Optional
 
-from hermes_constants import get_hermes_home
+from eidolon_constants import get_eidolon_home
 from tools.tool_backend_helpers import managed_nous_tools_enabled
 
 logger = logging.getLogger(__name__)
@@ -33,8 +33,8 @@ def _clean(value: object) -> Optional[str]:
 
 
 def auth_json_path():
-    """Return the Hermes auth store path, respecting HERMES_HOME overrides."""
-    return get_hermes_home() / "auth.json"
+    """Return the Eidolon auth store path, respecting HERMES_HOME overrides."""
+    return get_eidolon_home() / "auth.json"
 
 
 def _read_nous_provider_state() -> Optional[dict]:
@@ -95,7 +95,7 @@ def read_nous_access_token() -> Optional[str]:
     if cached_token and not _access_token_is_expiring(nous_provider.get("expires_at"), _NOUS_ACCESS_TOKEN_REFRESH_SKEW_SECONDS):
         return cached_token
     try:
-        from hermes_cli.auth import resolve_nous_access_token
+        from eidolon_cli.auth import resolve_nous_access_token
 
         if refreshed_token := _clean(resolve_nous_access_token(refresh_skew_seconds=_NOUS_ACCESS_TOKEN_REFRESH_SKEW_SECONDS)):
             return refreshed_token

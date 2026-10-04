@@ -23,7 +23,7 @@ import { usePromptActions } from '@/app/session/hooks/use-prompt-actions'
 import type { ClientSessionState } from '@/app/types'
 import { chatMessageText } from '@/lib/chat-messages'
 import { createClientSessionState } from '@/lib/chat-runtime'
-import type { RpcEvent } from '@/types/hermes'
+import type { RpcEvent } from '@/types/eidolon'
 
 import { STREAM_DELTA_FLUSH_MS } from './utils'
 

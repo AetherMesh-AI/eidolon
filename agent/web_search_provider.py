@@ -30,7 +30,7 @@ def get_provider_env(name: str) -> str:
     import contexts). See #40190.
     """
     try:
-        from hermes_cli.config import get_env_value
+        from eidolon_cli.config import get_env_value
 
         val = get_env_value(name)
     except Exception:  # noqa: BLE001 — config layer optional here
@@ -47,7 +47,7 @@ class WebSearchProvider(ProviderBase):
     @abc.abstractmethod
     def is_available(self) -> bool:
         """True when this provider can service calls. Cheap check only (env var, importable
-        dep, instance URL) — NO network; runs at tool registration and on every ``hermes tools`` paint."""
+        dep, instance URL) — NO network; runs at tool registration and on every ``eidolon tools`` paint."""
 
     def supports_search(self) -> bool:
         """True if this provider implements :meth:`search`."""

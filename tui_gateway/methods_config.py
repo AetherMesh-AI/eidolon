@@ -4,8 +4,8 @@
 
 from .method_ctx import HandlerRegistry, bind_module
 
-from hermes_constants import DEFAULT_INDICATOR_STYLE, INDICATOR_STYLES
-from hermes_constants import display_hermes_home as _display_hermes_home
+from eidolon_constants import DEFAULT_INDICATOR_STYLE, INDICATOR_STYLES
+from eidolon_constants import display_eidolon_home as _display_eidolon_home
 
 _registry = HandlerRegistry()
 method = _registry.method
@@ -35,7 +35,7 @@ def _(rid, params: dict) -> dict:
     with _profile_db(params) as db:
         if db is None:
             return _ok(rid, {"repos": []})
-        from hermes_cli import projects_db as pdb
+        from eidolon_cli import projects_db as pdb
         policy = _repo_discovery_policy()
         with pdb.connect_closing() as conn:
             _reconcile_repo_discovery(pdb, conn, policy, _repo_discovery_policy_key(policy))
@@ -51,7 +51,7 @@ def _(rid, params: dict) -> dict:
 @_projects_handler("projects.record_repos")
 def _(rid, params: dict) -> dict:
     """Persist repo roots found by the client's (desktop-side) scan; return the merged list."""
-    from hermes_cli import projects_db as pdb
+    from eidolon_cli import projects_db as pdb
     policy = _repo_discovery_policy()
     policy_key = _repo_discovery_policy_key(policy)
     incoming = params.get("discovery_policy")
@@ -129,7 +129,7 @@ _THINKING_MODES = frozenset({"collapsed", "truncated", "full"})
 
 
 def _cfg_get_provider(params):
-    from hermes_cli.models import list_available_providers, normalize_provider
+    from eidolon_cli.models import list_available_providers, normalize_provider
     model = _resolve_model()
     parts = model.split("/", 1)
     return {"model": model, "provider": normalize_provider(parts[0]) if len(parts) > 1 else "unknown",
@@ -144,7 +144,7 @@ def _cfg_get_project(params):
 
 def _cfg_get_personality(params):
     # EFFECTIVE personality via the single owner — a stale/unknown name must not show as active.
-    from hermes_cli.personality import active_personality_name
+    from eidolon_cli.personality import active_personality_name
     return {"value": active_personality_name(_load_cfg()) or "none"}
 
 
@@ -185,7 +185,7 @@ def _cfg_get_thinking_mode(params):
 
 
 def _cfg_get_mtime(params):
-    cfg_path = _hermes_home / "config.yaml"
+    cfg_path = _eidolon_home / "config.yaml"
     try:
         mtime = cfg_path.stat().st_mtime if cfg_path.exists() else 0
     except Exception:
@@ -198,7 +198,7 @@ def _cfg_get_mtime(params):
 # key -> getter(params); bind_module rebinds the table's functions onto server.py's globals.
 _CONFIG_GETTERS = {
     "provider": _cfg_get_provider,
-    "profile": lambda params: {"home": str(_hermes_home), "display": _display_hermes_home()},
+    "profile": lambda params: {"home": str(_eidolon_home), "display": _display_eidolon_home()},
     "project": _cfg_get_project,
     "full": lambda params: {"config": _load_cfg()},
     "prompt": lambda params: {"prompt": _load_cfg().get("custom_prompt", "")},
@@ -252,7 +252,7 @@ def _readiness_check(rid, params, probe):
     profile = str(params.get("profile") or "").strip() if isinstance(params, dict) else ""
     scope = contextlib.nullcontext()
     if profile:
-        from hermes_cli import profiles as profiles_mod
+        from eidolon_cli import profiles as profiles_mod
         if not profiles_mod.profile_exists(profile):
             return _ok(rid, {"ok": False, "profile": params.get("profile"),
                              "error": f"Profile '{profile}' does not exist on this backend."})
@@ -268,7 +268,7 @@ def _readiness_check(rid, params, probe):
 def _(rid, params: dict) -> dict:
     """Loose provider check; ``profile`` (optional) scopes it to that profile's home."""
     try:
-        from hermes_cli.main import _has_any_provider_configured
+        from eidolon_cli.main import _has_any_provider_configured
         return _readiness_check(rid, params, lambda profile, scoped: {
             "provider_configured": bool(_has_any_provider_configured(strict_profile_scope=bool(profile))),
             **scoped})
@@ -283,9 +283,9 @@ def _(rid, params: dict) -> dict:
     error when the model can't be served, so UIs surface onboarding before a doomed prompt.
     ``profile`` answers for THAT profile's pin and ``.env``; unknown -> ``ok=False``."""
     try:
-        from hermes_cli.runtime_provider import resolve_runtime_provider
-        from hermes_cli.auth import has_usable_secret
-        from hermes_cli.main import _has_any_provider_configured
+        from eidolon_cli.runtime_provider import resolve_runtime_provider
+        from eidolon_cli.auth import has_usable_secret
+        from eidolon_cli.main import _has_any_provider_configured
         requested = str(params.get("provider") or "").strip() or None
 
         def probe(profile, scoped):
@@ -299,7 +299,7 @@ def _(rid, params: dict) -> dict:
                         "source": src, "error": error, **scoped}
             if (not provider_configured and provider == "bedrock"
                     and source in {"iam-role", "aws-sdk-default-chain"}):
-                return fail("No Hermes provider is configured.", source)
+                return fail("No Eidolon provider is configured.", source)
             api_key = runtime.get("api_key")
             api_key_text = "" if callable(api_key) else str(api_key or "").strip()
             if not (callable(api_key) or api_key_text in {"aws-sdk", "no-key-required"}

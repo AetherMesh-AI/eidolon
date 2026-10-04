@@ -1,7 +1,7 @@
 """The test suite must never write into the operator's real Hermes logs.
 
-`hermes_cli/main.py` calls `setup_logging()` at module scope, which resolves
-`get_hermes_home()` and attaches rotating file handlers to the ROOT logger.
+`eidolon_cli/main.py` calls `setup_logging()` at module scope, which resolves
+`get_eidolon_home()` and attaches rotating file handlers to the ROOT logger.
 Importing it - which many test modules do, directly or transitively - wires
 the whole pytest session's logging to `<HERMES_HOME>/logs/agent.log`.
 
@@ -25,7 +25,7 @@ from pathlib import Path
 import pytest
 
 
-def _real_hermes_home() -> Path:
+def _real_eidolon_home() -> Path:
     """Where the operator's logs live, ignoring any test sandboxing."""
     return Path.home() / ".hermes"
 
@@ -51,9 +51,9 @@ def _all_file_destinations() -> list[str]:
     collect(logging.getLogger().handlers)
 
     try:
-        import hermes_logging
+        import eidolon_logging
 
-        listener = getattr(hermes_logging, "_queue_listener", None)
+        listener = getattr(eidolon_logging, "_queue_listener", None)
         if listener is not None:
             collect(getattr(listener, "handlers", ()))
     except Exception:
@@ -63,7 +63,7 @@ def _all_file_destinations() -> list[str]:
 
 
 class TestLogIsolation:
-    def test_hermes_home_is_sandboxed_before_imports(self):
+    def test_eidolon_home_is_sandboxed_before_imports(self):
         # Deliberately NOT os.environ: by test time the per-test `_isolate_env`
         # fixture has sandboxed HERMES_HOME, so reading it here would pass even
         # with the conftest block deleted. Assert the value captured at conftest
@@ -71,15 +71,15 @@ class TestLogIsolation:
         from tests.conftest import HERMES_HOME_AT_CONFTEST_IMPORT as home
 
         assert home, "conftest must set HERMES_HOME before test modules import"
-        assert Path(home).resolve() != _real_hermes_home().resolve(), (
+        assert Path(home).resolve() != _real_eidolon_home().resolve(), (
             f"HERMES_HOME pointed at the operator's real home ({home}) when "
             "conftest loaded; import-time setup_logging() writes to their agent.log"
         )
 
     def test_importing_the_cli_does_not_target_the_real_logs(self):
-        pytest.importorskip("hermes_cli.main")
+        pytest.importorskip("eidolon_cli.main")
 
-        real_logs = str(_real_hermes_home() / "logs")
+        real_logs = str(_real_eidolon_home() / "logs")
         offenders = [p for p in _all_file_destinations() if p.startswith(real_logs)]
 
         assert offenders == [], (

@@ -3,16 +3,16 @@
 Protocol: reads JSON lines from stdin {id, command}, writes {id, ok, output|error} to stdout.
 """
 
-# Stop a ``utils/`` (or ``proxy/``, ``ui/``) package in the launch directory from shadowing Hermes's own
+# Stop a ``utils/`` (or ``proxy/``, ``ui/``) package in the launch directory from shadowing Eidolon's own
 # top-level modules: this worker is spawned as ``-m tui_gateway.slash_worker`` with the user's CWD, so
 # ``import cli`` would otherwise resolve ``utils`` to a colliding local package and crash the child in a
-# retry loop. ``hermes_bootstrap`` lives at the repo root (no collision risk), so importing it first is safe.
-# ``hermes_bootstrap`` lives at the repo root, so importing it is safe before the guard runs (its name won't
+# retry loop. ``eidolon_bootstrap`` lives at the repo root (no collision risk), so importing it first is safe.
+# ``eidolon_bootstrap`` lives at the repo root, so importing it is safe before the guard runs (its name won't
 # collide with a user package), and it owns the canonical path-hardening logic shared with the other entry
 # points — #51693 added the guard to ``entry.py``/``acp_adapter/entry.py`` but missed this child.
-import hermes_bootstrap
+import eidolon_bootstrap
 
-hermes_bootstrap.harden_import_path()
+eidolon_bootstrap.harden_import_path()
 
 import argparse
 import contextlib
@@ -44,11 +44,11 @@ def _is_orphaned(original_ppid, getppid=os.getppid) -> bool:
 
 def _prepare_slash_worker_runtime() -> None:
     """Start bounded MCP discovery before HermesCLI snapshots tools: each slash_worker child is its
-    own process — the parent ``hermes serve`` discovery thread does not populate this registry.
+    own process — the parent ``eidolon serve`` discovery thread does not populate this registry.
 
     See #61891.
     """
-    from hermes_cli.mcp_startup import start_background_mcp_discovery, wait_for_mcp_discovery
+    from eidolon_cli.mcp_startup import start_background_mcp_discovery, wait_for_mcp_discovery
     start_background_mcp_discovery(logger=logger, thread_name="slash-worker-mcp-discovery")
     wait_for_mcp_discovery()
 
@@ -134,7 +134,7 @@ def main():
             # Workers persist for the TUI session: release allocator pages at the command boundary like
             # other long-lived gateway processes (trim_memory's shared cooldown coalesces nearby activity).
             try:
-                from hermes_cli.mem_trim import trim_memory
+                from eidolon_cli.mem_trim import trim_memory
                 trim_memory(reason="slash worker command completion")
             except Exception as exc:
                 # debug, not warning — a persistent failure would repeat every command.

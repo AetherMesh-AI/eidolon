@@ -15,18 +15,18 @@ Search arXiv papers by keyword, author, category, or ID.
 | | |
 |---|---|
 | Source | Bundled (installed by default) |
-| Path | `skills/research\arxiv` |
+| Path | `skills/research/arxiv` |
 | Version | `1.0.0` |
 | Author | Hermes Agent |
 | License | MIT |
 | Platforms | linux, macos, windows |
 | Tags | `Research`, `Arxiv`, `Papers`, `Academic`, `Science`, `API` |
-| Related skills | `ocr-and-documents` |
+| Related skills | [`pdf`](/docs/user-guide/skills/bundled/productivity/productivity-pdf) |
 
 ## Reference: full SKILL.md
 
 :::info
-The following is the complete skill definition that Hermes loads when this skill is triggered. This is what the agent sees as instructions when the skill is active.
+The following is the complete skill definition that Eidolon loads when this skill is triggered. This is what the agent sees as instructions when the skill is active.
 :::
 
 # arXiv Research

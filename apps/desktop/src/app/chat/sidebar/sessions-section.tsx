@@ -7,8 +7,8 @@ import { type NewSessionSplitHandler, startNewSessionDrag } from '@/app/chat/new
 import { SidebarPanelLabel } from '@/app/shell/sidebar-label'
 import { DisclosureCaret } from '@/components/ui/disclosure-caret'
 import { SidebarGroup, SidebarGroupContent } from '@/components/ui/sidebar'
+import type { SessionInfo } from '@/eidolon'
 import type { HermesGitWorktree } from '@/global'
-import type { SessionInfo } from '@/hermes'
 import { useI18n } from '@/i18n'
 import { flattenSessionsWithBranches } from '@/lib/session-branch-tree'
 import {

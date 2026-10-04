@@ -57,7 +57,7 @@ _NONFINAL_RETRIES = 1  # content-agnostic retries when the stream yields no fina
 
 _NO_AUTH = (
     "No Codex/ChatGPT OAuth credentials available. Run "
-    "`hermes auth codex` (or `hermes setup` → Codex) to sign in.")
+    "`eidolon auth codex` (or `eidolon setup` → Codex) to sign in.")
 
 
 def _summarize_error_body(body: str) -> str:
@@ -336,7 +336,7 @@ class OpenAICodexImageGenProvider(StaticImageGenProvider):
             "tag": "gpt-image-2 via ChatGPT/Codex OAuth — no API key required; supports text and image inputs",
             "env_vars": [],
             "post_setup_hint": (
-                "Sign in with `hermes auth codex` (or `hermes setup` → Codex) "
+                "Sign in with `eidolon auth codex` (or `eidolon setup` → Codex) "
                 "if you haven't already. No API key needed."),
         }
 

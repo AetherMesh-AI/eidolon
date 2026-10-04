@@ -85,10 +85,10 @@ def _write_cmd(path: Path, text: str) -> None:
 def test_venv_sweep_stops_managed_runtime_children_but_not_unrelated_processes(
     tmp_path: Path,
 ) -> None:
-    hermes_home = tmp_path / "hermes-home"
-    install_dir = hermes_home / "hermes-agent"
+    eidolon_home = tmp_path / "eidolon-home"
+    install_dir = eidolon_home / "eidolon-agent"
     venv_scripts = install_dir / "venv" / "Scripts"
-    runtime_dir = install_dir / ".hermes-runtime" / "python" / "generation-test"
+    runtime_dir = install_dir / ".eidolon-runtime" / "python" / "generation-test"
     unrelated_dir = tmp_path / "unrelated"
     fake_bin = tmp_path / "fake-bin"
     for directory in (venv_scripts, runtime_dir, unrelated_dir, fake_bin):
@@ -117,11 +117,11 @@ def test_venv_sweep_stops_managed_runtime_children_but_not_unrelated_processes(
         fake_bin / "taskkill.cmd",
         "@echo off\n"
         'echo %* | "%SystemRoot%\\System32\\findstr.exe" /I '
-        '/C:"/IM hermes.exe" >nul\n'
+        '/C:"/IM eidolon.exe" >nul\n'
         "if not errorlevel 1 exit /b 0\n"
         '"%SystemRoot%\\System32\\taskkill.exe" %*\n',
     )
-    uv = hermes_home / "bin" / "uv.exe"
+    uv = eidolon_home / "bin" / "uv.exe"
     uv.parent.mkdir(parents=True)
     compile_fake_uv(POWERSHELL, uv)
     wrapper = tmp_path / "run-venv-stage.ps1"
@@ -129,7 +129,7 @@ def test_venv_sweep_stops_managed_runtime_children_but_not_unrelated_processes(
         f"function global:schtasks {{ & '{fake_bin / 'schtasks.cmd'}' @args }}\n"
         f"function global:taskkill {{ & '{fake_bin / 'taskkill.cmd'}' @args }}\n"
         f"& '{INSTALL_PS1}' -Stage venv -NonInteractive "
-        f"-InstallDir '{install_dir}' -HermesHome '{hermes_home}'\n"
+        f"-InstallDir '{install_dir}' -HermesHome '{eidolon_home}'\n"
         "exit $LASTEXITCODE\n",
         encoding="utf-8",
     )

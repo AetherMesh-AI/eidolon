@@ -1,8 +1,8 @@
 import { useStore } from '@nanostores/react'
 import { useEffect, useMemo, useState } from 'react'
 
+import type { SessionInfo } from '@/eidolon'
 import type { HermesGitWorktree } from '@/global'
-import type { SessionInfo } from '@/hermes'
 import { desktopGit } from '@/lib/desktop-git'
 import { mapPool } from '@/lib/pool'
 import { $sidebarWorkspaceNodeOpen, toggleWorkspaceNodeCollapsed } from '@/store/layout'

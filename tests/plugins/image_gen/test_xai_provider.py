@@ -21,7 +21,7 @@ def _fake_api_key(monkeypatch, tmp_path):
     monkeypatch.setenv("XAI_API_KEY", "test-key-12345")
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     try:
-        import hermes_cli.config as cfg_mod
+        import eidolon_cli.config as cfg_mod
 
         if hasattr(cfg_mod, "_invalidate_load_config_cache"):
             cfg_mod._invalidate_load_config_cache()
@@ -368,7 +368,7 @@ class TestGenerate:
         call_args = mock_post.call_args
         headers = call_args.kwargs.get("headers") or call_args[1].get("headers")
         assert "Bearer test-key-12345" in headers["Authorization"]
-        assert "Hermes-Agent" in headers["User-Agent"]
+        assert "Eidolon-Agent" in headers["User-Agent"]
 
     def test_payload_resolution_is_literal_1k_or_2k(self):
         """Regression: xAI API rejects numeric resolutions ("1024"/"2048") with 422.
@@ -522,7 +522,7 @@ def test_xai_image_field_expands_user_home(tmp_path, monkeypatch):
 
 
 class TestXAIImageFieldReadGuard:
-    """#57698: local image inputs must not read Hermes credential stores."""
+    """#57698: local image inputs must not read Eidolon credential stores."""
 
     def test_xai_image_field_blocks_credential_store(self, tmp_path, monkeypatch):
         from plugins.image_gen.xai import _xai_image_field

@@ -1,5 +1,5 @@
+import type { ProjectInfo, SessionInfo } from '@/eidolon'
 import type { HermesGitWorktree } from '@/global'
-import type { ProjectInfo, SessionInfo } from '@/hermes'
 import { normalize } from '@/lib/text'
 
 import { rankSessions } from '../order'

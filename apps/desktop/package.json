@@ -1,8 +1,8 @@
 {
-  "name": "hermes",
+  "name": "eidolon",
   "productName": "Eidolon",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.2.0-alpha",
   "description": "Eidolon, an experimental desktop agent manager from AetherMesh.",
   "author": "AetherMesh contributors",
   "repository": {
@@ -92,7 +92,7 @@
     "@dnd-kit/core": "6.3.1",
     "@dnd-kit/sortable": "10.0.0",
     "@dnd-kit/utilities": "3.2.2",
-    "@hermes/shared": "file:../shared",
+    "@aethermesh/shared": "file:../shared",
     "@icons-pack/react-simple-icons": "13.11.1",
     "@lezer/highlight": "1.2.3",
     "@nanostores/react": "1.1.0",
@@ -192,9 +192,9 @@
     "executableName": "Eidolon",
     "protocols": [
       {
-        "name": "Hermes Protocol",
+        "name": "Eidolon Protocol",
         "schemes": [
-          "hermes"
+          "eidolon"
         ]
       }
     ],

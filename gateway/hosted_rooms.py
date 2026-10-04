@@ -397,14 +397,14 @@ def _schema_is_current(conn: sqlite3.Connection) -> bool:
 
 def default_db_path() -> Path:
     """Return the gateway-wide state database for the active install."""
-    from hermes_constants import get_hermes_home
-    home = get_hermes_home()
+    from eidolon_constants import get_eidolon_home
+    home = get_eidolon_home()
     return (home.parent.parent if home.parent.name == "profiles" else home) / "state.db"
 
 
 def local_authority_gateway_id() -> str:
     """Return the stable server-owned identity for hosted-room authority."""
-    from hermes_cli.install_identity import get_install_id
+    from eidolon_cli.install_identity import get_install_id
     install_id = get_install_id()
     if not install_id:
         raise HostedRoomError("stable gateway install identity is unavailable")

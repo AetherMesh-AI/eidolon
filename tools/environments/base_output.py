@@ -15,8 +15,8 @@ from collections import deque
 from pathlib import Path
 from typing import IO, Callable, Protocol
 
-from hermes_constants import get_hermes_home
-from hermes_cli._subprocess_compat import windows_hide_flags
+from eidolon_constants import get_eidolon_home
+from eidolon_cli._subprocess_compat import windows_hide_flags
 
 # Sentinel capacity for full-fidelity capture: large enough that the collector
 # never evicts, so bounded and unbounded modes share one code path.
@@ -183,7 +183,7 @@ def _new_output_collector(proc, bounded_capture: bool) -> _BoundedOutputCollecto
         capture_limit = 50_000
     spill_path = None
     try:
-        spill_dir = get_hermes_home() / "cache" / "terminal-output"
+        spill_dir = get_eidolon_home() / "cache" / "terminal-output"
         spill_path = spill_dir / f"out-{int(time.time())}-{os.getpid()}-{id(proc) & 0xffff:x}.log"
         if spill_dir.is_dir():
             cutoff = time.time() - _SPILL_MAX_AGE_S

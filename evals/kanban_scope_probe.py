@@ -14,8 +14,8 @@ if len(sys.argv) == 2:
         p = subprocess.run([sys.executable, __file__, str(repo), "isolated"], cwd=home, env=env, stdin=subprocess.DEVNULL)
         sys.exit(p.returncode)
 sys.path.insert(0, str(repo))
-from hermes_cli import kanban_db as kb
-from hermes_cli.kanban_db_connect import connect
+from eidolon_cli import kanban_db as kb
+from eidolon_cli.kanban_db_connect import connect
 from agent.transports.codex_app_server import CodexAppServerClient
 
 home = Path(os.environ["HOME"])
@@ -34,7 +34,7 @@ ch.mkdir()
 (ch / "config.toml").write_text(
     'model="fixture"\nmodel_provider="fixture"\n'
     '[model_providers.fixture]\nname="fixture"\nbase_url="http://127.0.0.1:9/v1"\nwire_api="responses"\n'
-    '[mcp_servers.hermes-mcp]\ncommand=' + json.dumps(sys.executable) + '\nargs=["-m","agent.transports.hermes_tools_mcp_server"]\nstartup_timeout_sec=40\n'
+    '[mcp_servers.hermes-mcp]\ncommand=' + json.dumps(sys.executable) + '\nargs=["-m","agent.transports.eidolon_tools_mcp_server"]\nstartup_timeout_sec=40\n'
     '[mcp_servers.hermes-mcp.env]\nPYTHONPATH=' + json.dumps(str(repo)) + '\nHERMES_HOME=' + json.dumps(str(hh)) + '\n'
 )
 report = {}

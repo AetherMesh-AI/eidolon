@@ -6,8 +6,8 @@ import type {
   SkillHubSourcesResponse,
   SkillInfo,
   StarmapGraph
-} from '@/types/hermes'
-import type { ActionResponse } from '@/types/hermes'
+} from '@/types/eidolon'
+import type { ActionResponse } from '@/types/eidolon'
 
 import { capabilityScoped, hermesApi, type ProfileScope, profileScoped } from './client'
 

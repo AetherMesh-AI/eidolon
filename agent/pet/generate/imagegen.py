@@ -38,7 +38,7 @@ class SpriteProvider:
 
 def _discover() -> None:
     try:
-        from hermes_cli.plugins import _ensure_plugins_discovered
+        from eidolon_cli.plugins import _ensure_plugins_discovered
 
         _ensure_plugins_discovered()
     except Exception as exc:  # noqa: BLE001 - discovery is best-effort
@@ -82,7 +82,7 @@ def resolve_provider(*, require_references: bool = True, prefer: str | None = No
         return SpriteProvider(name=getattr(active, "name", "unknown"), provider=active, supports_references=False)
     raise GenerationError(
         "Pet generation needs an image backend that supports reference images. "
-        "Open `hermes tools` → Image Generation and configure Nous Portal, "
+        "Open `eidolon tools` → Image Generation and configure Nous Portal, "
         "OpenRouter, or OpenAI (gpt-image-2) with an API key."
     )
 

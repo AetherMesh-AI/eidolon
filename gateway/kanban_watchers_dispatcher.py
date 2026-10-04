@@ -18,12 +18,12 @@ from gateway.kanban_watchers_common import _board_slugs, _positive_int_setting, 
 
 
 def _kbc():
-    from hermes_cli import kanban_db_connect
+    from eidolon_cli import kanban_db_connect
     return kanban_db_connect
 
 
 def _kbd():
-    from hermes_cli import kanban_db_dispatch
+    from eidolon_cli import kanban_db_dispatch
     return kanban_db_dispatch
 
 _CORRUPT_DB_MARKERS = ("file is not a database", "database disk image is malformed")
@@ -194,7 +194,7 @@ class _KanbanDispatcher:
                     "SQLite database; pausing dispatch for this board until "
                     "the file changes, the gateway restarts, or the "
                     "quarantine timer expires. Move or restore the file, "
-                    "then run `hermes kanban init` if you need a fresh board.",
+                    "then run `eidolon kanban init` if you need a fresh board.",
                     slug, fingerprint[0],
                 )
                 return None
@@ -241,7 +241,7 @@ class _KanbanDispatcher:
         load from burst-spending the aux LLM. Returns the number decomposed.
         """
         try:
-            from hermes_cli import kanban_decompose as _decomp
+            from eidolon_cli import kanban_decompose as _decomp
         except Exception as exc:  # pragma: no cover
             logger.warning("kanban auto-decompose: import failed (%s); skipping", exc)
             return 0

@@ -2,7 +2,7 @@
  * Window translucency (see-through window).
  *
  * One lever, 0–100. Two modes decide HOW the desktop shows through — see
- * `@hermes/shared/translucency`, which owns the mapping both this store and the
+ * `@aethermesh/shared/translucency`, which owns the mapping both this store and the
  * main process read.
  *
  * Settings are kept per light/dark appearance: a tint that reads as a whisper
@@ -42,7 +42,7 @@ import {
   type TranslucencyMode,
   type TranslucencyState,
   type TranslucencyValues
-} from '@hermes/shared/translucency'
+} from '@aethermesh/shared/translucency'
 import { atom, computed } from 'nanostores'
 
 import { isMacPlatform, isWindowsPlatform } from '@/lib/platform'

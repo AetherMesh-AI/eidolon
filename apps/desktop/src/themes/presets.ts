@@ -18,8 +18,8 @@
  * re-derived. `nous-alt` is first-party — do not re-derive it from GitHub.
  */
 
-import type { DesktopTheme, DesktopThemeTypography } from './types'
 import { eidolonTheme } from './eidolon'
+import type { DesktopTheme, DesktopThemeTypography } from './types'
 
 // Color-emoji fonts to append to every stack as a last resort. None of the UI
 // text/mono fonts carry emoji glyphs, so without this emoji render as tofu
@@ -174,8 +174,8 @@ export const githubTheme: DesktopTheme = {
  */
 export const nousTheme: DesktopTheme = {
   name: 'nous',
-  label: 'Nous',
-  description: 'GitHub chrome, Nous blue accent',
+  label: 'AetherMesh',
+  description: 'GitHub chrome, AetherMesh blue accent',
   colors: {
     background: '#ffffff',
     foreground: '#1f2328',
@@ -601,7 +601,7 @@ const nousAltTintTransparent = (pct: number) => `color-mix(in srgb, ${NOUS_ALT_B
  */
 export const nousAltTheme: DesktopTheme = {
   name: 'nous-alt',
-  label: 'Nous Alt',
+  label: 'AetherMesh Alt',
   description: 'Glass neutrals, cream on mission-blue',
   colors: {
     background: '#F8FAFF',

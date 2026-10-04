@@ -30,7 +30,7 @@ def _is_successful_goal_turn(result: Any, status: str, raw: Any) -> bool:
 
 def _active_goal_manager(session: dict):
     """The session's GoalManager when a goal is active, else None."""
-    from hermes_cli.goals import GoalManager
+    from eidolon_cli.goals import GoalManager
     try:
         max_turns = int((_load_cfg().get("goals") or {}).get("max_turns", 20) or 20)
     except Exception:
@@ -153,7 +153,7 @@ def _route_turn_images(agent, prompt: Any, images: list[str]) -> Any:
     Decision table: agent/image_routing.py."""
     try:
         from agent.image_routing import build_native_content_parts, decide_image_input_mode
-        from hermes_cli.config import load_config as _tui_load_config
+        from eidolon_cli.config import load_config as _tui_load_config
         _provider, _model = _active_image_routing_identity(agent)
         mode = decide_image_input_mode(
             _provider, _model, _tui_load_config(),
@@ -196,7 +196,7 @@ def _start_turn_voice() -> tuple[Any, bool]:
             if is_audio_output_active():
                 return False
             try:
-                from hermes_cli.voice import is_continuous_active
+                from eidolon_cli.voice import is_continuous_active
                 return not is_continuous_active()
             except Exception:
                 return True
@@ -295,7 +295,7 @@ def _goal_followup_after_turn(
         if session.get("session_key") and (goal_mgr := _active_goal_manager(session)) is not None:
             _active_deleg = 0
             try:
-                from hermes_cli.goals import count_active_delegations, gather_background_processes as _gather_bg
+                from eidolon_cli.goals import count_active_delegations, gather_background_processes as _gather_bg
                 # Only THIS session's processes (TUI turns register under session_key): subagents'
                 # pollers must not park the parent's goal. Same rule as the CLI and gateway loops.
                 _bg_procs = _gather_bg(owner_task_id=session.get("session_key") or None)
@@ -317,7 +317,7 @@ def _goal_followup_after_turn(
 def _after_complete_turn(sid: str, session: dict, st: _TurnRun, raw: Any) -> None:
     """Hooks for a ``complete`` turn: /loop tick evaluation, pending title, voice fallback."""
     try:
-        from hermes_cli.loops import LoopManager
+        from eidolon_cli.loops import LoopManager
         loop_sid_key = session.get("session_key") or ""
         if loop_sid_key:
             loop_mgr = LoopManager(session_id=loop_sid_key)
@@ -347,7 +347,7 @@ def _after_complete_turn(sid: str, session: dict, st: _TurnRun, raw: Any) -> Non
         try:
             threading.Thread(target=_speak_text_with_barge, args=(raw,), daemon=True).start()
         except ImportError:
-            logger.warning("voice TTS skipped: hermes_cli.voice unavailable")
+            logger.warning("voice TTS skipped: eidolon_cli.voice unavailable")
         except Exception as e:
             logger.warning("voice TTS dispatch failed: %s", e)
 
@@ -446,7 +446,7 @@ def _prepare_turn_input(sid: str, session: dict, st: _TurnRun, text: Any, images
     scopes.session_tokens = _set_session_context(session["session_key"], ui_session_id=sid)
     profile_home = session.get("profile_home")
     if profile_home:
-        scopes.home = set_hermes_home_override(profile_home)
+        scopes.home = set_eidolon_home_override(profile_home)
         scopes.secret = set_secret_scope(build_profile_secret_scope(Path(profile_home)))
         from tools.terminal_scope import install_profile_terminal_scope
         scopes.terminal = install_profile_terminal_scope(Path(profile_home))
@@ -714,7 +714,7 @@ def _finish_turn(sid: str, session: dict, st: _TurnRun) -> None:
     if isinstance(run_kwargs, dict):
         run_kwargs.clear()
     try:  # while the profile HERMES_HOME override is still active (session's own config)
-        from hermes_cli.mem_trim import trim_memory
+        from eidolon_cli.mem_trim import trim_memory
         trim_memory(reason="tui turn completion")
     except Exception:
         logger.debug("post-turn memory trim failed", exc_info=True)
@@ -738,7 +738,7 @@ def _finish_turn(sid: str, session: dict, st: _TurnRun) -> None:
             from tools.approval_context import reset_current_session_key
             reset_current_session_key(scopes.approval)
     if scopes.home is not None:
-        reset_hermes_home_override(scopes.home)
+        reset_eidolon_home_override(scopes.home)
     if scopes.secret is not None:
         reset_secret_scope(scopes.secret)
     if scopes.terminal is not None:

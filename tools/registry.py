@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Set
 
-from hermes_constants import hermes_home_key
+from eidolon_constants import hermes_home_key
 
 logger = logging.getLogger(__name__)
 
@@ -129,8 +129,8 @@ def _discovery_cache_path() -> Optional[Path]:
     """Path of the tool-discovery verdict cache, or None if unresolvable."""
     try:
         # Deferred import keeps tools/registry.py a no-deps leaf at import time.
-        from hermes_constants import get_hermes_home
-        return Path(get_hermes_home()) / "cache" / "tool_discovery_cache.json"
+        from eidolon_constants import get_eidolon_home
+        return Path(get_eidolon_home()) / "cache" / "tool_discovery_cache.json"
     except Exception:
         return None
 
@@ -196,7 +196,7 @@ _OVERRIDE_DENIED_MSG = (
 
 # ---- check_fn TTL cache ----------------------------------------------------
 # check_fns probe external state (Docker, Modal SDK, playwright) that changes on human
-# timescales, so results are cached ~30 s: env-var flips via ``hermes tools`` still land
+# timescales, so results are cached ~30 s: env-var flips via ``eidolon tools`` still land
 # within a turn or two. Transient-failure suppression: a flapping probe (``docker version``
 # timing out under load) would silently strip a whole toolset from the agent being built —
 # most visibly a subagent reporting "Tool read_file does not exist" — so a failure within a
@@ -246,7 +246,7 @@ def check_fn_cache_scope() -> Optional[str]:
     availability is request-bound (changes on every attach/detach), so a fully bound
     browser-control request bypasses this cache AND model_tools' outer definition cache (same
     sentinel) — one Browser session's live tools must not leak into another. Single-profile
-    processes keep the process-wide cache; a multiplex gateway installs a Hermes-home override
+    processes keep the process-wide cache; a multiplex gateway installs a Eidolon-home override
     per profile turn, so the canonical profile key is the boundary."""
     try:
         from gateway.session_context import get_session_env
@@ -256,10 +256,10 @@ def check_fn_cache_scope() -> Optional[str]:
         pass
     try:
         from agent.secret_scope import is_multiplex_active
-        from hermes_constants import get_hermes_home_override
+        from eidolon_constants import get_eidolon_home_override
         if not is_multiplex_active():
             return None
-        override = get_hermes_home_override()
+        override = get_eidolon_home_override()
         return str(Path(override).expanduser().resolve()) if override else CHECK_FN_CACHE_BYPASS
     except Exception:
         # Fail closed: bypass both cache layers rather than aliasing requests
@@ -346,7 +346,7 @@ def _memo_check(fn: Callable, memo: Dict[Callable, bool]) -> bool:
 
 
 def invalidate_check_fn_cache() -> None:
-    """Drop all cached ``check_fn`` results (after config changes like ``hermes tools enable``)."""
+    """Drop all cached ``check_fn`` results (after config changes like ``eidolon tools enable``)."""
     with _check_fn_cache_lock:
         _check_fn_cache.clear()
         _check_fn_last_good.clear()
@@ -759,7 +759,7 @@ class ToolRegistry:
 
     def get_definitions(self, tool_names: Set[str], quiet: bool = False) -> List[dict]:
         """OpenAI-format schemas for the requested tools whose ``check_fn`` passes (or is
-        absent). Probes use the ~30 s TTL cache so ``hermes tools enable`` lands quickly."""
+        absent). Probes use the ~30 s TTL cache so ``eidolon tools enable`` lands quickly."""
         result = []
         check_results: Dict[Callable, bool] = {}
         entries_by_name = {entry.name: entry for entry in self._snapshot_entries()}

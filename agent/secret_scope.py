@@ -63,7 +63,7 @@ def current_secret_scope() -> Optional[Mapping[str, str]]:
 # fail-closed path would wrongly crash). Keep this tight — when in doubt a
 # value is a profile secret. Membership is exact name OR prefix.
 _GLOBAL_ENV_EXACT = frozenset({
-    # Hermes runtime / deployment
+    # Eidolon runtime / deployment
     "HERMES_HOME", "HERMES_PROFILE", "HERMES_GATEWAY_LOCK_DIR",
     "HERMES_MAX_ITERATIONS", "HERMES_API_TIMEOUT",
     "HERMES_REDACT_SECRETS", "HERMES_NOUS_TIMEOUT_SECONDS",
@@ -170,7 +170,7 @@ def load_env_file(env_path: Path) -> Dict[str, str]:
     except (FileNotFoundError, OSError, UnicodeDecodeError):
         return secrets
 
-    from hermes_cli.config import _parse_env_value
+    from eidolon_cli.config import _parse_env_value
 
     for raw in text.splitlines():
         line = raw.strip()
@@ -191,7 +191,7 @@ def build_profile_secret_scope(hermes_home: Path) -> Dict[str, str]:
     from ``os.environ`` — so the scope holds only profile secrets."""
     secrets = load_env_file(Path(hermes_home) / ".env")
     try:
-        from hermes_cli.env_loader import get_secret_source_values
+        from eidolon_cli.env_loader import get_secret_source_values
         external_secrets = get_secret_source_values(Path(hermes_home))
     except Exception:
         external_secrets = {}

@@ -36,7 +36,7 @@ def _prefix_names_served_profile(profile: str) -> bool:
     """True when a /p/<profile>/ prefix names the profile this gateway serves. Fail closed: a
     single-profile gateway answering /p/<x>/ served the owner's toolsets under another URL."""
     try:
-        from hermes_cli.profiles import profile_matches_home
+        from eidolon_cli.profiles import profile_matches_home
         return profile_matches_home(profile)
     except Exception:
         return False
@@ -183,10 +183,10 @@ async def _call_verifier(verifier, *args, **kwargs):
 
 
 def _hermes_version() -> str:
-    """Canonical Hermes version: ``hermes_cli.__version__`` (dist-info can be stale on
+    """Canonical Eidolon version: ``eidolon_cli.__version__`` (dist-info can be stale on
     source checkouts), then distribution metadata, then "dev". Never raises."""
     with suppress(Exception):
-        from hermes_cli import __version__
+        from eidolon_cli import __version__
         return __version__
     try:
         from importlib.metadata import version
@@ -308,7 +308,7 @@ def _apply_runtime_agent_overrides(
 def _resolve_request_runtime_agent_kwargs(provider: str, target_model: Optional[str] = None) -> Dict[str, Any]:
     """gateway.run._resolve_runtime_agent_kwargs() for an explicit provider/model, so an API
     caller uses the same authenticated provider catalog without mutating config.yaml."""
-    from hermes_cli.runtime_provider import resolve_runtime_provider, format_runtime_provider_error, _get_model_config
+    from eidolon_cli.runtime_provider import resolve_runtime_provider, format_runtime_provider_error, _get_model_config
     try:
         runtime = resolve_runtime_provider(requested=provider, target_model=target_model)
     except Exception as exc:
@@ -327,7 +327,7 @@ def _request_agent_overrides(
 
     The virtual model (``hermes-agent``) means "gateway default". A bare ``model`` without
     ``provider`` is honored only when ``allow_bare_model`` (generic clients hardcode "gpt-4o";
-    OpenAI-compatible handlers pass the ``direct_model_requests`` opt-in, Hermes-native
+    OpenAI-compatible handlers pass the ``direct_model_requests`` opt-in, Eidolon-native
     endpoints always allow it). An explicit ``provider`` is always honored.
     """
     if not isinstance(body, dict):
@@ -663,8 +663,8 @@ class ResponseStore:
         if db_path is None:
             db_path = ":memory:"
             with suppress(Exception):
-                from hermes_cli.config import get_hermes_home
-                db_path = str(get_hermes_home() / "response_store.db")
+                from eidolon_cli.config import get_eidolon_home
+                db_path = str(get_eidolon_home() / "response_store.db")
         self._db_path: Optional[str] = db_path if db_path != ":memory:" else None
         try:
             self._conn = sqlite3.connect(db_path, check_same_thread=False)
@@ -672,7 +672,7 @@ class ResponseStore:
             self._conn = sqlite3.connect(":memory:", check_same_thread=False)
             self._db_path = None
         # Shared WAL-fallback so response_store.db degrades gracefully on NFS/SMB/FUSE homes.
-        from hermes_state_wal import apply_wal_with_fallback
+        from eidolon_state_wal import apply_wal_with_fallback
         apply_wal_with_fallback(self._conn, db_label="response_store.db")
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS responses ("
@@ -990,7 +990,7 @@ def _make_request_fingerprint(body: Dict[str, Any], keys: List[str]) -> str:
 
 def _derive_chat_session_id(system_prompt: Optional[str], first_user_message: str) -> str:
     """Stable session id from the system prompt + first user message (constant across all
-    turns of an Open WebUI-style conversation), so one Hermes session/sandbox is reused."""
+    turns of an Open WebUI-style conversation), so one Eidolon session/sandbox is reused."""
     seed = f"{system_prompt or ''}\n{first_user_message}"
     digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()[:16]
     return f"api-{digest}"
@@ -1120,7 +1120,7 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
         # hardcode "gpt-4o" etc., hence off by default).
         # Off by default: generic OpenAI clients routinely hardcode model names ("gpt-4o", ...), and
         # existing deployments rely on those falling back to the gateway default rather than switching the
-        # executing model. Requests that send an explicit ``provider`` — and the Hermes-native session-chat
+        # executing model. Requests that send an explicit ``provider`` — and the Eidolon-native session-chat
         # and /v1/runs endpoints — are always honored regardless of this flag. (Idea credit: PR #22825 by
         # @mssteuer.)
         self._direct_model_requests: bool = _coerce_request_bool(
@@ -1238,7 +1238,7 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
         """gateway.api_server.max_concurrent_runs (0 disables; default 10; negatives -> 0)."""
         default = 10
         try:
-            from hermes_cli.config import cfg_get, load_config
+            from eidolon_cli.config import cfg_get, load_config
             raw = cfg_get(
                 load_config(), "gateway", "api_server", "max_concurrent_runs", default=default)
             value = int(raw)
@@ -1249,11 +1249,11 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
     @staticmethod
     def _resolve_model_name(explicit: str) -> str:
         """Advertised /v1/models name: explicit override > active profile name > "hermes-agent"
-        (precedence owned by ``hermes_cli.model_switch.resolve_effective_model``)."""
-        from hermes_cli.model_switch import resolve_effective_model
+        (precedence owned by ``eidolon_cli.model_switch.resolve_effective_model``)."""
+        from eidolon_cli.model_switch import resolve_effective_model
         profile_name = ""
         with suppress(Exception):
-            from hermes_cli.profiles import get_active_profile_name
+            from eidolon_cli.profiles import get_active_profile_name
             profile = get_active_profile_name()
             if profile and profile not in {"default", "custom"}:
                 profile_name = profile
@@ -1321,7 +1321,7 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
             return self._api_key
         try:
             from agent.secret_scope import get_secret
-            from hermes_cli.auth import has_usable_secret
+            from eidolon_cli.auth import has_usable_secret
             key = get_secret("API_SERVER_KEY", "") or ""
             return key if has_usable_secret(key, min_length=16) else ""
         except Exception as exc:
@@ -1437,7 +1437,7 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
         if not getattr(cfg, "multiplex_profiles", False):
             return None if _prefix_names_served_profile(profile) else _PROFILE_REJECTED
         try:
-            from hermes_cli.profiles import profiles_to_serve
+            from eidolon_cli.profiles import profiles_to_serve
             served = {
                 name for name, _ in profiles_to_serve(
                     multiplex=True, profile_allowlist=getattr(cfg, "multiplex_profile_allowlist", None))}
@@ -1459,11 +1459,11 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
                 from agent.secret_scope import is_multiplex_active
                 if is_multiplex_active():
                     from gateway.run import _profile_runtime_scope
-                    from hermes_constants import get_hermes_home
-                    return _profile_runtime_scope(get_hermes_home())
+                    from eidolon_constants import get_eidolon_home
+                    return _profile_runtime_scope(get_eidolon_home())
             return nullcontext()
         from gateway.run import _profile_runtime_scope
-        from hermes_cli.profiles import get_profile_dir
+        from eidolon_cli.profiles import get_profile_dir
         return _profile_runtime_scope(get_profile_dir(profile))
 
     def _make_profile_prefix_middleware(self):
@@ -1624,7 +1624,7 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
     def _open_and_cache_session_db(self, home) -> Optional[Any]:
         """Cached SessionDB for ``home`` (shared by both ``_ensure_session_db*``). Never writes
         ``self._session_db`` (explicit override only), so no profile pins later requests."""
-        from hermes_state_registry import acquire
+        from eidolon_state_registry import acquire
         key = str(home)
         with self._session_db_cache_lock:
             if self._session_db_cache_closed:
@@ -1646,19 +1646,19 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
             if db is shared_db:
                 continue
             try:
-                from hermes_state_registry import release_or_close
+                from eidolon_state_registry import release_or_close
                 release_or_close(db)
             except Exception:
                 logger.debug("Failed to close API-server SessionDB", exc_info=True)
 
     def _ensure_session_db(self):
-        """SessionDB for the active profile home (the runtime scope redirects ``get_hermes_home()``
+        """SessionDB for the active profile home (the runtime scope redirects ``get_eidolon_home()``
         per profile). Sync, for ``_create_agent``; handlers use ``_ensure_session_db_async``."""
         if self._session_db is not None:
             return self._session_db
         try:
-            from hermes_constants import get_hermes_home
-            return self._open_and_cache_session_db(get_hermes_home())
+            from eidolon_constants import get_eidolon_home
+            return self._open_and_cache_session_db(get_eidolon_home())
         except Exception as e:
             logger.debug("SessionDB unavailable for API server: %s", e)
             return None
@@ -1669,8 +1669,8 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
         if self._session_db is not None:
             return self._session_db
         try:
-            from hermes_constants import get_hermes_home
-            home = get_hermes_home()
+            from eidolon_constants import get_eidolon_home
+            home = get_eidolon_home()
             key = str(home)
             with self._session_db_cache_lock:
                 cached = self._session_dbs.get(key)
@@ -1988,10 +1988,10 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
     def _recover_or_record_model(self, model: str, runtime_kwargs: Dict[str, Any], gateway_session_key) -> str:
         """Fill an empty resolved model: provider's default catalog model, then the last-known-good
         model for this key / process-wide. Non-empty non-virtual models are recorded instead."""
-        # No model.default but a provider resolved (e.g. `hermes auth add` without `hermes model`).
+        # No model.default but a provider resolved (e.g. `eidolon auth add` without `eidolon model`).
         if not model and runtime_kwargs.get("provider"):
             with suppress(Exception):
-                from hermes_cli.models import get_default_model_for_provider
+                from eidolon_cli.models import get_default_model_for_provider
                 model = get_default_model_for_provider(runtime_kwargs["provider"])
                 if model:
                     logger.info(
@@ -2034,8 +2034,8 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
         current_provider = _clean_request_string(runtime_kwargs.get("provider"))
         session_override = None if confirmed_runtime_lock else self._session_model_override_for(session_key)
         # Model-string precedence (override > session-persisted > global) is owned by
-        # hermes_cli.model_switch.resolve_effective_model.
-        from hermes_cli.model_switch import resolve_effective_model
+        # eidolon_cli.model_switch.resolve_effective_model.
+        from eidolon_cli.model_switch import resolve_effective_model
         if session_override:
             model = resolve_effective_model(session_override, None, model)
             self._apply_provider_runtime(
@@ -2101,7 +2101,7 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
         from gateway.run import (
             _checkpoint_agent_kwargs, _current_max_iterations, _resolve_runtime_agent_kwargs,
             _resolve_gateway_model, _load_gateway_config, GatewayRunner)
-        from hermes_cli.tools_config import _get_platform_tools
+        from eidolon_cli.tools_config import _get_platform_tools
         # RuntimeError is caught ONLY here (sole provider-auth raiser); the typed subclass keeps
         # run_conversation() errors distinct.
         try:
@@ -2216,7 +2216,7 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
         can sync to the configured provider catalog instead of scraping /v1/models."""
         refresh = _coerce_request_bool(request.query.get("refresh"), default=False)
         try:
-            from hermes_cli.inventory import build_model_options_payload, load_picker_context
+            from eidolon_cli.inventory import build_model_options_payload, load_picker_context
 
             def _build_payload() -> Dict[str, Any]:
                 return build_model_options_payload(
@@ -2238,7 +2238,7 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
             "runtime": {
                 "mode": "server_agent", "tool_execution": "server", "split_runtime": False,
                 "description": (
-                    "The API server creates a server-side Hermes AIAgent; "
+                    "The API server creates a server-side Eidolon AIAgent; "
                     "tools execute on the API-server host unless a future "
                     "explicit split-runtime mode is enabled.")},
             "features": {
@@ -2487,13 +2487,13 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
         if store is not None:
             return store
         try:
-            from hermes_cli.profiles import get_profile_dir
+            from eidolon_cli.profiles import get_profile_dir
             root = Path(get_profile_dir(profile or "default")) / "artifacts" / "browser-control"
         except Exception:
-            # Unscoped fallback (tests/manual wiring): controlled root under the Hermes home.
+            # Unscoped fallback (tests/manual wiring): controlled root under the Eidolon home.
             try:
-                from hermes_state import get_hermes_home
-                root = Path(get_hermes_home()) / "artifacts" / "browser-control"
+                from eidolon_state import get_eidolon_home
+                root = Path(get_eidolon_home()) / "artifacts" / "browser-control"
             except Exception:
                 raise ArtifactError("no artifact root is resolvable") from None
         store = ArtifactStore(
@@ -2628,8 +2628,8 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
         """GET /v1/toolsets — each toolset the api_server agent exposes: enabled/configured state
         plus the concrete tool names it expands to."""
         try:
-            from hermes_cli.config import load_config
-            from hermes_cli.tools_config import (
+            from eidolon_cli.config import load_config
+            from eidolon_cli.tools_config import (
                 _get_effective_configurable_toolsets, _get_platform_tools, _toolset_has_keys,
                 get_nous_subscription_features)
             from toolsets import resolve_toolset
@@ -2723,7 +2723,7 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
 
     @_require_auth
     async def _handle_list_sessions(self, request: "web.Request") -> "web.Response":
-        """GET /api/sessions — list persisted Hermes sessions."""
+        """GET /api/sessions — list persisted Eidolon sessions."""
         db = await self._ensure_session_db_async()
         if db is None:
             return self._session_db_unavailable()
@@ -2731,7 +2731,7 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
         offset = self._parse_nonnegative_int(request.query.get("offset"), default=0, maximum=1_000_000)
         source = request.query.get("source") or None
         include_children = _coerce_request_bool(request.query.get("include_children"), default=False)
-        # Exact-title lookup (`hermes peer dm` -> canonical "Bot Chat"). include_hidden is honored
+        # Exact-title lookup (`eidolon peer dm` -> canonical "Bot Chat"). include_hidden is honored
         # ONLY with a title filter: a blanket hidden listing stays off this client surface.
         title_filter = (request.query.get("title") or "").strip() or None
         include_hidden = bool(title_filter) and _coerce_request_bool(
@@ -2750,12 +2750,12 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
 
         sessions = await _list()
         if title_filter and not sessions:
-            # A canonical Bot Chat auto-archived by the orphan reaper would make `hermes peer dm`
+            # A canonical Bot Chat auto-archived by the orphan reaper would make `eidolon peer dm`
             # mint transient sessions: resurrect and re-list; deliberate archives stay put.
             try:
                 # Recoverable-archive resurrection (#92687): a canonical Bot Chat archived by the ws-orphan
                 # reaper / older agent cleanup is invisible to list_sessions_rich (include_archived=False),
-                # which would fail `hermes peer dm` resolution and mint transient sessions — same accident
+                # which would fail `eidolon peer dm` resolution and mint transient sessions — same accident
                 # the tui_gateway lookups heal.
                 from tools.bot_mode_probe import BOT_CHAT_TITLE
                 stale = db.get_session_by_title(title_filter) if title_filter == BOT_CHAT_TITLE else None
@@ -2772,7 +2772,7 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
 
     @_require_auth
     async def _handle_create_session(self, request: "web.Request") -> "web.Response":
-        """POST /api/sessions -- create an empty Hermes session row. Existence check, insert and
+        """POST /api/sessions -- create an empty Eidolon session row. Existence check, insert and
         title handling run as ONE off-loop write so concurrent same-id creates can't both 201."""
         body, err = await self._read_json_body(request)
         if err:
@@ -3413,7 +3413,7 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
         job_id, err = self._cron_request_guard(request, need_job_id=True, check_draining=True)
         if err:
             return err
-        # Optional transient per-run context (standalone `hermes cron run` /
+        # Optional transient per-run context (standalone `eidolon cron run` /
         # cronjob(action='run', prompt=...)) — same cap + scan as a stored prompt.
         extra_prompt = body = None
         with suppress(Exception):
@@ -3433,7 +3433,7 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
         """POST /api/cron/fire — Chronos fire webhook (NAS -> agent), authenticated by a
         NAS-minted JWT via the pluggable verifier, NOT API_SERVER_KEY. 202 + background run so
         a long turn never trips NAS's timeout; the store CAS claim guards double-fire on retry."""
-        from hermes_cli.config import cfg_get, load_config
+        from eidolon_cli.config import cfg_get, load_config
         from plugins.cron_providers.chronos.verify import get_fire_verifier
         auth = request.headers.get("Authorization", "")
         token = auth[7:].strip() if auth.startswith("Bearer ") else ""
@@ -3784,7 +3784,7 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
                 self.name, self._host)
             return False
         try:
-            from hermes_cli.auth import has_usable_secret
+            from eidolon_cli.auth import has_usable_secret
         except Exception as exc:
             # Fail CLOSED: "could not check" must not mean "start" on a terminal-capable endpoint.
             logger.error(
@@ -3855,7 +3855,7 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
             if is_network_accessible(self._host):
                 _backend = "local"
                 with suppress(Exception):
-                    from hermes_cli.config import load_config as _load_cfg
+                    from eidolon_cli.config import load_config as _load_cfg
                     _backend = ((_load_cfg() or {}).get("terminal") or {}).get("backend", "local")
                 if str(_backend).lower() == "local":
                     logger.warning(

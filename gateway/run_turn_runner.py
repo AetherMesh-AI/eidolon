@@ -25,7 +25,7 @@ from gateway.config import Platform
 from gateway.media_repair import repair_explicit_computer_use_media_paths
 from gateway.platforms.base import BasePlatformAdapter
 from gateway.turn_context import TurnContext
-from hermes_cli.config import cfg_get
+from eidolon_cli.config import cfg_get
 from utils import is_truthy_value
 
 if TYPE_CHECKING:  # string annotations only; never imported at runtime (cycle)
@@ -184,7 +184,7 @@ class TurnRunner:
     def _progress_onboarding_hint(self, kwargs: dict) -> None:
         """First-touch onboarding: the first time a tool exceeds _LONG_TOOL_THRESHOLD_S while
         streaming every tool (progress_mode == "all"), append a one-time /verbose hint."""
-        from gateway.run import _hermes_home, _load_gateway_config
+        from gateway.run import _eidolon_home, _load_gateway_config
         ctx = self._ctx
         try:
             if (kwargs.get("duration") or 0) >= ctx._LONG_TOOL_THRESHOLD_S and ctx.progress_mode == "all":
@@ -194,7 +194,7 @@ class TurnRunner:
                 if gate_on and not is_seen(cfg, TOOL_PROGRESS_FLAG):
                     ctx.long_tool_hint_fired[0] = True
                     ctx.progress_queue.put(tool_progress_hint_gateway())
-                    mark_seen(_hermes_home / "config.yaml", TOOL_PROGRESS_FLAG)
+                    mark_seen(_eidolon_home / "config.yaml", TOOL_PROGRESS_FLAG)
         except Exception as err:
             logger.debug("tool-progress onboarding hint failed: %s", err)
 
@@ -316,7 +316,7 @@ class TurnRunner:
         def fallback_text(self) -> str:
             labels = {"in_progress": "running", "complete": "complete", "error": "error"}
             lines = [f"- {t['title']} - {labels.get(t['status'], t['status'])}" for t in self.visible_tasks()]
-            return "Hermes is working\n" + "\n".join(lines)
+            return "Eidolon is working\n" + "\n".join(lines)
 
         def _upsert(self, call_id: str, title: str) -> Dict[str, str]:
             if call_id not in self.tasks:
@@ -382,7 +382,7 @@ class TurnRunner:
             return
         if not st.native_failed:
             result = await st.adapter.send_native_task_card_progress(
-                chat_id=ctx.source.chat_id, tasks=st.visible_tasks(), title="Hermes is working",
+                chat_id=ctx.source.chat_id, tasks=st.visible_tasks(), title="Eidolon is working",
                 reply_to=ctx._progress_reply_to, metadata=ctx._progress_metadata, fallback_text=st.fallback_text(),
             )
             if getattr(result, "success", False):
@@ -903,7 +903,7 @@ class TurnRunner:
         """gateway.platforms.<plat>.skip_context_files: messaging platforms may opt out of
         filesystem-heavy context-file discovery (SOUL.md, AGENTS.md, .cursorrules)."""
         platforms_cfg = (self._ctx.user_config.get("gateway") or {}).get("platforms") or {}
-        # ``hermes gateway setup`` writes ``gateway.platforms`` as a LIST of enabled platform names,
+        # ``eidolon gateway setup`` writes ``gateway.platforms`` as a LIST of enabled platform names,
         # not a dict; treat any non-dict shape as "no per-platform overrides" rather than crashing.
         if not isinstance(platforms_cfg, dict):
             return False

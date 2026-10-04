@@ -17,7 +17,7 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
-from hermes_constants import get_hermes_home
+from eidolon_constants import get_eidolon_home
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +26,7 @@ def _traces_enabled_and_dir() -> Optional[Path]:
     """Trace directory if ``moa.save_traces`` is on, else None. Reads config per
     call (once per cache-MISS turn); ``moa.trace_dir`` overrides the default."""
     try:
-        from hermes_cli.config import load_config
+        from eidolon_cli.config import load_config
         moa_cfg = (load_config() or {}).get("moa") or {}
     except Exception:  # pragma: no cover - never break a turn over tracing
         return None
@@ -35,7 +35,7 @@ def _traces_enabled_and_dir() -> Optional[Path]:
     override = moa_cfg.get("trace_dir")
     if override:
         return Path(os.path.expandvars(os.path.expanduser(str(override))))
-    return get_hermes_home() / "moa-traces"
+    return get_eidolon_home() / "moa-traces"
 
 
 def _sanitize_session_id(session_id: Optional[str]) -> str:

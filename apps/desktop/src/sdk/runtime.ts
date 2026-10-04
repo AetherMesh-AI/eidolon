@@ -1,6 +1,6 @@
 /**
  * Runtime SDK injection — the other half of the vscode-module model. Bundled
- * plugins resolve `@hermes/plugin-sdk` through the vite alias; RUNTIME-loaded
+ * plugins resolve `@aethermesh/plugin-sdk` through the vite alias; RUNTIME-loaded
  * plugins (disk / fetched) import the same specifier and get the same object:
  * the loader rewrites bare specifiers to shim modules that re-export the
  * live namespaces installed here. React ships as the app's singletons —
@@ -43,11 +43,17 @@ let cached: Record<string, string> | null = null
 
 /** Specifier -> shim URL map for the runtime loader (longest keys first). */
 export function sdkImportMap(): Record<string, string> {
-  cached ??= {
-    '@hermes/plugin-sdk': shimUrl('__HERMES_PLUGIN_SDK__'),
-    'react/jsx-dev-runtime': shimUrl('__HERMES_REACT_JSX_DEV__'),
-    'react/jsx-runtime': shimUrl('__HERMES_REACT_JSX__'),
-    react: shimUrl('__HERMES_REACT__')
+  if (!cached) {
+    const sdkShim = shimUrl('__HERMES_PLUGIN_SDK__')
+
+    cached = {
+      '@aethermesh/plugin-sdk': sdkShim,
+      // Existing disk plugins must resolve the same module, not a second SDK.
+      '@hermes/plugin-sdk': sdkShim,
+      'react/jsx-dev-runtime': shimUrl('__HERMES_REACT_JSX_DEV__'),
+      'react/jsx-runtime': shimUrl('__HERMES_REACT_JSX__'),
+      react: shimUrl('__HERMES_REACT__')
+    }
   }
 
   return cached

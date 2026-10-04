@@ -38,8 +38,8 @@ export function findGitBash(opts: GitBashOptions): string | null {
   const joinWin = path.win32.join
 
   if (localAppData) {
-    candidates.push(joinWin(localAppData, 'hermes', 'git', 'bin', 'bash.exe'))
-    candidates.push(joinWin(localAppData, 'hermes', 'git', 'usr', 'bin', 'bash.exe'))
+    candidates.push(joinWin(localAppData, 'eidolon', 'git', 'bin', 'bash.exe'))
+    candidates.push(joinWin(localAppData, 'eidolon', 'git', 'usr', 'bin', 'bash.exe'))
   }
 
   candidates.push(joinWin(env['ProgramFiles'] || 'C:\\Program Files', 'Git', 'bin', 'bash.exe'))

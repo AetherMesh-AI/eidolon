@@ -9,7 +9,7 @@ bot's canonical "Bot Chat" session on a Bot-Mode-managed install (same gate as
 ``tools/bot_mode_probe.py``; never in the registry or any toolset), and dispatch
 re-checks that gate so a forged call returns a structured error. Transports:
 local → ``hermes -p <name> chat --in ~ -c "Bot Chat" --create-if-missing -Q
---query-file <tmp>``; peer → ``hermes peer dm <peer>[/<name>] < <tmp>``; both via
+--query-file <tmp>``; peer → ``eidolon peer dm <peer>[/<name>] < <tmp>``; both via
 ``terminal_tool(background=True, notify_on_complete=True)``.
 """
 
@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 # Top-level imports stay stdlib-only: this module also runs directly as the background
-# delivery runner (``python bot_mode_dm.py --run-delivery …``); Hermes helpers import lazily.
+# delivery runner (``python bot_mode_dm.py --run-delivery …``); Eidolon helpers import lazily.
 
 logger = logging.getLogger(__name__)
 
@@ -46,14 +46,14 @@ _DM_DIR_NAME = "hermes-dm"
 _DM_STALE_SECONDS = 24 * 60 * 60
 _LIVE_WAIT_SECONDS = 300
 
-# '<peer>/<agent>' — peer names are lowercase (``hermes peer`` normalizes them).
+# '<peer>/<agent>' — peer names are lowercase (``eidolon peer`` normalizes them).
 _PEER_TARGET_RE = re.compile(r"^([a-z0-9][a-z0-9_-]{0,63})/([a-zA-Z0-9][a-zA-Z0-9_-]{0,63})$")
 # Same shape as ``tools.bot_relay._HANDLE_RE`` (kept local: see import note above).
 _LOCAL_TARGET_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$")
 
 
 def _default_home() -> str:
-    return os.getenv("HERMES_HOME") or os.path.expanduser("~/.hermes")
+    return os.getenv("HERMES_HOME") or os.path.expanduser("~/.eidolon")
 
 
 def message_agent_tool_schema() -> dict:
@@ -222,10 +222,10 @@ def message_agent_tool(target: str = "", message: str = "", task_id: Optional[st
         if peer_name not in peers:
             return _roster_err(f"No registered peer named '{peer_name}'.")
         dm_target = f"{peer_name}/{peer_profile}" if peer_profile else peer_name
-        # Pin the registry-owning profile: `hermes peer` resolves bot_peers via the profile-scoped
+        # Pin the registry-owning profile: `eidolon peer` resolves bot_peers via the profile-scoped
         # load_config(), while the roster above reads the machine-root config — the CLI must run
         # in that same profile or a secondary-profile bot sees an empty registry.
-        return _start_delivery(["hermes", "-p", _self_profile_name(root), "peer", "dm", dm_target], content,
+        return _start_delivery(["eidolon", "-p", _self_profile_name(root), "peer", "dm", dm_target], content,
                                f"@{peer_profile or peer_name} on peer '{peer_name}'", stdin_file=True, **delivery)
 
     # Local teammate.
@@ -245,7 +245,7 @@ def message_agent_tool(target: str = "", message: str = "", task_id: Optional[st
         return _roster_err(f"No teammate named '{raw_target}' on this install, on a connected "
                            "machine, or on a registered peer. Pick a name from the roster "
                            "(roles are listed in your system prompt).")
-    return _start_delivery(["hermes", "-p", resolved, *BOT_CHAT_TURN_ARGS], content, f"@{_handle(resolved)}",
+    return _start_delivery(["eidolon", "-p", resolved, *BOT_CHAT_TURN_ARGS], content, f"@{_handle(resolved)}",
                            stdin_file=False, profile_home=roster_homes[resolved], **delivery)
 
 
@@ -347,7 +347,7 @@ def _delivery_lock(argv: list[str], *, stdin_file: bool):
     # (service contexts lack PATH) and carries .exe on Windows; split on both separators.
     # Split on both separators so the shape matches regardless of which platform built the argv. See #93590.
     cli = (argv[0] if argv else "").rsplit("\\", 1)[-1].rsplit("/", 1)[-1]
-    if stdin_file or len(argv) < 3 or cli not in ("hermes", "hermes.exe") or argv[1] != "-p":
+    if stdin_file or len(argv) < 3 or cli not in ("eidolon", "eidolon.exe", "hermes", "hermes.exe") or argv[1] != "-p":
         return contextlib.nullcontext()
     from tools.bot_mode_probe import _hermes_root
     from tools.bot_relay import acquire_turn_lock
@@ -454,7 +454,7 @@ def _wait_live_dm(home: str, delivery_id: str) -> int:
 
 def _local_delivery_home(argv: list[str]) -> Path | None:
     cli = (argv[0] if argv else "").rsplit("\\", 1)[-1].rsplit("/", 1)[-1]
-    if len(argv) < 3 or cli not in ("hermes", "hermes.exe") or argv[1] != "-p":
+    if len(argv) < 3 or cli not in ("eidolon", "eidolon.exe", "hermes", "hermes.exe") or argv[1] != "-p":
         return None
     from tools.bot_mode_probe import _hermes_root, _roster
 

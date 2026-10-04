@@ -24,7 +24,7 @@ _PLAN_STATUS = {"pending": "pending", "in_progress": "in_progress", "completed":
 
 
 def _build_plan_update_from_todo_result(result: Any) -> AgentPlanUpdate | None:
-    """Translate Hermes' todo tool result into ACP's native plan update.
+    """Translate Eidolon' todo tool result into ACP's native plan update.
 
     Zed renders ``sessionUpdate: plan`` as its first-class task panel, so the
     todo state is exposed natively rather than only as a tool-call transcript."""

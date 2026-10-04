@@ -706,9 +706,9 @@ class TestResetBundledSkill:
 class TestNoBundledSkillsOptOut:
     """The .no-bundled-skills marker makes sync_skills() a no-op.
 
-    This is what `hermes profile create --no-skills` (named profiles) and the
+    This is what `eidolon profile create --no-skills` (named profiles) and the
     installer's `--no-skills` flag (default ~/.hermes) rely on so bundled
-    skills are never seeded at install time NOR re-injected by `hermes update`.
+    skills are never seeded at install time NOR re-injected by `eidolon update`.
     """
 
     def test_marker_skips_sync_and_removal_seeds_normally(self, tmp_path):
@@ -754,7 +754,7 @@ class TestNoBundledSkillsOptOut:
 
 
 class TestOptOutToggleAndRemove:
-    """`hermes skills opt-out/opt-in` core: marker toggle + safe removal."""
+    """`eidolon skills opt-out/opt-in` core: marker toggle + safe removal."""
 
     def _setup_bundled(self, tmp_path):
         bundled = tmp_path / "bundled"
@@ -941,37 +941,37 @@ class TestCallTimeDirResolution:
     HERMES_HOME at import, so a long-lived dashboard/TUI process serving a
     console skills command for another profile resolved (and for
     reset_bundled_skill DELETED) against whichever home was live at import.
-    The accessors must follow set_hermes_home_override() at call time, while
+    The accessors must follow set_eidolon_home_override() at call time, while
     an explicitly patched module global (tests, _profile_scope retargeting)
     still wins.
     """
 
-    def test_accessors_follow_hermes_home_override(self, tmp_path):
-        from hermes_constants import set_hermes_home_override, reset_hermes_home_override
+    def test_accessors_follow_eidolon_home_override(self, tmp_path):
+        from eidolon_constants import set_eidolon_home_override, reset_eidolon_home_override
         import tools.skills_sync as ss
 
         profile_home = tmp_path / "profiles" / "research"
-        token = set_hermes_home_override(str(profile_home))
+        token = set_eidolon_home_override(str(profile_home))
         try:
-            assert ss._hermes_home() == profile_home
+            assert ss._eidolon_home() == profile_home
             assert ss._skills_dir() == profile_home / "skills"
             assert ss._manifest_file() == profile_home / "skills" / ".bundled_manifest"
         finally:
-            reset_hermes_home_override(token)
+            reset_eidolon_home_override(token)
 
     def test_explicit_module_patch_wins_over_override(self, tmp_path):
-        from hermes_constants import set_hermes_home_override, reset_hermes_home_override
+        from eidolon_constants import set_eidolon_home_override, reset_eidolon_home_override
         import tools.skills_sync as ss
 
         patched = tmp_path / "patched-skills"
-        token = set_hermes_home_override(str(tmp_path / "other-profile"))
+        token = set_eidolon_home_override(str(tmp_path / "other-profile"))
         try:
             with patch("tools.skills_sync.SKILLS_DIR", patched):
                 assert ss._skills_dir() == patched
                 # MANIFEST_FILE unpatched -> derives from the patched skills dir.
                 assert ss._manifest_file() == patched / ".bundled_manifest"
         finally:
-            reset_hermes_home_override(token)
+            reset_eidolon_home_override(token)
 
     def test_rmtree_guard_anchors_on_overridden_profile(self, tmp_path):
         """The #48200 strict-child rmtree guard must anchor on the OVERRIDDEN
@@ -979,7 +979,7 @@ class TestCallTimeDirResolution:
         was computed against the wrong home (#65828's sharpest edge): a
         legitimate delete in the scoped profile would be refused, and a stale
         path under the import-time home would pass the guard."""
-        from hermes_constants import set_hermes_home_override, reset_hermes_home_override
+        from eidolon_constants import set_eidolon_home_override, reset_eidolon_home_override
         import tools.skills_sync as ss
 
         profile_home = tmp_path / "profiles" / "worker"
@@ -987,7 +987,7 @@ class TestCallTimeDirResolution:
         victim.mkdir(parents=True)
         (victim / "SKILL.md").write_text("---\nname: doomed-skill\n---\n", encoding="utf-8")
 
-        token = set_hermes_home_override(str(profile_home))
+        token = set_eidolon_home_override(str(profile_home))
         try:
             # Allowed: strict child of the overridden profile's skills root.
             ss._rmtree_writable(victim)
@@ -999,4 +999,4 @@ class TestCallTimeDirResolution:
             with pytest.raises(ValueError):
                 ss._rmtree_writable(foreign)
         finally:
-            reset_hermes_home_override(token)
+            reset_eidolon_home_override(token)

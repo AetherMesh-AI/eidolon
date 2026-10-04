@@ -26,7 +26,7 @@ Throwaway HTML mockups: 2-3 design variants to compare.
 ## Reference: full SKILL.md
 
 :::info
-The following is the complete skill definition that Hermes loads when this skill is triggered. This is what the agent sees as instructions when the skill is active.
+The following is the complete skill definition that Eidolon loads when this skill is triggered. This is what the agent sees as instructions when the skill is active.
 :::
 
 # Sketch
@@ -107,7 +107,7 @@ Each variant is a **single self-contained HTML file**:
 
 Open it in a browser. If it looks broken, fix it before showing the user.
 
-**Verify variants visually — use Hermes' browser tools.** Don't just write HTML and hope it renders; load each variant and look at it:
+**Verify variants visually — use Eidolon's browser tools.** Don't just write HTML and hope it renders; load each variant and look at it:
 
 ```
 browser_navigate(url="file:///absolute/path/to/sketches/001-calm-editorial/index.html")

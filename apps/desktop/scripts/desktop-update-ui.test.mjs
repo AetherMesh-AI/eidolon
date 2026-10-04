@@ -73,7 +73,7 @@ test.each(['disconnect', 'hung', 'hung-body', 'http', 'invalid'])('bounds %s pro
   await vi.advanceTimersByTimeAsync(20_000)
   assert.equal(document.body.className, 'disconnected')
   assert.equal(document.getElementById('title').textContent, 'Update status unavailable')
-  assert.match(document.getElementById('line').textContent, /Check Hermes/)
+  assert.match(document.getElementById('line').textContent, /Check Eidolon/)
   assert.ok(attempts <= 4, `unbounded retry loop: ${attempts}`)
 })
 

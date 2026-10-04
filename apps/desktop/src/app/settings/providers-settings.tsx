@@ -4,8 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { runInTerminal } from '@/app/right-sidebar/store'
 import {
-  FEATURED_ID,
-  FeaturedProviderRow,
+  AetherMeshComingSoonRow,
   FireworksProviderRow,
   LocalModelsProviderRow,
   OpenRouterProviderRow,
@@ -16,7 +15,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { RowButton } from '@/components/ui/row-button'
 import { SearchField } from '@/components/ui/search-field'
-import { disconnectOAuthProvider, listOAuthProviders } from '@/hermes'
+import { disconnectOAuthProvider, listOAuthProviders } from '@/eidolon'
 import { useI18n } from '@/i18n'
 import { Check, ChevronDown, ChevronRight, KeyRound, Loader2, Terminal, Trash2 } from '@/lib/icons'
 import { normalize } from '@/lib/text'
@@ -26,7 +25,7 @@ import { $localModelsEnabled } from '@/store/local-models-flag'
 import { notify, notifyError } from '@/store/notifications'
 import { $desktopOnboarding, startManualLocalEndpoint, startManualProviderOAuth } from '@/store/onboarding'
 import { $settingsRequestProfile } from '@/store/settings-scope'
-import type { EnvVarInfo, OAuthProvider } from '@/types/hermes'
+import type { EnvVarInfo, OAuthProvider } from '@/types/eidolon'
 
 import { isKeyVar, ProviderKeyRows } from './credential-key-ui'
 import { CustomEndpointsSettings } from './custom-endpoints-settings'
@@ -61,7 +60,7 @@ export type ProviderView = (typeof PROVIDER_VIEWS)[number]
 //
 // Grouping key precedence:
 //   1. Backend `provider_label` / `provider` (from the unified provider catalog
-//      in hermes_cli/provider_catalog.py) — the SAME provider identity
+//      in eidolon_cli/provider_catalog.py) — the SAME provider identity
 //      `hermes model` uses. This is authoritative: a provider tagged by the
 //      backend always renders a card, even with no PROVIDER_GROUPS row.
 //   2. Desktop prefix match (`providerGroup`) — legacy fallback for provider
@@ -151,14 +150,9 @@ function OAuthPicker({
   const [showAll, setShowAll] = useState(false)
   const ordered = useMemo(() => sortProviders(providers), [providers])
 
-  if (ordered.length === 0) {
-    return null
-  }
-
   const select = (p: OAuthProvider) => startManualProviderOAuth(p.id, profile)
 
-  const featured = ordered.find(p => p.id === FEATURED_ID && !p.status?.logged_in) ?? null
-  const rest = featured ? ordered.filter(p => p.id !== FEATURED_ID) : ordered
+  const rest = ordered
   // Keep connected accounts grouped and always visible; only the unconnected
   // providers hide behind the disclosure, so the page leads with what's set up.
   // Both lists preserve `sortProviders` order (curated priority, then name).
@@ -184,7 +178,7 @@ function OAuthPicker({
       <p className="-mt-2 mb-1 text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
         {p.intro}
       </p>
-      {featured && <FeaturedProviderRow onSelect={select} provider={featured} />}
+      <AetherMeshComingSoonRow />
       {/* Slot #2 — the no-account path, matching onboarding. Behind the
           --local launch flag like every local-models surface. */}
       {$localModelsEnabled.get() && <LocalModelsProviderRow onClick={onWantLocalModels} />}
@@ -459,10 +453,7 @@ export function ProvidersSettings({
     return <SettingsSkeleton search sections={[{ rows: 6 }]} />
   }
 
-  const hasOauth = oauthProviders.length > 0
-  // The sidebar subnav owns the Accounts/API-keys split now; with no OAuth
-  // providers there's nothing for the "Accounts" view to show, so fall to keys.
-  const showApiKeys = view === 'keys' || (!hasOauth && view !== 'custom-endpoints')
+  const showApiKeys = view === 'keys'
 
   const keyGroups = buildProviderKeyGroups(vars)
 

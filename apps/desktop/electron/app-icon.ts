@@ -70,13 +70,16 @@ export function resolveAppIcon(
  */
 export function appIconCandidates(opts: {
   isWindows: boolean
+  isMac?: boolean
   appRoot: string
   resourcesPath?: string
   unpackedPathFor: (p: string) => string
 }): string[] {
-  const { isWindows, appRoot, resourcesPath, unpackedPathFor } = opts
+  const { isWindows, isMac = false, appRoot, resourcesPath, unpackedPathFor } = opts
 
   return [
+    // createWindow also sets the Dock icon at runtime; keep that override masked.
+    ...(isMac ? [path.join(appRoot, 'assets', 'icon-macos.png'), path.join(unpackedPathFor(appRoot), 'assets', 'icon-macos.png')] : []),
     ...(isWindows ? [path.join(resourcesPath ?? '', 'icon.ico'), path.join(appRoot, 'assets', 'icon.ico')] : []),
     // Prefer the packaging artwork; retain legacy PNGs for older/partial builds.
     path.join(appRoot, 'public', 'icon.png'),

@@ -22,9 +22,9 @@ from typing import Any, Callable, Iterator, Optional
 
 from agent.redact import redact_sensitive_text
 from cron.executions import _owner_is_live, _process_start_time
-from hermes_cli.sqlite_util import add_column_if_missing
-from hermes_constants import get_hermes_home
-from hermes_time import now as _hermes_now
+from eidolon_cli.sqlite_util import add_column_if_missing
+from eidolon_constants import get_eidolon_home
+from eidolon_time import now as _hermes_now
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +74,7 @@ def _prune_terminal_unlocked(conn: sqlite3.Connection) -> None:
 
 
 def _path() -> Path:
-    return DELIVERY_DB or (get_hermes_home().resolve() / "cron" / "deliveries.db")
+    return DELIVERY_DB or (get_eidolon_home().resolve() / "cron" / "deliveries.db")
 
 
 @contextmanager
@@ -89,7 +89,7 @@ def _transaction() -> Iterator[sqlite3.Connection]:
             pass
         conn.row_factory = sqlite3.Row
         try:
-            from hermes_state_wal import apply_wal_with_fallback
+            from eidolon_state_wal import apply_wal_with_fallback
 
             conn.execute("PRAGMA busy_timeout=5000")
             apply_wal_with_fallback(conn, db_label="cron/deliveries.db")

@@ -32,8 +32,8 @@ def fleet(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(root))
     # The pytest seat-belt in the root write-through compares the global path
     # against $HOME/.hermes/auth.json; our root is elsewhere, so writes go.
-    import hermes_constants
-    hermes_constants._default_hermes_root_memo = None  # type: ignore[attr-defined]
+    import eidolon_constants
+    eidolon_constants._default_hermes_root_memo = None  # type: ignore[attr-defined]
 
     expired = int((time.time() - 3600) * 1000)
     store = {
@@ -93,13 +93,13 @@ def fleet(tmp_path, monkeypatch):
     def use(home):
         """Switch the process to *home* (root or a profile dir)."""
         monkeypatch.setenv("HERMES_HOME", str(home))
-        hermes_constants._default_hermes_root_memo = None  # type: ignore[attr-defined]
-        import hermes_cli.auth as auth_mod
+        eidolon_constants._default_hermes_root_memo = None  # type: ignore[attr-defined]
+        import eidolon_cli.auth as auth_mod
         auth_mod._global_auth_store_cache = None
         auth_mod._oauth_heal_clean_marks.clear()
 
     # Process-wide notice buffer: start each test clean.
-    import hermes_cli.auth as _auth_mod
+    import eidolon_cli.auth as _auth_mod
     _auth_mod._oauth_heal_notices.clear()
     _auth_mod._oauth_heal_clean_marks.clear()
 
@@ -113,7 +113,7 @@ def fleet(tmp_path, monkeypatch):
 
 
 def _profile(fleet, name, **kw):
-    from hermes_cli.profiles import create_profile
+    from eidolon_cli.profiles import create_profile
     fleet["use"](fleet["root"])
     return create_profile(name, **kw)
 
@@ -132,7 +132,7 @@ def test_clone_all_strips_oauth_grant_but_keeps_api_keys(fleet):
 
 
 def test_strip_helper_drops_device_code_blocks_and_reports(tmp_path):
-    from hermes_cli.auth import strip_cloned_single_use_oauth_grants
+    from eidolon_cli.auth import strip_cloned_single_use_oauth_grants
     pdir = tmp_path / "p"
     pdir.mkdir()
     (pdir / "auth.json").write_text(json.dumps({
@@ -156,7 +156,7 @@ def test_strip_helper_drops_device_code_blocks_and_reports(tmp_path):
 
 
 def test_strip_helper_is_a_noop_without_credentials(tmp_path):
-    from hermes_cli.auth import strip_cloned_single_use_oauth_grants
+    from eidolon_cli.auth import strip_cloned_single_use_oauth_grants
     assert strip_cloned_single_use_oauth_grants(tmp_path) == {"pool": [], "providers": [], "files": []}
 
 
@@ -170,7 +170,7 @@ def test_strip_helper_is_a_noop_without_credentials(tmp_path):
 )
 def test_strip_helper_leaves_shared_root_auth_store_unchanged(fleet, link):
     """A shared auth store is one grant, not a cloned credential copy."""
-    from hermes_cli.auth import strip_cloned_single_use_oauth_grants
+    from eidolon_cli.auth import strip_cloned_single_use_oauth_grants
 
     root = fleet["root"]
     _seed_codex_grant(root)
@@ -185,8 +185,8 @@ def test_strip_helper_leaves_shared_root_auth_store_unchanged(fleet, link):
 
 def test_strip_helper_fails_closed_when_root_store_cannot_be_resolved(fleet, monkeypatch):
     """Credential hygiene must not mutate auth when store identity is unknown."""
-    from hermes_cli.auth import strip_cloned_single_use_oauth_grants
-    import hermes_constants
+    from eidolon_cli.auth import strip_cloned_single_use_oauth_grants
+    import eidolon_constants
 
     root = fleet["root"]
     _seed_codex_grant(root)
@@ -194,7 +194,7 @@ def test_strip_helper_fails_closed_when_root_store_cannot_be_resolved(fleet, mon
     shared = _shared_profile(
         fleet, "shared", link=lambda target, alias: alias.symlink_to(target))
     monkeypatch.setattr(
-        hermes_constants, "get_default_hermes_root",
+        eidolon_constants, "get_default_hermes_root",
         lambda: (_ for _ in ()).throw(OSError("root unavailable")))
 
     assert strip_cloned_single_use_oauth_grants(shared) == {
@@ -205,7 +205,7 @@ def test_strip_helper_fails_closed_when_root_store_cannot_be_resolved(fleet, mon
 
 def test_strip_helper_fails_closed_when_store_identity_check_errors(fleet, monkeypatch):
     """A transient stat failure must not be interpreted as two stores."""
-    from hermes_cli.auth import strip_cloned_single_use_oauth_grants
+    from eidolon_cli.auth import strip_cloned_single_use_oauth_grants
 
     root = fleet["root"]
     _seed_codex_grant(root)
@@ -363,7 +363,7 @@ def test_heal_consolidates_existing_forks_to_the_live_copy(fleet, caplog):
     assert fleet["rows"](forge)[0]["refresh_token"] == "sk-ant-ort-RT1"
     assert fleet["rows"](atlas)[0]["refresh_token"] == "sk-ant-ort-RT0"
 
-    with caplog.at_level(logging.INFO, logger="hermes_cli.auth"):
+    with caplog.at_level(logging.INFO, logger="eidolon_cli.auth"):
         fleet["use"](forge)
         sel = load_pool("anthropic").select()
     assert sel is not None and sel.access_token == "sk-ant-oat01-AT2"
@@ -390,11 +390,11 @@ def test_heal_consolidates_existing_forks_to_the_live_copy(fleet, caplog):
 def test_heal_is_idempotent_and_logs_once(fleet, caplog):
     import logging
     from agent.credential_pool import load_pool
-    from hermes_cli.auth import consume_oauth_heal_notices, heal_forked_single_use_oauth_grants
+    from eidolon_cli.auth import consume_oauth_heal_notices, heal_forked_single_use_oauth_grants
 
     kid = _fork(fleet, "kid")
     fleet["use"](kid)
-    with caplog.at_level(logging.INFO, logger="hermes_cli.auth"):
+    with caplog.at_level(logging.INFO, logger="eidolon_cli.auth"):
         load_pool("anthropic")
         assert fleet["rows"](kid) is None
         notices = consume_oauth_heal_notices()
@@ -409,7 +409,7 @@ def test_heal_is_idempotent_and_logs_once(fleet, caplog):
 
 
 def test_heal_never_deletes_the_only_surviving_copy(fleet):
-    """Root lost its grant (user ran `hermes auth remove` at root); the profile's
+    """Root lost its grant (user ran `eidolon auth remove` at root); the profile's
     copy is the only one left — and an independent second account stays put."""
     from agent.credential_pool import load_pool
 
@@ -459,7 +459,7 @@ def test_heal_leaves_a_different_account_alone(fleet):
 
 
 def test_heal_pkce_singleton_shape_commits_live_pair_to_root_singleton(fleet):
-    """`hermes auth` PKCE shape: root + profile each have .anthropic_oauth.json +
+    """`eidolon auth` PKCE shape: root + profile each have .anthropic_oauth.json +
     a hermes_pkce-seeded row; the profile's copy is the rotated (live) one."""
     from agent.credential_pool import load_pool
 
@@ -505,7 +505,7 @@ def test_heal_pkce_singleton_shape_commits_live_pair_to_root_singleton(fleet):
 
 
 def test_heal_is_a_noop_in_classic_mode(fleet):
-    from hermes_cli.auth import heal_forked_single_use_oauth_grants
+    from eidolon_cli.auth import heal_forked_single_use_oauth_grants
     fleet["use"](fleet["root"])
     before = (fleet["root"] / "auth.json").read_text()
     assert heal_forked_single_use_oauth_grants("anthropic") is None
@@ -545,7 +545,7 @@ def test_heal_skips_profile_auth_json_symlinked_to_the_root_store(fleet):
     """#101356: `ln -s ~/.hermes/auth.json <profile>/auth.json` shares ONE store.
     Both sides of the consolidation read the same file, so every row looks like
     a fork of itself — healing would strip the shared grant through the link."""
-    from hermes_cli.auth import consume_oauth_heal_notices, heal_forked_single_use_oauth_grants
+    from eidolon_cli.auth import consume_oauth_heal_notices, heal_forked_single_use_oauth_grants
 
     root = fleet["root"]
     _seed_codex_grant(root)
@@ -566,7 +566,7 @@ def test_heal_skips_profile_auth_json_symlinked_to_the_root_store(fleet):
 def test_heal_skips_profile_auth_json_hardlinked_to_the_root_store(fleet):
     """Same class as the symlink: a hardlink resolves to a different name but
     is the same inode, so it is still one store, not a forked copy."""
-    from hermes_cli.auth import heal_forked_single_use_oauth_grants
+    from eidolon_cli.auth import heal_forked_single_use_oauth_grants
 
     root = fleet["root"]
     _seed_codex_grant(root)
@@ -584,7 +584,7 @@ def test_heal_leaves_an_aliased_anthropic_singleton_alone(fleet):
     """Separate auth.jsons but a profile `.anthropic_oauth.json` symlinked to
     root's: one shared grant, not a fork. The heal must not self-compare it
     or unlink the alias (#101356 sibling site)."""
-    from hermes_cli.auth import heal_forked_single_use_oauth_grants
+    from eidolon_cli.auth import heal_forked_single_use_oauth_grants
 
     root = fleet["root"]
     (root / ".anthropic_oauth.json").write_text(json.dumps({
@@ -606,7 +606,7 @@ def test_heal_leaves_an_aliased_anthropic_singleton_alone(fleet):
 def test_heal_same_store_skip_is_memoized_off_the_hot_path(fleet, monkeypatch):
     """The shared-store skip must record the clean mark so load_pool()'s
     per-call heal does not re-stat/resolve both paths every model call."""
-    from hermes_cli import auth as auth_mod
+    from eidolon_cli import auth as auth_mod
 
     root = fleet["root"]
     _seed_codex_grant(root)

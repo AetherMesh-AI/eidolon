@@ -327,7 +327,7 @@ export const pt: Translations = {
     enableRuntime: "Ativar",
     forceReinstall: "Forçar reinstalação (eliminar pasta existente primeiro)",
     headline:
-      "Descobrir, instalar, ativar e atualizar plugins Eidolon (paridade com `hermes plugins`).",
+      "Descobrir, instalar, ativar e atualizar plugins Eidolon (paridade com `eidolon plugins`).",
     identifierLabel: "URL Git ou owner/repo",
     inactive: "inativo",
     installBtn: "Instalar",

@@ -26,7 +26,7 @@ Carry a GitHub issue to a verified PR with honest CI state.
 ## Reference: full SKILL.md
 
 :::info
-The following is the complete skill definition that Hermes loads when this skill is triggered. This is what the agent sees as instructions when the skill is active.
+The following is the complete skill definition that Eidolon loads when this skill is triggered. This is what the agent sees as instructions when the skill is active.
 :::
 
 # GitHub Issue to Pull Request

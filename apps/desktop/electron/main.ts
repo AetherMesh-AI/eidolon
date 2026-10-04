@@ -34,6 +34,8 @@ import { classifyActiveRuntime } from './active-runtime-state'
 import { destroyKeepaliveAgents, downloadAgentFor, jsonAgentFor, withRetry } from './api-transport'
 import { appIconCandidates, resolveAppIcon } from './app-icon'
 import { DESKTOP_APP_ID } from './app-identity'
+import { createArchiveUpdateCaller, createSourcePythonBackend, selectSourceBackend } from './archive-update-caller'
+import { readPreparedSource } from './archive-update-source'
 import { stopBackendChild as stopBackendChildImpl, stopBackendTreesForUpdate } from './backend-child'
 import {
   type BackendOutputTail,
@@ -56,6 +58,7 @@ import {
   makeUnsignedOauthError,
   waitForHermesReady
 } from './backend-health'
+import { requestBackendJson } from './backend-json-request'
 import { backendCommandMatches, createBackendOwnership, createBackendShutdownCoordinator } from './backend-ownership'
 import {
   canImportHermesCli,
@@ -81,8 +84,6 @@ import {
   resolveLinuxPasswordStore
 } from './bootstrap-platform'
 import { decideBootstrapRepair } from './bootstrap-repair-guard'
-import { readPreparedSource } from './archive-update-source'
-import { createArchiveUpdateCaller, selectSourceBackend, createSourcePythonBackend } from './archive-update-caller'
 import { runBootstrap } from './bootstrap-runner'
 import {
   BROWSER_WINDOW_HEIGHT,
@@ -172,6 +173,7 @@ import {
   uninstallArgsForMode
 } from './desktop-uninstall'
 import { describeDevCdpDecision, resolveDevCdpPort } from './dev-cdp'
+import { hasRuntimeSource, resolveManagedRuntimeRoot, runtimeCliModule, runtimeShimPath } from './eidolon-runtime'
 import { installEmbedReferer } from './embed-referer'
 import { createEventDeduper } from './event-dedupe'
 import {
@@ -261,7 +263,6 @@ import {
   oauthTicketFailureAuthMessage,
   resolveGatedDownloadAuth,
   resolveJsonBody,
-  resolveOauthRestAuth,
   resolveReadinessProbeAuth
 } from './native-auth-decisions'
 import {
@@ -388,9 +389,7 @@ import {
 import {
   compareApiUrl,
   parseCompareBehindCount,
-  resolveBehindCount,
-  resolveCommitLogSelection,
-  shouldCountCommits
+  resolveCommitLogSelection
 } from './update-count'
 import { waitForUpdateClearance } from './update-gate'
 import { readLiveUpdateMarker, updateHandoffConflict, writeUpdateMarker } from './update-marker'
@@ -439,7 +438,7 @@ import {
   chooseUpdaterArgs,
   getVenvSitePackagesEntries,
   resolveVenvHermesCommand
-} from './windows-hermes-path'
+} from './windows-eidolon-path'
 import {
   connectWindowsRemote,
   detectRemotePlatform,
@@ -466,6 +465,10 @@ import { readWindowsUserEnvVar } from './windows-user-env'
 import { isPackagedInstallPath as isPackagedInstallPathUnderRoots } from './workspace-cwd'
 import { readWslWindowsClipboardImage } from './wsl-clipboard-image'
 import { resolvePickerDefaultPath, setActiveGatewayProfile, setWslBridgeProfileState } from './wsl-path-bridge'
+
+// Consume the public alias once so explicit profile-scoped HERMES_HOME wins in children.
+if (process.env.EIDOLON_HOME) {process.env.HERMES_HOME = process.env.EIDOLON_HOME}
+delete process.env.EIDOLON_HOME
 
 const USER_DATA_OVERRIDE = process.env.HERMES_DESKTOP_USER_DATA_DIR
 
@@ -516,7 +519,7 @@ if (REMOTE_DISPLAY_REASON) {
   // with only --disable-gpu: force compositing onto the CPU too.
   app.commandLine.appendSwitch('disable-gpu-compositing')
   console.log(
-    `[hermes] remote display detected (${REMOTE_DISPLAY_REASON}); disabling GPU hardware acceleration to prevent flicker`
+    `[eidolon] remote display detected (${REMOTE_DISPLAY_REASON}); disabling GPU hardware acceleration to prevent flicker`
   )
 }
 
@@ -532,14 +535,14 @@ if (DEV_CDP.port) {
   // so a future edit can't widen it by omission.
   app.commandLine.appendSwitch('remote-debugging-address', '127.0.0.1')
   console.log(
-    `[hermes] renderer debugging on http://127.0.0.1:${DEV_CDP.port} — anything that can reach it ` +
+    `[eidolon] renderer debugging on http://127.0.0.1:${DEV_CDP.port} — anything that can reach it ` +
       'can run code in the renderer. HERMES_DESKTOP_CDP_PORT=off to disable.'
   )
 } else {
   const why = describeDevCdpDecision(DEV_CDP)
 
   if (why) {
-    console.warn(`[hermes] ${why}`)
+    console.warn(`[eidolon] ${why}`)
   }
 }
 
@@ -550,23 +553,23 @@ if (IS_WSL && !REMOTE_DISPLAY_REASON && fs.existsSync('/dev/dxg')) {
   app.commandLine.appendSwitch('ignore-gpu-blocklist')
   app.commandLine.appendSwitch('enable-gpu-rasterization')
   app.commandLine.appendSwitch('enable-zero-copy')
-  console.log('[hermes] WSL GPU passthrough (/dev/dxg) detected; enabling GPU acceleration')
+  console.log('[eidolon] WSL GPU passthrough (/dev/dxg) detected; enabling GPU acceleration')
 }
 
 // Linux: point Chromium at the session's keychain backend so safeStorage can
 // encrypt remote gateway tokens (hardening.ts refuses to persist them without
 // it). The value arrives via HERMES_DESKTOP_PASSWORD_STORE, bridged by the
-// `hermes desktop` launcher from detection or `desktop.password_store` in
+// `eidolon desktop` launcher from detection or `desktop.password_store` in
 // config.yaml. Must run before app `ready` — the switch only applies pre-launch.
 const PASSWORD_STORE = resolveLinuxPasswordStore()
 
 if (PASSWORD_STORE.warning) {
-  console.warn(`[hermes] ${PASSWORD_STORE.warning}`)
+  console.warn(`[eidolon] ${PASSWORD_STORE.warning}`)
 }
 
 if (PASSWORD_STORE.store) {
   app.commandLine.appendSwitch('password-store', PASSWORD_STORE.store)
-  console.log(`[hermes] using password-store backend: ${PASSWORD_STORE.store}`)
+  console.log(`[eidolon] using password-store backend: ${PASSWORD_STORE.store}`)
 }
 
 // Windows sandbox / GPU breakpoint crash recovery (#38216).
@@ -576,7 +579,7 @@ if (PASSWORD_STORE.store) {
 // 0x80000003. After enough GPU deaths the browser process FATAL-exits before the
 // UI is usable. Must run before app `ready` so `--no-sandbox` applies to child
 // processes. The sticky marker recovers Start Menu / shortcut launches that
-// never go through `hermes desktop`; it is version-scoped so an app update
+// never go through `eidolon desktop`; it is version-scoped so an app update
 // re-probes the sandbox instead of degrading forever.
 //
 // `windowsSandboxFallbackActive` = this process runs without the Chromium
@@ -603,9 +606,9 @@ if (IS_WINDOWS) {
     const acl = grantAllApplicationPackagesAcl(exeDir, { execFileSync })
 
     if (acl.ok) {
-      console.log(`[hermes] granted ALL APPLICATION PACKAGES RX on ${exeDir} (#38216)`)
+      console.log(`[eidolon] granted ALL APPLICATION PACKAGES RX on ${exeDir} (#38216)`)
     } else if (acl.error && acl.error !== 'missing-target-or-exec') {
-      console.warn(`[hermes] AppContainer ACL grant failed on ${exeDir}: ${acl.error}`)
+      console.warn(`[eidolon] AppContainer ACL grant failed on ${exeDir}: ${acl.error}`)
     }
   }
 
@@ -627,7 +630,7 @@ if (IS_WINDOWS) {
     app.commandLine.appendSwitch('no-sandbox')
     process.env.ELECTRON_DISABLE_SANDBOX = '1'
     console.log(
-      `[hermes] Windows sandbox fallback enabled (${sandboxDecision.reason}); launching with --no-sandbox (#38216)`
+      `[eidolon] Windows sandbox fallback enabled (${sandboxDecision.reason}); launching with --no-sandbox (#38216)`
     )
   }
 
@@ -658,14 +661,14 @@ if (IS_WINDOWS) {
     }
 
     console.warn(
-      `[hermes] Windows GPU sandbox crashed (exit=${details?.exitCode}); relaunching once with --no-sandbox (#38216)`
+      `[eidolon] Windows GPU sandbox crashed (exit=${details?.exitCode}); relaunching once with --no-sandbox (#38216)`
     )
 
     try {
       app.relaunch({ args: buildNoSandboxRelaunchArgs(process.argv.slice(1)) })
       void exitAfterBackendShutdown(0)
     } catch (error) {
-      console.error(`[hermes] --no-sandbox relaunch failed: ${error?.message || error}`)
+      console.error(`[eidolon] --no-sandbox relaunch failed: ${error?.message || error}`)
     }
   })
 }
@@ -706,7 +709,7 @@ const SOURCE_REPO_ROOT = path.resolve(APP_ROOT, '../..')
 //
 // Schema:
 //   { schemaVersion: 1, commit, branch, builtAt, dirty, source }
-import { readInstallStampFromPaths, formatInstallStamp, formatInstallVersion } from './install-stamp'
+import { formatInstallStamp, formatInstallVersion, readInstallStampFromPaths } from './install-stamp'
 
 function loadInstallStamp() {
   // Try packaged location first (resources/install-stamp.json), then the
@@ -725,13 +728,13 @@ const INSTALL_STAMP = loadInstallStamp()
 
 if (INSTALL_STAMP) {
   console.log(
-    `[hermes] install stamp: ${formatInstallStamp(INSTALL_STAMP)}`
+    `[eidolon] install stamp: ${formatInstallStamp(INSTALL_STAMP)}`
   )
 } else if (IS_PACKAGED) {
   // Dev builds without a stamp are normal; packaged builds without one
   // mean the bootstrap won't know what to clone. Surface clearly.
   console.error(
-    '[hermes] WARNING: no install-stamp.json found in packaged build. First-launch bootstrap will not have a pinned ref to install.'
+    '[eidolon] WARNING: no install-stamp.json found in packaged build. First-launch bootstrap will not have a pinned ref to install.'
   )
 }
 
@@ -784,7 +787,7 @@ function pathWithHermesManagedNode(...entries) {
 // ACTIVE_HERMES_ROOT — the canonical mutable Hermes install. Same path
 // install.ps1 / install.sh use, so a desktop-only user and a CLI-only user end
 // up with identical layouts and can share one install.
-const ACTIVE_HERMES_ROOT = path.join(HERMES_HOME, 'hermes-agent')
+const ACTIVE_HERMES_ROOT = resolveManagedRuntimeRoot(HERMES_HOME)
 // VENV_ROOT — venv lives inside the repo, exactly like install.ps1 does it.
 const VENV_ROOT = path.join(ACTIVE_HERMES_ROOT, 'venv')
 // BOOTSTRAP_COMPLETE_MARKER — written by the first-launch bootstrap runner
@@ -798,7 +801,7 @@ const VENV_ROOT = path.join(ACTIVE_HERMES_ROOT, 'venv')
 // We deliberately put the marker INSIDE ACTIVE_HERMES_ROOT (not alongside)
 // so that deleting the checkout to start fresh also deletes the marker --
 // avoids the confusing "marker exists but checkout is gone" state.
-const BOOTSTRAP_COMPLETE_MARKER = path.join(ACTIVE_HERMES_ROOT, '.hermes-bootstrap-complete')
+const BOOTSTRAP_COMPLETE_MARKER = path.join(ACTIVE_HERMES_ROOT, '.eidolon-bootstrap-complete')
 const BOOTSTRAP_MARKER_SCHEMA_VERSION = 1
 
 const DESKTOP_CONNECTION_CONFIG_PATH = path.join(app.getPath('userData'), 'connection.json')
@@ -815,11 +818,11 @@ const DESKTOP_MANAGED_SSH_RECOVERY_PATH = path.join(app.getPath('userData'), 'ma
 // active-profile.json records which Hermes profile the desktop launches its
 // local backend as. When set, startHermes() passes `hermes --profile <name>
 // dashboard …`, which deterministically pins HERMES_HOME (see
-// _apply_profile_override in hermes_cli/main.py) and bypasses the sticky
+// _apply_profile_override in eidolon_cli/main.py) and bypasses the sticky
 // ~/.hermes/active_profile file. Unset (null) preserves the legacy behavior:
 // no --profile flag, so the backend honors active_profile / default.
 const DESKTOP_PROFILE_CONFIG_PATH = path.join(app.getPath('userData'), 'active-profile.json')
-// Mirrors hermes_cli.profiles._PROFILE_ID_RE so we never hand the backend a
+// Mirrors eidolon_cli.profiles._PROFILE_ID_RE so we never hand the backend a
 // value its profile resolver would reject and exit on.
 const PROFILE_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/
 // Branch we track for self-update. The GUI work has merged to main, so this
@@ -827,7 +830,7 @@ const PROFILE_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/
 // hermesDesktop.updates.setBranch().
 const DEFAULT_UPDATE_BRANCH = 'main'
 // desktop.log lives under HERMES_HOME/logs/ so it sits next to agent.log,
-// errors.log, gateway.log produced by hermes_logging.setup_logging — one log
+// errors.log, gateway.log produced by eidolon_logging.setup_logging — one log
 // directory per user, regardless of which UI surface produced the line.
 const DESKTOP_LOG_PATH = path.join(HERMES_HOME, 'logs', 'desktop.log')
 const DESKTOP_LOG_FLUSH_MS = 120
@@ -838,7 +841,7 @@ const DESKTOP_LOG_BUFFER_MAX_CHARS = 64 * 1024
 // bound — we have seen it reach ~326 GB and exhaust the disk, which then breaks
 // update/install (no room for git/venv/npm temp files).
 //
-// Mirror the Python logs (hermes_logging.py RotatingFileHandler, maxBytes x
+// Mirror the Python logs (eidolon_logging.py RotatingFileHandler, maxBytes x
 // backupCount): cascade live -> .1 -> .2 -> .3, drop the oldest. Steady-state
 // stays bounded at ~(backupCount + 1) x cap however hard the app loops.
 //
@@ -892,6 +895,7 @@ const WINDOW_BUTTON_POSITION = {
 // decode, and an undecodable icon must never take the main process down.
 const APP_ICON_PATHS = appIconCandidates({
   isWindows: IS_WINDOWS,
+  isMac: IS_MAC,
   appRoot: APP_ROOT,
   resourcesPath: process.resourcesPath,
   unpackedPathFor
@@ -1286,7 +1290,7 @@ if (IS_WINDOWS) {
 
 // Seed the native About panel with the live Hermes version. This is refreshed
 // on every open via the explicit "About" menu handler (refreshAboutPanel), so
-// an in-place `hermes update` mid-session is reflected without an app restart;
+// an in-place `eidolon update` mid-session is reflected without an app restart;
 // the seed here just covers the first open and any non-menu invocation path.
 app.setAboutPanelOptions({
   applicationName: APP_NAME,
@@ -1490,7 +1494,7 @@ function logPoolSpawnFailure(label: string, error: unknown): void {
     rememberLog(`Profile backend ${label} slot wait timed out (background); will retry on the next hydration`)
   } else {
     rememberLog(
-      `Hermes backend for profile ${label} failed to start: ${error instanceof Error ? error.message : String(error)}`
+      `Eidolon backend for profile ${label} failed to start: ${error instanceof Error ? error.message : String(error)}`
     )
   }
 }
@@ -1806,6 +1810,12 @@ function openExternalUrl(rawUrl) {
     parsed = new URL(raw)
   } catch {
     return false
+  }
+
+  if (DEEPLINK_SCHEMES.includes(parsed.protocol.replace(/:$/, ''))) {
+    handleDeepLink(parsed.toString())
+
+    return true
   }
 
   // `file://` URLs come from the artifacts panel (the renderer can't open
@@ -2291,7 +2301,7 @@ const BUNDLE_SWAP_RELAUNCH_FLAG = '--hermes-bundle-swap-relaunched'
 // banner than a window that never comes back.
 const BUNDLE_SWAP_RELAUNCH_FAILSAFE_MS = 15_000
 
-// The detached updater swaps the packaged bundle on disk AFTER `hermes update`
+// The detached updater swaps the packaged bundle on disk AFTER `eidolon update`
 // exits (posix.sh mac_swap / windows.ps1). An instance reopened mid-update —
 // the #50238 gesture the gate above exists for — was launched from the
 // PRE-swap bundle, and the updater's `open` leg then merely focuses us (single
@@ -2349,7 +2359,7 @@ async function waitForUpdateToFinish() {
 
       await advanceBootProgress(
         'backend.update-wait',
-        'An update is finishing — Hermes will start automatically when it completes…',
+        'An update is finishing — Eidolon will start automatically when it completes…',
         12
       )
     },
@@ -2382,7 +2392,7 @@ async function waitForUpdateToFinish() {
     } else if (result) {
       rememberLog(`[updates] detached update FAILED (exit ${result.exitCode}): ${result.message}`)
       dialog.showErrorBox(
-        'Hermes update did not finish',
+        'Eidolon update did not finish',
         `${result.message}\n\nDetails: ${path.join(HERMES_HOME, 'logs', 'desktop-update-handoff.log')}`
       )
     }
@@ -2397,7 +2407,7 @@ async function waitForUpdateToFinish() {
   if (outcome === 'timeout') {
     rememberLog('[updates] update still in progress after wait timeout; starting backend anyway')
   } else if (relaunchIntoSwappedBundle()) {
-    await advanceBootProgress('backend.update-restart', 'Restarting Hermes to load the updated app…', 14)
+    await advanceBootProgress('backend.update-restart', 'Restarting Eidolon to load the updated app…', 14)
     // Park while the scheduled exit lands so this stale build never starts a
     // backend; the failsafe below only runs if the exit somehow does not.
     await new Promise(resolve => setTimeout(resolve, BUNDLE_SWAP_RELAUNCH_FAILSAFE_MS))
@@ -2506,7 +2516,7 @@ function backendSupportsServe(backend) {
 
   if (backend.root) {
     try {
-      const src = fs.readFileSync(path.join(backend.root, 'hermes_cli', 'subcommands', 'dashboard.py'), 'utf8')
+      const src = fs.readFileSync(path.join(backend.root, runtimeCliModule(backend.root).split('.')[0], 'subcommands', 'dashboard.py'), 'utf8')
       supported = sourceDeclaresServe(src)
     } catch {
       supported = null // source unreadable — fall through to the probe
@@ -2599,7 +2609,7 @@ function looksLikeDesktopAppBinary(commandPath) {
 }
 
 function isHermesSourceRoot(root) {
-  return directoryExists(root) && fileExists(path.join(root, 'hermes_cli', 'main.py'))
+  return directoryExists(root) && hasRuntimeSource(root)
 }
 
 function findSystemPython() {
@@ -2819,8 +2829,8 @@ function resolveGitBinary() {
   const candidates = []
 
   if (localAppData) {
-    candidates.push(path.join(localAppData, 'hermes', 'git', 'cmd', 'git.exe'))
-    candidates.push(path.join(localAppData, 'hermes', 'git', 'bin', 'git.exe'))
+    candidates.push(path.join(localAppData, 'eidolon', 'git', 'cmd', 'git.exe'))
+    candidates.push(path.join(localAppData, 'eidolon', 'git', 'bin', 'git.exe'))
   }
 
   candidates.push(path.join(process.env['ProgramFiles'] || 'C:\\Program Files', 'Git', 'cmd', 'git.exe'))
@@ -3022,9 +3032,11 @@ function emitUpdateProgress(payload) {
 // connection can't strand a user on the wrong branch.
 async function resolveHealedBranch(updateRoot, branch) {
   const originUrl = await getOriginUrl(updateRoot)
+
   if (!/^https:\/\/github\.com\/AetherMesh-AI\/Eidolon(?:\.git)?$/i.test(originUrl) && !isOfficialSshRemote(originUrl)) {
     throw new Error('Eidolon updates require the official AetherMesh-AI/Eidolon origin; no upstream fallback.')
   }
+
   return 'main'
 }
 
@@ -3037,6 +3049,7 @@ async function checkUpdates() {
     if (IS_PACKAGED && !process.env.HERMES_DESKTOP_HERMES_ROOT) {
       return archiveUpdateCaller().check(updateRoot, INSTALL_STAMP?.commit)
     }
+
     return {
       supported: false,
       reason: 'not-a-git-checkout',
@@ -3082,10 +3095,12 @@ async function checkUpdates() {
   const isShallow = shallowStr === 'true'
   const targetAncestor = await runGit(['merge-base', '--is-ancestor', `origin/${branch}`, 'HEAD'], { cwd: updateRoot })
   const headAncestor = await runGit(['merge-base', '--is-ancestor', 'HEAD', `origin/${branch}`], { cwd: updateRoot })
+
   if (isShallow || ![0, 1].includes(targetAncestor.code) || ![0, 1].includes(headAncestor.code) ||
       (currentSha !== targetSha && targetAncestor.code !== 0 && headAncestor.code !== 0)) {
     return { supported: true, branch, error: 'ancestry-unavailable-or-diverged', hermesRoot: updateRoot, fetchedAt: Date.now() }
   }
+
   const behind = targetAncestor.code === 0 ? 0 : Number(await git(['rev-list', `HEAD..origin/${branch}`, '--count']))
 
   const commits = behind !== 0 ? await readCommitLog(updateRoot, branch, isShallow) : []
@@ -3125,7 +3140,7 @@ async function fetchCompareBehindCount({ currentSha, originUrl, targetSha }) {
           headers: {
             Accept: 'application/vnd.github+json',
             // GitHub requires a UA on api.github.com; requests without one 403.
-            'User-Agent': 'hermes-desktop-update-check'
+            'User-Agent': 'eidolon-desktop-update-check'
           },
           timeout: 10_000
         },
@@ -3199,7 +3214,7 @@ let quitPromptOpen = false
 let quitConfirmedWithActiveWork = false
 
 // Resolve the staged updater binary the desktop may hand an update to. On
-// Windows that binary owns ALL repo mutation — running `hermes update` +
+// Windows that binary owns ALL repo mutation — running `eidolon update` +
 // rebuilding the desktop — so the desktop never touches its own bits while
 // running. macOS/Linux stage the same binary but deliberately do not use it;
 // see resolveStagedUpdaterBinary for the policy and for #74836. Returns null
@@ -3236,13 +3251,11 @@ function repairMacUpdaterHelper(updater) {
   }
 }
 
-// Path to the venv shim whose lock decides whether `hermes update` can write
+// Path to the venv shim whose lock decides whether `eidolon update` can write
 // fresh entry points. On Windows this is the file the running backend
 // `hermes.exe` holds open; on POSIX it's never mandatory-locked.
 function venvHermesShimPath(updateRoot) {
-  return IS_WINDOWS
-    ? path.join(updateRoot, 'venv', 'Scripts', 'hermes.exe')
-    : path.join(updateRoot, 'venv', 'bin', 'hermes')
+  return runtimeShimPath(updateRoot, IS_WINDOWS)
 }
 
 // Best-effort lock probe mirroring the Rust updater's is_locked(): a running
@@ -3317,7 +3330,7 @@ function killHermesOwnedVenvDaemons(updateRoot) {
     const pid = Number(holder?.ProcessId)
 
     if (Number.isInteger(pid) && pid > 0) {
-      rememberLog(`[updates] stopping Hermes-owned venv daemon (hindsight) PID ${pid} before hand-off`)
+      rememberLog(`[updates] stopping Eidolon-owned venv daemon (hindsight) PID ${pid} before hand-off`)
       forceKillProcessTree(pid)
     }
   }
@@ -3548,7 +3561,7 @@ async function claimBackendChild(child, command, profile, nonce, outputTail: Bac
     stopBackendChild(child)
     await waitForBackendExit(child)
     throw new Error(
-      `Hermes backend (PID ${child.pid}) died before its identity could be recorded: ${decision.reason}${outputTail?.describe() ?? ''}`
+      `Eidolon backend (PID ${child.pid}) died before its identity could be recorded: ${decision.reason}${outputTail?.describe() ?? ''}`
     )
   }
 
@@ -3557,7 +3570,7 @@ async function claimBackendChild(child, command, profile, nonce, outputTail: Bac
   if (decision.action === 'degrade') {
     startMarker = pidOnlyStartMarker(child.pid)
     rememberLog(
-      `WARNING: process start marker probe failed for live Hermes backend PID ${child.pid}; ` +
+      `WARNING: process start marker probe failed for live Eidolon backend PID ${child.pid}; ` +
         `claiming with PID-only identity instead of stopping it: ${decision.reason}`
     )
   } else {
@@ -3585,7 +3598,7 @@ async function claimBackendChild(child, command, profile, nonce, outputTail: Bac
     stopBackendChild(child)
     await waitForBackendExit(child)
     throw new Error(
-      `Could not persist ownership for the Hermes backend: ${error.message}${outputTail?.describe() ?? ''}`
+      `Could not persist ownership for the Eidolon backend: ${error.message}${outputTail?.describe() ?? ''}`
     )
   }
 }
@@ -3663,7 +3676,7 @@ async function releaseBackendLock(updateRoot, tag) {
   // supervised primary backend and all pool backends. The gate waits for
   // these to actually LEAVE the process table, not just for the shim to
   // unlock — the shim probe only covers venv\Scripts\hermes.exe, but the
-  // backend is `python.exe -m hermes_cli.main serve`, which need not hold
+  // backend is `python.exe -m eidolon_cli.main serve`, which need not hold
   // the shim at all (#74805 first-attempt race).
   const initialPids = []
 
@@ -3757,8 +3770,8 @@ async function releaseBackendLock(updateRoot, tag) {
 //
 // The desktop is a pure consumer: it does NOT git pull / pip install / rebuild
 // itself (the old open-coded git dance lived here and drifted from
-// `hermes update`). Instead we spawn the staged Hermes-Setup binary with
-// --update and quit, so it can run `hermes update` (which refuses while we
+// `eidolon update`). Instead we spawn the staged Hermes-Setup binary with
+// --update and quit, so it can run `eidolon update` (which refuses while we
 // hold the venv shim) and rebuild the desktop with our exe already gone.
 //
 // Detection (checkUpdates / commit changelog / "N behind") stays in the UI;
@@ -3784,30 +3797,33 @@ async function applyUpdates(opts: { stopSafeBlockers?: boolean } = {}) {
 
   try {
     const archiveRoot = resolveUpdateRoot()
+
     if (IS_PACKAGED && !process.env.HERMES_DESKTOP_HERMES_ROOT && !directoryExists(path.join(archiveRoot, '.git'))) {
       const prepared = await prepareArchiveUpdateSource()
-      if (!prepared.ok) return prepared
+
+      if (!prepared.ok) {return prepared}
     }
+
     // A staged installer may target its original install directory. Managed
     // source uses the upstream repository handoff with an explicit repo root.
     const updater = IS_PACKAGED && !process.env.HERMES_DESKTOP_HERMES_ROOT && readPreparedSource(HERMES_HOME) ? null : resolveUpdaterBinary()
 
     if (!updater && !IS_WINDOWS) {
       // macOS/Linux: hand off to the repo-owned posix script — same shape as
-      // Windows (quit → detached orchestrator → `hermes update` → relaunch),
+      // Windows (quit → detached orchestrator → `eidolon update` → relaunch),
       // minus the venv-lock gauntlet POSIX doesn't need. The old in-app
       // updater (applyUpdatesPosixInApp) is gone with everything it dragged
       // in: the HERMES_DESKTOP_CHILD_PID reaper-exclusion dance (#37532),
       // the in-window rebuild retry, and the relaunch-outcome matrix — the
       // script owns swap/relaunch, and the app is DEAD during the update so
       // there is nothing to reap around. Checkouts that predate the script
-      // get the manual `hermes update` card once; their next update pulls it.
+      // get the manual `eidolon update` card once; their next update pulls it.
       return await applyUpdatesPosixHandoff(opts)
     }
 
     if (!updater) {
       // No staged updater binary — this is a CLI-installed user (they ran
-      // `hermes desktop`, never the Tauri installer that self-copies
+      // `eidolon desktop`, never the Tauri installer that self-copies
       // hermes-setup.exe into HERMES_HOME). On Windows the repo hand-off
       // script serves them just as well as installer users — it only needs
       // PowerShell and the checkout — so fall through to the normal hand-off
@@ -3819,11 +3835,11 @@ async function applyUpdates(opts: { stopSafeBlockers?: boolean } = {}) {
         // They DO have a working `hermes` on PATH / in the venv, so the
         // correct path is the one-liner in their native medium. We show the
         // EXACT command, branch-pinned to the checkout they're on — bare
-        // `hermes update` defaults to main and would silently switch a
+        // `eidolon update` defaults to main and would silently switch a
         // bb/gui (or any non-main) install off-branch. Mirror the GUI
         // button's contract: append --branch <current> for non-main
         // checkouts, keep it bare for main so the card stays clean.
-        let command = 'hermes update'
+        let command = 'eidolon update'
 
         try {
           const head = await runGit(['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: updateRoot })
@@ -3833,11 +3849,11 @@ async function applyUpdates(opts: { stopSafeBlockers?: boolean } = {}) {
             const branch = await resolveHealedBranch(updateRoot, current)
 
             if (branch !== 'main') {
-              command = `hermes update --branch ${branch}`
+              command = `eidolon update --branch ${branch}`
             }
           }
         } catch {
-          // Best-effort: fall back to bare `hermes update` if branch detection fails.
+          // Best-effort: fall back to bare `eidolon update` if branch detection fails.
         }
 
         rememberLog(`[updates] no staged updater; surfacing manual \`${command}\` for CLI install at ${updateRoot}`)
@@ -3865,7 +3881,7 @@ async function applyUpdates(opts: { stopSafeBlockers?: boolean } = {}) {
     emitUpdateProgress({
       stage: 'restart',
       message:
-        'Updating Hermes — this window will close and the updater will open. Don’t reopen Hermes yourself; it restarts automatically when the update finishes.',
+        'Updating Eidolon — this window will close and the updater will open. Don’t reopen Eidolon yourself; it restarts automatically when the update finishes.',
       percent: 100
     })
     repairMacUpdaterHelper(updater)
@@ -3910,8 +3926,8 @@ async function applyUpdates(opts: { stopSafeBlockers?: boolean } = {}) {
       // user close the holder and retry. Restart our own backend so the app
       // keeps working after the failed attempt.
       const message =
-        'Update aborted: another process is holding the Hermes install open ' +
-        '(a second Hermes window or a terminal running hermes?). Close it and retry.'
+        'Update aborted: another process is holding the Eidolon install open ' +
+        '(a second Eidolon window or a terminal running eidolon?). Close it and retry.'
 
       emitUpdateProgress({ stage: 'error', message, percent: null })
       startHermes().catch(() => {})
@@ -3992,14 +4008,14 @@ async function applyUpdates(opts: { stopSafeBlockers?: boolean } = {}) {
     }
 
     // Detached so the updater outlives this process — it needs us GONE before
-    // `hermes update` will run (the venv shim is locked while we live).
+    // `eidolon update` will run (the venv shim is locked while we live).
     //
     // Prefer the repo-owned hand-off script over the staged Tauri binary.
     // The staged binary is frozen (no self-update path) and historically runs
     // months-stale updater logic — pre-#67369 cache resolver, pre-#74782
     // marker adoption — producing failures that were fixed on main long ago
     // (2026-08-09 incident). scripts/desktop-update/windows.ps1 ships WITH the
-    // checkout, so each `hermes update` refreshes the code that drives the
+    // checkout, so each `eidolon update` refreshes the code that drives the
     // next one. Checkouts that predate the script fall back to the binary
     // path unchanged.
     const scriptHandoff = resolveUpdateScriptHandoff(updateRoot)
@@ -4043,7 +4059,7 @@ async function applyUpdates(opts: { stopSafeBlockers?: boolean } = {}) {
       // the first moments of the hand-off — the script's step 0 overwrites it
       // with its own live $PID, and if the script never starts the wrapper's
       // dead pid makes the marker read as stale and self-delete (no wedge).
-      // The `hermes update` child adopts the SCRIPT's claim via
+      // The `eidolon update` child adopts the SCRIPT's claim via
       // update_lock.py's process-ancestry rule; no mtime heuristics needed.
       if (Number.isInteger(child.pid)) {
         writeUpdateMarker(HERMES_HOME, child.pid, { startedAt: updateStartedAt })
@@ -4108,7 +4124,7 @@ async function applyUpdates(opts: { stopSafeBlockers?: boolean } = {}) {
     const handoffOutcome = await observeUpdaterHandoff(child, UPDATE_HANDOFF_DWELL_MS)
 
     if (!handoffOutcome.ok) {
-      const message = `Update failed to start: ${handoffOutcome.message}. Hermes will keep running — try again, or run \`hermes update\` from a terminal.`
+      const message = `Update failed to start: ${handoffOutcome.message}. Eidolon will keep running — try again, or run \`eidolon update\` from a terminal.`
 
       rememberLog(`[updates] hand-off not viable, aborting quit: ${handoffOutcome.message}`)
       emitUpdateProgress({ stage: 'error', message, percent: null })
@@ -4173,7 +4189,7 @@ async function handOffWindowsBootstrapRecovery(reason) {
     : configuredBranch || DEFAULT_UPDATE_BRANCH
 
   const venvBin = path.join(updateRoot, 'venv', IS_WINDOWS ? 'Scripts' : 'bin')
-  const venvHermes = path.join(venvBin, IS_WINDOWS ? 'hermes.exe' : 'hermes')
+  const venvHermes = runtimeShimPath(updateRoot, IS_WINDOWS)
   const venvPython = path.join(venvBin, IS_WINDOWS ? 'python.exe' : 'python')
 
   // The updater invokes the venv's Hermes launcher, which in turn requires the
@@ -4184,7 +4200,7 @@ async function handOffWindowsBootstrapRecovery(reason) {
   // gentle update path. Partial or missing runtimes go through full repair.
   const updaterArgs = chooseUpdaterArgs(
     {
-      hasBootstrapMarker: fileExists(path.join(updateRoot, '.hermes-bootstrap-complete')),
+      hasBootstrapMarker: fileExists(path.join(updateRoot, '.eidolon-bootstrap-complete')),
       hasVenvHermes: fileExists(venvHermes),
       hasVenvPython: fileExists(venvPython)
     },
@@ -4267,7 +4283,7 @@ function runningAppBundle() {
 // intact before any update process mutates the install.  Runs in the
 // desktop Electron process itself, before the backend is killed and
 // before the updater is spawned — a separate safety net from the
-// Python-level pre-update snapshot inside `hermes update`.
+// Python-level pre-update snapshot inside `eidolon update`.
 function preflightStateDb(hermesHome, rememberLog) {
   const stateDbPath = path.join(hermesHome, 'state.db')
 
@@ -4350,7 +4366,7 @@ function preflightStateDb(hermesHome, rememberLog) {
 
 // macOS/Linux update hand-off: spawn the repo-owned posix orchestrator
 // (scripts/desktop-update/posix.sh) detached and QUIT. The script waits us
-// out, runs `hermes update`, swaps/relaunches the app bundle, and writes
+// out, runs `eidolon update`, swaps/relaunches the app bundle, and writes
 // .hermes-update-result.json for the relaunched Desktop to surface. It shows
 // its own tiny shim window (or nothing, headless) — this process only needs
 // to leave. Checkouts that predate the script get the manual card once.
@@ -4359,9 +4375,9 @@ async function applyUpdatesPosixHandoff(opts: any) {
   const handoff = resolvePosixScriptHandoff(updateRoot)
 
   if (!handoff) {
-    emitUpdateProgress({ stage: 'manual', message: 'hermes update', percent: null })
+    emitUpdateProgress({ stage: 'manual', message: 'eidolon update', percent: null })
 
-    return { ok: true, manual: true, command: 'hermes update', hermesRoot: updateRoot }
+    return { ok: true, manual: true, command: 'eidolon update', hermesRoot: updateRoot }
   }
 
   const handoffConflict = updateHandoffConflict(HERMES_HOME)
@@ -4445,7 +4461,7 @@ async function applyUpdatesPosixHandoff(opts: any) {
   emitUpdateProgress({
     stage: 'restart',
     message:
-      'Updating Hermes — this window will close. Don’t reopen Hermes yourself; it restarts automatically when the update finishes.',
+      'Updating Eidolon — this window will close. Don’t reopen Eidolon yourself; it restarts automatically when the update finishes.',
     percent: 100
   })
 
@@ -4458,7 +4474,7 @@ async function applyUpdatesPosixHandoff(opts: any) {
   const handoffOutcome = await observeUpdaterHandoff(child, UPDATE_HANDOFF_DWELL_MS)
 
   if (!handoffOutcome.ok) {
-    const message = `Update failed to start: ${handoffOutcome.message}. Hermes will keep running — try again, or run \`hermes update\` from a terminal.`
+    const message = `Update failed to start: ${handoffOutcome.message}. Eidolon will keep running — try again, or run \`eidolon update\` from a terminal.`
 
     rememberLog(`[updates] posix hand-off not viable, aborting quit: ${handoffOutcome.message}`)
     emitUpdateProgress({ stage: 'error', message, percent: null })
@@ -4500,7 +4516,9 @@ function readJson(filePath) {
 //     desktopVersion: "<app.getVersion()>"  // for forensics
 //   }
 function readBootstrapMarker() {
-  return readJson(BOOTSTRAP_COMPLETE_MARKER)
+  return readJson(BOOTSTRAP_COMPLETE_MARKER) ||
+    (runtimeCliModule(ACTIVE_HERMES_ROOT) === 'hermes_cli.main'
+      ? readJson(path.join(ACTIVE_HERMES_ROOT, '.hermes-bootstrap-complete')) : null)
 }
 
 // Marker-independent: is the canonical install at ACTIVE_HERMES_ROOT actually
@@ -4515,6 +4533,7 @@ function isActiveRuntimeUsable() {
     isHermesSourceRoot(ACTIVE_HERMES_ROOT) &&
     fileExists(venvPython) &&
     canImportHermesCli(venvPython, {
+      runtimeRoot: ACTIVE_HERMES_ROOT,
       env: {
         PYTHONPATH: [ACTIVE_HERMES_ROOT, process.env.PYTHONPATH].filter(Boolean).join(path.delimiter)
       }
@@ -4623,7 +4642,7 @@ function resolveRendererIndex() {
     rememberLog(
       `[renderer] every renderer bundle is incomplete (${present.join(', ')}). ` +
         `The last update replaced the app while its files were locked. ` +
-        `Repair with: hermes desktop --force-build`
+        `Repair with: eidolon desktop --force-build`
     )
 
     return present[0]
@@ -4635,7 +4654,7 @@ function resolveRendererIndex() {
   rememberLog(
     `[renderer] index.html not found — the desktop app was packaged without a ` +
       `renderer bundle. Tried: ${candidates.join(', ')}. ` +
-      `Rebuild with: hermes desktop --force-build`
+      `Rebuild with: eidolon desktop --force-build`
   )
 
   return candidates[0]
@@ -4770,7 +4789,7 @@ function createActiveBackend(backendArgs) {
     kind: 'python',
     label: `Eidolon at ${ACTIVE_HERMES_ROOT}`,
     command,
-    args: ['-m', 'hermes_cli.main', ...backendArgs],
+    args: ['-m', runtimeCliModule(ACTIVE_HERMES_ROOT), ...backendArgs],
     env: buildDesktopBackendEnv({
       hermesHome: HERMES_HOME,
       pythonPathEntries: [ACTIVE_HERMES_ROOT, ...getVenvSitePackagesEntries(VENV_ROOT)],
@@ -4788,7 +4807,8 @@ function resolveHermesBackend(backendArgs) {
     packaged: IS_PACKAGED, sourceRepoRoot: SOURCE_REPO_ROOT, hermesHome: HERMES_HOME,
     backendArgs, findSystemPython
   })
-  if (sourceBackend) return sourceBackend
+
+  if (sourceBackend) {return sourceBackend}
 
   // 3. ACTIVE_HERMES_ROOT — the canonical install at
   //    %LOCALAPPDATA%\\hermes\\hermes-agent (Windows) or ~/.hermes/hermes-agent.
@@ -4803,7 +4823,7 @@ function resolveHermesBackend(backendArgs) {
   if (activeRuntime.shouldUseActiveRuntime && !bootstrapRepairRequested) {
     if (!activeRuntime.hasValidMarker) {
       rememberLog(
-        `[bootstrap] Active Hermes runtime at ${ACTIVE_HERMES_ROOT} is usable but the bootstrap marker is missing or stale; skipping first-run bootstrap.`
+        `[bootstrap] Active Eidolon runtime at ${ACTIVE_HERMES_ROOT} is usable but the bootstrap marker is missing or stale; skipping first-run bootstrap.`
       )
     }
 
@@ -4831,15 +4851,15 @@ function resolveHermesBackend(backendArgs) {
       } else if (!isWindowsBinaryPathInWsl(hermesOverride, { isWsl: IS_WSL })) {
         hermesCommand = hermesOverride
       } else {
-        rememberLog(`Ignoring Windows Hermes override under WSL: ${hermesOverride}`)
+        rememberLog(`Ignoring Windows Eidolon override under WSL: ${hermesOverride}`)
       }
     } else {
-      hermesCommand = findOnPath('hermes')
+      hermesCommand = findOnPath('eidolon')
     }
 
     if (hermesCommand) {
       if (looksLikeDesktopAppBinary(hermesCommand)) {
-        rememberLog(`Ignoring desktop app executable on PATH while resolving Hermes CLI: ${hermesCommand}`)
+        rememberLog(`Ignoring desktop app executable on PATH while resolving Eidolon CLI: ${hermesCommand}`)
         hermesCommand = null
       }
     }
@@ -4882,12 +4902,12 @@ function resolveHermesBackend(backendArgs) {
       }
 
       rememberLog(
-        `Ignoring existing Hermes CLI at ${hermesCommand}: --version probe failed; falling through to bootstrap.`
+        `Ignoring existing Eidolon CLI at ${hermesCommand}: --version probe failed; falling through to bootstrap.`
       )
     }
   }
 
-  // 5. Last-ditch: pip-installed hermes_cli module via system Python.
+  // 5. Last-ditch: pip-installed eidolon_cli module via system Python.
   //    Same rationale as #4 -- the user installed this; we use it but don't
   //    take ownership.
   const python = findSystemPython()
@@ -4895,7 +4915,7 @@ function resolveHermesBackend(backendArgs) {
   if (python) {
     // Same smoke-test rationale as step 4: a system Python in the
     // SUPPORTED_VERSIONS range can be registered (PEP 514) without
-    // having hermes_cli installed -- common on dev boxes that have
+    // having eidolon_cli installed -- common on dev boxes that have
     // a python.org install from prior unrelated work. Returning that
     // backend hands the spawn step a guaranteed ModuleNotFoundError.
     // Verify the import works before trusting the candidate; on
@@ -4904,16 +4924,16 @@ function resolveHermesBackend(backendArgs) {
     if (canImportHermesCli(python)) {
       return {
         kind: 'python',
-        label: `installed hermes_cli module via ${python}`,
+        label: `installed eidolon_cli module via ${python}`,
         command: python,
-        args: ['-m', 'hermes_cli.main', ...backendArgs],
+        args: ['-m', 'eidolon_cli.main', ...backendArgs],
         bootstrap: false,
         env: {},
         shell: false
       }
     }
 
-    rememberLog(`Ignoring system Python ${python}: hermes_cli is not importable; falling through to bootstrap.`)
+    rememberLog(`Ignoring system Python ${python}: eidolon_cli is not importable; falling through to bootstrap.`)
   }
 
   // 6. Nothing usable yet -- signal the bootstrap runner that we need to
@@ -4959,11 +4979,11 @@ async function ensureRuntime(backend) {
   // will rewire startup to spawn the window first and route bootstrap events
   // to a renderer-side install overlay.
   if (backend.kind === 'bootstrap-needed') {
-    rememberLog('[bootstrap] no Hermes install found; starting first-launch bootstrap')
+    rememberLog('[bootstrap] no Eidolon install found; starting first-launch bootstrap')
 
     if (await handOffWindowsBootstrapRecovery('bootstrap-needed')) {
       const handoffError: Error & { isBootstrapFailure?: boolean; bootstrapHandedOff?: boolean } = new Error(
-        'Hermes recovery was handed off to Hermes Setup. The desktop will restart when recovery completes.'
+        'Eidolon recovery was handed off to Eidolon Setup. The desktop will restart when recovery completes.'
       )
 
       handoffError.isBootstrapFailure = true
@@ -5025,7 +5045,7 @@ async function ensureRuntime(backend) {
     bootstrapAbortController = null
 
     if (bootstrapResult.cancelled) {
-      const cancelledError = new Error('Hermes install was cancelled.') as any
+      const cancelledError = new Error('Eidolon install was cancelled.') as any
       cancelledError.isBootstrapFailure = true
       cancelledError.bootstrapCancelled = true
       bootstrapFailure = cancelledError
@@ -5034,7 +5054,7 @@ async function ensureRuntime(backend) {
 
     if (!bootstrapResult.ok) {
       const bootstrapError = new Error(
-        `Hermes bootstrap failed${bootstrapResult.failedStage ? ` at stage '${bootstrapResult.failedStage}'` : ''}: ` +
+        `Eidolon bootstrap failed${bootstrapResult.failedStage ? ` at stage '${bootstrapResult.failedStage}'` : ''}: ` +
           `${bootstrapResult.error || 'unknown error'}. ` +
           `Check ${path.join(HERMES_HOME, 'logs', 'desktop.log')} for the full transcript.`
       ) as any
@@ -5063,7 +5083,7 @@ async function ensureRuntime(backend) {
   // attests they ran successfully).
   if (!isHermesSourceRoot(ACTIVE_HERMES_ROOT)) {
     throw new Error(
-      `Hermes install at ${ACTIVE_HERMES_ROOT} is missing or incomplete. ` +
+      `Eidolon install at ${ACTIVE_HERMES_ROOT} is missing or incomplete. ` +
         'Reinstall via the desktop installer or scripts/install.ps1.'
     )
   }
@@ -5076,10 +5096,10 @@ async function ensureRuntime(backend) {
   // here via an external `hermes` on PATH, this check still helps.
   if (IS_WINDOWS && !findGitBash()) {
     throw new Error(
-      'Git for Windows is required for Hermes on Windows (provides Git Bash, ' +
+      'Git for Windows is required for Eidolon on Windows (provides Git Bash, ' +
         "which the agent's terminal tool uses). Install it from " +
         'https://git-scm.com/download/win or run `winget install -e --id Git.Git`, ' +
-        'then relaunch Hermes.'
+        'then relaunch Eidolon.'
     )
   }
 
@@ -5090,11 +5110,11 @@ async function ensureRuntime(backend) {
     // means we have a half-installed checkout: .git exists, source files
     // exist, but venv is missing or broken. This shouldn't happen in
     // normal flow because activeRuntimeState() requires isHermesSourceRoot()
-    // plus an importable hermes_cli before it hands back the active runtime.
+    // plus an importable eidolon_cli before it hands back the active runtime.
     // If we hit this, the user (or a deleted venv) broke the invariant; tell
     // them to re-run the install.
     throw new Error(
-      `Hermes venv missing at ${VENV_ROOT}. Re-run the desktop installer or ` + '`scripts/install.ps1` to rebuild it.'
+      `Eidolon venv missing at ${VENV_ROOT}. Re-run the desktop installer or ` + '`scripts/install.ps1` to rebuild it.'
     )
   }
 
@@ -5151,7 +5171,7 @@ function fetchJson(url, token, options: any = {}) {
         const timeoutMs = resolveTimeoutMs(options.timeoutMs, DEFAULT_FETCH_TIMEOUT_MS)
 
         if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-          reject(new Error(`Unsupported Hermes backend URL protocol: ${parsed.protocol}`))
+          reject(new Error(`Unsupported Eidolon backend URL protocol: ${parsed.protocol}`))
 
           return
         }
@@ -5183,7 +5203,7 @@ function fetchJson(url, token, options: any = {}) {
               const text = Buffer.concat(chunks).toString('utf8')
 
               if ((res.statusCode || 500) >= 400) {
-                reject(new Error(`${res.statusCode}: ${text || res.statusMessage}`))
+                reject(Object.assign(new Error(`${res.statusCode}: ${text || res.statusMessage}`), { statusCode: res.statusCode }))
 
                 return
               }
@@ -5205,7 +5225,7 @@ function fetchJson(url, token, options: any = {}) {
                 reject(
                   new Error(
                     `Expected JSON from ${url} but got HTML (status ${res.statusCode}). ` +
-                      'The endpoint is likely missing on the Hermes backend.'
+                      'The endpoint is likely missing on the Eidolon backend.'
                   )
                 )
 
@@ -5223,7 +5243,7 @@ function fetchJson(url, token, options: any = {}) {
 
         req.on('error', reject)
         req.setTimeout(timeoutMs, () => {
-          req.destroy(new Error(`Timed out connecting to Hermes backend after ${timeoutMs}ms`))
+          req.destroy(new Error(`Timed out connecting to Eidolon backend after ${timeoutMs}ms`))
         })
 
         // From here the request goes on the wire: a later transport error can no
@@ -5259,7 +5279,7 @@ function downloadViaTokenToFile(url, token, ctx, options: any = {}) {
     }
 
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      reject(new Error(`Unsupported Hermes backend URL protocol: ${parsed.protocol}`))
+      reject(new Error(`Unsupported Eidolon backend URL protocol: ${parsed.protocol}`))
 
       return
     }
@@ -5294,7 +5314,7 @@ function downloadViaTokenToFile(url, token, ctx, options: any = {}) {
 
     req.on('error', reject)
     req.setTimeout(timeoutMs, () => {
-      req.destroy(new Error(`Timed out connecting to Hermes backend after ${timeoutMs}ms`))
+      req.destroy(new Error(`Timed out connecting to Eidolon backend after ${timeoutMs}ms`))
     })
     req.end()
   })
@@ -5325,7 +5345,7 @@ function fetchPublicJson(url, options: any = {}) {
         const timeoutMs = resolveTimeoutMs(options.timeoutMs, DEFAULT_FETCH_TIMEOUT_MS)
 
         if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-          reject(new Error(`Unsupported Hermes backend URL protocol: ${parsed.protocol}`))
+          reject(new Error(`Unsupported Eidolon backend URL protocol: ${parsed.protocol}`))
 
           return
         }
@@ -5367,7 +5387,7 @@ function fetchPublicJson(url, options: any = {}) {
                 reject(
                   new Error(
                     `Expected JSON from ${url} but got HTML (status ${res.statusCode}). ` +
-                      'The endpoint is likely missing on the Hermes backend.'
+                      'The endpoint is likely missing on the Eidolon backend.'
                   )
                 )
 
@@ -5385,7 +5405,7 @@ function fetchPublicJson(url, options: any = {}) {
 
         req.on('error', reject)
         req.setTimeout(timeoutMs, () => {
-          req.destroy(new Error(`Timed out connecting to Hermes backend after ${timeoutMs}ms`))
+          req.destroy(new Error(`Timed out connecting to Eidolon backend after ${timeoutMs}ms`))
         })
 
         // Past this point the request is on the wire — see fetchJson.
@@ -7467,7 +7487,7 @@ function openOauthLoginWindow(baseUrl, { silent = false } = {}) {
       win = new BrowserWindow({
         width: 520,
         height: 720,
-        title: silent ? 'Connecting to Hermes Cloud agent…' : 'Sign in to Hermes gateway',
+        title: silent ? 'Connecting to Hermes Cloud agent…' : 'Sign in to Eidolon gateway',
         autoHideMenuBar: true,
         // Silent cascade: start HIDDEN. The auto-SSO 302 chain completes in
         // well under a second, so the window normally never needs to show. We
@@ -7562,7 +7582,7 @@ function fetchJsonViaOauthSession(url, options: any = {}) {
     }
 
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      reject(new Error(`Unsupported Hermes backend URL protocol: ${parsed.protocol}`))
+      reject(new Error(`Unsupported Eidolon backend URL protocol: ${parsed.protocol}`))
 
       return
     }
@@ -7595,7 +7615,7 @@ function fetchJsonViaOauthSession(url, options: any = {}) {
         // already finished
       }
 
-      reject(new Error(`Timed out connecting to Hermes backend after ${timeoutMs}ms`))
+      reject(new Error(`Timed out connecting to Eidolon backend after ${timeoutMs}ms`))
     }, timeoutMs)
 
     request.on('response', res => {
@@ -7667,7 +7687,7 @@ function fetchJsonViaOauthSession(url, options: any = {}) {
 // involved. Tokens are persisted encrypted at rest via Electron ``safeStorage``
 // (OS keychain) keyed by gateway base URL, and refreshed via
 // ``/auth/native/refresh`` before expiry. This is the desktop half of the
-// feature; the server half lives in hermes_cli/dashboard_auth/native_flow.py.
+// feature; the server half lives in eidolon_cli/dashboard_auth/native_flow.py.
 // ---------------------------------------------------------------------------
 
 // In-memory cache of decrypted native tokens, keyed by normalized base URL.
@@ -7813,7 +7833,7 @@ function downloadViaOauthSessionToFile(url, ctx, options: any = {}) {
     }
 
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      reject(new Error(`Unsupported Hermes backend URL protocol: ${parsed.protocol}`))
+      reject(new Error(`Unsupported Eidolon backend URL protocol: ${parsed.protocol}`))
 
       return
     }
@@ -7843,7 +7863,7 @@ function downloadViaOauthSessionToFile(url, ctx, options: any = {}) {
         // already finished
       }
 
-      reject(new Error(`Timed out connecting to Hermes backend after ${timeoutMs}ms`))
+      reject(new Error(`Timed out connecting to Eidolon backend after ${timeoutMs}ms`))
     }, timeoutMs)
 
     request.on('response', res => {
@@ -8161,7 +8181,7 @@ async function freshGatewayWsUrl(profile) {
 //     its own PKCE exchange; SSO removes the human click, not a security check.
 
 // Canonical Nous portal base URL, overridable for staging/dev. Mirrors the CLI
-// convention (hermes_cli/auth.py DEFAULT_NOUS_PORTAL_URL + the same env names)
+// convention (eidolon_cli/auth.py DEFAULT_NOUS_PORTAL_URL + the same env names)
 // so a single override flips every Hermes surface to the same portal.
 const DEFAULT_NOUS_PORTAL_URL = 'https://portal.nousresearch.com'
 
@@ -9526,7 +9546,7 @@ function isHermesProcess(pid) {
   try {
     const cmdline = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8')
 
-    return cmdline.includes('hermes')
+    return /(?:eidolon|hermes)/i.test(cmdline)
   } catch {
     // /proc not available (macOS) — fall back to ps. Use -o args= to inspect
     // the full command line, not just the process name.  -o comm= would return
@@ -9535,7 +9555,7 @@ function isHermesProcess(pid) {
       const { execSync } = require('child_process')
       const out = execSync(`ps -p ${pid} -o args=`, { encoding: 'utf8', timeout: 2000 })
 
-      return out.includes('hermes')
+      return /(?:eidolon|hermes)/i.test(out)
     } catch {
       return false
     }
@@ -9879,7 +9899,7 @@ async function buildRemoteConnection(
       throw gatewayTicketFailure(
         error,
         oauthTicketFailureAuthMessage(hasNativeSession(baseUrl)),
-        'Could not reach the remote Hermes gateway while refreshing its WebSocket ticket. Try reconnecting.'
+        'Could not reach the remote Eidolon gateway while refreshing its WebSocket ticket. Try reconnecting.'
       )
     }
 
@@ -9904,7 +9924,7 @@ async function buildRemoteConnection(
 
   if (!token) {
     throw new Error(
-      'Remote Hermes gateway is selected, but no session token is saved. ' +
+      'Remote Eidolon gateway is selected, but no session token is saved. ' +
         'Open Settings → Gateway and save a token, or switch back to Local.'
     )
   }
@@ -10959,7 +10979,7 @@ async function testDesktopConnectionConfig(input: any = {}) {
             return {
               reachable: false,
               sshError: 'update-required',
-              error: 'Update Hermes on the remote host before connecting with Desktop SSH.'
+              error: 'Update Eidolon on the remote host before connecting with Desktop SSH.'
             }
           }
 
@@ -12388,7 +12408,7 @@ async function spawnPoolBackend(profile, entry, opts: { forceLocal?: boolean; po
   profileDeletionGate.assertCanStart(profile)
 
   // --profile wins over the inherited HERMES_HOME env (see _apply_profile_override
-  // step 3 in hermes_cli/main.py), so the child re-homes to this profile.
+  // step 3 in eidolon_cli/main.py), so the child re-homes to this profile.
   // --port 0: the OS assigns an ephemeral port; the child announces it on stdout.
   const backendArgs = ['--profile', profile, 'serve', '--host', '127.0.0.1', '--port', '0']
   const backend = await ensureRuntime(resolveHermesBackend(backendArgs))
@@ -12479,16 +12499,16 @@ async function spawnPoolBackend(profile, entry, opts: { forceLocal?: boolean; po
   })
 
   child.once('error', error => {
-    rememberLog(`Hermes backend for profile "${profile}" failed to start: ${error.message}`)
+    rememberLog(`Eidolon backend for profile "${profile}" failed to start: ${error.message}`)
     void teardownFailedLocalBackend(poolKey, entry).catch(cleanupError => {
       rememberLog(
-        `Hermes backend for profile "${profile}" cleanup failed: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`
+        `Eidolon backend for profile "${profile}" cleanup failed: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`
       )
     })
     rejectStart?.(error)
   })
   child.once('exit', (code, signal) => {
-    rememberLog(`Hermes backend for profile "${profile}" exited (${signal || code})`)
+    rememberLog(`Eidolon backend for profile "${profile}" exited (${signal || code})`)
     releaseLocalBackendSlot(entry)
     releaseBackendChild(child)
 
@@ -12499,7 +12519,7 @@ async function spawnPoolBackend(profile, entry, opts: { forceLocal?: boolean; po
     if (!ready) {
       rejectStart?.(
         new Error(
-          `Hermes backend for profile "${profile}" exited before it became ready (${signal || code}).${outputTail.describe()}`
+          `Eidolon backend for profile "${profile}" exited before it became ready (${signal || code}).${outputTail.describe()}`
         )
       )
     }
@@ -12533,7 +12553,7 @@ async function spawnPoolBackend(profile, entry, opts: { forceLocal?: boolean; po
 
   if (!wsProbe.ok) {
     throw new Error(
-      `Hermes backend for profile "${profile}" is HTTP-reachable but the WebSocket (/api/ws) rejected the session token: ${wsProbe.reason}`
+      `Eidolon backend for profile "${profile}" is HTTP-reachable but the WebSocket (/api/ws) rejected the session token: ${wsProbe.reason}`
     )
   }
 
@@ -12600,7 +12620,7 @@ async function exitAfterBackendShutdown(code) {
 // Returns the profile name whose backend was torn down, or null when the
 // request is not a profile-delete.  The caller uses this to skip ensureBackend
 // for the just-torn-down profile — otherwise ensureBackend respawns a pool
-// backend whose ensure_hermes_home() recreates the deleted profile directory.
+// backend whose ensure_eidolon_home() recreates the deleted profile directory.
 //
 // The routing *decision* (which branch fires, what profile name gets
 // returned) lives in the pure decideProfileDeleteAction() in
@@ -12656,7 +12676,7 @@ async function startHermes() {
   // otherwise SIGTERMs the running instance's live backend (#87295).
   if (!isPrimaryInstance) {
     rememberLog('[boot] non-primary instance: skipping backend machinery')
-    throw new Error('Hermes Desktop is already running in another window.')
+    throw new Error('Eidolon Desktop is already running in another window.')
   }
 
   await reapOrphanedBackendsOnce()
@@ -12725,16 +12745,16 @@ async function startHermes() {
       // mint). If a newer attempt started meanwhile (e.g. the user switched
       // remotes and Apply invalidated this attempt), bail before probing.
       if (!backendConnectionState.isCurrentAttempt(connectionAttempt)) {
-        throw new Error('Hermes backend start was superseded by a newer connection attempt.')
+        throw new Error('Eidolon backend start was superseded by a newer connection attempt.')
       }
 
-      await advanceBootProgress('backend.remote', `Connecting to remote Hermes backend at ${remote.baseUrl}`, 24)
+      await advanceBootProgress('backend.remote', `Connecting to remote Eidolon backend at ${remote.baseUrl}`, 24)
       await waitForHermes(remote.baseUrl, remote.token, undefined, remote.authMode, remote.headers)
 
       // Second async boundary: the health probe itself can outlive the
       // attempt. A late success here must not publish a stale descriptor.
       if (!backendConnectionState.isCurrentAttempt(connectionAttempt)) {
-        throw new Error('Hermes backend start was superseded by a newer connection attempt.')
+        throw new Error('Eidolon backend start was superseded by a newer connection attempt.')
       }
 
       updateBootProgress({
@@ -12785,7 +12805,7 @@ async function startHermes() {
       connectRemote,
       ensureLocalRuntime: ensureRuntime,
       prepareLocalBackend: async () => {
-        await advanceBootProgress('backend.runtime', 'Resolving Hermes runtime', 28)
+        await advanceBootProgress('backend.runtime', 'Resolving Eidolon runtime', 28)
 
         return resolveHermesBackend(backendArgs)
       },
@@ -12837,7 +12857,7 @@ async function startHermes() {
         cwd: hermesCwd,
         env: {
           ...process.env,
-          // Explicitly pin HERMES_HOME for the child so Python's get_hermes_home()
+          // Explicitly pin HERMES_HOME for the child so Python's get_eidolon_home()
           // resolves to the SAME location our resolveHermesHome() picked. Without
           // this pin, Python falls back to ~/.hermes on every platform — fine on
           // mac/linux (where our default matches), but on Windows our default is
@@ -12901,7 +12921,7 @@ async function startHermes() {
       stopBackendChild(hermesProcess)
       await waitForBackendExit(hermesProcess)
       releaseBackendChild(hermesProcess)
-      throw new Error('Hermes backend start was superseded by a newer connection attempt.')
+      throw new Error('Eidolon backend start was superseded by a newer connection attempt.')
     }
 
     hermesProcess.stdout.on('data', rememberLog)
@@ -12917,8 +12937,8 @@ async function startHermes() {
       releaseBackendChild(hermesProcess)
 
       if (!backendConnectionState.clearForCurrentProcess(processOwner)) {
-        rememberLog(`Ignoring stale Hermes backend error: ${error.message}`)
-        rejectBackendStart?.(new Error('Hermes backend start was superseded by a newer connection attempt.'))
+        rememberLog(`Ignoring stale Eidolon backend error: ${error.message}`)
+        rejectBackendStart?.(new Error('Eidolon backend start was superseded by a newer connection attempt.'))
 
         return
       }
@@ -12940,20 +12960,20 @@ async function startHermes() {
       releaseBackendChild(hermesProcess)
 
       if (!backendConnectionState.clearForCurrentProcess(processOwner)) {
-        rememberLog(`Ignoring stale Hermes backend exit (${signal || code})`)
+        rememberLog(`Ignoring stale Eidolon backend exit (${signal || code})`)
 
         if (!backendReady) {
-          rejectBackendStart?.(new Error('Hermes backend start was superseded by a newer connection attempt.'))
+          rejectBackendStart?.(new Error('Eidolon backend start was superseded by a newer connection attempt.'))
         }
 
         return
       }
 
-      rememberLog(`Hermes backend exited (${signal || code})`)
+      rememberLog(`Eidolon backend exited (${signal || code})`)
       sendBackendExit({ code, signal })
 
       if (!backendReady) {
-        const message = `Hermes backend exited before it became ready (${signal || code}).${primaryOutputTail.describe()}`
+        const message = `Eidolon backend exited before it became ready (${signal || code}).${primaryOutputTail.describe()}`
         updateBootProgress(
           {
             error: message,
@@ -12965,13 +12985,13 @@ async function startHermes() {
         )
         rejectBackendStart?.(
           new Error(
-            `Hermes backend exited before it became ready (${signal || code}). Log: ${DESKTOP_LOG_PATH}\n${recentHermesLog()}`
+            `Eidolon backend exited before it became ready (${signal || code}). Log: ${DESKTOP_LOG_PATH}\n${recentHermesLog()}`
           )
         )
       }
     })
 
-    await advanceBootProgress('backend.port', 'Waiting for Hermes backend to launch', 86)
+    await advanceBootProgress('backend.port', 'Waiting for Eidolon backend to launch', 86)
 
     // Discover the ephemeral port the child bound to
     const port = await Promise.race([portAnnouncement, backendStartFailed])
@@ -12981,7 +13001,7 @@ async function startHermes() {
     }
 
     const baseUrl = `http://127.0.0.1:${port}`
-    await advanceBootProgress('backend.wait', 'Waiting for Hermes backend to become ready', 90)
+    await advanceBootProgress('backend.wait', 'Waiting for Eidolon backend to become ready', 90)
     await Promise.race([waitForHermes(baseUrl, token), backendStartFailed])
     backendReady = true
     backendStartFailure = null
@@ -12997,7 +13017,7 @@ async function startHermes() {
 
     if (!wsProbe.ok) {
       throw new Error(
-        `Local Hermes backend is HTTP-reachable but the WebSocket (/api/ws) rejected the session token: ${wsProbe.reason}`
+        `Local Eidolon backend is HTTP-reachable but the WebSocket (/api/ws) rejected the session token: ${wsProbe.reason}`
       )
     }
 
@@ -13876,7 +13896,7 @@ function startHudGameOverlayFeed(win: BrowserWindow) {
 
     if (!reported) {
       reported = true
-      console.warn(`[hermes] HUD cannot enumerate windows: ${windows.reason}`)
+      console.warn(`[eidolon] HUD cannot enumerate windows: ${windows.reason}`)
     }
 
     return null
@@ -14548,7 +14568,7 @@ function createWindow() {
           errorCode: details?.errorCode,
           url: details?.url,
           errorDescription: 'The desktop renderer failed to load repeatedly after the update.',
-          repairHint: 'hermes desktop --force-build',
+          repairHint: 'eidolon desktop --force-build',
           reloadUrl: DEV_SERVER || pathToFileURL(resolveRendererIndex()).toString()
         })
       }
@@ -14584,7 +14604,7 @@ function createWindow() {
       errorCode: 'ERR_FILE_NOT_FOUND',
       errorDescription: `The desktop renderer bundle is incomplete after the last update (${tornAssets.length} missing file(s)).`,
       missingAssets: tornAssets,
-      repairHint: 'hermes desktop --force-build',
+      repairHint: 'eidolon desktop --force-build',
       reloadUrl: pathToFileURL(rendererIndex).toString()
     })
   } else {
@@ -14849,7 +14869,7 @@ ipcMain.handle('hermes:window:openBrowser', async (_event, tabId) => {
 // to continue the chat in the terminal they already live in.
 //
 // The desktop's runtime is usually a venv Python invoked as
-// `python -m hermes_cli.main`, so we resolve the SAME backend the app itself
+// `python -m eidolon_cli.main`, so we resolve the SAME backend the app itself
 // launches and carry its argv + PYTHONPATH into a launcher script rather than
 // hoping a `hermes` exists on the user's interactive PATH. Resolution only —
 // never ensureRuntime(), which would kick off a first-run install from a menu
@@ -14864,7 +14884,7 @@ ipcMain.handle('hermes:window:openInTerminal', async (_event, sessionId, opts) =
     const backend = resolveHermesBackend(tuiResumeArgs(sessionId.trim(), profile || undefined))
 
     if (!backend.command) {
-      return { ok: false, error: 'Hermes is not installed yet' }
+      return { ok: false, error: 'Eidolon is not installed yet' }
     }
 
     const { cwd } = sanitizeWorkspaceCwd(opts?.cwd)
@@ -15658,7 +15678,7 @@ async function requestManagedSshUpdate(rawId) {
 
 ipcMain.handle('hermes:connections:update-managed', async (_event, rawId) => requestManagedSshUpdate(rawId))
 
-// Fan out `hermes update` to every eligible registered connection at once.
+// Fan out `eidolon update` to every eligible registered connection at once.
 // Cloud entries are excluded (platform-managed); each dispatch reports
 // independently so one dead LAN box can't wedge the batch. Local reuses the
 // app's own update pipeline; Desktop-managed SSH uses the transactional
@@ -15713,7 +15733,7 @@ ipcMain.handle('hermes:connections:update-all', async (_event, payload) => {
             ensureRegistryBackend(connection.id, null)
           )
 
-          const body: any = await postJsonForBackend(descriptor, '/api/hermes/update', {}, { timeoutMs: 15_000 })
+          const body: any = await postJsonForBackend(descriptor, '/api/eidolon/update', {}, { timeoutMs: 15_000 })
 
           if (body?.ok === false) {
             // The backend refused (docker/nix/externally-managed installs) —
@@ -15758,41 +15778,10 @@ async function fetchJsonForBackend(
   path,
   opts: { method?: string; body?: unknown; upload?: unknown; timeoutMs?: number } = {}
 ) {
-  const url = `${descriptor.baseUrl}${path}`
-
-  if (descriptor.authMode === 'oauth') {
-    // The OAuth cookie path rides electron.net with JSON headers; multipart
-    // isn't wired there. Fail loudly rather than corrupting the upload.
-    if (opts.upload) {
-      throw new Error('File uploads are not supported against OAuth-gated remote backends yet.')
-    }
-
-    const nativeAt = await ensureNativeAccessToken(descriptor.baseUrl).catch(() => null)
-
-    if (nativeAt) {
-      return fetchJson(url, null, {
-        method: opts.method,
-        body: opts.body,
-        timeoutMs: opts.timeoutMs,
-        bearer: nativeAt,
-        headers: descriptor.headers
-      })
-    }
-
-    return fetchJsonViaOauthSession(url, {
-      method: opts.method,
-      body: opts.body,
-      timeoutMs: opts.timeoutMs,
-      headers: descriptor.headers
-    })
-  }
-
-  return fetchJson(url, descriptor.token, {
-    method: opts.method,
-    body: opts.body,
-    upload: opts.upload,
-    timeoutMs: opts.timeoutMs,
-    headers: descriptor.headers
+  return requestBackendJson(descriptor, path, opts, {
+    ensureNativeAccessToken,
+    fetchJson,
+    fetchJsonViaOauthSession
   })
 }
 
@@ -16423,7 +16412,7 @@ async function handleHermesApiRequest(request) {
   const profile = request?.profile
   // After tearing down a backend for profile deletion, route to the primary
   // backend instead of spawning a fresh pool backend.  A freshly spawned
-  // backend calls ensure_hermes_home() which recreates the profile directory,
+  // backend calls ensure_eidolon_home() which recreates the profile directory,
   // defeating the deletion and leaving a zombie process.
   //
   // Safe local-profile REST calls also stay on the primary dashboard and carry
@@ -16445,51 +16434,12 @@ async function handleHermesApiRequest(request) {
     const connection = await ensureBackend(routeProfile)
     const timeoutMs = resolveTimeoutMs(request?.timeoutMs, DEFAULT_FETCH_TIMEOUT_MS)
 
-    const url = `${connection.baseUrl}${apiRoute.requestPath}`
-
-    // OAuth gateways authenticate REST via EITHER a native bearer token
-    // (cookieless RFC 8252 flow) OR the HttpOnly session cookie held in the OAuth
-    // partition. Prefer the native bearer when present (mirroring
-    // mintGatewayWsTicket): the native flow never sets a cookie, so routing an
-    // oauth-mode REST call through the cookie-only path returns 401 no_cookie even
-    // though a valid bearer is held. Cookie mode rides Electron's net stack bound
-    // to the OAuth partition so the cookie attaches automatically. Token/local
-    // modes keep using the static session-token header.
-    if (connection.authMode === 'oauth') {
-      // The OAuth path rides electron.net with JSON headers; multipart isn't
-      // wired there. Fail loudly rather than corrupting the upload.
-      if (request?.upload) {
-        throw new Error('File uploads are not supported against OAuth-gated remote backends yet.')
-      }
-
-      // Native bearer first (cookieless). ensureNativeAccessToken transparently
-      // refreshes a near-expiry AT via /auth/native/refresh; a null return means
-      // no native session (resolveOauthRestAuth then selects the cookie path).
-      const nativeAt = await ensureNativeAccessToken(connection.baseUrl).catch(() => null)
-      const restAuth = resolveOauthRestAuth(nativeAt)
-
-      if (restAuth.kind === 'bearer') {
-        response = await fetchJson(url, null, {
-          method: request?.method,
-          body: request?.body,
-          timeoutMs,
-          bearer: restAuth.token
-        })
-      } else {
-        response = await fetchJsonViaOauthSession(url, {
-          method: request?.method,
-          body: request?.body,
-          timeoutMs
-        })
-      }
-    } else {
-      response = await fetchJson(url, connection.token, {
-        method: request?.method,
-        body: request?.body,
-        upload: request?.upload,
-        timeoutMs
-      })
-    }
+    response = await fetchJsonForBackend(connection, apiRoute.requestPath, {
+      method: request?.method,
+      body: request?.body,
+      upload: request?.upload,
+      timeoutMs
+    })
   } catch (error) {
     // A failed rename PATCH must not strand the app on the temporary primary:
     // restore the original active profile and restart its backend.
@@ -17017,7 +16967,7 @@ ipcMain.on('hermes:translucency:support', event => {
 
 // Launch-flag facts the renderer needs before first paint (same sendSync
 // pattern as translucency). `--local` gates every local-models GUI surface;
-// it arrives from `hermes desktop --local` or directly on Hermes.exe (a
+// it arrives from `eidolon desktop --local` or directly on Hermes.exe (a
 // shortcut edit), and survives self-relaunches because collectRelaunchArgs
 // only strips internal flags.
 ipcMain.on('hermes:launch-flags', event => {
@@ -17391,7 +17341,7 @@ ipcMain.handle('hermes:updates:branch:set', async (_event, name) => {
 })
 
 // Resolve the canonical Hermes version (the one `release.py` bumps in
-// hermes_cli/__init__.py + pyproject.toml) so the desktop About panel shows the
+// eidolon_cli/__init__.py + pyproject.toml) so the desktop About panel shows the
 // real Hermes version instead of the Electron app's own package.json version,
 // which historically drifted (stuck at 0.0.2). Falls back to app.getVersion()
 // when the source tree can't be read (e.g. a packaged build without the repo).
@@ -17399,7 +17349,7 @@ function resolveHermesVersion() {
   return formatInstallVersion(INSTALL_STAMP)
 }
 
-// Renderer-bundle skew: `hermes update` moves the SOURCE TREE, but the UI
+// Renderer-bundle skew: `eidolon update` moves the SOURCE TREE, but the UI
 // (including bundled plugins like Bot Mode) is compiled into this binary at
 // build time. A terminal-side update — or an in-app update whose bundle-swap
 // leg failed — leaves the new runtime running under an old renderer, so About
@@ -17413,7 +17363,7 @@ async function detectRendererSkew() {
 }
 
 // Re-resolve the live Hermes version and push it into the native About panel
-// just before showing it, so an in-place `hermes update` is reflected without
+// just before showing it, so an in-place `eidolon update` is reflected without
 // an app restart. macOS only — `showAboutPanel()` is a no-op elsewhere, and the
 // other platforms don't use this menu item.
 function showAboutPanelFresh() {
@@ -17467,7 +17417,7 @@ ipcMain.handle('hermes:app:relaunch', async () => {
 // CLI exactly: GUI only, Lite (keep user data), Full. We ask the agent to do
 // the actual removal via `hermes uninstall …` so the cross-platform PATH /
 // registry / service / node-symlink cleanup all lives in one place
-// (hermes_cli/uninstall.py + hermes_cli/gui_uninstall.py).
+// (eidolon_cli/uninstall.py + eidolon_cli/gui_uninstall.py).
 //
 // getUninstallSummary() shells out to `--gui-summary` (a fast, no-side-effect
 // JSON probe) so the UI can gate options on what's actually installed — and
@@ -17516,7 +17466,7 @@ async function getUninstallSummary() {
     try {
       const child = spawn(
         py,
-        ['-m', 'hermes_cli.main', 'uninstall', '--gui-summary'],
+        ['-m', 'eidolon_cli.main', 'uninstall', '--gui-summary'],
         hiddenWindowsChildOptions({
           cwd: agentRoot,
           env: { ...process.env, HERMES_HOME, NO_COLOR: '1' },
@@ -17567,14 +17517,14 @@ async function runDesktopUninstall(mode) {
     return {
       ok: false,
       error: 'agent-missing',
-      message: `Can't run the uninstaller: no Hermes agent venv at ${VENV_ROOT}.`
+      message: `Can't run the uninstaller: no Eidolon agent venv at ${VENV_ROOT}.`
     }
   }
 
   // Interpreter choice (Finding 3): lite/full rmtree the venv that holds the
   // running python.exe. On Windows a running .exe is mandatory-locked, so the
   // rmtree must NOT be driven by the venv's own interpreter — use a system
-  // Python with PYTHONPATH=<agentRoot> so `import hermes_cli` resolves from
+  // Python with PYTHONPATH=<agentRoot> so `import eidolon_cli` resolves from
   // source while the venv is torn down. gui-only doesn't touch the venv, so the
   // venv python is fine there. If no system Python exists (the Windows edge
   // case), fall back to the venv python — gui-only is unaffected; lite/full may
@@ -17693,9 +17643,9 @@ ipcMain.handle('hermes:vscode-theme:search', async (_event, query) => searchMark
 // running app. Three delivery paths: macOS 'open-url',
 // Win/Linux running-app 'second-instance' (argv), Win/Linux cold-start argv.
 // ---------------------------------------------------------------------------
-const HERMES_PROTOCOL = DEV_SERVER ? 'hermes-dev' : 'hermes'
+const EIDOLON_PROTOCOL = DEV_SERVER ? 'eidolon-dev' : 'eidolon'
 /** Schemes accepted when parsing inbound URLs (dev accepts both). */
-const DEEPLINK_SCHEMES = DEV_SERVER ? ['hermes-dev', 'hermes'] : ['hermes']
+const DEEPLINK_SCHEMES = DEV_SERVER ? ['eidolon-dev', 'eidolon', 'hermes-dev', 'hermes'] : ['eidolon', 'hermes']
 let _pendingDeepLink = null
 let _rendererReadyForDeepLink = false
 
@@ -17767,7 +17717,7 @@ ipcMain.handle('hermes:deep-link-ready', () => {
     const queued = _pendingDeepLink
     _pendingDeepLink = null
     handleDeepLink(
-      `${HERMES_PROTOCOL}://${queued.kind}/${encodeURIComponent(queued.name)}` +
+      `${EIDOLON_PROTOCOL}://${queued.kind}/${encodeURIComponent(queued.name)}` +
         (Object.keys(queued.params).length ? '?' + new URLSearchParams(queued.params).toString() : '')
     )
   }
@@ -17782,12 +17732,12 @@ function registerDeepLinkProtocol() {
       // relaunch us with the URL. argv[1] is usually "." when launched via
       // `electron .` from apps/desktop — resolve against cwd.
       const entry = path.resolve(process.argv[1])
-      app.setAsDefaultProtocolClient(HERMES_PROTOCOL, process.execPath, [entry])
+      app.setAsDefaultProtocolClient(EIDOLON_PROTOCOL, process.execPath, [entry])
     } else {
-      app.setAsDefaultProtocolClient(HERMES_PROTOCOL)
+      app.setAsDefaultProtocolClient(EIDOLON_PROTOCOL)
     }
 
-    rememberLog(`[deeplink] registered ${HERMES_PROTOCOL}:// handler`)
+    rememberLog(`[deeplink] registered ${EIDOLON_PROTOCOL}:// handler`)
   } catch (err) {
     rememberLog(`[deeplink] protocol registration failed: ${err.message}`)
   }

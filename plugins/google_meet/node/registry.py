@@ -11,13 +11,13 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from hermes_constants import get_hermes_home
+from eidolon_constants import get_eidolon_home
 
 from plugins.google_meet._jsonfile import read_json, write_json_atomic
 
 
 def _default_path() -> Path:
-    return Path(get_hermes_home()) / "workspace" / "meetings" / "nodes.json"
+    return Path(get_eidolon_home()) / "workspace" / "meetings" / "nodes.json"
 
 
 class NodeRegistry:

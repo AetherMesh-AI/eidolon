@@ -117,7 +117,7 @@ def _unregistered_stt_provider_error(provider: str) -> Dict[str, Any]:
     key = str(provider or "").strip()
     return _error_result(
         f"stt.provider='{key}' is set but no built-in, command, or plugin "
-        "provider registered that name. Run `hermes plugins list` to see "
+        "provider registered that name. Run `eidolon plugins list` to see "
         "installed STT plugins, or configure a command provider under "
         f"`stt.providers.{key}.command`.",
         provider=key,
@@ -143,7 +143,7 @@ def _dispatch_to_plugin_provider(
         return None
     try:
         from agent.transcription_registry import get_provider
-        from hermes_cli.plugins import _ensure_plugins_discovered
+        from eidolon_cli.plugins import _ensure_plugins_discovered
         _ensure_plugins_discovered()
         plugin_provider = get_provider(key)
         if plugin_provider is None:
@@ -222,7 +222,7 @@ def _apply_pre_transcription_hook(
     wins). ``language_override`` is None unless a hook explicitly set ``language``, so backends keep
     their own config/env resolution."""
     try:
-        from hermes_cli.plugins import has_hook, invoke_hook
+        from eidolon_cli.plugins import has_hook, invoke_hook
         if not has_hook("pre_transcription"):
             return model, None, prompt
         hook_results = invoke_hook(

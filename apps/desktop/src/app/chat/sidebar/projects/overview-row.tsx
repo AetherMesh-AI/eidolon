@@ -3,7 +3,7 @@ import { useRef } from 'react'
 
 import { type NewSessionSplitHandler, startNewSessionDrag } from '@/app/chat/new-session-drag'
 import { Codicon } from '@/components/ui/codicon'
-import type { SessionInfo } from '@/hermes'
+import type { SessionInfo } from '@/eidolon'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 

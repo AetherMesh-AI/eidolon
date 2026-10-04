@@ -81,7 +81,7 @@ def register_from_config(cfg: Optional[Dict[str, Any]]) -> List[WebhookTarget]:
     targets = iter_configured_targets(cfg)
     if not targets:
         return []
-    from hermes_cli.plugins import get_plugin_manager
+    from eidolon_cli.plugins import get_plugin_manager
     manager = get_plugin_manager()
     home_key = _home_key()
     registered: List[WebhookTarget] = []
@@ -139,7 +139,7 @@ def re_register_config_hooks() -> None:
     the same ``_hooks`` dict that ``PluginManager.discover_and_load(force=True)`` clears via ``unload()``,
     so without this the force-reloaded profile's outbound webhooks go silently inert (#92682 review).
     """
-    from hermes_cli.config import load_config
+    from eidolon_cli.config import load_config
     _forget_home_registrations(_registered, _registered_lock)
     register_from_config(load_config())
 
@@ -157,7 +157,7 @@ def reset_for_tests() -> None:
 
 
 def _parse_single_target(index: int, raw: Any) -> Optional[WebhookTarget]:
-    from hermes_cli.plugins import VALID_HOOKS
+    from eidolon_cli.plugins import VALID_HOOKS
 
     def warn(msg: str, *args: Any) -> None:
         logger.warning("hooks.outbound[%d]" + msg, index, *args)
@@ -241,7 +241,7 @@ def _serialize_payload(event: str, kwargs: Dict[str, Any], delivery_id: str) -> 
     body, so they double as replay protection."""
     # Profile resolved at fire time so a multiplexed gateway's receivers can tell which profile emitted.
     # See #92674.
-    from hermes_cli.profiles import get_active_profile_name
+    from eidolon_cli.profiles import get_active_profile_name
     payload = {
         "hook_event_name": event, "profile": get_active_profile_name(), **_payload_fields(kwargs),
         "delivery_id": delivery_id, "timestamp": _utc_now_iso(),
@@ -251,7 +251,7 @@ def _serialize_payload(event: str, kwargs: Dict[str, Any], delivery_id: str) -> 
 
 def _build_delivery(event: str, target: WebhookTarget, body: bytes, delivery_id: str) -> Dict[str, Any]:
     headers = {
-        "Content-Type": "application/json", "User-Agent": "Hermes-Agent-Outbound-Webhook",
+        "Content-Type": "application/json", "User-Agent": "Eidolon-Agent-Outbound-Webhook",
         "X-Hermes-Event": event, "X-Hermes-Delivery": delivery_id,
     }
     if target.secret:

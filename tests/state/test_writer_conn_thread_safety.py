@@ -28,7 +28,7 @@ import time
 
 import pytest
 
-from hermes_state import SessionDB
+from eidolon_state import SessionDB
 
 
 @pytest.fixture
@@ -131,7 +131,7 @@ class TestConcurrentReadersDoNotRaceTheWriter:
         import ast
         import inspect
 
-        import hermes_state as hs
+        import eidolon_state as hs
 
         src = inspect.getsource(hs)
         tree = ast.parse(src)

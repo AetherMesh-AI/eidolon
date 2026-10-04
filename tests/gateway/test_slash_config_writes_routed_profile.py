@@ -3,7 +3,7 @@
 Regression for #87939 / #75684: the multiplexed inbound handler already runs
 every slash handler inside ``_profile_runtime_scope`` (routed HERMES_HOME
 override), but several handlers built their write path from the module
-constant ``gateway.run._hermes_home`` — the LAUNCH home — so ``/reasoning
+constant ``gateway.run._eidolon_home`` — the LAUNCH home — so ``/reasoning
 --global``, ``/fast``, ``/memory approval``, ``/skills approval``, ``/verbose``
 and ``/footer`` persisted into the default profile's config.yaml. They now go
 through ``_gateway_config_home()`` like the reads do.
@@ -47,7 +47,7 @@ def homes(tmp_path, monkeypatch):
     routed_home.mkdir(parents=True)
     (default_home / "config.yaml").write_text("agent:\n  reasoning_effort: medium\n")
     (routed_home / "config.yaml").write_text("agent:\n  reasoning_effort: none\n")
-    monkeypatch.setattr(gateway_run, "_hermes_home", default_home)
+    monkeypatch.setattr(gateway_run, "_eidolon_home", default_home)
     monkeypatch.setenv("HERMES_HOME", str(default_home))
     return default_home, routed_home
 

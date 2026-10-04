@@ -331,7 +331,7 @@ def test_lock_file_persists_scan_provenance(tmp_path):
 
 
 def test_real_temp_repo_and_home_install_e2e(served_repo, monkeypatch, tmp_path):
-    from hermes_cli.skills_hub import do_install
+    from eidolon_cli.skills_hub import do_install
 
     _repo, url = served_repo
     home = tmp_path / "home"
@@ -385,9 +385,9 @@ def test_install_with_junctioned_skills_dir(served_repo, monkeypatch, tmp_path):
     install_dir is resolved by _resolve_lock_install_path (following the
     redirect), so relative_to() must receive the resolved skills root or it
     raises ValueError after the files have already been moved, leaving a lock
-    entry without a content_hash (which then poisons 'hermes skills check').
+    entry without a content_hash (which then poisons 'eidolon skills check').
     """
-    from hermes_cli.skills_hub import do_install
+    from eidolon_cli.skills_hub import do_install
 
     _repo, url = served_repo
     home = tmp_path / "home"
@@ -469,7 +469,7 @@ def test_install_skips_unreachable_support_file_e2e(served_repo_missing_support,
     whole URL install: the bundle still installs end-to-end through quarantine,
     scan, install, and lock provenance, with only the reachable files landing
     on disk and recorded in the lock file (#66760)."""
-    from hermes_cli.skills_hub import do_install
+    from eidolon_cli.skills_hub import do_install
 
     _repo, url = served_repo_missing_support
     home = tmp_path / "home"

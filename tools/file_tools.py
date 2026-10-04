@@ -53,7 +53,7 @@ def _get_max_read_chars() -> int:
     global _max_read_chars_cached
     if _max_read_chars_cached is None:
         try:
-            from hermes_cli.config import load_config
+            from eidolon_cli.config import load_config
             val = load_config().get("file_read_max_chars")
         except Exception:
             val = None
@@ -541,7 +541,7 @@ def read_file_tool(path: str, offset: int = 1, limit: int = DEFAULT_READ_LIMIT, 
     """Read a file with pagination and line numbers.
 
     Guard order: device-path blocklist (no I/O) → stat-based special-file
-    guard (host only) → document extraction → binary-extension guard → Hermes
+    guard (host only) → document extraction → binary-extension guard → Eidolon
     internal denylist → negative-result cache → dedup stub → real read.
     """
     try:
@@ -578,7 +578,7 @@ def read_file_tool(path: str, offset: int = 1, limit: int = DEFAULT_READ_LIMIT, 
                 f"Cannot read binary file '{path}' ({_resolved.suffix.lower()}). "
                 "Use vision_analyze for images, or terminal to inspect binary files.")
 
-        # Hermes internal denylist (prompt injection via catalog metadata,
+        # Eidolon internal denylist (prompt injection via catalog metadata,
         # credential stores). Pass the RESOLVED path: the denylist's own
         # resolve() uses the process cwd and would miss a relative "auth.json".
         block_error = get_read_block_error(str(_resolved))
@@ -1301,7 +1301,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

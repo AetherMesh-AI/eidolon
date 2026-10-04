@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import { $desktopOnboarding, type DesktopOnboardingState, type OnboardingContext } from '@/store/onboarding'
 import { makeOAuthProvider } from '@/test/oauth-provider'
-import type { OAuthProvider } from '@/types/hermes'
+import type { OAuthProvider } from '@/types/eidolon'
 
 import { Picker } from '.'
 
@@ -46,22 +46,29 @@ afterEach(() => {
 })
 
 describe('onboarding Picker', () => {
-  it('features Nous Portal and hides other providers behind a disclosure', () => {
+  it('shows an informational network preview and keeps real providers in the disclosure', () => {
     setProviders([makeOAuthProvider('anthropic', 'Anthropic Claude'), makeOAuthProvider('nous', 'Nous Portal')])
     render(<Picker ctx={ctx} />)
 
-    expect(screen.getByText('Nous Portal')).toBeTruthy()
-    expect(screen.getByText('Recommended')).toBeTruthy()
-    // Fireworks stays behind the disclosure with the other alternatives; only
-    // Nous Portal is visible before the user expands the list.
+    const network = screen.getByRole('region', { name: 'AetherMesh' })
+    expect(network.textContent).toContain('Coming soon')
+    expect(network.textContent).toContain('peer-to-peer AI network')
+    expect(network.querySelector('button, a, input')).toBeNull()
+    expect(screen.queryByText('Nous Portal')).toBeNull()
+    // The preview cannot begin authentication; real providers stay available.
+    fireEvent.click(network)
+    expect($desktopOnboarding.get().flow.status).toBe('idle')
     expect(screen.queryByText('Fireworks AI')).toBeNull()
     expect(screen.queryByText('Anthropic API Key')).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: 'Other providers' }))
 
+    expect(screen.getByText('Nous Portal')).toBeTruthy()
     expect(screen.getByText('Fireworks AI')).toBeTruthy()
     expect(screen.getByText('Anthropic API Key')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Collapse' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse' }))
+    expect(screen.queryByText('Nous Portal')).toBeNull()
+    expect(screen.getByRole('region', { name: 'AetherMesh' })).toBeTruthy()
   })
 
   it('shows Fireworks first in the expanded list, ahead of other OAuth providers', () => {
@@ -80,7 +87,7 @@ describe('onboarding Picker', () => {
 
     const indexOf = (needle: string) => labels.findIndex(text => text.includes(needle))
     expect(indexOf('Nous Portal')).toBeGreaterThanOrEqual(0)
-    expect(indexOf('Fireworks AI')).toBeGreaterThan(indexOf('Nous Portal'))
+    expect(indexOf('Nous Portal')).toBeGreaterThan(indexOf('Fireworks AI'))
     expect(indexOf('ChatGPT or Codex')).toBeGreaterThan(indexOf('Fireworks AI'))
     expect(indexOf('MiniMax')).toBeGreaterThan(indexOf('ChatGPT or Codex'))
   })

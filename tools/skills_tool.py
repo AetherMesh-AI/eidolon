@@ -12,9 +12,9 @@ from contextlib import suppress
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Dict, List, Optional, Tuple
 
-from hermes_constants import get_hermes_home
+from eidolon_constants import get_eidolon_home
 from tools.registry import registry, tool_error
-from hermes_cli.config import cfg_get
+from eidolon_cli.config import cfg_get
 from agent.skill_utils import (
     EXCLUDED_SKILL_DIRS as _EXCLUDED_SKILL_DIRS, is_skill_support_path as _is_skill_support_path)
 from tools.skills_tool_setup import (  # noqa: F401
@@ -57,7 +57,7 @@ def _skills_scan_signature(dirs_to_scan, disabled) -> tuple:
     return (tuple(sig), frozenset(disabled), platform)
 
 
-HERMES_HOME = get_hermes_home()  # all skills live in ~/.hermes/skills/ (seeded from bundled)
+HERMES_HOME = get_eidolon_home()  # all skills live in ~/.hermes/skills/ (seeded from bundled)
 SKILLS_DIR = HERMES_HOME / "skills"
 _SKILLS_DIR_AT_IMPORT = SKILLS_DIR
 
@@ -66,7 +66,7 @@ def _skills_dir() -> Path:
     """Active profile's skills dir at call time: the patched ``SKILLS_DIR`` when a patcher changed
     it, else live profile-scoped HERMES_HOME (long-lived runtimes may import before profile set)."""
     configured = Path(SKILLS_DIR)
-    return configured if configured != _SKILLS_DIR_AT_IMPORT else get_hermes_home() / "skills"
+    return configured if configured != _SKILLS_DIR_AT_IMPORT else get_eidolon_home() / "skills"
 
 
 _secret_capture_callback = None
@@ -89,7 +89,7 @@ def _skill_lookup_path_error(name: str) -> Optional[str]:
 
 def load_env() -> Dict[str, str]:
     """Load profile-scoped environment variables from HERMES_HOME/.env."""
-    env_path = get_hermes_home() / ".env"
+    env_path = get_eidolon_home() / ".env"
     env_vars: Dict[str, str] = {}
     if env_path.exists():
         # utf-8-sig: a Notepad BOM would otherwise glue U+FEFF onto the first key.
@@ -157,7 +157,7 @@ def _is_skill_disabled(name: str, platform: str = None) -> bool:
     ``HERMES_SESSION_PLATFORM``. A globally-disabled skill stays disabled on every platform
     (keep in sync with agent.skill_utils.get_disabled_skill_names)."""
     try:
-        from hermes_cli.config import load_config
+        from eidolon_cli.config import load_config
         skills_cfg = load_config().get("skills", {})
         resolved_platform = platform or os.getenv("HERMES_PLATFORM")
         if not resolved_platform:
@@ -240,7 +240,7 @@ def skills_list(category: str = None, task_id: str = None) -> str:
         _skills_dir().mkdir(parents=True, exist_ok=True)
         all_skills = _find_all_skills()
         try:
-            from hermes_cli.plugins import discover_plugins, get_plugin_manager
+            from eidolon_cli.plugins import discover_plugins, get_plugin_manager
             discover_plugins()
             for plugin_skill in get_plugin_manager().list_plugin_skill_metadata():
                 frontmatter = plugin_skill.pop("frontmatter", {})
@@ -269,7 +269,7 @@ def _resolve_plugin_skill(name, file_path, task_id, preprocess):
     local_category_name)`` to fall through to the flat-tree scan — categorized local skills also use
     ``category:skill`` in config/gateway prompts, so the on-disk ``category/skill`` form returns."""
     from agent.skill_utils import is_valid_namespace, parse_qualified_name
-    from hermes_cli.plugins import discover_plugins, get_plugin_manager
+    from eidolon_cli.plugins import discover_plugins, get_plugin_manager
     namespace, bare = parse_qualified_name(name)
     if not is_valid_namespace(namespace):
         return _fail(f"Invalid namespace '{namespace}' in '{name}'. Namespaces must match [a-zA-Z0-9_-]+."), None
@@ -493,7 +493,7 @@ def _locate_skill(name: str, local_category_name: Optional[str], project_dirs: l
                 f"Project skill '{name}' is quarantined: the security scan flagged its content as "
                 "dangerous. It will not load until the repo's skill content changes and passes a re-scan.",
                 hint="Inspect the skill in the repo checkout, or untrust the repo with "
-                "`hermes skills untrust`."), None, None
+                "`eidolon skills untrust`."), None, None
     if not skill_md or not skill_md.exists():
         available = [s["name"] for s in _sort_skills(_find_all_skills())[:20]]
         return _fail(f"Skill '{name}' not found.", available_skills=available,
@@ -551,7 +551,7 @@ def skill_view(
             return _fail(f"Skill '{name}' is not supported on this platform.", readiness_status=SkillReadinessStatus.UNSUPPORTED.value)
         resolved_name = frontmatter.get("name", skill_md.parent.name)
         if _is_skill_disabled(resolved_name):
-            return _fail(f"Skill '{resolved_name}' is disabled. Enable it with `hermes skills` or inspect the files directly on disk.")
+            return _fail(f"Skill '{resolved_name}' is disabled. Enable it with `eidolon skills` or inspect the files directly on disk.")
         if file_path and skill_dir:
             return _serve_skill_file(
                 skill_dir, file_path, name, list_available=True, mark_read=True,
@@ -675,7 +675,7 @@ import threading  # noqa: F401,E402
 
 
 _PLUGIN_COMPAT_LAZY = {
-    'display_hermes_home': ('hermes_constants', 'display_hermes_home'),
+    'display_eidolon_home': ('eidolon_constants', 'display_eidolon_home'),
     'env_var_enabled': ('utils', 'env_var_enabled'),
 }
 
@@ -685,7 +685,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

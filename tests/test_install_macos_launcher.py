@@ -47,9 +47,9 @@ def test_venv_launcher_bypasses_uv_console_script_that_requires_realpath(tmp_pat
         venv_bin / "python",
         '#!/bin/sh\nprintf "%s\\n" "$@" > "$LAUNCH_RESULT"\n',
     )
-    (install_dir / "hermes").write_text("# source entrypoint\n", encoding="utf-8")
+    (install_dir / "eidolon").write_text("# source entrypoint\n", encoding="utf-8")
     _make_executable(
-        venv_bin / "hermes",
+        venv_bin / "eidolon",
         "#!/bin/sh\n"
         f'PATH="{minimal_path}"\n'
         "'''exec' \"$(dirname -- \"$(realpath -- \"$0\")\")\"/'python3' \"$0\" \"$@\"\n"
@@ -72,11 +72,13 @@ def test_venv_launcher_bypasses_uv_console_script_that_requires_realpath(tmp_pat
         "INSTALL_DIR": str(install_dir),
         "DISTRO": "macos",
         "COMMAND_LINK_DIR": str(command_dir),
+        "HOME": str(tmp_path),
+        "PATH": str(command_dir) + os.pathsep + os.environ["PATH"],
     }
     subprocess.run(["/bin/bash", "-c", harness], env=env, check=True)
 
     completed = subprocess.run(
-        [command_dir / "hermes", "--version"],
+        [command_dir / "eidolon", "--version"],
         env=os.environ | {"LAUNCH_RESULT": str(result)},
         text=True,
         capture_output=True,
@@ -84,6 +86,6 @@ def test_venv_launcher_bypasses_uv_console_script_that_requires_realpath(tmp_pat
 
     assert completed.returncode == 0, completed.stderr
     assert result.read_text(encoding="utf-8").splitlines() == [
-        str(install_dir / "hermes"),
+        str(install_dir / "eidolon"),
         "--version",
     ]

@@ -8,7 +8,7 @@ gate in :mod:`tools.approval`.
 import contextvars
 import logging
 import os
-from hermes_cli.config import cfg_get
+from eidolon_cli.config import cfg_get
 from utils import env_var_enabled, is_truthy_value
 
 logger = logging.getLogger("tools.approval")
@@ -23,7 +23,7 @@ def _ctx(name: str, default: "str | None" = "") -> contextvars.ContextVar:
 _approval_session_key: contextvars.ContextVar[str] = _ctx("approval_session_key")
 _approval_turn_id: contextvars.ContextVar[str] = _ctx("approval_turn_id")
 _approval_tool_call_id: contextvars.ContextVar[str] = _ctx("approval_tool_call_id")
-# Hermes session id (observability identity, distinct from the gateway routing session_key), forwarded to approval
+# Eidolon session id (observability identity, distinct from the gateway routing session_key), forwarded to approval
 # hooks so observer plugins attach marks to the REAL session scope — otherwise they fall back to a synthetic "default"
 # session whose scope never closes, so close-time exporters never ship them.
 _approval_session_id: contextvars.ContextVar[str] = _ctx("approval_session_id")
@@ -58,7 +58,7 @@ def _fire_approval_hook(hook_name: str, **kwargs) -> None:
     observability is not.
     """
     try:
-        from hermes_cli.lifecycle import invoke_hook
+        from eidolon_cli.lifecycle import invoke_hook
     except Exception:
         return  # plugin system unavailable (bare tool-only imports, minimal tests)
     try:
@@ -146,7 +146,7 @@ def _is_unattended_platform_approval_context() -> bool:
 
 
 def _is_single_query_approval_context() -> bool:
-    """True for a single-query (-q) session: ``hermes chat -q`` exports
+    """True for a single-query (-q) session: ``eidolon chat -q`` exports
     ``HERMES_INTERACTIVE=1`` (so sudo password prompts work) but nobody is waiting
     to answer approvals; without this marker the gate would wait the full timeout,
     fail closed and push the agent toward workarounds (e.g. execute_code).
@@ -218,7 +218,7 @@ def _get_approval_config() -> dict:
     """Read the approvals config block: the LIVE config-cache sub-dict
     (load_config_readonly contract) — callers must not mutate it or any nested structure."""
     try:
-        from hermes_cli.config import load_config_readonly
+        from eidolon_cli.config import load_config_readonly
         return load_config_readonly().get("approvals", {}) or {}
     except Exception as e:
         logger.warning("Failed to load approval config: %s", e)
@@ -260,7 +260,7 @@ def _get_approval_timeout() -> int:
 def _binary_approval_mode(key: str) -> str:
     """Read ``approvals.<key>`` as 'approve' or 'deny' (default deny)."""
     try:
-        from hermes_cli.config import load_config_readonly
+        from eidolon_cli.config import load_config_readonly
         mode = str(cfg_get(load_config_readonly(), "approvals", key, default="deny")).lower().strip()
         return "approve" if mode in {"approve", "off", "allow", "yes"} else "deny"
     except Exception:
@@ -289,7 +289,7 @@ def _tirith_fail_open() -> bool:
     False means the operator opted into fail-closed: an un-importable scanner
     must not silently grant access."""
     try:
-        from hermes_cli.config import load_config_readonly
+        from eidolon_cli.config import load_config_readonly
         _sec = (load_config_readonly() or {}).get("security", {}) or {}
         return bool(_sec.get("tirith_fail_open", True)) if _sec.get("tirith_enabled", True) else True
     except Exception:
@@ -299,7 +299,7 @@ def _tirith_fail_open() -> bool:
 def _get_approval_transport_config() -> tuple[str, str | None]:
     """Return explicitly selected transport and fail-closed fallback mode."""
     try:
-        from hermes_cli.config import load_config_readonly
+        from eidolon_cli.config import load_config_readonly
         cfg = ((load_config_readonly() or {}).get("security") or {}).get("approval") or {}
         selected = str(cfg.get("transport") or "builtin").strip().lower()
         fallback = str(cfg.get("transport_fallback") or "").strip().lower()

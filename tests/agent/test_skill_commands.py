@@ -209,7 +209,7 @@ class TestScanSkillCommands:
         """
         import agent.skill_commands as sc_mod
         from agent.skill_commands import get_skill_commands
-        from hermes_constants import reset_hermes_home_override, set_hermes_home_override
+        from eidolon_constants import reset_eidolon_home_override, set_eidolon_home_override
 
         empty_local_dir = tmp_path / "no-local-skills"
         empty_local_dir.mkdir()
@@ -235,22 +235,22 @@ class TestScanSkillCommands:
             patch.object(sc_mod, "_skill_commands_platform", None),
             patch.object(sc_mod, "_skill_commands_home", None),
         ):
-            token = set_hermes_home_override(profile_a)
+            token = set_eidolon_home_override(profile_a)
             try:
                 profile_a_commands = dict(get_skill_commands())
             finally:
-                reset_hermes_home_override(token)
+                reset_eidolon_home_override(token)
 
             assert "/a-only" in profile_a_commands
             assert "/b-only" not in profile_a_commands
 
             # Switching profiles without touching the cache directly must
             # rescan — not keep serving profile_a's stale view.
-            token = set_hermes_home_override(profile_b)
+            token = set_eidolon_home_override(profile_b)
             try:
                 profile_b_commands = dict(get_skill_commands())
             finally:
-                reset_hermes_home_override(token)
+                reset_eidolon_home_override(token)
 
             assert "/b-only" in profile_b_commands
             assert "/a-only" not in profile_b_commands
@@ -263,7 +263,7 @@ class TestScanSkillCommands:
         """
         import agent.skill_commands as sc_mod
         from agent.skill_commands import build_skill_invocation_message, get_skill_commands
-        from hermes_constants import reset_hermes_home_override, set_hermes_home_override
+        from eidolon_constants import reset_eidolon_home_override, set_eidolon_home_override
 
         profile_b = tmp_path / "profiles" / "b"
         _make_skill(profile_b / "skills", "b-only", body="Body of b-only.")
@@ -274,7 +274,7 @@ class TestScanSkillCommands:
             patch.object(sc_mod, "_skill_commands_platform", None),
             patch.object(sc_mod, "_skill_commands_home", None),
         ):
-            token = set_hermes_home_override(profile_b)
+            token = set_eidolon_home_override(profile_b)
             try:
                 commands = dict(get_skill_commands())
                 assert "/b-only" in commands
@@ -287,7 +287,7 @@ class TestScanSkillCommands:
                 # (normalize_skill_lookup_name must use the same live root).
                 msg = build_skill_invocation_message("/b-only", user_instruction="go")
             finally:
-                reset_hermes_home_override(token)
+                reset_eidolon_home_override(token)
         assert msg is not None and "Body of b-only." in msg
 
     def test_get_skill_commands_rescans_when_leaving_platform_scope(self, tmp_path, monkeypatch):

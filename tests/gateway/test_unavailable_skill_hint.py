@@ -15,7 +15,7 @@ These tests pin the fixed behavior:
   :func:`agent.skill_commands.scan_skill_commands`), so the slug differs
   from the directory name when the declared name is multi-word.
 * ``disabled`` membership is checked by the declared name, because that
-  is what :func:`hermes_cli.skills_config.save_disabled_skills` stores.
+  is what :func:`eidolon_cli.skills_config.save_disabled_skills` stores.
 """
 from __future__ import annotations
 
@@ -61,7 +61,7 @@ def test_frontmatter_slug_matched_even_when_dir_name_differs(
 
     _write_skill(tmp_skills, "mlops/stable-diffusion", "Stable Diffusion Image Generation")
 
-    # Config disables by declared name (matches what `hermes skills config` writes).
+    # Config disables by declared name (matches what `eidolon skills config` writes).
     monkeypatch.setattr(
         "gateway.run._get_disabled_skill_names",
         lambda: {"Stable Diffusion Image Generation"},
@@ -81,7 +81,7 @@ def test_frontmatter_slug_matched_even_when_dir_name_differs(
         "the old code compared the dir name 'stable-diffusion' and returned None"
     )
     assert "disabled" in msg.lower()
-    assert "hermes skills config" in msg
+    assert "eidolon skills config" in msg
 
 
 def test_unknown_command_still_returns_none(

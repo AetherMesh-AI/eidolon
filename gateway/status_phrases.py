@@ -15,9 +15,9 @@ from typing import Any
 
 import yaml
 
-from hermes_constants import get_hermes_home
+from eidolon_constants import get_eidolon_home
 
-# Hermes UI surfaces, not app/vendor buckets.  Long-running-only: regular tool/thinking/interim
+# Eidolon UI surfaces, not app/vendor buckets.  Long-running-only: regular tool/thinking/interim
 # chatter is deliberately not rewritten (too noisy in chat).
 _STATUS_SURFACES = ("status", "generic")
 _MAX_CUSTOM_PHRASES_PER_SURFACE = 80
@@ -115,7 +115,7 @@ def resolve_status_phrase_catalog(user_config: Mapping[str, Any] | None,
     ``display.status_phrases`` (or legacy alias ``generic_status_phrases``), then
     ``display.platforms.<platform>.status_phrases``."""
     catalog = _copy_catalog(_DEFAULT_PHRASES)
-    hermes_home = get_hermes_home()
+    hermes_home = get_eidolon_home()
     _merge_phrase_paths(catalog, list(_CONVENTIONAL_RELATIVE_PATHS), base_dir=hermes_home)
     display = (user_config or {}).get("display") if isinstance(user_config, Mapping) else None
     if not isinstance(display, Mapping):
@@ -131,7 +131,7 @@ def resolve_status_phrase_catalog(user_config: Mapping[str, Any] | None,
 
 def classify_status_context(kind: str, *, tool_name: str | None = None, preview: str | None = None,
                             args: Any = None) -> str:
-    """Classify an internal gateway event into a Hermes UI-surface bucket."""
+    """Classify an internal gateway event into a Eidolon UI-surface bucket."""
     if str(kind or "").strip().lower() in {"heartbeat", "waiting", "long_running", "status"}:
         return "status"
     return "generic"

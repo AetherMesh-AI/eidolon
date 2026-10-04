@@ -20,7 +20,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from hermes_state import SessionDB
+from eidolon_state import SessionDB
 
 
 @pytest.fixture()
@@ -39,8 +39,8 @@ def server(hermes_home):
     with patch.dict(
         "sys.modules",
         {
-            "hermes_cli.env_loader": MagicMock(),
-            "hermes_cli.banner": MagicMock(),
+            "eidolon_cli.env_loader": MagicMock(),
+            "eidolon_cli.banner": MagicMock(),
         },
     ):
         mod = importlib.import_module("tui_gateway.server")
@@ -50,7 +50,7 @@ def server(hermes_home):
     # Restore in place instead of clear+reload: importlib.reload
     # re-registers atexit hooks (duplicate ThreadPoolExecutor shutdowns
     # race the stderr buffer at interpreter exit — same class as PR #34217)
-    # and re-captures module-level paths like _hermes_home against this
+    # and re-captures module-level paths like _eidolon_home against this
     # test's soon-deleted tmpdir, breaking later files in the same process.
     mod._methods.clear()
     mod._methods.update(methods)

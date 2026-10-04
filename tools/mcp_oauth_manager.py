@@ -59,7 +59,7 @@ class HermesMCPOAuthProvider(HermesProviderMixin, *_SDK_BASES):
         import anyio
         self.context.lock = anyio.Semaphore(1, max_value=1)
         self._hermes_server_name = server_name
-        self._hermes_home = ""
+        self._eidolon_home = ""
         # A config-supplied client_id rejected as invalid_client means the *config* is wrong — only DCR clients auto-heal.
         self._hermes_preregistered = preregistered
 
@@ -98,7 +98,7 @@ class HermesMCPOAuthProvider(HermesProviderMixin, *_SDK_BASES):
     async def _prefetch_oauth_metadata(self) -> None:
         """Fetch PRM + ASM from the well-known endpoints before the first request, via the SDK's own URL
         builders/response handlers so we track whatever the pinned SDK expects."""
-        # The SDK's httpx flavour, not Hermes': `create_oauth_metadata_request` returns *its* (httpx2) Request objects.
+        # The SDK's httpx flavour, not Eidolon': `create_oauth_metadata_request` returns *its* (httpx2) Request objects.
         from tools.mcp_tool import sdk_httpx
         httpx = sdk_httpx()
         if httpx is None:  # pragma: no cover — SDK import would have failed
@@ -204,7 +204,7 @@ class HermesMCPOAuthProvider(HermesProviderMixin, *_SDK_BASES):
 
     async def async_auth_flow(self, request):  # type: ignore[override]
         try:  # pre-flow hook: reload from disk if it changed (non-fatal on error)
-            await get_manager().invalidate_if_disk_changed(self._hermes_server_name, hermes_home=self._hermes_home)
+            await get_manager().invalidate_if_disk_changed(self._hermes_server_name, hermes_home=self._eidolon_home)
         except Exception as exc:  # pragma: no cover — defensive
             self._log_nonfatal("pre-flow disk-watch", exc)
         # Bridge the bidirectional generator by hand: a naive ``async for item in inner: yield
@@ -289,13 +289,13 @@ class MCPOAuthManager:
             if entry.provider is None:
                 entry.provider = self._build_provider(server_name, entry)
                 if entry.provider is not None:
-                    entry.provider._hermes_home = key[0]
+                    entry.provider._eidolon_home = key[0]
             return entry.provider
 
     @staticmethod
     def _key(server_name: str, hermes_home: str | Path | None = None) -> tuple[str, str]:
-        from hermes_constants import get_hermes_home
-        home = Path(hermes_home) if hermes_home is not None else get_hermes_home()
+        from eidolon_constants import get_eidolon_home
+        home = Path(hermes_home) if hermes_home is not None else get_eidolon_home()
         return (str(home.expanduser().resolve(strict=False)), server_name)
 
     def _build_provider(self, server_name: str, entry: _ProviderEntry) -> Optional[Any]:

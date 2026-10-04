@@ -1,7 +1,7 @@
 """Kanban tools — structured tool-call surface for worker + orchestrator agents.
 
 Registered only under the dispatcher (``HERMES_KANBAN_TASK`` set) or when the profile
-enables the ``kanban`` toolset. Tools rather than ``hermes kanban`` shell-outs: they run
+enables the ``kanban`` toolset. Tools rather than ``eidolon kanban`` shell-outs: they run
 in the agent's process (reach ``kanban.db`` from a container/SSH terminal backend, no
 shlex quoting of JSON metadata, structured-JSON failures). Humans use CLI/dashboard.
 """
@@ -16,9 +16,9 @@ from contextlib import contextmanager
 from typing import Any, Callable, Optional
 
 from agent.redact import redact_sensitive_text
-from hermes_cli.goals import judge_goal
+from eidolon_cli.goals import judge_goal
 from tools.registry import registry, tool_error
-from hermes_cli.config import cfg_get, load_config
+from eidolon_cli.config import cfg_get, load_config
 from tools.kanban_tools_schemas import (
     KANBAN_ATTACH_SCHEMA,
     KANBAN_ATTACH_URL_SCHEMA, KANBAN_ATTACHMENTS_SCHEMA, KANBAN_BLOCK_SCHEMA, KANBAN_COMMENT_SCHEMA,
@@ -201,8 +201,8 @@ def _board(board: Optional[str], *, quiet_close: bool = False):
     """``with _board(slug) as (kb, conn)``; lazy import so the module loads in non-kanban
     contexts. ``board=None`` keeps the env/symlink resolution chain; an explicit slug
     overrides it per call. ``quiet_close`` swallows close() errors (best-effort bridges)."""
-    from hermes_cli import kanban_db as kb
-    from hermes_cli import kanban_db_connect as kbc
+    from eidolon_cli import kanban_db as kb
+    from eidolon_cli import kanban_db_connect as kbc
     conn = kbc.connect(board=board)
     try:
         yield kb, conn
@@ -426,7 +426,7 @@ def heartbeat_current_worker_from_env() -> bool:
         return False
     _auto_heartbeat_last_attempt = now
     try:
-        from hermes_cli import kanban_db_dispatch as kbd
+        from eidolon_cli import kanban_db_dispatch as kbd
         with _board(None, quiet_close=True) as (kb, conn):
             ops = ((kb.heartbeat_claim, {"claimer": os.environ.get("HERMES_KANBAN_CLAIM_LOCK")}),
                    (kbd.heartbeat_worker, {"note": None, "expected_run_id": _worker_run_id(tid)}))
@@ -669,7 +669,7 @@ def _handle_heartbeat(args: dict, **kw) -> str:
     Without the claim half, a worker blocked in one long tool call would still
     be reclaimed by ``release_stale_claims``."""
     tid = _worker_guard("kanban_heartbeat", args)
-    from hermes_cli import kanban_db_dispatch as kbd
+    from eidolon_cli import kanban_db_dispatch as kbd
     with _board(args.get("board")) as (kb, conn):
         # The dispatcher pins HERMES_KANBAN_CLAIM_LOCK at spawn; the default
         # claimer covers locally-driven workers that bypassed the dispatcher.
@@ -771,7 +771,7 @@ def _download_url_with_cap(url: str, max_bytes: int) -> tuple[bytes, Optional[st
 @_kanban_handler("kanban_attach_url")
 def _handle_attach_url(args: dict, **kw) -> str:
     """Attach a file fetched server-side from an http(s) URL (shared size cap)."""
-    from hermes_cli import kanban_db as kb
+    from eidolon_cli import kanban_db as kb
     tid = _worker_guard("kanban_attach_url", args)
     url = str(_require_text(args, "url")).strip()
     filename = args.get("filename") or args.get("title")
@@ -873,7 +873,7 @@ def _resolve_notify_target() -> Optional[dict[str, Any]]:
     notifier_profile = env("HERMES_SESSION_PROFILE", "") or os.environ.get("HERMES_PROFILE")
     if not notifier_profile:
         try:
-            from hermes_cli.profiles import get_active_profile_name
+            from eidolon_cli.profiles import get_active_profile_name
             notifier_profile = get_active_profile_name() or "default"
         except Exception:
             notifier_profile = "default"
@@ -914,7 +914,7 @@ def _maybe_auto_subscribe(conn: Any, task_id: str) -> bool:
         target = _resolve_notify_target()
         if target is None:
             return False  # CLI / cron / test — no persistent channel
-        from hermes_cli import kanban_db_notify as _kbn
+        from eidolon_cli import kanban_db_notify as _kbn
         # Inheritance and explicit subscriptions already encode the delivery policy.
         # Auto-subscribe must not turn a passive destination into an agent wake.
         if any(sub["platform"] == target["platform"] and sub["chat_id"] == target["chat_id"]

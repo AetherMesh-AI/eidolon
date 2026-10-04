@@ -20,7 +20,7 @@ env = {'PATH': f'{BASE}/bin:/usr/bin:/bin', 'HOME': str(BASE/'home'),
 for name in ('home', 'hermes', 'bin'):
     (BASE/name).mkdir(exist_ok=True)
 sys.path.insert(0, str(REPO))
-from hermes_cli import banner
+from eidolon_cli import banner
 
 if len(sys.argv) > 1:
     os.environ.clear()

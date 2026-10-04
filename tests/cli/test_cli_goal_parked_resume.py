@@ -5,8 +5,8 @@ from unittest.mock import patch
 
 import pytest
 
-from hermes_cli import goals
-from hermes_cli.cli_loops_mixin import CLILoopsMixin
+from eidolon_cli import goals
+from eidolon_cli.cli_loops_mixin import CLILoopsMixin
 
 
 @pytest.fixture

@@ -45,7 +45,7 @@ test('a dual-venv checkout uses the selected interpreter and its own site-packag
   expect(backend?.command).toBe(preferred.python)
   expect(backend?.env.PYTHONPATH.split(path.delimiter)).toEqual([root, preferred.sitePackages])
   expect(backend?.env.PYTHONPATH).not.toContain(sibling.sitePackages)
-  expect(backend?.args).toEqual(['-m', 'hermes_cli.main', 'serve'])
+  expect(backend?.args).toEqual(['-m', 'eidolon_cli.main', 'serve'])
   expect(systemPython).not.toHaveBeenCalled()
 })
 

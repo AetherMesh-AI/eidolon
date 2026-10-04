@@ -247,7 +247,7 @@ def cmd_doctor(a, token):
         "anonymous .rss needs no account, login, cookie or key; ~1 request/minute per IP",
         "www.reddit.com .json, api.reddit.com and old.reddit are 403 / an empty shell for server IPs",
         "for more than a few calls per task register a free 'script' app at reddit.com/prefs/apps and set "
-        "REDDIT_CLIENT_ID/REDDIT_CLIENT_SECRET in .env (app-only credentials; Hermes never logs in as the user)",
+        "REDDIT_CLIENT_ID/REDDIT_CLIENT_SECRET in .env (app-only credentials; Eidolon never logs in as the user)",
     ]
     return report
 

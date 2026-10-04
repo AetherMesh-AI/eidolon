@@ -321,7 +321,7 @@ export const zh: Translations = {
     enableAfterInstall: "安装后启用",
     enableRuntime: "启用",
     forceReinstall: "强制重装（先删除已有目录）",
-    headline: "发现、安装、启用和更新 Eidolon 插件（对齐 `hermes plugins` CLI）。",
+    headline: "发现、安装、启用和更新 Eidolon 插件（对齐 `eidolon plugins` CLI）。",
     identifierLabel: "Git 地址或 owner/repo",
     inactive: "未启用",
     installBtn: "安装",

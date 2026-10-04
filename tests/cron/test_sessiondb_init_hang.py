@@ -79,10 +79,10 @@ class TestSessionDbInitTimeout:
         self, tmp_path, monkeypatch
     ):
         """The timeout worker must construct SessionDB under the active profile."""
-        from hermes_constants import (
-            get_hermes_home,
-            reset_hermes_home_override,
-            set_hermes_home_override,
+        from eidolon_constants import (
+            get_eidolon_home,
+            reset_eidolon_home_override,
+            set_eidolon_home_override,
         )
 
         default_home = tmp_path / "default"
@@ -92,19 +92,19 @@ class TestSessionDbInitTimeout:
         fake_db = MagicMock()
 
         def make_session_db(*args, **kwargs):
-            observed_homes.append(get_hermes_home())
+            observed_homes.append(get_eidolon_home())
             return fake_db
 
         job = {"id": "profile-sessiondb", "name": "test", "prompt": "hello"}
-        profile_token = set_hermes_home_override(profile_home)
+        profile_token = set_eidolon_home_override(profile_home)
         try:
-            with patch("cron.scheduler._hermes_home", None), \
+            with patch("cron.scheduler._eidolon_home", None), \
                  patch("cron.scheduler_delivery._resolve_origin", return_value=None), \
-                 patch("hermes_cli.env_loader.load_hermes_dotenv"), \
-                 patch("hermes_cli.env_loader.reset_secret_source_cache"), \
-                 patch("hermes_state_registry.acquire", side_effect=make_session_db), \
+                 patch("eidolon_cli.env_loader.load_hermes_dotenv"), \
+                 patch("eidolon_cli.env_loader.reset_secret_source_cache"), \
+                 patch("eidolon_state_registry.acquire", side_effect=make_session_db), \
                  patch(
-                     "hermes_cli.runtime_provider.resolve_runtime_provider",
+                     "eidolon_cli.runtime_provider.resolve_runtime_provider",
                      return_value=_RUNTIME,
                  ), \
                  patch("run_agent.AIAgent") as mock_agent_cls:
@@ -114,7 +114,7 @@ class TestSessionDbInitTimeout:
 
                 success, _output, final_response, error = run_job(job)
         finally:
-            reset_hermes_home_override(profile_token)
+            reset_eidolon_home_override(profile_token)
 
         assert success is True
         assert error is None
@@ -127,13 +127,13 @@ class TestSessionDbInitTimeout:
         job = {"id": "wedged-sessiondb", "name": "test", "prompt": "hello"}
         timeouts: list = []
 
-        with patch("cron.scheduler._hermes_home", tmp_path), \
+        with patch("cron.scheduler._eidolon_home", tmp_path), \
              patch("cron.scheduler_delivery._resolve_origin", return_value=None), \
-             patch("hermes_cli.env_loader.load_hermes_dotenv"), \
-             patch("hermes_cli.env_loader.reset_secret_source_cache"), \
-             patch("hermes_state_registry.acquire"), \
+             patch("eidolon_cli.env_loader.load_hermes_dotenv"), \
+             patch("eidolon_cli.env_loader.reset_secret_source_cache"), \
+             patch("eidolon_state_registry.acquire"), \
              patch(
-                 "hermes_cli.runtime_provider.resolve_runtime_provider",
+                 "eidolon_cli.runtime_provider.resolve_runtime_provider",
                  return_value=_RUNTIME,
              ), \
              patch("run_agent.AIAgent") as mock_agent_cls, \
@@ -162,13 +162,13 @@ class TestSessionDbInitTimeout:
         job = {"id": "bad-timeout-env", "name": "test", "prompt": "hello"}
         timeouts: list = []
 
-        with patch("cron.scheduler._hermes_home", tmp_path), \
+        with patch("cron.scheduler._eidolon_home", tmp_path), \
              patch("cron.scheduler_delivery._resolve_origin", return_value=None), \
-             patch("hermes_cli.env_loader.load_hermes_dotenv"), \
-             patch("hermes_cli.env_loader.reset_secret_source_cache"), \
-             patch("hermes_state_registry.acquire", return_value=fake_db), \
+             patch("eidolon_cli.env_loader.load_hermes_dotenv"), \
+             patch("eidolon_cli.env_loader.reset_secret_source_cache"), \
+             patch("eidolon_state_registry.acquire", return_value=fake_db), \
              patch(
-                 "hermes_cli.runtime_provider.resolve_runtime_provider",
+                 "eidolon_cli.runtime_provider.resolve_runtime_provider",
                  return_value=_RUNTIME,
              ), \
              patch("run_agent.AIAgent") as mock_agent_cls, \
@@ -205,13 +205,13 @@ class TestSessionDbInitTimeout:
         job = {"id": "config-timeout", "name": "test", "prompt": "hello"}
         timeouts: list = []
 
-        with patch("cron.scheduler._hermes_home", tmp_path), \
+        with patch("cron.scheduler._eidolon_home", tmp_path), \
              patch("cron.scheduler_delivery._resolve_origin", return_value=None), \
-             patch("hermes_cli.env_loader.load_hermes_dotenv"), \
-             patch("hermes_cli.env_loader.reset_secret_source_cache"), \
-             patch("hermes_state_registry.acquire"), \
+             patch("eidolon_cli.env_loader.load_hermes_dotenv"), \
+             patch("eidolon_cli.env_loader.reset_secret_source_cache"), \
+             patch("eidolon_state_registry.acquire"), \
              patch(
-                 "hermes_cli.runtime_provider.resolve_runtime_provider",
+                 "eidolon_cli.runtime_provider.resolve_runtime_provider",
                  return_value=_RUNTIME,
              ), \
              patch("run_agent.AIAgent") as mock_agent_cls, \
@@ -255,13 +255,13 @@ class TestDispatchGuardReleasedAfterHang:
         timeouts: list = []
 
         try:
-            with patch("cron.scheduler._hermes_home", tmp_path), \
+            with patch("cron.scheduler._eidolon_home", tmp_path), \
                  patch("cron.scheduler_delivery._resolve_origin", return_value=None), \
-                 patch("hermes_cli.env_loader.load_hermes_dotenv"), \
-                 patch("hermes_cli.env_loader.reset_secret_source_cache"), \
-                 patch("hermes_state_registry.acquire"), \
+                 patch("eidolon_cli.env_loader.load_hermes_dotenv"), \
+                 patch("eidolon_cli.env_loader.reset_secret_source_cache"), \
+                 patch("eidolon_state_registry.acquire"), \
                  patch(
-                     "hermes_cli.runtime_provider.resolve_runtime_provider",
+                     "eidolon_cli.runtime_provider.resolve_runtime_provider",
                      return_value=_RUNTIME,
                  ), \
                  patch("run_agent.AIAgent") as mock_agent_cls, \
@@ -353,13 +353,13 @@ class TestLateSessionDbClosedAfterTimeout:
         job = {"id": "late-close-test", "name": "test", "prompt": "hello"}
 
         try:
-            with patch("cron.scheduler._hermes_home", tmp_path), \
+            with patch("cron.scheduler._eidolon_home", tmp_path), \
                  patch("cron.scheduler_delivery._resolve_origin", return_value=None), \
-                 patch("hermes_cli.env_loader.load_hermes_dotenv"), \
-                 patch("hermes_cli.env_loader.reset_secret_source_cache"), \
-                 patch("hermes_state_registry.acquire", side_effect=_hanging_then_capture), \
+                 patch("eidolon_cli.env_loader.load_hermes_dotenv"), \
+                 patch("eidolon_cli.env_loader.reset_secret_source_cache"), \
+                 patch("eidolon_state_registry.acquire", side_effect=_hanging_then_capture), \
                  patch(
-                     "hermes_cli.runtime_provider.resolve_runtime_provider",
+                     "eidolon_cli.runtime_provider.resolve_runtime_provider",
                      return_value={
                          "api_key": "test-key",
                          "base_url": "https://example.invalid/v1",
@@ -411,11 +411,11 @@ class TestSessionDbInitAfterEarlyReturns:
             "script": "gate.py",
         }
 
-        with patch("cron.scheduler._hermes_home", tmp_path), \
+        with patch("cron.scheduler._eidolon_home", tmp_path), \
              patch("cron.scheduler_delivery._resolve_origin", return_value=None), \
-             patch("hermes_cli.env_loader.load_hermes_dotenv"), \
-             patch("hermes_cli.env_loader.reset_secret_source_cache"), \
-             patch("hermes_state_registry.acquire") as mock_db_cls, \
+             patch("eidolon_cli.env_loader.load_hermes_dotenv"), \
+             patch("eidolon_cli.env_loader.reset_secret_source_cache"), \
+             patch("eidolon_state_registry.acquire") as mock_db_cls, \
              patch(
                  "cron.scheduler._run_job_script_with_claim_heartbeat",
                  return_value=(True, '{"wakeAgent": false}'),

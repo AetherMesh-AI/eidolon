@@ -75,7 +75,7 @@ _BEARER_PROVIDERS: Dict[str, Tuple[str, ...]] = {
 # ``secrets.replace.match_headers`` targets arbitrary header names (case-insensitive; confirmed by the
 # iron-proxy author on PR #30179 and verified in the pinned v0.39.0 source — ``swapHeaders`` +
 # ``parseHeaderMatchers``), so these are first-class swapped providers, not "uncovered". ``aliases`` are
-# interchangeable env-var names for the SAME upstream credential (Hermes' auth.py keys Google on both
+# interchangeable env-var names for the SAME upstream credential (Eidolon' auth.py keys Google on both
 # GEMINI_API_KEY and GOOGLE_API_KEY). The sandbox receives the minted token under the canonical name AND
 # every alias so SDKs reading either work.
 _HEADER_AUTH_PROVIDERS: Dict[str, Dict[str, Tuple[str, ...]]] = {
@@ -155,13 +155,13 @@ class TokenMapping:
 
 
 def _hermes_bin_dir() -> Path:
-    from hermes_constants import get_hermes_home
-    return get_hermes_home() / "bin"
+    from eidolon_constants import get_eidolon_home
+    return get_eidolon_home() / "bin"
 
 
 def _proxy_state_dir_ro() -> Path:  # without creating it (status probes, pidfile reads)
-    from hermes_constants import get_hermes_home
-    return get_hermes_home() / "proxy"
+    from eidolon_constants import get_eidolon_home
+    return get_eidolon_home() / "proxy"
 
 
 def _proxy_state_dir() -> Path:
@@ -396,7 +396,7 @@ def ensure_management_token(*, force: bool = False) -> str:
 
 
 def _yaml():
-    """PyYAML module or None (it is a Hermes dep, but never a hard requirement here)."""
+    """PyYAML module or None (it is a Eidolon dep, but never a hard requirement here)."""
     try:
         import yaml
         return yaml
@@ -949,7 +949,7 @@ def _refresh_secrets_from_bitwarden(env: Dict[str, str], needed: set, bitwarden_
             "Bitwarden refresh did not return secrets for %s — falling back to host env for those names (allow_env_fallback=true).", missing,
         )
     if warnings:  # log only the count: the taint analyzer can't tell bws status text is non-secret
-        logger.warning("Bitwarden refresh produced %d warning(s); run `hermes secrets bitwarden status` for detail.", len(warnings))
+        logger.warning("Bitwarden refresh produced %d warning(s); run `eidolon secrets bitwarden status` for detail.", len(warnings))
 
 
 def _forget_daemon() -> None:

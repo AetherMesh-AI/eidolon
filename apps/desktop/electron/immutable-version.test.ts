@@ -1,10 +1,13 @@
-import { expect, it } from 'vitest'
+import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { execFileSync } from 'node:child_process'
-import { readInstallStampFromPaths, formatInstallVersion } from './install-stamp'
+
+import { expect, it } from 'vitest'
+
 import { writeBuildStamp } from '../scripts/write-build-stamp.mjs'
+
+import { formatInstallVersion, readInstallStampFromPaths } from './install-stamp'
 
 it('generates a build identity and consumes it through the real runtime reader', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'identity-'))
@@ -18,13 +21,12 @@ it('generates a build identity and consumes it through the real runtime reader',
     git('init', '-b', 'main'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid')
     git('commit', '--allow-empty', '-m', 'anchor')
     const anchor = git('rev-parse', 'HEAD')
-    fs.mkdirSync(path.join(root, 'hermes_cli'))
-    fs.writeFileSync(path.join(root, 'hermes_cli/eidolon_version.py'),
-      fs.readFileSync(path.resolve('../../hermes_cli/eidolon_version.py'), 'utf8').replace('437db7394d78a178966fb2ae42792f2978133a9d', anchor))
+    fs.mkdirSync(path.join(root, 'eidolon_cli'))
+    fs.writeFileSync(path.join(root, 'eidolon_cli/eidolon_version.py'),
+      fs.readFileSync(path.resolve('../../eidolon_cli/eidolon_version.py'), 'utf8').replace('437db7394d78a178966fb2ae42792f2978133a9d', anchor))
     git('add', '.'); git('commit', '-m', 'generator')
     const stamp = writeBuildStamp({ repoRoot: root })
     const runtime = readInstallStampFromPaths([path.join(root, 'apps/desktop/build/install-stamp.json')])
-    expect(runtime?.version).toBe('0.1.1')
     expect(runtime?.version).toBe(stamp.version)
     expect(formatInstallVersion(runtime)).not.toContain('unverified')
   } finally { process.env = before; fs.rmSync(root, { recursive: true, force: true }) }

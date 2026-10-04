@@ -71,7 +71,7 @@ def test_load_wake_word_config_is_a_dict_with_defaults():
 
 def test_load_wake_word_config_guards_non_dict(monkeypatch):
     monkeypatch.setattr(
-        "hermes_cli.config.load_config", lambda: {"wake_word": "oops"}
+        "eidolon_cli.config.load_config", lambda: {"wake_word": "oops"}
     )
     assert ww.load_wake_word_config() == {}
 

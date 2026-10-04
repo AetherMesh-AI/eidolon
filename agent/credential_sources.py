@@ -1,7 +1,7 @@
-"""Unified removal contract for every credential source Hermes reads from.
+"""Unified removal contract for every credential source Eidolon reads from.
 
 Readers live in ``agent.credential_pool``; what is unified here is **removal**:
-``hermes auth remove <provider> <N>`` must make the entry stay gone across
+``eidolon auth remove <provider> <N>`` must make the entry stay gone across
 ``load_pool()`` calls. Each source registers a ``RemovalStep`` whose
 ``remove_fn`` cleans the external state the source reads from, and the
 dispatcher suppresses ``(provider, source_id)`` in auth.json so the seeding
@@ -60,8 +60,8 @@ def find_removal_step(provider: str, source: str) -> Optional[RemovalStep]:
 
 
 def _remove_env_source(provider: str, removed) -> RemovalResult:
-    """env:<VAR> — clear from ~/.hermes/.env; hint when the shell exports it."""
-    from hermes_cli.config import get_env_path, remove_env_value
+    """env:<VAR> — clear from ~/.eidolon/.env; hint when the shell exports it."""
+    from eidolon_cli.config import get_env_path, remove_env_value
 
     result = RemovalResult()
     env_var = removed.source[len("env:"):]
@@ -69,7 +69,7 @@ def _remove_env_source(provider: str, removed) -> RemovalResult:
         return result
 
     # Detect shell vs .env BEFORE remove_env_value pops os.environ. Read the
-    # .env as utf-8-sig like hermes_cli/config.py: a BOM-sensitive read would
+    # .env as utf-8-sig like eidolon_cli/config.py: a BOM-sensitive read would
     # misreport a Notepad-edited .env var as a shell export.
     env_in_process = bool(os.getenv(env_var))
     env_in_dotenv = False
@@ -89,11 +89,11 @@ def _remove_env_source(provider: str, removed) -> RemovalResult:
     if env_in_process and not env_in_dotenv:
         result.hints.extend([
             f"Note: {env_var} is still set in your shell environment "
-            f"(not in ~/.hermes/.env).",
+            f"(not in ~/.eidolon/.env).",
             "  Unset it there (shell profile, systemd EnvironmentFile, "
-            "launchd plist, etc.) or it will keep being visible to Hermes.",
-            f"  The pool entry is now suppressed — Hermes will ignore "
-            f"{env_var} until you run `hermes auth add {provider}`.",
+            "launchd plist, etc.) or it will keep being visible to Eidolon.",
+            f"  The pool entry is now suppressed — Eidolon will ignore "
+            f"{env_var} until you run `eidolon auth add {provider}`.",
         ])
     else:
         result.hints.append(
@@ -104,15 +104,15 @@ def _remove_env_source(provider: str, removed) -> RemovalResult:
 
 
 def _remove_hermes_pkce(provider: str, removed) -> RemovalResult:
-    """~/.hermes/.anthropic_oauth.json is ours — delete it outright."""
-    from hermes_constants import get_hermes_home
+    """~/.eidolon/.anthropic_oauth.json is ours — delete it outright."""
+    from eidolon_constants import get_eidolon_home
 
     result = RemovalResult()
-    oauth_file = get_hermes_home() / ".anthropic_oauth.json"
+    oauth_file = get_eidolon_home() / ".anthropic_oauth.json"
     if oauth_file.exists():
         try:
             oauth_file.unlink()
-            result.cleaned.append("Cleared Hermes Anthropic OAuth credentials")
+            result.cleaned.append("Cleared Eidolon Anthropic OAuth credentials")
         except OSError as exc:
             result.hints.append(f"Could not delete {oauth_file}: {exc}")
     return result
@@ -124,7 +124,7 @@ def _remove_auth_store_oauth(provider: str, removed) -> RemovalResult:
     Suppression by the dispatcher is still required — otherwise
     ``_seed_from_singletons`` re-seeds from any path that rewrites the block.
     """
-    from hermes_cli.auth import _auth_store_lock, _load_auth_store, _save_auth_store
+    from eidolon_cli.auth import _auth_store_lock, _load_auth_store, _save_auth_store
 
     result = RemovalResult()
     with _auth_store_lock():
@@ -140,7 +140,7 @@ def _remove_auth_store_oauth(provider: str, removed) -> RemovalResult:
 def _remove_xai_oauth_device_code(provider: str, removed) -> RemovalResult:
     result = _remove_auth_store_oauth(provider, removed)
     result.hints.append(
-        "Run `hermes model` → xAI Grok OAuth (SuperGrok / Premium+) to re-authenticate if needed."
+        "Run `eidolon model` → xAI Grok OAuth (SuperGrok / Premium+) to re-authenticate if needed."
     )
     return result
 
@@ -151,14 +151,14 @@ def _remove_codex_device_code(provider: str, removed) -> RemovalResult:
     Suppress the canonical ``device_code`` key — not just ``removed.source`` —
     so a ``manual:device_code`` removal still blocks the re-seed path.
     """
-    from hermes_cli.auth import suppress_credential_source
+    from eidolon_cli.auth import suppress_credential_source
 
     result = _remove_auth_store_oauth(provider, removed)
     suppress_credential_source(provider, "device_code")
     result.hints.extend([
         "Suppressed openai-codex device_code source — it will not be re-seeded.",
         "Note: Codex CLI credentials still live in ~/.codex/auth.json",
-        "Run `hermes auth add openai-codex` to re-enable if needed.",
+        "Run `eidolon auth add openai-codex` to re-enable if needed.",
     ])
     return result
 
@@ -167,7 +167,7 @@ def _remove_copilot_gh(provider: str, removed) -> RemovalResult:
     """The same Copilot token is seeded as gh_cli AND env:<VAR> rows, so suppress
     every variant or the duplicates resurrect the entry. gh CLI and shell state
     are left untouched."""
-    from hermes_cli.auth import suppress_credential_source
+    from eidolon_cli.auth import suppress_credential_source
 
     suppress_credential_source(provider, "gh_cli")
     for env_var in ("COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"):
@@ -175,7 +175,7 @@ def _remove_copilot_gh(provider: str, removed) -> RemovalResult:
     return RemovalResult(hints=[
         "Suppressed all copilot token sources (gh_cli + env vars) — they will not be re-seeded.",
         "Note: Your gh CLI / shell environment is unchanged.",
-        "Run `hermes auth add copilot` to re-enable if needed.",
+        "Run `eidolon auth add copilot` to re-enable if needed.",
     ])
 
 
@@ -209,14 +209,14 @@ _REGISTRY: List[RemovalStep] = [
         remove_fn=_suppress_only(
             "Suppressed claude_code credential — it will not be re-seeded.",
             "Note: Claude Code credentials still live in ~/.claude/.credentials.json",
-            "Run `hermes auth add anthropic` to re-enable if needed.",
+            "Run `eidolon auth add anthropic` to re-enable if needed.",
         ),
         description="~/.claude/.credentials.json",
     ),
     RemovalStep(
         provider="anthropic", source_id="hermes_pkce",
         remove_fn=_remove_hermes_pkce,
-        description="~/.hermes/.anthropic_oauth.json",
+        description="~/.eidolon/.anthropic_oauth.json",
     ),
     RemovalStep(
         provider="nous", source_id="device_code",
@@ -239,7 +239,7 @@ _REGISTRY: List[RemovalStep] = [
         remove_fn=_suppress_only(
             "Suppressed qwen-cli credential — it will not be re-seeded.",
             "Note: Qwen CLI credentials still live in ~/.qwen/oauth_creds.json",
-            "Run `hermes auth add qwen-oauth` to re-enable if needed.",
+            "Run `eidolon auth add qwen-oauth` to re-enable if needed.",
         ),
         description="~/.qwen/oauth_creds.json",
     ),

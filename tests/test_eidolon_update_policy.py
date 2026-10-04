@@ -3,32 +3,40 @@
 import os
 from pathlib import Path
 import subprocess
-from hermes_cli import __version__
+from eidolon_cli import __version__
 
 
 def test_build_identity_reads_stamp_without_spawning_or_changing_target(tmp_path, monkeypatch):
     import json
-    from hermes_cli import eidolon_update_policy as policy
-    from hermes_cli.eidolon_version import ANCHOR_COMMIT, fallback
+    from eidolon_cli import eidolon_update_policy as policy
+    from eidolon_cli.eidolon_version import ANCHOR_COMMIT, RELEASE_VERSION, fallback
     value = fallback('a' * 40, False)
-    value.update(version='0.1.12', versionSource='stamp', baseTag='alpha-v0.1.0',
+    value.update(version=RELEASE_VERSION, versionSource='stamp', baseTag='alpha-v0.1.0',
                  baseCommit=ANCHOR_COMMIT, distance=12)
-    package = tmp_path / 'hermes_cli'
+    package = tmp_path / 'eidolon_cli'
     package.mkdir()
     (package / '_build_identity.json').write_text(json.dumps(value))
     def forbidden(*args, **kwargs): raise AssertionError('runtime spawned Git')
     monkeypatch.setattr(subprocess, 'run', forbidden)
     identity = policy.build_identity(tmp_path)
-    assert identity['version'] == '0.1.12'
+    assert identity['version'] == RELEASE_VERSION
+    assert identity['versionSource'] == 'stamp'
     assert identity['channel'] == 'alpha'
     assert identity['repository'] == 'AetherMesh-AI/Eidolon'
     assert identity['updateBranch'] == 'main'
+
+    # A previous Git-distance release is not a valid stamp for this release.
+    value['version'] = '0.1.12'
+    (package / '_build_identity.json').write_text(json.dumps(value))
+    rejected = policy.build_identity(tmp_path)
+    assert rejected['version'] == RELEASE_VERSION
+    assert rejected['versionSource'] == 'fallback'
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 def policy():
-    from hermes_cli import eidolon_update_policy as module
+    from eidolon_cli import eidolon_update_policy as module
     return module
 
 
@@ -83,7 +91,7 @@ def test_git_ancestry_not_hash_order(tmp_path, monkeypatch):
 
 
 def test_fork_sync_reuses_upstream_force_with_lease(tmp_path, monkeypatch):
-    from hermes_cli import update_cmd_git
+    from eidolon_cli import update_cmd_git
     calls = []
     def git_ok(*args, **kwargs):
         calls.append((args, kwargs))
@@ -96,7 +104,7 @@ def test_fork_sync_reuses_upstream_force_with_lease(tmp_path, monkeypatch):
 def test_windows_git_error_dispatcher_refuses_archive(tmp_path, monkeypatch):
     import pytest
     from types import SimpleNamespace
-    from hermes_cli import update_cmd, main
+    from eidolon_cli import update_cmd, main
     archive_calls = []
     monkeypatch.setattr(main, "_is_windows", lambda: True)
     monkeypatch.setattr(main, "PROJECT_ROOT", tmp_path)
@@ -112,7 +120,7 @@ def test_update_body_routes_windows_git_exception_without_network(tmp_path, monk
     import pytest
     import urllib.request
     from types import SimpleNamespace
-    from hermes_cli import update_cmd, main
+    from eidolon_cli import update_cmd, main
     calls = []
     monkeypatch.setattr(main, 'PROJECT_ROOT', tmp_path)
     monkeypatch.setattr(main, '_is_windows', lambda: True)

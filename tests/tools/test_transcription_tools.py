@@ -222,7 +222,7 @@ class TestTranscribeGroq:
 
 class TestTranscribeLocalCommand:
     def test_command_provider_uses_sanitized_child_env(self, monkeypatch):
-        """Salvage of #56332: command STT must not inherit Hermes secrets."""
+        """Salvage of #56332: command STT must not inherit Eidolon secrets."""
         monkeypatch.setenv("AUXILIARY_VISION_API_KEY", "sk-vision")
         monkeypatch.setenv("GATEWAY_RELAY_SECRET", "relay-secret")
         monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
@@ -971,7 +971,7 @@ class TestShellSafety:
     def test_env_var_template_metacharacters_are_literal_argv(
         self, monkeypatch, sample_wav, tmp_path
     ):
-        from hermes_cli._subprocess_compat import windows_hide_flags
+        from eidolon_cli._subprocess_compat import windows_hide_flags
         from tools.transcription_tools import (
             LOCAL_STT_COMMAND_ENV,
             _transcribe_local_command,
@@ -1256,7 +1256,7 @@ class TestExplicitOpenaiSelectionError:
 
     When ``_resolve_openai_audio_client_config()`` raises its
     selection-specific ValueError (managed openai-audio gateway unavailable,
-    with the ``hermes tools`` remediation for managed-Nous users), the old
+    with the ``eidolon tools`` remediation for managed-Nous users), the old
     boolean probe flattened it into False — the log said "no API key" and
     the transcription result returned the all-provider install hint,
     pointing operators at unrelated setup instead of their managed route.
@@ -1300,7 +1300,7 @@ class TestExplicitOpenaiSelectionError:
 
     def test_dispatch_returns_selection_specific_error(self, monkeypatch):
         """The final transcription result carries the managed-route error and
-        its hermes tools remediation instead of the all-provider install
+        its eidolon tools remediation instead of the all-provider install
         hint."""
         self._no_openai_credentials(monkeypatch)
         monkeypatch.setattr(
@@ -1313,7 +1313,7 @@ class TestExplicitOpenaiSelectionError:
              patch("tools.transcription_tools._HAS_FASTER_WHISPER", False), \
              patch(
                  "tools.tool_backend_helpers.nous_tool_gateway_unavailable_message",
-                 lambda what: f"managed route down for {what}; run `hermes tools`",
+                 lambda what: f"managed route down for {what}; run `eidolon tools`",
              ):
             from tools.transcription_tools import _dispatch_stt_provider
 
@@ -1323,7 +1323,7 @@ class TestExplicitOpenaiSelectionError:
 
         assert result["success"] is False
         assert "managed route down" in result["error"]
-        assert "hermes tools" in result["error"]
+        assert "eidolon tools" in result["error"]
         assert "No STT provider available" not in result["error"]
 
     def test_auto_detect_none_keeps_generic_hint(self, monkeypatch):

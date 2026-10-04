@@ -39,7 +39,7 @@ _cached: dict[str, str] = {}
 
 def _default_home() -> str:
     """Ambient HERMES_HOME (env, else ~/.hermes) as a string."""
-    return os.getenv("HERMES_HOME") or os.path.expanduser("~/.hermes")
+    return os.getenv("HERMES_HOME") or os.path.expanduser("~/.eidolon")
 
 
 def _resolve_home(home: str | os.PathLike | None) -> Path:
@@ -137,7 +137,7 @@ def _profile_role(profile_dir: Path) -> str:
 
 
 def _peers(root: Path) -> list[str]:
-    """Registered peer gateway names (``hermes peer``) from config.yaml, read
+    """Registered peer gateway names (``eidolon peer``) from config.yaml, read
     directly (no config-loader import; the section is absent on most installs). Never raises."""
     def _names() -> list[str]:
         peers = (_read_yaml_dict(root / "config.yaml", "bot_peers") or {}).get("bot_peers")
@@ -185,7 +185,7 @@ def _peer_paragraph(root: Path) -> str:
         "\n\nTeammates on OTHER machines: this install also has peer gateways "
         f"registered ({listed}). Message an agent on a peer the same way — "
         'message_agent with target "<peer>/<agent-name>" (or "<peer>" alone '
-        "for the peer's main agent). Run `hermes peer list` for the live "
+        "for the peer's main agent). Run `eidolon peer list` for the live "
         "peer list."
     )
 
@@ -201,7 +201,7 @@ def _build_section(home: Path) -> str:
 
     return (
         f"{_PROTOCOL_HEADING}\n"
-        "This install runs Bot Mode: each Hermes profile is an agent teammate with "
+        "This install runs Bot Mode: each Eidolon profile is an agent teammate with "
         'one canonical "Bot Chat" conversation, and you have the `message_agent` '
         "tool to DM any of them. It is FIRE-AND-FORGET: it delivers your message "
         "with your attribution prefixed automatically and returns an acknowledgement "
@@ -263,14 +263,14 @@ def capability_fingerprint(home: str | os.PathLike | None = None) -> str:
     try:
         # Canonical loader (managed overlay + env expansion + normalization),
         # scoped to the bot's home via the override the loaders already honor.
-        from hermes_cli.config import load_config_readonly
-        from hermes_constants import reset_hermes_home_override, set_hermes_home_override
+        from eidolon_cli.config import load_config_readonly
+        from eidolon_constants import reset_eidolon_home_override, set_eidolon_home_override
 
-        token = set_hermes_home_override(str(resolved))
+        token = set_eidolon_home_override(str(resolved))
         try:
             cfg = load_config_readonly() or {}
         finally:
-            reset_hermes_home_override(token)
+            reset_eidolon_home_override(token)
         skills_cfg = cfg.get("skills") if isinstance(cfg.get("skills"), dict) else {}
         tools_cfg = cfg.get("tools") if isinstance(cfg.get("tools"), dict) else {}
         surface["disabled_skills"] = sorted(str(s).lower() for s in (skills_cfg.get("disabled") or []))

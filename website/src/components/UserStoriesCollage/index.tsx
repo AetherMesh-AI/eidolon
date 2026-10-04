@@ -172,12 +172,12 @@ export default function UserStoriesCollage(): React.JSX.Element {
   return (
     <div className={styles.wrap}>
       <div className={styles.hero}>
-        <h1>User Stories &amp; Use Cases</h1>
+        <h1>Upstream User Stories</h1>
         <p>
-          What the Hermes Agent community is actually building. Every tile
-          below links to a real post, issue, video, or gist where someone
-          describes how they use Hermes &mdash; scraped from X, GitHub, Reddit,
-          Hacker News, YouTube, blogs, and podcasts.
+          These are preserved reports from the upstream Hermes Agent community.
+          They describe Hermes, not verified Eidolon capabilities. Each tile links
+          to its original post, issue, video, or gist; quotations and source
+          attribution are retained.
         </p>
         <div className={styles.meta}>
           <span><strong>{allStories.length}</strong> stories</span>
@@ -293,19 +293,14 @@ export default function UserStoriesCollage(): React.JSX.Element {
       )}
 
       <div className={styles.footer}>
-        Built something with Hermes?{' '}
+        Have an Eidolon experience to share?{' '}
         <a
-          href="https://github.com/NousResearch/hermes-agent/edit/main/website/src/data/userStories.json"
+          href="https://github.com/AetherMesh-AI/eidolon/issues"
           target="_blank"
           rel="noopener noreferrer"
         >
-          Add your story to this page
-        </a>{' '}
-        by editing <code>userStories.json</code>, or post it in the{' '}
-        <a href="https://discord.gg/NousResearch" target="_blank" rel="noopener noreferrer">
-          Nous Research Discord
-        </a>{' '}
-        and we&apos;ll pick it up.
+          Share it in the Eidolon repository
+        </a>.
       </div>
     </div>
   );

@@ -18,7 +18,7 @@ import threading
 import uuid
 from typing import Any, Dict, List, Optional
 
-from hermes_cli._subprocess_compat import windows_hide_flags
+from eidolon_cli._subprocess_compat import windows_hide_flags
 from tools.computer_use.backend import ActionResult, ComputerUseBackend
 from tools.computer_use.cua_backend_capture import _CaptureMixin
 from tools.computer_use.cua_backend_daemon import _EmbeddedCuaDaemon
@@ -38,7 +38,7 @@ _CUA_NATIVE_WAYLAND_ENV_VAR = "CUA_DRIVER_RS_ENABLE_WAYLAND"
 def _computer_use_cfg() -> Dict[str, Any]:
     """The ``computer_use`` config block, or ``{}`` when config is unreadable."""
     with contextlib.suppress(Exception):
-        from hermes_cli.config import load_config
+        from eidolon_cli.config import load_config
         return (load_config() or {}).get("computer_use") or {}
     return {}
 
@@ -113,7 +113,7 @@ def cua_driver_child_env(base_env: Optional[Dict[str, str]] = None) -> Dict[str,
     return env
 
 def sanitized_cua_driver_env() -> Dict[str, str]:
-    """``cua_driver_child_env()`` with Hermes provider secrets stripped — cua-driver is a third-party binary and must
+    """``cua_driver_child_env()`` with Eidolon provider secrets stripped — cua-driver is a third-party binary and must
     never inherit API keys. Falls back to the unsanitized telemetry env if the sanitizer can't import."""
     env = cua_driver_child_env()
     with contextlib.suppress(Exception):
@@ -189,7 +189,7 @@ def _maybe_repair_runtime_contract(contract: Dict[str, Any]) -> Dict[str, Any]:
     logger.info("computer_use: installed cua-driver is not usable (%s); attempting automatic repair",
                 contract.get("reason") or "runtime contract is incomplete")
     try:
-        from hermes_cli.tools_config import install_cua_driver
+        from eidolon_cli.tools_config import install_cua_driver
         repaired = install_cua_driver(upgrade=False, show_installer_progress=False)
     except Exception as exc:
         logger.warning("computer_use: automatic cua-driver repair failed: %s", exc)
@@ -236,7 +236,7 @@ class CuaDriverBackend(_CaptureMixin, _InputMixin, ComputerUseBackend):
         # windows all say Qt6Application), `_snapshot_tokens` (element_index -> element_token, attached to actions so
         # cua-driver reports "stale" instead of silently re-resolving).
         self._clear_active_target()
-        # Public session label (one per Hermes run) sent as `session` on every call: owns the cursor color and
+        # Public session label (one per Eidolon run) sent as `session` on every call: owns the cursor color and
         # gives config/recording state a stable owner across transport restarts. Part of the 0.20 runtime contract.
         self._session_id: str = f"hermes-{uuid.uuid4().hex[:12]}"
         self._session.set_transport_reset_callback(self._handle_transport_reset)
@@ -407,7 +407,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

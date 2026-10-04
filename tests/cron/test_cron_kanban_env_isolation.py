@@ -1,7 +1,7 @@
 """Cron sessions must not inherit a kanban worker's dispatcher identity.
 
 A cron job can be fired *in-process* from a kanban worker: the worker is a
-normal ``hermes chat -q`` CLI agent (its default toolset includes ``cronjob``)
+normal ``eidolon chat -q`` CLI agent (its default toolset includes ``cronjob``)
 running with ``HERMES_KANBAN_TASK`` legitimately set in its own environment,
 and ``cronjob(action="run")`` calls ``run_one_job()`` -> ``run_job()`` in that
 same process.
@@ -241,7 +241,7 @@ class TestRunJobKanbanIsolation:
         fake_mod.AIAgent = agent_cls or FakeAgent
         monkeypatch.setitem(sys.modules, "run_agent", fake_mod)
 
-        from hermes_cli import runtime_provider as _rtp
+        from eidolon_cli import runtime_provider as _rtp
 
         monkeypatch.setattr(
             _rtp, "resolve_runtime_provider",
@@ -384,9 +384,9 @@ def test_dispatcher_grants_only_the_assigned_worker_scope(tmp_path, monkeypatch)
     import json
     from pathlib import Path
     import sys
-    from hermes_cli import kanban_db as kb
-    from hermes_cli.kanban_db_connect import connect
-    from hermes_cli.kanban_db_dispatch import _default_spawn
+    from eidolon_cli import kanban_db as kb
+    from eidolon_cli.kanban_db_connect import connect
+    from eidolon_cli.kanban_db_dispatch import _default_spawn
 
     monkeypatch.setenv("HOME", str(tmp_path))
     db = tmp_path / "board.db"

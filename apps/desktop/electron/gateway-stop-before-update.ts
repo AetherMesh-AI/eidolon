@@ -13,7 +13,7 @@
  * So we delegate to `hermes gateway stop --all`: the CLI discovers every
  * profile's gateway processes (launcher + worker) via find_gateway_pids,
  * drains in-flight agents (planned-stop marker -> resume_pending), and
- * force-kills survivors — the same logic `hermes update`'s
+ * force-kills survivors — the same logic `eidolon update`'s
  * _pause_windows_gateways_for_update relies on.
  *
  * Pure + dependency-injected so the launcher/worker and multi-profile

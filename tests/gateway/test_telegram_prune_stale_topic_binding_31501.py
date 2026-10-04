@@ -31,7 +31,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from hermes_state import SessionDB
+from eidolon_state import SessionDB
 
 
 # ---------------------------------------------------------------------------

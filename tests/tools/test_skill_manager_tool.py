@@ -695,7 +695,7 @@ class TestSecurityScanGate:
         """If load_config raises, _guard_agent_created_enabled defaults to False (fail-safe off)."""
         from tools.skill_manager_tool import _guard_agent_created_enabled
 
-        with patch("hermes_cli.config.load_config", side_effect=RuntimeError("boom")):
+        with patch("eidolon_cli.config.load_config", side_effect=RuntimeError("boom")):
             assert _guard_agent_created_enabled() is False
 
     def test_guard_flag_quoted_false_stays_disabled(self):
@@ -703,7 +703,7 @@ class TestSecurityScanGate:
         from tools.skill_manager_tool import _guard_agent_created_enabled
 
         for quoted in ("false", "False", "0", "no", "off"):
-            with patch("hermes_cli.config.load_config",
+            with patch("eidolon_cli.config.load_config",
                        return_value={"skills": {"guard_agent_created": quoted}}):
                 assert _guard_agent_created_enabled() is False, \
                     f"guard_agent_created={quoted!r} must coerce to False"
@@ -1032,7 +1032,7 @@ def _curator_pass(tmp_path, *, monkeypatch):
     """Run the body as the curator/background-review fork.
 
     Points HERMES_HOME at ``tmp_path/.hermes`` so skill_usage's archive path
-    (``get_hermes_home()``) resolves into the same tree the skill manager
+    (``get_eidolon_home()``) resolves into the same tree the skill manager
     searches, and flips ``is_background_review()`` → True so the consolidation
     guard fires.
 

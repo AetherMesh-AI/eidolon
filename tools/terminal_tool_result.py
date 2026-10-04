@@ -125,7 +125,7 @@ def _apply_output_transform_hook(command, output, returncode, task_id, env_type)
     """Plugin output-transform seam (fail-open; first string result wins).
     Replacements are still subject to the output limit applied afterwards."""
     with _quiet("transform_terminal_output hook"):
-        from hermes_cli.lifecycle import invoke_hook
+        from eidolon_cli.lifecycle import invoke_hook
         results = invoke_hook("transform_terminal_output", command=command, output=output,
                               returncode=returncode, task_id=task_id or "", env_type=env_type)
         output = next((r for r in results if isinstance(r, str)), output)

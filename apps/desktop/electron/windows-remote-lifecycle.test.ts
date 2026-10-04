@@ -29,7 +29,7 @@ test('Windows spawn holds the update mutex across marker check and helper spawn'
 
   const encoded = command.match(/-EncodedCommand\s+([^\s]+)$/)?.[1]
   const script = encoded ? Buffer.from(encoded, 'base64').toString('utf16le') : ''
-  assert.match(script, /\.hermes-update-in-progress/)
+  assert.match(script, /\.eidolon-update-in-progress/)
   assert.match(script, /\$mutexPath=\$marker\+"\.mutex"/)
   assert.match(script, /\.Lock\(0,1\)/)
   assert.match(script, /windows_ssh_runtime.*spawn/)
@@ -79,7 +79,7 @@ test('Windows relaunch gate refuses live and uncertain markers before executing 
       const script = Buffer.from(command.split(' ').at(-1) || '', 'base64').toString('utf16le')
       scripts.push(script)
 
-      if (script.includes('Get-Command hermes.exe')) {
+      if (script.includes('Get-Command eidolon.exe')) {
         return JSON.stringify({
           os: 'Windows',
           arch: 'AMD64',
@@ -110,7 +110,7 @@ test('Windows relaunch gate refuses live and uncertain markers before executing 
       (error: any) => error.kind === 'update-in-progress'
     )
     assert.equal(
-      scripts.some(script => script.includes('hermes_cli.windows_ssh_runtime')),
+      scripts.some(script => script.includes('eidolon_cli.windows_ssh_runtime')),
       false
     )
   }
@@ -134,7 +134,7 @@ test('Windows relaunch gate uses strict install-wide marker parsing and fail-clo
   assert.doesNotMatch(script, /ErrorAction SilentlyContinue/)
 })
 
-test('Windows probe validates Hermes and Python topology before selection', async () => {
+test('Windows probe validates Eidolon and Python topology before selection', async () => {
   let script = ''
   await probeWindowsRemote(
     sshWith(async command => {
@@ -218,10 +218,10 @@ test('platform detection surfaces transport failures as themselves, not unsuppor
           throw new Error('not recognized')
         }
 
-        throw new Error('Hermes is not installed on the remote Windows host.')
+        throw new Error('Eidolon is not installed on the remote Windows host.')
       })
     ),
-    (err: any) => err.kind === 'unsupported-platform' && /Hermes is not installed/.test(err.message)
+    (err: any) => err.kind === 'unsupported-platform' && /Eidolon is not installed/.test(err.message)
   )
 })
 
@@ -232,7 +232,7 @@ test('helper command uses the fixed remote Python entry point and quotes path da
 
   const encoded = command.split(' ').pop()!
   const script = Buffer.from(encoded, 'base64').toString('utf16le')
-  assert.match(script, /-m' 'hermes_cli\.windows_ssh_runtime' 'inspect'/)
+  assert.match(script, /-m' 'eidolon_cli\.windows_ssh_runtime' 'inspect'/)
   assert.match(script, /Hermes''s/)
   assert.match(script, /C:\\x y\\hermes\.exe/)
 })

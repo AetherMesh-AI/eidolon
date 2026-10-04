@@ -12,7 +12,7 @@ from agent.secret_scope import (
     set_multiplex_active,
     set_secret_scope,
 )
-from hermes_constants import reset_hermes_home_override, set_hermes_home_override
+from eidolon_constants import reset_eidolon_home_override, set_eidolon_home_override
 from gateway.config import (
     ChannelOverride,
     GatewayConfig,
@@ -297,7 +297,7 @@ class TestLoadGatewayConfig:
 
     def test_multiplex_profiles_from_nested_gateway_section(self, tmp_path, monkeypatch):
         """``gateway.multiplex_profiles: true`` (the nested form written by
-        ``hermes config set gateway.multiplex_profiles true``) must enable
+        ``eidolon config set gateway.multiplex_profiles true``) must enable
         multiplexing when loaded via load_gateway_config().
 
         Regression: load_gateway_config() only surfaced the *top-level*
@@ -987,13 +987,13 @@ class TestLoadGatewayConfig:
         # os.environ (single-profile overlay semantics, #67827) and this test
         # would no longer exercise the cross-profile isolation it's about.
         set_multiplex_active(True)
-        home_token = set_hermes_home_override(str(secondary_home))
+        home_token = set_eidolon_home_override(str(secondary_home))
         secret_token = set_secret_scope({"DISCORD_BOT_TOKEN": "worker-token"})
         try:
             config = load_gateway_config()
         finally:
             reset_secret_scope(secret_token)
-            reset_hermes_home_override(home_token)
+            reset_eidolon_home_override(home_token)
             set_multiplex_active(False)
 
         assert config.multiplex_profiles is True
@@ -1216,7 +1216,7 @@ class TestMultiplexProfilesConfig:
 
 
     def test_multiplex_profiles_nested_under_gateway(self, tmp_path, monkeypatch):
-        """gateway.multiplex_profiles (the form written by `hermes config set
+        """gateway.multiplex_profiles (the form written by `eidolon config set
         gateway.multiplex_profiles true`) must be honored. Regression test for
         the silent-fallback bug where the loader only forwarded the top-level
         key, so users who wrote it under gateway: got multiplex_profiles=False

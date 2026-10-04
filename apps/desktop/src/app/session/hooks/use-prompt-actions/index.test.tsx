@@ -1,10 +1,10 @@
-import { JsonRpcGatewayError } from '@hermes/shared'
+import { JsonRpcGatewayError } from '@aethermesh/shared'
 import { act, cleanup, render, waitFor } from '@testing-library/react'
 import type { MutableRefObject } from 'react'
 import { useEffect, useRef } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { getSession } from '@/hermes'
+import { getSession } from '@/eidolon'
 import { textPart } from '@/lib/chat-messages'
 import { createClientSessionState } from '@/lib/chat-runtime'
 import { $composerAttachments, $composerDraft, type ComposerAttachment, setComposerDraft } from '@/store/composer'
@@ -28,7 +28,7 @@ import {
 } from '@/store/session'
 import { dropSessionState, publishSessionState } from '@/store/session-states'
 import { $wakeWord, resetWakeWordState } from '@/store/wake-word'
-import type { SessionInfo } from '@/types/hermes'
+import type { SessionInfo } from '@/types/eidolon'
 
 import { clearSingleFlightSessionResumeState } from './single-flight-resume'
 import { SESSION_COMPRESS_TIMEOUT_MS } from './slash'
@@ -43,7 +43,7 @@ beforeEach(() => {
   clearSingleFlightSessionResumeState()
 })
 
-vi.mock('@/hermes', () => ({
+vi.mock('@/eidolon', () => ({
   getProfiles: vi.fn(async () => ({ profiles: [] })),
   getSession: vi.fn(),
   PROMPT_SUBMIT_REQUEST_TIMEOUT_MS: 1_800_000,

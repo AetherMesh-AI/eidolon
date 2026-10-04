@@ -31,7 +31,7 @@ import {
   useQuery,
   useQueryClient,
   useValue
-} from '@hermes/plugin-sdk'
+} from '@aethermesh/plugin-sdk'
 import { type ReactNode, useEffect, useState } from 'react'
 
 import {

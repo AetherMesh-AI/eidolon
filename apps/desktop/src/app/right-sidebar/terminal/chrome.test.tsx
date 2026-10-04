@@ -1,9 +1,10 @@
-import { atom } from 'nanostores'
 import { fireEvent, render, screen } from '@testing-library/react'
+import { atom } from 'nanostores'
 import { beforeEach, expect, it, vi } from 'vitest'
 
-import type { TerminalEntry } from './terminals'
 import type { ComposerStatusItem } from '@/store/composer-status'
+
+import type { TerminalEntry } from './terminals'
 
 const state = vi.hoisted(() => ({ terminal: null as unknown, processes: null as unknown }))
 vi.mock('./terminals', () => {
@@ -16,9 +17,9 @@ vi.mock('@/store/composer-status', () => {
 })
 vi.mock('./persistent', () => ({ TerminalSlot: () => <div>Terminal body</div> }))
 vi.mock('./rail', () => ({ TerminalRail: () => <div>Terminal rail</div> }))
-import { TerminalPaneChrome } from './chrome'
-
 import { $backgroundStatusBySession } from '@/store/composer-status'
+
+import { TerminalPaneChrome } from './chrome'
 import { $activeTerminal } from './terminals'
 const terminal = () => $activeTerminal as ReturnType<typeof atom<TerminalEntry | null>>
 const processes = () => $backgroundStatusBySession

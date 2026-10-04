@@ -1,11 +1,11 @@
-import { type GatewayEvent, registryBackendScopeKey } from '@hermes/shared'
+import { type GatewayEvent, registryBackendScopeKey } from '@aethermesh/shared'
 import { useStore } from '@nanostores/react'
 import { act, cleanup, render, waitFor } from '@testing-library/react'
 import { useEffect, useMemo, useRef } from 'react'
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 
 import { createSessionRpcDispatcher } from '@/app/contrib/session-rpc-dispatcher'
-import { getSession } from '@/hermes'
+import { getSession } from '@/eidolon'
 import {
   activeGateway,
   activeGatewayConnectionId,
@@ -41,7 +41,7 @@ import {
   setSessions
 } from '@/store/session'
 import { foregroundSessionScopes } from '@/store/session-states'
-import type { SessionInfo } from '@/types/hermes'
+import type { SessionInfo } from '@/types/eidolon'
 
 import type { ClientSessionState } from '../../types'
 
@@ -150,7 +150,7 @@ function answer(socket: MockGateway, method: string, params: Record<string, unkn
   return {}
 }
 
-vi.mock('@/hermes', async importOriginal => ({
+vi.mock('@/eidolon', async importOriginal => ({
   ...(await importOriginal<Record<string, unknown>>()),
   HermesGateway: class {
     connectUrl: null | string = null

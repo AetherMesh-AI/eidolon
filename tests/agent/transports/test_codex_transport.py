@@ -102,7 +102,7 @@ class TestCodexBuildKwargs:
         assert kw["temperature"] == 0.4
 
     def test_900k_context_variant_suffix_stripped_on_wire(self, transport):
-        """``-900k`` large-context picker variants are Hermes-side aliases —
+        """``-900k`` large-context picker variants are Eidolon-side aliases —
         the Codex backend only knows the base slug, so build_kwargs must
         strip the suffix from the wire model id."""
         messages = [{"role": "user", "content": "Hi"}]
@@ -177,7 +177,7 @@ class TestCodexBuildKwargs:
         # thread is_github_responses through to the input converter so the
         # id never reaches the request.
         messages = [
-            {"role": "system", "content": "You are Hermes."},
+            {"role": "system", "content": "You are Eidolon."},
             {
                 "role": "assistant",
                 "content": "pong",
@@ -207,7 +207,7 @@ class TestCodexBuildKwargs:
 
     def test_non_github_responses_keeps_message_item_id_end_to_end(self, transport):
         messages = [
-            {"role": "system", "content": "You are Hermes."},
+            {"role": "system", "content": "You are Eidolon."},
             {
                 "role": "assistant",
                 "content": "pong",
@@ -756,7 +756,7 @@ class TestCodexBuildKwargs:
         assert "hermes_web_search" not in names
 
     def test_xai_renames_client_web_search_when_firecrawl_configured(self, transport, monkeypatch):
-        """Configured Firecrawl (or any non-xai backend) must keep Hermes
+        """Configured Firecrawl (or any non-xai backend) must keep Eidolon
         dispatch — rename the wire tool so Grok cannot hijack ``web_search``.
         """
         import agent.transports.codex as codex_mod
@@ -785,7 +785,7 @@ class TestCodexBuildKwargs:
         assert "web_search" not in names
 
     def test_xai_normalize_maps_client_web_search_alias_back(self, transport, monkeypatch):
-        """Alias used on the wire must become ``web_search`` for Hermes dispatch."""
+        """Alias used on the wire must become ``web_search`` for Eidolon dispatch."""
         import agent.transports.codex as codex_mod
 
         msg = SimpleNamespace(
@@ -823,7 +823,7 @@ class TestCodexBuildKwargs:
         already-requested client ``web_search`` — NOT an additive grant.  A
         turn whose toolset has no ``web_search`` (user never enabled the web
         toolset) must not get Grok server-side search force-injected, which
-        would silently bypass Hermes's web-provider config and tool-trace
+        would silently bypass Eidolon's web-provider config and tool-trace
         plumbing for every xai-oauth turn.
         """
         messages = [{"role": "user", "content": "Read this file."}]
@@ -1406,7 +1406,7 @@ class TestCodexTransportXaiReasoningEffort:
 
     @pytest.mark.parametrize("effort", ["max", "ultra"])
     def test_grok_46_clamps_hermes_aliases_to_model_ceiling(self, transport, effort):
-        """Hermes ladder aliases mean "this model's ceiling" — on grok-4.6
+        """Eidolon ladder aliases mean "this model's ceiling" — on grok-4.6
         that is xhigh, not one rung below it (#87279)."""
         kw = transport.build_kwargs(
             model="x-ai/grok-4.6-latest",

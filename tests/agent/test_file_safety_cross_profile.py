@@ -7,14 +7,14 @@ import pytest
 
 
 # ---------------------------------------------------------------------------
-# Helpers — set up a fake Hermes root with two profiles, monkeypatch the
+# Helpers — set up a fake Eidolon root with two profiles, monkeypatch the
 # resolver helpers so the classifier sees the test layout.
 # ---------------------------------------------------------------------------
 
 
 @pytest.fixture
 def fake_hermes(tmp_path, monkeypatch):
-    """Build a fake Hermes layout:
+    """Build a fake Eidolon layout:
 
         <tmp>/
           skills/foo/SKILL.md           # default profile
@@ -46,8 +46,8 @@ def fake_hermes(tmp_path, monkeypatch):
 
     # Monkeypatch the resolver functions used by file_safety so each test
     # can choose which profile is "active".
-    import hermes_constants
-    monkeypatch.setattr(hermes_constants, "get_default_hermes_root", lambda: root)
+    import eidolon_constants
+    monkeypatch.setattr(eidolon_constants, "get_default_hermes_root", lambda: root)
 
     import agent.file_safety as fs
     monkeypatch.setattr(fs, "_hermes_root_path", lambda: root)
@@ -61,9 +61,9 @@ def fake_hermes(tmp_path, monkeypatch):
 
 
 def _set_active_home(monkeypatch, hermes_home: Path):
-    """Point file_safety._hermes_home_path at a specific profile dir."""
+    """Point file_safety._eidolon_home_path at a specific profile dir."""
     import agent.file_safety as fs
-    monkeypatch.setattr(fs, "_hermes_home_path", lambda: hermes_home)
+    monkeypatch.setattr(fs, "_eidolon_home_path", lambda: hermes_home)
 
 
 # ---------------------------------------------------------------------------
@@ -85,6 +85,6 @@ class TestResolveActiveProfileName:
         def _boom():
             raise RuntimeError("simulated")
 
-        monkeypatch.setattr(fs, "_hermes_home_path", _boom)
+        monkeypatch.setattr(fs, "_eidolon_home_path", _boom)
         # Should not raise — falls back to "default"
         assert fs._resolve_active_profile_name() == "default"

@@ -26,7 +26,7 @@ description: "在构建前验证想法的一次性实验"
 ## 参考：完整 SKILL.md
 
 :::info
-以下是 Hermes 在触发该 skill 时加载的完整 skill 定义。这是 agent 在 skill 激活时所看到的指令内容。
+以下是 Eidolon 在触发该 skill 时加载的完整 skill 定义。这是 agent 在 skill 激活时所看到的指令内容。
 :::
 
 # Spike
@@ -94,7 +94,7 @@ Spike 并非不需要调研——你需要调研到足以选定正确方案，�
 3. **选定一个。** 说明原因。如果有 2 个以上可信方案，在 spike 内构建快速变体。
 4. **跳过调研**的情形：纯逻辑，无外部依赖。
 
-调研步骤使用 Hermes 工具：
+调研步骤使用 Eidolon 工具：
 
 - `web_search("python websocket streaming libraries 2025")` — 查找候选库
 - `web_extract(urls=["https://websockets.readthedocs.io/..."])` — 阅读实际文档（返回 markdown）

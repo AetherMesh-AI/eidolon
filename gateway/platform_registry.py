@@ -13,7 +13,7 @@ import threading
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Optional
 
-from hermes_constants import hermes_home_key
+from eidolon_constants import hermes_home_key
 
 logger = logging.getLogger(__name__)
 
@@ -65,11 +65,11 @@ class PlatformEntry:
     # Connected/configured for this PlatformConfig (``get_connected_platforms``, setup UI);
     # None falls back to ``validate_config`` or ``check_fn``.
     is_connected: Optional[Callable[[Any], bool]] = None
-    required_env: list = field(default_factory=list)  # ``hermes setup`` display
+    required_env: list = field(default_factory=list)  # ``eidolon setup`` display
     install_hint: str = ""  # shown when check_fn is False
     setup_fn: Optional[Callable[[], None]] = None  # None = _setup_standard_platform / env display
     source: str = "plugin"  # "builtin" or "plugin"
-    plugin_name: str = ""  # owning manifest so ``hermes gateway setup`` can auto-enable it
+    plugin_name: str = ""  # owning manifest so ``eidolon gateway setup`` can auto-enable it
     allowed_users_env: str = ""  # comma-separated allowed user IDs (_is_user_authorized)
     allow_all_env: str = ""  # truthy "allow everyone" switch
     max_message_length: int = 0  # smart-chunking cap; 0 = no limit

@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-from hermes_constants import display_hermes_home
+from eidolon_constants import display_eidolon_home
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +107,7 @@ def _api_server_base_url() -> str:
     except ValueError:
         port = 8642
     try:
-        from hermes_cli.config import cfg_get, load_config_readonly
+        from eidolon_cli.config import cfg_get, load_config_readonly
         host = str(cfg_get(load_config_readonly(), "platforms", "api_server", "extra", "host", default="") or "").strip()
     except Exception:
         host = ""
@@ -355,12 +355,12 @@ def _latest_job_output_excerpt(job_id: str, max_chars: int = 2000) -> Optional[s
 
 def _reap_stale_executions(job_name: str) -> None:
     """Reap execution rows left 'claimed'/'running' by a provably-dead owner (e.g. a prior
-    one-shot `hermes cron run` that died mid-run). The ticker does this at startup; one-shot
+    one-shot `eidolon cron run` that died mid-run). The ticker does this at startup; one-shot
     invocations have no such moment, so a stale claim would block every later manual run.
     Best-effort self-heal: must not block dispatch."""
     try:
         # Reap any execution row this job (or any job) left stranded 'claimed'/ 'running' by a dead owner
-        # process -- e.g. a PRIOR one-shot `hermes cron run` invocation whose dispatched runner died with
+        # process -- e.g. a PRIOR one-shot `eidolon cron run` invocation whose dispatched runner died with
         # the exiting process before writing a terminal status (issue #86721). Safe and cheap: only
         # provably-dead owners (PID gone, or PID reused by a different process per its start time) are
         # reaped; a genuinely live owner's row is left untouched.
@@ -433,7 +433,7 @@ def _try_dispatch_background_run(
     _reap_stale_executions(job_name)
 
     # Routing capture BEFORE the claim: no routable session = no durable consumer for a detached
-    # completion, so don't claim-and-dispatch (direct callers like `hermes cron run` exit right after).
+    # completion, so don't claim-and-dispatch (direct callers like `eidolon cron run` exit right after).
     session_key = _background_session_key(session_id)
     # CLI path: the approval contextvar is only bound during gateway/TUI turns. The CLI drain filters
     # completions by the durable agent session id (#64240), so stamp it as the key — an empty key would fail
@@ -954,7 +954,7 @@ Jobs run in a fresh session with no current-chat context, so prompts must be sel
             },
             "script": {
                 "type": "string",
-                "description": f"Optional script run each tick; stdout is injected into the agent's prompt as context (with no_agent=True the script IS the job). Relative paths resolve under {display_hermes_home()}/scripts/; .sh/.bash via bash, else Python. On update, '' clears."
+                "description": f"Optional script run each tick; stdout is injected into the agent's prompt as context (with no_agent=True the script IS the job). Relative paths resolve under {display_eidolon_home()}/scripts/; .sh/.bash via bash, else Python. On update, '' clears."
             },
             "monitor": {
                 "type": "string",
@@ -1005,7 +1005,7 @@ def check_cronjob_requirements() -> bool:
 
 
 # Agent-facing arguments forwarded verbatim to cronjob(). model / provider / base_url are
-# intentionally NOT here: per-job inference pins are user-owned (dashboard, `hermes cron
+# intentionally NOT here: per-job inference pins are user-owned (dashboard, `eidolon cron
 # create/edit --model`, hand-edited jobs) — the agent must not point unattended spend at a
 # different model. Programmatic callers of cronjob() itself retain the parameters.
 _HANDLER_FORWARDED_ARGS = (
@@ -1057,7 +1057,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

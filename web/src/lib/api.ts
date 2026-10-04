@@ -1,4 +1,4 @@
-import { buildHermesWebSocketUrl } from "@hermes/shared";
+import { buildHermesWebSocketUrl } from "@aethermesh/shared";
 
 // The dashboard can be served either at the root of its host (e.g.
 // https://kanban.tilos.com/) or under a URL prefix when reverse-proxied
@@ -194,7 +194,7 @@ function pluginPath(name: string): string {
 /**
  * Fetch a single-use ticket for a WebSocket upgrade in gated mode.
  *
- * The dashboard's gated-mode WS auth (``hermes_cli.web_server._ws_auth_ok``)
+ * The dashboard's gated-mode WS auth (``eidolon_cli.web_server._ws_auth_ok``)
  * rejects the legacy ``?token=<_SESSION_TOKEN>`` path and only accepts
  * ``?ticket=<minted>`` consumed against the in-memory ticket store. Browsers
  * can't set ``Authorization`` on a WS upgrade, so this round-trip via the
@@ -957,10 +957,10 @@ export const api = {
   restartGateway: () =>
     fetchJSON<ActionResponse>("/api/gateway/restart", { method: "POST" }),
   updateHermes: () =>
-    fetchJSON<ActionResponse>("/api/hermes/update", { method: "POST" }),
+    fetchJSON<ActionResponse>("/api/eidolon/update", { method: "POST" }),
   checkHermesUpdate: (force = false) =>
     fetchJSON<UpdateCheckResponse>(
-      `/api/hermes/update/check${force ? "?force=true" : ""}`,
+      `/api/eidolon/update/check${force ? "?force=true" : ""}`,
     ),
   getActionStatus: (name: string, lines = 200) =>
     fetchJSON<ActionStatusResponse>(

@@ -26,11 +26,11 @@ Pick the row that matches your goal:
 
 | Goal | Do this first | Then do this |
 |---|---|---|
-| I just want Eidolon working on my machine | `hermes setup` | Run a real chat and verify it responds |
-| I already know my provider | `hermes model` | Save the config, then start chatting |
-| I want a bot or always-on setup | `hermes gateway setup` after CLI works | Connect Telegram, Discord, Slack, or another platform |
-| I want a local or self-hosted model | `hermes model` → custom endpoint | Verify the endpoint, model name, and context length |
-| I want multi-provider fallback | `hermes model` first | Add routing and fallback only after the base chat works |
+| I just want Eidolon working on my machine | `eidolon setup` | Run a real chat and verify it responds |
+| I already know my provider | `eidolon model` | Save the config, then start chatting |
+| I want a bot or always-on setup | `eidolon gateway setup` after CLI works | Connect Telegram, Discord, Slack, or another platform |
+| I want a local or self-hosted model | `eidolon model` → custom endpoint | Verify the endpoint, model name, and context length |
+| I want multi-provider fallback | `eidolon model` first | Add routing and fallback only after the base chat works |
 
 **Rule of thumb:** if Eidolon cannot complete a normal chat, do not add more features yet. Get one clean conversation working first, then layer on gateway, cron, skills, voice, or routing.
 
@@ -69,33 +69,33 @@ For detailed installation options, prerequisites, and troubleshooting, see the [
 
 ## 2. Choose a Provider
 
-The single most important setup step. Use `hermes model` to walk through the choice interactively:
+The single most important setup step. Use `eidolon model` to walk through the choice interactively:
 
 ```bash
-hermes model
+eidolon model
 ```
 
 :::note Optional Nous Portal
-Nous Portal remains a third-party provider option. If you choose it, `hermes setup --portal` starts its authentication and provider setup. Other providers and custom endpoints remain available; no subscription or hosted service is required by the Eidolon rebrand.
+Nous Portal remains a third-party provider option. If you choose it, `eidolon setup --portal` starts its authentication and provider setup. Other providers and custom endpoints remain available; no subscription or hosted service is required by the Eidolon rebrand.
 :::
 
 :::info Setup modes
-On a fresh install, `hermes setup` offers three modes:
+On a fresh install, `eidolon setup` offers three modes:
 
 - **Quick Setup (Nous Portal)** — free OAuth login, no API keys; sets up a model plus the Tool Gateway tools. The recommended fast path.
 - **Full Setup** — walk through every provider, tool, and option yourself (bring your own keys).
 - **Blank Slate** — everything starts **off** except the bare minimum needed to run an agent: **provider & model, the File Operations toolset, and the Terminal toolset**. No web, browser, code execution, vision, memory, delegation, cron, skills, plugins, or MCP servers — and compression, checkpoints, smart routing, and memory capture are all disabled. After the minimal baseline is applied, you choose one of two paths: **start with everything disabled** (finish now with the minimal agent), or **walk through all configurations** (opt in to tools, skills, plugins, MCP, and messaging). Pick this when you want a minimal, fully-controlled agent and intend to enable only exactly what you need.
 
-Blank Slate writes an explicit `platform_toolsets.cli` list plus `agent.disabled_toolsets`, so nothing you didn't choose ever loads — not even after `hermes update`. Re-enable anything later with `hermes tools`, seed skills with `hermes skills opt-in --sync`, or tune settings with `hermes setup agent`.
+Blank Slate writes an explicit `platform_toolsets.cli` list plus `agent.disabled_toolsets`, so nothing you didn't choose ever loads — not even after `eidolon update`. Re-enable anything later with `eidolon tools`, seed skills with `eidolon skills opt-in --sync`, or tune settings with `eidolon setup agent`.
 :::
 
 Good defaults:
 
 | Provider | What it is | How to set up |
 |----------|-----------|---------------|
-| **Nous Portal** | Subscription-based, zero-config | OAuth login via `hermes model` |
-| **OpenAI Codex** | ChatGPT or Codex subscription, uses Codex models | Device code auth via `hermes model` → **ChatGPT or Codex Subscription** |
-| **Anthropic** | Claude models directly — Max plan + extra usage credits (OAuth), or API key for pay-per-token | `hermes model` → OAuth login (requires Max + extra credits), or an Anthropic API key |
+| **Nous Portal** | Subscription-based, zero-config | OAuth login via `eidolon model` |
+| **OpenAI Codex** | ChatGPT or Codex subscription, uses Codex models | Device code auth via `eidolon model` → **ChatGPT or Codex Subscription** |
+| **Anthropic** | Claude models directly — Max plan + extra usage credits (OAuth), or API key for pay-per-token | `eidolon model` → OAuth login (requires Max + extra credits), or an Anthropic API key |
 | **OpenRouter** | Multi-provider routing across many models | Enter your API key |
 | **Fireworks AI** | Direct OpenAI-compatible model API | Set `FIREWORKS_API_KEY` |
 | **Z.AI** | GLM / Zhipu-hosted models | Set `GLM_API_KEY` / `ZAI_API_KEY` (also accepts `Z_AI_API_KEY`) |
@@ -104,7 +104,7 @@ Good defaults:
 | **Arcee AI** | Trinity models | Set `ARCEEAI_API_KEY` |
 | **GMI Cloud** | Multi-model direct API | Set `GMI_API_KEY` |
 | **Actual Computer** | Your own hardware as a private inference cluster — hosted relay or local daemon | Set `ACTUAL_API_KEY` (relay) or `ACTUAL_BASE_URL=http://127.0.0.1:8080` (local, no key) |
-| **MiniMax (OAuth)** | MiniMax frontier model via browser OAuth — no API key needed (model name in `hermes_cli/models.py` may change between releases) | `hermes model` → MiniMax (OAuth) |
+| **MiniMax (OAuth)** | MiniMax frontier model via browser OAuth — no API key needed (model name in `eidolon_cli/models.py` may change between releases) | `eidolon model` → MiniMax (OAuth) |
 | **MiniMax** | International MiniMax endpoint | Set `MINIMAX_API_KEY` |
 | **MiniMax China** | China-region MiniMax endpoint | Set `MINIMAX_CN_API_KEY` |
 | **Alibaba Cloud** | Qwen models via DashScope | Set `DASHSCOPE_API_KEY` (Qwen Coding Plan also accepts `ALIBABA_CODING_PLAN_API_KEY`) |
@@ -113,7 +113,7 @@ Good defaults:
 | **Azure Foundry** | Azure AI Foundry-hosted models | Set `AZURE_FOUNDRY_API_KEY` + `AZURE_FOUNDRY_BASE_URL` |
 | **Google AI Studio** | Gemini models via direct API | Set `GOOGLE_API_KEY` / `GEMINI_API_KEY` |
 | **xAI** | Grok models via direct API | Set `XAI_API_KEY` |
-| **xAI Grok OAuth** | SuperGrok / Premium+ subscription, no API key needed | `hermes model` → xAI Grok OAuth |
+| **xAI Grok OAuth** | SuperGrok / Premium+ subscription, no API key needed | `eidolon model` → xAI Grok OAuth |
 | **NovitaAI** | Multi-model API gateway | Set `NOVITA_API_KEY` |
 | **Ramp Router** | Responses-native LLM gateway routing across OpenAI/Anthropic/xAI/... | Set `RAMP_ROUTER_API_KEY` |
 | **Nebius Token Factory** | Open models on Nebius AI cloud | Set `NEBIUS_API_KEY` |
@@ -123,14 +123,14 @@ Good defaults:
 | **Tencent TokenPlan** | Tencent Hy models via Anthropic-style endpoint | Set `TOKENPLAN_API_KEY` |
 | **Ollama Cloud** | Managed Ollama-hosted models | Set `OLLAMA_API_KEY` |
 | **LM Studio** | Local desktop app exposing an OpenAI-compatible API | Set `LM_API_KEY` (and `LM_BASE_URL` if non-default) |
-| **Qwen OAuth** | Qwen Portal browser OAuth — no API key needed | `hermes model` → Qwen OAuth |
+| **Qwen OAuth** | Qwen Portal browser OAuth — no API key needed | `eidolon model` → Qwen OAuth |
 | **Kilo Code** | KiloCode-hosted models | Set `KILOCODE_API_KEY` |
 | **OpenCode Zen** | Pay-as-you-go access to curated models | Set `OPENCODE_ZEN_API_KEY` |
 | **OpenCode Go** | $10/month subscription for open models | Set `OPENCODE_GO_API_KEY` |
 | **DeepSeek** | Direct DeepSeek API access | Set `DEEPSEEK_API_KEY` |
 | **NVIDIA NIM** | Nemotron models via build.nvidia.com or local NIM | Set `NVIDIA_API_KEY` (optional: `NVIDIA_BASE_URL`) |
-| **GitHub Copilot** | GitHub Copilot subscription (GPT-5.x, Claude, Gemini, etc.) | OAuth via `hermes model`, or `COPILOT_GITHUB_TOKEN` / `GH_TOKEN` |
-| **GitHub Copilot ACP** | Copilot ACP agent backend (spawns local `copilot` CLI) | `hermes model` (requires `copilot` CLI + `copilot login`) |
+| **GitHub Copilot** | GitHub Copilot subscription (GPT-5.x, Claude, Gemini, etc.) | OAuth via `eidolon model`, or `COPILOT_GITHUB_TOKEN` / `GH_TOKEN` |
+| **GitHub Copilot ACP** | Copilot ACP agent backend (spawns local `copilot` CLI) | `eidolon model` (requires `copilot` CLI + `copilot login`) |
 | **Vercel AI Gateway** | Vercel AI Gateway routing | Set `AI_GATEWAY_API_KEY` |
 | **Custom Endpoint** | VLLM, SGLang, Ollama, or any OpenAI-compatible API | Set base URL + API key |
 
@@ -141,7 +141,7 @@ Eidolon requires a model with at least **64,000 tokens** of context. Models with
 :::
 
 :::tip
-You can switch providers at any time with `hermes model` — no lock-in. For a full list of all supported providers and setup details, see [AI Providers](../integrations/providers.md).
+You can switch providers at any time with `eidolon model` — no lock-in. For a full list of all supported providers and setup details, see [AI Providers](../integrations/providers.md).
 :::
 
 ### How settings are stored
@@ -154,9 +154,9 @@ Eidolon separates secrets from normal config:
 The easiest way to set values correctly is through the CLI:
 
 ```bash
-hermes config set model anthropic/claude-opus-4.6
-hermes config set terminal.backend docker
-hermes config set OPENROUTER_API_KEY sk-or-...
+eidolon config set model anthropic/claude-opus-4.6
+eidolon config set terminal.backend docker
+eidolon config set OPENROUTER_API_KEY sk-or-...
 ```
 
 The right value goes to the right file automatically.
@@ -164,14 +164,14 @@ The right value goes to the right file automatically.
 ## 3. Run Your First Chat
 
 ```bash
-hermes            # classic CLI
-hermes --tui      # modern TUI (release-specific verification required)
+eidolon            # classic CLI
+eidolon --tui      # modern TUI (release-specific verification required)
 ```
 
 You'll see a welcome banner with your model, available tools, and skills. Use a prompt that's specific and easy to verify:
 
 :::tip Pick your interface
-Eidolon ships with two terminal interfaces: the classic `prompt_toolkit` CLI and a newer [TUI](../user-guide/tui.md) with modal overlays, mouse selection, and non-blocking input. Both share the same sessions, slash commands, and config — try each with `hermes` vs `hermes --tui`.
+Eidolon ships with two terminal interfaces: the classic `prompt_toolkit` CLI and a newer [TUI](../user-guide/tui.md) with modal overlays, mouse selection, and non-blocking input. Both share the same sessions, slash commands, and config — try each with `eidolon` vs `eidolon --tui`.
 :::
 
 ```
@@ -200,8 +200,8 @@ If that works, you're past the hardest part.
 Before moving on, make sure resume works:
 
 ```bash
-hermes --continue    # Resume the most recent session
-hermes -c            # Short form
+eidolon --continue    # Resume the most recent session
+eidolon -c            # Short form
 ```
 
 That should bring you back to the session you just had. If it doesn't, check whether you're in the same profile and whether the session actually saved. This matters later when you're juggling multiple setups or machines.
@@ -243,15 +243,15 @@ Only after the base chat works. Pick what you need:
 ### Bot or shared assistant
 
 ```bash
-hermes gateway setup    # Interactive platform configuration
+eidolon gateway setup    # Interactive platform configuration
 ```
 
 Connect [Telegram](/user-guide/messaging/telegram), [Discord](/user-guide/messaging/discord), [Slack](/user-guide/messaging/slack), [WhatsApp](/user-guide/messaging/whatsapp), [Signal](/user-guide/messaging/signal), [Email](/user-guide/messaging/email), or [Home Assistant](/user-guide/messaging/homeassistant), or [Microsoft Teams](/user-guide/messaging/teams).
 
 ### Automation and tools
 
-- `hermes tools` — tune tool access per platform
-- `hermes skills` — browse and install reusable workflows
+- `eidolon tools` — tune tool access per platform
+- `eidolon skills` — browse and install reusable workflows
 - Cron — only after your bot or CLI setup is stable
 
 ### Sandboxed terminal
@@ -259,18 +259,18 @@ Connect [Telegram](/user-guide/messaging/telegram), [Discord](/user-guide/messag
 For safety, run the agent in a Docker container or on a remote server:
 
 ```bash
-hermes config set terminal.backend docker    # Docker isolation
-hermes config set terminal.backend ssh       # Remote server
+eidolon config set terminal.backend docker    # Docker isolation
+eidolon config set terminal.backend ssh       # Remote server
 ```
 
-For Docker sandboxes, you can also enable the **egress credential-injection proxy** so the sandbox never sees your real API keys — only opaque proxy tokens that work exclusively from behind a local TLS-intercepting daemon. See [Egress proxy](../user-guide/egress/iron-proxy.md). Setup is `hermes egress setup && hermes egress start`; `hermes setup terminal` also points Docker users at it. Modal, SSH, Daytona, and Singularity are not wired yet.
+For Docker sandboxes, you can also enable the **egress credential-injection proxy** so the sandbox never sees your real API keys — only opaque proxy tokens that work exclusively from behind a local TLS-intercepting daemon. See [Egress proxy](../user-guide/egress/iron-proxy.md). Setup is `eidolon egress setup && eidolon egress start`; `eidolon setup terminal` also points Docker users at it. Modal, SSH, Daytona, and Singularity are not wired yet.
 
 ### Voice mode
 
 ```bash
 # From the Eidolon install directory (the curl installer placed it at
-# ~/.eidolon/hermes-agent on Linux/macOS or %LOCALAPPDATA%\hermes\hermes-agent on Windows):
-cd ~/.eidolon/hermes-agent
+# ~/.eidolon/eidolon-agent on Linux/macOS or %LOCALAPPDATA%\eidolon\eidolon-agent on Windows):
+cd ~/.eidolon/eidolon-agent
 uv pip install --python ./venv/bin/python -e ".[voice]"
 # Includes faster-whisper for free local speech-to-text
 ```
@@ -286,12 +286,12 @@ Eidolon ships with a catalog of bundled skills already installed in `~/.eidolon/
 **Browse and install from the hub:**
 
 ```bash
-hermes skills browse                      # list everything available
-hermes skills search kubernetes           # find skills by keyword
-hermes skills install openai/skills/k8s   # install one (runs a security scan first)
+eidolon skills browse                      # list everything available
+eidolon skills search kubernetes           # find skills by keyword
+eidolon skills install openai/skills/k8s   # install one (runs a security scan first)
 ```
 
-The install argument is a `source/path` slug from the hub — `openai/skills/k8s` means the `k8s` skill from OpenAI's catalog. `hermes skills browse` shows the exact slugs to use.
+The install argument is a `source/path` slug from the hub — `openai/skills/k8s` means the `k8s` skill from OpenAI's catalog. `eidolon skills browse` shows the exact slugs to use.
 
 **Use a skill** — every installed skill becomes a slash command automatically:
 
@@ -321,10 +321,10 @@ mcp_servers:
 ACP support ships with the standard `[all]` extras, so the curl installer already includes it. Just run:
 
 ```bash
-hermes acp
+eidolon acp
 ```
 
-(If you installed without `[all]`, run `cd ~/.eidolon/hermes-agent && uv pip install -e ".[acp]"` first.)
+(If you installed without `[all]`, run `cd ~/.eidolon/eidolon-agent && uv pip install -e ".[acp]"` first.)
 
 See [ACP Editor Integration](../user-guide/features/acp.md).
 
@@ -336,23 +336,23 @@ These are the problems that waste the most time:
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| Eidolon opens but gives empty or broken replies | Provider auth or model selection is wrong | Run `hermes model` again and confirm provider, model, and auth |
+| Eidolon opens but gives empty or broken replies | Provider auth or model selection is wrong | Run `eidolon model` again and confirm provider, model, and auth |
 | Custom endpoint "works" but returns garbage | Wrong base URL, model name, or not actually OpenAI-compatible | Verify the endpoint in a separate client first |
-| Gateway starts but nobody can message it | Bot token, allowlist, or platform setup is incomplete | Re-run `hermes gateway setup` and check `hermes gateway status` |
-| `hermes --continue` can't find old session | Switched profiles or session never saved | Check `hermes sessions list` and confirm you're in the right profile |
+| Gateway starts but nobody can message it | Bot token, allowlist, or platform setup is incomplete | Re-run `eidolon gateway setup` and check `eidolon gateway status` |
+| `eidolon --continue` can't find old session | Switched profiles or session never saved | Check `eidolon sessions list` and confirm you're in the right profile |
 | Model unavailable or odd fallback behavior | Provider routing or fallback settings are too aggressive | Keep routing off until the base provider is stable |
-| `hermes doctor` flags config problems | Config values are missing or stale | Fix the config, retest a plain chat before adding features |
+| `eidolon doctor` flags config problems | Config values are missing or stale | Fix the config, retest a plain chat before adding features |
 
 ## Recovery Toolkit
 
 When something feels off, use this order:
 
-1. `hermes doctor`
-2. `hermes model`
-3. `hermes setup`
-4. `hermes sessions list`
-5. `hermes --continue`
-6. `hermes gateway status`
+1. `eidolon doctor`
+2. `eidolon model`
+3. `eidolon setup`
+4. `eidolon sessions list`
+5. `eidolon --continue`
+6. `eidolon gateway status`
 
 That sequence gets you from "broken vibes" back to a known state fast.
 
@@ -362,14 +362,14 @@ That sequence gets you from "broken vibes" back to a known state fast.
 
 | Command | Description |
 |---------|-------------|
-| `hermes` | Start chatting |
-| `hermes model` | Choose your LLM provider and model |
-| `hermes tools` | Configure which tools are enabled per platform |
-| `hermes setup` | Full setup wizard (configures everything at once) |
-| `hermes doctor` | Diagnose issues |
-| `hermes update` | Update to latest version |
-| `hermes gateway` | Start the messaging gateway |
-| `hermes --continue` | Resume last session |
+| `eidolon` | Start chatting |
+| `eidolon model` | Choose your LLM provider and model |
+| `eidolon tools` | Configure which tools are enabled per platform |
+| `eidolon setup` | Full setup wizard (configures everything at once) |
+| `eidolon doctor` | Diagnose issues |
+| `eidolon update` | Update to latest version |
+| `eidolon gateway` | Start the messaging gateway |
+| `eidolon --continue` | Resume last session |
 
 ## Next Steps
 
@@ -380,4 +380,4 @@ That sequence gets you from "broken vibes" back to a known state fast.
 - **[AI Providers](../integrations/providers.md)** — Full provider list and setup details
 - **[Skills System](../user-guide/features/skills.md)** — Reusable workflows and knowledge
 - **[Tips & Best Practices](../guides/tips.md)** — Power user tips
-- **[Moving to another machine](/reference/faq#exporting-hermes-to-another-machine)** — `hermes backup` migrates your whole setup (or [a single profile](/reference/faq#moving-a-single-profile-to-another-machine)); no need to rebuild from scratch
+- **[Moving to another machine](/reference/faq#exporting-eidolon-to-another-machine)** — `eidolon backup` migrates your whole setup (or [a single profile](/reference/faq#moving-a-single-profile-to-another-machine)); no need to rebuild from scratch

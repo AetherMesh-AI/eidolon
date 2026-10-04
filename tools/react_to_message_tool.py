@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Agent emoji reaction in the Hermes desktop app: the counterpart to the user's tapback
+"""Agent emoji reaction in the Eidolon desktop app: the counterpart to the user's tapback
 (same store, one-per-author, ``author="agent"``). Lives in the ``desktop_ui`` toolset so it
 costs nothing elsewhere (adapters expose reactions via ``send_message(action="react")``);
 defaults to the triggering message and emits ``message.reaction`` for live painting."""
@@ -15,7 +15,7 @@ from tools.registry import registry, tool_error
 def _open_session_db():
     """Open the SessionDB for the profile owning this turn, or ``None``."""
     try:
-        from hermes_state_registry import acquire
+        from eidolon_state_registry import acquire
         return acquire()
     except Exception:
         return None
@@ -54,7 +54,7 @@ def react_to_message_tool(emoji: str, message_row_id=None, messages_back=None) -
         return json.dumps({"success": True, "row_id": int(row_id), "reactions": reactions}, ensure_ascii=False)
     finally:
         with contextlib.suppress(Exception):
-            from hermes_state_registry import release_or_close
+            from eidolon_state_registry import release_or_close
             release_or_close(db)
 
 
@@ -134,7 +134,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

@@ -20,8 +20,8 @@ process.env.GIT_CONFIG_GLOBAL=path.join(base,'gitconfig'); process.env.GIT_CONFI
 fs.writeFileSync(process.env.GIT_CONFIG_GLOBAL,`[url "file://${remote}"]\n insteadOf = ${origin}\n`)
 const git=(...args)=>execFileSync('git',args,{cwd:remote,encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim()
 git('init','-b','main'); git('config','user.name','Fixture'); git('config','user.email','fixture@example.invalid')
-fs.mkdirSync(path.join(remote,'scripts')); fs.mkdirSync(path.join(remote,'hermes_cli'))
-fs.writeFileSync(path.join(remote,'hermes_cli/main.py'),'fixture source\n')
+fs.mkdirSync(path.join(remote,'scripts')); fs.mkdirSync(path.join(remote,'eidolon_cli'))
+fs.writeFileSync(path.join(remote,'eidolon_cli/main.py'),'fixture source\n')
 fs.writeFileSync(path.join(remote,'scripts/install.sh'),`#!/bin/bash
 set -eu
 if [ "$1" = --manifest ]; then
@@ -86,7 +86,7 @@ async function main(){
  assert.equal(fs.readFileSync(path.join(root,'stages.log'),'utf8'),'prerequisites\nvenv\npython-deps\n')
  assert.equal(selected().root,root)
  const backend=selected()
- assert.deepEqual(backend.args,['-m','hermes_cli.main','--fixture'])
+ assert.deepEqual(backend.args,['-m','eidolon_cli.main','--fixture'])
  assert.equal(backend.command,path.join(root,'venv/bin/python'))
  assert.equal(backend.bootstrap,false);assert.equal(backend.shell,false)
  assert.equal(execFileSync(backend.command,backend.args,{cwd:backend.root,env:backend.env,encoding:'utf8'}).trim(),'prepared-backend')

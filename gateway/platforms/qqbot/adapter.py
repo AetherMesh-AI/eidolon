@@ -725,10 +725,10 @@ class QQAdapter(BasePlatformAdapter):
     @staticmethod
     def _write_update_response(answer: str, operator: str = "") -> None:
         """Atomically (tmp + rename) write the update-prompt answer to
-        ``.update_response``, polled by the detached ``hermes update --gateway`` watcher."""
+        ``.update_response``, polled by the detached ``eidolon update --gateway`` watcher."""
         try:
-            from hermes_constants import get_hermes_home
-            response_path = get_hermes_home() / ".update_response"
+            from eidolon_constants import get_eidolon_home
+            response_path = get_eidolon_home() / ".update_response"
             tmp = response_path.with_suffix(".tmp")
             tmp.write_text(answer, encoding="utf-8")
             tmp.replace(response_path)

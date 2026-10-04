@@ -27,12 +27,12 @@ except ImportError:  # pragma: no cover - non-Windows
     msvcrt = None
 from datetime import datetime, timedelta
 from pathlib import Path
-from hermes_constants import get_hermes_home
+from eidolon_constants import get_eidolon_home
 from typing import Optional, Dict, List, Any, Callable, Set, Tuple, Union, Collection
 
 logger = logging.getLogger(__name__)
 
-from hermes_time import now as _hermes_now
+from eidolon_time import now as _hermes_now
 from utils import atomic_replace, atomic_write_text
 
 # croniter is imported lazily (slow import, only needed for cron exprs). HAS_CRONITER stays a
@@ -56,28 +56,28 @@ def _ensure_croniter() -> bool:
 
 # --- Configuration ---
 
-# Cron is per-profile by design: anchor at get_hermes_home() (active profile home), NOT
+# Cron is per-profile by design: anchor at get_eidolon_home() (active profile home), NOT
 # get_default_hermes_root() — the shared root would funnel every profile's jobs into one jobs.json
 # and run them under the ticker's HERMES_HOME, leaking config/credentials/skills across profiles.
 # Each profile owns its own cron store under its own HERMES_HOME, and a profile-scoped gateway runs that
 # profile's jobs under that same HERMES_HOME — so a job authored in profile `coder` lives in
 # `~/.hermes/profiles/coder/cron/jobs.json` and executes with `coder`'s `.env`, `config.yaml`, and skills.
 # Do NOT change this to the default root: that re-breaks per-profile isolation. See also the dynamic
-# `_get_hermes_home()` / `_get_lock_paths()` resolution in cron/scheduler.py. See #4707.
-HERMES_DIR = get_hermes_home().resolve()
+# `_get_eidolon_home()` / `_get_lock_paths()` resolution in cron/scheduler.py. See #4707.
+HERMES_DIR = get_eidolon_home().resolve()
 # Default-profile fallback and compatibility surface for callers/tests. Cross-profile callers must
 # scope paths with use_cron_store() instead of mutating these process-wide.
 CRON_DIR = HERMES_DIR / "cron"
 JOBS_FILE = CRON_DIR / "jobs.json"
-# Heartbeat: touched every ticker loop so `hermes cron status` can tell the ticker THREAD is alive,
+# Heartbeat: touched every ticker loop so `eidolon cron status` can tell the ticker THREAD is alive,
 # not just the gateway PROCESS; success = last tick that completed WITHOUT raising.
-# The gateway process and the (separate) ``hermes cron status`` process share it so status can tell whether
+# The gateway process and the (separate) ``eidolon cron status`` process share it so status can tell whether
 # the ticker THREAD is alive, not just whether the gateway PROCESS exists — a ticker that dies silently
 # inside a live gateway would otherwise report healthy (#32612, #32895).
 TICKER_HEARTBEAT_FILE = CRON_DIR / "ticker_heartbeat"
 TICKER_SUCCESS_FILE = CRON_DIR / "ticker_last_success"
 # Single source of truth for the ticker interval (scheduler_provider.py) and the staleness
-# threshold in `hermes cron status` (hermes_cli/cron.py), so they never drift apart.
+# threshold in `eidolon cron status` (eidolon_cli/cron.py), so they never drift apart.
 TICKER_INTERVAL_SECONDS = 60
 
 # In-process lock for load_jobs→modify→save_jobs cycles; without it, parallel tick threads'
@@ -118,7 +118,7 @@ _IMPORT_STORE = _CronStorePaths(CRON_DIR, JOBS_FILE, OUTPUT_DIR)
 def _current_cron_store() -> _CronStorePaths:
     """Paths pinned to this execution context's profile. Precedence: (1) active use_cron_store()
     override; (2) deliberately re-pointed module constants; (3) the ACTIVE profile home via
-    get_hermes_home(), so re-pointing HERMES_HOME after import uses ITS OWN store rather than the
+    get_eidolon_home(), so re-pointing HERMES_HOME after import uses ITS OWN store rather than the
     user's real jobs.json frozen at import; (4) import-time constants."""
     override = _cron_store_override.get()
     if override is not None:
@@ -126,7 +126,7 @@ def _current_cron_store() -> _CronStorePaths:
     live_constants = _CronStorePaths(CRON_DIR, JOBS_FILE, OUTPUT_DIR)
     if live_constants != _IMPORT_STORE:
         return live_constants
-    home = get_hermes_home().resolve()
+    home = get_eidolon_home().resolve()
     if home == HERMES_DIR:
         return live_constants
     return _CronStorePaths.for_dir(home / "cron")
@@ -763,8 +763,8 @@ def parse_schedule(schedule: str) -> Dict[str, Any]:
     if 'T' in schedule or re.match(r'^\d{4}-\d{2}-\d{2}', schedule):
         try:
             dt = datetime.fromisoformat(schedule.replace('Z', '+00:00'))
-            # Naive timestamps become aware in the CONFIGURED Hermes timezone (not server-local):
-            # the due-check compares against hermes_time.now().
+            # Naive timestamps become aware in the CONFIGURED Eidolon timezone (not server-local):
+            # the due-check compares against eidolon_time.now().
             # Make naive timestamps timezone-aware at parse time so the stored value doesn't depend on the
             # system timezone matching at check time. UTC) while now() runs in Asia/Kolkata, the stored
             # instant would land hours off from the user's wall-clock intent — far enough that one-shots
@@ -805,7 +805,7 @@ def parse_schedule(schedule: str) -> Dict[str, Any]:
 
 
 def _ensure_aware(dt: datetime) -> datetime:
-    """Aware datetime in the configured Hermes timezone. Legacy naive values are read as
+    """Aware datetime in the configured Eidolon timezone. Legacy naive values are read as
     *system-local* wall time (what created them) then converted, preserving ordering across
     timezone changes and avoiding false not-due results."""
     target_tz = _hermes_now().tzinfo
@@ -1123,7 +1123,7 @@ def compute_next_run(schedule: Dict[str, Any], last_run_at: Optional[str] = None
     return None
 
 
-# --- Ticker heartbeat (liveness signal for `hermes cron status`) ---
+# --- Ticker heartbeat (liveness signal for `eidolon cron status`) ---
 
 def _write_marker(name: str, text: str, tmp_prefix: str) -> None:
     """Atomic (never torn) best-effort marker write; failures swallowed so markers never break the
@@ -1140,7 +1140,7 @@ def record_ticker_heartbeat(success: bool = False) -> None:
     "alive but failing" from "firing"; scoped per profile store.
 
     The ticker calls this once per loop iteration. ``success=True`` additionally bumps the *last successful
-    tick* marker. We track two distinct signals so `hermes cron status` can tell a thread that is merely
+    tick* marker. We track two distinct signals so `eidolon cron status` can tell a thread that is merely
     *alive and looping* (heartbeat fresh, success stale) from one that is actually *firing jobs* (both
     fresh) — a ticker stuck failing every tick would otherwise keep the plain heartbeat fresh and falsely
     report healthy (#32612, #32895).
@@ -1166,7 +1166,7 @@ def get_ticker_heartbeat_age() -> Optional[float]:
     not "dead").
 
     Resolution uses ``_current_cron_store()`` so the heartbeat is correctly scoped to the active profile —
-    critical under multiplex_profiles where ``hermes cron status`` must report per-profile liveness
+    critical under multiplex_profiles where ``eidolon cron status`` must report per-profile liveness
     (#69377).
     """
     return _epoch_file_age("ticker_heartbeat")
@@ -1176,7 +1176,7 @@ def get_ticker_success_age() -> Optional[float]:
     """Seconds since the ticker last completed a tick WITHOUT raising, or None.
 
     Resolution uses ``_current_cron_store()`` so the heartbeat is correctly scoped to the active profile —
-    critical under multiplex_profiles where ``hermes cron status`` must report per-profile liveness
+    critical under multiplex_profiles where ``eidolon cron status`` must report per-profile liveness
     (#69377).
     """
     return _epoch_file_age("ticker_last_success")
@@ -1496,14 +1496,14 @@ def _resolve_default_model_snapshot() -> Optional[str]:
     """Default model resolved as the ticker's ``run_job`` does, so unpinned jobs can snapshot it and
     detect a later swap. ``None`` on missing config or failure (fail-open: "no snapshot")."""
     try:
-        from hermes_cli.config import _expand_env_vars, read_user_config_raw
+        from eidolon_cli.config import _expand_env_vars, read_user_config_raw
 
-        cfg_path = get_hermes_home() / "config.yaml"
+        cfg_path = get_eidolon_home() / "config.yaml"
         if not cfg_path.exists():
             return None
         cfg = read_user_config_raw(cfg_path)
         with contextlib.suppress(Exception):
-            from hermes_cli import managed_scope
+            from eidolon_cli import managed_scope
             cfg = managed_scope.apply_managed_overlay(cfg)
         cfg = _expand_env_vars(cfg)
         cron_cfg = cfg.get("cron") or {}
@@ -1561,7 +1561,7 @@ def _normalize_reasoning_effort(value: Any) -> Optional[str]:
     text = str(value).strip().lower()
     if not text:
         return None
-    from hermes_constants import parse_reasoning_effort
+    from eidolon_constants import parse_reasoning_effort
 
     if parse_reasoning_effort(text) is None:
         raise ValueError(
@@ -1611,7 +1611,7 @@ def _compute_provider_model_snapshots(
     model_snapshot: Optional[str] = None
     if normalized_provider is None:
         with contextlib.suppress(Exception):
-            from hermes_cli.runtime_provider import resolve_runtime_provider
+            from eidolon_cli.runtime_provider import resolve_runtime_provider
 
             runtime_kwargs = {"requested": None}
             # Delegate all rate-limit / 5xx retry to hermes's outer conversation loop, which honors
@@ -2013,7 +2013,7 @@ def trigger_job(job_id: str, extra_prompt: Optional[str] = None) -> Optional[Dic
         name = job.get("name", job_id)
         raise ValueError(
             f"Cannot run: job '{name}' is {job.get('state')} (terminal). "
-            f"Create a new occurrence with 'hermes cron resume {name} "
+            f"Create a new occurrence with 'eidolon cron resume {name} "
             "--run-now' or '--at <ISO-8601>'.")
     manual_run_at = _hermes_now().isoformat()
     return update_job(job["id"], {
@@ -2554,7 +2554,7 @@ COMPLETED_ONESHOT_RETENTION_DAYS = 7
 def _cron_config_number(key: str, default: Any, cast: Callable[[Any], Any]) -> Any:
     """Read ``cron.<key>`` from config as *cast*, falling back to *default* on any failure."""
     try:
-        from hermes_cli.config import load_config
+        from eidolon_cli.config import load_config
         cfg = load_config() or {}
         cron_cfg = cfg.get("cron", {}) if isinstance(cfg, dict) else {}
         return cast(cron_cfg.get(key, default))
@@ -2895,7 +2895,7 @@ def _oneshot_dispatch_limit_reached(job: Dict[str, Any], scan: _DueScan) -> bool
             "Job '%s': one-shot dispatch limit reached (%d/%d) on a record that already completed "
             "a run (last_run_at=%s) — removing it WITHOUT firing. This record was re-armed "
             "without a budget reset (pre-#93615 store or hand edit); re-run it with "
-            "'hermes cron resume <job> --run-now' (#93524).",
+            "'eidolon cron resume <job> --run-now' (#93524).",
             name, completed, times, job.get("last_run_at"))
     else:
         logger.info(
@@ -3025,7 +3025,7 @@ def _get_due_jobs_locked() -> List[Dict[str, Any]]:
 
 # Per-run output files (`cron/output/<job>/<timestamp>.md`) are capped so a frequent job can't fill
 # the disk.
-# Unlike the quick-snapshot store (`hermes_cli.backup`, capped at 20) it had no retention, so a
+# Unlike the quick-snapshot store (`eidolon_cli.backup`, capped at 20) it had no retention, so a
 # frequently-scheduled job on a long-running deploy accumulated one file per run forever and could fill the
 # disk (#52383). Keep the most recent N files per job; a non-positive value disables pruning (opt-out).
 _CRON_OUTPUT_DEFAULT_KEEP = 50

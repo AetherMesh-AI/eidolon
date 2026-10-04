@@ -23,8 +23,8 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any, Dict, Optional
 
-from hermes_cli.timeouts import get_provider_request_timeout, get_provider_stale_timeout
-from hermes_constants import PARTIAL_STREAM_STUB_ID, FINISH_REASON_LENGTH
+from eidolon_cli.timeouts import get_provider_request_timeout, get_provider_stale_timeout
+from eidolon_constants import PARTIAL_STREAM_STUB_ID, FINISH_REASON_LENGTH
 from agent.error_classifier import (FailoverReason, PROVIDER_STREAM_NON_JSON_ERROR_CODE)
 from agent.errors import EmptyStreamError
 from agent.chat_completion_stream_monitor import StreamingWaitMonitor
@@ -420,8 +420,8 @@ def _provider_preferences_for_agent(agent) -> Dict[str, Any]:
         "data_collection": agent.provider_data_collection}
     per_model = {}
     with contextlib.suppress(Exception):
-        from hermes_cli.config import load_config_readonly
-        from hermes_constants import resolve_per_model_provider_routing
+        from eidolon_cli.config import load_config_readonly
+        from eidolon_constants import resolve_per_model_provider_routing
         _pr = load_config_readonly().get("provider_routing")
         per_model = resolve_per_model_provider_routing(agent.model, (_pr or {}).get("models") if isinstance(_pr, dict) else None)
     merged = {**flat, **{k: v for k, v in per_model.items() if k in flat}}
@@ -647,7 +647,7 @@ def _bedrock_reasoning_stale_floor(model_id: object) -> "float | None":
 
 
 def _bedrock_converse_call(api_kwargs: dict, *, stream: bool, on_stream_denied=None):
-    """Pop the Hermes routing keys and call ``converse`` / ``converse_stream`` (boto3
+    """Pop the Eidolon routing keys and call ``converse`` / ``converse_stream`` (boto3
     directly) with the shared recovery: a cachePoint rejection (Nova: toolConfig.tools,
     #97281) drops the marker and resends once inside the same attempt; a streaming IAM
     denial hands off to ``on_stream_denied(client, kwargs, exc)``; a stale connection
@@ -743,8 +743,8 @@ def _managed_local_load_notice(agent, api_kwargs: dict) -> "Optional[str]":
         if not base:
             return None
         from urllib.parse import urlparse
-        from hermes_cli.local_runtime.load_progress import get_loading_progress, get_prefill_progress
-        from hermes_cli.local_runtime.supervisor import state_path
+        from eidolon_cli.local_runtime.load_progress import get_loading_progress, get_prefill_progress
+        from eidolon_cli.local_runtime.supervisor import state_path
         state = json.loads(state_path().read_text(encoding="utf-8"))
         managed = urlparse(str(state.get("base_url", ""))).netloc.lower()
         if not managed or urlparse(base).netloc.lower() != managed:
@@ -1606,7 +1606,7 @@ def _fallback_entry_unavailable_without_network(agent, fb: dict) -> Optional[str
     if (fb.get("provider") or "").strip().lower() != "nous":
         return None
     try:
-        from hermes_cli.auth import get_provider_auth_state
+        from eidolon_cli.auth import get_provider_auth_state
         state = get_provider_auth_state("nous") or {}
     except Exception as exc:
         return f"nous_auth_unreadable:{type(exc).__name__}"
@@ -1650,7 +1650,7 @@ def _fallback_reason_text(reason: "FailoverReason | None") -> str:
 def _is_anthropic_wire_url(url: str) -> bool:
     """Same Messages-only host match as determine_api_mode() / _detect_api_mode_for_url(): api.anthropic.com,
     a /anthropic suffix, or Kimi Code's api.kimi.com/coding (its /chat/completions 404s — #77256)."""
-    from hermes_cli.providers import host_mandated_api_mode
+    from eidolon_cli.providers import host_mandated_api_mode
     return host_mandated_api_mode(url) == "anthropic_messages"
 
 
@@ -1674,7 +1674,7 @@ def _fallback_api_mode_resolved(agent, fb_provider: str, fb_model: str, fb_base_
         return "codex_responses"
     if fb_provider in {"nous", "nous-portal", "nousresearch"}:
         # Portal is dual-wire: anthropic/* must land on /v1/messages (the swap rebuilds the native client).
-        from hermes_cli.providers import nous_api_mode
+        from eidolon_cli.providers import nous_api_mode
         return nous_api_mode(fb_model)
     if _is_anthropic_wire_url(fb_base_url):
         # Named custom providers (cron-anthropic) resolve base_url from config; the hint pass never saw it.
@@ -1778,8 +1778,8 @@ def _reresolve_fallback_reasoning_config(agent) -> None:
     try:
         # Re-resolve reasoning_config for the new fallback model (Closes #21256). Wrapped in try/except
         # because a config load failure must not kill the swap.
-        from hermes_cli.config import load_config
-        from hermes_constants import resolve_reasoning_config
+        from eidolon_cli.config import load_config
+        from eidolon_constants import resolve_reasoning_config
         agent.reasoning_config = resolve_reasoning_config(load_config() or {}, agent.model)
         logger.info("Fallback %s: reasoning_config resolved: %s", agent.model, agent.reasoning_config)
     except Exception as _reasoning_err:
@@ -1843,7 +1843,7 @@ def try_activate_fallback(agent, reason: "FailoverReason | None" = None) -> bool
 
         try:
             from agent.auxiliary_client import resolve_provider_client
-            from hermes_cli.fallback_config import resolve_entry_api_key
+            from eidolon_cli.fallback_config import resolve_entry_api_key
             # Pass the entry's base_url/api_key so custom endpoints (Ollama Cloud) resolve instead
             # of falling through to OpenRouter defaults.
             fb_base_url_hint = (fb.get("base_url") or "").strip() or None
@@ -1862,7 +1862,7 @@ def try_activate_fallback(agent, reason: "FailoverReason | None" = None) -> bool
                 unavailable.add(fb_key)
                 continue
             try:
-                from hermes_cli.model_normalize import normalize_model_for_provider
+                from eidolon_cli.model_normalize import normalize_model_for_provider
                 fb_model = normalize_model_for_provider(fb_model, fb_provider)
             except Exception as _norm_err:
                 logger.warning("Could not normalize fallback model %r for provider %r: %s", fb_model, fb_provider, _norm_err)
@@ -1962,7 +1962,7 @@ def _iteration_summary_api_messages(agent, messages: list) -> list:
         # chat.completions.create() directly, bypassing the transport — so mirror that sanitization here:
         # tool_name (SQLite FTS bookkeeping), the codex_* reasoning carriers, timestamp (preserved on
         # gateway user replay entries for the stale-confirmation expiry check — #47868 rejection class), and
-        # every Hermes-internal underscore-prefixed scaffolding key.
+        # every Eidolon-internal underscore-prefixed scaffolding key.
         substitute_api_content(api_msg)
         if needs_sanitize:
             agent._sanitize_tool_calls_for_strict_api(api_msg, model=sanitize_model)
@@ -2104,7 +2104,7 @@ def handle_max_iterations(agent, messages: list, api_call_count: int) -> str:
     if getattr(agent, "suppress_status_output", False):
         # Strict machine-readable mode (-Q, oneshot): keep diagnostics off stdout. quiet_mode is
         # NOT the gate — the interactive CLI runs quiet_mode=True by default and must see this.
-        # Strict machine-readable mode (hermes chat -Q, oneshot, background review): keep diagnostics out of
+        # Strict machine-readable mode (eidolon chat -Q, oneshot, background review): keep diagnostics out of
         # stdout so wrappers receive only the final assistant content (#93220 class).
         logger.warning(warning)
     else:
@@ -2765,7 +2765,7 @@ class _StreamingCall(StreamingWaitMonitor):
             completed_response_predicate=lambda value: hasattr(value, "choices"),
             metadata=_relay_stream_metadata(self.agent, "chat_completions"), defer_logical_completion=True))
         if self.agent.provider == "moa":
-            # Hermes interrupts the managed stream; Relay alone closes the provider stream.
+            # Eidolon interrupts the managed stream; Relay alone closes the provider stream.
             self.clients.set_stream_handle(stream)
 
         for chunk in _iter_provider_stream_chunks(stream, response=lambda: self._attempt_stream_response):
@@ -3228,7 +3228,7 @@ class _StreamingCall(StreamingWaitMonitor):
         if base == 180.0 and self.agent.base_url and is_local_endpoint(self.agent.base_url):
             _local_default = 900.0
             with contextlib.suppress(Exception):
-                from hermes_cli.config import load_config_readonly
+                from eidolon_cli.config import load_config_readonly
                 _cfg = load_config_readonly()  # read-only consumer — no deepcopy
                 _agent_cfg = _cfg.get("agent") if isinstance(_cfg, dict) else None
                 _v = _agent_cfg.get("local_stream_stale_timeout") if isinstance(_agent_cfg, dict) else None

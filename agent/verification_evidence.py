@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterator, Optional
 
-from hermes_constants import get_hermes_home
+from eidolon_constants import get_eidolon_home
 
 
 _DB_LOCK = threading.Lock()
@@ -108,11 +108,11 @@ def _utc_now() -> str:
 
 
 def _db_path() -> Path:
-    return get_hermes_home() / "verification_evidence.db"
+    return get_eidolon_home() / "verification_evidence.db"
 
 
 def _connect() -> sqlite3.Connection:
-    from hermes_state_wal import apply_wal_with_fallback
+    from eidolon_state_wal import apply_wal_with_fallback
 
     path = _db_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -456,10 +456,10 @@ def record_terminal_result(
 
 
 def record_verify_run(
-    *, root: str | Path, session_id: str | None = None, ok: bool, command: str = "hermes verify",
+    *, root: str | Path, session_id: str | None = None, ok: bool, command: str = "eidolon verify",
     scope: str = "full", output: str = "",
 ) -> Optional[dict[str, Any]]:
-    """Record a completed ``hermes verify`` run as verification evidence.
+    """Record a completed ``eidolon verify`` run as verification evidence.
 
     A pass marks the workspace ``passed`` for the verify-on-stop guard like a
     canonical test command would. ``root`` is re-resolved through project facts
@@ -467,7 +467,7 @@ def record_verify_run(
     """
     resolved = str(Path(root).resolve())
     return _insert_evidence(VerificationEvidence(
-        command=command, canonical_command="hermes verify", kind="verify",
+        command=command, canonical_command="eidolon verify", kind="verify",
         scope=scope if scope in {"full", "targeted"} else "full",
         status="passed" if ok else "failed", exit_code=0 if ok else 1, cwd=resolved,
         root=str((_project_facts(root) or {}).get("root") or resolved),

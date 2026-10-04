@@ -9,7 +9,7 @@ import shutil
 import subprocess
 import pytest
 
-from hermes_cli import worktree_ops
+from eidolon_cli import worktree_ops
 from pathlib import Path
 
 
@@ -1088,7 +1088,7 @@ class TestMergeVerdictCache:
     def test_cache_is_bounded(self, monkeypatch, tmp_path):
         """The cache file must not grow without limit across sessions."""
         import cli
-        from hermes_cli import worktree_ops
+        from eidolon_cli import worktree_ops
         path = tmp_path / "verdicts.json"
         monkeypatch.setattr(worktree_ops, "_worktree_merge_cache_path", lambda: path)
         monkeypatch.setattr(worktree_ops, "_WORKTREE_MERGE_CACHE_MAX", 10)

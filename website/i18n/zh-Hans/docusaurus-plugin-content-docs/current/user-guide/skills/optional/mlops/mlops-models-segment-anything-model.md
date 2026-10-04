@@ -14,7 +14,7 @@ SAM：通过点、框、掩码实现零样本图像分割。
 
 | | |
 |---|---|
-| 来源 | 可选 — 通过 `hermes skills install official/mlops/segment-anything` 安装 |
+| 来源 | 可选 — 通过 `eidolon skills install official/mlops/segment-anything` 安装 |
 | 路径 | `optional-skills/mlops/models/segment-anything-model` |
 | 版本 | `1.0.0` |
 | 作者 | Orchestra Research |
@@ -26,7 +26,7 @@ SAM：通过点、框、掩码实现零样本图像分割。
 ## 参考：完整 SKILL.md
 
 :::info
-以下是 Hermes 在触发此 skill 时加载的完整 skill 定义。这是 skill 激活时 agent 所看到的指令内容。
+以下是 Eidolon 在触发此 skill 时加载的完整 skill 定义。这是 skill 激活时 agent 所看到的指令内容。
 :::
 
 # Segment Anything Model (SAM)
@@ -513,8 +513,8 @@ mask_generator = SamAutomaticMaskGenerator(
 
 ## 参考资料
 
-- **[高级用法](https://github.com/NousResearch/hermes-agent/blob/main/optional-skills/mlops/models/segment-anything-model/references/advanced-usage.md)** - 批处理、微调、集成
-- **[故障排查](https://github.com/NousResearch/hermes-agent/blob/main/optional-skills/mlops/models/segment-anything-model/references/troubleshooting.md)** - 常见问题与解决方案
+- **[高级用法](https://github.com/AetherMesh-AI/eidolon/blob/main/optional-skills/mlops/models/segment-anything-model/references/advanced-usage.md)** - 批处理、微调、集成
+- **[故障排查](https://github.com/AetherMesh-AI/eidolon/blob/main/optional-skills/mlops/models/segment-anything-model/references/troubleshooting.md)** - 常见问题与解决方案
 
 ## 资源
 

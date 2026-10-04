@@ -63,8 +63,8 @@ class RunIdempotencyStore:
     def __init__(self, db_path: str = None):
         if db_path is None:
             try:
-                from hermes_cli.config import get_hermes_home
-                db_path = str(get_hermes_home() / "runs_idempotency.db")
+                from eidolon_cli.config import get_eidolon_home
+                db_path = str(get_eidolon_home() / "runs_idempotency.db")
             except Exception:
                 db_path = ":memory:"
         self._db_path = None if db_path == ":memory:" else db_path
@@ -80,7 +80,7 @@ class RunIdempotencyStore:
                 "process memory, so replay will not survive a restart: %s", exc)
             self._conn = sqlite3.connect(":memory:", check_same_thread=False)
             self._db_path = None
-        from hermes_state_wal import apply_wal_with_fallback
+        from eidolon_state_wal import apply_wal_with_fallback
         apply_wal_with_fallback(self._conn, db_label="runs_idempotency.db")
         self._conn.execute(
             """CREATE TABLE IF NOT EXISTS run_idempotency (

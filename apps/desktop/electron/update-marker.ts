@@ -30,7 +30,7 @@ import path from 'path'
 export const UPDATE_MARKER_MAX_AGE_MS = 20 * 60 * 1000
 
 export function markerPath(hermesHome) {
-  return path.join(hermesHome, '.hermes-update-in-progress')
+  return path.join(hermesHome, '.eidolon-update-in-progress')
 }
 
 // True only if a host process with this pid is currently alive. Signal 0 does
@@ -63,8 +63,8 @@ export function isPidAlive(pid, kill: typeof process.kill = process.kill.bind(pr
  * Pure-ish: file I/O against the given path, plus an injectable pid probe and
  * clock for tests.
  */
-export function readLiveUpdateMarker(
-  hermesHome,
+function readLiveUpdateMarkerFile(
+  file,
   {
     kill,
     now = Date.now,
@@ -75,7 +75,6 @@ export function readLiveUpdateMarker(
     kill?: typeof process.kill
   } = {}
 ) {
-  const file = markerPath(hermesHome)
   let raw
 
   try {
@@ -101,6 +100,18 @@ export function readLiveUpdateMarker(
   }
 
   return { pid, ageMs }
+}
+
+/** A detached pre-rename updater may still hold the legacy marker in this home. */
+export function readLiveUpdateMarker(
+  hermesHome: string,
+  options: { now?: () => number; maxAgeMs?: number; kill?: typeof process.kill } = {}
+) {
+  for (const file of [markerPath(hermesHome), path.join(hermesHome, '.hermes-update-in-progress')]) {
+    const owner = readLiveUpdateMarkerFile(file, options)
+    if (owner) {return owner}
+  }
+  return null
 }
 
 /**

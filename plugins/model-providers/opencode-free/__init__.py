@@ -3,12 +3,12 @@
 KEYLESS: the relay serves free-tier models anonymously and 401s any bearer it
 doesn't recognize, so this provider never sends a credential (the runtime
 resolver pins the keyless placeholder and an empty Authorization header; see
-hermes_cli.models.opencode_zen_free_runtime). Select via ``/model free``.
+eidolon_cli.models.opencode_zen_free_runtime). Select via ``/model free``.
 """
 
 from typing import Any
 
-from hermes_cli import __version__ as _HERMES_VERSION
+from eidolon_cli import __version__ as _HERMES_VERSION
 from providers import register_provider
 from providers.base import ProviderProfile
 

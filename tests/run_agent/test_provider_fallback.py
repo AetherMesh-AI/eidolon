@@ -228,7 +228,7 @@ class TestFallbackChainAdvancement:
         Anthropic client — otherwise the turn POSTs /chat/completions. The wire
         is opt-in since 2026-09-06 (``nous.anthropic_wire``, see ``nous_api_mode``).
         """
-        from hermes_cli import providers as _providers
+        from eidolon_cli import providers as _providers
         monkeypatch.setattr(_providers, "_nous_anthropic_wire", lambda: "native")
         portal = "https://inference-api.nousresearch.com/v1"
         fbs = [
@@ -259,7 +259,7 @@ class TestFallbackChainAdvancement:
                 ),
             ),
             patch(
-                "hermes_cli.model_normalize.normalize_model_for_provider",
+                "eidolon_cli.model_normalize.normalize_model_for_provider",
                 side_effect=lambda m, p: m,
             ),
             patch(
@@ -295,7 +295,7 @@ class TestFallbackChainAdvancement:
                 ),
             ),
             patch(
-                "hermes_cli.model_normalize.normalize_model_for_provider",
+                "eidolon_cli.model_normalize.normalize_model_for_provider",
                 side_effect=lambda m, p: m,
             ),
             patch(
@@ -360,7 +360,7 @@ class TestFallbackChainDedup:
             called.append((provider, model))
             return _mock_client(), model
         with patch("agent.auxiliary_client.resolve_provider_client", side_effect=_resolve):
-            with patch("hermes_cli.model_normalize.normalize_model_for_provider", side_effect=lambda m, p: m):
+            with patch("eidolon_cli.model_normalize.normalize_model_for_provider", side_effect=lambda m, p: m):
                 ok = agent._try_activate_fallback()
 
         assert ok is True
@@ -413,7 +413,7 @@ class TestFallbackChainDedup:
 
         with patch("agent.auxiliary_client.resolve_provider_client", side_effect=_resolve):
             with patch(
-                "hermes_cli.model_normalize.normalize_model_for_provider",
+                "eidolon_cli.model_normalize.normalize_model_for_provider",
                 side_effect=lambda m, p: m,
             ):
                 ok = agent._try_activate_fallback()

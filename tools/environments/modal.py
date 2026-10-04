@@ -12,7 +12,7 @@ import threading
 from pathlib import Path
 from typing import Any, Optional
 
-from hermes_constants import get_hermes_home
+from eidolon_constants import get_eidolon_home
 from tools.environments.base import BaseEnvironment, _load_json_store, _save_json_store
 from tools.environments.base_output import _ThreadedProcessHandle
 from tools.environments.file_sync import (
@@ -21,7 +21,7 @@ from tools.environments.remote_common import bash_argv, ensure_lazy_dep
 
 logger = logging.getLogger(__name__)
 
-_SNAPSHOT_STORE = get_hermes_home() / "modal_snapshots.json"
+_SNAPSHOT_STORE = get_eidolon_home() / "modal_snapshots.json"
 
 
 def _load_snapshots() -> dict:

@@ -50,14 +50,14 @@ from agent.turn_request_assembly import assemble_api_request
 from agent.turn_response_check import check_api_response
 from agent.turn_response_intake import normalize_model_response
 from agent.turn_tool_round import run_tool_round
-from hermes_logging import set_session_context
+from eidolon_logging import set_session_context
 from tools.skill_provenance import set_current_write_origin
 from utils import base_url_host_matches
 
 logger = logging.getLogger(__name__)
 
-# Must mirror _STALE_TOOL_CALL_MARKER_RE in hermes_state.py; kept local so importing
-# hermes_state (module-level DEFAULT_DB_PATH) is not forced at load time.
+# Must mirror _STALE_TOOL_CALL_MARKER_RE in eidolon_state.py; kept local so importing
+# eidolon_state (module-level DEFAULT_DB_PATH) is not forced at load time.
 _STALE_MARKER_RE = re.compile(r"^\[[A-Za-z_][A-Za-z0-9_.-]*\]$")
 
 # Shared by _apply_active_turn_redirect and the api_messages ghost-row filter so both sites cannot drift.
@@ -382,7 +382,7 @@ def _ollama_context_limit_error(agent: Any, request_tokens: int) -> Optional[str
 
     model = getattr(agent, "model", "") or "the selected model"
     logger.warning(
-        "Ollama runtime context too small for Hermes tool use: model=%s provider=%s base_url=%s "
+        "Ollama runtime context too small for Eidolon tool use: model=%s provider=%s base_url=%s "
         "runtime_context=%d minimum_context=%d estimated_request_tokens=%d tool_count=%d session=%s",
         model, getattr(agent, "provider", "") or "unknown",
         getattr(agent, "base_url", "") or "unknown base URL", runtime_ctx, MINIMUM_CONTEXT_LENGTH,
@@ -390,10 +390,10 @@ def _ollama_context_limit_error(agent: Any, request_tokens: int) -> Optional[str
         getattr(agent, "session_id", None) or "none",
     )
     return (
-        f"Ollama loaded `{model}` with only {runtime_ctx:,} tokens of runtime context, but Hermes "
+        f"Ollama loaded `{model}` with only {runtime_ctx:,} tokens of runtime context, but Eidolon "
         f"needs at least {MINIMUM_CONTEXT_LENGTH:,} tokens for reliable tool use.\n\n"
         "Increase the Ollama context for this model and restart/reload the model before trying "
-        "again. A known-good starting point is 65,536 tokens. In Hermes config, set "
+        "again. A known-good starting point is 65,536 tokens. In Eidolon config, set "
         "`model.ollama_num_ctx: 65536` (and `model.context_length: 65536` if you also override the "
         "displayed model context). If you manage the model through an Ollama Modelfile, set "
         "`PARAMETER num_ctx 65536` there instead."
@@ -411,7 +411,7 @@ def _maybe_grow_local_window(agent: Any, compressor: Any,
     ):
         return None
     try:
-        from hermes_cli.local_runtime.growth import maybe_grow_window
+        from eidolon_cli.local_runtime.growth import maybe_grow_window
         current_window = int(getattr(compressor, "context_length", 0) or 0)
         if current_window <= 0:
             return None
@@ -432,7 +432,7 @@ def _ra():
 
 def _nous_entitlement_message(capability: str) -> str:
     try:
-        from hermes_cli.nous_account import (
+        from eidolon_cli.nous_account import (
             format_nous_portal_entitlement_message,
             get_nous_portal_account_info,
         )
@@ -504,7 +504,7 @@ def _billing_or_entitlement_message(
                 "at https://claude.ai/settings/usage",
                 switch,
                 # The exhaustion latch replays the stored error without a request.
-                "Retry with a fresh credential state: `hermes auth reset anthropic`. Until that "
+                "Retry with a fresh credential state: `eidolon auth reset anthropic`. Until that "
                 "cooldown clears, this error can be replayed from cache without contacting the API.",
             ])
         return "\n".join([
@@ -729,7 +729,7 @@ def _restore_or_build_system_prompt(agent, system_message, conversation_history)
 
     # Plugin hook: on_session_start — fired once for a brand-new session, not on continuation.
     try:
-        from hermes_cli.lifecycle import invoke_hook as _invoke_hook
+        from eidolon_cli.lifecycle import invoke_hook as _invoke_hook
         _invoke_hook(
             "on_session_start", session_id=agent.session_id, model=agent.model,
             platform=getattr(agent, "platform", None) or "",
@@ -1219,7 +1219,7 @@ def _decode_inline_moa_turn(user_message, persist_user_message):
     """Decode a MoA preset encoded into ``user_message``; returns ``(user_message,
     moa_config, persist_user_message)``, unchanged with ``moa_config=None`` otherwise."""
     try:
-        from hermes_cli.moa_config import decode_moa_turn
+        from eidolon_cli.moa_config import decode_moa_turn
         _decoded_message, _decoded_moa_config = decode_moa_turn(user_message)
         if _decoded_moa_config is not None:
             if persist_user_message is None:
@@ -1560,7 +1560,7 @@ _PLUGIN_COMPAT_LAZY = {
     'COMPRESSION_RETRY_TOO_LARGE_STATUS_TEMPLATE': ('agent.conversation_compression', 'COMPRESSION_RETRY_TOO_LARGE_STATUS_TEMPLATE'),
     'FailoverReason': ('agent.error_classifier', 'FailoverReason'),
     'KawaiiSpinner': ('agent.display', 'KawaiiSpinner'),
-    'PARTIAL_STREAM_STUB_ID': ('hermes_constants', 'PARTIAL_STREAM_STUB_ID'),
+    'PARTIAL_STREAM_STUB_ID': ('eidolon_constants', 'PARTIAL_STREAM_STUB_ID'),
     'PRE_API_COMPRESSION_STATUS_TEMPLATE': ('agent.conversation_compression', 'PRE_API_COMPRESSION_STATUS_TEMPLATE'),
     'adaptive_rate_limit_backoff': ('agent.retry_utils', 'adaptive_rate_limit_backoff'),
     'anchored_context_tokens': ('agent.usage_anchor', 'anchored_context_tokens'),
@@ -1599,7 +1599,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

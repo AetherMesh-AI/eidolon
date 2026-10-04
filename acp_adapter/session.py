@@ -1,4 +1,4 @@
-"""ACP session manager — maps ACP sessions to Hermes AIAgent instances.
+"""ACP session manager — maps ACP sessions to Eidolon AIAgent instances.
 
 Sessions are persisted to the shared SessionDB (``~/.hermes/state.db``) so they
 survive process restarts and appear in ``session_search``; ``load_session`` /
@@ -6,7 +6,7 @@ survive process restarts and appear in ``session_search``; ``load_session`` /
 """
 from __future__ import annotations
 
-from hermes_constants import get_hermes_home, translate_cwd_for_wsl_backend, windows_path_to_wsl
+from eidolon_constants import get_eidolon_home, translate_cwd_for_wsl_backend, windows_path_to_wsl
 
 import copy
 import json
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 def _translate_acp_cwd(cwd: str) -> str:
     """Translate Windows ACP cwd values (``E:\\Projects``, ``\\\\wsl.localhost\\``) to POSIX form
-    when Hermes runs in WSL so agents, tools, and persisted sessions agree; no-op elsewhere."""
+    when Eidolon runs in WSL so agents, tools, and persisted sessions agree; no-op elsewhere."""
     return translate_cwd_for_wsl_backend(str(cwd))
 
 
@@ -130,7 +130,7 @@ def _first_user_preview(history: List[Dict[str, Any]], default: str) -> str:
 
 @dataclass
 class SessionState:
-    """Tracks per-session state for an ACP-managed Hermes agent."""
+    """Tracks per-session state for an ACP-managed Eidolon agent."""
 
     session_id: str
     agent: Any  # AIAgent instance
@@ -146,7 +146,7 @@ class SessionState:
 
 
 class SessionManager:
-    """Thread-safe manager for ACP sessions backed by Hermes AIAgent instances.
+    """Thread-safe manager for ACP sessions backed by Eidolon AIAgent instances.
 
     Sessions are held in-memory for fast access **and** persisted to the shared
     SessionDB so they survive restarts and are searchable via ``session_search``."""
@@ -271,8 +271,8 @@ class SessionManager:
         ``DEFAULT_DB_PATH``, so test fixtures that change the env var later are honoured."""
         if self._db_instance is None:
             try:
-                from hermes_state import SessionDB
-                self._db_instance = SessionDB(db_path=get_hermes_home() / "state.db")
+                from eidolon_state import SessionDB
+                self._db_instance = SessionDB(db_path=get_eidolon_home() / "state.db")
             except Exception:
                 logger.debug("SessionDB unavailable for ACP persistence", exc_info=True)
         return self._db_instance
@@ -373,8 +373,8 @@ class SessionManager:
             return self._agent_factory()
 
         from run_agent import AIAgent
-        from hermes_cli.config import load_config
-        from hermes_cli.runtime_provider import resolve_runtime_provider
+        from eidolon_cli.config import load_config
+        from eidolon_cli.runtime_provider import resolve_runtime_provider
 
         config = load_config()
         model_cfg = config.get("model")
@@ -412,7 +412,7 @@ class SessionManager:
         # Bounded by ``mcp_discovery_timeout`` (config.yaml, ~1.5s); late servers are
         # picked up by HermesACPAgent._schedule_mcp_late_refresh.
         try:
-            from hermes_cli.mcp_startup import ensure_mcp_discovery_before_agent_build
+            from eidolon_cli.mcp_startup import ensure_mcp_discovery_before_agent_build
 
             ensure_mcp_discovery_before_agent_build(logger=logger, thread_name="acp-mcp-discovery")
         except Exception:

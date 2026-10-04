@@ -20,7 +20,7 @@ def watcher_home(tmp_path, monkeypatch):
     (tmp_path / "config.yaml").write_text("display: {}\n")
     (tmp_path / "cron").mkdir()
 
-    monkeypatch.setattr(server, "_hermes_home", str(tmp_path))
+    monkeypatch.setattr(server, "_eidolon_home", str(tmp_path))
     monkeypatch.setattr(server, "_cfg_cache", None)
     monkeypatch.setattr(server, "_change_sigs", {})
     monkeypatch.setattr(server, "_change_checked_at", {})
@@ -71,7 +71,7 @@ def test_served_profile_store_move_broadcasts_sessions_changed(watcher_home, mon
     bot_home = home / "profiles" / "bot"
     bot_home.mkdir(parents=True)
     monkeypatch.setattr(server, "_served_profile_homes", set())
-    monkeypatch.setattr("hermes_cli.profiles.get_profile_dir", lambda name: home / "profiles" / name)
+    monkeypatch.setattr("eidolon_cli.profiles.get_profile_dir", lambda name: home / "profiles" / name)
     assert server._profile_home("bot") == bot_home
     server._broadcast_watched_changes(now=0.0)
 

@@ -1,5 +1,5 @@
 """
-Tests for timezone support (hermes_time module + integration points).
+Tests for timezone support (eidolon_time module + integration points).
 
 Covers:
   - Valid timezone applies correctly
@@ -17,32 +17,32 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
-import hermes_time
+import eidolon_time
 
 
-def _reset_hermes_time_cache():
-    """Reset the hermes_time module cache."""
-    hermes_time.reset_cache()
+def _reset_eidolon_time_cache():
+    """Reset the eidolon_time module cache."""
+    eidolon_time.reset_cache()
 
 
 # =========================================================================
-# hermes_time.now() — core helper
+# eidolon_time.now() — core helper
 # =========================================================================
 
 class TestHermesTimeNow:
     """Test the timezone-aware now() helper."""
 
     def setup_method(self):
-        _reset_hermes_time_cache()
+        _reset_eidolon_time_cache()
 
     def teardown_method(self):
-        _reset_hermes_time_cache()
+        _reset_eidolon_time_cache()
         os.environ.pop("HERMES_TIMEZONE", None)
 
     def test_valid_timezone_applies(self):
         """With a valid IANA timezone, now() returns time in that zone."""
         os.environ["HERMES_TIMEZONE"] = "Asia/Kolkata"
-        result = hermes_time.now()
+        result = eidolon_time.now()
         assert result.tzinfo is not None
         # IST is UTC+5:30
         offset = result.utcoffset()
@@ -51,13 +51,13 @@ class TestHermesTimeNow:
     def test_utc_timezone(self):
         """UTC timezone works."""
         os.environ["HERMES_TIMEZONE"] = "UTC"
-        result = hermes_time.now()
+        result = eidolon_time.now()
         assert result.utcoffset() == timedelta(0)
 
     def test_us_eastern(self):
         """US/Eastern timezone works (DST-aware zone)."""
         os.environ["HERMES_TIMEZONE"] = "America/New_York"
-        result = hermes_time.now()
+        result = eidolon_time.now()
         assert result.tzinfo is not None
         # Offset is -5h or -4h depending on DST
         offset_hours = result.utcoffset().total_seconds() / 3600
@@ -72,15 +72,15 @@ class TestGetTimezone:
     """Test get_timezone()."""
 
     def setup_method(self):
-        _reset_hermes_time_cache()
+        _reset_eidolon_time_cache()
 
     def teardown_method(self):
-        _reset_hermes_time_cache()
+        _reset_eidolon_time_cache()
         os.environ.pop("HERMES_TIMEZONE", None)
 
     def test_returns_zoneinfo_for_valid(self):
         os.environ["HERMES_TIMEZONE"] = "Europe/London"
-        tz = hermes_time.get_timezone()
+        tz = eidolon_time.get_timezone()
         assert isinstance(tz, ZoneInfo)
         assert str(tz) == "Europe/London"
 
@@ -97,16 +97,16 @@ class TestGetTimezone:
         monkeypatch.delenv("HERMES_TIMEZONE", raising=False)
 
         monkeypatch.setenv("HERMES_HOME", str(first_home))
-        assert str(hermes_time.get_timezone()) == "Asia/Tokyo"
+        assert str(eidolon_time.get_timezone()) == "Asia/Tokyo"
 
         # Multiplexed profile runtime scopes switch HERMES_HOME in one process.
         monkeypatch.setenv("HERMES_HOME", str(second_home))
-        assert str(hermes_time.get_timezone()) == "America/New_York"
+        assert str(eidolon_time.get_timezone()) == "America/New_York"
 
         # Switching BACK must return the first profile's zone (per-identity
         # entries stay hot; no single-slot ping-pong).
         monkeypatch.setenv("HERMES_HOME", str(first_home))
-        assert str(hermes_time.get_timezone()) == "Asia/Tokyo"
+        assert str(eidolon_time.get_timezone()) == "Asia/Tokyo"
 
     def test_concurrent_profile_resolution_never_mixes_zones(
         self, tmp_path, monkeypatch
@@ -121,9 +121,9 @@ class TestGetTimezone:
         """
         import threading
 
-        from hermes_constants import (
-            reset_hermes_home_override,
-            set_hermes_home_override,
+        from eidolon_constants import (
+            reset_eidolon_home_override,
+            set_eidolon_home_override,
         )
 
         zones = {"a": "Asia/Tokyo", "b": "America/New_York"}
@@ -143,14 +143,14 @@ class TestGetTimezone:
         def worker(key: str) -> None:
             barrier.wait()
             for _ in range(200):
-                token = set_hermes_home_override(str(homes[key]))
+                token = set_eidolon_home_override(str(homes[key]))
                 try:
-                    tz = hermes_time.get_timezone()
+                    tz = eidolon_time.get_timezone()
                     if str(tz) != zones[key]:
                         errors.append((key, str(tz)))
                         return
                 finally:
-                    reset_hermes_home_override(token)
+                    reset_eidolon_home_override(token)
 
         threads = [
             threading.Thread(target=worker, args=(key,)) for key in zones
@@ -243,10 +243,10 @@ class TestCronTimezone:
     """Verify cron paths use timezone-aware now()."""
 
     def setup_method(self):
-        _reset_hermes_time_cache()
+        _reset_eidolon_time_cache()
 
     def teardown_method(self):
-        _reset_hermes_time_cache()
+        _reset_eidolon_time_cache()
         os.environ.pop("HERMES_TIMEZONE", None)
 
     def test_parse_schedule_one_shot_duration_uses_tz_aware_now(self):
@@ -278,7 +278,7 @@ class TestCronTimezone:
         from cron.jobs import _ensure_aware
 
         os.environ["HERMES_TIMEZONE"] = "Asia/Kolkata"
-        _reset_hermes_time_cache()
+        _reset_eidolon_time_cache()
 
         # Create a naive datetime — will be interpreted as system-local time
         naive_dt = datetime(2026, 3, 11, 12, 0, 0)
@@ -311,7 +311,7 @@ class TestCronTimezone:
         # of the naive timestamp exceeds _hermes_now's wall time — this would
         # have caused a false "not due" with the old replace(tzinfo=...) approach.
         os.environ["HERMES_TIMEZONE"] = "Pacific/Midway"  # UTC-11
-        _reset_hermes_time_cache()
+        _reset_eidolon_time_cache()
 
         from cron.jobs import create_job, load_jobs, save_jobs, get_due_jobs
         create_job(prompt="Cross-tz job", schedule="every 1h")
@@ -335,7 +335,7 @@ class TestCronTimezone:
         monkeypatch.setattr(jobs_module, "OUTPUT_DIR", tmp_path / "cron" / "output")
 
         os.environ["HERMES_TIMEZONE"] = "US/Eastern"
-        _reset_hermes_time_cache()
+        _reset_eidolon_time_cache()
 
         from cron.jobs import create_job
         job = create_job(prompt="TZ test", schedule="every 2h")

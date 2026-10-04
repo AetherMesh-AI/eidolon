@@ -282,7 +282,7 @@ class TestGlobalAllowPrivateUrls:
     def test_default_is_false(self, monkeypatch):
         """Toggle defaults to False when no env var or config is set."""
         monkeypatch.delenv("HERMES_ALLOW_PRIVATE_URLS", raising=False)
-        with patch("hermes_cli.config.read_raw_config", side_effect=Exception("no config")):
+        with patch("eidolon_cli.config.read_raw_config", side_effect=Exception("no config")):
             assert _global_allow_private_urls() is False
 
 
@@ -290,7 +290,7 @@ class TestGlobalAllowPrivateUrls:
         """Quoted false must not opt out of SSRF protection."""
         monkeypatch.delenv("HERMES_ALLOW_PRIVATE_URLS", raising=False)
         cfg = {"security": {"allow_private_urls": "false"}}
-        with patch("hermes_cli.config.read_raw_config", return_value=cfg):
+        with patch("eidolon_cli.config.read_raw_config", return_value=cfg):
             assert _global_allow_private_urls() is False
 
 
@@ -303,9 +303,9 @@ class TestGlobalAllowPrivateUrls:
         self, tmp_path, monkeypatch, profile_order
     ):
         """Multiplexed profiles must resolve their own private-URL policy."""
-        from hermes_constants import (
-            reset_hermes_home_override,
-            set_hermes_home_override,
+        from eidolon_constants import (
+            reset_eidolon_home_override,
+            set_eidolon_home_override,
         )
 
         monkeypatch.delenv("HERMES_ALLOW_PRIVATE_URLS", raising=False)
@@ -326,11 +326,11 @@ class TestGlobalAllowPrivateUrls:
         )
 
         def under_profile(home):
-            token = set_hermes_home_override(home)
+            token = set_eidolon_home_override(home)
             try:
                 return is_safe_url("http://profile-private.test/resource")
             finally:
-                reset_hermes_home_override(token)
+                reset_eidolon_home_override(token)
 
         homes = {"allowed": allowed_home, "blocked": blocked_home}
         expected = {"allowed": True, "blocked": False}

@@ -19,12 +19,12 @@ import sqlite3
 
 import pytest
 
-import hermes_state
-import hermes_state_holders
-import hermes_state_schema
-from hermes_state import SessionDB
-from hermes_state_common import FTS_REBUILD_DEFERRAL_KEY, FTS_STALE_KEY, LEGACY_FTS_SQL, LEGACY_FTS_TRIGRAM_SQL, SCHEMA_SQL, _FTS_TRIGGERS
-from hermes_state_dbfile import _concrete_state_db_holder_pids, _is_inactive_orphan_desktop_holder
+import eidolon_state
+import eidolon_state_holders
+import eidolon_state_schema
+from eidolon_state import SessionDB
+from eidolon_state_common import FTS_REBUILD_DEFERRAL_KEY, FTS_STALE_KEY, LEGACY_FTS_SQL, LEGACY_FTS_TRIGRAM_SQL, SCHEMA_SQL, _FTS_TRIGGERS
+from eidolon_state_dbfile import _concrete_state_db_holder_pids, _is_inactive_orphan_desktop_holder
 
 
 @pytest.fixture
@@ -92,7 +92,7 @@ class TestRuntimeFtsRebuild:
         assert _concrete_state_db_holder_pids(
             db_path,
             [
-                (222, "uninspectable holder: python -m hermes_cli.main serve --port 0"),
+                (222, "uninspectable holder: python -m eidolon_cli.main serve --port 0"),
                 (-1, "open-file scan failed"),
             ],
         ) == []
@@ -141,44 +141,47 @@ class TestRuntimeFtsRebuild:
                 "/usr/sbin/tailscaled",
                 "be-child",
                 "ssh",
-                "--cmd=python -m hermes_cli.main gateway",
+                "--cmd=python -m eidolon_cli.main gateway",
             ),
             ("tmux", "new-session", "/opt/hermes-agent/.venv/bin/hermes gateway"),
             ("python3", "/opt/hermes-agent/tools/check_state.py"),
             ("hermes-monitor", "gateway"),
             ("hermesctl", "serve"),
-            ("python3", "worker.py", "hermes_cli.main"),
-            ("python3", "-m", "other.module", "hermes_cli.main"),
-            ("python3", "-c", "hermes_cli.main"),
-            ("python3", "-Icprint('hermes_cli.main')", "hermes_cli/main.py"),
+            ("python3", "worker.py", "eidolon_cli.main"),
+            ("python3", "-m", "other.module", "eidolon_cli.main"),
+            ("python3", "-c", "eidolon_cli.main"),
+            ("python3", "-Icprint('eidolon_cli.main')", "eidolon_cli/main.py"),
         ),
     )
     def test_uninspectable_non_hermes_process_is_not_a_holder(self, argv):
-        assert not hermes_state_holders._looks_like_hermes(argv)
+        assert not eidolon_state_holders._looks_like_hermes(argv)
 
     @pytest.mark.parametrize(
         "argv",
         (
+            ("/usr/local/bin/eidolon", "gateway"),
+            ("/usr/local/bin/eidolon-agent", "serve"),
+            ("/usr/local/bin/eidolon-acp", "--stdio"),
             ("/usr/local/bin/hermes", "gateway"),
             ("/usr/local/bin/hermes-agent", "serve"),
             ("/usr/local/bin/hermes-acp", "--stdio"),
-            ("/usr/bin/python3", "-m", "hermes_cli.main", "gateway"),
+            ("/usr/bin/python3", "-m", "eidolon_cli.main", "gateway"),
             ("/usr/bin/python3", "-m", "acp_adapter"),
-            ("/usr/bin/python3", "-Im", "hermes_cli.main", "gateway"),
-            ("/usr/bin/python3", "-mhermes_cli.main", "gateway"),
-            ("/usr/bin/python3", "-W", "ignore", "-m", "hermes_cli.main"),
-            ("/usr/bin/python3", "-Xdev", "-m", "hermes_cli.main"),
+            ("/usr/bin/python3", "-Im", "eidolon_cli.main", "gateway"),
+            ("/usr/bin/python3", "-meidolon_cli.main", "gateway"),
+            ("/usr/bin/python3", "-W", "ignore", "-m", "eidolon_cli.main"),
+            ("/usr/bin/python3", "-Xdev", "-m", "eidolon_cli.main"),
             (
                 "/opt/hermes-agent/.venv/bin/python",
-                "/opt/hermes-agent/hermes_cli/main.py",
+                "/opt/hermes-agent/eidolon_cli/main.py",
                 "gateway",
             ),
-            ("python.exe", "--", "hermes_cli/main.py", "gateway"),
+            ("python.exe", "--", "eidolon_cli/main.py", "gateway"),
             ("python3", "/opt/hermes-agent/run_agent.py", "--query", "hello"),
         ),
     )
     def test_uninspectable_hermes_process_remains_a_holder(self, argv):
-        assert hermes_state_holders._looks_like_hermes(argv)
+        assert eidolon_state_holders._looks_like_hermes(argv)
 
     @pytest.mark.linux_only
     def test_foreign_holder_detection_proc_readlink_deleted_wal(
@@ -207,18 +210,18 @@ class TestRuntimeFtsRebuild:
         other.touch()
         os.symlink(str(other), str(proc_root / "333" / "fd" / "3"))
 
-        monkeypatch.setattr(hermes_state_holders.os, "getpid", lambda: 111)
+        monkeypatch.setattr(eidolon_state_holders.os, "getpid", lambda: 111)
         real_listdir = os.listdir
         def _listdir(path):
             if isinstance(path, str):
                 path = path.replace("/proc", str(proc_root))
             return real_listdir(path)
-        monkeypatch.setattr(hermes_state_holders.os, "listdir", _listdir)
+        monkeypatch.setattr(eidolon_state_holders.os, "listdir", _listdir)
         real_readlink = os.readlink
         def _readlink(path):
             path = path.replace("/proc", str(proc_root))
             return real_readlink(path)
-        monkeypatch.setattr(hermes_state_holders.os, "readlink", _readlink)
+        monkeypatch.setattr(eidolon_state_holders.os, "readlink", _readlink)
         real_stat = os.stat
         def _stat(path, *args, **kwargs):
             path_s = str(path).replace("/proc", str(proc_root))
@@ -230,9 +233,9 @@ class TestRuntimeFtsRebuild:
                 fields[1] += 1000
                 return os.stat_result(fields)
             return real_stat(path_s, *args, **kwargs)
-        monkeypatch.setattr(hermes_state_holders.os, "stat", _stat)
+        monkeypatch.setattr(eidolon_state_holders.os, "stat", _stat)
 
-        holders = hermes_state_holders.foreign_state_db_holders(db_path)
+        holders = eidolon_state_holders.foreign_state_db_holders(db_path)
         assert holders == [(222, db_path_wal + " (deleted)")]
 
     @pytest.mark.linux_only
@@ -260,14 +263,14 @@ class TestRuntimeFtsRebuild:
         guest_db.touch()
         os.symlink(str(guest_db), str(proc_root / "222" / "fd" / "3"))
 
-        monkeypatch.setattr(hermes_state_holders.os, "getpid", lambda: 111)
+        monkeypatch.setattr(eidolon_state_holders.os, "getpid", lambda: 111)
 
         real_listdir = os.listdir
         def _listdir(path):
             if isinstance(path, str):
                 path = path.replace("/proc", str(proc_root))
             return real_listdir(path)
-        monkeypatch.setattr(hermes_state_holders.os, "listdir", _listdir)
+        monkeypatch.setattr(eidolon_state_holders.os, "listdir", _listdir)
 
         # The guest fd reports the host's path (identical string), which is
         # exactly what the kernel shows across mount namespaces.
@@ -276,7 +279,7 @@ class TestRuntimeFtsRebuild:
             if path.endswith(f"{proc_root}/222/fd/3") or "222" in path:
                 return str(db_path)
             return os.readlink(path)
-        monkeypatch.setattr(hermes_state_holders.os, "readlink", _readlink)
+        monkeypatch.setattr(eidolon_state_holders.os, "readlink", _readlink)
 
         # ...but stat()ing the descriptor resolves to the peer's own inode.
         real_stat = os.stat
@@ -289,9 +292,9 @@ class TestRuntimeFtsRebuild:
                 fields[2] = st.st_dev + 1000
                 return os.stat_result(fields)
             return st
-        monkeypatch.setattr(hermes_state_holders.os, "stat", _stat)
+        monkeypatch.setattr(eidolon_state_holders.os, "stat", _stat)
 
-        assert hermes_state_holders.foreign_state_db_holders(db_path) == []
+        assert eidolon_state_holders.foreign_state_db_holders(db_path) == []
 
     @pytest.mark.linux_only
     def test_foreign_holder_uninspectable_process_cmdline_fallback(
@@ -309,10 +312,10 @@ class TestRuntimeFtsRebuild:
         # PID 222's cmdline is world-readable and looks like Hermes
         cmdline_path = proc_root / "222" / "cmdline"
         cmdline_path.write_bytes(
-            b"python3\x00-m\x00hermes_cli.main\x00chat\x00"
+            b"python3\x00-m\x00eidolon_cli.main\x00chat\x00"
         )
 
-        monkeypatch.setattr(hermes_state_holders.os, "getpid", lambda: 111)
+        monkeypatch.setattr(eidolon_state_holders.os, "getpid", lambda: 111)
         real_listdir = os.listdir
         def _listdir(path):
             if isinstance(path, str):
@@ -320,7 +323,7 @@ class TestRuntimeFtsRebuild:
                     raise PermissionError(path)
                 path = path.replace("/proc", str(proc_root))
             return real_listdir(path)
-        monkeypatch.setattr(hermes_state_holders.os, "listdir", _listdir)
+        monkeypatch.setattr(eidolon_state_holders.os, "listdir", _listdir)
         # _read_proc_argv opens /proc/<pid>/cmdline directly; redirect
         # it to our fake proc tree.
         def _fake_argv(pid):
@@ -333,13 +336,13 @@ class TestRuntimeFtsRebuild:
                 return raw.decode("utf-8", "replace").rstrip("\x00").split("\x00")
             except OSError:
                 return None
-        monkeypatch.setattr(hermes_state_holders, "_read_proc_argv", _fake_argv)
+        monkeypatch.setattr(eidolon_state_holders, "_read_proc_argv", _fake_argv)
 
-        holders = hermes_state_holders.foreign_state_db_holders(db_path)
+        holders = eidolon_state_holders.foreign_state_db_holders(db_path)
         # Should include PID 222 with the cmdline info
         assert len(holders) == 1
         assert holders[0][0] == 222
-        assert "hermes_cli.main" in holders[0][1]
+        assert "eidolon_cli.main" in holders[0][1]
 
         # Cleanup
         os.chmod(proc_root / "222" / "fd", 0o755)
@@ -404,7 +407,7 @@ class TestRuntimeFtsRebuild:
         # Structural corruption quarantines the handle: the typed error wraps
         # the original (cause preserved, SQLite result code copied) and the
         # sticky flag is set, so later writes fail fast.
-        from hermes_state import StateDbCorruptError
+        from eidolon_state import StateDbCorruptError
 
         assert isinstance(caught.value, StateDbCorruptError)
         assert caught.value.__cause__ is structural
@@ -773,7 +776,7 @@ class TestRuntimeFtsRebuild:
             "_reap_inactive_orphan_desktop_holders",
             lambda self, holders, *, min_age_seconds: reaped.extend(holders) or [4242],
         )
-        monkeypatch.setattr(hermes_state_schema.time, "time", lambda: 120.0)
+        monkeypatch.setattr(eidolon_state_schema.time, "time", lambda: 120.0)
 
         reopened = SessionDB(db_path=db_path)
         try:
@@ -892,7 +895,7 @@ class TestPhysicalCorruptionAcceptance:
         db = SessionDB(db_path=db_path)
         try:
             caplog.clear()
-            with caplog.at_level("WARNING", logger="hermes_state"):
+            with caplog.at_level("WARNING", logger="eidolon_state"):
                 with pytest.raises(sqlite3.DatabaseError) as caught:
                     db.append_message("s1", "user", "post-corruption write")
             # The genuine structural error propagated, not an FTS retry result.
@@ -911,14 +914,14 @@ class TestPhysicalCorruptionAcceptance:
             # Structural damage quarantines the handle: typed error, sticky
             # flag, later writes fail fast, and close() must not checkpoint
             # the WAL over a damaged page image (the #90950 page-1 clobber).
-            from hermes_state import StateDbCorruptError
+            from eidolon_state import StateDbCorruptError
 
             assert isinstance(caught.value, StateDbCorruptError)
             assert db._db_corrupt is True
             with pytest.raises(StateDbCorruptError):
                 db.append_message("s1", "user", "second write after corruption")
             caplog.clear()
-            with caplog.at_level("WARNING", logger="hermes_state"):
+            with caplog.at_level("WARNING", logger="eidolon_state"):
                 db.close()
             assert "Skipping the close-time WAL checkpoint" in caplog.text
         finally:

@@ -271,7 +271,7 @@ class HomeAssistantAdapter(BasePlatformAdapter):
         reads from the same WS connection.
         """
         url = f"{self._hass_url}/api/services/persistent_notification/create"
-        payload = {"title": "Hermes Agent", "message": content[:self.MAX_MESSAGE_LENGTH]}
+        payload = {"title": "Eidolon Agent", "message": content[:self.MAX_MESSAGE_LENGTH]}
 
         async def _post(session) -> SendResult:
             async with session.post(
@@ -302,7 +302,7 @@ class HomeAssistantAdapter(BasePlatformAdapter):
 # #3823) Added when the Email adapter moved from gateway/platforms/email.py into this bundled plugin.
 # register() exposes the platform via the registry, replacing the Platform.EMAIL elif in gateway/run.py, the
 # _PLATFORM_CONNECTED_CHECKERS entry in gateway/config.py, the _PLATFORMS["email"] static dict in
-# hermes_cli/gateway.py, and the _send_email dispatch in tools/send_message_tool.py. EMAIL_*
+# eidolon_cli/gateway.py, and the _send_email dispatch in tools/send_message_tool.py. EMAIL_*
 # env→PlatformConfig seeding stays in core.
 # ──────────────────────────────────────────────────────────────────────────
 async def _standalone_send(
@@ -336,14 +336,14 @@ async def _standalone_send(
 
 
 def _is_connected(config) -> bool:
-    """Connected when ``HASS_TOKEN`` is set; read via ``hermes_cli.gateway.get_env_value`` at call
+    """Connected when ``HASS_TOKEN`` is set; read via ``eidolon_cli.gateway.get_env_value`` at call
     time so tests patching ``gateway_mod.get_env_value`` can suppress ambient env vars."""
-    import hermes_cli.gateway as gateway_mod
+    import eidolon_cli.gateway as gateway_mod
     return bool((gateway_mod.get_env_value("HASS_TOKEN") or "").strip())
 
 
 def register(ctx) -> None:
-    """Plugin entry point — called by the Hermes plugin system."""
+    """Plugin entry point — called by the Eidolon plugin system."""
     ctx.register_platform(
         name="homeassistant", label="Home Assistant", adapter_factory=HomeAssistantAdapter,
         check_fn=check_ha_requirements, validate_config=validate_ha_config, is_connected=_is_connected,

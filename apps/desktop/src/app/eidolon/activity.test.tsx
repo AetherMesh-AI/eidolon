@@ -1,8 +1,9 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { expect, it } from 'vitest'
-import { createPrototypeAdapter } from './adapter'
+
 import { Activity } from './activity'
+import { createPrototypeAdapter } from './adapter'
 
 it('offers the brief categories with opt-in fictional events and observable details', () => {
  const adapter = createPrototypeAdapter()
@@ -14,6 +15,7 @@ it('offers the brief categories with opt-in fictional events and observable deta
  render(<MemoryRouter><Activity snapshot={snapshot} /></MemoryRouter>)
  const filter = screen.getByRole('combobox', { name: 'Event type' })
  const expected = { Assignments: 'delegation', Decisions: 'decision', Tools: 'tool', Files: 'file', Reviews: 'approval', System: 'system' }
+
  for (const [label, kind] of Object.entries(expected)) {
   const option = within(filter).getByRole('option', { name: label }) as HTMLOptionElement
   fireEvent.change(filter, { target: { value: option.value } })
@@ -35,11 +37,11 @@ it('keeps event inspectors inside the current objective scope', () => {
  adapter.loadDemo()
  const snapshot = adapter.getSnapshot()
  const example = snapshot.activity.find(event => event.kind === 'tool')!
- const { rerender } = render(<MemoryRouter><Activity snapshot={snapshot} objectiveId="demo-identity" /></MemoryRouter>)
+ const { rerender } = render(<MemoryRouter><Activity objectiveId="demo-identity" snapshot={snapshot} /></MemoryRouter>)
  fireEvent.change(screen.getByRole('combobox', { name: 'Event type' }), { target: { value: 'tool' } })
  expect(screen.getAllByRole('button', { name: /Inspect event:/ })).toHaveLength(1)
  fireEvent.click(screen.getByRole('button', { name: `Inspect event: ${example.text}` }))
- rerender(<MemoryRouter><Activity snapshot={snapshot} objectiveId="another-objective" /></MemoryRouter>)
+ rerender(<MemoryRouter><Activity objectiveId="another-objective" snapshot={snapshot} /></MemoryRouter>)
  expect(screen.queryByRole('complementary', { name: 'Event details' })).toBeNull()
  expect(screen.queryByRole('button', { name: /Inspect event:/ })).toBeNull()
 })

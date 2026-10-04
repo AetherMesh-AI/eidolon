@@ -1,3 +1,4 @@
+import { hermesApi } from '@/eidolon'
 import type {
   HermesGitBaseBranch,
   HermesGitBranch,
@@ -7,7 +8,6 @@ import type {
   HermesReviewList,
   HermesReviewShipInfo
 } from '@/global'
-import { hermesApi } from '@/hermes'
 
 import { desktopFsProfile, isDesktopFsRemoteMode } from './desktop-fs'
 
@@ -23,7 +23,7 @@ function desktopApi<T>(path: string, body?: Record<string, unknown>): Promise<T>
   const desktop = window.hermesDesktop
 
   if (!desktop) {
-    throw new Error('Hermes Desktop bridge is unavailable')
+    throw new Error('Eidolon Desktop bridge is unavailable')
   }
 
   return hermesApi<T>(

@@ -1,6 +1,6 @@
 """Plugin-compat pointers must resolve to the SAME object the name moved to, never a same-named stranger.
 
-Regression: ``hermes_cli.kanban_db.connect`` was pointed at ``hermes_cli.projects_db.connect`` (a different
+Regression: ``eidolon_cli.kanban_db.connect`` was pointed at ``eidolon_cli.projects_db.connect`` (a different
 database, no ``board=`` parameter) because the generator ranked candidate homes by path proximity. The
 manifest codified the mistake, so the compat lint treated it as valid.
 
@@ -75,8 +75,8 @@ def test_moved_lazy_pointers_resolve_to_the_split_off_siblings_object():
 
 def test_kanban_db_connect_opens_a_kanban_board(tmp_path, monkeypatch):
     """The historical ``kanban_db.connect(board=...)`` opens a Kanban DB, not projects.db."""
-    import hermes_cli.kanban_db as kanban_db
-    import hermes_cli.kanban_db_connect as kanban_db_connect
+    import eidolon_cli.kanban_db as kanban_db
+    import eidolon_cli.kanban_db_connect as kanban_db_connect
 
     assert kanban_db.connect is kanban_db_connect.connect
     assert kanban_db.connect_closing is kanban_db_connect.connect_closing

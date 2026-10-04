@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 def get_env_value(name, default=None):
     """Read env values through the live config module (resolved per call: tests monkeypatch it around import)."""
     try:
-        from hermes_cli.config import get_env_value as _get_env_value
+        from eidolon_cli.config import get_env_value as _get_env_value
     except ImportError:
         return os.getenv(name, default)
     value = _get_env_value(name)
@@ -92,7 +92,7 @@ _IDLE_UNLOAD_CHECK_INTERVAL = 30  # seconds between idle checks
 def _load_stt_config() -> dict:
     """Load the ``stt`` section from user config, falling back to defaults."""
     try:
-        from hermes_cli.config import load_config
+        from eidolon_cli.config import load_config
         return load_config().get("stt") or {}
     except Exception:
         return {}
@@ -136,7 +136,7 @@ def _has_openai_audio_backend() -> bool:
 
 
 def _is_local_stt_provider(provider: str, stt_config: Dict[str, Any]) -> bool:
-    """Whether *provider* is exempt from Hermes's remote upload cap."""
+    """Whether *provider* is exempt from Eidolon's remote upload cap."""
     return (provider or "").lower().strip() in {"local", "local_command"}
 
 
@@ -501,7 +501,7 @@ def _no_provider_error(provider: str, stt_config: Dict[str, Any]) -> Dict[str, A
     if "provider" in stt_config and provider_key and provider_key not in BUILTIN_STT_PROVIDERS and provider_key != "none":
         return _unregistered_stt_provider_error(provider_key)
     # An explicit openai selection flattened to "none" has a specific reason (e.g. managed gateway down).
-    # Surface it — with its `hermes tools` remediation — instead of the all-provider setup hint (#93045).
+    # Surface it — with its `eidolon tools` remediation — instead of the all-provider setup hint (#93045).
     if provider_key == "none" and str(stt_config.get("provider") or "") == "openai" and _HAS_OPENAI:
         reason = _openai_audio_unavailable_reason()
         if reason is not None:
@@ -587,7 +587,7 @@ _PLUGIN_COMPAT_LAZY = {
     'nous_tool_gateway_unavailable_message': ('tools.tool_backend_helpers', 'nous_tool_gateway_unavailable_message'),
     'resolve_managed_tool_gateway': ('tools.managed_tool_gateway', 'resolve_managed_tool_gateway'),
     'resolve_openai_audio_api_key': ('tools.tool_backend_helpers', 'resolve_openai_audio_api_key'),
-    'windows_hide_flags': ('hermes_cli._subprocess_compat', 'windows_hide_flags'),
+    'windows_hide_flags': ('eidolon_cli._subprocess_compat', 'windows_hide_flags'),
 }
 
 
@@ -596,7 +596,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

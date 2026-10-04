@@ -1,9 +1,9 @@
 """Centralized Nous Portal request tags.
 
-Every Hermes request to the Nous Portal (main loop, auxiliary client, fallback
+Every Eidolon request to the Nous Portal (main loop, auxiliary client, fallback
 paths) must carry the same product-attribution tags, sent in OpenAI-compatible
 ``extra_body['tags']``: ``["product=hermes-agent", "client=hermes-client-v<__version__>"]``.
-The version is read live from ``hermes_cli.__version__`` — do NOT pre-compute it
+The version is read live from ``eidolon_cli.__version__`` — do NOT pre-compute it
 as a module constant in consumers; it can change at runtime (editable installs,
 hot reload).
 """
@@ -71,10 +71,10 @@ def get_conversation_context() -> Optional[str]:
     return _conversation_id.get()
 
 
-def hermes_client_tag() -> str:
-    """``client=hermes-client-v<MAJOR>.<MINOR>.<PATCH>`` ("unknown" if hermes_cli is unimportable)."""
+def eidolon_client_tag() -> str:
+    """``client=hermes-client-v<MAJOR>.<MINOR>.<PATCH>`` ("unknown" if eidolon_cli is unimportable)."""
     try:
-        from hermes_cli import __version__
+        from eidolon_cli import __version__
     except Exception:
         __version__ = "unknown"
     return f"client=hermes-client-v{__version__}"
@@ -92,7 +92,7 @@ def nous_portal_tags(session_id: str | None = None) -> List[str]:
     The ambient conversation context (lineage ROOT id) wins over the explicit
     ``session_id``, a fallback for callers outside any agent turn.
     """
-    tags = ["product=hermes-agent", hermes_client_tag()]
+    tags = ["product=hermes-agent", eidolon_client_tag()]
     effective = get_conversation_context() or session_id
     if effective:
         tags.append(conversation_tag(effective))

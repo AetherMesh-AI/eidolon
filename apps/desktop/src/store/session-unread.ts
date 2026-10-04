@@ -2,7 +2,7 @@ import { Codecs, persistentAtom } from '@/lib/persisted'
 import { stableArray } from '@/lib/stable-array'
 import { readKey } from '@/lib/storage'
 import { $activeGatewayProfile, normalizeProfileKey } from '@/store/profile'
-import type { SessionInfo } from '@/types/hermes'
+import type { SessionInfo } from '@/types/eidolon'
 
 import {
   $cronSessions,

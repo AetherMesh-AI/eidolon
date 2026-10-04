@@ -22,9 +22,9 @@ from typing import Any, Callable, NamedTuple, Optional  # noqa: F401  (Callable:
 # Several of these look unused here but are resolved BARE by split-module bodies rebound onto this
 # namespace (method_ctx.bind_module) — deleting one breaks a handler at call time, not import time.
 from agent.secret_scope import build_profile_secret_scope, reset_secret_scope, set_secret_scope  # noqa: F401
-from hermes_constants import (
-    get_hermes_home, get_hermes_home_override, reset_hermes_home_override, set_hermes_home_override)
-from hermes_cli.env_loader import load_hermes_dotenv
+from eidolon_constants import (
+    get_eidolon_home, get_eidolon_home_override, reset_eidolon_home_override, set_eidolon_home_override)
+from eidolon_cli.env_loader import load_hermes_dotenv
 from utils import is_truthy_value
 from tools.environments.local import hermes_subprocess_env
 from agent.replay_cleanup import sanitize_replay_history
@@ -39,13 +39,13 @@ from tui_gateway.transport import (FanoutTransport, StdioTransport, Transport, b
 
 logger = logging.getLogger(__name__)
 
-_hermes_home = get_hermes_home()
-load_hermes_dotenv(hermes_home=_hermes_home, project_env=Path(__file__).parent.parent / ".env")
+_eidolon_home = get_eidolon_home()
+load_hermes_dotenv(hermes_home=_eidolon_home, project_env=Path(__file__).parent.parent / ".env")
 
 
 # ── Panic logger: crashes otherwise leave no forensics (stdout is the JSON-RPC pipe, stderr doesn't
 # flush before exit) → append every unhandled exception to the crash log + one-line stderr summary.
-_CRASH_LOG = os.path.join(_hermes_home, "logs", "tui_gateway_crash.log")
+_CRASH_LOG = os.path.join(_eidolon_home, "logs", "tui_gateway_crash.log")
 
 
 def _record_crash(kind: str, exc_type, exc_value, exc_tb, *, thread_name: str | None = None) -> None:
@@ -73,7 +73,7 @@ threading.excepthook = lambda args: _record_crash(
     "thread exception", args.exc_type, args.exc_value, args.exc_traceback, thread_name=args.thread.name)
 
 with contextlib.suppress(Exception):
-    from hermes_cli.banner import prefetch_update_check
+    from eidolon_cli.banner import prefetch_update_check
 
     prefetch_update_check()
 
@@ -109,7 +109,7 @@ def _ws_orphan_setting(env_var: str, cfg_key: str, default: float) -> float:
     if raw is None or not str(raw).strip():
         raw = None
         with contextlib.suppress(Exception):
-            from hermes_cli.config import load_config
+            from eidolon_cli.config import load_config
             raw = (load_config().get("dashboard") or {}).get(cfg_key)
     with contextlib.suppress(ValueError, TypeError):
         return max(0.0, float(raw) if raw is not None else default)
@@ -214,10 +214,10 @@ _detached_ws_transport = _DropTransport()
 
 def _prepend_tool_paths(env: dict[str, str]) -> dict[str, str]:
     """Prepend managed bin (first: managed-first policy for the Browser Use CLI), venv bin and
-    ~/.local/bin to PATH so slash_worker children resolve Hermes-managed CLIs under the Desktop's minimal PATH."""
+    ~/.local/bin to PATH so slash_worker children resolve Eidolon-managed CLIs under the Desktop's minimal PATH."""
     managed_bin = ""
     with contextlib.suppress(Exception):
-        managed_bin = str(Path(get_hermes_home()) / "bin")
+        managed_bin = str(Path(get_eidolon_home()) / "bin")
     venv_bin = str(Path(sys.executable).parent)  # <venv>/bin (POSIX) or <venv>/Scripts (Windows)
     parts = [p for p in (managed_bin, venv_bin, str(Path.home() / ".local" / "bin"), env.get("PATH") or "") if p]
     env["PATH"] = os.pathsep.join(parts)
@@ -234,8 +234,8 @@ class _SlashWorker:
         self.stdout_queue: queue.Queue[dict | None] = queue.Queue()
         argv = [sys.executable, "-m", "tui_gateway.slash_worker", "--session-key", session_key] + (["--model", model] if model else [])
         self._closed = False
-        from hermes_cli._subprocess_compat import windows_hide_flags
-        # slash_worker runs the Hermes agent → needs provider credentials. Tier-1 secrets
+        from eidolon_cli._subprocess_compat import windows_hide_flags
+        # slash_worker runs the Eidolon agent → needs provider credentials. Tier-1 secrets
         # (gateway/GitHub/infra) are still stripped (#29157). Global-remote / multi-profile sessions: the
         # worker must resolve config/skills/state against the session's profile home, not the gateway's
         # launch HERMES_HOME (#40677). The override goes through the build_subprocess_env factory's `extra`
@@ -251,8 +251,8 @@ class _SlashWorker:
         # start_new_session: otherwise the worker inherits the gateway's pgid and mcp_tool's orphan
         # sweep, racing the spawn, killpg()s the TUI parent itself. errors="replace": bytes invalid
         # in the system locale (GBK Windows) must not raise UnicodeDecodeError in the drain threads.
-        # Prepend the Hermes venv bin dir and the user-local bin dir to PATH so slash_worker child processes
-        # can resolve Hermes-managed CLIs (browser-use, uvx) even when the parent gateway was launched with
+        # Prepend the Eidolon venv bin dir and the user-local bin dir to PATH so slash_worker child processes
+        # can resolve Eidolon-managed CLIs (browser-use, uvx) even when the parent gateway was launched with
         # a minimal PATH (e.g. by the Desktop/Dashboard app). See #83845.
         self.proc = subprocess.Popen(
             argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
@@ -377,7 +377,7 @@ _start_idle_reaper()
 def _get_db():
     global _db, _db_error
     if _db is None:
-        from hermes_state_registry import acquire
+        from eidolon_state_registry import acquire
         try:
             _db, _db_error = acquire(), None
         except Exception as exc:
@@ -412,7 +412,7 @@ def _open_profile_session_db(profile_home):
     """Open a DEDICATED handle on ``profile_home``'s ``state.db`` — FAIL CLOSED: a silent fallback to the
     launch ``state.db`` would bleed rows into the wrong profile's store exactly when the profile store is
     briefly unopenable (locked, mid-restore); callers let the error abort the build (→ ``agent_error``)."""
-    from hermes_state_registry import acquire
+    from eidolon_state_registry import acquire
     db_path = Path(profile_home) / "state.db"
     try:
         return acquire(db_path)
@@ -431,7 +431,7 @@ def _profile_db(params: dict | None = None):
         db, owns = _get_db(), False
     else:
         try:
-            from hermes_state_registry import acquire
+            from eidolon_state_registry import acquire
             db, owns = acquire(Path(profile_home) / "state.db"), True
         except Exception as exc:
             logger.warning("TUI profile session store unavailable for %s: %s", profile, exc)
@@ -461,11 +461,11 @@ def _profile_home(profile: str | None) -> Path | None:
     """Resolve a named profile's home on THIS host, or None for the launch profile."""
     if not (name := (profile or "").strip()):
         return None
-    from hermes_cli import profiles as profiles_mod
+    from eidolon_cli import profiles as profiles_mod
     home = Path(profiles_mod.get_profile_dir(name))
     if not home.is_dir():
         raise FileNotFoundError(f"Profile '{name}' does not exist.")
-    if home.resolve() == Path(_hermes_home).resolve():
+    if home.resolve() == Path(_eidolon_home).resolve():
         return None  # already the launch profile (no override needed)
     _served_profile_homes.add(home)  # the change watcher must stat every served sibling store too
     return home
@@ -478,7 +478,7 @@ _served_profile_homes: set[Path] = set()
 
 def _profile_scoped(handler):
     """Bind ``params['profile']``'s HERMES_HOME around a handler (pets/projects resolve via
-    ``get_hermes_home``, so app-global remote mode still hits the focused profile). No-op for launch.
+    ``get_eidolon_home``, so app-global remote mode still hits the focused profile). No-op for launch.
 
     Secondary-profile adapters are constructed inside ``_profile_runtime_scope`` (secret scope installed +
     multiplex active) — the same discriminator the Buzz/SimpleX adapters use for this bug class (#98738).
@@ -500,11 +500,11 @@ def _profile_scoped(handler):
         home = _profile_home(params.get("profile") if isinstance(params, dict) else None)
         if home is None:
             return handler(rid, params)
-        token = set_hermes_home_override(home)
+        token = set_eidolon_home_override(home)
         try:
             return handler(rid, params)
         finally:
-            reset_hermes_home_override(token)
+            reset_eidolon_home_override(token)
     return wrapper
 
 
@@ -535,7 +535,7 @@ def _profile_configured_cwd(profile_home: Path | None) -> str | None:
     if profile_home is None:
         return None
     with contextlib.suppress(Exception):
-        from hermes_cli.config import read_user_config_raw
+        from eidolon_cli.config import read_user_config_raw
         p = Path(profile_home) / "config.yaml"
         return _configured_cwd_from_cfg(_expand_cfg(_apply_managed(read_user_config_raw(p)))) if p.exists() else None
     return None
@@ -858,7 +858,7 @@ def _bind_build_profile_scopes(profile_home: str) -> "_TurnScopes":
     scope (the build must not die on a scope helper); the terminal installer itself fails closed (malformed
     policy → refusal scope) so _make_agent's terminal probing / cwd hints resolve the routed profile."""
     scopes = _TurnScopes()
-    scopes.home = set_hermes_home_override(profile_home)
+    scopes.home = set_eidolon_home_override(profile_home)
     with contextlib.suppress(Exception):
         scopes.secret = set_secret_scope(build_profile_secret_scope(Path(profile_home)))
     scopes.terminal = None
@@ -870,7 +870,7 @@ def _bind_build_profile_scopes(profile_home: str) -> "_TurnScopes":
 
 def _release_build_profile_scopes(scopes: "_TurnScopes") -> None:
     if scopes.home is not None:
-        reset_hermes_home_override(scopes.home)
+        reset_eidolon_home_override(scopes.home)
     if scopes.secret is not None:
         with contextlib.suppress(Exception):
             reset_secret_scope(scopes.secret)
@@ -1115,8 +1115,8 @@ def _load_dashboard_process_isolation_config(cfg: dict | None = None) -> dict[st
 
 def _active_config_path() -> Path:
     """config.yaml of the per-session profile override (session.resume) when bound, else the launch home."""
-    override = get_hermes_home_override()
-    return Path(override if isinstance(override, str) and override else _hermes_home) / "config.yaml"
+    override = get_eidolon_home_override()
+    return Path(override if isinstance(override, str) and override else _eidolon_home) / "config.yaml"
 
 
 def _load_cfg_raw() -> dict:
@@ -1131,7 +1131,7 @@ def _load_cfg_raw() -> dict:
         with _cfg_lock:
             if _cfg_cache is not None and _cfg_mtime == mtime and _cfg_path == p:
                 return copy.deepcopy(_cfg_cache)
-        from hermes_cli.config import read_user_config_raw
+        from eidolon_cli.config import read_user_config_raw
         data = read_user_config_raw(p) if p.exists() else {}
         with _cfg_lock:  # cache the RAW config: _save_cfg writes _cfg_cache back to disk
             _cfg_cache, _cfg_mtime, _cfg_path = copy.deepcopy(data), mtime, p
@@ -1141,7 +1141,7 @@ def _load_cfg_raw() -> dict:
 
 def _expand_cfg(cfg: dict) -> dict:
     """``${ENV_VAR}`` expansion (same as ``load_config_readonly``); non-dict results keep the input."""
-    from hermes_cli.config import _expand_env_vars
+    from eidolon_cli.config import _expand_env_vars
     expanded = _expand_env_vars(cfg)
     return expanded if isinstance(expanded, dict) else cfg
 
@@ -1161,7 +1161,7 @@ def _apply_managed(cfg: dict) -> dict:
     config independently of load_config, so managed skin/reasoning_effort/service_tier/provider_routing
     would otherwise be silently ignored."""
     with contextlib.suppress(Exception):
-        from hermes_cli import managed_scope
+        from eidolon_cli import managed_scope
         return managed_scope.apply_managed_overlay(cfg if isinstance(cfg, dict) else {})
     return cfg
 
@@ -1310,9 +1310,9 @@ _TOUR_PROBE_TIMEOUT_S = 10
 
 _TOUR_BRIDGE_UNAVAILABLE = json.dumps({
     "success": False,
-    "error": ("No Hermes Desktop window answered the tour request. The tour is driven by the desktop app's "
+    "error": ("No Eidolon Desktop window answered the tour request. The tour is driven by the desktop app's "
               "renderer, which updates separately from this backend, so an app build older than the tour tool "
-              "has nothing listening. Update the Hermes Desktop app and start a new session. Do not retry tour "
+              "has nothing listening. Update the Eidolon Desktop app and start a new session. Do not retry tour "
               "in this session.")})
 
 
@@ -1370,7 +1370,7 @@ def _resolve_model() -> str:
         return m.strip()
     # No env seed / config preference: the cost-safe silent default (cache-only read), never an unpicked flagship.
     with contextlib.suppress(Exception):
-        from hermes_cli.models import get_preferred_silent_default_model
+        from eidolon_cli.models import get_preferred_silent_default_model
         return get_preferred_silent_default_model()
     return "z-ai/glm-5.2"
 
@@ -1410,7 +1410,7 @@ def _resolve_startup_runtime() -> tuple[str, str | None]:
     if not (explicit_model := _env_model_seed()):
         return model, None
     with contextlib.suppress(Exception):
-        from hermes_cli.models import detect_static_provider_for_model
+        from eidolon_cli.models import detect_static_provider_for_model
         cfg = _load_cfg().get("model") or {}
         current_provider = ((str(cfg.get("provider") or "").strip().lower() if isinstance(cfg, dict) else "")
                             or os.environ.get("HERMES_INFERENCE_PROVIDER", "").strip().lower() or "auto")
@@ -1427,12 +1427,12 @@ def _resolve_startup_runtime() -> tuple[str, str | None]:
 # routable provider with its own API key and base_url. Sessions that used OpenRouter store
 # ``billing_provider="openrouter"``; dropping it forces resume to the current global model (e.g. a custom
 # endpoint), which is the wrong provider for the stored model. See #57588.
-from hermes_state import _BARE_BILLING_PROVIDERS
+from eidolon_state import _BARE_BILLING_PROVIDERS
 
 
 def _is_routable_provider(provider: str) -> bool:
     with contextlib.suppress(Exception):
-        from hermes_cli.runtime_provider import is_routable_provider
+        from eidolon_cli.runtime_provider import is_routable_provider
         return is_routable_provider(provider)
     return False
 
@@ -1490,7 +1490,7 @@ def _stored_session_runtime_overrides(row: dict | None) -> dict:
     if provider and not _is_routable_provider(provider):
         healed = None
         try:
-            from hermes_cli.runtime_provider import canonical_custom_identity
+            from eidolon_cli.runtime_provider import canonical_custom_identity
             healed = canonical_custom_identity(base_url=base_url or None, model=model or None)
         except Exception:
             logger.debug("custom provider identity recovery failed", exc_info=True)
@@ -1525,7 +1525,7 @@ def _runtime_model_config(agent, existing: dict | None = None) -> dict:
         # ``agent.provider`` resolves every named custom entry to the literal "custom", losing the entry
         # identity (api_key is never persisted): recover ``custom:<name>`` from the endpoint URL.
         try:
-            from hermes_cli.runtime_provider import canonical_custom_identity
+            from eidolon_cli.runtime_provider import canonical_custom_identity
             provider = canonical_custom_identity(base_url=base_url, model=model or None) or provider
         except Exception:
             logger.debug("custom provider identity lookup failed", exc_info=True)
@@ -1586,7 +1586,7 @@ def _persist_live_session_system_prompt(session: dict | None) -> None:
     # Without this, _start_agent_build's finally block has already reset the override and the rebuilt prompt
     # silently uses the root profile's SOUL.md and skills. See issue #50233.
     profile_home = session.get("profile_home")
-    home_token = set_hermes_home_override(profile_home) if profile_home else None
+    home_token = set_eidolon_home_override(profile_home) if profile_home else None
     session_tokens = _set_session_context(session_key, cwd=_session_cwd(session))
     try:
         prompt = agent._cached_system_prompt = agent._build_system_prompt(None)
@@ -1596,7 +1596,7 @@ def _persist_live_session_system_prompt(session: dict | None) -> None:
     finally:
         _clear_session_context(session_tokens)
         if home_token is not None:
-            reset_hermes_home_override(home_token)
+            reset_eidolon_home_override(home_token)
 
 
 # Stable leading text of the model-switch marker (builder + dedup); only the newest marker is meaningful.
@@ -1709,12 +1709,12 @@ def _display_mouse_tracking(display: dict) -> str:
 
 
 def _load_reasoning_config(model: str = "") -> dict | None:
-    """Via the shared chokepoint :func:`hermes_constants.resolve_reasoning_config` (per-model override >
+    """Via the shared chokepoint :func:`eidolon_constants.resolve_reasoning_config` (per-model override >
     global ``agent.reasoning_effort``; YAML False = disabled).
 
     Closes #21256.
     """
-    from hermes_constants import resolve_reasoning_config
+    from eidolon_constants import resolve_reasoning_config
     return resolve_reasoning_config(_load_cfg(), model)
 
 
@@ -1778,7 +1778,7 @@ def _resolve_explicit_toolsets(explicit: list[str], validate_toolset) -> list[st
     unresolved = [name for name in explicit if name not in built_in]
     if unresolved:
         try:
-            from hermes_cli.plugins import discover_plugins
+            from eidolon_cli.plugins import discover_plugins
             discover_plugins()
             plugin_valid = [name for name in unresolved if validate_toolset(name)]
         except Exception:
@@ -1792,8 +1792,8 @@ def _resolve_explicit_toolsets(explicit: list[str], validate_toolset) -> list[st
     if not unresolved:
         return built_in
     try:  # (enabled, disabled) MCP server names from raw config; both empty on any failure
-        from hermes_cli.config import read_raw_config
-        from hermes_cli.tools_config import _parse_enabled_flag
+        from eidolon_cli.config import read_raw_config
+        from eidolon_cli.tools_config import _parse_enabled_flag
         raw_cfg = read_raw_config()
         mcp_servers = raw_cfg.get("mcp_servers") if isinstance(raw_cfg.get("mcp_servers"), dict) else {}
         mcp_names, mcp_disabled = set(), set()
@@ -1837,8 +1837,8 @@ def _load_enabled_toolsets(platform: str | None = None) -> list[str] | None:
             return resolved
         fallback_notice = "[tui] no valid HERMES_TUI_TOOLSETS entries; using configured CLI toolsets"
     try:
-        from hermes_cli.config import load_config
-        from hermes_cli.tools_config import _get_platform_tools
+        from eidolon_cli.config import load_config
+        from eidolon_cli.tools_config import _get_platform_tools
         cfg = load_config()
         # include_default_mcp_servers=True is the runtime variant (the agent must be able to call
         # default MCP servers); the config-editing variant would silently drop MCP tools from the TUI.
@@ -1965,7 +1965,7 @@ def _probe_config_health(cfg: dict) -> str:
         personality = str(display_cfg.get("personality", "") or "").strip().lower()
         if personality and personality not in {"default", "none", "neutral"}:
             with contextlib.suppress(Exception):
-                from hermes_cli.personality import available_personalities
+                from eidolon_cli.personality import available_personalities
                 if personality not in available_personalities(cfg):
                     warnings.append(f"`display.personality: {personality}` does not match any built-in or "
                                     "`agent.personalities` entry; personality overlay will be skipped.")
@@ -1974,7 +1974,7 @@ def _probe_config_health(cfg: dict) -> str:
 
 def _current_profile_name() -> str:
     with contextlib.suppress(Exception):
-        from hermes_cli.profiles import get_active_profile_name
+        from eidolon_cli.profiles import get_active_profile_name
         return get_active_profile_name() or "default"
     return "default"
 
@@ -2000,7 +2000,7 @@ def _project_info_for_cwd(cwd: str) -> dict | None:
     if not str(cwd or "").strip():
         return None
     try:
-        from hermes_cli import projects_db as pdb
+        from eidolon_cli import projects_db as pdb
         with pdb.connect_closing() as conn:
             project = pdb.project_for_path(conn, cwd)
         return None if project is None else {
@@ -2063,7 +2063,7 @@ def _session_info(agent, session: dict | None = None) -> dict:
             if isinstance(session, dict) and session.get("profile_home") else _current_profile_name()),
     }
     with contextlib.suppress(Exception):
-        from hermes_cli import __version__, __release_date__
+        from eidolon_cli import __version__, __release_date__
         info.update(version=__version__, release_date=__release_date__)
     live_agent = agent is not None and not sess.get("_compute_host_active")
     if live_agent:
@@ -2074,7 +2074,7 @@ def _session_info(agent, session: dict | None = None) -> dict:
                 name = t["function"]["name"]
                 info["tools"].setdefault(get_toolset_for_tool(name) or "other", []).append(name)
         with contextlib.suppress(Exception):
-            from hermes_cli.banner import get_available_skills
+            from eidolon_cli.banner import get_available_skills
             info["skills"] = get_available_skills()
     info["mcp_servers"] = []
     with contextlib.suppress(Exception):
@@ -2084,8 +2084,8 @@ def _session_info(agent, session: dict | None = None) -> dict:
         info["system_prompt"] = (
             mirror.get("system_prompt") if "system_prompt" in mirror else getattr(agent, "_cached_system_prompt", "") or "")
     with contextlib.suppress(Exception):
-        from hermes_cli.banner import get_update_result
-        from hermes_cli.config import recommended_update_command
+        from eidolon_cli.banner import get_update_result
+        from eidolon_cli.config import recommended_update_command
         # Two assignments (not one info.update): if recommended_update_command() raises,
         # update_behind must still be reported, as on main.
         info["update_behind"] = get_update_result(timeout=0.5)
@@ -2163,8 +2163,8 @@ class _RuntimeFallbackResolution(NamedTuple):
 def _resolve_runtime_with_fallback(resolve_kwargs: dict | None = None) -> _RuntimeFallbackResolution:
     """Resolve the primary runtime or one complete provider/model fallback. Provider-only fallback entries
     are skipped so the unavailable primary model can never leak into a different runtime."""
-    from hermes_cli.auth import AuthError
-    from hermes_cli.runtime_provider import resolve_runtime_provider
+    from eidolon_cli.auth import AuthError
+    from eidolon_cli.runtime_provider import resolve_runtime_provider
     try:
         return _RuntimeFallbackResolution(resolve_runtime_provider(**(resolve_kwargs or {})), None, False)
     except AuthError as primary_exc:
@@ -2174,7 +2174,7 @@ def _resolve_runtime_with_fallback(resolve_kwargs: dict | None = None) -> _Runti
             if not fb_provider or not fb_model:
                 continue
             try:
-                from hermes_cli.fallback_config import resolve_entry_api_key
+                from eidolon_cli.fallback_config import resolve_entry_api_key
                 fb_kwargs: dict = {"requested": fb_provider, "target_model": fb_model,
                                    **({"explicit_base_url": entry["base_url"]} if entry.get("base_url") else {})}
                 if fb_api_key := resolve_entry_api_key(entry):
@@ -2199,7 +2199,7 @@ def _resolve_agent_model_runtime(model_override, provider_override) -> tuple[str
         override_base_url = model_override.get("base_url")
         resolve_kwargs = {}
         if str(requested_provider or "").strip().lower() == "custom":
-            from hermes_cli.runtime_provider import canonical_custom_identity
+            from eidolon_cli.runtime_provider import canonical_custom_identity
             if recovered := canonical_custom_identity(base_url=override_base_url or None, model=model or None):
                 requested_provider = recovered
             if override_base_url:
@@ -2227,7 +2227,7 @@ def _resolve_agent_model_runtime(model_override, provider_override) -> tuple[str
 def _startup_system_prompt(cfg: dict, task_id: str) -> str:
     """Config ephemeral system prompt + HERMES_TUI_SKILLS preload block. Hard-fails only when EVERY requested
     skill is missing (cli.py parity): a typo'd name must not auto-block the Kanban task."""
-    from hermes_cli.config import resolve_ephemeral_system_prompt_from_config
+    from eidolon_cli.config import resolve_ephemeral_system_prompt_from_config
     system_prompt = resolve_ephemeral_system_prompt_from_config(cfg)
     startup_skills = _parse_tui_skills_env()
     if not startup_skills:
@@ -2239,7 +2239,7 @@ def _startup_system_prompt(cfg: dict, task_id: str) -> str:
         if not loaded_skills:
             raise ValueError(f"Unknown skill(s): {missing_display}")
         logger.warning("Unknown skill(s) requested, skipping: %s. Continuing with: %s. "
-                       "List available skills with `hermes skills list`.", missing_display, ", ".join(loaded_skills))
+                       "List available skills with `eidolon skills list`.", missing_display, ", ".join(loaded_skills))
     if skills_prompt:
         system_prompt = "\n\n".join(part for part in (system_prompt, skills_prompt) if part).strip()
     return system_prompt
@@ -2258,7 +2258,7 @@ def _make_agent(
     from run_agent import AIAgent
     # MCP discovery runs in a daemon thread (a dead server can't freeze the shell); the agent snapshots its tool
     # list once, so briefly wait for in-flight discovery. Dashboard /api/ws uses mcp_startup; TUI stdio uses entry.
-    for _mod in ("hermes_cli.mcp_startup", "tui_gateway.entry"):
+    for _mod in ("eidolon_cli.mcp_startup", "tui_gateway.entry"):
         with contextlib.suppress(Exception):
             importlib.import_module(_mod).wait_for_mcp_discovery()
     cfg = _load_cfg()
@@ -2491,7 +2491,7 @@ def _schedule_agent_build(sid: str, delay: float = 0.05) -> None:
 def _load_resume_transcript(db, stored_id: str) -> tuple[list, list, list]:
     """(raw_history, display_history, ancestor_prefix) for a cold resume. The full lineage is materialized
     only while it fits sessions.max_resume_messages (the transcript is REST-paginated), else the tip alone."""
-    from hermes_state import SessionResumeTooLargeError
+    from eidolon_state import SessionResumeTooLargeError
     prefix_fits = True
     guard = getattr(db, "assert_resume_safe", None)
     if callable(guard):
@@ -2776,7 +2776,7 @@ def _pet_row_frame_counts(spritesheet) -> dict:
 def _pet_cfg() -> dict:
     """``display.pet`` from the canonical config ({} on any failure)."""
     with contextlib.suppress(Exception):
-        from hermes_cli.config import load_config
+        from eidolon_cli.config import load_config
         display = load_config().get("display")
         pet = display.get("pet") if isinstance(display, dict) else None
         return pet if isinstance(pet, dict) else {}
@@ -2852,7 +2852,7 @@ def _pet_state_rows(spritesheet) -> list[str]:
 
 def _pet_gen_root():
     """Profile-scoped staging dir for in-progress generation drafts."""
-    root = get_hermes_home() / "cache" / "pet-gen"
+    root = get_eidolon_home() / "cache" / "pet-gen"
     root.mkdir(parents=True, exist_ok=True)
     return root
 
@@ -2936,7 +2936,7 @@ def _pet_is_cancelled(token: str) -> bool:
 
 
 def _spawn_trees_root():
-    root = get_hermes_home() / "spawn-trees"
+    root = get_eidolon_home() / "spawn-trees"
     root.mkdir(parents=True, exist_ok=True)
     return root
 
@@ -3151,24 +3151,24 @@ def _rank_slash_completions(items: list[dict], usage, origin_of, *, browsing: bo
 
 # argv shapes that must not run headless in the gateway process → user hint.
 _CLI_EXEC_BLOCKED = {
-    ("setup",): "`hermes setup` needs a full terminal — run it outside the TUI",
-    ("gateway",): "`hermes gateway` is long-running — run it in another terminal",
-    ("sessions", "browse"): "`hermes sessions browse` is interactive — use /resume here, or run browse in another terminal",
-    ("config", "edit"): "`hermes config edit` needs $EDITOR in a real terminal",
+    ("setup",): "`eidolon setup` needs a full terminal — run it outside the TUI",
+    ("gateway",): "`eidolon gateway` is long-running — run it in another terminal",
+    ("sessions", "browse"): "`eidolon sessions browse` is interactive — use /resume here, or run browse in another terminal",
+    ("config", "edit"): "`eidolon config edit` needs $EDITOR in a real terminal",
 }
 
 
 def _cli_exec_blocked(argv: list[str]) -> str | None:
     """Return user hint if this argv must not run headless in the gateway process."""
     if not argv:
-        return "bare `hermes` is interactive — use `/hermes chat -q …` or run `hermes` in another terminal"
+        return "bare `hermes` is interactive — use `/eidolon chat -q …` or run `hermes` in another terminal"
     head = tuple(a.lower() for a in argv[:2])
     return _CLI_EXEC_BLOCKED.get(head[:1]) or _CLI_EXEC_BLOCKED.get(head)
 
 
 def _resolve_name(name: str) -> str:
     with contextlib.suppress(Exception):
-        from hermes_cli.commands import resolve_command
+        from eidolon_cli.commands import resolve_command
         return r.name if (r := resolve_command(name)) else name
     return name
 

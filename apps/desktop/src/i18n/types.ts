@@ -2577,7 +2577,8 @@ export interface Translations {
     chooseLater: string
     recommended: string
     connected: string
-    featuredPitch: string
+    aetherMeshDescription: string
+    aetherMeshComingSoon: string
     fireworksPitch: string
     localModelsTitle: string
     localModelsPitch: string

@@ -19,22 +19,22 @@ from plugins.memory.mem0._setup import (
 )
 
 
-def _inject_fake_hermes_cli(monkeypatch):
-    """Inject fake hermes_cli modules so yaml/curses aren't required."""
-    fake_config_mod = types.ModuleType("hermes_cli.config")
+def _inject_fake_eidolon_cli(monkeypatch):
+    """Inject fake eidolon_cli modules so yaml/curses aren't required."""
+    fake_config_mod = types.ModuleType("eidolon_cli.config")
     fake_config_mod.save_config = lambda c: None
 
-    fake_setup_mod = types.ModuleType("hermes_cli.memory_setup")
+    fake_setup_mod = types.ModuleType("eidolon_cli.memory_setup")
     fake_setup_mod._curses_select = lambda *a, **kw: 0
     fake_setup_mod._prompt = lambda label, default=None, secret=False: default or ""
 
-    fake_hermes_cli = types.ModuleType("hermes_cli")
-    fake_hermes_cli.config = fake_config_mod
-    fake_hermes_cli.memory_setup = fake_setup_mod
+    fake_eidolon_cli = types.ModuleType("eidolon_cli")
+    fake_eidolon_cli.config = fake_config_mod
+    fake_eidolon_cli.memory_setup = fake_setup_mod
 
-    monkeypatch.setitem(sys.modules, "hermes_cli", fake_hermes_cli)
-    monkeypatch.setitem(sys.modules, "hermes_cli.config", fake_config_mod)
-    monkeypatch.setitem(sys.modules, "hermes_cli.memory_setup", fake_setup_mod)
+    monkeypatch.setitem(sys.modules, "eidolon_cli", fake_eidolon_cli)
+    monkeypatch.setitem(sys.modules, "eidolon_cli.config", fake_config_mod)
+    monkeypatch.setitem(sys.modules, "eidolon_cli.memory_setup", fake_setup_mod)
 
     monkeypatch.setattr("plugins.memory.mem0._setup._curses_select", lambda *a, **kw: 0)
     monkeypatch.setattr("plugins.memory.mem0._setup._prompt", lambda label, default=None, secret=False: default or "")
@@ -210,8 +210,8 @@ class TestPostSetup:
 
     def test_platform_flag_mode(self, tmp_path, monkeypatch):
         monkeypatch.setattr("sys.argv", ["hermes", "--mode", "platform", "--api-key", "sk-test"])
-        monkeypatch.setattr("plugins.memory.mem0._setup.get_hermes_home", lambda: tmp_path)
-        _inject_fake_hermes_cli(monkeypatch)
+        monkeypatch.setattr("plugins.memory.mem0._setup.get_eidolon_home", lambda: tmp_path)
+        _inject_fake_eidolon_cli(monkeypatch)
         config = {"memory": {}}
         post_setup(str(tmp_path), config)
         assert config["memory"]["provider"] == "mem0"
@@ -226,8 +226,8 @@ class TestPostSetup:
             "hermes", "--mode", "selfhosted",
             "--host", "http://localhost:8888/", "--api-key", "admin-key",
         ])
-        monkeypatch.setattr("plugins.memory.mem0._setup.get_hermes_home", lambda: tmp_path)
-        _inject_fake_hermes_cli(monkeypatch)
+        monkeypatch.setattr("plugins.memory.mem0._setup.get_eidolon_home", lambda: tmp_path)
+        _inject_fake_eidolon_cli(monkeypatch)
         monkeypatch.setattr("plugins.memory.mem0._setup._check_selfhosted_server", lambda h: None)
         config = {"memory": {}}
         post_setup(str(tmp_path), config)
@@ -256,7 +256,7 @@ class TestConnectivityChecks:
 
 
 def test_discovery_loaded_setup_module_exposes_post_setup(monkeypatch):
-    """`hermes memory setup mem0` reaches the wizard when the package is first imported by plugin
+    """`eidolon memory setup mem0` reaches the wizard when the package is first imported by plugin
     discovery, which execs sibling modules before ``__init__`` (#103078). The invariant is on the
     module the loader actually cached, not on a normal top-level import."""
     from plugins.memory import load_memory_provider

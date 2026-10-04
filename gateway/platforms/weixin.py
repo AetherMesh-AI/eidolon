@@ -34,7 +34,7 @@ from gateway.platforms.base import (
     cache_audio_from_bytes_async, cache_document_from_bytes_async, cache_image_from_bytes_async,
 )
 from gateway.platforms.event import MessageEvent, MessageType
-from hermes_constants import get_hermes_home
+from eidolon_constants import get_eidolon_home
 from utils import atomic_json_write
 from agent.secret_scope import UnscopedSecretError, get_secret
 
@@ -701,7 +701,7 @@ class WeixinAdapter(BasePlatformAdapter):
     def __init__(self, config: PlatformConfig):
         super().__init__(config, Platform.WEIXIN)
         extra = config.extra or {}
-        self._hermes_home = hermes_home = str(get_hermes_home())
+        self._eidolon_home = hermes_home = str(get_eidolon_home())
         self._token_store = ContextTokenStore(hermes_home)
         self._typing_cache = TypingTicketCache()
         self._poll_session = self._send_session = None  # type: Optional[aiohttp.ClientSession]
@@ -783,8 +783,8 @@ class WeixinAdapter(BasePlatformAdapter):
             logger.warning(
                 "[%s] WEIXIN_GROUP_POLICY=%s is set, but QR-login connects an iLink bot identity (e.g. ...@im.bot) "
                 "which typically cannot be invited into ordinary WeChat groups. iLink usually does not deliver "
-                "ordinary-group events for these accounts, so group messages may never reach Hermes regardless of "
-                "this policy. If group delivery doesn't work, the limitation is on the iLink side, not in Hermes.",
+                "ordinary-group events for these accounts, so group messages may never reach Eidolon regardless of "
+                "this policy. If group delivery doesn't work, the limitation is on the iLink side, not in Eidolon.",
                 self.name, self._group_policy)
         self._wire_plugin_handlers(None)  # plugin-registered native handlers
         return True
@@ -813,7 +813,7 @@ class WeixinAdapter(BasePlatformAdapter):
 
     async def _poll_loop(self) -> None:
         assert self._poll_session is not None
-        sync_buf = _load_sync_buf(self._hermes_home, self._account_id)
+        sync_buf = _load_sync_buf(self._eidolon_home, self._account_id)
         timeout_ms = LONG_POLL_TIMEOUT_MS
         consecutive_failures = 0
 
@@ -844,7 +844,7 @@ class WeixinAdapter(BasePlatformAdapter):
                 consecutive_failures = 0
                 if response.get("get_updates_buf"):
                     sync_buf = str(response["get_updates_buf"])
-                    _save_sync_buf(self._hermes_home, self._account_id, sync_buf)
+                    _save_sync_buf(self._eidolon_home, self._account_id, sync_buf)
                 for message in response.get("msgs") or []:
                     asyncio.create_task(self._process_message_safe(message))
             except asyncio.CancelledError:
@@ -1253,7 +1253,7 @@ async def send_weixin_direct(
         return {"error": "Weixin token missing. Configure WEIXIN_TOKEN or platforms.weixin.token."}
     if not account_id:
         return {"error": "Weixin account ID missing. Configure WEIXIN_ACCOUNT_ID or platforms.weixin.extra.account_id."}
-    token_store = ContextTokenStore(str(get_hermes_home()))
+    token_store = ContextTokenStore(str(get_eidolon_home()))
     token_store.restore(account_id)
     context_token = token_store.get(account_id, chat_id)
     live_adapter = _LIVE_ADAPTERS.get(resolved_token)

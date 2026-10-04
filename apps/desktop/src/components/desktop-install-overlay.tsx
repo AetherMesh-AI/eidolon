@@ -58,6 +58,12 @@ interface StageRowProps {
   now: number
 }
 
+// Bootstrap state does not expose its resolved home. Display the canonical
+// user-home location rather than claiming the install root owns these logs.
+export function bootstrapLogsPath(platform: string): string {
+  return /^win/i.test(platform) ? '%USERPROFILE%\\.eidolon\\logs\\' : '~/.eidolon/logs/'
+}
+
 function formatStageName(name: string): string {
   // 'system-packages' -> 'System packages'; 'uv' stays 'uv'
   if (name.length <= 3) {
@@ -670,7 +676,9 @@ export function DesktopInstallOverlay({ enabled = true }: DesktopInstallOverlayP
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs text-muted-foreground">
                 {copy.transcriptSaved}{' '}
-                <code className="font-mono text-(--ui-text-secondary)">%LOCALAPPDATA%\hermes\logs\</code>
+                <code className="font-mono text-(--ui-text-secondary)">
+                  {bootstrapLogsPath(navigator.platform || navigator.userAgent || '')}
+                </code>
               </span>
               <div className="flex gap-2">
                 <Button

@@ -12,7 +12,7 @@
  * through the plugin host loader (next phase); this is that seam.
  */
 
-import { pluginRest, type PluginRestOptions, pluginSocket } from '@/hermes'
+import { pluginRest, type PluginRestOptions, pluginSocket } from '@/eidolon'
 import { createPluginI18n, type PluginI18n } from '@/i18n'
 import { readKey, writeKey } from '@/lib/storage'
 import { dispatchPluginNativeNotification, type PluginNativeNotificationInput } from '@/store/native-notifications'
@@ -20,8 +20,8 @@ import { dispatchPluginNativeNotification, type PluginNativeNotificationInput } 
 import { registry } from './registry'
 import type { Contribution } from './types'
 
-export type { PluginRestOptions } from '@/hermes'
-export type { HermesOpenTarget } from '@/lib/hermes-open-target'
+export type { PluginRestOptions } from '@/eidolon'
+export type { HermesOpenTarget } from '@/lib/eidolon-open-target'
 export type { PluginNativeNotificationInput, PluginNotificationAction } from '@/store/native-notifications'
 
 /** A contribution as a plugin author writes it — provenance + id scoping are

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Hyperliquid CLI Tool for Hermes Agent
+Hyperliquid CLI Tool for Eidolon Agent
 -------------------------------------
 Queries the Hyperliquid info endpoint for market and account data.
 Uses only Python standard library - no external packages required.
@@ -45,8 +45,8 @@ DEFAULT_USER_ENV = "HYPERLIQUID_USER_ADDRESS"
 DEFAULT_API_BASE = "https://api.hyperliquid.xyz"
 
 
-def _hermes_home() -> Path:
-    return Path(os.environ.get("HERMES_HOME", "~/.hermes")).expanduser()
+def _eidolon_home() -> Path:
+    return Path(os.environ.get("HERMES_HOME", "~/.eidolon")).expanduser()
 
 
 def _dotenv_paths() -> List[Path]:
@@ -55,7 +55,7 @@ def _dotenv_paths() -> List[Path]:
     if project_env.exists():
         paths.append(project_env)
 
-    user_env = _hermes_home() / ".env"
+    user_env = _eidolon_home() / ".env"
     if user_env.exists():
         paths.append(user_env)
 
@@ -115,7 +115,7 @@ def _resolve_user(user: Optional[str]) -> str:
 
     sys.exit(
         "Missing Hyperliquid address. Pass <address> explicitly or set "
-        f"{DEFAULT_USER_ENV} in your environment or {_hermes_home() / '.env'}."
+        f"{DEFAULT_USER_ENV} in your environment or {_eidolon_home() / '.env'}."
     )
 
 
@@ -1534,7 +1534,7 @@ def _add_json_flag(parser: argparse.ArgumentParser) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Hyperliquid CLI Tool for Hermes Agent")
+    parser = argparse.ArgumentParser(description="Hyperliquid CLI Tool for Eidolon Agent")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     dexs = subparsers.add_parser("dexs", help="List available perpetual dexs")

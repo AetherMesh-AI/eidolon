@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Code Execution Tool -- Programmatic Tool Calling (PTC).
 
-The LLM writes a Python script that calls Hermes tools via RPC, collapsing
+The LLM writes a Python script that calls Eidolon tools via RPC, collapsing
 multi-step tool chains into one inference turn; only the script's stdout returns
 to the LLM. Local backend: a persistent per-conversation session kernel
 (tools/code_kernel.py) over a Unix socket (loopback TCP on Windows). Remote
@@ -33,7 +33,7 @@ from tools.code_execution_rpc import _rpc_poll_loop
 
 logger = logging.getLogger(__name__)
 
-# Loopback TCP replaces AF_UNIX on Windows, so execute_code runs on every platform Hermes does.
+# Loopback TCP replaces AF_UNIX on Windows, so execute_code runs on every platform Eidolon does.
 SANDBOX_AVAILABLE = True
 
 # Tools allowed inside the sandbox; ∩ the session's enabled tools decides which stubs are generated.
@@ -83,7 +83,7 @@ def _spill_full_stdout(stdout_text: str) -> Optional[str]:
     reruns coalesce; the dir rides the cache/web remote bind-mount list (credential_files)."""
     try:
         import hashlib
-        from hermes_constants import get_hermes_dir
+        from eidolon_constants import get_hermes_dir
         from tools.spill_safety import write_text_exclusive
         if len(stdout_text) > MAX_SPILLED_STDOUT_BYTES:
             stdout_text = (stdout_text[:MAX_SPILLED_STDOUT_BYTES]
@@ -245,7 +245,7 @@ def retry(fn, max_attempts=3, delay=2):
 # ---- UDS transport (local backend) ---------------------------------------
 
 _UDS_TRANSPORT_HEADER = '''\
-"""Auto-generated Hermes tools RPC stubs."""
+"""Auto-generated Eidolon tools RPC stubs."""
 import json, os, socket, shlex, threading, time
 
 _sock = None
@@ -330,7 +330,7 @@ def _call(tool_name, args):
 # ---- File-based transport (remote backends) -------------------------------
 
 _FILE_TRANSPORT_HEADER = '''\
-"""Auto-generated Hermes tools RPC stubs (file-based transport)."""
+"""Auto-generated Eidolon tools RPC stubs (file-based transport)."""
 import json, os, shlex, tempfile, threading, time
 
 _RPC_DIR = os.environ.get("HERMES_RPC_DIR") or os.path.join(tempfile.gettempdir(), "hermes_rpc")
@@ -663,7 +663,7 @@ def execute_code(
     reset: bool = False,
 ) -> str:
     """Run Python in the session's persistent kernel (local) or on the remote terminal backend,
-    with RPC access to a subset of Hermes tools; returns the JSON result string. "Sandbox" means
+    with RPC access to a subset of Eidolon tools; returns the JSON result string. "Sandbox" means
     the security envelope (env scrubbing, tool whitelist + call budget, output redaction), not an
     isolation jail: default `project` mode runs in the session's cwd with the project venv.
     ``enabled_tools`` ∩ SANDBOX_ALLOWED_TOOLS; ``reset`` kills the existing kernel first."""
@@ -760,7 +760,7 @@ def _load_config() -> dict:
     """``code_execution`` config section via the lightweight raw reader — runs while the
     module-level schema is built at tool discovery, so it must not import ``cli``."""
     try:
-        from hermes_cli.config import read_raw_config
+        from eidolon_cli.config import read_raw_config
         cfg = read_raw_config().get("code_execution", {})
         return cfg if isinstance(cfg, dict) else {}
     except Exception:
@@ -824,14 +824,14 @@ def build_execute_code_schema(enabled_sandbox_tools: set = None,
     if mode == "strict":
         cwd_note = (
             "Scripts run in their own temp dir, not the session's CWD — use absolute paths "
-            "(os.path.expanduser('~/.hermes/.env')) or terminal()/read_file() for user files."
+            "(os.path.expanduser('~/.eidolon/.env')) or terminal()/read_file() for user files."
         )
     else:
         cwd_note = (
             "Scripts run in the session's working directory. Interpreter: "
             "the project's activated venv/conda python when one is active "
             "(VIRTUAL_ENV/CONDA_PREFIX — matches terminal()); otherwise "
-            "Hermes's own python (the common case — stdlib plus Hermes's "
+            "Eidolon's own python (the common case — stdlib plus Eidolon's "
             "deps; check `import x` before relying on project packages)."
         )
     # Remote hosts that fail open to per-call are not worth schema words; the result's
@@ -839,7 +839,7 @@ def build_execute_code_schema(enabled_sandbox_tools: set = None,
     # Session kernels are always on (kernel_mode retired in #96787): persistence is part of the tool's one
     # description, not a bolt-on paragraph behind a dead conditional.
     description = (
-        "Run Python that calls Hermes tools programmatically. Use when you "
+        "Run Python that calls Eidolon tools programmatically. Use when you "
         "need 3+ tool calls with logic between them: filtering/reducing "
         "large outputs before they enter context, branching, or loops "
         "(N pages/files, retry on failure). Use normal tool calls for "
@@ -925,7 +925,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

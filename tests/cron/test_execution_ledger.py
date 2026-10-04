@@ -140,7 +140,7 @@ def test_execution_ledger_follows_the_current_profile_home(monkeypatch, tmp_path
 
     current_home = {"path": tmp_path / "default"}
     monkeypatch.setattr(executions, "EXECUTIONS_FILE", None)
-    monkeypatch.setattr(executions, "get_hermes_home", lambda: current_home["path"])
+    monkeypatch.setattr(executions, "get_eidolon_home", lambda: current_home["path"])
 
     default_row = executions.create_execution("default-job", source="builtin")
     current_home["path"] = tmp_path / "worker"
@@ -211,7 +211,7 @@ def test_cron_runs_cli_prints_execution_history(monkeypatch, tmp_path, capsys):
     executions = _point_ledger(monkeypatch, tmp_path)
     row = executions.create_execution("cli-job", source="builtin")
     executions.finish_execution(row["id"], success=False, error="boom")
-    from hermes_cli.cron import cron_runs
+    from eidolon_cli.cron import cron_runs
 
     cron_runs("cli-job", limit=10)
 
@@ -222,7 +222,7 @@ def test_cron_runs_cli_prints_execution_history(monkeypatch, tmp_path, capsys):
 
 
 def test_quick_backup_includes_execution_ledger():
-    from hermes_cli.backup import _QUICK_STATE_FILES
+    from eidolon_cli.backup import _QUICK_STATE_FILES
 
     assert "cron/executions.db" in _QUICK_STATE_FILES
 

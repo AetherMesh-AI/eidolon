@@ -2,7 +2,7 @@
 
 Covers:
 - agent/skill_utils namespace helpers
-- hermes_cli/plugins register_skill API + registry
+- eidolon_cli/plugins register_skill API + registry
 - tools/skills_tool qualified name dispatch in skill_view
 """
 
@@ -58,8 +58,8 @@ class TestIsValidNamespace:
 class TestPluginSkillRegistry:
     @pytest.fixture
     def pm(self, monkeypatch):
-        from hermes_cli import plugins as plugins_mod
-        from hermes_cli.plugins import PluginManager
+        from eidolon_cli import plugins as plugins_mod
+        from eidolon_cli.plugins import PluginManager
 
         fresh = PluginManager()
         monkeypatch.setattr(plugins_mod, "_plugin_manager", fresh)
@@ -107,8 +107,8 @@ class TestPluginSkillRegistry:
 class TestPluginContextRegisterSkill:
     @pytest.fixture
     def ctx(self, tmp_path, monkeypatch):
-        from hermes_cli import plugins as plugins_mod
-        from hermes_cli.plugins import PluginContext, PluginManager, PluginManifest
+        from eidolon_cli import plugins as plugins_mod
+        from eidolon_cli.plugins import PluginContext, PluginManager, PluginManifest
 
         pm = PluginManager()
         monkeypatch.setattr(plugins_mod, "_plugin_manager", pm)
@@ -172,8 +172,8 @@ class TestSkillViewQualifiedName:
     @pytest.fixture(autouse=True)
     def _isolate(self, tmp_path, monkeypatch):
         """Fresh plugin manager + empty SKILLS_DIR for each test."""
-        from hermes_cli import plugins as plugins_mod
-        from hermes_cli.plugins import PluginManager
+        from eidolon_cli import plugins as plugins_mod
+        from eidolon_cli.plugins import PluginManager
 
         self.pm = PluginManager()
         monkeypatch.setattr(plugins_mod, "_plugin_manager", self.pm)
@@ -255,7 +255,7 @@ class TestSkillViewQualifiedName:
         tmp_path,
         monkeypatch,
     ):
-        from hermes_cli import lifecycle
+        from eidolon_cli import lifecycle
         from tools.skills_tool import _skill_view_with_bump
 
         events = []
@@ -402,8 +402,8 @@ class TestSkillViewPluginGuards:
     def _isolate(self, tmp_path, monkeypatch):
         import sys
 
-        from hermes_cli import plugins as plugins_mod
-        from hermes_cli.plugins import PluginManager
+        from eidolon_cli import plugins as plugins_mod
+        from eidolon_cli.plugins import PluginManager
 
         self.pm = PluginManager()
         monkeypatch.setattr(plugins_mod, "_plugin_manager", self.pm)
@@ -426,7 +426,7 @@ class TestSkillViewPluginGuards:
         from tools.skills_tool import skill_view
 
         self._reg(tmp_path, "---\nname: foo\n---\nBody.\n")
-        monkeypatch.setattr("hermes_cli.plugins._get_disabled_plugins", lambda: {"myplugin"})
+        monkeypatch.setattr("eidolon_cli.plugins._get_disabled_plugins", lambda: {"myplugin"})
 
         result = json.loads(skill_view("myplugin:foo"))
         assert result["success"] is False
@@ -459,8 +459,8 @@ class TestSkillViewPluginGuards:
 class TestBundleContextBanner:
     @pytest.fixture(autouse=True)
     def _isolate(self, tmp_path, monkeypatch):
-        from hermes_cli import plugins as plugins_mod
-        from hermes_cli.plugins import PluginManager
+        from eidolon_cli import plugins as plugins_mod
+        from eidolon_cli.plugins import PluginManager
 
         self.pm = PluginManager()
         monkeypatch.setattr(plugins_mod, "_plugin_manager", self.pm)

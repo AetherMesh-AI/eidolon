@@ -94,7 +94,7 @@ _DISCORD_MAX_APP_COMMANDS = 100
 _REQUIRED = object()
 _NATIVE_SLASH_COMMANDS: tuple = (
     ("new", "Start a new conversation", (), "/reset", "New conversation started~"),
-    ("reset", "Reset your Hermes session", (), "/reset", "Session reset~"),
+    ("reset", "Reset your Eidolon session", (), "/reset", "Session reset~"),
     ("model", "Show or change the model",
      (("name", str, "", "Model name (e.g. anthropic/claude-sonnet-4). Leave empty to see current.", None),),
      "/model {name}", None),
@@ -111,9 +111,9 @@ _NATIVE_SLASH_COMMANDS: tuple = (
      "/personality {name}", None),
     ("retry", "Retry your last message", (), "/retry", "Retrying~"),
     ("undo", "Remove the last exchange", (), "/undo", None),
-    ("status", "Show Hermes session status", (), "/status", "Status sent~"),
+    ("status", "Show Eidolon session status", (), "/status", "Status sent~"),
     ("sethome", "Set this chat as the home channel", (), "/sethome", None),
-    ("stop", "Stop the running Hermes agent", (), "/stop", "Stop requested~"),
+    ("stop", "Stop the running Eidolon agent", (), "/stop", "Stop requested~"),
     ("steer", "Inject a message after the next tool call (no interrupt)",
      (("prompt", str, _REQUIRED, "Text to inject into the agent's next tool result", None),),
      "/steer {prompt}", None),
@@ -142,8 +142,8 @@ _NATIVE_SLASH_COMMANDS: tuple = (
         ("tts — voice reply to all messages", "tts"), ("off — text only", "off"),
         ("status — show current mode", "status"))),),
      "/voice {mode}", None),
-    ("update", "Update Hermes Agent to the latest version", (), "/update", "Update initiated~"),
-    ("restart", "Gracefully restart the Hermes gateway", (), "/restart", "Restart requested~"),
+    ("update", "Update Eidolon Agent to the latest version", (), "/update", "Update initiated~"),
+    ("restart", "Gracefully restart the Eidolon gateway", (), "/restart", "Restart requested~"),
     ("approve", "Approve a pending dangerous command",
      (("scope", str, "", "Optional: 'all', 'session', 'always', 'all session', 'all always'", None),),
      "/approve {scope}", None),
@@ -151,7 +151,7 @@ _NATIVE_SLASH_COMMANDS: tuple = (
      (("scope", str, "", "Optional: 'all' to deny all pending commands", None),),
      "/deny {scope}", None),
     # /thread: template None -> registered by _register_thread_slash (auth-gated defer).
-    ("thread", "Create a new thread and start a Hermes session in it", (), None, None),
+    ("thread", "Create a new thread and start a Eidolon session in it", (), None, None),
     ("queue", "Queue a prompt for the next turn (doesn't interrupt)",
      (("prompt", str, _REQUIRED, "The prompt to queue", None),),
      "/queue {prompt}", "Queued for the next turn."),
@@ -191,7 +191,7 @@ _DISCORD_NONCONVERSATIONAL_HISTORY_MESSAGE_PATTERNS = (
         re.IGNORECASE,
     ),
     re.compile(
-        r"^\s*(?:✅|❌)\s+Hermes update\s+"
+        r"^\s*(?:✅|❌)\s+Eidolon update\s+"
         r"(?:finished|failed|timed out)[\s\S]*$",
         re.IGNORECASE,
     ),
@@ -364,7 +364,7 @@ def _format_privileged_intents_guidance(*, needs_members: bool) -> str:
     lines = [
         "Discord rejected the connection because privileged Gateway Intents "
         "are not enabled for this bot in the Developer Portal.",
-        "Hermes is requesting:",
+        "Eidolon is requesting:",
         "  - Message Content Intent (required to read message text)",
     ]
     if needs_members:
@@ -442,9 +442,9 @@ class _DiscordNonConversationalMessageTracker:
         self._persist_lock = asyncio.Lock()
 
     def _state_path(self) -> _Path:
-        from hermes_constants import get_hermes_home
+        from eidolon_constants import get_eidolon_home
         return (
-            get_hermes_home()
+            get_eidolon_home()
             / _DISCORD_COMMAND_SYNC_STATE_SUBDIR
             / _DISCORD_NONCONVERSATIONAL_STATE_FILENAME
         )
@@ -910,7 +910,7 @@ class VoiceReceiver:
     def pcm_to_wav(pcm_data: bytes, output_path: str, src_rate: int = 48000, src_channels: int = 2):
         """Convert raw PCM to 16kHz mono WAV via ffmpeg into *output_path* (not stdout: ffmpeg
         can't seek a pipe, so piped WAV carries placeholder RIFF sizes strict readers misreport)."""
-        from hermes_cli._subprocess_compat import windows_hide_flags
+        from eidolon_cli._subprocess_compat import windows_hide_flags
         subprocess.run(
             [
                 resolve_ffmpeg_executable(), "-y", "-loglevel", "error", "-f", "s16le",
@@ -930,7 +930,7 @@ def _read_dm_role_auth_guild() -> Optional[int]:
     """Return the guild ID opted-in for DM role-based auth, or None (secure default). Read from
     config.yaml ``discord.dm_role_auth_guild`` only (behavioral, not a secret); int or numeric string."""
     try:
-        from hermes_cli.config import read_raw_config
+        from eidolon_cli.config import read_raw_config
         cfg = read_raw_config() or {}
         discord_cfg = cfg.get("discord", {}) or {}
         raw = discord_cfg.get("dm_role_auth_guild")
@@ -964,7 +964,7 @@ def _read_discord_prompt_timeout() -> int:
     (default 300), clamped to [MIN, MAX] so a typo can't make prompts vanish or outlive tokens."""
     raw: Any = None
     try:
-        from hermes_cli.config import read_raw_config
+        from eidolon_cli.config import read_raw_config
         cfg = read_raw_config() or {}
         approvals_cfg = cfg.get("approvals", {}) or {}
         raw = approvals_cfg.get("discord_prompt_timeout")
@@ -1074,9 +1074,9 @@ class DiscordAdapter(DiscordMediaMixin, BasePlatformAdapter):
         # True while disconnect() intentionally closes discord.py (done callback: shutdown vs crash).
         self._disconnecting = False
         self._missed_message_backfill_task: Optional[asyncio.Task] = None
-        from hermes_constants import get_hermes_home
+        from eidolon_constants import get_eidolon_home
         from plugins.platforms.discord.recovery import DiscordRecoveryStore
-        self._discord_recovery_store = DiscordRecoveryStore(get_hermes_home())
+        self._discord_recovery_store = DiscordRecoveryStore(get_eidolon_home())
         # Dedup cache: Discord RESUME replays events after reconnects.
         self._dedup = MessageDeduplicator()
         # Reply threading mode: "off", "first" (default; first chunk only), "all" (every chunk).
@@ -1468,7 +1468,7 @@ class DiscordAdapter(DiscordMediaMixin, BasePlatformAdapter):
     def _platform_events_subscribed() -> bool:
         """has_hook fast-path shared by every Discord fire-site."""
         try:
-            from hermes_cli.lifecycle import has_hook
+            from eidolon_cli.lifecycle import has_hook
             return has_hook("gateway_platform_event")
         except Exception:
             return False
@@ -1817,8 +1817,8 @@ class DiscordAdapter(DiscordMediaMixin, BasePlatformAdapter):
         logger.info("[%s] Disconnected", self.name)
 
     def _command_sync_state_path(self) -> _Path:
-        from hermes_constants import get_hermes_home
-        directory = get_hermes_home() / _DISCORD_COMMAND_SYNC_STATE_SUBDIR
+        from eidolon_constants import get_eidolon_home
+        directory = get_eidolon_home() / _DISCORD_COMMAND_SYNC_STATE_SUBDIR
         try:
             directory.mkdir(parents=True, exist_ok=True)
         except Exception:
@@ -2318,7 +2318,7 @@ class DiscordAdapter(DiscordMediaMixin, BasePlatformAdapter):
         self._with_discord_recovery_db(_op)
 
     async def _should_backfill_discord_message(self, message: Any) -> bool:
-        """Return True when a recent Discord message still needs Hermes work."""
+        """Return True when a recent Discord message still needs Eidolon work."""
         if not self._client or not getattr(self._client, "user", None):
             return False
         if getattr(getattr(message, "author", None), "id", None) == getattr(self._client.user, "id", None):
@@ -2331,7 +2331,7 @@ class DiscordAdapter(DiscordMediaMixin, BasePlatformAdapter):
         return not await self._message_has_non_down_bot_response(message)
 
     def _is_down_notice_content(self, content: str) -> bool:
-        """Recognize only explicit Hermes/gateway outage notices."""
+        """Recognize only explicit Eidolon/gateway outage notices."""
         text = (content or "").lower()
         subject = r"(?:hermes|the agent|agent|the gateway|gateway|bmo)"
         state = r"(?:is|was|appears to be|is currently|was currently)"
@@ -2580,7 +2580,7 @@ class DiscordAdapter(DiscordMediaMixin, BasePlatformAdapter):
         return "safe"
 
     def _canonicalize_app_command_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """Reduce command payloads to the semantic fields Hermes manages."""
+        """Reduce command payloads to the semantic fields Eidolon manages."""
         contexts = payload.get("contexts")
         integration_types = payload.get("integration_types")
         return {
@@ -3175,7 +3175,7 @@ class DiscordAdapter(DiscordMediaMixin, BasePlatformAdapter):
             ],
         }
         try:
-            from hermes_cli.config import read_raw_config
+            from eidolon_cli.config import read_raw_config
             cfg = read_raw_config() or {}
             fx = ((cfg.get("discord") or {}).get("voice_fx") or {})
             if isinstance(fx, dict):
@@ -3189,7 +3189,7 @@ class DiscordAdapter(DiscordMediaMixin, BasePlatformAdapter):
     def _load_discord_int_config(self, key: str, default: int, *, minimum: int = 0) -> int:
         """Read a non-secret integer from the top-level ``discord`` config."""
         try:
-            from hermes_cli.config import read_raw_config
+            from eidolon_cli.config import read_raw_config
             cfg = read_raw_config() or {}
             raw = (cfg.get("discord") or {}).get(key, default)
             value = int(raw)
@@ -3698,7 +3698,7 @@ class DiscordAdapter(DiscordMediaMixin, BasePlatformAdapter):
         return bool(channel_ids & allowed)
 
     def _is_pairing_approved_user(self, user_id: str) -> bool:
-        """True when the Discord user has an explicit Hermes pairing grant."""
+        """True when the Discord user has an explicit Eidolon pairing grant."""
         user_id = str(user_id or "").strip()
         if not user_id:
             return False
@@ -4176,7 +4176,7 @@ class DiscordAdapter(DiscordMediaMixin, BasePlatformAdapter):
     def _register_thread_slash(self, tree, name: str, description: str) -> None:
         @tree.command(name=name, description=description)
         @discord.app_commands.describe(
-            name="Thread name", message="Optional first message to send to Hermes in the thread",
+            name="Thread name", message="Optional first message to send to Eidolon in the thread",
             auto_archive_duration="Auto-archive in minutes (60, 1440, 4320, 10080)",
         )
         async def slash_thread(
@@ -4226,7 +4226,7 @@ class DiscordAdapter(DiscordMediaMixin, BasePlatformAdapter):
                 # e.g. name conflict with a subcommand group.
                 pass
         try:
-            from hermes_cli.commands import COMMAND_REGISTRY, _is_gateway_available, _resolve_config_gates
+            from eidolon_cli.commands import COMMAND_REGISTRY, _is_gateway_available, _resolve_config_gates
             try:
                 already_registered = {cmd.name for cmd in tree.get_commands()}
             except Exception:
@@ -4240,7 +4240,7 @@ class DiscordAdapter(DiscordMediaMixin, BasePlatformAdapter):
             logger.warning("Discord auto-register from COMMAND_REGISTRY failed: %s", e)
         # Mirror PluginContext.register_command() commands into the native slash picker.
         try:
-            from hermes_cli.commands import _iter_plugin_command_entries
+            from eidolon_cli.commands import _iter_plugin_command_entries
             for plugin_name, plugin_desc, plugin_args_hint in _iter_plugin_command_entries():
                 _auto_register(plugin_name, plugin_desc, plugin_args_hint)
         except Exception as e:
@@ -4356,7 +4356,7 @@ class DiscordAdapter(DiscordMediaMixin, BasePlatformAdapter):
                 _desc, cmd_key = entry
                 await self._run_simple_slash(interaction, f"{cmd_key} {args}".strip())
             cmd = discord.app_commands.Command(
-                name="skill", description="Run a Hermes skill", callback=_skill_handler,
+                name="skill", description="Run a Eidolon skill", callback=_skill_handler,
             )
             tree.add_command(cmd)
             logger.info(
@@ -4374,7 +4374,7 @@ class DiscordAdapter(DiscordMediaMixin, BasePlatformAdapter):
     def _refresh_skill_catalog_state(self) -> None:
         """Re-scan disk and repopulate ``self._skill_entries``/``_skill_lookup`` in place.
         No Discord API calls: autocomplete and handler read these attributes directly."""
-        from hermes_cli.commands_platforms import discord_skill_commands_by_category
+        from eidolon_cli.commands_platforms import discord_skill_commands_by_category
         reserved = getattr(self, "_skill_group_reserved_names", set())
         categories, uncategorized, hidden = discord_skill_commands_by_category(
             reserved_names=set(reserved),
@@ -4970,7 +4970,7 @@ class DiscordAdapter(DiscordMediaMixin, BasePlatformAdapter):
             return self._thread_created(thread, name)
         except Exception as direct_error:
             try:
-                seed_content = starter_message or f"\U0001f9f5 Thread created by Hermes: **{name}**"
+                seed_content = starter_message or f"\U0001f9f5 Thread created by Eidolon: **{name}**"
                 seed_msg = await parent_channel.send(seed_content)
                 thread = await seed_msg.create_thread(
                     name=name, auto_archive_duration=auto_archive_duration, reason=reason,
@@ -4998,7 +4998,7 @@ class DiscordAdapter(DiscordMediaMixin, BasePlatformAdapter):
 
         Strip Discord mention syntax (users / roles / channels) so thread titles don't show raw <@id>,
         <@&id>, or <#id> markers — the ID isn't meaningful to humans glancing at the thread list (#6336).
-        Real semantic naming is done after the first agent turn, when Hermes has an LLM-generated session
+        Real semantic naming is done after the first agent turn, when Eidolon has an LLM-generated session
         title and can safely rename only this newly-created thread.
         """
         content = (content or "").strip()
@@ -5006,7 +5006,7 @@ class DiscordAdapter(DiscordMediaMixin, BasePlatformAdapter):
         content = re.sub(r"<@[!&]?\d+>", "", content)
         content = re.sub(r"<#\d+>", "", content)
         content = re.sub(r"\s+", " ", content).strip()
-        thread_name = content[:80] if content else "Hermes"
+        thread_name = content[:80] if content else "Eidolon"
         if len(content) > 80:
             thread_name = thread_name[:77] + "..."
         return thread_name
@@ -5040,7 +5040,7 @@ class DiscordAdapter(DiscordMediaMixin, BasePlatformAdapter):
                 last_direct_error = direct_error
                 try:
                     seed_msg = await message.channel.send(
-                        f"\U0001f9f5 Thread created by Hermes: **{thread_name}**"
+                        f"\U0001f9f5 Thread created by Eidolon: **{thread_name}**"
                     )
                     thread = await seed_msg.create_thread(name=thread_name, auto_archive_duration=1440, reason=reason)
                     return self._stamp_auto_thread_name(thread, thread_name)
@@ -5093,7 +5093,7 @@ class DiscordAdapter(DiscordMediaMixin, BasePlatformAdapter):
         if edit is None:
             return False
         try:
-            await edit(name=cleaned, reason="Hermes semantic session title")
+            await edit(name=cleaned, reason="Eidolon semantic session title")
             logger.info(
                 "[%s] Renamed Discord thread %s from %r to %r",
                 self.name, thread_id, current_name, cleaned,
@@ -5129,7 +5129,7 @@ class DiscordAdapter(DiscordMediaMixin, BasePlatformAdapter):
             )
             return None
         thread_name = (name or "handoff").strip()[:80] or "handoff"
-        reason = "Hermes session handoff"
+        reason = "Eidolon session handoff"
         try:
             create = getattr(parent, "create_thread", None)
             if create is not None:
@@ -5144,7 +5144,7 @@ class DiscordAdapter(DiscordMediaMixin, BasePlatformAdapter):
             send = getattr(parent, "send", None)
             if send is None:
                 return None
-            seed_msg = await send(f"\U0001f9f5 Hermes handoff: **{thread_name}**")
+            seed_msg = await send(f"\U0001f9f5 Eidolon handoff: **{thread_name}**")
             thread = await seed_msg.create_thread(
                 name=thread_name, auto_archive_duration=1440, reason=reason,
             )
@@ -5222,7 +5222,7 @@ class DiscordAdapter(DiscordMediaMixin, BasePlatformAdapter):
                 reason_display = reason_display[: reason_budget - 15] + "... [truncated]"
             prompt_prefix = (
                 "⚠️ **Command Approval Required**\n\n"
-                "Do you want Hermes to run this command?\n\n"
+                "Do you want Eidolon to run this command?\n\n"
                 "**Requested command:**\n```bash\n"
             )
             if smart_denied:
@@ -5302,7 +5302,7 @@ class DiscordAdapter(DiscordMediaMixin, BasePlatformAdapter):
 
         def _build(_channel):
             embed = discord.Embed(
-                title="❓ Hermes needs your input",
+                title="❓ Eidolon needs your input",
                 description=self._embed_body(str(question or "").strip()),
                 color=discord.Color.orange(),
             )
@@ -5321,7 +5321,7 @@ class DiscordAdapter(DiscordMediaMixin, BasePlatformAdapter):
                 embed.add_field(name="Reply", value=hint, inline=False)
                 view = None
             content = self._self_contained_prompt_content(
-                "❓ **Hermes needs your input**", str(question or "").strip(), tail=f"\n\n{hint}",
+                "❓ **Eidolon needs your input**", str(question or "").strip(), tail=f"\n\n{hint}",
             )
             send_kwargs = {"content": content, "embed": embed}
             if view:
@@ -5333,7 +5333,7 @@ class DiscordAdapter(DiscordMediaMixin, BasePlatformAdapter):
         self, chat_id: str, prompt: str, default: str = "", session_key: str = "",
         metadata: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
-        """Yes/No prompt for the gateway ``/update`` watcher when ``hermes update --gateway`` needs input."""
+        """Yes/No prompt for the gateway ``/update`` watcher when ``eidolon update --gateway`` needs input."""
         def _build(_channel):
             default_hint = f" (default: {default})" if default else ""
             embed = discord.Embed(
@@ -5357,7 +5357,7 @@ class DiscordAdapter(DiscordMediaMixin, BasePlatformAdapter):
         """Two-step select-menu model picker (provider → model) via ``ModelPickerView``."""
         def _build(_channel):
             try:
-                from hermes_cli.providers import get_label
+                from eidolon_cli.providers import get_label
                 provider_label = get_label(current_provider)
             except Exception:
                 provider_label = current_provider
@@ -5722,7 +5722,7 @@ class DiscordAdapter(DiscordMediaMixin, BasePlatformAdapter):
                         # channel. Surface a short visible error so the user can retry once Discord
                         # recovers, and skip agent invocation for this message. See #20243.
                         await message.channel.send(
-                            "⚠️ Hermes could not create a Discord thread for "
+                            "⚠️ Eidolon could not create a Discord thread for "
                             "this message, so the request was not processed. Please retry."
                         )
                     except Exception as notify_error:
@@ -5957,7 +5957,7 @@ def _define_discord_view_classes() -> None:
     global ExecApprovalView, SlashConfirmView, UpdatePromptView, ModelPickerView, ClarifyChoiceView, ChoicePickerView
 
     class _HermesView(discord.ui.View):
-        """Shared plumbing for Hermes component views: allowlist auth, single-use
+        """Shared plumbing for Eidolon component views: allowlist auth, single-use
         ``resolved`` flag, ``_message`` handle for timeout edits."""
 
         def __init__(self, allowed_user_ids: set, allowed_role_ids: Optional[set], *, timeout):
@@ -6144,7 +6144,7 @@ def _define_discord_view_classes() -> None:
             await self._resolve(interaction, "cancel", discord.Color.greyple(), "Cancelled")
 
     class UpdatePromptView(_HermesView):
-        """Yes/No buttons for ``hermes update`` prompts; the answer is written to
+        """Yes/No buttons for ``eidolon update`` prompts; the answer is written to
         ``.update_response`` for the detached update process to pick up."""
 
         def __init__(self, session_key: str, allowed_user_ids: set, allowed_role_ids: Optional[set] = None):
@@ -6156,8 +6156,8 @@ def _define_discord_view_classes() -> None:
                 return
             await self._finalize_embed(interaction, color, f"{label} by {interaction.user.display_name}")
             try:
-                from hermes_constants import get_hermes_home
-                response_path = get_hermes_home() / ".update_response"
+                from eidolon_constants import get_eidolon_home
+                response_path = get_eidolon_home() / ".update_response"
                 tmp = response_path.with_suffix(".tmp")
                 tmp.write_text(answer, encoding="utf-8")
                 tmp.replace(response_path)
@@ -6264,7 +6264,7 @@ def _define_discord_view_classes() -> None:
 
         async def _expensive_warning_for(self, model_id: str):
             try:
-                from hermes_cli.model_selection_guards import combined_selection_warning
+                from eidolon_cli.model_selection_guards import combined_selection_warning
                 # Pricing lookup can hit models.dev on a cache miss — keep it off the event loop.
                 return await asyncio.to_thread(combined_selection_warning, model_id, provider=self._selected_provider)
             except Exception:
@@ -6326,7 +6326,7 @@ def _define_discord_view_classes() -> None:
                 return
             self._build_provider_select()
             try:
-                from hermes_cli.providers import get_label
+                from eidolon_cli.providers import get_label
                 provider_label = get_label(self.current_provider)
             except Exception:
                 provider_label = self.current_provider
@@ -6524,7 +6524,7 @@ if DISCORD_AVAILABLE:
 
 # ── Standalone (out-of-process) sender ────────────────────────────────────────
 # Used by ``tools/send_message_tool._send_via_adapter`` when no live DiscordAdapter is in this
-# process (e.g. standalone ``hermes cron``); same forum/thread/multipart logic via Discord REST.
+# process (e.g. standalone ``eidolon cron``); same forum/thread/multipart logic via Discord REST.
 
 # Process-local channel-type probe cache: avoids re-probing every send when the directory cache misses.
 _DISCORD_CHANNEL_TYPE_PROBE_CACHE: Dict[str, bool] = {}
@@ -6833,8 +6833,8 @@ def _clean_discord_user_ids(raw: str) -> list:
 
 def interactive_setup() -> None:
     """Guide the user through Discord bot setup: token, allowlist, home channel (lazy CLI imports)."""
-    from hermes_cli.config import get_env_value, remove_env_value, save_env_value
-    from hermes_cli.cli_output import (
+    from eidolon_cli.config import get_env_value, remove_env_value, save_env_value
+    from eidolon_cli.cli_output import (
         prompt, prompt_yes_no, print_header, print_info, print_success,
     )
     def _info_lines(*lines: str) -> None:
@@ -6894,7 +6894,7 @@ def interactive_setup() -> None:
         )
     print()
     _info_lines(
-        "📬 Home Channel: where Hermes delivers cron job results,",
+        "📬 Home Channel: where Eidolon delivers cron job results,",
         "   cross-platform messages, and notifications.",
         "   To get a channel ID: right-click a channel → Copy Channel ID",
         "   (requires Developer Mode in Discord settings)",
@@ -7017,8 +7017,8 @@ def _apply_yaml_config(yaml_cfg: dict, discord_cfg: dict) -> dict | None:
 
 def _is_connected(config) -> bool:
     """Connected when DISCORD_BOT_TOKEN is set.
-    Looks up ``hermes_cli.gateway.get_env_value`` at call time so tests can patch it (ambient env)."""
-    import hermes_cli.gateway as gateway_mod
+    Looks up ``eidolon_cli.gateway.get_env_value`` at call time so tests can patch it (ambient env)."""
+    import eidolon_cli.gateway as gateway_mod
     return bool((gateway_mod.get_env_value("DISCORD_BOT_TOKEN") or "").strip())
 
 
@@ -7028,7 +7028,7 @@ def _build_adapter(config):
 
 
 def register(ctx) -> None:
-    """Plugin entry point — called by the Hermes plugin system."""
+    """Plugin entry point — called by the Eidolon plugin system."""
     ctx.register_platform(
         name="discord",
         label="Discord",
@@ -7037,7 +7037,7 @@ def register(ctx) -> None:
         ensure_deps_fn=check_discord_requirements,
         is_connected=_is_connected,
         required_env=["DISCORD_BOT_TOKEN"],
-        install_hint="Run `hermes setup` to install Discord support.",
+        install_hint="Run `eidolon setup` to install Discord support.",
         setup_fn=interactive_setup,
         # YAML→env bridge: ``discord:`` config keys → ``DISCORD_*`` env vars read via os.getenv().
         # YAML→env config bridge — owns the translation of ``config.yaml`` ``discord:`` keys
@@ -7073,7 +7073,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

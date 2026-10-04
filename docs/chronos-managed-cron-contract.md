@@ -4,7 +4,7 @@
 **Audience:** the NAS-side implementer of the `agent-cron` endpoints
 (`nous-account-service`) and anyone debugging the managed-cron path.
 
-Chronos lets a hosted Hermes gateway **scale to zero** while idle and still
+Chronos lets a hosted Hermes Cloud gateway **scale to zero** while idle and still
 fire cron jobs. Instead of an in-process 60-second ticker, the agent asks NAS
 to arm exactly **one external one-shot per job at that job's real next-fire
 time**. NAS calls the agent back at fire time over an authenticated webhook;
@@ -129,7 +129,7 @@ Arm (or re-arm, idempotently) exactly one one-shot for a job.
 This is the agent endpoint NAS calls in Endpoint 3 step 3. Two hops on hosted
 deployments:
 
-1. **Dashboard app** (`hermes_cli/web_server.py`) — the agent's only public
+1. **Dashboard app** (`eidolon_cli/web_server.py`) — the agent's only public
    HTTP surface (the Fly proxy exposes exactly one port, the dashboard's). It
    is in `PUBLIC_API_PATHS` so the dashboard cookie gate lets the bearer-JWT
    callback through to the verifier. The dashboard verifies the JWT, resolves

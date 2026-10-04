@@ -1,4 +1,4 @@
-import type { OAuthProvider } from '@/types/hermes'
+import type { OAuthProvider } from '@/types/eidolon'
 
 /** A logged-out PKCE provider. Onboarding branches on `flow` and
  *  `status.logged_in`; the rest is filler the UI only echoes. */

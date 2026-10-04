@@ -21,7 +21,7 @@ logger = logging.getLogger("cron.chronos")
 def _cfg(*keys: str, default: Any = "") -> Any:
     """Read a cron.chronos.* config value (no network)."""
     try:
-        from hermes_cli.config import cfg_get, load_config
+        from eidolon_cli.config import cfg_get, load_config
         return cfg_get(load_config(), *keys, default=default)
     except Exception:
         return default
@@ -47,7 +47,7 @@ class ChronosCronScheduler(CronScheduler):
             return False
         # Stored-token presence only (no refresh); refresh-aware token resolved at provision time.
         try:
-            from hermes_cli.auth import get_provider_auth_state
+            from eidolon_cli.auth import get_provider_auth_state
             return bool((get_provider_auth_state("nous") or {}).get("access_token"))
         except Exception:
             return False

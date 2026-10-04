@@ -1,5 +1,5 @@
 import { requestComposerFocus, requestComposerInsert } from '@/app/chat/composer/focus'
-import { getSkills } from '@/hermes'
+import { getSkills } from '@/eidolon'
 import { translateNow } from '@/i18n'
 import type { ChatMessage } from '@/lib/chat-messages'
 import { type ComposerSuggestion, registerDraftProvider } from '@/store/composer-suggestions'

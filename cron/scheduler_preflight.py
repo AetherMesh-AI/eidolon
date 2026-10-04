@@ -102,9 +102,9 @@ def _preflight_check_provider_key(job: dict, cfg: dict) -> Optional[str]:
         job.get("provider") or str((_cron_cfg or {}).get("model_provider") or "").strip() or None)
     model = job.get("model") or os.getenv("HERMES_MODEL") or ""
 
-    from hermes_cli.auth import AuthError
+    from eidolon_cli.auth import AuthError
     try:
-        from hermes_cli.runtime_provider import resolve_runtime_provider
+        from eidolon_cli.runtime_provider import resolve_runtime_provider
         kwargs = {"requested": requested, "target_model": model}
         if job.get("base_url"):
             kwargs["explicit_base_url"] = job.get("base_url")
@@ -112,8 +112,8 @@ def _preflight_check_provider_key(job: dict, cfg: dict) -> Optional[str]:
     except AuthError as exc:
         return (
             f"provider credential missing: {exc}. "
-            "Set the provider API key in .env (or `hermes setup`), or pin a "
-            "working provider via `hermes cron edit "
+            "Set the provider API key in .env (or `eidolon setup`), or pin a "
+            "working provider via `eidolon cron edit "
             f"{job.get('id')} --provider <p>`."
         )
     except Exception:
@@ -135,9 +135,9 @@ def _primary_profile_routes_for_current_home() -> list:
     ``duplicate_credential`` fatal).
     """
     try:
-        from hermes_constants import get_default_hermes_root, get_hermes_home
+        from eidolon_constants import get_default_hermes_root, get_eidolon_home
         primary_home = get_default_hermes_root()
-        current_home = _sched.Path(get_hermes_home())
+        current_home = _sched.Path(get_eidolon_home())
         if (
             primary_home.expanduser().resolve(strict=False)
             == current_home.expanduser().resolve(strict=False)
@@ -147,7 +147,7 @@ def _primary_profile_routes_for_current_home() -> list:
         if not config_path.exists():
             return []
 
-        from hermes_cli.config import read_user_config_raw
+        from eidolon_cli.config import read_user_config_raw
         raw = read_user_config_raw(config_path)  # raw primary file, not the merged current-profile config
         routes_raw = raw.get("profile_routes")
         if routes_raw is None and isinstance(raw.get("gateway"), dict):
@@ -156,7 +156,7 @@ def _primary_profile_routes_for_current_home() -> list:
             return []
 
         from gateway.profile_routing import parse_profile_routes
-        from hermes_cli.profiles import profile_matches_home
+        from eidolon_cli.profiles import profile_matches_home
         return [
             route for route in parse_profile_routes(routes_raw)
             if route.enabled and profile_matches_home(route.profile)
@@ -269,7 +269,7 @@ def _preflight_check_delivery(job: dict) -> Optional[str]:
             return (
                 f"delivery platform '{platform_name}' has no gateway "
                 "credentials configured (not connected). Configure it via "
-                "`hermes setup` or change the job's `deliver` target."
+                "`eidolon setup` or change the job's `deliver` target."
             )
     return None
 

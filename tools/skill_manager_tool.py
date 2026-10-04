@@ -19,9 +19,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 
-from hermes_constants import get_hermes_home, display_hermes_home
+from eidolon_constants import get_eidolon_home, display_eidolon_home
 from utils import atomic_write_text, is_truthy_value
-from hermes_cli.config import cfg_get
+from eidolon_cli.config import cfg_get
 from agent.skill_utils import (
     extract_skill_description,
     is_skill_description_truncated_for_prompt,
@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 def _guard_agent_created_enabled() -> bool:
     """skills.guard_agent_created (default False): opt-in — terminal() runs the same code ungated."""
     try:
-        from hermes_cli.config import load_config
+        from eidolon_cli.config import load_config
         return is_truthy_value(cfg_get(load_config(), "skills", "guard_agent_created"), default=False)
     except Exception:
         return False
@@ -64,7 +64,7 @@ def _security_scan_skill(skill_dir: Path) -> Optional[str]:
 
 
 # All skills live in ~/.hermes/skills/ (single source of truth)
-HERMES_HOME = get_hermes_home()
+HERMES_HOME = get_eidolon_home()
 SKILLS_DIR = HERMES_HOME / "skills"
 _SKILLS_DIR_AT_IMPORT = SKILLS_DIR
 
@@ -77,7 +77,7 @@ def _skills_dir() -> Path:
     module once under the launch HERMES_HOME and later bind a different profile per session (#40677).
     """
     configured = Path(SKILLS_DIR)
-    return configured if configured != _SKILLS_DIR_AT_IMPORT else get_hermes_home() / "skills"
+    return configured if configured != _SKILLS_DIR_AT_IMPORT else get_eidolon_home() / "skills"
 
 
 MAX_NAME_LENGTH = 64
@@ -96,7 +96,7 @@ def _display_create_dir() -> str:
         from agent.skill_utils import display_skill_create_dir
         return display_skill_create_dir()
     except Exception:
-        return f"{display_hermes_home()}/skills/"
+        return f"{display_eidolon_home()}/skills/"
 
 
 # --- Validation helpers -------------------------------------------------------
@@ -234,7 +234,7 @@ def _find_skill_in_other_profiles(name: str) -> List[Tuple[str, Path]]:
     error can explain a wrong-profile mistake). Fail-quiet."""
     matches: List[Tuple[str, Path]] = []
     try:
-        from hermes_constants import get_default_hermes_root
+        from eidolon_constants import get_default_hermes_root
         root = get_default_hermes_root()
     except Exception:
         return matches
@@ -380,7 +380,7 @@ def _attach_lint_findings(result: Dict[str, Any], skill_md: Path) -> None:
         {"severity": f.severity, "rule": f.rule, "message": f.message} for f in findings]
     result["lint_hint"] = (
         "The skill was created. These are advisory authoring-convention findings (not blockers) "
-        "— fix them with skill_manage(action='patch') to match Hermes skill standards.")
+        "— fix them with skill_manage(action='patch') to match Eidolon skill standards.")
 
 
 def _clip(text: str, n: int, ellipsis: str) -> str:
@@ -900,7 +900,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

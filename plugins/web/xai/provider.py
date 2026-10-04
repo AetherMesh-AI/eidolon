@@ -1,8 +1,8 @@
 """xAI Web Search — search-only provider backed by Grok's server-side ``web_search`` tool on the
 Responses API (https://docs.x.ai/developers/tools/web-search); Grok is asked for structured JSON
-so rows match every other Hermes web provider. Config: ``web.backend: "xai"``; optional ``web.xai``:
+so rows match every other Eidolon web provider. Config: ``web.backend: "xai"``; optional ``web.xai``:
 ``model`` (default grok-build-0.1), ``allowed_domains`` / ``excluded_domains`` (max 5, mutually
-exclusive), ``timeout`` (default 90s). Auth: Grok OAuth via ``hermes auth``, else XAI_API_KEY.
+exclusive), ``timeout`` (default 90s). Auth: Grok OAuth via ``eidolon auth``, else XAI_API_KEY.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ _JSON_BLOCK_RE = re.compile(r"\{[\s\S]*\}", re.MULTILINE)
 def _load_xai_web_config() -> Dict[str, Any]:
     """Read ``web.xai`` from config.yaml (returns {} on miss)."""
     try:
-        from hermes_cli.config import load_config
+        from eidolon_cli.config import load_config
         cfg = load_config()
         for key in ("web", "xai"):
             cfg = cfg.get(key) if isinstance(cfg, dict) else None
@@ -60,7 +60,7 @@ class XAIWebSearchProvider(BaseWebSearchProvider):
     def is_available(self) -> bool:
         """Cheap probe (env var OR auth-store tokens). Deliberately NOT
         ``resolve_xai_http_credentials``: must never refresh tokens or take the
-        auth-store lock, since this runs on every ``hermes tools`` repaint."""
+        auth-store lock, since this runs on every ``eidolon tools`` repaint."""
         return has_xai_credentials()
 
     def search(self, query: str, limit: int = 5) -> Dict[str, Any]:
@@ -74,7 +74,7 @@ class XAIWebSearchProvider(BaseWebSearchProvider):
         api_key = str(creds.get("api_key") or "").strip()
         base_url = str(creds.get("base_url") or "https://api.x.ai/v1").strip().rstrip("/")
         if not api_key:
-            return _fail("No xAI credentials found. Run `hermes auth` to sign in with xAI Grok OAuth, or set XAI_API_KEY.")
+            return _fail("No xAI credentials found. Run `eidolon auth` to sign in with xAI Grok OAuth, or set XAI_API_KEY.")
         # Same clamp range as web_search_tool so explicit limits aren't downgraded.
         limit = max(1, min(_coerce(int, limit, 5), 100))
         cfg = _load_xai_web_config()
@@ -276,7 +276,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

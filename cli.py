@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Eidolon CLI — interactive terminal interface (``python cli.py --help`` for usage)."""
 
-# Must be the very first import (UTF-8 stdio on Windows). Missing only mid-``hermes update``.
+# Must be the very first import (UTF-8 stdio on Windows). Missing only mid-``eidolon update``.
 try:
-    import hermes_bootstrap  # noqa: F401
+    import eidolon_bootstrap  # noqa: F401
 except ModuleNotFoundError:
     pass
 
@@ -31,21 +31,21 @@ logger = logging.getLogger(__name__)
 
 os.environ["HERMES_QUIET"] = "1"  # suppress our modules' startup chatter
 
-from hermes_cli.fallback_config import get_fallback_chain
-from hermes_cli.cli_agent_setup_mixin import CLIAgentSetupMixin
-from hermes_cli.cli_commands_mixin import CLICommandsMixin
-from hermes_cli.cli_billing_mixin import CLIBillingMixin
-from hermes_cli.cli_loops_mixin import CLILoopsMixin
-from hermes_cli.cli_info_mixin import CLIInfoMixin
-from hermes_cli.cli_terminal_mixin import CLITerminalMixin
-from hermes_cli.cli_modal_mixin import CLIModalMixin
-from hermes_cli.cli_stream_mixin import CLIStreamMixin
-from hermes_cli.cli_session_mixin import CLISessionMixin
-from hermes_cli.cli_model_switch_mixin import CLIModelSwitchMixin
-from hermes_cli.cli_voice_mixin import CLIVoiceMixin
-from hermes_cli.cli_status_bar_mixin import CLIStatusBarMixin
-from hermes_cli.cli_tui_mixin import CLITuiMixin
-from hermes_cli.cli_process_notifications import CLIProcessNotificationsMixin
+from eidolon_cli.fallback_config import get_fallback_chain
+from eidolon_cli.cli_agent_setup_mixin import CLIAgentSetupMixin
+from eidolon_cli.cli_commands_mixin import CLICommandsMixin
+from eidolon_cli.cli_billing_mixin import CLIBillingMixin
+from eidolon_cli.cli_loops_mixin import CLILoopsMixin
+from eidolon_cli.cli_info_mixin import CLIInfoMixin
+from eidolon_cli.cli_terminal_mixin import CLITerminalMixin
+from eidolon_cli.cli_modal_mixin import CLIModalMixin
+from eidolon_cli.cli_stream_mixin import CLIStreamMixin
+from eidolon_cli.cli_session_mixin import CLISessionMixin
+from eidolon_cli.cli_model_switch_mixin import CLIModelSwitchMixin
+from eidolon_cli.cli_voice_mixin import CLIVoiceMixin
+from eidolon_cli.cli_status_bar_mixin import CLIStatusBarMixin
+from eidolon_cli.cli_tui_mixin import CLITuiMixin
+from eidolon_cli.cli_process_notifications import CLIProcessNotificationsMixin
 from agent.interrupt_compat import request_hard_interrupt
 from agent.pet import render as pet_render
 
@@ -60,7 +60,7 @@ except (ImportError, AttributeError):
     _STEADY_CURSOR = None
 
 try:
-    from hermes_cli import pt_input_extras as _pt_extras
+    from eidolon_cli import pt_input_extras as _pt_extras
 
     _pt_extras.install_shift_enter_alias()
     _pt_extras.install_ctrl_enter_alias()
@@ -118,7 +118,7 @@ def _reverse_alias_for_display(model_name: str) -> str:
                 rmap[m] = alias
 
         try:
-            from hermes_cli.config import load_config
+            from eidolon_cli.config import load_config
             cfg = load_config() or {}
             ma = cfg.get("model_aliases")
             if isinstance(ma, dict):
@@ -159,19 +159,19 @@ def format_token_count_compact(*args, **kwargs):
 
 
 realign_markdown_tables = _lazy_shim("agent.markdown_tables", "realign_markdown_tables")
-from hermes_cli.banner import format_banner_version_label
+from eidolon_cli.banner import format_banner_version_label
 
 _COMMAND_SPINNER_FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
 
 
 # ~/.hermes/.env first, project .env as dev fallback; user env files override stale shell exports.
-from hermes_constants import get_hermes_home
-from hermes_cli.env_loader import load_hermes_dotenv
+from eidolon_constants import get_eidolon_home
+from eidolon_cli.env_loader import load_hermes_dotenv
 from utils import base_url_host_matches, base_url_hostname, fast_safe_load
 
-_hermes_home = get_hermes_home()
+_eidolon_home = get_eidolon_home()
 _project_env = Path(__file__).parent / '.env'
-load_hermes_dotenv(hermes_home=_hermes_home, project_env=_project_env)
+load_hermes_dotenv(hermes_home=_eidolon_home, project_env=_project_env)
 
 
 _REASONING_TAGS = ("REASONING_SCRATCHPAD", "think", "thinking", "reasoning", "thought")
@@ -236,7 +236,7 @@ def _load_prefill_messages(file_path: str) -> List[Dict[str, Any]]:
         return []
     path = Path(file_path).expanduser()
     if not path.is_absolute():
-        path = _hermes_home / path
+        path = _eidolon_home / path
     if not path.exists():
         logger.warning("Prefill messages file not found: %s", path)
         return []
@@ -264,7 +264,7 @@ def _resolve_prefill_messages_file(config: Dict[str, Any]) -> str:
 
 def _parse_reasoning_config(effort) -> dict | None:
     """Parse a reasoning effort level (string or YAML bool; ``false``/``off`` = disabled)."""
-    from hermes_constants import parse_reasoning_effort
+    from eidolon_constants import parse_reasoning_effort
     result = parse_reasoning_effort(effort)
     if effort and str(effort).strip() and result is None:
         logger.warning("Unknown reasoning_effort '%s', using default (medium)", effort)
@@ -369,7 +369,7 @@ def _mirror_config_to_env(defaults, _file_has_terminal_config):
         if redact is not None:
             os.environ["HERMES_REDACT_SECRETS"] = str(redact).lower()
 
-    # Session-search index knobs (hermes_state reads the env carriers).
+    # Session-search index knobs (eidolon_state reads the env carriers).
     sessions_config = defaults.get("sessions", {})
     if isinstance(sessions_config, dict):
         if "cjk_fts" in sessions_config:
@@ -399,11 +399,11 @@ def _cli_config_defaults():
         "agent": {
             "max_turns": 500, "verbose": False, "system_prompt": "", "prefill_messages_file": "",  # max_turns shared with subagents
             "reasoning_effort": "", "service_tier": "",
-            "personalities": {},  # user overrides merged by name over hermes_cli.personality builtins
+            "personalities": {},  # user overrides merged by name over eidolon_cli.personality builtins
         },
         "display": {
             "compact": False,
-            # /resume recap tuning and show_reasoning: keep in sync with hermes_cli/config.py DEFAULT_CONFIG
+            # /resume recap tuning and show_reasoning: keep in sync with eidolon_cli/config.py DEFAULT_CONFIG
             "resume_display": "full", "resume_exchanges": 10, "resume_max_user_chars": 300,
             "resume_max_assistant_chars": 200, "resume_max_assistant_lines": 3, "resume_skip_tool_only": True,
             "show_reasoning": True, "reasoning_full": False, "streaming": True, "busy_input_mode": "interrupt",
@@ -460,7 +460,7 @@ def load_cli_config() -> Dict[str, Any]:
 
     ``HERMES_IGNORE_USER_CONFIG=1`` skips the user config entirely (``.env`` still loads).
     """
-    config_path = _hermes_home / 'config.yaml'
+    config_path = _eidolon_home / 'config.yaml'
     if not config_path.exists() or os.environ.get("HERMES_IGNORE_USER_CONFIG") == "1":
         config_path = Path(__file__).parent / 'cli-config.yaml'
 
@@ -472,7 +472,7 @@ def load_cli_config() -> Dict[str, Any]:
     if config_path.exists():
         try:
             with open(config_path, "r", encoding="utf-8") as f:
-                from hermes_cli.config import _normalize_root_model_keys
+                from eidolon_cli.config import _normalize_root_model_keys
 
                 file_config = _normalize_root_model_keys(fast_safe_load(f) or {})
 
@@ -482,12 +482,12 @@ def load_cli_config() -> Dict[str, Any]:
             logger.warning("Failed to load cli-config.yaml: %s", e)
 
     # Expand ${ENV_VAR} references before bridging to env vars.
-    from hermes_cli.config import _expand_env_vars
+    from eidolon_cli.config import _expand_env_vars
     defaults = _expand_env_vars(defaults)
 
     # Administrator-pinned (managed scope) values overlay LAST; cli.py builds its config
-    # independently of hermes_cli.config, so this keeps parity with `hermes config`. Fail-open.
-    from hermes_cli import managed_scope
+    # independently of eidolon_cli.config, so this keeps parity with `eidolon config`. Fail-open.
+    from eidolon_cli import managed_scope
 
     defaults = managed_scope.apply_managed_overlay(defaults)
 
@@ -506,9 +506,9 @@ def _init_logging_and_display_from_config() -> None:
         return CLI_CONFIG.get("display", {}).get(key, default)
 
     for step in (
-        lambda: _im("hermes_logging").setup_logging(mode="cli"),
-        lambda: _im("hermes_cli.config").print_config_warnings(),
-        lambda: _im("hermes_cli.skin_engine").init_skin_from_config(CLI_CONFIG),
+        lambda: _im("eidolon_logging").setup_logging(mode="cli"),
+        lambda: _im("eidolon_cli.config").print_config_warnings(),
+        lambda: _im("eidolon_cli.skin_engine").init_skin_from_config(CLI_CONFIG),
         lambda: _im("agent.display").set_tool_preview_max_len(int(_display("tool_preview_length", 0) or 0)),
         lambda: _im("agent.display").set_friendly_tool_labels(bool(_display("friendly_tool_labels", True))),
     ):
@@ -571,7 +571,7 @@ from rich.text import Text as _RichText
 
 # Agent/tool systems load lazily: bare startup only needs the prompt.
 def get_tool_definitions(*args, **kwargs):
-    from hermes_cli.mcp_startup import wait_for_mcp_discovery
+    from eidolon_cli.mcp_startup import wait_for_mcp_discovery
     from model_tools import get_tool_definitions as _get_tool_definitions
 
     wait_for_mcp_discovery()
@@ -634,13 +634,13 @@ def _prepare_deferred_agent_startup() -> None:
     _deferred_agent_startup_done = True
     _accept_hooks = os.environ.get("HERMES_ACCEPT_HOOKS", "").lower() in {"1", "true", "yes", "on"}
     try:
-        from hermes_cli.plugins import discover_plugins
+        from eidolon_cli.plugins import discover_plugins
 
         discover_plugins()
     except Exception:
         logger.warning("plugin discovery failed at deferred CLI startup", exc_info=True)
     try:
-        from hermes_cli.mcp_startup import start_background_mcp_discovery
+        from eidolon_cli.mcp_startup import start_background_mcp_discovery
 
         start_background_mcp_discovery(logger=logger, thread_name="termux-cli-mcp-discovery")
     except Exception:
@@ -648,7 +648,7 @@ def _prepare_deferred_agent_startup() -> None:
     try:
         from agent.shell_hooks import register_from_config
         from agent.outbound_webhooks import register_from_config as register_outbound_webhooks
-        from hermes_cli.config import load_config
+        from eidolon_cli.config import load_config
 
         _hooks_cfg = load_config()
         register_from_config(_hooks_cfg, accept_hooks=_accept_hooks)
@@ -849,7 +849,7 @@ def _should_emit_cleanup_session_finalize(session_id: str | None) -> bool:
 
 def _notify_session_finalize(*, session_id: str | None, platform: str = "cli", reason: str = "shutdown") -> None:
     with suppress(Exception):
-        from hermes_cli.lifecycle import finalize_session
+        from eidolon_cli.lifecycle import finalize_session
         finalize_session(session_id=session_id, platform=platform, reason=reason)
 
 
@@ -862,7 +862,7 @@ def _oneshot_agent_and_session(cli):
 def _invoke_interrupted_session_end(agent, session_id, reason: str, **extra) -> None:
     """Best-effort ``on_session_end`` hook for a turn cut short (never raises)."""
     with suppress(Exception):
-        from hermes_cli.lifecycle import invoke_hook as _invoke_hook
+        from eidolon_cli.lifecycle import invoke_hook as _invoke_hook
         _invoke_hook(
             "on_session_end", session_id=session_id, completed=False, interrupted=True,
             model=getattr(agent, "model", None), platform=getattr(agent, "platform", None) or "cli",
@@ -1021,7 +1021,7 @@ def _reset_terminal_input_modes_on_exit() -> None:
         tty.flush()
 
 
-from hermes_cli.worktree_ops import (
+from eidolon_cli.worktree_ops import (
     _git_quiet,
     _git_repo_root,
     _maintain_pack_health,
@@ -1072,15 +1072,15 @@ def _run_state_db_auto_maintenance(session_db) -> None:
     if session_db is None:
         return
     try:
-        from hermes_cli.config import load_config as _load_full_config
-        from hermes_constants import get_hermes_home as _get_hermes_home  # lazy: tests patch it
-        _hermes_home_maint = _get_hermes_home()
+        from eidolon_cli.config import load_config as _load_full_config
+        from eidolon_constants import get_eidolon_home as _get_eidolon_home  # lazy: tests patch it
+        _eidolon_home_maint = _get_eidolon_home()
 
         # One-time repairs, each latched in state_meta once it has run.
         for meta_key, repair, done_msg, skip_msg in (
             (
                 "ghost_session_prune_v1",
-                lambda: session_db.prune_empty_ghost_sessions(sessions_dir=_hermes_home_maint / "sessions"),
+                lambda: session_db.prune_empty_ghost_sessions(sessions_dir=_eidolon_home_maint / "sessions"),
                 "Pruned %d empty TUI ghost sessions", "Ghost session prune skipped: %s",
             ),
             (
@@ -1114,7 +1114,7 @@ def _run_state_db_auto_maintenance(session_db) -> None:
             min_interval_hours=int(cfg.get("min_interval_hours", 24)),
             min_vacuum_interval_days=int(cfg.get("min_vacuum_interval_days", 30)),
             vacuum=bool(cfg.get("vacuum_after_prune", True)),
-            sessions_dir=_hermes_home_maint / "sessions",
+            sessions_dir=_eidolon_home_maint / "sessions",
         )
     except Exception as exc:
         logger.debug("state.db auto-maintenance skipped: %s", exc)
@@ -1123,13 +1123,13 @@ def _run_state_db_auto_maintenance(session_db) -> None:
 def _run_checkpoint_auto_maintenance() -> None:
     """Call ``maybe_auto_prune_checkpoints`` per the ``checkpoints:`` config. Never raises."""
     try:
-        from hermes_cli.config import load_config as _load_full_config
+        from eidolon_cli.config import load_config as _load_full_config
         cfg = (_load_full_config().get("checkpoints") or {})
         if not cfg.get("auto_prune", False):
             return
         from tools.checkpoint_manager import maybe_auto_prune_checkpoints
         # delete_orphans stays False: a missing workdir at startup is ambiguous (unmounted
-        # volume / VPN down); orphans are only reclaimed by `hermes checkpoints prune`.
+        # volume / VPN down); orphans are only reclaimed by `eidolon checkpoints prune`.
         maybe_auto_prune_checkpoints(
             retention_days=int(cfg.get("retention_days", 7)),
             min_interval_hours=int(cfg.get("min_interval_hours", 24)),
@@ -1345,7 +1345,7 @@ def _maybe_remap_for_light_mode(hex_color: str) -> str:
 def _install_skin_light_mode_hook() -> None:
     """Wrap SkinConfig.get_color so EVERY skin color read goes through the light-mode remap. Idempotent."""
     try:
-        from hermes_cli.skin_engine import SkinConfig  # type: ignore[import]
+        from eidolon_cli.skin_engine import SkinConfig  # type: ignore[import]
     except Exception:
         return
     if getattr(SkinConfig, "_hermes_light_mode_hook_installed", False):
@@ -1384,7 +1384,7 @@ class _SkinAwareAnsi:
     def __str__(self) -> str:
         if self._cached is None:
             try:
-                from hermes_cli.skin_engine import get_active_skin
+                from eidolon_cli.skin_engine import get_active_skin
                 self._cached = _hex_to_ansi(
                     get_active_skin().get_color(self._skin_key, self._fallback_hex),
                     bold=self._bold,
@@ -1424,7 +1424,7 @@ _d = functools.partial(_tty_wrap, sgr="\x1b[2;3m")  # dim-italic when stdout is 
 def _accent_hex() -> str:
     """Return the active skin accent color for legacy CLI output lines."""
     try:
-        from hermes_cli.skin_engine import get_active_skin
+        from eidolon_cli.skin_engine import get_active_skin
         return get_active_skin().get_color("ui_accent", "#FFBF00")
     except Exception:
         return "#FFBF00"
@@ -1881,7 +1881,7 @@ def _should_auto_attach_clipboard_image_on_paste(pasted_text: str) -> bool:
 
 
 _strip_leaked_bracketed_paste_wrappers = _lazy_shim(
-    "hermes_cli.input_sanitize", "strip_leaked_bracketed_paste_wrappers", "_strip_leaked_bracketed_paste_wrappers"
+    "eidolon_cli.input_sanitize", "strip_leaked_bracketed_paste_wrappers", "_strip_leaked_bracketed_paste_wrappers"
 )
 
 
@@ -2048,7 +2048,7 @@ def _enable_extended_enter_keys(output=None, env: Optional[Mapping[str, str]] = 
     mode as ``ESC[<codepoint>;<mod>u`` (plus the Esc key as ``ESC[27u``), modifyOtherKeys=2 as
     ``ESC[27;<mod>;<codepoint>~``. Stock prompt_toolkit 3.x maps almost none of these, which is why the CSI
     >1u push was temporarily removed in 87074 (Ctrl+C arrived as ``ESC[99;5u`` and died, #56684).
-    ``install_modify_other_keys_aliases()`` (called at CLI startup from ``hermes_cli.pt_input_extras``) now
+    ``install_modify_other_keys_aliases()`` (called at CLI startup from ``eidolon_cli.pt_input_extras``) now
     populates ``ANSI_SEQUENCES`` with the full Ctrl/Alt/Shift/multi-modifier and functional-key tables under
     BOTH formats, so every existing key binding continues to fire — including Ctrl+C, which is handled by
     prompt_toolkit's ``c-c`` binding (raw mode clears ISIG, so the kernel INTR path was never in play for
@@ -2284,7 +2284,7 @@ class ChatConsole:
 def _build_compact_banner() -> str:
     """Build a compact banner that fits the current terminal width."""
     try:
-        from hermes_cli.skin_engine import get_active_skin
+        from eidolon_cli.skin_engine import get_active_skin
         _skin = get_active_skin()
     except Exception:
         _skin = None
@@ -2303,8 +2303,8 @@ def _build_compact_banner() -> str:
     line1 = f"{tiny_line} - Agent Manager"
 
     if os.environ.get("HERMES_FAST_STARTUP_BANNER") == "1":
-        from hermes_cli import __release_date__ as _release_date
-        from hermes_cli import __version__ as _version
+        from eidolon_cli import __release_date__ as _release_date
+        from eidolon_cli import __version__ as _version
 
         version_line = f"Eidolon v{_version} ({_release_date})"
     else:
@@ -2378,7 +2378,7 @@ build_bundle_invocation_message = _lazy_shim("agent.skill_bundles", "build_bundl
 def _get_plugin_cmd_handler_names() -> set:
     """Return plugin command names (without slash prefix) for dispatch matching."""
     try:
-        from hermes_cli.plugins import get_plugin_commands
+        from eidolon_cli.plugins import get_plugin_commands
         return set(get_plugin_commands().keys())
     except Exception:
         return set()
@@ -2398,7 +2398,7 @@ def save_config_value(key_path: str, value: any) -> bool:
 
     Never the repo's cli-config.yaml: no config reader loads it, so the value would vanish.
     """
-    config_path = get_hermes_home() / 'config.yaml'
+    config_path = get_eidolon_home() / 'config.yaml'
 
     try:
         config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -2408,8 +2408,8 @@ def save_config_value(key_path: str, value: any) -> bool:
             os.chmod(config_path, 0o600)
         except (OSError, NotImplementedError):
             pass
-        # Same fail-closed cron drift warning as `hermes config set` for every model switch.
-        from hermes_cli.config import warn_unpinned_cron_jobs_after_model_config_change
+        # Same fail-closed cron drift warning as `eidolon config set` for every model switch.
+        from eidolon_cli.config import warn_unpinned_cron_jobs_after_model_config_change
 
         warn_unpinned_cron_jobs_after_model_config_change(key_path, value)
         return True
@@ -2422,7 +2422,7 @@ def _normalize_moa_model(model: Optional[str]) -> tuple[Optional[str], Optional[
     """``moa:<preset>`` -> ``("moa", preset)`` (same routing as ``/moa``); anything else -> ``(None, model)``.
 
     Returns ``("moa", "<preset>")`` when *model* selects the MoA virtual provider, otherwise ``(None,
-    model)`` unchanged. This gives non-interactive ``hermes chat -Q -m moa:<preset>`` the same routing the
+    model)`` unchanged. This gives non-interactive ``eidolon chat -Q -m moa:<preset>`` the same routing the
     interactive ``/moa`` command and the model picker already use: ``resolve_runtime_provider`` handles
     ``requested_provider == "moa"`` and ``agent_init`` builds the MoAClient off ``provider == "moa"``.
     Without this the raw ``moa:<preset>`` string is sent to the real provider and rejected with a 401/400
@@ -2434,7 +2434,7 @@ def _normalize_moa_model(model: Optional[str]) -> tuple[Optional[str], Optional[
             return "moa", preset
     return None, model
 
-_split_model_config_default = _lazy_shim("hermes_cli.config", "split_model_config_default", "_split_model_config_default")
+_split_model_config_default = _lazy_shim("eidolon_cli.config", "split_model_config_default", "_split_model_config_default")
 
 
 class _VoiceInputMessage:
@@ -2521,7 +2521,7 @@ class _ChatTurn:
     stop_event: Optional[threading.Event] = None
     tts_normal_exit: bool = False
     voice_prefix: str = ""
-from hermes_cli.cli_chat_turn_mixin import CLIChatTurnMixin
+from eidolon_cli.cli_chat_turn_mixin import CLIChatTurnMixin
 
 
 _PASTE_REF_RE = re.compile(r'\[Pasted text #\d+: \d+ lines \u2192 (.+?)\]')
@@ -2574,7 +2574,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         self._focus_saved_tool_progress = self._focus_last_counted_tool = None
         self._focus_hidden_lines = 0
         if self._focus_view_enabled:
-            from hermes_cli.focus_view import FOCUS_TOOL_PROGRESS_MODE, normalize_tool_progress_mode
+            from eidolon_cli.focus_view import FOCUS_TOOL_PROGRESS_MODE, normalize_tool_progress_mode
 
             self._focus_saved_tool_progress = normalize_tool_progress_mode(self.tool_progress_mode)
             self.tool_progress_mode = FOCUS_TOOL_PROGRESS_MODE
@@ -2651,7 +2651,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         _cfg_provider = _model_config.get("provider") or os.getenv("HERMES_INFERENCE_PROVIDER")
         _startup_provider_override = _startup_base_url_override = _startup_api_key_override = ""
         if self.model:
-            from hermes_cli.model_switch import resolve_startup_model_route
+            from eidolon_cli.model_switch import resolve_startup_model_route
 
             _startup_route = resolve_startup_model_route(
                 self.model,
@@ -2674,7 +2674,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         if self.model == "":  # auto-detect from a local server
             _base_url = _model_config.get("base_url") or ""
             if base_url_hostname(_base_url) in ("localhost", "127.0.0.1"):
-                from hermes_cli.runtime_provider import _auto_detect_local_model
+                from eidolon_cli.runtime_provider import _auto_detect_local_model
                 self.model = _auto_detect_local_model(_base_url) or self.model
         # Provider normalisation may silently override the default but must warn for an
         # explicit choice (a config model equal to the global fallback is NOT explicit).
@@ -2695,7 +2695,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         # Explicit `-m` still wins. See #86978.
         if not model and provider:
             try:
-                from hermes_cli.runtime_provider import _get_named_custom_provider
+                from eidolon_cli.runtime_provider import _get_named_custom_provider
 
                 _named_custom = _get_named_custom_provider(provider)
             except Exception as exc:
@@ -2728,7 +2728,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         # resolve_turn_limit() accepts "none"/"unlimited" (-> sys.maxsize) alongside ints.
         # KEEP the root-level CLI_CONFIG["max_turns"] fallback: it is never migrated on disk
         # and other config paths may bypass the load-time fold.
-        from hermes_cli.config import resolve_turn_limit as _resolve_turn_limit
+        from eidolon_cli.config import resolve_turn_limit as _resolve_turn_limit
         self.max_turns = _resolve_turn_limit(next(
             (v for v in (max_turns, CLI_CONFIG["agent"].get("max_turns"), CLI_CONFIG.get("max_turns")) if v is not None),
             os.getenv("HERMES_MAX_ITERATIONS"),
@@ -2762,8 +2762,8 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
 
     def _init_prompt_and_reasoning(self, reasoning):
         """Ephemeral system prompt/prefill, reasoning + service tier, OpenRouter routing knobs, fallback chain."""
-        # Env var wins, then hermes_cli.personality (single owner of overlay resolution).
-        from hermes_cli.personality import available_personalities, resolve_ephemeral_system_prompt
+        # Env var wins, then eidolon_cli.personality (single owner of overlay resolution).
+        from eidolon_cli.personality import available_personalities, resolve_ephemeral_system_prompt
 
         self.system_prompt = os.getenv("HERMES_EPHEMERAL_SYSTEM_PROMPT", "") or resolve_ephemeral_system_prompt(CLI_CONFIG)
         self.personalities = available_personalities(CLI_CONFIG)
@@ -2772,8 +2772,8 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
 
         # Per-model override > global reasoning_effort.
         # Reasoning config (OpenRouter reasoning effort level) Per-model override > global reasoning_effort
-        # — resolved through the shared chokepoint in hermes_constants (Closes #21256).
-        from hermes_constants import resolve_reasoning_config
+        # — resolved through the shared chokepoint in eidolon_constants (Closes #21256).
+        from eidolon_constants import resolve_reasoning_config
         self.reasoning_config = resolve_reasoning_config(CLI_CONFIG, self.model)
         # --reasoning wins for this run only (never persisted); unparseable -> warn and ignore.
         if reasoning is not None and str(reasoning).strip():
@@ -2825,7 +2825,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         self.session_id = resume or f"{self.session_start.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
         getattr(self, "_write_terminal_breadcrumb", lambda: None)()
 
-        self._history_file = _hermes_home / ".hermes_history"
+        self._history_file = _eidolon_home / ".hermes_history"
         self._last_invalidate: float = 0.0  # throttles UI repaints
         self._init_ui_state()
 
@@ -2834,7 +2834,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         self._session_db = None
         self._session_db_unavailable = False
         try:
-            from hermes_state import SessionDB
+            from eidolon_state import SessionDB
             self._session_db = SessionDB()
         except Exception as e:
             # Without a store the transcript is NOT persisted while the chat looks healthy,
@@ -2851,7 +2851,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
                     "this conversation will [bold]NOT be saved[/bold] to disk and "
                     "cannot be resumed later. Searching past sessions is also disabled.\n"
                     f"  Reason: {e}\n"
-                    "  Fix the state.db store (e.g. `hermes update` to rebuild the venv) to restore persistence."
+                    "  Fix the state.db store (e.g. `eidolon update` to rebuild the venv) to restore persistence."
                 )
             except Exception:
                 print(
@@ -2884,7 +2884,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         self._clarify_deadline = self._sudo_deadline = self._approval_deadline = self._slash_confirm_deadline = 0
         self._approval_lock = threading.Lock()
         try:  # composer placeholder chosen once so it stays stable on screen
-            from hermes_cli.tips import get_random_composer_placeholder
+            from eidolon_cli.tips import get_random_composer_placeholder
             self._composer_placeholder = get_random_composer_placeholder()
         except Exception:
             self._composer_placeholder = ""
@@ -2913,7 +2913,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         self._attached_images: list[Path] = []
         self._image_counter = 0
         # Ctrl+S prompt stash; in-memory only because drafts routinely contain secrets.
-        from hermes_cli.prompt_stash import PromptStash as _PromptStash
+        from eidolon_cli.prompt_stash import PromptStash as _PromptStash
         self._prompt_stash = _PromptStash()
         self.preloaded_skills: list[str] = []
         self._startup_skills_line_shown = False
@@ -2957,7 +2957,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         if self._active_session_lease is not None:
             return True
         try:
-            from hermes_cli.active_sessions import format_refusal_stderr, try_acquire_active_session
+            from eidolon_cli.active_sessions import format_refusal_stderr, try_acquire_active_session
 
             lease, message = try_acquire_active_session(
                 session_id=self.session_id,
@@ -3029,7 +3029,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
     def _show_security_advisories(self):
         """Startup banner for unacked security advisories, on stderr (piped stdout stays clean); 24h rate-limited."""
         try:
-            from hermes_cli.security_advisories import detect_compromised, startup_banner
+            from eidolon_cli.security_advisories import detect_compromised, startup_banner
 
             banner = startup_banner(detect_compromised())
             if banner:
@@ -3075,7 +3075,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
                 logger.warning(
                     "Unknown skill(s) requested, skipping: %s. "
                     "Continuing with: %s. "
-                    "List available skills with `hermes skills list`.",
+                    "List available skills with `eidolon skills list`.",
                     missing_display,
                     ", ".join(loaded_skills),
                 )
@@ -3098,7 +3098,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
                 self._console_print("[yellow]⚠️  Some tools disabled (missing API keys):[/]")
                 for item in api_key_missing:
                     self._console_print(f"   [dim]• {item['name']}[/] [dim italic]({', '.join(item['missing_vars'])})[/]")
-                self._console_print("[dim]   Run 'hermes setup' to configure[/]")
+                self._console_print("[dim]   Run 'eidolon setup' to configure[/]")
         except Exception:
             pass
 
@@ -3108,7 +3108,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         terminal_cwd = os.getenv("TERMINAL_CWD", os.getcwd())
         terminal_timeout = os.getenv("TERMINAL_TIMEOUT", "60")
 
-        config_path = _hermes_home / 'config.yaml'
+        config_path = _eidolon_home / 'config.yaml'
         if not config_path.exists():
             config_path = Path(__file__).parent / 'cli-config.yaml'
         config_status = "(loaded)" if config_path.exists() else "(not found)"
@@ -3203,15 +3203,15 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         cmd_lower = command.lower().strip()  # lowercase only for matching; args keep their case
         cmd_original = command.strip()
 
-        # Aliases resolve via the central registry (hermes_cli/commands.py).
-        from hermes_cli.commands import resolve_command as _resolve_cmd
+        # Aliases resolve via the central registry (eidolon_cli/commands.py).
+        from eidolon_cli.commands import resolve_command as _resolve_cmd
         _base_word = cmd_lower.split()[0].lstrip("/")
         _cmd_def = _resolve_cmd(_base_word)
         canonical = _cmd_def.name if _cmd_def else _base_word
 
         # Observer-only pre_command plugin hook (return values ignored; never raises).
         if _cmd_def is not None:
-            from hermes_cli.plugins import fire_pre_command_hook
+            from eidolon_cli.plugins import fire_pre_command_hook
             fire_pre_command_hook(
                 surface="cli", command=canonical, alias_used=_base_word, args_raw=_slash_args(cmd_original),
                 session_key=getattr(self, "session_id", None), platform="cli",
@@ -3277,7 +3277,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
             # shell=True is intentional (user-authored config snippets, never LLM controlled);
             # the env is sanitized because this process holds every API key.
             from tools.environments.local import build_subprocess_env
-            from hermes_cli._subprocess_compat import windows_hide_flags
+            from eidolon_cli._subprocess_compat import windows_hide_flags
             result = subprocess.run(
                 exec_cmd, shell=True, capture_output=True, text=True, encoding="utf-8", errors="replace",
                 timeout=30, env=build_subprocess_env(),
@@ -3297,7 +3297,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         return True
 
     def _run_plugin_slash_command(self, base_cmd: str, user_args: str) -> None:
-        from hermes_cli.plugins import get_plugin_command_handler, resolve_plugin_command_result
+        from eidolon_cli.plugins import get_plugin_command_handler, resolve_plugin_command_result
 
         plugin_handler = get_plugin_command_handler(base_cmd.lstrip("/"))
         if not plugin_handler:
@@ -3353,7 +3353,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
 
     def _expand_slash_prefix(self, cmd_original: str, cmd_lower: str, skill_commands, skill_bundles) -> bool:
         """Unique-prefix expansion against built-in COMMANDS + skill commands/bundles (agrees with tab-completion)."""
-        from hermes_cli.commands import COMMANDS
+        from eidolon_cli.commands import COMMANDS
         typed_base = cmd_lower.split()[0]
         all_known = set(COMMANDS) | set(skill_commands) | set(skill_bundles)
         matches = [c for c in all_known if c.startswith(typed_base)]
@@ -3636,7 +3636,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         _welcome_text = "Welcome to Eidolon! Type your message or /help for commands."
         _welcome_color = "#FFF8DC"
         try:
-            from hermes_cli.skin_engine import get_active_skin
+            from eidolon_cli.skin_engine import get_active_skin
             _welcome_skin = get_active_skin()
             _welcome_text = _welcome_skin.get_branding("welcome", _welcome_text)
             _welcome_color = _welcome_skin.get_color("banner_text", _welcome_color)
@@ -3659,7 +3659,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         """Idle-window prewarms (picker cache, agent runtime imports) plus the redaction-off and OpenClaw-residue banners."""
         # Warm the /model picker cache off-thread (else its first open blocks ~1-2s).
         with suppress(Exception):
-            from hermes_cli.model_switch_providers import prewarm_picker_cache_async
+            from eidolon_cli.model_switch_providers import prewarm_picker_cache_async
             prewarm_picker_cache_async()
 
         # Pre-import the agent runtime (~1.5s: run_agent + OpenAI SDK) off-thread; the import
@@ -3702,7 +3702,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
                     _resid_color = "#B8860B"
                 self._console_print(f"[{_resid_color}]{openclaw_residue_hint_cli()}[/]")
                 try:
-                    from hermes_cli.config import get_config_path as _get_cfg_path_resid
+                    from eidolon_cli.config import get_config_path as _get_cfg_path_resid
                     mark_seen(_get_cfg_path_resid(), OPENCLAW_RESIDUE_FLAG)
                 except Exception:
                     pass  # banner fires again next session
@@ -3789,7 +3789,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
             print(
                 "Error: stdin (fd 0) is not available.\n"
                 "This can happen with certain Python installations (e.g. uv-managed cPython on macOS).\n"
-                "Try reinstalling Python via pyenv or Homebrew, then re-run: hermes setup"
+                "Try reinstalling Python via pyenv or Homebrew, then re-run: eidolon setup"
             )
             return False
         if sys.platform == "darwin":
@@ -3909,7 +3909,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
                     f"\nError: stdin is not usable ({_stdin_err}).\n"
                     "This can happen with certain Python installations (e.g. uv-managed cPython on macOS)\n"
                     "where kqueue cannot register fd 0.\n"
-                    "Try reinstalling Python via pyenv or Homebrew, then re-run: hermes setup"
+                    "Try reinstalling Python via pyenv or Homebrew, then re-run: eidolon setup"
                 )
             else:
                 raise
@@ -3919,7 +3919,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         # /update relaunch happens here, after prompt_toolkit restored terminal modes, on the
         # main thread (the process_loop thread would skip cleanup / only exit itself on Windows).
         if self._pending_relaunch:
-            from hermes_cli.relaunch import relaunch
+            from eidolon_cli.relaunch import relaunch
             relaunch(self._pending_relaunch, preserve_inherited=False)
 
     def _tui_shutdown(self):
@@ -3959,7 +3959,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
                 # /exit --delete: remove transcripts + SQLite history.
                 try:
                     _sid = self.agent.session_id
-                    if self._session_db.delete_session(_sid, sessions_dir=get_hermes_home() / "sessions"):
+                    if self._session_db.delete_session(_sid, sessions_dir=get_eidolon_home() / "sessions"):
                         _cprint(f"  {_DIM}✓ Session {_escape(_sid)} deleted{_RST}")
                     else:
                         _cprint(f"  {_DIM}✗ Session {_escape(_sid)} not found for deletion{_RST}")
@@ -4010,9 +4010,9 @@ def _run_kanban_goal_loop_q(cli: "HermesCLI", first_response: str) -> None:
     if raw_run_id and worker_run_id is None:
         logger.warning("invalid HERMES_KANBAN_RUN_ID=%r", raw_run_id)
 
-    from hermes_cli import kanban_db as _kb
-    from hermes_cli import kanban_db_connect as _kbc
-    from hermes_cli.goals import run_kanban_goal_loop as _run_loop, DEFAULT_MAX_TURNS as _DEF_TURNS
+    from eidolon_cli import kanban_db as _kb
+    from eidolon_cli import kanban_db_connect as _kbc
+    from eidolon_cli.goals import run_kanban_goal_loop as _run_loop, DEFAULT_MAX_TURNS as _DEF_TURNS
 
     # Goal text = title + body (the acceptance criteria the judge evaluates against).
     with _kbc.connect_closing() as conn:
@@ -4093,7 +4093,7 @@ def _run_quiet_single_query(cli, effective_query):
         _exit_code = 1
         if os.environ.get("HERMES_KANBAN_TASK") and result.get("failure_reason") in ("rate_limit", "billing"):
             try:
-                from hermes_cli.kanban_db import KANBAN_RATE_LIMIT_EXIT_CODE as _RL_CODE
+                from eidolon_cli.kanban_db import KANBAN_RATE_LIMIT_EXIT_CODE as _RL_CODE
                 _exit_code = _RL_CODE
             except Exception:
                 _exit_code = 1
@@ -4113,7 +4113,7 @@ def _route_single_query_images(cli, query, effective_query, single_query_images,
     try:
         from agent.image_routing import build_native_content_parts as _build_parts  # noqa: F811
         from agent.image_routing import decide_image_input_mode
-        from hermes_cli.config import load_config
+        from eidolon_cli.config import load_config
 
         _img_mode = decide_image_input_mode(
             (cli.provider or "").strip(), (cli.model or "").strip(), load_config(),
@@ -4151,8 +4151,8 @@ def _collect_kanban_task_images(single_query_images):
     if not _kanban_task_id:
         return single_query_image_urls
     try:
-        from hermes_cli import kanban_db as _kb
-        from hermes_cli import kanban_db_connect as _kbc
+        from eidolon_cli import kanban_db as _kb
+        from eidolon_cli import kanban_db_connect as _kbc
         from agent.image_routing import extract_image_refs as _extract_refs
 
         with _kbc.connect_closing() as _conn:
@@ -4236,7 +4236,7 @@ def _build_cli_from_args(model, toolsets, provider, reasoning, api_key, base_url
         except Exception:
             toolsets_list = None
         if toolsets_list is None:
-            from hermes_cli.tools_config import _get_platform_tools
+            from eidolon_cli.tools_config import _get_platform_tools
             toolsets_list = sorted(_get_platform_tools(CLI_CONFIG, "cli"))
 
     parsed_skills = _parse_skills_argument(skills)
@@ -4260,7 +4260,7 @@ def _build_cli_from_args(model, toolsets, provider, reasoning, api_key, base_url
         )
     except ImportError as e:
         # Direct `python cli.py` bypasses cmd_chat's partial-update ImportError handler.
-        from hermes_constants import emit_partial_update_hint
+        from eidolon_constants import emit_partial_update_hint
 
         if emit_partial_update_hint(e):
             sys.exit(1)
@@ -4287,7 +4287,7 @@ def _run_legacy_gateway():
     """Legacy `cli.py --gateway` entry: arm the startup watchdog (before importing the gateway graph), then run it."""
     import asyncio
     with suppress(Exception):
-        from hermes_startup_watchdog import arm_startup_watchdog
+        from eidolon_startup_watchdog import arm_startup_watchdog
         arm_startup_watchdog()
     from gateway.run import start_gateway
     print("Starting Eidolon Gateway (messaging platforms)...")
@@ -4487,13 +4487,13 @@ def main(
     """
     # UTF-8 stdio on Windows before any print (Rich box-drawing would UnicodeEncodeError on cp1252).
     with suppress(Exception):
-        from hermes_cli.stdio import configure_windows_stdio
+        from eidolon_cli.stdio import configure_windows_stdio
         configure_windows_stdio()
 
     os.environ["HERMES_INTERACTIVE"] = "1"  # terminal_tool: interactive sudo prompts with timeout
     # The banner names affected plugins; the raw per-name compat warnings would only duplicate it on stderr.
     with suppress(Exception):
-        from hermes_cli.plugin_compat import quiet_for_interactive
+        from eidolon_cli.plugin_compat import quiet_for_interactive
         quiet_for_interactive()
 
     if gateway:
@@ -4582,28 +4582,28 @@ def CanonicalUsage(*args, **kwargs):
 
 
 _PLUGIN_COMPAT_LAZY = {
-    'DEFAULT_BROWSER_CDP_URL': ('hermes_cli.browser_connect', 'DEFAULT_BROWSER_CDP_URL'),
-    'HERMES_AGENT_LOGO': ('hermes_cli.banner', 'HERMES_AGENT_LOGO'),
-    'HERMES_CADUCEUS': ('hermes_cli.banner', 'HERMES_CADUCEUS'),
-    'SlashCommandAutoSuggest': ('hermes_cli.commands_completion', 'SlashCommandAutoSuggest'),
-    'SlashCommandCompleter': ('hermes_cli.commands_completion', 'SlashCommandCompleter'),
-    'build_welcome_banner': ('hermes_cli.banner', 'build_welcome_banner'),
-    'display_hermes_home': ('hermes_constants', 'display_hermes_home'),
+    'DEFAULT_BROWSER_CDP_URL': ('eidolon_cli.browser_connect', 'DEFAULT_BROWSER_CDP_URL'),
+    'HERMES_AGENT_LOGO': ('eidolon_cli.banner', 'HERMES_AGENT_LOGO'),
+    'HERMES_CADUCEUS': ('eidolon_cli.banner', 'HERMES_CADUCEUS'),
+    'SlashCommandAutoSuggest': ('eidolon_cli.commands_completion', 'SlashCommandAutoSuggest'),
+    'SlashCommandCompleter': ('eidolon_cli.commands_completion', 'SlashCommandCompleter'),
+    'build_welcome_banner': ('eidolon_cli.banner', 'build_welcome_banner'),
+    'display_eidolon_home': ('eidolon_constants', 'display_eidolon_home'),
     'estimate_usage_cost': ('agent.usage_pricing', 'estimate_usage_cost'),
     'get_all_toolsets': ('toolsets', 'get_all_toolsets'),
     'get_job': ('cron.jobs', 'get_job'),
     'get_toolset_for_tool': ('model_tools', 'get_toolset_for_tool'),
     'get_toolset_info': ('toolsets', 'get_toolset_info'),
-    'init_skin_from_config': ('hermes_cli.skin_engine', 'init_skin_from_config'),
-    'is_browser_debug_ready': ('hermes_cli.browser_connect', 'is_browser_debug_ready'),
+    'init_skin_from_config': ('eidolon_cli.skin_engine', 'init_skin_from_config'),
+    'is_browser_debug_ready': ('eidolon_cli.browser_connect', 'is_browser_debug_ready'),
     'is_table_divider': ('agent.markdown_tables', 'is_table_divider'),
     'looks_like_table_row': ('agent.markdown_tables', 'looks_like_table_row'),
-    'manual_chrome_debug_command': ('hermes_cli.browser_connect', 'manual_chrome_debug_command'),
-    'print_config_warnings': ('hermes_cli.config', 'print_config_warnings'),
-    'prompt_for_secret': ('hermes_cli.callbacks', 'prompt_for_secret'),
+    'manual_chrome_debug_command': ('eidolon_cli.browser_connect', 'manual_chrome_debug_command'),
+    'print_config_warnings': ('eidolon_cli.config', 'print_config_warnings'),
+    'prompt_for_secret': ('eidolon_cli.callbacks', 'prompt_for_secret'),
     'set_friendly_tool_labels': ('agent.display', 'set_friendly_tool_labels'),
     'set_tool_preview_max_len': ('agent.display', 'set_tool_preview_max_len'),
-    'setup_logging': ('hermes_logging', 'setup_logging'),
+    'setup_logging': ('eidolon_logging', 'setup_logging'),
 }
 
 
@@ -4612,7 +4612,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

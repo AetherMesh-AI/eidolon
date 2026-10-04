@@ -200,9 +200,9 @@ export default defineConfig(({ command }) => ({
     alias: {
       '@/debug/dev-only': debugEntry(command, process.env as Record<string, string>),
       '@': path.resolve(__dirname, './src'),
-      '@hermes/plugin-sdk': path.resolve(__dirname, './src/sdk/index.ts'),
-      '@hermes/shared/billing': path.resolve(__dirname, '../shared/src/billing-types.ts'),
-      '@hermes/shared': path.resolve(__dirname, '../shared/src'),
+      '@aethermesh/plugin-sdk': path.resolve(__dirname, './src/sdk/index.ts'),
+      '@aethermesh/shared/billing': path.resolve(__dirname, '../shared/src/billing-types.ts'),
+      '@aethermesh/shared': path.resolve(__dirname, '../shared/src'),
       // The tour tool's preview surface injects driver.js's prebuilt IIFE into
       // the pane's guest page as raw source; the package's exports map doesn't
       // expose that dist file (nor ./package.json), so resolve the main entry

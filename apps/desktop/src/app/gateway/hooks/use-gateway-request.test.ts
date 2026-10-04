@@ -1,4 +1,4 @@
-import type { GatewayWsUrlResult } from '@hermes/shared'
+import type { GatewayWsUrlResult } from '@aethermesh/shared'
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -11,7 +11,7 @@ const gatewayMocks = vi.hoisted(() => ({
   }>
 }))
 
-vi.mock('@/hermes', async importOriginal => {
+vi.mock('@/eidolon', async importOriginal => {
   const actual = await importOriginal<typeof HermesModule>()
 
   class FakeHermesGateway {
@@ -50,8 +50,8 @@ vi.mock('@/hermes', async importOriginal => {
   return { ...actual, HermesGateway: FakeHermesGateway }
 })
 
-import type * as HermesModule from '@/hermes'
-import type { HermesGateway } from '@/hermes'
+import type * as HermesModule from '@/eidolon'
+import type { HermesGateway } from '@/eidolon'
 import {
   $gateway,
   closeSecondaryGateways,

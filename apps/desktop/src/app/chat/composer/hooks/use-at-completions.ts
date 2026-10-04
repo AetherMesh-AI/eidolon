@@ -3,7 +3,7 @@ import { useCallback } from 'react'
 
 import { refChipLabel } from '@/components/assistant-ui/directive-text'
 import { useContributions } from '@/contrib/react/use-contributions'
-import type { HermesGateway } from '@/hermes'
+import type { HermesGateway } from '@/eidolon'
 import { cachedPathCompletion, hasCachedPathCompletion } from '@/lib/slash-completion-cache'
 import { normalize } from '@/lib/text'
 

@@ -1,7 +1,7 @@
 """Session transcript stores are read-only to agent file tools.
 
 Inspired by Claude Code 2.1.205's auto-mode rule preventing transcript
-manipulation. Hermes keeps canonical conversation history in state.db and may
+manipulation. Eidolon keeps canonical conversation history in state.db and may
 also emit legacy JSON snapshots under sessions/; agent tools must not rewrite
 or delete either store.
 """
@@ -18,7 +18,7 @@ import pytest
 def fake_homes(tmp_path, monkeypatch):
     """Point HERMES_HOME at a temp profile dir.
 
-    Uses the real env-var resolution chain (get_hermes_home /
+    Uses the real env-var resolution chain (get_eidolon_home /
     get_default_hermes_root) instead of monkeypatching private helpers —
     a stale monkeypatch on a since-deleted helper broke CI in July 2026
     (monkeypatch.setattr raises AttributeError on missing attributes).

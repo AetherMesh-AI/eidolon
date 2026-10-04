@@ -19,7 +19,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, NamedTuple, Optional, Set
 
-from hermes_constants import get_hermes_home
+from eidolon_constants import get_eidolon_home
 from tools import skill_usage
 from utils import atomic_json_write
 
@@ -35,7 +35,7 @@ DEFAULT_CONSOLIDATE = False
 # --- .curator_state — persistent scheduler + status ---
 
 def _state_file() -> Path:
-    return get_hermes_home() / "skills" / ".curator_state"
+    return get_eidolon_home() / "skills" / ".curator_state"
 
 
 def load_state() -> Dict[str, Any]:
@@ -81,7 +81,7 @@ def _subdict(node: Any, *keys: str) -> Dict[str, Any]:
 def _read_config_section(*path: str, label: str, log: logging.Logger = logger) -> Dict[str, Any]:
     """Read a nested section of ~/.hermes/config.yaml. Tolerates missing file."""
     try:
-        from hermes_cli.config import load_config_readonly
+        from eidolon_cli.config import load_config_readonly
         cfg = load_config_readonly()
     except Exception as e:
         log.debug("Failed to load config for %s: %s", label, e)
@@ -121,7 +121,7 @@ def get_archive_after_days() -> int:
 
 
 def get_prune_builtins() -> bool:
-    """Bundled built-ins are curation candidates (ON by default); a suppression list keeps them archived across `hermes update` re-seeds. Hub skills are never pruned."""
+    """Bundled built-ins are curation candidates (ON by default); a suppression list keeps them archived across `eidolon update` re-seeds. Hub skills are never pruned."""
     return bool(_load_config().get("prune_builtins", True))
 
 
@@ -264,7 +264,7 @@ CURATOR_DRY_RUN_BANNER = (
 
 
 CURATOR_REVIEW_PROMPT = (
-    "You are running as Hermes' background skill CURATOR. This is an "
+    "You are running as Eidolon' background skill CURATOR. This is an "
     "UMBRELLA-BUILDING consolidation pass, not a passive audit and not a "
     "duplicate-finder.\n\n"
     "The goal of the skill collection is a LIBRARY OF CLASS-LEVEL "
@@ -446,7 +446,7 @@ CURATOR_PRUNE_BUILTINS_NOTE = (
     "rule #1 for bundled skills ONLY. Hub-installed skills "
     "remain strictly off-limits. Treat a stale built-in the "
     "same as a stale agent-created skill: archive it (never "
-    "delete). It will be restored on `hermes update` only if "
+    "delete). It will be restored on `eidolon update` only if "
     "the user explicitly restores it."
 )
 
@@ -454,7 +454,7 @@ CURATOR_PRUNE_BUILTINS_NOTE = (
 
 def _reports_root() -> Path:
     """``~/.hermes/logs/curator/`` (telemetry next to agent.log, not under skills/). mkdir'd here too so gateway-only / bare-library entry paths work."""
-    root = get_hermes_home() / "logs" / "curator"
+    root = get_eidolon_home() / "logs" / "curator"
     try:
         root.mkdir(parents=True, exist_ok=True)
     except OSError as e:
@@ -993,8 +993,8 @@ def _resolve_review_provider() -> tuple:
     rp: Dict[str, Any] = {}
     overrides, provider, model_name = {}, None, ""
     try:
-        from hermes_cli.config import load_config_readonly
-        from hermes_cli.runtime_provider import resolve_runtime_provider
+        from eidolon_cli.config import load_config_readonly
+        from eidolon_cli.runtime_provider import resolve_runtime_provider
         binding = _resolve_review_runtime(load_config_readonly())
         model_name = binding.model
         rp = resolve_runtime_provider(

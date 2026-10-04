@@ -37,21 +37,21 @@ except ImportError:
 
 # --- Helpers -----------------------------------------------------------------
 
-def _hermes_home() -> Path:
+def _eidolon_home() -> Path:
     try:
-        from hermes_constants import get_hermes_home
-        return get_hermes_home()
+        from eidolon_constants import get_eidolon_home
+        return get_eidolon_home()
     except ImportError:
         return Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
 
 
 def _get_sessions_dir() -> Path:
-    return _hermes_home() / "sessions"
+    return _eidolon_home() / "sessions"
 
 
 def _read_state_db_mtime() -> float:
     try:
-        return (_hermes_home() / "state.db").stat().st_mtime
+        return (_eidolon_home() / "state.db").stat().st_mtime
     except OSError:  # missing file included
         return 0.0
 
@@ -78,7 +78,7 @@ def _close_quietly(db, what: str) -> None:
 def _get_session_db():
     """SessionDB instance for reading message transcripts, or None."""
     try:
-        from hermes_state_registry import acquire
+        from eidolon_state_registry import acquire
         return acquire()
     except Exception as e:
         logger.debug("SessionDB unavailable: %s", e)
@@ -96,7 +96,7 @@ def _load_session_messages(session_id: str):
         return None, f"Failed to read messages: {e}"
     finally:
         try:
-            from hermes_state_registry import release_or_close
+            from eidolon_state_registry import release_or_close
             release_or_close(db)
         except Exception:
             logger.debug("Failed to close MCP SessionDB", exc_info=True)
@@ -180,7 +180,7 @@ def _load_sessions_index_from_json() -> dict:
 
 def _load_channel_directory() -> dict:
     """Load the cached channel directory for available targets."""
-    return _read_json(_hermes_home() / "channel_directory.json")
+    return _read_json(_eidolon_home() / "channel_directory.json")
 
 
 def _coerce_int(value, *, default: int, minimum: int, maximum: int) -> int:

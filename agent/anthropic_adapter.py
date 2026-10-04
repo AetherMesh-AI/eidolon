@@ -1,4 +1,4 @@
-"""Anthropic Messages API adapter: client construction + the Messages call for Hermes's
+"""Anthropic Messages API adapter: client construction + the Messages call for Eidolon's
 OpenAI-style internals. Auth: API keys (``sk-ant-api*``) -> x-api-key; OAuth setup-tokens
 (``sk-ant-oat*``) and Claude Code credentials -> Bearer + beta header. Endpoint predicates,
 payload conversion and credentials live in ``agent/anthropic_{endpoints,message_convert,
@@ -24,7 +24,7 @@ from agent.anthropic_message_convert import (
     convert_messages_to_anthropic, convert_tools_to_anthropic, normalize_model_name,
 )
 
-from hermes_cli import __version__ as _HERMES_VERSION
+from eidolon_cli import __version__ as _HERMES_VERSION
 
 
 # ``import anthropic`` is deliberately NOT at module top: the SDK costs ~220 ms of imports and
@@ -58,7 +58,7 @@ def _require_sdk(purpose: str, verb: str = "Install it with"):
 logger = logging.getLogger(__name__)
 
 THINKING_BUDGET = {"xhigh": 32000, "high": 16000, "medium": 8000, "low": 4000}
-# Hermes effort -> Anthropic adaptive-thinking effort (output_config.effort). 4.7+ exposes
+# Eidolon effort -> Anthropic adaptive-thinking effort (output_config.effort). 4.7+ exposes
 # low/medium/high/xhigh/max; Opus/Sonnet 4.6 have no xhigh, so callers downgrade xhigh->max
 # there (see _supports_xhigh_effort). "minimal" is a legacy alias for low on every model.
 ADAPTIVE_EFFORT_MAP = {
@@ -245,7 +245,7 @@ def _get_claude_code_version() -> str:
 _CLAUDE_CODE_SYSTEM_PREFIX = "You are Claude Code, Anthropic's official CLI for Claude."
 _MCP_TOOL_PREFIX = "mcp__"
 
-# Anthropic's OAuth billing classifier fingerprints certain Hermes tool schemas/prose as a
+# Anthropic's OAuth billing classifier fingerprints certain Eidolon tool schemas/prose as a
 # third-party app and reroutes to the metered extra-usage lane (HTTP 400 "You're out of extra
 # usage" on a valid subscription). Live A/B repros isolated two independent triggers — the
 # ``session_search`` tool (schema/name/prose) and the ``memory`` tool (schema/name) — so both are
@@ -425,7 +425,7 @@ def _normalize_to_mcp_wire(name: str) -> str:
     """OAuth wire form of a tool name (no aliasing): ``mcp__<...>``. Anthropic's OAuth billing
     classifier treats a single-underscore ``mcp_`` tool name as a third-party-app fingerprint
     (HTTP 400 "Third-party apps now draw from extra usage"); ``mcp__foo`` is accepted. Both bare
-    Hermes tools (``read_file``) and native MCP tools registered as ``mcp_<server>_<tool>`` must
+    Eidolon tools (``read_file``) and native MCP tools registered as ``mcp_<server>_<tool>`` must
     land on the double-underscore form. normalize_response reverses both via registry lookup."""
     if name.startswith("mcp__"):
         return name  # already correct, don't double-prefix
@@ -453,7 +453,7 @@ def _oauth_wire_namer(anthropic_tools: List[Dict[str, Any]]):
 
 
 _OAUTH_SYSTEM_REPLACEMENTS = (
-    ("Hermes Agent", "Claude Code"), ("Hermes agent", "Claude Code"),
+    ("Eidolon Agent", "Claude Code"), ("Eidolon agent", "Claude Code"),
     ("hermes-agent", "claude-code"), ("Nous Research", "Anthropic"),
 )
 
@@ -489,7 +489,7 @@ def _thinking_kwargs(reasoning_config: Dict[str, Any], model: str, effective_max
     """Map ``reasoning_config`` to Anthropic thinking kwargs. Adaptive models (Claude 4.6+,
     Kimi/Moonshot) get ``thinking.type=adaptive`` + ``output_config.effort``; older models and
     manual-only compat endpoints (MiniMax) get budget_tokens. Haiku has no extended thinking. On
-    4.7+ ``thinking.display`` defaults to "omitted", hiding the reasoning Hermes shows in its CLI,
+    4.7+ ``thinking.display`` defaults to "omitted", hiding the reasoning Eidolon shows in its CLI,
     so "summarized" is requested to keep the activity feed populated."""
     if reasoning_config.get("enabled") is False:
         # Adaptive models think by DEFAULT, so omitting the parameter is not a disable — the user
@@ -564,7 +564,7 @@ def build_anthropic_kwargs(
     # ``output_config.effort``, and the replay-validation 400s that originally motivated dropping the
     # parameter (#13848) no longer occur. (Kimi on chat_completions enables thinking via extra_body in the
     # ChatCompletionsTransport — see #13503.) On 4.7+ the `thinking.display` field defaults to "omitted",
-    # which silently hides reasoning text that Hermes surfaces in its CLI. We request "summarized" so the
+    # which silently hides reasoning text that Eidolon surfaces in its CLI. We request "summarized" so the
     # reasoning blocks stay populated — matching 4.6 behavior and preserving the activity-feed UX during
     # long tool runs.
     if reasoning_config and isinstance(reasoning_config, dict):
@@ -695,7 +695,7 @@ _PLUGIN_COMPAT_LAZY = {
     'base_url_host_matches': ('utils', 'base_url_host_matches'),
     'base_url_hostname': ('utils', 'base_url_hostname'),
     'claude_code_credentials_path': ('agent.anthropic_credentials', 'claude_code_credentials_path'),
-    'get_hermes_home': ('hermes_constants', 'get_hermes_home'),
+    'get_eidolon_home': ('eidolon_constants', 'get_eidolon_home'),
     'is_claude_code_token_valid': ('agent.anthropic_credentials', 'is_claude_code_token_valid'),
     'is_rotation_consumed_uncommitted': ('agent.anthropic_credentials', 'is_rotation_consumed_uncommitted'),
     'mark_rotation_consumed_uncommitted': ('agent.anthropic_credentials', 'mark_rotation_consumed_uncommitted'),
@@ -713,7 +713,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

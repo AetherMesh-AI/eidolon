@@ -14,7 +14,7 @@ import time
 
 import pytest
 
-from hermes_state import SessionDB
+from eidolon_state import SessionDB
 from tools.session_search_tool import (
     SESSION_SEARCH_SCHEMA,
     _format_timestamp,
@@ -151,9 +151,9 @@ class TestBrowseShape:
                 return []
 
         db = _DB()
-        monkeypatch.setattr("hermes_state_registry.acquire", lambda: db)
+        monkeypatch.setattr("eidolon_state_registry.acquire", lambda: db)
         monkeypatch.setattr(
-            "hermes_state_registry.release_or_close",
+            "eidolon_state_registry.release_or_close",
             lambda _: setattr(db, "released", db.released + 1),
         )
 
@@ -517,7 +517,7 @@ class TestSessionLink:
 
 class TestCrossProfileRead:
     def _patch_profiles(self, monkeypatch, home, exists=True):
-        from hermes_cli import profiles as profiles_mod
+        from eidolon_cli import profiles as profiles_mod
         monkeypatch.setattr(profiles_mod, "normalize_profile_name", lambda n: n)
         monkeypatch.setattr(profiles_mod, "validate_profile_name", lambda n: None)
         monkeypatch.setattr(profiles_mod, "profile_exists", lambda n: exists)
@@ -534,7 +534,7 @@ class TestCrossProfileRead:
         other._conn.commit()
 
         from collections import namedtuple
-        from hermes_cli import profiles as profiles_mod
+        from eidolon_cli import profiles as profiles_mod
         Info = namedtuple("Info", "name path")
         monkeypatch.setattr(profiles_mod, "get_profile_dir", lambda n: tmp_path / "default_home")
         monkeypatch.setattr(profiles_mod, "list_profiles", lambda: [Info("asdf", other_home)])

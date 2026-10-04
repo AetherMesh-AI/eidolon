@@ -21,11 +21,11 @@ class TestSaveConfigValueAtomic:
             "model": {"default": "test-model", "provider": "openrouter"},
             "display": {"skin": "default"},
         }))
-        # save_config_value resolves the target live via get_hermes_home(), so
-        # point HERMES_HOME at the temp dir (the _hermes_home import-time
+        # save_config_value resolves the target live via get_eidolon_home(), so
+        # point HERMES_HOME at the temp dir (the _eidolon_home import-time
         # constant is no longer consulted).
         monkeypatch.setenv("HERMES_HOME", str(hermes_home))
-        monkeypatch.setattr("cli._hermes_home", hermes_home)
+        monkeypatch.setattr("cli._eidolon_home", hermes_home)
         return config_path
 
     def test_calls_roundtrip_yaml_update(self, config_env, monkeypatch):
@@ -52,7 +52,7 @@ class TestSaveConfigValueAtomic:
     def test_model_write_runs_shared_cron_drift_warning(self, config_env, monkeypatch):
         warning = MagicMock()
         monkeypatch.setattr(
-            "hermes_cli.config.warn_unpinned_cron_jobs_after_model_config_change",
+            "eidolon_cli.config.warn_unpinned_cron_jobs_after_model_config_change",
             warning,
         )
 

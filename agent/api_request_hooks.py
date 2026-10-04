@@ -167,7 +167,7 @@ class ApiRequestHooksMixin:
     ) -> None:
         # Lazy module import (not from-import) so tests can replace lifecycle dispatch at this call site.
         with suppress(Exception):
-            from hermes_cli import lifecycle as _lifecycle
+            from eidolon_cli import lifecycle as _lifecycle
             if not _lifecycle.has_hook("api_request_error"):
                 return
             ended_at = time.time()

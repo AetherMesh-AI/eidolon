@@ -10,17 +10,17 @@ from __future__ import annotations
 
 import pytest
 
-from hermes_constants import reset_hermes_home_override, set_hermes_home_override
+from eidolon_constants import reset_eidolon_home_override, set_eidolon_home_override
 from plugins.plugin_storage import plugin_data_dir, plugin_db
 
 
 @pytest.fixture
 def hermes_home(tmp_path):
-    token = set_hermes_home_override(str(tmp_path))
+    token = set_eidolon_home_override(str(tmp_path))
     try:
         yield tmp_path
     finally:
-        reset_hermes_home_override(token)
+        reset_eidolon_home_override(token)
 
 
 def test_data_dir_lives_outside_the_install_tree(hermes_home):

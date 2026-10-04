@@ -21,7 +21,7 @@ def prepare_ledger(
     conn: sqlite3.Connection, *, db_label: str, synchronous_full: bool = True
 ) -> None:
     """Configure row access, busy timeout, WAL, and optional full synchronization."""
-    from hermes_state_wal import apply_wal_with_fallback
+    from eidolon_state_wal import apply_wal_with_fallback
 
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA busy_timeout=5000")

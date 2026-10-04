@@ -14,8 +14,8 @@ from pathlib import Path
 from typing import Dict, Optional, Any
 
 from gateway.platforms._shared import get_scoped_secret
-from hermes_cli._subprocess_compat import windows_detach_popen_kwargs
-from hermes_constants import (find_node_executable, get_hermes_dir, with_hermes_node_path)
+from eidolon_cli._subprocess_compat import windows_detach_popen_kwargs
+from eidolon_constants import (find_node_executable, get_hermes_dir, with_hermes_node_path)
 
 _IS_WINDOWS = platform.system() == "Windows"
 
@@ -56,7 +56,7 @@ def _safe_ints(tokens) -> list:
 
 def _windows_listener_pids(port: int) -> list:
     """PIDs in LISTENING state on ``port`` via netstat (Windows)."""
-    from hermes_cli._subprocess_compat import windows_hide_flags
+    from eidolon_cli._subprocess_compat import windows_hide_flags
     result = subprocess.run(["netstat", "-ano", "-p", "TCP"], timeout=5, creationflags=windows_hide_flags(), **_RUN_TEXT)
     rows = (line.split() for line in result.stdout.splitlines())
     return _safe_ints(p[4] for p in rows if len(p) >= 5 and p[3] == "LISTENING" and p[1].endswith(f":{port}"))
@@ -88,7 +88,7 @@ def _kill_port_process(port: int) -> None:
                 logger.warning("[whatsapp] Not killing PID %s on port %d: process is not a node bridge (or identity unverifiable)", pid, port)
                 continue
             if _IS_WINDOWS:
-                from hermes_cli._subprocess_compat import windows_hide_flags
+                from eidolon_cli._subprocess_compat import windows_hide_flags
                 # Only SubprocessError is swallowed per-PID; an OSError (e.g. taskkill missing) aborts the scan.
                 with suppress(subprocess.SubprocessError):
                     subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True, stdin=subprocess.DEVNULL, timeout=5, creationflags=windows_hide_flags())
@@ -186,7 +186,7 @@ def _cache_dirs() -> tuple:
 
 
 def _is_allowed_bridge_path(url: str) -> bool:
-    """Absolute bridge path resolves (symlinks included) inside a Hermes cache dir — a rogue bridge could hand back /etc/passwd."""
+    """Absolute bridge path resolves (symlinks included) inside a Eidolon cache dir — a rogue bridge could hand back /etc/passwd."""
     try:
         resolved = Path(url).resolve()
     except (OSError, ValueError):
@@ -208,7 +208,7 @@ def _file_content_hash(path: Path) -> str:
 
 
 def check_whatsapp_requirements() -> bool:
-    """Node.js (Hermes-managed first, so a bad system Node on PATH can't break Windows) is available."""
+    """Node.js (Eidolon-managed first, so a bad system Node on PATH can't break Windows) is available."""
     _node = find_node_executable("node")
     try:
         return bool(_node) and subprocess.run([_node, "--version"], timeout=5, **_RUN_TEXT).returncode == 0
@@ -318,7 +318,7 @@ class WhatsAppAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
         except OSError:
             pass
         print(f"[{self.name}] Installing WhatsApp bridge dependencies...")
-        # Hermes-managed portable Node's npm.cmd first (Windows), then PATH.
+        # Eidolon-managed portable Node's npm.cmd first (Windows), then PATH.
         _npm_bin = find_node_executable("npm") or "npm"
         detail = ""
         try:  # Default 300s accommodates slow systems like an Unraid NAS.
@@ -335,7 +335,7 @@ class WhatsAppAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
             print(f"[{self.name}] Failed to install dependencies: {e}")
             detail = f" ({e})"
         self._set_fatal_error("whatsapp_npm_install_failed", f"WhatsApp bridge npm install failed{detail}. Run `cd {bridge_dir} && {_npm_bin} install` "
-                              "manually, then restart `hermes gateway`.", retryable=False)
+                              "manually, then restart `eidolon gateway`.", retryable=False)
         return False
 
     def _attach_to_bridge(self, managed_process) -> None:
@@ -433,7 +433,7 @@ class WhatsAppAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
         creds_path = self._session_path / "creds.json"
         checks = (
             (check_whatsapp_requirements, ("[%s] Node.js not found. WhatsApp requires Node.js.", self.name),
-             "whatsapp_node_missing", "Node.js is not installed — install Node.js and re-run `hermes gateway`."),
+             "whatsapp_node_missing", "Node.js is not installed — install Node.js and re-run `eidolon gateway`."),
             (bridge_path.exists, ("[%s] Bridge script not found: %s", self.name, bridge_path),
              "whatsapp_bridge_missing", f"WhatsApp bridge script missing at {bridge_path}."),
             (creds_path.exists, ("[%s] WhatsApp is enabled but not paired (no creds.json at %s). Pair from the dashboard or run "
@@ -828,7 +828,7 @@ class WhatsAppAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
             return None
 
 
-# ── Plugin glue: register(ctx) plus the hooks for gateway/run.py, gateway/config.py, hermes_cli/gateway.py, send_message_tool.py.
+# ── Plugin glue: register(ctx) plus the hooks for gateway/run.py, gateway/config.py, eidolon_cli/gateway.py, send_message_tool.py.
 
 _WA_EXT_MEDIA_TYPE = {
     **dict.fromkeys((".jpg", ".jpeg", ".png", ".webp", ".gif"), "image"),
@@ -892,8 +892,8 @@ async def _standalone_send(pconfig, chat_id, message, *, thread_id=None, media_f
 
 def interactive_setup() -> None:
     """Guide the user through WhatsApp setup (CLI helpers lazy-imported)."""
-    from hermes_cli.config import get_env_value, remove_env_value, save_env_value
-    from hermes_cli.cli_output import prompt, prompt_yes_no, print_header, print_info, print_success
+    from eidolon_cli.config import get_env_value, remove_env_value, save_env_value
+    from eidolon_cli.cli_output import prompt, prompt_yes_no, print_header, print_info, print_success
     print_header("WhatsApp")
     print_info("WhatsApp uses a local Node.js bridge (WhatsApp Web client).")
     print_info("Start the bridge separately; the gateway connects to it over HTTP.")
@@ -946,8 +946,8 @@ def _is_connected(config) -> bool:
     """Connected == WHATSAPP_ENABLED opt-in (or an enabled PlatformConfig with extras); auth lives in the bridge."""
     if config is not None and getattr(config, "enabled", False) and (getattr(config, "extra", {}) or {}):
         return True
-    # Via hermes_cli.gateway.get_env_value (not os.getenv) so setup-status callers that patch it observe the same value.
-    import hermes_cli.gateway as gateway_mod
+    # Via eidolon_cli.gateway.get_env_value (not os.getenv) so setup-status callers that patch it observe the same value.
+    import eidolon_cli.gateway as gateway_mod
     return (gateway_mod.get_env_value("WHATSAPP_ENABLED") or "").strip().lower() in {"true", "1", "yes"}
 
 

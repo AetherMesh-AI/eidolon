@@ -7,8 +7,8 @@ import pytest
 from gateway.config import Platform
 from gateway.run import GatewayRunner, _profile_runtime_scope
 from gateway.session import SessionSource
-from hermes_cli.heartbeat import HeartbeatManager, HeartbeatState, save_heartbeat, migrate_heartbeat_to_session
-from hermes_constants import get_hermes_home
+from eidolon_cli.heartbeat import HeartbeatManager, HeartbeatState, save_heartbeat, migrate_heartbeat_to_session
+from eidolon_constants import get_eidolon_home
 
 
 @pytest.mark.asyncio
@@ -27,7 +27,7 @@ async def test_watches_read_and_admit_in_each_owner_profile(tmp_path, monkeypatc
         _active_sessions = {}
 
         async def handle_message(self, event):
-            rows.append((event.source.profile, str(get_hermes_home()), event.text))
+            rows.append((event.source.profile, str(get_eidolon_home()), event.text))
             self._active_sessions[event.metadata['gateway_session_key']] = True
 
     runner._adapter_for_source = lambda source: Adapter()

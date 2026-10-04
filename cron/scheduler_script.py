@@ -22,7 +22,7 @@ from cron.jobs import _ensure_cron_dir
 from pathlib import Path
 from typing import Any, Callable, Optional, TYPE_CHECKING
 
-from hermes_cli._subprocess_compat import windows_hide_flags
+from eidolon_cli._subprocess_compat import windows_hide_flags
 
 if TYPE_CHECKING:
     from cron.scheduler import _CancelEventLike
@@ -257,7 +257,7 @@ def _resolve_script_path(script_path: str) -> tuple[Optional[Path], Optional[str
     """Validate a job script path; ``(path, None)`` or ``(None, error)``. Scripts MUST resolve
     inside HERMES_HOME/scripts/ (relative, absolute and ``~`` paths are all validated — path
     traversal / absolute-path injection); contract of lifecycle_guard._expand_candidate_path."""
-    scripts_dir = _sched._get_hermes_home() / "scripts"
+    scripts_dir = _sched._get_eidolon_home() / "scripts"
     _ensure_cron_dir(scripts_dir)
     scripts_dir_resolved = scripts_dir.resolve()
 

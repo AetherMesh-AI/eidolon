@@ -305,7 +305,7 @@ def atomic_roundtrip_yaml_update(path: Union[str, Path], key_path: str, value: A
     # blind splitting — same navigation as ``hermes config set``'s ``_set_nested``; otherwise
     # /model + TUI persistence wrote ``glm-5: {'3': ...}`` phantom siblings.
     # See #91607.
-    from hermes_cli.config import _greedy_literal_match, _split_key_path
+    from eidolon_cli.config import _greedy_literal_match, _split_key_path
 
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -344,7 +344,7 @@ def atomic_roundtrip_yaml_save(path: Union[str, Path], new_state: dict) -> None:
     """
     from ruamel.yaml.comments import CommentedMap
     from ruamel.yaml.scalarstring import DoubleQuotedScalarString
-    from hermes_cli.config import require_readable_config_before_write
+    from eidolon_cli.config import require_readable_config_before_write
 
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)

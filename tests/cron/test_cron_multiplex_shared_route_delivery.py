@@ -15,7 +15,7 @@ import yaml
 from cron.scheduler import _deliver_result
 from cron.scheduler_preflight import SharedRouteAdapters, _primary_profile_routes_for_current_home
 from gateway.config import Platform, PlatformConfig
-from hermes_constants import reset_hermes_home_override, set_hermes_home_override
+from eidolon_constants import reset_eidolon_home_override, set_eidolon_home_override
 
 PRIMARY_YAML = {
     "gateway": {
@@ -77,10 +77,10 @@ def test_satellite_routes_exact_target_through_primary_adapter(tmp_path, monkeyp
     fitness_home = root / "profiles" / "fitness"
     fitness_home.mkdir(parents=True)
     (root / "config.yaml").write_text(yaml.safe_dump(PRIMARY_YAML), encoding="utf-8")
-    monkeypatch.setattr("hermes_constants.get_default_hermes_root", lambda: root)
+    monkeypatch.setattr("eidolon_constants.get_default_hermes_root", lambda: root)
     primary = _primary_adapter()
 
-    token = set_hermes_home_override(str(fitness_home))
+    token = set_eidolon_home_override(str(fitness_home))
     try:
         shared = SharedRouteAdapters(
             {Platform.DISCORD: primary}, _primary_profile_routes_for_current_home()
@@ -101,7 +101,7 @@ def test_satellite_routes_exact_target_through_primary_adapter(tmp_path, monkeyp
             assert primary.sent == []
             assert standalone == [chat]
     finally:
-        reset_hermes_home_override(token)
+        reset_eidolon_home_override(token)
 
 
 def test_shared_view_is_falsy_without_routes_or_primary_adapters():

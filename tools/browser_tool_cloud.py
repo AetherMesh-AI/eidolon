@@ -9,7 +9,7 @@ from typing import Callable, Optional
 
 from agent.browser_provider import BrowserProvider as CloudBrowserProvider
 from agent.browser_registry import get_provider as _registry_get_browser_provider
-from hermes_constants import get_hermes_home_override, hermes_home_key
+from eidolon_constants import get_eidolon_home_override, hermes_home_key
 from plugins.browser.browser_use.provider import BrowserUseBrowserProvider
 from plugins.browser.browserbase.provider import BrowserbaseBrowserProvider
 from tools.tool_backend_helpers import normalize_browser_cloud_provider
@@ -29,14 +29,14 @@ def _memo(_bt, resolved_attr: str, cache_attr: str, compute: Callable[[], object
 def _ensure_browser_plugins_loaded() -> None:
     """Idempotently trigger plugin discovery (standalone scripts/tests may never import ``model_tools``)."""
     try:
-        from hermes_cli.plugins import _ensure_plugins_discovered
+        from eidolon_cli.plugins import _ensure_plugins_discovered
         _ensure_plugins_discovered()
     except Exception as exc:
         _origin().logger.debug("Browser plugin discovery failed (non-fatal): %s", exc)
 
 
 def _get_cloud_provider() -> Optional[CloudBrowserProvider]:
-    """Return the provider cached for the active Hermes profile."""
+    """Return the provider cached for the active Eidolon profile."""
     _bt = _origin()
     scope = hermes_home_key()
     with _bt._cloud_provider_cache_lock:
@@ -117,7 +117,7 @@ def _resolve_cloud_provider_uncached() -> Optional[CloudBrowserProvider]:
     resolved: Optional[CloudBrowserProvider] = None
     provider_key = None
     try:
-        from hermes_cli.config import read_raw_config
+        from eidolon_cli.config import read_raw_config
         browser_cfg = read_raw_config().get("browser", {})
         if isinstance(browser_cfg, dict) and "cloud_provider" in browser_cfg:
             provider_key = normalize_browser_cloud_provider(browser_cfg.get("cloud_provider"))
@@ -236,7 +236,7 @@ def _allow_private_urls() -> bool:
     resolve on every call so one profile's opt-out is never reused by another.
     """
     _bt = _origin()
-    if get_hermes_home_override() is not None:
+    if get_eidolon_home_override() is not None:
         return _resolve_allow_private_urls()
     return _memo(_bt, "_allow_private_urls_resolved", "_cached_allow_private_urls", _resolve_allow_private_urls)
 

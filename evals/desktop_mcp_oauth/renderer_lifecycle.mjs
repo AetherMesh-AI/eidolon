@@ -70,7 +70,7 @@ const bundle = await build({
   format: 'esm',
   platform: 'browser',
   jsx: 'automatic',
-  alias: { '@': repo + '/apps/desktop/src', '@hermes/shared': repo + '/apps/shared/src' },
+  alias: { '@': repo + '/apps/desktop/src', '@aethermesh/shared': repo + '/apps/shared/src' },
   define: {
     'process.env.NODE_ENV': '"production"',
     'import.meta.env': '{}',

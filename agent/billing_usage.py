@@ -39,7 +39,7 @@ def _fmt_usd(value: Optional[float]) -> str:
 def nous_logged_in() -> bool:
     """Cheap local auth-state check: a Nous access token is present. Fail-closed."""
     try:
-        from hermes_cli.auth import get_provider_auth_state
+        from eidolon_cli.auth import get_provider_auth_state
         tok = (get_provider_auth_state("nous") or {}).get("access_token")
         return isinstance(tok, str) and bool(tok.strip())
     except Exception:
@@ -49,7 +49,7 @@ def nous_logged_in() -> bool:
 def fetch_nous_account(timeout: float):
     """Wall-clock-bounded fresh portal account fetch. Raises on failure/timeout."""
     import concurrent.futures
-    from hermes_cli.nous_account import get_nous_portal_account_info
+    from eidolon_cli.nous_account import get_nous_portal_account_info
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
         return pool.submit(get_nous_portal_account_info, force_fresh=True).result(timeout=timeout)
 

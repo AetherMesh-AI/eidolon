@@ -1,4 +1,4 @@
-"""Shared ``OAuthClientProvider`` customizations for Hermes MCP OAuth.
+"""Shared ``OAuthClientProvider`` customizations for Eidolon MCP OAuth.
 
 Two code paths build an SDK provider — ``tools.mcp_oauth.build_oauth_auth`` (legacy public
 API) and ``tools.mcp_oauth_manager.MCPOAuthManager`` — and both need the same real-world

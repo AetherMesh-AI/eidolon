@@ -25,7 +25,7 @@ from typing import Any, List, NoReturn, Optional, Tuple
 
 from packaging.requirements import Requirement
 
-from hermes_constants import display_hermes_home, get_hermes_home
+from eidolon_constants import display_eidolon_home, get_eidolon_home
 from utils import atomic_write_text
 
 # Pinned legacy logger name so operator log filters keep matching (see adapter.py).
@@ -66,22 +66,22 @@ def _token_rel(email: Optional[str]) -> str:
 
 
 def _user_tokens_dir() -> Path:
-    return get_hermes_home() / "google_chat_user_tokens"
+    return get_eidolon_home() / "google_chat_user_tokens"
 
 
 def _token_path(email: Optional[str] = None) -> Path:
     """Per-user token path for ``email``, or the legacy single-user path."""
-    return get_hermes_home() / _token_rel(email)
+    return get_eidolon_home() / _token_rel(email)
 
 
 def _client_secret_path() -> Path:
-    return get_hermes_home() / "google_chat_user_client_secret.json"
+    return get_eidolon_home() / "google_chat_user_client_secret.json"
 
 
 def _pending_auth_path(email: Optional[str] = None) -> Path:
     if email:
-        return get_hermes_home() / "google_chat_user_oauth_pending" / f"{_sanitize_email(email)}.json"
-    return get_hermes_home() / "google_chat_user_oauth_pending.json"
+        return get_eidolon_home() / "google_chat_user_oauth_pending" / f"{_sanitize_email(email)}.json"
+    return get_eidolon_home() / "google_chat_user_oauth_pending.json"
 
 
 # -- Library API — called from the adapter at runtime -------------------------
@@ -123,7 +123,7 @@ def load_user_credentials(email: Optional[str] = None) -> Optional[Any]:
     except ImportError:
         logger.warning(
             "[google_chat_user_oauth] google-auth not installed; user-OAuth "
-            "attachment delivery is disabled. Run `hermes setup` to install Google Chat support."
+            "attachment delivery is disabled. Run `eidolon setup` to install Google Chat support."
         )
         return None
     try:
@@ -237,7 +237,7 @@ def install_deps() -> bool:
         return True
     print("Installing Google Chat dependencies...")
     try:
-        from hermes_cli.tools_config import _pip_install
+        from eidolon_cli.tools_config import _pip_install
 
         result = _pip_install(["--quiet"] + missing)
         if result.returncode != 0:
@@ -249,7 +249,7 @@ def install_deps() -> bool:
         return True
     except Exception as exc:
         print(f"ERROR: Failed to install dependencies: {exc}")
-        print("Run `hermes setup` to repair the managed installation, then retry.")
+        print("Run `eidolon setup` to repair the managed installation, then retry.")
         return False
 
 
@@ -381,7 +381,7 @@ def exchange_auth_code(code: str, email: Optional[str] = None) -> None:
     _write_private_json(token_path, token_payload)
     _pending_auth_path(email).unlink(missing_ok=True)
     print(f"OK: Authenticated. Token saved to {token_path}")
-    print(f"Profile path: {display_hermes_home()}/{_token_rel(email)}")
+    print(f"Profile path: {display_eidolon_home()}/{_token_rel(email)}")
 
 
 def revoke(email: Optional[str] = None) -> None:
@@ -415,7 +415,7 @@ def revoke(email: Optional[str] = None) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Google Chat user-OAuth setup for Hermes (native attachment delivery)"
+        description="Google Chat user-OAuth setup for Eidolon (native attachment delivery)"
     )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--check", action="store_true", help="Check if auth is valid (exit 0=yes, 1=no)")
@@ -465,7 +465,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

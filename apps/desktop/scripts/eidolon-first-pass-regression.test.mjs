@@ -67,9 +67,9 @@ for (const status of ['clean', 'untracked', 'tracked', 'detached', 'failed']) {
       for (const name of ['write-build-stamp.mjs', 'utils.mjs']) {
         fs.copyFileSync(new URL(name, import.meta.url), path.join(scripts, name))
       }
-      fs.mkdirSync(path.join(dir, 'hermes_cli'))
-      fs.copyFileSync(new URL('../../../hermes_cli/eidolon_version.py', import.meta.url), path.join(dir, 'hermes_cli/eidolon_version.py'))
-      fs.writeFileSync(path.join(dir, '.gitignore'), 'apps/desktop/build/\nhermes_cli/_build_identity.json\n')
+      fs.mkdirSync(path.join(dir, 'eidolon_cli'))
+      fs.copyFileSync(new URL('../../../eidolon_cli/eidolon_version.py', import.meta.url), path.join(dir, 'eidolon_cli/eidolon_version.py'))
+      fs.writeFileSync(path.join(dir, '.gitignore'), 'apps/desktop/build/\neidolon_cli/_build_identity.json\n')
       const git = (...args) => execFileSync('/usr/bin/git', args, { cwd: dir, stdio: 'pipe' })
       git('init', '-q', '-b', 'main'); git('add', '.')
       git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'fixture')
@@ -97,7 +97,7 @@ for (const status of ['clean', 'untracked', 'tracked', 'detached', 'failed']) {
       assert.equal(stamp.distance, null)
       assert.equal(payload.versionSource, 'fallback')
       const version = formatInstallVersion(stamp)
-      assert.match(version, /version unavailable\/unverified/)
+      assert.match(version, /build provenance unverified/)
       if (expected === null) assert.match(version, /source status unknown/)
       else if (expected) assert.match(version, /dirty source/)
       else assert.doesNotMatch(version, /dirty source|source status unknown/)

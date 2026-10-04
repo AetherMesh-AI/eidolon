@@ -218,7 +218,7 @@ def _legacy_group_fence_error(rid, session, params):
         hosted = probe_hosted_room(default_db_path(), room_id=room_id)
         peer = False
         if not hosted:
-            from hermes_constants import named_profile_home
+            from eidolon_constants import named_profile_home
             session_profile_home = named_profile_home(str(session.get("profile_home") or ""))
             peer = probe_peer_room_reservation(
                 default_db_path(), room_id=room_id, target_profile=(
@@ -235,7 +235,7 @@ def _legacy_group_fence_error(rid, session, params):
     if hosted or peer:
         owner = "its gateway" if hosted else "its home host"
         return _err(
-            rid, 4122, f"This room is managed by {owner}. Update Hermes Desktop to continue it.")
+            rid, 4122, f"This room is managed by {owner}. Update Eidolon Desktop to continue it.")
     return None
 
 
@@ -265,7 +265,7 @@ def _parse_truncation_params(rid, sid, session, params, history):
         rid, 4029,
         "truncation parameters require confirm_truncate=true; "
         "an ordinary prompt.submit must not drop session history "
-        "(update your Hermes client if a rewind was intended)")
+        "(update your Eidolon client if a rewind was intended)")
 
 
 def _resolve_truncation_ordinal(rid, sid, session, params, history):
@@ -451,7 +451,7 @@ def _persist_session_row_for_submit(rid, session):
                 "was not saved; repair state.db and try again")
         _persist_branch_seed(session)
     except Exception as exc:
-        from hermes_state_errors import is_disk_full_error
+        from eidolon_state_errors import is_disk_full_error
         with session["history_lock"]:
             session["running"] = False
             session["last_active"] = time.time()
@@ -533,7 +533,7 @@ def _lock_in_submit_turn(
 
 @method("prompt.submit")
 def _(rid, params: dict) -> dict:
-    from hermes_cli.input_sanitize import sanitize_user_prompt_text
+    from eidolon_cli.input_sanitize import sanitize_user_prompt_text
     sid = params.get("session_id", "")
     raw_text = params.get("text", "")
     text = sanitize_user_prompt_text(raw_text) if isinstance(raw_text, str) else raw_text
@@ -652,7 +652,7 @@ def _(rid, params: dict) -> dict:
     if err:
         return err
     try:
-        from hermes_cli.clipboard import has_clipboard_image, save_clipboard_image
+        from eidolon_cli.clipboard import has_clipboard_image, save_clipboard_image
     except Exception as e:
         return _err(rid, 5027, f"clipboard unavailable: {e}")
     session["image_counter"] = session.get("image_counter", 0) + 1
@@ -803,7 +803,7 @@ def _(rid, params: dict) -> dict:
         argv = [
             "pdftoppm", "-png", "-r", "150", "-f", str(first_page), "-l", str(last_page),
             str(pdf_path), str(td_path / "page")]
-        from hermes_cli._subprocess_compat import windows_hide_flags
+        from eidolon_cli._subprocess_compat import windows_hide_flags
         try:
             # UTF-8 + lossy decode: non-UTF-8 child output must not crash the gateway
             # thread on locale-mismatched Windows.
@@ -924,13 +924,13 @@ def _spawn_side_agent(
         # to leave a background server running under this task_id, and AIAgent.close() would kill every
         # process for the task_id and tear down the very server the restart just started.
         profile_home = session.get("profile_home")
-        home_token = set_hermes_home_override(profile_home) if profile_home else None
+        home_token = set_eidolon_home_override(profile_home) if profile_home else None
         try:
             try:
                 text = body()
             finally:
                 if home_token is not None:
-                    reset_hermes_home_override(home_token)
+                    reset_eidolon_home_override(home_token)
             _emit(event, parent, {"task_id": task_id, **extra, "text": text})
         except Exception as e:
             _emit(event, parent, {"task_id": task_id, **extra, "text": f"error: {e}"})
@@ -992,14 +992,14 @@ def _(rid, params: dict) -> dict:
 
 
 _PREVIEW_RESTART_RULES = (
-    "Restart exactly the app intended for the Preview URL, not Hermes Desktop itself.",
+    "Restart exactly the app intended for the Preview URL, not Eidolon Desktop itself.",
     "The Preview URL and port are the target. Preserve that target unless you conclude it is impossible.",
     "If the prior conversation shows a specific command that bound this URL/port, prefer re-running THAT exact command (in the same cwd) over guessing a new one.",
-    "First inspect what process, if any, owns the Preview URL port. If a stale server exists, inspect its cwd and prefer that cwd over the Hermes/Desktop process cwd.",
+    "First inspect what process, if any, owns the Preview URL port. If a stale server exists, inspect its cwd and prefer that cwd over the Eidolon/Desktop process cwd.",
     "The Current working directory is only a hint. Do not assume it is the preview app root when the port owner or files indicate another root.",
     "If the console shows a module-script MIME error for src/main.tsx or similar, a static server is serving source files. Do not restart python -m http.server or any dumb static server for that app.",
     "For module-script MIME failures, inspect package.json/vite config in the candidate app root and start the real dev server/bundler (for example npm/pnpm/yarn dev) so module transforms happen.",
-    "Before declaring success, verify the Preview URL responds with the intended app, not Hermes Desktop. If it serves Hermes/Desktop UI or another unrelated app, stop that process and report failure.",
+    "Before declaring success, verify the Preview URL responds with the intended app, not Eidolon Desktop. If it serves Eidolon/Desktop UI or another unrelated app, stop that process and report failure.",
     "Do not modify files. Do not ask the user unless blocked.",
     "Prefer existing project scripts or commands when they are clear.",
     "If a stale process owns the needed port, handle it safely.",

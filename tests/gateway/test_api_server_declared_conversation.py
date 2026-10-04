@@ -3,7 +3,7 @@
 A client that manages its own history has no ``previous_response_id`` chain,
 so ``/v1/responses`` and ``/v1/runs`` used to mint a throwaway physical
 session id per request even when the request declared its conversation with
-``X-Hermes-Session-Key``.  Every conversation-affinity hint Hermes sends is
+``X-Hermes-Session-Key``.  Every conversation-affinity hint Eidolon sends is
 derived from that physical id — ``prompt_cache_key`` on both OpenAI-wire
 transports, the OpenRouter/Nous sticky ``session_id``, and xAI's
 ``x-grok-conv-id`` — so all four re-keyed on every single reply.
@@ -28,7 +28,7 @@ from gateway.platforms.api_server import (
     cors_middleware,
     security_headers_middleware,
 )
-from hermes_state import SessionDB
+from eidolon_state import SessionDB
 
 KEY = "agent:main:api_server:room-42:member-7"
 OTHER_KEY = "agent:main:api_server:room-42:member-8"

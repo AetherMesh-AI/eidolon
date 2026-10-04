@@ -14,8 +14,8 @@ def test_passive_dock_fills_rows_but_keeps_input_live(monkeypatch, columns, rows
     from prompt_toolkit.output import DummyOutput
     from prompt_toolkit.styles import Style
     from prompt_toolkit.widgets import TextArea
-    from hermes_cli.cli_subagent_monitor import install_dock
-    from hermes_cli import skin_engine
+    from eidolon_cli.cli_subagent_monitor import install_dock
+    from eidolon_cli import skin_engine
 
     monkeypatch.setattr(skin_engine, '_active_skin', skin_engine.load_skin(skin))
     cli = SimpleNamespace(agent=None)
@@ -63,7 +63,7 @@ def test_expanded_roster_reserves_activity_before_long_task_names():
     from prompt_toolkit.input import create_pipe_input
     from prompt_toolkit.output import DummyOutput
     from prompt_toolkit.utils import get_cwidth
-    from hermes_cli.cli_subagent_monitor import SubagentMonitor, build_monitor_application
+    from eidolon_cli.cli_subagent_monitor import SubagentMonitor, build_monitor_application
 
     monitor = SubagentMonitor(SimpleNamespace())
     monitor.entries = [dict(subagent_id=str(i), goal='Inspect 界 ' * 30,

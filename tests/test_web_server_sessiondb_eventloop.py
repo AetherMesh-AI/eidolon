@@ -3,13 +3,13 @@ import asyncio
 import threading
 from pathlib import Path
 
-from hermes_cli import web_server
-import hermes_cli.web_models as _web_models
-import hermes_cli.web_routers.sessions as _rt_sessions
-import hermes_cli.web_server_sessions as _web_server_sessions
-from hermes_cli import web_server_sessions
-from hermes_cli.web_routers import analytics as web_analytics
-from hermes_cli.web_routers import sessions as web_sessions
+from eidolon_cli import web_server
+import eidolon_cli.web_models as _web_models
+import eidolon_cli.web_routers.sessions as _rt_sessions
+import eidolon_cli.web_server_sessions as _web_server_sessions
+from eidolon_cli import web_server_sessions
+from eidolon_cli.web_routers import analytics as web_analytics
+from eidolon_cli.web_routers import sessions as web_sessions
 
 
 TARGET_HANDLERS = {

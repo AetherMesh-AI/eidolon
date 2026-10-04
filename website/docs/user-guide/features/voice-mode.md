@@ -1,14 +1,14 @@
 ---
 sidebar_position: 10
 title: "Voice Mode"
-description: "Real-time voice conversations with Hermes Agent — CLI, Telegram, Discord (DMs, text channels, and voice channels)"
+description: "Real-time voice conversations with Eidolon — CLI, Telegram, Discord (DMs, text channels, and voice channels)"
 ---
 
 # Voice Mode
 
-Hermes Agent supports full voice interaction across CLI and messaging platforms. Talk to the agent using your microphone, hear spoken replies, and have live voice conversations in Discord voice channels.
+Eidolon supports full voice interaction across CLI and messaging platforms. Talk to the agent using your microphone, hear spoken replies, and have live voice conversations in Discord voice channels.
 
-If you want a practical setup walkthrough with recommended configurations and real usage patterns, see [Use Voice Mode with Hermes](../../guides/use-voice-mode-with-hermes.md).
+If you want a practical setup walkthrough with recommended configurations and real usage patterns, see [Use Voice Mode with Eidolon](../../guides/use-voice-mode-with-eidolon.md).
 
 For hands-free session start — saying "hey hermes" (or any phrase) to open a fresh voice session on the CLI, TUI, or desktop app — see [Wake Word](/user-guide/features/wake-word).
 
@@ -16,16 +16,16 @@ For hands-free session start — saying "hey hermes" (or any phrase) to open a f
 
 Before using voice features, make sure you have:
 
-1. **Hermes Agent installed** — via the install script (see [Installation](/getting-started/installation))
-2. **An LLM provider configured** — run `hermes model` or set your preferred provider credentials in `~/.hermes/.env`
-3. **A working base setup** — run `hermes` to verify the agent responds to text before enabling voice
+1. **Eidolon installed** — via the install script (see [Installation](/getting-started/installation))
+2. **An LLM provider configured** — run `eidolon model` or set your preferred provider credentials in `~/.eidolon/.env`
+3. **A working base setup** — run `eidolon` to verify the agent responds to text before enabling voice
 
 :::tip
-The `~/.hermes/` directory and default `config.yaml` are created automatically the first time you run `hermes`. You only need to create `~/.hermes/.env` manually for API keys.
+The `~/.eidolon/` directory and default `config.yaml` are created automatically the first time you run `eidolon`. You only need to create `~/.eidolon/.env` manually for API keys.
 :::
 
 :::tip Nous Portal covers both
-A paid [Nous Portal](/user-guide/features/tool-gateway) subscription supplies the LLM (step 2) **and** OpenAI TTS via the Tool Gateway — no separate OpenAI key needed. On a fresh install, `hermes setup --portal` wires both up at once.
+A paid [Nous Portal](/user-guide/features/tool-gateway) subscription supplies the LLM (step 2) **and** OpenAI TTS via the Tool Gateway — no separate OpenAI key needed. On a fresh install, `eidolon setup --portal` wires both up at once.
 :::
 
 ## Overview
@@ -42,19 +42,19 @@ A paid [Nous Portal](/user-guide/features/tool-gateway) subscription supplies th
 
 ```bash
 # CLI voice mode (microphone + audio playback)
-cd ~/.hermes/hermes-agent && uv pip install -e ".[voice]"
+cd ~/.eidolon/eidolon-agent && uv pip install -e ".[voice]"
 
 # Discord + Telegram messaging (includes discord.py[voice] for VC support)
-cd ~/.hermes/hermes-agent && uv pip install -e ".[messaging]"
+cd ~/.eidolon/eidolon-agent && uv pip install -e ".[messaging]"
 
 # Premium TTS (ElevenLabs)
-cd ~/.hermes/hermes-agent && uv pip install -e ".[tts-premium]"
+cd ~/.eidolon/eidolon-agent && uv pip install -e ".[tts-premium]"
 
 # Local TTS (NeuTTS, optional)
 python -m pip install -U neutts[all]
 
 # Everything at once
-cd ~/.hermes/hermes-agent && uv pip install -e ".[all]"
+cd ~/.eidolon/eidolon-agent && uv pip install -e ".[all]"
 ```
 
 | Extra | Packages | Required For |
@@ -90,7 +90,7 @@ sudo apt install espeak-ng   # for NeuTTS
 
 ### API Keys
 
-Add to `~/.hermes/.env`:
+Add to `~/.eidolon/.env`:
 
 ```bash
 # Speech-to-Text — local provider needs NO key at all
@@ -111,14 +111,14 @@ If `faster-whisper` is installed, voice mode works with **zero API keys** for ST
 
 ## CLI Voice Mode
 
-Voice mode is available in both the **classic CLI** (`hermes chat`) and the **TUI** (`hermes --tui`). Behavior is identical across both — same slash commands, same VAD silence detection, same streaming TTS, same hallucination filter. The TUI additionally forwards crash-forensic logs to `~/.hermes/logs/` so push-to-talk failures on exotic audio backends can be reported with a full stack trace rather than disappearing silently.
+Voice mode is available in both the **classic CLI** (`eidolon chat`) and the **TUI** (`eidolon --tui`). Behavior is identical across both — same slash commands, same VAD silence detection, same streaming TTS, same hallucination filter. The TUI additionally forwards crash-forensic logs to `~/.eidolon/logs/` so push-to-talk failures on exotic audio backends can be reported with a full stack trace rather than disappearing silently.
 
 ### Quick Start
 
 Start the CLI and enable voice mode:
 
 ```bash
-hermes                # Start the interactive CLI
+eidolon                # Start the interactive CLI
 ```
 
 Then use these commands inside the CLI:
@@ -133,7 +133,7 @@ Then use these commands inside the CLI:
 
 ### How It Works
 
-1. Start the CLI with `hermes` and enable voice mode with `/voice on`
+1. Start the CLI with `eidolon` and enable voice mode with `/voice on`
 2. **Press Ctrl+B** — a beep plays (880Hz), recording starts
 3. **Speak** — a live audio level bar shows your input: `● [▁▂▃▅▇▇▅▂] ❯`
 4. **Stop speaking** — after 3 seconds of silence, recording auto-stops
@@ -145,7 +145,7 @@ Then use these commands inside the CLI:
 This loop continues until you press **Ctrl+B** during recording (exits continuous mode) or 3 consecutive recordings detect no speech.
 
 :::tip
-The record key is configurable via `voice.record_key` in `~/.hermes/config.yaml` (default: `ctrl+b`).
+The record key is configurable via `voice.record_key` in `~/.eidolon/config.yaml` (default: `ctrl+b`).
 :::
 
 ### Silence Detection
@@ -177,7 +177,7 @@ The same pipeline runs in the classic CLI, the TUI, and the desktop app. In a de
 
 ### Desktop remote: client-direct voice (lowest-hop path)
 
-When Hermes Desktop is connected to a **remote gateway**, audio does not need to be relayed through the gateway at all. At voice-session start the desktop fetches the active profile's resolved STT/TTS settings (provider, model, language/voice, and credential) from the gateway over the authenticated REST channel (`GET /api/audio/voice-config`) and then calls the providers **directly**:
+When Eidolon Desktop is connected to a **remote gateway**, audio does not need to be relayed through the gateway at all. At voice-session start the desktop fetches the active profile's resolved STT/TTS settings (provider, model, language/voice, and credential) from the gateway over the authenticated REST channel (`GET /api/audio/voice-config`) and then calls the providers **directly**:
 
 - **Dictation / voice input:** the mic recording goes straight from your desktop to the profile's STT provider; only the resulting *text* is sent to the gateway as the prompt.
 - **Spoken replies:** the reply text is already streaming to the desktop over the chat socket, so the desktop synthesizes it locally with the profile's TTS provider and plays it — the gateway link never carries audio.
@@ -221,8 +221,8 @@ If you haven't set up your messaging bots yet, see the platform-specific guides:
 Start the gateway to connect to your messaging platforms:
 
 ```bash
-hermes gateway        # Start the gateway (connects to configured platforms)
-hermes gateway setup  # Interactive setup wizard for first-time configuration
+eidolon gateway        # Start the gateway (connects to configured platforms)
+eidolon gateway setup  # Interactive setup wizard for first-time configuration
 ```
 
 ### Discord: Channels vs DMs
@@ -239,7 +239,7 @@ The bot supports two interaction modes on Discord:
 **Server channels:** The bot only responds when you @mention it (e.g. `@hermesbyt4 hello`). Make sure you select the **bot user** from the mention popup, not the role with the same name.
 
 :::tip
-To disable the mention requirement in server channels, add to `~/.hermes/.env`:
+To disable the mention requirement in server channels, add to `~/.eidolon/.env`:
 ```bash
 DISCORD_REQUIRE_MENTION=false
 ```
@@ -350,7 +350,7 @@ The bot auto-loads the codec from:
 #### 4. Environment Variables
 
 ```bash
-# ~/.hermes/.env
+# ~/.eidolon/.env
 
 # Discord bot (already configured for text)
 DISCORD_BOT_TOKEN=your-bot-token
@@ -367,7 +367,7 @@ DISCORD_ALLOWED_USERS=your-user-id
 ### Start the Gateway
 
 ```bash
-hermes gateway        # Start with existing configuration
+eidolon gateway        # Start with existing configuration
 ```
 
 The bot should come online in Discord within a few seconds.
@@ -414,7 +414,7 @@ The bot automatically pauses its audio listener while playing TTS replies, preve
 Only users listed in `DISCORD_ALLOWED_USERS` can interact via voice. Other users' audio is silently ignored.
 
 ```bash
-# ~/.hermes/.env
+# ~/.eidolon/.env
 DISCORD_ALLOWED_USERS=284102345871466496
 ```
 
@@ -544,7 +544,7 @@ brew install portaudio    # macOS
 sudo apt install portaudio19-dev  # Ubuntu
 ```
 
-If you are running Hermes inside Docker on a Linux desktop, the container also needs access to your host audio socket. See the [Docker audio bridge](/user-guide/docker#optional-linux-desktop-audio-bridge) notes for a PulseAudio/PipeWire-compatible setup.
+If you are running Eidolon inside Docker on a Linux desktop, the container also needs access to your host audio socket. See the [Docker audio bridge](/user-guide/docker#optional-linux-desktop-audio-bridge) notes for a PulseAudio/PipeWire-compatible setup.
 
 ### Bot doesn't respond in Discord server channels
 
@@ -552,7 +552,7 @@ The bot requires an @mention by default in server channels. Make sure you:
 
 1. Type `@` and select the **bot user** (with the #discriminator), not the **role** with the same name
 2. Or use DMs instead — no mention needed
-3. Or set `DISCORD_REQUIRE_MENTION=false` in `~/.hermes/.env`
+3. Or set `DISCORD_REQUIRE_MENTION=false` in `~/.eidolon/.env`
 
 ### Bot joins VC but doesn't hear me
 
@@ -564,7 +564,7 @@ The bot requires an @mention by default in server channels. Make sure you:
 
 - Verify STT is available: install `faster-whisper` (no key needed) or set `GROQ_API_KEY` / `VOICE_TOOLS_OPENAI_KEY`
 - Check the LLM model is configured and accessible
-- Review gateway logs: `tail -f ~/.hermes/logs/gateway.log`
+- Review gateway logs: `tail -f ~/.eidolon/logs/gateway.log`
 
 ### Bot responds in text but not in voice channel
 

@@ -226,8 +226,8 @@ def _slack_tools_loaded() -> bool:
     if not token.strip():
         return False
     try:
-        from hermes_cli.config import load_config
-        from hermes_cli.tools_config import _get_platform_tools
+        from eidolon_cli.config import load_config
+        from eidolon_cli.tools_config import _get_platform_tools
         # include_default_mcp_servers defaults True so a default-enabled Slack MCP counts too.
         return "slack" in _get_platform_tools(load_config(), "slack")
     except Exception:
@@ -239,8 +239,8 @@ def _discord_tools_loaded() -> bool:
     toolset enabled AND `DISCORD_BOT_TOKEN` set (the tool's `check_fn` gates on it)."""
     try:
         from agent.secret_scope import get_secret
-        from hermes_cli.config import load_config
-        from hermes_cli.tools_config import _get_platform_tools
+        from eidolon_cli.config import load_config
+        from eidolon_cli.tools_config import _get_platform_tools
 
         if not (get_secret("DISCORD_BOT_TOKEN", "") or "").strip():
             return False
@@ -436,14 +436,14 @@ def build_session_context_prompt(context: SessionContext, *, redact_pii: bool = 
             lines.append(f"  - {platform.value}: {safe_name} (ID: {safe_id})")
 
     lines += ["", "**Delivery options for scheduled tasks:**"]
-    from hermes_constants import display_hermes_home
+    from eidolon_constants import display_eidolon_home
     if src.platform == Platform.LOCAL:
         lines.append("- `\"origin\"` → Local output (saved to files)")
     else:
         _origin_label = _format_untrusted_prompt_value(src.chat_name or _chat_label(src.chat_id))
         lines.append(f"- `\"origin\"` → Back to this chat ({_origin_label})")
 
-    lines.append(f"- `\"local\"` → Save to local files only ({display_hermes_home()}/cron/output/)")
+    lines.append(f"- `\"local\"` → Save to local files only ({display_eidolon_home()}/cron/output/)")
     for platform, home in context.home_channels.items():
         home_name = _format_untrusted_prompt_value(home.name)
         lines.append(f"- `\"{platform.value}\"` → Home channel ({home_name})")
@@ -604,7 +604,7 @@ def build_channel_continuity_note(entry: "SessionEntry", source: SessionSource) 
         return None
     where = "thread" if source.thread_id else "channel"
     return (
-        f"[System note: This {where} had an earlier Hermes session (session_id: {prev}) that was "
+        f"[System note: This {where} had an earlier Eidolon session (session_id: {prev}) that was "
         f"auto-reset. If the user refers to earlier work here, or the request depends on this "
         f"{where}'s history, use the session_search tool to recall that prior session before "
         f"acting — do not assume an unrelated recent session is the right context.]"
@@ -779,7 +779,7 @@ class SessionStore(
         # Initialize SQLite session database. A multiplexed gateway serves every profile from a SINGLE
         # process, so a handle bound during __init__ is frozen to the process's own root home; every
         # profile's rows then land in the root state.db even though ``_profile_runtime_scope`` has already
-        # redirected ``get_hermes_home()`` for the turn (its docstring lists "sessions" among what it
+        # redirected ``get_eidolon_home()`` for the turn (its docstring lists "sessions" among what it
         # scopes). The row still carries the right ``profile_name``, so the damage is invisible in the data
         # and shows up only as the desktop listing a profile's session under the default bot --
         # ``_open_session_db_for_profile`` reads ``profiles/<name>/state.db``, which never received the
@@ -801,9 +801,9 @@ class SessionStore(
         # The routing index needs exactly one home for its lifetime: the gateway's own, captured
         # before any profile scope exists (see ``_routing_db``).
         try:
-            from hermes_constants import get_hermes_home
+            from eidolon_constants import get_eidolon_home
 
-            self._routing_home: Optional[Path] = Path(get_hermes_home())
+            self._routing_home: Optional[Path] = Path(get_eidolon_home())
         except Exception:
             self._routing_home = None
         self._open_session_db_for_active_scope()
@@ -1211,7 +1211,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

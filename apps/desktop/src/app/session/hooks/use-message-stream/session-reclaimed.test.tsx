@@ -7,7 +7,7 @@ import { createClientSessionState } from '@/lib/chat-runtime'
 import { resetRuntimeGoneHealing } from '@/store/runtime-gone'
 import { $activeSessionId, $sessionResumeRequest } from '@/store/session'
 import { $sessionStates, $sessionTiles, publishSessionState } from '@/store/session-states'
-import type { RpcEvent } from '@/types/hermes'
+import type { RpcEvent } from '@/types/eidolon'
 
 import { type MessageStreamHarness, renderMessageStream } from './test-harness'
 

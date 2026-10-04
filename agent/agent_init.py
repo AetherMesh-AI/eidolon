@@ -37,10 +37,10 @@ from agent.think_scrubber import StreamingThinkScrubber
 from agent.tool_guardrails import (
     ToolCallGuardrailConfig, ToolCallGuardrailController
 )
-from hermes_cli.config import cfg_get
-from hermes_cli.route_identity import normalize_route_base_url
-from hermes_cli.timeouts import get_provider_request_timeout
-from hermes_constants import get_hermes_home
+from eidolon_cli.config import cfg_get
+from eidolon_cli.route_identity import normalize_route_base_url
+from eidolon_cli.timeouts import get_provider_request_timeout
+from eidolon_constants import get_eidolon_home
 from utils import base_url_host_matches, is_truthy_value
 
 # Same logger name as run_agent so caplog/patches on "run_agent" see our records.
@@ -64,7 +64,7 @@ def _warn_memory_provider_unavailable(name: str, reason: str = "") -> None:
     logger.warning(
         "Memory provider %r is selected but reports unavailable — external memory "
         "is disabled for this session (built-in memory still works). Check the "
-        "provider's credentials/config with 'hermes memory status'. Note: "
+        "provider's credentials/config with 'eidolon memory status'. Note: "
         "systemd/gateway services do not inherit ~/.hermes/.env automatically; set "
         "any required variables in the service environment.%s",
         name,
@@ -82,7 +82,7 @@ def _provider_default_routes(provider: str) -> set[str]:
             routes.add(route)
 
     with suppress(Exception):
-        from hermes_cli.providers import HERMES_OVERLAYS, get_provider
+        from eidolon_cli.providers import HERMES_OVERLAYS, get_provider
         overlay = HERMES_OVERLAYS.get(provider)
         provider_def = get_provider(provider, allow_network=False)
         add(getattr(overlay, "base_url_override", ""))
@@ -93,9 +93,9 @@ def _provider_default_routes(provider: str) -> set[str]:
         add(getattr(get_provider_profile(provider), "base_url", ""))
 
     with suppress(Exception):
-        from hermes_cli.auth import PROVIDER_REGISTRY
-        from hermes_cli.models import normalize_provider as normalize_model_provider
-        from hermes_cli.providers import normalize_provider as normalize_registry_provider
+        from eidolon_cli.auth import PROVIDER_REGISTRY
+        from eidolon_cli.models import normalize_provider as normalize_model_provider
+        from eidolon_cli.providers import normalize_provider as normalize_registry_provider
         for provider_id, config in PROVIDER_REGISTRY.items():
             if normalize_registry_provider(normalize_model_provider(provider_id)) == provider:
                 add(getattr(config, "inference_base_url", ""))
@@ -120,14 +120,14 @@ def _context_route_mismatch(
     if not configured_provider:
         return False
     try:
-        from hermes_cli.models import normalize_provider as normalize_model_provider
+        from eidolon_cli.models import normalize_provider as normalize_model_provider
         configured_provider = normalize_model_provider(configured_provider)
         active_provider = normalize_model_provider(active_provider)
     except Exception:
         configured_provider = configured_provider.lower()
         active_provider = active_provider.lower()
     with suppress(Exception):
-        from hermes_cli.providers import normalize_provider as normalize_registry_provider
+        from eidolon_cli.providers import normalize_provider as normalize_registry_provider
         configured_provider = normalize_registry_provider(configured_provider)
         active_provider = normalize_registry_provider(active_provider)
 
@@ -178,7 +178,7 @@ def _build_codex_gpt5_autoraise_notice(
         f"ℹ Codex {model} caps context at {cap}, so auto-compaction was raised "
         f"to {to_pct}% (from {from_pct}%) to use more of the window before "
         f"summarizing.\n"
-        f"  Opt back out: hermes config set compression.codex_gpt55_autoraise false"
+        f"  Opt back out: eidolon config set compression.codex_gpt55_autoraise false"
     )
 
 
@@ -203,7 +203,7 @@ def _resolve_compression_threshold(
 
 def _codex_gpt55_autoraise_notice_marker():
     """Per-profile marker path (``$HERMES_HOME`` is profile-scoped; not a config key)."""
-    return get_hermes_home() / ".codex_gpt55_autoraise_notice"
+    return get_eidolon_home() / ".codex_gpt55_autoraise_notice"
 
 
 def _codex_gpt55_autoraise_notice_state(autoraise: Dict[str, Any]) -> str:
@@ -396,7 +396,7 @@ def _resolve_api_mode(agent, api_mode, provider_name, base_url):
     elif agent.provider in {"nous", "nous-portal", "nousresearch"}:
         # Portal is dual-wire (anthropic/* → Messages, else chat_completions); covers direct
         # AIAgent construction without a resolved runtime.
-        from hermes_cli.providers import nous_api_mode
+        from eidolon_cli.providers import nous_api_mode
         agent.api_mode = nous_api_mode(agent.model)
     else:
         # Host-mandated wire check — LAST, so the provider-slug rewrites above always win.
@@ -408,7 +408,7 @@ def _resolve_api_mode(agent, api_mode, provider_name, base_url):
             # BY DESIGN, not provider-name-driven, because user config `providers.meta` may point at any
             # OpenAI-compatible endpoint, and forcing `codex_responses` on the provider name alone would
             # break custom endpoints named "meta" that do not host the Responses API. See #63425.
-            from hermes_cli.providers import host_mandated_api_mode as _host_mandated_api_mode
+            from eidolon_cli.providers import host_mandated_api_mode as _host_mandated_api_mode
             _mandated = _host_mandated_api_mode(base_url or "")
         except Exception:
             _mandated = None
@@ -442,11 +442,11 @@ def _finalize_routing(agent, api_mode, credential_pool):
     # process-wide, daemon.
     if agent.provider == "nous":
         with suppress(Exception):
-            from hermes_cli.nous_auth_keepalive import start_nous_auth_keepalive
+            from eidolon_cli.nous_auth_keepalive import start_nous_auth_keepalive
             start_nous_auth_keepalive()
 
     with suppress(Exception):
-        from hermes_cli.model_normalize import (
+        from eidolon_cli.model_normalize import (
             _AGGREGATOR_PROVIDERS, normalize_model_for_provider
         )
 
@@ -644,7 +644,7 @@ def _init_prompt_cache_config(agent):
     # inject their own cache_control markers (#13477).
     agent._cache_ttl = "5m"
     with suppress(Exception):
-        from hermes_cli.config import load_config_readonly as _load_pc_cfg
+        from eidolon_cli.config import load_config_readonly as _load_pc_cfg
         from agent.agent_runtime_helpers import cache_ttl_means_disabled
         _pc_cfg = _load_pc_cfg().get("prompt_caching", {}) or {}
         _ttl = _pc_cfg.get("cache_ttl", "5m")
@@ -669,14 +669,14 @@ def _init_turn_state(agent, run_budget_seconds):
 def _setup_logging(agent):
     # agent.log (INFO+) + errors.log (WARNING+); idempotent so per-message gateway agents
     # don't duplicate handlers.
-    from hermes_logging import setup_logging, setup_verbose_logging
-    setup_logging(hermes_home=_ra()._hermes_home)
+    from eidolon_logging import setup_logging, setup_verbose_logging
+    setup_logging(hermes_home=_ra()._eidolon_home)
 
     if agent.verbose_logging:
         setup_verbose_logging()
         _ra().logger.info("Verbose logging enabled (third-party library logs suppressed)")
     # Quiet mode must NOT raise per-logger levels: isEnabledFor() runs before propagation and
-    # would starve the root file handlers. Noise reduction belongs in hermes_logging.
+    # would starve the root file handlers. Noise reduction belongs in eidolon_logging.
 
 
 def _bedrock_region_from_url(base_url) -> str:
@@ -726,7 +726,7 @@ def _init_anthropic_client(agent, api_key, base_url, _provider_timeout):
     # auth.json, so other processes' refreshes are seen).
     if agent.provider == "minimax-oauth" and isinstance(effective_key, str) and effective_key:
         try:
-            from hermes_cli.auth import build_minimax_oauth_token_provider
+            from eidolon_cli.auth import build_minimax_oauth_token_provider
             effective_key = build_minimax_oauth_token_provider()
         except Exception as _mm_exc:  # noqa: BLE001 — never block startup on this
             logging.getLogger(__name__).warning(
@@ -779,7 +779,7 @@ def _init_bedrock_client(agent, base_url):
     # Guardrail config — read from config.yaml at init time.
     agent._bedrock_guardrail_config = None
     with suppress(Exception):
-        from hermes_cli.config import load_config_readonly as _load_br_cfg
+        from eidolon_cli.config import load_config_readonly as _load_br_cfg
         _gr = _load_br_cfg().get("bedrock", {}).get("guardrail", {})
         if _gr.get("guardrail_identifier") and _gr.get("guardrail_version"):
             agent._bedrock_guardrail_config = {
@@ -811,7 +811,7 @@ def _explicit_client_kwargs(agent, api_key, base_url, _provider_timeout) -> Dict
     # OpenCode Zen free tier is served ANONYMOUSLY and 401s any bearer (incl. our keyless
     # placeholder): send an empty Authorization header to override the SDK's "Bearer <key>".
     with suppress(Exception):
-        from hermes_cli.models import (
+        from eidolon_cli.models import (
             OPENCODE_ZEN_FREE_KEYLESS_PLACEHOLDER, opencode_zen_free_headers
         )
         if api_key == OPENCODE_ZEN_FREE_KEYLESS_PLACEHOLDER:
@@ -850,7 +850,7 @@ def _routed_client_kwargs(agent, fallback_model, _provider_timeout) -> Dict[str,
     _explicit = (agent.provider or "").strip().lower()
     for _fb in _fallback_entries(fallback_model):
         try:
-            from hermes_cli.fallback_config import resolve_entry_api_key
+            from eidolon_cli.fallback_config import resolve_entry_api_key
             _fb_explicit_key = resolve_entry_api_key(_fb)
             _fb_client, _fb_model = resolve_provider_client(
                 _fb["provider"], model=_fb["model"], raw_codex=True,
@@ -869,18 +869,18 @@ def _routed_client_kwargs(agent, fallback_model, _provider_timeout) -> Dict[str,
         # Use the provider's real env var name (alibaba → DASHSCOPE_API_KEY).
         _env_hint = f"{_explicit.upper()}_API_KEY"
         with suppress(Exception):
-            from hermes_cli.auth import PROVIDER_REGISTRY
+            from eidolon_cli.auth import PROVIDER_REGISTRY
             _pcfg = PROVIDER_REGISTRY.get(_explicit)
             if _pcfg and _pcfg.api_key_env_vars:
                 _env_hint = _pcfg.api_key_env_vars[0]
         raise RuntimeError(
             f"Provider '{_explicit}' is set in config.yaml but no API key "
             f"was found. Set the {_env_hint} environment "
-            f"variable, or switch to a different provider with `hermes model`."
+            f"variable, or switch to a different provider with `eidolon model`."
         )
     raise RuntimeError(
-        "No LLM provider configured. Run `hermes model` to "
-        "select a provider, or run `hermes setup` for first-time "
+        "No LLM provider configured. Run `eidolon model` to "
+        "select a provider, or run `eidolon setup` for first-time "
         "configuration."
     )
 
@@ -903,7 +903,7 @@ def _apply_openai_header_policy(agent, client_kwargs: Dict[str, Any]) -> None:
     # model.default_headers override provider/SDK defaults (WAFs rejecting SDK headers).
     agent._apply_user_default_headers()
     try:
-        from hermes_cli.config import (
+        from eidolon_cli.config import (
             apply_custom_provider_extra_headers_to_client_kwargs,
             apply_custom_provider_tls_to_client_kwargs, get_compatible_custom_providers,
             load_config,
@@ -983,7 +983,7 @@ _HOST_DEFAULT_HEADERS: List[tuple[str, Callable[[Any, str], Dict[str, str]]]] = 
     ("integrate.api.nvidia.com",
      _lazy_headers("agent.auxiliary_client", "build_nvidia_nim_headers", pass_base=True)),
     ("api.routermint.com", _lazy_headers("agent.client_lifecycle", "_routermint_headers")),
-    ("githubcopilot.com", _lazy_headers("hermes_cli.models", "copilot_default_headers")),
+    ("githubcopilot.com", _lazy_headers("eidolon_cli.models", "copilot_default_headers")),
     ("api.kimi.com", lambda _k, _b: {"User-Agent": "claude-code/0.1.0"}),
     ("portal.qwen.ai", _lazy_headers("agent.client_lifecycle", "_qwen_portal_headers")),
     ("chatgpt.com", _lazy_headers("agent.codex_headers", "codex_cloudflare_headers", pass_key=True)),
@@ -1050,7 +1050,7 @@ def _load_tools(agent, enabled_toolsets, disabled_toolsets):
     # A multiplexed gateway may have switched HERMES_HOME since model_tools was imported;
     # make sure this profile's plugins are discovered before the tool snapshot.
     try:
-        from hermes_cli.plugins import discover_plugins
+        from eidolon_cli.plugins import discover_plugins
         discover_plugins()
     except Exception:
         logger.warning("Plugin discovery failed during agent setup", exc_info=True)
@@ -1131,7 +1131,7 @@ def _init_session_state(agent, session_id, session_db, parent_session_id, reason
     _publish_session_id(agent.session_id)
 
     # ~/.hermes/sessions/ — kept unconditionally for request_dump_*.json debug breadcrumbs.
-    agent.logs_dir = get_hermes_home() / "sessions"
+    agent.logs_dir = get_eidolon_home() / "sessions"
     agent.logs_dir.mkdir(parents=True, exist_ok=True)
     _set_defaults(agent, _SESSION_STATE)
 
@@ -1205,7 +1205,7 @@ def _memory_provider_init_kwargs(agent, platform) -> Dict[str, Any]:
     kwargs = {
         "session_id": agent.session_id,
         "platform": platform or "cli",
-        "hermes_home": str(get_hermes_home()),
+        "hermes_home": str(get_eidolon_home()),
         "agent_context": "primary",
     }
     if kwargs["platform"] == "cli":
@@ -1225,7 +1225,7 @@ def _memory_provider_init_kwargs(agent, platform) -> Dict[str, Any]:
             kwargs[_ident] = _val
     # Profile identity for per-profile provider scoping
     with suppress(Exception):
-        from hermes_cli.profiles import get_active_profile_name
+        from eidolon_cli.profiles import get_active_profile_name
         kwargs["agent_identity"] = get_active_profile_name()
         kwargs["agent_workspace"] = "hermes"
     return kwargs
@@ -1532,7 +1532,7 @@ def _custom_provider_configured_base_url(
     _user_providers = _agent_cfg.get("providers")
     _disabled_ids: set[str] = set()
     if isinstance(_user_providers, dict):
-        from hermes_cli.config import is_provider_enabled
+        from eidolon_cli.config import is_provider_enabled
         for _key, _entry in _user_providers.items():
             if not isinstance(_entry, dict):
                 continue
@@ -1576,7 +1576,7 @@ def _configured_default_base_url(_agent_cfg, _model_cfg, _custom_providers) -> s
         _custom_provider_candidate = False
     elif _custom_provider_candidate and _norm != "custom" and not _norm.startswith("custom:"):
         with suppress(Exception):
-            from hermes_cli.auth import resolve_provider as resolve_auth_provider
+            from eidolon_cli.auth import resolve_provider as resolve_auth_provider
             _custom_provider_candidate = (
                 str(resolve_auth_provider(_norm) or "").strip().lower() != _norm
             )
@@ -1610,14 +1610,14 @@ def _scope_context_length_to_default_runtime(
     """
     _default = _model_cfg.get("default")
     if isinstance(_default, dict):
-        from hermes_cli.config import split_model_config_default
+        from eidolon_cli.config import split_model_config_default
         _default, _ = split_model_config_default(_default)
     _configured_default_model = str(_default or "").strip()
     _configured_default_runtime_model = _configured_default_model
     _active_runtime_model = agent.model
     if _configured_default_model:
         with suppress(Exception):
-            from hermes_cli.model_normalize import normalize_model_for_provider
+            from eidolon_cli.model_normalize import normalize_model_for_provider
             _configured_default_runtime_model = normalize_model_for_provider(
                 _configured_default_model, agent.provider
             )
@@ -1699,7 +1699,7 @@ def _resolve_context_length(agent, _agent_cfg, base_url):
 
     # Resolve custom_providers before route-scoping: a named provider may keep its URL here.
     try:
-        from hermes_cli.config import get_compatible_custom_providers
+        from eidolon_cli.config import get_compatible_custom_providers
         _custom_providers = get_compatible_custom_providers(_agent_cfg)
     except Exception:
         _custom_providers = _agent_cfg.get("custom_providers")
@@ -1719,7 +1719,7 @@ def _resolve_context_length(agent, _agent_cfg, base_url):
 
     if _config_context_length is None and _custom_providers:
         with suppress(Exception):
-            from hermes_cli.config import get_custom_provider_context_length
+            from eidolon_cli.config import get_custom_provider_context_length
             _cp_ctx_resolved = get_custom_provider_context_length(
                 model=agent.model, base_url=agent.base_url, custom_providers=_custom_providers
             )
@@ -1762,7 +1762,7 @@ def _select_context_engine(_agent_cfg):
 
     if _selected_engine is None:
         try:
-            from hermes_cli.plugins import get_plugin_context_engine
+            from eidolon_cli.plugins import get_plugin_context_engine
             _candidate = get_plugin_context_engine()
         except Exception:
             _candidate = None
@@ -1903,7 +1903,7 @@ def _enforce_minimum_context(agent):
         raise ValueError(
             f"Model {agent.model} has a context window of {_ctx:,} tokens, "
             f"which is below the minimum {MINIMUM_CONTEXT_LENGTH:,} required "
-            f"by Hermes Agent.  Choose a model with at least "
+            f"by Eidolon Agent.  Choose a model with at least "
             f"{MINIMUM_CONTEXT_LENGTH // 1000}K context.  If your server "
             f"reports a window smaller than the model's true window, set "
             f"model.context_length in config.yaml to the real value "
@@ -1917,7 +1917,7 @@ def _warn_nonagentic_hermes_model(agent):
     if agent.quiet_mode or (agent.platform or "cli") == "cli":
         return
     with suppress(Exception):
-        from hermes_cli.model_switch import _check_hermes_model_warning
+        from eidolon_cli.model_switch import _check_hermes_model_warning
         _hermes_warn = _check_hermes_model_warning(agent.model or "")
         if _hermes_warn:
             _user_msg = (
@@ -1973,7 +1973,7 @@ def _inject_context_engine_tools(agent):
     if agent.context_compressor:
         try:
             agent.context_compressor.on_session_start(
-                agent.session_id, hermes_home=str(get_hermes_home()),
+                agent.session_id, hermes_home=str(get_eidolon_home()),
                 platform=agent.platform or "cli", model=agent.model,
                 context_length=getattr(agent.context_compressor, "context_length", 0),
                 conversation_id=getattr(agent, "_gateway_session_key", None),
@@ -2286,7 +2286,7 @@ def init_agent(
 
     # Load config once for memory, skills, and compression sections
     try:
-        from hermes_cli.config import load_config_readonly as _load_agent_config
+        from eidolon_cli.config import load_config_readonly as _load_agent_config
         _agent_cfg = _load_agent_config()
     except Exception:
         _agent_cfg = {}
@@ -2327,7 +2327,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

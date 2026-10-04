@@ -15,7 +15,7 @@ def test_cancel_event_terminates_script_process_tree(tmp_path, monkeypatch):
     import cron.scheduler as scheduler
     from cron import scheduler_script as sched_script
 
-    monkeypatch.setattr(scheduler, "_get_hermes_home", lambda: tmp_path)
+    monkeypatch.setattr(scheduler, "_get_eidolon_home", lambda: tmp_path)
     scripts_dir = tmp_path / "scripts"
     scripts_dir.mkdir()
     started = tmp_path / "started"
@@ -76,7 +76,7 @@ def test_cancel_event_kills_sigterm_ignoring_descendant(tmp_path, monkeypatch):
     import cron.scheduler as scheduler
     from cron import scheduler_script as sched_script
 
-    monkeypatch.setattr(scheduler, "_get_hermes_home", lambda: tmp_path)
+    monkeypatch.setattr(scheduler, "_get_eidolon_home", lambda: tmp_path)
     scripts_dir = tmp_path / "scripts"
     scripts_dir.mkdir()
     started = tmp_path / "started"
@@ -250,7 +250,7 @@ def test_long_running_script_refreshes_owned_claim_in_profile_store(
 
     with (
         jobs.use_cron_store(profile_home),
-        patch("hermes_state_registry.acquire", return_value=MagicMock()),
+        patch("eidolon_state_registry.acquire", return_value=MagicMock()),
     ):
         success, _doc, _response, error = scheduler.run_job(claimed_job)
         profile_claim = jobs.get_job("long-script")["run_claim"]

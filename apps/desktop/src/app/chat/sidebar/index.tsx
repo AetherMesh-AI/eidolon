@@ -23,7 +23,7 @@ import {
 } from '@/components/ui/sidebar'
 import { Tip, TipKeybindLabel } from '@/components/ui/tooltip'
 import { useContributions } from '@/contrib/react/use-contributions'
-import { searchSessions, type SessionInfo, type SessionSearchResult } from '@/hermes'
+import { searchSessions, type SessionInfo, type SessionSearchResult } from '@/eidolon'
 import { useI18n } from '@/i18n'
 import { comboTokens } from '@/lib/keybinds/combo'
 import { resolveProfileColor } from '@/lib/profile-color'
@@ -277,7 +277,7 @@ const HEADER_NAV_BTN =
 // by id; the snippet stands in for the preview).
 
 // The backend's FTS layer wraps matched terms in literal '>>>' / '<<<'
-// highlight markers (sqlite snippet() delimiters — see hermes_state_search.py).
+// highlight markers (sqlite snippet() delimiters — see eidolon_state_search.py).
 // The sidebar renders the snippet as plain text, so the markers must be
 // stripped or a search for "foo" paints rows titled ">>>foo<<<".
 // Exported for tests.

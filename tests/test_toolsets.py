@@ -224,7 +224,7 @@ class TestToolsetConsistency:
         on hermes-discord, gated on DISCORD_BOT_TOKEN) are allowed on top —
         the invariant is that the core set is identical across platforms.
         """
-        platforms = ["hermes-cli", "hermes-telegram", "hermes-discord", "hermes-whatsapp", "hermes-slack", "hermes-signal", "hermes-homeassistant"]
+        platforms = ["eidolon-cli", "eidolon-telegram", "eidolon-discord", "eidolon-whatsapp", "eidolon-slack", "eidolon-signal", "eidolon-homeassistant"]
         tool_sets = [set(TOOLSETS[p]["tools"]) for p in platforms]
         # All platforms must contain the shared core; platform-specific
         # extras are OK (subset check, not equality).
@@ -255,7 +255,7 @@ class TestPluginToolsets:
 
 class TestDefaultPlatformWebSearchCoverage:
     def test_hermes_whatsapp_toolset_includes_web_search(self):
-        assert "web_search" in resolve_toolset("hermes-whatsapp")
+        assert "web_search" in resolve_toolset("eidolon-whatsapp")
 
 
 
@@ -328,8 +328,8 @@ class TestResolveToolsetMemo:
         registry_id = id(registry)
         generation = registry._generation
 
-        first = resolve_toolset("hermes-cli")
-        second = resolve_toolset("hermes-cli")
+        first = resolve_toolset("eidolon-cli")
+        second = resolve_toolset("eidolon-cli")
 
         assert first == second
         assert get_toolset_calls["n"] == 1, (
@@ -337,7 +337,7 @@ class TestResolveToolsetMemo:
             f"got {get_toolset_calls['n']} calls"
         )
         assert (
-            "hermes-cli", True, registry_id, generation
+            "eidolon-cli", True, registry_id, generation
         ) in toolsets_mod._resolve_toolset_memo
 
     def test_generation_bump_invalidates_memo(self, monkeypatch):
@@ -355,12 +355,12 @@ class TestResolveToolsetMemo:
 
         monkeypatch.setattr(toolsets_mod, "get_toolset", counting_get_toolset)
 
-        resolve_toolset("hermes-cli")
+        resolve_toolset("eidolon-cli")
         assert get_toolset_calls["n"] == 1
 
         # Simulate a registry mutation bumping the generation.
         registry._generation += 1
-        resolve_toolset("hermes-cli")
+        resolve_toolset("eidolon-cli")
         assert get_toolset_calls["n"] == 2, (
             "generation bump must invalidate the memo and re-resolve"
         )
@@ -368,8 +368,17 @@ class TestResolveToolsetMemo:
     def test_memo_result_matches_fresh_resolution(self):
         """The memo must never change the resolved result."""
         toolsets_mod._resolve_toolset_memo.clear()
-        first = resolve_toolset("hermes-cli", include_registry=False)
-        second = resolve_toolset("hermes-cli", include_registry=False)
+        first = resolve_toolset("eidolon-cli", include_registry=False)
+        second = resolve_toolset("eidolon-cli", include_registry=False)
         assert first == second
         assert first  # non-empty sanity
 
+
+
+def test_legacy_builtin_bundle_names_resolve_to_canonical_tools():
+    from toolsets import resolve_toolset, validate_toolset
+    for canonical in TOOLSETS:
+        if canonical.startswith("eidolon-"):
+            legacy = "hermes-" + canonical.removeprefix("eidolon-")
+            assert validate_toolset(legacy)
+            assert resolve_toolset(legacy) == resolve_toolset(canonical)

@@ -51,10 +51,10 @@ class TestHandleUpdateCommand:
         """Returns an error when .git does not exist."""
         runner = _make_runner()
         event = _make_event()
-        # Point _hermes_home to tmp_path and project_root to a dir without .git
+        # Point _eidolon_home to tmp_path and project_root to a dir without .git
         fake_root = tmp_path / "project"
         fake_root.mkdir()
-        with patch("gateway.run._hermes_home", tmp_path), \
+        with patch("gateway.run._eidolon_home", tmp_path), \
              patch("gateway.run.Path") as MockPath:
             # Path(__file__).parent.parent.resolve() -> fake_root
             MockPath.return_value = MagicMock()
@@ -65,7 +65,7 @@ class TestHandleUpdateCommand:
         # Simpler approach — mock at method level using a wrapper
         runner = _make_runner()
 
-        with patch("gateway.run._hermes_home", tmp_path):
+        with patch("gateway.run._eidolon_home", tmp_path):
             # The handler does Path(__file__).parent.parent.resolve()
             # We need to make project_root / '.git' not exist.
             # Since Path(__file__) resolves to the real gateway/run.py,
@@ -101,7 +101,7 @@ class TestHandleUpdateCommand:
              patch("importlib.util.find_spec", return_value=fake_spec):
             result = _resolve_hermes_bin()
 
-        assert result == [sys.executable, "-m", "hermes_cli.main"]
+        assert result == [sys.executable, "-m", "eidolon_cli.main"]
 
 
     @pytest.mark.asyncio
@@ -120,7 +120,7 @@ class TestHandleUpdateCommand:
         hermes_home = tmp_path / "hermes"
         hermes_home.mkdir()
 
-        with patch("gateway.run._hermes_home", hermes_home), \
+        with patch("gateway.run._eidolon_home", hermes_home), \
              patch("gateway.run.__file__", fake_file), \
              patch("shutil.which", side_effect=lambda x: "/usr/bin/hermes" if x == "hermes" else "/usr/bin/setsid"), \
              patch("subprocess.Popen"):
@@ -161,7 +161,7 @@ class TestHandleUpdateCommand:
                 return None
             return None
 
-        with patch("gateway.run._hermes_home", hermes_home), \
+        with patch("gateway.run._eidolon_home", hermes_home), \
              patch("gateway.run.__file__", fake_file), \
              patch("shutil.which", side_effect=which_no_setsid), \
              patch("subprocess.Popen", mock_popen):
@@ -175,7 +175,7 @@ class TestHandleUpdateCommand:
         # start_new_session=True should be in kwargs
         call_kwargs = mock_popen.call_args[1]
         assert call_kwargs.get("start_new_session") is True
-        assert "Starting Hermes update" in result
+        assert "Starting Eidolon update" in result
 
 
 # ---------------------------------------------------------------------------
@@ -209,7 +209,7 @@ class TestUpdateCommandPlatformGate:
         assert Platform.DISCORD not in GatewayRunner._UPDATE_ALLOWED_PLATFORMS
 
         # Make sure the plugin registry is populated so the fallback fires.
-        from hermes_cli.plugins import PluginManager
+        from eidolon_cli.plugins import PluginManager
         PluginManager().discover_and_load(force=True)
         from gateway.platform_registry import platform_registry
         discord_entry = platform_registry.get("discord")
@@ -225,7 +225,7 @@ class TestUpdateCommandPlatformGate:
 
         # The gate must NOT have rejected us — anything other than the
         # ``platform_not_messaging`` rejection string is acceptable here.
-        # Later steps may legitimately return success ("Starting Hermes
+        # Later steps may legitimately return success ("Starting Eidolon
         # update…") or fail for environment reasons.
         assert "only available from messaging platforms" not in result
 
@@ -240,7 +240,7 @@ class TestUpdateCommandPlatformGate:
 
         assert Platform.HOMEASSISTANT not in GatewayRunner._UPDATE_ALLOWED_PLATFORMS
 
-        from hermes_cli.plugins import PluginManager
+        from eidolon_cli.plugins import PluginManager
         PluginManager().discover_and_load(force=True)
         from gateway.platform_registry import platform_registry
         ha_entry = platform_registry.get("homeassistant")
@@ -282,7 +282,7 @@ class TestSendUpdateNotification:
         mock_adapter = AsyncMock()
         runner.adapters = {Platform.TELEGRAM: mock_adapter}
 
-        with patch("gateway.run._hermes_home", hermes_home):
+        with patch("gateway.run._eidolon_home", hermes_home):
             result = await runner._send_update_notification()
 
         assert result is False
@@ -306,7 +306,7 @@ class TestSendUpdateNotification:
         mock_adapter = AsyncMock()
         runner.adapters = {Platform.TELEGRAM: mock_adapter}
 
-        with patch("gateway.run._hermes_home", hermes_home):
+        with patch("gateway.run._eidolon_home", hermes_home):
             result = await runner._send_update_notification()
 
         assert result is True
@@ -338,7 +338,7 @@ class TestSendUpdateNotification:
         mock_adapter.send = AsyncMock()
         runner.adapters = {Platform.TELEGRAM: mock_adapter}
 
-        with patch("gateway.run._hermes_home", hermes_home):
+        with patch("gateway.run._eidolon_home", hermes_home):
             await runner._send_update_notification()
 
         mock_adapter.send.assert_called_once()
@@ -368,7 +368,7 @@ class TestSendUpdateNotification:
         mock_adapter.send.side_effect = RuntimeError("network error")
         runner.adapters = {Platform.TELEGRAM: mock_adapter}
 
-        with patch("gateway.run._hermes_home", hermes_home):
+        with patch("gateway.run._eidolon_home", hermes_home):
             await runner._send_update_notification()
 
         # Files should still be cleaned up (finally block)
@@ -402,7 +402,7 @@ class TestSendUpdateNotification:
         mock_adapter = AsyncMock()
         runner.adapters = {Platform.TELEGRAM: mock_adapter}
 
-        with patch("gateway.run._hermes_home", hermes_home):
+        with patch("gateway.run._eidolon_home", hermes_home):
             result = await runner._send_update_notification()
 
         # No send (wrong platform offline) and the result is deferred.
@@ -437,7 +437,7 @@ class TestSendUpdateNotification:
         exit_code_path.write_text("0")
 
         # First pass: target platform (discord) is still offline → defer.
-        with patch("gateway.run._hermes_home", hermes_home):
+        with patch("gateway.run._eidolon_home", hermes_home):
             first = await runner._send_update_notification()
 
         assert first is False
@@ -447,7 +447,7 @@ class TestSendUpdateNotification:
         mock_adapter = AsyncMock()
         runner.adapters = {Platform.DISCORD: mock_adapter}
 
-        with patch("gateway.run._hermes_home", hermes_home):
+        with patch("gateway.run._eidolon_home", hermes_home):
             second = await runner._send_update_notification()
 
         assert second is True
@@ -478,7 +478,7 @@ class TestSendUpdateNotification:
         mock_adapter = AsyncMock()
         runner.adapters = {Platform.DISCORD: mock_adapter}
 
-        with patch("gateway.run._hermes_home", hermes_home):
+        with patch("gateway.run._eidolon_home", hermes_home):
             delivered = await runner._send_update_notification()
 
         assert delivered is True
@@ -487,7 +487,7 @@ class TestSendUpdateNotification:
         assert "ok before" in sent_text
         assert "invalid byte" in sent_text
         assert "continued after" in sent_text
-        assert "Hermes update finished" in sent_text
+        assert "Eidolon update finished" in sent_text
         assert not pending_path.exists()
         assert not output_path.exists()
         assert not exit_code_path.exists()
@@ -536,11 +536,11 @@ class TestWatchUpdateProgress:
         mock_adapter = AsyncMock()
         runner.adapters = {Platform.TELEGRAM: mock_adapter}
 
-        with patch("gateway.run._hermes_home", hermes_home):
+        with patch("gateway.run._eidolon_home", hermes_home):
             await runner._watch_update_progress(poll_interval=0.01, stream_interval=0.01, timeout=1.0)
 
         sent = "\n".join(call.args[1] for call in mock_adapter.send.call_args_list)
         assert "ok before" in sent
         assert "continued after" in sent
-        assert "Hermes update finished" in sent
+        assert "Eidolon update finished" in sent
         assert not (hermes_home / ".update_pending.json").exists()

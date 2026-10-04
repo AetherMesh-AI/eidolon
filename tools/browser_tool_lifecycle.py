@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from hermes_constants import get_hermes_home, reset_hermes_home_override, set_hermes_home_override
+from eidolon_constants import get_eidolon_home, reset_eidolon_home_override, set_eidolon_home_override
 from tools.browser_tool_origin import origin as _bt
 from tools import browser_tool_cdp as _cdp
 from tools import browser_tool_cloud as _cloud
@@ -102,7 +102,7 @@ def _emergency_cleanup_all_sessions():
 
 @contextlib.contextmanager
 def _session_owner_scope(task_id: str):
-    """Run under the Hermes home + secret scope owning ``task_id``'s session (no-op if unrecorded).
+    """Run under the Eidolon home + secret scope owning ``task_id``'s session (no-op if unrecorded).
 
     The janitor thread is process-global, so each teardown must re-enter its OWN
     profile's scope rather than inherit the spawning profile's; never falls
@@ -114,9 +114,9 @@ def _session_owner_scope(task_id: str):
         return
 
     from agent.secret_scope import build_profile_secret_scope, reset_secret_scope, set_secret_scope
-    from hermes_cli.env_loader import hydrate_profile_secret_sources
+    from eidolon_cli.env_loader import hydrate_profile_secret_sources
 
-    home_token = set_hermes_home_override(owner_home)
+    home_token = set_eidolon_home_override(owner_home)
     try:
         hydrate_profile_secret_sources(Path(owner_home))
         secret_token = set_secret_scope(build_profile_secret_scope(Path(owner_home)))
@@ -125,7 +125,7 @@ def _session_owner_scope(task_id: str):
         finally:
             reset_secret_scope(secret_token)
     finally:
-        reset_hermes_home_override(home_token)
+        reset_eidolon_home_override(home_token)
 
 
 def _forget_session_tracking(task_id: str, *, activity: bool = True, session: bool = False) -> None:
@@ -428,14 +428,14 @@ def _stop_browser_cleanup_thread():
 
 
 def _update_session_activity(task_id: str):
-    """Touch the activity timestamp and record the owning Hermes home on first sight (the
+    """Touch the activity timestamp and record the owning Eidolon home on first sight (the
     janitor tears down under the owner's scope). Does NOT reset ``_cleanup_failures``.
 
     See #86402.
     """
     with _bt._cleanup_lock:
         _bt._session_last_activity[task_id] = time.time()
-        _bt._session_owner_homes.setdefault(task_id, str(get_hermes_home()))
+        _bt._session_owner_homes.setdefault(task_id, str(get_eidolon_home()))
 
 
 def _kill_process_tree(proc: "subprocess.Popen") -> None:
@@ -530,7 +530,7 @@ def _cleanup_old_screenshots(screenshots_dir, max_age_hours=24):
 def _cleanup_old_recordings(max_age_hours=72):
     """Prune old browser recordings."""
     try:
-        recordings_dir = get_hermes_home() / "browser_recordings"
+        recordings_dir = get_eidolon_home() / "browser_recordings"
     except Exception as e:
         _bt.logger.debug("Recording cleanup error (non-critical): %s", e)
         return

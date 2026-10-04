@@ -22,7 +22,7 @@ import time
 from contextlib import closing, contextmanager
 from typing import Any, Dict, Iterator, List, Optional
 
-from hermes_constants import get_hermes_home
+from eidolon_constants import get_eidolon_home
 
 logger = logging.getLogger(__name__)
 _DB_LOCK = threading.Lock()
@@ -139,7 +139,7 @@ def _runtime_retryable(last_error: Any) -> bool:
 
 
 def _db_path():
-    return get_hermes_home() / "state.db"
+    return get_eidolon_home() / "state.db"
 
 
 def _connect() -> sqlite3.Connection:
@@ -155,7 +155,7 @@ def _connect() -> sqlite3.Connection:
 
 
 def _initialize_schema(conn: sqlite3.Connection) -> None:
-    from hermes_state_wal import apply_wal_with_fallback
+    from eidolon_state_wal import apply_wal_with_fallback
     apply_wal_with_fallback(conn, db_label="state.db (delivery_ledger)")
     conn.execute(
         """CREATE TABLE IF NOT EXISTS delivery_obligations (
@@ -511,7 +511,7 @@ def ledger_enabled(config: Optional[Dict[str, Any]] = None) -> bool:
     """Read the ``gateway.delivery_ledger`` config gate (default on)."""
     try:
         if config is None:
-            from hermes_cli.config import load_config
+            from eidolon_cli.config import load_config
             config = load_config()
         value = (config.get("gateway") or {}).get("delivery_ledger", True)
         return value.strip().lower() not in {"false", "0", "no", "off"} if isinstance(value, str) else bool(value)

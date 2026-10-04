@@ -29,7 +29,7 @@ def _profile_user_agent() -> str:
     (OpenCode Zen, etc.) sit behind a WAF that returns 403 for that.
     """
     try:
-        from hermes_cli import __version__ as _ver  # lazy: avoid layer cycle at import time
+        from eidolon_cli import __version__ as _ver  # lazy: avoid layer cycle at import time
         return f"hermes-cli/{_ver}"
     except Exception:
         return "hermes-cli"
@@ -80,7 +80,7 @@ class ProviderProfile:
 
     # ── External-process providers (auth_type="external_process") ──
     # An agent CLI driven over stdio (ACP) rather than an HTTP endpoint. These
-    # describe how to launch it; hermes_cli/auth.py's
+    # describe how to launch it; eidolon_cli/auth.py's
     # resolve_external_process_provider_credentials() reads them instead of
     # hardcoding one vendor's binary. Env vars are checked in order and win
     # over the static defaults, so an operator can point at a custom build.
@@ -309,7 +309,7 @@ class ProviderProfile:
         import json
         import urllib.request
 
-        from hermes_cli.urllib_security import open_credentialed_url
+        from eidolon_cli.urllib_security import open_credentialed_url
 
         req = urllib.request.Request(url)
         if api_key:

@@ -5,6 +5,7 @@
 
 import { atom } from 'nanostores'
 
+import { checkHermesUpdate, getActionStatus, updateHermes } from '@/eidolon'
 import type {
   DesktopUpdateApplyOptions,
   DesktopUpdateApplyResult,
@@ -14,14 +15,13 @@ import type {
   DesktopUpdateStatus,
   DesktopVersionInfo
 } from '@/global'
-import { checkHermesUpdate, getActionStatus, updateHermes } from '@/hermes'
 import { translateNow } from '@/i18n'
 import { persistString, storedString } from '@/lib/storage'
 import { $connectionsRegistry, refreshConnectionsRegistry } from '@/store/connections'
 import { reconnectGateway } from '@/store/gateway-reconnect'
 import { dismissNotification, notify } from '@/store/notifications'
 import { $connection } from '@/store/session'
-import type { BackendUpdateCheckResponse } from '@/types/hermes'
+import type { BackendUpdateCheckResponse } from '@/types/eidolon'
 
 export interface UpdateApplyState {
   applying: boolean
@@ -471,8 +471,8 @@ export async function applyUpdates(opts: DesktopUpdateApplyOptions = {}): Promis
         ...IDLE,
         applying: false,
         stage: 'manual',
-        message: result.command ?? 'hermes update',
-        command: result.command ?? 'hermes update'
+        message: result.command ?? 'eidolon update',
+        command: result.command ?? 'eidolon update'
       })
 
       return result
@@ -680,7 +680,7 @@ async function runBackendUpdate(): Promise<DesktopUpdateApplyResult> {
 
     if (!started.ok) {
       const message = (started as { message?: string }).message || translateNow('updates.applyStatus.notAvailable')
-      const command = (started as { update_command?: string }).update_command || 'hermes update'
+      const command = (started as { update_command?: string }).update_command || 'eidolon update'
       $backendUpdateApply.set({ ...IDLE, applying: false, stage: 'manual', message, command })
 
       return { ok: false, error: 'manual', manual: true, message, command }

@@ -15,14 +15,14 @@ import {
   saveMoaModels,
   setEnvVar,
   setModelAssignment
-} from '@/hermes'
+} from '@/eidolon'
 import type {
   AuxiliaryModelsResponse,
   MoaConfigResponse,
   MoaModelSlot,
   ModelOptionProvider,
   StaleAuxAssignment
-} from '@/hermes'
+} from '@/eidolon'
 import { useI18n } from '@/i18n'
 import { isCodeSkewRestartRequired } from '@/lib/code-skew-error'
 import { AlertTriangle, Cpu, Loader2 } from '@/lib/icons'
@@ -101,7 +101,7 @@ function isProviderReady(p?: ModelOptionProvider): boolean {
   return !!p && (p.authenticated !== false || (p.models?.length ?? 0) > 0)
 }
 
-// Mirrors `_AUX_TASK_SLOTS` in hermes_cli/web_server.py. Friendly labels and
+// Mirrors `_AUX_TASK_SLOTS` in eidolon_cli/web_server.py. Friendly labels and
 // hints make the assignments readable; raw task keys (vision, mcp, …) are
 // opaque to most users.
 interface AuxTaskMeta {
@@ -899,7 +899,7 @@ export function ModelSettings({ onMainModelChanged, scopeProfile }: ModelSetting
           <p className="mt-2 text-xs text-muted-foreground">
             {selectedProviderRow?.auth_type === 'api_key'
               ? `${selectedProviderRow?.name} needs an API key — set it up to choose a model.`
-              : `${selectedProviderRow?.name} signs in through your browser — Hermes runs the flow for you.`}
+              : `${selectedProviderRow?.name} signs in through your browser — Eidolon runs the flow for you.`}
           </p>
         )}
         {config && mainModel && (reasoningSupported || fastSupported) && (

@@ -45,7 +45,7 @@ def _stat_denying(target):
 # --- pure helpers -----------------------------------------------------------
 
 
-def test_heartbeat_path_lives_under_hermes_home_state(hermes_home):
+def test_heartbeat_path_lives_under_eidolon_home_state(hermes_home):
     p = s2z.dashboard_client_heartbeat_path()
     assert p == hermes_home / "state" / "dashboard_clients.heartbeat"
 

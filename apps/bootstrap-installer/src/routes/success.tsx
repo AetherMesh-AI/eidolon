@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { type CSSProperties } from 'react'
 
 import { HackeryButton } from '../components/hackery-button'
-import { launchHermesDesktop } from '../store'
+import { launchEidolonDesktop } from '../store'
 
 /*
  * Success screen. EIDOLON wordmark stays as the visual anchor
@@ -13,7 +13,7 @@ import { launchHermesDesktop } from '../store'
  * Launching the desktop can fail (e.g. Stage-Desktop was skipped and
  * Eidolon.exe doesn't exist). We catch the Tauri error and surface it
  * inline rather than silently doing nothing — the previous version
- * had `onClick={() => void launchHermesDesktop()}` which swallowed
+ * had `onClick={() => void launchEidolonDesktop()}` which swallowed
  * the rejection and left the user staring at an unresponsive button.
  */
 export default function Success() {
@@ -25,7 +25,7 @@ export default function Success() {
     setLaunching(true)
 
     try {
-      await launchHermesDesktop()
+      await launchEidolonDesktop()
       // On success the installer exits — control never returns here.
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
@@ -35,7 +35,7 @@ export default function Success() {
   }
 
   return (
-    <div className="hermes-fade-in flex h-full flex-col items-center justify-center gap-8 px-12 py-10">
+    <div className="eidolon-fade-in flex h-full flex-col items-center justify-center gap-8 px-12 py-10">
       <div className="w-full max-w-2xl min-w-0 text-center">
         <p
           className="fit-text mx-auto mb-4 w-full font-['Collapse'] font-bold uppercase leading-[0.9] tracking-[0.08em] text-midground mix-blend-plus-lighter dark:text-foreground/90"
@@ -55,7 +55,7 @@ export default function Success() {
 
         <p className="m-0 text-center text-base leading-normal tracking-tight text-muted-foreground">
           You can launch from here, or any time from your terminal with{' '}
-          <code className="font-mono text-sm text-foreground/80">hermes desktop</code>.
+          <code className="font-mono text-sm text-foreground/80">eidolon desktop</code>.
         </p>
       </div>
 

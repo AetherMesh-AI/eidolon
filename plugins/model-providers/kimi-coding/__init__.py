@@ -5,7 +5,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from agent.reasoning_effort import KIMI_K3_EFFORTS, KIMI_K3_OVERRIDES, clamp_effort, requested_effort
-from hermes_cli import __version__ as _HERMES_VERSION
+from eidolon_cli import __version__ as _HERMES_VERSION
 from providers import register_provider
 from providers.base import OMIT_TEMPERATURE, ProviderProfile
 

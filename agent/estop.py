@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Optional
 
 # Same profile-aware / fleet-root resolvers the file-safety guards use (fail-open to ~/.hermes).
-from agent.file_safety import _hermes_home_path as _hermes_home, _hermes_root_path as _canonical_root
+from agent.file_safety import _eidolon_home_path as _eidolon_home, _hermes_root_path as _canonical_root
 
 SENTINEL_NAME = "ESTOP"
 
@@ -30,7 +30,7 @@ _logged_components: set[str] = set()
 
 def sentinel_path() -> Path:
     """Path of the ESTOP sentinel this process would write on `hermes pause`."""
-    return _hermes_home() / SENTINEL_NAME
+    return _eidolon_home() / SENTINEL_NAME
 
 
 def _candidate_sentinel_paths() -> list:
@@ -116,7 +116,7 @@ def paused_reply() -> Optional[str]:
     if state is None:
         return None
     tag = f" ({state['reason']})" if state.get("reason") else ""
-    return f"⏸️ Hermes is paused{tag}. New work is on hold; run `hermes resume` to pick things back up."
+    return f"⏸️ Eidolon is paused{tag}. New work is on hold; run `hermes resume` to pick things back up."
 
 
 def check_paused(component: str, logger: logging.Logger) -> bool:

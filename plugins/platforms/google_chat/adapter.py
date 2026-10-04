@@ -379,11 +379,11 @@ class GoogleChatAdapter(BasePlatformAdapter):
         # see one conversation, so thread_id leaves the source (stable session key) and is cached here.
         self._last_inbound_thread: Dict[str, str] = {}
         try:
-            from hermes_constants import get_hermes_home as _get_hermes_home
-            _hermes_home = _get_hermes_home()
+            from eidolon_constants import get_eidolon_home as _get_eidolon_home
+            _eidolon_home = _get_eidolon_home()
         except (ModuleNotFoundError, ImportError):
-            _hermes_home = _Path.home() / ".hermes"
-        self._thread_count_store = _ThreadCountStore(_hermes_home / "google_chat_thread_counts.json")
+            _eidolon_home = _Path.home() / ".eidolon"
+        self._thread_count_store = _ThreadCountStore(_eidolon_home / "google_chat_thread_counts.json")
         # In-flight typing-card creates per chat_id: reserved BEFORE the API call so
         # concurrent _keep_typing calls wait instead of duplicating cards.
         self._typing_card_inflight: Dict[str, asyncio.Event] = {}
@@ -493,8 +493,8 @@ class GoogleChatAdapter(BasePlatformAdapter):
     # -- bot identity --------------------------------------------------------
     def _bot_id_cache_path(self) -> _Path:
         """Resolved at call time so multiplexed profiles don't share one cache file."""
-        from hermes_constants import get_hermes_home as _get_hermes_home
-        return _get_hermes_home() / "google_chat_bot_id.json"
+        from eidolon_constants import get_eidolon_home as _get_eidolon_home
+        return _get_eidolon_home() / "google_chat_bot_id.json"
 
     def _load_cached_bot_id(self) -> Optional[str]:
         try:
@@ -1221,7 +1221,7 @@ class GoogleChatAdapter(BasePlatformAdapter):
         return SendResult(success=True, message_id=resp.get("name"))
 
     async def send_typing(self, chat_id: str, metadata: Any = None) -> None:
-        """Post a visible 'Hermes is thinking…' marker (Chat has no typing API); ``send()``
+        """Post a visible 'Eidolon is thinking…' marker (Chat has no typing API); ``send()``
         PATCHes it with the reply, ``on_processing_complete`` reaps it otherwise. Created in
         the user's thread (patch cannot move it). ``_keep_typing`` wraps this in
         ``wait_for(timeout=1.5)``: a cancelled create would still land an unrecorded card and
@@ -1236,7 +1236,7 @@ class GoogleChatAdapter(BasePlatformAdapter):
                 await asyncio.wait_for(self._typing_card_inflight[chat_id].wait(), timeout=5.0)
             return
         thread_id = self._resolve_thread_id(reply_to=None, metadata=metadata, chat_id=chat_id)
-        body = _thread_body(getattr(self.config, "typing_status_text", None) or "Hermes is thinking…", thread_id)
+        body = _thread_body(getattr(self.config, "typing_status_text", None) or "Eidolon is thinking…", thread_id)
         self._typing_card_inflight[chat_id] = completed = asyncio.Event()
 
         async def _create_and_record() -> None:
@@ -1580,9 +1580,9 @@ Full guide: website/docs/user-guide/messaging/google_chat.md
 
 
 def interactive_setup() -> None:
-    """``hermes setup`` wizard: print GCP instructions, prompt for env vars, persist to ``~/.hermes/.env``."""
-    from hermes_cli.cli_output import print_info, print_success, print_warning, prompt, prompt_yes_no
-    from hermes_cli.config import get_env_value, save_env_value
+    """``eidolon setup`` wizard: print GCP instructions, prompt for env vars, persist to ``~/.hermes/.env``."""
+    from eidolon_cli.cli_output import print_info, print_success, print_warning, prompt, prompt_yes_no
+    from eidolon_cli.config import get_env_value, save_env_value
     existing_sub = get_env_value("GOOGLE_CHAT_SUBSCRIPTION_NAME")
     if existing_sub:
         print_info(f"Google Chat: already configured (subscription: {existing_sub})")
@@ -1620,7 +1620,7 @@ def interactive_setup() -> None:
         save_env_value("GOOGLE_CHAT_HOME_CHANNEL", home.strip())
     print()
     print_success("Google Chat configuration saved to ~/.hermes/.env")
-    print_info("Restart the gateway: hermes gateway restart")
+    print_info("Restart the gateway: eidolon gateway restart")
 
 
 # Strict resource-name patterns: anything outside Chat's documented character set
@@ -1649,7 +1649,7 @@ async def _standalone_send(
     media_files: Optional[List[str]] = None, force_document: bool = False,
 ) -> Dict[str, Any]:
     """POST one Chat message via REST without the SDK (``send_message_tool`` when the
-    gateway runner is not in-process, e.g. ``hermes cron``). Needs SA credentials and a
+    gateway runner is not in-process, e.g. ``eidolon cron``). Needs SA credentials and a
     validated space name; ``media_files`` / ``force_document`` are signature parity only."""
     if not chat_id:
         return _standalone_error("chat_id (space resource) is required")
@@ -1714,7 +1714,7 @@ def register(ctx) -> None:
         validate_config=_validate_config,
         is_connected=_is_connected,
         required_env=["GOOGLE_CHAT_SERVICE_ACCOUNT_JSON"],
-        install_hint="Run `hermes setup` to install Google Chat support.",
+        install_hint="Run `eidolon setup` to install Google Chat support.",
         setup_fn=interactive_setup,
         env_enablement_fn=_env_enablement,
         cron_deliver_env_var="GOOGLE_CHAT_HOME_CHANNEL",
@@ -1733,7 +1733,7 @@ def register(ctx) -> None:
             "in your response. Native file attachments require the user to run /setup-files once in their own DM — "
             "until they do, file requests fall back to a text notice with the host path. Do NOT generate interactive "
             "Card v2 buttons — Google Chat interactivity is not yet supported by this gateway; ask for typed "
-            "confirmations instead. While you are generating a response, a 'Hermes is thinking…' marker message "
+            "confirmations instead. While you are generating a response, a 'Eidolon is thinking…' marker message "
             "appears in the space and is deleted once your response is ready. You do NOT have access to Google "
             "Chat-specific APIs — you cannot search space history, list space members, or manage spaces. Do not "
             "promise to perform these actions; explain that you can only read messages sent directly to you and "

@@ -102,9 +102,9 @@ class TestGatewayRunnerRegistration:
         # Stub out heavy dependencies if not already present
         stubs = [
             "dotenv",
-            "hermes_cli.env_loader",
-            "hermes_cli.config",
-            "hermes_constants",
+            "eidolon_cli.env_loader",
+            "eidolon_cli.config",
+            "eidolon_constants",
         ]
         _orig = {}
         for mod in stubs:

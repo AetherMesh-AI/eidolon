@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { setApiRequestConnection } from '@/hermes'
+import { setApiRequestConnection } from '@/eidolon'
 import { $connection } from '@/store/session'
 
 import { desktopGit } from './desktop-git'

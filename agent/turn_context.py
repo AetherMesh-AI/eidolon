@@ -613,7 +613,7 @@ def _collect_pre_llm_call_context(
     (never the system prompt). Oversized per-hook context is spilled to disk so a
     runaway plugin can't inflate every subsequent turn's prompt."""
     try:
-        from hermes_cli.lifecycle import invoke_hook as _invoke_hook
+        from eidolon_cli.lifecycle import invoke_hook as _invoke_hook
         _pre_results = _invoke_hook(
             "pre_llm_call",
             session_id=agent.session_id,
@@ -797,7 +797,7 @@ def build_turn_context(
     if recovered_history is not None:
         conversation_history = recovered_history
 
-    # Tag log records on this thread with the session ID for ``hermes logs``; bind the
+    # Tag log records on this thread with the session ID for ``eidolon logs``; bind the
     # skill write-origin ContextVar; restore the primary runtime after a fallback turn.
     # NOTE: the DB session row is created later, AFTER the system prompt is restored/built (see
     # _ensure_db_session() below the system-prompt block). Creating it here — before _cached_system_prompt
@@ -1055,7 +1055,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

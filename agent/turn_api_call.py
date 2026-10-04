@@ -112,7 +112,7 @@ def perform_api_call(
             defer_logical_completion=True,
         )
 
-    from hermes_cli.middleware import run_llm_execution_middleware
+    from eidolon_cli.middleware import run_llm_execution_middleware
 
     # The ``_model_request_active`` bracket is taken under the redirect lock when one exists,
     # so redirect() can't observe a half-toggled flag.

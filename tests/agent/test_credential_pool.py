@@ -43,7 +43,7 @@ def test_explicit_reset_timestamp_overrides_default_429_ttl(tmp_path, monkeypatc
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes"))
     # Prevent auto-seeding from Codex CLI tokens on the host
     monkeypatch.setattr(
-        "hermes_cli.auth._import_codex_cli_tokens",
+        "eidolon_cli.auth._import_codex_cli_tokens",
         lambda: None,
     )
     _write_auth_store(
@@ -506,7 +506,7 @@ def test_dead_manual_entry_pruned_after_24h(tmp_path, monkeypatch):
     Manual entries (``manual:*``) are independent credentials with no
     singleton to re-seed from, so we can clean them up after a quiet
     window without losing recoverability — the user can always re-add
-    via ``hermes auth add``.
+    via ``eidolon auth add``.
     """
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes"))
     # DEAD entry from > 24h ago
@@ -677,7 +677,7 @@ def test_load_pool_persists_bitwarden_origin_metadata_without_secret(tmp_path, m
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes"))
     monkeypatch.setenv("OPENROUTER_API_KEY", sentinel)
     monkeypatch.setattr(
-        "hermes_cli.env_loader.get_secret_source",
+        "eidolon_cli.env_loader.get_secret_source",
         lambda env_var: "bitwarden" if env_var == "OPENROUTER_API_KEY" else None,
     )
     _write_auth_store(tmp_path, {"version": 1, "providers": {}})
@@ -837,7 +837,7 @@ def test_write_credential_pool_sanitizes_borrowed_payload_at_disk_boundary(tmp_p
     manual_secret = "MANUAL_SECRET_STAYS_PERSISTABLE"
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes"))
 
-    from hermes_cli.auth import write_credential_pool
+    from eidolon_cli.auth import write_credential_pool
 
     write_credential_pool("openrouter", [
         {
@@ -880,7 +880,7 @@ def test_write_credential_pool_treats_unowned_oauth_source_as_borrowed(tmp_path,
     sentinel = "S3NTINEL_DO_NOT_PERSIST_UNOWNED_OAUTH"
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes"))
 
-    from hermes_cli.auth import write_credential_pool
+    from eidolon_cli.auth import write_credential_pool
 
     write_credential_pool("openrouter", [
         {
@@ -908,7 +908,7 @@ def test_write_credential_pool_preserves_known_provider_owned_oauth_state(tmp_pa
     sentinel = "PROVIDER_OWNED_DEVICE_CODE_STAYS_PERSISTABLE"
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes"))
 
-    from hermes_cli.auth import write_credential_pool
+    from eidolon_cli.auth import write_credential_pool
 
     write_credential_pool("nous", [
         {
@@ -1077,12 +1077,12 @@ def test_nous_runtime_api_key_rejects_opaque_agent_key():
 def test_load_pool_api_key_path_skips_oauth_autodiscovery(tmp_path, monkeypatch):
     """API-key auth path: autodiscovered OAuth creds must NOT be seeded.
 
-    When the user picks "Anthropic API key" at `hermes setup`,
+    When the user picks "Anthropic API key" at `eidolon setup`,
     `save_anthropic_api_key()` writes ANTHROPIC_API_KEY and zeros
     ANTHROPIC_TOKEN.  That env-var pattern is the explicit signal that the
     user opted into the API-key path and explicitly OUT of the OAuth
     masquerade (Claude Code identity injection + `mcp_` tool-name rewrite
-    + claude-cli user-agent).  Autodiscovered Claude Code / Hermes PKCE
+    + claude-cli user-agent).  Autodiscovered Claude Code / Eidolon PKCE
     tokens from other tools' credential files must NOT be silently mixed
     into the anthropic pool — otherwise rotation on a 401/429 could flip
     the session onto OAuth credentials mid-conversation.
@@ -1092,7 +1092,7 @@ def test_load_pool_api_key_path_skips_oauth_autodiscovery(tmp_path, monkeypatch)
     monkeypatch.delenv("ANTHROPIC_TOKEN", raising=False)
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
     _write_auth_store(tmp_path, {"version": 1, "providers": {}})
-    monkeypatch.setattr("hermes_cli.auth.is_provider_explicitly_configured", lambda pid: True)
+    monkeypatch.setattr("eidolon_cli.auth.is_provider_explicitly_configured", lambda pid: True)
 
     pkce_called = {"n": 0}
     cc_called = {"n": 0}
@@ -1133,7 +1133,7 @@ def test_load_pool_api_key_path_prunes_stale_oauth_entries(tmp_path, monkeypatch
 
     Without this, a user who logs into OAuth (seeding `claude_code` or
     `hermes_pkce` into auth.json) and later switches to the API key at
-    `hermes setup` would still have those OAuth entries dormant on disk.
+    `eidolon setup` would still have those OAuth entries dormant on disk.
     Pool rotation on a transient 401 could revive them and flip the
     session onto the OAuth masquerade.
     """
@@ -1166,7 +1166,7 @@ def test_load_pool_api_key_path_prunes_stale_oauth_entries(tmp_path, monkeypatch
             },
         },
     )
-    monkeypatch.setattr("hermes_cli.auth.is_provider_explicitly_configured", lambda pid: True)
+    monkeypatch.setattr("eidolon_cli.auth.is_provider_explicitly_configured", lambda pid: True)
     monkeypatch.setattr("agent.anthropic_credentials.read_hermes_oauth_credentials", lambda: None)
     monkeypatch.setattr("agent.anthropic_credentials.read_claude_code_credentials", lambda: None)
 
@@ -1184,7 +1184,7 @@ def test_load_pool_oauth_path_still_autodiscovers(tmp_path, monkeypatch):
     """OAuth path: ANTHROPIC_TOKEN set, autodiscovery still fires.
 
     Regression guard: the API-key gate must not affect users who chose the
-    OAuth path at `hermes setup`.  When ANTHROPIC_TOKEN is set (and
+    OAuth path at `eidolon setup`.  When ANTHROPIC_TOKEN is set (and
     ANTHROPIC_API_KEY is empty), autodiscovered Claude Code creds should
     still be seeded into the pool as before.
     """
@@ -1193,7 +1193,7 @@ def test_load_pool_oauth_path_still_autodiscovers(tmp_path, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_TOKEN", "sk-ant-oat01-explicit-oauth-token")
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
     _write_auth_store(tmp_path, {"version": 1, "providers": {}})
-    monkeypatch.setattr("hermes_cli.auth.is_provider_explicitly_configured", lambda pid: True)
+    monkeypatch.setattr("eidolon_cli.auth.is_provider_explicitly_configured", lambda pid: True)
 
     monkeypatch.setattr(
         "agent.anthropic_credentials.read_hermes_oauth_credentials",
@@ -1375,7 +1375,7 @@ def test_load_pool_does_not_seed_claude_code_when_anthropic_not_configured(tmp_p
     )
     # User configured kimi-coding, NOT anthropic
     monkeypatch.setattr(
-        "hermes_cli.auth.is_provider_explicitly_configured",
+        "eidolon_cli.auth.is_provider_explicitly_configured",
         lambda pid: pid == "kimi-coding",
     )
 
@@ -1392,7 +1392,7 @@ def test_load_pool_seeds_copilot_via_gh_auth_token(tmp_path, monkeypatch):
     _write_auth_store(tmp_path, {"version": 1, "credential_pool": {}})
 
     monkeypatch.setattr(
-        "hermes_cli.copilot_auth.resolve_copilot_token",
+        "eidolon_cli.copilot_auth.resolve_copilot_token",
         lambda: ("gho_fake_token_abc123", "gh auth token"),
     )
 
@@ -1414,7 +1414,7 @@ def test_load_pool_skips_exchange_for_suppressed_copilot(tmp_path, monkeypatch):
     ``get_copilot_api_token`` (which retries 3x with backoff, ~13s worst
     case), so every pool load — model picker open, /model, agent startup —
     burned the full exchange dead time for a source the user had already
-    removed with ``hermes auth remove copilot gh_cli``.  The gate must run
+    removed with ``eidolon auth remove copilot gh_cli``.  The gate must run
     BEFORE the network call.
     """
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes"))
@@ -1428,7 +1428,7 @@ def test_load_pool_skips_exchange_for_suppressed_copilot(tmp_path, monkeypatch):
     )
 
     monkeypatch.setattr(
-        "hermes_cli.copilot_auth.resolve_copilot_token",
+        "eidolon_cli.copilot_auth.resolve_copilot_token",
         lambda: ("gho_fake_token_abc123", "gh auth token"),
     )
 
@@ -1440,7 +1440,7 @@ def test_load_pool_skips_exchange_for_suppressed_copilot(tmp_path, monkeypatch):
         raise AssertionError("exchange must not run for a suppressed source")
 
     monkeypatch.setattr(
-        "hermes_cli.copilot_auth.get_copilot_api_token",
+        "eidolon_cli.copilot_auth.get_copilot_api_token",
         _boom,
     )
 
@@ -1471,7 +1471,7 @@ def test_load_pool_respects_env_var_copilot_suppression(tmp_path, monkeypatch):
     )
 
     monkeypatch.setattr(
-        "hermes_cli.copilot_auth.resolve_copilot_token",
+        "eidolon_cli.copilot_auth.resolve_copilot_token",
         lambda: ("gho_fake_token_env", "GH_TOKEN"),
     )
 
@@ -1483,7 +1483,7 @@ def test_load_pool_respects_env_var_copilot_suppression(tmp_path, monkeypatch):
         raise AssertionError("exchange must not run for a suppressed env source")
 
     monkeypatch.setattr(
-        "hermes_cli.copilot_auth.get_copilot_api_token",
+        "eidolon_cli.copilot_auth.get_copilot_api_token",
         _boom,
     )
 
@@ -1511,11 +1511,11 @@ def test_load_pool_gh_cli_suppression_does_not_block_env_tokens(tmp_path, monkey
     )
 
     monkeypatch.setattr(
-        "hermes_cli.copilot_auth.resolve_copilot_token",
+        "eidolon_cli.copilot_auth.resolve_copilot_token",
         lambda: ("gho_fake_token_env", "GH_TOKEN"),
     )
     monkeypatch.setattr(
-        "hermes_cli.copilot_auth.get_copilot_api_token",
+        "eidolon_cli.copilot_auth.get_copilot_api_token",
         lambda token: ("capi_exchanged_token", None),
     )
 
@@ -1529,7 +1529,7 @@ def test_load_pool_skips_resolve_when_all_copilot_sources_suppressed(tmp_path, m
     """With every copilot source suppressed, resolve_copilot_token (which
     shells out to ``gh auth token``) must not run at all."""
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes"))
-    from hermes_cli.copilot_auth import COPILOT_ENV_VARS
+    from eidolon_cli.copilot_auth import COPILOT_ENV_VARS
     _write_auth_store(
         tmp_path,
         {
@@ -1544,7 +1544,7 @@ def test_load_pool_skips_resolve_when_all_copilot_sources_suppressed(tmp_path, m
     def _boom():
         raise AssertionError("resolve_copilot_token must not run when all sources are suppressed")
 
-    monkeypatch.setattr("hermes_cli.copilot_auth.resolve_copilot_token", _boom)
+    monkeypatch.setattr("eidolon_cli.copilot_auth.resolve_copilot_token", _boom)
 
     from agent.credential_pool import load_pool
     pool = load_pool("copilot")
@@ -1560,7 +1560,7 @@ def test_load_pool_seeds_qwen_oauth_via_cli_tokens(tmp_path, monkeypatch):
     _write_auth_store(tmp_path, {"version": 1, "credential_pool": {}})
 
     monkeypatch.setattr(
-        "hermes_cli.auth.resolve_qwen_runtime_credentials",
+        "eidolon_cli.auth.resolve_qwen_runtime_credentials",
         lambda **kw: {
             "provider": "qwen-oauth",
             "base_url": "https://portal.qwen.ai/v1",
@@ -1586,10 +1586,10 @@ def test_load_pool_does_not_seed_qwen_oauth_when_no_token(tmp_path, monkeypatch)
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes"))
     _write_auth_store(tmp_path, {"version": 1, "credential_pool": {}})
 
-    from hermes_cli.auth import AuthError
+    from eidolon_cli.auth import AuthError
 
     monkeypatch.setattr(
-        "hermes_cli.auth.resolve_qwen_runtime_credentials",
+        "eidolon_cli.auth.resolve_qwen_runtime_credentials",
         lambda **kw: (_ for _ in ()).throw(
             AuthError("Qwen CLI credentials not found.", provider="qwen-oauth", code="qwen_auth_missing")
         ),
@@ -1810,7 +1810,7 @@ def test_persist_preserves_concurrent_disk_only_entry(tmp_path, monkeypatch):
     )
 
     from agent.credential_pool import load_pool
-    from hermes_cli.auth import read_credential_pool, write_credential_pool
+    from eidolon_cli.auth import read_credential_pool, write_credential_pool
 
     pool = load_pool("anthropic")
     assert {entry.id for entry in pool.entries()} == {"cred-A", "cred-B"}
@@ -1854,7 +1854,7 @@ def _make_anthropic_claude_code_pool(tmp_path, monkeypatch, *, access_token, ref
     monkeypatch.delenv("ANTHROPIC_TOKEN", raising=False)
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
     _write_auth_store(tmp_path, {"version": 1, "credential_pool": {}})
-    monkeypatch.setattr("hermes_cli.auth.is_provider_explicitly_configured", lambda pid: pid == "anthropic")
+    monkeypatch.setattr("eidolon_cli.auth.is_provider_explicitly_configured", lambda pid: pid == "anthropic")
     monkeypatch.setattr(
         "agent.anthropic_credentials.read_hermes_oauth_credentials",
         lambda: None,
@@ -2124,7 +2124,7 @@ def test_reset_statuses_clears_a_cooldown_that_is_still_binding(tmp_path, monkey
     snapshot so one process cannot resurrect a key another has just benched.
     ``reset_statuses`` clears ``last_status_at`` to None, which that merge reads
     as epoch 0 — older than any real timestamp — so the reset always lost and
-    the cooldown was copied straight back. ``hermes auth reset`` printed "Reset
+    the cooldown was copied straight back. ``eidolon auth reset`` printed "Reset
     status on 1 credentials" and changed nothing on disk.
 
     The cooldown here is deliberately RECENT. Once a cooldown has expired the
@@ -2157,7 +2157,7 @@ def test_reset_statuses_clears_the_classified_failure_reason(tmp_path, monkeypat
 
     It lives in ``extra`` rather than as a dataclass field, so ``replace()``
     could not reach it and it outlived every reset — leaving an entry with no
-    status and no error code but still classified ``billing``. ``hermes auth
+    status and no error code but still classified ``billing``. ``eidolon auth
     list`` renders that leftover as though it were a current finding.
     """
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes"))
@@ -2186,7 +2186,7 @@ def test_a_persist_without_declared_intent_still_cannot_erase_a_cooldown(
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes"))
     _exhausted_billing_store(tmp_path, age_seconds=5)
 
-    from hermes_cli.auth import write_credential_pool
+    from eidolon_cli.auth import write_credential_pool
 
     # A stale snapshot: same id, status cleared, intent NOT declared.
     write_credential_pool(

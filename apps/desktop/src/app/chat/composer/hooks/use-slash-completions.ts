@@ -2,7 +2,7 @@ import type { Unstable_TriggerAdapter, Unstable_TriggerItem } from '@assistant-u
 import { useStore } from '@nanostores/react'
 import { useCallback, useEffect } from 'react'
 
-import type { HermesGateway } from '@/hermes'
+import type { HermesGateway } from '@/eidolon'
 import { sessionTitle } from '@/lib/chat-runtime'
 import {
   type CommandsCatalogLike,

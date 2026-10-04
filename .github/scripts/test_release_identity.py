@@ -45,8 +45,8 @@ class IdentityTests(unittest.TestCase):
             git('config', 'user.name', 'Offline fixture')
             desktop = root / 'apps/desktop'; desktop.mkdir(parents=True)
             shutil.copy(r.DESKTOP / 'package.json', desktop / 'package.json')
-            owner = root / 'hermes_cli'; owner.mkdir()
-            shutil.copy(r.ROOT / 'hermes_cli/eidolon_version.py', owner / 'eidolon_version.py')
+            owner = root / 'eidolon_cli'; owner.mkdir()
+            shutil.copy(r.ROOT / 'eidolon_cli/eidolon_version.py', owner / 'eidolon_version.py')
             git('add', '.'); git('commit', '-m', 'small release fixture')
             git('tag', 'alpha-v2.3.4')
             git('commit', '--allow-empty', '-m', 'next')
@@ -54,9 +54,7 @@ class IdentityTests(unittest.TestCase):
             env = dict(os.environ, GITHUB_SHA=sha, GITHUB_ACTIONS='true')
             with patch.object(r, 'ROOT', root), patch.object(r, 'DESKTOP', desktop), patch.dict(os.environ, env, clear=True):
                 identity = r.verified_build_identity()
-                distance = git('rev-list', '--first-parent', sha).splitlines().index(
-                    '437db7394d78a178966fb2ae42792f2978133a9d')
-                self.assertEqual(identity['version'], f'0.1.{distance}')
+                self.assertEqual(identity['version'], json.loads((desktop / 'package.json').read_text())['version'])
                 stamp_dir = desktop / 'build'; stamp_dir.mkdir()
                 (root / '.gitignore').write_text('apps/desktop/build/\n')
                 git('add', '.gitignore'); git('commit', '-m', 'ignore build output')
@@ -74,7 +72,7 @@ class IdentityTests(unittest.TestCase):
                         r.verify_packaged_identity(dict(identity, **{key: value}), identity)
                 version = identity['version']
                 xml = f'<pkg-info identifier="com.aethermesh-ai.eidolon" version="{version}" install-location="/Applications" relocatable="false"><bundle path="./Eidolon.app"/></pkg-info>'
-                r.validate_pkg_info(xml, 'alpha-v' + version)
+                r.validate_pkg_info(xml, 'v' + version)
                 tag = 'alpha-v0.1.0'; assets = Path(td) / 'assets'; assets.mkdir()
                 proofs = Path(td) / 'proofs'
                 for platform, arch, label, ext in r.VARIANTS:

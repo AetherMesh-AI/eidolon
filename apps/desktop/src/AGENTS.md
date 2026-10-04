@@ -3,20 +3,20 @@
 Applies on top of `apps/desktop/AGENTS.md` (the judgment guide) and the root `AGENTS.md`.
 Root TypeScript style rules apply.
 
-## The desktop is its own chat surface on a `hermes serve` backend
+## The desktop is its own chat surface on a `eidolon serve` backend
 
 Electron + React + nanostores (`@assistant-ui/react`) talking to a `tui_gateway` backend over
 JSON-RPC (`requestGateway(method, params)`); transport lives in the framework-agnostic `apps/shared`
-(`@hermes/shared`: `JsonRpcGatewayClient` + WS URL helpers), which the web dashboard also consumes.
+(`@aethermesh/shared`: `JsonRpcGatewayClient` + WS URL helpers), which the web dashboard also consumes.
 The desktop has **no build/runtime dependency on the dashboard frontend**: it spawns a headless
-`hermes serve` (`headless_backend=True` → `cmd_dashboard` skips `_build_web_ui` and exports
+`eidolon serve` (`headless_backend=True` → `cmd_dashboard` skips `_build_web_ui` and exports
 `HERMES_SERVE_HEADLESS=1` so `mount_spa()` disables the SPA even if a stray `web_dist/` exists).
 `dashboard` and `serve` share `cmd_dashboard`/`start_server` but neither launches the other. It does
-NOT embed `hermes --tui` — own composer, transcript, slash pipeline.
+NOT embed `eidolon --tui` — own composer, transcript, slash pipeline.
 
 **One backward-compat fallback:** `serve` is newer, so the spawn (`electron/backend-command.ts` +
 `backendSupportsServe()` in `electron/main.ts`) checks whether the resolved runtime registers `serve`
-and ONLY when it does not (older managed install / PATH `hermes` not yet updated) rewrites argv to
+and ONLY when it does not (older managed install / PATH `eidolon` not yet updated) rewrites argv to
 legacy `dashboard --no-open`. Without it a new app against an un-upgraded runtime crashes on an
 unknown subcommand and bricks every mid-upgrade user. Keep it narrow and tested.
 
@@ -46,9 +46,9 @@ user-activated extensions. If you tighten `desktop-slash-commands.ts`, keep
 `isDesktopSlashExtensionCommand` flowing into both paths. Test: from `apps/desktop`,
 `npx vitest run src/lib/desktop-slash-commands.test.ts` (workspace deps install at the repo root).
 
-## Bot Mode (`src/plugins/hermes-bots/`) — one bot = ONE canonical forever-chat, identified by NAME
+## Bot Mode (`src/plugins/eidolon-bots/`) — one bot = ONE canonical forever-chat, identified by NAME
 
-Each bot is a Hermes **profile** with a persistent identity. This invariant regressed repeatedly,
+Each bot is an Eidolon **profile** with a persistent identity. This invariant regressed repeatedly,
 cost users conversation history each time, and is not open for re-litigation in a routine PR.
 
 The chat's only identity is **(profile, session titled exactly "Bot Chat")**; the state DB's
@@ -77,7 +77,7 @@ target; such reports are about side-chats and the fix belongs in the Sessions si
 The gateway reports the registry row as `canonical_session` on `profiles.list` (resolved server-side
 by title); roster preview, activity signals, and the `/new`→`/compact` guard all read it, so preview
 identity and click identity are the same row by construction. Contract tests:
-in `src/plugins/hermes-bots/`: `canonical-chat-registry.test.ts` (tripwire: the open path never
+in `src/plugins/eidolon-bots/`: `canonical-chat-registry.test.ts` (tripwire: the open path never
 reads/writes a stored pointer), `canonical-chat-creation.test.ts`, `canonical-chat-adopt-on-conflict.test.ts`,
 `bot-row-opens-canonical-chat.test.ts`, `hide-bot-chats.test.ts`; plus repo-root
 `tests/tui_gateway/test_profiles_list_canonical_session.py`.

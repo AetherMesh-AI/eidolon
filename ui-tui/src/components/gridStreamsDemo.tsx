@@ -1,4 +1,4 @@
-import { Box, Text } from '@hermes/ink'
+import { Box, Text } from '@aethermesh/ink'
 import { memo, type ReactNode, useEffect, useRef, useState } from 'react'
 
 import { sparkRows } from '../lib/charts.js'

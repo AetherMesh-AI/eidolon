@@ -3,7 +3,7 @@
 The provider is KEYLESS: OpenCode's free tier is served anonymously and
 rejects any unrecognized Authorization bearer with 401, so the provider
 declares no env vars and every request goes out with an empty Authorization
-header (see hermes_cli.models.opencode_zen_free_runtime).
+header (see eidolon_cli.models.opencode_zen_free_runtime).
 """
 
 import os
@@ -63,7 +63,7 @@ class TestOpenCodeFreeAuthAlias:
     """Verify the hardcoded alias in auth.py resolve_provider()."""
 
     def test_resolve_provider_free_alias(self):
-        from hermes_cli.auth import resolve_provider
+        from eidolon_cli.auth import resolve_provider
         # "free" should resolve to "opencode-free" without any credential
         result = resolve_provider("free")
         assert result == "opencode-free"
@@ -75,7 +75,7 @@ class TestOpenCodeFreeModelLists:
     def test_delisted_ox_alpha_not_in_floor(self):
         """x-preview-f-free was delisted by the relay 2026-08-26 (401s keyless);
         the offline floor must not offer it (#95914)."""
-        from hermes_cli.models import _PROVIDER_MODELS
+        from eidolon_cli.models import _PROVIDER_MODELS
         assert "x-preview-f-free" not in _PROVIDER_MODELS["opencode-free"]
 
 
@@ -83,7 +83,7 @@ class TestOpenCodeFreeRuntimeKeyless:
     """The runtime resolver pins every opencode-free model keyless."""
 
     def test_free_provider_any_model_routes_keyless(self):
-        from hermes_cli.models import (
+        from eidolon_cli.models import (
             OPENCODE_ZEN_FREE_KEYLESS_PLACEHOLDER,
             opencode_zen_free_runtime,
         )
@@ -95,7 +95,7 @@ class TestOpenCodeFreeRuntimeKeyless:
 
     def test_free_provider_muse_routes_responses(self):
         """opencode-free inherits Zen's per-model endpoint routing."""
-        from hermes_cli.models import opencode_zen_free_runtime
+        from eidolon_cli.models import opencode_zen_free_runtime
         rt = opencode_zen_free_runtime(
             "opencode-free", "muse-spark-1.2-contributor-free"
         )

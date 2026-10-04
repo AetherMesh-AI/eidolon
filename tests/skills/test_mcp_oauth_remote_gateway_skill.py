@@ -86,8 +86,8 @@ def _run_main(mod, tokens_dir, argv, responses):
     with patch.object(mod.os, "environ", dict(mod.os.environ, HERMES_HOME=str(tokens_dir.parent))), \
          patch.object(mod.urllib.request, "urlopen", side_effect=fake_urlopen), \
          patch.object(sys, "argv", ["diagnose-oauth-mcp.py", *argv]):
-        # Force the env-var fallback path (ignore any importable hermes_constants).
-        with patch.object(mod, "_hermes_home", lambda: str(tokens_dir.parent)):
+        # Force the env-var fallback path (ignore any importable eidolon_constants).
+        with patch.object(mod, "_eidolon_home", lambda: str(tokens_dir.parent)):
             buf = io.StringIO()
             from contextlib import redirect_stdout
             with redirect_stdout(buf):
@@ -152,4 +152,4 @@ def test_skill_md_frontmatter_invariants():
     assert len(fm["description"]) <= 60
     assert fm["description"].endswith(".")
     assert "platforms" in fm and len(fm["platforms"]) >= 1
-    assert fm["author"].split(",")[0].strip() != "Hermes Agent"  # human credited first
+    assert fm["author"].split(",")[0].strip() != "Eidolon Agent"  # human credited first

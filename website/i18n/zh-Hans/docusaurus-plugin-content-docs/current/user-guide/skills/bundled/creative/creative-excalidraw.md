@@ -25,7 +25,7 @@ description: "手绘风格 Excalidraw JSON 图表（架构图、流程图、时�
 ## 参考：完整 SKILL.md
 
 :::info
-以下是 Hermes 在触发此 skill 时加载的完整 skill 定义。这是 agent 在 skill 激活时所看到的指令内容。
+以下是 Eidolon 在触发此 skill 时加载的完整 skill 定义。这是 agent 在 skill 激活时所看到的指令内容。
 :::
 
 # Excalidraw 图表 Skill
@@ -51,7 +51,7 @@ description: "手绘风格 Excalidraw JSON 图表（架构图、流程图、时�
 {
   "type": "excalidraw",
   "version": 2,
-  "source": "hermes-agent",
+  "source": "eidolon-agent",
   "elements": [ ...your elements array here... ],
   "appState": {
     "viewBackgroundColor": "#ffffff"

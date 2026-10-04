@@ -171,7 +171,7 @@ class MCPServerTransportMixin:
         # Machine spawn ledger (startup sweeps reap orphans after an unclean exit); best-effort.
         for _pid in new_pids:
             try:
-                from hermes_cli.process_identity import register_child
+                from eidolon_cli.process_identity import register_child
                 register_child(_pid, "mcp-helper")
             except Exception:
                 logger.debug("spawn-ledger register_child failed for MCP helper pid %s", _pid, exc_info=True)
@@ -209,7 +209,7 @@ class MCPServerTransportMixin:
                            "HTTP/SSE transports — ignored for stdio servers", self.name)
         if not _core._ensure_mcp_sdk():
             raise ImportError(f"MCP server '{self.name}' requires the 'mcp' Python SDK, but "
-                              "it is not installed. Run `hermes setup` to install MCP support, then retry.")
+                              "it is not installed. Run `eidolon setup` to install MCP support, then retry.")
         command = config.get("command")
         if not command:
             raise ValueError(f"MCP server '{self.name}' has no 'command' in config")

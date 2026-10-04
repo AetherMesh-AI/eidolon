@@ -48,7 +48,7 @@ _ROOM_GRANT_SECRET_FILE = ".room-link-grant-secret"
 @lru_cache(maxsize=32)
 def _gateway_room_grant_secret_for_home(home_value: str) -> bytes:
     """Load one restart-scoped grant secret for an exact installation root."""
-    from hermes_cli.install_identity import _fsync_directory
+    from eidolon_cli.install_identity import _fsync_directory
     (home := Path(home_value)).mkdir(parents=True, exist_ok=True)
     path = home / _ROOM_GRANT_SECRET_FILE
     def _read() -> bytes:
@@ -89,10 +89,10 @@ def gateway_room_grant_secret(root: Path | str | None = None) -> bytes:
     or capability RPCs, and is shared only by this installation's gateway processes.
     """
     if root is None:
-        from hermes_constants import get_hermes_home
+        from eidolon_constants import get_eidolon_home
         # Profile routing uses a context-local HERMES_HOME override; the process environment
         # retains the installation root and is the authority here.
-        root = os.environ.get("HERMES_HOME") or get_hermes_home()
+        root = os.environ.get("HERMES_HOME") or get_eidolon_home()
     return _gateway_room_grant_secret_for_home(str(Path(root).expanduser().resolve()))
 
 
@@ -288,15 +288,15 @@ def local_room_link_endpoint(value: Any | None = None) -> dict[str, Any]:
 def _room_link_url_from_config(home: str) -> str | None:
     """Read the restart-scoped user setting without polling config on probes."""
     from gateway.config import load_gateway_config
-    from hermes_constants import get_hermes_home, reset_hermes_home_override, set_hermes_home_override
-    if str(get_hermes_home()) == home:
+    from eidolon_constants import get_eidolon_home, reset_eidolon_home_override, set_eidolon_home_override
+    if str(get_eidolon_home()) == home:
         value = load_gateway_config().room_link_url
     else:
-        token = set_hermes_home_override(home)
+        token = set_eidolon_home_override(home)
         try:
             value = load_gateway_config().room_link_url
         finally:
-            reset_hermes_home_override(token)
+            reset_eidolon_home_override(token)
     return value.strip() if isinstance(value, str) and value.strip() else None
 
 
@@ -304,8 +304,8 @@ def _configured_room_link_url() -> str | None:
     """Resolve the explicit endpoint: env override > profile config > root config."""
     if (override := os.getenv("HERMES_ROOM_LINK_URL")) is not None:
         return override
-    from hermes_constants import get_default_hermes_root, get_hermes_home
-    home = get_hermes_home()
+    from eidolon_constants import get_default_hermes_root, get_eidolon_home
+    home = get_eidolon_home()
     if configured := _room_link_url_from_config(str(home)):
         return configured
     # RoomLink is a gateway reachability property, not a Bot personality setting: named profiles may

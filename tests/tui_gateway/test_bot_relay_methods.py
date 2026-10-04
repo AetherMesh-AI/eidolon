@@ -87,7 +87,7 @@ def test_deliver_validates_profile_and_runs_transport(home, monkeypatch):
     argv = calls["argv"]
     # argv[0] may be a resolved venv path (#93590) — match by basename.
     assert argv[1:3] == ["-p", "ops"]
-    assert argv[0].rsplit("\\", 1)[-1].rsplit("/", 1)[-1] in ("hermes", "hermes.exe")
+    assert argv[0].rsplit("\\", 1)[-1].rsplit("/", 1)[-1] in ("eidolon", "eidolon.exe")
     assert "Bot Chat" in argv and "--query-file" in argv
 
     # 'hermes' alias resolves to default

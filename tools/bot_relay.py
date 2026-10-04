@@ -99,7 +99,7 @@ def _bot_mode_cfg(key: str, *, loader: str) -> Any:
     """``bot_mode.<key>`` from config, read lazily (tools/ must not import CLI
     config at import time); None when absent or the config is unreadable."""
     try:
-        import hermes_cli.config as cfgmod
+        import eidolon_cli.config as cfgmod
 
         cfg = getattr(cfgmod, loader)() or {}
         return (cfg.get("bot_mode") or {}).get(key)
@@ -356,7 +356,7 @@ def waiter_command(root: Path | str, envelope: dict) -> str:
     return f"{shlex.quote(sys.executable or 'python3')} -c {shlex.quote(code)}"
 
 
-def _hermes_cli() -> str:
+def _eidolon_cli() -> str:
     """hermes CLI beside this interpreter, then ``shutil.which``, then the bare name
     (service contexts lack PATH, so a bare "hermes" died with ENOENT).
 
@@ -367,13 +367,13 @@ def _hermes_cli() -> str:
     installed script), a ``shutil.which`` lookup runs next — it honors whatever PATH the process does have —
     before falling back to the bare name, preserving today's behavior for interactive shells.
     """
-    sibling = Path(sys.executable or "").parent / ("hermes.exe" if sys.platform == "win32" else "hermes")
-    return str(sibling) if sibling.is_file() else shutil.which("hermes") or "hermes"
+    sibling = Path(sys.executable or "").parent / ("eidolon.exe" if sys.platform == "win32" else "eidolon")
+    return str(sibling) if sibling.is_file() else shutil.which("eidolon") or "eidolon"
 
 
 def local_delivery_command(profile: str, query_file: str) -> list[str]:
     """argv that delivers a DM into ``profile``'s Bot Chat on THIS gateway."""
-    return [_hermes_cli(), "-p", profile, *BOT_CHAT_TURN_ARGS, "--query-file", query_file]
+    return [_eidolon_cli(), "-p", profile, *BOT_CHAT_TURN_ARGS, "--query-file", query_file]
 
 
 # Two deliveries into the SAME profile must never run Bot Chat turns concurrently.

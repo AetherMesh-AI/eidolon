@@ -35,7 +35,7 @@ copilot_acp = CopilotACPProfile(
     base_url="acp://copilot",  # ACP internal scheme
     auth_type="external_process",
     # How to launch the CLI; env var names predate this profile (formerly hardcoded in
-    # hermes_cli/auth.py), so existing setups keep working.
+    # eidolon_cli/auth.py), so existing setups keep working.
     process_command="copilot",
     process_args=("--acp", "--stdio"),
     process_command_env_vars=("HERMES_COPILOT_ACP_COMMAND", "COPILOT_CLI_PATH"),

@@ -200,7 +200,7 @@ export function sessionRoute(sessionId: string): string {
 export function appViewForPath(pathname: string): AppView {
   const path = routePathname(pathname)
 
-  if (isOrganizationRoute(path)) return 'organization'
+  if (isOrganizationRoute(path)) {return 'organization'}
 
   if (isNewChatRoute(path) || routeSessionId(path)) {
     return 'chat'

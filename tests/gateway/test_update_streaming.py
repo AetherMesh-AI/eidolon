@@ -1,6 +1,6 @@
 """Tests for /update live streaming, prompt forwarding, and gateway IPC.
 
-Tests the new --gateway mode for hermes update, including:
+Tests the new --gateway mode for eidolon update, including:
 - _gateway_prompt() file-based IPC
 - _watch_update_progress() output streaming and prompt detection
 - Message interception for update prompt responses
@@ -78,7 +78,7 @@ class TestGatewayPrompt:
         thread.start()
 
         with patch.dict(os.environ, {"HERMES_HOME": str(hermes_home)}):
-            from hermes_cli.update_cmd import _gateway_prompt
+            from eidolon_cli.update_cmd import _gateway_prompt
             result = _gateway_prompt("Restore? [Y/n]", "y", timeout=5.0)
 
         thread.join()
@@ -98,7 +98,7 @@ class TestRestoreStashWithInputFn:
 
     def test_uses_input_fn_when_provided(self, tmp_path):
         """When input_fn is provided, it's called instead of input()."""
-        from hermes_cli.update_cmd import _restore_stashed_changes
+        from eidolon_cli.update_cmd import _restore_stashed_changes
 
         captured_args = []
 
@@ -127,7 +127,7 @@ class TestRestoreStashWithInputFn:
 
 
 class TestUpdateCommandGatewayFlag:
-    """Verify the gateway spawns hermes update --gateway."""
+    """Verify the gateway spawns eidolon update --gateway."""
 
     @pytest.mark.asyncio
     async def test_spawns_with_gateway_flag(self, tmp_path):
@@ -145,7 +145,7 @@ class TestUpdateCommandGatewayFlag:
         hermes_home.mkdir()
 
         mock_popen = MagicMock()
-        with patch("gateway.run._hermes_home", hermes_home), \
+        with patch("gateway.run._eidolon_home", hermes_home), \
              patch("gateway.run.__file__", fake_file), \
              patch("shutil.which", side_effect=lambda x: f"/usr/bin/{x}"), \
              patch("subprocess.Popen", mock_popen):
@@ -193,7 +193,7 @@ class TestWatchUpdateProgress:
             , encoding="utf-8")
             (hermes_home / ".update_exit_code").write_text("0")
 
-        with patch("gateway.run._hermes_home", hermes_home):
+        with patch("gateway.run._eidolon_home", hermes_home):
             task = asyncio.create_task(write_exit_code())
             await runner._watch_update_progress(
                 poll_interval=0.1,
@@ -234,7 +234,7 @@ class TestWatchUpdateProgress:
             await asyncio.sleep(0.2)
             (hermes_home / ".update_exit_code").write_text("0")
 
-        with patch("gateway.run._hermes_home", hermes_home):
+        with patch("gateway.run._eidolon_home", hermes_home):
             task = asyncio.create_task(simulate_prompt_cycle())
             await runner._watch_update_progress(
                 poll_interval=0.1,
@@ -276,7 +276,7 @@ class TestWatchUpdateProgress:
         adapter1 = AsyncMock()
         runner1.adapters = {Platform.TELEGRAM: adapter1}
 
-        with patch("gateway.run._hermes_home", hermes_home):
+        with patch("gateway.run._eidolon_home", hermes_home):
             watch1 = asyncio.create_task(
                 runner1._watch_update_progress(
                     poll_interval=0.05,
@@ -351,7 +351,7 @@ class TestUpdatePromptInterception:
         runner._handle_reset_command = AsyncMock(return_value="reset ok")
         (hermes_home / ".update_prompt.json").write_text(json.dumps({"prompt": "test"}))
 
-        with patch("gateway.run._hermes_home", hermes_home):
+        with patch("gateway.run._eidolon_home", hermes_home):
             result = await runner._handle_message(event)
 
         assert result == "reset ok"
@@ -378,7 +378,7 @@ class TestCmdUpdateGatewayMode:
 
     def test_gateway_flag_enables_gateway_prompt_for_stash(self, tmp_path):
         """With --gateway, stash restore uses _gateway_prompt instead of input()."""
-        from hermes_cli.update_cmd import _restore_stashed_changes
+        from eidolon_cli.update_cmd import _restore_stashed_changes
 
         # Use input_fn to verify the gateway path is taken
         calls = []

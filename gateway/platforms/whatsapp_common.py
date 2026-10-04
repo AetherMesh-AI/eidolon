@@ -55,7 +55,7 @@ class WhatsAppBehaviorMixin:
     MAX_MESSAGE_LENGTH: int = 4096
     supports_code_blocks = True  # WhatsApp renders fenced code blocks (monospace)
 
-    DEFAULT_REPLY_PREFIX: str = "⚕ *Hermes Agent*\n────────────\n"
+    DEFAULT_REPLY_PREFIX: str = "⚕ *Eidolon Agent*\n────────────\n"
 
     _OUTBOUND_INVISIBLE_CHARS_RE = re.compile(r"[\u200b\u2060\u2063\ufeff]")
     _OUTBOUND_ODD_SPACE_RE = re.compile(r"[\u00a0\u1680\u180e\u2000-\u200a\u202f\u205f\u3000]")
@@ -311,9 +311,9 @@ def resolve_whatsapp_bridge_dir() -> Path:
     """Bridge directory for CLI and adapter. A read-only install tree (e.g. Docker
     /opt/hermes) is mirrored to HERMES_HOME so npm install works."""
     import shutil
-    from hermes_constants import get_hermes_home
+    from eidolon_constants import get_eidolon_home
     install_bridge = Path(__file__).resolve().parents[2] / "scripts" / "whatsapp-bridge"
-    hermes_home_bridge = get_hermes_home() / "scripts" / "whatsapp-bridge"
+    hermes_home_bridge = get_eidolon_home() / "scripts" / "whatsapp-bridge"
     try:
         (install_bridge / ".write_test").touch()
         (install_bridge / ".write_test").unlink()

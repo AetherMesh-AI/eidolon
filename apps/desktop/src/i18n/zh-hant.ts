@@ -817,7 +817,7 @@ export const zhHant = defineLocale({
       remoteDesc:
         '將此桌面殼層連線至遠端 Eidolon 後端。託管閘道使用 OAuth 或帳號密碼；自託管閘道也可使用工作階段 Token。',
       remoteUrlTitle: '遠端 URL',
-      remoteUrlDesc: '遠端儀表板後端的基礎 URL。支援路徑前綴，例如 /hermes。',
+      remoteUrlDesc: '遠端儀表板後端的基礎 URL。支援路徑前綴，例如 /eidolon。',
       probing: '正在檢查此閘道的驗證方式…',
       probeError: '暫時無法連線此閘道。請檢查 URL；閘道回應後將顯示驗證方式。',
       signedIn: '已登入',
@@ -888,8 +888,8 @@ export const zhHant = defineLocale({
       sshPortDesc: '留空 = 22 或 ~/.ssh/config 中的連接埠。',
       sshKeyTitle: '金鑰檔案',
       sshKeyDesc: '私密金鑰路徑。留空 = ssh-agent 或 ~/.ssh/config。',
-      sshHermesPathTitle: 'Hermes 路徑（選用）',
-      sshHermesPathDesc: '遠端 hermes 執行檔的完整路徑。留空 = 自動偵測。',
+      sshHermesPathTitle: 'Eidolon 路徑（選用）',
+      sshHermesPathDesc: '遠端 eidolon 執行檔的完整路徑。留空 = 自動偵測。',
       sshHermesPathPlaceholder: '自動偵測',
       sshTestConnection: '測試 SSH',
       sshConnect: '連線',
@@ -901,7 +901,7 @@ export const zhHant = defineLocale({
         'SSH 驗證失敗。請將金鑰載入 ssh-agent（ssh-add），或在 ~/.ssh/config 中設定 IdentityFile——Eidolon 以非互動方式執行 ssh。',
       sshErrHostKey: '自上次連線以來主機金鑰已變更。請確認這是預期的，然後執行 ssh-keygen -R <host> 並重新連線。',
       sshErrNotInstalled:
-        '遠端主機上未找到相容的執行階段。請查看 Eidolon 的發行說明（https://github.com/AetherMesh-AI/Eidolon/releases），或設定現有 hermes 執行檔的路徑。',
+        '遠端主機上未找到相容的執行階段。請查看 Eidolon 的發行說明（https://github.com/AetherMesh-AI/Eidolon/releases），或設定現有 eidolon 執行檔的路徑。',
       sshErrPlatform: '不支援的遠端平台。Eidolon Desktop 的 SSH 模式支援 Linux、macOS 和 Windows 遠端主機。',
       sshErrTimeout: 'SSH 連線逾時。主機可能無法存取或處於睡眠狀態。',
       sshErrUpdateRequired: '使用 Desktop SSH 連線前，請更新遠端主機上的 Eidolon。',
@@ -1306,7 +1306,7 @@ export const zhHant = defineLocale({
     edit: '編輯',
     archive: '封存',
     skillArchivedTitle: '技能已封存',
-    skillArchivedMessage: '可透過 hermes curator restore 還原。',
+    skillArchivedMessage: '可透過 eidolon curator restore 還原。',
     officialCatalog: '可安裝',
     officialPill: '官方'
   },
@@ -1604,7 +1604,7 @@ export const zhHant = defineLocale({
       MATTERMOST_ALLOWED_USERS: { label: '允許的使用者 ID', help: '建議設定。逗號分隔的 Mattermost 使用者 ID。' },
       MATRIX_HOMESERVER: { label: 'Homeserver URL', placeholder: 'https://matrix.org' },
       MATRIX_ACCESS_TOKEN: { label: '存取 Token' },
-      MATRIX_USER_ID: { label: 'Bot 使用者 ID', placeholder: '@hermes:example.org' },
+      MATRIX_USER_ID: { label: 'Bot 使用者 ID', placeholder: '@eidolon:example.org' },
       MATRIX_ALLOWED_USERS: {
         label: '允許的 Matrix 使用者 ID',
         help: '建議設定。@user:server 格式的逗號分隔使用者 ID。'
@@ -1655,7 +1655,7 @@ export const zhHant = defineLocale({
       title: (profile: string) => `將 ${profile} 連線至遠端主機`,
       description: '此設定檔中的工作階段將在你指定的遠端 Eidolon 上執行，而不是這台電腦。',
       urlLabel: '遠端位址',
-      urlPlaceholder: 'https://hermes.example.com',
+      urlPlaceholder: 'https://eidolon.example.com',
       urlInvalid: '請輸入以 http:// 或 https:// 開頭的完整位址',
       tokenLabel: '存取權杖',
       tokenPlaceholder: '貼上遠端工作階段權杖',
@@ -2162,7 +2162,7 @@ export const zhHant = defineLocale({
       '/resume': '繼續之前的工作階段',
       '/details': '控制對話記錄的詳細程度',
       '/copy': '複製所選內容或最後一條助手訊息',
-      '/quit': '結束 hermes'
+      '/quit': '結束 Eidolon'
     },
     hotkeyDescs: {
       'composer.mention': '參照檔案、資料夾、URL、git',
@@ -2494,7 +2494,7 @@ export const zhHant = defineLocale({
     remoteSetupDesc: '輸入閘道 URL。Eidolon 會偵測需要權杖還是瀏覽器登入。',
     remoteUrlTitle: '閘道 URL',
     remoteUrlDesc: '使用 Eidolon 閘道的基礎 URL；遠端位址請包含 https://。',
-    remoteUrlPlaceholder: 'https://gateway.example.com/hermes',
+    remoteUrlPlaceholder: 'https://gateway.example.com/eidolon',
     probing: '正在偵測閘道驗證方式...',
     probeError: '無法連線到該 Eidolon 閘道。',
     identityProvider: '您的身分提供者',
@@ -2519,7 +2519,7 @@ export const zhHant = defineLocale({
     settingUpTitle: '正在設定 Eidolon',
     finishingTitle: '正在收尾',
     failedDesc:
-      '某個安裝步驟失敗。在 Windows 上，如果另一個 Hermes CLI 或 Eidolon 執行個體正在執行，可能會出現這種情況。請停止正在執行的 Hermes CLI 和 Eidolon 執行個體後重試。可查看下方的詳細資訊或 desktop 記錄中的完整記錄。',
+      '某個安裝步驟失敗。在 Windows 上，如果另一個 Eidolon CLI 或 Eidolon 執行個體正在執行，可能會出現這種情況。請停止正在執行的 Eidolon CLI 和 Eidolon 執行個體後重試。可查看下方的詳細資訊或 desktop 記錄中的完整記錄。',
     activeDesc: '這是一次性設定。Eidolon 安裝程式正在下載相依套件並設定您的電腦。之後啟動會略過此步驟。',
     progress: (completed, total) => `${completed}/${total} 個步驟已完成`,
     currentStage: stage => ` -- 目前：${stage}`,
@@ -2549,7 +2549,8 @@ export const zhHant = defineLocale({
     chooseLater: '稍後再選擇提供方',
     recommended: '建議',
     connected: '已連線',
-    featuredPitch: '一個訂閱，300+ 前沿模型 — 執行 Eidolon 的建議方式',
+    aetherMeshDescription: '點對點 AI 網路。',
+    aetherMeshComingSoon: '即將推出',
     fireworksPitch: '直接模型 API — Fireworks 託管的前沿模型',
     localModelsTitle: '本地執行模型',
     localModelsPitch: '無需帳號——下載模型，在本機執行',
@@ -2587,11 +2588,11 @@ export const zhHant = defineLocale({
     pickDifferentProvider: '選擇其他提供方',
     signInWith: provider => `使用 ${provider} 登入`,
     openedBrowser: provider => `已在瀏覽器中開啟 ${provider}。`,
-    authorizeThere: '請在那裡授權 Hermes。',
+    authorizeThere: '請在那裡授權 Eidolon。',
     copyAuthCode: '複製授權碼並貼到下方。',
     pasteAuthCode: '貼上授權碼',
     reopenAuthPage: '重新開啟授權頁面',
-    autoBrowser: provider => `已在瀏覽器中開啟 ${provider}。請在那裡授權 Hermes，連線會自動完成，無需複製或貼上。`,
+    autoBrowser: provider => `已在瀏覽器中開啟 ${provider}。請在那裡授權 Eidolon，連線會自動完成，無需複製或貼上。`,
     reopenSignInPage: '重新開啟登入頁面',
     waitingAuthorize: '等待您授權...',
     externalPending: provider => `${provider} 透過自己的 CLI 登入。請在終端機執行此指令，然後回來選擇「我已登入」：`,
@@ -3044,7 +3045,7 @@ export const zhHant = defineLocale({
       reject: '拒絕',
       alwaysTitle: '一律允許此指令？',
       alwaysDescription: pattern =>
-        `這會將「${pattern}」模式加入永久允許清單（~/.hermes/config.yaml）。Eidolon 對類似指令將不再詢問，包括目前工作階段和未來工作階段。`,
+        `這會將「${pattern}」模式加入此設定檔的 config.yaml 中的永久允許清單。Eidolon 對類似指令將不再詢問，包括目前工作階段和未來工作階段。`,
       alwaysAllow: '一律允許'
     },
     clarify: {
@@ -3228,7 +3229,7 @@ export const zhHant = defineLocale({
       success: platform => `已移交到 ${platform}。隨時可在此處恢復。`,
       systemNote: platform => `↻ 已移交到 ${platform} — 隨時可在此處恢復。`,
       failed: error => `移交失敗：${error}`,
-      timedOut: '等待閘道逾時。`hermes gateway` 是否正在執行？'
+      timedOut: '等待閘道逾時。`eidolon gateway` 是否正在執行？'
     }
   },
 

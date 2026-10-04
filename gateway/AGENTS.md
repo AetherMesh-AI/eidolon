@@ -11,11 +11,11 @@ goals, notifications, shutdown, ...), sessions in `session*.py`, slash handlers 
 over `platforms/base.py`. `builtin_hooks/` is the extension point for always-registered gateway
 hooks (none shipped). The gateway reads user YAML **raw** (`run.py` + `config.py`), not through
 `DEFAULT_CONFIG` — a key the CLI sees but the gateway doesn't means you're on the wrong loader
-(`hermes_cli/AGENTS.md`). Each adapter picks a base toolset (Telegram → `"messaging"`).
+(`eidolon_cli/AGENTS.md`). Each adapter picks a base toolset (Telegram → `"messaging"`).
 
 Slash commands: handlers are looked up by name through `_command_handler_table`; a command is
 listed in `_IDLE_COMMANDS` or `_PLAIN_COMMANDS` (works mid-run) in `run_busy.py`. No
-`if canonical == ...` chains. Registry + adding a command: `hermes_cli/AGENTS.md`.
+`if canonical == ...` chains. Registry + adding a command: `eidolon_cli/AGENTS.md`.
 
 ## The gateway has TWO message guards — both must bypass approval/control commands
 
@@ -81,7 +81,7 @@ session with a header/footer frame so the main conversation's role alternation s
 
 ## Gateway lifecycle vs. the Desktop app
 
-`hermes serve` (control plane, desktop-spawned child) dies with the app — by design. The messaging
+`eidolon serve` (control plane, desktop-spawned child) dies with the app — by design. The messaging
 gateway (`gateway run`) SURVIVES the app: the serve backend's `/api/gateway/*` endpoints spawn it
 detached (`_spawn_hermes_action` — `start_new_session` / `DETACHED_PROCESS`), so `before-quit`'s
 SIGTERM never reaches it and bots keep running. The known breach is the Windows shim-unlock

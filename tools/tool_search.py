@@ -91,9 +91,9 @@ def _safe_float(value: Any, fallback: float) -> float:
 
 
 def _config_from_loader(loader_name: str) -> ToolSearchConfig:
-    """Tool-search config via ``hermes_cli.config.<loader_name>`` (defaults on any failure)."""
+    """Tool-search config via ``eidolon_cli.config.<loader_name>`` (defaults on any failure)."""
     try:
-        import hermes_cli.config as _cfg_mod
+        import eidolon_cli.config as _cfg_mod
         tools_cfg = (getattr(_cfg_mod, loader_name)() or {}).get("tools")
         tools_cfg = tools_cfg if isinstance(tools_cfg, dict) else {}
         return ToolSearchConfig.from_raw(tools_cfg.get("tool_search"))

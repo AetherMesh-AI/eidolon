@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type * as HermesModule from '@/eidolon'
 import type { HermesReadDirResult } from '@/global'
-import type * as HermesModule from '@/hermes'
 
 import { $pluginRecords, publishPlugin, setPluginEnabled } from './plugins-store'
 import { discoverRuntimePlugins, loadRuntimePlugin, watchRuntimePlugins } from './runtime-loader'
@@ -10,7 +10,7 @@ import { discoverRuntimePlugins, loadRuntimePlugin, watchRuntimePlugins } from '
 // remote mode. The disk scanner must NOT derive the plugin root from it (#66899).
 const getStatus = vi.fn(async () => ({ hermes_home: '/remote/box/.hermes' }))
 
-vi.mock('@/hermes', async importActual => ({
+vi.mock('@/eidolon', async importActual => ({
   ...(await importActual<typeof HermesModule>()),
   getStatus: () => getStatus()
 }))
@@ -275,6 +275,35 @@ describe('plugin source reads (512 KiB preview-cap bug)', () => {
     }
   }
 
+  it('loads canonical and legacy SDK imports as the same live module instance', async () => {
+    const probe = vi.fn()
+    const runtimeGlobal = globalThis as unknown as { __sdkAliasProbe?: typeof probe }
+    runtimeGlobal.__sdkAliasProbe = probe
+    const restore = blobToDataUrl()
+
+    try {
+      const id = await loadRuntimePlugin(
+        `import * as canonical from '@aethermesh/plugin-sdk';
+         import * as legacy from '@hermes/plugin-sdk';
+         export default {
+           id: 'sdk-alias-fixture',
+           register() { globalThis.__sdkAliasProbe(canonical, legacy); }
+         }`,
+        'sdk-alias-fixture'
+      )
+
+      expect(id).toBe('sdk-alias-fixture')
+      expect(probe).toHaveBeenCalledTimes(1)
+      const [canonical, legacy] = probe.mock.calls[0]
+      expect(canonical).toBe(legacy)
+      expect(canonical.host).toBe((await import('@/sdk')).host)
+      expect($pluginRecords.get()['sdk-alias-fixture'].status).toBe('loaded')
+    } finally {
+      restore()
+      delete runtimeGlobal.__sdkAliasProbe
+    }
+  })
+
   /** Two-level standalone-root listing the metadata-walk probe needs:
    *  the root lists the package folder, the folder lists plugin.js. */
   const standaloneRootWith = (name: string) => {
@@ -408,7 +437,7 @@ describe('bundled-shadowed disk copies', () => {
       const id = await loadRuntimePlugin(
         'export default { id: "hermes-bots", name: "Bot Mode", register() {} }',
         'hermes-bots',
-        { file: '/local/.hermes/desktop-plugins/hermes-bots/plugin.js' }
+        { file: '/local/.hermes/desktop-plugins/eidolon-bots/plugin.js' }
       )
 
       // Skipped — the bundled copy stays the only live registration...
@@ -420,7 +449,7 @@ describe('bundled-shadowed disk copies', () => {
       expect($pluginRecords.get()['hermes-bots:disk-shadowed']).toMatchObject({
         kind: 'disk',
         status: 'disabled',
-        file: '/local/.hermes/desktop-plugins/hermes-bots/plugin.js'
+        file: '/local/.hermes/desktop-plugins/eidolon-bots/plugin.js'
       })
     } finally {
       createObjectURL.mockRestore()

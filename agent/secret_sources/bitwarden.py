@@ -91,10 +91,10 @@ def _classify_bws_error(message: str) -> ErrorKind:
 
 
 def _hermes_bin_dir() -> Path:
-    """Where Hermes stores its managed binaries. Profile-aware."""
-    from hermes_constants import get_hermes_home
+    """Where Eidolon stores its managed binaries. Profile-aware."""
+    from eidolon_constants import get_eidolon_home
 
-    return get_hermes_home() / "bin"
+    return get_eidolon_home() / "bin"
 
 
 def find_bws(*, install_if_missing: bool = False) -> Optional[Path]:
@@ -346,7 +346,7 @@ def fetch_bitwarden_secrets(
         raise RuntimeError("bws binary not available — auto-install failed and `bws` is "
                            "not on PATH.  Install manually from "
                            "https://github.com/bitwarden/sdk-sm/releases or re-run "
-                           "`hermes secrets bitwarden setup`.")
+                           "`eidolon secrets bitwarden setup`.")
 
     try:
         secrets, warnings = _run_bws_list(bws, access_token, project_id, server_url)
@@ -451,10 +451,10 @@ class BitwardenSource(SecretSource):
     # — a stale .env line must not have the final say.
     override_existing_default = True
     _AUTH_HINT = (
-        "Run `hermes secrets bitwarden token` to paste a fresh access "
+        "Run `eidolon secrets bitwarden token` to paste a fresh access "
         "token (create one in the Bitwarden web app: Secrets Manager → "
         "Machine accounts → Access tokens).  Wrong region?  Re-run "
-        "`hermes secrets bitwarden setup` and pick EU/self-hosted."
+        "`eidolon secrets bitwarden setup` and pick EU/self-hosted."
     )
     remediation_hints = {ErrorKind.AUTH_FAILED: _AUTH_HINT, ErrorKind.AUTH_EXPIRED: _AUTH_HINT}
 
@@ -481,16 +481,16 @@ class BitwardenSource(SecretSource):
         access_token = get_source_environment().get(access_token_env, "").strip()
         if not access_token:
             return result.fail(f"secrets.bitwarden.enabled is true but {access_token_env} is "
-                               "not set.  Run `hermes secrets bitwarden setup`.", ErrorKind.NOT_CONFIGURED)
+                               "not set.  Run `eidolon secrets bitwarden setup`.", ErrorKind.NOT_CONFIGURED)
         project_id = str(cfg.get("project_id") or "")
         if not project_id:
-            return result.fail("secrets.bitwarden.project_id is empty.  Run `hermes secrets bitwarden setup`.",
+            return result.fail("secrets.bitwarden.project_id is empty.  Run `eidolon secrets bitwarden setup`.",
                                ErrorKind.NOT_CONFIGURED)
         binary = find_bws(install_if_missing=bool(cfg.get("auto_install", True)))
         result.binary_path = binary
         if binary is None:
             return result.fail("bws binary not available and auto-install is disabled.  "
-                               "Run `hermes secrets bitwarden setup` to install.", ErrorKind.BINARY_MISSING)
+                               "Run `eidolon secrets bitwarden setup` to install.", ErrorKind.BINARY_MISSING)
 
         encrypted_cfg = cfg.get("encrypted_cache")
         encrypted_cfg = encrypted_cfg if isinstance(encrypted_cfg, dict) else {}
@@ -569,14 +569,14 @@ def apply_bitwarden_secrets(
     if not access_token:
         result.error = (
             f"secrets.bitwarden.enabled is true but {access_token_env} is "
-            "not set.  Run `hermes secrets bitwarden setup`."
+            "not set.  Run `eidolon secrets bitwarden setup`."
         )
         return result
 
     if not project_id:
         result.error = (
             "secrets.bitwarden.project_id is empty.  "
-            "Run `hermes secrets bitwarden setup`."
+            "Run `eidolon secrets bitwarden setup`."
         )
         return result
 
@@ -585,7 +585,7 @@ def apply_bitwarden_secrets(
     if binary is None:
         result.error = (
             "bws binary not available and auto-install is disabled.  "
-            "Run `hermes secrets bitwarden setup` to install."
+            "Run `eidolon secrets bitwarden setup` to install."
         )
         return result
 
@@ -633,7 +633,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

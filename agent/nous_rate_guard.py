@@ -3,7 +3,7 @@
 Writes rate limit state to a shared file so all sessions (CLI, gateway, cron,
 auxiliary) can check whether Nous Portal is currently rate-limited before making
 requests. Without it each 429 fans out into up to 9 calls per turn (3 SDK
-retries x 3 Hermes retries), all counted against RPH.
+retries x 3 Eidolon retries), all counted against RPH.
 """
 
 from __future__ import annotations
@@ -31,10 +31,10 @@ format_remaining = _fmt_seconds
 def _state_path() -> str:
     """Path to the Nous rate limit state file."""
     try:
-        from hermes_constants import get_hermes_home
-        base = get_hermes_home()
+        from eidolon_constants import get_eidolon_home
+        base = get_eidolon_home()
     except ImportError:
-        base = os.path.join(os.path.expanduser("~"), ".hermes")
+        base = os.path.join(os.path.expanduser("~"), ".eidolon")
     return os.path.join(base, "rate_limits", "nous.json")
 
 
@@ -181,7 +181,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

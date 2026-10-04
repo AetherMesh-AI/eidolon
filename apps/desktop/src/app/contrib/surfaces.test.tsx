@@ -3,7 +3,7 @@ import { atom } from 'nanostores'
 import { MemoryRouter } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { HermesGateway } from '@/hermes'
+import type { HermesGateway } from '@/eidolon'
 import { $gateway } from '@/store/gateway'
 import { $activeGatewayProfile } from '@/store/profile'
 
@@ -22,7 +22,7 @@ vi.mock('../chat', () => ({
   ChatView: ({ gateway }: { gateway: { id?: string } | null }) => <div data-testid="gateway">{gateway?.id}</div>
 }))
 vi.mock('../chat/sidebar', () => ({ ChatSidebar: () => null }))
-vi.mock('@/plugins/hermes-bots/roster-pane', () => ({ BotsPane: () => null }))
+vi.mock('@/plugins/eidolon-bots/roster-pane', () => ({ BotsPane: () => null }))
 vi.mock('../eidolon/rail', () => ({ OrganizationRail: () => null }))
 vi.mock('../eidolon/workspace', () => ({ OrganizationWorkspace: () => null }))
 vi.mock('../right-sidebar/terminal/chrome', () => ({ TerminalPaneChrome: () => null }))

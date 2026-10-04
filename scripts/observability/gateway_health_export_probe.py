@@ -42,7 +42,7 @@ def main() -> None:
                 "export_interval_seconds": 5,
                 "logs_export_interval_seconds": 5,
                 "resource_attributes": {
-                    "service.name": "hermes-gateway-smoke",
+                    "service.name": "eidolon-gateway-smoke",
                     "deployment.environment.name": "local-smoke",
                 },
             },

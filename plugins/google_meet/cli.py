@@ -20,7 +20,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from hermes_constants import get_hermes_home
+from eidolon_constants import get_eidolon_home
 
 from plugins.google_meet import process_manager as pm
 from plugins.google_meet.meet_bot import _is_safe_meet_url
@@ -29,7 +29,7 @@ from plugins.google_meet.tools import resolve_node
 
 
 def _auth_state_path() -> Path:
-    return Path(get_hermes_home()) / "workspace" / "meetings" / "auth.json"
+    return Path(get_eidolon_home()) / "workspace" / "meetings" / "auth.json"
 
 
 # ``hermes meet <sub>`` in help order.
@@ -54,7 +54,7 @@ def register_cli(subparser: argparse.ArgumentParser) -> None:
     p["install"].add_argument("--yes", "-y", action="store_true",
                               help="Answer yes to all prompts (use with care; will run sudo apt-get or brew without asking).")
     p["join"].add_argument("url", help="https://meet.google.com/...")
-    p["join"].add_argument("--guest-name", default="Hermes Agent")
+    p["join"].add_argument("--guest-name", default="Eidolon Agent")
     p["join"].add_argument("--duration", default=None, help="e.g. 30m, 2h, 90s")
     p["join"].add_argument("--headed", action="store_true", help="show browser")
     p["join"].add_argument("--mode", choices=("transcribe", "realtime"), default="transcribe",
@@ -146,7 +146,7 @@ def _cmd_install(*, realtime: bool, assume_yes: bool) -> int:
     pip_pkgs = ["playwright", "websockets"]
     print(f"\n[1/3] pip install: {' '.join(pip_pkgs)}")
     try:
-        from hermes_cli.tools_config import _pip_install
+        from eidolon_cli.tools_config import _pip_install
         if _pip_install(["--upgrade", *pip_pkgs], capture_output=False).returncode != 0:
             print("  pip install failed")
             return 1

@@ -24,16 +24,16 @@ from typing import Any, Dict, Optional
 logger = logging.getLogger(__name__)
 
 
-def _process_hermes_home() -> Path:
+def _process_eidolon_home() -> Path:
     """HERMES_HOME for process-level identity files (ignore task overrides)."""
-    from hermes_constants import get_hermes_home
+    from eidolon_constants import get_eidolon_home
 
     val = os.environ.get("HERMES_HOME", "").strip()
-    return Path(val) if val else get_hermes_home()
+    return Path(val) if val else get_eidolon_home()
 
 
 def _home_path(home: Optional[Path], *relative: str) -> Path:
-    return (_process_hermes_home() if home is None else home).joinpath(*relative)
+    return (_process_eidolon_home() if home is None else home).joinpath(*relative)
 
 
 def get_lifecycle_sentinel_path(home: Optional[Path] = None) -> Path:
@@ -190,7 +190,7 @@ def _report_unclean_exit(evidence: Dict[str, Any], home: Optional[Path]) -> None
     if verdict not in ("ok", "absent"):
         logger.error(
             "state.db FAILED integrity check after an unclean gateway exit: %s — sessions may read as "
-            "missing until it is repaired. Run `hermes doctor`.",
+            "missing until it is repaired. Run `eidolon doctor`.",
             verdict,
         )
     _append_exit_diag({"ts": _now_iso(), "tag": "gateway.previous_unclean_exit", "pid": os.getpid(), **evidence}, home)

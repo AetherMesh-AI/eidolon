@@ -14,8 +14,8 @@ from contextvars import ContextVar
 from pathlib import Path
 from typing import Callable, Dict, Iterator, List, Optional, Tuple
 
-from hermes_cli.config import cfg_get
-from hermes_constants import get_hermes_dir, get_hermes_home
+from eidolon_cli.config import cfg_get
+from eidolon_constants import get_hermes_dir, get_eidolon_home
 
 from agent.skill_utils import EXCLUDED_SKILL_DIRS
 
@@ -69,7 +69,7 @@ def register_credential_file(relative_path: str, container_base: str = "/root/.h
     skill what the read surface denies. Fails CLOSED (logged) if the guard is unavailable or raises.
     """
     resolved = _contained_host_path(
-        relative_path, get_hermes_home(),
+        relative_path, get_eidolon_home(),
         "credential_files: rejected absolute path %r (must be relative to HERMES_HOME)",
         "credential_files: rejected path traversal %r (%s)")
     if resolved is None:
@@ -125,8 +125,8 @@ def _load_config_files() -> List[Dict[str, str]]:
 
     result: List[Dict[str, str]] = []
     try:
-        from hermes_cli.config import read_raw_config
-        hermes_home = get_hermes_home()
+        from eidolon_cli.config import read_raw_config
+        hermes_home = get_eidolon_home()
         cred_files = cfg_get(read_raw_config(), "terminal", "credential_files")
         for item in cred_files if isinstance(cred_files, list) else []:
             rel = item.strip() if isinstance(item, str) else ""
@@ -164,7 +164,7 @@ def _skill_dir_roots(container_base: str) -> Iterator[Tuple[Path, str]]:
     project-local at ``<base>/project_skills/<i>`` (own namespace so paths stay stable if external_dirs change).
     """
     base = container_base.rstrip("/")
-    skills_dir = get_hermes_home() / "skills"
+    skills_dir = get_eidolon_home() / "skills"
     if skills_dir.is_dir():
         yield skills_dir, f"{base}/skills"
     try:
@@ -236,7 +236,7 @@ def iter_skills_files(container_base: str = "/root/.hermes") -> List[Dict[str, s
 
 # --- Cache directory mounts (documents, images, audio, videos, screenshots) ---
 
-# (new_subpath, old_name) pairs matching hermes_constants.get_hermes_dir().
+# (new_subpath, old_name) pairs matching eidolon_constants.get_hermes_dir().
 _CACHE_DIRS: list[tuple[str, str]] = [
     ("cache/documents", "document_cache"),
     ("cache/images", "image_cache"),

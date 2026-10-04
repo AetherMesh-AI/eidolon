@@ -3,7 +3,7 @@
 
 The SDK's ``OAuthClientProvider`` does discovery, client identification, PKCE, exchange and
 refresh; this module supplies ``HermesTokenStorage`` (on-disk persistence), the localhost callback
-listener and ``build_oauth_auth()`` (legacy entry point). client_id is Hermes' Client ID Metadata
+listener and ``build_oauth_auth()`` (legacy entry point). client_id is Eidolon' Client ID Metadata
 Document URL (CIMD) when the server supports it, else RFC 7591 DCR. ``mcp_servers.<name>.oauth`` keys
 (all optional): client_id, client_secret, scope, redirect_port, redirect_uri (proxy callback),
 redirect_host, client_name, client_metadata_url, cimd, user_agent, timeout."""
@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs, urlparse
 
-from hermes_constants import secure_parent_dir
+from eidolon_constants import secure_parent_dir
 from tools.mcp_dashboard_oauth import contextvar_set as _contextvar_set, get_dashboard_oauth_flow
 
 if TYPE_CHECKING:  # annotations only; the SDK is imported lazily at runtime
@@ -96,9 +96,9 @@ _USER_SKIPPED_SENTINEL = "__hermes_user_skipped__"
 
 def _get_token_dir(hermes_home: str | Path | None = None) -> Path:
     """``HERMES_HOME/mcp-tokens/`` — per-profile token directory."""
-    from hermes_constants import get_hermes_home
+    from eidolon_constants import get_eidolon_home
 
-    return Path(hermes_home if hermes_home is not None else get_hermes_home()) / "mcp-tokens"
+    return Path(hermes_home if hermes_home is not None else get_eidolon_home()) / "mcp-tokens"
 
 
 def _safe_filename(name: str) -> str:
@@ -276,10 +276,10 @@ class HermesTokenStorage:
 
     def __init__(self, server_name: str, *, hermes_home: str | Path | None = None):
         self._server_name = _safe_filename(server_name)
-        self._hermes_home = Path(hermes_home) if hermes_home is not None else None
+        self._eidolon_home = Path(hermes_home) if hermes_home is not None else None
 
     def _path(self, suffix: str) -> Path:
-        return _get_token_dir(self._hermes_home) / f"{self._server_name}{suffix}"
+        return _get_token_dir(self._eidolon_home) / f"{self._server_name}{suffix}"
 
     _tokens_path = partialmethod(_path, ".json")
     _client_info_path = partialmethod(_path, ".client.json")
@@ -410,7 +410,7 @@ class HermesTokenStorage:
         self.remove()
         if not snapshot:
             return
-        token_dir = _get_token_dir(self._hermes_home)
+        token_dir = _get_token_dir(self._eidolon_home)
         token_dir.mkdir(parents=True, exist_ok=True)
         for fname, data in snapshot.items():
             try:
@@ -475,7 +475,7 @@ def _make_callback_handler() -> tuple[type, dict]:
         def do_GET(self) -> None:  # noqa: N802
             parsed = _parse_redirect_query(urlparse(self.path).query)
             result.update(auth_code=parsed["code"], state=parsed["state"], error=parsed["error"], iss=parsed["iss"])
-            body = ("<h2>Authorization Successful</h2><p>You can close this tab and return to Hermes.</p>" if parsed["code"]
+            body = ("<h2>Authorization Successful</h2><p>You can close this tab and return to Eidolon.</p>" if parsed["code"]
                     else f"<h2>Authorization Failed</h2><p>Error: {parsed['error'] or 'unknown'}</p>")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -623,7 +623,7 @@ def _callback_outcome(result: dict, cimd_url: str | None):
     if result["auth_code"] is None:
         hint = (
             " If the browser showed an invalid-client error instead of an approval prompt, the authorization "
-            f"server rejected Hermes' Client ID Metadata Document ({cimd_url}); set ``cimd: false`` under that "
+            f"server rejected Eidolon' Client ID Metadata Document ({cimd_url}); set ``cimd: false`` under that "
             "server's ``oauth:`` block in config.yaml to authorize via dynamic client registration instead."
         ) if cimd_url else ""
         raise OAuthNonInteractiveError(
@@ -694,7 +694,7 @@ def remove_oauth_tokens(server_name: str, *, hermes_home: str | Path | None = No
 
 
 # CIMD (OAuth Client ID Metadata Documents): the client_id IS an HTTPS URL the server fetches for our
-# name/logo/redirect URIs, replacing per-install DCR. The SDK does the protocol; Hermes only decides
+# name/logo/redirect URIs, replacing per-install DCR. The SDK does the protocol; Eidolon only decides
 # eligibility. Published from ``website/static/oauth/client-metadata.json``; the github.io origin is
 # deliberate — servers MUST NOT follow redirects when fetching it, and hermes-agent.nousresearch.com/docs/* 301s here.
 _CIMD_CLIENT_METADATA_URL = "https://nousresearch.github.io/hermes-agent/docs/oauth/client-metadata.json"
@@ -745,7 +745,7 @@ def _pick_cimd_port() -> int | None:
 
 def _server_declined_cimd(storage: "HermesTokenStorage | None") -> bool:
     """True when cached metadata shows this server doesn't advertise CIMD. The SDK decides CIMD vs DCR
-    in its 401 branch — after Hermes must fix the redirect URI — so cached metadata closes the gap;
+    in its 401 branch — after Eidolon must fix the redirect URI — so cached metadata closes the gap;
     only a genuinely unknown server pays the optimistic pin."""
     try:
         metadata = storage.load_oauth_metadata() if storage is not None else None
@@ -882,7 +882,7 @@ def _build_client_metadata(cfg: dict) -> "OAuthClientMetadata":
     # Public client by default; confidential only with a known secret or a provider (Figma) needing confidential-style token posts.
     auth_method = cfg.get("token_endpoint_auth_method") or ("client_secret_post" if cfg.get("client_secret") else "none")
     metadata_kwargs: dict[str, Any] = {
-        "client_name": cfg.get("client_name", "Hermes Agent"),
+        "client_name": cfg.get("client_name", "Eidolon Agent"),
         "redirect_uris": [AnyUrl(_resolve_redirect_uri(cfg, port))],
         "grant_types": ["authorization_code", "refresh_token"],
         "response_types": ["code"],
@@ -951,7 +951,7 @@ def humanize_oauth_registration_error(
     server_name: str, exc: BaseException | str, *, server_url: str | None = None) -> str | None:
     """Turn a DCR 403/Forbidden into a useful next step; None for anything else so the caller keeps the
     original text. Figma gates DCR on exact ``client_name`` (auto-set to ``Claude Code``), so this fires
-    when the user overrode it or an older Hermes is running."""
+    when the user overrode it or an older Eidolon is running."""
     msg = str(exc)
     lowered = msg.lower()
     looks_like_registration = ("403" in msg or "forbidden" in lowered) and (
@@ -963,7 +963,7 @@ def humanize_oauth_registration_error(
     if _is_figma_remote_mcp(server_name, server_url):
         return (
             f"'{server_name}' is Figma's remote MCP — DCR is allowlisted by exact client_name "
-            f"(\"{_FIGMA_DCR_CLIENT_NAME}\" and \"Codex\" work; most other names 403). Hermes defaults to "
+            f"(\"{_FIGMA_DCR_CLIENT_NAME}\" and \"Codex\" work; most other names 403). Eidolon defaults to "
             f"client_name: {_FIGMA_DCR_CLIENT_NAME!r} automatically. If you set oauth.client_name yourself, "
             f"change it to one of those, or clear it and re-run:\n  hermes mcp login {server_name}")
     return (
@@ -993,7 +993,7 @@ def build_oauth_auth(server_name: str, server_url: str, oauth_config: dict | Non
         from tools.mcp_oauth_provider import HermesProviderMixin
 
         HermesOAuthClientProvider = type("HermesOAuthClientProvider", (HermesProviderMixin, _sdk_class("OAuthClientProvider")), {
-            "__doc__": "SDK provider plus Hermes' token-endpoint fixes (see ``HermesProviderMixin``).",
+            "__doc__": "SDK provider plus Eidolon' token-endpoint fixes (see ``HermesProviderMixin``).",
             "__module__": __name__, "_hermes_logger": logger})
     return HermesOAuthClientProvider(server_url=server_url, **kwargs)
 

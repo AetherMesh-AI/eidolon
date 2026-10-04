@@ -6,7 +6,7 @@ import pytest
 
 @pytest.mark.parametrize("linked,explicit", [(False, None), (True, None), (False, "override")])
 def test_worker_create_keeps_durable_origin(tmp_path, monkeypatch, linked, explicit):
-    from hermes_cli import kanban_db as kb, kanban_db_connect as kbc, kanban_db_notify as kn
+    from eidolon_cli import kanban_db as kb, kanban_db_connect as kbc, kanban_db_notify as kn
     from tools import kanban_tools as kt, async_delegation
     from gateway.session_context import set_session_vars, clear_session_vars
 
@@ -41,7 +41,7 @@ def test_worker_create_keeps_durable_origin(tmp_path, monkeypatch, linked, expli
 
 
 def test_tool_subscription_captures_conversation_anchors(tmp_path, monkeypatch):
-    from hermes_cli import kanban_db as kb, kanban_db_connect as kbc, kanban_db_notify as kn
+    from eidolon_cli import kanban_db as kb, kanban_db_connect as kbc, kanban_db_notify as kn
     from tools import kanban_tools as kt
     from gateway.session_context import set_session_vars, clear_session_vars
 

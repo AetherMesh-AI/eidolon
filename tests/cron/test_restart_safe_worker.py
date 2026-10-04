@@ -132,18 +132,18 @@ def test_external_worker_adopts_execution_and_runs_payload_once(
         }),
         encoding="utf-8",
     )
-    from hermes_constants import get_hermes_home
+    from eidolon_constants import get_eidolon_home
 
     observed_homes = []
     adopted = Mock(
         side_effect=lambda execution_id: (
-            observed_homes.append(get_hermes_home().resolve())
+            observed_homes.append(get_eidolon_home().resolve())
             or {"id": execution_id, "status": "running"}
         )
     )
     run = Mock(
         side_effect=lambda *_args, **_kwargs: (
-            observed_homes.append(get_hermes_home().resolve()) or True
+            observed_homes.append(get_eidolon_home().resolve()) or True
         )
     )
     monkeypatch.setattr("cron.executions.adopt_claimed_execution", adopted)
@@ -190,7 +190,7 @@ def test_launch_external_worker_uses_restart_safe_scope_and_acknowledges(
     import cron.scheduler as scheduler
 
     job = {"id": "job-1", "execution_id": "exec-1", "prompt": "work"}
-    monkeypatch.setattr(scheduler, "_get_hermes_home", lambda: tmp_path)
+    monkeypatch.setattr(scheduler, "_get_eidolon_home", lambda: tmp_path)
     wrapped_commands = []
 
     def wrap(command, *, unit_suffix):
@@ -362,7 +362,7 @@ def test_worker_delivery_queue_is_keyed_by_the_delivering_jobs_own_execution(
     monkeypatch, tmp_path
 ):
     """A nested in-process dispatch inside a worker (e.g. a script running
-    ``hermes cron run <other>``) must not queue under the OUTER execution id."""
+    ``eidolon cron run <other>``) must not queue under the OUTER execution id."""
     import cron.scheduler as scheduler
     import cron.scheduler_delivery as scheduler_delivery
 

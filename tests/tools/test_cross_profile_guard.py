@@ -20,7 +20,7 @@ import pytest
 
 @pytest.fixture
 def fake_hermes(tmp_path, monkeypatch):
-    """Build a two-profile Hermes layout and point HERMES_HOME at
+    """Build a two-profile Eidolon layout and point HERMES_HOME at
     the hermes-security profile (matching the original-incident shape).
     """
     root = tmp_path / "fake-hermes"
@@ -37,11 +37,11 @@ def fake_hermes(tmp_path, monkeypatch):
 
     monkeypatch.setenv("HERMES_HOME", str(sec_home))
 
-    import hermes_constants
-    monkeypatch.setattr(hermes_constants, "get_default_hermes_root", lambda: root)
+    import eidolon_constants
+    monkeypatch.setattr(eidolon_constants, "get_default_hermes_root", lambda: root)
 
     import agent.file_safety as fs
-    monkeypatch.setattr(fs, "_hermes_home_path", lambda: sec_home)
+    monkeypatch.setattr(fs, "_eidolon_home_path", lambda: sec_home)
     monkeypatch.setattr(fs, "_hermes_root_path", lambda: root)
 
     return {
@@ -203,7 +203,7 @@ class TestSystemPromptActiveProfile:
         about ~/.hermes/profiles/<name>/."""
         # Don't set HERMES_HOME — falls back to default.
         import agent.file_safety as fs
-        monkeypatch.setattr(fs, "_hermes_home_path", lambda: tmp_path / "fake")
+        monkeypatch.setattr(fs, "_eidolon_home_path", lambda: tmp_path / "fake")
         monkeypatch.setattr(fs, "_hermes_root_path", lambda: tmp_path / "fake")
 
         from agent.file_safety import _resolve_active_profile_name
@@ -221,9 +221,9 @@ class TestSystemPromptActiveProfile:
         # explicit user direction.
         from pathlib import Path
         src = Path("agent/system_prompt.py").read_text()
-        assert "Active Hermes profile" in src
+        assert "Active Eidolon profile" in src
         assert "cross_profile=True" not in src  # guard retired
         assert "~/.hermes/profiles/" in src
         # Both branches present (default and named profile).
-        assert "Active Hermes profile: default" in src
-        assert "Active Hermes profile: {active_profile}" in src
+        assert "Active Eidolon profile: default" in src
+        assert "Active Eidolon profile: {active_profile}" in src

@@ -130,7 +130,7 @@ class TestTruncateTokenCallable:
     def test_callable_returns_placeholder(self):
         """Dashboard preview must render the Entra placeholder, NOT
         ``"<function ...>"``."""
-        from hermes_cli.web_server_oauth import _truncate_token
+        from eidolon_cli.web_server_oauth import _truncate_token
 
         invoked = {"count": 0}
 
@@ -144,13 +144,13 @@ class TestTruncateTokenCallable:
         assert invoked["count"] == 0
 
     def test_string_jwt_still_truncated_to_signature_tail(self):
-        from hermes_cli.web_server_oauth import _truncate_token
+        from eidolon_cli.web_server_oauth import _truncate_token
         # JWT shape: header.payload.signature → only signature tail shown.
         out = _truncate_token("aaaa.bbbb.cccccccsig", visible=4)
         assert out == "…csig"
 
     def test_empty_returns_empty(self):
-        from hermes_cli.web_server_oauth import _truncate_token
+        from eidolon_cli.web_server_oauth import _truncate_token
         assert _truncate_token(None) == ""
         assert _truncate_token("") == ""
 
@@ -253,7 +253,7 @@ class TestCliEnsureRuntimeCredentialsCallable:
         # ``CLIAgentSetupMixin`` (god-file decomposition Phase 4). Read the
         # module the method actually lives in now.
         src = (Path(__file__).resolve().parent.parent.parent
-               / "hermes_cli" / "cli_agent_setup_mixin.py").read_text()
+               / "eidolon_cli" / "cli_agent_setup_mixin.py").read_text()
         # The fix gates the string-only check on ``callable(api_key)`` so callable
         # token providers survive.
         assert "if not callable(api_key) and not (isinstance(api_key, str) and api_key):" in src, (

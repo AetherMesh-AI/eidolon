@@ -15,7 +15,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from hermes_cli._subprocess_compat import harden_git_argv, noninteractive_git_env
+from eidolon_cli._subprocess_compat import harden_git_argv, noninteractive_git_env
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ def _run_git(args, cwd: str, timeout: int = _GIT_TIMEOUT):
 def local_backend_active() -> bool:
     """True when the terminal backend is local (worktrees visible to tools)."""
     try:
-        from hermes_cli.config import load_config_readonly
+        from eidolon_cli.config import load_config_readonly
 
         backend = (load_config_readonly().get("terminal") or {}).get("backend") or "local"
         return str(backend).strip().lower() in ("", "local")

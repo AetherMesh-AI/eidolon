@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 
 def test_debounced_resize_does_not_write_over_subagent_monitor():
-    from hermes_cli.cli_terminal_mixin import CLITerminalMixin
+    from eidolon_cli.cli_terminal_mixin import CLITerminalMixin
     writes = []
     cli = SimpleNamespace(
         _subagent_monitor=SimpleNamespace(opening=True),

@@ -6,14 +6,14 @@ import { deliveryTargetFromCommand, replyTextFromResult } from './agent-delivery
 // X" notices instead of terminal transcript rows. This pins the detection
 // (the canonical Bot Mode command shape) and the reply extraction.
 describe('delivery command detection', () => {
-  it('matches the canonical delivery command', () => {
-    const cmd = 'hermes -p turqoise chat --in ~ -c "Bot Chat" -Q -q "Message from 🤖 Hermes (@hermes): hi there"'
+  it.each(['eidolon', 'hermes'])('matches a %s delivery command', executable => {
+    const cmd = `${executable} -p turqoise chat --in ~ -c "Bot Chat" -Q -q "Message from 🤖 Eidolon (@hermes): hi there"`
 
     expect(deliveryTargetFromCommand(cmd)).toBe('turqoise')
   })
 
-  it('matches with a cd prefix and timeout wrapper', () => {
-    const cmd = 'cd ~ && timeout 240 hermes -p mr-tester chat --in "~" -Q -q "Message from 🤖 Hermes: hello"'
+  it.each(['eidolon', 'hermes'])('matches %s with a cd prefix and timeout wrapper', executable => {
+    const cmd = `cd ~ && timeout 240 ${executable} -p mr-tester chat --in "~" -Q -q "Message from 🤖 Eidolon: hello"`
 
     expect(deliveryTargetFromCommand(cmd)).toBe('mr-tester')
   })

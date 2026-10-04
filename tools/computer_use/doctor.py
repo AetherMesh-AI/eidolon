@@ -15,7 +15,7 @@ import sys
 from contextlib import contextmanager, suppress
 from typing import Any, Callable, Dict, Iterator, List, Optional, Sequence, Tuple, Union
 
-from hermes_cli._subprocess_compat import windows_hide_flags
+from eidolon_cli._subprocess_compat import windows_hide_flags
 from tools.computer_use.permissions import _child_env as _sanitized_cua_env
 
 # Match the ALLOWED_STATUS_VALUES + ALLOWED_OVERALL_VALUES the cua-driver integration test pins.
@@ -74,7 +74,7 @@ def _cli_doctor_snippet(binary: str, timeout: float = 8.0) -> Optional[str]:
     return None if isinstance(cp, BaseException) else (_combined_output(cp) or None)
 
 def _build_identity(binary: str, report: Report) -> Report:
-    """Hermes-side identity block comparing resolved binary vs health_report."""
+    """Eidolon-side identity block comparing resolved binary vs health_report."""
     def token(text: str) -> str:  # dotted version-ish token out of a free-form string
         m = text and re.search(r"(\d+\.\d+(?:\.\d+)?(?:[-+][\w.]+)?)", text)
         return m.group(1) if m else text.strip().lower()

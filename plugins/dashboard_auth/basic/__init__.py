@@ -20,7 +20,7 @@ import secrets
 import time
 from typing import Optional
 
-from hermes_cli.dashboard_auth import DashboardAuthProvider, InvalidCredentialsError, RefreshExpiredError, Session
+from eidolon_cli.dashboard_auth import DashboardAuthProvider, InvalidCredentialsError, RefreshExpiredError, Session
 from plugins.dashboard_auth._shared import (
     NonInteractiveMixin, SkipRegistration, load_config_section, register_provider, resolve_env_or_cfg)
 
@@ -271,7 +271,7 @@ from typing import Any  # noqa: F401,E402
 
 
 _PLUGIN_COMPAT_LAZY = {
-    'LoginStart': ('hermes_cli.dashboard_auth', 'LoginStart'),
+    'LoginStart': ('eidolon_cli.dashboard_auth', 'LoginStart'),
 }
 
 
@@ -280,7 +280,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

@@ -13,14 +13,14 @@ import { Navigate, Route, Routes, useNavigate, useParams } from 'react-router'
 
 import { ContribBoundary, ContribRender } from '@/contrib/react/boundary'
 import { useContributions } from '@/contrib/react/use-contributions'
+import { BotsPane } from '@/plugins/eidolon-bots/roster-pane'
 import { $activeConnectionId } from '@/store/connections'
 import { $gateway } from '@/store/gateway'
 import { $activeGatewayProfile } from '@/store/profile'
 import { $freshDraftReady, $gatewayState } from '@/store/session'
 
 import { ChatView } from '../chat'
-import { ChatSidebar } from '../chat/sidebar'
-import { BotsPane } from '@/plugins/hermes-bots/roster-pane'
+import type { ChatSidebar } from '../chat/sidebar'
 import { OrganizationRail } from '../eidolon/rail'
 import { OrganizationWorkspace } from '../eidolon/workspace'
 import { TerminalPaneChrome } from '../right-sidebar/terminal/chrome'
@@ -169,7 +169,7 @@ export const ChatRoutesSurface = memo(function ChatRoutesSurface({
 
   return (
     <Routes>
-      {['home', 'objectives', 'objectives/:objectiveId', 'organization', 'activity', 'knowledge'].map(path => <Route key={path} path={path} element={page(<OrganizationWorkspace />)} />)}
+      {['home', 'objectives', 'objectives/:objectiveId', 'organization', 'activity', 'knowledge'].map(path => <Route element={page(<OrganizationWorkspace />)} key={path} path={path} />)}
       <Route element={chatView} index />
       <Route element={chatView} path=":sessionId" />
       <Route element={page(<SkillsView setStatusbarItemGroup={setStatusbarItemGroup} />)} path="skills" />

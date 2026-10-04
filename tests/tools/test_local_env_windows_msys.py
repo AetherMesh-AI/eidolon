@@ -228,7 +228,7 @@ class TestWindowsMsysPathconvDefaults:
         env = _sanitize_subprocess_env({})
         assert env.get("MSYS_NO_PATHCONV") == "1"
 
-    def test_hermes_subprocess_env_sets_msys_no_pathconv_on_windows(self):
+    def test_eidolon_subprocess_env_sets_msys_no_pathconv_on_windows(self):
         env = hermes_subprocess_env()
         assert env.get("MSYS_NO_PATHCONV") == "1"
 

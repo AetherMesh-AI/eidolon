@@ -446,7 +446,7 @@ export const zh: Translations = {
         includesHeading: '此包包含',
         agentLabel: '智能体插件',
         desktopLabel: '桌面 UI',
-        agentTargetLocal: profile => `安装到 ${profile} 后端（~/.hermes/plugins/）`,
+        agentTargetLocal: profile => `安装到 ${profile} 后端的插件目录`,
         agentTargetRemote: profile => `安装到已连接的 ${profile} 后端`,
         desktopTarget: '安装到此应用的本地 desktop-plugins 文件夹',
         desktopOnlyNote: '仅桌面包不会安装后端智能体插件。',
@@ -1110,7 +1110,7 @@ export const zh: Translations = {
       cloudAgentProvisioning: '正在配置…',
       cloudStatusLabel: status => `状态：${status}`,
       remoteUrlTitle: '远程 URL',
-      remoteUrlDesc: '远程 dashboard 后端的基础 URL。支持路径前缀，例如 /hermes。',
+      remoteUrlDesc: '远程 dashboard 后端的基础 URL。支持路径前缀，例如 /eidolon。',
       probing: '正在检查此网关的认证方式…',
       probeError: '暂时无法访问此网关。请检查 URL；网关响应后会显示认证方式。',
       signedIn: '已登录',
@@ -1181,8 +1181,8 @@ export const zh: Translations = {
       sshPortDesc: '留空 = 22 或 ~/.ssh/config 中的端口。',
       sshKeyTitle: '密钥文件',
       sshKeyDesc: '私钥路径。留空 = ssh-agent 或 ~/.ssh/config。',
-      sshHermesPathTitle: 'Hermes 路径（可选）',
-      sshHermesPathDesc: '远程 hermes 可执行文件的完整路径。留空 = 自动检测。',
+      sshHermesPathTitle: 'Eidolon 路径（可选）',
+      sshHermesPathDesc: '远程 eidolon 可执行文件的完整路径。留空 = 自动检测。',
       sshHermesPathPlaceholder: '自动检测',
       sshTestConnection: '测试 SSH',
       sshConnect: '连接',
@@ -1194,7 +1194,7 @@ export const zh: Translations = {
         'SSH 认证失败。请将密钥加载到 ssh-agent（ssh-add），或在 ~/.ssh/config 中设置 IdentityFile——Eidolon 以非交互方式运行 ssh。',
       sshErrHostKey: '自上次连接以来主机密钥已更改。请确认这是预期的，然后运行 ssh-keygen -R <host> 并重新连接。',
       sshErrNotInstalled:
-        '远程主机上未找到兼容的运行时。请查看 Eidolon 的发布说明（https://github.com/AetherMesh-AI/Eidolon/releases），或设置现有 hermes 可执行文件的路径。',
+        '远程主机上未找到兼容的运行时。请查看 Eidolon 的发布说明（https://github.com/AetherMesh-AI/Eidolon/releases），或设置现有 eidolon 可执行文件的路径。',
       sshErrPlatform: '不支持的远程平台。Eidolon Desktop 的 SSH 模式支持 Linux、macOS 和 Windows 远程主机。',
       sshErrTimeout: 'SSH 连接超时。主机可能无法访问或处于休眠状态。',
       sshErrUpdateRequired: '使用 Desktop SSH 连接前，请更新远程主机上的 Eidolon。',
@@ -1653,7 +1653,7 @@ export const zh: Translations = {
     edit: '编辑',
     archive: '归档',
     skillArchivedTitle: '技能已归档',
-    skillArchivedMessage: '可通过 hermes curator restore 恢复。',
+    skillArchivedMessage: '可通过 eidolon curator restore 恢复。',
     officialCatalog: '可安装',
     officialPill: '官方',
     hub: {
@@ -2076,7 +2076,7 @@ export const zh: Translations = {
       MATTERMOST_ALLOWED_USERS: { label: '允许的用户 ID', help: '推荐。逗号分隔的 Mattermost 用户 ID。' },
       MATRIX_HOMESERVER: { label: 'Homeserver URL', placeholder: 'https://matrix.org' },
       MATRIX_ACCESS_TOKEN: { label: '访问令牌' },
-      MATRIX_USER_ID: { label: 'Bot 用户 ID', placeholder: '@hermes:example.org' },
+      MATRIX_USER_ID: { label: 'Bot 用户 ID', placeholder: '@eidolon:example.org' },
       MATRIX_ALLOWED_USERS: { label: '允许的 Matrix 用户 ID', help: '推荐。@user:server 格式的逗号分隔用户 ID。' },
       SIGNAL_HTTP_URL: {
         label: 'Signal 桥接 URL',
@@ -2109,7 +2109,7 @@ export const zh: Translations = {
       wecom: '在企业微信中添加群机器人，复制其 webhook key 作为 WECOM_BOT_ID。仅可发送——双向请用企业微信 (应用) 选项。',
       wecom_callback: '设置一个企业微信自建应用，暴露其回调 URL，并提供 corp ID、secret、agent ID 和 AES key。',
       weixin:
-        '运行 `hermes gateway setup`，选择 Weixin，然后使用个人微信账号扫描并确认二维码。Eidolon 会通过腾讯 iLink Bot API 连接并保存凭据。',
+        '运行 `eidolon gateway setup`，选择 Weixin，然后使用个人微信账号扫描并确认二维码。Eidolon 会通过腾讯 iLink Bot API 连接并保存凭据。',
       qqbot: '在 QQ 开放平台 (q.qq.com) 注册一个应用，复制 App ID 和 Client Secret。',
       api_server:
         '把 Eidolon 暴露为兼容 OpenAI 的 API。设置一个鉴权密钥，然后把 Open WebUI / LobeChat 等指向 host:port。',
@@ -2218,7 +2218,7 @@ export const zh: Translations = {
       title: (profile: string) => `将 ${profile} 连接到远程主机`,
       description: '此配置档案中的会话将在你指定的远程 Eidolon 上运行，而不是这台电脑。',
       urlLabel: '远程地址',
-      urlPlaceholder: 'https://hermes.example.com',
+      urlPlaceholder: 'https://eidolon.example.com',
       urlInvalid: '请输入以 http:// 或 https:// 开头的完整地址',
       tokenLabel: '访问令牌',
       tokenPlaceholder: '粘贴远程会话令牌',
@@ -2743,7 +2743,7 @@ export const zh: Translations = {
       '/resume': '恢复之前的会话',
       '/details': '控制对话记录的详细程度',
       '/copy': '复制所选内容或最后一条助手消息',
-      '/quit': '退出 hermes'
+      '/quit': '退出 Eidolon'
     },
     hotkeyDescs: {
       'composer.mention': '引用文件、文件夹、URL、git',
@@ -3111,7 +3111,7 @@ export const zh: Translations = {
     remoteSetupDesc: '输入网关 URL。Eidolon 会检测需要令牌还是浏览器登录。',
     remoteUrlTitle: '网关 URL',
     remoteUrlDesc: '使用 Eidolon 网关的基础 URL；远程地址请包含 https://。',
-    remoteUrlPlaceholder: 'https://gateway.example.com/hermes',
+    remoteUrlPlaceholder: 'https://gateway.example.com/eidolon',
     probing: '正在检测网关认证方式...',
     probeError: '无法连接到该 Eidolon 网关。',
     identityProvider: '你的身份提供方',
@@ -3136,7 +3136,7 @@ export const zh: Translations = {
     settingUpTitle: '正在设置 Eidolon',
     finishingTitle: '正在收尾',
     failedDesc:
-      '某个安装步骤失败。在 Windows 上，如果另一个 Hermes CLI 或 Eidolon 实例正在运行，可能会出现这种情况。请停止正在运行的 Hermes CLI 和 Eidolon 实例后重试。可查看下面的详情或 desktop 日志中的完整记录。',
+      '某个安装步骤失败。在 Windows 上，如果另一个 Eidolon CLI 或 Eidolon 实例正在运行，可能会出现这种情况。请停止正在运行的 Eidolon CLI 和 Eidolon 实例后重试。可查看下面的详情或 desktop 日志中的完整记录。',
     activeDesc: '这是一次性设置。Eidolon 安装器正在下载依赖并配置你的机器。之后启动会跳过此步骤。',
     progress: (completed, total) => `${completed}/${total} 个步骤已完成`,
     currentStage: stage => ` -- 当前：${stage}`,
@@ -3166,7 +3166,8 @@ export const zh: Translations = {
     chooseLater: '稍后再选择提供方',
     recommended: '推荐',
     connected: '已连接',
-    featuredPitch: '一个订阅，300+ 前沿模型 — 运行 Eidolon 的推荐方式',
+    aetherMeshDescription: '点对点 AI 网络。',
+    aetherMeshComingSoon: '即将推出',
     fireworksPitch: '直接模型 API — Fireworks 托管的前沿模型',
     localModelsTitle: '本地运行模型',
     localModelsPitch: '无需账号——下载模型，在本机运行',
@@ -3205,11 +3206,11 @@ export const zh: Translations = {
     pickDifferentProvider: '选择其他提供方',
     signInWith: provider => `使用 ${provider} 登录`,
     openedBrowser: provider => `已在浏览器中打开 ${provider}。`,
-    authorizeThere: '请在那里授权 Hermes。',
+    authorizeThere: '请在那里授权 Eidolon。',
     copyAuthCode: '复制授权码并粘贴到下面。',
     pasteAuthCode: '粘贴授权码',
     reopenAuthPage: '重新打开授权页面',
-    autoBrowser: provider => `已在浏览器中打开 ${provider}。请在那里授权 Hermes，连接会自动完成，无需复制或粘贴。`,
+    autoBrowser: provider => `已在浏览器中打开 ${provider}。请在那里授权 Eidolon，连接会自动完成，无需复制或粘贴。`,
     reopenSignInPage: '重新打开登录页面',
     waitingAuthorize: '等待你授权...',
     externalPending: provider => `${provider} 通过自己的 CLI 登录。请在终端运行此命令，然后回来选择“我已登录”：`,
@@ -3698,7 +3699,7 @@ export const zh: Translations = {
       reject: '拒绝',
       alwaysTitle: '始终允许此命令？',
       alwaysDescription: pattern =>
-        `这会将“${pattern}”模式加入永久允许列表 (~/.hermes/config.yaml)。Eidolon 对类似命令将不再询问，包括当前会话和未来会话。`,
+        `这会将“${pattern}”模式加入此配置档案的 config.yaml 中的永久允许列表。Eidolon 对类似命令将不再询问，包括当前会话和未来会话。`,
       alwaysAllow: '始终允许'
     },
     clarify: {
@@ -3900,7 +3901,7 @@ export const zh: Translations = {
       success: platform => `已移交到 ${platform}。随时可在此处恢复。`,
       systemNote: platform => `↻ 已移交到 ${platform} — 随时可在此处恢复。`,
       failed: error => `移交失败：${error}`,
-      timedOut: '等待网关超时。`hermes gateway` 是否正在运行？'
+      timedOut: '等待网关超时。`eidolon gateway` 是否正在运行？'
     }
   },
 

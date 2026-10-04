@@ -212,7 +212,7 @@ class TestAdapterInit:
             staticmethod(lambda model="": {"enabled": True, "effort": "xhigh"}),
         )
         monkeypatch.setattr("gateway.run.GatewayRunner._load_fallback_model", staticmethod(lambda: None))
-        monkeypatch.setattr("hermes_cli.tools_config._get_platform_tools", lambda *_: set())
+        monkeypatch.setattr("eidolon_cli.tools_config._get_platform_tools", lambda *_: set())
 
         adapter = APIServerAdapter(PlatformConfig(enabled=True))
         monkeypatch.setattr(adapter, "_ensure_session_db", lambda: None)
@@ -263,7 +263,7 @@ class TestConcurrencyCap:
 
     def test_resolve_reads_config_value(self):
         cfg = {"gateway": {"api_server": {"max_concurrent_runs": 3}}}
-        with patch("hermes_cli.config.load_config", return_value=cfg):
+        with patch("eidolon_cli.config.load_config", return_value=cfg):
             assert APIServerAdapter._resolve_max_concurrent_runs() == 3
 
 
@@ -797,14 +797,14 @@ class TestModelsEndpoint:
 
     def test_resolve_model_name_default_profile(self):
         """Default profile falls back to 'hermes-agent'."""
-        with patch("hermes_cli.profiles.get_active_profile_name", return_value="default"):
+        with patch("eidolon_cli.profiles.get_active_profile_name", return_value="default"):
             assert APIServerAdapter._resolve_model_name("") == "hermes-agent"
 
 
     @pytest.mark.asyncio
     async def test_model_options_returns_shared_inventory(self, adapter, monkeypatch):
         """GET /api/model/options builds the shared picker payload off-loop."""
-        from hermes_cli import inventory
+        from eidolon_cli import inventory
 
         ctx = object()
         payload = {
@@ -934,16 +934,16 @@ class TestToolsetsEndpoint:
         ]
         feature_snapshot = object()
         with patch(
-            "hermes_cli.tools_config._get_effective_configurable_toolsets",
+            "eidolon_cli.tools_config._get_effective_configurable_toolsets",
             return_value=fake_toolsets,
         ), patch(
-            "hermes_cli.tools_config._get_platform_tools",
+            "eidolon_cli.tools_config._get_platform_tools",
             return_value={"default"},
         ), patch(
-            "hermes_cli.tools_config.get_nous_subscription_features",
+            "eidolon_cli.tools_config.get_nous_subscription_features",
             return_value=feature_snapshot,
         ) as resolve_features, patch(
-            "hermes_cli.tools_config._toolset_has_keys",
+            "eidolon_cli.tools_config._toolset_has_keys",
             return_value=True,
         ) as has_keys, patch(
             "toolsets.resolve_toolset",
@@ -2493,7 +2493,7 @@ def _patch_create_agent_runtime(monkeypatch, captured: dict, fake_agent_cls):
         "gateway.run.GatewayRunner._load_fallback_model", staticmethod(lambda: None)
     )
     monkeypatch.setattr("gateway.run._current_max_iterations", lambda: 90)
-    monkeypatch.setattr("hermes_cli.tools_config._get_platform_tools", lambda *_: set())
+    monkeypatch.setattr("eidolon_cli.tools_config._get_platform_tools", lambda *_: set())
 
 
 class TestModelRoutesParsing:
@@ -2614,7 +2614,7 @@ class TestModelRoutesAgentCreation:
 class TestStoredSessionModelFilter:
     """A session row that persisted the advertised virtual model must read as
     "no stored model" — replaying "hermes-agent" upstream 400s. Found live
-    (Aug 2026): the first cross-gateway `hermes peer dm` against a fresh
+    (Aug 2026): the first cross-gateway `eidolon peer dm` against a fresh
     api_server failed every turn with "hermes-agent is not a valid model ID".
     """
 
@@ -2784,8 +2784,8 @@ class TestApiKeyStartupGuardFailsClosed:
         real_import = __import__
 
         def _blocked(name, *args, **kwargs):
-            if name == "hermes_cli.auth":
-                raise ImportError("simulated: hermes_cli.auth unavailable")
+            if name == "eidolon_cli.auth":
+                raise ImportError("simulated: eidolon_cli.auth unavailable")
             return real_import(name, *args, **kwargs)
 
         return patch("builtins.__import__", _blocked)
@@ -2931,7 +2931,7 @@ class TestCreateAgentModelRecovery:
     def test_create_agent_defaults_to_provider_catalog_model_when_empty(self, monkeypatch):
         """api_server.py had no equivalent of run.py's provider-catalog
         default when model resolves empty but a provider did resolve (e.g.
-        `hermes auth add openai-codex` without `hermes model`) —
+        `eidolon auth add openai-codex` without `eidolon model`) —
         AIAgent(model="") 400s every call."""
         captured = {}
 
@@ -2947,7 +2947,7 @@ class TestCreateAgentModelRecovery:
         )
         monkeypatch.setattr("gateway.run._resolve_gateway_model", lambda: "")
         monkeypatch.setattr(
-            "hermes_cli.models.get_default_model_for_provider",
+            "eidolon_cli.models.get_default_model_for_provider",
             lambda provider: "gpt-5.5-codex" if provider == "openai-codex" else None,
         )
 

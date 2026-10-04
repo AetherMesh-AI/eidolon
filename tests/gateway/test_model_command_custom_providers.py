@@ -32,7 +32,7 @@ async def test_direct_model_switch_offloads_to_thread(tmp_path, monkeypatch):
     gateway event loop (#20525)."""
     import asyncio
 
-    from hermes_cli.model_switch import ModelSwitchResult
+    from eidolon_cli.model_switch import ModelSwitchResult
 
     hermes_home = tmp_path / ".hermes"
     hermes_home.mkdir()
@@ -45,14 +45,14 @@ async def test_direct_model_switch_offloads_to_thread(tmp_path, monkeypatch):
 
     import gateway.run as gateway_run
 
-    monkeypatch.setattr(gateway_run, "_hermes_home", hermes_home)
+    monkeypatch.setattr(gateway_run, "_eidolon_home", hermes_home)
 
     # Fail the switch so the handler returns before _finish_switch (which needs
     # full runner state) — we only care that the offload happened.
     def _fake_switch(**kwargs):
         return ModelSwitchResult(success=False, error_message="nope")
 
-    monkeypatch.setattr("hermes_cli.model_switch.switch_model", _fake_switch)
+    monkeypatch.setattr("eidolon_cli.model_switch.switch_model", _fake_switch)
 
     offloaded = []
     real_to_thread = asyncio.to_thread

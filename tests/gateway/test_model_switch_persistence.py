@@ -186,7 +186,7 @@ class TestOneTurnNeverPersisted:
 
         import gateway.run as gateway_run
         from gateway.run import GatewayRunner
-        from hermes_cli.model_switch import ModelSwitchResult
+        from eidolon_cli.model_switch import ModelSwitchResult
 
         hermes_home = tmp_path / ".hermes"
         hermes_home.mkdir()
@@ -196,10 +196,10 @@ class TestOneTurnNeverPersisted:
             ),
             encoding="utf-8",
         )
-        monkeypatch.setattr(gateway_run, "_hermes_home", hermes_home)
+        monkeypatch.setattr(gateway_run, "_eidolon_home", hermes_home)
         monkeypatch.setattr("agent.models_dev.fetch_models_dev", lambda: {})
         monkeypatch.setattr(
-            "hermes_cli.model_switch.switch_model",
+            "eidolon_cli.model_switch.switch_model",
             lambda **kw: ModelSwitchResult(
                 success=True,
                 new_model="gpt-5.5",
@@ -212,8 +212,8 @@ class TestOneTurnNeverPersisted:
                 provider_label="OpenRouter",
             ),
         )
-        monkeypatch.setattr("hermes_constants.get_hermes_home", lambda: hermes_home)
-        monkeypatch.setattr("hermes_cli.config.get_hermes_home", lambda: hermes_home)
+        monkeypatch.setattr("eidolon_constants.get_eidolon_home", lambda: hermes_home)
+        monkeypatch.setattr("eidolon_cli.config.get_eidolon_home", lambda: hermes_home)
 
         runner = object.__new__(GatewayRunner)
         runner.adapters = {}

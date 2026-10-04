@@ -22,7 +22,7 @@ for _stream in (sys.stdout, sys.stderr):
     if hasattr(_stream, "reconfigure"):
         with suppress(ValueError, TypeError):
             _stream.reconfigure(encoding="utf-8", errors="replace")
-from hermes_constants import get_bundled_skills_dir, get_hermes_home, get_optional_skills_dir
+from eidolon_constants import get_bundled_skills_dir, get_eidolon_home, get_optional_skills_dir
 from agent.skill_utils import ESSENTIAL_SKILLS, is_excluded_skill_path
 from tools.skill_usage import _read_skill_name, read_suppressed_names
 from tools.skills_sync_optional import (
@@ -32,7 +32,7 @@ from utils import atomic_write_text
 
 logger = logging.getLogger(__name__)
 
-HERMES_HOME = get_hermes_home()
+HERMES_HOME = get_eidolon_home()
 SKILLS_DIR = HERMES_HOME / "skills"
 MANIFEST_FILE = SKILLS_DIR / ".bundled_manifest"
 
@@ -43,7 +43,7 @@ MANIFEST_FILE = SKILLS_DIR / ".bundled_manifest"
 # Same bug class and same fix as skills_tool (f8723c478) and skill_manager_tool (c6a3d412d): long-lived
 # multi-profile runtimes (Dashboard console, TUI/Desktop backend, cron, kanban workers) import this module
 # once under the launch HERMES_HOME and later scope requests to a different profile via
-# set_hermes_home_override(). See #65828.
+# set_eidolon_home_override(). See #65828.
 _HERMES_HOME_AT_IMPORT = HERMES_HOME
 _SKILLS_DIR_AT_IMPORT = SKILLS_DIR
 _MANIFEST_FILE_AT_IMPORT = MANIFEST_FILE
@@ -54,20 +54,20 @@ def _live(configured, at_import: Path, fallback) -> Path:
     return Path(configured) if Path(configured) != at_import else fallback()
 
 
-def _hermes_home() -> Path:
-    return _live(HERMES_HOME, _HERMES_HOME_AT_IMPORT, get_hermes_home)
+def _eidolon_home() -> Path:
+    return _live(HERMES_HOME, _HERMES_HOME_AT_IMPORT, get_eidolon_home)
 
 
 def _skills_dir() -> Path:
-    return _live(SKILLS_DIR, _SKILLS_DIR_AT_IMPORT, lambda: _hermes_home() / "skills")
+    return _live(SKILLS_DIR, _SKILLS_DIR_AT_IMPORT, lambda: _eidolon_home() / "skills")
 
 
 def _manifest_file() -> Path:
     return _live(MANIFEST_FILE, _MANIFEST_FILE_AT_IMPORT, lambda: _skills_dir() / ".bundled_manifest")
 
 
-# Written by `hermes profile create --no-skills` / installer `--no-skills`: sync seeds only
-# essential skills. Mirrors hermes_cli.profiles.NO_BUNDLED_SKILLS_MARKER (no CLI import here).
+# Written by `eidolon profile create --no-skills` / installer `--no-skills`: sync seeds only
+# essential skills. Mirrors eidolon_cli.profiles.NO_BUNDLED_SKILLS_MARKER (no CLI import here).
 NO_BUNDLED_SKILLS_MARKER = ".no-bundled-skills"
 
 
@@ -214,7 +214,7 @@ def _recover_renamed_skill(st: "_SyncState", skill_name: str, dest: Path) -> Opt
             st.say(
                 f"  ⚠ {skill_name}: upstream moved this skill to {_rel_skills_posix(dest)}, but your "
                 f"modified copy at {rel} was kept — it will not receive updates. "
-                f"Run `hermes skills reset {skill_name} --restore` to move to the new location.")
+                f"Run `eidolon skills reset {skill_name} --restore` to move to the new location.")
             continue
         try:
             _move_dir(candidate, dest)
@@ -284,7 +284,7 @@ def _install_new_skill(st: _SyncState, skill_name: str, skill_src: Path, dest: P
             else:
                 st.say(
                     f"  ⚠ {skill_name}: bundled version shipped but you already have a local skill "
-                    f"by this name — yours was kept. Run `hermes skills reset {skill_name}` to "
+                    f"by this name — yours was kept. Run `eidolon skills reset {skill_name}` to "
                     f"replace it with the bundled version.")
         else:
             _copy_dir(skill_src, dest)
@@ -364,7 +364,7 @@ def sync_skills(quiet: bool = False) -> dict:
     """Sync bundled skills into ~/.hermes/skills/ using the manifest; returns the per-category
     result dict. Opted-out profiles seed ONLY ESSENTIAL_SKILLS (the system prompt always
     points at ``hermes-agent``)."""
-    essential_only = (_hermes_home() / NO_BUNDLED_SKILLS_MARKER).exists()
+    essential_only = (_eidolon_home() / NO_BUNDLED_SKILLS_MARKER).exists()
     if essential_only and not quiet:
         print("  (profile opted out of bundled skills via .no-bundled-skills — seeding essential skills only)")
     bundled_dir = _get_bundled_dir()
@@ -464,7 +464,7 @@ from datetime import timezone  # noqa: F401,E402
 
 def is_bundled_skills_opt_out() -> bool:
     """Return True if the active profile carries the opt-out marker."""
-    return (_hermes_home() / NO_BUNDLED_SKILLS_MARKER).exists()
+    return (_eidolon_home() / NO_BUNDLED_SKILLS_MARKER).exists()
 
 
 _PLUGIN_COMPAT_LAZY = {
@@ -483,7 +483,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

@@ -70,9 +70,9 @@ describe('formatBlockerMessage', () => {
 })
 
 describe('formatProbeFailedMessage', () => {
-  it('suggests retry and hermes update', () => {
+  it('suggests retry and eidolon update', () => {
     const msg = formatProbeFailedMessage()
-    assert.ok(msg.includes('hermes update'))
+    assert.ok(msg.includes('eidolon update'))
     assert.ok(msg.includes('retry'))
   })
 
@@ -352,7 +352,7 @@ describe('scanVenvBlockers', () => {
     assert.equal(calls.length, 1)
     const c = calls[0]
     assert.ok(c.cmd.endsWith('python.exe'))
-    assert.deepEqual(c.args, ['-m', 'hermes_cli._scan_venv_blockers'])
+    assert.deepEqual(c.args, ['-m', 'eidolon_cli._scan_venv_blockers'])
     assert.equal(c.cwd, '/update/root')
     assert.equal(c.timeout, 60_000)
   })
@@ -399,7 +399,7 @@ describe('stopSafeVenvBlockers', () => {
     assert.deepEqual(calls, [
       {
         command: 'C:\\Hermes\\venv\\Scripts\\python.exe',
-        args: ['-m', 'hermes_cli._scan_venv_blockers', '--terminate-safe', '47484', '1722798000.25']
+        args: ['-m', 'eidolon_cli._scan_venv_blockers', '--terminate-safe', '47484', '1722798000.25']
       }
     ])
     assert.deepEqual(outcome, { stopped: [47484], failed: [] })

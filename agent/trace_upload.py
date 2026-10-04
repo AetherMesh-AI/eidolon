@@ -1,4 +1,4 @@
-"""Upload a Hermes session transcript to Hugging Face as an agent trace, re-emitted in the **Claude Code
+"""Upload a Eidolon session transcript to Hugging Face as an agent trace, re-emitted in the **Claude Code
 JSONL** shape the HF Agent Trace Viewer auto-detects (https://huggingface.co/docs/hub/agent-traces).
 Deterministic, zero LLM turns. Private by default: traces can carry prompts, tool output, local paths and
 secrets, so the dataset is created private and every text body passes the secret redactor (``force=True``)
@@ -40,7 +40,7 @@ class TraceRedactionError(RuntimeError):
     """Raised when a trace cannot be safely redacted before upload."""
 
 
-# --- Conversion: Hermes OpenAI-format messages -> Claude Code JSONL ---
+# --- Conversion: Eidolon OpenAI-format messages -> Claude Code JSONL ---
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
@@ -210,7 +210,7 @@ def _do_upload(jsonl: str, *, token: str, session_id: str, dataset_name: str = D
 def load_session_messages(session_id: str, db_path=None) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """``(messages, meta)`` from SQLite; ``meta`` is ``{}`` when the session row is missing (a live, untitled
     session may still have messages)."""
-    from hermes_state_registry import acquire, release_or_close
+    from eidolon_state_registry import acquire, release_or_close
     db = acquire(db_path or None)
     try:
         resolved = db.resolve_session_id(session_id) or session_id

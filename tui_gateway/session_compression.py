@@ -210,7 +210,7 @@ def _compress_session_history(
     """
     from agent.conversation_compression import finalize_context_engine_compression_notification
     from agent.model_metadata import estimate_request_tokens_rough
-    from hermes_cli.partial_compress import (
+    from eidolon_cli.partial_compress import (
         parse_partial_compress_args, rejoin_compressed_head_and_tail, split_history_for_partial_compress,
     )
     agent = session["agent"]

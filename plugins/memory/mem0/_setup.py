@@ -16,7 +16,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-from hermes_constants import get_hermes_home  # noqa: F401 — patched by tests
+from eidolon_constants import get_eidolon_home  # noqa: F401 — patched by tests
 
 from ._oss_providers import EMBEDDER_PROVIDERS, KNOWN_DIMS, LLM_PROVIDERS, SECTION_REGISTRIES, VECTOR_PROVIDERS, validate_oss_config
 
@@ -25,7 +25,7 @@ _PGVECTOR_CONTAINER, _PGVECTOR_IMAGE, _PGVECTOR_PASSWORD = "hermes-pgvector", "p
 
 
 def _curses_select(title: str, items: list[tuple[str, str]], default: int = 0) -> int:
-    from hermes_cli.curses_ui import curses_radiolist
+    from eidolon_cli.curses_ui import curses_radiolist
     return curses_radiolist(title, [f"{label}  {desc}" if desc else label for label, desc in items], selected=default, cancel_returns=default)
 
 
@@ -149,7 +149,7 @@ def _write_env(env_path: Path, env_writes: dict[str, str]) -> None:
 
 def _activate_provider(config: dict) -> None:
     """Point config.yaml's memory.provider at mem0."""
-    from hermes_cli.config import save_config
+    from eidolon_cli.config import save_config
     config["memory"]["provider"] = "mem0"
     save_config(config)
 
@@ -187,7 +187,7 @@ def _setup_platform(hermes_home: str, config: dict, flags: dict[str, str]) -> No
     provider_config.update(mode="platform", host="")
     # _load_config() also seeds ``host`` from MEM0_HOST (.env); the file clear can't help there, so warn.
     if os.environ.get("MEM0_HOST", "").strip():
-        print(f"\n  ⚠ MEM0_HOST is set in your environment ({os.environ['MEM0_HOST']}). It overrides platform mode — remove it from ~/.hermes/.env (or unset it) or Hermes will keep routing to the self-hosted server.")
+        print(f"\n  ⚠ MEM0_HOST is set in your environment ({os.environ['MEM0_HOST']}). It overrides platform mode — remove it from ~/.hermes/.env (or unset it) or Eidolon will keep routing to the self-hosted server.")
     _persist_provider_config(hermes_home, config, provider_config, env_writes, "mem0", "API keys saved to .env")
 
 
@@ -497,7 +497,7 @@ _MODE_PICKER = (_setup_platform, _setup_selfhosted, _setup_oss)
 
 
 def post_setup(hermes_home: str, config: dict) -> None:
-    """Entry point for `hermes memory setup`: routes on --mode (platform / selfhosted / oss), else shows a picker.
+    """Entry point for `eidolon memory setup`: routes on --mode (platform / selfhosted / oss), else shows a picker.
     OSS is non-interactive only when the mode came from the flag."""
     with suppress(ImportError):  # mem0ai must meet the minimum version from plugin.yaml
         import mem0

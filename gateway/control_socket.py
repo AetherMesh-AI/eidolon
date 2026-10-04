@@ -2,7 +2,7 @@
 versioned JSON verbs (``identify``, ``status``). A connectable socket with a well-formed ``identify``
 answer IS liveness — no PID-reuse heuristics. Never a TCP port: filesystem/pipe ACLs are the auth
 boundary. POSIX: ``$HERMES_HOME/gateway.sock`` (or a temp-dir socket + ``gateway.sock.path`` pointer
-file when the home path exceeds ``sun_path``); Windows: named pipe ``\\\\.\\pipe\\hermes-gateway-<hash>``.
+file when the home path exceeds ``sun_path``); Windows: named pipe ``\\\\.\\pipe\\eidolon-gateway-<hash>``.
 Wire contract: ONE request per connection — one JSON line in, one out, then the server closes.
 Consumers PREFER the socket and fall back to the state-file/scan layer when it doesn't answer.
 """
@@ -41,7 +41,7 @@ def _home_hash(home: Path) -> str:
 
 def windows_pipe_name(home: Path) -> str:
     """Per-HERMES_HOME named pipe path (Windows transport)."""
-    return rf"\\.\pipe\hermes-gateway-{_home_hash(home)}"
+    return rf"\\.\pipe\eidolon-gateway-{_home_hash(home)}"
 
 
 def _fits_sun_path(path: Path) -> bool:
@@ -126,8 +126,8 @@ class GatewayControlServer:
     def __init__(self, home: Optional[Path] = None, *,
                  verb_handlers: Optional[dict[str, Callable[[], dict[str, Any]]]] = None) -> None:
         if home is None:
-            from gateway.status import _get_process_hermes_home
-            home = _get_process_hermes_home()
+            from gateway.status import _get_process_eidolon_home
+            home = _get_process_eidolon_home()
         self._home = Path(home)
         self._server: Optional[asyncio.AbstractServer] = None
         self._pipe_server: Any = None  # Windows proactor pipe server

@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils'
 
-const assetPath = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\/+/, '')}`
+import eidolonIcon from '../../assets/icon.png'
 
 // Brand badge: Eidolon app icon on a white tile, identical in light/dark.
 // Fills the tile (softly rounded); size via className (default size-14).
@@ -13,7 +13,7 @@ export function BrandMark({ className, ...props }: React.ComponentProps<'span'>)
       )}
       {...props}
     >
-      <img alt="" className="size-full object-contain" src={assetPath('icon.png')} />
+      <img alt="" className="size-full object-contain" src={eidolonIcon} />
     </span>
   )
 }

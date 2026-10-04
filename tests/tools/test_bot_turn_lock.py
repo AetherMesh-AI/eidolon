@@ -130,13 +130,13 @@ def test_turn_wait_seconds_falls_back_to_module_constant(monkeypatch):
     def _boom():
         raise RuntimeError("no config")
 
-    monkeypatch.setattr("hermes_cli.config.load_config", _boom)
+    monkeypatch.setattr("eidolon_cli.config.load_config", _boom)
     assert bot_relay.turn_wait_seconds() == float(bot_relay.TURN_WAIT_SECONDS_FALLBACK)
 
 
 def test_turn_wait_seconds_reads_config(monkeypatch):
     monkeypatch.setattr(
-        "hermes_cli.config.load_config",
+        "eidolon_cli.config.load_config",
         lambda: {"bot_mode": {"turn_wait_seconds": 7}},
     )
     assert bot_relay.turn_wait_seconds() == 7.0
@@ -170,10 +170,10 @@ def test_run_delivery_holds_profile_lock_during_turn(root, tmp_path, monkeypatch
 
     monkeypatch.setattr(bot_mode_dm.subprocess, "run", _fake_run)
     rc = bot_mode_dm._run_delivery(
-        ["hermes", "-p", "ops", "chat"], str(dm), stdin_file=False
+        ["eidolon", "-p", "ops", "chat"], str(dm), stdin_file=False
     )
     assert rc == 0
-    assert observed["argv"][:3] == ["hermes", "-p", "ops"]
+    assert observed["argv"][:3] == ["eidolon", "-p", "ops"]
     # …and after the turn, the lock is free again.
     with acquire_turn_lock(home, "ops", timeout_seconds=0.5):
         pass
@@ -234,7 +234,7 @@ def test_peer_stdin_delivery_skips_local_lock(root, tmp_path, monkeypatch):
 
         monkeypatch.setattr(bot_mode_dm.subprocess, "run", _fake_run)
         rc = bot_mode_dm._run_delivery(
-            ["hermes", "peer", "dm", "spark/ops"], str(dm), stdin_file=True
+            ["eidolon", "peer", "dm", "spark/ops"], str(dm), stdin_file=True
         )
         assert rc == 0  # did not contend with the held 'ops' lock
     finally:
@@ -257,7 +257,7 @@ def test_local_delivery_command_never_reenters_the_lock():
 
     argv = bot_relay.local_delivery_command("ops", "/tmp/q.txt")
     assert argv[1:3] == ["-p", "ops"]
-    assert Path(argv[0]).name in ("hermes", "hermes.exe")
+    assert Path(argv[0]).name in ("eidolon", "eidolon.exe")
     assert "--run-delivery" not in argv
     assert not any("bot_mode_dm" in part for part in argv)
 

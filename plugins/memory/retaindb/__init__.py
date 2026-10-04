@@ -37,7 +37,7 @@ _TEXT_EXTS = (".txt", ".md", ".json", ".csv", ".yaml", ".yml", ".xml", ".html")
 def _load_retaindb_config() -> dict[str, Any]:
     """``memory.retaindb`` block from config.yaml (empty on error): Dashboard-persisted base_url/project; api_key stays in scoped secrets."""
     try:
-        from hermes_cli.config import load_config_readonly
+        from eidolon_cli.config import load_config_readonly
         block = load_config_readonly().get("memory", {}).get("retaindb", {})
     except Exception:
         block = None
@@ -338,8 +338,8 @@ class RetainDBMemoryProvider(MemoryProvider):
         self._client = _Client(get_secret("RETAINDB_API_KEY", "") or "", base_url, project)
         self._session_id, self._user_id = session_id, kwargs.get("user_id", "default") or "default"
         self._agent_id = kwargs.get("agent_id", "hermes") or "hermes"
-        from hermes_constants import get_hermes_home
-        home = get_hermes_home()
+        from eidolon_constants import get_eidolon_home
+        home = get_eidolon_home()
         self._queue = _WriteQueue(self._client, home / "retaindb_queue.db")
         soul = (home / "SOUL.md").read_text(encoding="utf-8", errors="replace").strip() if (home / "SOUL.md").exists() else ""
         if soul:  # seed agent identity from SOUL.md in background

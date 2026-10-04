@@ -503,7 +503,7 @@ class GatewayAdapterLifecycleMixin:
                 # ``_process_handoff(row)`` with no second parameter, and a keyword call would TypeError
                 # into the failure branch — turning a passing suite into a silent no-op watcher. Arity is
                 # probed above. It still sees the profile's home and secret scope only because
-                # ``set_hermes_home_override`` and ``set_secret_scope`` are ContextVar-based — ensure_future
+                # ``set_eidolon_home_override`` and ``set_secret_scope`` are ContextVar-based — ensure_future
                 # copies the current Context into the Task. If either seam is ever migrated to a
                 # thread-local or module global, secondary- profile handoffs silently regress to
                 # primary-config delivery (the exact bug fixed in #91217) while still recording
@@ -661,7 +661,7 @@ class GatewayAdapterLifecycleMixin:
         logger.warning(
             "%s has been failing/reconnecting continuously for %.1f hours (%d attempts) — flagging "
             "NEEDS_ATTENTION. Retries continue, but this usually means a permanent problem (revoked "
-            "credentials, missing intents, broken sidecar). Check `hermes status` / `/platform list`.",
+            "credentials, missing intents, broken sidecar). Check `eidolon status` / `/platform list`.",
             platform.value, queued_for / 3600.0, info.get("attempts", 0),
         )
         self._update_platform_runtime_status(
@@ -832,7 +832,7 @@ class GatewayAdapterLifecycleMixin:
         if not self._multiplex_on():
             return 0
         try:
-            from hermes_cli.profiles import get_active_profile_name
+            from eidolon_cli.profiles import get_active_profile_name
         except Exception:
             return 0
         active = get_active_profile_name() or "default"
@@ -873,7 +873,7 @@ class GatewayAdapterLifecycleMixin:
 
     def _record_served_profiles(self, active: str, profile_homes) -> None:
         """Record the served set (eligible for routing/HTTP prefixes/cron/runtime scope — broader
-        than "has a connected adapter") for `hermes status`; seed per-profile PairingStores."""
+        than "has a connected adapter") for `eidolon status`; seed per-profile PairingStores."""
         with _log_suppressed(logging.DEBUG, "could not record served_profiles", exc_info=True):
             from gateway.status import write_runtime_status
             from gateway.pairing import PairingStore
@@ -894,12 +894,12 @@ class GatewayAdapterLifecycleMixin:
             _own_policy_open_startup_violation, _profile_runtime_scope,
         )
         from gateway.config import load_gateway_config
-        from hermes_cli.env_loader import hydrate_profile_secret_sources
+        from eidolon_cli.env_loader import hydrate_profile_secret_sources
         # Hydrate external secret sources off-loop ONCE: sync hydration would stall every heartbeat.
         await asyncio.to_thread(hydrate_profile_secret_sources, profile_home)
         with _profile_runtime_scope(profile_home, hydrate_secrets=False):
             profile_runtime_cfg = _load_gateway_runtime_config()
-            from hermes_cli.plugins import discover_plugins
+            from eidolon_cli.plugins import discover_plugins
             discover_plugins()
             # This profile's `hooks:` block: start() registered before any profile scope existed.
             self._register_config_hooks(
@@ -1089,8 +1089,8 @@ class GatewayAdapterLifecycleMixin:
         tears down a RETURNED adapter; one whose configure/connect raised is torn down here."""
         from gateway.run import _platform_has_bot_credential, _profile_runtime_scope
         # Lazy + per-attempt: keeps test monkeypatches on these modules live.
-        from hermes_cli.profiles import get_profile_dir
-        from hermes_cli.env_loader import hydrate_profile_secret_sources
+        from eidolon_cli.profiles import get_profile_dir
+        from eidolon_cli.env_loader import hydrate_profile_secret_sources
         from gateway.config import load_gateway_config
         profile_home = get_profile_dir(profile_name)
         # Hydrate external secret sources off-loop so they cannot starve heartbeats.
@@ -1272,7 +1272,7 @@ class GatewayAdapterLifecycleMixin:
 
     @staticmethod
     def _profile_home_or_none(profile_name: str):
-        from hermes_cli.profiles import get_profile_dir
+        from eidolon_cli.profiles import get_profile_dir
         try:
             return get_profile_dir(profile_name)
         except Exception:
@@ -1314,8 +1314,8 @@ class GatewayAdapterLifecycleMixin:
     def _make_default_profile_message_handler(self):
         """Scope primary-adapter messages to their routed multiplex profile. Authorization stays
         with the transport profile (a routed profile may have no credential/allowlist)."""
-        from gateway.run import _async_profile_runtime_scope, get_hermes_home
-        default_home = Path(get_hermes_home())
+        from gateway.run import _async_profile_runtime_scope, get_eidolon_home
+        default_home = Path(get_eidolon_home())
 
         async def _handler(event):
             source = event.source
@@ -1357,7 +1357,7 @@ class GatewayAdapterLifecycleMixin:
         """Authorize and publish one normalized adapter event to plugin hooks."""
         # Observer failures must never break the adapter's update loop.
         with _log_suppressed(logging.DEBUG, "gateway_platform_event hook dispatch failed", exc_info=True):
-            from hermes_cli.lifecycle import has_hook, invoke_hook
+            from eidolon_cli.lifecycle import has_hook, invoke_hook
             if has_hook("gateway_platform_event") and self._is_user_authorized_for_source(source):
                 invoke_hook("gateway_platform_event", **event)
 
@@ -1376,8 +1376,8 @@ class GatewayAdapterLifecycleMixin:
 
     def _make_default_profile_platform_event_handler(self):
         """Scope primary-transport events to their routed multiplex profile."""
-        from gateway.run import _profile_runtime_scope, get_hermes_home
-        default_home = Path(get_hermes_home())
+        from gateway.run import _profile_runtime_scope, get_eidolon_home
+        default_home = Path(get_eidolon_home())
 
         async def _handler(event, source):
             source._authorization_profile_home = default_home
@@ -1470,8 +1470,8 @@ class GatewayAdapterLifecycleMixin:
         Without this an inline-button caller approved only in the routed profile's pairing store was denied
         (#86296), because the adapter's callback source was never route-stamped.
         """
-        from gateway.run import get_hermes_home
-        transport_home = Path(get_hermes_home()) if self._multiplex_on() and profile_name is None else None
+        from gateway.run import get_eidolon_home
+        transport_home = Path(get_eidolon_home()) if self._multiplex_on() and profile_name is None else None
 
         def check(
             user_id: str, chat_type: Optional[str] = None, chat_id: Optional[str] = None, *,

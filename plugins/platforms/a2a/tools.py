@@ -25,7 +25,7 @@ _ORCHESTRATE_MAX_WORKERS = 6  # max parallel peers for fan-out
 
 def _load_config() -> dict:
     try:
-        from hermes_cli.config import load_config
+        from eidolon_cli.config import load_config
         return load_config() or {}
     except Exception:
         return {}

@@ -93,8 +93,8 @@ def build_profile_terminal_scope(hermes_home: "Any") -> Dict[str, str]:
     ``config.yaml`` ``terminal:``. Total by construction, so a bound scope never widens back to
     ambient authority. Raises :class:`TerminalPolicyUnavailable` if a present file is unreadable.
     """
-    from hermes_cli.config import TERMINAL_CONFIG_ENV_MAP, _terminal_env_value
-    from hermes_cli.config_defaults import DEFAULT_CONFIG
+    from eidolon_cli.config import TERMINAL_CONFIG_ENV_MAP, _terminal_env_value
+    from eidolon_cli.config_defaults import DEFAULT_CONFIG
 
     home = Path(hermes_home)
     scope: Dict[str, str] = {}
@@ -132,7 +132,7 @@ def build_profile_terminal_scope(hermes_home: "Any") -> Dict[str, str]:
     except Exception as exc:
         raise TerminalPolicyUnavailable(f"cannot resolve terminal config in {home}: {exc}") from exc
     if config_exists:
-        from hermes_cli.config import fast_safe_load
+        from eidolon_cli.config import fast_safe_load
 
         try:
             with open(config_path, encoding="utf-8") as f:

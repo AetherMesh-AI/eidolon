@@ -458,7 +458,7 @@ export const en: Translations = {
         includesHeading: 'This package includes',
         agentLabel: 'Agent plugin',
         desktopLabel: 'Desktop UI',
-        agentTargetLocal: profile => `Installs into the ${profile} backend (~/.hermes/plugins/)`,
+        agentTargetLocal: profile => `Installs into the plugins directory of the ${profile} backend`,
         agentTargetRemote: profile => `Installs into the connected ${profile} backend`,
         desktopTarget: "Installs into this app's local desktop-plugins folder",
         desktopOnlyNote: 'Desktop-only packages do not install a backend agent plugin.',
@@ -914,7 +914,7 @@ export const en: Translations = {
       cloudAgentProvisioning: 'Provisioning…',
       cloudStatusLabel: status => `Status: ${status}`,
       remoteUrlTitle: 'Remote URL',
-      remoteUrlDesc: 'Base URL for the remote dashboard backend. Path prefixes are supported, for example /hermes.',
+      remoteUrlDesc: 'Base URL for the remote dashboard backend. Path prefixes are supported, for example /eidolon.',
       probing: 'Checking how this gateway authenticates…',
       probeError: 'Could not reach this gateway yet. Check the URL — the auth method will appear once it responds.',
       signedIn: 'Signed in',
@@ -986,8 +986,8 @@ export const en: Translations = {
       sshPortDesc: 'Blank = 22 or the ~/.ssh/config port.',
       sshKeyTitle: 'Identity file',
       sshKeyDesc: 'Private key path. Blank = ssh-agent or ~/.ssh/config.',
-      sshHermesPathTitle: 'Hermes path (optional)',
-      sshHermesPathDesc: 'Full path to the remote hermes binary. Blank = auto-detect.',
+      sshHermesPathTitle: 'Eidolon path (optional)',
+      sshHermesPathDesc: 'Full path to the remote eidolon binary. Blank = auto-detect.',
       sshHermesPathPlaceholder: 'auto-detect',
       sshTestConnection: 'Test SSH',
       sshConnect: 'Connect',
@@ -1000,7 +1000,7 @@ export const en: Translations = {
       sshErrHostKey:
         'The host key has CHANGED since you last connected. Verify this is expected, then run ssh-keygen -R <host> and reconnect.',
       sshErrNotInstalled:
-        'No compatible runtime was found on the remote host. Check the Eidolon release instructions (https://github.com/AetherMesh-AI/Eidolon/releases), or set the path to an existing hermes executable.',
+        'No compatible runtime was found on the remote host. Check the Eidolon release instructions (https://github.com/AetherMesh-AI/Eidolon/releases), or set the path to an existing eidolon executable.',
       sshErrPlatform:
         'Unsupported remote platform. Eidolon Desktop SSH mode supports Linux, macOS, and Windows remote hosts.',
       sshErrTimeout: 'SSH connection timed out. The host may be unreachable or asleep.',
@@ -1478,7 +1478,7 @@ export const en: Translations = {
     edit: 'Edit',
     archive: 'Archive',
     skillArchivedTitle: 'Skill archived',
-    skillArchivedMessage: 'Restorable via hermes curator restore.',
+    skillArchivedMessage: 'Restorable via eidolon curator restore.',
     officialCatalog: 'Available to install',
     officialPill: 'Official',
     hub: {
@@ -1922,7 +1922,7 @@ export const en: Translations = {
       },
       MATRIX_HOMESERVER: { label: 'Homeserver URL', placeholder: 'https://matrix.org' },
       MATRIX_ACCESS_TOKEN: { label: 'Access token' },
-      MATRIX_USER_ID: { label: 'Bot user ID', placeholder: '@hermes:example.org' },
+      MATRIX_USER_ID: { label: 'Bot user ID', placeholder: '@eidolon:example.org' },
       MATRIX_ALLOWED_USERS: {
         label: 'Allowed Matrix user IDs',
         help: 'Recommended. Comma-separated user IDs in @user:server format.'
@@ -2048,7 +2048,7 @@ export const en: Translations = {
       title: (profile: string) => `Connect ${profile} to a remote host`,
       description: 'Sessions in this profile will run on the remote Eidolon you point it at, instead of this computer.',
       urlLabel: 'Remote address',
-      urlPlaceholder: 'https://hermes.example.com',
+      urlPlaceholder: 'https://eidolon.example.com',
       urlInvalid: 'Enter a full address starting with http:// or https://',
       tokenLabel: 'Access token',
       tokenPlaceholder: 'Paste the remote session token',
@@ -2578,7 +2578,7 @@ export const en: Translations = {
       '/resume': 'resume a prior session',
       '/details': 'control transcript detail level',
       '/copy': 'copy selection or last assistant message',
-      '/quit': 'exit hermes'
+      '/quit': 'exit Eidolon'
     },
     hotkeyDescs: {
       'composer.mention': 'reference files, folders, urls, git',
@@ -2953,7 +2953,7 @@ export const en: Translations = {
     remoteSetupDesc: 'Enter your gateway URL. Eidolon will detect whether it needs a token or browser sign-in.',
     remoteUrlTitle: 'Gateway URL',
     remoteUrlDesc: 'Use the base URL of the Eidolon gateway, including https:// when remote.',
-    remoteUrlPlaceholder: 'https://gateway.example.com/hermes',
+    remoteUrlPlaceholder: 'https://gateway.example.com/eidolon',
     probing: 'Detecting gateway authentication...',
     probeError: 'Could not reach that Eidolon gateway.',
     identityProvider: 'your identity provider',
@@ -2978,7 +2978,7 @@ export const en: Translations = {
     settingUpTitle: 'Setting up Eidolon',
     finishingTitle: 'Finishing up',
     failedDesc:
-      'One of the install steps failed. On Windows, this can happen if another Hermes CLI or Eidolon instance is running. Stop any running Hermes CLI and Eidolon instances, then retry. Check the details below or the desktop log for the full transcript.',
+      'One of the install steps failed. On Windows, this can happen if another Eidolon CLI or Eidolon instance is running. Stop any running Eidolon CLI and Eidolon instances, then retry. Check the details below or the desktop log for the full transcript.',
     activeDesc:
       'This is a one-time setup. The Eidolon installer is downloading dependencies and configuring your machine. Subsequent launches will skip this step.',
     progress: (completed, total) => `${completed} of ${total} steps complete`,
@@ -3009,7 +3009,8 @@ export const en: Translations = {
     chooseLater: "I'll choose a provider later",
     recommended: 'Recommended',
     connected: 'Connected',
-    featuredPitch: 'One subscription, 300+ frontier models — the recommended way to run Eidolon',
+    aetherMeshDescription: 'A peer-to-peer AI network.',
+    aetherMeshComingSoon: 'Coming soon',
     fireworksPitch: 'Direct model API — Fireworks-hosted frontier models',
     localModelsTitle: 'Run models locally',
     localModelsPitch: 'No account needed — download a model and run it on this machine',
@@ -3055,12 +3056,12 @@ export const en: Translations = {
     pickDifferentProvider: 'Pick a different provider',
     signInWith: provider => `Sign in with ${provider}`,
     openedBrowser: provider => `We opened ${provider} in your browser.`,
-    authorizeThere: 'Authorize Hermes there.',
+    authorizeThere: 'Authorize Eidolon there.',
     copyAuthCode: 'Copy the authorization code and paste it below.',
     pasteAuthCode: 'Paste authorization code',
     reopenAuthPage: 'Re-open authorization page',
     autoBrowser: provider =>
-      `We opened ${provider} in your browser. Authorize Hermes there and you'll be connected automatically — nothing to copy or paste.`,
+      `We opened ${provider} in your browser. Authorize Eidolon there and you'll be connected automatically — nothing to copy or paste.`,
     reopenSignInPage: 'Re-open sign-in page',
     waitingAuthorize: 'Waiting for you to authorize...',
     externalPending: provider =>
@@ -3556,7 +3557,7 @@ export const en: Translations = {
       reject: 'Reject',
       alwaysTitle: 'Always allow this command?',
       alwaysDescription: pattern =>
-        `This adds the “${pattern}” pattern to your permanent allowlist (~/.hermes/config.yaml). Eidolon won’t ask again for commands like this — in this session or any future one.`,
+        `This adds the “${pattern}” pattern to the permanent allowlist in this profile’s config.yaml. Eidolon won’t ask again for commands like this — in this session or any future one.`,
       alwaysAllow: 'Always allow'
     },
     clarify: {
@@ -3592,7 +3593,7 @@ export const en: Translations = {
       unanswered: 'No response',
       toolCount: count => (count === 1 ? '1 tool' : `${count} tools`),
       notInCatalog: server => `“${server}” is not in the MCP catalog`,
-      catalogSource: 'From the Nous-approved catalog',
+      catalogSource: 'From the curated catalog',
       envRequired: 'Fill in the required credentials first',
       sendFailed: 'Could not send MCP setup response',
       reloadFailed: 'Server saved, but reloading MCP tools failed — they load next session',
@@ -3772,7 +3773,7 @@ export const en: Translations = {
       success: platform => `Handed off to ${platform}. Resume here anytime.`,
       systemNote: platform => `↻ Handed off to ${platform} — resume here anytime.`,
       failed: error => `Handoff failed: ${error}`,
-      timedOut: 'Timed out waiting for the gateway. Is `hermes gateway` running?'
+      timedOut: 'Timed out waiting for the gateway. Is `eidolon gateway` running?'
     }
   },
 

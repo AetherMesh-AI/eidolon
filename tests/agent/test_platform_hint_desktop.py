@@ -158,8 +158,8 @@ class TestEmbeddedTuiPaneClarifier:
 
 class TestContradictionGone:
     """The original contradiction: a single assembled system prompt
-    contained both ``You are running in the Hermes terminal UI (TUI).`` and
-    ``Runtime surface: you're running inside the Hermes desktop GUI app.``.
+    contained both ``You are running in the Eidolon terminal UI (TUI).`` and
+    ``Runtime surface: you're running inside the Eidolon desktop GUI app.``.
     After the fix, no single session's prompt can carry both."""
 
     def test_desktop_chat_session_has_no_tui_framing(self, monkeypatch):

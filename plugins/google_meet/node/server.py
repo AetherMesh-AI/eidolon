@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from hermes_constants import get_hermes_home
+from eidolon_constants import get_eidolon_home
 from plugins.google_meet._jsonfile import read_json, write_json_atomic
 from plugins.google_meet.node import protocol as _proto
 
@@ -68,7 +68,7 @@ class NodeServer:
         self.port = port
         self.display_name = display_name
         self.token_path = Path(token_path) if token_path is not None else (
-            Path(get_hermes_home()) / "workspace" / "meetings" / "node_token.json")
+            Path(get_eidolon_home()) / "workspace" / "meetings" / "node_token.json")
         self._token: Optional[str] = None
 
     def ensure_token(self) -> str:

@@ -22,7 +22,7 @@ import os
 
 import pytest
 
-from hermes_cli.active_sessions import (
+from eidolon_cli.active_sessions import (
     MAX_CONCURRENT_SESSIONS,
     PER_SESSION_EXCLUSIVE_SUBMIT,
     SESSION_NOT_OWNED,
@@ -125,7 +125,7 @@ def test_a_dead_owner_is_pruned_and_a_successor_may_acquire():
     assert lease is not None
 
     # Rewrite the holder as a process that is gone.
-    from hermes_cli.active_sessions import _read_entries, _state_path, _write_entries
+    from eidolon_cli.active_sessions import _read_entries, _state_path, _write_entries
 
     entries = _read_entries(_state_path())
     assert len(entries) == 1
@@ -148,7 +148,7 @@ def test_a_recycled_pid_does_not_keep_a_lease_alive():
     lease, _ = acquire("S")
     assert lease is not None
 
-    from hermes_cli.active_sessions import _read_entries, _state_path, _write_entries
+    from eidolon_cli.active_sessions import _read_entries, _state_path, _write_entries
 
     entries = _read_entries(_state_path())
     entries[0]["pid"] = os.getpid()

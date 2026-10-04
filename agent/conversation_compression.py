@@ -578,7 +578,7 @@ class CompressionCommitFence:
             release()
 
 
-# Defaults for the in-agent progress-aware wrap; mirror hermes_cli.config.DEFAULT_CONFIG["compression"] keys.
+# Defaults for the in-agent progress-aware wrap; mirror eidolon_cli.config.DEFAULT_CONFIG["compression"] keys.
 DEFAULT_CONTEXT_TIMEOUT_SECONDS = 120.0
 DEFAULT_CONTEXT_TOTAL_CEILING_SECONDS = 600.0
 
@@ -684,7 +684,7 @@ def resolve_context_compression_timeouts(compression_cfg: Optional[dict] = None)
     if cfg is None:
         cfg = {}
         with contextlib.suppress(Exception):
-            from hermes_cli.config import load_config
+            from eidolon_cli.config import load_config
             raw = load_config()
             maybe = raw.get("compression", {}) if isinstance(raw, dict) else {}
             cfg = maybe if isinstance(maybe, dict) else {}
@@ -1145,10 +1145,10 @@ def _checkpoint_blocked(reason: str) -> CompressionCheckpointUnavailable:
 
 def _lock_api_is_absent_on_session_db(lock_db: Any) -> bool:
     """Whether the live in-memory SessionDB class structurally predates locks.
-    Only the exact old ``hermes_state.SessionDB`` class (hot-reload skew) may fail open; proxies, lookalikes,
+    Only the exact old ``eidolon_state.SessionDB`` class (hot-reload skew) may fail open; proxies, lookalikes,
     non-callables and descriptor failures fail closed."""
     try:
-        from hermes_state import SessionDB
+        from eidolon_state import SessionDB
         missing = object()
         return (
             type(lock_db) is SessionDB
@@ -1369,7 +1369,7 @@ def _rebind_session_context(session_id: str) -> None:
     except Exception:
         os.environ["HERMES_SESSION_ID"] = session_id
     with contextlib.suppress(Exception):
-        from hermes_logging import set_session_context
+        from eidolon_logging import set_session_context
         set_session_context(session_id)
 
 
@@ -1753,7 +1753,7 @@ def _lower_threshold_to_aux_context(
             f"  To make this permanent, use a larger compression model in config.yaml:\n       auxiliary:\n"
             f"         compression:\n           model: <model-with-{old_threshold:,}+-context>\n"
             f"  (Lowering compression.threshold cannot help here — with {_main_label}'s {main_ctx:,}-token window, "
-            f"Hermes's small-context floor and output reservation would recompute the trigger to "
+            f"Eidolon's small-context floor and output reservation would recompute the trigger to "
             f"{recomputed_threshold:,} tokens, still above the compression model's {aux_context:,}.)"
         )
     agent._compression_warning = msg
@@ -1803,7 +1803,7 @@ def check_compression_model_feasibility(agent: Any) -> None:
             else:
                 msg = (
                     "⚠ No auxiliary LLM provider configured — context compression will drop middle turns without a summary. "
-                    "Run `hermes setup` or set OPENROUTER_API_KEY."
+                    "Run `eidolon setup` or set OPENROUTER_API_KEY."
                 )
             agent._compression_warning = msg
             agent._emit_status(msg)
@@ -1829,7 +1829,7 @@ def check_compression_model_feasibility(agent: Any) -> None:
             raise ValueError(
                 f"Auxiliary compression model {aux_model} has a context "
                 f"window of {aux_context:,} tokens, which is below the "
-                f"minimum {MINIMUM_CONTEXT_LENGTH:,} required by Hermes "
+                f"minimum {MINIMUM_CONTEXT_LENGTH:,} required by Eidolon "
                 f"Agent.  Choose a compression model with at least "
                 f"{MINIMUM_CONTEXT_LENGTH // 1000}K context (set "
                 f"auxiliary.compression.model in config.yaml), or set "
@@ -2476,7 +2476,7 @@ def _acquire_compression_lease(
                 agent._last_compression_lock_error_sid = _lock_sid
                 logger.warning(
                     "compression lock subsystem unavailable for session=%s — proceeding without lock. This usually means a stale "
-                    "in-memory module after an update; restart the process (or `hermes update`) to resync.",
+                    "in-memory module after an update; restart the process (or `eidolon update`) to resync.",
                     _lock_sid,
                 )
             _lock_acquired = True  # acquired-but-unlocked compatibility path
@@ -2887,7 +2887,7 @@ def _parent_deliberately_ended(session_db: Any, session_id: str) -> bool:
     if not callable(reader):
         return False
     try:
-        from hermes_state_common import is_automatic_end_reason
+        from eidolon_state_common import is_automatic_end_reason
         row = reader(session_id) or {}
         return row.get("ended_at") is not None and not is_automatic_end_reason(row.get("end_reason"))
     except Exception:
@@ -2904,13 +2904,13 @@ def _carry_session_state_to_child(agent: Any, old_session_id: str, old_title: An
         # Carry a persistent /goal onto the continuation session. Compression mints a fresh child id;
         # load_goal does a flat per-session lookup with no parent walk, so without this an active goal
         # silently dies at the boundary (#33618).
-        from hermes_cli.goals import migrate_goal_to_session
+        from eidolon_cli.goals import migrate_goal_to_session
         migrate_goal_to_session(old_session_id, agent.session_id, reason="compression")
     with _swallow('Could not migrate heartbeat on compression: %s'):
-        from hermes_cli.heartbeat import migrate_heartbeat_to_session
+        from eidolon_cli.heartbeat import migrate_heartbeat_to_session
         migrate_heartbeat_to_session(old_session_id, agent.session_id)
     with _swallow('Could not migrate loop on compression: %s'):
-        from hermes_cli.loops import migrate_loop_to_session
+        from eidolon_cli.loops import migrate_loop_to_session
         migrate_loop_to_session(old_session_id, agent.session_id, reason="compression")
     if not old_title:
         return
@@ -2957,7 +2957,7 @@ def _publish_rotated_compaction(
     # publish also COALESCEs from the parent row for threads lacking HERMES_HOME.
     _profile_for_child = None
     with contextlib.suppress(Exception):
-        from hermes_cli.profiles import get_active_profile_name
+        from eidolon_cli.profiles import get_active_profile_name
         _profile_for_child = get_active_profile_name()
     if _profile_for_child == "default":
         _profile_for_child = None
@@ -3567,7 +3567,7 @@ def compress_context(
     attempt = _begin_compression_attempt(agent, force=force, defer_notification=defer_context_engine_notification)
 
     # Codex owns the real thread; route compaction to its own compact (config
-    # compression.codex_app_server_auto). Memory handoff is Hermes-only: no native
+    # compression.codex_app_server_auto). Memory handoff is Eidolon-only: no native
     # summary prompt to inject into. `is True`: MagicMock attributes are truthy.
     checkpoint_required = getattr(agent, "compression_checkpoint_required", False) is True
     if getattr(agent, "api_mode", None) == "codex_app_server":
@@ -3760,7 +3760,7 @@ def _compress_context_via_codex_app_server(
 ) -> Tuple[list, str]:
     """Route compaction to Codex app-server for Codex-owned threads.
     Rewriting the local transcript would not shrink the Codex thread, so Codex compacts its own thread and
-    Hermes' transcript is left unchanged."""
+    Eidolon' transcript is left unchanged."""
     _sid = getattr(agent, "session_id", None) or "none"
     _tokens = f"{approx_tokens:,}" if approx_tokens else "unknown"
     auto_mode = str(getattr(agent, "codex_app_server_auto_compaction", "native") or "native").lower()

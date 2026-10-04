@@ -75,7 +75,7 @@ def _image_error_max_dimension(error: Exception) -> Optional[int]:
 def _try_refresh_nous_paid_entitlement_credentials(agent) -> bool:
     """Refresh Nous runtime credentials after a fresh paid-entitlement check."""
     try:
-        from hermes_cli.nous_account import get_nous_portal_account_info
+        from eidolon_cli.nous_account import get_nous_portal_account_info
 
         if get_nous_portal_account_info(force_fresh=True).paid_service_access is not True:
             return False
@@ -239,7 +239,7 @@ def _print_nous_401_diagnostics(agent: Any, api_error: Exception) -> None:
     """Nous 401 that survived a credential refresh: likely Portal OAuth expired/revoked,
     no credits, or agent key blocked."""
     from agent.conversation_loop import _print_nous_entitlement_guidance
-    from hermes_constants import display_hermes_home
+    from eidolon_constants import display_eidolon_home
     _body_text = ""
     try:
         _body = getattr(api_error, "body", None) or getattr(api_error, "response", None)
@@ -255,9 +255,9 @@ def _print_nous_401_diagnostics(agent: Any, api_error: Exception) -> None:
     _plines(
         agent,
         "   Troubleshooting:",
-        "     • Re-authenticate: hermes auth add nous",
+        "     • Re-authenticate: eidolon auth add nous",
         "     • Check credits / billing: https://portal.nousresearch.com",
-        f"     • Verify stored credentials: {display_hermes_home()}/auth.json",
+        f"     • Verify stored credentials: {display_eidolon_home()}/auth.json",
         "     • Switch providers temporarily: /model <model> --provider openrouter",
     )
 
@@ -266,7 +266,7 @@ def _print_anthropic_401_diagnostics(agent: Any, key: Any) -> None:
     """Anthropic 401 that survived a credential refresh: show auth method + fixes."""
     from agent.anthropic_credentials import _is_oauth_token
     from agent.azure_identity_adapter import is_token_provider
-    from hermes_constants import display_hermes_home
+    from eidolon_constants import display_eidolon_home
     _plines(agent, "🔐 Anthropic 401 — authentication failed.")
     if is_token_provider(key):
         # Azure Foundry Entra ID: JWT minted per-request by an httpx hook; 401 = Azure
@@ -274,7 +274,7 @@ def _print_anthropic_401_diagnostics(agent: Any, key: Any) -> None:
         _plines(
             agent,
             "   Auth method: Microsoft Entra ID (httpx event hook)",
-            "   Run `hermes doctor` for credential-chain diagnostics, or",
+            "   Run `eidolon doctor` for credential-chain diagnostics, or",
             "   `az login` if your developer session expired.",
         )
     else:
@@ -284,16 +284,16 @@ def _print_anthropic_401_diagnostics(agent: Any, key: Any) -> None:
             f"   Auth method: {auth_method}",
             f"   Token prefix: {key[:12]}..." if isinstance(key, str) and len(key) > 12 else "   Token: (empty or short)",
         )
-    _dhh = display_hermes_home()
+    _dhh = display_eidolon_home()
     _plines(
         agent,
         "   Troubleshooting:",
-        f"     • Check ANTHROPIC_TOKEN in {_dhh}/.env for Hermes-managed OAuth/setup tokens",
+        f"     • Check ANTHROPIC_TOKEN in {_dhh}/.env for Eidolon-managed OAuth/setup tokens",
         f"     • Check ANTHROPIC_API_KEY in {_dhh}/.env for API keys or legacy token values",
         "     • For API keys: verify at https://platform.claude.com/settings/keys",
         "     • For Claude Code: run 'claude /login' to refresh, then retry",
-        "     • Legacy cleanup: hermes config set ANTHROPIC_TOKEN \"\"",
-        "     • Clear stale keys: hermes config set ANTHROPIC_API_KEY \"\"",
+        "     • Legacy cleanup: eidolon config set ANTHROPIC_TOKEN \"\"",
+        "     • Clear stale keys: eidolon config set ANTHROPIC_API_KEY \"\"",
     )
 
 
@@ -526,7 +526,7 @@ def recover_after_classification(
         _retry.reasoning_mandatory_retry_attempted = True
         agent._reasoning_disable_rejected = True
         try:
-            from hermes_cli.models_reasoning_caps import refresh_reasoning_caps_async
+            from eidolon_cli.models_reasoning_caps import refresh_reasoning_caps_async
             refresh_reasoning_caps_async(agent.provider)
         except Exception:
             pass
@@ -600,13 +600,13 @@ def _print_nonretryable_auth_guidance(
                 "   💡 Codex OAuth token was rejected (HTTP 401). Your token may have been",
                 "      refreshed by another client (Codex CLI, VS Code). To fix:",
                 "      1. Run `codex` in your terminal to generate fresh tokens.",
-                "      2. Then run `hermes auth` to re-authenticate.",
+                "      2. Then run `eidolon auth` to re-authenticate.",
             )
         elif provider == "xai-oauth":
             _vlines(
                 agent,
                 "   💡 xAI OAuth token was rejected (HTTP 401). To fix:",
-                "      re-authenticate with xAI Grok OAuth (SuperGrok / Premium+) from `hermes model`.",
+                "      re-authenticate with xAI Grok OAuth (SuperGrok / Premium+) from `eidolon model`.",
             )
         else:  # nous
             _vlines(
@@ -629,7 +629,7 @@ def _print_nonretryable_auth_guidance(
     _vlines(
         agent,
         "   💡 Your API key was rejected by the provider. Check:",
-        "      • Is the key valid? Run: hermes setup",
+        "      • Is the key valid? Run: eidolon setup",
         f"      • Does your account have access to {model}?",
     )
     if base_url_host_matches(str(base_url), "openrouter.ai"):
@@ -685,7 +685,7 @@ def nonretryable_client_error_result(
             "   💡 The provider's safety filter rejected this specific prompt.",
             "      • Try rephrasing the request, narrowing the context, or splitting into smaller steps.",
             "      • Configure a fallback provider so future blocks route automatically:",
-            "        hermes fallback add   (interactive picker — same as `hermes model`)",
+            "        hermes fallback add   (interactive picker — same as `eidolon model`)",
         )
     # TLS certificate failures are environment problems — name the knobs for each cause.
     if classified.reason == FailoverReason.ssl_cert_verification:
@@ -712,7 +712,7 @@ def nonretryable_client_error_result(
     if classified.reason == FailoverReason.content_policy_blocked:
         _policy_response = (
             "⚠️  The model provider's safety filter blocked this request "
-            "(not a Hermes/gateway failure).\n\n"
+            "(not a Eidolon/gateway failure).\n\n"
             f"Provider message: {_nonretryable_summary}\n\n"
             f"{_CONTENT_POLICY_RECOVERY_HINT}"
         )
@@ -802,7 +802,7 @@ def max_retries_exhausted_result(
             "reasoning models behind cloud gateways (NVIDIA NIM, OpenAI, Anthropic, DeepSeek).",
             "      Workarounds in priority order:",
             f"      1. Set `providers.{provider}.models.{model}.stale_timeout_seconds: 900` "
-            "in `~/.hermes/config.yaml` to extend the per-call timeout. (Hermes's built-in floor is 600s for "
+            "in `~/.hermes/config.yaml` to extend the per-call timeout. (Eidolon's built-in floor is 600s for "
             "known reasoning models — if you still see this after raising, the upstream cap is even shorter.)",
             "      2. Lower `reasoning_budget` or set `reasoning_effort: medium` on this model if the provider supports it.",
             "      3. Use a smaller / faster reasoning model if the task doesn't require deep thinking.",
@@ -905,7 +905,7 @@ def log_api_error_attempt(
     # provider never names the model, so we do.
     if getattr(api_error, "status_code", None) == 404:
         try:
-            from hermes_cli.model_normalize import suggest_prefixed_model_id
+            from eidolon_cli.model_normalize import suggest_prefixed_model_id
 
             _suggestion = suggest_prefixed_model_id(_provider, _model)
         except Exception:
@@ -914,7 +914,7 @@ def log_api_error_attempt(
             _blines(
                 agent,
                 f"   💡 Model '{_model}' is not a valid id for provider {_provider} — it is missing its vendor prefix.",
-                f"      Did you mean '{_suggestion}'?  Re-pick it with `hermes model`.",
+                f"      Did you mean '{_suggestion}'?  Re-pick it with `eidolon model`.",
             )
     return error_type, error_msg, _provider, _base, _model
 

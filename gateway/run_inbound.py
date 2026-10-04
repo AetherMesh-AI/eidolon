@@ -45,7 +45,7 @@ class GatewayInboundMixin:
         Results: ``{"action": "skip"}`` → drop; ``{"action": "rewrite", "text"}`` → replace ``event.text``;
         ``allow``/None → normal dispatch. Runs BEFORE auth so plugins can handle unauthorized senders."""
         try:
-            from hermes_cli.lifecycle import invoke_hook as _invoke_hook
+            from eidolon_cli.lifecycle import invoke_hook as _invoke_hook
             _hook_results = _invoke_hook(
                 "pre_gateway_dispatch", event=event, gateway=self,
                 # getattr: bare-runner tests build GatewayRunner via object.__new__ without __init__.
@@ -207,7 +207,7 @@ class GatewayInboundMixin:
         with suppress(Exception):
             _estop_cmd = event.get_command()
             if _estop_cmd:
-                from hermes_cli.commands import resolve_command as _resolve_estop_cmd
+                from eidolon_cli.commands import resolve_command as _resolve_estop_cmd
                 if _resolve_estop_cmd(_estop_cmd) is not None:
                     return True
         with suppress(Exception):
@@ -250,13 +250,13 @@ class GatewayInboundMixin:
     @staticmethod
     def _hm_write_update_response(response_text: str) -> Optional[str]:
         """Atomically hand *response_text* to the detached update process; returns the OSError str."""
-        from gateway.run import _hermes_home
-        response_path = _hermes_home / ".update_response"
+        from gateway.run import _eidolon_home
+        response_path = _eidolon_home / ".update_response"
         try:
             tmp = response_path.with_suffix(".tmp")
             tmp.write_text(response_text, encoding="utf-8")
             tmp.replace(response_path)
-            (_hermes_home / ".update_prompt.json").unlink(missing_ok=True)
+            (_eidolon_home / ".update_prompt.json").unlink(missing_ok=True)
         except OSError as e:
             return str(e)
         return None
@@ -278,7 +278,7 @@ class GatewayInboundMixin:
         else:
             if cmd:
                 with suppress(Exception):
-                    from hermes_cli.commands import resolve_command as _resolve_update_cmd
+                    from eidolon_cli.commands import resolve_command as _resolve_update_cmd
                     _cmd_def = _resolve_update_cmd(cmd)
                     _recognized_cmd = _cmd_def.name if _cmd_def else None
             response_text = "" if _recognized_cmd else (event.text or "").strip()
@@ -497,7 +497,7 @@ class GatewayInboundMixin:
     ) -> Tuple[bool, Optional[str]]:
         """Slash-command / photo-burst handling on the busy fast-path → ``(handled, result)``. Each
         command's mid-run behavior is declared on its CommandDef (busy_policy / busy_handler)."""
-        from hermes_cli.commands import resolve_command as _resolve_cmd_inner
+        from eidolon_cli.commands import resolve_command as _resolve_cmd_inner
         _evt_cmd = event.get_command()
         _cmd_def_inner = _resolve_cmd_inner(_evt_cmd) if _evt_cmd else None
 
@@ -678,7 +678,7 @@ class GatewayInboundMixin:
         raw_args = event.get_command_args().strip()
         platform = source.platform.value if source.platform else ""
         try:
-            from hermes_cli.plugins import fire_pre_command_hook
+            from eidolon_cli.plugins import fire_pre_command_hook
             fire_pre_command_hook(
                 surface="gateway", command=str(canonical), alias_used=str(command),
                 args_raw=raw_args, session_key=_quick_key, platform=platform,
@@ -720,7 +720,7 @@ class GatewayInboundMixin:
     ) -> Tuple[bool, Optional[str], Optional[str], Optional[str]]:
         """Resolve the slash command (aliases, access gate, hooks) → ``(handled, result, command,
         canonical)``; when ``handled`` the caller returns ``result`` as-is (may be None)."""
-        from hermes_cli.commands import is_gateway_known_command, resolve_command as _resolve_cmd
+        from eidolon_cli.commands import is_gateway_known_command, resolve_command as _resolve_cmd
 
         def _canon(cmd):
             # Aliases resolve to the canonical name so dispatch and hook names don't depend on them.
@@ -781,7 +781,7 @@ class GatewayInboundMixin:
         return True, ""
 
     async def _hm_cmd_egress(self, event, source, _quick_key):
-        from hermes_cli.proxy_cli import format_status_text
+        from eidolon_cli.proxy_cli import format_status_text
         return True, format_status_text()
 
     async def _hm_rewrite_turn_to_prompt(self, event, source, name: str, ack: str, build) -> Tuple[bool, Optional[str]]:
@@ -811,7 +811,7 @@ class GatewayInboundMixin:
 
     async def _hm_cmd_init(self, event, source, _quick_key):
         # /init builds the prompt first: the ack wording depends on whether AGENTS.md exists.
-        from hermes_cli.init_command import build_init_prompt_for_cwd
+        from eidolon_cli.init_command import build_init_prompt_for_cwd
 
         try:
             _init_prompt = build_init_prompt_for_cwd(extra=event.get_command_args().strip())
@@ -878,8 +878,8 @@ class GatewayInboundMixin:
         # /moa is one-shot sugar only: run a single prompt through the default MoA preset, then
         # restore the prior model. To *switch* to a MoA preset for the session, pick it from the
         # model picker (MoA presets surface as a virtual "Mixture of Agents" provider).
-        from hermes_cli.moa_config import moa_usage, normalize_moa_config
-        from hermes_cli.config import load_config
+        from eidolon_cli.moa_config import moa_usage, normalize_moa_config
+        from eidolon_cli.config import load_config
 
         moa_payload = event.get_command_args().strip()
         if not moa_payload:
@@ -981,7 +981,7 @@ class GatewayInboundMixin:
         # underscored autocomplete form matches plugin commands registered with hyphens.
         if command:
             try:
-                from hermes_cli.plugins import get_plugin_command_handler
+                from eidolon_cli.plugins import get_plugin_command_handler
                 plugin_handler = get_plugin_command_handler(command.replace("_", "-"))
                 if plugin_handler:
                     result = plugin_handler(event.get_command_args().strip())
@@ -1026,7 +1026,7 @@ class GatewayInboundMixin:
     def _hm_unknown_slash_reply(command: str, source: SessionSource) -> Optional[str]:
         """Reply for a /command that is not built-in/plugin/skill; None when it is known."""
         from gateway.run import _check_unavailable_skill
-        from hermes_cli.commands import GATEWAY_KNOWN_COMMANDS
+        from eidolon_cli.commands import GATEWAY_KNOWN_COMMANDS
         # Known-but-disabled or uninstalled skill → actionable guidance.
         _unavail_msg = _check_unavailable_skill(command)
         if _unavail_msg:
@@ -1086,7 +1086,7 @@ class GatewayInboundMixin:
                 if _skill_name and _skill_name in _plat_disabled:
                     return (
                         f"The **{_skill_name}** skill is disabled for {_plat}.\n"
-                        f"Enable it with: `hermes skills config`"
+                        f"Enable it with: `eidolon skills config`"
                     )
                 _disabled_extra = [
                     skill_cmds.get(k, {}).get("name", "")
@@ -1097,7 +1097,7 @@ class GatewayInboundMixin:
                     return (
                         f"The **{', '.join(_disabled_extra)}** skill(s) in this "
                         f"stacked invocation are disabled for {_plat}.\n"
-                        f"Enable them with: `hermes skills config`"
+                        f"Enable them with: `eidolon skills config`"
                     )
             if extra_keys and _build_stacked is not None:
                 stacked_result = _build_stacked(
@@ -1533,7 +1533,7 @@ class GatewayInboundMixin:
                 if _msg_raw_ctx is not None:
                     _msg_config_ctx = int(_msg_raw_ctx)
             try:
-                from hermes_cli.config import get_compatible_custom_providers
+                from eidolon_cli.config import get_compatible_custom_providers
 
                 _msg_custom_providers = get_compatible_custom_providers(_msg_cfg)
             except Exception:
@@ -1551,7 +1551,7 @@ class GatewayInboundMixin:
             _msg_config_ctx = None
         if _msg_config_ctx is not None:
             try:
-                from hermes_cli.route_identity import should_clear_context_pin_async
+                from eidolon_cli.route_identity import should_clear_context_pin_async
 
                 if await should_clear_context_pin_async(
                     None, None,  # model match already checked above
@@ -1563,7 +1563,7 @@ class GatewayInboundMixin:
                 _msg_config_ctx = None
         if _msg_custom_providers and _msg_base_url:
             with suppress(Exception):
-                from hermes_cli.config import get_custom_provider_context_length
+                from eidolon_cli.config import get_custom_provider_context_length
 
                 _msg_config_ctx = get_custom_provider_context_length(
                     model=_msg_model, base_url=_msg_base_url, custom_providers=_msg_custom_providers,
@@ -1708,7 +1708,7 @@ class GatewayInboundMixin:
 
     def _install_plugin_message_injector(self) -> None:
         """Publish this live gateway's plugin message scheduler."""
-        from hermes_cli.plugins import get_plugin_manager
+        from eidolon_cli.plugins import get_plugin_manager
 
         get_plugin_manager().set_gateway_message_injector(
             self, self._schedule_plugin_message_injection
@@ -1716,7 +1716,7 @@ class GatewayInboundMixin:
 
     def _clear_plugin_message_injector(self) -> None:
         """Remove this runner's scheduler without clobbering a newer owner."""
-        from hermes_cli.plugins import get_plugin_manager
+        from eidolon_cli.plugins import get_plugin_manager
 
         get_plugin_manager().clear_gateway_message_injector(self)
 
@@ -1830,7 +1830,7 @@ class GatewayInboundMixin:
         try:
             from agent.image_routing import decide_image_input_mode
             from agent.auxiliary_client import _read_main_model, _read_main_provider
-            from hermes_cli.config import load_config
+            from eidolon_cli.config import load_config
 
             cfg = user_config if isinstance(user_config, dict) else load_config()
             resolved_provider = (provider or "").strip()

@@ -4,7 +4,7 @@ import { sessionProjectColor } from '@/app/chat/sidebar/projects/workspace-group
 import { Codecs, persistentAtom } from '@/lib/persisted'
 import { $projects } from '@/store/projects'
 import { $sessions, sessionPinId } from '@/store/session'
-import type { ProjectInfo, SessionInfo } from '@/types/hermes'
+import type { ProjectInfo, SessionInfo } from '@/types/eidolon'
 
 // Per-session color OVERRIDES — a user-picked color that wins over the inherited
 // project color (#66565 layer 2). Desktop-local like pins, keyed by the DURABLE

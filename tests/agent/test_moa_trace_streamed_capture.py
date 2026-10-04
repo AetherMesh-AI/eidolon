@@ -6,7 +6,7 @@ capture at call time) or streaming (captured after the fact from the caller's
 resolved assistant text). Before the streamed-capture fix, a streamed
 aggregator left ``output: null`` in the trace and only pointed at state.db,
 so an offline audit of a benchmark run (which drives the streaming display
-path via ``hermes chat --query``) couldn't see what the aggregator actually
+path via ``eidolon chat --query``) couldn't see what the aggregator actually
 produced without joining to the session DB by hand.
 
 These exercise the real ``consume_and_save_trace`` → ``save_moa_turn`` path
@@ -28,7 +28,7 @@ def _enable_traces(tmp_path, monkeypatch):
     hermes_home.mkdir()
     monkeypatch.setenv("HERMES_HOME", str(hermes_home))
 
-    # save_moa_turn reads config via hermes_cli.config.load_config; stub it to
+    # save_moa_turn reads config via eidolon_cli.config.load_config; stub it to
     # return traces-on so the test doesn't depend on a real config file.
     import agent.moa_trace as moa_trace
 
@@ -40,7 +40,7 @@ def _enable_traces(tmp_path, monkeypatch):
     )
     # load_config is imported lazily inside _traces_enabled_and_dir; patch the
     # source module attribute it imports from as well.
-    import hermes_cli.config as cfg
+    import eidolon_cli.config as cfg
 
     monkeypatch.setattr(
         cfg, "load_config", lambda: {"moa": {"save_traces": True}}, raising=False

@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from hermes_cli.active_sessions import (
+from eidolon_cli.active_sessions import (
     active_session_liveness_guard,
     active_session_registry_snapshot,
     try_acquire_active_session,
@@ -23,8 +23,8 @@ import os
 import time
 from pathlib import Path
 
-from hermes_cli import active_sessions
-from hermes_cli.active_sessions import try_acquire_active_session
+from eidolon_cli import active_sessions
+from eidolon_cli.active_sessions import try_acquire_active_session
 
 boundary_file = os.environ.get("BOUNDARY_FILE")
 if boundary_file:
@@ -155,7 +155,7 @@ def test_unlimited_session_lease_is_real_even_without_a_cap(
 def test_orphan_guard_fails_closed_when_registry_is_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from hermes_cli import active_sessions
+    from eidolon_cli import active_sessions
 
     def _unavailable(*_args, **_kwargs):
         raise OSError("registry unavailable")
@@ -308,7 +308,7 @@ def test_automatic_cleanup_reclaims_own_orphan_lease_not_treated_as_sibling(
     # The owner vanished minutes ago; a lease written seconds ago is still
     # inside the self-orphan grace window and must be left alone.
     monkeypatch.setattr(
-        "hermes_cli.active_sessions._SELF_ORPHAN_GRACE_SECONDS", 0.0
+        "eidolon_cli.active_sessions._SELF_ORPHAN_GRACE_SECONDS", 0.0
     )
     ended: list[tuple[str, str]] = []
 

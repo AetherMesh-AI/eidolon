@@ -49,7 +49,7 @@ class TestManifest:
 class TestDiscovery:
     def test_plugin_is_discovered_as_standalone_opt_in(self, tmp_path, monkeypatch):
         """Scanner should find the plugin but NOT load it by default."""
-        from hermes_cli import plugins as plugins_mod
+        from eidolon_cli import plugins as plugins_mod
 
         # Isolated HERMES_HOME so we don't read the developer's config.yaml.
         home = tmp_path / ".hermes"
@@ -442,7 +442,7 @@ class TestTurnTraceIsolation:
 # "placeholder", "test-key", or "your-langfuse-key", the SDK accepts the
 # credentials at construction time (it does no server-side validation
 # eagerly) but drops every trace at flush time, with no signal in the
-# Hermes logs.  The fix in `_get_langfuse()` validates the documented
+# Eidolon logs.  The fix in `_get_langfuse()` validates the documented
 # `pk-lf-` / `sk-lf-` prefix Langfuse always issues, surfaces a one-shot
 # warning naming the offending env var(s), and short-circuits via the
 # same `_INIT_FAILED` path used for missing credentials so subsequent
@@ -607,10 +607,10 @@ class TestRequestMessageCoercion:
 
         out = mod._messages_for_langfuse_input(
             request_messages=[{"role": "user", "content": "hi"}],
-            system_prompt="You are Hermes.",
+            system_prompt="You are Eidolon.",
         )
         assert out[0]["role"] == "system"
-        assert out[0]["content"] == "You are Hermes."
+        assert out[0]["content"] == "You are Eidolon."
         assert out[1]["role"] == "user"
 
     def test_messages_for_langfuse_skips_duplicate_system(self):
@@ -1691,7 +1691,7 @@ class TestMoAReferenceGenerations:
         assert gens == []
 
 class TestAtexitFinalization(TestTurnTraceIsolation):
-    """Short-lived processes (kanban workers, `hermes chat -q`, cron) can exit
+    """Short-lived processes (kanban workers, `eidolon chat -q`, cron) can exit
     with tool calls still queued — the root span never ends and the backend
     shows an anonymous trace (no name/session/metadata). _finalize_all_traces
     (registered atexit after client construction) must end every open root."""
@@ -1744,7 +1744,7 @@ class TestAtexitFinalization(TestTurnTraceIsolation):
 class TestSystemPromptInGenerationInput:
     """The generation input must carry the system prompt even for providers
     that move it out of ``messages``: Anthropic Messages (``system`` kwarg)
-    and the Responses/Codex API (``instructions``).  Hermes forwards it to
+    and the Responses/Codex API (``instructions``).  Eidolon forwards it to
     hooks as ``system_prompt``; the plugin prepends a ``role: system`` entry.
 
     Regression for the trace gap discussed in PR #32175 (Anthropic) and its
@@ -1792,10 +1792,10 @@ class TestSystemPromptInGenerationInput:
         self._fire(
             mod,
             request_messages=[{"role": "user", "content": "hi"}],
-            system_prompt="You are Hermes.",
+            system_prompt="You are Eidolon.",
         )
         assert captured["input"][0]["role"] == "system"
-        assert captured["input"][0]["content"] == "You are Hermes."
+        assert captured["input"][0]["content"] == "You are Eidolon."
         assert captured["input"][1]["role"] == "user"
 
     def test_anthropic_block_list_flattened(self, monkeypatch):
@@ -1825,10 +1825,10 @@ class TestSystemPromptInGenerationInput:
         self._fire(
             mod,
             request_messages=[
-                {"role": "system", "content": "You are Hermes."},
+                {"role": "system", "content": "You are Eidolon."},
                 {"role": "user", "content": "hi"},
             ],
-            system_prompt="You are Hermes.",
+            system_prompt="You are Eidolon.",
         )
         roles = [m["role"] for m in captured["input"]]
         assert roles.count("system") == 1
@@ -1862,9 +1862,9 @@ class TestSystemPromptInGenerationInput:
         self._fire(
             mod,
             request_messages=[{"role": "user", "content": "hi"}],
-            system_prompt="You are Hermes.",
+            system_prompt="You are Eidolon.",
         )
-        assert captured["metadata"]["system_prompt_chars"] == len("You are Hermes.")
+        assert captured["metadata"]["system_prompt_chars"] == len("You are Eidolon.")
 
 
 class TestSystemPromptCrossesHookBoundary:
@@ -1872,7 +1872,7 @@ class TestSystemPromptCrossesHookBoundary:
     the regression coverage PR #32175's review asked for: verify the
     provider-specific request shape (Anthropic ``system`` kwarg, Codex
     ``instructions``) actually reaches the Langfuse generation input, with
-    no Hermes internals mocked (only the Langfuse client is faked)."""
+    no Eidolon internals mocked (only the Langfuse client is faked)."""
 
     def _make_mod(self):
         sys.modules.pop("plugins.observability.langfuse", None)

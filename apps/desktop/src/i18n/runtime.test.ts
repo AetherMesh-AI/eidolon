@@ -52,6 +52,24 @@ describe('desktop i18n runtime translator', () => {
     )
   })
 
+  it.each(Object.keys(TRANSLATIONS) as Array<keyof typeof TRANSLATIONS>)(
+    'keeps installation and approval guidance profile-scoped in %s',
+    locale => {
+      setRuntimeI18nLocale(locale)
+      const profile = 'review-profile'
+      const pattern = 'git status *'
+      const install = translateNow('settings.plugins.installModal.agentTargetLocal', profile)
+      const approval = translateNow('assistant.approval.alwaysDescription', pattern)
+
+      expect(install).toContain(profile)
+      expect(approval).toContain(pattern)
+      expect(approval).toContain('config.yaml')
+      // Named profiles may have a different home; guidance must not claim a fixed one.
+      expect(install).not.toContain('~/')
+      expect(approval).not.toContain('~/')
+    }
+  )
+
   it('keeps translated settings field copy addressable from schema keys', () => {
     const field = ['display', 'show_reasoning'].join('.')
 

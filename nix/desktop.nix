@@ -1,19 +1,19 @@
-# nix/desktop.nix — Hermes Desktop (Electron) app build + wrapper
+# nix/desktop.nix — Eidolon Desktop (Electron) app build + wrapper
 #
-# `hermesAgent` is the fully-built `.#default` package — it ships the
-# `hermes` binary with the venv, runtime PATH, bundled skills/plugins, etc.
+# `eidolonAgent` is the fully-built `.#default` package — it ships the
+# `eidolon` binary with the venv, runtime PATH, bundled skills/plugins, etc.
 # already wired up.  We point the desktop at it via the existing
 # `HERMES_DESKTOP_HERMES` override env var, so the desktop's resolver
-# uses our fully wrapped binary at step 4 ("existing Hermes CLI").
+# uses our fully wrapped binary at step 4 ("existing Eidolon CLI").
 # No reimplementation of the agent resolution in this wrapper.
 {
   pkgs,
   lib,
   stdenv,
   makeWrapper,
-  hermesNpmLib,
+  eidolonNpmLib,
   electron,
-  hermesAgent,
+  eidolonAgent,
   python3,
   # Environment to bake into the launcher. A GUI launcher reads none of the
   # shell profile, so a variable that an interactive shell exports does not
@@ -53,7 +53,7 @@ let
     else if stdenv.hostPlatform.isLinux then
       "linux"
     else
-      throw "hermes-desktop: unsupported host platform for node-pty staging";
+      throw "eidolon-desktop: unsupported host platform for node-pty staging";
 
   targetArch =
     if stdenv.hostPlatform.isAarch64 then
@@ -61,15 +61,15 @@ let
     else if stdenv.hostPlatform.isx86_64 then
       "x64"
     else
-      throw "hermes-desktop: unsupported host arch for node-pty staging";
+      throw "eidolon-desktop: unsupported host arch for node-pty staging";
 
   # Build the renderer (dist/ + electron/ + package.json).
-  renderer = hermesNpmLib.buildNpmPackage {
+  renderer = eidolonNpmLib.buildNpmPackage {
     dirs = [
       "apps/desktop"
       "apps/shared"
     ];
-    pname = "hermes-desktop-renderer";
+    pname = "eidolon-desktop-renderer";
 
     doCheck = true;
 
@@ -99,7 +99,7 @@ let
         mkdir -p "$TMPDIR/electron-headers"
         tar -xzf ${electronHeaders} -C "$TMPDIR/electron-headers" --strip-components=1
 
-        ${lib.getExe hermesNpmLib.node-gyp} rebuild \
+        ${lib.getExe eidolonNpmLib.node-gyp} rebuild \
           --directory=../../node_modules/node-pty \
           --build-from-source \
           --runtime=electron \
@@ -157,7 +157,7 @@ in
 
 # Electron wrapper: nixpkgs' electron binary pointed at the renderer dir.
 stdenv.mkDerivation {
-  pname = "hermes-desktop";
+  pname = "eidolon-desktop";
   inherit (renderer) version;
 
   dontUnpack = true;
@@ -171,35 +171,35 @@ stdenv.mkDerivation {
   installPhase = ''
     runHook preInstall
 
-    mkdir -p $out/share/hermes-desktop $out/bin
-    cp -r ${renderer}/* $out/share/hermes-desktop/
+    mkdir -p $out/share/eidolon-desktop $out/bin
+    cp -r ${renderer}/* $out/share/eidolon-desktop/
 
     # Standard nixpkgs pattern for electron-builder apps: patch process.resourcesPath
     # to point to the app's directory. In Nix, unpackaged electron defaults this
     # to the electron distribution's resources path, breaking extraResources lookups.
-    substituteInPlace $out/share/hermes-desktop/dist/electron-main.mjs \
-      --replace-fail "process.resourcesPath" "'$out/share/hermes-desktop'"
+    substituteInPlace $out/share/eidolon-desktop/dist/electron-main.mjs \
+      --replace-fail "process.resourcesPath" "'$out/share/eidolon-desktop'"
 
     # Wrap the nixpkgs electron binary to launch our app.  Set
-    # HERMES_DESKTOP_HERMES to the absolute path of the nix-built `hermes`
-    # binary so the desktop's resolver step 4 ("existing Hermes CLI on
+    # HERMES_DESKTOP_HERMES to the absolute path of the nix-built `eidolon`
+    # binary so the desktop's resolver step 4 ("existing Eidolon CLI on
     # PATH") uses our fully wrapped binary — venv with all deps,
     # bundled skills/plugins, runtime PATH (ripgrep/git/ffmpeg/etc).
     # No reimplementation of the agent resolver in the wrapper.
-    makeWrapper ${lib.getExe electron} $out/bin/hermes-desktop \
-      --add-flags "$out/share/hermes-desktop" \
-      --set HERMES_DESKTOP_HERMES "${lib.getExe hermesAgent}" \
+    makeWrapper ${lib.getExe electron} $out/bin/eidolon-desktop \
+      --add-flags "$out/share/eidolon-desktop" \
+      --set HERMES_DESKTOP_HERMES "${lib.getExe eidolonAgent}" \
       --set ELECTRON_IS_DEV 0${extraEnvFlags}${extraRunFlags}
 
     # XDG launcher entry
     mkdir -p $out/share/applications $out/share/icons/hicolor/1024x1024/apps
     install -m 0644 ${../apps/desktop/assets/icon.png} \
-      $out/share/icons/hicolor/1024x1024/apps/hermes.png
+      $out/share/icons/hicolor/1024x1024/apps/eidolon.png
     export PYTHONPATH=$(mktemp -d)
-    cp ${../hermes_cli/linux_desktop_entry.py} "$PYTHONPATH/linux_desktop_entry.py"
-    export DESKTOP_EXEC="$out/bin/hermes-desktop"
-    export DESKTOP_ICON="$out/share/icons/hicolor/1024x1024/apps/hermes.png"
-    python3 -c 'import os; from linux_desktop_entry import render_desktop_entry; print(render_desktop_entry(os.environ["DESKTOP_EXEC"], os.environ["DESKTOP_ICON"]))' > $out/share/applications/hermes.desktop
+    cp ${../eidolon_cli/linux_desktop_entry.py} "$PYTHONPATH/linux_desktop_entry.py"
+    export DESKTOP_EXEC="$out/bin/eidolon-desktop"
+    export DESKTOP_ICON="$out/share/icons/hicolor/1024x1024/apps/eidolon.png"
+    python3 -c 'import os; from linux_desktop_entry import render_desktop_entry; print(render_desktop_entry(os.environ["DESKTOP_EXEC"], os.environ["DESKTOP_ICON"]))' > $out/share/applications/eidolon.desktop
     runHook postInstall
   '';
 
@@ -208,10 +208,10 @@ stdenv.mkDerivation {
   };
 
   meta = with lib; {
-    description = "Native Electron desktop shell for Hermes Agent";
-    homepage = "https://github.com/NousResearch/hermes-agent";
+    description = "Native Electron desktop shell for Eidolon Agent";
+    homepage = "https://github.com/AetherMesh-AI/Eidolon";
     license = licenses.mit;
     platforms = platforms.unix;
-    mainProgram = "hermes-desktop";
+    mainProgram = "eidolon-desktop";
   };
 }

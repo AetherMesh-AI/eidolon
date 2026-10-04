@@ -81,8 +81,8 @@ class TestLoadGatewayConfigForRunner:
         monkeypatch.setenv("API_SERVER_PORT", "8642")
         monkeypatch.delenv("API_SERVER_KEY", raising=False)
         monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
-        monkeypatch.setattr(run_mod, "get_hermes_home", lambda: home)
-        monkeypatch.setattr(run_mod, "_hermes_home", home)
+        monkeypatch.setattr(run_mod, "get_eidolon_home", lambda: home)
+        monkeypatch.setattr(run_mod, "_eidolon_home", home)
         # Model the real multiplexed gateway: run.py flips the runtime flag
         # before the runner reload, making any installed scope authoritative.
         ss.set_multiplex_active(True)
@@ -248,7 +248,7 @@ class TestPrimaryMessageRuntimeScope:
         (home / "config.yaml").write_text(
             "platform_toolsets:\n  discord:\n    - discord\n", encoding="utf-8"
         )
-        monkeypatch.setattr(run_mod, "get_hermes_home", lambda: home)
+        monkeypatch.setattr(run_mod, "get_eidolon_home", lambda: home)
         monkeypatch.setenv("DISCORD_BOT_TOKEN", "wrong-process-token")
         secret_scope.set_multiplex_active(True)
 

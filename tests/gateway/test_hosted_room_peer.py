@@ -24,7 +24,7 @@ from gateway.hosted_room_peer import (
     local_room_link_endpoint,
     verify_room_grant,
 )
-from hermes_constants import reset_hermes_home_override, set_hermes_home_override
+from eidolon_constants import reset_eidolon_home_override, set_eidolon_home_override
 
 
 SECRET = b"s" * 32
@@ -40,11 +40,11 @@ def test_gateway_room_grant_secret_is_private_persistent_and_not_an_api_key(
     monkeypatch.setenv("HERMES_HOME", str(home))
 
     first = gateway_room_grant_secret()
-    token = set_hermes_home_override(str(profile_home))
+    token = set_eidolon_home_override(str(profile_home))
     try:
         second = gateway_room_grant_secret()
     finally:
-        reset_hermes_home_override(token)
+        reset_eidolon_home_override(token)
 
     secret_path = home / ".room-link-grant-secret"
     assert first == second
@@ -133,7 +133,7 @@ def test_named_profile_inherits_gateway_room_link_endpoint(tmp_path, monkeypatch
     monkeypatch.setenv("HERMES_HOME", str(root))
     monkeypatch.delenv("HERMES_ROOM_LINK_URL", raising=False)
 
-    token = set_hermes_home_override(profile)
+    token = set_eidolon_home_override(profile)
     try:
         assert local_room_link_endpoint() == {
             "available": True,
@@ -141,7 +141,7 @@ def test_named_profile_inherits_gateway_room_link_endpoint(tmp_path, monkeypatch
             "transport_security": "tls",
         }
     finally:
-        reset_hermes_home_override(token)
+        reset_eidolon_home_override(token)
 
 
 def test_named_profile_room_link_override_wins_over_gateway_root(
@@ -161,13 +161,13 @@ def test_named_profile_room_link_override_wins_over_gateway_root(
     monkeypatch.setenv("HERMES_HOME", str(root))
     monkeypatch.delenv("HERMES_ROOM_LINK_URL", raising=False)
 
-    token = set_hermes_home_override(profile)
+    token = set_eidolon_home_override(profile)
     try:
         assert local_room_link_endpoint()["url"] == (
             "https://profile.example.test/hermes"
         )
     finally:
-        reset_hermes_home_override(token)
+        reset_eidolon_home_override(token)
 
 
 def _dispatch(**overrides):

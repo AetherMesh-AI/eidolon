@@ -113,7 +113,7 @@ export function isFallbackCommit(commit) {
 /** Python owns the derivation. A broken/missing generator is a build error. */
 export function resolveBuildIdentity({ repoRoot = REPO_ROOT, env = process.env } = {}) {
   const python = env.HERMES_PYTHON || env.PYTHON || (process.platform === 'win32' ? 'python' : 'python3')
-  return JSON.parse(execFileSync(python, [join(repoRoot, 'hermes_cli', 'eidolon_version.py'),
+  return JSON.parse(execFileSync(python, [join(repoRoot, 'eidolon_cli', 'eidolon_version.py'),
     '--repo-root', repoRoot], { cwd: repoRoot, env, encoding: 'utf8' }))
 }
 

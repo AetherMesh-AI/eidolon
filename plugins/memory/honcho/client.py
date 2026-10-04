@@ -24,8 +24,8 @@ from typing import TYPE_CHECKING, Any, Callable
 from urllib.parse import urlparse
 
 from agent.secret_scope import get_secret
-from hermes_cli.profiles import _get_default_hermes_home
-from hermes_constants import get_hermes_home
+from eidolon_cli.profiles import _get_default_eidolon_home
+from eidolon_constants import get_eidolon_home
 
 from plugins.memory.honcho.client_cache import (
     _DEFAULT_HTTP_TIMEOUT, _client_cache_key, _client_slots, _client_slots_lock,
@@ -50,7 +50,7 @@ def _sanitize_url(url: str | None) -> str | None:
 
 
 def profile_host_key(profile: str | None) -> str:
-    """Return the safe Honcho host key for a Hermes profile."""
+    """Return the safe Honcho host key for a Eidolon profile."""
     if not profile or profile in {"default", "custom"}:
         return HOST
     sanitized = "".join(c if c.isalnum() or c in "_-" else "_" for c in profile).strip("_")
@@ -73,7 +73,7 @@ def resolve_active_host() -> str:
     if explicit:
         return explicit
     try:
-        from hermes_cli.profiles import get_active_profile_name
+        from eidolon_cli.profiles import get_active_profile_name
         profile_host = profile_host_key(get_active_profile_name())
     except Exception:
         profile_host = HOST
@@ -101,10 +101,10 @@ def resolve_config_path() -> Path:
     """Active Honcho config path: $HERMES_HOME/honcho.json -> default profile's honcho.json
     (host blocks accumulate there via setup/clone) -> ~/.honcho/config.json (also the
     first-time-setup write target when nothing exists)."""
-    local_path = get_hermes_home() / "honcho.json"
+    local_path = get_eidolon_home() / "honcho.json"
     if local_path.exists():
         return local_path
-    default_path = _get_default_hermes_home() / "honcho.json"
+    default_path = _get_default_eidolon_home() / "honcho.json"
     if default_path != local_path and default_path.exists():
         return default_path
     return resolve_global_config_path()
@@ -264,7 +264,7 @@ def _connection_fields(look: _HostLookup, host: str, path: Path) -> dict[str, An
                        "is NOT inherited (profiles are credential-isolated). Set apiKey on "
                        "hosts.%s in %s or this profile runs unauthenticated.", host, HOST, host, path)
     # The SDK's native format (and Claude Desktop) nests the URL at endpoint.baseUrl;
-    # read it before the flat Hermes spellings.
+    # read it before the flat Eidolon spellings.
     endpoint_block = raw.get("endpoint")
     native_base_url = endpoint_block.get("baseUrl") if isinstance(endpoint_block, dict) else None
     base_url = _sanitize_url(host_block.get("baseUrl") or host_block.get("base_url") or native_base_url
@@ -391,7 +391,7 @@ class HonchoClientConfig:
     # re-resolving (the resolvers read a ContextVar background threads can't see).
     # Provenance: WHERE this config was resolved from, captured at resolution time (inside the caller's
     # profile scope). Bound consumers (session manager, OAuth refresh paths) use these instead of
-    # re-resolving resolve_config_path()/get_hermes_home() later — those resolvers read a ContextVar that
+    # re-resolving resolve_config_path()/get_eidolon_home() later — those resolvers read a ContextVar that
     # background threads cannot see, so re-resolution from a daemon thread silently lands on the DEFAULT
     # profile (#69123, #74065).
     config_path: Path | None = None
@@ -412,13 +412,13 @@ class HonchoClientConfig:
             environment=os.environ.get("HONCHO_ENVIRONMENT", "production"),
             timeout=_resolve_optional_float(os.environ.get("HONCHO_TIMEOUT")),
             ai_peer=resolved_host, enabled=bool(api_key or base_url),
-            config_path=resolve_config_path(), hermes_home=get_hermes_home(),
+            config_path=resolve_config_path(), hermes_home=get_eidolon_home(),
         )
 
     @classmethod
     def from_global_config(cls, host: str | None = None, config_path: Path | None = None) -> HonchoClientConfig:
         """Config from the resolved Honcho config path, falling back to env. ``host=None``
-        derives it from the active Hermes profile."""
+        derives it from the active Eidolon profile."""
         resolved_host = host or resolve_active_host()
         path = config_path or resolve_config_path()
         if not path.exists():
@@ -436,7 +436,7 @@ class HonchoClientConfig:
         return cls(
             host=resolved_host, **_connection_fields(look, resolved_host, path), **_behavior_fields(look, explicitly_configured),
             sessions=raw.get("sessions", {}), raw=raw, explicitly_configured=explicitly_configured,
-            config_path=path, hermes_home=get_hermes_home(),
+            config_path=path, hermes_home=get_eidolon_home(),
         )
 
     @staticmethod
@@ -502,7 +502,7 @@ class HonchoClientConfig:
 
 def spawn_context_thread(target, *, name: str, daemon: bool = True, args: tuple = ()) -> "_threading.Thread":
     """Thread that inherits the caller's contextvars: profile isolation is a ContextVar
-    (set_hermes_home_override) and a plain Thread starts EMPTY, so ambient resolution on it
+    (set_eidolon_home_override) and a plain Thread starts EMPTY, so ambient resolution on it
     would silently land on the default profile."""
     import contextvars
 
@@ -558,7 +558,7 @@ def _build_client(config: HonchoClientConfig) -> "Honcho":
     base_url, timeout = config.base_url, config.timeout
     if not base_url or timeout is None:
         with contextlib.suppress(Exception):
-            from hermes_cli.config import load_config
+            from eidolon_cli.config import load_config
             honcho_cfg = load_config().get("honcho", {})
             if isinstance(honcho_cfg, dict):
                 base_url = base_url or _sanitize_url(honcho_cfg.get("base_url", "").strip() or None)
@@ -613,7 +613,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

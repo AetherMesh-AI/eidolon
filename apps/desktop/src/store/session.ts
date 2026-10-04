@@ -1,4 +1,4 @@
-import type { ConnectionState } from '@hermes/shared'
+import type { ConnectionState } from '@aethermesh/shared'
 import { atom, computed } from 'nanostores'
 
 import { lastVisibleMessageIsUser } from '@/app/chat/thread-loading'
@@ -12,7 +12,7 @@ import {
 } from '@/lib/connection-scoped'
 import { persistBoolean, persistString, readJson, storedBoolean, storedString, writeJson } from '@/lib/storage'
 import { syncCronModelImpactConnection } from '@/store/cron-model-impact-scope'
-import type { SessionInfo, UsageStats } from '@/types/hermes'
+import type { SessionInfo, UsageStats } from '@/types/eidolon'
 
 import { isSessionRemovalPending } from './session-removal'
 import type { SessionOwnerRoute, SessionOwnerScope } from './session-request-router'

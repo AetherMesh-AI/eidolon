@@ -26,7 +26,7 @@ Ground answers and documents in cited, verifiable sources.
 ## Reference: full SKILL.md
 
 :::info
-The following is the complete skill definition that Hermes loads when this skill is triggered. This is what the agent sees as instructions when the skill is active.
+The following is the complete skill definition that Eidolon loads when this skill is triggered. This is what the agent sees as instructions when the skill is active.
 :::
 
 # Grounded Citations
@@ -73,7 +73,7 @@ Override per task with `--ledger <path>` or `HERMES_CITATION_LEDGER`.
 ## How to Run
 
 ```bash
-S=~/.hermes/skills/research/grounded-citations/scripts/sources.py
+S=~/.eidolon/skills/research/grounded-citations/scripts/sources.py
 
 python "$S" reset                                  # start a clean ledger
 python "$S" add https://example.com/a --title "A"  # prints: [1]

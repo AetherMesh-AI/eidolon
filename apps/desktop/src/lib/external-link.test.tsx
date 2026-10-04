@@ -185,6 +185,19 @@ describe('external link helpers', () => {
   })
 
   // A webview can't do anything useful with these, so they always hand off.
+  it.each(['eidolon', 'hermes'])('hands %s app links to the desktop dispatcher without a web preview', scheme => {
+    const openExternal = vi.fn().mockResolvedValue(undefined)
+    installDesktopBridge({ openExternal: openExternal as unknown as Window['hermesDesktop']['openExternal'] })
+    const href = `${scheme}://settings?tab=providers`
+    render(<ExternalLink href={href}>Open providers</ExternalLink>)
+
+    fireEvent.click(screen.getByRole('link', { name: 'Open providers' }))
+
+    expect(openExternal).toHaveBeenCalledWith(href)
+    expect($previewTabs.get()).toHaveLength(0)
+    expect(isTitleFetchable(href)).toBe(false)
+  })
+
   it('hands a non-web scheme to the OS', () => {
     const openExternal = vi.fn().mockResolvedValue(undefined)
     installDesktopBridge({ openExternal: openExternal as unknown as Window['hermesDesktop']['openExternal'] })

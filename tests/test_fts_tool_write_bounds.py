@@ -2,8 +2,8 @@ import sqlite3
 
 import pytest
 
-from hermes_state import SessionDB
-from hermes_state_common import (
+from eidolon_state import SessionDB
+from eidolon_state_common import (
     FTS_TOOL_CONTENT_PREFIX_CHARS,
     FTS_TOOL_FULL_CONTENT_HIGH_WATER_KEY,
     LEGACY_FTS_SQL,

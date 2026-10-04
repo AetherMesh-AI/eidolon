@@ -29,7 +29,7 @@ import {
   profileScopeKey,
   saveMcpServers,
   testMcpServer
-} from '@/hermes'
+} from '@/eidolon'
 import { type Translations, useI18n } from '@/i18n'
 import { compactNumber } from '@/lib/format'
 import { brandFor } from '@/lib/mcp-brands'

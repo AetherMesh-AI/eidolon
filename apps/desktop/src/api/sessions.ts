@@ -8,7 +8,7 @@ import type {
   SessionMessage,
   SessionMessagesResponse,
   SessionSearchResponse
-} from '@/types/hermes'
+} from '@/types/eidolon'
 
 import { capabilityScoped, getApiRequestConnection, hermesApi, type ProfileScope, profileScoped } from './client'
 

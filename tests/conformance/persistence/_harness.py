@@ -125,7 +125,7 @@ def integrity_ok(db_path: Path) -> bool:
         conn.close()
 
 
-def make_hermes_home(base: Path, journal_mode: str) -> Path:
+def make_eidolon_home(base: Path, journal_mode: str) -> Path:
     """Create an isolated HERMES_HOME whose config pins ``database.journal_mode``.
 
     The journal-mode matrix legs must steer the CHILD's own resolver:

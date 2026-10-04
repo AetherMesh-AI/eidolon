@@ -1,6 +1,6 @@
 import { atom } from 'nanostores'
 
-import { type HermesOpenTarget, resolveHermesOpenPath } from '@/lib/hermes-open-target'
+import { type HermesOpenTarget, resolveHermesOpenPath } from '@/lib/eidolon-open-target'
 import { persistString, storedString } from '@/lib/storage'
 
 import { $gateway } from './gateway'

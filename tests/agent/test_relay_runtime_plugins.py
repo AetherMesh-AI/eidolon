@@ -264,7 +264,7 @@ def test_foreign_active_plugin_configuration_is_left_unchanged(
         )
         assert relay.active_report is foreign_report
         assert relay.events == []
-        assert "already active outside Hermes native ownership" in caplog.text
+        assert "already active outside Eidolon native ownership" in caplog.text
         assert "leaving it unchanged" in caplog.text
     finally:
         host.shutdown()
@@ -329,7 +329,7 @@ def test_initialization_failure_is_fail_open(explicit_static_config, caplog):
             host._plugin_configuration_state
             is relay_runtime._RelayPluginConfigurationState.FAILED
         )
-        assert "Hermes Relay plugin initialization failed" in caplog.text
+        assert "Eidolon Relay plugin initialization failed" in caplog.text
     finally:
         host.shutdown()
 
@@ -468,7 +468,7 @@ def test_two_profile_hosts_initialize_once_and_clear_after_final_shutdown(
     assert (
         caplog.text.count(
             "Relay plugins are active process-wide and apply to all profiles "
-            "hosted by this Hermes process."
+            "hosted by this Eidolon process."
         )
         == 1
     )
@@ -943,7 +943,7 @@ manifest_ref = "relay-plugin.toml"
             is relay_runtime._RelayPluginConfigurationState.FAILED
         )
         assert relay.events == []
-        assert "Hermes [[dynamic_plugins]] records are unsupported" in caplog.text
+        assert "Eidolon [[dynamic_plugins]] records are unsupported" in caplog.text
         assert "use Relay [[plugins.dynamic]] records" in caplog.text
         assert "continuing without Relay plugins" in caplog.text
     finally:
@@ -1173,7 +1173,7 @@ mode = "overwrite"
 enabled = true
 output_directory = "{atif_dir}"
 filename_template = "trajectory-{{session_id}}.json"
-agent_name = "Hermes Native Test"
+agent_name = "Eidolon Native Test"
 agent_version = "test"
 """.strip(),
         encoding="utf-8",

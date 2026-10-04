@@ -106,9 +106,9 @@ def _check_frontmatter(frontmatter: Dict[str, Any], skill_dir: Optional[Path]) -
     elif "tags" not in hermes_meta:
         yield _warn("missing-metadata", "metadata.hermes.tags is missing.")
     author = str(frontmatter.get("author", ""))
-    if author and author.strip().lower() in ("hermes", "agent", "hermes agent") and (
-        author != "Hermes Agent"):
-        yield _warn("author-caps", f"author '{author}' should be 'Hermes Agent' (proper caps) "
+    if author and author.strip().lower() in ("hermes", "eidolon", "agent", "hermes agent", "eidolon agent") and (
+        author not in {"Hermes Agent", "Eidolon Agent"}):
+        yield _warn("author-caps", f"author '{author}' should use proper capitalization (e.g. 'Eidolon Agent') "
                     f"or a real contributor name.")
     platforms = frontmatter.get("platforms")
     if platforms:

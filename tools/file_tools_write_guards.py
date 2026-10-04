@@ -26,8 +26,8 @@ _SENSITIVE_EXACT_PATHS = {"/var/run/docker.sock", "/run/docker.sock"}
 
 _hermes_config_resolved: str | None = None
 _hermes_config_resolved_loaded = False
-_real_hermes_home_cached: str | None = None
-_real_hermes_home_loaded = False
+_real_eidolon_home_cached: str | None = None
+_real_eidolon_home_loaded = False
 
 
 def _cached_lookup(slot: str, flag: str, primary, fallback) -> str | None:
@@ -47,24 +47,24 @@ def _cached_lookup(slot: str, flag: str, primary, fallback) -> str | None:
 
 
 def _config_path_resolved() -> str:
-    from hermes_cli.config import get_config_path
+    from eidolon_cli.config import get_config_path
     return str(get_config_path().resolve())
 
 
-def _hermes_home_real() -> str:
-    from hermes_constants import get_hermes_home
-    return os.path.realpath(str(get_hermes_home()))
+def _eidolon_home_real() -> str:
+    from eidolon_constants import get_eidolon_home
+    return os.path.realpath(str(get_eidolon_home()))
 
 
 def _get_hermes_config_resolved() -> str | None:
-    """Return the resolved absolute path of the Hermes config file (cached)."""
+    """Return the resolved absolute path of the Eidolon config file (cached)."""
     return _cached_lookup("_hermes_config_resolved", "_hermes_config_resolved_loaded", _config_path_resolved,
                           lambda: str(Path(_expand_tilde("~/.hermes/config.yaml")).resolve()))
 
 
-def _get_real_hermes_home() -> str | None:
-    """Return the realpath of the authoritative Hermes home (cached)."""
-    return _cached_lookup("_real_hermes_home_cached", "_real_hermes_home_loaded", _hermes_home_real,
+def _get_real_eidolon_home() -> str | None:
+    """Return the realpath of the authoritative Eidolon home (cached)."""
+    return _cached_lookup("_real_eidolon_home_cached", "_real_eidolon_home_loaded", _eidolon_home_real,
                           lambda: os.path.realpath(_expand_tilde("~/.hermes")))
 
 
@@ -88,9 +88,9 @@ def _check_sensitive_path(filepath: str, task_id: str = "default") -> str | None
     hermes_config = _get_hermes_config_resolved()
     if hermes_config and hermes_config in candidates:
         return (
-            f"Refusing to write to Hermes config file: {filepath}\n"
+            f"Refusing to write to Eidolon config file: {filepath}\n"
             "Agent cannot modify security-sensitive configuration. "
-            "Edit ~/.hermes/config.yaml directly or use 'hermes config' instead.")
+            "Edit ~/.hermes/config.yaml directly or use 'eidolon config' instead.")
     return None
 
 
@@ -115,7 +115,7 @@ def _protected_instruction_config() -> tuple[bool, list[str]]:
     ``security.protected_instruction_extra_patterns`` (fnmatch on basename). Config read
     failures keep the gate ON — fail-safe for a security boundary."""
     try:
-        from hermes_cli.config import load_config, cfg_get
+        from eidolon_cli.config import load_config, cfg_get
         cfg = load_config()
         enabled = cfg_get(cfg, "security", "protected_instruction_files", default=True)
         extra = cfg_get(cfg, "security", "protected_instruction_extra_patterns", default=[])
@@ -152,7 +152,7 @@ def _protected_instruction_reason(filepath: str, task_id: str = "default",
     # ~/.hermes itself is governed by its own guards (config.yaml hard-block,
     # mirror guard, write_approval); this gate targets PROJECT-LOCAL files only.
     # Must run before the ``.hermes`` component rule, which would match the home.
-    real_home = _get_real_hermes_home()
+    real_home = _get_real_eidolon_home()
     if real_home and (resolved == real_home or resolved.startswith(real_home + os.sep)):
         return None
 
@@ -162,7 +162,7 @@ def _protected_instruction_reason(filepath: str, task_id: str = "default",
         if base_lower in _PROTECTED_INSTRUCTION_BASENAMES or any(
                 fnmatch.fnmatch(base_lower, pattern.lower()) for pattern in extra_patterns):
             return base
-        # Project-local .hermes config dirs (<repo>/.hermes/config.yaml) steer
+        # Project-local .eidolon config dirs (<repo>/.hermes/config.yaml) steer
         # behavior too. Only the IMMEDIATE parent counts — matching any ancestor
         # would gate every write inside a checkout living under ~/.hermes.
         parts = candidate.replace("\\", "/").rstrip("/").split("/")
@@ -305,7 +305,7 @@ def _check_approval_required_write(paths: list[str], task_id: str = "default") -
 
 
 def _get_container_mirror_prefix_for_task(task_id: str = "default") -> str | None:
-    """Return the container-side Hermes mirror prefix for persistent Docker file tools."""
+    """Return the container-side Eidolon mirror prefix for persistent Docker file tools."""
     try:
         from tools.terminal_tool import (
             _active_environments, _env_lock, _get_env_config, _resolve_container_task_id)
@@ -326,7 +326,7 @@ def _get_container_mirror_prefix_for_task(task_id: str = "default") -> str | Non
 
 def _check_cross_profile_path(filepath: str, task_id: str = "default") -> str | None:
     """Soft-guard: warn when ``filepath`` lands on a host-side or Docker sandbox MIRROR of
-    Hermes state (a write the host never reads). Not profile isolation — that guard was
+    Eidolon state (a write the host never reads). Not profile isolation — that guard was
     removed; ``cross_profile=True`` keeps bypassing this one for replay compat. Fails open."""
     try:
         from agent.file_safety import get_container_mirror_warning, get_sandbox_mirror_warning

@@ -1,4 +1,4 @@
-"""Lightweight i18n for Hermes' static user-facing strings (approval prompts, a few gateway replies).
+"""Lightweight i18n for Eidolon' static user-facing strings (approval prompts, a few gateway replies).
 
 Catalogs are ``locales/<lang>.yaml`` flattened to dotted keys. Missing keys
 fall back to English, then to the key itself, so a broken catalog never crashes.
@@ -122,7 +122,7 @@ def _flatten_into(node: Any, prefix: str, out: dict[str, str]) -> None:
 def _config_language_cached() -> str | None:
     """``display.language`` from config.yaml, read once per process (``t()`` is a hot path)."""
     try:
-        from hermes_cli.config import load_config_readonly
+        from eidolon_cli.config import load_config_readonly
         lang = (load_config_readonly().get("display") or {}).get("language")
         return _normalize_lang(lang) if lang else None
     except Exception as exc:

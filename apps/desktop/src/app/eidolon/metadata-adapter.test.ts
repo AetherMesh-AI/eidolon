@@ -1,4 +1,5 @@
 import { expect, it } from 'vitest'
+
 import { createPrototypeAdapter } from './adapter'
 
 it.each([-1, 101, NaN, Infinity])('rejects invalid progress %s atomically on create and update', progress => {

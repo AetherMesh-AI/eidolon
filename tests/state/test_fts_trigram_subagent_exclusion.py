@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import pytest
 
-from hermes_state import SessionDB
-from hermes_state_common import SCHEMA_VERSION
-from hermes_state_common import FTS_TRIGRAM_EXCLUDED_SOURCES, fts_trigram_session_sql
+from eidolon_state import SessionDB
+from eidolon_state_common import SCHEMA_VERSION
+from eidolon_state_common import FTS_TRIGRAM_EXCLUDED_SOURCES, fts_trigram_session_sql
 
 
 @pytest.fixture

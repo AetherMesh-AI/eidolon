@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 
 def test_monitor_keys_pin_controls_across_roster_changes(monkeypatch):
-    from hermes_cli.cli_subagent_monitor import SubagentMonitor, build_monitor_application
+    from eidolon_cli.cli_subagent_monitor import SubagentMonitor, build_monitor_application
 
     from prompt_toolkit.input import create_pipe_input
     from prompt_toolkit.output import DummyOutput
@@ -53,7 +53,7 @@ def test_monitor_keys_pin_controls_across_roster_changes(monkeypatch):
 
 
 def test_extended_tail_is_bounded_and_literal(tmp_path):
-    from hermes_cli.cli_subagent_monitor import read_tail
+    from eidolon_cli.cli_subagent_monitor import read_tail
     path = tmp_path / 'child.log'
     path.write_text('old data\n' * 20000 + '\x1b[2Jlast activity\n', encoding='utf-8')
     tail = read_tail(str(path))

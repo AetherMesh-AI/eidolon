@@ -36,33 +36,36 @@ async function probeWindowsRemote(ssh, explicitHermesPath = '') {
     '}',
     `$explicit=${explicit}`,
     'if($explicit){Assert-NoReparse $explicit $false;$explicitPython=[IO.Path]::Combine([IO.Path]::GetDirectoryName($explicit), "python.exe");Assert-NoReparse $explicitPython $false}',
-    '$hermesHome=$env:HERMES_HOME',
-    'if(-not $hermesHome){$hermesHome=Join-Path $env:LOCALAPPDATA "hermes"}',
+    '$hermesHome=$env:EIDOLON_HOME;if(-not $hermesHome){$hermesHome=$env:HERMES_HOME}',
+    'if(-not $hermesHome){$hermesHome=Join-Path $HOME ".eidolon";if($explicit -and $explicit -match "[\\\\/]hermes(?:[.]exe)?$" -and $explicit -notmatch "[.]eidolon[\\\\/]"){$hermesHome=Join-Path $env:LOCALAPPDATA "hermes"}}',
     'Assert-NoReparse $hermesHome $true',
-    '$candidate=[IO.Path]::Combine($hermesHome, "hermes-agent\\venv\\Scripts\\hermes.exe")',
+    '$candidate=[IO.Path]::Combine($hermesHome, "eidolon-agent\\venv\\Scripts\\eidolon.exe")',
     '$candidatePython=[IO.Path]::Combine([IO.Path]::GetDirectoryName($candidate), "python.exe")',
     'Assert-NoReparse $candidate $true',
     'Assert-NoReparse $candidatePython $true',
-    '$profileCandidate=[IO.Path]::Combine($HOME, "hermes-agent\\.venv\\Scripts\\hermes.exe")',
+    '$profileCandidate=[IO.Path]::Combine($HOME, "eidolon-agent\\.venv\\Scripts\\eidolon.exe")',
     '$profileCandidatePython=[IO.Path]::Combine([IO.Path]::GetDirectoryName($profileCandidate), "python.exe")',
     'Assert-NoReparse $profileCandidate $true',
     'Assert-NoReparse $profileCandidatePython $true',
-    '$fallbackHomeCandidate=Join-Path $hermesHome "hermes-agent\\venv\\Scripts\\hermes.exe"',
-    '$fallbackProfileCandidate=Join-Path $HOME "hermes-agent\\.venv\\Scripts\\hermes.exe"',
+    '$fallbackHomeCandidate=Join-Path $hermesHome "eidolon-agent\\venv\\Scripts\\eidolon.exe"',
+    '$fallbackProfileCandidate=Join-Path $HOME "eidolon-agent\\.venv\\Scripts\\eidolon.exe"',
     '$candidates=@()',
     'if($explicit){$candidates+=$explicit}',
-    '$cmd=Get-Command hermes.exe -ErrorAction SilentlyContinue',
+    '$cmd=Get-Command eidolon.exe -ErrorAction SilentlyContinue',
     'if($cmd){Assert-NoReparse $cmd.Source $true;$cmdPython=[IO.Path]::Combine([IO.Path]::GetDirectoryName($cmd.Source), "python.exe");Assert-NoReparse $cmdPython $true;$candidates+=$cmd.Source}',
     '$candidates+=$fallbackHomeCandidate',
     '$candidates+=$fallbackProfileCandidate',
+    '$legacyRoot=Join-Path $hermesHome "hermes-agent";$legacyManifest=Join-Path $legacyRoot "package.json"',
+    'try{Assert-NoReparse $legacyManifest $true;$manifest=Get-Content -LiteralPath $legacyManifest -Raw|ConvertFrom-Json;$repo=$manifest.repository;if($repo -isnot [string]){$repo=$repo.url};if($repo -match "^(?:git[+])?(?:https://github[.]com/|ssh://git@github[.]com/|git@github[.]com:)AetherMesh-AI/Eidolon(?:[.]git)?/?$"){$candidates+=(Join-Path $legacyRoot "venv\\Scripts\\hermes.exe")}}catch{}',
     '$hermes=$null',
     'foreach($candidate in $candidates){Assert-NoReparse $candidate $true;$candidatePython=[IO.Path]::Combine([IO.Path]::GetDirectoryName($candidate), "python.exe");Assert-NoReparse $candidatePython $true;try{$item=Get-Item -LiteralPath $candidate -Force -ErrorAction Stop;if(($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0 -and -not $item.PSIsContainer){$hermes=$item.FullName;break}}catch [Management.Automation.ItemNotFoundException]{continue}}',
-    'if(-not $hermes){throw "Hermes is not installed on the remote Windows host."}',
+    'if(-not $hermes){throw "Eidolon is not installed on the remote Windows host."}',
     'Assert-NoReparse $hermes $false',
-    'if($explicit -and $hermes -ne $explicit){throw "The configured Hermes path is not an executable file."}',
+    'if($explicit -and $hermes -ne $explicit){throw "The configured Eidolon path is not an executable file."}',
     '$python=[IO.Path]::Combine([IO.Path]::GetDirectoryName($hermes), "python.exe")',
     'Assert-NoReparse $python $false',
-    '[ordered]@{os="Windows";arch=$env:PROCESSOR_ARCHITECTURE;hermesHome=$hermesHome;hermesPath=$hermes;python=$python}|ConvertTo-Json -Compress'
+    '$runtimeRoot=Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $hermes));$namespace="eidolon_cli";if(-not (Test-Path -LiteralPath (Join-Path $runtimeRoot "eidolon_cli\\main.py")) -and ((Test-Path -LiteralPath (Join-Path $runtimeRoot "hermes_cli\\main.py")) -or (Split-Path -Leaf $hermes) -ieq "hermes.exe")){$namespace="hermes_cli"}',
+    '[ordered]@{os="Windows";arch=$env:PROCESSOR_ARCHITECTURE;hermesHome=$hermesHome;hermesPath=$hermes;python=$python;runtimeNamespace=([string]$namespace).Trim()}|ConvertTo-Json -Compress'
   ].join(';')
 
   return JSON.parse((await ssh.exec(powerShellCommand(script))).trim())
@@ -101,7 +104,8 @@ public static class HermesMarkerNoFollow {
     '$installRoot=$home',
     '$parent=Split-Path -Parent $home',
     'if((Split-Path -Leaf $parent) -ieq "profiles"){$installRoot=Split-Path -Parent $parent}',
-    '$marker=Join-Path $installRoot ".hermes-update-in-progress"',
+    '$markers=@((Join-Path $installRoot ".eidolon-update-in-progress"),(Join-Path $installRoot ".hermes-update-in-progress"))',
+    'foreach($marker in $markers){',
     '$result="UNCERTAIN"',
     '$stream=$null;$memory=$null',
     'try{',
@@ -126,6 +130,8 @@ public static class HermesMarkerNoFollow {
     '}',
     '}',
     '}}catch [IO.FileNotFoundException]{$result="CLEAR"}catch{$result="UNCERTAIN"}finally{if($memory){$memory.Dispose()};if($stream){$stream.Dispose()}}',
+    'if($result -ne "CLEAR"){break}',
+    '}',
     'Write-Output $result'
   ].join(';')
 
@@ -148,7 +154,7 @@ async function assertWindowsRemoteInstallUpdateClear(ssh, hermesHome) {
         .split(/\r?\n/)
         .pop() || ''
   } catch (cause) {
-    const error: any = new Error('Could not prove that the remote Hermes install is clear for SSH startup.')
+    const error: any = new Error('Could not prove that the remote Eidolon install is clear for SSH startup.')
     error.kind = 'update-in-progress'
     error.cause = cause
     throw error
@@ -162,8 +168,8 @@ async function assertWindowsRemoteInstallUpdateClear(ssh, hermesHome) {
 
   const error: any = new Error(
     live
-      ? `Remote Hermes update process ${live[1]} is still running; SSH startup is paused.`
-      : 'The remote Hermes update marker is unreadable or malformed; refusing SSH startup.'
+      ? `Remote Eidolon update process ${live[1]} is still running; SSH startup is paused.`
+      : 'The remote Eidolon update marker is unreadable or malformed; refusing SSH startup.'
   )
 
   error.kind = 'update-in-progress'
@@ -217,7 +223,7 @@ async function detectRemotePlatform(ssh, explicitHermesPath = '') {
 }
 
 function helperCommand(runtime, operation, args = []) {
-  const argv = [runtime.python, '-m', 'hermes_cli.windows_ssh_runtime', operation, ...args]
+  const argv = [runtime.python, '-m', `${runtime.runtimeNamespace === 'hermes_cli' ? 'hermes_cli' : 'eidolon_cli'}.windows_ssh_runtime`, operation, ...args]
 
   const script = [
     '$ErrorActionPreference="Stop"',
@@ -247,8 +253,9 @@ async function helper(ssh, runtime, operation, args = [], stdinData?) {
 }
 
 function atomicWindowsSpawnCommand(runtime, reservation: any = {}) {
-  const argv = [runtime.python, '-m', 'hermes_cli.windows_ssh_runtime', 'spawn']
-  const helper = operation => [runtime.python, '-m', 'hermes_cli.windows_ssh_runtime', operation]
+  const namespace = runtime.runtimeNamespace === 'hermes_cli' ? 'hermes_cli' : 'eidolon_cli'
+  const argv = [runtime.python, '-m', `${namespace}.windows_ssh_runtime`, 'spawn']
+  const helper = operation => [runtime.python, '-m', `${namespace}.windows_ssh_runtime`, operation]
 
   const script = [
     '$ErrorActionPreference="Stop"',
@@ -256,7 +263,7 @@ function atomicWindowsSpawnCommand(runtime, reservation: any = {}) {
     '$installRoot=$home',
     '$parent=Split-Path -Parent $home',
     'if((Split-Path -Leaf $parent) -ieq "profiles"){$installRoot=Split-Path -Parent $parent}',
-    '$marker=Join-Path $installRoot ".hermes-update-in-progress"',
+    `$marker=Join-Path $installRoot ${psLiteral(namespace === 'hermes_cli' ? '.hermes-update-in-progress' : '.eidolon-update-in-progress')}`,
     '$mutexPath=$marker+".mutex"',
     '$mutex=[IO.File]::Open($mutexPath,[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::ReadWrite)',
     'try{',
@@ -568,7 +575,7 @@ async function connectWindowsRemote(deps) {
   const inspection = await helper(ssh, runtime, 'inspect', [runtime.hermesPath])
 
   if (!inspection.supported) {
-    const error: any = new Error('Update Hermes on the remote Windows host before connecting with Desktop SSH.')
+    const error: any = new Error('Update Eidolon on the remote Windows host before connecting with Desktop SSH.')
     error.kind = 'update-required'
     throw error
   }
@@ -760,7 +767,7 @@ function buildWindowsInteractiveCommand(remoteCwd = '') {
     )
   }
 
-  script.push('$host.UI.RawUI.WindowTitle="Hermes SSH"', 'powershell.exe -NoLogo')
+  script.push('$host.UI.RawUI.WindowTitle="Eidolon SSH"', 'powershell.exe -NoLogo')
 
   return powerShellCommand(script.join(';'))
 }

@@ -198,9 +198,9 @@ async function locateHermes(ssh, remoteHermesPath) {
     }
 
     const err: any = new Error(
-      `The Hermes path you set is not an executable on the remote host: "${remoteHermesPath}". ` +
-        'Check the path (it must be the full path to the `hermes` binary on the remote, e.g. ' +
-        '~/hermes-agent/.venv/bin/hermes), or clear it to auto-detect.'
+      `The Eidolon path you set is not an executable on the remote host: "${remoteHermesPath}". ` +
+        'Check the path (it must be the full path to the `eidolon` binary on the remote, e.g. ' +
+        '~/.eidolon/eidolon-agent/venv/bin/eidolon), or clear it to auto-detect.'
     )
 
     err.kind = 'hermes-not-found'
@@ -210,7 +210,7 @@ async function locateHermes(ssh, remoteHermesPath) {
   const candidates: string[] = []
 
   try {
-    const found = (await ssh.exec(`bash -lc ${shq('command -v hermes')}`)).trim()
+    const found = (await ssh.exec(`bash -lc ${shq('command -v eidolon')}`)).trim()
 
     if (found) {
       candidates.push(found.split('\n').pop().trim())
@@ -221,9 +221,9 @@ async function locateHermes(ssh, remoteHermesPath) {
 
   // Fallback candidates when the login-shell probe misses: the installer's
   // command locations (scripts/install.sh) — per-user, root/FHS, legacy venv.
-  candidates.push('~/.local/bin/hermes')
-  candidates.push('/usr/local/bin/hermes')
-  candidates.push('~/.hermes/hermes-agent/venv/bin/hermes')
+  candidates.push('~/.local/bin/eidolon')
+  candidates.push('/usr/local/bin/eidolon')
+  candidates.push('~/.eidolon/eidolon-agent/venv/bin/eidolon')
 
   for (const candidate of candidates) {
     if (!candidate) {
@@ -235,10 +235,30 @@ async function locateHermes(ssh, remoteHermesPath) {
     }
   }
 
+  // Pre-rename fork layouts are accepted only beneath the selected home and
+  // only after their package metadata identifies AetherMesh/Eidolon.
+  try {
+    const probe = `import json,os,re
+from pathlib import Path
+home=Path(os.environ.get('EIDOLON_HOME') or os.environ.get('HERMES_HOME') or str(Path.home()/'.eidolon'))
+root=home/'hermes-agent'
+try:
+    manifest=json.loads((root/'package.json').read_text())
+    repository=manifest.get('repository',{})
+    url=repository if isinstance(repository,str) else repository.get('url','')
+    launcher=root/'venv'/'bin'/'hermes'
+    if re.fullmatch(r'(?:git[+])?(?:https://github[.]com/|ssh://git@github[.]com/|git@github[.]com:)AetherMesh-AI/Eidolon(?:[.]git)?/?',url,re.I) and os.access(launcher,os.X_OK):print(launcher)
+except (OSError,ValueError,TypeError,AttributeError):pass`
+    const legacy = String(await ssh.exec(`python3 -c ${shq(probe)}`)).trim()
+    if (legacy && await isExecutable(legacy)) {return resolveLauncher(legacy)}
+  } catch {
+    // Missing Python or unreadable metadata cannot authorize another install.
+  }
+
   const err: any = new Error(
-    'No compatible runtime was found on the remote host (could not find a `hermes` executable). ' +
+    'No compatible runtime was found on the remote host (could not find an `eidolon` executable). ' +
       'Check the Eidolon installation instructions at https://github.com/AetherMesh-AI/Eidolon/releases ' +
-      '— or set the path to an existing `hermes` executable in the SSH connection settings.'
+      '— or set the path to an existing runtime executable in the SSH connection settings.'
   )
 
   err.kind = 'hermes-not-found'
@@ -265,7 +285,7 @@ async function probeRemotePlatform(ssh) {
 
   if (!SUPPORTED_REMOTE_OS.has(osName)) {
     const err: any = new Error(
-      `Unsupported remote platform "${osName || 'unknown'}". Hermes Desktop SSH mode supports Linux, macOS, and Windows remote hosts.`
+      `Unsupported remote platform "${osName || 'unknown'}". Eidolon Desktop SSH mode supports Linux, macOS, and Windows remote hosts.`
     )
 
     err.kind = 'unsupported-platform'
@@ -278,13 +298,14 @@ async function probeRemotePlatform(ssh) {
 // The HERMES_HOME the remote dashboard will use (explicit env wins, else
 // ~/.hermes). Recorded in the lockfile so a future reuse can tell it's the same
 // state store; best-effort.
-async function probeRemoteHermesHome(ssh) {
+async function probeRemoteHermesHome(ssh, explicitPath = '') {
+  const fallback = /(?:^|\/)hermes(?:\.exe)?$/.test(explicitPath) && !explicitPath.includes('/.eidolon/') ? '.hermes' : '.eidolon'
   try {
-    const out = (await ssh.exec('echo "${HERMES_HOME:-$HOME/.hermes}"')).trim().split('\n').pop()
+    const out = (await ssh.exec('echo "${EIDOLON_HOME:-${HERMES_HOME:-$HOME/' + fallback + '}}"')).trim().split('\n').pop()
 
-    return out || '~/.hermes'
+    return out || `~/${fallback}`
   } catch (cause) {
-    const error: any = new Error('Could not resolve the remote Hermes home.')
+    const error: any = new Error('Could not resolve the remote Eidolon home.')
     error.kind = 'transient-transport-error'
     error.cause = cause
     throw error
@@ -297,35 +318,34 @@ from pathlib import Path
 
 home=Path(os.path.expanduser(sys.argv[1]))
 if home.parent.name=='profiles':home=home.parent.parent
-marker=home/'.hermes-update-in-progress'
-try:
-    with marker.open('rb') as stream:raw=stream.read(257)
-except FileNotFoundError:
-    print('CLEAR');raise SystemExit
-except OSError:
-    print('UNCERTAIN');raise SystemExit
-if len(raw)>256:
-    print('UNCERTAIN');raise SystemExit
-match=re.fullmatch(rb'([1-9][0-9]*)\r?\n([0-9]+)(?:\r?\n)?',raw)
-if not match:
-    print('UNCERTAIN');raise SystemExit
-try:
-    owner=int(match.group(1));lease=int(match.group(2))
-    if owner<1 or owner>4294967295 or lease>9007199254740991:raise ValueError()
-except ValueError:
-    print('UNCERTAIN');raise SystemExit
-try:
-    os.kill(owner,0)
-except ProcessLookupError:
-    print('CLEAR')
-except PermissionError:
-    print('LIVE:'+str(owner))
-except OSError as error:
-    if error.errno==errno.ESRCH:print('CLEAR')
-    elif error.errno==errno.EPERM:print('LIVE:'+str(owner))
-    else:print('UNCERTAIN')
-else:
-    print('LIVE:'+str(owner))
+for marker in (home/'.eidolon-update-in-progress',home/'.hermes-update-in-progress'):
+    try:
+        with marker.open('rb') as stream:raw=stream.read(257)
+    except FileNotFoundError:continue
+    except OSError:
+        print('UNCERTAIN');raise SystemExit
+    if len(raw)>256:
+        print('UNCERTAIN');raise SystemExit
+    match=re.fullmatch(rb'([1-9][0-9]*)\r?\n([0-9]+)(?:\r?\n)?',raw)
+    if not match:
+        print('UNCERTAIN');raise SystemExit
+    try:
+        owner=int(match.group(1));lease=int(match.group(2))
+        if owner<1 or owner>4294967295 or lease>9007199254740991:raise ValueError()
+    except ValueError:
+        print('UNCERTAIN');raise SystemExit
+    try:os.kill(owner,0)
+    except ProcessLookupError:continue
+    except PermissionError:
+        print('LIVE:'+str(owner));raise SystemExit
+    except OSError as error:
+        if error.errno==errno.ESRCH:continue
+        if error.errno==errno.EPERM:print('LIVE:'+str(owner))
+        else:print('UNCERTAIN')
+        raise SystemExit
+    else:
+        print('LIVE:'+str(owner));raise SystemExit
+print('CLEAR')
 `
 
 /**
@@ -348,7 +368,7 @@ async function assertRemoteInstallUpdateClear(ssh, hermesHome) {
         .split(/\r?\n/)
         .pop() || ''
   } catch (cause) {
-    const error: any = new Error('Could not prove that the remote Hermes install is clear for SSH startup.')
+    const error: any = new Error('Could not prove that the remote Eidolon install is clear for SSH startup.')
     error.kind = 'update-in-progress'
     error.cause = cause
     throw error
@@ -362,8 +382,8 @@ async function assertRemoteInstallUpdateClear(ssh, hermesHome) {
 
   const error: any = new Error(
     live
-      ? `Remote Hermes update process ${live[1]} is still running; SSH startup is paused.`
-      : 'The remote Hermes update marker is unreadable or malformed; refusing SSH startup.'
+      ? `Remote Eidolon update process ${live[1]} is still running; SSH startup is paused.`
+      : 'The remote Eidolon update marker is unreadable or malformed; refusing SSH startup.'
   )
 
   error.kind = 'update-in-progress'
@@ -378,7 +398,7 @@ async function listRemoteHermesProfiles(ssh) {
   try {
     listing = await ssh.exec(`if [ -d ${dir} ]; then ls -1 ${dir}; fi`)
   } catch (cause) {
-    const error: any = new Error('Could not list remote Hermes profiles.')
+    const error: any = new Error('Could not list remote Eidolon profiles.')
     error.kind = 'transient-transport-error'
     error.cause = cause
     throw error
@@ -391,7 +411,7 @@ function assertSafeRemoteHome(home) {
   const value = String(home || '').trim()
 
   if (!/^(\/|~\/)[A-Za-z0-9._/+-]+$/.test(value) || value.includes('..')) {
-    const error: any = new Error('Unsafe remote Hermes home.')
+    const error: any = new Error('Unsafe remote Eidolon home.')
     error.kind = 'unsafe-path'
     throw error
   }
@@ -597,7 +617,7 @@ async function pidIsOurDashboard(
       `hermes_home=os.path.expanduser(${shq(hermesHome)}) if ${shq(hermesHome)} else ""\n` +
       'expected_entries={expected}\n' +
       'if hermes_home:\n' +
-      ' expected_entries.add(os.path.join(hermes_home,"hermes-agent","venv","bin","hermes"))\n' +
+      ' expected_entries.update({os.path.join(hermes_home,"hermes-agent","venv","bin","hermes"),os.path.join(hermes_home,"eidolon-agent","venv","bin","eidolon")})\n' +
       `expected_token=os.path.expanduser(${shq(ownershipId ? spawnTokenPath(ownershipId, spawnNonce) : '')})\n` +
       `expected_profile=${shq(profile)}\n` +
       `nonce=${shq(spawnNonce)}\n` +
@@ -795,7 +815,7 @@ pid=${pid}
 expected_creation=${py(lock.creationTime)}
 expected_path=os.path.expanduser(${py(lock.hermesPath)})
 hermes_home=os.path.expanduser(${py(lock.hermesHome)})
-expected_entries={expected_path,os.path.join(hermes_home,"hermes-agent","venv","bin","hermes")}
+expected_entries={expected_path,os.path.join(hermes_home,"hermes-agent","venv","bin","hermes"),os.path.join(hermes_home,"eidolon-agent","venv","bin","eidolon")}
 expected_token=os.path.expanduser(${py(expectedToken)})
 expected_profile=${py(lock.profile)}
 nonce=${py(lock.spawnNonce)}
@@ -1046,10 +1066,11 @@ function buildSpawnCommand(hermesPath, profile, opts: any = {}) {
   const tokenArg = tokenFilePath ? ` --ssh-session-token-file ${expandRemotePath(tokenFilePath)}` : ''
   const ownerArg = opts.spawnNonce ? ` --ssh-owner-nonce ${validateSpawnNonce(opts.spawnNonce)}` : ''
   const subCmd = `serve --isolated --host 127.0.0.1 --port 0${tokenArg}${ownerArg}`
-  const marker = expandRemotePath(`${remoteInstallRoot(opts.hermesHome || '~/.hermes')}/.hermes-update-in-progress`)
+  const markerName = /(?:^|\/)hermes$/.test(hermesPath) ? '.hermes-update-in-progress' : '.eidolon-update-in-progress'
+  const marker = expandRemotePath(`${remoteInstallRoot(opts.hermesHome || '~/.eidolon')}/${markerName}`)
 
   const updateMutex = expandRemotePath(
-    `${remoteInstallRoot(opts.hermesHome || '~/.hermes')}/.hermes-update-in-progress.mutex`
+    `${remoteInstallRoot(opts.hermesHome || '~/.eidolon')}/${markerName}.mutex`
   )
 
   // The marker probe, ownership reservation, process creation, and initial
@@ -1171,12 +1192,12 @@ async function scrapeReadyPort(ssh, logPath, { timeoutMs = DEFAULT_READY_TIMEOUT
 
 async function spawnRemoteDashboard(
   ssh,
-  { hermesPath, profile, token, ownershipId, hermesHome = '~/.hermes', assertInstallClear = async () => {} }
+  { hermesPath, profile, token, ownershipId, hermesHome = '~/.eidolon', assertInstallClear = async () => {} }
 ) {
   if (!(await remoteSupportsSshOwnership(ssh, hermesPath))) {
     const err: any = new Error(
-      'The remote Hermes install does not support --ssh-session-token-file and --ssh-owner-nonce. ' +
-        'Update Hermes on the remote host to continue using Desktop SSH mode.'
+      'The remote Eidolon install does not support --ssh-session-token-file and --ssh-owner-nonce. ' +
+        'Update Eidolon on the remote host to continue using Desktop SSH mode.'
     )
 
     err.kind = 'update-required'
@@ -1398,7 +1419,7 @@ async function connect(deps) {
   assertBootstrapNotSuperseded(signal)
   const platform = await probeRemotePlatform(ssh)
   log(`remote platform ${platform.os}/${platform.arch}`)
-  const hermesHome = await probeRemoteHermesHome(ssh)
+  const hermesHome = await probeRemoteHermesHome(ssh, remoteHermesPath)
   await assertRemoteInstallUpdateClear(ssh, hermesHome)
   const hermesPath = await locateHermes(ssh, remoteHermesPath)
   log(`located hermes at ${hermesPath}`)
@@ -1421,7 +1442,7 @@ async function connect(deps) {
     )
 
     const error: any = new Error(
-      `The remote ownership record ${lpath} does not match this Hermes Desktop build (${lock.reason}). ` +
+      `The remote ownership record ${lpath} does not match this Eidolon Desktop build (${lock.reason}). ` +
         'It was probably written by a different or modified desktop build sharing this remote, or the file is corrupt. ' +
         'Refusing to reap or overwrite it — that could kill a live SSH backend owned by another build. ' +
         'If nothing else uses this remote, delete that file on the remote host and reconnect.'

@@ -8,7 +8,7 @@ cache, lock file, taps and audit log. Install/uninstall/update live in
 ``skills_hub_search``, and the adapters in the other ``tools.skills_hub_*``
 siblings; import each name from its defining module.
 
-Used by hermes_cli/skills_hub.py for CLI commands and the /skills slash command.
+Used by eidolon_cli/skills_hub.py for CLI commands and the /skills slash command.
 """
 
 import json
@@ -21,7 +21,7 @@ from urllib.parse import urljoin
 
 import httpx
 
-from hermes_constants import get_hermes_home
+from eidolon_constants import get_eidolon_home
 from tools.url_safety import is_safe_url
 from tools.website_policy import check_website_access
 from tools.skills_hub_models import _normalize_lock_install_path, _validate_skill_name
@@ -49,8 +49,8 @@ def _path_resolver(name: str, parent: str, leaf: str):
     return resolve
 
 
-def _hermes_home() -> Path:
-    return get_hermes_home()
+def _eidolon_home() -> Path:
+    return get_eidolon_home()
 
 
 _skills_dir = _path_resolver("SKILLS_DIR", "HERMES_HOME", "skills")
@@ -60,7 +60,7 @@ _quarantine_dir = _path_resolver("QUARANTINE_DIR", "HUB_DIR", "quarantine")
 _audit_log = _path_resolver("AUDIT_LOG", "HUB_DIR", "audit.log")
 _taps_file = _path_resolver("TAPS_FILE", "HUB_DIR", "taps.json")
 _index_cache_dir = _path_resolver("INDEX_CACHE_DIR", "HUB_DIR", "index-cache")
-_DYNAMIC_PATH_RESOLVERS = {"HERMES_HOME": _hermes_home, **{
+_DYNAMIC_PATH_RESOLVERS = {"HERMES_HOME": _eidolon_home, **{
     r.__name__[1:].upper(): r
     for r in (_skills_dir, _hub_dir, _lock_file, _quarantine_dir, _audit_log, _taps_file, _index_cache_dir)
 }}
@@ -372,7 +372,7 @@ _PLUGIN_COMPAT_LAZY = {
     'source_url_for_bundle': ('tools.skills_hub_models', 'source_url_for_bundle'),
     'unified_search': ('tools.skills_hub_search', 'unified_search'),
     'uninstall_skill': ('tools.skills_hub_install', 'uninstall_skill'),
-    'windows_hide_flags': ('hermes_cli._subprocess_compat', 'windows_hide_flags'),
+    'windows_hide_flags': ('eidolon_cli._subprocess_compat', 'windows_hide_flags'),
 }
 
 _plugin_compat_prev_getattr = __getattr__
@@ -383,7 +383,7 @@ def __getattr__(name):  # PEP 562 — chained onto the module's own __getattr__
     if target is None:
         return _plugin_compat_prev_getattr(name)
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

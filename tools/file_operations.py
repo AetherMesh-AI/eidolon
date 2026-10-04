@@ -349,7 +349,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
 
     def _escape_native_tool_arg(self, arg: str) -> str:
         """Quote a path for a NATIVE Windows binary (rg, node, git ...): those don't
-        understand the MSYS ``/c/...`` form and Hermes disables MSYS argument
+        understand the MSYS ``/c/...`` form and Eidolon disables MSYS argument
         conversion, so nothing translates it back (→ ``os error 3``). ``C:/Users/x``
         is accepted by every layer. Identical to ``_escape_shell_arg`` off Windows."""
         from tools.environments.local import _IS_WINDOWS, _msys_to_windows_path
@@ -1439,7 +1439,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

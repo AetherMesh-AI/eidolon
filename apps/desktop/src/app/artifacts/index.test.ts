@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { $connection } from '@/store/session'
-import type { SessionInfo, SessionMessage } from '@/types/hermes'
+import type { SessionInfo, SessionMessage } from '@/types/eidolon'
 
 import { artifactImageSrc, collectArtifactsForSession, loadArtifactsForSessions } from './artifact-utils'
 

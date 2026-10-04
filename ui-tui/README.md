@@ -349,7 +349,7 @@ Current color overrides:
 
 ```text
 ui-tui/
-  packages/hermes-ink/   forked Ink renderer (local dep)
+  packages/eidolon-ink/   forked Ink renderer (local dep)
   src/
     entry.tsx            TTY gate + render()
     app.tsx              top-level Ink tree, composes src/app/*
@@ -496,7 +496,7 @@ ui-tui/
       paste.ts                   bracketed paste snippet token regex
 
     types/
-      hermes-ink.d.ts            type declarations for @hermes/ink
+      eidolon-ink.d.ts            type declarations for @aethermesh/ink
 
     __tests__/                   vitest suite
 ```

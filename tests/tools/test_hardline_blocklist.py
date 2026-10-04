@@ -679,7 +679,7 @@ def test_session_yolo_cannot_bypass_hardline(clean_session):
 
 def test_approvals_mode_off_cannot_bypass_hardline(clean_session, monkeypatch, tmp_path):
     """config approvals.mode=off (yolo-equivalent) must not bypass hardline."""
-    # _get_approval_mode() reads from hermes config; simplest path: monkeypatch the helper.
+    # _get_approval_mode() reads from eidolon config; simplest path: monkeypatch the helper.
     import tools.approval as approval_mod
     from tools import approval_context
     from tools import approval_context

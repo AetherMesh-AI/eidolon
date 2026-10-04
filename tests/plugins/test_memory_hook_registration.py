@@ -4,7 +4,7 @@ import textwrap
 
 import pytest
 
-from hermes_cli.plugins import get_plugin_manager
+from eidolon_cli.plugins import get_plugin_manager
 from plugins.memory import load_memory_provider
 
 
@@ -74,13 +74,14 @@ def test_dual_kind_plugin_hooks_run_once(tmp_path, monkeypatch, order):
         manager.unload()
 
 
-def test_same_name_different_sources_are_not_suppressed(tmp_path, monkeypatch):
+@pytest.mark.parametrize("project_directory", [".hermes", ".eidolon"])
+def test_same_name_different_sources_are_not_suppressed(tmp_path, monkeypatch, project_directory):
     import shutil
 
     home = tmp_path / "home"
     manager = _install(home, monkeypatch)
     project = tmp_path / "project"
-    source = project / ".hermes" / "plugins" / "dual"
+    source = project / project_directory / "plugins" / "dual"
     shutil.copytree(home / "plugins" / "dual", source)
     (source / "values.py").write_text('LABEL = "project"\n')
     monkeypatch.chdir(project)
@@ -92,6 +93,32 @@ def test_same_name_different_sources_are_not_suppressed(tmp_path, monkeypatch):
             {"context": "first"}, {"context": "second"},
             {"context": "project"}, {"context": "second"},
         ]
+    finally:
+        manager.unload()
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_project_loaders_share_canonical_root_and_never_load_both(tmp_path, monkeypatch, enabled):
+    import shutil
+    from plugins.memory import find_provider_dir
+
+    home = tmp_path / "home"
+    manager = _install(home, monkeypatch)
+    project = tmp_path / "project"
+    canonical = project / ".eidolon" / "plugins" / "dual"
+    legacy = project / ".hermes" / "plugins" / "dual"
+    shutil.copytree(home / "plugins" / "dual", canonical)
+    shutil.move(str(home / "plugins" / "dual"), legacy)
+    (canonical / "values.py").write_text('LABEL = "canonical"\n')
+    (legacy / "values.py").write_text('LABEL = "legacy"\n')
+    monkeypatch.chdir(project)
+    monkeypatch.setenv("HERMES_ENABLE_PROJECT_PLUGINS", "1" if enabled else "0")
+    try:
+        assert find_provider_dir("dual") == (canonical if enabled else None)
+        provider = load_memory_provider("dual")
+        assert (provider is not None) is enabled
+        manager.discover_and_load()
+        assert _contexts(manager) == ([{"context": "canonical"}, {"context": "second"}] if enabled else [])
     finally:
         manager.unload()
 

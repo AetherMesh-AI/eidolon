@@ -98,7 +98,7 @@ assert fenced.session_id != suspended.session_id
 results["historical_expiry_fence_preserved"] = True
 store._db.close()
 
-spec = importlib.util.spec_from_file_location("migration_probe", repo / "optional-skills/migration/openclaw-migration/scripts/openclaw_to_hermes.py")
+spec = importlib.util.spec_from_file_location("migration_probe", repo / "optional-skills/migration/openclaw-migration/scripts/openclaw_to_eidolon.py")
 module = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = module
 spec.loader.exec_module(module)
@@ -115,7 +115,7 @@ assert json.loads((migrator.archive_dir / "session-config.json").read_text(encod
 results["migration_timers_ignored_advanced_archived"] = True
 from contextlib import redirect_stdout
 from io import StringIO
-from hermes_cli.cli_info_mixin import CLIInfoMixin
+from eidolon_cli.cli_info_mixin import CLIInfoMixin
 status_output = StringIO()
 with redirect_stdout(status_output):
     CLIInfoMixin._show_gateway_status(object.__new__(CLIInfoMixin))

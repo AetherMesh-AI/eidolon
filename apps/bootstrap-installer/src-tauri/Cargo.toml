@@ -1,13 +1,13 @@
 [package]
-name = "hermes-bootstrap"
-version = "0.0.1"
+name = "eidolon-bootstrap"
+version = "0.2.0-alpha"
 description = "Eidolon Setup, an experimental desktop agent manager installer"
 authors = ["AetherMesh contributors", "Nous Research (upstream Hermes Agent)"]
 edition = "2021"
 rust-version = "1.77"
 
 # Rename the output binary so the distributed artifact is literally
-# `Eidolon-Setup.exe` on disk — not `hermes-bootstrap.exe`. Grandma sees
+# `Eidolon-Setup.exe` on disk — not `eidolon-bootstrap.exe`. Grandma sees
 # what we hand her, period. Tauri honors [[bin]] over [package].name
 # for the produced executable name.
 [[bin]]
@@ -18,7 +18,7 @@ path = "src/main.rs"
 # tauri.conf.json's `app.windows[].label` references. We don't ship a separate
 # lib for now; everything is in src/.
 [lib]
-name = "hermes_bootstrap_lib"
+name = "eidolon_bootstrap_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

@@ -88,6 +88,12 @@ function isTransientTransportError(error) {
     return false
   }
 
+  // A completed HTTP response is not a transport failure, even when its
+  // diagnostic body happens to contain a socket-error phrase.
+  if (Number.isInteger(error.statusCode)) {
+    return false
+  }
+
   if (TRANSIENT_CODES.has(error.code)) {
     return true
   }

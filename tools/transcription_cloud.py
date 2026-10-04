@@ -239,7 +239,7 @@ def _transcribe_xai(
              } if direct_api_key else resolve_xai_http_credentials()
     api_key = str(creds.get("api_key") or "").strip()
     if not api_key:
-        return _error_result("No xAI credentials found. Configure xAI OAuth in `hermes model` or set XAI_API_KEY")
+        return _error_result("No xAI credentials found. Configure xAI OAuth in `eidolon model` or set XAI_API_KEY")
     stt_config = _load_stt_config()
     xai_config = stt_config.get("xai") or {}
 
@@ -328,12 +328,12 @@ def _transcribe_elevenlabs(
 def _transcribe_deepinfra(
     file_path: str, model_name: str, *, language: Optional[str] = None, prompt: Optional[str] = None
 ) -> Dict[str, Any]:
-    """Resolve DeepInfra credentials/model (shared ``hermes_cli.models`` helpers), then delegate to :func:`_transcribe_openai`."""
+    """Resolve DeepInfra credentials/model (shared ``eidolon_cli.models`` helpers), then delegate to :func:`_transcribe_openai`."""
     from tools.transcription_tools import _load_stt_config, _resolve_provider_key
     api_key = _resolve_provider_key("DEEPINFRA_API_KEY", "deepinfra")
     if not api_key:
         return _error_result("DEEPINFRA_API_KEY not set")
-    from hermes_cli.models import deepinfra_base_url, deepinfra_model_ids
+    from eidolon_cli.models import deepinfra_base_url, deepinfra_model_ids
     # ``stt.deepinfra: null`` in YAML yields None, not {} — coalesce.
     base_url = deepinfra_base_url(_get_stt_section(_load_stt_config(), "deepinfra"))
     model_name = model_name or next(iter(deepinfra_model_ids("stt")), None)

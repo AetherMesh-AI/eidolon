@@ -10,7 +10,7 @@ integrity_check` on the file reported the torn-b-tree signature:
     Tree 5 page 60788 cell 4: Rowid 34637 out of order
     Page 50549..52587: never used
 
-The defect: hermes_state already knows macOS `fsync()` does not guarantee
+The defect: eidolon_state already knows macOS `fsync()` does not guarantee
 write ordering, and mitigates it with `synchronous=FULL` +
 `checkpoint_fullfsync=1` (see `_enforce_macos_synchronous_full`, whose
 docstring names this exact failure: "a WAL checkpoint race with process
@@ -34,9 +34,9 @@ import sqlite3
 import sys
 from pathlib import Path
 
-import hermes_state
-from hermes_state import repair_state_db_schema
-from hermes_state_repair import _connect_repair_durable
+import eidolon_state
+from eidolon_state import repair_state_db_schema
+from eidolon_state_repair import _connect_repair_durable
 
 
 def _make_db(tmp_path: Path) -> Path:
@@ -100,12 +100,12 @@ def test_repair_path_has_no_bare_connects() -> None:
     Source-level guard: the bare form is exactly what regressed, and a unit
     test on the helper alone would not notice a sixth site being added.
     """
-    # The repair/probe helpers live in hermes_state_repair; hermes_state only
+    # The repair/probe helpers live in eidolon_state_repair; eidolon_state only
     # re-imports them.
-    import hermes_state_repair
+    import eidolon_state_repair
 
-    source = Path(hermes_state_repair.__file__).read_text(encoding="utf-8")
-    tree = ast.parse(source, filename=str(hermes_state_repair.__file__))
+    source = Path(eidolon_state_repair.__file__).read_text(encoding="utf-8")
+    tree = ast.parse(source, filename=str(eidolon_state_repair.__file__))
 
     def is_db_path_connect(node: ast.AST) -> bool:
         if not isinstance(node, ast.Call):

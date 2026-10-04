@@ -66,12 +66,12 @@ def test_session_search_lazily_opens_db_when_entrypoint_did_not_pass_one(monkeyp
         def __new__(cls):
             return sentinel_db
 
-    hermes_state = ModuleType("hermes_state")
-    hermes_state.SessionDB = FakeSessionDB
-    monkeypatch.setitem(sys.modules, "hermes_state", hermes_state)
-    hermes_state_registry = ModuleType("hermes_state_registry")
-    hermes_state_registry.acquire = lambda db_path=None: sentinel_db
-    monkeypatch.setitem(sys.modules, "hermes_state_registry", hermes_state_registry)
+    eidolon_state = ModuleType("eidolon_state")
+    eidolon_state.SessionDB = FakeSessionDB
+    monkeypatch.setitem(sys.modules, "eidolon_state", eidolon_state)
+    eidolon_state_registry = ModuleType("eidolon_state_registry")
+    eidolon_state_registry.acquire = lambda db_path=None: sentinel_db
+    monkeypatch.setitem(sys.modules, "eidolon_state_registry", eidolon_state_registry)
 
     session_search_mod = ModuleType("tools.session_search_tool")
 

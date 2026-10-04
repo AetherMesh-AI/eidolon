@@ -104,7 +104,7 @@ class ModelCapabilities:
     model_family: str = ""
 
 
-# Hermes provider names → models.dev provider IDs
+# Eidolon provider names → models.dev provider IDs
 PROVIDER_TO_MODELS_DEV: Dict[str, str] = {
     "openrouter": "openrouter", "novita": "novita-ai", "anthropic": "anthropic",
     "openai": "openai", "openai-api": "openai", "openai-codex": "openai", "zai": "zai",
@@ -115,7 +115,7 @@ PROVIDER_TO_MODELS_DEV: Dict[str, str] = {
     "alibaba": "alibaba", "qwen-oauth": "alibaba", "copilot": "github-copilot",
     "ai-gateway": "vercel", "opencode-zen": "opencode",
     "opencode-go": "opencode-go",
-    # opencode-free is Zen-hosted (hermes_cli/models.py) and models.dev's "opencode" catalog lists
+    # opencode-free is Zen-hosted (eidolon_cli/models.py) and models.dev's "opencode" catalog lists
     # its *-contributor-free SKUs; without this alias every opencode-free lookup missed models.dev.
     "opencode-free": "opencode",
     "kilocode": "kilo", "fireworks": "fireworks-ai",
@@ -124,18 +124,18 @@ PROVIDER_TO_MODELS_DEV: Dict[str, str] = {
     "xai-oauth": "xai",  # OAuth is a transport path for the same xAI catalog
     "xiaomi": "xiaomi", "nvidia": "nvidia",
     # Meta Model API (Muse Spark, api.meta.ai): models.dev keys it "meta", the
-    # Hermes provider is "meta-ai"; both aliases are needed or muse-spark-*
+    # Eidolon provider is "meta-ai"; both aliases are needed or muse-spark-*
     # falls back to the generic 256K default instead of its true 1M window.
     "meta-ai": "meta", "meta": "meta", "groq": "groq", "mistral": "mistral",
     "togetherai": "togetherai", "perplexity": "perplexity", "cohere": "cohere",
     "ollama-cloud": "ollama-cloud",
 }
-# Reverse mapping: models.dev id → Hermes ids (built lazily; many-to-one).
+# Reverse mapping: models.dev id → Eidolon ids (built lazily; many-to-one).
 _MODELS_DEV_TO_PROVIDER: Optional[Dict[str, List[str]]] = None
 
 
 def _models_dev_to_hermes_ids(mdev_id: str) -> List[str]:
-    """Return the Hermes provider ids that map to *mdev_id* (may be [])."""
+    """Return the Eidolon provider ids that map to *mdev_id* (may be [])."""
     global _MODELS_DEV_TO_PROVIDER
     if _MODELS_DEV_TO_PROVIDER is None:
         _MODELS_DEV_TO_PROVIDER = {}
@@ -151,15 +151,15 @@ def _dict_or_empty(value: Any) -> Dict[str, Any]:
 def _cfg_get(*keys: str, default: Any) -> Any:
     """``cfg_get`` over the read-only config; *default* on any failure."""
     try:
-        from hermes_cli.config import cfg_get, load_config_readonly
+        from eidolon_cli.config import cfg_get, load_config_readonly
         return cfg_get(load_config_readonly(), *keys, default=default)
     except Exception:
         return default
 
 
 def _hermes_path(name: str) -> Path:
-    from hermes_constants import get_hermes_home
-    return get_hermes_home() / name
+    from eidolon_constants import get_eidolon_home
+    return get_eidolon_home() / name
 
 
 def _get_cache_path() -> Path:
@@ -456,7 +456,7 @@ def _registry_models(mdev_id: str, *, allow_network: bool) -> Optional[Dict[str,
 
 
 def _get_provider_models(provider: str, *, allow_network: bool = False) -> Optional[Dict[str, Any]]:
-    """Resolve a Hermes provider ID to its models dict, or None if unknown.
+    """Resolve a Eidolon provider ID to its models dict, or None if unknown.
     ``allow_network`` defaults to False — hot-path callers must never block."""
     mdev_id = PROVIDER_TO_MODELS_DEV.get(provider)
     return _registry_models(mdev_id, allow_network=allow_network) if mdev_id else None
@@ -514,7 +514,7 @@ def lookup_models_dev_context(provider: str, model: str, *, allow_network: bool 
 # accept): context_window, supports_tools, supports_vision, supports_reasoning,
 # model_family. ``<provider>.<model_id>`` is an explicit partial patch that always wins over the
 # catalog. ``<provider>._default`` / top-level ``_default`` are FILL-GAP defaults: they apply ONLY to
-# models the catalog does not know and never displace catalog data. Provider keys accept the Hermes
+# models the catalog does not know and never displace catalog data. Provider keys accept the Eidolon
 # or models.dev id; model ids match exactly, then case-insensitively (mirroring catalog lookup).
 # Resolution semantics: 1. 2. See #84482, #8731.
 _OVERRIDE_WARNED_KEYS: set = set()
@@ -544,12 +544,12 @@ def _load_model_overrides() -> Dict[str, Any]:
 
 
 def _provider_override_section(provider: str) -> Optional[Dict[str, Any]]:
-    """Override section for *provider* (keyed by Hermes OR models.dev id), or None."""
+    """Override section for *provider* (keyed by Eidolon OR models.dev id), or None."""
     overrides = _load_model_overrides()
     provider_key = (provider or "").strip()
     if not overrides or not provider_key:
         return None
-    # Forward (Hermes → models.dev id) and reverse (caller passed a models.dev id, config keyed by Hermes id) aliases.
+    # Forward (Eidolon → models.dev id) and reverse (caller passed a models.dev id, config keyed by Eidolon id) aliases.
     candidates = [provider_key, PROVIDER_TO_MODELS_DEV.get(provider_key), *_models_dev_to_hermes_ids(provider_key)]
     return next((section for section in (overrides.get(key) if key else None for key in candidates) if isinstance(section, dict)), None)
 
@@ -701,7 +701,7 @@ def get_model_capabilities(provider: str, model: str, *, allow_network: bool = F
 def list_provider_models(provider: str, *, allow_network: bool = True) -> List[str]:
     """All model IDs for a provider ([] if unknown). ``allow_network`` defaults to True: the model
     picker is interactive and a fresh catalog is worth a short wait."""
-    from hermes_cli.models import normalize_provider
+    from eidolon_cli.models import normalize_provider
     provider = normalize_provider(provider) or provider
     models = _get_provider_models(provider, allow_network=allow_network)
     return [mid for mid in models if not _should_hide_from_provider_catalog(provider, mid)] if models is not None else []
@@ -769,14 +769,14 @@ def _parse_provider_info(provider_id: str, raw: Dict[str, Any]) -> ProviderInfo:
 
 
 def get_provider_info(provider_id: str, *, allow_network: bool = True) -> Optional[ProviderInfo]:
-    """Provider metadata by Hermes or models.dev ID, or None if not cataloged. ``allow_network`` defaults to True (interactive setup)."""
+    """Provider metadata by Eidolon or models.dev ID, or None if not cataloged. ``allow_network`` defaults to True (interactive setup)."""
     mdev_id = PROVIDER_TO_MODELS_DEV.get(provider_id, provider_id)
     raw = _registry_provider(mdev_id, allow_network)
     return _parse_provider_info(mdev_id, raw) if raw is not None else None
 
 
 def get_model_info(provider_id: str, model_id: str, *, allow_network: bool = False) -> Optional[ModelInfo]:
-    """Full model metadata by Hermes or models.dev provider ID (exact match, then case-insensitive), or
+    """Full model metadata by Eidolon or models.dev provider ID (exact match, then case-insensitive), or
     None if not found. EXPLICIT ``model_overrides`` patch known catalog models; ``_default`` fills the gap
     only for unknown ones. ``allow_network`` defaults to False — cost guard and inventory are hot paths.
 

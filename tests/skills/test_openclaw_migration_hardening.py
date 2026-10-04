@@ -1,4 +1,4 @@
-"""Tests for the OpenClaw→Hermes migration hardening features.
+"""Tests for the OpenClaw→Eidolon migration hardening features.
 
 Covers the changes in the "claw migrate hardening" PR:
   - secret redaction (engine-level, applied to report JSON)
@@ -22,12 +22,12 @@ SCRIPT_PATH = (
     / "migration"
     / "openclaw-migration"
     / "scripts"
-    / "openclaw_to_hermes.py"
+    / "openclaw_to_eidolon.py"
 )
 
 
 def _load():
-    spec = importlib.util.spec_from_file_location("openclaw_to_hermes_hard", SCRIPT_PATH)
+    spec = importlib.util.spec_from_file_location("openclaw_to_eidolon_hard", SCRIPT_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     sys.modules[spec.name] = module

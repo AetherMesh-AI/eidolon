@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 
-vi.mock('@/hermes', () => ({
+vi.mock('@/eidolon', () => ({
   getHermesConfigRecord: vi.fn(async () => ({})),
   saveHermesConfig: vi.fn(async () => undefined)
 }))
 
-import { saveHermesConfig } from '@/hermes'
+import { saveHermesConfig } from '@/eidolon'
 
 import { $voiceStopPhrase, applyVoiceStopPhraseFromConfig } from './voice-prefs'
 

@@ -20,7 +20,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from typing import Any, Callable, Dict, Iterator, List, Optional
 
-from hermes_constants import get_hermes_home
+from eidolon_constants import get_eidolon_home
 from tools.daemon_pool import DaemonThreadPoolExecutor
 from tools.thread_context import propagate_context_to_thread
 
@@ -79,7 +79,7 @@ _STALL_FIELD_MAP = (("_stall_quiet_seconds", "stalled_after_quiet_seconds"),
 
 # ── Durable ledger (state.db / async_delegations) ───────────────────────────
 def _db_path():
-    return get_hermes_home() / "state.db"
+    return get_eidolon_home() / "state.db"
 
 
 def _connect() -> sqlite3.Connection:
@@ -95,7 +95,7 @@ def _connect() -> sqlite3.Connection:
 
 
 def _initialize_schema(conn: sqlite3.Connection) -> None:
-    from hermes_state_repair import apply_durability_barriers
+    from eidolon_state_repair import apply_durability_barriers
     # Preserve the journal mode SessionDB configured on state.db: forcing WAL from
     # every short-lived connection collides with live transcript/FTS writers.
     apply_durability_barriers(conn)
@@ -612,7 +612,7 @@ def _dispatch(
             _finalize(delegation_id, result, status)
 
     try:
-        # Propagate the dispatching profile so the detached child resolves get_hermes_home() correctly.
+        # Propagate the dispatching profile so the detached child resolves get_eidolon_home() correctly.
         executor.submit(propagate_context_to_thread(_worker))
     except Exception as exc:  # pragma: no cover — pool submit failure is rare
         with _records_lock:

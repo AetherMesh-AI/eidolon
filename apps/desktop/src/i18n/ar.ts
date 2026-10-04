@@ -768,7 +768,7 @@ export const ar = defineLocale({
     },
     gateway: {
       sshErrNotInstalled:
-        'لم يُعثر على بيئة تشغيل متوافقة على المضيف البعيد. راجع تعليمات إصدارات Eidolon (https://github.com/AetherMesh-AI/Eidolon/releases)، أو حدد مسار ملف hermes التنفيذي الموجود.',
+        'لم يُعثر على بيئة تشغيل متوافقة على المضيف البعيد. راجع تعليمات إصدارات Eidolon (https://github.com/AetherMesh-AI/Eidolon/releases)، أو حدد مسار ملف eidolon التنفيذي الموجود.',
       loading: 'جار تحميل إعدادات البوابة...',
       unavailableTitle: 'إعدادات البوابة غير متاحة',
       unavailableDesc: 'جسر IPC في سطح المكتب لا يوفّر إعدادات البوابة.',
@@ -784,7 +784,7 @@ export const ar = defineLocale({
       remoteDesc:
         'صل واجهة سطح المكتب هذه بخلفية Eidolon بعيدة. البوابات المستضافة تستخدم OAuth أو اسم مستخدم وكلمة مرور، والبوابات الذاتية قد تستخدم رمز جلسة.',
       remoteUrlTitle: 'رابط البوابة البعيدة',
-      remoteUrlDesc: 'الرابط الأساسي لخلفية لوحة التحكم البعيدة. يمكن استخدام بادئات مسار مثل /hermes.',
+      remoteUrlDesc: 'الرابط الأساسي لخلفية لوحة التحكم البعيدة. يمكن استخدام بادئات مسار مثل /eidolon.',
       probing: 'جار فحص طريقة مصادقة هذه البوابة...',
       probeError: 'تعذر الوصول إلى هذه البوابة الآن. تحقق من الرابط وستظهر طريقة المصادقة عند الاستجابة.',
       signedIn: 'تم تسجيل الدخول',
@@ -1399,7 +1399,7 @@ export const ar = defineLocale({
       },
       MATRIX_USER_ID: {
         label: 'معرّف مستخدم البوت',
-        placeholder: '@hermes:example.org'
+        placeholder: '@eidolon:example.org'
       },
       MATRIX_ALLOWED_USERS: {
         label: 'معرّفات مستخدمي Matrix المسموح بهم',
@@ -1458,7 +1458,7 @@ export const ar = defineLocale({
       title: (profile: string) => `ربط ${profile} بمضيف بعيد`,
       description: 'ستعمل جلسات هذا الملف الشخصي على خادم Eidolon البعيد الذي تحدده، بدلاً من هذا الجهاز.',
       urlLabel: 'العنوان البعيد',
-      urlPlaceholder: 'https://hermes.example.com',
+      urlPlaceholder: 'https://eidolon.example.com',
       urlInvalid: 'أدخل عنواناً كاملاً يبدأ بـ http:// أو https://',
       tokenLabel: 'رمز الوصول',
       tokenPlaceholder: 'الصق رمز الجلسة البعيد',
@@ -1909,7 +1909,7 @@ export const ar = defineLocale({
       '/resume': 'استئناف جلسة سابقة',
       '/details': 'التحكم في مستوى تفاصيل النص',
       '/copy': 'نسخ التحديد أو آخر رسالة من المساعد',
-      '/quit': 'الخروج من hermes'
+      '/quit': 'الخروج من Eidolon'
     },
     hotkeyDescs: {
       'composer.mention': 'الإشارة إلى الملفات والمجلدات والروابط وgit',
@@ -2229,7 +2229,7 @@ export const ar = defineLocale({
     settingUpTitle: 'جار إعداد Eidolon',
     finishingTitle: 'جار الإنهاء',
     failedDesc:
-      'فشلت إحدى خطوات التثبيت. على Windows، قد يحدث هذا إذا كان هناك نسخة أخرى من Hermes CLI أو Eidolon قيد التشغيل. أوقف أي نسخ Hermes CLI وEidolon قيد التشغيل، ثم أعد المحاولة. تحقق من التفاصيل أدناه أو من سجل سطح المكتب للحصول على النص الكامل.',
+      'فشلت إحدى خطوات التثبيت. على Windows، قد يحدث هذا إذا كان هناك نسخة أخرى من Eidolon CLI أو Eidolon قيد التشغيل. أوقف أي نسخ Eidolon CLI وEidolon قيد التشغيل، ثم أعد المحاولة. تحقق من التفاصيل أدناه أو من سجل سطح المكتب للحصول على النص الكامل.',
     activeDesc:
       'هذا إعداد لمرة واحدة. يقوم مثبّت Eidolon بتنزيل التبعيات وتهيئة جهازك. ستتخطى عمليات التشغيل اللاحقة هذه الخطوة.',
     progress: (completed, total) => `اكتملت ${completed} من ${total} خطوة`,
@@ -2259,7 +2259,8 @@ export const ar = defineLocale({
     chooseLater: 'سأختار مزوّدا لاحقا',
     recommended: 'موصى به',
     connected: 'متصل',
-    featuredPitch: 'اشتراك واحد، أكثر من 300 نموذج متقدم — الطريقة الموصى بها لتشغيل Eidolon',
+    aetherMeshDescription: 'شبكة ذكاء اصطناعي من نظير إلى نظير.',
+    aetherMeshComingSoon: 'قريبًا',
     fireworksPitch: 'نماذج مفتوحة سريعة مع استضافة Fireworks.',
     openRouterPitch: 'مفتاح واحد لمئات النماذج — خيار افتراضي جيد',
     apiKeyOptions: {
@@ -2309,11 +2310,12 @@ export const ar = defineLocale({
     pickDifferentProvider: 'اختر مزوداً آخر',
     signInWith: provider => `تسجيل الدخول عبر ${provider}`,
     openedBrowser: provider => `فتحنا ${provider} في المتصفح.`,
-    authorizeThere: 'صرّح لـ Hermes هناك.',
+    authorizeThere: 'صرّح لـ Eidolon هناك.',
     copyAuthCode: 'انسخ رمز التفويض وألصقه أدناه.',
     pasteAuthCode: 'ألصق رمز التفويض',
     reopenAuthPage: 'إعادة فتح صفحة التفويض',
-    autoBrowser: provider => `فتحنا ${provider} في المتصفح. صرّح لـ Hermes هناك وسيتم الاتصال تلقائياً دون نسخ أو لصق.`,
+    autoBrowser: provider =>
+      `فتحنا ${provider} في المتصفح. صرّح لـ Eidolon هناك وسيتم الاتصال تلقائياً دون نسخ أو لصق.`,
     reopenSignInPage: 'إعادة فتح صفحة تسجيل الدخول',
     waitingAuthorize: 'بانتظار التفويض...',
     externalPending: provider =>
@@ -2710,7 +2712,8 @@ export const ar = defineLocale({
       jumpToApproval: 'الموافقة مطلوبة',
       reject: 'رفض',
       alwaysTitle: 'السماح دائما',
-      alwaysDescription: pattern => `السماح دائما بالأوامر المطابقة لـ ${pattern}`,
+      alwaysDescription: pattern =>
+        `يُضاف النمط «${pattern}» إلى قائمة السماح الدائمة في config.yaml لهذا الملف الشخصي. لن يطلب Eidolon الإذن مجددًا للأوامر المطابقة في هذه الجلسة أو الجلسات المستقبلية.`,
       alwaysAllow: 'السماح دائما'
     },
     clarify: {
@@ -2976,7 +2979,7 @@ export const ar = defineLocale({
       success: platform => `تم التسليم إلى ${platform}. استأنف هنا في أي وقت.`,
       systemNote: platform => `↻ تم التسليم إلى ${platform} — استأنف هنا في أي وقت.`,
       failed: error => `فشل التسليم: ${error}`,
-      timedOut: 'انتهت المهلة في انتظار البوابة. هل `hermes gateway` قيد التشغيل؟'
+      timedOut: 'انتهت المهلة في انتظار البوابة. هل `eidolon gateway` قيد التشغيل؟'
     }
   },
   errors: {

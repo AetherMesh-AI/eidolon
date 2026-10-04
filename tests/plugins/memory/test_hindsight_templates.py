@@ -14,7 +14,7 @@ _CATALOG = {
          "manifest_file": "templates/conversation.json"},
         {"id": "coding-agent", "name": "Coding Agent", "integrations": ["claude-code"],
          "manifest_file": "templates/coding-agent.json"},
-        {"id": "hermes-gateway-bot", "name": "Gateway Bot", "integrations": ["hermes"],
+        {"id": "eidolon-gateway-bot", "name": "Gateway Bot", "integrations": ["hermes"],
          "manifest_file": "templates/hermes-gateway-bot.json"},
     ]
 }
@@ -24,7 +24,7 @@ def test_fetch_hermes_templates_filters_to_hermes(monkeypatch):
     monkeypatch.setattr(tpl, "_get_json", lambda url: _CATALOG)
     entries = tpl.fetch_hermes_templates("https://example/templates.json")
     ids = [e["id"] for e in entries]
-    assert ids == ["conversation", "hermes-gateway-bot"]  # coding-agent excluded
+    assert ids == ["conversation", "eidolon-gateway-bot"]  # coding-agent excluded
 
 
 def test_fetch_manifest_resolves_relative_url(monkeypatch):
@@ -109,7 +109,7 @@ def test_supported_for_mode():
 
 def test_run_template_step_applies_selected(monkeypatch):
     monkeypatch.setattr(tpl, "fetch_hermes_templates", lambda url=None: [
-        {"id": "hermes-gateway-bot", "name": "Gateway Bot", "manifest_file": "templates/x.json"},
+        {"id": "eidolon-gateway-bot", "name": "Gateway Bot", "manifest_file": "templates/x.json"},
     ])
     monkeypatch.setattr(tpl, "fetch_manifest", lambda entry, url=None: {"version": "1"})
     monkeypatch.setattr(tpl, "probe_existing_customization", lambda *a: False)
@@ -121,12 +121,12 @@ def test_run_template_step_applies_selected(monkeypatch):
         api_url="https://api", bank_id="hermes", api_key="k",
         select=_select_returning(0), cancelled=-1, log=lambda *_: None,
     )
-    assert result == "hermes-gateway-bot"
+    assert result == "eidolon-gateway-bot"
     assert applied["bank"] == "hermes"
 
 
 def test_run_template_step_blank_selection_skips(monkeypatch):
-    entries = [{"id": "hermes-gateway-bot", "name": "Gateway Bot", "manifest_file": "templates/x.json"}]
+    entries = [{"id": "eidolon-gateway-bot", "name": "Gateway Bot", "manifest_file": "templates/x.json"}]
     monkeypatch.setattr(tpl, "fetch_hermes_templates", lambda url=None: entries)
     called = {"applied": False}
     monkeypatch.setattr(tpl, "apply_template",
@@ -166,7 +166,7 @@ def test_run_template_step_swallows_apply_errors(monkeypatch):
     import urllib.error
 
     monkeypatch.setattr(tpl, "fetch_hermes_templates", lambda url=None: [
-        {"id": "hermes-gateway-bot", "name": "Gateway Bot", "manifest_file": "templates/x.json"},
+        {"id": "eidolon-gateway-bot", "name": "Gateway Bot", "manifest_file": "templates/x.json"},
     ])
     monkeypatch.setattr(tpl, "fetch_manifest", lambda entry, url=None: {"version": "1"})
     monkeypatch.setattr(tpl, "probe_existing_customization", lambda *a: False)
@@ -218,7 +218,7 @@ def test_probe_existing_customization_false_on_error(monkeypatch):
 
 def _wire_apply(monkeypatch, customized):
     monkeypatch.setattr(tpl, "fetch_hermes_templates", lambda url=None: [
-        {"id": "hermes-gateway-bot", "name": "Gateway Bot", "manifest_file": "templates/x.json"},
+        {"id": "eidolon-gateway-bot", "name": "Gateway Bot", "manifest_file": "templates/x.json"},
     ])
     monkeypatch.setattr(tpl, "fetch_manifest", lambda entry, url=None: {"version": "1"})
     monkeypatch.setattr(tpl, "probe_existing_customization", lambda *a: customized)
@@ -245,7 +245,7 @@ def test_warns_then_applies_when_confirmed(monkeypatch):
         api_url="https://api", bank_id="hermes", api_key="k",
         select=_select_seq(0, 0), cancelled=-1, log=lambda *_: None,
     )
-    assert result == "hermes-gateway-bot"
+    assert result == "eidolon-gateway-bot"
     assert called["applied"] is True
 
 
@@ -256,5 +256,5 @@ def test_fresh_bank_skips_the_warning(monkeypatch):
         api_url="https://api", bank_id="hermes", api_key="k",
         select=_select_seq(0), cancelled=-1, log=lambda *_: None,
     )
-    assert result == "hermes-gateway-bot"
+    assert result == "eidolon-gateway-bot"
     assert called["applied"] is True

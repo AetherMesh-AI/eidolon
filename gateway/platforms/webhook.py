@@ -346,8 +346,8 @@ class WebhookAdapter(BasePlatformAdapter):
 
     def _reload_dynamic_routes(self) -> None:
         """Reload agent-created subscriptions from disk if the file changed."""
-        from hermes_constants import get_hermes_home
-        subs_path = get_hermes_home() / _DYNAMIC_ROUTES_FILENAME
+        from eidolon_constants import get_eidolon_home
+        subs_path = get_eidolon_home() / _DYNAMIC_ROUTES_FILENAME
         if not subs_path.exists():
             if self._dynamic_routes:
                 self._dynamic_routes, self._routes = {}, dict(self._static_routes)
@@ -381,12 +381,12 @@ class WebhookAdapter(BasePlatformAdapter):
             # Only a self-referential prefix may fall through to the bare route; anything else fails
             # closed (silently ignoring the prefix served the owner's routes under another profile's URL).
             with suppress(Exception):
-                from hermes_cli.profiles import profile_matches_home
+                from eidolon_cli.profiles import profile_matches_home
                 if profile_matches_home(profile):
                     return None
             return _PROFILE_REJECTED
         try:
-            from hermes_cli.profiles import profiles_to_serve
+            from eidolon_cli.profiles import profiles_to_serve
             allowlist = getattr(cfg, "multiplex_profile_allowlist", None)
             served = {name for name, _ in profiles_to_serve(multiplex=True, profile_allowlist=allowlist)}
         except Exception:
@@ -407,7 +407,7 @@ class WebhookAdapter(BasePlatformAdapter):
         if not profile or not isinstance(profile, str):
             return nullcontext()
         from gateway.run import _profile_runtime_scope
-        from hermes_cli.profiles import get_profile_dir
+        from eidolon_cli.profiles import get_profile_dir
         return _profile_runtime_scope(get_profile_dir(profile))
 
     async def _read_authenticated_body(self, request: "web.Request", route_name: str,

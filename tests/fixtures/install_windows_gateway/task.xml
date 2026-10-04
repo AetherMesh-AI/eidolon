@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo><Description>Hermes Agent Gateway - Messaging Platform Integration</Description></RegistrationInfo>
+  <Settings><Enabled>@ENABLED@</Enabled></Settings>
+  <Actions Context="Author"><Exec><Command>@COMMAND@</Command><Arguments>@ARGUMENTS@</Arguments></Exec></Actions>
+</Task>

@@ -2,7 +2,7 @@
 
 Field report (enterprise, v0.20.0/2026.8.3): cron jobs whose output carries
 PDF/image MEDIA attachments deliver text+attachment on scheduled ticks but
-text-only on manual ``hermes cron run <job-id>``. Same box, same token, same
+text-only on manual ``eidolon cron run <job-id>``. Same box, same token, same
 scopes — the divergence is process context and error visibility, not
 credentials.
 
@@ -70,7 +70,7 @@ def _install_fake_slack_sender(monkeypatch, result_factory):
     entry = reg_mod.platform_registry.get("slack")
     if entry is None:
         # Populate the registry the same way tools/send_message_tool does.
-        import hermes_cli.plugins as hp_boot
+        import eidolon_cli.plugins as hp_boot
 
         hp_boot.discover_plugins()
         entry = reg_mod.platform_registry.get("slack")
@@ -78,7 +78,7 @@ def _install_fake_slack_sender(monkeypatch, result_factory):
         pytest.skip("slack platform entry not registered in this environment")
     monkeypatch.setattr(entry, "standalone_sender_fn", fake_sender)
     # Keep plugin discovery from replacing our fake mid-test.
-    import hermes_cli.plugins as hp
+    import eidolon_cli.plugins as hp
 
     monkeypatch.setattr(hp, "discover_plugins", lambda *a, **k: None)
     return calls

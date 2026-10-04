@@ -2,8 +2,8 @@ import pytest
 
 
 def _set_xai_oauth_unavailable(monkeypatch):
-    from hermes_cli import auth
-    import hermes_cli.auth_xai as auth_xai
+    from eidolon_cli import auth
+    import eidolon_cli.auth_xai as auth_xai
 
     monkeypatch.setattr(auth, "resolve_xai_oauth_runtime_credentials", lambda **_: {})
     monkeypatch.setattr(auth_xai, "resolve_xai_oauth_runtime_credentials", lambda **_: {})
@@ -11,7 +11,7 @@ def _set_xai_oauth_unavailable(monkeypatch):
 
 def test_xai_credentials_fail_closed_without_profile_scope(tmp_path, monkeypatch):
     from agent import secret_scope
-    from hermes_cli.config import invalidate_env_cache
+    from eidolon_cli.config import invalidate_env_cache
     from tools.xai_http import resolve_xai_http_credentials
 
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
@@ -35,7 +35,7 @@ def test_xai_credentials_do_not_fall_back_to_environ_when_scope_has_no_key(
     tmp_path, monkeypatch
 ):
     from agent import secret_scope
-    from hermes_cli.config import invalidate_env_cache
+    from eidolon_cli.config import invalidate_env_cache
     from tools.xai_http import resolve_xai_http_credentials
 
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
@@ -164,7 +164,7 @@ def test_prefer_api_key_honors_profile_scope_only_key(tmp_path, monkeypatch):
     os.environ / .env) is honored on the preferred path — the read goes
     through resolve_provider_secret, not a raw env lookup."""
     from agent import secret_scope
-    from hermes_cli.config import invalidate_env_cache
+    from eidolon_cli.config import invalidate_env_cache
     from tools.xai_http import resolve_xai_http_credentials
 
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))

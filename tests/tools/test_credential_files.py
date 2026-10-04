@@ -280,7 +280,7 @@ class TestPathTraversalSecurity:
         assert get_credential_file_mounts() == []
 
 
-    def test_nested_subdir_inside_hermes_home_allowed(self, tmp_path, monkeypatch):
+    def test_nested_subdir_inside_eidolon_home_allowed(self, tmp_path, monkeypatch):
         """Files in subdirectories of HERMES_HOME must be allowed."""
         hermes_home = tmp_path / ".hermes"
         hermes_home.mkdir()
@@ -422,7 +422,7 @@ class TestCacheDirectoryMounts:
         assert "/root/.hermes/cache/documents" in container_paths
         assert "/root/.hermes/cache/images" in container_paths
 
-    def test_empty_hermes_home(self, tmp_path, monkeypatch):
+    def test_empty_eidolon_home(self, tmp_path, monkeypatch):
         """Empty home → every staging dir is created and mounted (#76577).
 
         Docker snapshots the mount list at container creation; skipping
@@ -506,7 +506,7 @@ class TestMapCachePathToContainer:
 
 class TestToAgentVisiblePathPerBackend:
     """#76577 follow-up: translation covers every backend that relocates the
-    Hermes cache — not just docker — and skips the ones where the host path
+    Eidolon cache — not just docker — and skips the ones where the host path
     stays correct (local; singularity auto-binds the host home)."""
 
     def _staged(self, tmp_path, monkeypatch):

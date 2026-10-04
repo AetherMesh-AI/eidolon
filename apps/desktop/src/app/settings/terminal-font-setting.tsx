@@ -8,10 +8,10 @@ import {
 } from '@/app/right-sidebar/terminal/terminal-font'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { saveHermesConfig } from '@/hermes'
+import { saveHermesConfig } from '@/eidolon'
 import { useI18n } from '@/i18n'
 import { notifyError } from '@/store/notifications'
-import type { HermesConfigRecord } from '@/types/hermes'
+import type { HermesConfigRecord } from '@/types/eidolon'
 
 import { setHermesConfigCache, useHermesConfigRecord } from '../hooks/use-config-record'
 import { useOnProfileSwitch } from '../hooks/use-on-profile-switch'

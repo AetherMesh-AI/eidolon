@@ -474,7 +474,7 @@ export const ru = defineLocale({
         includesHeading: 'Состав пакета',
         agentLabel: 'Плагин агента',
         desktopLabel: 'UI приложения',
-        agentTargetLocal: profile => `Устанавливается в локальный бэкенд ${profile} (~/.hermes/plugins/)`,
+        agentTargetLocal: profile => `Устанавливается в каталог плагинов бэкенда ${profile}`,
         agentTargetRemote: profile => `Устанавливается в подключённый бэкенд ${profile}`,
         desktopTarget: 'Устанавливается в локальную папку desktop-plugins этого приложения',
         desktopOnlyNote: 'Пакеты только для приложения не устанавливают плагин агента.',
@@ -1157,7 +1157,7 @@ export const ru = defineLocale({
       cloudAgentProvisioning: 'Развёртывание…',
       cloudStatusLabel: status => `Статус: ${status}`,
       remoteUrlTitle: 'Удалённый URL',
-      remoteUrlDesc: 'Базовый URL удалённого бэкенда дашборда. Поддерживаются префиксы пути, например /hermes.',
+      remoteUrlDesc: 'Базовый URL удалённого бэкенда дашборда. Поддерживаются префиксы пути, например /eidolon.',
       probing: 'Проверяем, как аутентифицируется этот шлюз…',
       probeError:
         'Пока не удалось связаться с этим шлюзом. Проверьте URL — способ аутентификации появится, когда он ответит.',
@@ -1228,8 +1228,8 @@ export const ru = defineLocale({
       sshPortDesc: 'Пусто = 22 или порт из ~/.ssh/config.',
       sshKeyTitle: 'Файл ключа',
       sshKeyDesc: 'Путь к закрытому ключу. Пусто = ssh-agent или ~/.ssh/config.',
-      sshHermesPathTitle: 'Путь к Hermes (необязательно)',
-      sshHermesPathDesc: 'Полный путь к бинарнику hermes на удалённой машине. Пусто = автоопределение.',
+      sshHermesPathTitle: 'Путь к Eidolon (необязательно)',
+      sshHermesPathDesc: 'Полный путь к бинарнику eidolon на удалённой машине. Пусто = автоопределение.',
       sshHermesPathPlaceholder: 'автоопределение',
       sshTestConnection: 'Проверить SSH',
       sshConnect: 'Подключиться',
@@ -1242,7 +1242,7 @@ export const ru = defineLocale({
       sshErrHostKey:
         'Ключ хоста ИЗМЕНИЛСЯ с последнего подключения. Убедитесь, что это ожидаемо, затем выполните ssh-keygen -R <host> и переподключитесь.',
       sshErrNotInstalled:
-        'На удалённой машине не найдена совместимая среда выполнения. Проверьте инструкции к релизам Eidolon (https://github.com/AetherMesh-AI/Eidolon/releases) или укажите путь к существующему исполняемому файлу hermes.',
+        'На удалённой машине не найдена совместимая среда выполнения. Проверьте инструкции к релизам Eidolon (https://github.com/AetherMesh-AI/Eidolon/releases) или укажите путь к существующему исполняемому файлу eidolon.',
       sshErrPlatform:
         'Неподдерживаемая удалённая платформа. SSH-режим Eidolon Desktop поддерживает удалённые хосты Linux, macOS и Windows.',
       sshErrTimeout: 'SSH-соединение истекло. Хост может быть недоступен или «спит».',
@@ -1584,7 +1584,7 @@ export const ru = defineLocale({
     edit: 'Изменить',
     archive: 'В архив',
     skillArchivedTitle: 'Навык в архиве',
-    skillArchivedMessage: 'Восстановить через hermes curator restore.',
+    skillArchivedMessage: 'Восстановить через eidolon curator restore.',
     hub: {
       searchPlaceholder: 'Поиск в хабе навыков',
       search: 'Поиск',
@@ -2029,7 +2029,7 @@ export const ru = defineLocale({
       },
       MATRIX_HOMESERVER: { label: 'URL homeserver', placeholder: 'https://matrix.org' },
       MATRIX_ACCESS_TOKEN: { label: 'Токен доступа' },
-      MATRIX_USER_ID: { label: 'ID пользователя бота', placeholder: '@hermes:example.org' },
+      MATRIX_USER_ID: { label: 'ID пользователя бота', placeholder: '@eidolon:example.org' },
       MATRIX_ALLOWED_USERS: {
         label: 'Разрешённые ID пользователей Matrix',
         help: 'Рекомендуется. ID пользователей через запятую в формате @user:server.'
@@ -2641,7 +2641,7 @@ export const ru = defineLocale({
       '/resume': 'возобновить прошлый сеанс',
       '/details': 'уровень детализации транскрипта',
       '/copy': 'скопировать выделенное или последнее сообщение ассистента',
-      '/quit': 'выйти из hermes'
+      '/quit': 'выйти из Eidolon'
     },
     hotkeyDescs: {
       'composer.mention': 'ссылки на файлы, папки, URL, git',
@@ -3017,7 +3017,7 @@ export const ru = defineLocale({
     remoteSetupDesc: 'Введите URL вашего шлюза. Eidolon определит, нужен токен или вход через браузер.',
     remoteUrlTitle: 'URL шлюза',
     remoteUrlDesc: 'Используйте базовый URL шлюза Eidolon, включая https:// для удалённых.',
-    remoteUrlPlaceholder: 'https://gateway.example.com/hermes',
+    remoteUrlPlaceholder: 'https://gateway.example.com/eidolon',
     probing: 'Определяем аутентификацию шлюза...',
     probeError: 'Не удалось подключиться к этому шлюзу Eidolon.',
     identityProvider: 'ваш провайдер аутентификации',
@@ -3042,7 +3042,7 @@ export const ru = defineLocale({
     settingUpTitle: 'Настройка Eidolon',
     finishingTitle: 'Завершаем',
     failedDesc:
-      'Один из шагов установки завершился ошибкой. На Windows это может произойти, если запущена другая инстанция Hermes CLI или Eidolon. Остановите все работающие инстанции Hermes CLI и Eidolon и повторите. Подробности — ниже или в журнале desktop.',
+      'Один из шагов установки завершился ошибкой. На Windows это может произойти, если запущена другая инстанция Eidolon CLI или Eidolon. Остановите все работающие инстанции Eidolon CLI и Eidolon и повторите. Подробности — ниже или в журнале desktop.',
     activeDesc:
       'Это одноразовая настройка. Установщик Eidolon скачивает зависимости и настраивает вашу машину. При следующих запусках этот шаг будет пропущен.',
     progress: (completed, total) => `Выполнено ${completed} из ${total} шагов`,
@@ -3072,7 +3072,8 @@ export const ru = defineLocale({
     chooseLater: 'Выберу провайдера позже',
     recommended: 'Рекомендуется',
     connected: 'Подключено',
-    featuredPitch: 'Одна подписка, 300+ передовых моделей — рекомендуемый способ запускать Eidolon',
+    aetherMeshDescription: 'Одноранговая сеть ИИ.',
+    aetherMeshComingSoon: 'Скоро',
     fireworksPitch: 'Прямой API моделей — передовые модели на хостинге Fireworks',
     openRouterPitch: 'Один ключ, сотни моделей — надёжный вариант по умолчанию',
     apiKeyOptions: {
@@ -3114,12 +3115,12 @@ export const ru = defineLocale({
     pickDifferentProvider: 'Выбрать другого провайдера',
     signInWith: provider => `Войти через ${provider}`,
     openedBrowser: provider => `Мы открыли ${provider} в вашем браузере.`,
-    authorizeThere: 'Авторизуйте Hermes там.',
+    authorizeThere: 'Авторизуйте Eidolon там.',
     copyAuthCode: 'Скопируйте код авторизации и вставьте его ниже.',
     pasteAuthCode: 'Вставьте код авторизации',
     reopenAuthPage: 'Открыть страницу авторизации снова',
     autoBrowser: provider =>
-      `Мы открыли ${provider} в вашем браузере. Авторизуйте Hermes там, и подключение произойдёт автоматически — ничего копировать и вставлять не нужно.`,
+      `Мы открыли ${provider} в вашем браузере. Авторизуйте Eidolon там, и подключение произойдёт автоматически — ничего копировать и вставлять не нужно.`,
     reopenSignInPage: 'Открыть страницу входа снова',
     waitingAuthorize: 'Ждём вашей авторизации...',
     externalPending: provider =>
@@ -3567,7 +3568,7 @@ export const ru = defineLocale({
       reject: 'Отклонить',
       alwaysTitle: 'Всегда разрешать эту команду?',
       alwaysDescription: pattern =>
-        `Это добавит паттерн «${pattern}» в ваш постоянный список разрешений (~/.hermes/config.yaml). Eidolon больше не будет спрашивать о подобных командах — ни в этом сеансе, ни в будущем.`,
+        `Это добавит паттерн «${pattern}» в постоянный список разрешений в config.yaml этого профиля. Eidolon больше не будет спрашивать о подобных командах — ни в этом сеансе, ни в будущем.`,
       alwaysAllow: 'Всегда разрешать'
     },
     clarify: {
@@ -3603,7 +3604,7 @@ export const ru = defineLocale({
       unanswered: 'Нет ответа',
       toolCount: count => `${count} ${RU_NOUN(count, 'инструмент', 'инструмента', 'инструментов')}`,
       notInCatalog: server => `«${server}» нет в MCP-каталоге`,
-      catalogSource: 'Из каталога, одобренного Nous',
+      catalogSource: 'Из проверенного каталога',
       envRequired: 'Сначала заполните обязательные учётные данные',
       sendFailed: 'Не удалось отправить ответ на настройку MCP',
       reloadFailed: 'Сервер сохранён, но перезагрузка MCP-инструментов не удалась — они загрузятся в следующем сеансе',
@@ -3791,7 +3792,7 @@ export const ru = defineLocale({
       success: platform => `Передаём в ${platform}. Возобновите здесь в любой момент.`,
       systemNote: platform => `↻ Передано в ${platform} — возобновите здесь в любой момент.`,
       failed: error => `Передача не удалась: ${error}`,
-      timedOut: 'Превышено время ожидания шлюза. Выполняется ли `hermes gateway`?'
+      timedOut: 'Превышено время ожидания шлюза. Выполняется ли `eidolon gateway`?'
     }
   },
   errors: {

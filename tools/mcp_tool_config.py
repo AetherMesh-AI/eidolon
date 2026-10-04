@@ -26,8 +26,8 @@ def _get_mcp_stderr_log() -> Any:
     with _mcp_stderr_log_lock:
         if _mcp_stderr_log_fh is None:
             try:
-                from hermes_constants import get_hermes_home
-                log_dir = get_hermes_home() / "logs"
+                from eidolon_constants import get_eidolon_home
+                log_dir = get_eidolon_home() / "logs"
                 log_dir.mkdir(parents=True, exist_ok=True)
                 # Line-buffered so output lands promptly; errors="replace" tolerates garbled binary.
                 fh = open(log_dir / "mcp-stderr.log", "a", encoding="utf-8", errors="replace", buffering=1)
@@ -96,7 +96,7 @@ def _build_safe_env(user_env: Optional[dict]) -> dict:
     keys, ``XDG_*``, vars injected by an external secret source (users configured that backend
     precisely so subprocesses can consume them), plus the server config's own ``env``."""
     try:
-        from hermes_cli.env_loader import get_secret_source
+        from eidolon_cli.env_loader import get_secret_source
     except Exception:  # pragma: no cover — early bootstrap/import fallback
         get_secret_source = None
     env = {
@@ -131,8 +131,8 @@ def _which_with_config_pathext(command: str, path_arg, env: dict):
 def _node_fallback(command: str) -> str:
     """Well-known Node install locations for bare ``npx``/``npm``/``node``; *command* unchanged when none exists."""
     home = os.path.expanduser("~")
-    hermes_home = os.path.expanduser(os.getenv("HERMES_HOME", os.path.join(home, ".hermes")))
-    # /usr/local/bin: canonical Node location (from-source Linux, Hermes Docker image, Intel Homebrew),
+    hermes_home = os.path.expanduser(os.getenv("HERMES_HOME", os.path.join(home, ".eidolon")))
+    # /usr/local/bin: canonical Node location (from-source Linux, Eidolon Docker image, Intel Homebrew),
     # needed when a hand-authored env.PATH omits it — npx's shebang re-execs /usr/bin/env node.
     candidates = (os.path.join(hermes_home, "node", "bin", command), os.path.join(home, ".local", "bin", command),
                   os.path.join(os.sep, "usr", "local", "bin", command))
@@ -162,7 +162,7 @@ def _npx_bin_candidates(bin_dir: str, name: str, *, windows: Optional[bool] = No
     """Launcher paths to try for *name* inside an npx cache's ``.bin``, in order. On Windows that
     directory holds the extensionless sh script plus ``<name>.cmd``/``<name>.ps1``; the sh one
     cannot be spawned there and ``os.access(X_OK)`` is only an existence check, so select by
-    extension (same precedence as ``hermes_constants._candidate_node_command_names``). ``windows``
+    extension (same precedence as ``eidolon_constants._candidate_node_command_names``). ``windows``
     is injectable so the branch is testable without patching ``os.name`` process-wide."""
     is_windows = os.name == "nt" if windows is None else windows
     if is_windows:
@@ -174,7 +174,7 @@ def _npx_cached_bin(args: list) -> Optional[tuple]:
     """Resolve ``npx -y <pkg>`` to the already-installed binary, or None.
 
     ``npx`` resolves the package and then FORKS, staying resident as the real server's parent
-    for nothing (~48 MB private memory per MCP server, measured); Hermes already supervises the
+    for nothing (~48 MB private memory per MCP server, measured); Eidolon already supervises the
     child (shared death supervisor). When the package is in npx's cache we spawn its binary
     directly. Deliberately conservative — None (caller keeps plain ``npx``, so a cold machine
     still installs) for a cache miss, a version pin (``pkg@1.2.3``), extra npx flags, a manifest
@@ -285,7 +285,7 @@ def _warn_hidden_whitespace(server_name: str, config: dict) -> List[str]:
 def _filter_suspicious_mcp_servers(servers: Dict[str, dict]) -> Dict[str, dict]:
     """Drop exfiltration-shaped MCP configs before any stdio spawn path."""
     try:
-        from hermes_cli.mcp_security import validate_mcp_server_entry
+        from eidolon_cli.mcp_security import validate_mcp_server_entry
     except Exception:
         return servers
     safe_servers = {}
@@ -301,7 +301,7 @@ def _filter_suspicious_mcp_servers(servers: Dict[str, dict]) -> Dict[str, dict]:
 def _portable_mcp_servers(safe_servers: Dict[str, dict]) -> None:
     """Merge plugin-provided (portable) MCP servers into *safe_servers*; native config wins on a clash. Never raises."""
     try:
-        from hermes_cli.plugins import discover_plugins, get_plugin_manager
+        from eidolon_cli.plugins import discover_plugins, get_plugin_manager
         discover_plugins()
         portable = get_plugin_manager().get_portable_mcp_servers()
         for name, cfg in _filter_suspicious_mcp_servers(portable).items():
@@ -316,13 +316,13 @@ def _portable_mcp_servers(safe_servers: Dict[str, dict]) -> None:
 def _load_mcp_config() -> Dict[str, dict]:
     """``mcp_servers`` from config.yaml as ``{name: config}`` (empty on error / safe mode), ``${VAR}`` interpolated."""
     try:
-        from hermes_cli.config import load_config
+        from eidolon_cli.config import load_config
         from utils import env_var_enabled as _env_enabled
         if _env_enabled("HERMES_SAFE_MODE"):
             return {}
         servers = load_config().get("mcp_servers")
         try:  # ensure .env vars are available for interpolation
-            from hermes_cli.env_loader import load_hermes_dotenv
+            from eidolon_cli.env_loader import load_hermes_dotenv
             load_hermes_dotenv()
         except Exception:
             pass

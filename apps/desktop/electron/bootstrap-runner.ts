@@ -1,3 +1,4 @@
+import { execFileSync, spawn } from 'node:child_process'
 /**
  * bootstrap-runner.ts
  *
@@ -31,13 +32,12 @@
  *   - User-facing retry / cancel from the renderer (event channels exist;
  *     no UI consumes them yet)
  */
-
-import { execFileSync, spawn } from 'node:child_process'
 import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import https from 'node:https'
 import path from 'node:path'
 
+import { resolveManagedRuntimeRoot } from './eidolon-runtime'
 import { hiddenWindowsChildOptions } from './windows-child-options'
 
 const IS_WINDOWS = process.platform === 'win32'
@@ -90,7 +90,7 @@ function readExistingPinnedCommit(activeRoot: string | null | undefined): string
   }
 
   try {
-    const raw = fs.readFileSync(path.join(activeRoot, '.hermes-bootstrap-complete'), 'utf8')
+    const raw = fs.readFileSync(path.join(activeRoot, '.eidolon-bootstrap-complete'), 'utf8')
     const parsed = JSON.parse(raw)
 
     return parsed && isPinnedCommit(parsed.pinnedCommit) ? parsed.pinnedCommit : null
@@ -200,7 +200,7 @@ function installedAgentInstallScript(hermesHome) {
     return null
   }
 
-  const candidate = path.join(hermesHome, 'hermes-agent', 'scripts', installScriptName())
+  const candidate = path.join(resolveManagedRuntimeRoot(hermesHome), 'scripts', installScriptName())
 
   try {
     fs.accessSync(candidate, fs.constants.R_OK)
@@ -967,7 +967,7 @@ async function runBootstrap(opts) {
       throw new Error('Installer manifest is missing a required source preparation stage')
     }
     for (const stage of manifest.stages) {
-      if (requestedStages && !requestedStages.includes(stage.name)) continue
+      if (requestedStages && !requestedStages.includes(stage.name)) {continue}
       if (abortSignal && abortSignal.aborted) {
         emit({ type: 'failed', error: 'bootstrap cancelled by user' })
 

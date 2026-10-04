@@ -10,7 +10,7 @@ import { Switch } from '@/components/ui/switch'
 import { Tip } from '@/components/ui/tooltip'
 import { $pluginRecords, type PluginRecord, setPluginEnabled } from '@/contrib/plugins-store'
 import { discoverRuntimePlugins } from '@/contrib/runtime-loader'
-import { getProfiles } from '@/hermes'
+import { getProfiles } from '@/eidolon'
 import { useI18n } from '@/i18n'
 import { triggerHaptic } from '@/lib/haptics'
 import { FolderOpen, Monitor, Package, RefreshCw } from '@/lib/icons'
@@ -253,7 +253,7 @@ function AgentPluginsSection() {
             <SelectContent>
               {profiles.map(profile => (
                 <SelectItem key={profile.name} value={profile.name}>
-                  {profile.is_default ? 'Hermes (default)' : profile.name}
+                  {profile.is_default ? 'Eidolon (default)' : profile.name}
                 </SelectItem>
               ))}
             </SelectContent>

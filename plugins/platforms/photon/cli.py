@@ -13,7 +13,7 @@ import subprocess
 import sys
 from typing import Optional
 
-from hermes_cli.colors import Colors, color
+from eidolon_cli.colors import Colors, color
 
 from . import auth as photon_auth
 from .adapter import sidecar_deps_installed
@@ -25,7 +25,7 @@ def register_cli(parser: argparse.ArgumentParser) -> None:
     """Wire up `hermes photon ...` subcommands."""
     subs = parser.add_subparsers(dest="photon_command", required=False)
     p_setup = subs.add_parser("setup", help="First-time setup (device login + project + user + sidecar)")
-    p_setup.add_argument("--project-name", default=None, help="Project name (default: 'Hermes Agent')")
+    p_setup.add_argument("--project-name", default=None, help="Project name (default: 'Eidolon Agent')")
     p_setup.add_argument("--phone", default=None, help="Your E.164 phone number (e.g. +15551234567)")
     p_setup.add_argument("--first-name", default=None)
     p_setup.add_argument("--last-name", default=None)
@@ -144,7 +144,7 @@ def _setup_credentials(token: str, dashboard_id: str, name: str) -> Optional[str
             print(f"  ✓ Spectrum ready (project id {dashboard_id}) — new secret saved")
             print("  ⚠ Project secret was regenerated. If the gateway is running, "
                   "restart it so the sidecar picks up the new secret:\n"
-                  "      hermes gateway restart")
+                  "      eidolon gateway restart")
     except Exception as e:
         print(f"spectrum provisioning failed: {e}", file=sys.stderr)
         return None
@@ -215,12 +215,12 @@ def _cmd_setup(args: argparse.Namespace) -> int:
             return rc
     # 7. Enable the platform in config.yaml, or the channel silently stays offline.
     try:
-        from hermes_cli.config import write_platform_config_field
+        from eidolon_cli.config import write_platform_config_field
         write_platform_config_field("photon", "enabled", True, raw=True)
         print("  ✓ photon platform enabled in config.yaml")
     except Exception as e:
         print(f"      (could not enable Photon in config: {e})", file=sys.stderr)
-    print("\n✓ Photon setup complete.\n  Start the gateway:  hermes gateway start")
+    print("\n✓ Photon setup complete.\n  Start the gateway:  eidolon gateway start")
     return 0
 
 
@@ -228,7 +228,7 @@ def _autoconfigure_access(phone: str) -> None:
     """Set PHOTON_ALLOWED_USERS and PHOTON_HOME_CHANNEL to the operator's number, each only
     when unset so a hand-tuned value is never clobbered on re-run."""
     try:
-        from hermes_cli.config import get_env_value, save_env_value
+        from eidolon_cli.config import get_env_value, save_env_value
     except ImportError:
         return
     for key, label in (("PHOTON_ALLOWED_USERS", "allowlisted your number"),
@@ -265,7 +265,7 @@ def _cmd_status(_args: argparse.Namespace) -> int:
 def _telemetry_enabled() -> bool:
     """PHOTON_TELEMETRY from env / ~/.hermes/.env; truthy set mirrors the sidecar's."""
     try:
-        from hermes_cli.config import get_env_value
+        from eidolon_cli.config import get_env_value
         raw = get_env_value("PHOTON_TELEMETRY")
     except ImportError:
         raw = os.getenv("PHOTON_TELEMETRY")
@@ -279,13 +279,13 @@ def _cmd_telemetry(args: argparse.Namespace) -> int:
         print("  Toggle with `hermes photon telemetry on` / `hermes photon telemetry off`.")
         return 0
     try:
-        from hermes_cli.config import save_env_value
+        from eidolon_cli.config import save_env_value
         save_env_value("PHOTON_TELEMETRY", "true" if state == "on" else "false")
     except Exception as e:
         print(f"could not save PHOTON_TELEMETRY: {e}", file=sys.stderr)
         return 1
     print(f"✓ Spectrum telemetry turned {state} (PHOTON_TELEMETRY in ~/.hermes/.env)")
-    print("  Restart the gateway for the sidecar to pick it up:  hermes gateway restart")
+    print("  Restart the gateway for the sidecar to pick it up:  eidolon gateway restart")
     return 0
 
 
@@ -328,7 +328,7 @@ _COMMANDS = {
 
 
 def gateway_setup() -> None:
-    """Run Photon first-time setup from the unified `hermes gateway setup` wizard (same flow
+    """Run Photon first-time setup from the unified `eidolon gateway setup` wizard (same flow
     as ``hermes photon setup``; phone is prompted when stdin is a TTY)."""
     _cmd_setup(argparse.Namespace(
         photon_command="setup", project_name=None, phone=None, first_name=None, last_name=None,
@@ -362,7 +362,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

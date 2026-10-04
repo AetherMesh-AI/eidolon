@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { expect, it } from 'vitest'
+
 import { createPrototypeAdapter } from './adapter'
 import { OrganizationWorkspace } from './workspace'
 

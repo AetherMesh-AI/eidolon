@@ -21,7 +21,7 @@ from cron.scheduler_preflight import (
     _delivery_platform_routed_from_primary_gateway,
     _preflight_check_delivery,
 )
-from hermes_constants import reset_hermes_home_override, set_hermes_home_override
+from eidolon_constants import reset_eidolon_home_override, set_eidolon_home_override
 
 
 PRIMARY_YAML = {
@@ -61,11 +61,11 @@ def multiplex_homes(tmp_path, monkeypatch):
     grant_home.mkdir(parents=True)
     (root / "config.yaml").write_text(yaml.safe_dump(PRIMARY_YAML), encoding="utf-8")
     monkeypatch.setattr(
-        "hermes_constants.get_default_hermes_root", lambda: root
+        "eidolon_constants.get_default_hermes_root", lambda: root
     )
-    token = set_hermes_home_override(str(grant_home))
+    token = set_eidolon_home_override(str(grant_home))
     yield root, grant_home
-    reset_hermes_home_override(token)
+    reset_eidolon_home_override(token)
 
 
 class TestRoutedSatellitePreflight:
@@ -92,22 +92,22 @@ class TestRoutedSatellitePreflight:
         (root / "config.yaml").write_text(yaml.safe_dump(PRIMARY_YAML),
                                           encoding="utf-8")
         monkeypatch.setattr(
-            "hermes_constants.get_default_hermes_root", lambda: root
+            "eidolon_constants.get_default_hermes_root", lambda: root
         )
-        token = set_hermes_home_override(str(other_home))
+        token = set_eidolon_home_override(str(other_home))
         try:
             assert _delivery_platform_routed_from_primary_gateway("telegram") is False
         finally:
-            reset_hermes_home_override(token)
+            reset_eidolon_home_override(token)
 
     def test_primary_home_itself_skips_route_lookup(self, multiplex_homes):
         """Running as the primary home: no primary/secondary split to consult."""
         root, _ = multiplex_homes
-        token = set_hermes_home_override(str(root))
+        token = set_eidolon_home_override(str(root))
         try:
             assert _delivery_platform_routed_from_primary_gateway("telegram") is False
         finally:
-            reset_hermes_home_override(token)
+            reset_eidolon_home_override(token)
 
     def test_missing_primary_config_fails_closed(self, tmp_path, monkeypatch):
         """No primary config.yaml readable: the rescue stays off (blocked)."""
@@ -115,9 +115,9 @@ class TestRoutedSatellitePreflight:
         grant_home = root / "profiles" / "grant"
         grant_home.mkdir(parents=True)
         monkeypatch.setattr(
-            "hermes_constants.get_default_hermes_root", lambda: root
+            "eidolon_constants.get_default_hermes_root", lambda: root
         )
-        token = set_hermes_home_override(str(grant_home))
+        token = set_eidolon_home_override(str(grant_home))
         try:
             with patch("gateway.config.load_gateway_config",
                        return_value=_gateway_config(set())):
@@ -126,7 +126,7 @@ class TestRoutedSatellitePreflight:
                 assert reason is not None
                 assert "telegram" in reason
         finally:
-            reset_hermes_home_override(token)
+            reset_eidolon_home_override(token)
 
     def test_disabled_route_does_not_rescue(self, tmp_path, monkeypatch):
         """``enabled: false`` routes are inert — the block stands."""
@@ -137,10 +137,10 @@ class TestRoutedSatellitePreflight:
         cfg["gateway"]["profile_routes"][0]["enabled"] = False
         (root / "config.yaml").write_text(yaml.safe_dump(cfg), encoding="utf-8")
         monkeypatch.setattr(
-            "hermes_constants.get_default_hermes_root", lambda: root
+            "eidolon_constants.get_default_hermes_root", lambda: root
         )
-        token = set_hermes_home_override(str(grant_home))
+        token = set_eidolon_home_override(str(grant_home))
         try:
             assert _delivery_platform_routed_from_primary_gateway("telegram") is False
         finally:
-            reset_hermes_home_override(token)
+            reset_eidolon_home_override(token)

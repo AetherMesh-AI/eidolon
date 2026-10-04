@@ -22,11 +22,11 @@ from pathlib import Path
 
 import pytest
 
-import hermes_state
-import hermes_state_repair
-import hermes_state_wal
-from hermes_state import SessionDB, is_malformed_db_error
-from hermes_state_repair import repair_state_db_schema
+import eidolon_state
+import eidolon_state_repair
+import eidolon_state_wal
+from eidolon_state import SessionDB, is_malformed_db_error
+from eidolon_state_repair import repair_state_db_schema
 
 
 def _build_healthy_db(db_path: Path) -> str:
@@ -79,9 +79,9 @@ def test_generic_malformed_open_does_not_attempt_schema_surgery(
     def _generic_corruption(*_args, **_kwargs):
         raise sqlite3.DatabaseError("database disk image is malformed")
 
-    monkeypatch.setattr(hermes_state, "apply_wal_with_fallback", _generic_corruption)  # SessionDB open path
+    monkeypatch.setattr(eidolon_state, "apply_wal_with_fallback", _generic_corruption)  # SessionDB open path
     monkeypatch.setattr(
-        hermes_state, "repair_state_db_schema",
+        eidolon_state, "repair_state_db_schema",
         lambda *args, **kwargs: repair_calls.append((args, kwargs)),
     )
 
@@ -117,17 +117,17 @@ def test_auto_heal_attempted_once_per_process(tmp_path, monkeypatch):
     db_path = tmp_path / "state.db"
     _build_healthy_db(db_path)
     _corrupt_duplicate_fts(db_path)
-    monkeypatch.setattr(hermes_state, "_repair_attempted_paths", set())
+    monkeypatch.setattr(eidolon_state, "_repair_attempted_paths", set())
 
     calls = {"n": 0}
-    real_repair = hermes_state.repair_state_db_schema
+    real_repair = eidolon_state.repair_state_db_schema
 
     def fake_repair(path, **kw):
         calls["n"] += 1
         # Pretend repair failed so the guard's one-shot behavior is exercised.
         return {"repaired": False, "strategy": None, "backup_path": None, "error": "x"}
 
-    monkeypatch.setattr(hermes_state, "repair_state_db_schema", fake_repair)
+    monkeypatch.setattr(eidolon_state, "repair_state_db_schema", fake_repair)
 
     with pytest.raises(sqlite3.DatabaseError):
         SessionDB(db_path=db_path)
@@ -135,7 +135,7 @@ def test_auto_heal_attempted_once_per_process(tmp_path, monkeypatch):
         SessionDB(db_path=db_path)
     assert calls["n"] == 1  # repair attempted only once across both opens
 
-    monkeypatch.setattr(hermes_state, "repair_state_db_schema", real_repair)
+    monkeypatch.setattr(eidolon_state, "repair_state_db_schema", real_repair)
 
 
 
@@ -186,7 +186,7 @@ def _corrupt_fts_shadow_segments(db_path: Path) -> None:
 
 def test_fts_read_corruption_repaired_in_place(tmp_path):
     """``repair_state_db_schema`` rebuilds the FTS index so reads resume."""
-    from hermes_state_repair import _db_opens_cleanly
+    from eidolon_state_repair import _db_opens_cleanly
 
     db_path = tmp_path / "state.db"
     _build_healthy_db(db_path)
@@ -273,7 +273,7 @@ def _corrupt_fts_index_data(db_path: Path) -> None:
 
 def test_fts_write_corruption_detected_by_write_probe(tmp_path):
     """_db_opens_cleanly's rolled-back write probe flags FTS write corruption."""
-    from hermes_state_repair import _db_opens_cleanly
+    from eidolon_state_repair import _db_opens_cleanly
 
     db_path = tmp_path / "state.db"
     _build_healthy_db(db_path)
@@ -294,7 +294,7 @@ def test_fts_write_corruption_detected_by_write_probe(tmp_path):
 
 def test_fts_write_corruption_repaired_in_place(tmp_path):
     """repair_state_db_schema rebuilds the FTS index; reads + writes resume."""
-    from hermes_state_repair import _db_opens_cleanly
+    from eidolon_state_repair import _db_opens_cleanly
 
     db_path = tmp_path / "state.db"
     _build_healthy_db(db_path)
@@ -378,7 +378,7 @@ def test_repair_rebuilds_stale_btree_indexes(tmp_path):
     _corrupt_btree_index(db_path, "idx_messages_session")
 
     # The real detector must see the real corruption...
-    reason = hermes_state_repair._db_opens_cleanly(db_path)
+    reason = eidolon_state_repair._db_opens_cleanly(db_path)
     assert reason is not None
     assert "wrong # of entries in index idx_messages_session" in reason
 
@@ -389,7 +389,7 @@ def test_repair_rebuilds_stale_btree_indexes(tmp_path):
 
     # Post-repair the DB is genuinely healthy: detector and raw
     # integrity_check both agree, and the repaired index answers queries.
-    assert hermes_state_repair._db_opens_cleanly(db_path) is None
+    assert eidolon_state_repair._db_opens_cleanly(db_path) is None
     raw = sqlite3.connect(str(db_path))
     assert raw.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
     n = raw.execute(
@@ -444,7 +444,7 @@ time.sleep({hold})
 def _lock_held_by_other_process(db_path: Path, hold_seconds: float = 30.0):
     """Hold the repair flock for *db_path* in a real child process."""
     script = _HOLD_LOCK_SCRIPT.format(
-        root=str(Path(hermes_state.__file__).parent),
+        root=str(Path(eidolon_state.__file__).parent),
         lock=str(db_path.with_name(db_path.name + ".repair.lock")),
         hold=hold_seconds,
     )
@@ -469,7 +469,7 @@ def test_repair_skips_surgery_while_another_process_holds_the_lock(
     db_path = tmp_path / "state.db"
     _build_healthy_db(db_path)
     _corrupt_duplicate_fts(db_path)
-    monkeypatch.setattr(hermes_state, "_REPAIR_LOCK_TIMEOUT_SECONDS", 0.5)
+    monkeypatch.setattr(eidolon_state, "_REPAIR_LOCK_TIMEOUT_SECONDS", 0.5)
 
     with _lock_held_by_other_process(db_path):
         report = repair_state_db_schema(db_path)
@@ -479,7 +479,7 @@ def test_repair_skips_surgery_while_another_process_holds_the_lock(
     # No surgery ran: no backup was taken and the DB is still malformed.
     assert report["backup_path"] is None
     assert not list(tmp_path.glob("state.db.malformed-backup-*"))
-    assert hermes_state_repair._db_opens_cleanly(db_path) is not None
+    assert eidolon_state_repair._db_opens_cleanly(db_path) is not None
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX flock test")
@@ -489,7 +489,7 @@ def test_repair_reports_success_when_the_holder_already_healed_the_db(
     """Timing out against a healthy DB is a success, not an error."""
     db_path = tmp_path / "state.db"
     _build_healthy_db(db_path)
-    monkeypatch.setattr(hermes_state, "_REPAIR_LOCK_TIMEOUT_SECONDS", 0.5)
+    monkeypatch.setattr(eidolon_state, "_REPAIR_LOCK_TIMEOUT_SECONDS", 0.5)
 
     with _lock_held_by_other_process(db_path):
         report = repair_state_db_schema(db_path)
@@ -501,7 +501,7 @@ def test_repair_reports_success_when_the_holder_already_healed_the_db(
 _REPAIR_SCRIPT = """
 import sys, json
 sys.path.insert(0, {root!r})
-from hermes_state_repair import repair_state_db_schema
+from eidolon_state_repair import repair_state_db_schema
 print(json.dumps(repair_state_db_schema({db!r})), flush=True)
 """
 
@@ -520,7 +520,7 @@ def test_two_processes_repairing_at_once_perform_surgery_once(tmp_path):
     _corrupt_duplicate_fts(db_path)
 
     script = _REPAIR_SCRIPT.format(
-        root=str(Path(hermes_state.__file__).parent), db=str(db_path)
+        root=str(Path(eidolon_state.__file__).parent), db=str(db_path)
     )
     procs = [
         subprocess.Popen(
@@ -595,7 +595,7 @@ def test_backup_refusal_hard_stops_the_repair(tmp_path, monkeypatch):
     original_bytes = db_path.read_bytes()
 
     monkeypatch.setattr(
-        hermes_state_repair, "_backup_db_file",
+        eidolon_state_repair, "_backup_db_file",
         lambda p: (None, "a connection to it is still open in this process"),
     )
 
@@ -607,7 +607,7 @@ def test_backup_refusal_hard_stops_the_repair(tmp_path, monkeypatch):
     assert "still open" in report["error"]
     # No mutating strategy ran: the damaged source bytes are untouched.
     assert db_path.read_bytes() == original_bytes
-    assert hermes_state_repair._db_opens_cleanly(db_path) is not None
+    assert eidolon_state_repair._db_opens_cleanly(db_path) is not None
 
 
 def test_backup_copy_failure_hard_stops_the_repair(tmp_path, monkeypatch):
@@ -617,7 +617,7 @@ def test_backup_copy_failure_hard_stops_the_repair(tmp_path, monkeypatch):
     _corrupt_duplicate_fts(db_path)
 
     monkeypatch.setattr(
-        hermes_state_repair, "_backup_db_file",
+        eidolon_state_repair, "_backup_db_file",
         lambda p: (None, "backup copy failed: [Errno 28] No space left on device"),
     )
 
@@ -667,7 +667,7 @@ def _configure_journal_mode(monkeypatch, tmp_path, mode) -> None:
         yaml.safe_dump({"database": {"journal_mode": mode}}), encoding="utf-8",
     )
     monkeypatch.setattr(
-        hermes_state_wal, "is_sqlite_wal_reset_vulnerable", lambda **kwargs: False,
+        eidolon_state_wal, "is_sqlite_wal_reset_vulnerable", lambda **kwargs: False,
     )
 
 
@@ -698,7 +698,7 @@ def test_repair_restores_configured_wal_after_surgery(
     assert _mode_of(db_path) == "delete"
     _corrupt_duplicate_fts(db_path)
 
-    with caplog.at_level(logging.WARNING, logger="hermes_state"):
+    with caplog.at_level(logging.WARNING, logger="eidolon_state"):
         report = repair_state_db_schema(db_path)
 
     assert report["repaired"] is True
@@ -718,7 +718,7 @@ def test_repair_restore_matches_canonical_on_vulnerable_sqlite(
     db_path = tmp_path / "state.db"
     _configure_journal_mode(monkeypatch, tmp_path, "wal")
     monkeypatch.setattr(
-        hermes_state_wal, "is_sqlite_wal_reset_vulnerable", lambda **kwargs: True
+        eidolon_state_wal, "is_sqlite_wal_reset_vulnerable", lambda **kwargs: True
     )
     _build_healthy_db(db_path)
     conn = sqlite3.connect(str(db_path))
@@ -752,9 +752,9 @@ def test_repair_logs_mode_change_when_probe_succeeded(
 
     with (
         patch.object(
-            hermes_state_repair, "_probe_journal_mode_for_repair", return_value="delete"
+            eidolon_state_repair, "_probe_journal_mode_for_repair", return_value="delete"
         ),
-        caplog.at_level(logging.WARNING, logger="hermes_state"),
+        caplog.at_level(logging.WARNING, logger="eidolon_state"),
     ):
         report = repair_state_db_schema(db_path)
 
@@ -778,7 +778,7 @@ def test_repair_logs_nothing_when_mode_already_matches(
     _build_healthy_db(db_path)
     _corrupt_duplicate_fts(db_path)
 
-    with caplog.at_level(logging.WARNING, logger="hermes_state"):
+    with caplog.at_level(logging.WARNING, logger="eidolon_state"):
         report = repair_state_db_schema(db_path)
 
     assert report["repaired"] is True
@@ -809,8 +809,8 @@ def test_repair_restore_failure_is_nonfatal_and_logged(
         raise sqlite3.OperationalError("database is locked")
 
     with (
-        patch.object(hermes_state_wal, "apply_wal_with_fallback", _refused),
-        caplog.at_level(logging.WARNING, logger="hermes_state"),
+        patch.object(eidolon_state_wal, "apply_wal_with_fallback", _refused),
+        caplog.at_level(logging.WARNING, logger="eidolon_state"),
     ):
         report = repair_state_db_schema(db_path)
 

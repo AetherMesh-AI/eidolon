@@ -73,7 +73,7 @@ def _setup(cron_env, monkeypatch):
 
     env = cron_env
     monkeypatch.setattr(E, "EXECUTIONS_FILE", env["home"] / "cron" / "executions.db")
-    monkeypatch.setattr(S, "_hermes_home", env["home"])
+    monkeypatch.setattr(S, "_eidolon_home", env["home"])
     return S, E, J, env
 
 

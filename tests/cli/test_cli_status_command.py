@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from cli import HermesCLI
-from hermes_cli.commands import resolve_command
+from eidolon_cli.commands import resolve_command
 
 
 def _make_cli():
@@ -44,7 +44,7 @@ def test_egress_command_is_available_in_cli_registry():
 def test_process_command_egress_prints_proxy_status(monkeypatch):
     cli_obj = _make_cli()
     monkeypatch.setattr(
-        "hermes_cli.proxy_cli.format_status_text",
+        "eidolon_cli.proxy_cli.format_status_text",
         lambda: "Egress proxy status\nEnabled: no",
     )
 
@@ -78,7 +78,7 @@ def test_show_session_status_prints_gateway_style_summary():
         "started_at": 1775791440,
     }
 
-    with patch("hermes_constants.display_hermes_home", return_value="~/.hermes"):
+    with patch("eidolon_constants.display_eidolon_home", return_value="~/.hermes"):
         cli_obj._show_session_status()
 
     printed = "\n".join(str(call.args[0]) for call in cli_obj.console.print.call_args_list)
@@ -107,7 +107,7 @@ def test_show_session_status_includes_reasoning_approvals_context():
         "context_tokens": 50000, "context_length": 200000, "context_percent": 25,
     }
 
-    with patch("hermes_constants.display_hermes_home", return_value="~/.hermes"), \
+    with patch("eidolon_constants.display_eidolon_home", return_value="~/.hermes"), \
          patch("tools.approval_context._get_approval_mode", return_value="manual"), \
          patch("tools.approval.is_approval_bypass_active_for_session", return_value=False):
         cli_obj._show_session_status()

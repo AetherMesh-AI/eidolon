@@ -24,8 +24,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # Directories that make up the shipped source tree.
-SCAN_DIRS = ("agent", "hermes_cli", "tools", "gateway", "cron", "tui_gateway")
-SCAN_ROOT_FILES = ("cli.py", "hermes_constants.py")
+SCAN_DIRS = ("agent", "eidolon_cli", "tools", "gateway", "cron", "tui_gateway")
+SCAN_ROOT_FILES = ("cli.py", "eidolon_constants.py")
 
 # How many lines around an `os.environ.copy()` we look for a spawn call.
 PROXIMITY_LINES = 20
@@ -48,7 +48,7 @@ ALLOWED_RAW_SPAWN_ENV_FILES = {
     # Bang-shell (`!cmd` in the CLI) goes through build_subprocess_env(); the
     # only raw copy is the except-fallback for when the tools package itself
     # cannot be imported, so the user's typed command still runs.
-    "hermes_cli/bang_shell.py",
+    "eidolon_cli/bang_shell.py",
 }
 
 

@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, NamedTuple, Optional
 
-from hermes_constants import _get_platform_default_hermes_home, get_hermes_home
+from eidolon_constants import _get_platform_default_eidolon_home, get_eidolon_home
 from utils import atomic_json_write
 
 if sys.platform == "win32":
@@ -28,7 +28,8 @@ if sys.platform == "win32":
 else:
     import fcntl
 
-_GATEWAY_KIND = "hermes-gateway"
+_GATEWAY_KIND = "eidolon-gateway"
+_GATEWAY_KINDS = frozenset({_GATEWAY_KIND, "hermes-gateway"})
 _RUNTIME_STATUS_FILE = "gateway_state.json"
 _LOCKS_DIRNAME = "gateway-locks"
 _IS_WINDOWS = sys.platform == "win32"
@@ -60,7 +61,7 @@ def record_start_and_check_storm(
     """Record this start; :class:`StormInfo` when > ``max_starts`` landed in ``window_s``.
     Best-effort: a broken ``gateway-starts.log`` ledger is logged and swallowed, never fatal."""
     try:
-        path = get_hermes_home() / "gateway-starts.log"
+        path = get_eidolon_home() / "gateway-starts.log"
         path.parent.mkdir(parents=True, exist_ok=True)
         now = datetime.now(timezone.utc).timestamp()
         existing: list[float] = []
@@ -84,23 +85,23 @@ def record_start_and_check_storm(
         return None
 
 
-def _get_process_hermes_home() -> Path:
+def _get_process_eidolon_home() -> Path:
     """Launch-home HERMES_HOME for identity files (PID, lock, status, markers):
-    ``get_hermes_home()`` honors the per-session ``_HERMES_HOME_OVERRIDE`` and would misroute
+    ``get_eidolon_home()`` honors the per-session ``_HERMES_HOME_OVERRIDE`` and would misroute
     them."""
     val = os.environ.get("HERMES_HOME", "").strip()
-    return Path(val) if val else _get_platform_default_hermes_home()
+    return Path(val) if val else _get_platform_default_eidolon_home()
 
 
-def _canonical_hermes_home(path: Path | str) -> Path:
+def _canonical_eidolon_home(path: Path | str) -> Path:
     """Stable absolute HERMES_HOME path for persisted identity data."""
     return Path(path).expanduser().resolve(strict=False)
 
 
-def _same_hermes_home(left: Path | str, right: Path | str) -> bool:
+def _same_eidolon_home(left: Path | str, right: Path | str) -> bool:
     """Compare HERMES_HOME paths with the host platform's case semantics."""
-    left_c = os.path.normcase(str(_canonical_hermes_home(left)))
-    return left_c == os.path.normcase(str(_canonical_hermes_home(right)))
+    left_c = os.path.normcase(str(_canonical_eidolon_home(left)))
+    return left_c == os.path.normcase(str(_canonical_eidolon_home(right)))
 
 
 def recorded_gateway_home_conflicts(
@@ -114,30 +115,30 @@ def recorded_gateway_home_conflicts(
     if not isinstance(recorded_home, str) or not recorded_home.strip():
         return False
     try:
-        base = expected_home if expected_home is not None else _get_process_hermes_home()
-        return not _same_hermes_home(recorded_home, base)
+        base = expected_home if expected_home is not None else _get_process_eidolon_home()
+        return not _same_eidolon_home(recorded_home, base)
     except Exception:
         return True
 
 
-# Mirrors hermes_cli.profiles._PROFILE_ID_RE -- duplicated so gateway identity code
-# stays import-light (hermes_constants + stdlib only).
+# Mirrors eidolon_cli.profiles._PROFILE_ID_RE -- duplicated so gateway identity code
+# stays import-light (eidolon_constants + stdlib only).
 _PROFILE_LABEL_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 
 
 def _profile_label_for_home(home: Path | str) -> Optional[str]:
     """Best-effort label: ``<root>/profiles/<name>`` -> name, root home -> "default", else None."""
     try:
-        canonical = _canonical_hermes_home(home)
+        canonical = _canonical_eidolon_home(home)
     except Exception:
         return None
     if canonical.parent.name == "profiles" and _PROFILE_LABEL_RE.match(canonical.name):
         return canonical.name
-    import hermes_constants
-    default_homes = (hermes_constants.get_default_hermes_root, _get_platform_default_hermes_home)
+    import eidolon_constants
+    default_homes = (eidolon_constants.get_default_hermes_root, _get_platform_default_eidolon_home)
     for default_home in default_homes:
         with contextlib.suppress(Exception):
-            if _same_hermes_home(canonical, default_home()):
+            if _same_eidolon_home(canonical, default_home()):
                 return "default"
     return None
 
@@ -155,7 +156,7 @@ def scoped_lock_owner_label(record: Optional[dict[str, Any]]) -> Optional[str]:
 
 
 def _get_pid_path() -> Path:
-    return _get_process_hermes_home() / "gateway.pid"
+    return _get_process_eidolon_home() / "gateway.pid"
 
 
 def _get_gateway_lock_path(pid_path: Optional[Path] = None) -> Path:
@@ -163,7 +164,7 @@ def _get_gateway_lock_path(pid_path: Optional[Path] = None) -> Path:
 
 
 def _get_runtime_status_path() -> Path:
-    return _get_process_hermes_home() / _RUNTIME_STATUS_FILE
+    return _get_process_eidolon_home() / _RUNTIME_STATUS_FILE
 
 
 def _get_lock_dir() -> Path:
@@ -236,7 +237,7 @@ def terminate_pid(
         os.kill(pid, signal.SIGTERM if not force else getattr(signal, "SIGKILL", signal.SIGTERM))
         return
     # Hide flags: a bare taskkill spawn from windowless pythonw.exe would flash a conhost window.
-    from hermes_cli._subprocess_compat import windows_hide_flags
+    from eidolon_cli._subprocess_compat import windows_hide_flags
 
     try:
         result = subprocess.run(
@@ -306,9 +307,9 @@ def _read_process_cmdline(pid: int) -> Optional[str]:
 
 
 def _gateway_command_subcommand(command: str | None) -> str | None:
-    """Hermes gateway lifecycle subcommand from a command line, or None. No loose substring matches
+    """Eidolon gateway lifecycle subcommand from a command line, or None. No loose substring matches
     (``"gateway" in cmdline`` also matched ``gateway status`` / ``python -m tui_gateway``): needs a
-    Hermes entrypoint plus the ``gateway`` subcommand, or a gateway-dedicated entrypoint. Tokenizes
+    Eidolon entrypoint plus the ``gateway`` subcommand, or a gateway-dedicated entrypoint. Tokenizes
     quote-aware (Windows paths with spaces); ``--profile``/``-p`` selectors are stripped anywhere in
     argv since ``_apply_profile_override`` removes them before argparse."""
     if not command:
@@ -325,11 +326,11 @@ def _gateway_command_subcommand(command: str | None) -> str | None:
     # Gateway-dedicated entrypoints carry no subcommand to inspect.
     if any(t == "gateway/run.py" or t.endswith("/gateway/run.py") for t in tokens):
         return "run"
-    if any(b in ("hermes-gateway", "hermes-gateway.exe") for b in basenames):
+    if any(b in ("eidolon-gateway", "eidolon-gateway.exe", "hermes-gateway", "hermes-gateway.exe") for b in basenames):
         return "run"
     joined = " ".join(tokens)
-    if "hermes_cli.main" not in joined and "hermes_cli/main.py" not in joined and not any(
-        b in ("hermes", "hermes.exe") for b in basenames
+    if not any(module in joined for module in ("eidolon_cli.main", "eidolon_cli/main.py", "hermes_cli.main", "hermes_cli/main.py")) and not any(
+        b in ("eidolon", "eidolon.exe", "hermes", "hermes.exe") for b in basenames
     ):
         return None
     # Drop --profile X / -p X / --profile=X / -p=X (consumes a VALUE of "gateway" too).
@@ -344,7 +345,7 @@ def _gateway_command_subcommand(command: str | None) -> str | None:
             filtered.append(token)
     for i, token in enumerate(filtered):
         if token == "gateway":
-            # Bare `hermes gateway` defaults to `run`.
+            # Bare `eidolon gateway` defaults to `run`.
             return filtered[i + 1] if i + 1 < len(filtered) else "run"
     return None
 
@@ -357,12 +358,12 @@ def looks_like_gateway_command_line(command: str | None) -> bool:
 def looks_like_gateway_runtime_command_line(command: str | None) -> bool:
     """True for command lines that can host the runtime (``run`` or ``restart``: without a service
     manager the manual restart fallback runs ``run_gateway()`` in-process). For validating
-    Hermes-owned records / cleanup scans only; ``looks_like_gateway_command_line`` stays strict."""
+    Eidolon-owned records / cleanup scans only; ``looks_like_gateway_command_line`` stays strict."""
     return _gateway_command_subcommand(command) in {"run", "restart"}
 
 
 def _looks_like_gateway_process(pid: int) -> bool:
-    """True when the live PID still looks like the Hermes gateway."""
+    """True when the live PID still looks like the Eidolon gateway."""
     cmdline = _read_process_cmdline(pid)
     return bool(cmdline) and looks_like_gateway_command_line(cmdline)
 
@@ -370,7 +371,7 @@ def _looks_like_gateway_process(pid: int) -> bool:
 def _record_looks_like_gateway(record: dict[str, Any]) -> bool:
     """Validate gateway identity from PID-file metadata when cmdline is unavailable."""
     argv = record.get("argv")
-    if record.get("kind") != _GATEWAY_KIND or not isinstance(argv, list) or not argv:
+    if record.get("kind") not in _GATEWAY_KINDS or not isinstance(argv, list) or not argv:
         return False
     return looks_like_gateway_runtime_command_line(" ".join(str(part) for part in argv))
 
@@ -382,7 +383,7 @@ def _profile_name_for_home(profile_home: Path) -> Optional[str]:
 
 def _command_line_belongs_to_profile(command: str, profile_home: Path) -> bool:
     """True when a gateway command line belongs to ``profile_home`` (mirrors
-    ``hermes_cli.gateway._matches_current_profile``): a stale state file can record a PID recycled
+    ``eidolon_cli.gateway._matches_current_profile``): a stale state file can record a PID recycled
     onto ANOTHER profile's live gateway. Named profiles carry ``-p``/``--profile <name>`` or
     ``HERMES_HOME=`` on argv; the default gateway runs bare. Separators normalized."""
     command_lc = command.lower().replace("\\", "/")
@@ -420,21 +421,21 @@ def _build_pid_record() -> dict:
         "start_time": _get_process_start_time(os.getpid()),
         # Scoped locks are machine-global; the owner's home lets a cross-profile
         # --replace place its takeover marker where the target will read it.
-        "hermes_home": str(_canonical_hermes_home(_get_process_hermes_home())),
+        "hermes_home": str(_canonical_eidolon_home(_get_process_eidolon_home())),
     }
 
 
 def _get_code_identity_fields() -> dict[str, Any]:
     """Code identity of THIS process for ``gateway_state.json`` (restart picked up new code?).
-    Lazy import keeps ``gateway.status`` free of ``hermes_cli`` at import time. Never raises.
+    Lazy import keeps ``gateway.status`` free of ``eidolon_cli`` at import time. Never raises.
 
     A gateway keeps serving the module versions it imported at startup, so stamping the identity into
-    ``gateway_state.json`` lets `hermes update` (and the dashboard) prove whether a running gateway actually
+    ``gateway_state.json`` lets `eidolon update` (and the dashboard) prove whether a running gateway actually
     picked up new code after the restart phase — instead of assuming it did (#88654, #69754). Never raises;
     degrades to absent fields.
     """
     try:
-        from hermes_cli.build_info import get_code_identity
+        from eidolon_cli.build_info import get_code_identity
         identity = get_code_identity()
         return {"code_sha": identity.get("sha"), "code_version": identity.get("version")}
     except Exception:
@@ -447,7 +448,7 @@ def _pid_record_belongs_to_current_profile(record: Optional[dict[str, Any]]) -> 
     if not isinstance(record, dict):
         return False
     record_home = record.get("hermes_home")
-    return not record_home or _same_hermes_home(record_home, _get_process_hermes_home())
+    return not record_home or _same_eidolon_home(record_home, _get_process_eidolon_home())
 
 
 def _build_runtime_status_record() -> dict[str, Any]:
@@ -1047,7 +1048,7 @@ def acquire_scoped_lock(
     }
     # Profile label for cross-profile conflict diagnostics ("token already in use (PID 559)" alone
     # does not say WHICH profile). Omitted when not inferable; readers fall back to hermes_home.
-    profile = _profile_label_for_home(_get_process_hermes_home())
+    profile = _profile_label_for_home(_get_process_eidolon_home())
     if profile:
         record["profile"] = profile
     existing = _read_json_file(lock_path)
@@ -1130,12 +1131,12 @@ _PLANNED_STOP_MARKER_TTL_S = 60
 
 def _get_takeover_marker_path(hermes_home: Optional[Path] = None) -> Path:
     """Takeover marker path; ``hermes_home`` is given only for a verified cross-home handoff."""
-    home = _canonical_hermes_home(hermes_home or _get_process_hermes_home())
+    home = _canonical_eidolon_home(hermes_home or _get_process_eidolon_home())
     return home / _TAKEOVER_MARKER_FILENAME
 
 
 def _get_planned_stop_marker_path() -> Path:
-    return _get_process_hermes_home() / _PLANNED_STOP_MARKER_FILENAME
+    return _get_process_eidolon_home() / _PLANNED_STOP_MARKER_FILENAME
 
 
 def _marker_is_stale(written_at: str, ttl_s: int) -> bool:
@@ -1164,7 +1165,7 @@ def _pid_marker_names_self(target_pid: int, target_start_time: Any) -> bool:
     times known -> must match; either unknown -> PID equality decides (bounded by the marker TTL):
     ``_get_process_start_time`` is None without /proc (macOS, native Windows -- where the
     planned-stop watcher matters most) and requiring a match there would misclassify a legitimate
-    ``hermes gateway stop`` as an unexpected exit revived by the service manager."""
+    ``eidolon gateway stop`` as an unexpected exit revived by the service manager."""
     if target_pid != os.getpid():
         return False
     our_start_time = _get_process_start_time(target_pid)
@@ -1180,14 +1181,14 @@ def _consume_pid_marker_for_self(path: Path, *, ttl_s: int) -> bool:
     # cross-HERMES_HOME --replace while ignoring a marker accidentally written into another
     # profile's directory. Legacy markers have no target field: keep the same-replacer-home rule.
     # See #29092.
-    our_home = _get_process_hermes_home()
-    target_home = record.get("target_hermes_home")
+    our_home = _get_process_eidolon_home()
+    target_home = record.get("target_eidolon_home")
     if target_home is not None:
-        if not isinstance(target_home, str) or not _same_hermes_home(target_home, our_home):
+        if not isinstance(target_home, str) or not _same_eidolon_home(target_home, our_home):
             return False
     else:
-        replacer_home = record.get("replacer_hermes_home")
-        if replacer_home is not None and not _same_hermes_home(replacer_home, our_home):
+        replacer_home = record.get("replacer_eidolon_home")
+        if replacer_home is not None and not _same_eidolon_home(replacer_home, our_home):
             return False
     matches = _pid_marker_names_self(target_pid, target_start_time)
     _unlink_quietly(path)
@@ -1202,13 +1203,13 @@ def write_takeover_marker(
     passes ``target_home`` + validated ``target_start_time`` so the marker lands in the target's
     home; such callers must fail closed on False (the target's supervisor could revive it)."""
     try:
-        marker_home = _canonical_hermes_home(target_home or _get_process_hermes_home())
+        marker_home = _canonical_eidolon_home(target_home or _get_process_eidolon_home())
         if target_start_time is _UNSET:
             target_start_time = _get_process_start_time(target_pid)
         return _write_marker(_get_takeover_marker_path(marker_home), {
             "target_pid": target_pid, "target_start_time": target_start_time,
-            "target_hermes_home": str(marker_home), "replacer_pid": os.getpid(),
-            "replacer_hermes_home": str(_canonical_hermes_home(_get_process_hermes_home())),
+            "target_eidolon_home": str(marker_home), "replacer_pid": os.getpid(),
+            "replacer_eidolon_home": str(_canonical_eidolon_home(_get_process_eidolon_home())),
             "written_at": _utc_now_iso(),
         })
     except OSError:
@@ -1250,7 +1251,7 @@ def _validated_scoped_lock_gateway_owner(record: dict[str, Any]) -> Optional[tup
         or not Path(raw_home).expanduser().is_absolute()
     ):
         return None
-    target_home = _canonical_hermes_home(raw_home)
+    target_home = _canonical_eidolon_home(raw_home)
     if _scoped_lock_owner_state(owner_pid, owner_start_time) != "same":
         return None
     live_cmdline = _read_process_cmdline(owner_pid)
@@ -1264,7 +1265,7 @@ def _validated_scoped_lock_gateway_owner(record: dict[str, Any]) -> Optional[tup
         or _pid_from_record(pid_record) != owner_pid
         or pid_record.get("start_time") != owner_start_time
         or not isinstance(pid_record_home, str)
-        or not _same_hermes_home(pid_record_home, target_home)
+        or not _same_eidolon_home(pid_record_home, target_home)
     ):
         return None
     return owner_pid, owner_start_time, target_home

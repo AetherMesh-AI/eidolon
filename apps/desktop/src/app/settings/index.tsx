@@ -5,7 +5,7 @@ import { useLocation, useNavigate } from 'react-router'
 import { codiconIcon } from '@/components/ui/codicon'
 import { KbdCombo } from '@/components/ui/kbd'
 import { Tip } from '@/components/ui/tooltip'
-import { getHermesConfigDefaults, getHermesConfigRecord, saveHermesConfig } from '@/hermes'
+import { getHermesConfigDefaults, getHermesConfigRecord, saveHermesConfig } from '@/eidolon'
 import { useI18n } from '@/i18n'
 import { triggerHaptic } from '@/lib/haptics'
 import {

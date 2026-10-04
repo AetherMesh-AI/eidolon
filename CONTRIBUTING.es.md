@@ -15,7 +15,7 @@ Esta guía resume [CONTRIBUTING.md](CONTRIBUTING.md), el documento de referencia
 
 - Escritorio: [apps/desktop](apps/desktop).
 - Prototipos de organización y memoria: [apps/desktop/src/app/eidolon](apps/desktop/src/app/eidolon).
-- Ejecución de agentes y configuración: [agent](agent) y [hermes_cli](hermes_cli).
+- Ejecución de agentes y configuración: [agent](agent) y [eidolon_cli](eidolon_cli).
 - Mensajería y sesiones: [gateway](gateway).
 - Herramientas y extensiones: [tools](tools), [plugins](plugins) y [skills](skills).
 - Pruebas y dependencias: [tests](tests), [apps/desktop/package.json](apps/desktop/package.json), [pyproject.toml](pyproject.toml) y [package.json](package.json).

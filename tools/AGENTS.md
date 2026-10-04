@@ -16,7 +16,7 @@ string.**
 
 ## Adding a core tool (2 files) — only when the user is explicitly contributing a core tool
 
-For custom/local-only tools do NOT edit core: create `~/.hermes/plugins/<name>/plugin.yaml` +
+For custom/local-only tools do NOT edit core: create `~/.eidolon/plugins/<name>/plugin.yaml` +
 `__init__.py` and call `ctx.register_tool(...)`; plugin toolsets are discovered automatically and
 toggled without touching `tools/` or `toolsets.py` (`plugins/AGENTS.md`).
 
@@ -39,8 +39,8 @@ Rules for tool code:
   web_search"). Those tools may be unavailable (missing key, disabled toolset) and the model
   hallucinates calls to them. Cross-references are added dynamically in `get_tool_definitions()` in
   `model_tools.py` — see the `browser_navigate` / `execute_code` post-processing blocks.
-- **Paths in schema descriptions use `display_hermes_home()`** (schema is built at import, after
-  `_apply_profile_override()` set `HERMES_HOME`). **State files use `get_hermes_home()`**, never
+- **Paths in schema descriptions use `display_eidolon_home()`** (schema is built at import, after
+  `_apply_profile_override()` set `HERMES_HOME`). **State files use `get_eidolon_home()`**, never
   `Path.home()/.hermes`, so each profile gets its own state.
 - **No `offset`/`limit` on instructional tools** (skills, prompts, playbooks) — models read page 1
   and skip the rest (root rubric).
@@ -51,8 +51,8 @@ Rules for tool code:
   `INLINE_TOOL_EXECUTORS` table (`agent/inline_tool_executors.py`; `agent/AGENTS.md`).
 - **`_last_resolved_tool_names`** is a process-global in `model_tools.py`; `_run_single_child()` in
   `delegate_tool.py` saves/restores it around child runs — readers may see it stale mid-delegation.
-- New tools integrate with existing setup UX (`hermes tools`, `hermes setup`, auto-install) rather
-  than a raw env var; secrets go in `OPTIONAL_ENV_VARS` (`hermes_cli/AGENTS.md`).
+- New tools integrate with existing setup UX (`eidolon tools`, `eidolon setup`, auto-install) rather
+  than a raw env var; secrets go in `OPTIONAL_ENV_VARS` (`eidolon_cli/AGENTS.md`).
 
 ## Toolsets (`toolsets.py`)
 
@@ -60,7 +60,7 @@ Single `TOOLSETS` dict. Keys today: `browser, clarify, code_execution, cronjob, 
 delegation, discord, discord_admin, feishu_doc, feishu_drive, file, homeassistant, image_gen,
 kanban, memory, messaging, moa, rl, safe, search, session_search, skills, spotify, terminal, todo,
 tts, video, vision, web, yuanbao` (don't assert the list in tests). Per-platform enable/disable via
-`hermes tools` (curses) or `tools.<platform>.enabled/disabled` in config.yaml. `browser_exec`
+`eidolon tools` (curses) or `tools.<platform>.enabled/disabled` in config.yaml. `browser_exec`
 replaces the other browser tools when `browser.backend` is `browser-use`.
 
 ## Backends and providers inside tools/

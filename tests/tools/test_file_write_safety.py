@@ -558,7 +558,7 @@ class TestProtectedInstructionFiles:
         assert not res.get("error"), res
         assert approvals["calls"] == []
 
-    def test_real_hermes_home_not_gated_by_this_check(
+    def test_real_eidolon_home_not_gated_by_this_check(
         self, tmp_path, approvals, monkeypatch
     ):
         """~/.hermes itself is governed by existing guards, not this gate."""
@@ -566,7 +566,7 @@ class TestProtectedInstructionFiles:
         fake_home = tmp_path / ".hermes"
         (fake_home / "notes").mkdir(parents=True)
         monkeypatch.setattr(
-            ft, "_get_real_hermes_home", lambda: str(fake_home.resolve())
+            ft, "_get_real_eidolon_home", lambda: str(fake_home.resolve())
         )
         res = self._write(fake_home / "notes" / "scratch.txt", "ok")
         assert not res.get("error"), res

@@ -23,12 +23,12 @@
 
 import { atom } from 'nanostores'
 
-import { setSessionPinnedRemote } from '@/hermes'
+import { setSessionPinnedRemote } from '@/eidolon'
 import { onConnectionScopeChange } from '@/lib/connection-scoped'
 import { $pinnedSessionIds, pinSession, unpinSession } from '@/store/layout'
 import { $activeGatewayProfile, normalizeProfileKey } from '@/store/profile'
 import { $cronSessions, $messagingSessions, $sessions, sessionMatchesStoredId, sessionPinId } from '@/store/session'
-import type { SessionInfo } from '@/types/hermes'
+import type { SessionInfo } from '@/types/eidolon'
 
 // pin ids we've successfully PATCHed pinned=true this session.
 const mirrored = new Set<string>()

@@ -60,7 +60,7 @@ export default function ProgressScreen({ bootstrap }: ProgressProps) {
   const pct = Math.round(progress.fraction * 100)
 
   return (
-    <div className="hermes-fade-in flex h-full flex-col">
+    <div className="eidolon-fade-in flex h-full flex-col">
       {/* Header: brand + title + description, matching the desktop install overlay. */}
       <div className="flex shrink-0 items-start gap-4 px-6 pt-6 pb-4">
         <BrandMark className="size-11" />

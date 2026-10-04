@@ -6,7 +6,7 @@ from gateway.config import GatewayConfig, Platform
 from gateway.kanban_watchers_notifier import _KanbanNotification, _notifier_collect
 from gateway.profile_routing import parse_profile_routes
 from gateway.run import GatewayRunner
-from hermes_cli import kanban_db as kb, kanban_db_connect as kbc, kanban_db_notify as kbn
+from eidolon_cli import kanban_db as kb, kanban_db_connect as kbc, kanban_db_notify as kbn
 
 
 class RecordingAdapter:
@@ -147,7 +147,7 @@ def test_route_denials_leave_events_retryable_at_claim_and_send(tmp_path, monkey
 def test_kanban_wakes_install_the_destination_runtime_scope(tmp_path, monkeypatch):
     from agent.secret_scope import get_secret
     from gateway.run import _profile_runtime_scope
-    from hermes_constants import get_hermes_home
+    from eidolon_constants import get_eidolon_home
 
     runner = setup_runner(tmp_path, monkeypatch)
     home = tmp_path / ".hermes"
@@ -158,7 +158,7 @@ def test_kanban_wakes_install_the_destination_runtime_scope(tmp_path, monkeypatc
         async def handle_message(self, event):
             # A real yield catches scopes that mutate process-global state.
             await asyncio.sleep(0)
-            observed.append((event.source.profile, get_secret("KANBAN_TEST_SECRET"), get_hermes_home()))
+            observed.append((event.source.profile, get_secret("KANBAN_TEST_SECRET"), get_eidolon_home()))
             await super().handle_message(event)
 
     for name in ("yuki", "other"):

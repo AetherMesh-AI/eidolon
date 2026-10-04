@@ -28,7 +28,7 @@ def test_launch_home_fallback_when_no_profile(tmp_path):
     launch_home = tmp_path / ".hermes"
     session = {}
 
-    with patch("tui_gateway.server._hermes_home", launch_home):
+    with patch("tui_gateway.server._eidolon_home", launch_home):
         assert _session_images_dir(session) == launch_home / "images"
 
 
@@ -37,7 +37,7 @@ def test_empty_profile_home_falls_back_to_launch_home(tmp_path):
     launch_home = tmp_path / ".hermes"
     session = {"profile_home": ""}
 
-    with patch("tui_gateway.server._hermes_home", launch_home):
+    with patch("tui_gateway.server._eidolon_home", launch_home):
         assert _session_images_dir(session) == launch_home / "images"
 
 

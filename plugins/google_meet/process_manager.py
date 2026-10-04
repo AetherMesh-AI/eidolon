@@ -19,13 +19,13 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from hermes_constants import get_hermes_home
+from eidolon_constants import get_eidolon_home
 
 from plugins.google_meet._jsonfile import read_json, write_json_atomic
 
 
 def _root() -> Path:
-    return Path(get_hermes_home()) / "workspace" / "meetings"
+    return Path(get_eidolon_home()) / "workspace" / "meetings"
 
 
 def _read_active() -> Optional[Dict[str, Any]]:
@@ -51,7 +51,7 @@ _NO_ACTIVE = {"ok": False, "reason": "no active meeting"}
 
 
 def start(url: str, *, out_dir: Optional[Path] = None, headed: bool = False,
-          auth_state: Optional[str] = None, guest_name: str = "Hermes Agent", duration: Optional[str] = None,
+          auth_state: Optional[str] = None, guest_name: str = "Eidolon Agent", duration: Optional[str] = None,
           session_id: Optional[str] = None, mode: str = "transcribe", realtime_model: Optional[str] = None,
           realtime_voice: Optional[str] = None, realtime_instructions: Optional[str] = None,
           realtime_api_key: Optional[str] = None) -> Dict[str, Any]:

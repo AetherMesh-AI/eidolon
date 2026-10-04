@@ -11,7 +11,7 @@ import {
   DATA_URL_READ_DEFAULT_MAX_MB,
   DATA_URL_READ_MAX_MAX_MB,
   DATA_URL_READ_MIN_MAX_MB
-} from '@hermes/shared'
+} from '@aethermesh/shared'
 import { atom } from 'nanostores'
 
 import { notifyError } from '@/store/notifications'

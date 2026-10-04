@@ -45,7 +45,7 @@ _PHOTON_ENV = (
 
 
 @pytest.fixture
-def tmp_hermes_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def tmp_eidolon_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Isolate from the real ~/.hermes/auth.json fallback in load_project_credentials()."""
     home = tmp_path / "hermes"
     home.mkdir()
@@ -91,7 +91,7 @@ class TestAuthMultiplexProfileScope:
     """load_project_credentials / load_dashboard_project_id (auth.py)."""
 
     def test_scoped_miss_does_not_leak_default_project_id(
-        self, tmp_hermes_home, multiplex_scope, default_profile_env
+        self, tmp_eidolon_home, multiplex_scope, default_profile_env
     ):
         multiplex_scope({"SOMETHING_ELSE": "x"})
         sid, secret = photon_auth.load_project_credentials()
@@ -106,7 +106,7 @@ class TestAdapterMultiplexProfileScope:
     """PhotonAdapter.__init__ / _env_enablement / _reactions_enabled (adapter.py)."""
 
     def test_secondary_extra_wins_over_default_profile_env(
-        self, tmp_hermes_home, multiplex_scope, default_profile_env
+        self, tmp_eidolon_home, multiplex_scope, default_profile_env
     ):
         """A secondary profile's own config.yaml extra project_id must be
         authoritative -- not the default profile's bridged env value. The

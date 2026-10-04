@@ -41,8 +41,8 @@ class TestWriteDenyExactPaths:
         monkeypatch.setenv("HERMES_HOME", str(profile_home))
 
         # Sanity check: HERMES_HOME does point to the profile dir, not the root.
-        from hermes_constants import get_hermes_home, get_default_hermes_root
-        assert get_hermes_home() == profile_home
+        from eidolon_constants import get_eidolon_home, get_default_hermes_root
+        assert get_eidolon_home() == profile_home
         assert get_default_hermes_root() == root
 
         assert _is_write_denied(str(global_env)) is True
@@ -88,8 +88,8 @@ class TestWriteAllowed:
 
 
     def test_hermes_control_files_requested_writable(self):
-        from hermes_constants import get_hermes_home
+        from eidolon_constants import get_eidolon_home
 
-        home = get_hermes_home()
+        home = get_eidolon_home()
         for name in ["auth.json", "config.yaml", "webhook_subscriptions.json"]:
             assert _is_write_denied(str(home / name)) is False, f"{name} should be writable"

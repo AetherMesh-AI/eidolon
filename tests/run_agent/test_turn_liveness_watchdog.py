@@ -186,7 +186,7 @@ def watchdog_config(monkeypatch):
     (AGENTS.md rejects new non-secret HERMES_* env knobs); the resolver in
     agent/turn_liveness.py validates the values and the env is never read.
     """
-    import hermes_cli.config as config_module
+    import eidolon_cli.config as config_module
 
     monkeypatch.setattr(
         config_module,

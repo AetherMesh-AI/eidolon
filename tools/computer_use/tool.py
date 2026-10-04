@@ -33,7 +33,7 @@ def set_approval_callback(cb) -> None:
     global _approval_callback
     _approval_callback = cb
 
-# Hard-blocked regardless of approval level (e.g. logout kills the session Hermes runs in). Alt is
+# Hard-blocked regardless of approval level (e.g. logout kills the session Eidolon runs in). Alt is
 # canonicalized to option, so the Windows variants are blocked before any backend sees them.
 # See #4562.
 _BLOCKED_KEY_COMBOS = {
@@ -73,7 +73,7 @@ def _input_target_mismatch(backend, requested_app: str) -> Optional[str]:
     return None if not current or not wanted or wanted in current or current in wanted else last_app
 
 # ── Backend selection — env-swappable for tests ─────────────────────────────
-# Per-Hermes-session cached backends (own cua-driver session, native target, refs, grant namespace).
+# Per-Eidolon-session cached backends (own cua-driver session, native target, refs, grant namespace).
 _backend_lock = threading.Lock()
 _backend: Optional[ComputerUseBackend] = None  # backward-compatible empty-session injection hook (older tests)
 _backends: Dict[str, ComputerUseBackend] = {}
@@ -91,7 +91,7 @@ _always_allow: Dict[str, set] = {}            # sid -> set of (action, delivery_
 _escalation_warned: set = set()               # sids already warned that a bypass widened the driver mode
 
 def _cua_permission_mode(session_id: str) -> str:
-    """Map Hermes's approval bypass onto Cua's immutable mode; fails closed. Both identity namespaces are consulted
+    """Map Eidolon's approval bypass onto Cua's immutable mode; fails closed. Both identity namespaces are consulted
     (DB ``session_id`` and gateway ``session_key`` contextvar) or a gateway ``/yolo`` would be invisible here.
     Warns once per session that ``-z``/``--yolo`` swapped the driver onto a private ``unrestricted`` daemon, dropping
     the configured ceiling: deliberate (``unrestricted`` is not a config value) but easy to trigger by accident."""
@@ -196,7 +196,7 @@ def _shutdown_backend_atexit() -> None:
     Never raises. Drops the global lock before stop(): teardown budgets 5s and must not block spawns.
 
     Each session backend holds a long-lived ``cua-driver`` subprocess, so without this a driver can survive
-    the Hermes process that spawned it (#28152 item 3). #69903 kept the orphan from burning a core by
+    the Eidolon process that spawned it (#28152 item 3). #69903 kept the orphan from burning a core by
     disabling the cursor overlay; the process itself still lingered.
     """
     global _backend
@@ -606,7 +606,7 @@ def _maybe_follow_capture(backend: ComputerUseBackend, res: ActionResult, do_cap
 def _cache_file(subdir: str, legacy: str, name: str, pattern: str = "", cap: int = 0):
     """Path for a new file under ``$HERMES_HOME/<subdir>`` (dir created). With ``pattern``/``cap``, first unlinks the
     oldest matching files so at most ``cap - 1`` remain (best-effort)."""
-    from hermes_constants import get_hermes_dir  # lazy so tests can patch get_hermes_dir
+    from eidolon_constants import get_hermes_dir  # lazy so tests can patch get_hermes_dir
     cache_dir = get_hermes_dir(subdir, legacy)
     cache_dir.mkdir(parents=True, exist_ok=True)
     with contextlib.suppress(Exception):
@@ -627,7 +627,7 @@ def _write_cache_file(what: str, subdir: str, legacy: str, name: str, pattern: s
         return None
 
 def _persist_capture_image(cap: CaptureResult) -> Optional[str]:
-    """Copy of the capture in Hermes' media cache so attachment surfaces can deliver it (None without an image)."""
+    """Copy of the capture in Eidolon' media cache so attachment surfaces can deliver it (None without an image)."""
     return _write_cache_file(
         "screenshot persistence", "cache/images", "image_cache", f"computer_use_{uuid.uuid4().hex}{_capture_image_format(cap)[1]}",
         "computer_use_*.*", _MAX_CAPTURE_FILES, lambda p: p.write_bytes(base64.b64decode(cap.png_b64, validate=False)),
@@ -674,7 +674,7 @@ def _should_route_through_aux_vision() -> bool:
     stage = "import"
     try:
         from agent.auxiliary_client import _read_main_model, _read_main_provider
-        from hermes_cli.config import load_config
+        from eidolon_cli.config import load_config
         from tools.computer_use.vision_routing import should_route_capture_to_aux_vision
         stage = "config read"
         provider, model = _read_main_provider() or "", _read_main_model() or ""
@@ -690,7 +690,7 @@ def _should_route_through_aux_vision() -> bool:
 def _capture_after_mode() -> str:
     """Mode for ``capture_after`` follow-ups. Default ``som`` (screenshot)."""
     with contextlib.suppress(Exception):
-        from hermes_cli.config import load_config
+        from eidolon_cli.config import load_config
         mode = str(((load_config() or {}).get("computer_use") or {}).get("capture_after_mode", "som") or "som")
         return mode if (mode := mode.strip().lower()) in {"som", "vision", "ax"} else "som"
     return "som"

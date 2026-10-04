@@ -48,7 +48,7 @@ def _hex_rgb(h: str) -> tuple[int, int, int]:
 def _get_skin():
     """Active skin config, or None when unavailable (lazy import avoids cycles)."""
     try:
-        from hermes_cli.skin_engine import get_active_skin
+        from eidolon_cli.skin_engine import get_active_skin
         return get_active_skin()
     except Exception:
         return None
@@ -670,7 +670,7 @@ _DIFF_LINE_COLORS = (("@@", "hunk"), ("-", "minus"), ("+", "plus"), (" ", "dim")
 
 
 def _render_inline_unified_diff(diff: str) -> list[str]:
-    """Render unified diff lines in Hermes' inline transcript style."""
+    """Render unified diff lines in Eidolon' inline transcript style."""
     rendered: list[str] = []
     from_file = to_file = None
     for raw_line in diff.splitlines():

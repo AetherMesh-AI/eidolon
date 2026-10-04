@@ -16,7 +16,7 @@ Eidolon is an independent project building a desktop home for persistent AI agen
 | Desktop application | [apps/desktop](apps/desktop) |
 | Organization and memory prototypes | [apps/desktop/src/app/eidolon](apps/desktop/src/app/eidolon) |
 | Agent runtime | [agent](agent) |
-| CLI and configuration | [hermes_cli](hermes_cli) |
+| CLI and configuration | [eidolon_cli](eidolon_cli) |
 | Messaging and sessions | [gateway](gateway) |
 | Tools and extensions | [tools](tools), [plugins](plugins), [skills](skills) |
 | Tests | [tests](tests), [apps/desktop/package.json](apps/desktop/package.json) |

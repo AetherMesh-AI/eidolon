@@ -23,14 +23,14 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Iterator, List, Optional, Set, Tuple
 
 # split_command_line, not shlex: shlex eats Windows path backslashes.
-from hermes_cli._subprocess_compat import IS_WINDOWS, kill_process_tree, split_command_line, windows_hide_flags
+from eidolon_cli._subprocess_compat import IS_WINDOWS, kill_process_tree, split_command_line, windows_hide_flags
 
 try:
     import fcntl  # POSIX only; Windows falls back to best-effort without flock.
 except ImportError:  # pragma: no cover
     fcntl = None  # type: ignore[assignment]
 
-from hermes_constants import get_hermes_home
+from eidolon_constants import get_eidolon_home
 from utils import atomic_replace
 
 logger = logging.getLogger(__name__)
@@ -59,7 +59,7 @@ _allowlist_write_lock = threading.Lock()
 
 
 def _home_key() -> str:
-    return str(get_hermes_home().expanduser().resolve())
+    return str(get_eidolon_home().expanduser().resolve())
 
 
 def _forget_home_registrations(registry: Set[tuple], lock: threading.Lock) -> None:
@@ -149,7 +149,7 @@ def register_from_config(cfg: Optional[Dict[str, Any]], *, accept_hooks: bool = 
     specs = _parse_hooks_block(cfg.get("hooks"))
     if not specs:
         return []
-    from hermes_cli.plugins import get_plugin_manager  # lazy: avoids import cycle
+    from eidolon_cli.plugins import get_plugin_manager  # lazy: avoids import cycle
     manager, home_key, registered = get_plugin_manager(), _home_key(), []
     # Idempotence + allowlist read under the lock; TTY prompt outside it; mutation re-takes the lock and re-checks.
     for spec in specs:
@@ -188,13 +188,13 @@ def re_register_config_hooks() -> None:
     startup (they are config-owned, not plugin-owned, so the ledger cannot restore them). Clear the
     idempotence set and re-run ``register_from_config()`` so hooks are wired again (#60036 / PR #60267;
     tracking #64178 — salvaged from PR #64188).
-    Only the idempotence keys for the *current* Hermes home are cleared — ``discover_and_load(force=True)``
+    Only the idempotence keys for the *current* Eidolon home are cleared — ``discover_and_load(force=True)``
     only unloads the manager scoped to that one home, so clearing every home's keys would make a
     force-reload in profile A drop profile B's still-live registration from the ledger and duplicate it on
     B's next registration call (#92682 review).
     """
     _forget_home_registrations(_registered, _registered_lock)
-    from hermes_cli.config import load_config
+    from eidolon_cli.config import load_config
     register_from_config(load_config())
 
 
@@ -208,7 +208,7 @@ def reset_for_tests() -> None:
 
 def _parse_hooks_block(hooks_cfg: Any) -> List[ShellHookSpec]:
     """Normalise ``hooks:`` into specs; malformed entries warn-and-skip, never raise."""
-    from hermes_cli.plugins import SHELL_UNSUPPORTED_HOOKS, VALID_HOOKS
+    from eidolon_cli.plugins import SHELL_UNSUPPORTED_HOOKS, VALID_HOOKS
     if not isinstance(hooks_cfg, dict):
         return []
     specs: List[ShellHookSpec] = []
@@ -390,8 +390,8 @@ def _block_message(primary: Any, secondary: Any) -> str:
     return raw if isinstance(raw, str) and raw else _DEFAULT_BLOCK_MESSAGE
 
 
-# pre_tool_call dialects in check order — Hermes ``action`` then Claude-Code ``decision`` — as (verb key,
-# block-message primary, secondary, modify payload key); both translate to the canonical Hermes shape.
+# pre_tool_call dialects in check order — Eidolon ``action`` then Claude-Code ``decision`` — as (verb key,
+# block-message primary, secondary, modify payload key); both translate to the canonical Eidolon shape.
 _PRE_TOOL_DIALECTS = (("action", "message", "reason", "args"), ("decision", "reason", "message", "tool_input"))
 
 
@@ -406,7 +406,7 @@ def _parse_pre_tool_call(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
 
 def _parse_pre_verify(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    # "continue" (Hermes) / "block" (Claude-Code Stop) both mean keep going; no message is a no-op.
+    # "continue" (Eidolon) / "block" (Claude-Code Stop) both mean keep going; no message is a no-op.
     action = str(data.get("action") or data.get("decision") or "").strip().lower()
     message = data.get("message") or data.get("reason")
     if action in {"continue", "block"} and isinstance(message, str) and message.strip():
@@ -423,7 +423,7 @@ _RESPONSE_PARSERS: Dict[str, Callable[[Dict[str, Any]], Optional[Dict[str, Any]]
 
 
 def _parse_response(event: str, stdout: str) -> Optional[Dict[str, Any]]:
-    """Translate stdout JSON into a Hermes wire-shape dict, or ``None``."""
+    """Translate stdout JSON into a Eidolon wire-shape dict, or ``None``."""
     stdout = (stdout or "").strip()
     if not stdout:
         return None
@@ -439,7 +439,7 @@ def _parse_response(event: str, stdout: str) -> Optional[Dict[str, Any]]:
 
 def allowlist_path() -> Path:
     """Path to the per-user shell-hook allowlist file."""
-    return get_hermes_home() / ALLOWLIST_FILENAME
+    return get_eidolon_home() / ALLOWLIST_FILENAME
 
 
 def load_allowlist() -> Dict[str, Any]:
@@ -510,7 +510,7 @@ def _prompt_and_record(event: str, command: str, *, accept_hooks: bool) -> bool:
     if not sys.stdin.isatty():
         return False
     print(
-        f"\n⚠ Hermes is about to register a shell hook that will run a\n  command on your behalf.\n\n"
+        f"\n⚠ Eidolon is about to register a shell hook that will run a\n  command on your behalf.\n\n"
         f"    Event:   {event}\n    Command: {command}\n\n"
         f"  Commands run with your full user credentials.  Only approve\n  commands you trust."
     )

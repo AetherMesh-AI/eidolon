@@ -1,7 +1,7 @@
 import { atom } from 'nanostores'
 
 import { persistString, storedString } from '@/lib/storage'
-import type { ModelOptionProvider } from '@/types/hermes'
+import type { ModelOptionProvider } from '@/types/eidolon'
 
 const STORAGE_KEY = 'hermes.desktop.visible-models'
 

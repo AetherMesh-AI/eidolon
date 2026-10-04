@@ -12,14 +12,14 @@ const WINDOWS_SCRIPT = path.join(REPO_ROOT, 'scripts', 'desktop-update', 'window
 
 function sandbox(tag: string) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), `hermes-handoff-marker-${tag}-`))
-  const installRoot = path.join(home, 'hermes-agent')
+  const installRoot = path.join(home, 'eidolon-agent')
   fs.mkdirSync(installRoot)
 
   return { home, installRoot }
 }
 
 function markerStartedAt(home: string): number {
-  const [, startedAt] = fs.readFileSync(path.join(home, '.hermes-update-in-progress'), 'utf8').split('\n')
+  const [, startedAt] = fs.readFileSync(path.join(home, '.eidolon-update-in-progress'), 'utf8').split('\n')
 
   return Number.parseInt(startedAt, 10)
 }
@@ -75,7 +75,7 @@ function assertScriptHandoff(run: (installRoot: string, startedAt?: string) => R
   assert.equal(markerStartedAt(preserved.home), acquiredAt, 'the script must preserve the Desktop acquisition time')
 
   const refreshed = sandbox('refreshed')
-  fs.writeFileSync(path.join(refreshed.home, '.hermes-update-in-progress'), '999999\n1\n')
+  fs.writeFileSync(path.join(refreshed.home, '.eidolon-update-in-progress'), '999999\n1\n')
   const before = Math.floor(Date.now() / 1000)
   const refreshedResult = run(refreshed.installRoot, 'malformed')
   const after = Math.floor(Date.now() / 1000)

@@ -4,7 +4,7 @@ import type {
   ProfileSetupCommand,
   ProfileSoul,
   ProfilesResponse
-} from '@/types/hermes'
+} from '@/types/eidolon'
 
 import { capabilityScoped, hermesApi, type ProfileScope, STARTUP_REQUEST_TIMEOUT_MS } from './client'
 

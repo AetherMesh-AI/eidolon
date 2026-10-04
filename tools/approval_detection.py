@@ -19,12 +19,12 @@ logger = logging.getLogger("tools.approval")
 # import-time path snapshot (stale once HERMES_HOME is set after import) lives in the patterns.
 _SSH_SENSITIVE_PATH = r'(?:~|\$home|\$\{home\})/\.ssh(?:/|$)'
 _HERMES_ENV_PATH = (
-    r'(?:~\/\.hermes/|(?:\$home|\$\{home\})/\.hermes/|(?:\$hermes_home|\$\{hermes_home\})/)' r'\.env\b'
+    r'(?:~\/\.(?:hermes|eidolon)/|(?:\$home|\$\{home\})/\.(?:hermes|eidolon)/|(?:\$(?:hermes|eidolon)_home|\$\{(?:hermes|eidolon)_home\})/)' r'\.env\b'
 )
 # ~/.hermes/config.yaml IS the security policy (approvals.mode, yolo, allowlist) and the config cache is mtime-keyed,
 # so a write takes effect mid-session. Terminal-side coverage (sed -i, tee, >, cp) pairs the file_tools deny.
 _HERMES_CONFIG_PATH = (
-    r'(?:~\/\.hermes/|(?:\$home|\$\{home\})/\.hermes/|(?:\$hermes_home|\$\{hermes_home\})/)' r'config\.yaml\b'
+    r'(?:~\/\.(?:hermes|eidolon)/|(?:\$home|\$\{home\})/\.(?:hermes|eidolon)/|(?:\$(?:hermes|eidolon)_home|\$\{(?:hermes|eidolon)_home\})/)' r'config\.yaml\b'
 )
 _PROJECT_ENV_PATH = r'(?:(?:/|\.{1,2}/)?(?:[^\s/"\'`]+/)*\.env(?:\.[^/\s"\'`]+)*)'
 _PROJECT_CONFIG_PATH = r'(?:(?:/|\.{1,2}/)?(?:[^\s/"\'`]+/)*config\.yaml)'
@@ -252,7 +252,7 @@ DANGEROUS_PATTERNS = [
     (r'\bsc(?:\.exe)?\s+(?:stop|delete)\b', "stop/delete service (sc)"),
     # Windows-form credential paths; the POSIX ~/.ssh patterns never match drive-letter or backslash spellings.
     (r'\busers[\\/][^\\/\s]+[\\/]\.ssh\b', "access to SSH keys (Windows path)"),
-    (r'\bappdata[\\/](?:local|roaming)[\\/]hermes[^\n]*\.env\b', "access to Hermes secrets (Windows path)"),
+    (r'\bappdata[\\/](?:local|roaming)[\\/](?:hermes|eidolon)[^\n]*\.env\b', "access to Eidolon secrets (Windows path)"),
     # ── end of Windows tier
     (r'\bchmod\s+(-[^\s]*\s+)*(777|666|o\+[rwx]*w|a\+[rwx]*w)\b', "world/other-writable permissions"),
     (r'\bchmod\s+--recursive\b.*(777|666|o\+[rwx]*w|a\+[rwx]*w)', "recursive world/other-writable (long flag)"),
@@ -303,8 +303,8 @@ DANGEROUS_PATTERNS = [
     (r'\bfind\b.*-delete\b', "find -delete"),
     # Gateway lifecycle: stopping/restarting the gateway kills all running agents. Global flags
     # between `hermes` and `gateway` (`hermes -p ade gateway restart`) are allowed so a profile flag can't slip past.
-    (r'\bhermes\s+(?:-{1,2}\S+(?:\s+\S+)?\s+)*gateway\s+(stop|restart)\b', "stop/restart hermes gateway (kills running agents)"),
-    (r'\bhermes\s+update\b', "hermes update (restarts gateway, kills running agents)"),
+    (r'\b(?:hermes|eidolon)\s+(?:-{1,2}\S+(?:\s+\S+)?\s+)*gateway\s+(stop|restart)\b', "stop/restart eidolon gateway (kills running agents)"),
+    (r'\b(?:hermes|eidolon)\s+update\b', "eidolon update (restarts gateway, kills running agents)"),
     # Docker/Podman daemon redirect — global flags or env that point the CLI at a DIFFERENT (often remote) daemon:
     # `docker -H ssh://prod stop app` looks local but operates on remote infra, so any redirect requires approval
     # regardless of subcommand. The flag must be in global position (before the subcommand) and -H/--host/--context
@@ -322,10 +322,10 @@ DANGEROUS_PATTERNS = [
     (r'\bdocker(?:-compose|\s+compose)\s+(?:-{1,2}\S+(?:[=\s]\S+)?\s+)*(restart|stop|kill|down)\b', "docker compose restart/stop/kill/down (container lifecycle)"),
     (r'\bdocker\s+(?:-{1,2}\S+(?:[=\s]\S+)?\s+)*(restart|stop|kill)\b', "docker restart/stop/kill (container lifecycle)"),
     # Gateway protection: never start gateway outside systemd management
-    (r'gateway\s+run\b.*(&\s*$|&\s*;|\bdisown\b|\bsetsid\b)', "start gateway outside systemd (use 'systemctl --user restart hermes-gateway')"),
-    (r'\bnohup\b.*gateway\s+run\b', "start gateway outside systemd (use 'systemctl --user restart hermes-gateway')"),
+    (r'gateway\s+run\b.*(&\s*$|&\s*;|\bdisown\b|\bsetsid\b)', "start gateway outside systemd (use 'systemctl --user restart eidolon-gateway')"),
+    (r'\bnohup\b.*gateway\s+run\b', "start gateway outside systemd (use 'systemctl --user restart eidolon-gateway')"),
     # Self-termination protection: prevent agent from killing its own process
-    (r'\b(pkill|killall)\b.*\b(hermes|gateway|cli\.py)\b', "kill hermes/gateway process (self-termination)"),
+    (r'\b(pkill|killall)\b.*\b((?:hermes|eidolon)|gateway|cli\.py)\b', "kill hermes/gateway process (self-termination)"),
     # Self-termination via kill + $(pgrep/pidof): the substitution is opaque to the name-based
     # pattern above, so catch the structural form.
     (r'\bkill\b.*\$\(\s*(pgrep|pidof)\b', "kill process via pgrep/pidof expansion (self-termination)"),
@@ -334,10 +334,10 @@ DANGEROUS_PATTERNS = [
     # sequential match: a for-loop building the label from a list defined EARLIER (`for item in 'ai.hermes...'; do
     # launchctl bootout "$label"`) never has "hermes" after the verb, and that slipped past and restarted 4 gateways
     # with zero approval. Erring broad is correct for an approval gate: an extra prompt is cheap.
-    (r'(?=[\s\S]*\blaunchctl\s+(?:stop|kickstart|bootout|unload|kill|disable|remove)\b)(?=[\s\S]*\b(?:hermes|ai\.hermes)\b)', "stop/restart hermes launchd service (kills running agents)"),
+    (r'(?=[\s\S]*\blaunchctl\s+(?:stop|kickstart|bootout|unload|kill|disable|remove)\b)(?=[\s\S]*\b(?:(?:hermes|eidolon)|ai\.(?:hermes|eidolon))\b)', "stop/restart hermes launchd service (kills running agents)"),
     (rf'\b(cp|mv|install)\b.*\s{_SYSTEM_CONFIG_PATH}', "copy/move file into system config path"),
     (rf'\b(cp|mv|install)\b.*\s["\']?{_PROJECT_SENSITIVE_WRITE_TARGET}["\']?{_COMMAND_TAIL}', "overwrite project env/config file"),
-    # cp/mv/install OVERWRITING a credential/SSH/shell-rc/Hermes file (key implant, login-time
+    # cp/mv/install OVERWRITING a credential/SSH/shell-rc/Eidolon file (key implant, login-time
     # injection) — pairs the tee/redirection coverage. Anchored to the command tail so only the
     # DESTINATION fires; reading OUT of a sensitive path (`cp ~/.ssh/config /tmp/x`) stays safe.
     # The trailing `[^\s"\']*` consumes the rest of the destination filename.
@@ -355,18 +355,18 @@ DANGEROUS_PATTERNS = [
     (rf'\b(?:perl|ruby)\b.*(?:^|\s)-[^\s]*i\b.*(?:{_USER_SENSITIVE_WRITE_TARGET})[^\s"\']*', "in-place edit of sensitive credential/SSH/shell-rc path (perl/ruby)"),
     (rf'\bsed\s+-[^\s]*i.*\s{_SYSTEM_CONFIG_PATH}', "in-place edit of system config"),
     (rf'\bsed\s+--in-place\b.*\s{_SYSTEM_CONFIG_PATH}', "in-place edit of system config (long flag)"),
-    # sed -i on Hermes config/.env bypasses the redirection/tee rules; pairs the file_tools
+    # sed -i on Eidolon config/.env bypasses the redirection/tee rules; pairs the file_tools
     # write_file/patch deny so the terminal side is not an open door.
-    # In-place edit of a Hermes-managed security file (~/.hermes/config.yaml or .env). sed -i bypasses the
+    # In-place edit of a Eidolon-managed security file (~/.hermes/config.yaml or .env). sed -i bypasses the
     # redirection/tee patterns above because it mutates the file directly. See #14639.
-    (rf'\bsed\s+-[^\s]*i.*(?:{_HERMES_CONFIG_PATH}|{_HERMES_ENV_PATH})', "in-place edit of Hermes config/env"),
-    (rf'\bsed\s+--in-place\b.*(?:{_HERMES_CONFIG_PATH}|{_HERMES_ENV_PATH})', "in-place edit of Hermes config/env (long flag)"),
+    (rf'\bsed\s+-[^\s]*i.*(?:{_HERMES_CONFIG_PATH}|{_HERMES_ENV_PATH})', "in-place edit of Eidolon config/env"),
+    (rf'\bsed\s+--in-place\b.*(?:{_HERMES_CONFIG_PATH}|{_HERMES_ENV_PATH})', "in-place edit of Eidolon config/env (long flag)"),
     # perl/ruby -i: the flag may be its own token after other flags (`-p -i -e`), combined (`-pi`), or carry a backup
     # suffix (`-i.bak`), so match any flag token containing `i` anywhere; `perl -e '...'` (no -i) does not trip.
     # perl -i and ruby -i perform the same in-place mutation as sed -i but are not caught by the -e/-c
     # script-execution pattern above (which targets code evaluation, not file mutation). Pairs the sed -i
     # coverage from #14639.
-    (rf'\b(?:perl|ruby)\b.*(?:^|\s)-[^\s]*i\b.*(?:{_HERMES_CONFIG_PATH}|{_HERMES_ENV_PATH})', "in-place edit of Hermes config/env (perl/ruby)"),
+    (rf'\b(?:perl|ruby)\b.*(?:^|\s)-[^\s]*i\b.*(?:{_HERMES_CONFIG_PATH}|{_HERMES_ENV_PATH})', "in-place edit of Eidolon config/env (perl/ruby)"),
     # Interpreter heredocs are handled by _execution_flag_findings(); only shell heredocs stay
     # regex-based. `bash <<'EOF'` runs arbitrary commands without triggering the `bash -c` path.
     (r'\b(bash|sh|zsh|ksh)\s+<<', "shell execution via heredoc"),
@@ -429,11 +429,11 @@ def _normalize_command_for_detection(command: str) -> str:
     # precede the generic escape strip below, whose [^\n] class skips newlines and would leave the
     # backslash wedged between tokens, defeating the structured rm/mkfs/dd patterns incl. the HARDLINE floor.
     command = re.sub(r'\\\r?\n', '', command)
-    # Fold absolute user/Hermes home prefixes to ~/ and ~/.hermes/ so the static patterns catch /home/alice/.bashrc
+    # Fold absolute user/Eidolon home prefixes to ~/ and ~/.hermes/ so the static patterns catch /home/alice/.bashrc
     # and C:\Users\alice\.bashrc. Resolved at detection time (not import time) so it tracks HOME/HERMES_HOME set
-    # later. MUST run before the backslash strip (which would dissolve C:\Users\alice to C:Usersalice). Hermes home
+    # later. MUST run before the backslash strip (which would dissolve C:\Users\alice to C:Usersalice). Eidolon home
     # first: on Windows it nests under the user home, and folding the user home first would eat the prefix it needs.
-    command = _rewrite_resolved_hermes_home(command)
+    command = _rewrite_resolved_eidolon_home(command)
     command = _rewrite_resolved_user_home(command)
     # Strip backslash-escapes (r\m -> rm) and empty-string literals (r''m -> rm).
     command = re.sub(r'\\([^\n])', r'\1', command)
@@ -483,12 +483,12 @@ def _rewrite_resolved_user_home(command: str) -> str:
     return _fold_home_prefixes(command, paths, "~")
 
 
-def _rewrite_resolved_hermes_home(command: str) -> str:
+def _rewrite_resolved_eidolon_home(command: str) -> str:
     """Resolved HERMES_HOME (and its realpath) -> ``~/.hermes/`` so the _HERMES_CONFIG_PATH /
     _HERMES_ENV_PATH rules match Docker/gateway deployments that spell the absolute path."""
     try:
-        from hermes_constants import get_hermes_home
-        home = get_hermes_home().expanduser()
+        from eidolon_constants import get_eidolon_home
+        home = get_eidolon_home().expanduser()
         paths = [str(home), str(home.resolve(strict=False))]
     except Exception:
         return command
@@ -583,7 +583,7 @@ _BASH_SHORT_OPTION_LETTERS = frozenset("ilrsDcabefhkmnptuvxBCEHPTOo")
 _MAX_DETECTION_COMMAND_CHARS, _MAX_SEPARATOR_FREE_COMMAND_CHARS, _MAX_DETECTION_SEGMENTS = 128_000, 4_096, 25_000
 _PARSER_LIMIT_DESCRIPTION = "command parser limit exceeded"
 _MALFORMED_EXEC_DESCRIPTION = "command parser limit or malformed executable payload"
-_GATEWAY_LIFECYCLE_SPLICE_DESCRIPTION = "stop/restart hermes gateway via shell-spliced verb (kills running agents)"
+_GATEWAY_LIFECYCLE_SPLICE_DESCRIPTION = "stop/restart eidolon gateway via shell-spliced verb (kills running agents)"
 
 
 def _command_parser_limit_exceeded(command: str) -> bool:
@@ -1361,7 +1361,7 @@ def _command_detection_variants(command: str):
 
 
 def _is_verification_artifact_cleanup(command: str) -> bool:
-    """Return whether *command* only removes one Hermes ad-hoc temp script."""
+    """Return whether *command* only removes one Eidolon ad-hoc temp script."""
     try:
         argv = shlex.split(command, posix=True)
     except ValueError:
@@ -1374,7 +1374,7 @@ def _is_verification_artifact_cleanup(command: str) -> bool:
     return (
         operand == os.path.join(temp_dir, basename)
         and os.path.dirname(os.path.realpath(operand)) == temp_dir
-        and re.fullmatch(r"hermes-(?:verify|ad-hoc)-[A-Za-z0-9_.-]+", basename) is not None
+        and re.fullmatch(r"(?:hermes|eidolon)-(?:verify|ad-hoc)-[A-Za-z0-9_.-]+", basename) is not None
     )
 
 
@@ -1384,7 +1384,7 @@ def _is_shell_token_spliced_gateway_lifecycle(command: str) -> bool:
     ``_deobfuscate_shell_word_for_detection`` is deliberately scoped to command-position words
     (widening it would let quoted prose like ``git commit -m "rm -rf /"`` match), and the spliced
     verb is an ARGUMENT, so ``launchctl kick"start" -k gui/501/ai.hermes.gateway`` auto-approved.
-    Delegates to ``cron.lifecycle_guard`` (shlex-tokenized, anchored on a hermes-gateway
+    Delegates to ``cron.lifecycle_guard`` (shlex-tokenized, anchored on a eidolon-gateway
     identifier). Runs last so an ordinary pattern match keeps its more specific reason; this layer
     only prompts — the non-bypassable block still lives in ``cron.lifecycle_guard``.
 

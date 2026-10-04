@@ -128,7 +128,7 @@ def test_handle_enter_never_gates_on_command_running():
     ``_command_blocks_input`` check inside ``handle_enter`` would let a
     future edit silently drop type-ahead submissions during /compress.
     """
-    cli_path = Path(__file__).resolve().parents[2] / "hermes_cli" / "cli_tui_mixin.py"
+    cli_path = Path(__file__).resolve().parents[2] / "eidolon_cli" / "cli_tui_mixin.py"
     tree = ast.parse(cli_path.read_text(encoding="utf-8"))
 
     handlers = ("_tui_handle_enter", "_tui_enter_inline_command", "_tui_enter_overlay",

@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { SessionInfo } from '@/hermes'
+import type { SessionInfo } from '@/eidolon'
 import { $dismissedWorktreeIds, dismissWorktree, restoreWorktree } from '@/store/layout'
 import { removeWorktreePath, switchBranchInRepo } from '@/store/projects'
 

@@ -27,7 +27,7 @@ def test_reload_runtime_env_preserves_config_max_turns(tmp_path: Path, monkeypat
         encoding="utf-8",
     )
 
-    monkeypatch.setattr(gateway_run, "_hermes_home", hermes_home)
+    monkeypatch.setattr(gateway_run, "_eidolon_home", hermes_home)
     monkeypatch.setenv("HERMES_MAX_ITERATIONS", "9000")
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
 
@@ -47,7 +47,7 @@ def test_reload_runtime_env_preserves_config_terminal_backend(
     gateway starts on the bridged local backend, works for hours, then a
     later turn's reload re-loads .env with override=True and every terminal /
     execute_code / read_file call starts trying Docker — while
-    ``hermes config get terminal.backend`` still says local.
+    ``eidolon config get terminal.backend`` still says local.
     """
     hermes_home = tmp_path / ".hermes"
     hermes_home.mkdir()
@@ -57,7 +57,7 @@ def test_reload_runtime_env_preserves_config_terminal_backend(
     )
     (hermes_home / ".env").write_text("TERMINAL_ENV=docker\n", encoding="utf-8")
 
-    monkeypatch.setattr(gateway_run, "_hermes_home", hermes_home)
+    monkeypatch.setattr(gateway_run, "_eidolon_home", hermes_home)
     monkeypatch.setenv("HERMES_HOME", str(hermes_home))
     # Startup bridge already ran: the effective backend is local.
     monkeypatch.setenv("TERMINAL_ENV", "local")

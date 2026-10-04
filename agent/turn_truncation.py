@@ -20,7 +20,7 @@ from agent.message_sanitization import close_interrupted_tool_sequence
 from agent.repetition_guard import is_repetition_dominated
 from agent.turn_api_call import stop_thinking_spinner
 from agent.turn_retry_state import TurnRetryState
-from hermes_constants import PARTIAL_STREAM_STUB_ID
+from eidolon_constants import PARTIAL_STREAM_STUB_ID
 
 logger = logging.getLogger("agent.conversation_loop")
 
@@ -515,7 +515,7 @@ def handle_content_policy_refusal(
         f"Model's explanation: {_refusal_text}" if _refusal_text else "The model returned no explanation."
     )
     _refusal_response = (
-        "⚠️  The model declined to respond to this request (safety refusal — not a Hermes/gateway failure).\n\n"
+        "⚠️  The model declined to respond to this request (safety refusal — not a Eidolon/gateway failure).\n\n"
         f"{_refusal_detail}\n\n"
         f"{_CONTENT_POLICY_RECOVERY_HINT}"
     )

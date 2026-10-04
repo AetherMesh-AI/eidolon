@@ -208,7 +208,7 @@ class TestMcpPrefixThreshold:
         cfg = BudgetConfig(default_result_size=100_000, mcp_result_size=999_999)
         assert cfg.resolve_threshold("mcp_anything") == 100_000
 
-    def test_config_override_via_hermes_home(self, tmp_path, monkeypatch):
+    def test_config_override_via_eidolon_home(self, tmp_path, monkeypatch):
         (tmp_path / "config.yaml").write_text(
             "tool_budget:\n  mcp_result_size_chars: 30000\n"
         )

@@ -5,7 +5,7 @@
  * maps, while this file owns the security-sensitive ordering and the remote
  * wire protocol:
  *
- *   gate dials -> drain every captured scope -> detached `hermes update`
+ *   gate dials -> drain every captured scope -> detached `eidolon update`
  *   -> correlated terminal marker + durable receipt -> restore every scope
  *   -> lift the gate
  *
@@ -210,7 +210,7 @@ function windowsChildPath(home: string, name: string): string {
  */
 function buildPosixManagedUpdateLaunch(target: RemoteUpdateTarget, correlationId: string): string {
   const correlation = validateCorrelationId(correlationId)
-  const home = validateRemoteValue(target.hermesHome, 'Hermes home')
+  const home = validateRemoteValue(target.hermesHome, 'Eidolon home')
   const hermesPath = validateRemoteValue(target.hermesPath, 'launcher path')
   const statusPath = posixChildPath(home, `.update_exit_code.${correlation}`)
   const intentPath = posixChildPath(home, `.update_launch_intent.${correlation}`)
@@ -255,7 +255,7 @@ function buildPosixManagedUpdateLaunch(target: RemoteUpdateTarget, correlationId
 /** Windows equivalent of buildPosixManagedUpdateLaunch. */
 function buildWindowsManagedUpdateLaunch(target: RemoteUpdateTarget, correlationId: string): string {
   const correlation = validateCorrelationId(correlationId)
-  const home = validateRemoteValue(target.hermesHome, 'Hermes home')
+  const home = validateRemoteValue(target.hermesHome, 'Eidolon home')
   const hermesPath = validateRemoteValue(target.hermesPath, 'launcher path')
   const statusPath = windowsChildPath(home, `.update_exit_code.${correlation}`)
   const readyPath = windowsChildPath(home, `.update_coordinator_ready.${correlation}`)
@@ -322,7 +322,7 @@ correlation=sys.argv[2]
 profile_parent=home.parent.name
 is_profile_home=(profile_parent.lower()=='profiles') if os.name=='nt' else (profile_parent=='profiles')
 install_root=home.parent.parent if is_profile_home else home
-marker_path=install_root/'.hermes-update-in-progress'
+marker_paths=(install_root/'.eidolon-update-in-progress',install_root/'.hermes-update-in-progress')
 status_path=home/('.update_exit_code.'+correlation)
 ready_path=home/('.update_coordinator_ready.'+correlation)
 intent_path=home/('.update_launch_intent.'+correlation)
@@ -385,7 +385,7 @@ def process_creation(pid):
         finally:kernel.CloseHandle(handle)
     except Exception:return None
 
-def marker_state():
+def read_marker_state(marker_path):
     try:raw=marker_path.read_bytes()
     except FileNotFoundError:return {'state':'absent'}
     except OSError:return {'state':'unavailable'}
@@ -398,6 +398,12 @@ def marker_state():
     live=pid_alive(pid)
     if live is None:return {'state':'unavailable','pid':pid}
     return {'state':'live' if live else 'dead','pid':pid}
+
+def marker_state():
+    states=[read_marker_state(marker) for marker in marker_paths]
+    for state in states:
+        if state['state'] not in ('absent','dead'):return state
+    return next((state for state in states if state['state']=='dead'),{'state':'absent'})
 
 def terminal_code():
     try:raw=status_path.read_bytes()
@@ -455,7 +461,7 @@ print(json.dumps({'marker':state['state'],'markerPid':state.get('pid'),'launchIn
 
 function buildRemoteUpdateObservationCommand(target: RemoteUpdateTarget, correlationId: string): string {
   const correlation = validateCorrelationId(correlationId)
-  const home = validateRemoteValue(target.hermesHome, 'Hermes home')
+  const home = validateRemoteValue(target.hermesHome, 'Eidolon home')
 
   if (target.platform === 'Windows') {
     const python = validateRemoteValue(target.pythonPath || '', 'Python path')
@@ -888,7 +894,7 @@ async function runManagedSshUpdate<TScope extends ManagedSshScope>(
     ...(error ? { error } : {}),
     message:
       outcome === 'updated'
-        ? 'Remote Hermes updated and every managed SSH profile is ready.'
+        ? 'Remote Eidolon updated and every managed SSH profile is ready.'
         : restoreOk
           ? 'The remote update failed, but every managed SSH profile was restored.'
           : 'The remote update transaction could not restore every managed SSH profile.'

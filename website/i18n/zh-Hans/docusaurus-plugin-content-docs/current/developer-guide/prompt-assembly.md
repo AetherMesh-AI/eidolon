@@ -1,12 +1,12 @@
 ---
 sidebar_position: 5
 title: "Prompt 组装"
-description: "Hermes 如何构建系统 prompt、保持缓存稳定性并注入临时层"
+description: "Eidolon 如何构建系统 prompt、保持缓存稳定性并注入临时层"
 ---
 
 # Prompt 组装
 
-Hermes 刻意将以下内容分离：
+Eidolon 刻意将以下内容分离：
 
 - **已缓存的系统 prompt 状态**
 - **API 调用时临时添加的内容**
@@ -46,8 +46,8 @@ Hermes 刻意将以下内容分离：
 以下是所有层都存在时最终系统 prompt 的简化视图（注释说明每个部分的来源）：
 
 ```
-# Layer 1: Agent Identity (from ~/.hermes/SOUL.md)
-You are Hermes, an AI assistant created by Nous Research.
+# Layer 1: Agent Identity (from ~/.eidolon/SOUL.md)
+You are Eidolon, an AI assistant by AetherMesh.
 You are an expert software engineer and researcher.
 You value correctness, clarity, and efficiency.
 ...
@@ -118,12 +118,12 @@ renderable inside a terminal.
 
 ## SOUL.md 在 prompt 中的位置
 
-`SOUL.md` 位于 `~/.hermes/SOUL.md`，作为 agent 的身份标识——系统 prompt 的第一个部分。`prompt_builder.py` 中的加载逻辑如下：
+`SOUL.md` 位于 `~/.eidolon/SOUL.md`，作为 agent 的身份标识——系统 prompt 的第一个部分。`prompt_builder.py` 中的加载逻辑如下：
 
 ```python
 # From agent/prompt_builder.py (simplified)
 def load_soul_md() -> Optional[str]:
-    soul_path = get_hermes_home() / "SOUL.md"
+    soul_path = get_eidolon_home() / "SOUL.md"
     if not soul_path.exists():
         return None
     content = soul_path.read_text(encoding="utf-8").strip()
@@ -137,7 +137,7 @@ def load_soul_md() -> Optional[str]:
 若 `SOUL.md` 不存在，系统将回退到：
 
 ```
-You are Hermes Agent, built by Nous Research. Be direct: match the length
+You are Eidolon, built by AetherMesh. Be direct: match the length
 of your reply to the weight of the ask — a one-line question gets a
 one-line answer, and finished work gets a short report of what changed,
 what's verified, and what's left, never a replay of the process. No
@@ -191,7 +191,7 @@ def build_context_files_prompt(cwd=None, skip_soul=False):
 
 | 优先级 | 文件 | 搜索范围 | 说明 |
 |--------|------|----------|------|
-| 1 | `.hermes.md`、`HERMES.md` | 从 CWD 向上至 git 根目录 | Hermes 原生项目配置 |
+| 1 | `.hermes.md`、`HERMES.md` | 从 CWD 向上至 git 根目录 | Eidolon 原生项目配置 |
 | 2 | `AGENTS.md` | 仅 CWD | 常见 agent 指令文件 |
 | 3 | `CLAUDE.md` | 仅 CWD | Claude Code 兼容性 |
 | 4 | `.cursorrules`、`.cursor/rules/*.mdc` | 仅 CWD | Cursor 兼容性 |
@@ -235,15 +235,15 @@ def build_context_files_prompt(cwd=None, skip_soul=False):
 
 ## 支持的 prompt 自定义入口
 
-大多数用户应将 `agent/prompt_builder.py` 视为实现代码，而非配置入口。推荐的自定义路径是修改 Hermes 已加载的 prompt 输入，而非直接编辑 Python 模板。
+大多数用户应将 `agent/prompt_builder.py` 视为实现代码，而非配置入口。推荐的自定义路径是修改 Eidolon 已加载的 prompt 输入，而非直接编辑 Python 模板。
 
 ### 优先使用这些入口
 
-- `~/.hermes/SOUL.md` — 用自定义 agent 角色和固定行为替换内置默认身份块。
-- `~/.hermes/MEMORY.md` 和 `~/.hermes/USER.md` — 提供应在新会话中快照的持久跨会话事实和用户配置文件数据。
+- `~/.eidolon/SOUL.md` — 用自定义 agent 角色和固定行为替换内置默认身份块。
+- `~/.eidolon/MEMORY.md` 和 `~/.eidolon/USER.md` — 提供应在新会话中快照的持久跨会话事实和用户配置文件数据。
 - 项目上下文文件，如 `.hermes.md`、`HERMES.md`、`AGENTS.md`、`CLAUDE.md` 或 `.cursorrules` — 注入仓库特定的工作规则。
 - Skills — 打包可复用的工作流和参考资料，无需编辑核心 prompt 代码。
-- 可选系统 prompt 配置 / API 覆盖 — 添加部署特定的指令文本，无需 fork Hermes。
+- 可选系统 prompt 配置 / API 覆盖 — 添加部署特定的指令文本，无需 fork Eidolon。
 - 临时覆盖层，如 `HERMES_EPHEMERAL_SYSTEM_PROMPT` 或 prefill 消息 — 添加不应成为已缓存 prompt 前缀一部分的轮次级指导。
 
 ### 何时应编辑代码
@@ -255,7 +255,7 @@ def build_context_files_prompt(cwd=None, skip_soul=False):
 - 若想要不同的助手身份，编辑 `SOUL.md`
 - 若想要不同的仓库规则，编辑项目上下文文件
 - 若想要可复用的操作流程，添加或修改 skills
-- 若想改变 Hermes 为所有人组装 prompt 的方式，修改 Python 代码并将其视为代码贡献
+- 若想改变 Eidolon 为所有人组装 prompt 的方式，修改 Python 代码并将其视为代码贡献
 
 ## Prompt 组装为何如此拆分
 

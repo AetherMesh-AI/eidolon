@@ -26,7 +26,7 @@ from tools.registry import tool_error
 
 def prepare_send_message_platforms() -> None:
     """Load enabled standalone plugins before tool schemas/cache keys are built."""
-    from hermes_cli.plugins import discover_plugins
+    from eidolon_cli.plugins import discover_plugins
     discover_plugins()
 
 
@@ -311,7 +311,7 @@ def _home_chat_id(config, platform, platform_name):
     home_env = _HOME_CHANNEL_ENV_OVERRIDES.get(platform_name, f"{platform_name.upper()}_HOME_CHANNEL")
     return None, (f"No home channel set for {platform_name} to determine where to send the message. "
                   f"Either specify a channel directly with '{platform_name}:CHANNEL_NAME', "
-                  f"or set a home channel via: hermes config set {home_env} <channel_id>")
+                  f"or set a home channel via: eidolon config set {home_env} <channel_id>")
 
 
 def _slack_dm_chat_id(pconfig, chat_id):
@@ -700,7 +700,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

@@ -31,7 +31,7 @@ def get_spill_config() -> Dict[str, Any]:
     """Return resolved hook output-spill config. Never raises."""
     section: Dict[str, Any] = {}
     try:
-        from hermes_cli.config import load_config
+        from eidolon_cli.config import load_config
         cfg = load_config() or {}
         hooks = cfg.get("hooks") if isinstance(cfg, dict) else None
         if isinstance(hooks, dict) and isinstance(hooks.get("output_spill"), dict):
@@ -55,8 +55,8 @@ def _resolve_spill_dir(directory_override: Optional[str], session_id: Optional[s
     if directory_override:
         base = Path(os.path.expanduser(directory_override))
     else:
-        from hermes_constants import get_hermes_home
-        base = Path(get_hermes_home()) / "hook_outputs"
+        from eidolon_constants import get_eidolon_home
+        base = Path(get_eidolon_home()) / "hook_outputs"
     session_segment = (session_id or "no-session").replace("/", "_").replace("\\", "_").replace("..", "_")
     return base / session_segment
 

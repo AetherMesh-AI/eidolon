@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ConfirmHost } from '@/components/confirm-host'
 import { $confirmRequest } from '@/store/confirm'
-import type { EnvVarInfo, OAuthProvider } from '@/types/hermes'
+import type { EnvVarInfo, OAuthProvider } from '@/types/eidolon'
 
 const listOAuthProviders = vi.fn()
 const disconnectOAuthProvider = vi.fn()
@@ -21,7 +21,7 @@ vi.mock('@/store/profile', () => ({
   normalizeProfileKey: (p: string | null) => p || 'default'
 }))
 
-vi.mock('@/hermes', () => ({
+vi.mock('@/eidolon', () => ({
   setApiRequestProfile: vi.fn(),
   getProfiles: async () => ({ profiles: (await import('@/store/profile')).$profiles.get() }),
   setEnvVar: (key: string, value: string, profile?: string) => setEnvVar(key, value, profile),
@@ -104,6 +104,21 @@ async function renderProvidersSettings() {
 }
 
 describe('ProvidersSettings', () => {
+  it('keeps the network preview inert while real disconnected providers remain available', async () => {
+    listOAuthProviders.mockResolvedValue({ providers: [provider('nous', false)] })
+    await renderProvidersSettings()
+
+    const network = await screen.findByRole('region', { name: 'AetherMesh' })
+    expect(network.textContent).toContain('Coming soon')
+    expect(network.querySelector('button, a, input')).toBeNull()
+    fireEvent.click(network)
+    expect(startManualProviderOAuth).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Other providers' }))
+    fireEvent.click(screen.getByRole('button', { name: /Nous Portal/ }))
+    expect(startManualProviderOAuth).toHaveBeenCalledWith('nous', undefined)
+  })
+
   it('reads and saves API keys for the shared Settings target and reloads when it changes', async () => {
     const { $settingsScopeOverride } = await import('@/store/settings-scope')
     const { $activeGatewayProfile, $profiles } = await import('@/store/profile')

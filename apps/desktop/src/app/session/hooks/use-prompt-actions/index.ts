@@ -1,9 +1,9 @@
+import { JsonRpcGatewayError } from '@aethermesh/shared'
 import type { AppendMessage, ThreadMessage } from '@assistant-ui/react'
-import { JsonRpcGatewayError } from '@hermes/shared'
 import { useStore } from '@nanostores/react'
 import { type MutableRefObject, useCallback, useEffect, useRef } from 'react'
 
-import { transcribeAudio } from '@/hermes'
+import { transcribeAudio } from '@/eidolon'
 import { useI18n } from '@/i18n'
 import { stripAnsi } from '@/lib/ansi'
 import { type ChatMessage, textPart } from '@/lib/chat-messages'

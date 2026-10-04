@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { HermesGitWorktree } from '@/global'
 import { makeCwdSession } from '@/test/session-info'
-import type { ProjectInfo, SessionInfo } from '@/types/hermes'
+import type { ProjectInfo, SessionInfo } from '@/types/eidolon'
 
 import {
   baseName,

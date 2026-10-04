@@ -16,7 +16,7 @@ EMBEDDER_PROVIDERS: dict[str, dict[str, Any]] = {
 }
 
 VECTOR_PROVIDERS: dict[str, dict[str, Any]] = {
-    "qdrant": {"label": "Qdrant", "default_config": {"path": os.path.expanduser("~/.hermes/mem0_qdrant")}, "pip_dep": "qdrant-client"},
+    "qdrant": {"label": "Qdrant", "default_config": {"path": os.path.expanduser("~/.eidolon/mem0_qdrant")}, "pip_dep": "qdrant-client"},
     "pgvector": {
         "label": "PGVector",
         "default_config": {"host": "localhost", "port": 5432, "user": os.getenv("USER", "postgres"), "dbname": "postgres"},

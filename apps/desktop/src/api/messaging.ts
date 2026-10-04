@@ -8,7 +8,7 @@ import type {
   WebhookCreateResponse,
   WebhookEnableResponse,
   WebhooksResponse
-} from '@/types/hermes'
+} from '@/types/eidolon'
 
 import { hermesApi, profileScoped } from './client'
 

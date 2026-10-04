@@ -190,14 +190,14 @@ def check_systemd_timing_alignment(
     drain_timeout: float, cron_drain_timeout: float = DEFAULT_GATEWAY_CRON_DRAIN_TIMEOUT
 ) -> Optional[Dict[str, Any]]:
     """At startup, sanity-check that systemd's TimeoutStopSec covers stop. A stale unit file
-    (upgraded without re-running ``hermes setup``) can have ``TimeoutStopSec`` below the stop
+    (upgraded without re-running ``eidolon setup``) can have ``TimeoutStopSec`` below the stop
     budget, so systemd SIGKILLs the cgroup mid-drain (a phantom ``code=killed status=9`` in the
     journal). ``None`` when aligned OR undeterminable (not under systemd, no ``systemctl``);
     otherwise a dict with ``timeout_stop_sec``/``drain_timeout``/``expected_min``/``mismatch``.
     """
     if not os.environ.get("INVOCATION_ID"):
         return None  # Not running under systemd (or at least not directly)
-    # /proc/self/cgroup: "0::/user.slice/.../hermes-gateway.service"
+    # /proc/self/cgroup: "0::/user.slice/.../eidolon-gateway.service"
     unit_name: Optional[str] = None
     with contextlib.suppress(OSError), open("/proc/self/cgroup", encoding="utf-8") as fh:
         for line in fh:
@@ -237,7 +237,7 @@ def _systemd_timeout_stop_us(unit_name: str) -> Optional[int]:
 def parse_systemd_duration_to_us(raw: str) -> Optional[int]:
     """Parse 'TimeoutStopUSec=1min 30s' / '90s' style values to microseconds. Covers us, ms, s, min,
     h, d, w, month, y; a bare number is seconds. None on anything unexpected; never raises. Public: also consumed by
-    hermes_cli.gateway's restart-wait sizing.
+    eidolon_cli.gateway's restart-wait sizing.
     """
     if not raw:
         return None

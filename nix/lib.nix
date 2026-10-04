@@ -106,7 +106,7 @@ let
   # Python source: everything except JS/TS/docs/infra directories.
   pythonSrc = lib.cleanSourceWith {
     src = repoRoot;
-    name = "hermes-python-source";
+    name = "eidolon-python-source";
     filter =
       path: type:
       let
@@ -136,7 +136,7 @@ let
             # Nix build definitions (Python build doesn't need these)
             "nix"
             # Skills are shipped via HERMES_BUNDLED_SKILLS /
-            # HERMES_OPTIONAL_SKILLS (see hermes-agent.nix), not via the
+            # HERMES_OPTIONAL_SKILLS (see eidolon-agent.nix), not via the
             # wheel's data_files — setup.py's _data_file_tree returns []
             # for a missing dir, so the wheel builds fine without them.
             # This keeps SKILL.md edits from rebuilding the Python venv.
@@ -169,7 +169,7 @@ let
           "SECURITY.md"
           "README.zh-CN.md"
           ".gitignore"
-          "setup-hermes.sh"
+          "setup-eidolon.sh"
         ];
       in
       if relPath == "" then
@@ -235,7 +235,7 @@ let
   # e.g. apps/desktop depends on apps/shared.
   #
   # Usage:
-  #   hermesNpmLib.buildNpmPackage {
+  #   eidolonNpmLib.buildNpmPackage {
   #     dirs = [ "apps/desktop" "apps/shared" ];
   #     buildPhase = '' ... '';
   #     installPhase = '' ... '';

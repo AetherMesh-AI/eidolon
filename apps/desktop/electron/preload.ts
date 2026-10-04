@@ -195,7 +195,7 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
     setLastUsed: id => ipcRenderer.invoke('hermes:connections:set-last-used', id),
     test: id => ipcRenderer.invoke('hermes:connections:test', id),
     updateManaged: id => ipcRenderer.invoke('hermes:connections:update-managed', id),
-    // Fan out `hermes update` to every eligible registered connection.
+    // Fan out `eidolon update` to every eligible registered connection.
     // Optional excludeIds skips rows the caller updates through another path.
     updateAll: options => ipcRenderer.invoke('hermes:connections:update-all', options),
     // Registry lifecycle push (main → renderer): a connection was removed or

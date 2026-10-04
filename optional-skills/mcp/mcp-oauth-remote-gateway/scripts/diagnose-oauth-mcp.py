@@ -30,17 +30,17 @@ import json, os, sys, time, argparse, urllib.request, urllib.error, urllib.parse
 UA = "python-httpx/0.27"  # CF blocks default urllib UA on many providers
 
 
-def _hermes_home():
-    # Prefer Hermes' own resolver (profile-safe); fall back to env then ~/.hermes.
+def _eidolon_home():
+    # Prefer Eidolon' own resolver (profile-safe); fall back to env then ~/.hermes.
     try:
-        from hermes_constants import get_hermes_home
-        return str(get_hermes_home())
+        from eidolon_constants import get_eidolon_home
+        return str(get_eidolon_home())
     except Exception:
-        return os.environ.get("HERMES_HOME") or os.path.expanduser("~/.hermes")
+        return os.environ.get("HERMES_HOME") or os.path.expanduser("~/.eidolon")
 
 
 def _tokens_dir():
-    return os.path.join(_hermes_home(), "mcp-tokens")
+    return os.path.join(_eidolon_home(), "mcp-tokens")
 
 
 def _post(url, data=None, headers=None, form=False, timeout=30):

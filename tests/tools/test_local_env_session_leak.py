@@ -205,7 +205,7 @@ def test_sanitize_subprocess_env_set_contextvar_wins_when_engaged():
 # Non-terminal spawn surface (hermes_subprocess_env) — sibling path
 # --------------------------------------------------------------------------- #
 
-def test_hermes_subprocess_env_strips_foreign_session_key_when_engaged(monkeypatch):
+def test_eidolon_subprocess_env_strips_foreign_session_key_when_engaged(monkeypatch):
     """hermes_subprocess_env (browser/ACP/CLI/TUI-host spawns) must not leak a
     foreign session key either. cli.exec spawns via this helper WITHOUT re-binding
     the session identity, so an UNSET ContextVar under an engaged host must strip
@@ -225,7 +225,7 @@ def test_hermes_subprocess_env_strips_foreign_session_key_when_engaged(monkeypat
     )
 
 
-def test_hermes_subprocess_env_unengaged_preserves_fallback(monkeypatch):
+def test_eidolon_subprocess_env_unengaged_preserves_fallback(monkeypatch):
     """A pure single-process CLI (never engaged) keeps the inherited fallback."""
     monkeypatch.setenv("HERMES_SESSION_KEY", "cli-fallback-key")
     # not engaged (autouse fixture leaves _session_context_engaged False)

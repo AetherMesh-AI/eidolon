@@ -1,4 +1,4 @@
-"""Base class for all Hermes execution environment backends.
+"""Base class for all Eidolon execution environment backends.
 
 Unified spawn-per-call model: every command spawns a fresh ``bash -c`` process.
 A session snapshot (env vars, functions, aliases) is captured once at init and
@@ -18,7 +18,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Callable, Iterable
 
-from hermes_constants import get_hermes_home
+from eidolon_constants import get_eidolon_home
 from tools.interrupt import consume_yield, is_interrupted, is_thread_interrupted
 from tools.environments.base_output import (
     ProcessHandle, _finalize_wait_result, _new_output_collector, _start_drain_thread,
@@ -111,7 +111,7 @@ def get_sandbox_dir() -> Path:
     """Host-side root for all sandbox storage (Docker workspaces, Singularity
     overlays/SIF cache). ``TERMINAL_SANDBOX_DIR`` overrides ``{HERMES_HOME}/sandboxes``."""
     custom = os.getenv("TERMINAL_SANDBOX_DIR")
-    p = Path(custom) if custom else get_hermes_home() / "sandboxes"
+    p = Path(custom) if custom else get_eidolon_home() / "sandboxes"
     p.mkdir(parents=True, exist_ok=True)
     return p
 
@@ -140,14 +140,14 @@ def _file_mtime_key(host_path: str) -> tuple[float, int] | None:
 
 
 class BaseEnvironment(ABC):
-    """Common interface and unified execution flow for all Hermes backends. Subclasses
+    """Common interface and unified execution flow for all Eidolon backends. Subclasses
     implement ``_run_bash()`` and ``cleanup()``; the base provides ``execute()`` with
     snapshot sourcing, CWD tracking, interrupt handling and timeout enforcement."""
 
     # Subclasses that embed stdin as a heredoc (Modal, Daytona) set this.
     _stdin_mode: str = "pipe"  # "pipe" or "heredoc"
 
-    # True only when commands execute on the SAME host as the Hermes process
+    # True only when commands execute on the SAME host as the Eidolon process
     # (LocalEnvironment); controller-host facts then describe the execution target.
     is_local: bool = False
 
@@ -607,7 +607,7 @@ import subprocess  # noqa: F401,E402
 
 _PLUGIN_COMPAT_LAZY = {
     'sanitize_task_id_for_path': ('tools.environments.path_utils', 'sanitize_task_id_for_path'),
-    'windows_hide_flags': ('hermes_cli._subprocess_compat', 'windows_hide_flags'),
+    'windows_hide_flags': ('eidolon_cli._subprocess_compat', 'windows_hide_flags'),
 }
 
 
@@ -616,7 +616,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

@@ -19,7 +19,7 @@ import tempfile
 from pathlib import Path
 from typing import Callable, Dict, Any, List, Optional
 
-from hermes_constants import display_hermes_home
+from eidolon_constants import display_eidolon_home
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 def get_env_value(name, default=None):
     """Read env values through the live config module (resolved per call so test patches apply)."""
     try:
-        from hermes_cli.config import get_env_value as _get_env_value
+        from eidolon_cli.config import get_env_value as _get_env_value
     except ImportError:
         return os.getenv(name, default)
     value = _get_env_value(name)
@@ -112,7 +112,7 @@ DEFAULT_PROVIDER = "edge"
 
 
 def _get_default_output_dir() -> str:
-    from hermes_constants import get_hermes_dir
+    from eidolon_constants import get_hermes_dir
     return str(get_hermes_dir("cache/audio", "audio_cache"))
 
 
@@ -126,7 +126,7 @@ def _default_output_dir() -> str:
     Same bug class as skills_tool (f8723c478) and skills_sync (#65828): long-lived multi-profile runtimes
     (dashboard console, TUI/Desktop backend, cron, kanban workers) import this module once under the launch
     HERMES_HOME and later scope requests to a different profile via
-    ``hermes_constants.set_hermes_home_override()`` — a frozen module constant keeps writing synthesized
+    ``eidolon_constants.set_eidolon_home_override()`` — a frozen module constant keeps writing synthesized
     audio into the launch profile's cache instead of the active profile's (#98749). Keep the legacy
     ``DEFAULT_OUTPUT_DIR`` module attribute for tests and external patchers; when it has not been patched,
     re-resolve from the live profile-scoped HERMES_HOME on every call.
@@ -139,10 +139,10 @@ def _default_output_dir() -> str:
 def _load_tts_config() -> Dict[str, Any]:
     """Return the ``tts`` config section ({} when unavailable)."""
     try:
-        from hermes_cli.config import load_config
+        from eidolon_cli.config import load_config
         return load_config().get("tts") or {}
     except ImportError:
-        logger.debug("hermes_cli.config not available, using default TTS config")
+        logger.debug("eidolon_cli.config not available, using default TTS config")
     except Exception as e:
         logger.warning("Failed to load TTS config: %s", e, exc_info=True)
     return {}
@@ -176,18 +176,18 @@ _BUILTIN_DISPATCH: Dict[str, tuple] = {
     "xai": (None, "xAI TTS", "_generate_xai_tts", None),
     "mistral": (lambda: _importable(_import_mistral_client), "Mistral Voxtral TTS", "_generate_mistral_tts",
                 "Mistral provider selected but 'mistralai' package not installed. "
-                "Run `hermes setup` to install Mistral support."),
+                "Run `eidolon setup` to install Mistral support."),
     "gemini": (None, "Google Gemini TTS", "_generate_gemini_tts", None),
     "neutts": (lambda: _check_neutts_available(), "NeuTTS (local)", "_generate_neutts",
                "NeuTTS provider selected but neutts is not installed. "
-               "Run hermes setup and choose NeuTTS, or install espeak-ng and run python -m pip install -U neutts[all]."),
+               "Run eidolon setup and choose NeuTTS, or install espeak-ng and run python -m pip install -U neutts[all]."),
     "kittentts": (lambda: _importable(_import_kittentts), "KittenTTS (local, ~25MB)", "_generate_kittentts",
                   "KittenTTS provider selected but 'kittentts' package not installed. "
-                  "Run 'hermes setup tts' and choose KittenTTS, or install manually: "
+                  "Run 'eidolon setup tts' and choose KittenTTS, or install manually: "
                   "pip install https://github.com/KittenML/KittenTTS/releases/download/0.8.1/kittentts-0.8.1-py3-none-any.whl"),
     "piper": (lambda: _importable(_import_piper), "Piper (local)", "_generate_piper_tts",
               "Piper provider selected but 'piper-tts' package not installed. "
-              "Run 'hermes tools' and select Piper under TTS, or install manually: "
+              "Run 'eidolon tools' and select Piper under TTS, or install manually: "
               "pip install piper-tts")}
 
 
@@ -534,7 +534,7 @@ TTS_SCHEMA = {
             },
             "output_path": {
                 "type": "string",
-                "description": f"Optional custom file path to save the audio. Defaults to {display_hermes_home()}/audio_cache/<timestamp>.mp3"
+                "description": f"Optional custom file path to save the audio. Defaults to {display_eidolon_home()}/audio_cache/<timestamp>.mp3"
             },
             "speed": {
                 "type": "number",
@@ -667,7 +667,7 @@ _PLUGIN_COMPAT_LAZY = {
     'stream_tts_to_speaker': ('tools.tts_tool_speaker', 'stream_tts_to_speaker'),
     'tts_lease_holders': ('tools.tts_tool_lifecycle', 'tts_lease_holders'),
     'warm_tts_provider': ('tools.tts_tool_lifecycle', 'warm_tts_provider'),
-    'windows_hide_flags': ('hermes_cli._subprocess_compat', 'windows_hide_flags'),
+    'windows_hide_flags': ('eidolon_cli._subprocess_compat', 'windows_hide_flags'),
 }
 
 
@@ -676,7 +676,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

@@ -558,7 +558,7 @@ class TestSlackConnectCleanup:
     async def test_disconnect_closes_workspace_clients_and_clears_runtime_state(self):
         """Regression for #51465: shutdown must close Slack WebClients.
 
-        ``hermes gateway run --replace`` takes the old process through the
+        ``eidolon gateway run --replace`` takes the old process through the
         normal adapter.disconnect() path. If Slack leaves AsyncWebClient
         instances open there, aiohttp logs ``Unclosed client session`` while
         the old gateway exits after SIGTERM.
@@ -1194,12 +1194,12 @@ class TestStandaloneSendUserDmResolution:
             result = await _slack_mod._standalone_send(
                 config,
                 "C123",
-                "[Hermes](https://example.com/hermes)",
+                "[Documentation](https://example.com/hermes)",
             )
 
         assert result["success"] is True
         payload = session.post.call_args.kwargs["json"]
-        assert payload["text"] == "<https://example.com/hermes|Hermes>"
+        assert payload["text"] == "<https://example.com/hermes|Documentation>"
         assert payload["unfurl_links"] is False
         assert payload["unfurl_media"] is False
 
@@ -3528,7 +3528,7 @@ class TestMessageSplitting:
 
     @pytest.mark.asyncio
     async def test_send_coerces_string_unfurl_options(self, adapter):
-        """`hermes config set` / Railway persist YAML booleans as strings.
+        """`eidolon config set` / Railway persist YAML booleans as strings.
 
         Relay-plane parity: string "false"/"true" must coerce instead of
         being silently dropped (which would leave previews on with no error).
@@ -4435,7 +4435,7 @@ class TestMissingCredentials:
         assert fatal_errors[0]["code"] == "missing_slack_app_token"
         assert fatal_errors[0]["retryable"] is False
         assert "SLACK_APP_TOKEN" in fatal_errors[0]["message"]
-        assert "hermes gateway setup" in fatal_errors[0]["message"].lower() or ".env" in fatal_errors[0]["message"]
+        assert "eidolon gateway setup" in fatal_errors[0]["message"].lower() or ".env" in fatal_errors[0]["message"]
 
 
 # ---------------------------------------------------------------------------

@@ -6,14 +6,14 @@ import pytest
 
 def test_explicit_profile_target_never_falls_back(tmp_path, monkeypatch):
     from tui_gateway import server
-    from hermes_state import SessionDB
+    from eidolon_state import SessionDB
 
     home = tmp_path / ".hermes"
     worker = home / "profiles" / "worker"
     worker.mkdir(parents=True)
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setenv("HERMES_HOME", str(home))
-    monkeypatch.setattr(server, "_hermes_home", home)
+    monkeypatch.setattr(server, "_eidolon_home", home)
     for path, marker in ((home, "launch"), (worker, "worker")):
         (path / "config.yaml").write_text(f"terminal:\n  cwd: /{marker}\n")
         with SessionDB(db_path=path / "state.db") as db:

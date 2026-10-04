@@ -27,9 +27,9 @@ import {
 // --- uninstallArgsForMode ---
 
 test('uninstallArgsForMode maps each mode to the module-runner argv', () => {
-  assert.deepEqual(uninstallArgsForMode('gui'), ['-m', 'hermes_cli.uninstall', '--mode', 'gui'])
-  assert.deepEqual(uninstallArgsForMode('lite'), ['-m', 'hermes_cli.uninstall', '--mode', 'lite'])
-  assert.deepEqual(uninstallArgsForMode('full'), ['-m', 'hermes_cli.uninstall', '--mode', 'full'])
+  assert.deepEqual(uninstallArgsForMode('gui'), ['-m', 'eidolon_cli.uninstall', '--mode', 'gui'])
+  assert.deepEqual(uninstallArgsForMode('lite'), ['-m', 'eidolon_cli.uninstall', '--mode', 'lite'])
+  assert.deepEqual(uninstallArgsForMode('full'), ['-m', 'eidolon_cli.uninstall', '--mode', 'full'])
 })
 
 test('uninstallArgsForMode throws on an unknown mode (no silent full wipe)', () => {
@@ -81,17 +81,17 @@ test('resolveRemovableAppPath: dev-run .app resolves (safety is shouldRemoveAppB
 
 test('resolveRemovableAppPath finds the install dir on Windows', () => {
   assert.equal(
-    resolveRemovableAppPath('C:\\Users\\x\\AppData\\Local\\Programs\\Hermes\\Hermes.exe', 'win32'),
-    'C:\\Users\\x\\AppData\\Local\\Programs\\Hermes'
+    resolveRemovableAppPath('C:\\Users\\x\\AppData\\Local\\Programs\\Eidolon\\Eidolon.exe', 'win32'),
+    'C:\\Users\\x\\AppData\\Local\\Programs\\Eidolon'
   )
   assert.equal(
-    resolveRemovableAppPath('C:\\Users\\x\\AppData\\Local\\hermes-desktop\\Hermes.exe', 'win32'),
+    resolveRemovableAppPath('C:\\Users\\x\\AppData\\Local\\hermes-desktop\\Eidolon.exe', 'win32'),
     'C:\\Users\\x\\AppData\\Local\\hermes-desktop'
   )
 })
 
 test('resolveRemovableAppPath returns null for an unrecognized Windows dir', () => {
-  assert.equal(resolveRemovableAppPath('C:\\Temp\\foo\\Hermes.exe', 'win32'), null)
+  assert.equal(resolveRemovableAppPath('C:\\Temp\\foo\\Eidolon.exe', 'win32'), null)
 })
 
 test('resolveRemovableAppPath uses APPIMAGE on Linux when set', () => {
@@ -129,7 +129,7 @@ test('buildPosixCleanupScript waits for the PID, runs the uninstall module, remo
     pythonExe: '/home/x/.hermes/hermes-agent/venv/bin/python',
     pythonPath: null,
     agentRoot: '/home/x/.hermes/hermes-agent',
-    uninstallArgs: ['-m', 'hermes_cli.uninstall', '--mode', 'gui'],
+    uninstallArgs: ['-m', 'eidolon_cli.uninstall', '--mode', 'gui'],
     appPath: '/opt/hermes/linux-unpacked',
     hermesHome: '/home/x/.hermes'
   })
@@ -139,7 +139,7 @@ test('buildPosixCleanupScript waits for the PID, runs the uninstall module, remo
   assert.match(script, /kill -0 "\$pid"/)
   // bounded wait (~30s), not unbounded
   assert.match(script, /seq 1 60/)
-  assert.match(script, /'-m' 'hermes_cli\.uninstall' '--mode' 'gui'/)
+  assert.match(script, /'-m' 'eidolon_cli\.uninstall' '--mode' 'gui'/)
   assert.match(script, /rm -rf '\/opt\/hermes\/linux-unpacked'/)
   assert.match(script, /export HERMES_HOME='\/home\/x\/\.hermes'/)
 })
@@ -150,15 +150,15 @@ test('buildPosixCleanupScript exports PYTHONPATH when pythonPath is set (lite/fu
     pythonExe: '/usr/bin/python3',
     pythonPath: '/home/x/.hermes/hermes-agent',
     agentRoot: '/home/x/.hermes/hermes-agent',
-    uninstallArgs: ['-m', 'hermes_cli.uninstall', '--mode', 'full'],
+    uninstallArgs: ['-m', 'eidolon_cli.uninstall', '--mode', 'full'],
     appPath: null,
     hermesHome: '/home/x/.hermes'
   })
 
-  // System python + source on PYTHONPATH so import hermes_cli works while the
+  // System python + source on PYTHONPATH so import eidolon_cli works while the
   // venv is torn down.
   assert.match(script, /export PYTHONPATH='\/home\/x\/\.hermes\/hermes-agent'/)
-  assert.match(script, /'\/usr\/bin\/python3' '-m' 'hermes_cli\.uninstall' '--mode' 'full'/)
+  assert.match(script, /'\/usr\/bin\/python3' '-m' 'eidolon_cli\.uninstall' '--mode' 'full'/)
 })
 
 test('buildPosixCleanupScript omits PYTHONPATH when pythonPath is null (gui)', () => {
@@ -167,7 +167,7 @@ test('buildPosixCleanupScript omits PYTHONPATH when pythonPath is null (gui)', (
     pythonExe: '/p/python',
     pythonPath: null,
     agentRoot: '/a',
-    uninstallArgs: ['-m', 'hermes_cli.uninstall', '--mode', 'gui'],
+    uninstallArgs: ['-m', 'eidolon_cli.uninstall', '--mode', 'gui'],
     appPath: null,
     hermesHome: '/h'
   })
@@ -181,14 +181,14 @@ test('buildPosixCleanupScript omits the bundle rm when appPath is null', () => {
     pythonExe: '/p/python',
     pythonPath: null,
     agentRoot: '/a',
-    uninstallArgs: ['-m', 'hermes_cli.uninstall', '--mode', 'lite'],
+    uninstallArgs: ['-m', 'eidolon_cli.uninstall', '--mode', 'lite'],
     appPath: null,
     hermesHome: '/h'
   })
 
   assert.doesNotMatch(script, /rm -rf '\//)
   // Still runs the uninstall.
-  assert.match(script, /'-m' 'hermes_cli\.uninstall' '--mode' 'lite'/)
+  assert.match(script, /'-m' 'eidolon_cli\.uninstall' '--mode' 'lite'/)
 })
 
 test('buildPosixCleanupScript single-quote-escapes paths with apostrophes', () => {
@@ -197,7 +197,7 @@ test('buildPosixCleanupScript single-quote-escapes paths with apostrophes', () =
     pythonExe: "/home/o'brien/python",
     pythonPath: null,
     agentRoot: '/a',
-    uninstallArgs: ['-m', 'hermes_cli.uninstall', '--mode', 'gui'],
+    uninstallArgs: ['-m', 'eidolon_cli.uninstall', '--mode', 'gui'],
     appPath: null,
     hermesHome: '/h'
   })
@@ -214,23 +214,23 @@ test('buildWindowsCleanupScript waits (bounded) for PID, runs uninstall, rmdir b
     pythonExe: 'C:\\Python313\\python.exe',
     pythonPath: 'C:\\hermes',
     agentRoot: 'C:\\hermes',
-    uninstallArgs: ['-m', 'hermes_cli.uninstall', '--mode', 'full'],
-    appPath: 'C:\\Users\\x\\AppData\\Local\\Programs\\Hermes',
+    uninstallArgs: ['-m', 'eidolon_cli.uninstall', '--mode', 'full'],
+    appPath: 'C:\\Users\\x\\AppData\\Local\\Programs\\Eidolon',
     hermesHome: 'C:\\Users\\x\\AppData\\Local\\hermes'
   })
 
   assert.match(script, /@echo off/)
   assert.match(script, /set "PID=9988"/)
-  // PYTHONPATH set so a system python can import hermes_cli from source.
+  // PYTHONPATH set so a system python can import eidolon_cli from source.
   assert.match(script, /set "PYTHONPATH=C:\\hermes;%PYTHONPATH%"/)
-  assert.match(script, /"C:\\Python313\\python.exe" "-m" "hermes_cli\.uninstall" "--mode" "full"/)
+  assert.match(script, /"C:\\Python313\\python.exe" "-m" "eidolon_cli\.uninstall" "--mode" "full"/)
   // Bounded wait-loop (no infinite loop), whole-token PID match (no substring).
   assert.match(script, /if %waited% geq 60 goto waited_done/)
   assert.match(script, /findstr \/r \/c:" %PID% "/)
   assert.doesNotMatch(script, /find "%PID%"/) // the old substring-prone form is gone
   // Removal is a retry loop (Windows releases dir handles lazily).
   assert.match(script, /:rmloop/)
-  assert.match(script, /rmdir \/s \/q "C:\\Users\\x\\AppData\\Local\\Programs\\Hermes" >nul 2>&1/)
+  assert.match(script, /rmdir \/s \/q "C:\\Users\\x\\AppData\\Local\\Programs\\Eidolon" >nul 2>&1/)
   assert.match(script, /if %tries% geq 10 goto rmdone/)
   assert.match(script, /del "%~f0"/)
 })
@@ -241,7 +241,7 @@ test('buildWindowsCleanupScript omits PYTHONPATH + rmdir when not needed (gui, n
     pythonExe: 'C:\\h\\venv\\Scripts\\python.exe',
     pythonPath: null,
     agentRoot: 'C:\\h',
-    uninstallArgs: ['-m', 'hermes_cli.uninstall', '--mode', 'gui'],
+    uninstallArgs: ['-m', 'eidolon_cli.uninstall', '--mode', 'gui'],
     appPath: null,
     hermesHome: 'C:\\h'
   })

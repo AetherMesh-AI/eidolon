@@ -1,4 +1,4 @@
-"""Lazy dependency installer for opt-in Hermes backends.
+"""Lazy dependency installer for opt-in Eidolon backends.
 
 Backends call :func:`ensure(feature)` on first import; missing packages are installed into the
 active venv (or the durable target) unless ``security.allow_lazy_installs: false``, in which
@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from hermes_cli._subprocess_compat import windows_hide_flags
+from eidolon_cli._subprocess_compat import windows_hide_flags
 
 logger = logging.getLogger(__name__)
 
@@ -191,12 +191,12 @@ LAZY_DEPS: dict[str, tuple[str, ...]] = {
         "starlette==1.3.1",
     ),
     # huggingface-hub is SHARED with transformers (>=1.5.0,<2 via Hindsight) and marked active
-    # on mere presence, so `hermes update` re-asserts this pin everywhere hub exists. MUST stay
+    # on mere presence, so `eidolon update` re-asserts this pin everywhere hub exists. MUST stay
     # inside transformers' window and match uv.lock (tests/test_project_metadata.py enforces).
     # HF Agent Trace Viewer upload (hermes trace upload / /upload-trace). huggingface-hub is a SHARED
     # dependency: transformers (pulled by sentence-transformers for local Hindsight embeddings) requires
     # >=1.5.0,<2, and faster-whisper/tokenizers depend on it transitively. Because active_features() marks a
-    # feature active from mere package presence, the `hermes update` lazy-refresh pass re-asserts THIS pin
+    # feature active from mere package presence, the `eidolon update` lazy-refresh pass re-asserts THIS pin
     # on every install where hub is present — so an exact pin below 1.5.0 force-downgrades the shared
     # package and breaks Hindsight startup (#60783). Policy: keep the exact pin (no ranges — security
     # posture), but it MUST stay inside transformers' accepted window and MUST match uv.lock so the whole
@@ -316,7 +316,7 @@ def _allow_lazy_installs() -> bool:
     target to redirect into. Unreadable config fails OPEN — blocking is an explicit opt-in."""
     cfg = None
     with contextlib.suppress(Exception):
-        from hermes_cli.config import load_config
+        from eidolon_cli.config import load_config
         cfg = load_config()
     if cfg is not None and not bool((cfg.get("security") or {}).get("allow_lazy_installs", True)):
         return False
@@ -329,7 +329,7 @@ def _unsupported_feature_reason(feature: str) -> Optional[str]:
     """Platform capability gate (not policy): why a feature cannot work on this host, or None."""
     if sys.platform == "win32" and feature == "platform.matrix":
         return ("unsupported on Windows: Matrix E2EE depends on python-olm, which has no Windows wheel and "
-                "requires make + libolm to build from sdist. Run Hermes under WSL to use Matrix on Windows.")
+                "requires make + libolm to build from sdist. Run Eidolon under WSL to use Matrix on Windows.")
     return None
 
 
@@ -364,7 +364,7 @@ def _installed_version(spec: str) -> Optional[str]:
 
 
 def _is_satisfied(spec: str) -> bool:
-    """Present AND inside the spec's version range, so ``hermes update`` propagates pin bumps to
+    """Present AND inside the spec's version range, so ``eidolon update`` propagates pin bumps to
     installed backends. Unparseable specs/versions or a missing ``packaging`` count as satisfied — err
     toward "don't churn"."""
     installed = _installed_version(spec)
@@ -472,7 +472,7 @@ def _uv_binary() -> Optional[str]:
     """Managed uv first ($HERMES_HOME/bin is never on PATH), then PATH. A lookup, not ensure_uv():
     downloading uv mid-turn is more than the caller asked for; pip covers no-uv."""
     try:
-        from hermes_cli.managed_uv import resolve_uv
+        from eidolon_cli.managed_uv import resolve_uv
 
         return resolve_uv() or shutil.which("uv")
     except Exception:
@@ -482,7 +482,7 @@ def _uv_binary() -> Optional[str]:
 def _venv_pip_install(specs: tuple[str, ...], *, timeout: int = 300) -> _InstallResult:
     """Install ``specs`` via the uv -> pip -> ensurepip ladder, venv-scoped or into the durable
     ``--target`` (constrained to core versions) when :data:`_LAZY_TARGET_ENV` is set. Independent of
-    ``hermes_cli.tools_config._pip_install`` (no CLI dependency)."""
+    ``eidolon_cli.tools_config._pip_install`` (no CLI dependency)."""
     if not specs:
         return _InstallResult(True, "", "")
     target = _lazy_install_target()
@@ -581,14 +581,14 @@ def ensure(feature: str, *, prompt: bool = True) -> None:
     if _lazy_install_target() is None:
         managed_by = ""  # config unreadable — proceed with the install
         with contextlib.suppress(Exception):
-            from hermes_cli.config import get_managed_system
+            from eidolon_cli.config import get_managed_system
             managed_by = get_managed_system()
         if managed_by:
             raise FeatureUnavailable(
                 feature, missing,
                 f"unsupported on {managed_by}-managed installs: this build's packages come from {managed_by}, "
-                f"so Hermes cannot install them at runtime. Add the dependencies for {feature!r} via "
-                f"{managed_by} (or run a pip/uv install of Hermes instead).")
+                f"so Eidolon cannot install them at runtime. Add the dependencies for {feature!r} via "
+                f"{managed_by} (or run a pip/uv install of Eidolon instead).")
     for spec in missing:  # belt and braces on top of the allowlist
         if not _spec_is_safe(spec):
             raise FeatureUnavailable(feature, missing, f"refusing to install unsafe spec {spec!r}")
@@ -670,12 +670,12 @@ def install_specs(specs: list[str] | tuple[str, ...], *, timeout: int = 300) -> 
 
 def active_features() -> list[str]:
     """Features whose ANCHOR package (first spec) is present at any version — shared helpers like
-    asyncpg are deliberately not proof a backend was enabled. Drives ``hermes update``."""
+    asyncpg are deliberately not proof a backend was enabled. Drives ``eidolon update``."""
     return [f for f, specs in LAZY_DEPS.items() if specs and _is_present(specs[0])]
 
 
 def refresh_active_features(*, prompt: bool = False) -> dict[str, str]:
-    """Re-run ``ensure`` for every active feature (``hermes update``); returns
+    """Re-run ``ensure`` for every active feature (``eidolon update``); returns
     ``{feature: "current" | "refreshed" | "failed: <reason>" | "skipped: <reason>"}``. Never raises."""
     return _refresh_features(active_features(), prompt=prompt, restoring=False)
 

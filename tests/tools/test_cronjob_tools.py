@@ -321,7 +321,7 @@ class TestUnifiedCronjobTool:
 
     @staticmethod
     def _patch_named_legit(monkeypatch):
-        import hermes_cli.runtime_provider as rp
+        import eidolon_cli.runtime_provider as rp
         monkeypatch.setattr(rp, "has_named_custom_provider", lambda n: True)
         monkeypatch.setattr(
             rp, "_get_named_custom_provider",
@@ -432,7 +432,7 @@ class TestUnifiedCronjobTool:
 
 
 class TestAgentCannotSetModelPin:
-    """Per-job inference pins are user-owned (dashboard / `hermes cron`
+    """Per-job inference pins are user-owned (dashboard / `eidolon cron`
     --model / hand-edited jobs). The agent-facing tool schema must not expose
     model/provider/base_url, and the registered handler must ignore them even
     if a model hallucinates the old parameters."""
@@ -657,7 +657,7 @@ class TestValidateCronBaseUrl:
 
     @staticmethod
     def _patch_named_legit(monkeypatch):
-        import hermes_cli.runtime_provider as rp
+        import eidolon_cli.runtime_provider as rp
         monkeypatch.setattr(rp, "has_named_custom_provider", lambda n: True)
         monkeypatch.setattr(
             rp, "_get_named_custom_provider",

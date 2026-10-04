@@ -1,4 +1,4 @@
-"""`hermes memory setup` wizard for the Hindsight provider (``post_setup``)."""
+"""`eidolon memory setup` wizard for the Hindsight provider (``post_setup``)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 from agent.secret_scope import get_secret
-from hermes_cli.secret_prompt import masked_secret_prompt
+from eidolon_cli.secret_prompt import masked_secret_prompt
 
 from . import templates as _hs_templates
 from .embedded import _embedded_profile_env_path, _load_simple_env, _materialize_embedded_profile_env
@@ -35,7 +35,7 @@ def _secret_prompt(label: str) -> str:
 
 def _select(title: str, items: list, values: list, current) -> str | None:
     """Curses pick from *values*, defaulting to *current*; None when cancelled."""
-    from hermes_cli.memory_setup import _CANCELLED, _curses_select, _print_cancelled_setup
+    from eidolon_cli.memory_setup import _CANCELLED, _curses_select, _print_cancelled_setup
 
     default = values.index(current) if current in values else 0
     idx = _curses_select(title, items, default=default, cancel_returns=_CANCELLED)
@@ -78,7 +78,7 @@ def _prompt_embedded_llm(llm_provider: str, provider_config: dict, env_writes: d
 
 def run_setup(provider, hermes_home: str, config: dict) -> None:
     """Interactive wizard — installs only the deps the selected mode needs."""
-    from hermes_cli.config import save_config
+    from eidolon_cli.config import save_config
 
     from . import _load_config
 
@@ -154,7 +154,7 @@ def run_setup(provider, hermes_home: str, config: dict) -> None:
     # Starter template (best-effort) only where the API is reachable now
     # (local_embedded's daemon isn't up).
     if _hs_templates.supported_for_mode(mode):
-        from hermes_cli.memory_setup import _CANCELLED, _curses_select
+        from eidolon_cli.memory_setup import _CANCELLED, _curses_select
 
         default_url = _DEFAULT_LOCAL_URL if mode == "local_external" else _DEFAULT_API_URL
         _hs_templates.run_template_step(

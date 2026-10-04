@@ -13,7 +13,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 INSTALL_SCRIPTS = (
     REPO_ROOT / "scripts" / "install.sh",
-    REPO_ROOT / "setup-hermes.sh",
+    REPO_ROOT / "setup-eidolon.sh",
 )
 _HELPER_START = "run_locked_uv_sync() {\n"
 
@@ -87,7 +87,7 @@ export XDG_CONFIG_DIRS=/poison/system
 """
         + _locked_sync_helper(INSTALL_SCRIPTS[0])
         + """
-run_locked_uv_sync /tmp/hermes-venv
+run_locked_uv_sync /tmp/eidolon-venv
 test "$UV_NO_CONFIG" = 1
 test "$UV_CONFIG_FILE" = /poison/uv.toml
 test "$XDG_CONFIG_HOME" = /poison/user
@@ -145,6 +145,7 @@ exclude-newer = "14 days"
     clean_env["XDG_CONFIG_HOME"] = str(isolated_config)
     clean_env["XDG_CONFIG_DIRS"] = str(isolated_config)
     clean_env["UV_OFFLINE"] = "1"
+    clean_env["UV_CACHE_DIR"] = str(tmp_path / "uv-cache")
 
     locked = subprocess.run(
         [uv, "lock"],

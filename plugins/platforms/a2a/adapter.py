@@ -36,7 +36,7 @@ _DEFAULT_PORT = 9900
 _ORPHAN_TIMEOUT, _WATCHDOG_INTERVAL = 300, 60  # seconds: pending task considered orphaned / watchdog period
 _MAX_BODY = 1_048_576  # 1MB max request body — prevents DoS via memory exhaustion
 _SSE_KEEPALIVE = 5  # seconds between SSE keepalive comments
-_DEFAULT_DESCRIPTION = "Hermes Agent — a general-purpose agent reachable over A2A."
+_DEFAULT_DESCRIPTION = "Eidolon Agent — a general-purpose agent reachable over A2A."
 
 _ok = protocol.jsonrpc_result
 _err = protocol.jsonrpc_error
@@ -96,7 +96,7 @@ def _join_url(base: str, prefix: str) -> str:
 
 def _active_profile_name() -> str:
     try:
-        from hermes_cli.profiles import get_active_profile_name
+        from eidolon_cli.profiles import get_active_profile_name
         return get_active_profile_name() or "default"
     except Exception:
         return os.getenv("HERMES_PROFILE", "default") or "default"
@@ -104,13 +104,13 @@ def _active_profile_name() -> str:
 
 def _profile_home(profile: str) -> Optional[str]:
     with contextlib.suppress(Exception):
-        from hermes_cli.profiles import get_profile_dir
+        from eidolon_cli.profiles import get_profile_dir
         return str(get_profile_dir(profile))
     if profile and profile != "default":
-        return os.path.expanduser(f"~/.hermes/profiles/{profile}")
+        return os.path.expanduser(f"~/.eidolon/profiles/{profile}")
     with contextlib.suppress(Exception):
-        from hermes_cli.config import get_hermes_home
-        return str(get_hermes_home())
+        from eidolon_cli.config import get_eidolon_home
+        return str(get_eidolon_home())
     return None
 
 
@@ -346,7 +346,7 @@ class A2AAdapter(BasePlatformAdapter):
         raw = extra.get("agents") or extra.get("served_agents")
         if raw is None:
             try:
-                from hermes_cli.config import load_config
+                from eidolon_cli.config import load_config
                 cfg = load_config() or {}
             except Exception:
                 cfg = {}
@@ -385,8 +385,8 @@ class A2AAdapter(BasePlatformAdapter):
             agents[slug] = {
                 "slug": slug, "path": "/" + path_segment, "tenant": tenant, "profile": profile or slug,
                 "local": bool(val.get("local")) or profile in ("", "default", self._active_profile),
-                "name": str(val.get("name") or f"Hermes {slug}"),
-                "description": str(val.get("description") or f"Hermes profile '{profile or slug}' exposed over A2A."),
+                "name": str(val.get("name") or f"Eidolon {slug}"),
+                "description": str(val.get("description") or f"Eidolon profile '{profile or slug}' exposed over A2A."),
                 "advertised_toolsets": list(toolsets or []),
                 "timeout": int(val.get("timeout") or _reply_timeout()),
             }
@@ -532,7 +532,7 @@ class A2AAdapter(BasePlatformAdapter):
         return None, {"task_id": task_id, "context_id": context_id, "peer": peer, "future": fut, "created_iso": rec["created_iso"], "started": time.time()}
 
     def _forward_to_profile(self, agent: dict, peer: str, context_id: str, framed_text: str) -> tuple[str, str]:
-        """Forward a routed task to another local profile via ``hermes chat``. First contact creates a
+        """Forward a routed task to another local profile via ``eidolon chat``. First contact creates a
         ``source=a2a`` session and titles it deterministically; later turns ``--resume`` that id."""
         profile = str(agent.get("profile") or agent.get("slug") or "").strip()
         slug = str(agent.get("slug") or profile or "agent")
@@ -544,7 +544,7 @@ class A2AAdapter(BasePlatformAdapter):
             session_id = self._profile_sessions.get(key) or _state_db(
                 profile, "SELECT id FROM sessions WHERE title = ? ORDER BY started_at DESC LIMIT 1",
                 (session_title,), "A2A: could not lookup forwarded session")
-            cmd = ["hermes", "chat", "-q", framed_text, "-Q", "--source", "a2a"] + (["--resume", session_id] if session_id else [])
+            cmd = ["eidolon", "chat", "-q", framed_text, "-Q", "--source", "a2a"] + (["--resume", session_id] if session_id else [])
             env = {**os.environ, "HERMES_A2A_PEER": peer}
             if home := _profile_home(profile):
                 env["HERMES_HOME"] = home

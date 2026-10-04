@@ -228,7 +228,7 @@ class XAIImageGenProvider(StaticImageGenProvider):
         provider_name = str(creds.get("provider") or "xai").strip() or "xai"
         if not api_key:
             return error_factory(provider_name, aspect_ratio)(
-                "No xAI credentials found. Configure xAI OAuth in `hermes model` or set XAI_API_KEY.",
+                "No xAI credentials found. Configure xAI OAuth in `eidolon model` or set XAI_API_KEY.",
                 "missing_api_key")
 
         model_id, meta = _resolve_model(kwargs.get("model"))
@@ -339,7 +339,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

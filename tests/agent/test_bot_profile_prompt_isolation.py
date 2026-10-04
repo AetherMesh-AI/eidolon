@@ -4,9 +4,9 @@ thread that did not bind the HERMES_HOME ContextVar.
 
 Root cause this guards (confirmed empirically): ContextVars do not propagate
 into ``threading.Thread``. ``build_skills_system_prompt`` and the
-active-profile line resolved the home via the ambient ``get_hermes_home()``,
+active-profile line resolved the home via the ambient ``get_eidolon_home()``,
 so an unbound build thread fell back to ``~/.hermes`` (default) and leaked
-default's full skills index + "Active Hermes profile: default" into a bot's
+default's full skills index + "Active Eidolon profile: default" into a bot's
 prompt, while the live ``skills_list()`` (re-bound per turn) correctly
 showed the bot's real, empty set. The agent now resolves its own home from
 its ``_session_db.db_path`` and passes it explicitly.
@@ -48,7 +48,7 @@ def test_skills_prompt_scoped_to_override_not_ambient_home(tmp_path, monkeypatch
     result = {}
 
     def build():
-        # No set_hermes_home_override on THIS thread — ambient resolves to
+        # No set_eidolon_home_override on THIS thread — ambient resolves to
         # default. The override arg must still scope to the empty bot.
         result["bot"] = _skills_body(
             prompt_builder.build_skills_system_prompt(skills_dir_override=bot_skills)
@@ -95,7 +95,7 @@ def test_agent_home_none_without_session_db():
 def test_profile_name_correct_on_bound_profile_session(tmp_path, monkeypatch):
     """Regression for the fix-of-the-fix: on a CORRECTLY bound profile session
     the ambient home IS the profile dir, so deriving the profile name with
-    ``get_hermes_home()/profiles`` as the root would never match and every
+    ``get_eidolon_home()/profiles`` as the root would never match and every
     profile would misreport as \"default\". The name must derive from the
     hermes ROOT (get_default_hermes_root)."""
     from agent import system_prompt

@@ -8,10 +8,10 @@ import json
 import time
 from typing import Optional
 
-from hermes_cli.config import get_hermes_home
+from eidolon_cli.config import get_eidolon_home
 from utils import atomic_json_write
 
-CACHE_PATH = get_hermes_home() / "sticker_cache.json"
+CACHE_PATH = get_eidolon_home() / "sticker_cache.json"
 
 # Kept concise to save tokens.
 STICKER_VISION_PROMPT = (

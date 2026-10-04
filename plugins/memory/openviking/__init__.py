@@ -37,7 +37,7 @@ from urllib.request import url2pathname
 from agent.message_content import flatten_message_text
 from agent.memory_provider import MemoryProvider
 from agent.skill_commands import extract_user_instruction_from_skill_message
-from hermes_cli import __version__ as _HERMES_VERSION
+from eidolon_cli import __version__ as _HERMES_VERSION
 from tools.registry import tool_error
 from utils import atomic_json_write, env_var_enabled
 
@@ -122,7 +122,7 @@ _OPENVIKING_RESPONDED_FAILURE_PREFIX = "OpenViking server responded"
 # Identity probe states; "modern" and "legacy" are the two identified ones.
 _OPENVIKING_IDENTIFIED_STATES = frozenset({"modern", "legacy"})
 _RETRY_LATER = (
-    "OpenViking memory is temporarily unavailable; Hermes will retry on a later access or when the config changes."
+    "OpenViking memory is temporarily unavailable; Eidolon will retry on a later access or when the config changes."
 )
 _FIX_ENDPOINT = "OpenViking memory is temporarily unavailable; correct the endpoint and reload the configuration."
 _HTTPX_MISSING = "httpx not installed — OpenViking plugin disabled"
@@ -185,7 +185,7 @@ def _format_openviking_exception(error: Exception) -> str:
 
 
 def _derive_openviking_user_text(content: Any) -> str:
-    """Strip Hermes slash-skill scaffolding before sending content to OpenViking
+    """Strip Eidolon slash-skill scaffolding before sending content to OpenViking
     (MemoryManager already does this for the fan-out; kept for direct hook callers)."""
     return extract_user_instruction_from_skill_message(content) or ""
 
@@ -640,7 +640,7 @@ def _normalize_openviking_url(url: str) -> str:
         blocked = _openviking_endpoint_is_always_blocked(candidate)
     except Exception as exc:
         logger.debug("OpenViking endpoint safety validation failed", exc_info=True)
-        raise _OpenVikingEndpointError("OpenViking endpoint safety validation failed; Hermes refused the connection.") from exc
+        raise _OpenVikingEndpointError("OpenViking endpoint safety validation failed; Eidolon refused the connection.") from exc
     if blocked:
         raise _OpenVikingEndpointError(
             f"OpenViking endpoint {_openviking_endpoint_label(candidate)} targets a blocked metadata address."
@@ -738,7 +738,7 @@ def _is_local_openviking_url(value: str) -> bool:
 
 def _load_hermes_openviking_config() -> dict:
     try:
-        from hermes_cli.config import load_config_readonly
+        from eidolon_cli.config import load_config_readonly
 
         config = load_config_readonly()
         memory_config = config.get("memory", {}) if isinstance(config, dict) else {}
@@ -899,13 +899,13 @@ def _local_openviking_bind(endpoint: str) -> tuple[str, int]:
     return parsed.hostname or "127.0.0.1", parsed.port or 1933
 
 
-def _hermes_home_path() -> Path:
+def _eidolon_home_path() -> Path:
     try:
-        from hermes_constants import get_hermes_home
-        return get_hermes_home()
+        from eidolon_constants import get_eidolon_home
+        return get_eidolon_home()
     except Exception:
         env_home = os.environ.get("HERMES_HOME")
-        return Path(env_home).expanduser() if env_home else Path.home() / ".hermes"
+        return Path(env_home).expanduser() if env_home else Path.home() / ".eidolon"
 
 
 def _local_openviking_port_is_open(host: str, port: int) -> bool:
@@ -965,22 +965,22 @@ def _start_local_openviking_server(endpoint: str) -> tuple[str, str]:
     # An occupied port only prevents spawning — it never proves the listener is OpenViking.
     if _local_openviking_port_is_open(host, port):
         return _LOCAL_SERVER_OCCUPIED, (
-            f"Port {host}:{port} is occupied by {_describe_local_port_listener(host, port)}. Hermes did not start "
+            f"Port {host}:{port} is occupied by {_describe_local_port_listener(host, port)}. Eidolon did not start "
             "openviking-server because the listener has not passed OpenViking's /health check."
         )
     server_cmd = shutil.which("openviking-server")
     if not server_cmd:
         return _LOCAL_SERVER_FAILED, "openviking-server was not found on PATH. Start it manually, then retry."
-    log_path = _hermes_home_path() / _OPENVIKING_SERVER_LOG_RELATIVE_PATH
+    log_path = _eidolon_home_path() / _OPENVIKING_SERVER_LOG_RELATIVE_PATH
     try:
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        # Strip PYTHONPATH: the Desktop backend puts the Hermes venv on it, which
+        # Strip PYTHONPATH: the Desktop backend puts the Eidolon venv on it, which
         # would shadow openviking-server's own site-packages (and on Windows lock
-        # the Hermes venv's .pyd files, breaking `hermes update`).
+        # the Eidolon venv's .pyd files, breaking `eidolon update`).
         # Do not let the server child inherit this process's PYTHONPATH. If inherited, openviking-server
-        # would import aiohttp and friends from the Hermes venv instead of its own (its venv's site-packages
+        # would import aiohttp and friends from the Eidolon venv instead of its own (its venv's site-packages
         # are shadowed because PYTHONPATH precedes them) — and on Windows the loaded DLLs then lock the
-        # Hermes venv, aborting `hermes update` with access-denied on .pyd files. (#78153)
+        # Eidolon venv, aborting `eidolon update` with access-denied on .pyd files. (#78153)
         child_env = os.environ.copy()
         child_env.pop("PYTHONPATH", None)
         with log_path.open("ab") as log_file:
@@ -1208,7 +1208,7 @@ class OpenVikingMemoryProvider(MemoryProvider):
     def __init__(self):
         self._client: Optional[_VikingClient] = None
         self._endpoint = self._api_key = self._account = self._user = self._agent = ""
-        self._session_id, self._turn_count, self._hermes_home = "", 0, ""
+        self._session_id, self._turn_count, self._eidolon_home = "", 0, ""
         # (conn snapshot, user): keyed on the snapshot so every client built from it
         # shares the resolved user and a /reload invalidates it.
         # Server-asserted user space for explicit-uid URIs (#91995). Key the cache on the connection
@@ -1274,7 +1274,7 @@ class OpenVikingMemoryProvider(MemoryProvider):
         if endpoint:
             normalized["endpoint"] = _normalize_openviking_url(endpoint)
 
-        from hermes_cli.config import load_config, save_config
+        from eidolon_cli.config import load_config, save_config
 
         config = load_config()
         if not isinstance(config.get("memory"), dict):
@@ -1406,7 +1406,7 @@ class OpenVikingMemoryProvider(MemoryProvider):
         self._env_refresh_enabled = True
         self._session_id = session_id
         self._turn_count = 0
-        self._hermes_home = str(kwargs.get("hermes_home") or "").strip() or str(_hermes_home_path())
+        self._eidolon_home = str(kwargs.get("hermes_home") or "").strip() or str(_eidolon_home_path())
         self._acquire_run_lock()
         self._profile_prefetched_sessions.clear()
 
@@ -1495,7 +1495,7 @@ class OpenVikingMemoryProvider(MemoryProvider):
         self._failed_refresh = (settings_key, time.monotonic())
         if health_state == "responded":
             logger.warning(
-                "%s OpenViking memory is temporarily unavailable; Hermes will retry on a later access (after cooldown) or when the config changes.",
+                "%s OpenViking memory is temporarily unavailable; Eidolon will retry on a later access (after cooldown) or when the config changes.",
                 health_message,
             )
         else:
@@ -1942,7 +1942,7 @@ class OpenVikingMemoryProvider(MemoryProvider):
 
     @staticmethod
     def _extract_current_turn_messages(messages: Optional[List[Dict[str, Any]]], user_content: str, assistant_content: str) -> List[Dict[str, Any]]:
-        """Slice the completed turn out of Hermes' full canonical transcript: the last
+        """Slice the completed turn out of Eidolon' full canonical transcript: the last
         assistant message matching assistant_content (else the last assistant message,
         else the transcript end) back to the matching (else nearest) user message."""
         if not messages:
@@ -1962,7 +1962,7 @@ class OpenVikingMemoryProvider(MemoryProvider):
 
     @staticmethod
     def _messages_to_openviking_batch(messages: List[Dict[str, Any]], *, assistant_peer_id: str = "") -> List[Dict[str, Any]]:
-        """Convert Hermes canonical messages into OpenViking batch payloads.
+        """Convert Eidolon canonical messages into OpenViking batch payloads.
 
         Recall-tool calls/results are dropped (re-ingesting recalled memory would
         re-store it); tool results are grouped into assistant messages; a tool call
@@ -2135,11 +2135,11 @@ class OpenVikingMemoryProvider(MemoryProvider):
         """Marker/lock file under HERMES_HOME: ``pending`` -> pending_sessions/<sid>.json,
         ``lock`` -> runs/<run_id>.lock; an empty run id maps to the legacy recovery lock."""
         name = str(name or "").strip()
-        if not self._hermes_home or (not name and kind != "lock"):
+        if not self._eidolon_home or (not name and kind != "lock"):
             return None
         if kind == "pending":
-            return Path(self._hermes_home) / _PENDING_SESSIONS_RELATIVE_DIR / f"{quote(name, safe='')}.json"
-        return Path(self._hermes_home) / _RUN_LOCKS_RELATIVE_DIR / (f"{quote(name, safe='')}.lock" if name else _LEGACY_RECOVERY_LOCK_FILENAME)
+            return Path(self._eidolon_home) / _PENDING_SESSIONS_RELATIVE_DIR / f"{quote(name, safe='')}.json"
+        return Path(self._eidolon_home) / _RUN_LOCKS_RELATIVE_DIR / (f"{quote(name, safe='')}.lock" if name else _LEGACY_RECOVERY_LOCK_FILENAME)
 
     @staticmethod
     def _flock_open(path: Path):
@@ -2237,7 +2237,7 @@ class OpenVikingMemoryProvider(MemoryProvider):
 
     def _pending_sessions(self) -> List[tuple[str, str]]:
         """(sid, owner_run_id) for every marker file; sid falls back to the file name."""
-        directory = Path(self._hermes_home) / _PENDING_SESSIONS_RELATIVE_DIR if self._hermes_home else None
+        directory = Path(self._eidolon_home) / _PENDING_SESSIONS_RELATIVE_DIR if self._eidolon_home else None
         if directory is None or not directory.is_dir():
             return []
         sessions: List[tuple[str, str]] = []
@@ -2595,7 +2595,7 @@ class OpenVikingMemoryProvider(MemoryProvider):
         return json.dumps(result, ensure_ascii=False)
 
     def _tool_remember(self, args: dict) -> str:
-        """Submit content through a dedicated session so it never touches the live Hermes session."""
+        """Submit content through a dedicated session so it never touches the live Eidolon session."""
         content = args.get("content", "")
         if not content:
             return tool_error("content is required")
@@ -2613,7 +2613,7 @@ class OpenVikingMemoryProvider(MemoryProvider):
                 recovery_note=(
                     "Inspect session_uri before recovery. If history/archive_* exists, do not retry. If messages.jsonl contains "
                     "the fact and no archive exists, run recovery_command with the same OpenViking profile and credentials as "
-                    "Hermes. Otherwise, do not resubmit automatically; report the uncertain state to the user."
+                    "Eidolon. Otherwise, do not resubmit automatically; report the uncertain state to the user."
                 ),
             )
         try:

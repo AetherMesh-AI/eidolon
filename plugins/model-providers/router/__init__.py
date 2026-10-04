@@ -1,6 +1,6 @@
 """Ramp Router (router.com) provider profile: Responses-only LLM gateway (verified live).
 
-``api_mode="codex_responses"`` + the ``api.router.com`` host mandate in ``hermes_cli/providers.py``
+``api_mode="codex_responses"`` + the ``api.router.com`` host mandate in ``eidolon_cli/providers.py``
 keep every path on the native wire. The catalog is account-scoped, so no ``fallback_models``
 (picker uses ``fetch_models()``). Router 400s on ``reasoning.effort`` levels outside a model's
 published vocabulary and on any reasoning field for non-reasoning models, so the efforts map
@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from agent.reasoning_effort import EFFORT_LADDER
-from hermes_cli import __version__ as _HERMES_VERSION
+from eidolon_cli import __version__ as _HERMES_VERSION
 from providers import register_provider
 from providers.base import ProviderProfile, _profile_user_agent
 
@@ -45,7 +45,7 @@ def _resolve_api_key() -> str:
     """Router key (documented var, then alias), preferring dotenv; plain os.environ
     is the fallback when the dotenv resolver is unavailable or raises."""
     try:
-        from hermes_cli.config import get_env_value_prefer_dotenv as prefer_dotenv
+        from eidolon_cli.config import get_env_value_prefer_dotenv as prefer_dotenv
     except Exception:
         prefer_dotenv = None
     for resolve in filter(None, (prefer_dotenv, os.environ.get)):
@@ -100,8 +100,8 @@ def _parse_efforts(items: Any) -> Optional[dict[str, list[str]]]:
 
 def _disk_path() -> Optional[Path]:
     try:
-        from hermes_constants import get_hermes_home
-        return get_hermes_home() / "cache" / "router_catalog.json"
+        from eidolon_constants import get_eidolon_home
+        return get_eidolon_home() / "cache" / "router_catalog.json"
     except Exception:
         return None
 
@@ -154,7 +154,7 @@ def _fetch_catalog_items(*, api_key: str = "", base_url: str = "", timeout: floa
     """Fetch the raw ``/v1/models`` ``data`` array. None on any failure."""
     import urllib.request
 
-    from hermes_cli.urllib_security import open_credentialed_url
+    from eidolon_cli.urllib_security import open_credentialed_url
 
     req = urllib.request.Request((base_url or _base_url()).rstrip("/") + "/models")
     key = api_key or _resolve_api_key()
@@ -250,7 +250,7 @@ router = RouterProfile(
     env_vars=("RAMP_ROUTER_API_KEY", "ROUTER_API_KEY", "RAMP_ROUTER_BASE_URL"), base_url=_base_url(),
     auth_type="api_key",
     # Router attributes coding-agent clients by UA prefix; its WAF rejects default UAs.
-    default_headers={"User-Agent": f"Hermes-Agent/{_HERMES_VERSION}"},
+    default_headers={"User-Agent": f"Eidolon-Agent/{_HERMES_VERSION}"},
     supports_vision=True, default_aux_model="gpt-5.4-mini",
     fallback_models=(),  # account-scoped IDs; the picker uses fetch_models()
 )

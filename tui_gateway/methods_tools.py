@@ -40,10 +40,10 @@ def _profile_scoped_rpc(
             token = None
             if profile := _str_arg(params, "profile") if scoped else "":
                 try:
-                    profile_dir = _tools_mod("hermes_cli.profiles").get_profile_dir(profile)
+                    profile_dir = _tools_mod("eidolon_cli.profiles").get_profile_dir(profile)
                     if not profile_dir or not profile_dir.is_dir():
                         return _err(rid, 4064, f"profile '{profile}' not found")
-                    token = _tools_mod("hermes_constants").set_hermes_home_override(str(profile_dir))
+                    token = _tools_mod("eidolon_constants").set_eidolon_home_override(str(profile_dir))
                 except Exception as e:
                     if not catch_resolve:
                         raise
@@ -99,7 +99,7 @@ def _mcp_rpc(name: str, required=_NAME):
 
 def _mcp_named_server(rid, params):
     """(name, servers, None) for a configured server, else (name, servers, 4064 error)."""
-    name, servers = _str_arg(params, "name"), _tools_mod("hermes_cli.mcp_config")._get_mcp_servers()
+    name, servers = _str_arg(params, "name"), _tools_mod("eidolon_cli.mcp_config")._get_mcp_servers()
     return name, servers, None if name in servers else _err(rid, 4064, f"server '{name}' not found")
 
 
@@ -160,7 +160,7 @@ def _capture_run_kwargs(timeout: int) -> dict:
     not crash the gateway thread on Windows), no stdin, no console flash under the desktop parent."""
     return dict(
         capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout,
-        stdin=subprocess.DEVNULL, creationflags=_tools_mod("hermes_cli._subprocess_compat").windows_hide_flags())
+        stdin=subprocess.DEVNULL, creationflags=_tools_mod("eidolon_cli._subprocess_compat").windows_hide_flags())
 
 
 def _captured_exec(rid, cmd, timeout: int, *, on_result, timeout_err: tuple, fail_code: int,
@@ -215,10 +215,10 @@ _SIMPLE_RPCS = {
     # Session-scoped view of the background process registry (desktop status stack).
     "process.stop": (5010, lambda params: {"killed": _tools_mod("tools.process_registry").process_registry.kill_all()}),
     # Re-read ``~/.hermes/.env`` (CLI ``/reload`` parity); built agents keep their pool, ``/new`` resolves fresh.
-    "reload.env": (5015, lambda params: {"updated": int(_tools_mod("hermes_cli.config").reload_env())}),
+    "reload.env": (5015, lambda params: {"updated": int(_tools_mod("eidolon_cli.config").reload_env())}),
     "plugins.list": (5032, lambda params: {"plugins": [
         {"name": n, "version": getattr(i, "version", "?"), "enabled": getattr(i, "enabled", True)}
-        for n, i in _tools_mod("hermes_cli.plugins").get_plugin_manager()._plugins.items()]}),
+        for n, i in _tools_mod("eidolon_cli.plugins").get_plugin_manager()._plugins.items()]}),
     "tools.list": (5031, lambda params: {"toolsets": _toolset_rows(params, with_tools=True)}),
     "toolsets.list": (5032, lambda params: {"toolsets": _toolset_rows(params, with_tools=False)}),
     "agents.list": (5033, lambda params: {"processes": [
@@ -249,7 +249,7 @@ def _(rid, params: dict, session) -> dict:
 def _mcp_reload_confirm_required() -> bool:
     """``approvals.mcp_reload_confirm`` from disk config; True (safe) on any failure."""
     try:
-        cfg = _tools_mod("hermes_cli.config").load_config()
+        cfg = _tools_mod("eidolon_cli.config").load_config()
         approvals = cfg.get("approvals") if isinstance(cfg, dict) else None
         return bool(approvals.get("mcp_reload_confirm", True)) if isinstance(approvals, dict) else True
     except Exception:
@@ -346,7 +346,7 @@ class _Catalog:
 
 
 def _catalog_registry(cat: _Catalog) -> None:
-    commands = _tools_mod("hermes_cli.commands")
+    commands = _tools_mod("eidolon_cli.commands")
     for cmd in commands.COMMAND_REGISTRY:
         meta = commands.command_desktop_meta(cmd)
         cat.commands.update({f"/{key}": dict(meta) for key in (cmd.name, *cmd.aliases)})
@@ -376,7 +376,7 @@ def _catalog_quick_commands(cat: _Catalog) -> None:
 
 
 def _catalog_plugin_commands(cat: _Catalog) -> None:
-    plugin_cmds = _tools_mod("hermes_cli.plugins").get_plugin_commands() or {}
+    plugin_cmds = _tools_mod("eidolon_cli.plugins").get_plugin_commands() or {}
     if plugin_cmds:
         cat.cat_map.setdefault("Plugin commands", [])
     for pname, info in sorted(plugin_cmds.items()):
@@ -420,7 +420,7 @@ def _(rid, params: dict) -> dict:
     except Exception as e:
         warning = f"skill discovery unavailable: {e}"
     return _ok(rid, {
-        "pairs": cat.pairs, "sub": {k: v[:] for k, v in _tools_mod("hermes_cli.commands").SUBCOMMANDS.items()},
+        "pairs": cat.pairs, "sub": {k: v[:] for k, v in _tools_mod("eidolon_cli.commands").SUBCOMMANDS.items()},
         "canon": cat.canon,
         "commands": cat.commands,
         "categories": [{"name": c, "pairs": rows} for c, rows in cat.cat_map.items()],
@@ -429,7 +429,7 @@ def _(rid, params: dict) -> dict:
 
 @method("cli.exec")
 def _(rid, params: dict) -> dict:
-    """Run `python -m hermes_cli.main` with argv; capture stdout/stderr (non-interactive only)."""
+    """Run `python -m eidolon_cli.main` with argv; capture stdout/stderr (non-interactive only)."""
     argv = params.get("argv", [])
     if not isinstance(argv, list) or not all(isinstance(x, str) for x in argv):
         return _err(rid, 4003, "argv must be list[str]")
@@ -439,7 +439,7 @@ def _(rid, params: dict) -> dict:
 
     # Can drive the agent → needs provider credentials; tier-1 secrets still stripped.
     return _captured_exec(
-        rid, [sys.executable, "-m", "hermes_cli.main", *argv], min(int(params.get("timeout", 240)), 600),
+        rid, [sys.executable, "-m", "eidolon_cli.main", *argv], min(int(params.get("timeout", 240)), 600),
         on_result=lambda r: _ok(rid, {
             "blocked": False, "code": r.returncode, "output": (_joined_output(r) or "(no output)")[:48_000]}),
         timeout_err=(5016, "cli.exec: timeout"), fail_code=5017,
@@ -448,7 +448,7 @@ def _(rid, params: dict) -> dict:
 
 @_rpc("command.resolve", 5012)
 def _(rid, params: dict) -> dict:
-    r = _tools_mod("hermes_cli.commands").resolve_command(params.get("name", ""))
+    r = _tools_mod("eidolon_cli.commands").resolve_command(params.get("name", ""))
     if r:
         return _ok(rid, {"canonical": r.name, "description": r.description, "category": r.category})
     return _err(rid, 4011, f"unknown command: {params.get('name')}")
@@ -476,27 +476,27 @@ def _dispatch_quick(rid, params, session, name, arg):
 
 def _plugin_command_handler(name: str):
     try:
-        return _tools_mod("hermes_cli.plugins").get_plugin_command_handler(name)
+        return _tools_mod("eidolon_cli.plugins").get_plugin_command_handler(name)
     except Exception:
         return None
 
 
 def _run_plugin_command(handler, arg: str) -> str:
-    return str(_tools_mod("hermes_cli.plugins").resolve_plugin_command_result(handler(arg)) or "")
+    return str(_tools_mod("eidolon_cli.plugins").resolve_plugin_command_result(handler(arg)) or "")
 
 
 def _is_profile_skill_command(session: dict, base: str) -> bool:
     """True when ``/base`` is a skill command of the session's profile (HERMES_HOME bound to it so
     get_skill_commands() sees its skills.external_dirs; nothing upstream binds it). False on failure."""
     try:
-        hc = _tools_mod("hermes_constants")
+        hc = _tools_mod("eidolon_constants")
         profile_home = session.get("profile_home")
-        token = hc.set_hermes_home_override(profile_home) if profile_home else None
+        token = hc.set_eidolon_home_override(profile_home) if profile_home else None
         try:
             return f"/{base}" in _tools_mod("agent.skill_commands").get_skill_commands()
         finally:
             if token is not None:
-                hc.reset_hermes_home_override(token)
+                hc.reset_eidolon_home_override(token)
     except Exception:
         return False
 
@@ -511,7 +511,7 @@ def _dispatch_plugin(rid, params, session, name, arg):
 def _bundle_key_for(name: str):
     """Skill-bundle key for ``name`` when it is NOT a registry command; None otherwise / on failure."""
     try:
-        if _tools_mod("hermes_cli.commands").resolve_command(name) is None:
+        if _tools_mod("eidolon_cli.commands").resolve_command(name) is None:
             return _tools_mod("agent.skill_bundles").resolve_bundle_command_key(name)
         return None
     except Exception:
@@ -571,14 +571,14 @@ def _prompt_builtin(module: str, fn: str, kw: str = ""):
 
 _cmd_learn = _prompt_builtin("agent.learn_prompt", "build_learn_prompt")
 _cmd_plan = _prompt_builtin("agent.plan_prompt", "build_plan_prompt")
-_cmd_init = _prompt_builtin("hermes_cli.init_command", "build_init_prompt_for_cwd", kw="extra")
+_cmd_init = _prompt_builtin("eidolon_cli.init_command", "build_init_prompt_for_cwd", kw="extra")
 
 
 def _cmd_moa(rid, params, session, name, arg):
     # One prompt through the default MoA preset, then restore the prior model (whole-session
     # switching goes through the model picker).
     try:
-        moa = _tools_mod("hermes_cli.moa_config")
+        moa = _tools_mod("eidolon_cli.moa_config")
         if not arg:
             return _err(rid, 4004, moa.moa_usage())
         if not session:
@@ -611,7 +611,7 @@ def _cmd_moa(rid, params, session, name, arg):
 
 def _cmd_focus(rid, params, session, name, arg):
     # Display-only; routed through the config.set branch Ink uses so both surfaces share one state machine.
-    fv = _tools_mod("hermes_cli.focus_view")
+    fv = _tools_mod("eidolon_cli.focus_view")
     display = _load_cfg().get("display")
     display = display if isinstance(display, dict) else {}
     action, target = fv.resolve_focus_arg(arg, cur := bool(display.get("focus_view", False)))
@@ -669,7 +669,7 @@ def _cmd_steer(rid, params, session, name, arg):
 
 def _cmd_goal(rid, params, session, name, arg):
     with _session_profile_runtime_scope(session or {}):
-        sid_key, goals, err = _session_key_or_err(rid, session, "hermes_cli.goals", "goals")
+        sid_key, goals, err = _session_key_or_err(rid, session, "eidolon_cli.goals", "goals")
         if err:
             return err
         try:
@@ -677,7 +677,7 @@ def _cmd_goal(rid, params, session, name, arg):
         except Exception:
             max_turns = 20
         mgr = goals.GoalManager(session_id=sid_key, default_max_turns=max_turns)
-        from hermes_cli.goal_command import dispatch_goal_command
+        from eidolon_cli.goal_command import dispatch_goal_command
         result = dispatch_goal_command(
             mgr, arg, authorize_gate=lambda: None,
             last_user_message=goals.last_user_message_from_db(sid_key),
@@ -694,7 +694,7 @@ def _cmd_goal(rid, params, session, name, arg):
 
 
 def _cmd_loop(rid, params, session, name, arg):
-    sid_key, loops, err = _session_key_or_err(rid, session, "hermes_cli.loops", "loops")
+    sid_key, loops, err = _session_key_or_err(rid, session, "eidolon_cli.loops", "loops")
     if err:
         return err
     result = loops.dispatch_loop_command(loops.LoopManager(session_id=sid_key), arg)
@@ -954,7 +954,7 @@ def _(rid, params: dict) -> dict:
             ["Max Turns", str(_cfg_max_turns(cfg, 500))],
             ["Toolsets", ", ".join(cfg.get("enabled_toolsets", [])) or "all"],
             ["Verbose", str(cfg.get("verbose", False))]]},
-        {"title": "Environment", "rows": [["Working Dir", os.getcwd()], ["Config File", str(_hermes_home / "config.yaml")]]},
+        {"title": "Environment", "rows": [["Working Dir", os.getcwd()], ["Config File", str(_eidolon_home / "config.yaml")]]},
     ]
     return _ok(rid, {"sections": sections})
 
@@ -1003,7 +1003,7 @@ def _configure_session_tools(rid, params: dict, sid: str, session) -> dict:
         return _err(rid, 4017, f"unknown tools action: {action}")
     if not targets:
         return _err(rid, 4018, "names required")
-    hc, tc = _tools_mod("hermes_cli.config"), _tools_mod("hermes_cli.tools_config")
+    hc, tc = _tools_mod("eidolon_cli.config"), _tools_mod("eidolon_cli.tools_config")
     cfg = hc.load_config()
     valid_toolsets = {ts_key for ts_key, _, _ in tc.CONFIGURABLE_TOOLSETS} | tc._get_plugin_toolset_keys()
     mcp_targets = [name for name in targets if ":" in name]
@@ -1090,21 +1090,21 @@ def _skills_search(rid, params, query):
 
 def _skills_install(rid, params, query):
     quiet = _tools_mod("types").SimpleNamespace(print=lambda *a, **k: None)
-    _tools_mod("hermes_cli.skills_hub").do_install(query, skip_confirm=True, console=quiet)
+    _tools_mod("eidolon_cli.skills_hub").do_install(query, skip_confirm=True, console=quiet)
     return _ok(rid, {"installed": True, "name": query})
 
 
 def _skills_browse(rid, params, query):
     pg = int(params.get("page", 0) or 0) or (int(query) if query.isdigit() else 1)
-    browse = _tools_mod("hermes_cli.skills_hub").browse_skills
+    browse = _tools_mod("eidolon_cli.skills_hub").browse_skills
     return _ok(rid, browse(page=pg, page_size=int(params.get("page_size", 20))))
 
 
 _SKILLS_ACTIONS = {
-    "list": lambda rid, params, query: _ok(rid, {"skills": _tools_mod("hermes_cli.banner").get_available_skills()}),
+    "list": lambda rid, params, query: _ok(rid, {"skills": _tools_mod("eidolon_cli.banner").get_available_skills()}),
     "search": _skills_search, "install": _skills_install, "browse": _skills_browse,
     "inspect": lambda rid, params, query: _ok(
-        rid, {"info": _tools_mod("hermes_cli.skills_hub").inspect_skill(query) or {}})}
+        rid, {"info": _tools_mod("eidolon_cli.skills_hub").inspect_skill(query) or {}})}
 
 
 def _run_action(rid, params: dict, table: dict, label: str, *extra) -> dict:
@@ -1136,12 +1136,12 @@ def _(rid, params: dict) -> dict:
 
 
 # ─── MCP catalog + per-profile server lifecycle (mcp.servers.*) ─────────────
-# Gateway mirrors of the dashboard REST surface (hermes_cli/web_routers/mcp.py) so a
-# desktop plugin can manage MCP servers for ANY profile. Persistence: hermes_cli/mcp_config.py.
+# Gateway mirrors of the dashboard REST surface (eidolon_cli/web_routers/mcp.py) so a
+# desktop plugin can manage MCP servers for ANY profile. Persistence: eidolon_cli/mcp_config.py.
 @_scoped_rpc("mcp.catalog")
 def _(rid, params: dict) -> dict:
     """``{servers: [{name, description, installed, enabled, requires: [env keys], transport}]}`` per profile."""
-    mcp_catalog = _tools_mod("hermes_cli.mcp_catalog")
+    mcp_catalog = _tools_mod("eidolon_cli.mcp_catalog")
     out = []
     for entry in mcp_catalog.list_catalog():
         try:
@@ -1161,7 +1161,7 @@ def _(rid, params: dict) -> dict:
 def _(rid, params: dict) -> dict:
     """``{servers: [{name, transport, url, command, args, env (key names), auth, oauth_tokens_present,
     enabled, tools}]}``"""
-    servers = _tools_mod("hermes_cli.mcp_config")._get_mcp_servers()
+    servers = _tools_mod("eidolon_cli.mcp_config")._get_mcp_servers()
     return _ok(rid, {"servers": [_mcp_summarize_server(name, cfg) for name, cfg in sorted(servers.items())]})
 
 
@@ -1171,10 +1171,10 @@ def _(rid, params: dict) -> dict:
     runtime state; never connects, probes, or starts auth. Under a multiplexer the runtime view is the
     scoped profile's; otherwise it is shown only when ``profile`` is the launch profile."""
     import time
-    hc = _tools_mod("hermes_constants")
-    configured = _tools_mod("hermes_cli.mcp_config")._get_mcp_servers()
+    hc = _tools_mod("eidolon_constants")
+    configured = _tools_mod("eidolon_cli.mcp_config")._get_mcp_servers()
     include_runtime = (_tools_mod("agent.secret_scope").is_multiplex_active()
-                       or hc.hermes_home_key() == hc.hermes_home_key(hc.get_process_hermes_home()))
+                       or hc.hermes_home_key() == hc.hermes_home_key(hc.get_process_eidolon_home()))
     safe = ("name", "transport", "tools", "connected", "disabled", "status")
     servers = _tools_mod("tools.mcp_tool_discovery").get_mcp_status(configured, include_runtime=include_runtime)
     return _ok(rid, {"servers": [{k: e[k] for k in safe if k in e} for e in servers],
@@ -1185,7 +1185,7 @@ def _(rid, params: dict) -> dict:
 def _(rid, params: dict) -> dict:
     """Add ``name`` from ``preset`` (catalog id) and/or ``config`` (url/command/args/env/headers/auth/
     tools); ``bearer_token`` goes to the profile's .env (only the header template persists). Dup → 4090."""
-    mc = _tools_mod("hermes_cli.mcp_config")
+    mc = _tools_mod("eidolon_cli.mcp_config")
     name, preset = _str_arg(params, "name"), _str_arg(params, "preset")
     if name in mc._get_mcp_servers():
         return _err(rid, 4090, f"server '{name}' already exists")
@@ -1209,7 +1209,7 @@ def _(rid, params: dict) -> dict:
 def _(rid, params: dict) -> dict:
     """Secret → profile .env under ``env_var`` (default ``MCP_<NAME>_API_KEY``); config.yaml gets only
     a ``${ENV}`` reference (Bearer header for http, ``env`` entry for stdio)."""
-    hc, mc = _tools_mod("hermes_cli.config"), _tools_mod("hermes_cli.mcp_config")
+    hc, mc = _tools_mod("eidolon_cli.config"), _tools_mod("eidolon_cli.mcp_config")
     name, servers, err = _mcp_named_server(rid, params)
     if err:
         return err
@@ -1241,7 +1241,7 @@ def _(rid, params: dict) -> dict:
 def _(rid, params: dict) -> dict:
     """Connect, list tools, disconnect → ``{ok, tools, prompts, resources, oauth_needed,
     oauth_tokens_present}`` (``{ok: false, error, tools: []...}`` on failure). RPC pool: cold npx blocks."""
-    mc = _tools_mod("hermes_cli.mcp_config")
+    mc = _tools_mod("eidolon_cli.mcp_config")
     name, servers, err = _mcp_named_server(rid, params)
     if err:
         return err
@@ -1271,7 +1271,7 @@ def _(rid, params: dict) -> dict:
 def _(rid, params: dict) -> dict:
     """Remove a server from the profile's config.yaml → ``{ok: true, removed: true}``."""
     name = _str_arg(params, "name")
-    if not _tools_mod("hermes_cli.mcp_config")._remove_mcp_server(name):
+    if not _tools_mod("eidolon_cli.mcp_config")._remove_mcp_server(name):
         return _err(rid, 4064, f"server '{name}' not found")
     return _ok(rid, {"ok": True, "removed": True})
 
@@ -1293,7 +1293,7 @@ def _(rid, params: dict) -> dict:
         if cfg.get("headers") and cfg.get("auth") != "oauth":
             return _err(rid, 4001, "this server uses header/API-key auth, not OAuth")
         cfg["auth"] = "oauth"
-        hermes_home = str(_tools_mod("hermes_constants").get_hermes_home().expanduser().resolve(strict=False))
+        hermes_home = str(_tools_mod("eidolon_constants").get_eidolon_home().expanduser().resolve(strict=False))
         result = _tools_mod("tui_gateway.mcp_oauth_sessions").start_flow(
             hermes_home, name, cfg, client_redirect_uri=client_redirect_uri)
     except ValueError as e:
@@ -1311,7 +1311,7 @@ def _(rid, params: dict) -> dict:
 @_mcp_rpc("oauth.cancel", _NAME_SESSION)
 def _(rid, params: dict) -> dict:
     """Cancel a flow owned by the resolved profile, waking its callback worker."""
-    home = str(_tools_mod("hermes_constants").get_hermes_home().expanduser().resolve(strict=False))
+    home = str(_tools_mod("eidolon_constants").get_eidolon_home().expanduser().resolve(strict=False))
     cancel = _tools_mod("tui_gateway.mcp_oauth_sessions").cancel_flow
     return _ok(rid, cancel(_str_arg(params, "session_id"), _str_arg(params, "name"), home))
 
@@ -1327,7 +1327,7 @@ def _(rid, params: dict) -> dict:
 
 # ─── Plugins ─────────────────────────────────────────────────────────────────
 def _plugin_rows() -> list[dict]:
-    pc = _tools_mod("hermes_cli.plugins_cmd")
+    pc = _tools_mod("eidolon_cli.plugins_cmd")
     enabled, disabled = pc._get_enabled_set(), pc._get_disabled_set()
     out = []
     for name, version, desc, source, _dir, key in sorted(pc._discover_all_plugins()):
@@ -1354,7 +1354,7 @@ def _plugins_toggle(rid, params):
     ident = (params.get("key") or params.get("name") or "").strip()
     if not ident:
         return _err(rid, 4019, "plugins.toggle requires a 'key' or 'name'")
-    toggle = _tools_mod("hermes_cli.plugins_cmd").dashboard_set_agent_plugin_enabled
+    toggle = _tools_mod("eidolon_cli.plugins_cmd").dashboard_set_agent_plugin_enabled
     result = toggle(ident, enabled=bool(params.get("enable")))
     if not result.get("ok"):
         return _err(rid, 5026, result.get("error") or "toggle failed")
@@ -1366,7 +1366,7 @@ def _plugins_install(rid, params):
     ident = (params.get("identifier") or params.get("repo") or "").strip()
     if not ident:
         return _err(rid, 4019, "plugins.install requires 'identifier' or 'repo'")
-    result = _tools_mod("hermes_cli.plugins_cmd").dashboard_install_plugin(
+    result = _tools_mod("eidolon_cli.plugins_cmd").dashboard_install_plugin(
         ident, force=bool(params.get("force")), enable=params.get("enable", True))
     return _ok(rid, result) if result.get("ok") else _err(rid, 5026, result.get("error") or "install failed")
 
@@ -1376,7 +1376,7 @@ _PLUGINS_ACTIONS = {"list": _plugins_list, "toggle": _plugins_toggle, "install":
 
 @_scoped_rpc("plugins.manage", 5026, catch_resolve=False)
 def _(rid, params: dict) -> dict:
-    """TUI Plugins Hub backend (shares primitives with ``hermes plugins`` / the dashboard):
+    """TUI Plugins Hub backend (shares primitives with ``eidolon plugins`` / the dashboard):
     ``list`` → {plugins, user_count, bundled_count}; ``toggle`` flips ``key``/``name`` per ``enable``;
     ``install`` git-clones ``identifier``/``repo`` (``force``, ``enable`` default True)."""
     return _run_action(rid, params, _PLUGINS_ACTIONS, "plugins")

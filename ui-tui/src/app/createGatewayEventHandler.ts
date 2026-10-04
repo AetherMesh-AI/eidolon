@@ -1,6 +1,6 @@
 import { execFile } from 'child_process'
 
-import { forceRedraw, onTerminalBackground, onTerminalForeground } from '@hermes/ink'
+import { forceRedraw, onTerminalBackground, onTerminalForeground } from '@aethermesh/ink'
 
 import { STARTUP_IMAGE, STARTUP_QUERY } from '../config/env.js'
 import { STREAM_BATCH_MS } from '../config/timing.js'
@@ -1051,7 +1051,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
           const ownProfile = getUiState().info?.profile_name || 'default'
 
           if (wakeProfile && wakeProfile !== ownProfile) {
-            sys(`wake phrase for profile '${wakeProfile}' — run: hermes -p ${wakeProfile} --tui`)
+            sys(`wake phrase for profile '${wakeProfile}' — run: eidolon -p ${wakeProfile} --tui`)
             await rpc('wake.resume', {}).catch(() => undefined)
 
             return

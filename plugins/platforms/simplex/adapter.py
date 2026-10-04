@@ -627,7 +627,7 @@ async def _standalone_send(
     thread_id: Optional[str] = None, media_files: Optional[List[str]] = None, force_document: bool = False,
 ) -> Dict[str, Any]:
     """Ephemeral WebSocket send for ``tools/send_message_tool`` when the gateway runner is not in
-    this process (``hermes cron``). ``thread_id``/``force_document`` are signature parity only;
+    this process (``eidolon cron``). ``thread_id``/``force_document`` are signature parity only;
     ``media_files`` is accepted but only the text body is delivered — SimpleX file transfers need
     the daemon's filesystem-backed flow, which an ephemeral connection cannot drive safely."""
     try:
@@ -659,15 +659,15 @@ _SETUP_PROMPTS = (
 
 
 def interactive_setup() -> None:
-    """Minimal stdin wizard for ``hermes setup gateway`` → SimpleX; writes ``~/.hermes/.env``."""
+    """Minimal stdin wizard for ``eidolon setup gateway`` → SimpleX; writes ``~/.hermes/.env``."""
     print(
         "\nSimpleX Chat setup\n------------------\nRequirements:\n"
         "  1. simplex-chat daemon running (e.g. `simplex-chat -p 5225`).\n"
         "  2. Python package `websockets` installed (`pip install websockets`).\n")
     try:
-        from hermes_cli.config import get_env_value, save_env_value
+        from eidolon_cli.config import get_env_value, save_env_value
     except ImportError:
-        print("hermes_cli.config not available; set SIMPLEX_* vars manually in ~/.hermes/.env")
+        print("eidolon_cli.config not available; set SIMPLEX_* vars manually in ~/.hermes/.env")
         return
 
     for var, prompt in _SETUP_PROMPTS:

@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional
 
-from hermes_cli.dashboard_auth import LoginStart, ProviderError, Session
+from eidolon_cli.dashboard_auth import LoginStart, ProviderError, Session
 from plugins.dashboard_auth._shared import (
     JwtOAuthProvider,
     SkipRegistration,
@@ -132,7 +132,7 @@ def _settings() -> dict:
         raise SkipRegistration(
             "HERMES_DASHBOARD_OAUTH_CLIENT_ID is not set (and dashboard.oauth.client_id "
             "in config.yaml is empty). The Nous Portal provisions this env var (shape "
-            "'agent:{instance_id}') when it deploys a Hermes Agent instance — set it to "
+            "'agent:{instance_id}') when it deploys a Eidolon Agent instance — set it to "
             "your provisioned client id (either as an env var or under "
             "dashboard.oauth.client_id in config.yaml), or pass --insecure to skip the "
             "OAuth gate entirely.")
@@ -168,10 +168,10 @@ import urllib.parse  # noqa: F401,E402
 
 
 _PLUGIN_COMPAT_LAZY = {
-    'DashboardAuthProvider': ('hermes_cli.dashboard_auth', 'DashboardAuthProvider'),
-    'InvalidCodeError': ('hermes_cli.dashboard_auth', 'InvalidCodeError'),
-    'RefreshExpiredError': ('hermes_cli.dashboard_auth', 'RefreshExpiredError'),
-    'classify_jwks_lookup_error': ('hermes_cli.dashboard_auth', 'classify_jwks_lookup_error'),
+    'DashboardAuthProvider': ('eidolon_cli.dashboard_auth', 'DashboardAuthProvider'),
+    'InvalidCodeError': ('eidolon_cli.dashboard_auth', 'InvalidCodeError'),
+    'RefreshExpiredError': ('eidolon_cli.dashboard_auth', 'RefreshExpiredError'),
+    'classify_jwks_lookup_error': ('eidolon_cli.dashboard_auth', 'classify_jwks_lookup_error'),
 }
 
 
@@ -180,7 +180,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

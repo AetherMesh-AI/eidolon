@@ -1,6 +1,6 @@
 """Auto-resume restart-loop breaker (defense-3).
 
-Defenses 1-2 (``_HERMES_GATEWAY`` guard on ``hermes gateway stop|restart`` /
+Defenses 1-2 (``_HERMES_GATEWAY`` guard on ``eidolon gateway stop|restart`` /
 ``terminal_tool``, cron lifecycle filter) stop the agent scheduling its own restart
 but not every SIGTERM source: the supervisor respawns, the gateway auto-resumes the
 restart-interrupted session, whose next turn re-runs the offending logic.  Boots are
@@ -17,7 +17,7 @@ import logging
 import time
 from typing import List, Optional
 
-from hermes_constants import get_hermes_home
+from eidolon_constants import get_eidolon_home
 
 logger = logging.getLogger("gateway.run")
 
@@ -35,7 +35,7 @@ _MAX_STORED_BOOTS = 50
 
 
 def _state_path():
-    return get_hermes_home() / "gateway" / "restart_loop.json"
+    return get_eidolon_home() / "gateway" / "restart_loop.json"
 
 
 def _load_boots() -> List[float]:

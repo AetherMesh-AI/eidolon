@@ -38,7 +38,7 @@ class TestSplitPairingDirMigration:
             "ou_user": {"user_name": "Alice", "approved_at": 123.0}
         }))
 
-        with patch("gateway.pairing.PAIRING_DIR", legacy), patch("gateway.pairing.get_hermes_home", return_value=home):
+        with patch("gateway.pairing.PAIRING_DIR", legacy), patch("gateway.pairing.get_eidolon_home", return_value=home):
             store = PairingStore()
             assert store.is_approved("feishu", "ou_user") is True
 
@@ -61,7 +61,7 @@ class TestProfileScopedDiscovery:
         # A profile's store anchors to the hermes ROOT, not the current
         # HERMES_HOME — the current home may itself be a profile, and nesting
         # profiles inside profiles is how a `-p work` CLI and its gateway end
-        # up reading different files. Patch that seam, not get_hermes_home.
+        # up reading different files. Patch that seam, not get_eidolon_home.
         with patch("gateway.pairing.PAIRING_DIR", global_dir), patch(
             "gateway.pairing.get_default_hermes_root", return_value=home
         ):
@@ -556,15 +556,15 @@ class TestUnreadablePairingFile:
 
 class TestProfileScopedStorage:
     """PairingStore(profile="<name>") should isolate per-profile whitelists
-    under each profile's own Hermes home so a multiplexing gateway can keep
+    under each profile's own Eidolon home so a multiplexing gateway can keep
     every profile's allowlist separate.
     """
 
     def test_default_store_uses_global_dir(self, tmp_path, monkeypatch):
         """PairingStore() (no profile) keeps the legacy global path so the
         ``hermes pairing`` CLI continues to work without a profile context."""
-        from hermes_constants import get_hermes_home
-        monkeypatch.setattr("hermes_constants.get_hermes_home", lambda: tmp_path)
+        from eidolon_constants import get_eidolon_home
+        monkeypatch.setattr("eidolon_constants.get_eidolon_home", lambda: tmp_path)
         # Re-import PAIRING_DIR (it's a module-level constant resolved at
         # import time) so the test exercises the right path. We patch it
         # rather than re-importing so the assertion is unambiguous.
@@ -591,16 +591,16 @@ class TestProfileScopedStorage:
         first_home = tmp_path / "first"
         second_home = tmp_path / "second"
 
-        monkeypatch.setattr("hermes_constants.get_hermes_home", lambda: first_home)
+        monkeypatch.setattr("eidolon_constants.get_eidolon_home", lambda: first_home)
         first_store = PairingStore()
         assert first_store._dir == first_home / "platforms" / "pairing"
 
-        monkeypatch.setattr("hermes_constants.get_hermes_home", lambda: second_home)
+        monkeypatch.setattr("eidolon_constants.get_eidolon_home", lambda: second_home)
         second_store = PairingStore()
         assert second_store._dir == second_home / "platforms" / "pairing"
 
     def test_profile_store_uses_profiles_subdir(self, tmp_path, monkeypatch):
-        """Explicit profile stores use that profile's normal Hermes layout."""
+        """Explicit profile stores use that profile's normal Eidolon layout."""
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
         store = PairingStore(profile="yangyang")
         assert store.profile == "yangyang"
@@ -612,7 +612,7 @@ class TestProfileScopedStorage:
 
     def test_profile_store_matches_profile_cli_home(self, tmp_path, monkeypatch):
         """Gateway and ``hermes -p`` must resolve the same pairing store."""
-        from hermes_constants import get_hermes_dir
+        from eidolon_constants import get_hermes_dir
 
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
         profile_home = tmp_path / "profiles" / "coder"
@@ -629,7 +629,7 @@ class TestProfileScopedStorage:
 
     def test_default_profile_store_is_global_store(self, tmp_path, monkeypatch):
         """Multiplexing must not invent a ``profiles/default`` store."""
-        from hermes_constants import get_hermes_dir
+        from eidolon_constants import get_hermes_dir
 
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
         expected = get_hermes_dir(

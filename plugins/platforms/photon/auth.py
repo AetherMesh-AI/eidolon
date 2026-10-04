@@ -37,12 +37,12 @@ class PhotonDashboardAuthError(RuntimeError):
 
 
 # Hosted Photon allowlists device clients (unregistered → 400 invalid_client); use Photon's
-# published CLI client until Hermes gets its own client_id.
+# published CLI client until Eidolon gets its own client_id.
 DEFAULT_CLIENT_ID = "photon-cli"
 DEFAULT_SCOPE = "openid profile email"
 DEFAULT_DASHBOARD_HOST = "https://app.photon.codes"
 DEFAULT_SPECTRUM_HOST = "https://spectrum.photon.codes"
-DEFAULT_PROJECT_NAME = "Hermes Agent"
+DEFAULT_PROJECT_NAME = "Eidolon Agent"
 DEFAULT_POLL_INTERVAL = 5  # RFC 8628 polling defaults; Photon's `interval` / `expires_in` win
 DEFAULT_POLL_TIMEOUT = 1800
 E164_RE = re.compile(r"^\+[1-9]\d{6,14}$")
@@ -51,12 +51,12 @@ E164_RE = re.compile(r"^\+[1-9]\d{6,14}$")
 # -- auth.json helpers (shares the file with the rest of hermes-agent) ------------
 
 def _auth_json_path() -> Path:
-    """``~/.hermes/auth.json`` honouring the active Hermes profile."""
+    """``~/.hermes/auth.json`` honouring the active Eidolon profile."""
     try:
-        from hermes_constants import get_hermes_home
-        return Path(get_hermes_home()) / "auth.json"
+        from eidolon_constants import get_eidolon_home
+        return Path(get_eidolon_home()) / "auth.json"
     except Exception:
-        return Path(os.path.expanduser("~/.hermes")) / "auth.json"
+        return Path(os.path.expanduser("~/.eidolon")) / "auth.json"
 
 
 def _load_auth() -> Dict[str, Any]:
@@ -105,7 +105,7 @@ def _pool_first(auth: Dict[str, Any], key: str) -> Any:
 
 def _store_pool_record(key: str, record: Dict[str, Any]) -> None:
     """Replace ``credential_pool.<key>`` with ``[record]`` under the cross-process lock."""
-    from hermes_cli.auth import _auth_store_lock
+    from eidolon_cli.auth import _auth_store_lock
     with _auth_store_lock():
         auth = _load_auth()
         auth.setdefault("credential_pool", {})[key] = [record]
@@ -206,9 +206,9 @@ def _persist_runtime_env(spectrum_project_id: str, project_secret: str) -> None:
     """Write the SDK creds to ``~/.hermes/.env`` (secret never bound to a printable local
     in a caller — CodeQL clean flow)."""
     try:
-        from hermes_cli.config import save_env_value
+        from eidolon_cli.config import save_env_value
     except ImportError:
-        logger.warning("photon: hermes_cli.config unavailable — skipping .env write")
+        logger.warning("photon: eidolon_cli.config unavailable — skipping .env write")
         return
     try:
         save_env_value("PHOTON_PROJECT_ID", spectrum_project_id)
@@ -661,7 +661,7 @@ def _configured_operator_phone() -> Optional[str]:
 
 def _get_config_env_value(key: str) -> Optional[str]:
     try:
-        from hermes_cli.config import get_env_value
+        from eidolon_cli.config import get_env_value
     except Exception:
         return os.getenv(key)
     return get_env_value(key)

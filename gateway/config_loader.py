@@ -1,7 +1,7 @@
 """config.yaml / gateway.json → ``GatewayConfig.from_dict`` schema (the ``load_gateway_config`` phases).
 
 Precedence for top-level keys: key-presence at the TOP LEVEL of config.yaml wins; the nested
-``gateway.<key>`` form (what ``hermes config set gateway.<key>`` produces) is consulted only when the
+``gateway.<key>`` form (what ``eidolon config set gateway.<key>`` produces) is consulted only when the
 top-level key is absent — not merely falsy/mistyped — so a present-but-empty top-level value is never
 silently replaced by the nested one. Both overwrite whatever legacy gateway.json set.
 """
@@ -36,7 +36,7 @@ def load_legacy_gateway_json(home: Path) -> Any:
 
 # --- top-level key bridging ----------------------------------------------------
 #
-# Top-level settings are also accepted nested under ``gateway:`` (what ``hermes config set
+# Top-level settings are also accepted nested under ``gateway:`` (what ``eidolon config set
 # gateway.<key>`` produces). This loader builds gw_data FLAT and never forwards the yaml ``gateway:``
 # section, so even keys GatewayConfig.from_dict can fall back on itself (loop_watchdog*,
 # multiplex_profiles, ...) must be bridged here or they are silently ignored on real startup.
@@ -346,8 +346,8 @@ def load_yaml_layer(home: Path, gw_data: dict) -> None:
         yaml_cfg = yaml.safe_load(f) or {}
 
     # Managed scope: overlay administrator-pinned values (this loader bypasses
-    # hermes_cli.config.load_config, so managed quick_commands / stt would otherwise be ignored).
-    from hermes_cli import managed_scope
+    # eidolon_cli.config.load_config, so managed quick_commands / stt would otherwise be ignored).
+    from eidolon_cli import managed_scope
     yaml_cfg = managed_scope.apply_managed_overlay(yaml_cfg)
 
     gateway_section = yaml_cfg.get("gateway")
@@ -356,7 +356,7 @@ def load_yaml_layer(home: Path, gw_data: dict) -> None:
     platforms_data = merge_platform_sections(yaml_cfg, gateway_section, gw_data)
 
     try:
-        from hermes_cli.plugins import discover_plugins
+        from eidolon_cli.plugins import discover_plugins
         discover_plugins()  # idempotent
         from gateway.platform_registry import platform_registry as registry
     except Exception as e:

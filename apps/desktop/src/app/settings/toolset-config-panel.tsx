@@ -17,7 +17,7 @@ import {
   selectToolsetProvider,
   setEnvVar,
   startOAuthLogin
-} from '@/hermes'
+} from '@/eidolon'
 import { useI18n } from '@/i18n'
 import { Check, Loader2, Save, Terminal } from '@/lib/icons'
 import { cn } from '@/lib/utils'
@@ -31,7 +31,7 @@ import type {
   ToolProviderStatus,
   ToolsetConfig,
   ToolsetModelsResponse
-} from '@/types/hermes'
+} from '@/types/eidolon'
 
 import { EnvVarActionsMenu, EnvVarActionsTrigger, EnvVarContextMenu } from './env-var-actions-menu'
 import { Pill } from './primitives'

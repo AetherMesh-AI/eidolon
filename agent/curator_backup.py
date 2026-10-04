@@ -20,10 +20,10 @@ from itertools import chain, count
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from hermes_constants import get_hermes_home
+from eidolon_constants import get_eidolon_home
 from agent.skill_utils import is_excluded_skill_path
 from agent.curator import _read_config_section
-from hermes_cli.sizefmt import format_bytes
+from eidolon_cli.sizefmt import format_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +45,7 @@ _STAGING_PREFIX = ".rollback-staging-"
 
 
 def _skills_dir() -> Path:
-    return get_hermes_home() / "skills"
+    return get_eidolon_home() / "skills"
 
 
 def _backups_dir() -> Path:
@@ -61,7 +61,7 @@ def _jobs_list(parsed: Any) -> Optional[list]:
 def _backup_cron_jobs_into(dest: Path) -> Dict[str, Any]:
     """Copy the live ``~/.hermes/cron/jobs.json`` into ``dest`` as ``cron-jobs.json``. Never raises: a missing/unreadable
     file yields ``backed_up=False`` plus a reason, and the snapshot proceeds."""
-    src = get_hermes_home() / "cron" / "jobs.json"
+    src = get_eidolon_home() / "cron" / "jobs.json"
     info: Dict[str, Any] = {"backed_up": False, "jobs_count": 0}
     if not src.exists():
         return {**info, "reason": "no cron/jobs.json present"}

@@ -16,7 +16,7 @@
  * itself here as the delegate so tile UI stays dependency-light.
  */
 
-import { type GatewayEvent, LOCAL_CONNECTION_ID, registryBackendScopeKey } from '@hermes/shared'
+import { type GatewayEvent, LOCAL_CONNECTION_ID, registryBackendScopeKey } from '@aethermesh/shared'
 import { atom, computed } from 'nanostores'
 
 import type { ClientSessionState } from '@/app/types'
@@ -34,7 +34,7 @@ import { $workspaceMode, resolveRememberedActivePane, workspaceScopeKey } from '
 import type { WorkspaceMode } from '@/contrib/types'
 import { stableArray } from '@/lib/stable-array'
 import { readJson, writeJson } from '@/lib/storage'
-import type { SessionInfo } from '@/types/hermes'
+import type { SessionInfo } from '@/types/eidolon'
 
 import { $activeGatewayProfile, normalizeProfileKey } from './profile'
 import { clearAllProviderWaits, clearSessionProviderWait } from './provider-wait'
@@ -1789,7 +1789,7 @@ export function discardSessionTile(storedSessionId: string) {
  * backend target profile when a source-scoped route is given).
  *
  * A leftover tile RESURRECTS the deleted profile on the next launch: Bot tab
- * restore re-dials the profile's backend, whose ensure_hermes_home() re-creates
+ * restore re-dials the profile's backend, whose ensure_eidolon_home() re-creates
  * the profile directory the delete just removed (hermes-agent#94235). Same
  * discard (no ⌘⇧T) semantics as discardSessionTile — undoing the delete of the
  * owning profile would resolve to a 404 again.

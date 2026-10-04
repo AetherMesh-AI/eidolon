@@ -96,7 +96,7 @@ class GatewayHealthExportRuntime:
                     item.shutdown()
 
         if closeables:
-            worker = threading.Thread(target=_close, name="hermes-gateway-health-export-shutdown", daemon=True)
+            worker = threading.Thread(target=_close, name="eidolon-gateway-health-export-shutdown", daemon=True)
             worker.start()
             worker.join(timeout=2.0)
         self.streamer = self.log_streamer = self.metric_provider = self.thread = self.stop_event = None
@@ -325,7 +325,7 @@ def start_gateway_health_export(config: Dict[str, Any]) -> GatewayHealthExportRu
                 while not stop_event.wait(interval):
                     _emit_snapshot_events(config)
 
-            thread = threading.Thread(target=_run, name="hermes-gateway-health-export", daemon=True)
+            thread = threading.Thread(target=_run, name="eidolon-gateway-health-export", daemon=True)
             thread.start()
             runtime.thread = thread
         except Exception:

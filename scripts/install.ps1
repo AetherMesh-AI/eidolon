@@ -30,8 +30,9 @@ param(
     # existing tree pass -ForceCommit.
     [switch]$ForceCommit,
     [string]$Tag = "",
-    [string]$HermesHome = $(if ($env:HERMES_HOME) { $env:HERMES_HOME } else { "$HOME\.eidolon" }),
-    [string]$InstallDir = $(if ($env:HERMES_HOME) { "$env:HERMES_HOME\hermes-agent" } else { "$HOME\.eidolon\hermes-agent" }),
+    [Alias('EidolonHome')]
+    [string]$HermesHome = $(if ($env:EIDOLON_HOME) { $env:EIDOLON_HOME } elseif ($env:HERMES_HOME) { $env:HERMES_HOME } else { "$HOME\.eidolon" }),
+    [string]$InstallDir = "",
 
     # --- Stage protocol (additive; default invocation behaves as before) ----
     # See the "Stage protocol" section near the bottom of the file for the
@@ -62,7 +63,7 @@ param(
     # builds apps/desktop into a launchable Eidolon.exe.
     #
     # Why opt-in:
-    #   * Hermes-Setup.exe (the signed Tauri bootstrap installer) passes
+    #   * Eidolon-Setup.exe (the signed Tauri bootstrap installer) passes
     #     -IncludeDesktop so a user who installed via the GUI ends up
     #     with a launchable desktop binary.
     #   * The Electron desktop's own bootstrap-runner.ts runs install.ps1
@@ -71,7 +72,7 @@ param(
     #     on disk and fail. The recursive path omits the flag.
     #   * The canonical CLI one-liner (irm | iex) omits the flag too;
     #     terminal users don't need a desktop binary built for them, and
-    #     `hermes desktop` already builds on demand.
+    #     `eidolon desktop` already builds on demand.
     [switch]$IncludeDesktop
 )
 
@@ -161,7 +162,7 @@ function Write-PathDiag {
     # produced nothing there under a non-interactive host.
     param([string]$Message)
     if ($ShowResolvedPaths) { return }
-    [Console]::Error.WriteLine("[hermes] $Message")
+    [Console]::Error.WriteLine("[eidolon] $Message")
 }
 
 function Get-LongProfileRoot {
@@ -345,16 +346,29 @@ if ($PSBoundParameters.ContainsKey('HermesHome')) {
     $HermesHome = ConvertTo-LongPath $HermesHome
 } else {
     $HermesHome = ConvertTo-LongPath $(
-        if ($env:HERMES_HOME) { $env:HERMES_HOME } else { "$HOME\.eidolon" }
+        if ($env:EIDOLON_HOME) { $env:EIDOLON_HOME } elseif ($env:HERMES_HOME) { $env:HERMES_HOME } else { "$HOME\.eidolon" }
     )
 }
 if ($PSBoundParameters.ContainsKey('InstallDir')) {
     $InstallDir = ConvertTo-LongPath $InstallDir
 } else {
-    $InstallDir = ConvertTo-LongPath $(
-        if ($env:HERMES_HOME) { "$env:HERMES_HOME\hermes-agent" } else { "$HOME\.eidolon\hermes-agent" }
-    )
+    $InstallDir = Join-Path $HermesHome "eidolon-agent"
+    $legacyInstall = Join-Path $HermesHome "hermes-agent"
+    $legacyPackage = Join-Path $legacyInstall "package.json"
+    if (-not (Test-Path -LiteralPath $InstallDir) -and (Test-Path -LiteralPath $legacyPackage -PathType Leaf)) {
+        try {
+            $legacyMetadata = Get-Content -LiteralPath $legacyPackage -Raw | ConvertFrom-Json
+            $legacyRepo = [string]$legacyMetadata.repository.url
+            if ($legacyRepo -match '^(git\+)?https://github\.com/AetherMesh-AI/Eidolon(?:\.git)?/?$|^(?:git@github\.com:|ssh://git@github\.com/)AetherMesh-AI/Eidolon(?:\.git)?/?$') {
+                $InstallDir = $legacyInstall
+            }
+        } catch {
+            # Invalid metadata is not evidence that another checkout belongs to Eidolon.
+        }
+    }
 }
+$env:HERMES_HOME = $HermesHome
+Remove-Item Env:EIDOLON_HOME -ErrorAction SilentlyContinue
 if ($script:NormalizedProfilePaths) {
     # Which paths the install actually settled on. Absent from every report of
     # this bug class, and the whole question once a short alias is in play.
@@ -376,6 +390,7 @@ $script:ResolvedPathReport = @{
     resolver          = $script:LastResolver
     temp              = $env:TEMP
     hermes_home       = $HermesHome
+    eidolon_home      = $HermesHome
     install_dir       = $InstallDir
 }
 
@@ -672,7 +687,7 @@ function Install-AgentBrowser {
 
     # agent-browser itself is intentionally NOT installed here (#43564 /
     # PR #44772 review): it resolves lazily via `npx agent-browser` instead,
-    # which every consumer (tools/browser_tool.py, `hermes update`'s npx
+    # which every consumer (tools/browser_tool.py, `eidolon update`'s npx
     # cache warm) already goes through. Eagerly npm-installing a second,
     # separately version-pinned copy here -- only reachable via this
     # explicit -Ensure browser fallback in the first place -- was redundant
@@ -744,10 +759,10 @@ function Get-PowerShellHostExe {
 }
 
 function Install-Uv {
-    # Hermes owns its own uv at $HermesHome\bin\uv.exe.  Always install there --
+    # Eidolon owns its own uv at $HermesHome\bin\uv.exe.  Always install there --
     # no PATH probing, no conda guards, no multi-location resolution chains.
-    # The runtime update path (hermes_cli/managed_uv.py) looks in the same
-    # place, so install.ps1 and `hermes update` stay in sync.
+    # The runtime update path (eidolon_cli/managed_uv.py) looks in the same
+    # place, so install.ps1 and `eidolon update` stay in sync.
     $managedUv = Join-Path $HermesHome "bin\uv.exe"
 
     if (Test-Path $managedUv) {
@@ -803,7 +818,7 @@ function Install-Uv {
         # on PATH, or at ~/.local/bin (the astral default location when
         # UV_INSTALL_DIR was ignored by an older installer) -- copy it into
         # the managed location so the managed-first invariant holds
-        # (hermes_cli/managed_uv.py looks only at $HermesHome\bin\uv.exe).
+        # (eidolon_cli/managed_uv.py looks only at $HermesHome\bin\uv.exe).
         if (-not (Test-Path $managedUv)) {
             $existingUv = $null
             $uvOnPath = Get-Command uv -CommandType Application -ErrorAction SilentlyContinue |
@@ -889,7 +904,7 @@ function Ensure-NodeExeOnPath {
 #
 # Appending is not enough: it leaves a pre-existing system Node ahead of the
 # bundled one in every new shell, so anything launched without a curated
-# environment (a standalone hermes-setup.exe run, a user typing `npm`) silently
+# environment (a standalone eidolon-setup.exe run, a user typing `npm`) silently
 # resolves the wrong Node.  Bundled must win.
 #
 # Move-to-front rather than add-if-missing, because installs made by an older
@@ -1025,7 +1040,7 @@ function Test-NpmVersionOk {
 #
 # Three details are load-bearing, mirroring _nb_ensure_bundled_npm_range in
 # scripts/lib/node-bootstrap.sh and upgrade_managed_npm in
-# hermes_cli/npm_engine.py:
+# eidolon_cli/npm_engine.py:
 #   - a temp cwd, so the checkout's own .npmrc (engine-strict,
 #     min-release-age) does not gate the very upgrade meant to satisfy it;
 #   - npm_config_min_release_age=0, which also neutralises a user ~/.npmrc;
@@ -1060,7 +1075,7 @@ function Update-ManagedNpm {
 
     Write-Info "Upgrading bundled npm to satisfy $range ..."
 
-    $tmpCwd = Join-Path $env:TEMP ("hermes-npm-upgrade-" + [Guid]::NewGuid().ToString("N"))
+    $tmpCwd = Join-Path $env:TEMP ("eidolon-npm-upgrade-" + [Guid]::NewGuid().ToString("N"))
     New-Item -ItemType Directory -Force -Path $tmpCwd | Out-Null
     $prevAge = $env:npm_config_min_release_age
     $prevCI = $env:CI
@@ -1167,9 +1182,9 @@ function Resolve-UvCmd {
 }
 
 function Initialize-ManagedPythonEnvironment {
-    # Python used by Hermes belongs to the checkout, never to another
+    # Python used by Eidolon belongs to the checkout, never to another
     # application or a user-level uv configuration. Keep this aligned with
-    # hermes_cli.managed_uv.managed_python_env(), which owns the update path.
+    # eidolon_cli.managed_uv.managed_python_env(), which owns the update path.
     foreach ($name in @(
         "CONDA_DEFAULT_ENV", "CONDA_PREFIX", "UV_PROJECT_ENVIRONMENT",
         "UV_NO_MANAGED_PYTHON", "UV_PYTHON", "UV_PYTHON_DOWNLOADS",
@@ -1178,7 +1193,7 @@ function Initialize-ManagedPythonEnvironment {
         Remove-Item -Path "Env:$name" -ErrorAction SilentlyContinue
     }
 
-    $managedRoot = Join-Path $InstallDir ".hermes-runtime\python"
+    $managedRoot = Join-Path $InstallDir ".eidolon-runtime\python"
     New-Item -ItemType Directory -Force -Path $managedRoot | Out-Null
     $env:UV_MANAGED_PYTHON = "1"
     $env:UV_NO_CONFIG = "1"
@@ -1193,7 +1208,7 @@ function Resolve-AvailablePythonVersion {
     # uv can find, preferring the requested version and then fallback minors.
     # System and application-owned interpreters are deliberately ineligible.
     #
-    # Under Hermes-Setup.exe each stage runs in a fresh powershell.exe. The
+    # Under Eidolon-Setup.exe each stage runs in a fresh powershell.exe. The
     # venv stage therefore re-resolves both version and provenance rather than
     # relying on state selected by the earlier Python stage (#50769).
     [string]$managedRoot = Initialize-ManagedPythonEnvironment
@@ -1427,32 +1442,32 @@ function Install-Git {
     <#
     .SYNOPSIS
     Ensure Git (and Git Bash) are installed.  Git for Windows bundles bash.exe
-    which Hermes uses to run shell commands.
+    which Eidolon uses to run shell commands.
 
     Priority order (deliberately simple -- no winget, no registry, no system
     package manager):
       1. Existing ``git`` on PATH -- use it as-is (the common fast path).
       2. Download **PortableGit** from the official git-for-windows GitHub
          release (self-extracting 7z.exe) and unpack it to
-         ``%LOCALAPPDATA%\hermes\git`` -- never touches system Git, never
+         ``%LOCALAPPDATA%\eidolon\git`` -- never touches system Git, never
          requires admin, works even on locked-down machines and machines
          with a broken system Git install.
 
     **Why PortableGit, not MinGit:**  MinGit is the minimal-automation
     distribution and ships ONLY ``git.exe`` -- no bash, no POSIX utilities.
-    Hermes needs ``bash.exe`` to run shell commands.  PortableGit is the
+    Eidolon needs ``bash.exe`` to run shell commands.  PortableGit is the
     full Git for Windows distribution without the installer UI; it ships
     ``git.exe`` + ``bash.exe`` + ``sh``, ``awk``, ``sed``, ``grep``, ``curl``,
     ``ssh``, etc. in ``usr\bin\``.
 
     We deliberately skip winget because it fails badly when the system Git
     install is in a half-installed state (partially registered, or uninstall-
-    blocked).  Owning the Hermes copy of Git ourselves is predictable and
-    recoverable: if it ever breaks, ``Remove-Item %LOCALAPPDATA%\hermes\git``
+    blocked).  Owning the Eidolon copy of Git ourselves is predictable and
+    recoverable: if it ever breaks, ``Remove-Item %LOCALAPPDATA%\eidolon\git``
     and re-running this installer fully recovers.
 
     After install we locate ``bash.exe`` and persist the path in
-    ``HERMES_GIT_BASH_PATH`` (User scope) so Hermes can find it in a fresh
+    ``HERMES_GIT_BASH_PATH`` (User scope) so Eidolon can find it in a fresh
     shell without a second PATH refresh.
     #>
     $script:GitInstallFailureReason = $null
@@ -1622,7 +1637,7 @@ function Set-GitBashEnvVar {
     <#
     .SYNOPSIS
     Locate ``bash.exe`` from an already-installed Git and persist the path in
-    ``HERMES_GIT_BASH_PATH`` (User env scope) so Hermes can find it even before
+    ``HERMES_GIT_BASH_PATH`` (User env scope) so Eidolon can find it even before
     PATH propagation completes in a newly-spawned shell.
     #>
     $script:GitBashPath = $null
@@ -1776,7 +1791,7 @@ function Test-Node {
         if ($zipName) {
             $downloadUrl = "${indexUrl}${zipName}"
             $tmpZip = "$env:TEMP\$zipName"
-            $tmpDir = "$env:TEMP\hermes-node-extract"
+            $tmpDir = "$env:TEMP\eidolon-node-extract"
 
             Invoke-WebRequest -Uri $downloadUrl -OutFile $tmpZip -UseBasicParsing
             if (Test-Path $tmpDir) { Remove-Item -Recurse -Force $tmpDir }
@@ -2022,7 +2037,7 @@ function Install-SystemPackages {
         # present -> happy path, no clutter).
         $pkgLogs = @{}
         foreach ($pkg in $wingetPkgs) {
-            $log = "$env:TEMP\hermes-winget-$($pkg -replace '[^A-Za-z0-9]','_')-$(Get-Random).log"
+            $log = "$env:TEMP\eidolon-winget-$($pkg -replace '[^A-Za-z0-9]','_')-$(Get-Random).log"
             $pkgLogs[$pkg] = $log
             # --source winget pins us to the github-backed source.  Without this,
             # a broken msstore source (cert validation failures like 0x8a15005e
@@ -2132,7 +2147,207 @@ function Install-SystemPackages {
 # Installation
 # ============================================================================
 
+function Resolve-InstallerGatewayDirectory {
+    param([string]$Path, [int]$Depth = 0)
+    if ($Depth -gt 64) { throw "Gateway directory alias is cyclic or too deep: $Path" }
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+    $parent = Split-Path -Parent $item.FullName
+    if (-not $parent) { return $item.FullName }
+    if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+        # Target is provided by the FileSystem provider in Windows PowerShell
+        # 5.1, unlike .NET's newer ResolveLinkTarget API.
+        $targetProperty = $item.PSObject.Properties['Target']
+        if (-not $targetProperty -or -not $targetProperty.Value) { throw "Could not resolve gateway directory alias: $Path" }
+        $target = @($targetProperty.Value)[0]
+        if (-not [IO.Path]::IsPathRooted($target)) { $target = Join-Path $parent $target }
+        return Resolve-InstallerGatewayDirectory -Path $target -Depth ($Depth + 1)
+    }
+    $resolvedParent = Resolve-InstallerGatewayDirectory -Path $parent -Depth ($Depth + 1)
+    return Join-Path $resolvedParent $item.Name
+}
+
+function ConvertTo-InstallerGatewayPath {
+    param([string]$Path)
+    # Resolve directory aliases, but never the final interpreter symlink: two
+    # independent venvs can point their python.exe at the same system binary.
+    if (-not $Path) { return '' }
+    $value = [Environment]::ExpandEnvironmentVariables($Path)
+    if (Test-Path -LiteralPath $value -PathType Container) {
+        $value = Resolve-InstallerGatewayDirectory $value
+    } else {
+        $parent = Split-Path -Parent $value
+        if ($parent -and (Test-Path -LiteralPath $parent -PathType Container)) {
+            $value = Join-Path (Resolve-InstallerGatewayDirectory $parent) (Split-Path -Leaf $value)
+        }
+    }
+    $value = $value.Replace('/', '\').TrimEnd('\')
+    if ($value -match '(^|\\)\.\.?($|\\)') { return '' }
+    return $value
+}
+
+function Read-InstallerGatewayCommand {
+    param([string]$CommandLine, [hashtable]$Environment = @{}, [int]$Depth = 0)
+    if ($Depth -gt 3) { return }
+    $words = @([regex]::Matches($CommandLine, '"(?:[^"\r\n]|"")*"|[^\s"]+') | ForEach-Object {
+        $_.Value.Trim('"').Replace('""', '"')
+    })
+    if ($words.Count -eq 0) { return }
+    $executable = ($words[0] -split '[\\/]')[-1]
+    # Follow only the action actually executed, including the generated Startup
+    # VBS -> service VBS chain. Merely mentioning a wrapper is not ownership.
+    if ($executable -match '^(?:wscript|cscript)(?:\.exe)?$') {
+        $targets = @($words | Select-Object -Skip 1 | Where-Object { $_ -notmatch '^//(?:B|Nologo)$' })
+        if ($targets.Count -eq 1 -and $targets[0] -match '\.vbs$') {
+            Read-InstallerGatewayWrapper -Path $targets[0] -Environment $Environment -Depth ($Depth + 1)
+        }
+        return
+    }
+    if ($executable -match '^(?:cmd)(?:\.exe)?$') {
+        $targets = @($words | Select-Object -Skip 1 | Where-Object { $_ -notmatch '^/[dsc]$' })
+        if ($targets.Count -eq 1 -and $targets[0] -match '\.(?:cmd|bat)$') {
+            Read-InstallerGatewayWrapper -Path $targets[0] -Environment $Environment -Depth ($Depth + 1)
+        }
+        return
+    }
+    if ($words.Count -eq 1 -and $executable -match '\.(?:vbs|cmd|bat)$') {
+        Read-InstallerGatewayWrapper -Path $words[0] -Environment $Environment -Depth ($Depth + 1)
+        return
+    }
+    if ($executable -notmatch '^pythonw?(?:\.exe)?$' -or $words.Count -lt 5 -or $words[1] -ne '-m') { return }
+    if ($words[2] -notin @('hermes_cli.main', 'eidolon_cli.main')) { return }
+    $tail = @($words | Select-Object -Skip 3)
+    if ($tail.Count -eq 4 -and $tail[0] -in @('-p', '--profile')) { $tail = $tail[2..3] }
+    if ($tail.Count -ne 2 -or $tail[0] -ne 'gateway' -or $tail[1] -ne 'run') { return }
+    $launchHome = ConvertTo-InstallerGatewayPath $Environment['HERMES_HOME']
+    $selectedHome = ConvertTo-InstallerGatewayPath $HermesHome
+    $selectedInstall = ConvertTo-InstallerGatewayPath $InstallDir
+    if (-not $launchHome -or -not $selectedHome -or -not $selectedInstall) { return }
+    if ($launchHome -ne $selectedHome -and $launchHome -notmatch ('^' + [regex]::Escape($selectedHome) + '\\profiles\\[^\\]+$')) { return }
+    $interpreter = ConvertTo-InstallerGatewayPath $words[0]
+    $selectedVenv = ConvertTo-InstallerGatewayPath (Join-Path $InstallDir 'venv')
+    $pythonPaths = @(([string]$Environment['PYTHONPATH']) -split ';' | ForEach-Object { ConvertTo-InstallerGatewayPath $_ })
+    $selectedInterpreters = @('venv\Scripts\python.exe', 'venv\Scripts\pythonw.exe') | ForEach-Object {
+        ConvertTo-InstallerGatewayPath (Join-Path $InstallDir $_)
+    }
+    $ownsInterpreter = $interpreter -in $selectedInterpreters
+    if (-not $ownsInterpreter -and (ConvertTo-InstallerGatewayPath $Environment['VIRTUAL_ENV']) -ne $selectedVenv -and $selectedInstall -notin $pythonPaths) { return }
+    [pscustomobject]@{ Home = $Environment['HERMES_HOME']; Module = $words[2] }
+}
+
+function Read-InstallerGatewayWrapper {
+    param([string]$Path, [hashtable]$Environment = @{}, [int]$Depth = 0)
+    if ($Depth -gt 3 -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) { return }
+    $environmentCopy = $Environment.Clone()
+    foreach ($line in Get-Content -LiteralPath $Path -ErrorAction Stop) {
+        if ($Path -match '\.vbs$') {
+            if ($line -match '^\s*env\.Item\("(HERMES_HOME|VIRTUAL_ENV|PYTHONPATH)"\)\s*=\s*"((?:[^"]|"")*)"(?:\s*&\s*existing_pp)?\s*$') {
+                $environmentCopy[$Matches[1]] = $Matches[2].Replace('""', '"')
+            } elseif ($line -match '^\s*sh\.Run\s+"((?:[^"]|"")*)",\s*0,\s*False\s*$') {
+                Read-InstallerGatewayCommand -CommandLine $Matches[1].Replace('""', '"') -Environment $environmentCopy -Depth $Depth
+            }
+        } elseif ($Path -match '\.(?:cmd|bat)$') {
+            if ($line -match '^\s*@?set\s+"(HERMES_HOME|VIRTUAL_ENV|PYTHONPATH)=([^"]*)"\s*$') {
+                $environmentCopy[$Matches[1]] = $Matches[2]
+            } else {
+                Read-InstallerGatewayCommand -CommandLine $line -Environment $environmentCopy -Depth $Depth
+            }
+        }
+    }
+}
+
+function Get-InstallerGatewayRegistrations {
+    param([string]$StartupDirectory = [Environment]::GetFolderPath('Startup'), [switch]$RequireInspection)
+    if ($env:OS -ne 'Windows_NT') { return }
+    # /NH avoids localized CSV headers; Enabled comes from XML, not a translated
+    # status label. A task name only selects candidates; its action proves scope.
+    try {
+        $global:LASTEXITCODE = 0
+        $tasks = @(schtasks /Query /FO CSV /NH 2>$null | ConvertFrom-Csv -Header TaskName, NextRunTime, Status)
+        if ($LASTEXITCODE -ne 0) { throw 'Scheduled Task enumeration failed.' }
+        foreach ($task in $tasks) {
+            if ($task.TaskName -notmatch '(?:^|\\)(?:Hermes|Eidolon)_Gateway(?:[-_][^\\]+)?$') { continue }
+            $global:LASTEXITCODE = 0
+            [xml]$definition = (schtasks /Query /TN $task.TaskName /XML 2>$null) -join "`n"
+            if ($LASTEXITCODE -ne 0 -or -not $definition.DocumentElement) { throw "Could not read task $($task.TaskName)." }
+            $enabled = $definition.SelectSingleNode('/*[local-name()="Task"]/*[local-name()="Settings"]/*[local-name()="Enabled"]')
+            $actions = @($definition.SelectNodes('/*[local-name()="Task"]/*[local-name()="Actions"]/*[local-name()="Exec"]'))
+            foreach ($action in $actions) {
+                $command = $action.SelectSingleNode('*[local-name()="Command"]')
+                $arguments = $action.SelectSingleNode('*[local-name()="Arguments"]')
+                if (-not $command) { continue }
+                $line = '"' + $command.InnerText.Trim('"') + '"'
+                if ($arguments) { $line += ' ' + $arguments.InnerText }
+                foreach ($launch in @(Read-InstallerGatewayCommand -CommandLine $line)) {
+                    [pscustomobject]@{ Kind = 'Task'; Name = $task.TaskName; Home = $launch.Home; Module = $launch.Module; Enabled = (-not $enabled -or $enabled.InnerText -ne 'false'); ActionCount = $actions.Count }
+                }
+            }
+        }
+    } catch {
+        if ($RequireInspection) { throw "Could not inspect gateway scheduled tasks before changing the legacy install: $($_.Exception.Message)" }
+        Write-Warn "Could not inspect gateway scheduled tasks: $($_.Exception.Message)"
+    }
+    if (-not $StartupDirectory) { return }
+    foreach ($wrapper in @(Get-ChildItem -LiteralPath $StartupDirectory -File -ErrorAction SilentlyContinue)) {
+        if ($wrapper.Name -notmatch '^(?:Hermes|Eidolon)_Gateway(?:[-_].+)?\.(?:vbs|cmd|bat)$') { continue }
+        try {
+            foreach ($launch in @(Read-InstallerGatewayWrapper -Path $wrapper.FullName)) {
+                [pscustomobject]@{ Kind = 'Startup'; Name = $wrapper.FullName; Home = $launch.Home; Module = $launch.Module; Enabled = $true }
+            }
+        } catch {
+            if ($RequireInspection) { throw "Could not inspect gateway Startup wrapper $($wrapper.FullName) before changing the legacy install: $($_.Exception.Message)" }
+            Write-Warn "Could not inspect gateway Startup wrapper $($wrapper.FullName): $($_.Exception.Message)"
+        }
+    }
+}
+
+function Assert-NoLegacyInstallerGateway {
+    # A failed inspection cannot establish that replacing an existing legacy
+    # runtime is safe. A fresh install has no old namespace to strand.
+    $hasLegacyRuntime = (Test-Path -LiteralPath (Join-Path $InstallDir 'hermes_cli') -PathType Container) -or
+        (Test-Path -LiteralPath (Join-Path $InstallDir 'venv\Scripts\hermes.exe') -PathType Leaf)
+    $legacy = @(Get-InstallerGatewayRegistrations -RequireInspection:$hasLegacyRuntime | Where-Object { $_.Module -eq 'hermes_cli.main' })
+    if ($legacy.Count -eq 0) { return }
+    Write-Warn 'This install still has a registered gateway using the old hermes_cli.main namespace.'
+    Write-Info 'Before retrying the installer, stop and retire only the registrations listed below. Keep the backups.'
+    foreach ($registration in $legacy) {
+        $backupSuffix = '.backup-' + [Guid]::NewGuid().ToString('N')
+        $name = "'" + $registration.Name.Replace("'", "''") + "'"
+        $homeArg = "'" + $registration.Home.Replace("'", "''") + "'"
+        $oldPython = "'" + (Join-Path $InstallDir 'venv\Scripts\python.exe').Replace("'", "''") + "'"
+        $eidolon = "'" + (Join-Path $InstallDir 'venv\Scripts\eidolon.exe').Replace("'", "''") + "'"
+        Write-Info "  $($registration.Kind): $($registration.Name)"
+        Write-Info "  Remove-Item Env:EIDOLON_HOME -ErrorAction SilentlyContinue; `$env:HERMES_HOME = $homeArg"
+        if ($registration.Kind -eq 'Task') {
+            $backup = "'" + (Join-Path $registration.Home (($registration.Name -replace '[\\/:*?"<>|]', '_') + $backupSuffix + '.task.xml')).Replace("'", "''") + "'"
+            Write-Info "  schtasks /Change /TN $name /DISABLE"
+            Write-Info "  schtasks /End /TN $name"
+            Write-Info "  & $oldPython -m hermes_cli.main gateway stop"
+            Write-Info "  schtasks /Query /TN $name /XML | Set-Content -LiteralPath $backup -Encoding Unicode"
+            Write-Info "  schtasks /Delete /TN $name /F"
+        } else {
+            $backup = "'" + ($registration.Name + $backupSuffix + '.disabled').Replace("'", "''") + "'"
+            Write-Info "  Move-Item -LiteralPath $name -Destination $backup"
+            Write-Info "  & $oldPython -m hermes_cli.main gateway stop"
+        }
+        Write-Info "  After rerunning the installer: `$env:HERMES_HOME = $homeArg; & $eidolon gateway install"
+        Write-Info "  `$env:HERMES_HOME = $homeArg; & $eidolon gateway start"
+    }
+    throw 'Retire the selected install legacy gateway registration before updating its source or virtual environment. No gateway registrations were changed.'
+}
+
+function Suspend-InstallerGatewayTasks {
+    foreach ($task in @(Get-InstallerGatewayRegistrations | Where-Object {
+        $_.Kind -eq 'Task' -and $_.Module -eq 'eidolon_cli.main' -and $_.Enabled -and $_.ActionCount -eq 1 -and
+        $_.Name -match '(?:^|\\)Eidolon_Gateway(?:[-_][^\\]+)?$'
+    } | Sort-Object -Property Name -Unique)) {
+        schtasks /End /TN $task.Name 2>$null | Out-Null
+        schtasks /Change /TN $task.Name /DISABLE 2>$null | Out-Null
+        if ($LASTEXITCODE -eq 0) { $task.Name }
+    }
+}
+
 function Install-Repository {
+    Assert-NoLegacyInstallerGateway
     Write-Info "Installing to $InstallDir..."
 
     $didUpdate = $false
@@ -2215,14 +2430,14 @@ function Install-Repository {
                     # -- the GUI "git checkout main failed (exit 1)" install
                     # failure. Clear the conflict markers with `git reset` first:
                     # working-tree changes are kept (and stashed just below); only
-                    # the index conflict state is dropped. Mirrors the `hermes
+                    # the index conflict state is dropped. Mirrors the `eidolon
                     # update` path (#4735).
                     $unmergedOut = git -c windows.appendAtomically=false ls-files --unmerged 2>$null
                     if (-not [string]::IsNullOrWhiteSpace(($unmergedOut -join "`n"))) {
                         Write-Info "Clearing unmerged index entries from a previous conflict..."
                         git -c windows.appendAtomically=false reset -q 2>$null
                     }
-                    $stashName = "hermes-install-autostash-" + (Get-Date -Format "yyyyMMdd-HHmmss")
+                    $stashName = "eidolon-install-autostash-" + (Get-Date -Format "yyyyMMdd-HHmmss")
                     Write-Info "Local changes detected, stashing before update..."
                     git -c windows.appendAtomically=false stash push --include-untracked -m "$stashName"
                     if ($LASTEXITCODE -eq 0) { $autostashRef = "stash@{0}" }
@@ -2237,7 +2452,7 @@ function Install-Repository {
                     # SHA isn't always reachable from any one branch fetch).
                     git -c windows.appendAtomically=false fetch origin $Commit
                     # A commit pin must never move an existing install
-                    # BACKWARDS. hermes-setup.exe bakes its build-time commit
+                    # BACKWARDS. eidolon-setup.exe bakes its build-time commit
                     # into the binary (BUILD_PIN_COMMIT) and passes it as
                     # -Commit on every install-mode run -- including the retry
                     # the desktop's "Update didn't finish" screen kicks off. An
@@ -2271,7 +2486,7 @@ function Install-Repository {
                     if ($LASTEXITCODE -ne 0) { throw "git checkout $Branch failed (exit $LASTEXITCODE)" }
                     # Managed installs should follow origin/$Branch exactly. If
                     # the checkout has diverged (or has local-only commits),
-                    # ff-only pull cannot succeed -- mirror ``hermes update`` and
+                    # ff-only pull cannot succeed -- mirror ``eidolon update`` and
                     # reset to the fetched remote so bootstrap/install can recover.
                     git -c windows.appendAtomically=false pull --ff-only origin $Branch
                     if ($LASTEXITCODE -ne 0) {
@@ -2427,8 +2642,8 @@ function Install-Repository {
                     $zipUrl = "https://github.com/AetherMesh-AI/Eidolon/archive/refs/heads/$Branch.zip"
                     $zipLabel = $Branch
                 }
-                $zipPath = "$env:TEMP\hermes-agent-$zipLabel.zip"
-                $extractPath = "$env:TEMP\hermes-agent-extract"
+                $zipPath = "$env:TEMP\eidolon-agent-$zipLabel.zip"
+                $extractPath = "$env:TEMP\eidolon-agent-extract"
 
                 Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath -UseBasicParsing
                 if (Test-Path $extractPath) { Remove-Item -Recurse -Force $extractPath }
@@ -2454,7 +2669,7 @@ function Install-Repository {
                     # repo's LF text files to CRLF in the working tree during
                     # `checkout -f FETCH_HEAD` -- leaving this freshly-created
                     # managed checkout dirty vs HEAD and aborting the next
-                    # `hermes update` (see the notes at the shared clone-path
+                    # `eidolon update` (see the notes at the shared clone-path
                     # config below and install.ps1:1461-1469). The later pin on
                     # the shared path is idempotent and still covers git clones.
                     git -c windows.appendAtomically=false config core.autocrlf false 2>$null
@@ -2513,7 +2728,7 @@ function Install-Repository {
     git -c windows.appendAtomically=false config windows.appendAtomically false 2>$null
     # Pin autocrlf=false on the managed clone so git never renormalizes the
     # repo's LF text files to CRLF in the working tree. Without this, the very
-    # next `hermes update` checkout aborts on a "dirty" tree the user never
+    # next `eidolon update` checkout aborts on a "dirty" tree the user never
     # touched (see the update path above).
     git -c windows.appendAtomically=false config core.autocrlf false 2>$null
 
@@ -2557,7 +2772,9 @@ function Install-Venv {
         return
     }
 
-    # Re-resolve the interpreter before creating the venv.  Under Hermes-Setup.exe
+    Assert-NoLegacyInstallerGateway
+
+    # Re-resolve the interpreter before creating the venv.  Under Eidolon-Setup.exe
     # each stage runs in its own powershell.exe, so the fallback the `python`
     # stage picked (e.g. 3.12 when 3.11 is absent) did NOT propagate into this
     # fresh process -- $PythonVersion is back at its "3.11" default.  Trusting it
@@ -2584,7 +2801,7 @@ function Install-Venv {
         $venvHadExistingVenv = $true
         Write-Info "Virtual environment already exists, recreating..."
         # On Windows, native Python extensions (e.g. _bcrypt.pyd, tornado's
-        # speedups.pyd) are loaded as DLLs by any running hermes process.
+        # speedups.pyd) are loaded as DLLs by any running eidolon process.
         # Windows denies deletion of loaded DLLs, so every process running out
         # of this venv must be stopped before retiring it. This keeps cleanup
         # from accumulating locked stale trees and avoids carrying a live
@@ -2603,36 +2820,26 @@ function Install-Venv {
             # on failure -- but only for tasks that were enabled to begin with.
             # Best-effort: a missing task just errors quietly.
             try {
-                schtasks /Query /FO CSV 2>$null | ConvertFrom-Csv | Where-Object { $_.TaskName -like '*Hermes_Gateway*' } | ForEach-Object {
-                    $tn = $_.TaskName
-                    if ($_.Status -eq 'Disabled') {
-                        Write-Info "  gateway autostart task $tn is already disabled; leaving it that way"
-                        return
-                    }
-                    schtasks /End /TN $tn 2>$null | Out-Null
-                    schtasks /Change /TN $tn /DISABLE 2>$null | Out-Null
-                    $gatewayTasksDisabled += $tn
-                    Write-Info "  disabled gateway autostart task $tn for the duration of the install"
-                }
+                $gatewayTasksDisabled = @(Suspend-InstallerGatewayTasks)
             } catch {
-                Write-Warn "Could not enumerate gateway scheduled tasks: $($_.Exception.Message)"
+                Write-Warn "Could not suspend selected-install gateway tasks: $($_.Exception.Message)"
             }
-            # The launcher CLI (hermes.exe) plus its child tree.
-            & taskkill /F /T /IM hermes.exe /FI "PID ne $myPid" 2>$null | Out-Null
-            # taskkill /IM hermes.exe is NOT enough: the gateway/agent that a
+            # The launcher CLI (eidolon.exe) plus its child tree.
+            & taskkill /F /T /IM eidolon.exe /FI "PID ne $myPid" 2>$null | Out-Null
+            # taskkill /IM eidolon.exe is NOT enough: the gateway/agent that a
             # scheduled task or watchdog autostarts runs as
-            # `pythonw.exe -m hermes_cli.main gateway run` straight out of
-            # venv\Scripts\, so its image name is python/pythonw, not hermes.exe.
+            # `pythonw.exe -m eidolon_cli.main gateway run` straight out of
+            # venv\Scripts\, so its image name is python/pythonw, not eidolon.exe.
             # That process holds the venv's .pyd files open and re-triggers the
             # access-denied failure. Select only roots whose executable lives
             # under this venv, then stop each root's whole process tree. Some
-            # Hermes children re-exec through .hermes-runtime, so killing only
+            # Eidolon children re-exec through .eidolon-runtime, so killing only
             # the selected venv process can leave its child holding the install
             # open. The path-prefix check still keeps unrelated Python processes
             # outside this venv untouched.
             #
             # The gateway autostart task registers with /RL LIMITED as the current
-            # user (see hermes_cli/gateway_windows.py), so the installer always
+            # user (see eidolon_cli/gateway_windows.py), so the installer always
             # runs at equal-or-higher integrity and can read its executable path.
             # Get-CimInstance is used over Get-Process because it returns a null
             # ExecutablePath for a process it cannot inspect (a different session)
@@ -2800,7 +3007,7 @@ function Install-Venv {
         # user's gateway autostart in the disabled state. Same function scope,
         # so the list survives even under the stage-per-process bootstrap.
         # Deliberately NOT started here -- dependencies aren't installed yet;
-        # the task fires normally on next logon and `hermes update` / the
+        # the task fires normally on next logon and `eidolon update` / the
         # gateway resume path handles the immediate restart.
         if ($gatewayTasksDisabled -and $gatewayTasksDisabled.Count -gt 0) {
             foreach ($tn in $gatewayTasksDisabled) {
@@ -2845,7 +3052,7 @@ function Complete-VenvTransaction {
 function Restore-VenvBackup {
     # Rollback: the dependency stage failed after Install-Venv replaced the
     # venv. Park the unusable replacement and restore the previous working
-    # venv so Hermes (and the venv-blocker probe) stay usable (#83149).
+    # venv so Eidolon (and the venv-blocker probe) stay usable (#83149).
     $backupName = Get-PendingVenvBackup
     if (-not $backupName) { return }
     try {
@@ -2915,7 +3122,7 @@ function Install-Dependencies {
         # UV_PROJECT_ENVIRONMENT pins the sync target to our venv\.
         # Without it, modern uv (>=0.5) ignores VIRTUAL_ENV for `sync`
         # and creates a sibling .venv\ inside the repo -- leaving venv\
-        # empty and producing the broken state where `hermes.exe` exists
+        # empty and producing the broken state where `eidolon.exe` exists
         # in the wrong directory and imports fail with ModuleNotFoundError.
         # (Mirrors the same flag in scripts/install.sh::install_deps.)
         $env:UV_PROJECT_ENVIRONMENT = "$InstallDir\venv"
@@ -2967,7 +3174,7 @@ try:
     specs = data['project']['optional-dependencies']['all']
     out = []
     for s in specs:
-        m = re.search(r'hermes-agent\[([\w-]+)\]', s)
+        m = re.search(r'eidolon-agent\[([\w-]+)\]', s)
         if m: out.append(m.group(1))
     print(','.join(out))
 except Exception:
@@ -3005,16 +3212,16 @@ except Exception:
         }
     }
     if (-not $installed) {
-        throw "Failed to install hermes-agent package even with no extras. Inspect the uv pip install output above."
+        throw "Failed to install eidolon-agent package even with no extras. Inspect the uv pip install output above."
     }
 
     # Baseline-import gate. Even if a tier reported success above, the
     # actual deps may have landed somewhere other than $InstallDir\venv\
     # (e.g. uv 0.5+ syncing into a sibling .venv\ when UV_PROJECT_ENVIRONMENT
-    # isn't set, leaving venv\ empty and hermes.exe broken with
+    # isn't set, leaving venv\ empty and eidolon.exe broken with
     # `ModuleNotFoundError: No module named 'dotenv'` on first run).
     # We probe via the venv's own python so a misdirected sync is caught
-    # here, not 30 seconds later when the user runs `hermes`.
+    # here, not 30 seconds later when the user runs `eidolon`.
     if (-not $NoVenv) {
         $venvPython = "$InstallDir\venv\Scripts\python.exe"
         if (-not (Test-Path $venvPython)) {
@@ -3050,17 +3257,17 @@ except Exception:
     } catch {
         # Dependency install or import validation failed: restore the previous
         # working venv (parked by Install-Venv) before surfacing the error, so
-        # a failed update leaves Hermes and its blocker probe usable.
+        # a failed update leaves Eidolon and its blocker probe usable.
         Restore-VenvBackup
         Pop-Location
         throw
     }
 
     if (-not $NoVenv) {
-        # uv on Windows can register hermes.exe in dist-info/RECORD but fail to
+        # uv on Windows can register eidolon.exe in dist-info/RECORD but fail to
         # materialise the .exe (file lock during self-update, distlib edge case).
         # Catch it here so a fresh install/update does not finish with a broken
-        # `hermes` command while hermes-agent.exe / hermes-acp.exe exist
+        # `eidolon` command while eidolon-agent.exe / eidolon-acp.exe exist
         $scriptsDir = Join-Path $InstallDir "venv\Scripts"
         $pythonExe = Join-Path $scriptsDir "python.exe"
         if ((Test-Path $scriptsDir) -and (Test-Path $pythonExe)) {
@@ -3089,7 +3296,7 @@ print(','.join(scripts))
                     }
                     if ($stillMissing.Count -gt 0) {
                         Write-Warn "Entry points still missing after repair: $($stillMissing -join ', ')"
-                        Write-Info "Workaround: `"$pythonExe`" -m hermes_cli.main <command>"
+                        Write-Info "Workaround: `"$pythonExe`" -m eidolon_cli.main <command>"
                     } else {
                         Write-Success "Console entry points restored"
                     }
@@ -3099,7 +3306,7 @@ print(','.join(scripts))
     }
 
     # Verify the dashboard deps specifically -- they're the most common thing
-    # users hit and lazy-import errors from `hermes dashboard` are confusing.
+    # users hit and lazy-import errors from `eidolon dashboard` are confusing.
     # If tier 1 failed (the common case), [web] was still picked up by tiers
     # 2-3; only tier 4 leaves you without it.
     $pythonExe = if (-not $NoVenv) { "$InstallDir\venv\Scripts\python.exe" } else { (& $UvCmd python find $PythonVersion) }
@@ -3118,22 +3325,22 @@ print(','.join(scripts))
             if ($LASTEXITCODE -eq 0) { $webOk = $true }
         } catch { }
         try {
-            & $pythonExe -m py_compile "$InstallDir\hermes_cli\web_server.py" 2>&1 | Out-Null
+            & $pythonExe -m py_compile "$InstallDir\eidolon_cli\web_server.py" 2>&1 | Out-Null
             if ($LASTEXITCODE -eq 0) { $webServerSyntaxOk = $true }
         } catch { }
         $ErrorActionPreference = $prevEAP
         if (-not $webOk) {
-            Write-Warn "fastapi/uvicorn not importable -- `hermes dashboard` will not work."
+            Write-Warn "fastapi/uvicorn not importable -- `eidolon dashboard` will not work."
             Write-Info "Attempting targeted install of [web] extra as last resort..."
             & $UvCmd pip install -e ".[web]"
             if ($LASTEXITCODE -eq 0) {
-                Write-Success "[web] extra installed; `hermes dashboard` should now work."
+                Write-Success "[web] extra installed; `eidolon dashboard` should now work."
             } else {
                 Write-Warn "Could not install [web] extra. Run manually: uv pip install --python `"$pythonExe`" `"fastapi>=0.104,<1`" `"uvicorn[standard]>=0.24,<1`""
             }
         }
         if (-not $webServerSyntaxOk) {
-            throw "dashboard backend source failed syntax check: hermes_cli/web_server.py"
+            throw "dashboard backend source failed syntax check: eidolon_cli/web_server.py"
         }
     }
     
@@ -3148,21 +3355,21 @@ function Install-HermesCommandLaunchers {
         [Parameter(Mandatory=$true)] [string]$Destination
     )
 
-    # Expose ONLY the hermes launchers on PATH -- never the whole
+    # Expose ONLY the eidolon launchers on PATH -- never the whole
     # venv\Scripts directory, which contains python.exe / pip.exe and
     # silently hijacks the `python` command in every terminal (#83797).
-    # Requiring hermes.exe before creating the destination keeps the PATH
+    # Requiring eidolon.exe before creating the destination keeps the PATH
     # stage from reporting success with an unusable command (PR #92092).
     $scriptsDir = Join-Path $Root "venv\Scripts"
-    $requiredSource = Join-Path $scriptsDir "hermes.exe"
+    $requiredSource = Join-Path $scriptsDir "eidolon.exe"
     if (-not (Test-Path -LiteralPath $requiredSource -PathType Leaf)) {
-        throw "Cannot set up the hermes command: required launcher not found: $requiredSource"
+        throw "Cannot set up the eidolon command: required launcher not found: $requiredSource"
     }
 
     New-Item -ItemType Directory -Force -Path $Destination | Out-Null
 
     # Launcher form depends on the venv (keep in lockstep with
-    # hermes_cli/_install_repair.py): a normal venv's exe trampoline
+    # eidolon_cli/_install_repair.py): a normal venv's exe trampoline
     # embeds an absolute interpreter path and survives copying; a
     # relocatable venv's trampoline (managed_uv rebuilds use
     # --relocatable) resolves relative to its own location, and a copy
@@ -3173,7 +3380,7 @@ function Install-HermesCommandLaunchers {
     if (Test-Path -LiteralPath $pyvenvCfg) {
         $venvRelocatable = [bool](Select-String -Path $pyvenvCfg -Pattern '^\s*relocatable\s*=\s*true\s*$' -Quiet)
     }
-    foreach ($launcher in @("hermes", "hermes-acp")) {
+    foreach ($launcher in @("eidolon", "eidolon-acp")) {
         $src = Join-Path $scriptsDir "$launcher.exe"
         if (-not (Test-Path -LiteralPath $src -PathType Leaf)) { continue }
         if ($venvRelocatable) {
@@ -3186,40 +3393,40 @@ function Install-HermesCommandLaunchers {
     }
 
     # Verify either staged form before the caller mutates PATH.
-    $requiredExe = Join-Path $Destination "hermes.exe"
-    $requiredCmd = Join-Path $Destination "hermes.cmd"
+    $requiredExe = Join-Path $Destination "eidolon.exe"
+    $requiredCmd = Join-Path $Destination "eidolon.cmd"
     if (-not ((Test-Path -LiteralPath $requiredExe -PathType Leaf) -or
               (Test-Path -LiteralPath $requiredCmd -PathType Leaf))) {
-        throw "Cannot set up the hermes command: launcher was not installed: $requiredExe"
+        throw "Cannot set up the eidolon command: launcher was not installed: $requiredExe"
     }
     return $Destination
 }
 
 function Set-PathVariable {
-    Write-Info "Setting up hermes command..."
+    Write-Info "Setting up eidolon command..."
     
     if ($NoVenv) {
-        $hermesBin = "$InstallDir"
+        $eidolonBin = "$InstallDir"
     } else {
         # $HermesHome\bin is the managed binary dir (shared with the managed
-        # uv), OUTSIDE the git checkout: `hermes update`'s autostash
+        # uv), OUTSIDE the git checkout: `eidolon update`'s autostash
         # (git stash push --include-untracked) deletes untracked files from
         # the working tree, which silently removed the launchers an earlier
-        # installer staged under hermes-agent\bin. No git operation can ever
+        # installer staged under eidolon-agent\bin. No git operation can ever
         # touch this dir. Staging and verification live in
         # Install-HermesCommandLaunchers, which throws BEFORE any PATH
         # mutation when the launchers cannot be staged.
-        $hermesBin = "$HermesHome\bin"
-        Install-HermesCommandLaunchers -Root $InstallDir -Destination $hermesBin | Out-Null
+        $eidolonBin = "$HermesHome\bin"
+        Install-HermesCommandLaunchers -Root $InstallDir -Destination $eidolonBin | Out-Null
     }
     
     $currentPath = [Environment]::GetEnvironmentVariable("Path", "User")
 
     # Migrate older layouts off the user PATH:
     #   venv\Scripts     -- shadowed the user's python (#83797)
-    #   hermes-agent\bin -- lived inside the git checkout, where the update
+    #   eidolon-agent\bin -- lived inside the git checkout, where the update
     #                       autostash could sweep the launchers off disk
-    # The hermes-agent\bin FILES are left in place on purpose: editor/ACP
+    # The eidolon-agent\bin FILES are left in place on purpose: editor/ACP
     # configs that captured absolute launcher paths keep working, and the
     # dir is git-ignored so it cannot dirty the checkout.
     if (-not $NoVenv) {
@@ -3229,23 +3436,23 @@ function Set-PathVariable {
         if ($cleaned.Count -ne $items.Count) {
             $currentPath = $cleaned -join ";"
             [Environment]::SetEnvironmentVariable("Path", $currentPath, "User")
-            Write-Info "Removed legacy launcher entries from user PATH (kept hermes via $hermesBin)"
+            Write-Info "Removed legacy launcher entries from user PATH (kept eidolon via $eidolonBin)"
         }
     }
     
-    if ($currentPath -notlike "*$hermesBin*") {
+    if ($currentPath -notlike "*$eidolonBin*") {
         [Environment]::SetEnvironmentVariable(
             "Path",
-            "$hermesBin;$currentPath",
+            "$eidolonBin;$currentPath",
             "User"
         )
-        Write-Success "Added to user PATH: $hermesBin"
+        Write-Success "Added to user PATH: $eidolonBin"
     } else {
         Write-Info "PATH already configured"
     }
     
     # Set HERMES_HOME so the Python code finds config/data in the right place.
-    # Only needed on Windows where we install to %LOCALAPPDATA%\hermes instead
+    # Only needed on Windows where we install to %LOCALAPPDATA%\eidolon instead
     # of the Unix default ~/.eidolon
     $currentHermesHome = [Environment]::GetEnvironmentVariable("HERMES_HOME", "User")
     if (-not $currentHermesHome -or $currentHermesHome -ne $HermesHome) {
@@ -3255,13 +3462,13 @@ function Set-PathVariable {
     $env:HERMES_HOME = $HermesHome
     
     # Update current session
-    $env:Path = "$hermesBin;$env:Path"
+    $env:Path = "$eidolonBin;$env:Path"
     
-    Write-Success "hermes command ready"
+    Write-Success "eidolon command ready"
 }
 
 function Write-BootstrapMarker {
-    # Writes $InstallDir\.hermes-bootstrap-complete which tells the Hermes
+    # Writes $InstallDir\.eidolon-bootstrap-complete which tells the Hermes
     # desktop app (apps/desktop/electron/main.ts) "install.ps1 ran
     # successfully -- DON'T trigger the legacy first-launch bootstrap
     # runner."
@@ -3272,10 +3479,10 @@ function Write-BootstrapMarker {
     #   BOOTSTRAP_MARKER_SCHEMA_VERSION = 1 (line 187)
     #
     # Pinned commit/branch come from -Commit + -Branch flags (passed by
-    # Hermes-Setup.exe) or fall back to whatever git resolves in the
+    # Eidolon-Setup.exe) or fall back to whatever git resolves in the
     # checkout. The desktop validates schemaVersion + pinnedCommit
     # length but doesn't enforce that HEAD matches the pin (users
-    # update via `hermes update` which moves HEAD legitimately).
+    # update via `eidolon update` which moves HEAD legitimately).
     if (-not (Test-Path $InstallDir)) {
         Write-Warn "Skipping bootstrap marker: $InstallDir doesn't exist"
         return
@@ -3312,7 +3519,7 @@ function Write-BootstrapMarker {
         $pinnedBranch = "main"  # install.ps1's own default for -Branch
     }
 
-    $markerPath = Join-Path $InstallDir ".hermes-bootstrap-complete"
+    $markerPath = Join-Path $InstallDir ".eidolon-bootstrap-complete"
     $marker = [ordered]@{
         schemaVersion = 1
         pinnedCommit  = $pinnedCommit
@@ -3340,7 +3547,7 @@ function Write-BootstrapMarker {
 function Copy-ConfigTemplates {
     Write-Info "Setting up configuration files..."
     
-    # Create the HERMES_HOME directory structure ($HermesHome, default %LOCALAPPDATA%\hermes)
+    # Create the HERMES_HOME directory structure ($HermesHome, default %LOCALAPPDATA%\eidolon)
     New-Item -ItemType Directory -Force -Path "$HermesHome\cron" | Out-Null
     New-Item -ItemType Directory -Force -Path "$HermesHome\sessions" | Out-Null
     New-Item -ItemType Directory -Force -Path "$HermesHome\logs" | Out-Null
@@ -3390,7 +3597,7 @@ function Copy-ConfigTemplates {
     # PowerShell version.
     $soulPath = "$HermesHome\SOUL.md"
     if (-not (Test-Path $soulPath)) {
-        # MUST match DEFAULT_SOUL_MD in hermes_cli/default_soul.py. The runtime
+        # MUST match DEFAULT_SOUL_MD in eidolon_cli/default_soul.py. The runtime
         # upgrades the old comment-only scaffold to this text on next run, so
         # drift is self-healing, but keep them in sync to avoid first-run churn.
         $soulContent = @"
@@ -3440,7 +3647,7 @@ You are Eidolon, built by AetherMesh. Be direct: match the length of your reply 
 
 function Install-NodeDeps {
     if (-not $HasNode) {
-        # Cross-process driver mode (Hermes-Setup.exe runs each -Stage NAME
+        # Cross-process driver mode (Eidolon-Setup.exe runs each -Stage NAME
         # in a fresh powershell.exe) means $script:HasNode set by Stage-Node
         # in the previous process isn't visible here. Re-probe rather than
         # trust the stale global -- Stage-Node already ran successfully or
@@ -3470,7 +3677,7 @@ function Install-NodeDeps {
     $npmCmd = Get-Command npm -ErrorAction SilentlyContinue
     if (-not $npmCmd) {
         Write-Warn "npm not found on PATH -- skipping Node.js dependencies."
-        Write-Info "Open a new PowerShell window and re-run 'hermes setup tools' later."
+        Write-Info "Open a new PowerShell window and re-run 'eidolon setup tools' later."
         return
     }
     $npmExe = $npmCmd.Source
@@ -3609,7 +3816,7 @@ function Install-NodeDeps {
     # Browser tools
     if (Test-Path "$InstallDir\package.json") {
         Write-Info "Installing Node.js dependencies (browser tools)..."
-        $browserLog = "$env:TEMP\hermes-npm-browser-$(Get-Random).log"
+        $browserLog = "$env:TEMP\eidolon-npm-browser-$(Get-Random).log"
         $browserNpmOk = _Run-NpmInstall "Browser tools" $InstallDir $browserLog $npmExe
 
         # Install Playwright Chromium (mirrors scripts/install.sh behaviour for
@@ -3636,7 +3843,7 @@ function Install-NodeDeps {
                 Write-Warn "npx not found -- cannot install Playwright Chromium."
                 Write-Info "Run manually later: cd `"$InstallDir`"; npx playwright install chromium"
             } else {
-                $pwLog = "$env:TEMP\hermes-playwright-install-$(Get-Random).log"
+                $pwLog = "$env:TEMP\eidolon-playwright-install-$(Get-Random).log"
                 Push-Location $InstallDir
                 # Capture EAP outside the try block so the catch's restore call
                 # always has a meaningful value (see Install-Uv for the full
@@ -3718,7 +3925,7 @@ function Install-NodeDeps {
     $tuiDir = "$InstallDir\ui-tui"
     if (Test-Path "$tuiDir\package.json") {
         Write-Info "Installing TUI dependencies..."
-        $tuiLog = "$env:TEMP\hermes-npm-tui-$(Get-Random).log"
+        $tuiLog = "$env:TEMP\eidolon-npm-tui-$(Get-Random).log"
         [void](_Run-NpmInstall "TUI" $tuiDir $tuiLog $npmExe)
     }
 
@@ -3729,7 +3936,7 @@ function Install-NodeDeps {
 # The Browser Use CLI is the default browser backend when it is runnable
 # (tools/browser_use_cli.py). Provision it at install time so fresh installs
 # don't silently fall back to the built-in browser tools. Best-effort: any
-# failure is non-fatal (browser_exec can still run via uvx, and `hermes tools`
+# failure is non-fatal (browser_exec can still run via uvx, and `eidolon tools`
 # can install it later).
 function Install-BrowserUseCli {
     if (-not $script:UvCmd) { Resolve-UvCmd }
@@ -3760,7 +3967,7 @@ function Install-BrowserUseCli {
             Write-Success "Browser Use CLI installed"
         } else {
             Write-Warn "Browser Use CLI install failed (exit $LASTEXITCODE) -- browser automation falls back to built-in tools."
-            Write-Info "Install later with: uv tool install browser-use  (or via 'hermes tools')"
+            Write-Info "Install later with: uv tool install browser-use  (or via 'eidolon tools')"
         }
     } catch {
         Write-Warn "Browser Use CLI install failed: $_"
@@ -3823,10 +4030,10 @@ function Test-CuaDriverRuntimeContract {
 }
 
 # cua-driver powers the computer_use toolset (background desktop control).
-# Provision it at install time so enabling the tool later -- via `hermes
+# Provision it at install time so enabling the tool later -- via `eidolon
 # tools`, the dashboard, or the desktop app -- is a config flip, not a
 # surprise multi-minute binary fetch. Best-effort and non-fatal: the enable
-# paths still lazy-install via install_cua_driver() (hermes_cli/tools_config)
+# paths still lazy-install via install_cua_driver() (eidolon_cli/tools_config)
 # when this step was skipped or failed.
 function Install-CuaDriver {
     if ($SkipComputerUse) {
@@ -3846,7 +4053,7 @@ function Install-CuaDriver {
     $prevEAP = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
-        # Same upstream installer `hermes computer-use install` runs. Bounded
+        # Same upstream installer `eidolon computer-use install` runs. Bounded
         # via a background job: the upstream installer serializes with its own
         # lock (600s stale window), so the ceiling sits above that -- matching
         # Hermes' _CUA_INSTALLER_TIMEOUT (660s).
@@ -3858,20 +4065,20 @@ function Install-CuaDriver {
             Remove-Job $job -Force -ErrorAction SilentlyContinue
             $installedCuaDriver = Get-Command cua-driver -ErrorAction SilentlyContinue
             if ($installedCuaDriver -and (Test-CuaDriverRuntimeContract -DriverPath $installedCuaDriver.Source)) {
-                Write-Success "Computer Use driver installed (enable via 'hermes tools' -> Computer Use)"
+                Write-Success "Computer Use driver installed (enable via 'eidolon tools' -> Computer Use)"
             } else {
                 Write-Warn "Computer Use driver install did not produce a compatible runtime -- repair it before enabling the tool."
-                Write-Info "Install later with: hermes computer-use install"
+                Write-Info "Install later with: eidolon computer-use install"
             }
         } else {
             Stop-Job $job -ErrorAction SilentlyContinue
             Remove-Job $job -Force -ErrorAction SilentlyContinue
             Write-Warn "Computer Use driver install timed out -- it will install on demand when you enable the tool."
-            Write-Info "Install later with: hermes computer-use install"
+            Write-Info "Install later with: eidolon computer-use install"
         }
     } catch {
         Write-Warn "Computer Use driver install failed: $_"
-        Write-Info "Install later with: hermes computer-use install"
+        Write-Info "Install later with: eidolon computer-use install"
     } finally {
         $ErrorActionPreference = $prevEAP
     }
@@ -4036,7 +4243,7 @@ function Install-Desktop {
     # itself, ~150MB), then run `npm run pack` in apps/desktop which
     # produces the unpacked binary at apps/desktop/release/<os>-unpacked/.
     #
-    # The Tauri bootstrap installer's launch_hermes_desktop command
+    # The Tauri bootstrap installer's launch_eidolon_desktop command
     # resolves apps/desktop/release/win-unpacked/Eidolon.exe directly,
     # so an "unpacked" build (electron-builder --dir) is enough -- we
     # don't need to produce an NSIS/MSI artifact here.
@@ -4160,7 +4367,7 @@ function Install-Desktop {
     # belt-and-suspenders: if the user's environment has them set
     # for some other tool, electron-builder would still try to sign.
     Write-Info "Building desktop app (this takes 1-3 minutes)..."
-    $buildLog = "$env:TEMP\hermes-desktop-build-$(Get-Random).log"
+    $buildLog = "$env:TEMP\eidolon-desktop-build-$(Get-Random).log"
     # Seed GITHUB_SHA for write-build-stamp.mjs. The stamp prefers CI env vars
     # over `git rev-parse`, so this covers: (1) node can't find git.exe on PATH
     # even though this PowerShell session can, (2) ZIP/init trees that still
@@ -4311,7 +4518,7 @@ function Install-Desktop {
     # 3c. Grant ALL APPLICATION PACKAGES (S-1-15-2-2) RX on the unpacked app
     #     directory. Chromium's GPU/renderer sandboxes CHECK-fail with
     #     0x80000003 when this ACE is missing alongside orphan AppContainer
-    #     SIDs under %LOCALAPPDATA% (electron/electron#51761, hermes-agent#38216).
+    #     SIDs under %LOCALAPPDATA% (electron/electron#51761, eidolon-agent#38216).
     #     Best-effort -- never fail an otherwise-good install over ACL repair.
     try {
         $appDir = Split-Path -Parent $desktopExe
@@ -4326,7 +4533,7 @@ function Install-Desktop {
     }
 
     # 4. Create Start Menu + Desktop shortcuts pointing DIRECTLY at the packed
-    #    Eidolon.exe. We deliberately do NOT point them at `hermes desktop`: that
+    #    Eidolon.exe. We deliberately do NOT point them at `eidolon desktop`: that
     #    command rebuilds (npm install + electron-builder) on every launch,
     #    which would cost minutes each time. The packed exe is the consumer --
     #    launching it directly is instant, and updates flow through the
@@ -4382,7 +4589,7 @@ function New-DesktopShortcuts {
         # Bust the Windows shell icon cache so the desktop/Start-Menu shortcut
         # repaints with the (possibly newly-stamped) icon instead of a stale
         # cached bitmap. Critical on the --update path: the exe was re-stamped
-        # with the Hermes icon, but without this the shortcut can keep drawing
+        # with the Eidolon icon, but without this the shortcut can keep drawing
         # the old Electron icon until the user manually refreshes / reboots.
         # Best-effort and silent -- never fail the install over a cosmetic cache.
         try {
@@ -4514,7 +4721,7 @@ function Invoke-SetupWizard {
         # The setup wizard prompts for API keys, model choice, persona, etc.
         # Non-interactive callers (GUI installer) own that UX themselves; let
         # them drive it after install.ps1 returns.
-        Write-Info "Skipping setup wizard (non-interactive). Configure via the GUI or 'hermes setup'."
+        Write-Info "Skipping setup wizard (non-interactive). Configure via the GUI or 'eidolon setup'."
         return
     }
 
@@ -4524,11 +4731,11 @@ function Invoke-SetupWizard {
 
     Push-Location $InstallDir
 
-    # Run hermes setup using the venv Python directly (no activation needed)
+    # Run eidolon setup using the venv Python directly (no activation needed)
     if (-not $NoVenv) {
-        & ".\venv\Scripts\python.exe" -m hermes_cli.main setup
+        & ".\venv\Scripts\python.exe" -m eidolon_cli.main setup
     } else {
-        python -m hermes_cli.main setup
+        python -m eidolon_cli.main setup
     }
 
     Pop-Location
@@ -4547,9 +4754,9 @@ function Start-GatewayIfConfigured {
 
     if (-not $hasMessaging) { return }
 
-    $hermesCmd = "$InstallDir\venv\Scripts\hermes.exe"
-    if (-not (Test-Path $hermesCmd)) {
-        $hermesCmd = "hermes"
+    $eidolonCmd = "$InstallDir\venv\Scripts\eidolon.exe"
+    if (-not (Test-Path $eidolonCmd)) {
+        $eidolonCmd = "eidolon"
     }
 
     # If WhatsApp is enabled but not yet paired, run foreground for QR scan
@@ -4558,7 +4765,7 @@ function Start-GatewayIfConfigured {
     if ($whatsappEnabled -and -not (Test-Path $whatsappSession)) {
         Write-Host ""
         Write-Info "WhatsApp is enabled but not yet paired."
-        Write-Info "Running 'hermes whatsapp' to pair via QR code..."
+        Write-Info "Running 'eidolon whatsapp' to pair via QR code..."
         Write-Host ""
         # Non-interactive callers (GUI installer, CI) skip the QR-pair prompt;
         # WhatsApp pairing requires a human looking at a phone camera, so the
@@ -4567,7 +4774,7 @@ function Start-GatewayIfConfigured {
             $response = Read-Host "Pair WhatsApp now? [Y/n]"
             if ($response -eq "" -or $response -match "^[Yy]") {
                 try {
-                    & $hermesCmd whatsapp
+                    & $eidolonCmd whatsapp
                 } catch {
                     # Expected after pairing completes
                 }
@@ -4587,7 +4794,7 @@ function Start-GatewayIfConfigured {
     # services on the build agent, etc.).  Treat it like the user declined.
     if ($NonInteractive) {
         Write-Info "Skipping gateway autostart prompt (non-interactive)."
-        Write-Info "Start the gateway later with: hermes gateway"
+        Write-Info "Start the gateway later with: eidolon gateway"
         return
     }
 
@@ -4597,7 +4804,7 @@ function Start-GatewayIfConfigured {
         Write-Info "Starting gateway in background..."
         try {
             $logFile = "$HermesHome\logs\gateway.log"
-            Start-Process -FilePath $hermesCmd -ArgumentList "gateway" `
+            Start-Process -FilePath $eidolonCmd -ArgumentList "gateway" `
                 -RedirectStandardOutput $logFile `
                 -RedirectStandardError "$HermesHome\logs\gateway-error.log" `
                 -WindowStyle Hidden
@@ -4605,10 +4812,10 @@ function Start-GatewayIfConfigured {
             Write-Info "Logs: $logFile"
             Write-Info "To stop: close the gateway process from Task Manager"
         } catch {
-            Write-Warn "Failed to start gateway. Run manually: hermes gateway"
+            Write-Warn "Failed to start gateway. Run manually: eidolon gateway"
         }
     } else {
-        Write-Info "Skipped. Start the gateway later with: hermes gateway"
+        Write-Info "Skipped. Start the gateway later with: eidolon gateway"
     }
 }
 
@@ -4634,19 +4841,19 @@ function Write-Completion {
     
     Write-Host "---------------------------------------------------------" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "* Eidolon commands (hermes CLI):" -ForegroundColor Cyan
+    Write-Host "* Eidolon commands (eidolon CLI):" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "   hermes              " -NoNewline -ForegroundColor Green
+    Write-Host "   eidolon              " -NoNewline -ForegroundColor Green
     Write-Host "Start chatting"
-    Write-Host "   hermes setup        " -NoNewline -ForegroundColor Green
+    Write-Host "   eidolon setup        " -NoNewline -ForegroundColor Green
     Write-Host "Configure API keys & settings"
-    Write-Host "   hermes config       " -NoNewline -ForegroundColor Green
+    Write-Host "   eidolon config       " -NoNewline -ForegroundColor Green
     Write-Host "View/edit configuration"
-    Write-Host "   hermes config edit  " -NoNewline -ForegroundColor Green
+    Write-Host "   eidolon config edit  " -NoNewline -ForegroundColor Green
     Write-Host "Open config in editor"
-    Write-Host "   hermes gateway      " -NoNewline -ForegroundColor Green
+    Write-Host "   eidolon gateway      " -NoNewline -ForegroundColor Green
     Write-Host "Start messaging gateway (Telegram, Discord, etc.)"
-    Write-Host "   hermes update       " -NoNewline -ForegroundColor Green
+    Write-Host "   eidolon update       " -NoNewline -ForegroundColor Green
     Write-Host "Update to latest version"
     Write-Host ""
     
@@ -4748,7 +4955,7 @@ $InstallStages = @(
     @{ Name = "node";             Title = "Detecting Node.js";                    Category = "prereqs";      NeedsUserInput = $false; Worker = "Stage-Node" }
     @{ Name = "system-packages";  Title = "Installing ripgrep and ffmpeg";        Category = "prereqs";      NeedsUserInput = $false; Worker = "Stage-SystemPackages" }
     @{ Name = "repository";       Title = "Cloning Eidolon repository";           Category = "install";      NeedsUserInput = $false; Worker = "Stage-Repository" }
-    # Managed Python lives under $InstallDir\.hermes-runtime, so the checkout
+    # Managed Python lives under $InstallDir\.eidolon-runtime, so the checkout
     # must exist before this stage creates that directory. Otherwise the later
     # repository stage treats the runtime-only directory as a broken checkout,
     # parks it, and leaves Stage-Venv with no managed interpreter.
@@ -4760,7 +4967,7 @@ $InstallStages = @(
 if ($IncludeDesktop) {
     # Insert AFTER node-deps so workspace npm is already installed when
     # the desktop build runs. Inserted only when explicitly requested
-    # (Hermes-Setup.exe), never via the irm|iex CLI one-liner.
+    # (Eidolon-Setup.exe), never via the irm|iex CLI one-liner.
     $InstallStages += @{ Name = "desktop"; Title = "Building desktop app"; Category = "install"; NeedsUserInput = $false; Worker = "Stage-Desktop" }
 }
 $InstallStages += @(

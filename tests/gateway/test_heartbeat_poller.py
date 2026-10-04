@@ -10,7 +10,7 @@ from gateway.platforms.base import BasePlatformAdapter, SendResult
 from gateway.platforms.event import MessageEvent
 from gateway.run import GatewayRunner
 from gateway.session import SessionSource, build_session_key
-from hermes_cli.heartbeat import HeartbeatManager
+from eidolon_cli.heartbeat import HeartbeatManager
 
 
 class _HeartbeatAdapter(BasePlatformAdapter):
@@ -31,7 +31,7 @@ class _HeartbeatAdapter(BasePlatformAdapter):
 
 @pytest.fixture
 def poller(monkeypatch):
-    from hermes_cli import goals, heartbeat
+    from eidolon_cli import goals, heartbeat
 
     goals._DB_CACHE.clear()
     goals._get_session_db()

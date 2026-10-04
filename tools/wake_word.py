@@ -137,7 +137,7 @@ def load_wake_word_config() -> Dict[str, Any]:
     """Return the ``wake_word`` config section, shape-guarded to a dict."""
     cfg = None
     with suppress(Exception):
-        from hermes_cli.config import load_config
+        from eidolon_cli.config import load_config
         cfg = load_config().get("wake_word")
     return cfg if isinstance(cfg, dict) else {}
 
@@ -227,7 +227,7 @@ def wake_surface_enabled(surface: str, cfg: Optional[Dict[str, Any]] = None) -> 
 
 def _active_profile_name() -> str:
     with suppress(Exception):
-        from hermes_cli.profiles import get_active_profile_name
+        from eidolon_cli.profiles import get_active_profile_name
         return get_active_profile_name() or "default"
     return "default"
 
@@ -238,8 +238,8 @@ def enrolled_profile_phrases() -> Dict[str, str]:
     ``"hey <profile>"``; the sherpa engine listens for all and routes to the match. Unreadable → skipped."""
     phrases: Dict[str, str] = {}
     with suppress(Exception):
-        from hermes_cli.config import read_user_config_raw
-        from hermes_cli.profiles import get_profile_dir, list_profiles
+        from eidolon_cli.config import read_user_config_raw
+        from eidolon_cli.profiles import get_profile_dir, list_profiles
         for info in list_profiles():
             name = getattr(info, "name", None) or str(info)
             with suppress(Exception):
@@ -313,7 +313,7 @@ def _resample_audio_frame(np, frame, output_length: int):
 def silent_audio_hint(details: Dict[str, Any]) -> str:
     """Platform-specific remediation for an armed stream delivering silence."""
     if sys.platform == "darwin":
-        return ("Microphone delivers only silence. Grant the Hermes backend "
+        return ("Microphone delivers only silence. Grant the Eidolon backend "
                 "microphone access in System Settings > Privacy & Security > "
                 "Microphone, then toggle the wake word.")
     fix = ("Set wake_word.input_device to a different PortAudio input device"
@@ -394,7 +394,7 @@ def check_wake_word_requirements(cfg: Optional[Dict[str, Any]] = None) -> Dict[s
          lambda: "The wake word needs the tflite runtime on this Mac: pip install ai-edge-litert"),
         (deps_ok and not audio_ok and capture_mode == "local",
          lambda: "Microphone capture needs sounddevice + numpy and a working audio device."),
-        (bool(missing), lambda: (f"Wake word needs {missing} configured — run `hermes tools` "
+        (bool(missing), lambda: (f"Wake word needs {missing} configured — run `eidolon tools` "
                                  f"(Voice section) or see the voice-mode docs.")),
     )
     hint = next((make() for cond, make in ladder if cond), "")
@@ -657,7 +657,7 @@ class WakeWordDetector:
                 self.on_failure(self)
 
 
-# ── Process-wide singleton (mirrors hermes_cli.voice's continuous API) ──
+# ── Process-wide singleton (mirrors eidolon_cli.voice's continuous API) ──
 
 _detector: Optional[WakeWordDetector] = None
 _detector_owner: object | None = None
@@ -666,7 +666,7 @@ _detector_lock = threading.Lock()
 
 
 def _lock_path() -> Path:
-    from hermes_constants import get_default_hermes_root
+    from eidolon_constants import get_default_hermes_root
     return get_default_hermes_root() / "runtime" / "wake-word.lock"
 
 

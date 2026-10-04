@@ -14,7 +14,7 @@ import threading
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from hermes_cli.middleware import OBSERVER_SCHEMA_VERSION
+from eidolon_cli.middleware import OBSERVER_SCHEMA_VERSION
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +76,7 @@ def _worker(dispatcher: _ConsumerDispatcher) -> None:
 
 def _registered_callbacks(hook_name: str) -> tuple[Callable[..., Any], ...]:
     try:
-        from hermes_cli import plugins
+        from eidolon_cli import plugins
         return plugins.iter_hook_callbacks(hook_name)
     except Exception:
         logger.debug("plugin stream hook callback lookup failed: %s", hook_name, exc_info=True)
@@ -147,7 +147,7 @@ def has_reasoning_stream_observer_hooks() -> bool:
 def stream_reasoning_deltas_enabled() -> bool:
     """Return True only when the user opted plugins into reasoning deltas."""
     try:
-        from hermes_cli import config as config_mod
+        from eidolon_cli import config as config_mod
         config = config_mod.load_config()
         return bool(config_mod.cfg_get(config, "plugins", "stream_reasoning_deltas", default=False))
     except Exception:

@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
-from hermes_constants import get_hermes_home
+from eidolon_constants import get_eidolon_home
 from tools.url_safety import _normalize_hostname as _normalize_host
 
 logger = logging.getLogger(__name__)
@@ -101,7 +101,7 @@ def load_website_blocklist(config_path: Optional[Path] = None) -> Dict[str, Any]
     """Parsed website blocklist policy (``{"enabled", "rules"}``); cached for ``_CACHE_TTL_SECONDS`` for
     the default config path only — an explicit ``config_path`` (tests) bypasses and never populates it."""
     global _cached_policy, _cached_policy_path, _cached_policy_time
-    default_path = get_hermes_home() / "config.yaml"
+    default_path = get_eidolon_home() / "config.yaml"
     resolved_path = str(config_path or default_path)
     now = time.monotonic()
     if config_path is None:
@@ -119,7 +119,7 @@ def load_website_blocklist(config_path: Optional[Path] = None) -> Dict[str, Any]
         if not isinstance(shared_file, str) or not shared_file.strip():
             continue
         path = Path(shared_file).expanduser()
-        path = path if path.is_absolute() else (get_hermes_home() / path).resolve()
+        path = path if path.is_absolute() else (get_eidolon_home() / path).resolve()
         pairs += [(normalized, str(path)) for normalized in _iter_blocklist_file_rules(path)]
     # dict.fromkeys dedupes (pattern, source) while keeping first-seen order.
     result = {"enabled": enabled, "rules": [{"pattern": p, "source": s} for p, s in dict.fromkeys(pairs)]}

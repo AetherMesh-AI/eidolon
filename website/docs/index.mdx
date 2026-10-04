@@ -25,7 +25,9 @@ Read build-specific limitations before installing. A successful build is not evi
 
 ## Documentation scope
 
-The detailed runtime, tools, provider and extension guides are inherited technical documentation and are being reviewed incrementally for Eidolon. Compatibility commands such as `hermes`, Python package names, `HERMES_*` configuration keys and real provider/model names remain unchanged where required. Upstream hosting, support and release promises in older guides are not Eidolon commitments. Prefer this repository's current README, contributor guide and security policy when they differ.
+The detailed runtime, tools, provider and extension guides are inherited technical documentation and are being reviewed incrementally for Eidolon. The primary command is `eidolon`, Python imports use `eidolon_cli` and `eidolon_*`, and the default application home is `~/.eidolon`. `EIDOLON_HOME` is the canonical startup override; `HERMES_HOME` remains the internal compatibility transport. Legacy plugin metadata/discovery keys and real provider/model names remain unchanged where required. Upstream hosting, support and release promises in older guides are not Eidolon commitments. Prefer this repository's current README, contributor guide and security policy when they differ.
+
+For the first source update across the package rename, read the [internal-name migration notes](https://github.com/AetherMesh-AI/eidolon/blob/main/docs/internal-name-migration.md). An old `hermes update` process cannot complete that transition.
 
 ## Attribution
 

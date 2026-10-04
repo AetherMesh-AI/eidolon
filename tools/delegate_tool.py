@@ -98,7 +98,7 @@ def _open_child_session_db(parent_agent) -> Any:
     if parent_session_db is None:
         return None
     with _quiet("subagent: failed to open dedicated SessionDB; child persistence disabled", exc_info=True):
-        from hermes_state_registry import acquire
+        from eidolon_state_registry import acquire
         _parent_db_path = getattr(parent_session_db, "db_path", None)
         return acquire(_parent_db_path) if _parent_db_path is not None else acquire()
     return None
@@ -248,7 +248,7 @@ def _build_child_agent(
             # No child close() will ever run: release the dedicated handle here.
             if child_session_db is not None:
                 with _quiet(None):
-                    from hermes_state_registry import release_or_close
+                    from eidolon_state_registry import release_or_close
                     release_or_close(child_session_db)
             raise
     child._print_fn = getattr(parent_agent, "_print_fn", None)
@@ -282,7 +282,7 @@ def _build_child_agent(
     # saturated — then the subagent_start lifecycle hook.
     _safe_progress(child_progress_cb, "subagent.spawn_requested", preview=goal)
     with _quiet("subagent_start hook invocation failed", exc_info=True):
-        from hermes_cli.lifecycle import invoke_hook as _invoke_hook
+        from eidolon_cli.lifecycle import invoke_hook as _invoke_hook
         _invoke_hook(
             "subagent_start", parent_session_id=parent_sid,
             parent_turn_id=getattr(parent_agent, "_current_turn_id", "") or "", parent_subagent_id=parent_subagent_id,
@@ -718,7 +718,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

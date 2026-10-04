@@ -189,7 +189,7 @@ describe('main.ts wiring for #90812', () => {
 
     expect(body).toContain('backendDialClaims.run(backendScopeKey(connection.id, null)')
     expect(body).toContain('ensureRegistryBackend(connection.id, null)')
-    expect(body).toContain("postJsonForBackend(descriptor, '/api/hermes/update'")
+    expect(body).toContain("postJsonForBackend(descriptor, '/api/eidolon/update'")
   })
 
   it('routes every registry-scoped REST dispatch (hermes:api) through the single-owner claim', () => {

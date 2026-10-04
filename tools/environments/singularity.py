@@ -13,7 +13,7 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
-from hermes_constants import get_hermes_home
+from eidolon_constants import get_eidolon_home
 from tools.environments.base import BaseEnvironment, _load_json_store, _save_json_store
 from tools.environments.base_output import _popen_bash
 from tools.environments.path_utils import sanitize_task_id_for_path
@@ -21,7 +21,7 @@ from tools.environments.remote_common import bash_argv, run_capture
 
 logger = logging.getLogger(__name__)
 
-_SNAPSHOT_STORE = get_hermes_home() / "singularity_snapshots.json"
+_SNAPSHOT_STORE = get_eidolon_home() / "singularity_snapshots.json"
 
 
 def _find_singularity_executable() -> str:

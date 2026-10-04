@@ -1,6 +1,6 @@
 """Auto-installation of LSP server binaries.
 
-Installs go to a Hermes-owned staging dir, ``<HERMES_HOME>/lsp/bin/``, so the
+Installs go to a Eidolon-owned staging dir, ``<HERMES_HOME>/lsp/bin/``, so the
 user's global toolchain stays untouched.  Strategies: ``auto`` (install with
 the best available package manager), ``manual`` / ``off`` (probe only; a
 missing binary skips the server and ``hermes lsp status`` reports it).
@@ -18,8 +18,8 @@ import threading
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
-from hermes_cli._subprocess_compat import windows_hide_flags
-from hermes_constants import find_node_executable
+from eidolon_cli._subprocess_compat import windows_hide_flags
+from eidolon_constants import find_node_executable
 
 logger = logging.getLogger("agent.lsp.install")
 
@@ -73,10 +73,10 @@ def _is_windows() -> bool:
 
 
 def hermes_lsp_bin_dir() -> Path:
-    """Return the Hermes-owned bin staging dir for LSP servers."""
-    from hermes_constants import get_hermes_home
+    """Return the Eidolon-owned bin staging dir for LSP servers."""
+    from eidolon_constants import get_eidolon_home
 
-    p = get_hermes_home() / "lsp" / "bin"
+    p = get_eidolon_home() / "lsp" / "bin"
     p.mkdir(parents=True, exist_ok=True)
     return p
 
@@ -175,7 +175,7 @@ def _link_into_bin(target: Path) -> str:
 def _install_npm(pkg: str, bin_name: str, extra_pkgs: Optional[list] = None) -> Optional[str]:
     """``npm install --prefix <staging>`` then link ``node_modules/.bin/<bin_name>`` into ``lsp/bin/``."""
     # Managed npm first: $HERMES_HOME/node isn't on an arbitrary process's
-    # PATH, so a bare which() would miss the Node that Hermes installed.
+    # PATH, so a bare which() would miss the Node that Eidolon installed.
     npm = find_node_executable("npm")
     if npm is None:
         logger.info("[install] cannot install %s: no usable npm found", pkg)
@@ -216,7 +216,7 @@ def _install_pip(pkg: str, bin_name: str) -> Optional[str]:
     pip_target.mkdir(parents=True, exist_ok=True)
     try:
         logger.info("[install] pip install --target %s %s", pip_target, pkg)
-        from hermes_cli.tools_config import _pip_install
+        from eidolon_cli.tools_config import _pip_install
 
         proc = _pip_install(["--target", str(pip_target), "--quiet", pkg], timeout=300)
         if proc.returncode != 0:

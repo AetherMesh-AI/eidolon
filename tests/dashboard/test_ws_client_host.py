@@ -25,8 +25,8 @@ import os
 
 import pytest
 
-from hermes_cli import web_server
-import hermes_cli.web_server_chat as _web_server_chat
+from eidolon_cli import web_server
+import eidolon_cli.web_server_chat as _web_server_chat
 
 
 # ---------------------------------------------------------------------------

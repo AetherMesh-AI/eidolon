@@ -143,7 +143,7 @@ export const en: Translations = {
     stopped: "Stopped",
     updateHermes: "Update Eidolon",
     updateHermesConfirmMessage:
-      "This runs hermes update and restarts the gateway when it finishes. Active sessions keep their prompt cache until then.",
+      "This runs eidolon update and restarts the gateway when it finishes. Active sessions keep their prompt cache until then.",
     updateHermesConfirmNow: "Update now",
     updateHermesConfirmTitle: "Update Eidolon?",
     updatingHermes: "Updating Eidolon…",
@@ -387,7 +387,7 @@ export const en: Translations = {
     enableRuntime: "Enable",
     forceReinstall: "Force reinstall (delete existing folder first)",
     headline:
-      "Discover, install, enable, and update Eidolon plugins (`hermes plugins` parity).",
+      "Discover, install, enable, and update Eidolon plugins (`eidolon plugins` parity).",
     identifierLabel: "Git URL or owner/repo",
     inactive: "inactive",
     installBtn: "Install",

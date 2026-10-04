@@ -16,7 +16,7 @@ const gatewayMocks = vi.hoisted(() => {
   }
 })
 
-vi.mock('@/hermes', () => ({
+vi.mock('@/eidolon', () => ({
   setApiRequestProfile: vi.fn(),
   getProfiles: vi.fn(async () => ({ profiles: [] })),
   HermesGateway: class {

@@ -2,14 +2,14 @@
 #
 # WHY THIS EXISTS (the frozen-binary problem): the Desktop's Update button
 # used to hand off exclusively to the staged Tauri binary
-# (%HERMES_HOME%\hermes-setup.exe). That binary has no self-update path --
-# copy_self_to_hermes_home deliberately no-ops during --update -- so every
+# (%HERMES_HOME%\eidolon-setup.exe). That binary has no self-update path --
+# copy_self_to_eidolon_home deliberately no-ops during --update -- so every
 # updater-side fix (cache refresh #67369, marker self-adopt #74782, straggler
 # handling) only reaches users when a new installer is built, signed, and
 # published. In practice binaries go months stale and users hit long-fixed
 # bugs on every update (the 2026-08-09 incident chain).
 #
-# This script lives in the repo checkout, so EVERY `hermes update` refreshes
+# This script lives in the repo checkout, so EVERY `eidolon update` refreshes
 # the very code that drives the next update. The Desktop spawns it through a
 # `cmd start` wrapper (see wrapHandoffForDetachedConsole in
 # apps/desktop/electron/updater-process.ts -- a bare detached+hidden
@@ -19,25 +19,25 @@
 # CONTRACT (keep in sync with apps/desktop/electron/main.ts):
 #   cmd /d /s /c start "" /min powershell -NoProfile -ExecutionPolicy Bypass
 #     -File scripts\desktop-update\windows.ps1
-#     -InstallRoot <path>   repo checkout (HERMES_HOME\hermes-agent)
+#     -InstallRoot <path>   repo checkout (HERMES_HOME\eidolon-agent)
 #     -Branch <ref>         branch to update against
 #     -DesktopPid <pid>     the Electron main process to wait out
 #     [-RelaunchExe <path>] Hermes.exe to start when done (omit = no relaunch)
 #     [-NoUi]               headless (tests); default shows a progress window
-#     [-NoMarkerCleanup]    leave .hermes-update-in-progress in place (tests)
+#     [-NoMarkerCleanup]    leave .eidolon-update-in-progress in place (tests)
 #
 # SAFETY POSTURE: both preflight gates FAIL CLOSED. A Desktop that never
 # exits, or a venv shim that never unlocks, aborts the hand-off without
 # mutating the install -- a skipped update is recoverable, a half-updated
 # venv is not. Every exit path (success, abort, crash) writes
-# .hermes-update-result.json for the relaunched Desktop to surface, and
+# .eidolon-update-result.json for the relaunched Desktop to surface, and
 # relaunches the Desktop so the user is never left stranded.
 #
-# Marker: we claim HERMES_HOME\.hermes-update-in-progress with OUR pid as
+# Marker: we claim HERMES_HOME\.eidolon-update-in-progress with OUR pid as
 # step 0 (the wrapper cmd.exe pid the Desktop saw is useless -- it exits
 # immediately), retaining HERMES_UPDATE_STARTED_AT from the Desktop hand-off.
-# hermes_cli/update_lock.py's ancestry rule lets our
-# `hermes update` child adopt the claim; electron/update-marker.ts parks a
+# eidolon_cli/update_lock.py's ancestry rule lets our
+# `eidolon update` child adopt the claim; electron/update-marker.ts parks a
 # relaunched Desktop on it. Cleanup only removes the marker while WE still
 # own it (a handoff partner that rewrote it keeps its claim).
 
@@ -82,12 +82,13 @@ try {
 } catch {}
 $TempDir = if ($env:TEMP) { $env:TEMP } else { [System.IO.Path]::GetTempPath() }
 $HermesHome = if ($InstallRoot) { Split-Path -Parent $InstallRoot } else { $TempDir }
-$MarkerPath = Join-Path $HermesHome ".hermes-update-in-progress"
+Remove-Item Env:EIDOLON_HOME -ErrorAction SilentlyContinue
+$MarkerPath = Join-Path $HermesHome ".eidolon-update-in-progress"
 $LogDir = Join-Path $HermesHome "logs"
 $LogPath = Join-Path $LogDir "desktop-update-handoff.log"
-$ResultPath = Join-Path $HermesHome ".hermes-update-result.json"
+$ResultPath = Join-Path $HermesHome ".eidolon-update-result.json"
 $script:Ui = $null
-$script:UiStage = "Hermes will open once done."   # until the first gate; matches ui.html
+$script:UiStage = "Eidolon will open once done."   # until the first gate; matches ui.html
 $script:UiStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
 function Write-HandoffLog([string]$Message) {
@@ -279,15 +280,15 @@ function Stop-UiServer([switch]$LeaveWindow) {
         } catch {}
     }
     # Best-effort removal of the dedicated browser profile dirs: this run's
-    # profile plus any stale hermes-update-ui-* leftovers from interrupted
+    # profile plus any stale eidolon-update-ui-* leftovers from interrupted
     # past runs. A browser that is still shutting down may hold the lock, in
     # which case the delete silently no-ops. Safe to sweep by prefix: the
-    # update marker (.hermes-update-in-progress) serialises hand-offs, so no
+    # update marker (.eidolon-update-in-progress) serialises hand-offs, so no
     # other run's profile can be in active use here.
     try {
         $profileDirs = @()
         if ($script:UiServer.Profile) { $profileDirs += $script:UiServer.Profile }
-        Get-ChildItem -LiteralPath $TempDir -Directory -Filter "hermes-update-ui-*" -ErrorAction SilentlyContinue |
+        Get-ChildItem -LiteralPath $TempDir -Directory -Filter "eidolon-update-ui-*" -ErrorAction SilentlyContinue |
             ForEach-Object { $profileDirs += $_.FullName }
         foreach ($dir in ($profileDirs | Select-Object -Unique)) {
             Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue
@@ -373,7 +374,7 @@ function Show-ProgressWindow {
                 # we own (a default-profile launch delegates to an existing
                 # browser and returns instantly, leaving nothing to close), and
                 # avoids touching the user's real browser profile.
-                $browserProfile = Join-Path $TempDir ("hermes-update-ui-{0}" -f $PID)
+                $browserProfile = Join-Path $TempDir ("eidolon-update-ui-{0}" -f $PID)
                 $browserArgs = @(
                     "--app=http://127.0.0.1:$($server.Port)/",
                     "--user-data-dir=$browserProfile",
@@ -465,7 +466,7 @@ function Show-ProgressWindow {
 
 function Show-ErrorFinale([string]$Message) {
     # Terse by design: a title + the debug-share pointer. No error text, no
-    # log tail -- `hermes debug share` uploads the real evidence and the
+    # log tail -- `eidolon debug share` uploads the real evidence and the
     # relaunched Desktop surfaces the result message.
     if ($script:UiServer) {
         # The shim renders the error state itself; leave the window up for
@@ -481,7 +482,7 @@ function Show-ErrorFinale([string]$Message) {
         if ($ui.Timer) { $ui.Timer.Stop() }
         $ui.Bar.Visible = $false
         $ui.Title.Text = "Failed to update"
-        $ui.Sub.Text = "Run `"hermes debug share`" in a terminal to send a report."
+        $ui.Sub.Text = "Run `"eidolon debug share`" in a terminal to send a report."
         $close = New-Object System.Windows.Forms.Button
         $close.Text = "Close"
         $close.SetBounds(100, 252, 80, 28)
@@ -511,7 +512,7 @@ function Show-ManualFinale([string]$Message) {
     # shape as the error finale, success glyph semantics: the shim renders
     # `manual` itself; the WinForms card swaps its copy. Held so the user
     # actually sees the instruction — this window is the only surface until
-    # they reopen Hermes themselves.
+    # they reopen Eidolon themselves.
     if ($script:UiServer) {
         Publish-UiEvent "manual" $Message
         Stop-UiServer -LeaveWindow
@@ -682,7 +683,7 @@ function Start-DesktopRelaunch {
         # window can't close while the app lives. Explorer re-parents the
         # target exactly like a normal shell launch, giving the same
         # no-console detachment WMI would have. Explorer returns no pid, so
-        # verify by watching for a fresh Hermes process.
+        # verify by watching for a fresh Eidolon process.
         try {
             $exeName = [System.IO.Path]::GetFileNameWithoutExtension($RelaunchExe)
             $before = @(Get-Process -Name $exeName -ErrorAction SilentlyContinue | ForEach-Object { $_.Id })
@@ -751,8 +752,8 @@ function Start-DesktopRelaunch {
 # write end of a redirected pipe to the child as an INHERITABLE handle, so
 # every descendant that is spawned without its own redirection gets a
 # duplicate -- and the read side does not see EOF until the last of them
-# closes it. `hermes update` deliberately runs its build steps with stdout
-# inherited (hermes_cli/main.py, the tee-stderr runner), so the tree under a
+# closes it. `eidolon update` deliberately runs its build steps with stdout
+# inherited (eidolon_cli/main.py, the tee-stderr runner), so the tree under a
 # step is arbitrarily deep and not something this script can enumerate. When
 # one of those descendants is a resident gateway, the pipe stays open for the
 # life of the gateway, i.e. forever.
@@ -781,9 +782,9 @@ if ($env:HERMES_UPDATE_STEP_IDLE_SECONDS) {
     }
 }
 
-# Silence on the pipes is NOT silence in the update. `hermes update` captures
+# Silence on the pipes is NOT silence in the update. `eidolon update` captures
 # the (very loud) Electron/vite build into logs/update.log instead of its own
-# stdout (hermes_cli/update_cmd.py, the update-log tee), so a real update is
+# stdout (eidolon_cli/update_cmd.py, the update-log tee), so a real update is
 # routinely stdout-silent for 40+ minutes while demonstrably progressing. An
 # idle ceiling that watched only stdout/stderr would cancel every healthy
 # large update at StepIdleTimeoutSeconds. The drain therefore also counts
@@ -1037,12 +1038,12 @@ function Invoke-HermesStep([string]$Exe, [string[]]$HermesArgs, [string]$Tag) {
     # DoEvents loop keeps the marquee animating through long silent
     # stretches (pip installs) -- the old EndOfStream pump blocked on quiet
     # children and froze it. Full output still lands in the hand-off log
-    # afterwards, where `hermes debug share` picks it up.
+    # afterwards, where `eidolon debug share` picks it up.
     #
     # The drain is bounded once the step exits (#90455). Waiting for pipe EOF
     # is waiting on the step's whole surviving descendant tree, and this
     # function sits upstream of every terminal obligation the hand-off has --
-    # .hermes-update-result.json, clearing .hermes-update-in-progress,
+    # .eidolon-update-result.json, clearing .eidolon-update-in-progress,
     # relaunching the Desktop. One resident grandchild holding an inherited
     # handle used to strand all three and leave the Desktop on "Updating
     # Hermes" until the user killed something by hand. Losing the tail of a
@@ -1104,7 +1105,7 @@ function Invoke-HermesStep([string]$Exe, [string[]]$HermesArgs, [string]$Tag) {
                 break
             }
         } elseif (-not $stalled -and $job -ne [IntPtr]::Zero -and ((Get-Date) - $lastProgressAt).TotalSeconds -ge $script:StepIdleTimeoutSeconds) {
-            # Quiet pipes are how a healthy `hermes update` looks for 40+
+            # Quiet pipes are how a healthy `eidolon update` looks for 40+
             # minutes: its build output streams to logs/update.log, not the
             # child's stdout. Growth of that file is progress -- reset the
             # clock instead of cancelling. Stat'd only once the ceiling is
@@ -1221,7 +1222,7 @@ if ($SelfTestUi) {
 }
 
 # -SelfTestPipeDrain: prove Invoke-HermesStep survives a leaked pipe ------
-# The #90455 deadlock needs no update, no checkout and no Hermes install to
+# The #90455 deadlock needs no update, no checkout and no Eidolon install to
 # reproduce -- only a step whose grandchild outlives it holding the inherited
 # write end of the redirected pipe. That is exactly what this builds, so the
 # fix has an executable proof on Windows instead of a source-grep. Exits
@@ -1240,7 +1241,7 @@ if ($SelfTestUi) {
 #            output. Guards #95589: the hand-off must terminate it and reach its
 #            retry/finally recovery rather than strand the Desktop.
 #   logstall -- a step that is silent on its pipes but keeps growing the
-#            update log, the shape of every real `hermes update` build (output
+#            update log, the shape of every real `eidolon update` build (output
 #            goes to logs/update.log, not stdout, for 40+ minutes). Guards the
 #            watchdog's other cliff: the idle ceiling must count update.log
 #            growth as progress and must NOT kill the healthy step.
@@ -1253,14 +1254,14 @@ if ($SelfTestPipeDrain) {
     # $PSHOME is this interpreter's own directory -- no hardcoded system path.
     $powershell = Join-Path $PSHOME "powershell.exe"
     $stamp = [Guid]::NewGuid().ToString("N")
-    $childPs1 = Join-Path $TempDir "hermes-pipe-drain-$stamp.ps1"
-    $floodPs1 = Join-Path $TempDir "hermes-pipe-flood-$stamp.ps1"
-    $pidFile = Join-Path $TempDir "hermes-pipe-drain-$stamp.pid"
-    $stallPs1 = Join-Path $TempDir "hermes-step-stall-$stamp.ps1"
-    $stallPidFile = Join-Path $TempDir "hermes-step-stall-$stamp.pid"
-    $stallGrandchildPidFile = Join-Path $TempDir "hermes-step-stall-grandchild-$stamp.pid"
-    $logStallPs1 = Join-Path $TempDir "hermes-step-logstall-$stamp.ps1"
-    $logStallProgress = Join-Path $TempDir "hermes-step-logstall-$stamp.update.log"
+    $childPs1 = Join-Path $TempDir "eidolon-pipe-drain-$stamp.ps1"
+    $floodPs1 = Join-Path $TempDir "eidolon-pipe-flood-$stamp.ps1"
+    $pidFile = Join-Path $TempDir "eidolon-pipe-drain-$stamp.pid"
+    $stallPs1 = Join-Path $TempDir "eidolon-step-stall-$stamp.ps1"
+    $stallPidFile = Join-Path $TempDir "eidolon-step-stall-$stamp.pid"
+    $stallGrandchildPidFile = Join-Path $TempDir "eidolon-step-stall-grandchild-$stamp.pid"
+    $logStallPs1 = Join-Path $TempDir "eidolon-step-logstall-$stamp.ps1"
+    $logStallProgress = Join-Path $TempDir "eidolon-step-logstall-$stamp.update.log"
     # UseShellExecute=$false with no redirection is what makes the grandchild
     # inherit our stdout/stderr -- the whole point of the fixture. Anything
     # that redirects (Start-Process, subprocess with stdout=DEVNULL) would
@@ -1279,7 +1280,7 @@ Write-Output "pipe-drain step output"
 exit 7
 '@
     # Writes straight to the console stream, holding nothing: a step that is
-    # merely loud. `hermes update` is this shape -- the Electron/vite build
+    # merely loud. `eidolon update` is this shape -- the Electron/vite build
     # alone is megabytes. Few large lines rather than many small ones on
     # purpose: Write-HandoffLog is one Add-Content per line and runs inside the
     # measured window, so line-heavy output would time the logger instead of
@@ -1492,7 +1493,7 @@ try {
     }
 
     # -- 1. Wait for the Desktop to exit (FAIL CLOSED) ----------------------
-    Publish-UiProgress "Waiting for Hermes to close"
+    Publish-UiProgress "Waiting for Eidolon to close"
     if ($DesktopPid -gt 0) {
         $deadline = (Get-Date).AddSeconds(30)
         while ((Get-Date) -lt $deadline) {
@@ -1505,7 +1506,7 @@ try {
             # A live Desktop means a live backend re-locking the venv at any
             # moment. Updating under it is how installs brick. Abort.
             $finalCode = 4
-            $finalMsg = "Update aborted: the Hermes window (pid $DesktopPid) did not exit within 30s. Nothing was changed. Close Hermes fully and try again."
+            $finalMsg = "Update aborted: the Eidolon window (pid $DesktopPid) did not exit within 30s. Nothing was changed. Close Eidolon fully and try again."
             Write-HandoffLog $finalMsg
             exit $finalCode
         }
@@ -1513,8 +1514,8 @@ try {
     }
 
     # -- 2. Wait for the venv shim to unlock (FAIL CLOSED) ------------------
-    Publish-UiProgress "Preparing Hermes files"
-    $shim = Join-Path $InstallRoot "venv\Scripts\hermes.exe"
+    Publish-UiProgress "Preparing Eidolon files"
+    $shim = Join-Path $InstallRoot "venv\Scripts\eidolon.exe"
     if (Test-Path -LiteralPath $shim) {
         $unlocked = $false
         $deadline = (Get-Date).AddSeconds(20)
@@ -1533,7 +1534,7 @@ try {
             # Something still maps the venv. --force-ing past it guarantees a
             # half-updated venv (the exact 2026-08-09 Access-denied brick).
             $finalCode = 5
-            $finalMsg = "Update aborted: another process is still holding the Hermes install open (venv\Scripts\hermes.exe locked after 20s). Nothing was changed. Close other Hermes windows/terminals and try again."
+            $finalMsg = "Update aborted: another process is still holding the Eidolon install open (venv\Scripts\eidolon.exe locked after 20s). Nothing was changed. Close other Eidolon windows/terminals and try again."
             Write-HandoffLog $finalMsg
             exit $finalCode
         }
@@ -1541,18 +1542,18 @@ try {
     }
 
     # -- 3. Run the update from the CURRENT checkout ------------------------
-    # --force skips only the hermes.exe shim guard, which step 2 just PROVED
+    # --force skips only the eidolon.exe shim guard, which step 2 just PROVED
     # is unlocked; the venv-python holder guard (orphan reap included) stays
     # active. Our marker claim is adopted by the child via update_lock.py's
     # process-ancestry rule.
     #
-    # DRIVE THE UPDATE THROUGH venv\Scripts\python.exe, NOT venv\Scripts\hermes.exe.
+    # DRIVE THE UPDATE THROUGH venv\Scripts\python.exe, NOT venv\Scripts\eidolon.exe.
     # `uv pip install -e .` has to replace the console-script shims, so
-    # _quarantine_running_hermes_exe must first rename the running hermes.exe
+    # _quarantine_running_eidolon_exe must first rename the running eidolon.exe
     # out of the way. On Windows that rename fails whenever ANY child process
-    # spawned from that hermes.exe is still alive: a child inherits a handle on
+    # spawned from that eidolon.exe is still alive: a child inherits a handle on
     # the parent image, and the resulting sharing violation is indistinguishable
-    # from a user leaving a second Hermes window open. It is the inherited
+    # from a user leaving a second Eidolon window open. It is the inherited
     # handle, not the trampoline itself, that pins the file -- killing the child
     # makes the same rename succeed immediately, and the shim flavour (uv
     # trampoline vs distlib launcher) makes no difference.
@@ -1572,7 +1573,7 @@ try {
     # elevation a Desktop-driven update does not have, and freed nothing for the
     # install already in flight.)
     #
-    # Running the same code as `python.exe -m hermes_cli.main update` puts the
+    # Running the same code as `python.exe -m eidolon_cli.main update` puts the
     # inherited handles on python.exe, which uv never has to replace.
     #
     # posix.sh is deliberately left alone: unlinking a running executable is
@@ -1580,21 +1581,21 @@ try {
     $pythonExe = Join-Path $InstallRoot "venv\Scripts\python.exe"
     if (-not (Test-Path -LiteralPath $pythonExe)) {
         $finalCode = 3
-        $finalMsg = "Update aborted: $pythonExe is missing. The install needs repair (run the Hermes installer or `hermes doctor`)."
+        $finalMsg = "Update aborted: $pythonExe is missing. The install needs repair (run the Eidolon installer or `eidolon doctor`)."
         Write-HandoffLog $finalMsg
         exit $finalCode
     }
-    $updateArgs = @("-m", "hermes_cli.main", "update", "--yes", "--gateway", "--force", "--branch", $Branch)
+    $updateArgs = @("-m", "eidolon_cli.main", "update", "--yes", "--gateway", "--force", "--branch", $Branch)
     # --keep-stash: never re-apply local source edits after the update (they
     # stay parked in git stash). Probe --help first: the flag ships with newer
     # backends and an unknown flag would abort argparse with exit 2, which
-    # collides with the "close all Hermes windows" sentinel.
+    # collides with the "close all Eidolon windows" sentinel.
     try {
-        $updateHelp = & $pythonExe -m hermes_cli.main update --help 2>$null | Out-String
+        $updateHelp = & $pythonExe -m eidolon_cli.main update --help 2>$null | Out-String
         if ($updateHelp -match "--keep-stash") {
             $updateArgs += "--keep-stash"
         } else {
-            Write-HandoffLog "installed hermes predates --keep-stash; running without it"
+            Write-HandoffLog "installed eidolon predates --keep-stash; running without it"
         }
     } catch {
         Write-HandoffLog "could not probe update --help; running without --keep-stash"
@@ -1602,7 +1603,7 @@ try {
     Write-HandoffLog ("running: python " + ($updateArgs -join " "))
     Publish-UiProgress "Updating code and dependencies"
     $res = Invoke-HermesStep $pythonExe $updateArgs "update"
-    Write-HandoffLog "hermes update exit code: $($res.Code)"
+    Write-HandoffLog "eidolon update exit code: $($res.Code)"
 
     $retryPolicyPath = Join-Path $PSScriptRoot "retry-policy.ps1"
     if (Test-Path -LiteralPath $retryPolicyPath) {
@@ -1629,26 +1630,26 @@ try {
     }
 
     # -- 4. Truthful completion: don't trust exit 0 -------------------------
-    # `hermes update` treats a Desktop GUI build failure as NON-fatal (prints
+    # `eidolon update` treats a Desktop GUI build failure as NON-fatal (prints
     # a one-line warning, exits 0). For a Desktop-DRIVEN update that warning
     # is fatal: we would relaunch the old exe and call it success. Detect it,
     # retry the build once, and propagate honestly.
     $desktopBuildFailed = $false
     if ($res.Code -eq 0 -and $res.Output -match "Desktop build failed") {
-        Write-HandoffLog "hermes update reported a desktop build failure (non-fatal there, fatal here); retrying build"
+        Write-HandoffLog "eidolon update reported a desktop build failure (non-fatal there, fatal here); retrying build"
         Publish-UiProgress "Rebuilding Desktop"
-        $rebuild = Invoke-HermesStep $pythonExe @("-m", "hermes_cli.main", "desktop", "--force-build", "--build-only") "rebuild"
+        $rebuild = Invoke-HermesStep $pythonExe @("-m", "eidolon_cli.main", "desktop", "--force-build", "--build-only") "rebuild"
         Write-HandoffLog "desktop rebuild exit code: $($rebuild.Code)"
         if ($rebuild.Code -ne 0) { $desktopBuildFailed = $true }
     }
 
     # A zero-exit update is not proof that the runtime survived the update.
     if ($res.Code -eq 0 -and -not $desktopBuildFailed) {
-        $verifyCode = "import hermes_cli.main; from hermes_cli.desktop_update_verify import verify_windows_desktop_update; verify_windows_desktop_update()"
+        $verifyCode = "import eidolon_cli.main; from eidolon_cli.desktop_update_verify import verify_windows_desktop_update; verify_windows_desktop_update()"
         $verify = Invoke-HermesStep $pythonExe @("-c", $verifyCode) "verify"
         if ($verify.Code -ne 0) {
             $finalCode = 8
-            $finalMsg = "The updated Hermes runtime or Desktop build failed verification. Repair the installation and review antivirus quarantine before retrying."
+            $finalMsg = "The updated Eidolon runtime or Desktop build failed verification. Repair the installation and review antivirus quarantine before retrying."
             Write-HandoffLog $finalMsg
             exit $finalCode
         }
@@ -1659,10 +1660,10 @@ try {
         $finalMsg = "Update complete."
     } elseif ($desktopBuildFailed) {
         $finalCode = 6
-        $finalMsg = "Code and dependencies updated, but the Desktop app REBUILD FAILED - you are running the previous build. Run `hermes desktop --force-build` from a terminal to retry."
+        $finalMsg = "Code and dependencies updated, but the Desktop app REBUILD FAILED - you are running the previous build. Run `eidolon desktop --force-build` from a terminal to retry."
     } else {
         $finalCode = $res.Code
-        $finalMsg = "Update failed (exit $($res.Code)). Run `hermes debug share` in a terminal to send a report."
+        $finalMsg = "Update failed (exit $($res.Code)). Run `eidolon debug share` in a terminal to send a report."
     }
     exit $finalCode
 } finally {
@@ -1670,7 +1671,7 @@ try {
     #   1. durable result + marker removal (the relaunched Desktop consumes
     #      the result on boot and must not park on our marker);
     #   2. attempt the relaunch and require ACCEPTANCE;
-    #   3. only then the terminal UI state — done means "Hermes is back",
+    #   3. only then the terminal UI state — done means "Eidolon is back",
     #      manual means "it is not, reopen it", error is error (and still
     #      tries to bring the app back after showing itself).
     if (-not $script:TreeSafeToFinalize) {
@@ -1679,7 +1680,7 @@ try {
         # that unknown state. This is intentionally fail-closed; the marker's
         # dead-owner recovery remains the next-start escape hatch.
         $finalCode = 7
-        $finalMsg = "Update recovery could not stop every updater process. Hermes was not restarted to avoid overlapping the active install. Wait for it to finish or restart Windows, then reopen Hermes."
+        $finalMsg = "Update recovery could not stop every updater process. Eidolon was not restarted to avoid overlapping the active install. Wait for it to finish or restart Windows, then reopen Hermes."
         Write-Result $false $finalCode $finalMsg
         Write-HandoffLog $finalMsg
         Show-ErrorFinale $finalMsg
@@ -1697,7 +1698,7 @@ try {
             if (-not $cameBack -and $RelaunchExe) {
                 # Launch was due and did not verifiably land: truthful result
                 # for the next boot, manual state held on screen now.
-                $finalMsg = "Update complete. Reopen Hermes to finish (it could not restart itself)."
+                $finalMsg = "Update complete. Reopen Eidolon to finish (it could not restart itself)."
                 Write-Result $true 0 $finalMsg $true
                 Show-ManualFinale $finalMsg
             }

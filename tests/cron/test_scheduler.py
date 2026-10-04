@@ -109,7 +109,7 @@ class TestPerJobToolsetMcpMerge:
         # it is the path taken and its result is returned.
         job = {"enabled_toolsets": None}
         sentinel = ["web", "finnhub"]
-        with patch("hermes_cli.tools_config._get_platform_tools",
+        with patch("eidolon_cli.tools_config._get_platform_tools",
                    return_value=set(sentinel)) as m_platform:
             result = _resolve_cron_enabled_toolsets(job, self.CFG)
         m_platform.assert_called_once()
@@ -128,7 +128,7 @@ class TestPerJobToolsetMcpMerge:
     def test_resolver_keeps_memory_from_platform_fallback(self):
         job = {"enabled_toolsets": None}
         with patch(
-            "hermes_cli.tools_config._get_platform_tools",
+            "eidolon_cli.tools_config._get_platform_tools",
             return_value={"web", "memory", "file"},
         ):
             result = _resolve_cron_enabled_toolsets(job, {})
@@ -549,13 +549,13 @@ class TestRunJobSessionPersistence:
         fake_db = MagicMock()
         fake_db.get_compression_tip.side_effect = lambda session_id: session_id
 
-        with patch("cron.scheduler._hermes_home", tmp_path), \
+        with patch("cron.scheduler._eidolon_home", tmp_path), \
              patch("cron.scheduler_delivery._resolve_origin", return_value=None), \
-             patch("hermes_cli.env_loader.load_hermes_dotenv"), \
-             patch("hermes_cli.env_loader.reset_secret_source_cache"), \
-             patch("hermes_state_registry.acquire", return_value=fake_db), \
+             patch("eidolon_cli.env_loader.load_hermes_dotenv"), \
+             patch("eidolon_cli.env_loader.reset_secret_source_cache"), \
+             patch("eidolon_state_registry.acquire", return_value=fake_db), \
              patch(
-                 "hermes_cli.runtime_provider.resolve_runtime_provider",
+                 "eidolon_cli.runtime_provider.resolve_runtime_provider",
                  return_value={
                      "api_key": "test-key",
                      "base_url": "https://example.invalid/v1",
@@ -614,13 +614,13 @@ class TestRunJobSessionPersistence:
         fake_db.close.side_effect = close_db
         fake_db.end_session.side_effect = end_session
 
-        with patch("cron.scheduler._hermes_home", tmp_path), \
+        with patch("cron.scheduler._eidolon_home", tmp_path), \
              patch("cron.scheduler_delivery._resolve_origin", return_value=None), \
-             patch("hermes_cli.env_loader.load_hermes_dotenv"), \
-             patch("hermes_cli.env_loader.reset_secret_source_cache"), \
-             patch("hermes_state_registry.acquire", return_value=fake_db), \
+             patch("eidolon_cli.env_loader.load_hermes_dotenv"), \
+             patch("eidolon_cli.env_loader.reset_secret_source_cache"), \
+             patch("eidolon_state_registry.acquire", return_value=fake_db), \
              patch(
-                 "hermes_cli.runtime_provider.resolve_runtime_provider",
+                 "eidolon_cli.runtime_provider.resolve_runtime_provider",
                  return_value={
                      "api_key": "test-key",
                      "base_url": "https://example.invalid/v1",
@@ -663,13 +663,13 @@ class TestRunJobSessionPersistence:
         mock_agent = MagicMock()
         mock_agent.run_conversation.return_value = {"final_response": "ok"}
         base = [
-            patch("cron.scheduler._hermes_home", tmp_path),
+            patch("cron.scheduler._eidolon_home", tmp_path),
             patch("cron.scheduler_delivery._resolve_origin", return_value=None),
-            patch("hermes_cli.env_loader.load_hermes_dotenv"),
-            patch("hermes_cli.env_loader.reset_secret_source_cache"),
-            patch("hermes_state_registry.acquire", return_value=fake_db),
+            patch("eidolon_cli.env_loader.load_hermes_dotenv"),
+            patch("eidolon_cli.env_loader.reset_secret_source_cache"),
+            patch("eidolon_state_registry.acquire", return_value=fake_db),
             patch(
-                "hermes_cli.runtime_provider.resolve_runtime_provider",
+                "eidolon_cli.runtime_provider.resolve_runtime_provider",
                 return_value={
                     "api_key": "test-key",
                     "base_url": "https://example.invalid/v1",
@@ -764,7 +764,7 @@ class TestRunJobSessionPersistence:
 
         fake_db = MagicMock()
 
-        with patch("cron.scheduler._hermes_home", tmp_path), \
+        with patch("cron.scheduler._eidolon_home", tmp_path), \
              patch("cron.scheduler.get_due_jobs", return_value=[job]), \
              patch("cron.scheduler.claim_job_for_fire", return_value=True), \
              patch("cron.scheduler.mark_job_run") as mock_mark, \
@@ -807,11 +807,11 @@ class TestRunJobSessionPersistence:
                 seen["thread_id"] = get_session_env("HERMES_CRON_AUTO_DELIVER_THREAD_ID") or None
                 return {"final_response": "ok"}
 
-        with patch("cron.scheduler._hermes_home", tmp_path), \
+        with patch("cron.scheduler._eidolon_home", tmp_path), \
              patch("cron.scheduler._preflight_job_config", return_value=None), \
-             patch("hermes_state_registry.acquire", return_value=fake_db), \
+             patch("eidolon_state_registry.acquire", return_value=fake_db), \
              patch(
-                 "hermes_cli.runtime_provider.resolve_runtime_provider",
+                 "eidolon_cli.runtime_provider.resolve_runtime_provider",
                  return_value={
                      "api_key": "***",
                      "base_url": "https://example.invalid/v1",
@@ -867,11 +867,11 @@ class TestRunJobSessionPersistence:
                 seen["thread_id"] = get_session_env("HERMES_CRON_AUTO_DELIVER_THREAD_ID") or None
                 return {"final_response": "ok"}
 
-        with patch("cron.scheduler._hermes_home", tmp_path), \
+        with patch("cron.scheduler._eidolon_home", tmp_path), \
              patch("cron.scheduler._preflight_job_config", return_value=None), \
-             patch("hermes_state_registry.acquire", return_value=fake_db), \
+             patch("eidolon_state_registry.acquire", return_value=fake_db), \
              patch(
-                 "hermes_cli.runtime_provider.resolve_runtime_provider",
+                 "eidolon_cli.runtime_provider.resolve_runtime_provider",
                  return_value={
                      "api_key": "***",
                      "base_url": "https://example.invalid/v1",
@@ -931,11 +931,11 @@ class TestRunJobSessionPersistence:
         monotonic_ticks = itertools.count(step=61.0)
         monkeypatch.setenv("HERMES_CRON_TIMEOUT", timeout_value)
 
-        with patch("cron.scheduler._hermes_home", tmp_path), \
+        with patch("cron.scheduler._eidolon_home", tmp_path), \
              patch("cron.scheduler._preflight_job_config", return_value=None), \
-             patch("hermes_state_registry.acquire", return_value=fake_db), \
+             patch("eidolon_state_registry.acquire", return_value=fake_db), \
              patch(
-                 "hermes_cli.runtime_provider.resolve_runtime_provider",
+                 "eidolon_cli.runtime_provider.resolve_runtime_provider",
                  return_value={
                      "api_key": "***",
                      "base_url": "https://example.invalid/v1",
@@ -979,13 +979,13 @@ class TestRunJobSessionPersistence:
             call_order.append("load")
             return []
 
-        with patch("cron.scheduler._hermes_home", tmp_path), \
+        with patch("cron.scheduler._eidolon_home", tmp_path), \
              patch("cron.scheduler_delivery._resolve_origin", return_value=None), \
-             patch("hermes_cli.env_loader.reset_secret_source_cache", _record_reset), \
-             patch("hermes_cli.env_loader.load_hermes_dotenv", _record_load), \
-             patch("hermes_state_registry.acquire", return_value=fake_db), \
+             patch("eidolon_cli.env_loader.reset_secret_source_cache", _record_reset), \
+             patch("eidolon_cli.env_loader.load_hermes_dotenv", _record_load), \
+             patch("eidolon_state_registry.acquire", return_value=fake_db), \
              patch(
-                 "hermes_cli.runtime_provider.resolve_runtime_provider",
+                 "eidolon_cli.runtime_provider.resolve_runtime_provider",
                  return_value={
                      "api_key": "***",
                      "base_url": "https://example.invalid/v1",
@@ -1042,11 +1042,11 @@ class TestRunJobSessionPersistence:
                 )
                 return {"final_response": "ok"}
 
-        with patch("cron.scheduler._hermes_home", tmp_path), \
+        with patch("cron.scheduler._eidolon_home", tmp_path), \
              patch("cron.scheduler._preflight_job_config", return_value=None), \
-             patch("hermes_state_registry.acquire", return_value=fake_db), \
+             patch("eidolon_state_registry.acquire", return_value=fake_db), \
              patch(
-                 "hermes_cli.runtime_provider.resolve_runtime_provider",
+                 "eidolon_cli.runtime_provider.resolve_runtime_provider",
                  return_value={
                      "api_key": "***",
                      "base_url": "https://example.invalid/v1",
@@ -1099,11 +1099,11 @@ class TestRunJobConfigLogging:
         # resolution and MCP discovery, both of which can spawn subprocesses
         # / hit the network and have caused this test to time out on CI
         # (>30s wall clock) under load. See PR #33661 follow-up.
-        with patch("cron.scheduler._hermes_home", tmp_path), \
+        with patch("cron.scheduler._eidolon_home", tmp_path), \
              patch("cron.scheduler_delivery._resolve_origin", return_value=None), \
-             patch("hermes_cli.env_loader.load_hermes_dotenv"), \
-             patch("hermes_cli.env_loader.reset_secret_source_cache"), \
-             patch("hermes_cli.runtime_provider.resolve_runtime_provider",
+             patch("eidolon_cli.env_loader.load_hermes_dotenv"), \
+             patch("eidolon_cli.env_loader.reset_secret_source_cache"), \
+             patch("eidolon_cli.runtime_provider.resolve_runtime_provider",
                    return_value={"provider": "openrouter", "api_key": "x",
                                  "base_url": "https://example.invalid",
                                  "api_mode": "chat_completions"}), \
@@ -1138,12 +1138,12 @@ class TestRunJobConfigEnvVarExpansion:
         job = {"id": "env-job", "name": "env test", "prompt": "hi"}
         fake_db = MagicMock()
 
-        with patch("cron.scheduler._hermes_home", tmp_path), \
+        with patch("cron.scheduler._eidolon_home", tmp_path), \
              patch("cron.scheduler_delivery._resolve_origin", return_value=None), \
-             patch("hermes_cli.env_loader.load_hermes_dotenv"), \
-             patch("hermes_cli.env_loader.reset_secret_source_cache"), \
-             patch("hermes_state_registry.acquire", return_value=fake_db), \
-             patch("hermes_cli.runtime_provider.resolve_runtime_provider",
+             patch("eidolon_cli.env_loader.load_hermes_dotenv"), \
+             patch("eidolon_cli.env_loader.reset_secret_source_cache"), \
+             patch("eidolon_state_registry.acquire", return_value=fake_db), \
+             patch("eidolon_cli.runtime_provider.resolve_runtime_provider",
                    return_value=self._RUNTIME), \
              patch("run_agent.AIAgent") as mock_agent_cls:
             mock_agent = MagicMock()
@@ -1202,12 +1202,12 @@ class TestRunJobConfigEnvVarExpansion:
             assert kwargs["target_model"] == "grok-4.5"
             return {**self._RUNTIME, "provider": "xai", "api_mode": "chat_completions"}
 
-        with patch("cron.scheduler._hermes_home", tmp_path), \
+        with patch("cron.scheduler._eidolon_home", tmp_path), \
              patch("cron.scheduler_delivery._resolve_origin", return_value=None), \
-             patch("hermes_cli.env_loader.load_hermes_dotenv"), \
-             patch("hermes_cli.env_loader.reset_secret_source_cache"), \
-             patch("hermes_state_registry.acquire", return_value=fake_db), \
-             patch("hermes_cli.runtime_provider.resolve_runtime_provider",
+             patch("eidolon_cli.env_loader.load_hermes_dotenv"), \
+             patch("eidolon_cli.env_loader.reset_secret_source_cache"), \
+             patch("eidolon_state_registry.acquire", return_value=fake_db), \
+             patch("eidolon_cli.runtime_provider.resolve_runtime_provider",
                    side_effect=resolve_runtime), \
              patch("tools.mcp_tool_discovery.discover_mcp_tools", return_value=[]), \
              patch("run_agent.AIAgent") as mock_agent_cls:
@@ -1226,7 +1226,7 @@ class TestRunJobConfigEnvVarExpansion:
 
     def test_auth_fallback_switches_provider_and_model_together(self, tmp_path):
         """Codex auth failure must produce OpenRouter+GLM, never OpenRouter+GPT."""
-        from hermes_cli.auth import AuthError
+        from eidolon_cli.auth import AuthError
 
         (tmp_path / "config.yaml").write_text(
             "model:\n"
@@ -1258,12 +1258,12 @@ class TestRunJobConfigEnvVarExpansion:
             assert kwargs["target_model"] == "z-ai/glm-5.2"
             return {**self._RUNTIME, "provider": "openrouter"}
 
-        with patch("cron.scheduler._hermes_home", tmp_path), \
+        with patch("cron.scheduler._eidolon_home", tmp_path), \
              patch("cron.scheduler_delivery._resolve_origin", return_value=None), \
-             patch("hermes_cli.env_loader.load_hermes_dotenv"), \
-             patch("hermes_cli.env_loader.reset_secret_source_cache"), \
-             patch("hermes_state_registry.acquire", return_value=fake_db), \
-             patch("hermes_cli.runtime_provider.resolve_runtime_provider",
+             patch("eidolon_cli.env_loader.load_hermes_dotenv"), \
+             patch("eidolon_cli.env_loader.reset_secret_source_cache"), \
+             patch("eidolon_state_registry.acquire", return_value=fake_db), \
+             patch("eidolon_cli.runtime_provider.resolve_runtime_provider",
                    side_effect=resolve_runtime), \
              patch("tools.mcp_tool_discovery.discover_mcp_tools", return_value=[]), \
              patch("run_agent.AIAgent") as mock_agent_cls:
@@ -1288,12 +1288,12 @@ class TestRunJobConfigEnvVarExpansion:
         job = {"id": "unset-job", "name": "unset var test", "prompt": "hi"}
         fake_db = MagicMock()
 
-        with patch("cron.scheduler._hermes_home", tmp_path), \
+        with patch("cron.scheduler._eidolon_home", tmp_path), \
              patch("cron.scheduler_delivery._resolve_origin", return_value=None), \
-             patch("hermes_cli.env_loader.load_hermes_dotenv"), \
-             patch("hermes_cli.env_loader.reset_secret_source_cache"), \
-             patch("hermes_state_registry.acquire", return_value=fake_db), \
-             patch("hermes_cli.runtime_provider.resolve_runtime_provider",
+             patch("eidolon_cli.env_loader.load_hermes_dotenv"), \
+             patch("eidolon_cli.env_loader.reset_secret_source_cache"), \
+             patch("eidolon_state_registry.acquire", return_value=fake_db), \
+             patch("eidolon_cli.runtime_provider.resolve_runtime_provider",
                    return_value=self._RUNTIME), \
              patch("run_agent.AIAgent") as mock_agent_cls:
             mock_agent = MagicMock()
@@ -1333,12 +1333,12 @@ class TestRunJobModelResolution:
         job = {"id": "null-model-job", "name": "null model", "prompt": "hi", "model": None}
         fake_db = MagicMock()
 
-        with patch("cron.scheduler._hermes_home", tmp_path), \
+        with patch("cron.scheduler._eidolon_home", tmp_path), \
              patch("cron.scheduler_delivery._resolve_origin", return_value=None), \
-             patch("hermes_cli.env_loader.load_hermes_dotenv"), \
-             patch("hermes_cli.env_loader.reset_secret_source_cache"), \
-             patch("hermes_state_registry.acquire", return_value=fake_db), \
-             patch("hermes_cli.runtime_provider.resolve_runtime_provider",
+             patch("eidolon_cli.env_loader.load_hermes_dotenv"), \
+             patch("eidolon_cli.env_loader.reset_secret_source_cache"), \
+             patch("eidolon_state_registry.acquire", return_value=fake_db), \
+             patch("eidolon_cli.runtime_provider.resolve_runtime_provider",
                    return_value=self._RUNTIME), \
              patch("run_agent.AIAgent") as mock_agent_cls:
             mock_agent = MagicMock()
@@ -1359,12 +1359,12 @@ class TestRunJobModelResolution:
         job = {"id": "no-model-job", "name": "no model anywhere", "prompt": "hi", "model": None}
         fake_db = MagicMock()
 
-        with patch("cron.scheduler._hermes_home", tmp_path), \
+        with patch("cron.scheduler._eidolon_home", tmp_path), \
              patch("cron.scheduler_delivery._resolve_origin", return_value=None), \
-             patch("hermes_cli.env_loader.load_hermes_dotenv"), \
-             patch("hermes_cli.env_loader.reset_secret_source_cache"), \
-             patch("hermes_state_registry.acquire", return_value=fake_db), \
-             patch("hermes_cli.runtime_provider.resolve_runtime_provider",
+             patch("eidolon_cli.env_loader.load_hermes_dotenv"), \
+             patch("eidolon_cli.env_loader.reset_secret_source_cache"), \
+             patch("eidolon_state_registry.acquire", return_value=fake_db), \
+             patch("eidolon_cli.runtime_provider.resolve_runtime_provider",
                    return_value=self._RUNTIME), \
              patch("run_agent.AIAgent") as mock_agent_cls:
             success, _, _, error = run_job(job)
@@ -1380,7 +1380,7 @@ class TestRunJobModelResolution:
     def test_config_model_alias_key_resolves(self, tmp_path, monkeypatch):
         """A ``model: {model: ...}`` alias key resolves like the CLI sibling.
 
-        ``hermes_cli/oneshot.py``, ``fallback_cmd.py`` and ``prompt_size.py``
+        ``eidolon_cli/oneshot.py``, ``fallback_cmd.py`` and ``prompt_size.py``
         all accept ``model.model`` as an alias for ``model.default``. The cron
         resolver mirrors that so a config that works in the CLI also works in
         cron.
@@ -1391,12 +1391,12 @@ class TestRunJobModelResolution:
         job = {"id": "alias-job", "name": "alias", "prompt": "hi", "model": None}
         fake_db = MagicMock()
 
-        with patch("cron.scheduler._hermes_home", tmp_path), \
+        with patch("cron.scheduler._eidolon_home", tmp_path), \
              patch("cron.scheduler_delivery._resolve_origin", return_value=None), \
-             patch("hermes_cli.env_loader.load_hermes_dotenv"), \
-             patch("hermes_cli.env_loader.reset_secret_source_cache"), \
-             patch("hermes_state_registry.acquire", return_value=fake_db), \
-             patch("hermes_cli.runtime_provider.resolve_runtime_provider",
+             patch("eidolon_cli.env_loader.load_hermes_dotenv"), \
+             patch("eidolon_cli.env_loader.reset_secret_source_cache"), \
+             patch("eidolon_state_registry.acquire", return_value=fake_db), \
+             patch("eidolon_cli.runtime_provider.resolve_runtime_provider",
                    return_value=self._RUNTIME), \
              patch("run_agent.AIAgent") as mock_agent_cls:
             mock_agent = MagicMock()
@@ -1416,12 +1416,12 @@ class TestRunJobModelResolution:
         job = {"id": "corrupt-job", "name": "corrupt", "prompt": "hi", "model": "explicit-model"}
         fake_db = MagicMock()
 
-        with patch("cron.scheduler._hermes_home", tmp_path), \
+        with patch("cron.scheduler._eidolon_home", tmp_path), \
              patch("cron.scheduler_delivery._resolve_origin", return_value=None), \
-             patch("hermes_cli.env_loader.load_hermes_dotenv"), \
-             patch("hermes_cli.env_loader.reset_secret_source_cache"), \
-             patch("hermes_state_registry.acquire", return_value=fake_db), \
-             patch("hermes_cli.runtime_provider.resolve_runtime_provider",
+             patch("eidolon_cli.env_loader.load_hermes_dotenv"), \
+             patch("eidolon_cli.env_loader.reset_secret_source_cache"), \
+             patch("eidolon_state_registry.acquire", return_value=fake_db), \
+             patch("eidolon_cli.runtime_provider.resolve_runtime_provider",
                    return_value=self._RUNTIME), \
              patch("run_agent.AIAgent") as mock_agent_cls:
             mock_agent = MagicMock()
@@ -1461,13 +1461,13 @@ class TestRunJobSkillBacked:
             assert "NOTION_API_KEY" in get_all_passthrough()
             return {"final_response": "ok"}
 
-        with patch("cron.scheduler._hermes_home", tmp_path), \
+        with patch("cron.scheduler._eidolon_home", tmp_path), \
              patch("cron.scheduler_delivery._resolve_origin", return_value=None), \
-             patch("hermes_cli.env_loader.load_hermes_dotenv"), \
-             patch("hermes_cli.env_loader.reset_secret_source_cache"), \
-             patch("hermes_state_registry.acquire", return_value=fake_db), \
+             patch("eidolon_cli.env_loader.load_hermes_dotenv"), \
+             patch("eidolon_cli.env_loader.reset_secret_source_cache"), \
+             patch("eidolon_state_registry.acquire", return_value=fake_db), \
              patch(
-                 "hermes_cli.runtime_provider.resolve_runtime_provider",
+                 "eidolon_cli.runtime_provider.resolve_runtime_provider",
                  return_value={
                      "api_key": "***",
                      "base_url": "https://example.invalid/v1",
@@ -1712,7 +1712,7 @@ class TestRunJobWakeGate:
             "requested_provider": None,
         }
         with patch(
-            "hermes_cli.runtime_provider.resolve_runtime_provider",
+            "eidolon_cli.runtime_provider.resolve_runtime_provider",
             return_value=fake_runtime,
         ):
             yield
@@ -2281,7 +2281,7 @@ class TestCronDeliveryTargets:
 class TestHomeTargetEnvVarRegistry:
     """Regression: ``_HOME_TARGET_ENV_VARS`` must include every gateway
     platform that supports cron-driven outbound delivery. Missing an
-    entry means ``hermes cron create --deliver=<platform>`` silently
+    entry means ``eidolon cron create --deliver=<platform>`` silently
     fails to route through the platform's home channel."""
 
 
@@ -2883,7 +2883,7 @@ class TestFailureStreakNudge:
         with patch("cron.scheduler.load_config", return_value={}):
             out = _failure_streak_nudge(self._job(2))
         assert "failed 3 runs in a row" in out
-        assert "hermes cron pause scout" in out
+        assert "eidolon cron pause scout" in out
 
     def test_silent_below_threshold(self):
         from cron.scheduler import _failure_streak_nudge

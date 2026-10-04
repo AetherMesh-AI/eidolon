@@ -40,7 +40,7 @@ def resolve_identity() -> Dict[str, Any]:
     ``owner`` is advisory (local ref naming; the server derives the real one). The JWT is decoded
     WITHOUT verification: safe, the claims only decide whether to attempt sync, never authz."""
     try:
-        from hermes_cli.auth import resolve_nous_runtime_credentials
+        from eidolon_cli.auth import resolve_nous_runtime_credentials
         creds = resolve_nous_runtime_credentials() or {}
     except Exception as e:
         raise SyncInertError(f"no Nous credentials: {e}") from e
@@ -68,7 +68,7 @@ _TRUE, _FALSE = {"1", "true", "yes", "on"}, {"0", "false", "no", "off", ""}
 def _sync_config(key: str) -> Any:
     """``sync.<key>`` from config.yaml, or None. Lazy import: must not import the CLI at module load."""
     try:
-        from hermes_cli.config import load_config
+        from eidolon_cli.config import load_config
         return ((load_config() or {}).get("sync") or {}).get(key)
     except Exception as e:
         logger.debug("skills_sync_client: config sync.%s read failed: %s", key, e)
@@ -121,8 +121,8 @@ def sync_default_opt_in() -> bool:
 
 # Local skill eligibility + the personal opt-in flag
 def _skills_dir() -> Path:
-    from hermes_constants import get_hermes_home
-    return get_hermes_home() / "skills"
+    from eidolon_constants import get_eidolon_home
+    return get_eidolon_home() / "skills"
 
 
 def _org_dir() -> Path:  # local mirror root for org skills (read-only by convention)
@@ -562,7 +562,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

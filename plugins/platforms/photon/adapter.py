@@ -31,7 +31,7 @@ else:
     try:
         import httpx
         HTTPX_AVAILABLE = True
-    except ImportError:  # pragma: no cover - httpx is already a Hermes dep
+    except ImportError:  # pragma: no cover - httpx is already a Eidolon dep
         HTTPX_AVAILABLE = False
         httpx = None
 
@@ -69,7 +69,7 @@ _PHOTON_RETRYABLE_PATTERNS = (
     "internal sidecar error", "upstream connect error", "upstream unavailable", "connection dropped",
     "reset reason: overflow", "upstream_overflow", "upstream_unavailable")
 # iMessage emits Open Graph preview art as attachments right after a URL message;
-# suppress those so Hermes sees the link once.
+# suppress those so Eidolon sees the link once.
 _RICHLINK_PREVIEW_SUPPRESS_SECONDS = 30.0
 _RICHLINK_PREVIEW_ATTACHMENT_SUFFIX = ".pluginpayloadattachment"
 _TYPING_COOLDOWN_SECONDS = 5.0  # per chat; reduces gRPC pressure during overflow
@@ -84,8 +84,8 @@ _TARGET_NOT_ALLOWED_MESSAGE = (
 # -- Sidecar runtime record ----------------------------------------------------
 
 def _runtime_record_path() -> Path:
-    from hermes_constants import get_hermes_home  # honors profile overrides
-    return get_hermes_home() / "runtime" / _RUNTIME_RECORD_NAME
+    from eidolon_constants import get_eidolon_home  # honors profile overrides
+    return get_eidolon_home() / "runtime" / _RUNTIME_RECORD_NAME
 
 
 def _write_runtime_record(port: int, token: str, pid: int) -> None:
@@ -233,7 +233,7 @@ def check_requirements() -> bool:
 
 
 def _sidecar_deps_stale() -> bool:
-    """True when node_modules predates the lockfile (`hermes update` rewrites it without
+    """True when node_modules predates the lockfile (`eidolon update` rewrites it without
     reinstalling); False if either file is missing."""
     return _lock_newer_than_install(_sidecar_dir())
 
@@ -245,7 +245,7 @@ def _reinstall_sidecar_deps() -> None:
     if not npm:
         logger.warning("[photon] cannot reinstall stale sidecar deps: npm not on PATH")
         return
-    from hermes_cli._subprocess_compat import windows_hide_flags  # no console flash on Windows
+    from eidolon_cli._subprocess_compat import windows_hide_flags  # no console flash on Windows
 
     def _run(verb: str) -> subprocess.CompletedProcess:
         return subprocess.run(  # noqa: S603
@@ -438,7 +438,7 @@ def _normalize_content(content: Dict[str, Any]) -> _Normalized:
 def _attachment_body(space_id: str, safe_path: str, *, kind: str, name: Optional[str] = None,
                      mime_type: Optional[str] = None, caption: Optional[str] = None) -> Dict[str, Any]:
     """``/send-attachment`` body; spectrum-ts infers name/mimeType from the extension,
-    so optional keys are only sent when Hermes supplied them."""
+    so optional keys are only sent when Eidolon supplied them."""
     body: Dict[str, Any] = {
         "spaceId": space_id, "path": safe_path, "kind": "voice" if kind == "voice" else "attachment"}
     body.update({k: v for k, v in (("name", name), ("mimeType", mime_type), ("caption", caption)) if v})
@@ -843,7 +843,7 @@ class PhotonAdapter(BasePlatformAdapter):
 
     @classmethod
     def _pid_is_sidecar(cls, pid: int) -> bool:
-        """True if ``pid``'s command line is a Photon sidecar (any Hermes checkout)."""
+        """True if ``pid``'s command line is a Photon sidecar (any Eidolon checkout)."""
         out = cls._quick_stdout(["ps", "-p", str(pid), "-o", "command="])
         return out is not None and "photon/sidecar/index.mjs" in out
 
@@ -907,7 +907,7 @@ class PhotonAdapter(BasePlatformAdapter):
                     f"{_sidecar_dir()} (see log for the npm error). "
                     f"Run: cd {_sidecar_dir()} && npm ci   (or `hermes photon setup`)",
                     code="SIDECAR_DEPS_MISSING", retryable=False)
-        # `hermes update` bumps the lockfile without reinstalling node_modules; the sidecar
+        # `eidolon update` bumps the lockfile without reinstalling node_modules; the sidecar
         # would spawn against stale deps and die on every reconnect.
         if _sidecar_deps_stale():
             logger.warning("[photon] sidecar deps are stale (lockfile newer than install); reinstalling before start")
@@ -938,7 +938,7 @@ class PhotonAdapter(BasePlatformAdapter):
             "PHOTON_SIDECAR_TOKEN": self._sidecar_token,
             # Exit on stdin EOF so ANY gateway death (incl. SIGKILL) can't orphan it on the port.
             "PHOTON_SIDECAR_WATCH_STDIN": "1"})
-        from hermes_cli._subprocess_compat import windows_hide_flags  # hide child console on Windows
+        from eidolon_cli._subprocess_compat import windows_hide_flags  # hide child console on Windows
         await self._apply_spectrum_patch(windows_hide_flags())
         try:
             self._sidecar_proc = subprocess.Popen(  # noqa: S603
@@ -1523,7 +1523,7 @@ def _standalone_token_from_record(port: int) -> Tuple[Optional[str], int, str]:
         stale_hint = (f" A stale sidecar runtime record was found (pid {record.get('pid')} is not running)"
                       " — the gateway appears to be down.")
     return None, port, (
-        "Photon standalone send requires a running sidecar. Start the Hermes gateway (which spawns "
+        "Photon standalone send requires a running sidecar. Start the Eidolon gateway (which spawns "
         f"the sidecar and records its address under <hermes-home>/runtime/{_RUNTIME_RECORD_NAME}), "
         "or set PHOTON_SIDECAR_TOKEN in this process's environment." + stale_hint)
 
@@ -1589,7 +1589,7 @@ async def _standalone_send(
 # -- Plugin entry point ----------------------------------------------------------
 
 def register(ctx) -> None:
-    """Called by the Hermes plugin loader at startup."""
+    """Called by the Eidolon plugin loader at startup."""
     from . import cli as _cli  # local: avoid argparse work at module load
     ctx.register_platform(
         name="photon", label="iMessage via Photon", adapter_factory=lambda cfg: PhotonAdapter(cfg),
@@ -1599,7 +1599,7 @@ def register(ctx) -> None:
             "Run: hermes photon setup  (logs in via device flow, creates a "
             "Spectrum project, links your phone number, installs the "
             "spectrum-ts sidecar)."),
-        setup_fn=_cli.gateway_setup,  # surfaces Photon in the unified `hermes gateway setup` wizard
+        setup_fn=_cli.gateway_setup,  # surfaces Photon in the unified `eidolon gateway setup` wizard
         env_enablement_fn=_env_enablement, cron_deliver_env_var="PHOTON_HOME_CHANNEL",
         standalone_sender_fn=_standalone_send, allowed_users_env="PHOTON_ALLOWED_USERS",
         allow_all_env="PHOTON_ALLOW_ALL_USERS", max_message_length=_MAX_MESSAGE_LENGTH, emoji="📱",
@@ -1634,7 +1634,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

@@ -1,5 +1,5 @@
 """DuckDuckGo search via the optional ``ddgs`` package (search only, no key). ``is_available()``
-reflects package importability; the plugin registers either way so ``hermes tools`` can offer to
+reflects package importability; the plugin registers either way so ``eidolon tools`` can offer to
 install it. Isolation: ``ddgs``/``primp`` can block inside native code while holding the GIL, so a
 thread-pool ``future.result(timeout=…)`` cap can never fire and Ctrl+C/SIGTERM freeze the process —
 each search runs in a disposable child process the parent can terminate/kill.
@@ -178,7 +178,7 @@ class DDGSWebSearchProvider(BaseWebSearchProvider):
 
     def is_available(self) -> bool:
         """True when ``ddgs`` is importable. Must NOT do network I/O — runs at
-        tool-registration time and on every ``hermes tools`` paint."""
+        tool-registration time and on every ``eidolon tools`` paint."""
         try:
             import ddgs  # noqa: F401
             return True
@@ -187,7 +187,7 @@ class DDGSWebSearchProvider(BaseWebSearchProvider):
 
     def search(self, query: str, limit: int = 5) -> Dict[str, Any]:
         """Run the search in a disposable child with a hard wall-clock timeout so a
-        hung native ``primp`` call cannot freeze the Hermes process.
+        hung native ``primp`` call cannot freeze the Eidolon process.
 
         See #36776, #68096.
         """
@@ -235,7 +235,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

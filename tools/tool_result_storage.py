@@ -31,8 +31,8 @@ _spillover_pruned_once = False
 
 def get_spillover_dir():
     """Return $HERMES_HOME/cache/spillover as a Path (not created)."""
-    from hermes_constants import get_hermes_home
-    return get_hermes_home() / SPILLOVER_SUBDIR
+    from eidolon_constants import get_eidolon_home
+    return get_eidolon_home() / SPILLOVER_SUBDIR
 
 
 def cleanup_spillover_cache(max_age_hours: int = SPILLOVER_MAX_AGE_HOURS) -> int:

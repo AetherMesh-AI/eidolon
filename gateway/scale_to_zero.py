@@ -92,8 +92,8 @@ def is_idle(*, active_work_count: int, seconds_since_last_inbound: float,
 def dashboard_client_heartbeat_path(hermes_home: Optional[os.PathLike | str] = None):
     """Path of the dashboard-client liveness marker under HERMES_HOME."""
     if hermes_home is None:
-        from hermes_constants import get_hermes_home
-        hermes_home = get_hermes_home()
+        from eidolon_constants import get_eidolon_home
+        hermes_home = get_eidolon_home()
     return Path(hermes_home) / DASHBOARD_CLIENT_HEARTBEAT_REL
 
 

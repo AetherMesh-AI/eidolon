@@ -12,7 +12,7 @@ The fix adds:
 2. _send_session_db_warning_notifications() — broadcasts a recovery-guidance
    message to all home channels after the gateway connects
 3. Improved "corrupt" cause wording in _format_turn_completion_explanation
-   with the full recovery path (hermes doctor, sqlite3 .recover, backups)
+   with the full recovery path (eidolon doctor, sqlite3 .recover, backups)
 """
 
 from pytest import fixture
@@ -25,16 +25,16 @@ def test_format_turn_completion_corrupt_includes_recovery_options():
     explanation = AIAgent._format_turn_completion_explanation(
         "session_persistence_failed", "corrupt"
     )
-    assert "hermes doctor" in explanation
+    assert "eidolon doctor" in explanation
     assert ".recover" in explanation
     assert "backups" in explanation
     assert "Freeing disk space will not help" in explanation
 
 
-def test_gateway_corruption_banner_backups_dir_follows_hermes_home(monkeypatch, tmp_path):
+def test_gateway_corruption_banner_backups_dir_follows_eidolon_home(monkeypatch, tmp_path):
     """The gateway broadcast's step 3 must name the live backups dir, not ~/.hermes (#104250).
 
-    Pre-update backups live at ``<hermes_root>/backups`` (``hermes_cli/backup.py``); a
+    Pre-update backups live at ``<hermes_root>/backups`` (``eidolon_cli/backup.py``); a
     custom-HERMES_HOME gateway must not be told to restore from a directory that never
     held its backups.
     """
@@ -71,7 +71,7 @@ def test_format_turn_completion_corrupt_never_names_the_live_db():
     when pointed at a live state.db, splitting the store into two
     generations whose acknowledged writes vanish. The guidance that ships
     in the corruption banner must be the snapshot-copying
-    `hermes sessions recover` lane.
+    `eidolon sessions recover` lane.
     """
     from run_agent import AIAgent
 
@@ -81,7 +81,7 @@ def test_format_turn_completion_corrupt_never_names_the_live_db():
     assert "sessions recover" in explanation
     assert 'sqlite3 ~/.hermes/state.db ".recover"' not in explanation
     # The replacement guidance names the safe command.
-    assert "hermes sessions recover --source" in explanation
+    assert "eidolon sessions recover --source" in explanation
 
 
 def test_format_turn_completion_disk_still_advises_space():

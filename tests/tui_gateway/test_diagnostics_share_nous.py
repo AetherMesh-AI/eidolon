@@ -15,7 +15,7 @@ from tui_gateway import server
 def test_legacy_diagnostics_rpc_rejects_without_collecting_or_uploading(monkeypatch, params):
     collect = Mock(side_effect=AssertionError("must not collect logs"))
     network = Mock(side_effect=AssertionError("must not transmit"))
-    monkeypatch.setattr("hermes_cli.debug.collect_share_bundle", collect)
+    monkeypatch.setattr("eidolon_cli.debug.collect_share_bundle", collect)
     monkeypatch.setattr("urllib.request.urlopen", network)
 
     result = server._methods["diagnostics.share_nous"]("retired-upload", params)

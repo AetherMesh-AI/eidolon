@@ -8,7 +8,7 @@ import re
 from enum import Enum
 from typing import Any, Dict, List
 
-from hermes_constants import display_hermes_home
+from eidolon_constants import display_eidolon_home
 from utils import env_var_enabled
 
 logger = logging.getLogger("tools.skills_tool")
@@ -100,7 +100,7 @@ def _capture_required_environment_variables(
             from gateway.platforms.base import GATEWAY_SECRET_CAPTURE_UNSUPPORTED_MESSAGE as hint
         except Exception:
             hint = (f"Secure secret entry is not available. Load this skill in the local CLI to be "
-                    f"prompted, or add the key to {display_hermes_home()}/.env manually.")
+                    f"prompted, or add the key to {display_eidolon_home()}/.env manually.")
         return _capture_result(missing_names, gateway_setup_hint=hint)
     if (callback := _st._secret_capture_callback) is None:
         return _capture_result(missing_names)

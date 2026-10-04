@@ -16,7 +16,7 @@ import {
   type PluginStorage,
   type PluginTranslate,
   queryClient
-} from '@hermes/plugin-sdk'
+} from '@aethermesh/plugin-sdk'
 
 // Native completion notification.
 import { bindCompletionNotify, type CompletionEvent, onKanbanEventsFrame } from './completion-notify'

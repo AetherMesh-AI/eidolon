@@ -16,7 +16,7 @@ import os
 from collections import Counter
 from typing import Optional
 
-from hermes_cli.dashboard_auth import DashboardAuthProvider, Session, TokenPrincipal
+from eidolon_cli.dashboard_auth import DashboardAuthProvider, Session, TokenPrincipal
 from plugins.dashboard_auth._shared import NonInteractiveMixin, SkipRegistration, load_config_section, register_provider
 
 logger = logging.getLogger(__name__)
@@ -147,7 +147,7 @@ def register(ctx) -> None:
     # Opt the drain endpoint into the token-auth seam so the interactive cookie gate
     # doesn't bounce NAS's bearer call.
     try:
-        from hermes_cli.dashboard_auth.token_auth import register_token_route
+        from eidolon_cli.dashboard_auth.token_auth import register_token_route
 
         register_token_route(DRAIN_ROUTE_PATH)
     except Exception as exc:  # noqa: BLE001 — seam import must not crash plugin load
@@ -164,7 +164,7 @@ def register(ctx) -> None:
 
 
 _PLUGIN_COMPAT_LAZY = {
-    'LoginStart': ('hermes_cli.dashboard_auth', 'LoginStart'),
+    'LoginStart': ('eidolon_cli.dashboard_auth', 'LoginStart'),
 }
 
 
@@ -173,7 +173,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

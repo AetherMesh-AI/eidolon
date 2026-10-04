@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { HermesConfigRecord } from '@/hermes'
+import type { HermesConfigRecord } from '@/eidolon'
 import { type I18nConfigClient, I18nProvider } from '@/i18n'
 import { stubMenuDomApis, stubResizeObserver } from '@/test/jsdom'
 

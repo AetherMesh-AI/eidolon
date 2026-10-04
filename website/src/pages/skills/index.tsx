@@ -418,9 +418,9 @@ function SkillCard({
               </div>
             )}
             <div className={styles.installHint}>
-              <code>{skill.installCmd || `hermes skills install ${skill.name}`}</code>
+              <code>{skill.installCmd || `eidolon skills install ${skill.name}`}</code>
               <CopyButton
-                text={skill.installCmd || `hermes skills install ${skill.name}`}
+                text={skill.installCmd || `eidolon skills install ${skill.name}`}
               />
             </div>
             {onPick ? (
@@ -501,7 +501,7 @@ function buildSearchHaystack(s: Skill): string {
 
 export default function SkillsDashboard() {
   // Picker embed mode (?embed=picker): the page is being iframed by a host
-  // app (Hermes desktop's Bot Mode agent editor) as a skill PICKER. Site
+  // app (Eidolon desktop's Bot Mode agent editor) as a skill PICKER. Site
   // chrome is hidden via a CSS class and every card gains an
   // "+ Add to this Agent" button that posts
   //   { type: 'hermes-skill-pick', name, identifier, installCmd, source }
@@ -521,7 +521,7 @@ export default function SkillsDashboard() {
           type: "hermes-skill-pick",
           name: skill.name,
           identifier: skill.identifier || skill.name,
-          installCmd: skill.installCmd || `hermes skills install ${skill.name}`,
+          installCmd: skill.installCmd || `eidolon skills install ${skill.name}`,
           source: skill.source,
         },
         "*"

@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from hermes_constants import get_hermes_home
+from eidolon_constants import get_eidolon_home
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +64,7 @@ def derive_actor() -> str:
 
 
 def _skills_dir() -> Path:
-    return get_hermes_home() / "skills"
+    return get_eidolon_home() / "skills"
 
 
 def ledger_path() -> Path:
@@ -72,13 +72,13 @@ def ledger_path() -> Path:
 
 
 def blobs_dir() -> Path:
-    return get_hermes_home() / ".curator_backups" / "blobs"
+    return get_eidolon_home() / ".curator_backups" / "blobs"
 
 
 def ledger_enabled() -> bool:
     """Config gate ``skills.ledger`` (default True); lazy import keeps this importable without the CLI."""
     try:
-        from hermes_cli.config import cfg_get, load_config
+        from eidolon_cli.config import cfg_get, load_config
         return bool(cfg_get(load_config(), "skills", "ledger", default=True))
     except Exception as e:  # pragma: no cover — best-effort config read
         logger.debug("skill_ledger: config read failed (%s); defaulting on", e)
@@ -229,7 +229,7 @@ def fill_snapshot_from_curator_backup(
         if not parts:
             continue
         dest = (dest_root if dest_root is not None else skills).joinpath(*parts)
-        if not _is_within(skills, dest) or not _is_within(get_hermes_home(), dest):
+        if not _is_within(skills, dest) or not _is_within(get_eidolon_home(), dest):
             continue
         rel_key = _rel_posix(dest, skills)
         if rel_key is None or rel_key in have:
@@ -326,7 +326,7 @@ def get_entry(entry_id: str) -> Optional[Dict[str, Any]]:
 def _validate_entry_paths(entry: Dict[str, Any]) -> Optional[str]:
     """Every entry path must be under HERMES_HOME — a hand-edited ledger must not
     become a write-anywhere primitive."""
-    home = get_hermes_home()
+    home = get_eidolon_home()
     for section in ("before", "after"):
         for item in entry.get(section) or []:
             p = Path(str(item.get("path", "")))

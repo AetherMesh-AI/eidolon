@@ -182,7 +182,7 @@ def run_probe(repo, receipt):
     sys.path.insert(0, str(repo))
     logging.disable(logging.CRITICAL)
     import httpx
-    from hermes_constants import set_hermes_home_override, reset_hermes_home_override
+    from eidolon_constants import set_eidolon_home_override, reset_eidolon_home_override
     from tui_gateway import mcp_oauth_sessions as sessions
     from tools.mcp_oauth import HermesTokenStorage
 
@@ -269,12 +269,12 @@ def run_probe(repo, receipt):
         # Even possession of valid session/state cannot cross the resolved home.
         flow = begin("owner_boundary")
         browser.get(flow["auth_url"], follow_redirects=True)
-        override = set_hermes_home_override(other)
+        override = set_eidolon_home_override(other)
         try:
             foreign_poll = sessions.poll_flow(flow["session_id"], "owner_boundary")
             foreign_callback = sessions.deliver_callback_flow(flow["session_id"], "owner_boundary", **callback.callback)
         finally:
-            reset_hermes_home_override(override)
+            reset_eidolon_home_override(override)
         receipt["ownership_boundary"] = {
             "cancel_owner_enforced": checks["wrong_owner_cancel_rejected"],
             "cross_profile_poll_rejected": foreign_poll["status"] == "error",
@@ -305,7 +305,7 @@ def main():
     if args.cold_probe:
         sys.path.insert(0, str(repo))
         logging.disable(logging.CRITICAL)
-        from hermes_cli.mcp_config import _get_mcp_servers, _probe_single_server
+        from eidolon_cli.mcp_config import _get_mcp_servers, _probe_single_server
         from tools.mcp_oauth import suppress_interactive_oauth
         with suppress_interactive_oauth():
             tools = _probe_single_server("positive", _get_mcp_servers()["positive"])

@@ -21,7 +21,7 @@ import time
 import urllib.request
 from contextlib import suppress
 
-from hermes_constants import get_hermes_home
+from eidolon_constants import get_eidolon_home
 
 logger = logging.getLogger(__name__)
 _REPO = "sheeki03/tirith"
@@ -45,7 +45,7 @@ def _env_int(key: str, default: int) -> int:
 def _load_security_config() -> dict:
     """Security settings from config.yaml, with env var overrides."""
     try:
-        from hermes_cli.config import load_config_readonly
+        from eidolon_cli.config import load_config_readonly
         cfg = load_config_readonly().get("security", {}) or {}
     except Exception:
         cfg = {}
@@ -123,7 +123,7 @@ def _set_failed(reason: str) -> None:
 
 # --- Disk failure marker ---
 def _failure_marker_path() -> str:
-    return os.path.join(str(get_hermes_home()), ".tirith-install-failed")
+    return os.path.join(str(get_eidolon_home()), ".tirith-install-failed")
 
 
 def _read_failure_reason() -> str | None:
@@ -177,7 +177,7 @@ def _disk_marker_blocks_install() -> bool:
 # --- Auto-install ---
 def _hermes_bin_dir() -> str:
     """$HERMES_HOME/bin, created if needed."""
-    os.makedirs(d := os.path.join(str(get_hermes_home()), "bin"), exist_ok=True)
+    os.makedirs(d := os.path.join(str(get_eidolon_home()), "bin"), exist_ok=True)
     return d
 
 

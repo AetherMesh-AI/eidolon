@@ -1,4 +1,4 @@
-import type { BillingBlock } from '@hermes/shared'
+import type { BillingBlock } from '@aethermesh/shared'
 
 import { burstVibeHearts } from '@/components/chat/vibe-hearts'
 import { translateNow } from '@/i18n'
@@ -343,7 +343,7 @@ export function handleMessageStreamEvent(ctx: GatewayEventContext): boolean {
     const failure =
       payload?.status === 'error'
         ? {
-            error: coerceGatewayText(payload.error).trim() || finalText || 'Hermes reported an error',
+            error: coerceGatewayText(payload.error).trim() || finalText || 'Eidolon reported an error',
             partial: Boolean(payload.partial),
             surface: parseErrorSurface(payload.error_surface)
           }

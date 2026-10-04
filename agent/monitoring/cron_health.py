@@ -18,7 +18,7 @@ from cron.jobs import (
     load_jobs,
 )
 from cron.scheduler import get_running_job_ids
-from hermes_time import now as _now
+from eidolon_time import now as _now
 
 logger = logging.getLogger(__name__)
 _KNOWN_STATUSES = {"claimed", "running", "completed", "failed", "unknown"}
@@ -187,7 +187,7 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
-    from hermes_cli.plugin_compat import warn_once
+    from eidolon_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

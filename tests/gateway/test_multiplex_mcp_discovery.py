@@ -12,7 +12,7 @@ import pytest
 from gateway.config import GatewayConfig, Platform
 from gateway.platforms.event import MessageEvent
 from gateway.session import SessionSource
-from hermes_constants import get_hermes_home, hermes_home_key
+from eidolon_constants import get_eidolon_home, hermes_home_key
 
 
 @pytest.mark.asyncio
@@ -28,11 +28,11 @@ async def test_gateway_boot_discovers_mcp_under_every_profile_home(
     seen: list[tuple[Path, str]] = []
 
     def fake_discover() -> list[str]:
-        seen.append((get_hermes_home(), threading.current_thread().name))
+        seen.append((get_eidolon_home(), threading.current_thread().name))
         return []
 
     monkeypatch.setattr(
-        "hermes_cli.profiles.profiles_to_serve",
+        "eidolon_cli.profiles.profiles_to_serve",
         lambda multiplex, profile_allowlist=None: homes,
     )
     monkeypatch.setattr(_mcp_discovery, "discover_mcp_tools", fake_discover)
@@ -74,10 +74,10 @@ async def test_reload_mcp_only_touches_requesting_profile(
     seen: list[tuple] = []
 
     def fake_shutdown(*, scope=None) -> None:
-        seen.append(("shutdown", scope, get_hermes_home()))
+        seen.append(("shutdown", scope, get_eidolon_home()))
 
     def fake_discover() -> list[str]:
-        seen.append(("discover", get_hermes_home()))
+        seen.append(("discover", get_eidolon_home()))
         return []
 
     monkeypatch.setattr(_mcp_lifecycle, "shutdown_mcp_servers", fake_shutdown)

@@ -48,6 +48,16 @@ const config: Config = {
         // Static-host redirects for renamed doc pages (GitHub Pages can't
         // do server-side redirects). Paths are relative to baseUrl (/docs/).
         redirects: [
+          // Preserve incoming links while canonical app-owned document names use Eidolon.
+          { from: '/guides/run-hermes-with-nous-portal', to: '/guides/run-eidolon-with-nous-portal' },
+          { from: '/guides/secure-hermes-on-a-work-machine', to: '/guides/secure-eidolon-on-a-work-machine' },
+          { from: '/guides/use-mcp-with-hermes', to: '/guides/use-mcp-with-eidolon' },
+          { from: '/guides/use-soul-with-hermes', to: '/guides/use-soul-with-eidolon' },
+          { from: '/guides/use-voice-mode-with-hermes', to: '/guides/use-voice-mode-with-eidolon' },
+          { from: '/user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-hermes-agent', to: '/user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-eidolon-agent' },
+          { from: '/user-guide/skills/bundled/software-development/software-development-hermes-agent-skill-authoring', to: '/user-guide/skills/bundled/software-development/software-development-eidolon-agent-skill-authoring' },
+          { from: '/user-guide/skills/bundled/software-development/software-development-inspecting-hermes-desktop-dom', to: '/user-guide/skills/bundled/software-development/software-development-inspecting-eidolon-desktop-dom' },
+          { from: '/user-guide/skills/optional/devops/devops-hermes-s6-container-supervision', to: '/user-guide/skills/optional/devops/devops-eidolon-s6-container-supervision' },
           {
             // Renamed in #44470 (Automation Blueprints terminology rebrand)
             from: '/guides/automation-templates',
