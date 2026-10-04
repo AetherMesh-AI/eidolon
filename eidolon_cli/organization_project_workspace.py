@@ -389,7 +389,7 @@ class OrganizationProjectStore:
     @staticmethod
     def _require_project_controller(conn, request):
         agent = conn.execute('SELECT * FROM agents WHERE id=?', (request['agent_id'],)).fetchone()
-        if (agent is None or agent['role'] != 'Employee' or agent['team'] != request['team']
+        if (agent is None or agent['role'] != 'Worker' or agent['team'] != request['team']
                 or agent['id'] not in {'control:apply', 'control:apply:' + hashlib.sha256(request['team'].encode()).hexdigest()[:16]}
                 or set(json.loads(agent['accepts'])) != {'request.apply', 'request.validate'}):
             raise ValueError('Only the matching backend-controlled workspace applier can apply or validate edits')

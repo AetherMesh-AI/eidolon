@@ -26,6 +26,10 @@ from eidolon_cli.organization_receipts import (
 from eidolon_cli.organization_staffing import STAFF_SCHEMA, OrganizationStaffingStore
 from eidolon_cli.organization_edits import EDIT_SCHEMA, OrganizationEditStore, evidence_proposal
 from eidolon_cli.organization_policy import POLICY_SCHEMA, OrganizationPolicyStore, persisted_settings
+from eidolon_cli.organization_identity import (
+    IDENTITY_SCHEMA, OrganizationIdentityStore, agent_context_view, agent_identity_view,
+    task_assignment_view, objective_assignment_view,
+)
 
 
 _TERMINAL = {"completed", "cancelled"}
@@ -83,29 +87,32 @@ def _text(value, field, limit=10000):
     return value.strip()
 
 
-class OrganizationStore(OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
+class OrganizationStore(OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
     def __init__(self, path: Path | str, settings: OrganizationSettings | None = None):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
-            conn.executescript(_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA)
+            conn.executescript(_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA)
             self.settings = settings or persisted_settings(conn) or OrganizationSettings()
         with self._write() as conn:
             self._migrate_acceptance(conn)
             self._adopt_policy(conn)
             roles = [("owner", "Owner", "Owner", None, []),
                      ("executive", "Executive", "Executive", "owner", ["request.accept"]),
-                     ("director", "Director", "Director", "executive", ["request.hire"]),
-                     ("manager", "Manager", "Manager", "director", ["request.plan", "request.integrate"]),
-                     ("reviewer", "Reviewer", "Employee", "manager", ["request.review"]),
-                     ("control:apply", "Workspace applier", "Employee", "manager", ["request.apply", "request.validate"])]
+                     ("director", "Staffing manager", "Manager", "executive", ["request.hire"]),
+                     ("manager", "Manager", "Manager", "executive", ["request.plan", "request.integrate"]),
+                     ("reviewer", "Reviewer", "Worker", "manager", ["request.review"]),
+                     ("control:apply", "Workspace applier", "Worker", "manager", ["request.apply", "request.validate"])]
             for ident, name, role, manager, accepts in roles:
                 conn.execute("INSERT OR IGNORE INTO agents VALUES (?,?,?,?,?,?)",
                              (ident, name, role, manager, self.settings.team, json.dumps(accepts)))
+            # Capture legacy identity scope before synchronizing current routes.
+            self._migrate_identities(conn)
             conn.execute("UPDATE agents SET team=? WHERE id IN ('owner','executive','director','manager','reviewer','control:apply')", (self.settings.team,))
             for ident, accepts in [('executive', ['request.accept']), ('manager', ['request.plan', 'request.integrate']), ('control:apply', ['request.apply', 'request.validate'])]:
                 conn.execute('UPDATE agents SET accepts=? WHERE id=?', (json.dumps(accepts), ident))
             self._sync_staff(conn)
+            self._migrate_identities(conn)
             self.migrate_open_project_validation(conn)
             for row in conn.execute("SELECT objective_id FROM objective_control WHERE status='pending'").fetchall():
                 self._maybe_integrate(conn, row['objective_id'])
@@ -159,7 +166,7 @@ class OrganizationStore(OrganizationAcceptanceStore, OrganizationOwnerStore, Org
                      (ident, objective, task, request_type, team, priority, time.time(), json.dumps(payload or {})))
         return ident
 
-    def create_objective(self, title, description=None, priority="normal", *, idempotency_key, acceptance_criteria=None, delivery_mode="source_project", required_checks=None):
+    def create_objective(self, title, description=None, priority="normal", *, idempotency_key, acceptance_criteria=None, delivery_mode="source_project", required_checks=None, executive_id=None, manager_id=None):
         title = _text(title, "Title", 500)
         description = _text(description or title, "Description", 30000)
         from eidolon_cli.organization_acceptance import acceptance_criteria as normalize_criteria
@@ -175,6 +182,8 @@ class OrganizationStore(OrganizationAcceptanceStore, OrganizationOwnerStore, Org
         identity = ([title, description, level] if acceptance_criteria is None and delivery_mode == 'source_project' and not checks else
                     {'title': title, 'description': description, 'priority': level, 'acceptanceCriteria': criteria,
                      'deliveryMode': delivery_mode, 'requiredChecks': checks})
+        if executive_id is not None or manager_id is not None:
+            identity = {'objective': identity, 'executiveId': executive_id, 'managerId': manager_id}
         digest = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
         with self._write() as conn:
             self._require_current_policy(conn)
@@ -192,9 +201,10 @@ class OrganizationStore(OrganizationAcceptanceStore, OrganizationOwnerStore, Org
                 ident = _id("obj")
                 conn.execute("INSERT INTO objectives VALUES (?,?,?,?,?,?,?,0)",
                              (ident, key, digest, title, description, level, time.time()))
+                manager = self._assign_objective(conn, ident, executive_id, manager_id)
                 conn.execute("INSERT INTO objective_control(objective_id,criteria,status,round,max_replans,max_stages,delivery_mode,required_checks) VALUES (?,?,'pending',0,?,?,?,?)",
                              (ident, json.dumps(criteria), self.settings.max_replans, self.settings.max_stages, delivery_mode, json.dumps(checks)))
-                self._request(conn, ident, "request.plan", self.settings.team, level)
+                self._request(conn, ident, "request.plan", manager['team'], level)
                 self._event(conn, ident, "Objective accepted. Manager planning is queued.", "planning")
         # A duplicate may be older than the UI's settled-history window.
         from eidolon_cli.organization_snapshot import build_snapshot
@@ -213,6 +223,8 @@ class OrganizationStore(OrganizationAcceptanceStore, OrganizationOwnerStore, Org
         staff = conn.execute("SELECT * FROM agents ORDER BY id").fetchall()
         candidates = []
         for agent in staff:
+            if not self._assignment_allows(conn, request, agent):
+                continue
             if self._staff_reason(conn, agent, request['type']):
                 continue
             if agent["team"] != request["team"] or request["type"] not in json.loads(agent["accepts"]):
@@ -309,6 +321,7 @@ class OrganizationStore(OrganizationAcceptanceStore, OrganizationOwnerStore, Org
             if request is None:
                 raise ValueError("Request lease is no longer owned")
             objective = dict(conn.execute("SELECT id,title,description FROM objectives WHERE id=?", (request["objective_id"],)).fetchone())
+            objective.update(objective_assignment_view(conn, request['objective_id']))
             control = conn.execute('SELECT * FROM objective_control WHERE objective_id=?', (request['objective_id'],)).fetchone()
             objective['acceptanceCriteria'] = json.loads(control['criteria'])
             objective['round'] = control['round']
@@ -321,6 +334,8 @@ class OrganizationStore(OrganizationAcceptanceStore, OrganizationOwnerStore, Org
             owner_inputs = [dict(row) for row in conn.execute('SELECT action,text,created FROM owner_resolutions WHERE objective_id=? ORDER BY created', (request['objective_id'],))]
             task = conn.execute("SELECT * FROM tasks WHERE id=?", (request["task_id"],)).fetchone()
             task = dict(task) if task else None
+            if task:
+                task.update(task_assignment_view(conn, task['id']))
             dependencies = []
             if task:
                 for ident in json.loads(task["dependencies"]):
@@ -348,11 +363,19 @@ class OrganizationStore(OrganizationAcceptanceStore, OrganizationOwnerStore, Org
                 if row:
                     evidence.append({**dict(row), 'toolReceipts': evidence_receipts(conn, row['id']),
                                      'editProposal': evidence_proposal(conn, row['id'])})
-            agent = dict(conn.execute("SELECT id,name,role,team FROM agents WHERE id=?", (request["agent_id"],)).fetchone())
+            agent = dict(conn.execute("SELECT id,name,role,team,manager_id AS managerId FROM agents WHERE id=?", (request["agent_id"],)).fetchone())
+            agent.update(agent_identity_view(conn, request['agent_id']))
             staff = self._staff(agent['id'])
             if staff:
                 agent.update({'provider': staff.provider, 'model': staff.model})
-            return {"objective": objective, "task": task, "agent": agent, "dependencies": dependencies,
+            organization = {'agents': [
+                {'id': row['id'], 'name': row['name'], 'role': row['role'], 'managerId': row['manager_id'],
+                 'team': row['team'], 'capabilities': json.loads(row['accepts']),
+                 'responsibilities': agent_identity_view(conn, row['id'])['responsibilities']}
+                for row in conn.execute('SELECT * FROM agents ORDER BY id')]}
+            return {"objective": objective, "task": task, "agent": agent,
+                    "agentContext": agent_context_view(conn, request['agent_id']), "dependencies": dependencies,
+                    "organization": organization, "maxInflight": self.settings.max_inflight,
                     "evidence": evidence, "feedback": task["feedback"] if task else payload.get("feedback", control["summary"]),
                     "ownerInputs": owner_inputs, "maxOutputTokens": self.settings.max_output_tokens,
                     "toolReceipts": [receipt for item in evidence for receipt in item['toolReceipts']],
@@ -493,7 +516,8 @@ class OrganizationStore(OrganizationAcceptanceStore, OrganizationOwnerStore, Org
             else:
                 handler = handlers.get(request["type"], self._finish_work)
             self._record_usage(conn, request, result)
-            handler(conn, request, {key: value for key, value in result.items() if key != 'usage'})
+            handler(conn, request, {key: value for key, value in result.items() if key not in {'usage', 'memory'}})
+            self._remember_agent_finish(conn, request, result)
             conn.execute("UPDATE requests SET status='completed',token=NULL,lease=NULL,reason=NULL WHERE id=?", (request["id"],))
             self._event(conn, request["objective_id"], f"{request['type']} finished.", "review" if request["type"] == "request.review" else "completion", request["agent_id"])
             self._maybe_integrate(conn, request['objective_id'])
@@ -520,10 +544,11 @@ class OrganizationStore(OrganizationAcceptanceStore, OrganizationOwnerStore, Org
                                _text(task.get("description"), "Task description", 10000), request_type, team,
                                request["priority"], "queued", json.dumps([ids[i] for i in dependencies])))
         workers = result.get("workers", 1)
-        if type(workers) is not int or workers < 1 or workers > 8:
-            raise ValueError("Requested worker count must be an integer from 1 to 8")
-        for values in normalized:
+        if type(workers) is not int or workers < 1 or workers > 64:
+            raise ValueError("Requested worker count must be an integer from 1 to 64")
+        for values, specification in zip(normalized, tasks):
             conn.execute("INSERT INTO tasks(id,objective_id,title,description,type,team,priority,status,dependencies) VALUES (?,?,?,?,?,?,?,?,?)", values)
+            self._assign_task(conn, values[0], specification, request['agent_id'])
             conn.execute('INSERT INTO objective_task_rounds SELECT ?,objective_id,round FROM objective_control WHERE objective_id=?', (values[0], request['objective_id']))
             self._request(conn, request["objective_id"], values[4], values[5], values[6], values[0])
         self._queue_staffing(conn, request, workers, normalized)

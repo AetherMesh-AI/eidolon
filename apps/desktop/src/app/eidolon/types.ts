@@ -5,6 +5,8 @@ export const objectiveStatusLabels = {
 export type ObjectiveStatus = keyof typeof objectiveStatusLabels
 export type WorkStatus = 'working' | 'active' | 'thinking' | 'executing' | 'reviewing' | 'needs_input' | 'idle' | 'waiting' | 'review' | 'offline'
 export interface ObjectiveMetadata {
+  executiveId?: string
+  managerId?: string
   description?: string
   acceptanceCriteria?: string[]
   deliveryMode?: 'source_project' | 'managed_artifact'
@@ -39,10 +41,35 @@ export interface Objective extends ObjectiveMetadata {
     notExecuted: string[]
   }
 }
+/** Bounded, persisted context owned by one stable organization identity.
+ * This is organizational memory, not a live provider transcript or tool grant. */
+export interface OrganizationAgentContext {
+  contextSummary?: string
+  memory?: { facts: string[]; decisions: string[]; lessons: string[]; openQuestions: string[] }
+  recentHistory?: {
+    requestId: string
+    objectiveId: string
+    objectiveTitle: string
+    taskId: string | null
+    requestType: string
+    summary: string
+    evidenceIds: string[]
+    createdAt: string
+  }[]
+  revision?: number
+  updatedAt?: string | null
+  /** Older runtimes may report token usage without persisted memory. */
+  used?: number
+  capacity?: number
+}
 export interface OrganizationAgent {
   id: string
+  identityId?: string
+  persistent?: boolean
+  createdAt?: string
   name: string
   role: string
+  purpose?: string
   team?: string
   managerId?: string
   responsibilities: string[]
@@ -53,7 +80,7 @@ export interface OrganizationAgent {
   model?: string
   provider?: string
   lifecycle?: 'active' | 'available' | 'disabled' | 'retired'
-  context?: { used?: number; capacity?: number }
+  context?: OrganizationAgentContext
   tools?: string[]
   profileName?: string
   objectiveId?: string
@@ -65,6 +92,8 @@ export interface OrganizationTask {
   ownerId: string
   status: 'queued' | 'working' | 'blocked' | 'review' | 'completed' | 'cancelled'
   assignedById?: string
+  assignedAgentId?: string | null
+  managingAgentId?: string
   reviewerId?: string
   requestType?: string
   team?: string
@@ -268,6 +297,10 @@ export interface OrganizationRuntime {
   capabilities: string[]
   state: string
   maxWorkers: number
+  /** Simultaneous execution slots; independent from durable roster size. */
+  maxInflight?: number
+  rosterCount?: number
+  workingCount?: number
   scope: string
   historyLimited?: boolean
   artifactPreviewLimit?: number

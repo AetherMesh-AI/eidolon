@@ -2,7 +2,8 @@
 import json
 from eidolon_cli.organization_store import _iso
 from eidolon_cli.organization_receipts import receipt_view
-from eidolon_cli.organization_roster import configured_workers, staff_unavailability
+from eidolon_cli.organization_roster import configured_staff, staff_unavailability
+from eidolon_cli.organization_identity import agent_identity_view, agent_context_view, task_assignment_view, objective_assignment_view
 from eidolon_cli.organization_edits import evidence_proposal
 from eidolon_cli.organization_acceptance import usage_view
 from eidolon_cli.organization_owner import allowed_resolutions
@@ -59,7 +60,8 @@ def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
                                           'conflicts': json.loads(acceptance_review['conflicts']) if acceptance_review else []},
                            'usage': usage_view(conn, control, settings), 'ownerResolutions': resolutions,
                            'status': status, 'source': 'runtime', 'createdAt': _iso(row['created']),
-                           'ownerId': 'manager' if control['status'] == 'legacy_completed' else 'executive', 'priority': f"P{6-row['priority']}",
+                           **objective_assignment_view(conn, row['id']),
+                           'ownerId': 'manager' if control['status'] == 'legacy_completed' else objective_assignment_view(conn, row['id'])['executiveId'], 'priority': f"P{6-row['priority']}",
                            'progress': round(100 * done / len(work)) if work else 0,
                            'result': (final['content'] if final else '\n\n'.join(t['result'] or '' for t in work)) if status == 'completed' else None,
                            'phase': 'Legacy reviewed outcome' if control['status'] == 'legacy_completed' else 'Accepted integrated outcome' if status == 'completed' else 'Integrated outcome acceptance' if control['status'] in {'integrating', 'reviewing'} else 'Pending intervention' if status == 'needs_input' else 'Manager planning' if not work else 'Execution and review'})
@@ -89,10 +91,11 @@ def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
         ui_tasks.append({'id': task['id'], 'objectiveId': task['objective_id'], 'title': task['title'],
                          'currentRound': rounds.get(task['id']) == controls[task['objective_id']]['round'],
                          'historical': rounds.get(task['id']) != controls[task['objective_id']]['round'],
-                         'ownerId': task['author_id'] or (latest['agent_id'] or '' if latest else ''),
+                         'ownerId': task['author_id'] or task_assignment_view(conn, task['id'])['agentId'] or (latest['agent_id'] or '' if latest else ''),
+                         'assignedAgentId': task_assignment_view(conn, task['id'])['agentId'],
                          'reviewerId': latest['agent_id'] if latest and latest['type'] == 'request.review' else None,
                          'status': task['status'], 'dependsOn': json.loads(task['dependencies']),
-                         'assignedById': 'manager', 'priority': f"P{6-task['priority']}",
+                         **{key: value for key, value in task_assignment_view(conn, task['id']).items() if key != 'agentId'}, 'priority': f"P{6-task['priority']}",
                          'requestType': task['type'], 'team': task['team'],
                          'review': 'approved' if task['status'] == 'completed' else 'required',
                          'inputs': [task['description']], 'results': [task['result']] if task['result'] else [],
@@ -101,7 +104,7 @@ def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
                                        'truncated': bool(p['truncated']),
                                        'editProposal': evidence_proposal(conn, p['id'], full=False)} for p in proof]})
     agents = []
-    configured = {staff.id: staff for staff in configured_workers(settings)}
+    configured = {staff.id: staff for staff in configured_staff(settings)}
     staff_states = {row['agent_id']: row for row in conn.execute('SELECT * FROM staff_state')}
     for row in conn.execute('SELECT * FROM agents ORDER BY rowid'):
         running = next((r for r in requests if r['agent_id'] == row['id'] and r['status'] == 'running'), None)
@@ -113,12 +116,13 @@ def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
         lifecycle = 'retired' if state and not staff else 'disabled' if reason else 'available' if state and not state['active'] else 'active'
         disabled = lifecycle in {'retired', 'disabled'}
         agents.append({'id': row['id'], 'name': row['name'], 'role': row['role'], 'managerId': row['manager_id'],
-                       'team': row['team'], 'responsibilities': accepts or ['Scoped organizational authority'],
+                       'team': row['team'], **agent_identity_view(conn, row['id']),
+                       'persistent': True, 'context': agent_context_view(conn, row['id']),
                        'capabilities': accepts, 'requestTypes': accepts,
                        'lifecycle': lifecycle, 'provider': staff.provider if staff else None,
                        'model': staff.model if staff else None, 'tools': list(staff.tool_grants) if staff else [],
                        'status': 'offline' if disabled else 'reviewing' if running and running['type'] in {'request.review', 'request.accept'} else 'executing' if running else 'needs_input' if blocked else 'idle',
-                       'summary': reason if disabled else running['type'] if running else blocked['reason'] if blocked else 'Configured staff available for request.hire.' if lifecycle == 'available' else 'Configured organizational role; no work in progress.',
+                       'summary': reason if disabled else running['type'] if running else blocked['reason'] if blocked else 'Persistent agent available for assignment activation.' if lifecycle == 'available' else 'Persistent identity retained; no work in progress.',
                        'objectiveId': (running or blocked)['objective_id'] if running or blocked else None})
     events = [{'id': f"event_{r['id']}", 'objectiveId': r['objective_id'], 'agentId': r['agent_id'],
                'kind': r['kind'], 'text': r['text'], 'timestamp': _iso(r['created']), 'source': 'runtime'}
@@ -147,6 +151,8 @@ def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
     return {'source': 'runtime', 'objectives': objectives, 'agents': agents, 'tasks': ui_tasks, 'activity': events,
             'knowledge': knowledge, 'decisions': [], 'requests': ui_requests,
             'runtime': {'state': 'ready', 'capabilities': list(settings.capabilities), 'maxWorkers': settings.max_workers,
+                        'maxInflight': settings.max_inflight, 'rosterCount': len(agents),
+                        'workingCount': sum(agent['status'] in {'executing', 'reviewing'} for agent in agents),
                         'scope': 'Writing and analysis of submitted context; configured work.inspect staff may read explicitly granted local text files. Other tools and unsupported requests require intervention.',
                         'readFileEnabled': 'read_file' in settings.tool_grants and bool(settings.read_roots),
                         'readRoots': list(settings.read_roots), 'maxToolCalls': settings.max_tool_calls,

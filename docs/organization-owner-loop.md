@@ -5,10 +5,31 @@ reviewed evidence, final acceptance and owner resolutions are different records
 with explicit links. A board, graph or attention badge is a view of those records,
 not a second dispatcher or completion authority.
 
+## Keep responsibility across objectives
+
+Organization is a persistent Executive → Manager → Worker roster under the human
+Owner. Identities survive idle periods, stopped execution and backend restarts.
+Managers have scoped responsibilities and reuse eligible worker specialists across
+assignments; cross-domain coordination still obeys exact team, capability,
+reporting-line and tool-grant checks. Roster size is separate from execution
+concurrency. Disabling or retiring staff preserves identity and history.
+
+The Organization inspector exposes each identity’s own bounded memory, context
+summary and recent request/task/evidence-linked history. These records are retained
+in the profile ledger. They do not replace task evidence, grant permissions or imply
+that a provider call is currently running. The legacy Director becomes a Manager
+while keeping its `director` ID and historical references; legacy Employees become
+Workers. Existing profile chats retain their separate canonical identity.
+
+For configuration, memory bounds and a scoped roster example, see
+[Persistent identities and reusable specialists](organization-flow.md#persistent-identities-and-reusable-specialists).
+
 ## Submit an outcome and its criteria
 
 Home accepts the objective, supplied context, acceptance criteria, priority,
-delivery mode and explicit required checks. Choose managed-artifact delivery when
+delivery mode and explicit required checks. On a persistent-identity runtime, choose
+an existing active Executive and one of its active Managers as the objective’s
+responsible leaders. Selection does not provision staff or expand permission. Choose managed-artifact delivery when
 the intended result is a reviewed downloadable patch or document. Choose
 source-project delivery when the result must also be verified in the original
 project. A delivery choice never grants file or account permissions.
@@ -128,8 +149,8 @@ has one plugin-controlled owner, preserving its identity and saved layout.
 
 Workspace makes organization evidence and session-file artifacts discoverable in
 one area while keeping their sources and review/application status clear. Existing
-Knowledge links retain compatible navigation. Neither artifact view claims to be
-a semantic organizational memory system.
+Knowledge links retain compatible navigation. Artifact views remain evidence browsers. Per-agent bounded memory and identity
+history live in the Organization inspector, separate from session-file artifacts.
 
 Old prototype records remain read/export-only. They are never automatically
 submitted as live work. Static examples remain available for illustration.

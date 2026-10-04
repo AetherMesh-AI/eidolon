@@ -19,13 +19,13 @@ def settings(**raw):
     return OrganizationSettings.from_config({"organization": raw})
 
 
-def test_absent_roster_is_explicitly_logical_and_empty_roster_never_falls_back():
+def test_absent_roster_has_persistent_defaults_and_empty_roster_never_falls_back():
     legacy = settings()
     assert legacy.capabilities == WORK_CAPABILITIES
     assert legacy.tool_grants == legacy.read_roots == ()
     workers = configured_workers(legacy)
     assert [worker.id for worker in workers] == [f"worker-{index}" for index in range(1, legacy.max_workers + 1)]
-    assert all("Logical" in worker.name and not worker.tool_grants for worker in workers)
+    assert all("Worker" in worker.name and not worker.tool_grants for worker in workers)
     assert select_staff_activation(legacy, {workers[0].id}, 2) == workers[1:]
     empty = settings(roster=[])
     assert configured_workers(empty) == ()
@@ -63,8 +63,7 @@ def test_route_and_capacity_failures_preserve_missing_disabled_and_wrong_team_re
     routes = [("sales", "work.draft"), ("support", "work.draft")]
     assert [worker.id for worker in select_staff_activation(split, [], 1, routes)] == ["sales", "support"]
     assert [worker.id for worker in select_staff_activation(split, {"sales"}, 1, routes)] == ["support"]
-    with pytest.raises(ValueError, match="capacity cannot cover"):
-        select_staff_activation(replace(split, max_workers=1), [], 1, routes)
+    assert select_staff_activation(replace(split, max_workers=1, max_inflight=1), [], 1, routes) == split.roster
 
 
 @pytest.mark.parametrize("missing", ["global_grant", "staff_grant", "read_roots", "capability"])

@@ -80,6 +80,7 @@ export function WorkGraph({ snapshot, objectiveId, onOpenEvidence }: WorkGraphPr
       <p className="eid-eyebrow">{runtime ? 'Runtime task · Gateway record' : 'Prototype task · Not dispatched'}</p>
       <dl>
         <dt>Owner</dt><dd>{agentName(task.ownerId)}</dd><dt>Assigned by</dt><dd>{task.assignedById ? agentName(task.assignedById) : 'Unknown · Not recorded'}</dd>
+        {runtime && task.managingAgentId && <><dt>{t.organizationRoster.managingAgent}</dt><dd>{agentName(task.managingAgentId)}</dd></>}
         <dt>Status</dt><dd>{task.status}</dd><dt>Priority</dt><dd>{task.priority || 'Unknown · Not recorded'}</dd>
         {runtime && <><dt>Team</dt><dd>{task.team || 'Not recorded by runtime'}</dd><dt>Request type</dt><dd>{task.requestType || 'Not recorded by runtime'}</dd><dt>Assigned reviewer</dt><dd>{task.reviewerId ? agentName(task.reviewerId) : 'No reviewer recorded'}</dd></>}
         <dt>Review</dt><dd>{task.review || 'Unknown · Not recorded'}</dd>

@@ -284,7 +284,7 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
       if (!title) {return Promise.reject(new Error('Describe an objective before submitting.'))}
       // Only fields the runtime implements cross this boundary. In particular,
       // prototype owner/status/progress edits never authorize runtime work.
-      const params = { title, description: metadata.description?.trim() || undefined, priority: metadata.priority, acceptanceCriteria: metadata.acceptanceCriteria, deliveryMode: metadata.deliveryMode, requiredChecks: metadata.requiredChecks }
+      const params = { title, executiveId: metadata.executiveId, managerId: metadata.managerId, description: metadata.description?.trim() || undefined, priority: metadata.priority, acceptanceCriteria: metadata.acceptanceCriteria, deliveryMode: metadata.deliveryMode, requiredChecks: metadata.requiredChecks }
       const intent = JSON.stringify([scope.ownerKey ?? scope.key, params])
       const key = idempotencyKey ?? createKeys.get(intent) ?? crypto.randomUUID()
       createKeys.set(intent, key)

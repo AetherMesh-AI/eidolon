@@ -320,7 +320,8 @@ def test_real_agent_tool_round_against_local_http_provider(inspection, tmp_path,
 
     context, receipts, root = inspection
     received = []
-    output = {"summary": "Inspected the cost notes", "deliverable": "root0/notes.txt lines 1–2: A costs $40; B costs $70."}
+    output = {"summary": "Inspected the cost notes", "deliverable": "root0/notes.txt lines 1–2: A costs $40; B costs $70.",
+              "memory": {"facts": ["The submitted notes compare options A and B."]}}
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
@@ -372,6 +373,9 @@ def test_real_agent_tool_round_against_local_http_provider(inspection, tmp_path,
         assert {key: value for key, value in result.items() if key != "usage"} == output
         assert result["usage"] == {"inputTokens": 60, "outputTokens": 40}
         assert len(received) == 2
+        system = next(message['content'] for message in received[0]['messages'] if message['role'] in {'system', 'developer'})
+        assert 'persistent member' in system and 'openQuestions' in system
+        assert "cannot modify another agent's context" in system
         assert [tool["function"]["name"] for tool in received[0]["tools"]] == ["read_file"]
         assert received[1]["tools"] == received[0]["tools"]
         tool_results = [m for m in received[1]["messages"] if m["role"] == "tool"]

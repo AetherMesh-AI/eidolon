@@ -1,10 +1,12 @@
 import { defineFieldCopy } from '@/app/settings/field-copy'
 
 import { defineLocale } from './define-locale'
+import { organizationRosterJa } from './organization-roster'
 import { organizationWorkJa } from './organization-work'
 
 export const ja = defineLocale({
   organizationWork: organizationWorkJa,
+  organizationRoster: organizationRosterJa,
   organizationRuntime: {
     artifactLoading: '成果物の全文を取得中',
     artifactError: '成果物を取得できませんでした。',

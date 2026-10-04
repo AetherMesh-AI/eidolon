@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 
-from eidolon_cli.organization_roster import configured_workers, select_staff_activation, staff_unavailability
+from eidolon_cli.organization_roster import configured_staff, configured_workers, select_staff_activation, staff_unavailability
 
 
 STAFF_SCHEMA = """
@@ -16,17 +16,20 @@ CREATE TABLE IF NOT EXISTS staff_state (
 class OrganizationStaffingStore:
     def _sync_staff(self, conn):
         mode = 'logical' if self.settings.roster is None else 'configured'
-        configured = configured_workers(self.settings)
+        configured = configured_staff(self.settings)
         for staff in configured:
-            prior_agent = conn.execute('SELECT id FROM agents WHERE id=?', (staff.id,)).fetchone()
+            prior_agent = conn.execute('SELECT id,name FROM agents WHERE id=?', (staff.id,)).fetchone()
             prior = conn.execute('SELECT * FROM staff_state WHERE agent_id=?', (staff.id,)).fetchone()
             active = bool(prior['active']) if prior and prior['source'] == mode else (
                 mode == 'logical' and (prior_agent is not None or staff.id == 'worker-1'))
+            if staff.role != 'Worker':
+                active = staff.enabled
             if not staff.enabled:
                 active = False
+            name = prior_agent['name'] if mode == 'logical' and prior_agent and prior_agent['name'] not in {f'Logical worker {staff.id.removeprefix("worker-")}', staff.name} else staff.name
             conn.execute('INSERT INTO agents VALUES (?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET '
-                         'name=excluded.name,team=excluded.team,accepts=excluded.accepts',
-                         (staff.id, staff.name, 'Employee', 'manager', staff.team, json.dumps(staff.capabilities)))
+                         'name=excluded.name,role=excluded.role,manager_id=excluded.manager_id,team=excluded.team,accepts=excluded.accepts',
+                         (staff.id, name, staff.role, staff.manager_id, staff.team, json.dumps(staff.capabilities)))
             policy = json.dumps({'provider': staff.provider, 'model': staff.model, 'tools': staff.tool_grants})
             conn.execute('INSERT INTO staff_state VALUES (?,?,?,?) ON CONFLICT(agent_id) DO UPDATE SET '
                          'active=excluded.active,source=excluded.source,policy=excluded.policy',
@@ -38,10 +41,6 @@ class OrganizationStaffingStore:
                     'SELECT 1 FROM staff_state WHERE agent_id=?', (row['id'],)).fetchone()) and row['id'] not in current_ids:
                 conn.execute("INSERT INTO staff_state VALUES (?,0,'retired','{}') ON CONFLICT(agent_id) "
                              "DO UPDATE SET active=0,source='retired'", (row['id'],))
-        active = self._active_staff(conn)
-        retained = [staff.id for staff in configured if staff.id in active][:self.settings.max_workers]
-        for ident in active - set(retained):
-            conn.execute('UPDATE staff_state SET active=0 WHERE agent_id=?', (ident,))
         for request in conn.execute("SELECT * FROM requests WHERE status='running'").fetchall():
             reason = self._staff_reason(conn, {'id': request['agent_id']}, request['type'])
             if reason:
@@ -53,17 +52,17 @@ class OrganizationStaffingStore:
             import hashlib
             ident = 'reviewer-' + hashlib.sha256(team.encode()).hexdigest()[:16]
             conn.execute('INSERT OR IGNORE INTO agents VALUES (?,?,?,?,?,?)',
-                         (ident, f'Reviewer · {team}', 'Employee', 'manager', team, '["request.review"]'))
+                         (ident, f'Reviewer · {team}', 'Worker', 'manager', team, '["request.review"]'))
             applier_id = 'control:apply:' + hashlib.sha256(team.encode()).hexdigest()[:16]
             conn.execute('INSERT OR IGNORE INTO agents VALUES (?,?,?,?,?,?)',
-                         (applier_id, f'Workspace applier · {team}', 'Employee', 'manager', team, '["request.apply","request.validate"]'))
+                         (applier_id, f'Workspace applier · {team}', 'Worker', 'manager', team, '["request.apply","request.validate"]'))
             conn.execute('UPDATE agents SET accepts=? WHERE id=?', ('["request.apply","request.validate"]', applier_id))
 
     def _staff(self, agent_id):
-        return next((staff for staff in configured_workers(self.settings) if staff.id == agent_id), None)
+        return next((staff for staff in configured_staff(self.settings) if staff.id == agent_id), None)
 
     def _active_staff(self, conn):
-        return {row[0] for row in conn.execute('SELECT agent_id FROM staff_state WHERE active=1')}
+        return {row[0] for row in conn.execute("SELECT s.agent_id FROM staff_state s JOIN agents a ON a.id=s.agent_id WHERE s.active=1 AND a.role='Worker'")}
 
     def _staff_reason(self, conn, agent, request_type):
         state = conn.execute('SELECT * FROM staff_state WHERE agent_id=?', (agent['id'],)).fetchone()
@@ -90,8 +89,9 @@ class OrganizationStaffingStore:
     def _staffing_context(self):
         return [{'id': staff.id, 'name': staff.name, 'team': staff.team,
                  'capabilities': list(staff.capabilities), 'tools': list(staff.tool_grants),
-                 'enabled': staff.enabled, 'availableReason': staff_unavailability(staff, self.settings)}
-                for staff in configured_workers(self.settings)]
+                 'enabled': staff.enabled, 'role': staff.role, 'managerId': staff.manager_id,
+                 'responsibilities': list(staff.responsibilities), 'purpose': staff.purpose, 'availableReason': staff_unavailability(staff, self.settings)}
+                for staff in configured_staff(self.settings)]
 
     def _route_reason(self, conn, request):
         if request['type'] == 'request.merge':
@@ -130,7 +130,8 @@ class OrganizationStaffingStore:
         active = self._active_staff(conn)
         available = [staff for staff in configured_workers(self.settings)
                      if staff.id not in active and staff.team == request['team']
-                     and staff_unavailability(staff, self.settings, request['type']) is None]
+                     and staff_unavailability(staff, self.settings, request['type']) is None
+                     and self._assignment_allows(conn, request, {'id': staff.id, 'manager_id': staff.manager_id})]
         if not available:
             return False
         self._request(conn, request['objective_id'], 'request.hire', self.settings.team, request['priority'],
@@ -141,26 +142,38 @@ class OrganizationStaffingStore:
     def _queue_staffing(self, conn, request, workers, normalized):
         routes = list(dict.fromkeys((task[5], task[4]) for task in normalized))
         active = self._active_staff(conn)
-        eligible_active = {staff.id for staff in configured_workers(self.settings) if staff.id in active
-                           and any(staff.team == team and kind in staff.capabilities
-                                   and not staff_unavailability(staff, self.settings, request_type=kind)
-                                   for team, kind in routes)}
-        # One hire request retains every requested route. Impossible staffing is
-        # visible, never filled with a worker from a different team/capability.
-        missing_route = any(not any(staff.id in active and staff.team == team and kind in staff.capabilities
-                                   and not staff_unavailability(staff, self.settings, request_type=kind)
-                                   for staff in configured_workers(self.settings)) for team, kind in routes)
-        needs_hire = workers > len(active) if self.settings.roster is None else (workers > len(eligible_active) or missing_route)
-        if needs_hire:
+        task_requests = conn.execute("SELECT * FROM requests WHERE objective_id=? AND task_id IS NOT NULL "
+                                     "AND type NOT LIKE 'request.%' AND status='queued'", (request['objective_id'],)).fetchall()
+        missing_route = any(not any(staff.id in active and staff.team == task_request['team']
+                                    and not staff_unavailability(staff, self.settings, task_request['type'])
+                                    and self._assignment_allows(conn, task_request, {'id': staff.id, 'manager_id': staff.manager_id})
+                                    for staff in configured_workers(self.settings)) for task_request in task_requests)
+        if workers > len(active) or (self.settings.roster is not None and missing_route):
             self._request(conn, request['objective_id'], 'request.hire', self.settings.team, request['priority'],
                           payload={'workers': workers, 'routes': [{'team': team, 'type': kind} for team, kind in routes]})
 
     def _finish_hire(self, conn, request, result):
         payload = json.loads(request['payload'])
         routes = [(route['team'], route['type']) for route in payload.get('routes', [])]
-        new_staff = select_staff_activation(self.settings, self._active_staff(conn), payload['workers'], routes)
+        active = self._active_staff(conn)
+        needed = []
+        workers = configured_workers(self.settings)
+        for task_request in conn.execute("SELECT * FROM requests WHERE objective_id=? AND task_id IS NOT NULL "
+                                         "AND type NOT LIKE 'request.%' AND status IN ('queued','pending_intervention')",
+                                         (request['objective_id'],)):
+            candidates = [staff for staff in workers if staff.team == task_request['team']
+                          and not staff_unavailability(staff, self.settings, task_request['type'])
+                          and self._assignment_allows(conn, task_request, {'id': staff.id, 'manager_id': staff.manager_id})]
+            if not candidates:
+                raise ValueError(self._route_reason(conn, task_request) + ' No eligible worker matches its persistent assignment.')
+            if any(staff.id in active for staff in candidates):
+                continue
+            selected = next((staff for staff in candidates if staff in needed), candidates[0])
+            if selected not in needed:
+                needed.append(selected)
+        new_staff = (*needed, *select_staff_activation(self.settings, active | {staff.id for staff in needed}, payload['workers'], routes))
         for staff in new_staff:
             conn.execute('UPDATE staff_state SET active=1 WHERE agent_id=?', (staff.id,))
         names = ', '.join(staff.name for staff in new_staff)
-        text = f'Director activated configured staff: {names}.' if new_staff else 'The requested configured staff is already active.'
+        text = f'Manager activated persistent staff: {names}.' if new_staff else 'The requested configured staff is already active.'
         self._event(conn, request['objective_id'], text, 'delegation', request['agent_id'])

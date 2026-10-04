@@ -120,7 +120,7 @@ def test_configured_provider_and_strict_stage_outputs(runtime):
     tasks[1]["dependsOn"] = [0]
     runtime.output["workers"] = 3
     assert executor.execute({"type": "request.plan"}, context, cancel)["workers"] == 3
-    runtime.output["workers"] = 9
+    runtime.output["workers"] = 65
     assert "intervention" in executor.execute({"type": "request.plan"}, context, cancel)
 
     evidence = {"id": "artifact-1", "content": "The artifact bytes"}

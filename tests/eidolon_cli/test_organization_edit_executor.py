@@ -254,6 +254,9 @@ def test_real_agent_localhost_edit_round_cannot_dispatch_configured_patch(manage
     try:
         result = executor.execute({"type": "work.edit"}, {**context, "timeoutSeconds": 20}, threading.Event())
         assert not errors
+        system = next(message['content'] for message in received[0]['messages'] if message['role'] in {'system', 'developer'})
+        assert 'persistent member' in system and 'openQuestions' in system
+        assert "cannot modify another agent's context" in system
         if provider_tool == "read_file":
             assert {key: value for key, value in result.items() if key != "usage"} == outputs[0]
             assert result["usage"] == {"inputTokens": 60, "outputTokens": 40}

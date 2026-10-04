@@ -6,6 +6,7 @@ import type { TipId } from '@/lib/tips/catalog'
 // partial locales should use `defineLocale()` so missing desktop-only strings
 // fall back to English while new keys remain type-checked.
 
+import type { OrganizationRosterCopy } from './organization-roster'
 import type { OrganizationWorkCopy } from './organization-work'
 
 export type Locale = 'en' | 'zh' | 'zh-hant' | 'ja' | 'ar' | 'ru'
@@ -53,6 +54,7 @@ interface AuxTaskCopy {
 
 export interface Translations {
   organizationWork: OrganizationWorkCopy
+  organizationRoster: OrganizationRosterCopy
   organizationRuntime: {
     artifactLoading: string
     artifactError: string

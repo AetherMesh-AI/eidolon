@@ -163,7 +163,7 @@ class OrganizationAcceptanceStore:
             return
         self.prepare_project_acceptance(conn, objective_id)
         evidence = self._current_evidence(conn, objective_id)
-        self._request(conn, objective_id, 'request.integrate', self.settings.team, objective['priority'],
+        self._request(conn, objective_id, 'request.integrate', self._objective_agent(conn, objective_id, 'Manager')['team'], objective['priority'],
                       payload={'evidenceIds': [row['id'] for row in evidence], 'round': control['round']})
         conn.execute("UPDATE objective_control SET status='integrating' WHERE objective_id=?", (objective_id,))
         self._event(conn, objective_id, 'Task reviews complete. Integrated deliverable and independent executive acceptance are required.', 'review')
@@ -201,7 +201,7 @@ class OrganizationAcceptanceStore:
                      (ident, request['objective_id'], control['round'], request['id'], request['agent_id'],
                       content, hashlib.sha256(content.encode()).hexdigest(), summary, json.dumps(expected), time.time()))
         conn.execute("UPDATE objective_control SET status='reviewing',deliverable_id=? WHERE objective_id=?", (ident, request['objective_id']))
-        self._request(conn, request['objective_id'], 'request.accept', self.settings.team, request['priority'],
+        self._request(conn, request['objective_id'], 'request.accept', self._objective_agent(conn, request['objective_id'], 'Executive')['team'], request['priority'],
                       payload={'evidenceIds': [*expected, ident], 'round': control['round']})
 
     def _finish_accept(self, conn, request, result):
@@ -214,7 +214,7 @@ class OrganizationAcceptanceStore:
         approved = result.get('approved')
         if type(approved) is not bool:
             raise ValueError('Objective acceptance requires an explicit boolean decision')
-        if request['agent_id'] != 'executive':
+        if request['agent_id'] != self._objective_agent(conn, request['objective_id'], 'Executive')['id']:
             raise ValueError('Only the independent executive can accept the objective')
         control = conn.execute('SELECT * FROM objective_control WHERE objective_id=?', (request['objective_id'],)).fetchone()
         validate_acceptance_result(result, json.loads(control['criteria']), expected)
@@ -235,7 +235,7 @@ class OrganizationAcceptanceStore:
             self._replan(conn, request['objective_id'], summary, completing_request=request['id'])
         else:
             conn.execute("UPDATE objective_control SET status='blocked',summary=? WHERE objective_id=?", (summary, request['objective_id']))
-            ident = self._request(conn, request['objective_id'], 'request.accept', self.settings.team, request['priority'],
+            ident = self._request(conn, request['objective_id'], 'request.accept', self._objective_agent(conn, request['objective_id'], 'Executive')['team'], request['priority'],
                                   payload={'evidenceIds': expected, 'round': control['round'], 'budgetExhausted': True})
             self._pending(conn, conn.execute('SELECT * FROM requests WHERE id=?', (ident,)).fetchone(),
                           'Objective replan limit reached. Final deliverable rejected: ' + summary[:1500])
@@ -274,7 +274,7 @@ class OrganizationAcceptanceStore:
         conn.execute("UPDATE tasks SET status='cancelled' WHERE objective_id=? AND status!='completed'", (objective_id,))
         conn.execute("UPDATE objective_control SET round=round+1,status='replanning',summary=?,deliverable_id=NULL WHERE objective_id=?", (feedback, objective_id))
         objective = conn.execute('SELECT * FROM objectives WHERE id=?', (objective_id,)).fetchone()
-        self._request(conn, objective_id, 'request.plan', self.settings.team, objective['priority'],
+        self._request(conn, objective_id, 'request.plan', self._objective_agent(conn, objective_id, 'Manager')['team'], objective['priority'],
                       payload={'round': control['round'] + 1, 'feedback': feedback, 'evidenceIds': previous})
         self._event(conn, objective_id, 'A bounded objective replan is queued. Previous artifacts and decisions remain in history.', 'planning')
 

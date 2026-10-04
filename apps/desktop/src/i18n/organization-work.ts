@@ -135,7 +135,7 @@ const copy = {
   legacyUnavailable: ['Local storage is unavailable in this window.', 'このウィンドウではローカルストレージを利用できません。', '此窗口无法使用本地存储。', '此視窗無法使用本機儲存空間。'],
   legacyDemo: ['Static fictional example', '静的な架空の例', '静态虚构示例', '靜態虛構範例'],
   navigationHistory: ['History', '履歴', '历史', '歷程'],
-  historyNote: ['Sessions and legacy profile conversations. Organization employees are listed in Organization.', 'セッションと旧プロファイル会話。組織メンバーは「組織」に表示されます。', '会话及旧配置档案对话。组织成员列在“组织”中。', '工作階段及舊設定檔對話。組織成員列在「組織」中。'],
+  historyNote: ['Sessions and legacy profile conversations. Persistent organization members are listed in Organization.', 'セッションと旧プロファイル会話。永続的な組織メンバーは「組織」に表示されます。', '会话及旧配置档案对话。持久化组织成员列在“组织”中。', '工作階段及舊設定檔對話。持久化組織成員列在「組織」中。'],
   evidenceSource: ['Organization evidence · current connection and profile', '組織の証拠・現在の接続とプロファイル', '组织证据 · 当前连接和配置档案', '組織證據 · 目前連線和設定檔'],
   evidenceEmpty: ['No organization evidence yet', '組織の証拠はまだありません', '尚无组织证据', '尚無組織證據'],
   evidenceNote: ['Retained outputs link to their source objective, task and immutable digest. Session files use their own source history.', '保存された出力は元の目標、タスク、変更不可のダイジェストにリンクします。セッションファイルは独自の履歴を持ちます。', '已保存输出链接到来源目标、任务及不可变摘要。会话文件保留各自来源历史。', '已儲存輸出連結至來源目標、任務及不可變摘要。工作階段檔案保留各自來源歷程。'],

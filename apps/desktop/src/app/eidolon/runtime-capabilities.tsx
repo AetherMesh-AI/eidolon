@@ -16,6 +16,8 @@ export function RuntimeCapabilities({ runtime }: { runtime: OrganizationRuntime 
   return (
     <section aria-label={copy.configuration} className="eid-runtime-capabilities">
       <dl className="eid-runtime-facts">
+        {runtime.maxInflight !== undefined && <><dt>{t.organizationRoster.maxInflight}</dt><dd>{runtime.maxInflight}</dd></>}
+        <dt>{runtime.maxInflight === undefined ? t.organizationRoster.legacyWorkerLimit : t.organizationRoster.defaultWorkers}</dt><dd>{runtime.maxWorkers}</dd>
         <dt>{copy.capabilities}</dt>
         <dd>{runtime.capabilities.join(', ') || copy.noCapabilities}</dd>
         <dt>{copy.readGrant}</dt>

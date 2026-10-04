@@ -1,10 +1,12 @@
 import { defineFieldCopy } from '@/app/settings/field-copy'
 
 import { defineLocale } from './define-locale'
+import { organizationRosterZhHant } from './organization-roster'
 import { organizationWorkZhHant } from './organization-work'
 
 export const zhHant = defineLocale({
   organizationWork: organizationWorkZhHant,
+  organizationRoster: organizationRosterZhHant,
   organizationRuntime: {
     artifactLoading: '正在取得完整成果物',
     artifactError: '無法取得成果物。',

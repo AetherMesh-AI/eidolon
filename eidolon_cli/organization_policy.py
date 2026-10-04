@@ -47,7 +47,8 @@ def persisted_settings(conn):
         values[key] = tuple(values[key])
     if values['roster'] is not None:
         values['roster'] = tuple(OrganizationStaff(**{**staff,
-            'capabilities': tuple(staff['capabilities']), 'tool_grants': tuple(staff['tool_grants'])})
+            'capabilities': tuple(staff['capabilities']), 'tool_grants': tuple(staff['tool_grants']),
+            'responsibilities': tuple(staff.get('responsibilities', ()))})
             for staff in values['roster'])
     return OrganizationSettings(**values)
 

@@ -17,6 +17,7 @@ export function Command({
 }) {
   const { t } = useI18n()
   const copy = t.organizationWork
+  const roster = t.organizationRoster
   const [criteria, setCriteria] = useState('')
   const [goal, setGoal] = useState('')
   const [metadata, setMetadata] = useState<ObjectiveMetadata>({})
@@ -26,6 +27,14 @@ export function Command({
   const sending = useRef(false)
   const navigate = useNavigate()
   const unavailable = snapshot.connection && snapshot.connection.state !== 'ready'
+  // Ownership selection is a capability of persistent-identity runtimes. Older
+  // snapshots continue using their established default owner contract.
+  const hasOwnership = snapshot.agents.some(agent => agent.persistent)
+  const executives = snapshot.agents.filter(agent => agent.role === 'Executive' && agent.lifecycle === 'active' && agent.capabilities.includes('request.accept'))
+  const executiveId = metadata.executiveId ?? (executives.some(agent => agent.id === 'executive') ? 'executive' : '')
+  const managers = snapshot.agents.filter(agent => agent.role === 'Manager' && agent.lifecycle === 'active' && agent.managerId === executiveId && ['request.plan', 'request.integrate'].every(capability => agent.capabilities.includes(capability)))
+  const managerId = metadata.managerId ?? (managers.some(agent => agent.id === 'manager') ? 'manager' : '')
+  const validOwnership = executives.some(agent => agent.id === executiveId) && managers.some(agent => agent.id === managerId)
 
   // eslint-disable-next-line no-restricted-syntax -- component lifetime guard, not a mirrored atom
   useEffect(() => {
@@ -43,6 +52,12 @@ export function Command({
 
     setError('')
 
+    if (hasOwnership && !validOwnership) {
+      setError(roster.ownershipRequired)
+
+      return
+    }
+
     const acceptanceCriteria = criteria
       .split('\n')
       .map(value => value.trim())
@@ -56,6 +71,8 @@ export function Command({
 
     const submitted = {
       ...metadata,
+      executiveId: hasOwnership ? executiveId : undefined,
+      managerId: hasOwnership ? managerId : undefined,
       acceptanceCriteria: acceptanceCriteria.length ? acceptanceCriteria : undefined,
       deliveryMode: metadata.deliveryMode ?? ('source_project' as const)
     }
@@ -117,6 +134,19 @@ export function Command({
           rows={3}
           value={goal}
         />
+        {hasOwnership && <>
+          <label htmlFor="eid-executive">{roster.objectiveExecutive}</label>
+          <select className={controlVariants()} disabled={submitting} id="eid-executive" onChange={event => setMetadata({ ...metadata, executiveId: event.target.value, managerId: '' })} value={executives.some(agent => agent.id === executiveId) ? executiveId : ''}>
+            <option value="">{roster.chooseExecutive}</option>
+            {executives.map(agent => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+          </select>
+          <label htmlFor="eid-manager">{roster.objectiveManager}</label>
+          <select className={controlVariants()} disabled={submitting || !executiveId} id="eid-manager" onChange={event => setMetadata({ ...metadata, managerId: event.target.value })} value={managers.some(agent => agent.id === managerId) ? managerId : ''}>
+            <option value="">{roster.chooseManager}</option>
+            {managers.map(agent => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+          </select>
+          <p className="eid-note">{roster.ownershipNote}</p>
+        </>}
         <label htmlFor="eid-context">{copy.submittedContext}</label>
         <Textarea
           disabled={submitting}

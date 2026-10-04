@@ -1,10 +1,12 @@
 import { FIELD_DESCRIPTIONS, FIELD_LABELS } from '@/app/settings/constants'
 
+import { organizationRosterEn } from './organization-roster'
 import { organizationWorkEn } from './organization-work'
 import type { Translations } from './types'
 
 export const en: Translations = {
   organizationWork: organizationWorkEn,
+  organizationRoster: organizationRosterEn,
   organizationRuntime: {
     artifactLoading: 'Retrieving full artifact',
     artifactError: 'Could not retrieve the artifact.',

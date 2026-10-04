@@ -1,4 +1,4 @@
-# Organization execution, inspection and reviewed workspace edits
+# Persistent organization, execution and reviewed workspace edits
 
 For the current owner-resolution queue, integrated acceptance, validation and
 legacy-surface behavior, see [Organization owner loop](organization-owner-loop.md).
@@ -7,6 +7,98 @@ The Organization workspace now submits durable work to the Python backend. It no
 longer manufactures a team or task graph when an objective is entered. The
 separate example preview remains explicitly fictional and does not contact a
 provider.
+
+## Persistent identities and reusable specialists
+
+Open **Organization** before, during or after an objective to inspect the same
+roster. Each identity has its own purpose, scoped responsibilities, reporting line,
+capability routes and retained context. Idle is a work state. Disabled and retired
+are roster lifecycle states. Stopping execution, completing an objective or
+closing the desktop does not delete identities or their history. A disconnected
+UI labels its last received snapshot; it does not claim the backend is running.
+
+The roster is not a count of concurrently running model calls. Explicit roster
+configuration accepts up to 64 entries; `max_inflight` independently bounds occupied
+execution slots. `max_workers` only seeds the initial default worker pool when
+`roster` is omitted. A specialist can take successive compatible assignments without
+being replaced by a new identity. Changing concurrency does not trim the roster.
+
+The agent inspector shows a stable identity ID and creation time, purpose,
+responsibilities, context summary, personal memory and the 12 most recent retained
+history records. Memory has four bounded categories: facts, decisions, lessons and
+open questions, each retaining at most 24 items of at most 1,000 characters, with a 4,000-character
+total per category. A
+successful, lease-owned finish records memory and history atomically with the work;
+an invalid, stale or cancelled result cannot write them. History links request,
+objective, task and evidence IDs. Model turns receive only four recent history
+summaries, each capped at 300 characters, a context summary of up to 500
+characters, and the four most recent items per memory category capped at 500
+characters each. The inspector retains the broader bounded view. This is a bounded working memory with provenance,
+not a copy of every model transcript or a replacement for exact evidence.
+
+Managers may coordinate across domains through the existing task graph. Task
+inspection distinguishes the planner (`assignedById`), the scoped managing identity
+(`managingAgentId`) and the assigned worker. The worker must match the exact team,
+capability and reporting scope. A requested specific worker must also be eligible.
+Neither collaboration nor memory changes tool grants, provider isolation or review
+requirements. Leaders remain tool-free.
+
+Home lets the owner choose an existing active Executive and one of that Executive’s
+active Managers for a new objective. Switching the Executive clears an incompatible
+Manager selection. This selects responsibility for planning, integration and
+acceptance; it does not create or activate staff. Existing callers that omit these
+IDs keep the established default Executive and Manager.
+
+Example explicit roster in the current profile’s `config.yaml`:
+
+```yaml
+organization:
+  max_inflight: 2
+  capabilities: [work.draft, work.analyze]
+  roster:
+    - id: product-executive
+      name: Product executive
+      role: Executive
+      manager_id: owner
+      team: product
+      responsibilities: [Evaluate integrated product outcomes]
+    - id: research-manager
+      name: Research manager
+      role: Manager
+      manager_id: product-executive
+      team: research
+      responsibilities: [Plan research and coordinate analysis]
+    - id: writing-manager
+      name: Writing manager
+      role: Manager
+      manager_id: product-executive
+      team: writing
+      responsibilities: [Integrate reviewed writing]
+    - id: analyst
+      name: Research analyst
+      role: Worker
+      manager_id: research-manager
+      team: research
+      capabilities: [work.analyze]
+      purpose: Analyze supplied context and preserve reusable findings.
+      responsibilities: [Identify evidence and unresolved questions]
+    - id: writer
+      name: Brief writer
+      role: Worker
+      manager_id: writing-manager
+      team: writing
+      capabilities: [work.draft]
+      responsibilities: [Write briefs from reviewed supplied context]
+```
+
+`role` defaults to Worker. Each Manager must report to an Executive, each Worker
+to a Manager, and each Executive to the human Owner. `responsibilities` accepts up
+to 12 nonempty strings of up to 500 characters; `purpose` accepts up to 3,000
+characters. Existing configured IDs are reconciled without changing their durable
+identity or retained context. Removing an entry retires it; adding the same ID back
+reuses its identity. Restart the profile’s service to adopt configuration changes.
+This increment does not add roster-management actions, a new request protocol,
+new decision/permission workflows, or an autonomous execution loop.
 
 ## Try a supported objective
 
@@ -22,7 +114,7 @@ Submitting starts model work and can incur the configured provider's normal
 charges. Current-profile provider selection is reused; the organization does not
 create credentials, accounts, profiles, or external-agent connections.
 
-The manager creates a task graph. Eligible employees claim requests by request
+The manager creates a task graph. Eligible workers claim requests by request
 type, team and priority. Each deliverable is persisted before a separate reviewer
 checks it. Dependencies unlock only after approval. Open **Requests**, **Tasks**,
 **Activity**, and the artifact inspector to see real state and the full retained
@@ -53,18 +145,19 @@ context, not a guarantee that statements are true or an external action happened
 - `request.integrate`: the manager assembles a full objective deliverable.
 - `request.accept`: a distinct executive checks current criteria, exact task and
   integrated evidence, conflicts, and explicit required checks.
-- `request.hire`: the director activates entries from the configured roster within
-  the worker limit. Its visible route demands preserve planned worker teams and
-  request types; the request itself routes through the director’s control team.
-  Without a roster, backward-compatible logical slots use this profile’s settings.
-  An explicit empty roster has no fallback employees. Hiring does not create
-  profiles, grant permissions, install software, or mean real-world employment.
+- `request.hire`: the staffing manager activates existing configured worker
+  identities. Its visible route demands preserve planned worker teams and request
+  types. Without an explicit roster, the initial worker pool uses this profile’s
+  settings. An explicit empty roster has no fallback workers. Activation does not
+  create profiles, grant permissions, install software, or mean real-world employment.
 
-Owner → Executive → Director → Manager → Employee is the authority hierarchy.
-Director staffing and backend application/validation remain deterministic.
-Planning, working, reviewing, integration and executive acceptance run as
-separate bounded AIAgent turns. A new worker slot is available for actual claims,
-not a simulated activity animation.
+The human Owner sets direction for Executive → Manager → Worker. The old Director
+is now a Manager; its stable `director` ID and historical request, event and
+artifact references are preserved. The existing planning Manager reports directly
+to its Executive, rather than through an extra Director tier. Employee roles become
+Worker roles without discarding identity or work history. Staffing and backend
+application/validation remain deterministic. Planning, working, reviewing,
+integration and executive acceptance run as separate bounded AIAgent turns.
 
 Browsing, writes to source-project files, sending, purchasing and code execution
 are not enabled in this increment. File reads require the explicit inspection grant described below.
@@ -103,7 +196,7 @@ pending rather than borrowing the interactive chat session’s authority.
 - Work survives a backend restart in the profile's `organization/state.db`.
   Queued requests resume. Interrupted/expired claims become visible interventions,
   not blindly replayed provider calls. Use **Retry** after inspecting the reason.
-- Retry attempts, task count, concurrent calls, logical employees, open objectives,
+- Retry attempts, task count, concurrent calls, configured roster entries, open objectives,
   and review revisions are bounded. Exhausted budgets require a revised objective.
 - Duplicate submissions use a persisted idempotency key; reuse with different
   input is rejected. Completed results and stale tokens cannot create duplicate
@@ -132,8 +225,8 @@ The `organization` section of the existing profile `config.yaml` supports:
 
 ```yaml
 organization:
-  max_workers: 2           # 1–8 active configured or legacy logical employees
-  max_inflight: 2          # 1–4 occupied execution slots
+  max_workers: 2           # 1–8 initial default workers, only when roster is omitted
+  max_inflight: 2          # 1–4 occupied execution slots, independent of roster size
   max_tasks: 12            # 1–24 tasks per manager plan
   max_open_objectives: 20  # 1–100
   max_attempts: 2          # 1–3 attempts per request
@@ -196,9 +289,9 @@ the requested file results to that provider. Use a project directory whose
 contents you intend the configured provider to receive.
 
 The manager sees declared staffing routes and grants without gaining the reader’s
-tool itself. The director activates matching configured entries. New entries are
-available until hired; disabled or removed entries never become generic fallback
-workers. Optional paired `provider` and `model` fields select an existing
+tool itself. The staffing manager activates matching configured workers. New
+worker entries are available until activated; disabled or removed entries retain
+their identity and history but never become generic fallback workers. Optional paired `provider` and `model` fields select an existing
 same-profile provider route. The resolved identity must match; unavailable
 providers become intervention instead of silently falling back. Staffing does
 not create or connect separate profiles. Reviewers are independent logical turns,
