@@ -9,6 +9,7 @@ import { test } from 'vitest'
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..')
 const POSIX_SCRIPT = path.join(REPO_ROOT, 'scripts', 'desktop-update', 'posix.sh')
 const WINDOWS_SCRIPT = path.join(REPO_ROOT, 'scripts', 'desktop-update', 'windows.ps1')
+const WINDOWS_SCRIPT_TIMEOUT_MS = 60_000
 
 function sandbox(tag: string) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), `hermes-handoff-marker-${tag}-`))
@@ -62,7 +63,7 @@ function runWindows(installRoot: string, startedAt?: string) {
       '-NoMarkerCleanup',
       '-SelfTestMarker'
     ],
-    { env, encoding: 'utf8' }
+    { env, encoding: 'utf8', timeout: WINDOWS_SCRIPT_TIMEOUT_MS }
   )
 }
 
@@ -71,7 +72,7 @@ function assertScriptHandoff(run: (installRoot: string, startedAt?: string) => R
   const acquiredAt = Math.floor(Date.now() / 1000) - 300
   const preservedResult = run(preserved.installRoot, String(acquiredAt))
 
-  assert.equal(preservedResult.status, 0, String(preservedResult.stderr || preservedResult.stdout))
+  assert.equal(preservedResult.status, 0, String(preservedResult.error || preservedResult.stderr || preservedResult.stdout))
   assert.equal(markerStartedAt(preserved.home), acquiredAt, 'the script must preserve the Desktop acquisition time')
 
   const refreshed = sandbox('refreshed')
@@ -80,7 +81,7 @@ function assertScriptHandoff(run: (installRoot: string, startedAt?: string) => R
   const refreshedResult = run(refreshed.installRoot, 'malformed')
   const after = Math.floor(Date.now() / 1000)
 
-  assert.equal(refreshedResult.status, 0, String(refreshedResult.stderr || refreshedResult.stdout))
+  assert.equal(refreshedResult.status, 0, String(refreshedResult.error || refreshedResult.stderr || refreshedResult.stdout))
   assert.ok(
     markerStartedAt(refreshed.home) >= before && markerStartedAt(refreshed.home) <= after,
     'an invalid hand-off timestamp must start a fresh claim'
@@ -91,7 +92,7 @@ function assertScriptHandoff(run: (installRoot: string, startedAt?: string) => R
   const oversizedResult = run(oversized.installRoot, '99999999999999999999')
   const oversizedAfter = Math.floor(Date.now() / 1000)
 
-  assert.equal(oversizedResult.status, 0, String(oversizedResult.stderr || oversizedResult.stdout))
+  assert.equal(oversizedResult.status, 0, String(oversizedResult.error || oversizedResult.stderr || oversizedResult.stdout))
   assert.ok(
     markerStartedAt(oversized.home) >= oversizedBefore && markerStartedAt(oversized.home) <= oversizedAfter,
     'an oversized hand-off timestamp must start a fresh claim'
@@ -102,6 +103,8 @@ test.skipIf(process.platform === 'win32')('POSIX hand-off preserves the Desktop 
   assertScriptHandoff(runPosix)
 })
 
+// Three sequential PowerShell starts each compile the native helpers. Keep the
+// outer budget above all three bounded child waits plus assertion overhead.
 test.skipIf(process.platform !== 'win32')('PowerShell hand-off preserves the Desktop marker acquisition time', () => {
   assertScriptHandoff(runWindows)
-}, 30_000)
+}, 3 * WINDOWS_SCRIPT_TIMEOUT_MS + 10_000)

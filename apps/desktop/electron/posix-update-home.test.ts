@@ -9,6 +9,8 @@ import { handoffResultPath, readAndConsumeHandoffResult } from './handoff-result
 import { hasReadyPosixUpdater, markerPath, readLiveUpdateMarker, writeUpdateMarker } from './update-marker'
 import { observeUpdaterHandoff, spawnUpdaterProcess } from './updater-process'
 
+const WINDOWS_SCRIPT_TIMEOUT_MS = 60_000
+
 test.skipIf(process.platform === 'win32').each(['managed-source', 'external-checkout', 'legacy-default'])(
   'POSIX update preserves its owning home across %s checkout layouts', layout => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'eidolon-update-home-'))
@@ -101,6 +103,7 @@ test.skipIf(process.platform === 'win32')('real detached worker acknowledges sta
   }
 }, 30_000)
 
+// Leave room outside the bounded PowerShell startup for assertions and cleanup.
 test.skipIf(process.platform !== 'win32')('Windows handoff writes markers and results to the caller-selected home', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'eidolon-update-home-'))
   const home = path.join(tmp, 'profile')
@@ -110,9 +113,9 @@ test.skipIf(process.platform !== 'win32')('Windows handoff writes markers and re
     fs.mkdirSync(root, { recursive: true })
     execFileSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
       path.resolve('../../scripts/desktop-update/windows.ps1'), '-InstallRoot', root, '-NoUi', '-SelfTestMarker'],
-    { env: { ...process.env, HERMES_HOME: home, TEMP: tmp }, timeout: 30_000 })
+    { env: { ...process.env, HERMES_HOME: home, TEMP: tmp }, timeout: WINDOWS_SCRIPT_TIMEOUT_MS })
     expect(readAndConsumeHandoffResult(home)).toMatchObject({ ok: true, exitCode: 0 })
     expect(fs.existsSync(markerPath(home))).toBe(false)
     expect(fs.existsSync(handoffResultPath(path.dirname(root)))).toBe(false)
   } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
-}, 30_000)
+}, WINDOWS_SCRIPT_TIMEOUT_MS + 10_000)
