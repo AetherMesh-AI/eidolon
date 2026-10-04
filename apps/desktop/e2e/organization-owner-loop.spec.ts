@@ -15,6 +15,7 @@ import {
   writeMockProviderConfig
 } from './fixtures'
 import { startMockServer } from './mock-server'
+import { organizationProviderTarget } from './organization-provider-target'
 import { expect, test } from './test'
 
 const objectiveTitle = 'Deploy the unsupported organization fixture'
@@ -27,6 +28,7 @@ const legacyBytes = JSON.stringify({
 let fixture: MockBackendFixture | null = null
 const stages: string[] = []
 const providerErrors: string[] = []
+const providerRequests: Array<{ method: string; path: string }> = []
 
 test.setTimeout(180_000)
 
@@ -39,6 +41,8 @@ async function localOrganizationProvider(mockUrl: string) {
     request.on('end', () => {
       const body = Buffer.concat(chunks)
       try {
+        const target = organizationProviderTarget(mockUrl, request.method, request.url)
+        providerRequests.push({ method: request.method!, path: target.pathname })
         const payload = body.length ? JSON.parse(body.toString('utf8')) as {
           messages?: Array<{ role: string; content: unknown }>
           tools?: unknown[]
@@ -76,8 +80,7 @@ async function localOrganizationProvider(mockUrl: string) {
           }
           return
         }
-        if (!request.url?.startsWith('/v1/')) { throw new Error('Unexpected provider endpoint') }
-        const upstream = http.request(new URL(request.url, mockUrl), {
+        const upstream = http.request(target, {
           method: request.method,
           headers: { ...request.headers, host: new URL(mockUrl).host }
         }, result => {
@@ -112,6 +115,7 @@ async function localOrganizationProvider(mockUrl: string) {
 test.beforeAll(async () => {
   stages.length = 0
   providerErrors.length = 0
+  providerRequests.length = 0
   const mock = await startMockServer()
   const provider = await localOrganizationProvider(mock.url)
   const sandbox = createSandbox('organization-owner-loop')
@@ -143,7 +147,7 @@ test.beforeAll(async () => {
 
 test.afterEach(async ({}, testInfo) => {
   await testInfo.attach('organization-provider-coverage', {
-    body: JSON.stringify({ stages, providerErrors, testStatus: testInfo.status,
+    body: JSON.stringify({ stages, providerErrors, providerRequests, testStatus: testInfo.status,
       expectedOutcome: 'unsupported capability intervention; no worker dispatch or completion' }, null, 2),
     contentType: 'application/json'
   })
