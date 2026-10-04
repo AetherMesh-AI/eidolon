@@ -1,8 +1,4 @@
-"""Tests for the `hermes tools` shared-metrics consent toggle.
-
-AGENTS.md requires outbound telemetry to be reachable from a config gate, the
-setup prompt, AND `hermes tools`. These cover the third surface.
-"""
+"""The `hermes tools` metrics toggle describes and persists local-only behavior."""
 
 from __future__ import annotations
 
@@ -39,14 +35,15 @@ class TestMenuLabel:
         assert "collecting locally" in label
         assert "Nous" not in label
 
-    def test_sending_state_names_the_destination(self):
+    def test_legacy_send_state_still_reports_local_collection(self):
         label = _shared_metrics_menu_label(_config(enabled=True, send=True))
-        assert "sending to Nous" in label
+        assert "collecting locally" in label
+        assert "Nous" not in label
 
 
 class TestToggle:
-    def test_enabling_send_persists(self, monkeypatch):
-        config = _config(enabled=True)
+    def test_legacy_send_is_disabled_and_persisted(self, monkeypatch):
+        config = _config(enabled=True, send=True)
         saved = {}
         monkeypatch.setattr(
             "hermes_cli.setup.prompt_yes_no", lambda *_a, **_k: True
@@ -59,7 +56,7 @@ class TestToggle:
             lambda cfg: saved.update({"cfg": cfg}),
         )
         _configure_shared_metrics_interactive(config)
-        assert config["telemetry"]["shared_metrics"]["send"] is True
+        assert config["telemetry"]["shared_metrics"]["send"] is False
         assert saved, "a consent change must be written to disk"
 
     def test_no_write_when_nothing_changed(self, monkeypatch):

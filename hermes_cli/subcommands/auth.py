@@ -60,7 +60,7 @@ def build_auth_parser(subparsers, *, cmd_auth: Callable) -> None:
         "logout", help="Log out a provider and clear stored auth state")
     auth_logout.add_argument("provider", help="Provider id")
     auth_spotify = auth_subparsers.add_parser(
-        "spotify", help="Authenticate Hermes with Spotify via PKCE")
+        "spotify", help="Authenticate Eidolon with Spotify via PKCE")
     auth_spotify.add_argument(
         "spotify_action", nargs="?", choices=["login", "status", "logout"], default="login")
     auth_spotify.add_argument(

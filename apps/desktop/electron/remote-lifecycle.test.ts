@@ -355,6 +355,8 @@ test('locateHermes throws a hermes-not-found error with an install hint', async 
     (err: any) => {
       assert.equal(err.kind, 'hermes-not-found')
       assert.match(err.message, /install/i)
+      assert.ok(err.message.includes('https://github.com/AetherMesh-AI/Eidolon/releases'))
+      assert.ok(err.message.includes('existing `hermes` executable'))
 
       return true
     }

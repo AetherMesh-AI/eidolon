@@ -9,13 +9,19 @@ import { saveHermesConfig } from '@/hermes'
 
 import { $voiceStopPhrase, applyVoiceStopPhraseFromConfig } from './voice-prefs'
 
+// jsdom's Storage proxy ignores instance method overrides. Spy on its actual
+// method owner so quota/permission failures reach the persistence boundary.
+function storageMethodOwner() {
+  return Object.hasOwn(localStorage, 'setItem') ? localStorage : Object.getPrototypeOf(localStorage)
+}
+
 it('keeps the desktop toggle local across config refreshes', async () => {
   for (const fails of [false, true]) {
     for (const enabled of [false, true]) {
       localStorage.clear()
       vi.resetModules()
       const prefs = await import('./voice-prefs')
-      const write = vi.spyOn(localStorage, 'setItem')
+      const write = vi.spyOn(storageMethodOwner(), 'setItem')
 
       if (fails) {
         write.mockImplementation(() => {
@@ -30,6 +36,7 @@ it('keeps the desktop toggle local across config refreshes', async () => {
         prefs.applyAutoSpeakFromConfig({ voice: { auto_tts: !enabled } })
         expect(prefs.$autoSpeakReplies.get()).toBe(enabled)
         expect(saveHermesConfig).not.toHaveBeenCalled()
+        expect(write).toHaveBeenCalled()
         expect(localStorage.getItem('hermes.desktop.autoSpeakReplies')).toBe(fails ? null : String(enabled))
       } finally {
         write.mockRestore()
@@ -44,7 +51,7 @@ it('migrates the legacy preference once, not on every refresh', async () => {
       localStorage.clear()
       vi.resetModules()
       const prefs = await import('./voice-prefs')
-      const write = vi.spyOn(localStorage, 'setItem')
+      const write = vi.spyOn(storageMethodOwner(), 'setItem')
 
       if (fails) {
         write.mockImplementation(() => {
@@ -58,6 +65,7 @@ it('migrates the legacy preference once, not on every refresh', async () => {
         prefs.applyAutoSpeakFromConfig({ voice: { auto_tts: enabled } })
         prefs.applyAutoSpeakFromConfig({ voice: { auto_tts: !enabled } })
         expect(prefs.$autoSpeakReplies.get()).toBe(enabled)
+        expect(write).toHaveBeenCalledTimes(1)
         expect(localStorage.getItem('hermes.desktop.autoSpeakReplies')).toBe(fails ? null : String(enabled))
       } finally {
         write.mockRestore()

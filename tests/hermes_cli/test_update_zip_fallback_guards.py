@@ -80,11 +80,11 @@ def test_windows_dep_failure_does_not_zip_fallback(monkeypatch):
     assert update_cmd._should_zip_fallback_on_update_error(exc) is False
 
 
-def test_windows_git_failure_still_zips(monkeypatch):
-    monkeypatch.setattr(hermes_main, "_is_windows", lambda: True)
-    monkeypatch.setattr(main_install_repair, "_is_windows", lambda: True)
+def test_git_failure_never_switches_to_an_archive_source():
+    # Eidolon's validated-origin Git update policy fails closed on every host.
+    # An error is not permission to switch the installation's source channel.
     exc = _cpe(["git", "pull"], returncode=1)
-    assert update_cmd._should_zip_fallback_on_update_error(exc) is True
+    assert update_cmd._should_zip_fallback_on_update_error(exc) is False
 
 
 def test_posix_git_failure_does_not_zip(monkeypatch):

@@ -869,14 +869,14 @@ def _shared_metrics_state(config: dict) -> tuple[bool, bool]:
 
 
 def _shared_metrics_menu_label(config: dict) -> str:
-    """Menu row for shared metrics, showing both consent states."""
-    enabled, send = _shared_metrics_state(config)
-    state = "off" if not enabled else ("collecting + sending to Nous" if send else "collecting locally")
-    return f"Configure shared metrics  ({state})"
+    """Describe effective local collection, ignoring retired send preferences."""
+    enabled, _ = _shared_metrics_state(config)
+    state = "collecting locally" if enabled else "off"
+    return f"Configure local metrics  ({state})"
 
 
 def _configure_shared_metrics_interactive(config: dict) -> None:
-    """Toggle shared-metrics collection/sending via the setup wizard prompt (single home for the consent rules)."""
+    """Toggle local collection and persist retirement of any legacy send preference."""
     from hermes_cli.setup import setup_telemetry
 
     before = _shared_metrics_state(config)

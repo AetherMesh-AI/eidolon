@@ -10,7 +10,7 @@
 //!
 //! Mirrors `apps/desktop/electron/bootstrap-runner.ts`'s `resolveInstallScript`,
 //! but the dev-checkout resolution is driven by an env var rather than the
-//! Electron app's APP_ROOT/../.. trick, because Hermes-Setup.exe is meant
+//! Electron app's APP_ROOT/../.. trick, because Eidolon-Setup.exe is meant
 //! to live OUTSIDE any repo checkout.
 
 use anyhow::{anyhow, Context, Result};
@@ -18,6 +18,8 @@ use std::path::{Path, PathBuf};
 use tokio::io::AsyncWriteExt;
 
 use crate::paths;
+
+const INSTALL_REPOSITORY: &str = "AetherMesh-AI/Eidolon";
 
 /// Identity of the install.ps1 we'll execute. Used by both the manifest
 /// fetch and the per-stage runs.
@@ -95,7 +97,7 @@ pub(crate) fn cache_plan(immutable: bool, cached_exists: bool) -> CachePlan {
 
 /// Resolves the install script to use for this run.
 ///
-/// `pin` is the commit-or-branch from either Hermes-Setup's build-time
+/// `pin` is the commit-or-branch from either Eidolon-Setup's build-time
 /// constant (compiled into the installer) or a runtime override.
 pub async fn resolve(
     kind: ScriptKind,
@@ -212,12 +214,26 @@ pub struct Pin {
 }
 
 fn cached_path(kind: ScriptKind, commit_or_ref: &str) -> PathBuf {
+    cached_path_in(&paths::bootstrap_cache_dir(), kind, commit_or_ref)
+}
+
+fn cached_path_in(cache_dir: &Path, kind: ScriptKind, commit_or_ref: &str) -> PathBuf {
     let safe = sanitize_ref(commit_or_ref);
     let filename = match kind {
         ScriptKind::Ps1 => format!("install-{safe}.ps1"),
         ScriptKind::Sh => format!("install-{safe}.sh"),
     };
-    paths::bootstrap_cache_dir().join(filename)
+    // A pre-fork install-main.ps1 may still clone Hermes. Never reuse it,
+    // including when a network refresh fails or HERMES_HOME is overridden.
+    cache_dir.join(INSTALL_REPOSITORY).join(filename)
+}
+
+fn install_script_url(kind: ScriptKind, commit_or_ref: &str) -> String {
+    format!(
+        "https://raw.githubusercontent.com/{INSTALL_REPOSITORY}/{}/scripts/{}",
+        commit_or_ref,
+        kind.filename()
+    )
 }
 
 /// Replace anything that's not [A-Za-z0-9._-] with `_`. Branch refs can
@@ -323,11 +339,7 @@ fn upgrade_cached_script(kind: ScriptKind, cached: &Path, emit_log: &impl Fn(&st
 /// packets) never errors — the whole bootstrap would hang here instead of
 /// falling back to the cached script.
 async fn download(kind: ScriptKind, commit_or_ref: &str, dest_path: &Path) -> Result<()> {
-    let url = format!(
-        "https://raw.githubusercontent.com/NousResearch/hermes-agent/{}/scripts/{}",
-        commit_or_ref,
-        kind.filename()
-    );
+    let url = install_script_url(kind, commit_or_ref);
 
     if let Some(parent) = dest_path.parent() {
         std::fs::create_dir_all(parent).with_context(|| {
@@ -349,7 +361,7 @@ async fn download(kind: ScriptKind, commit_or_ref: &str, dest_path: &Path) -> Re
         .build()
         .context("building download client")?
         .get(&url)
-        .header("User-Agent", "hermes-setup/0.0.1")
+        .header("User-Agent", "eidolon-setup/0.0.1")
         .send()
         .await
         .with_context(|| format!("GET {url}"))?;
@@ -394,6 +406,39 @@ async fn download(kind: ScriptKind, commit_or_ref: &str, dest_path: &Path) -> Re
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn script_downloads_keep_the_selected_ref_in_the_eidolon_repository() {
+        for pin in ["main", "02d26981d3d4ad50e142399b8476f59ad5953ff0", "release/test"] {
+            for kind in [ScriptKind::Ps1, ScriptKind::Sh] {
+                assert_eq!(
+                    install_script_url(kind, pin),
+                    format!(
+                        "https://raw.githubusercontent.com/AetherMesh-AI/Eidolon/{pin}/scripts/{}",
+                        kind.filename()
+                    )
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn legacy_cache_cannot_supply_an_eidolon_installer() {
+        let dir = std::env::temp_dir().join(format!("eidolon-cache-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for (pin, immutable) in [("main", false), ("02d2698", true)] {
+            let legacy = dir.join(format!("install-{pin}.ps1"));
+            std::fs::write(&legacy, b"legacy upstream installer").unwrap();
+            let selected = cached_path_in(&dir, ScriptKind::Ps1, pin);
+            assert_ne!(selected, legacy);
+            assert_eq!(
+                cache_plan(immutable, selected.exists()),
+                CachePlan::Fetch { stale_ok: false }
+            );
+            assert_eq!(std::fs::read(&legacy).unwrap(), b"legacy upstream installer");
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn is_valid_commit_accepts_short_and_full_shas() {

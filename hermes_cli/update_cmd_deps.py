@@ -233,7 +233,7 @@ def _restore_active_tool_dependencies(
         return
 
     print()
-    print(f"→ Restoring {len(missing)} Hermes Tools dependency set(s)...")
+    print(f"→ Restoring {len(missing)} tool dependency set(s)...")
     restored: list[str] = []
     failed: list[tuple[str, str]] = []
     for name, install_args in missing:
@@ -947,7 +947,7 @@ def _refuse_update_if_venv_foreign_owned(project_root) -> None:
     if not foreign:
         return
     print("\n✗ Update stopped: this install's venv contains files owned by another user.")
-    print("  Updating now would fail midway (Permission denied) and leave Hermes broken.")
+    print("  Updating now would fail midway (Permission denied) and leave Eidolon broken.")
     print("  This usually happens after running hermes or pip with sudo. Offending paths:")
     for p, uid in foreign:
         print(f"    - {p} (owner uid {uid})")
@@ -1049,4 +1049,4 @@ def _sync_python_dependencies_after_pull(
         print(f"  ⚠ {failing_module} still fails to import after updating:")
         print(f"      {import_error}")
         print("    Run `hermes update` again — if it persists, reinstall:")
-        print("    https://hermes-agent.nousresearch.com")
+        print("    https://github.com/AetherMesh-AI/eidolon#readme")

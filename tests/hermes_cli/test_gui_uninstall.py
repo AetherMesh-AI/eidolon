@@ -52,8 +52,8 @@ def test_gui_install_summary_shape(tmp_path, monkeypatch):
     hermes_home = tmp_path / ".hermes"
     _make_agent(hermes_home)
     _make_gui_build(hermes_home)
-    monkeypatch.setattr(gu, "packaged_gui_app_paths", lambda: [])
-    monkeypatch.setattr(gu, "desktop_userdata_dir", lambda: tmp_path / "none")
+    monkeypatch.setattr(gu, "packaged_gui_app_paths", lambda _home=None: [])
+    monkeypatch.setattr(gu, "desktop_userdata_dir", lambda _home=None: tmp_path / "none")
 
     summary = gu.gui_install_summary(hermes_home)
     # JSON-serializable primitives the desktop UI gates on.
@@ -71,16 +71,19 @@ def test_gui_install_summary_shape(tmp_path, monkeypatch):
 
 def test_linux_discovery_includes_launcher_entry(tmp_path, monkeypatch):
     """The launcher entry that `hermes desktop` installs is removable."""
-    monkeypatch.setattr(gu.sys, "platform", "linux")
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
 
     from hermes_cli import linux_desktop_entry as lde
 
-    assert lde.desktop_entry_path() in gu.packaged_gui_app_paths()
+    home = tmp_path / ".eidolon"
+    entry = lde.desktop_entry_path()
+    entry.parent.mkdir(parents=True)
+    entry.write_text(f"[Desktop Entry]\nX-Eidolon-Home={home.resolve()}\n")
+    assert entry in gu.packaged_gui_app_paths(home)
+    assert gu.packaged_gui_app_paths(tmp_path / "other") == []
 
 
 def test_uninstall_removes_launcher_entry_and_refreshes_cache(tmp_path, monkeypatch):
-    monkeypatch.setattr(gu.sys, "platform", "linux")
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
 
     from hermes_cli import linux_desktop_entry as lde
@@ -99,8 +102,9 @@ def test_uninstall_removes_launcher_entry_and_refreshes_cache(tmp_path, monkeypa
     icon = lde.icon_path(hermes_home / "hermes-agent")
     icon.parent.mkdir(parents=True, exist_ok=True)
     icon.write_bytes(b"\x89PNG")
-    monkeypatch.setattr(gu, "desktop_userdata_dir", lambda: tmp_path / "none")
+    monkeypatch.setattr(gu, "desktop_userdata_dir", lambda _home=None: tmp_path / "none")
 
+    entry.write_text(f"[Desktop Entry]\nX-Eidolon-Home={hermes_home.resolve()}\n")
     removed = gu.uninstall_gui(hermes_home)
 
     assert entry in removed and not entry.exists()
@@ -112,14 +116,13 @@ def test_uninstall_removes_launcher_entry_and_refreshes_cache(tmp_path, monkeypa
 
 
 def test_uninstall_skips_cache_refresh_when_no_launcher_entry(tmp_path, monkeypatch):
-    monkeypatch.setattr(gu.sys, "platform", "linux")
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
 
     from hermes_cli import linux_desktop_entry as lde
 
     refreshed: list[Path] = []
     monkeypatch.setattr(lde, "refresh_desktop_databases", lambda d: refreshed.append(d) or [])
-    monkeypatch.setattr(gu, "desktop_userdata_dir", lambda: tmp_path / "none")
+    monkeypatch.setattr(gu, "desktop_userdata_dir", lambda _home=None: tmp_path / "none")
 
     gu.uninstall_gui(tmp_path / ".hermes")
 

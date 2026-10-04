@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import platform
 import subprocess
 import sys
 from pathlib import Path
@@ -89,12 +90,7 @@ def _make_packaged_executable(root: Path, monkeypatch) -> Path:
     to include it.
     """
     desktop_dir = root / "apps" / "desktop"
-    if sys.platform == "darwin":
-        exe = desktop_dir / "release" / "mac-arm64" / "Eidolon.app" / "Contents" / "MacOS" / "Eidolon"
-    elif sys.platform == "win32":
-        exe = desktop_dir / "release" / "win-unpacked" / "Hermes.exe"
-    else:
-        exe = desktop_dir / "release" / "linux-unpacked" / "hermes"
+    exe = desktop_dir / "release" / _packaged_exe_rel()
     exe.parent.mkdir(parents=True, exist_ok=True)
     exe.write_text("", encoding="utf-8")
     if sys.platform not in ("darwin", "win32"):
@@ -113,10 +109,16 @@ def _staging_dir_from(cmd) -> Path:
 
 def _packaged_exe_rel() -> Path:
     """Packaged-exe path relative to electron-builder's output dir on THIS host."""
+    machine = platform.machine().casefold()
     if sys.platform == "darwin":
-        return Path("mac-arm64") / "Eidolon.app" / "Contents" / "MacOS" / "Eidolon"
+        directory = "mac-arm64" if machine in ("arm64", "aarch64") else "mac"
+        return Path(directory) / "Eidolon.app" / "Contents" / "MacOS" / "Eidolon"
     if sys.platform == "win32":
         return Path("win-unpacked") / "Hermes.exe"
+    if machine in ("arm64", "aarch64"):
+        return Path("linux-arm64-unpacked") / "hermes"
+    if machine in ("x86", "i386", "i486", "i586", "i686", "ia32"):
+        return Path("linux-ia32-unpacked") / "hermes"
     return Path("linux-unpacked") / "hermes"
 
 
@@ -137,7 +139,7 @@ def _pack_into_staging(root: Path, content: str = "", returncode: int = 0):
     return _run
 
 
-def test_gui_installs_packages_and_launches_desktop_app(tmp_path, monkeypatch):
+def test_gui_installs_packages_and_launches_desktop_app(tmp_path, monkeypatch, capsys):
     root = _make_desktop_tree(tmp_path)
     desktop_dir = root / "apps" / "desktop"
     monkeypatch.setattr(cli_main, "PROJECT_ROOT", root)
@@ -180,6 +182,7 @@ def test_gui_installs_packages_and_launches_desktop_app(tmp_path, monkeypatch):
     else:
         assert launched == [str(packaged_exe)]
     assert mock_run.call_args_list[1].kwargs["cwd"] == desktop_dir
+    assert f"Launching packaged Eidolon Desktop: {' '.join(launched)}" in capsys.readouterr().out
 
 
 def test_gui_install_env_prepends_managed_node_on_bare_path(tmp_path, monkeypatch):
@@ -250,10 +253,61 @@ def test_gui_install_env_prepends_managed_node_on_bare_path(tmp_path, monkeypatc
 
 @pytest.mark.macos_only
 def test_packaged_eidolon_executable_is_discovered(tmp_path):
-    executable = tmp_path / "mac-arm64/Eidolon.app/Contents/MacOS/Eidolon"
+    executable = tmp_path / _packaged_exe_rel()
     executable.parent.mkdir(parents=True)
     executable.write_text("packaged executable", encoding="utf-8")
     assert main_desktop._desktop_packaged_executable_in(tmp_path) == executable
+
+
+@pytest.mark.linux_only
+@pytest.mark.parametrize("helper_present", [False, True])
+def test_linux_sandbox_failure_reports_eidolon_and_relevant_artifact(
+    tmp_path, monkeypatch, capsys, helper_present
+):
+    executable = tmp_path / "linux-unpacked/Eidolon"
+    executable.parent.mkdir()
+    executable.write_bytes(b"packaged executable")
+    sandbox = executable.parent / "chrome-sandbox"
+    if helper_present:
+        sandbox.write_bytes(b"sandbox helper")
+        sandbox.chmod(0o755)
+    monkeypatch.setattr(main_desktop, "_desktop_linux_userns_sandbox_available", lambda: False)
+    monkeypatch.setattr(main_desktop.shutil, "which", lambda name: None)
+
+    assert main_desktop._desktop_linux_sandbox_fixup(executable) is False
+    output = capsys.readouterr().out
+    assert "Eidolon Desktop" in output
+    if helper_present:
+        assert "requires sudo" in output
+    else:
+        assert "is missing" in output
+        assert str(sandbox) in output
+
+
+@pytest.mark.macos_only
+@pytest.mark.parametrize("bundle_id", ["com.aethermesh-ai.eidolon", "com.nousresearch.hermes", None])
+def test_tcc_help_uses_selected_bundle_identifier_and_preserves_certificate(
+    tmp_path, monkeypatch, capsys, bundle_id
+):
+    import plistlib
+
+    root = _make_desktop_tree(tmp_path)
+    monkeypatch.setattr(cli_main, "PROJECT_ROOT", root)
+    executable = _make_packaged_executable(root, monkeypatch)
+    info = executable.parent.parent / "Info.plist"
+    info.write_bytes(plistlib.dumps({"CFBundleIdentifier": bundle_id} if bundle_id else {}))
+    monkeypatch.setattr(main_desktop.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(main_desktop, "_macos_codesigning_identity_valid", lambda security, identity: True)
+    monkeypatch.setattr(main_desktop, "_desktop_macos_relaunchable_fixup", lambda desktop_dir: True)
+    with patch("hermes_cli.config.set_config_value") as set_config:
+        assert main_desktop._desktop_macos_setup_tcc_identity() is True
+    set_config.assert_called_once_with("desktop.macos_signing_identity", "Hermes Local Signing")
+    output = capsys.readouterr().out
+    if bundle_id:
+        assert f"tccutil reset All {bundle_id}" in output
+    else:
+        assert "System Settings > Privacy & Security" in output
+        assert "tccutil reset All" not in output
 
 
 def _write_zip(path: Path) -> None:
@@ -1226,7 +1280,7 @@ def test_gui_linux_packaged_launch_bridges_detected_password_store(tmp_path, mon
 
 
 @pytest.mark.linux_only
-def test_gui_linux_source_launch_bridges_detected_password_store(tmp_path, monkeypatch):
+def test_gui_linux_source_launch_bridges_detected_password_store(tmp_path, monkeypatch, capsys):
     _clear_keychain_env(monkeypatch)
     root = _make_desktop_tree(tmp_path)
     monkeypatch.setattr(cli_main, "PROJECT_ROOT", root)
@@ -1247,6 +1301,7 @@ def test_gui_linux_source_launch_bridges_detected_password_store(tmp_path, monke
     assert mock_run.call_args_list[1].args[0] == ["/usr/bin/npm", "exec", "--", "electron", "."]
     launch_env = mock_run.call_args_list[1].kwargs["env"]
     assert launch_env["HERMES_DESKTOP_PASSWORD_STORE"] == "kwallet6"
+    assert "Launching Eidolon Desktop from source build" in capsys.readouterr().out
 
 
 @pytest.mark.linux_only

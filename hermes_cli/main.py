@@ -1583,7 +1583,7 @@ def _first_run_setup_guard(args) -> None:
     """No provider configured: offer `hermes setup` (TTY) or exit 1 with guidance."""
     print()
     print(
-        "It looks like Hermes isn't configured yet -- no API keys or providers found."
+        "It looks like Eidolon isn't configured yet -- no API keys or providers found."
     )
     print()
     print("  Run:  hermes setup")
@@ -2186,7 +2186,7 @@ def _update_preflight_handled(args) -> bool:
     from hermes_cli.config import is_managed, managed_error
 
     if is_managed():
-        managed_error("update Hermes Agent")
+        managed_error("update Eidolon")
         return True
 
     # --plan is read-only and deployment-kind aware, so it runs BEFORE the

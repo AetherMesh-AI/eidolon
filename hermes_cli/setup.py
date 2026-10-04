@@ -1,4 +1,4 @@
-"""Interactive setup wizard for Hermes Agent (config lives in ~/.hermes/).
+"""Interactive setup wizard for Eidolon (config lives in ~/.hermes/).
 
 Independently-runnable sections: Model & Provider, Terminal Backend, Agent Settings, Messaging
 Platforms, Tools. Section bodies live in sibling setup_* modules and are re-exported here; they
@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 
-_DOCS_BASE = "https://hermes-agent.nousresearch.com/docs"
+_DOCS_BASE = "https://github.com/AetherMesh-AI/eidolon/blob/main/website/docs"
 _BRACKETED_PASTE_PATTERN = re.compile(r"\x1b\[\s*200~|\x1b\[\s*201~")
 
 
@@ -80,12 +80,12 @@ def is_interactive_stdin() -> bool:
 def print_noninteractive_setup_guidance(reason: str | None = None) -> None:
     """Print guidance for headless/non-interactive setup flows."""
     print()
-    print(color("⚕ Hermes Setup — Non-interactive mode", Colors.CYAN, Colors.BOLD))
+    print(color("◇ Eidolon Setup — Non-interactive mode", Colors.CYAN, Colors.BOLD))
     print()
     if reason:
         print_info(reason)
     _info("The interactive wizard cannot be used here.", None,
-          "Configure Hermes using environment variables or config commands:",
+          "Configure Eidolon using environment variables or config commands:",
           "  hermes config set model.provider custom",
           "  hermes config set model.base_url http://localhost:8080/v1",
           "  hermes config set model.default your-model-name", None,
@@ -372,7 +372,7 @@ def setup_model_provider(config: dict, *, quick: bool = False):
     from hermes_cli.config import load_config, save_config
     print_header("Inference Provider")
     _info("Choose how to connect to your main chat model.",
-          f"   Guide: {_DOCS_BASE}/integrations/providers", None)
+          f"   Guide: {_DOCS_BASE}/integrations/providers.md", None)
     from hermes_cli.main import select_provider_and_model
     try:
         select_provider_and_model()
@@ -435,7 +435,7 @@ _TOOL_PROGRESS_HELP = (
 def setup_agent_settings(config: dict):
     """Configure agent behavior: iterations, progress display and compression."""
     print_header("Agent Settings")
-    _info(f"   Guide: {_DOCS_BASE}/user-guide/configuration", None)
+    _info(f"   Guide: {_DOCS_BASE}/user-guide/configuration.md", None)
 
     # ── Max Iterations ── (config.yaml is authoritative; never surface a stale legacy .env value)
     # If a legacy .env entry is still around (from pre-PR#18413 setups), prefer the config value so we don't
@@ -492,44 +492,22 @@ def setup_tools(config: dict, first_install: bool = False):
 # ── Shared Metrics ──
 
 
-_SEND_CONSENT_EXPLAINER = (
-    "", "Sending uploads each daily package to the Nous telemetry",
-    "service. Packages carry your profile-scoped install ID, a",
-    "stable random UUID that identifies this profile across days",
-    "(it contains no personal information and is reset by deleting",
-    "the shared-metrics directory). Only packages whose entire",
-    "collection period falls inside a recorded consent window are",
-    "ever sent — data from before you opt in, or from any gap",
-    "while sending was off, stays on this machine. Sending can be", "turned off again at any time.",
-)
-
-
 def setup_telemetry(config: dict):
-    """Configure the local shared-metrics subscriber and optional sending."""
-    print_header("Shared Metrics")
-    _info("Shared metrics contain only bounded counters and histograms.",
-          "Collection is local. Sending them to Nous is a separate opt-in.")
+    """Configure local metrics; inherited upstream sending is retired."""
+    print_header("Local Metrics")
+    _info("Metrics contain bounded counters and histograms stored on this machine.",
+          "Eidolon does not send these metrics to an upstream telemetry service.")
     shared_metrics = _sub_dict(_sub_dict(config, "telemetry"), "shared_metrics")
     current = shared_metrics.get("enabled") is True
-    shared_metrics["enabled"] = prompt_yes_no("Enable local shared metrics?", default=current)
-    if not shared_metrics["enabled"]:
-        print_info("Local shared metrics disabled.")
-        # Sending cannot outlive collection (send=true would log an error every run, never send).
-        if shared_metrics.get("send") is True:
-            shared_metrics["send"] = False
-            print_info("Sending shared metrics disabled as well.")
-        # Turning collection off withdraws send consent too. Recorded unconditionally: the send
-        # key may already be false while the consent window is still open, and it must close.
-        _record_send_consent_change(enabled=False)
-        return
-    print_success("Local shared metrics enabled.")
-    _info(*_SEND_CONSENT_EXPLAINER)
-    shared_metrics["send"] = prompt_yes_no("Send shared metrics to Nous?", default=shared_metrics.get("send") is True)
-    _record_send_consent_change(enabled=shared_metrics["send"])
-    if shared_metrics["send"]:
-        print_success("Sending shared metrics enabled.")
+    shared_metrics["enabled"] = prompt_yes_no("Enable local metrics?", default=current)
+    shared_metrics["send"] = False
+    # Retire any consent inherited from the original application. Collection
+    # stays independent, and legacy send=true must never revive transmission.
+    _record_send_consent_change(enabled=False)
+    if shared_metrics["enabled"]:
+        print_success("Local metrics enabled.")
     else:
-        print_info("Sending shared metrics disabled (collection stays local).")
+        print_info("Local metrics disabled.")
 
 
 def _record_send_consent_change(*, enabled: bool) -> None:
@@ -602,7 +580,7 @@ def _run_setup_section(config: dict, section: str) -> None:
         print_info(f"Available sections: {', '.join(k for k, _, _ in SETUP_SECTIONS)}")
         return
     label, func = entry
-    _print_banner(f"│     ⚕ Hermes Setup — {label:<34s} │")
+    _print_banner(f"│     ◇ Eidolon Setup — {label:<34s} │")
     _run_setup_steps([(label, lambda: func(config))])
     save_config(config)
     print()
@@ -690,9 +668,9 @@ def _run_setup_wizard_impl(args):
     from hermes_cli.auth import get_active_provider
     is_existing = bool(get_env_value("OPENROUTER_API_KEY") or get_env_value("OPENAI_BASE_URL")
                        or get_active_provider() is not None)
-    _print_banner("│             ⚕ Hermes Agent Setup Wizard                │",
+    _print_banner("│             ◇ Eidolon Setup Wizard                │",
                   "├─────────────────────────────────────────────────────────┤",
-                  "│  Let's configure your Hermes Agent installation.       │",
+                  "│  Let's configure your Eidolon installation.       │",
                   "│  Press Ctrl+C at any time to exit.                     │")
     migration_ran = False
     if is_existing:
@@ -703,7 +681,7 @@ def _run_setup_wizard_impl(args):
             _run_setup_steps([("Quick Setup", lambda: _run_quick_setup(config, hermes_home))])
             return
         print_header("Reconfigure", gap=True)
-        print_success("You already have Hermes configured.")
+        print_success("You already have Eidolon configured.")
         _info("Running the full wizard — each prompt shows your current value.",
               "Press Enter to keep it, or type a new value to change it.", "",
               "Tip: jump straight to a section with 'hermes setup model|terminal|",
@@ -716,7 +694,7 @@ def _run_setup_wizard_impl(args):
         migration_ran = _offer_openclaw_migration(hermes_home)  # before configuration begins
         if migration_ran:
             config = load_config()
-        setup_mode = prompt_choice("How would you like to set up Hermes?", [label for label, _ in _FIRST_TIME_MODES], 0)
+        setup_mode = prompt_choice("How would you like to set up Eidolon?", [label for label, _ in _FIRST_TIME_MODES], 0)
         label, runner = _FIRST_TIME_MODES[setup_mode]
         if runner is not None:
             from hermes_cli import setup_quick

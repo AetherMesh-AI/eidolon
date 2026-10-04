@@ -3,12 +3,18 @@ import { PassThrough } from 'stream'
 import { Box, renderSync } from '@hermes/ink'
 import chalk from 'chalk'
 import React from 'react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AUDIO_DIRECTIVE_RE, INLINE_RE, Md, MEDIA_LINE_RE, stripInlineMarkup } from '../components/markdown.js'
 import { __resetLinkTitleCache, fetchLinkTitle } from '../lib/externalLink.js'
 import { stripAnsi } from '../lib/text.js'
 import { DEFAULT_THEME, LIGHT_THEME } from '../theme.js'
+
+beforeEach(() => {
+  // Rendering a link may fetch its title. Fixture URLs must never leave the
+  // test process; title-resolution tests replace this with fixture HTML.
+  vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Network disabled in markdown tests')))
+})
 
 afterEach(() => {
   __resetLinkTitleCache()
@@ -272,13 +278,15 @@ describe('Md wrapping', () => {
 
 describe('Md link labels', () => {
   it('renders bare URLs with readable slug labels', () => {
+    const url = 'https://travel.example.invalid/things-to-do/puerto-rico-el-yunque-rainforest-adventure'
+
     const lines = renderPlain(
       React.createElement(
         Box,
         { width: 120 },
         React.createElement(Md, {
           t: DEFAULT_THEME,
-          text: 'see https://www.expedia.com/things-to-do/puerto-rico-el-yunque-rainforest-adventure for details'
+          text: `see ${url} for details`
         })
       )
     )
@@ -286,11 +294,12 @@ describe('Md link labels', () => {
     const rendered = lines.join('\n')
 
     expect(rendered).toContain('Puerto Rico El Yunque Rainforest Adventure')
-    expect(rendered).not.toContain('https://www.expedia.com/things-to-do/puerto-rico-el-yunque-rainforest-adventure')
+    expect(rendered).not.toContain(url)
+    expect(fetch).toHaveBeenCalledWith(url, expect.objectContaining({ redirect: 'follow' }))
   })
 
   it('keeps the authored markdown label even when a page title resolves', async () => {
-    const url = 'https://www.expedia.com/things-to-do/puerto-rico-el-yunque-rainforest-adventure'
+    const url = 'https://travel.example.invalid/things-to-do/puerto-rico-el-yunque-rainforest-adventure'
 
     // Warm the shared cache so `useLinkTitle` would have a title to render
     // synchronously — the label must still win.
@@ -311,7 +320,7 @@ describe('Md link labels', () => {
   })
 
   it('still resolves titles for links whose label is just the URL', async () => {
-    const url = 'https://www.expedia.com/things-to-do/puerto-rico-el-yunque-rainforest-adventure'
+    const url = 'https://travel.example.invalid/things-to-do/puerto-rico-el-yunque-rainforest-adventure'
 
     await stubFetchedTitle(url, 'Rainforest Adventure Tour')
 

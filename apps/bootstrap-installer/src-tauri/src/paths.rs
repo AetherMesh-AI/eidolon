@@ -1,51 +1,36 @@
 //! Filesystem paths + logging setup.
 //!
-//! Mirrors `hermes_constants.get_hermes_home()` from the Python CLI:
-//!   Windows: %LOCALAPPDATA%\hermes
-//!   macOS:   ~/.hermes
-//!   Linux:   ~/.hermes  (override via $HERMES_HOME)
-//!
-//! NOTE (macOS): Python's get_hermes_home(), scripts/install.sh, and the
-//! Electron desktop's resolveHermesHome() ALL use ~/.hermes on macOS — there
-//! is no ~/Library/Application Support branch anywhere else. An earlier
-//! version of this file used Application Support, which drifted from every
-//! other component: the installer wrote the install to one dir and the
-//! desktop looked for it in another, so first launch never found the backend.
-//!
-//! IMPORTANT: this must match exactly. Drift here means install.ps1
-//! writes to one place and the installer reads from another, breaking
-//! the bootstrap-complete check.
+//! Matches Eidolon's Python runtime, Electron desktop, and install scripts:
+//! the default is ~/.eidolon on every platform, including Windows.
+//! HERMES_HOME remains an explicit compatibility override. Never discover,
+//! adopt, or migrate a pre-existing Hermes installation implicitly.
 
 use std::path::{Path, PathBuf};
 #[cfg(target_os = "macos")]
 use std::process::Command;
 use tracing_appender::non_blocking::WorkerGuard;
 
-/// Returns the canonical Hermes home directory, respecting $HERMES_HOME if set.
+/// Returns the isolated Eidolon home, respecting an explicit HERMES_HOME override.
 pub fn hermes_home() -> PathBuf {
-    if let Ok(override_path) = std::env::var("HERMES_HOME") {
+    resolve_home(std::env::var("HERMES_HOME").ok(), dirs::home_dir())
+}
+
+fn resolve_home(override_path: Option<String>, user_home: Option<PathBuf>) -> PathBuf {
+    if let Some(override_path) = override_path {
         if !override_path.trim().is_empty() {
             return PathBuf::from(override_path);
         }
     }
 
-    #[cfg(target_os = "windows")]
-    {
-        // %LOCALAPPDATA%\hermes — matches scripts/install.ps1's $HermesHome.
-        if let Some(local_app_data) = dirs::data_local_dir() {
-            return local_app_data.join("hermes");
-        }
-    }
-
-    // macOS + Linux + fallback: ~/.hermes (matches Python get_hermes_home(),
-    // install.sh, and the Electron desktop's resolveHermesHome()).
-    if let Some(home) = dirs::home_dir() {
-        return home.join(".hermes");
+    // Fork isolation is intentional: an existing .hermes profile must never
+    // redirect this installer into another product's code or credentials.
+    if let Some(home) = user_home {
+        return home.join(".eidolon");
     }
 
     // Last resort — current dir, almost certainly wrong but at least
     // doesn't panic.
-    PathBuf::from(".hermes")
+    PathBuf::from(".eidolon")
 }
 
 pub fn log_dir() -> PathBuf {
@@ -66,8 +51,8 @@ pub fn bootstrap_cache_dir() -> PathBuf {
 /// HERMES_HOME so it survives repo checkout deletion (unlike anything under
 /// hermes-agent/).
 ///
-/// On Windows this is `%LOCALAPPDATA%\hermes\hermes-setup.exe`; on other
-/// platforms the extension differs but the directory is the same.
+/// The legacy executable basename is retained for launcher compatibility;
+/// the containing home is Eidolon's unless explicitly overridden.
 pub fn installer_dest() -> PathBuf {
     let name = if cfg!(target_os = "windows") {
         "hermes-setup.exe"
@@ -213,4 +198,31 @@ pub fn open_log_dir(app: tauri::AppHandle) -> Result<(), String> {
     app.opener()
         .open_path(path.to_string_lossy(), None::<&str>)
         .map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_home_is_isolated_from_hermes_on_every_platform() {
+        let user_home = PathBuf::from("fixture-home");
+        for unset in [None, Some(String::new()), Some("   ".to_string())] {
+            assert_eq!(
+                resolve_home(unset, Some(user_home.clone())),
+                user_home.join(".eidolon")
+            );
+        }
+        assert_eq!(resolve_home(None, None), PathBuf::from(".eidolon"));
+    }
+
+    #[test]
+    fn an_explicit_compatibility_home_wins_without_migration() {
+        for selected in ["custom-profile", ".hermes"] {
+            assert_eq!(
+                resolve_home(Some(selected.to_string()), Some(PathBuf::from("fixture-home"))),
+                PathBuf::from(selected)
+            );
+        }
+    }
 }

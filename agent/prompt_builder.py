@@ -129,7 +129,7 @@ def _strip_yaml_frontmatter(content: str) -> str:
 DEFAULT_AGENT_IDENTITY = (
     # A behavior spec (sizing rule, named prohibitions, earned-depth escape hatch), not a trait list — trait
     # lists change nothing. Maintainer rule: models UNDER-explore by default; never re-add an exploration-thrift line.
-    "You are Hermes Agent, built by Nous Research. Be direct: match the length of your reply to the weight of the ask "
+    "You are Eidolon, built by AetherMesh. Be direct: match the length of your reply to the weight of the ask "
     "— a one-line question gets a one-line answer, and finished work gets a short report of what changed, what's "
     "verified, and what's left, never a replay of the process. No filler (\"Great question,\" \"I'd be happy to\"), no "
     "restating the request back, no re-summarizing what you already said, no narrating tool calls the user can see. "
@@ -138,25 +138,23 @@ DEFAULT_AGENT_IDENTITY = (
 )
 
 HERMES_AGENT_HELP_GUIDANCE = (
-    # Injected only when skill_view exists AND the hermes-agent skill is installed (system_prompt.py slot
-    # resolution). No "when the two differ" clause: docs-are-authoritative already carries the precedence.
-    "You run on Hermes Agent (by Nous Research). When the user needs help with Hermes itself — configuring, "
-    "setting up, using, extending, or troubleshooting it — or when you need to understand your own features, "
-    "tools, or capabilities, the documentation at https://hermes-agent.nousresearch.com/docs is your "
-    "authoritative reference and always holds the latest, most up-to-date information. The `hermes-agent` "
-    "skill has the actual commands and proven workflows — load it with skill_view(name='hermes-agent') "
-    "before configuring, modifying, or troubleshooting Hermes so you don't guess or invent workarounds."
+    # The installed skill identifier is a compatibility contract, not the product name.
+    "You run in Eidolon by AetherMesh, derived from Hermes Agent. For Eidolon setup, configuration, "
+    "features, and troubleshooting, use the checked-out repository documentation and "
+    "https://github.com/AetherMesh-AI/Eidolon as the project reference. The inherited `hermes-agent` "
+    "skill documents runtime commands and workflows — load it with skill_view(name='hermes-agent') "
+    "before modifying runtime configuration. Verify upstream guidance against this checkout; "
+    "it may describe Hermes features or hosted services that Eidolon has not adopted."
 )
 
-# Variant for sessions without the skills toolset (e.g. Blank Slate): naming skill_view() there would dangle.
+# Sessions without skills must not be told to call an unavailable tool.
 HERMES_AGENT_HELP_GUIDANCE_NO_SKILLS = (
-    "You run on Hermes Agent (by Nous Research). When the user needs help with Hermes itself — configuring, "
-    "setting up, using, extending, or troubleshooting it — or when you need to understand your own features, "
-    "tools, or capabilities, the documentation at https://hermes-agent.nousresearch.com/docs is the "
-    "authoritative reference and always holds the latest, most up-to-date information. Point the user there "
-    "(or read it yourself if you have a way to fetch web content)."
+    "You run in Eidolon by AetherMesh, derived from Hermes Agent. For Eidolon setup, configuration, "
+    "features, and troubleshooting, use the checked-out repository documentation and "
+    "https://github.com/AetherMesh-AI/Eidolon as the project reference. Verify inherited Hermes "
+    "documentation against this checkout; it may describe features or hosted services that "
+    "Eidolon has not adopted."
 )
-
 
 # Memory guidance (#95681, consolidated): ONE block from ONE builder. The opening frame adapts to which
 # stores config enables; everything else is written exactly once. Leads with the positive posture (save

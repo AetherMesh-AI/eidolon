@@ -17,10 +17,20 @@ import pytest
 
 from hermes_cli.observability.shared_metrics import SharedMetricsStore
 from hermes_cli.observability.shared_metrics_sender import (
-    CONSENT_GATE_SQL,
     reconcile_send_consent,
 )
 from hermes_cli.sqlite_util import write_txn
+
+# Test-only projection of historical windows; the production sender is retired.
+CONSENT_GATE_SQL = """EXISTS (
+    SELECT 1 FROM send_consent_windows w
+    WHERE package_outbox.period_start >= w.opened_at
+      AND package_outbox.period_end <=
+          CASE WHEN w.closed_at IS NULL THEN w.last_confirmed_at
+               ELSE w.closed_at END
+)"""
+
+
 
 T0 = datetime(2026, 8, 1, tzinfo=timezone.utc)
 

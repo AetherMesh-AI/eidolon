@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { getOverlayState, resetOverlayState } from '../app/overlayStore.js'
 import { dialogTestApp, gridTestApp } from '../sdk/apps/index.js'
@@ -13,6 +13,7 @@ const key = (overrides: Partial<WidgetInput['key']> = {}, ch = ''): WidgetInput 
   }) as WidgetInput
 
 beforeEach(() => resetOverlayState())
+afterEach(() => vi.unstubAllGlobals())
 
 describe('widget SDK host', () => {
   it('registers the reference apps', () => {
@@ -149,10 +150,22 @@ describe('widget SDK host', () => {
     expect(ambientRailWidth('left')).toBe(0)
   })
 
-  it('ambient apps dock together and toggle independently', () => {
+  it('ambient apps dock together and toggle independently', async () => {
+    const fetchMock = vi.fn(async () => ({
+      json: async () => ({ current_condition: [{ temp_C: '22', weatherCode: '113' }] }),
+      ok: true
+    }))
+
+    vi.stubGlobal('fetch', fetchMock)
     expect(launchWidget('ticker', 'eurusd')).toBeNull()
     expect(launchWidget('weather', '')).toBeNull()
     expect(getOverlayState().ambient.map(a => a.appId)).toEqual(['ticker', 'weather'])
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    await vi.waitFor(() =>
+      expect(getOverlayState().ambient.find(app => app.appId === 'weather')?.state).toMatchObject({
+        phase: { kind: 'ready', report: { tempC: '22' } }
+      })
+    )
 
     // Relaunch with no arg toggles just that app out of the dock.
     expect(launchWidget('ticker', '')).toBeNull()

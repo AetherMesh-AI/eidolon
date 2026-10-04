@@ -3,8 +3,8 @@
   "productName": "Eidolon",
   "private": true,
   "version": "0.1.1",
-  "description": "Eidolon desktop, powered by Hermes Agent.",
-  "author": "Nous Research",
+  "description": "Eidolon, an experimental desktop agent manager from AetherMesh.",
+  "author": "AetherMesh contributors",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/AetherMesh-AI/Eidolon.git"
@@ -280,7 +280,7 @@
     },
     "win": {
       "icon": "assets/icon.ico",
-      "legalTrademarks": "Hermes",
+      "legalTrademarks": "Eidolon",
       "target": [
         "nsis",
         "msi"
@@ -291,8 +291,8 @@
     "linux": {
       "icon": "assets/icon.png",
       "category": "Development",
-      "maintainer": "Nous Research <support@nousresearch.com>",
-      "synopsis": "Eidolon desktop, powered by Hermes Agent.",
+      "maintainer": "AetherMesh",
+      "synopsis": "Eidolon, an experimental desktop agent manager from AetherMesh.",
       "target": [
         "AppImage",
         "deb",

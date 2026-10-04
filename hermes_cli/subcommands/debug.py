@@ -10,7 +10,7 @@ def build_debug_parser(subparsers, *, cmd_debug: Callable) -> None:
     """Attach the ``debug`` subcommand to ``subparsers``."""
     debug_parser = subparsers.add_parser(
         "debug", help="Debug tools — upload logs and system info for support",
-        description="Debug utilities for Hermes Agent. Use 'hermes debug share' to "
+        description="Debug utilities for Eidolon. Use 'hermes debug share' to "
         "upload a debug report (system info + recent logs) to a paste "
         "service and get a shareable URL.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -22,7 +22,6 @@ Examples:
     hermes debug share --expire 30  Keep paste for 30 days
     hermes debug share --local      Print report locally (no upload)
     hermes debug share --no-redact  Disable upload-time secret redaction
-    hermes debug share --nous       Upload to Nous-internal storage (private)
     hermes debug delete <url>       Delete a previously uploaded paste
 """)
     debug_sub = debug_parser.add_subparsers(dest="debug_command")
@@ -46,13 +45,8 @@ Examples:
             "are normally run through agent.redact.redact_sensitive_text "
             "with force=True before upload so credentials are not leaked "
             "into the public paste service.")
-    share_parser.add_argument(
-        "--nous", action="store_true",
-        help="Upload the debug bundle to Nous-internal storage (AWS S3) instead "
-            "of a public paste service. The bundle is private — viewable only "
-            "by Nous staff (and allowlisted Discord mods) via a Google-login-"
-            "gated viewer — and auto-deletes after 14 days. Still force-redacts "
-            "secrets unless --no-redact is also passed.")
+    # Parse old invocations so the handler can reject them without collecting data.
+    share_parser.add_argument("--nous", action="store_true", help=argparse.SUPPRESS)
     delete_parser = debug_sub.add_parser(
         "delete", help="Delete a paste uploaded by 'hermes debug share'")
     delete_parser.add_argument(

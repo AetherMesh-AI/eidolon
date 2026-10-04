@@ -236,9 +236,9 @@ async function locateHermes(ssh, remoteHermesPath) {
   }
 
   const err: any = new Error(
-    'Hermes is not installed on the remote host (could not find a `hermes` executable). ' +
-      'Install it on the remote with:  curl -fsSL https://hermes-agent.nousresearch.com/install.sh | sh  ' +
-      '— or set the Hermes path explicitly in the SSH connection settings.'
+    'No compatible runtime was found on the remote host (could not find a `hermes` executable). ' +
+      'Check the Eidolon installation instructions at https://github.com/AetherMesh-AI/Eidolon/releases ' +
+      '— or set the path to an existing `hermes` executable in the SSH connection settings.'
   )
 
   err.kind = 'hermes-not-found'

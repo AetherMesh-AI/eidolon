@@ -14,8 +14,8 @@ fireworks = ProviderProfile(
     # Attribution headers (canonical Hermes set); via default_headers so they
     # survive switch_model and credential rotation.
     default_headers={
-        "HTTP-Referer": "https://hermes-agent.nousresearch.com",
-        "X-Title": "Hermes Agent",
+        "HTTP-Referer": "https://github.com/AetherMesh-AI/Eidolon",
+        "X-Title": "Eidolon",
         "User-Agent": f"HermesAgent/{_HERMES_VERSION}",
     },
     default_aux_model="accounts/fireworks/models/glm-5p2",

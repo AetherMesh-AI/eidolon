@@ -232,7 +232,7 @@ def rewrite_relative_links(body: str, meta: dict[str, Any]) -> str:
     pointing to the file in the repo.
     """
     source_dir = "skills" if meta["source_kind"] == "bundled" else "optional-skills"
-    base = f"https://github.com/NousResearch/hermes-agent/blob/main/{source_dir}/{meta['rel_path']}"
+    base = f"https://github.com/AetherMesh-AI/eidolon/blob/main/{source_dir}/{meta['rel_path']}"
 
     def sub_link(m: re.Match) -> str:
         text = m.group(1)
@@ -472,7 +472,7 @@ def build_catalog_md_bundled(entries: list[tuple[dict[str, Any], dict[str, Any]]
         "---",
         "sidebar_position: 5",
         'title: "Bundled Skills Catalog"',
-        'description: "Catalog of bundled skills that ship with Hermes Agent"',
+        'description: "Catalog of bundled skills that ship with Eidolon"',
         "---",
         "",
         "# Bundled Skills Catalog",

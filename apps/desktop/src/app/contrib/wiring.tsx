@@ -1310,7 +1310,7 @@ export function ContribWiring({ children }: { children: ReactNode }) {
       {/* Backs confirm() from @/store/confirm — renders only while one is open. */}
       <ConfirmHost />
 
-      {/* Send Diagnostics consent/upload dialog — driven by $sendDiagnostics
+      {/* Local diagnostics notice — driven by $sendDiagnostics
           (error card action); renders nothing until requested. */}
       <SendDiagnosticsHost />
 

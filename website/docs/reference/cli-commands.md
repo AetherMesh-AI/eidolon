@@ -919,13 +919,12 @@ Upload a debug report (system info + recent logs) to a paste service and get a s
 |--------|-------------|
 | `--lines <N>` | Number of log lines to include per log file (default: 200). |
 | `--expire <days>` | Paste expiry in days (default: 7). |
-| `--nous` | Upload to Nous-internal diagnostics storage instead of a public paste service. Use this when Nous support asks for a private diagnostic bundle. |
 | `--local` | Print the report locally instead of uploading. |
 | `--no-redact` | Disable upload-time secret redaction. By default, uploads are redacted. |
 
 The report includes system info (OS, Python version, Hermes version), recent agent, gateway, GUI/dashboard, and desktop logs (512 KB limit per file), and redacted API key status. By default, uploads are redacted so secrets are not included.
 
-Default uploads use public paste services tried in order: paste.rs, dpaste.com. `--nous` uploads the same debug bundle to private Nous diagnostics storage instead; the returned viewer link is for the Nous team and auto-deletes after 14 days.
+Use `--local` to inspect a report without network activity. Explicit public uploads use paste.rs, then dpaste.com, after confirmation. Nous diagnostics uploads are retired in Eidolon: old `--nous` invocations fail before collecting or sending data. Review reports before sharing; logs can include conversation content and file paths even after secret redaction.
 
 ### Examples
 
@@ -933,7 +932,6 @@ Default uploads use public paste services tried in order: paste.rs, dpaste.com. 
 hermes debug share              # Upload debug report, print URL
 hermes debug share --lines 500  # Include more log lines
 hermes debug share --expire 30  # Keep paste for 30 days
-hermes debug share --nous       # Upload a private diagnostics bundle for Nous support
 hermes debug share --local      # Print report to terminal (no upload)
 ```
 

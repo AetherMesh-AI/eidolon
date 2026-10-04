@@ -82,6 +82,17 @@ class TestCliSkinPromptIntegration:
 
 class TestCompactBannerSkinIntegration:
 
+    def test_default_banner_uses_eidolon_at_narrow_and_wide_widths(self):
+        set_active_skin("default")
+        for width in (20, 90):
+            with patch("cli.shutil.get_terminal_size", return_value=SimpleNamespace(columns=width)):
+                rendered = _build_compact_banner()
+            assert "EIDOLON" in rendered
+            assert "NOUS HERMES" not in rendered
+            if width < 30:
+                assert "AetherMesh" in rendered
+
+
     def test_poseidon_compact_banner_uses_skin_branding_instead_of_nous_hermes(self):
         set_active_skin("poseidon")
 

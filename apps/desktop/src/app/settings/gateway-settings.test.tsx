@@ -1,6 +1,8 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { en } from '@/i18n/en'
+
 // Collect the component graph before the behavioral test deadline starts.
 import { GatewaySettings } from './gateway-settings'
 
@@ -42,9 +44,7 @@ describe('GatewaySettings', () => {
   it('loads the machine-level connection config (no profile scoping)', async () => {
     render(<GatewaySettings />)
     expect(await screen.findByText('Local gateway')).toBeTruthy()
-    expect(
-      screen.getByText('Start a private Hermes backend on localhost. This is the default and works offline.')
-    ).toBeTruthy()
+    expect(screen.getByText(en.settings.gateway.localDesc)).toBeTruthy()
 
     // The page manages the machine's gateway connections; it must load the
     // global config, never a per-profile override.

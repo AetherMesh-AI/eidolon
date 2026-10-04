@@ -211,4 +211,5 @@ def test_hermes_agent_launcher_cleanup_on_uninstall(tmp_path):
     with patch.object(Path, "home", return_value=tmp_path):
         removed = remove_wrapper_script()
 
-    assert local_shim in removed, "local hermes-agent wrapper must be removed"
+    assert local_shim not in removed, "an unowned generic wrapper must be preserved"
+    assert local_shim.exists()

@@ -1,8 +1,10 @@
 # Eidolon
 
-Eidolon is an open-source project building a desktop home for persistent AI agents. Its direction is simple: give each agent an ongoing identity, a dedicated conversation, and useful context that can carry forward as you work together.
+Eidolon is AetherMesh's open-source desktop agent manager, under active development. Its direction is simple: give each agent an ongoing identity, a dedicated conversation, and useful context that can carry forward as you work together.
 
 The project brings agent interaction, local data, and coordinated work into one application. You should be able to return to an agent, continue your conversation, and understand what it is doing without managing a collection of disconnected sessions.
+
+The planned `AetherMesh-core` SDK will connect applications to the AetherMesh peer-to-peer AI network. Eidolon is intended to offer that connection as an optional integration while preserving existing AI providers, authentication, credentials, model routing, and other integrations. This describes the project's direction, not a currently verified network capability.
 
 > **Early Alpha / Proof of Concept.** Consult [Eidolon releases](https://github.com/AetherMesh-AI/Eidolon/releases) for build-specific artifacts, verification scope, and limitations. Eidolon is under active development. The direction described here extends beyond the capabilities currently verified. A published artifact does not imply production readiness or supported installers on every platform.
 

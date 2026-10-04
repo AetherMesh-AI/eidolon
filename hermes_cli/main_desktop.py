@@ -126,27 +126,48 @@ def _desktop_packaged_executable(desktop_dir: Path) -> Optional[Path]:
     return _desktop_packaged_executable_in(desktop_dir / "release")
 
 
-def _desktop_packaged_executable_in(release_dir: Path) -> Optional[Path]:
+def _desktop_packaged_executable_in(
+    release_dir: Path, *, platform: Optional[str] = None, architecture: Optional[str] = None
+) -> Optional[Path]:
     """The unpacked Electron app executable under *release_dir* (live ``release`` or a staging dir).
 
     *release_dir* is electron-builder's ``directories.output`` — the live ``apps/desktop/release`` or a
-    stage-and-swap staging dir (#86443).
+    stage-and-swap staging dir (#86443). Legacy names are fallback artifacts in this directory only.
+    ``platform`` and ``architecture`` select the package layout without changing the host OS.
     """
-    if sys.platform == "darwin":
-        candidates = list(release_dir.glob("mac*/Eidolon.app/Contents/MacOS/Eidolon"))
-    elif sys.platform == "win32":
+    from platform import machine
+
+    platform = sys.platform if platform is None else platform
+    architecture = (machine() if architecture is None else architecture).casefold()
+    arch = {
+        "x86_64": "x64", "amd64": "x64", "x64": "x64",
+        "aarch64": "arm64", "arm64": "arm64",
+        "x86": "ia32", "i386": "ia32", "i486": "ia32", "i586": "ia32", "i686": "ia32", "ia32": "ia32",
+    }.get(architecture)
+    if platform == "darwin":
+        directories = {"x64": ("mac", "mac-universal"), "arm64": ("mac-arm64", "mac-universal")}.get(arch, ())
         candidates = [
-            release_dir / d / "Hermes.exe" for d in ("win-unpacked", "win-ia32-unpacked", "win-arm64-unpacked")
+            release_dir / directory / f"{name}.app" / "Contents" / "MacOS" / name
+            for directory in directories for name in ("Eidolon", "Hermes")
+        ]
+    elif platform == "win32":
+        candidates = [
+            release_dir / d / n for d in ("win-unpacked", "win-ia32-unpacked", "win-arm64-unpacked")
+            for n in ("Eidolon.exe", "Hermes.exe")
         ]
     else:
+        directories = {
+            "x64": ("linux-unpacked",), "arm64": ("linux-arm64-unpacked",), "ia32": ("linux-ia32-unpacked",),
+        }.get(arch, ())
         candidates = [
-            release_dir / d / n for d in ("linux-unpacked", "linux-arm64-unpacked") for n in ("hermes", "Hermes")
+            release_dir / d / n for d in directories
+            for n in ("Eidolon", "eidolon", "hermes", "Hermes")
         ]
 
-    existing = [p for p in candidates if p.exists()]
+    existing = [p for p in candidates if p.is_file()]
     if not existing:
         return None
-    if sys.platform == "win32" and len(existing) > 1:
+    if platform == "win32" and len(existing) > 1:
         # A stale win-arm64-unpacked next to the real win-unpacked: picking by
         # mtime can hand a wrong-architecture Hermes.exe to the launcher. Prefer
         # candidates whose PE machine matches the host; mtime when none parse.
@@ -158,6 +179,9 @@ def _desktop_packaged_executable_in(release_dir: Path) -> Optional[Path]:
         matching = [p for p in existing if _pe_machine_or_none(p) in expected]
         if matching:
             existing = matching
+    # Prefer the renamed app only after platform/architecture compatibility.
+    branded = [p for p in existing if p.name.casefold() in ("eidolon", "eidolon.exe")]
+    existing = branded or existing
     return max(existing, key=lambda p: p.stat().st_mtime)
 
 
@@ -464,7 +488,7 @@ def _ensure_desktop_exe_launchable(desktop_dir: Path, packaged_executable: Optio
     if error is None:
         return packaged_executable, False
 
-    print(f"✗ The built Hermes.exe failed its integrity check: {error}\n    at: {packaged_executable}")
+    print(f"✗ The built {packaged_executable.name} failed its integrity check: {error}\n    at: {packaged_executable}")
 
     # Only the exe's OWN output dir is purged (a staging dir), never the live
     # release/ tree that still holds the last working app.
@@ -477,13 +501,13 @@ def _ensure_desktop_exe_launchable(desktop_dir: Path, packaged_executable: Optio
 
     restored = _rollback_desktop_from_backup(packaged_executable)
     if restored is not None:
-        print("  ↩ Update aborted — restored the previous working Hermes.exe from backup.")
+        print(f"  ↩ Update aborted — restored the previous working {restored.name} from backup.")
         print("    Your existing version was kept and still works. Run `hermes desktop`")
         print("    (or the in-app update) again to retry with a fresh Electron download.")
         return restored, True
 
     print("  ✗ No usable backup was found to restore.")
-    print("    Run `hermes desktop --force-build` to rebuild, or re-run the Hermes")
+    print("    Run `hermes desktop --force-build` to rebuild, or re-run the Eidolon")
     print("    installer to repair the install.")
     return None, False
 
@@ -1029,7 +1053,8 @@ def _desktop_macos_setup_tcc_identity(identity: str = "Hermes Local Signing") ->
         return False
 
     desktop_dir = PROJECT_ROOT / "apps" / "desktop"
-    if _desktop_packaged_executable(desktop_dir) is not None:
+    packaged_executable = _desktop_packaged_executable(desktop_dir)
+    if packaged_executable is not None:
         try:
             if _desktop_macos_relaunchable_fixup(desktop_dir):
                 print(
@@ -1039,10 +1064,15 @@ def _desktop_macos_setup_tcc_identity(identity: str = "Hermes Local Signing") ->
         except Exception as exc:
             print(f"  (could not re-sign packaged app: {exc})")
 
+    bundle_id = _desktop_macos_bundle_id(packaged_executable.parents[2]) if packaged_executable else None
+    reset_hint = (
+        f"reset it with:  tccutil reset All {shlex.quote(bundle_id)}" if bundle_id
+        else "review Eidolon's permissions in System Settings > Privacy & Security"
+    )
     print(
         "\n  Note: macOS will re-prompt for permissions ONE final time (the identity "
         "changed). Grant them and they persist from then on. If a permission gets "
-        "stuck, reset it with:  tccutil reset All com.nousresearch.hermes"
+        f"stuck, {reset_hint}"
     )
     return True
 
@@ -1124,7 +1154,7 @@ def _desktop_linux_sandbox_fixup(packaged_executable: Path) -> bool:
 
     sandbox, st = _sandbox_helper_lstat(packaged_executable)
     if not sandbox.exists():
-        print(f"✗ Hermes Desktop is missing Electron's Linux sandbox helper: {sandbox}")
+        print(f"✗ Eidolon Desktop is missing Electron's Linux sandbox helper: {sandbox}")
         return False
     # Reject symlinks — chown/chmod must not follow an attacker-controlled link.
     if st is None:
@@ -1143,7 +1173,7 @@ def _desktop_linux_sandbox_fixup(packaged_executable: Path) -> bool:
 
     sudo = shutil.which("sudo")
     if not sudo:
-        print("✗ Hermes Desktop requires sudo to configure Electron's Linux sandbox helper.")
+        print("✗ Eidolon Desktop requires sudo to configure Electron's Linux sandbox helper.")
         return False
 
     print("→ Configuring Electron Linux sandbox helper (sudo required)...")
@@ -1388,8 +1418,8 @@ def _build_desktop_app(desktop_dir: Path, *, source_mode: bool, npm: str, env: d
                 print(_PREVIOUS_APP_KEPT)
         print(f"  Run manually:  cd apps/desktop && npm run {build_script}")
         if sys.platform == "win32":
-            print("  If this says \"Access is denied\" on Hermes.exe, close any")
-            print("  running Hermes desktop window and retry.")
+            print("  If this says \"Access is denied\" on the desktop executable, close any")
+            print("  running Eidolon desktop window and retry.")
         print("  If the log shows Electron download retries, rebuild via a mirror:")
         print("    ELECTRON_MIRROR=<mirror-base-url> hermes desktop --force-build")
         sys.exit(build_result.returncode or 1)
@@ -1546,7 +1576,7 @@ def cmd_gui(args: argparse.Namespace):
         return
 
     if source_mode:
-        print("→ Launching Hermes Desktop from source build...")
+        print("→ Launching Eidolon Desktop from source build...")
         launch_command = [npm, "exec", "--", "electron", "."]
     else:
         if packaged_executable is None:
@@ -1558,6 +1588,6 @@ def cmd_gui(args: argparse.Namespace):
     if getattr(args, "local", False):
         launch_command.append("--local")
     if not source_mode:
-        print(f"→ Launching packaged Hermes Desktop: {' '.join(launch_command)}")
+        print(f"→ Launching packaged Eidolon Desktop: {' '.join(launch_command)}")
     launch_result = subprocess.run(launch_command, cwd=desktop_dir, env=env, check=False)
     sys.exit(launch_result.returncode)

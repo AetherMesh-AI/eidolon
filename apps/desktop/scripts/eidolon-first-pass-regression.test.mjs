@@ -1,4 +1,4 @@
-import test from 'node:test'
+import { test } from 'vitest'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -91,9 +91,13 @@ for (const status of ['clean', 'untracked', 'tracked', 'detached', 'failed']) {
       assert.equal(payload.dirty, expected)
       const stamp = readInstallStampFromPaths([artifact])
       assert.equal(stamp.dirty, expected)
-      assert.equal(stamp.version, '0.1.0')
-      assert.equal(stamp.distance, 0)
+      // A mutable release-looking tag in an unrelated repository is not the
+      // immutable Eidolon version anchor. Keep provenance explicitly unverified.
+      assert.equal(stamp.version, null)
+      assert.equal(stamp.distance, null)
+      assert.equal(payload.versionSource, 'fallback')
       const version = formatInstallVersion(stamp)
+      assert.match(version, /version unavailable\/unverified/)
       if (expected === null) assert.match(version, /source status unknown/)
       else if (expected) assert.match(version, /dirty source/)
       else assert.doesNotMatch(version, /dirty source|source status unknown/)
@@ -112,7 +116,7 @@ test('version display distinguishes absent and legacy unknown status', () => {
 
 function temp(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'eidolon-regression-'))
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  t.onTestFinished(() => fs.rmSync(root, { recursive: true, force: true }))
   return root
 }
 

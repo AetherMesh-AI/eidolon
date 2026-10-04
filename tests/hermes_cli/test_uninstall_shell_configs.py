@@ -23,7 +23,7 @@ ZSHRC = (
     "alias ll='ls -la'\n"
     "\n"
     "# Hermes Agent\n"
-    'export PATH="$HOME/.local/bin:$PATH"\n'
+    'export PATH="$HOME/.hermes/node/bin:$PATH"\n'
     "\n"
     "source ~/.work-profile\n"
 )

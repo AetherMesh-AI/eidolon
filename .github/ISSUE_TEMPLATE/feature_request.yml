@@ -8,8 +8,8 @@ body:
       value: |
         Thanks for the suggestion! Before submitting, please consider:
 
-        - **Is this a new skill?** Most capabilities should be [skills, not tools](https://github.com/NousResearch/hermes-agent/blob/main/CONTRIBUTING.md#should-it-be-a-skill-or-a-tool). If it's a specialized integration (crypto, NFT, niche SaaS), it belongs on the Skills Hub, not bundled.
-        - **Search [existing issues](https://github.com/NousResearch/hermes-agent/issues)** — someone may have already proposed this.
+        - Read [Eidolon's direction](https://github.com/AetherMesh-AI/Eidolon/blob/main/README.md) and [engineering conventions](https://github.com/AetherMesh-AI/Eidolon/blob/main/CONTRIBUTING.md#engineering-conventions). Prefer existing extension boundaries for specialized integrations.
+        - **Search [existing issues](https://github.com/AetherMesh-AI/Eidolon/issues)** — someone may have already proposed this.
 
   - type: textarea
     id: problem
@@ -17,7 +17,7 @@ body:
       label: Problem or Use Case
       description: What problem does this solve? What are you trying to do that you can't today?
       placeholder: |
-        I'm trying to use Hermes with [provider/platform/workflow] but currently
+        I'm trying to use Eidolon with [provider/platform/workflow] but currently
         there's no way to...
     validations:
       required: true
@@ -44,6 +44,7 @@ body:
     attributes:
       label: Feature Type
       options:
+        - Desktop / agent management
         - New tool
         - New bundled skill
         - CLI improvement
@@ -75,11 +76,11 @@ body:
   - type: textarea
     id: debug-report
     attributes:
-      label: Debug Report (optional)
+      label: Sanitized Diagnostics (optional)
       description: |
-        If this feature request is related to a problem you're experiencing, run `hermes debug share` and paste the links here.
-        In an interactive chat session, you can use `/debug` instead.
-        This helps us understand your environment and any related logs.
+        If relevant, inspect diagnostics locally with `hermes debug share --local` against the affected Eidolon runtime.
+        Include only reviewed, sanitized excerpts. Do not post full logs, private conversations, credentials, or personal data.
+        No diagnostics upload is required.
       placeholder: |
-        Report   https://paste.rs/abc123
+        Relevant error message, with private details removed...
       render: shell

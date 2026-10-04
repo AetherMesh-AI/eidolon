@@ -11,7 +11,7 @@ def build_plugins_parser(subparsers, *, cmd_plugins: Callable) -> None:
     """Attach the ``plugins`` subcommand to ``subparsers``."""
     plugins_parser = subparsers.add_parser(
         "plugins", help="Manage and validate plugins",
-        description="Install, update, remove, list, or validate native Hermes plugins "
+        description="Install, update, remove, list, or validate native Eidolon plugins "
             "and portable Agent Plugins v1 packages. Portable packages install disabled.")
     plugins_subparsers = plugins_parser.add_subparsers(dest="plugins_action")
 

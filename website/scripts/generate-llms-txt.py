@@ -31,6 +31,7 @@ Called from `website/scripts/prebuild.mjs` on every `npm run start` /
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -39,7 +40,7 @@ WEBSITE = SCRIPT_DIR.parent
 DOCS = WEBSITE / "docs"
 STATIC = WEBSITE / "static"
 
-SITE_BASE = "https://hermes-agent.nousresearch.com/docs"
+SITE_BASE = os.environ.get("EIDOLON_DOCS_URL", "http://localhost:3000").rstrip("/") + "/docs"
 
 # The product story: which pages lead, and in what order. Everything not named
 # here is still indexed — ABSORB decides where it lands — so this list is safe
@@ -292,27 +293,15 @@ def emit_llms_index() -> str:
         if slug not in curated:
             absorbed.setdefault(section_for(slug), []).append(slug)
 
-    lines: list[str] = []
-    lines.append("# Hermes Agent")
-    lines.append("")
-    lines.append(
-        "> The self-improving AI agent built by Nous Research. A terminal-native "
-        "autonomous coding and task agent with persistent memory, agent-created skills, "
-        "and a messaging gateway that lives on 21+ messaging platforms — 19 native to "
-        "the gateway plus IRC and Microsoft Teams via plugins (Telegram, Discord, Slack, "
-        "SMS, Matrix, ...). Runs on local, Docker, SSH, Daytona, Modal, or Singularity "
-        "backends. Works with Nous Portal, OpenRouter, OpenAI, Anthropic, Google, or any "
-        "OpenAI-compatible endpoint."
-    )
-    lines.append("")
-    lines.append(
-        "Install: `curl -fsSL https://raw.githubusercontent.com/NousResearch/"
-        "hermes-agent/main/scripts/install.sh | bash`  "
-        "(Linux, macOS, WSL2, Termux)"
-    )
-    lines.append("")
-    lines.append("Repo: https://github.com/NousResearch/hermes-agent")
-    lines.append("")
+    lines: list[str] = [
+        "# Eidolon", "",
+        "> Experimental agent manager by AetherMesh, derived from Hermes Agent. "
+        "Existing providers remain available. Organization/delegation views include "
+        "local prototypes; AetherMesh-core network integration is planned, not active.", "",
+        "Source and setup: https://github.com/AetherMesh-AI/eidolon#readme", "",
+        "Docs may include inherited runtime material. Current README, CONTRIBUTING "
+        "and SECURITY policies take precedence over old support/release claims.", "",
+    ]
 
     for section, items in SECTIONS:
         lines.append(f"## {section}")
@@ -338,15 +327,15 @@ def emit_llms_full() -> str:
     """Concatenate every doc under website/docs/ into a single markdown file."""
     seen: set[Path] = set()
     chunks: list[str] = [
-        "# Hermes Agent — Full Documentation\n",
+        "# Eidolon — Full Documentation\n",
         (
-            "This file is the entire Hermes Agent documentation concatenated for LLM "
+            "This file is the Eidolon documentation, including inherited runtime guides, concatenated for LLM "
             "context ingestion. Section order reflects docs-site navigation: Getting "
-            "Started, Using Hermes, Features, Messaging, Integrations, Guides, "
+            "Started, Using Eidolon, Features, Messaging, Integrations, Guides, "
             "Developer Guide, Reference, then everything else.\n"
         ),
-        "Canonical site: https://hermes-agent.nousresearch.com/docs\n",
-        "Short index: https://hermes-agent.nousresearch.com/docs/llms.txt\n",
+        f"Documentation base: {SITE_BASE}\n",
+        f"Short index: {SITE_BASE}/llms.txt\n",
         "\n---\n\n",
     ]
 

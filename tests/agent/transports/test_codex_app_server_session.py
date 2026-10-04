@@ -41,6 +41,7 @@ class FakeClient:
 
     # API matching CodexAppServerClient
     def initialize(self, **kwargs):
+        self.initialize_params = kwargs
         self._initialized = True
         return {"userAgent": "fake/0.0.0", "codexHome": "/tmp",
                 "platformOs": "linux", "platformFamily": "unix"}
@@ -158,6 +159,8 @@ class TestLifecycle:
         tid_a = s.ensure_started()
         tid_b = s.ensure_started()
         assert tid_a == tid_b == "thread-fake-001"
+        assert client.initialize_params["client_title"] == "Eidolon"
+        assert client.initialize_params["client_name"] == "hermes"
         # thread/start should be called exactly once
         method_calls = [m for (m, _) in client.requests if m == "thread/start"]
         assert len(method_calls) == 1
