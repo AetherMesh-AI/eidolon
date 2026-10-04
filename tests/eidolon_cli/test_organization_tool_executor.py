@@ -361,7 +361,8 @@ def test_real_agent_tool_round_against_local_http_provider(inspection, tmp_path,
     try:
         result = executor.execute({"type": "work.inspect"}, {**context, "timeoutSeconds": 20,
             "objective": {"title": "Inspect source", "description": "Inspect root0/notes.txt and compare the costs."}}, threading.Event())
-        assert result == output
+        assert {key: value for key, value in result.items() if key != "usage"} == output
+        assert result["usage"] == {"inputTokens": 60, "outputTokens": 40}
         assert len(received) == 2
         assert [tool["function"]["name"] for tool in received[0]["tools"]] == ["read_file"]
         assert received[1]["tools"] == received[0]["tools"]
@@ -375,3 +376,35 @@ def test_real_agent_tool_round_against_local_http_provider(inspection, tmp_path,
         server.server_close()
         thread.join(3)
         config._LOAD_CONFIG_CACHE.clear()
+
+
+@pytest.mark.linux_only
+def test_explicit_discovery_grants_have_durable_receipts_and_cannot_replace_source_read(inspection):
+    context, receipts, root = inspection
+    context['toolPolicy']['tools'] += ['list_files', 'search_files']
+    with tool_execution(context, 'work.inspect') as execution:
+        agent, messages = _agent(execution), []
+        calls = [_call('root0', name='list_files', call_id='list'),
+                 _call('root0', name='search_files', call_id='search', query='costs')]
+        agent._execute_tool_calls(SimpleNamespace(tool_calls=calls), messages, 'task-fixture')
+        assert [row['toolName'] for row in receipts.rows] == ['list_files', 'search_files']
+        assert all(row['status'] == 'completed' for row in receipts.rows)
+        with pytest.raises(executor.OrganizationExecutionError, match='persisted successful'):
+            execution.verify_completion()
+        agent._execute_tool_calls(SimpleNamespace(tool_calls=[_call()]), messages, 'task-fixture')
+        execution.verify_completion()
+        from eidolon_cli.organization_tool_executor import validate_retained_receipts
+        validate_retained_receipts(receipts.rows)
+        agent._execute_tool_calls(SimpleNamespace(tool_calls=calls), messages, 'task-fixture')
+        assert len(receipts.rows) == 3
+        assert [row['content'] for row in messages[:2]] == [row['content'] for row in messages[3:]]
+
+
+@pytest.mark.linux_only
+def test_discovery_without_its_explicit_grant_never_starts_a_receipt(inspection):
+    context, receipts, _ = inspection
+    with tool_execution(context, 'work.inspect') as execution:
+        agent = _agent(execution)
+        with pytest.raises(executor.OrganizationExecutionError, match='outside'):
+            agent._execute_tool_calls(SimpleNamespace(tool_calls=[_call('root0', name='list_files')]), [], 'task')
+    assert receipts.rows == []

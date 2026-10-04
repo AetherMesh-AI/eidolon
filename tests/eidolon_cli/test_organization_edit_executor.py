@@ -255,7 +255,8 @@ def test_real_agent_localhost_edit_round_cannot_dispatch_configured_patch(manage
         result = executor.execute({"type": "work.edit"}, {**context, "timeoutSeconds": 20}, threading.Event())
         assert not errors
         if provider_tool == "read_file":
-            assert result == outputs[0]
+            assert {key: value for key, value in result.items() if key != "usage"} == outputs[0]
+            assert result["usage"] == {"inputTokens": 60, "outputTokens": 40}
             assert len(received) == 2 and len(rows) == 1 and rows[0]["status"] == "completed"
             assert received[0]["tools"] == received[1]["tools"]
         else:

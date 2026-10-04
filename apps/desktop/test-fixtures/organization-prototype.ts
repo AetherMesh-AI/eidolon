@@ -1,5 +1,17 @@
-import { demoSnapshot } from './demo'
-import type { Objective, ObjectiveMetadata, OrganizationSnapshot, PrototypeOrganizationAdapter } from './types'
+import { demoSnapshot } from '../src/app/eidolon/demo'
+import type { Objective, ObjectiveMetadata, ObjectiveStatus, OrganizationSnapshot, StaticOrganizationAdapter } from '../src/app/eidolon/types'
+
+// Historical writable simulator retained solely as an isolated test fixture.
+// No production module imports this file.
+interface PrototypeOrganizationAdapter extends StaticOrganizationAdapter {
+  createObjective(title: string, metadata?: ObjectiveMetadata): Objective
+  updateObjectiveMetadata(id: string, metadata: ObjectiveMetadata): void
+  setObjectiveStatus(id: string, status: ObjectiveStatus): void
+  recordOutcome(id: string, summary: string): void
+  resolveDecision(id: string, status: 'approved' | 'rejected'): void
+  loadDemo(): void
+  reset(): void
+}
 
 function validateMetadata(metadata: ObjectiveMetadata) {
   const { progress } = metadata

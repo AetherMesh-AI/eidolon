@@ -91,6 +91,7 @@ import { requestComposerInsert } from '../chat/composer/focus'
 import { useComposerActions } from '../chat/hooks/use-composer-actions'
 import { CommandPalette } from '../command-palette'
 import { triggerAndRefreshCronJobs } from '../cron/cron-actions'
+import { OrganizationRuntimeProvider } from '../eidolon/runtime-provider'
 import { useGatewayBoot } from '../gateway/hooks/use-gateway-boot'
 import { useGatewayRequest } from '../gateway/hooks/use-gateway-request'
 import { useHermesConfigRecord } from '../hooks/use-config-record'
@@ -152,6 +153,7 @@ import { usePetBridge } from './hooks/use-pet-bridge'
 import { useQuickEntryBridge } from './hooks/use-quick-entry-bridge'
 import { useSessionTileDelegate } from './hooks/use-session-tile-delegate'
 import { McpInstallDeepLinkDialog } from './mcp-install-deeplink-dialog'
+import { OrganizationActiveWorkBridge } from './organization-shell'
 import { $restartPreviewServer, useTitlebarToolContributions } from './panes'
 import { createSessionRpcDispatcher } from './session-rpc-dispatcher'
 import { ChatRoutesSurface, SidebarSurface, StatusbarSurface, TerminalSurface } from './surfaces'
@@ -174,6 +176,15 @@ const StarmapView = lazy(async () => ({ default: (await import('../starmap')).St
 export { WiredPane } from './context'
 
 export function ContribWiring({ children }: { children: ReactNode }) {
+  return (
+    <OrganizationRuntimeProvider>
+      <OrganizationActiveWorkBridge />
+      <ContribWiringContent>{children}</ContribWiringContent>
+    </OrganizationRuntimeProvider>
+  )
+}
+
+function ContribWiringContent({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient()
   const location = useLocation()
   const navigate = useNavigate()

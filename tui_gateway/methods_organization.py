@@ -41,6 +41,8 @@ def _organization_method(name: str):
             try:
                 from eidolon_cli.organization_service import get_service
                 from eidolon_cli.profiles import validate_profile_name
+                if not isinstance(params, dict):
+                    raise ValueError("Organization parameters must be an object")
                 profile = params.get("profile")
                 if profile is not None:
                     if not isinstance(profile, str) or len(profile) > 64:
@@ -87,7 +89,7 @@ def _(params, service):
 
 @_organization_method("organization.create")
 def _(params, service):
-    _organization_params(params, {"title", "description", "priority", "idempotencyKey"})
+    _organization_params(params, {"title", "description", "priority", "idempotencyKey", "acceptanceCriteria", "deliveryMode", "requiredChecks"})
     title = _organization_text(params, "title", 500)
     description = _organization_text(params, "description", 12000, optional=True)
     key = _organization_text(params, "idempotencyKey", 128)
@@ -96,7 +98,8 @@ def _(params, service):
         raise ValueError("priority must be low, normal, high, or P1–P5")
     organization = service()
     objective = organization.store.create_objective(title, description, priority,
-                                                     idempotency_key=key)
+                                                     idempotency_key=key, acceptance_criteria=params.get("acceptanceCriteria"),
+                                                     delivery_mode=params.get("deliveryMode", "source_project"), required_checks=params.get("requiredChecks"))
     organization.start()
     return {"objective": objective, "snapshot": _organization_snapshot(organization)}
 
@@ -117,6 +120,18 @@ def _(params, service):
     key = _organization_text(params, "idempotencyKey", 128)
     organization = service()
     organization.retry(request_id, idempotency_key=key)
+    return _organization_snapshot(organization)
+
+
+@_organization_method("organization.resolve")
+def _(params, service):
+    _organization_params(params, {"id", "action", "text", "evidenceIds", "idempotencyKey"})
+    organization = service()
+    organization.resolve(_organization_text(params, "id", 128),
+                         action=_organization_text(params, "action", 64),
+                         text=_organization_text(params, "text", 12000, optional=True),
+                         evidence_ids=params.get("evidenceIds"),
+                         idempotency_key=_organization_text(params, "idempotencyKey", 128))
     return _organization_snapshot(organization)
 
 

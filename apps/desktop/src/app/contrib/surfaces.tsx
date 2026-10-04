@@ -9,37 +9,54 @@
 
 import { useStore } from '@nanostores/react'
 import { type ComponentProps, lazy, memo, type ReactNode, Suspense, useMemo } from 'react'
-import { Navigate, Route, Routes, useNavigate, useParams } from 'react-router'
+import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router'
 
 import { ContribBoundary, ContribRender } from '@/contrib/react/boundary'
 import { useContributions } from '@/contrib/react/use-contributions'
-import { BotsPane } from '@/plugins/eidolon-bots/roster-pane'
 import { $activeConnectionId } from '@/store/connections'
 import { $gateway } from '@/store/gateway'
 import { $activeGatewayProfile } from '@/store/profile'
 import { $freshDraftReady, $gatewayState } from '@/store/session'
 
 import { ChatView } from '../chat'
-import type { ChatSidebar } from '../chat/sidebar'
+import { ChatSidebar } from '../chat/sidebar'
+import { LegacyOrganizationHistory } from '../eidolon/legacy-history'
 import { OrganizationRail } from '../eidolon/rail'
+import { useRuntimeOrganization } from '../eidolon/runtime-provider'
 import { OrganizationWorkspace } from '../eidolon/workspace'
 import { TerminalPaneChrome } from '../right-sidebar/terminal/chrome'
-import { contributedRoutes, navigateToWorkspacePage, NEW_CHAT_ROUTE, ROUTES_AREA, sessionRoute } from '../routes'
+import {
+  contributedRoutes,
+  LEGACY_KANBAN_ROUTE,
+  navigateToWorkspacePage,
+  NEW_CHAT_ROUTE,
+  ROUTES_AREA,
+  sessionRoute
+} from '../routes'
 import { useStatusSnapshot } from '../shell/hooks/use-status-snapshot'
 import { useStatusbarItems } from '../shell/hooks/use-statusbar-items'
 import { ModelMenuPanel } from '../shell/model-menu-panel'
 import { StatusbarControls } from '../shell/statusbar-controls'
 
 import { latestChatActions, latestSidebarActions } from './latest-actions'
+import { LegacyKanbanUnavailable, OrganizationWorkIndicator, PluginNavigation } from './organization-shell'
 import { setStatusbarItemGroup, useStatusbarContributions } from './panes'
 import type { SidebarActions, WiringActions } from './types'
 
 // Same lazy-view split as DesktopController — pages load on demand. The
 // full-page views the workspace route table mounts live here; overlay views
 // (agents/settings/…) are the controller's and stay in wiring.tsx.
-const ArtifactsView = lazy(async () => ({ default: (await import('../artifacts')).ArtifactsView }))
+const ArtifactsView = lazy(async () => ({ default: (await import('../artifacts/workspace')).ArtifactWorkspace }))
 const MessagingView = lazy(async () => ({ default: (await import('../messaging')).MessagingView }))
 const SkillsView = lazy(async () => ({ default: (await import('../skills')).SkillsView }))
+
+export function LegacyKnowledgeRedirect() {
+  const { search, hash } = useLocation()
+  const params = new URLSearchParams(search)
+  params.set('source', 'organization')
+
+  return <Navigate replace to={`/artifacts?${params}${hash}`} />
+}
 
 export function LegacySessionRedirect() {
   const { sessionId } = useParams()
@@ -57,7 +74,19 @@ export const SidebarSurface = memo(function SidebarSurface({
   const latestActions = useMemo(() => latestSidebarActions(actions), [actions])
   const navigate = useNavigate()
 
-  return <OrganizationRail onNavigate={to => navigateToWorkspacePage(navigate, to)} sessions={<BotsPane />} />
+  const organization = useRuntimeOrganization()
+
+  const needsYouCount =
+    organization?.snapshot.requests?.filter(request => request.status === 'pending_intervention').length ?? 0
+
+  return (
+    <OrganizationRail
+      needsYouCount={needsYouCount}
+      onNavigate={to => navigateToWorkspacePage(navigate, to)}
+      pluginNav={<PluginNavigation />}
+      sessions={<ChatSidebar currentView={currentView} historyOnly {...latestActions} />}
+    />
+  )
 })
 
 export const TerminalSurface = memo(function TerminalSurface() {
@@ -89,7 +118,12 @@ export const StatusbarSurface = memo(function StatusbarSurface({
   const gatewayScope = `${activeConnectionId ?? ''}\0${activeGatewayProfile}`
   const { inferenceStatus, statusSnapshot } = useStatusSnapshot(gatewayState, actions.requestGateway, gatewayScope)
   const extraLeftItems = useStatusbarContributions('left')
-  const extraRightItems = useStatusbarContributions('right')
+  const contributedRightItems = useStatusbarContributions('right')
+
+  const extraRightItems = useMemo(
+    () => [{ id: 'organization-work', render: () => <OrganizationWorkIndicator /> }, ...contributedRightItems],
+    [contributedRightItems]
+  )
 
   const { leftStatusbarItems, statusbarItems } = useStatusbarItems({
     agentsOpen,
@@ -169,7 +203,15 @@ export const ChatRoutesSurface = memo(function ChatRoutesSurface({
 
   return (
     <Routes>
-      {['home', 'objectives', 'objectives/:objectiveId', 'organization', 'activity', 'knowledge'].map(path => <Route element={page(<OrganizationWorkspace />)} key={path} path={path} />)}
+      {['home', 'objectives', 'objectives/:objectiveId', 'organization', 'activity', 'requests'].map(path => (
+        <Route element={page(<OrganizationWorkspace />)} key={path} path={path} />
+      ))}
+      <Route element={<LegacyKnowledgeRedirect />} path="knowledge" />
+      <Route element={page(<LegacyOrganizationHistory />)} path="legacy-organization" />
+      <Route element={<Navigate replace to="/legacy-organization" />} path="organization-preview" />
+      {!routeContributions.some(route => route.path === LEGACY_KANBAN_ROUTE) && (
+        <Route element={page(<LegacyKanbanUnavailable />)} path="kanban" />
+      )}
       <Route element={chatView} index />
       <Route element={chatView} path=":sessionId" />
       <Route element={page(<SkillsView setStatusbarItemGroup={setStatusbarItemGroup} />)} path="skills" />

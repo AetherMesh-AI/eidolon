@@ -21,8 +21,10 @@ import type { PluginContext } from '@aethermesh/plugin-sdk'
 import { atom } from 'nanostores'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { $botsPaneVisible, $openBotChat, $selectedRosterKey } from './bot-state'
 import type * as DataModule from './data'
 import type * as RoutingModule from './routing'
+import { getPluginCtx } from './shared'
 
 const mocks = vi.hoisted(() => ({
   botChatOwnsWorkspace: vi.fn(() => false),
@@ -161,6 +163,26 @@ afterEach(() => {
 })
 
 describe('the Bots pane dock', () => {
+  it('releases transient ownership on disable without erasing the selected chat identity', async () => {
+    const store = paneStores()
+    const harness = recordingContext()
+    plugin.register(harness.ctx)
+    $selectedRosterKey.set('local:researcher')
+    $openBotChat.set({ key: 'local:researcher', openedRegistryId: 'canonical', openedSessionId: 'live-tip' })
+    store('hermes-bots:pane').set(true)
+    expect($botsPaneVisible.get()).toBe(true)
+    harness.dispose()
+    expect($botsPaneVisible.get()).toBe(false)
+    expect($openBotChat.get()).toBeNull()
+    expect($selectedRosterKey.get()).toBe('local:researcher')
+    expect(getPluginCtx()).toBeNull()
+    expect(mocks.setWorkspaceScope).toHaveBeenLastCalledWith('sessions')
+    // A scheduled initial pane reconcile cannot resurrect a disabled plugin.
+    mocks.botChatOwnsWorkspace.mockReturnValue(true)
+    await settle()
+    expect(harness.find('routines')).toBeUndefined()
+  })
+
   it('center-stacks into the sessions zone as a standing invariant', () => {
     paneStores()
 

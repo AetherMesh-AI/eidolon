@@ -4,9 +4,12 @@ from eidolon_cli.organization_store import _iso
 from eidolon_cli.organization_receipts import receipt_view
 from eidolon_cli.organization_roster import configured_workers, staff_unavailability
 from eidolon_cli.organization_edits import evidence_proposal
+from eidolon_cli.organization_acceptance import usage_view
+from eidolon_cli.organization_owner import allowed_resolutions
+from eidolon_cli.organization_project_workspace import project_validation_view
 
 
-def build_snapshot(conn, settings, objective_id=None):
+def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
     # Keep every open objective visible; only completed history is windowed.
     rows = (conn.execute("SELECT * FROM objectives WHERE id=?", (objective_id,)).fetchall()
             if objective_id else conn.execute("SELECT * FROM objectives ORDER BY created DESC LIMIT 1000").fetchall())
@@ -17,16 +20,19 @@ def build_snapshot(conn, settings, objective_id=None):
         task_groups.setdefault(task['objective_id'], []).append(task)
     for request in requests:
         request_groups.setdefault(request['objective_id'], []).append(request)
+    controls = {row['objective_id']: row for row in conn.execute('SELECT * FROM objective_control')}
+    rounds = {row['task_id']: row['round'] for row in conn.execute('SELECT * FROM objective_task_rounds')}
     objectives = []
     history_count = 0
     for row in rows:
-        work = task_groups.get(row['id'], [])
+        control = controls[row['id']]
+        work = [task for task in task_groups.get(row['id'], []) if rounds.get(task['id']) == control['round']]
         queue = request_groups.get(row['id'], [])
         if row['cancelled']:
             status = 'cancelled'
         elif any(r['status'] == 'pending_intervention' for r in queue):
             status = 'needs_input'
-        elif work and all(t['status'] == 'completed' for t in work) and all(r['status'] == 'completed' for r in queue):
+        elif control['status'] in {'accepted', 'legacy_completed'}:
             status = 'completed'
         elif not work:
             status = 'planning'
@@ -38,13 +44,25 @@ def build_snapshot(conn, settings, objective_id=None):
             history_count += 1
             if history_count > 25:
                 continue
+        final = conn.execute('SELECT * FROM objective_deliverables WHERE id=?', (control['deliverable_id'],)).fetchone()
+        resolutions = [{'id': item['id'], 'requestId': item['request_id'], 'action': item['action'], 'text': item['text'], 'evidenceIds': json.loads(item['evidence_ids']), 'createdAt': _iso(item['created'])} for item in conn.execute('SELECT * FROM owner_resolutions WHERE objective_id=? ORDER BY created', (row['id'],))]
+        acceptance_review = conn.execute('SELECT * FROM objective_acceptances WHERE objective_id=? AND round=? ORDER BY created DESC LIMIT 1', (row['id'], control['round'])).fetchone()
         done = sum(t['status'] == 'completed' for t in work)
-        objectives.append({'id': row['id'], 'title': row['title'], 'description': row['description'],
+        objectives.append({'id': row['id'], 'title': row['title'], 'description': control['amended_scope'] or row['description'],
+                           'originalDescription': row['description'], 'deliveryMode': control['delivery_mode'],
+                           'requiredChecks': json.loads(control['required_checks']),
+                           'projectValidation': project_validation_view(conn, row['id'], full=False),
+                           'acceptance': {'status': control['status'], 'criteria': json.loads(control['criteria']),
+                                          'round': control['round'], 'maxReplans': min(control['max_replans'], settings.max_replans),
+                                          'summary': control['summary'], 'deliverableId': control['deliverable_id'],
+                                          'criteriaResults': json.loads(acceptance_review['criteria_results']) if acceptance_review else [],
+                                          'conflicts': json.loads(acceptance_review['conflicts']) if acceptance_review else []},
+                           'usage': usage_view(conn, control, settings), 'ownerResolutions': resolutions,
                            'status': status, 'source': 'runtime', 'createdAt': _iso(row['created']),
-                           'ownerId': 'manager', 'priority': f"P{6-row['priority']}",
+                           'ownerId': 'manager' if control['status'] == 'legacy_completed' else 'executive', 'priority': f"P{6-row['priority']}",
                            'progress': round(100 * done / len(work)) if work else 0,
-                           'result': '\n\n'.join(t['result'] or '' for t in work) if status == 'completed' else None,
-                           'phase': 'Reviewed outcome' if status == 'completed' else 'Pending intervention' if status == 'needs_input' else 'Manager planning' if not work else 'Execution and review'})
+                           'result': (final['content'] if final else '\n\n'.join(t['result'] or '' for t in work)) if status == 'completed' else None,
+                           'phase': 'Legacy reviewed outcome' if control['status'] == 'legacy_completed' else 'Accepted integrated outcome' if status == 'completed' else 'Integrated outcome acceptance' if control['status'] in {'integrating', 'reviewing'} else 'Pending intervention' if status == 'needs_input' else 'Manager planning' if not work else 'Execution and review'})
     visible = {o['id'] for o in objectives}
     tasks = [t for t in tasks if t['objective_id'] in visible]
     requests = [r for r in requests if r['objective_id'] in visible]
@@ -69,6 +87,8 @@ def build_snapshot(conn, settings, objective_id=None):
         latest = next((r for r in reversed(requests) if r['task_id'] == task['id']), None)
         proof = evidence_by_task.get(task['id'], [])
         ui_tasks.append({'id': task['id'], 'objectiveId': task['objective_id'], 'title': task['title'],
+                         'currentRound': rounds.get(task['id']) == controls[task['objective_id']]['round'],
+                         'historical': rounds.get(task['id']) != controls[task['objective_id']]['round'],
                          'ownerId': task['author_id'] or (latest['agent_id'] or '' if latest else ''),
                          'reviewerId': latest['agent_id'] if latest and latest['type'] == 'request.review' else None,
                          'status': task['status'], 'dependsOn': json.loads(task['dependencies']),
@@ -97,7 +117,7 @@ def build_snapshot(conn, settings, objective_id=None):
                        'capabilities': accepts, 'requestTypes': accepts,
                        'lifecycle': lifecycle, 'provider': staff.provider if staff else None,
                        'model': staff.model if staff else None, 'tools': list(staff.tool_grants) if staff else [],
-                       'status': 'offline' if disabled else 'reviewing' if running and running['type'] == 'request.review' else 'executing' if running else 'needs_input' if blocked else 'idle',
+                       'status': 'offline' if disabled else 'reviewing' if running and running['type'] in {'request.review', 'request.accept'} else 'executing' if running else 'needs_input' if blocked else 'idle',
                        'summary': reason if disabled else running['type'] if running else blocked['reason'] if blocked else 'Configured staff available for request.hire.' if lifecycle == 'available' else 'Configured organizational role; no work in progress.',
                        'objectiveId': (running or blocked)['objective_id'] if running or blocked else None})
     events = [{'id': f"event_{r['id']}", 'objectiveId': r['objective_id'], 'agentId': r['agent_id'],
@@ -113,6 +133,7 @@ def build_snapshot(conn, settings, objective_id=None):
             receipt_groups.setdefault(row['request_id'], []).append(receipt_view(row))
     ui_requests = [{'id': r['id'], 'objectiveId': r['objective_id'], 'taskId': r['task_id'], 'type': r['type'],
                     'team': r['team'], 'priority': r['priority'], 'status': r['status'], 'agentId': r['agent_id'],
+                    'allowedResolutions': resolution_options(conn, r) if resolution_options else allowed_resolutions(conn, r, settings),
                     'reason': r['reason'], 'attempts': r['attempts'], 'leaseExpiresAt': _iso(r['lease']),
                     'requestedRoutes': json.loads(r['payload']).get('routes', []),
                     'requestedWorkers': json.loads(r['payload']).get('workers'),

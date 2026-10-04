@@ -12,17 +12,21 @@
 import { computed } from 'nanostores'
 
 import type { HermesActiveWork } from '@/global'
+import { $organizationWork } from '@/store/organization-work'
 import { $sessions } from '@/store/session'
 import { $workingSessionIds } from '@/store/session-states'
 
-const $activeWork = computed([$workingSessionIds, $sessions], (workingIds, sessions): HermesActiveWork => {
-  const titleById = new Map(sessions.map(session => [session.id, session.title?.trim() ?? '']))
+const $activeWork = computed(
+  [$workingSessionIds, $sessions, $organizationWork],
+  (workingIds, sessions, organization): HermesActiveWork => {
+    const titleById = new Map(sessions.map(session => [session.id, session.title?.trim() ?? '']))
 
-  return {
-    count: workingIds.length,
-    titles: workingIds.map(id => titleById.get(id) ?? '').filter(Boolean)
+    return {
+      count: workingIds.length + organization.count,
+      titles: [...workingIds.map(id => titleById.get(id) ?? '').filter(Boolean), ...organization.titles]
+    }
   }
-})
+)
 
 if (typeof window !== 'undefined') {
   // `$sessions` republishes on unrelated churn (previews, heartbeats), so only

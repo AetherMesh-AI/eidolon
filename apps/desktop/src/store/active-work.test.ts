@@ -1,7 +1,9 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { OrganizationSnapshot } from '@/app/eidolon/types'
 import type { ClientSessionState } from '@/app/types'
 
+import { clearOrganizationWork, publishOrganizationWork } from './organization-work'
 import { $sessions } from './session'
 import { clearAllSessionStates, publishSessionState } from './session-states'
 
@@ -21,11 +23,35 @@ beforeAll(async () => {
 
 beforeEach(() => {
   clearAllSessionStates()
+  clearOrganizationWork()
   $sessions.set([])
   setActiveWork.mockClear()
 })
 
 describe('active work bridge', () => {
+  it('adds queued and running organization work while preserving ordinary chats', () => {
+    $sessions.set([session('s1', 'Ordinary side chat')])
+    publishSessionState('runtime-1', busy('s1', true))
+    publishOrganizationWork({
+      source: 'runtime',
+      connection: { scope: 'socket', ownerScope: 'profile-a', state: 'ready' },
+      objectives: [{ id: 'o1', title: 'Ship the feature' }],
+      requests: [
+        { id: 'r1', objectiveId: 'o1', status: 'running' },
+        { id: 'r2', objectiveId: 'o1', status: 'queued' }
+      ],
+      tasks: [],
+      agents: [],
+      knowledge: [],
+      activity: []
+    } as unknown as OrganizationSnapshot)
+
+    expect(setActiveWork).toHaveBeenLastCalledWith({
+      count: 3,
+      titles: ['Ordinary side chat', 'Ship the feature']
+    })
+  })
+
   it('reports a busy session by title', () => {
     $sessions.set([session('s1', 'Fix login'), session('s2', 'Idle chat')])
     publishSessionState('runtime-1', busy('s1', true))

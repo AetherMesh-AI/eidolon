@@ -1,9 +1,30 @@
 import { describe, expect, it } from 'vitest'
 
-import { appViewForPath, NEW_CHAT_ROUTE, primaryRouteSelectedSessionId, routeSessionId, sessionRoute, SETTINGS_ROUTE } from './routes'
+import { registry } from '@/contrib/registry'
+
+import {
+  appViewForPath,
+  contributedRoutes,
+  NEW_CHAT_ROUTE,
+  primaryRouteSelectedSessionId,
+  ROUTES_AREA,
+  routeSessionId,
+  sessionRoute,
+  SETTINGS_ROUTE
+} from './routes'
 
 it('keeps organization navigation out of canonical session identity', () => {
-  for (const path of ['/home', '/objectives', '/objectives/example', '/activity', '/knowledge', '/organization']) {
+  for (const path of [
+    '/home',
+    '/objectives',
+    '/objectives/example',
+    '/activity',
+    '/knowledge',
+    '/organization',
+    '/requests',
+    '/legacy-organization',
+    '/organization-preview'
+  ]) {
     expect(routeSessionId(path)).toBeNull()
     expect(appViewForPath(path)).toBe('organization')
     expect(primaryRouteSelectedSessionId(path, 'canonical-session')).toBe('canonical-session')
@@ -35,4 +56,26 @@ describe('primaryRouteSelectedSessionId', () => {
   it('returns null on a non-chat route with no store selection', () => {
     expect(primaryRouteSelectedSessionId(SETTINGS_ROUTE, null)).toBeNull()
   })
+})
+
+it('reserves organization routes while keeping installed plugin pages available', () => {
+  const dispose = registry.registerMany([
+    { id: 'override-requests', area: ROUTES_AREA, data: { path: '/requests' }, render: () => null },
+    { id: 'legacy-kanban', area: ROUTES_AREA, data: { path: '/kanban' }, render: () => null }
+  ])
+
+  try {
+    expect(contributedRoutes().some(route => route.path === '/requests')).toBe(false)
+    expect(contributedRoutes().some(route => route.path === '/kanban')).toBe(true)
+    expect(routeSessionId('/kanban')).toBeNull()
+    expect(appViewForPath('/kanban')).toBe('extension')
+  } finally {
+    dispose()
+  }
+})
+
+it('keeps a disabled legacy Kanban deeplink out of ordinary session history', () => {
+  expect(routeSessionId('/kanban?board=work')).toBeNull()
+  expect(appViewForPath('/kanban')).toBe('extension')
+  expect(primaryRouteSelectedSessionId('/kanban', 'my-chat')).toBe('my-chat')
 })

@@ -103,9 +103,10 @@
 .eid-rail nav a { display: flex; gap: 12px; align-items: center; padding: 9px 12px; color: var(--text-secondary); border-radius: 6px; }
 .eid-rail nav a:hover { background: var(--eidolon-surface-hover); }
 .eid-rail nav a[aria-current=page] { color: var(--aether-300); background: var(--eidolon-surface-3); box-shadow: inset 2px 0 var(--aether-500); }
-.eid-rail details { min-height: 0; flex: 1; display: flex; flex-direction: column; }
+.eid-rail > details { flex: 0 0 auto; max-height: 35%; overflow: auto; }
+.eid-rail > section { display: flex; flex: 1 1 0; min-height: 0; flex-direction: column; }
 .eid-rail summary { cursor: pointer; padding: 12px; color: var(--text-secondary); font-size: 11px; }
-.eid-session-tree { height: 280px; min-height: 100px; overflow: auto; }
+.eid-session-tree { display: flex; flex: 1 1 0; min-height: 0; overflow: hidden; }
 .eid-rail-footer { font-size: 10px; color: var(--text-secondary); padding: 12px; border-top: 1px solid var(--eidolon-border-subtle); }
 @media (max-width: 700px) { .eid-page { padding: 24px 18px; } .eidolon h1 { font-size: 22px; } .eid-command { margin-top: 24px; } .eid-page-header { flex-direction: column; gap: 12px; } .eid-composer-tools { flex-wrap: wrap; } }
 .eid-demo-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 24px; color: var(--text-secondary); font-size: 11px; }
@@ -164,3 +165,7 @@
 .eid-tool-running { color: var(--status-info); }
 .eid-tool-blocked, .eid-tool-unknown { color: var(--status-warning); }
 .eid-tool-failed { color: var(--status-danger); }
+
+.eid-resolution-form { display: flex; flex-direction: column; gap: 16px; margin-top: 20px; }
+.eid-resolution-form > label { display: flex; flex-direction: column; gap: 8px; }
+.eid-owner-history { margin-top: 24px; }

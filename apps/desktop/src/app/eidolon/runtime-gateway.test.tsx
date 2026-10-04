@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { MemoryRouter } from 'react-router'
+import { Link, MemoryRouter, Route, Routes } from 'react-router'
 import { beforeEach, expect, it, vi } from 'vitest'
 
 const routing = vi.hoisted(() => ({ connectionId: 'a', epoch: 1 }))
@@ -29,7 +29,9 @@ import { $activeGatewayRoute, $gateway } from '@/store/gateway'
 import { $activeGatewayProfile, $gatewaySwapTarget } from '@/store/profile'
 import { $connection, $gatewayState } from '@/store/session'
 
-import { createPrototypeAdapter } from './adapter'
+import { createPrototypeAdapter } from '../../../test-fixtures/organization-prototype'
+
+import { createOrganizationScopeReader, OrganizationRuntimeProvider, useRuntimeOrganization } from './runtime-provider'
 import type { OrganizationSnapshot } from './types'
 import { OrganizationWorkspace } from './workspace'
 
@@ -99,7 +101,7 @@ it('keeps the explicit prototype entirely outside the gateway lifecycle', async 
   const request = vi.fn().mockResolvedValue(snapshot('Forbidden live data'))
   $gateway.set({ request, connectionState: 'open' } as never)
   const view = render(<MemoryRouter initialEntries={['/home']}><OrganizationWorkspace adapter={createPrototypeAdapter()} /></MemoryRouter>)
-  expect(screen.getByRole('button', { name: 'Load example' })).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Load example' })).toBeNull()
   await act(async () => {await Promise.resolve()})
   expect(request).not.toHaveBeenCalled()
   view.unmount()
@@ -236,4 +238,39 @@ it('preserves form content and admission receipt when the real requester clears 
     view.unmount()
     window.hermesDesktop = previousDesktop
   }
+})
+
+
+it('keeps one shell subscription polling after leaving organization routes and exposes attention without navigating', async () => {
+  const initial = snapshot('Persistent organization work')
+  const request = vi.fn().mockResolvedValue(initial)
+  $gateway.set({ request, connectionState: 'open' } as never)
+
+  function Attention() {
+    const runtime = useRuntimeOrganization()
+
+    return <span data-testid="attention">{runtime?.snapshot.requests?.filter(item => item.status === 'pending_intervention').length ?? 0}</span>
+  }
+
+  const view = render(<MemoryRouter initialEntries={['/objectives']}><OrganizationRuntimeProvider><Attention /><Link to="/chat">Leave work</Link><Routes><Route element={<OrganizationWorkspace />} path="/objectives" /><Route element={<p>Unrelated chat surface</p>} path="/chat" /></Routes></OrganizationRuntimeProvider></MemoryRouter>)
+  await screen.findByRole('link', { name: /Persistent organization work/ })
+  expect(request).toHaveBeenCalledTimes(1)
+  fireEvent.click(screen.getByRole('link', { name: 'Leave work' }))
+  const changed = { ...initial, requests: [{ id: 'pending', objectiveId: 'Persistent organization work', type: 'request.clarify', team: 'research', priority: 3, attempts: 1, createdAt: '2026-10-04T00:00:00Z', status: 'pending_intervention' as const }] }
+  request.mockResolvedValue(changed)
+  // Reconnect is an immediate refresh while the work route remains unmounted.
+  act(() => {$gatewayState.set('closed')})
+  act(() => {$gatewayState.set('open')})
+  await waitFor(() => expect(screen.getByTestId('attention').textContent).toBe('1'))
+  expect(screen.getByText('Unrelated chat surface')).toBeTruthy()
+  expect(request).toHaveBeenCalledTimes(2)
+  view.unmount()
+})
+
+it('keeps secrets out of renderer scope identity while retaining endpoint and profile separation', () => {
+  $connection.set({ ...connection(), baseUrl: 'https://user:password@example.test/path?token=secret#key' } as never)
+  const getScope = createOrganizationScopeReader()
+  const scope = getScope()
+  expect(scope.key).not.toMatch(/password|secret|token|user:/)
+  expect(scope.ownerKey).toContain('https://example.test/path')
 })

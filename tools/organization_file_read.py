@@ -297,6 +297,177 @@ class OrganizationFileReadScope:
             return self._error("Result metadata exceeds the character limit.", blocked=True)
         return encoded
 
+    def _directory_target(self, path):
+        parts = _path_parts(path, absolute=False)
+        if len(path) > _MAX_ALIAS_PATH_CHARS or parts[0] not in self._roots:
+            raise OrganizationFileReadError("Directory is outside configured read-root aliases.")
+        root, fd = self._roots[parts[0]]
+        _check_lexical_path(_path_parts(root, absolute=True) + parts[1:], self._profile_prefixes)
+        return root, fd, parts[1:]
+
+    def validate_discovery_arguments(self, args, *, search=False):
+        fields = {"path", "limit", "query"} if search else {"path", "limit"}
+        if not isinstance(args, dict) or set(args) - fields:
+            raise OrganizationFileReadError("Unsupported discovery arguments.")
+        self._directory_target(args.get("path"))
+        limit = args.get("limit", 20 if search else 100)
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise OrganizationFileReadError("Discovery limit must be between 1 and 100.")
+        result = {"path": args["path"], "limit": limit}
+        if search:
+            query = args.get("query")
+            if (not isinstance(query, str) or not query or len(query) > 256
+                    or any(ord(char) < 32 for char in query)
+                    or redact_sensitive_text(query, force=True, file_read=True, redact_url_credentials=True) != query):
+                raise OrganizationFileReadError("Search requires bounded non-sensitive literal text.")
+            result["query"] = query
+        return result
+
+    def canonical_discovery_arguments(self, args, *, search=False):
+        try:
+            return self.validate_discovery_arguments(args, search=search)
+        except (OrganizationFileReadError, TypeError):
+            return {}
+
+    def discover_files(self, args, *, search=False):
+        """Bounded no-follow traversal within pinned grants; no implicit read grant."""
+        with self._lock:
+            try:
+                if self._closed:
+                    raise OrganizationFileReadError("Organization file read scope has closed.")
+                args = self.validate_discovery_arguments(args, search=search)
+                root, root_fd, initial = self._directory_target(args["path"])
+                alias = args["path"].split('/')[0]
+                stack, visited, scanned_bytes, reserved_bytes = [initial], 0, 0, 0
+                result = {"success": True, "operation": "search_files" if search else "list_files",
+                          "matches" if search else "files": [], "truncated": False}
+                rows = result["matches" if search else "files"]
+                flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+                while stack and visited < 500 and len(rows) < args["limit"]:
+                    parts = stack.pop()
+                    directory = os.dup(root_fd)
+                    try:
+                        for part in parts:
+                            child = os.open(part, flags, dir_fd=directory)
+                            os.close(directory)
+                            directory = child
+                        with os.scandir(directory) as entries:
+                            for entry in entries:
+                                visited += 1
+                                if visited > 500:
+                                    result["truncated"] = True
+                                    break
+                                relative = (*parts, entry.name)
+                                path = '/'.join((alias, *relative))
+                                absolute = os.path.join(root, *relative)
+                                try:
+                                    _path_parts(path, absolute=False)
+                                    if (len(path) > _MAX_ALIAS_PATH_CHARS
+                                            or redact_sensitive_text(path, force=True, file_read=True, redact_url_credentials=True) != path):
+                                        continue
+                                    path.encode('utf-8')
+                                    _check_lexical_path(_path_parts(absolute, absolute=True), self._profile_prefixes)
+                                    if get_read_block_error(absolute):
+                                        continue
+                                    info = entry.stat(follow_symlinks=False)
+                                    if stat.S_ISDIR(info.st_mode):
+                                        if not search:
+                                            row = {"path": path, "kind": "directory"}
+                                            if len(_json({**result, "files": [*rows, row]})) > self.max_result_chars - 100:
+                                                result["truncated"] = True
+                                                return _json(result)
+                                            rows.append(row)
+                                            if len(rows) >= args["limit"]:
+                                                result["truncated"] = True
+                                                return _json(result)
+                                        if len(relative) < 8:
+                                            stack.append(relative)
+                                        else:
+                                            result["truncated"] = True
+                                        continue
+                                    if (not stat.S_ISREG(info.st_mode) or info.st_nlink > 1
+                                            or has_binary_extension(path) or has_opaque_document_extension(path) or is_pdf_path(path)):
+                                        continue
+                                    if search:
+                                        if reserved_bytes + max(1, info.st_size) > MAX_FILE_BYTES:
+                                            result["truncated"] = True
+                                            continue
+                                        # Charge attempted reads as well as successful text. A
+                                        # growing or invalid file cannot reset the scan budget.
+                                        budget = max(1, info.st_size)
+                                        reserved_bytes += budget
+                                        fd = _open_file(root_fd, relative)
+                                        try:
+                                            content, size = _read_text(fd, budget)
+                                        finally:
+                                            os.close(fd)
+                                        scanned_bytes += size
+                                        content = redact_sensitive_text(content, force=True, file_read=True, redact_url_credentials=True)
+                                        for number, line in enumerate(content.splitlines(), 1):
+                                            if args["query"] in line:
+                                                position = line.find(args["query"])
+                                                start = max(0, position - 120)
+                                                row = {"path": path, "line": number, "column": position + 1,
+                                                       "text": line[start:start + 1000],
+                                                       "truncated": start > 0 or len(line) > start + 1000}
+                                                if len(_json({**result, "matches": [*rows, row]})) > self.max_result_chars - 100:
+                                                    result["truncated"] = True
+                                                    return _json(result)
+                                                rows.append(row)
+                                                if len(rows) >= args["limit"]:
+                                                    result["truncated"] = True
+                                                    return _json(result)
+                                    else:
+                                        row = {"path": path, "kind": "file", "size": info.st_size}
+                                        if len(_json({**result, "files": [*rows, row]})) > self.max_result_chars - 100:
+                                            result["truncated"] = True
+                                            return _json(result)
+                                        rows.append(row)
+                                        if len(rows) >= args["limit"]:
+                                            result["truncated"] = True
+                                            return _json(result)
+                                except (OrganizationFileReadError, OSError, UnicodeError):
+                                    continue
+                    except OSError:
+                        if parts == initial:
+                            raise OrganizationFileReadError("Discovery directory is unavailable or contains a symlink.") from None
+                    finally:
+                        os.close(directory)
+                result["truncated"] = result["truncated"] or bool(stack) or visited >= 500
+                result["scannedEntries"] = min(visited, 500)
+                if search:
+                    result["scannedBytes"] = scanned_bytes
+                return _json(result)
+            except OrganizationFileReadError as error:
+                return self._error(str(error), blocked=True)
+
+    def read_exact_source(self, path: str) -> dict:
+        """Trusted backend observation of bounded source bytes, never model output.
+
+        This always reads the original granted descriptor, bypassing the managed
+        workspace resolver. Used only to verify an owner-performed source merge.
+        """
+        with self._lock:
+            if self._closed:
+                raise OrganizationFileReadError("Organization file read scope has closed.")
+            root, root_fd, parts = self._target(path)
+            absolute = os.path.join(root, *parts)
+            _check_lexical_path(_path_parts(absolute, absolute=True), self._profile_prefixes)
+            if get_read_block_error(absolute):
+                raise OrganizationFileReadError("Protected credential or internal files cannot be read.")
+            if has_binary_extension(path) or has_opaque_document_extension(path) or is_pdf_path(path):
+                raise OrganizationFileReadError("Only plain-text files may be read.")
+            try:
+                fd = _open_file(root_fd, parts)
+                try:
+                    content, size = _read_text(fd, MAX_EDIT_BYTES)
+                finally:
+                    os.close(fd)
+            except OSError:
+                raise OrganizationFileReadError("Source is unavailable or contains a symlink or non-directory.") from None
+            _validate_edit_source(content)
+            return {"content": content, "size": size, "sha256": hashlib.sha256(content.encode("utf-8")).hexdigest()}
+
     def read_file(self, path: str, offset: int = 1, limit: int = MAX_READ_LINES) -> str:
         with self._lock:
             try:
@@ -360,3 +531,17 @@ def organization_file_read_scope(read_roots: tuple[str, ...], max_result_chars: 
     finally:
         _active_scope.reset(token)
         scope.close()
+
+
+def organization_list_files(args):
+    scope = get_organization_file_read_scope()
+    if scope is None:
+        raise OrganizationFileReadError("File discovery requires an organization scope.")
+    return scope.discover_files(args)
+
+
+def organization_search_files(args):
+    scope = get_organization_file_read_scope()
+    if scope is None:
+        raise OrganizationFileReadError("File search requires an organization scope.")
+    return scope.discover_files(args, search=True)

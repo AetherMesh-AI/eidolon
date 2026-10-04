@@ -8,7 +8,7 @@ from eidolon_cli.organization_roster import OrganizationStaff, parse_roster
 
 WORK_CAPABILITIES = ("work.draft", "work.analyze")
 SUPPORTED_WORK_CAPABILITIES = (*WORK_CAPABILITIES, "work.inspect", "work.edit")
-SUPPORTED_TOOL_GRANTS = ("read_file", "patch")
+SUPPORTED_TOOL_GRANTS = ("read_file", "list_files", "search_files", "patch")
 
 
 @dataclass(frozen=True)
@@ -19,6 +19,10 @@ class OrganizationSettings:
     max_open_objectives: int = 20
     max_attempts: int = 2
     max_revisions: int = 2
+    max_replans: int = 2
+    max_stages: int = 120
+    max_owner_resolutions: int = 12
+    max_output_tokens: int = 8000
     lease_seconds: int = 45
     timeout_seconds: int = 180
     team: str = "general"
@@ -36,7 +40,8 @@ class OrganizationSettings:
             raise ValueError("organization must be a configuration object")
         limits = {"max_workers": (1, 8), "max_inflight": (1, 4), "max_tasks": (1, 24),
                   "max_open_objectives": (1, 100), "max_attempts": (1, 3),
-                  "max_revisions": (0, 3), "lease_seconds": (15, 300),
+                  "max_revisions": (0, 3), "max_replans": (0, 3), "max_stages": (4, 300),
+                  "max_owner_resolutions": (1, 24), "max_output_tokens": (256, 16000), "lease_seconds": (15, 300),
                   "timeout_seconds": (30, 600), "max_tool_calls": (1, 20),
                   "max_tool_result_chars": (1000, 20000)}
         values = {}
@@ -53,7 +58,7 @@ class OrganizationSettings:
             raise ValueError("organization.capabilities must select supported work capabilities")
         grants = raw.get("tool_grants", [])
         if not isinstance(grants, list) or any(v not in SUPPORTED_TOOL_GRANTS for v in grants):
-            raise ValueError("organization.tool_grants must select supported tools: read_file or managed-workspace patch")
+            raise ValueError("organization.tool_grants must select supported tools: read_file, list_files, search_files or managed-workspace patch")
         roots = raw.get("read_roots", [])
         if (not isinstance(roots, list) or len(roots) > 8 or any(
             not isinstance(root, str) or not root.strip() or len(root) > 4096

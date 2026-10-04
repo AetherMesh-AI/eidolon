@@ -77,7 +77,9 @@ def test_configured_staff_hire_read_review_preserve_routes_and_exact_receipts(tm
     store.finish(review, {'approved': True, 'summary': 'Artifact is supported by the retained file result.', 'evidenceIds': [ev_id]})
     reopened = OrganizationStore(store.path, settings)
     assert reopened.snapshot()['objectives'][0]['id'] == obj['id']
-    assert reopened.snapshot()['objectives'][0]['status'] == 'completed'
+    assert reopened.snapshot()['tasks'][0]['status'] == 'completed'
+    assert reopened.snapshot()['objectives'][0]['status'] != 'completed'
+    assert reopened.claim_next()['type'] == 'request.integrate'
     assert reopened.tool_receipts(claim['id'])[0]['resultSha256'] == hashlib.sha256(_read_result().encode()).hexdigest()
 
 
@@ -96,7 +98,7 @@ def test_receipt_idempotency_is_atomic_and_limits_dispatch(tmp_path):
     with pytest.raises(ValueError, match='limit'):
         store.record_tool_start(claim, 'another-call', 'read_file', {'path': 'root0/README.md'})
     ident = receipts[0]['id']
-    with pytest.raises(ValueError, match='successful read'):
+    with pytest.raises(ValueError, match='successful granted observation'):
         store.record_tool_finish(claim, ident, '{"success":false,"error":"denied"}', 'completed')
     first = store.record_tool_finish(claim, ident, _read_result(), 'completed')
     assert store.record_tool_finish(claim, ident, _read_result(), 'completed') == first

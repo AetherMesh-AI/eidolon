@@ -79,8 +79,9 @@ function KanbanCount() {
 
 const plugin: HermesPlugin = {
   id: 'kanban',
-  name: 'Kanban',
-  description: 'Multi-agent task board — board page, sidebar entry, and a live in-flight count in the status bar.',
+  name: 'Legacy Kanban',
+  description:
+    'Existing Kanban tasks, dispatcher and history. Separate from the organization request ledger; no automatic migration.',
   defaultEnabled: false,
   register(ctx) {
     ctx.i18n.register(KANBAN_LOCALES)
@@ -114,7 +115,7 @@ const plugin: HermesPlugin = {
         id: 'nav',
         area: SIDEBAR_NAV_AREA,
         order: 50,
-        data: { codicon: 'project', label: 'Kanban', path: '/kanban' } satisfies SidebarNavContribution
+        data: { codicon: 'project', label: ctx.i18n.t('nav'), path: '/kanban' } satisfies SidebarNavContribution
       },
       {
         id: 'count',
@@ -127,7 +128,7 @@ const plugin: HermesPlugin = {
         area: PALETTE_AREA,
         data: {
           id: 'kanban.open',
-          label: 'Kanban: Open board',
+          label: ctx.i18n.t('openBoard'),
           keywords: ['kanban', 'board', 'tasks', 'agents'],
           run: () => host.navigate('/kanban')
         } satisfies PaletteContribution

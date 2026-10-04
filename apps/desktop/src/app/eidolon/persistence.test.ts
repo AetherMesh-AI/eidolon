@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 
-import { createPrototypeAdapter } from './adapter'
+import { createPrototypeAdapter } from '../../../test-fixtures/organization-prototype'
 it('persists local objectives across adapter restart without runtime execution', () => {
  const data = new Map<string,string>()
  const storage = { getItem: (key:string) => data.get(key) ?? null, setItem: (key:string,value:string) => { data.set(key,value) } }

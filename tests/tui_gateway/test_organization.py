@@ -35,6 +35,11 @@ def _deterministic(request, context, cancel):
     if kind == "request.plan":
         return {"workers": 2, "tasks": [
             {"title": "Draft supplied context", "description": "Use the supplied context", "type": "work.draft"}]}
+    if kind == 'request.accept':
+        ids = [item['id'] for item in context['evidence']]
+        return {'approved': True, 'summary': 'Integrated objective accepted against its criteria.', 'evidenceIds': ids,
+                'conflicts': [], 'criteriaResults': [{'criterion': criterion, 'satisfied': True, 'evidenceIds': ids,
+                'reason': 'Retained final deliverable satisfies the supplied criterion.'} for criterion in context['objective']['acceptanceCriteria']]}
     if kind == "request.review":
         return {"approved": True, "summary": "Reviewed the persisted text",
                 "evidenceIds": [item["id"] for item in context["evidence"]]}

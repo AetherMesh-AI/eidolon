@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { LogView } from '@/components/ui/log-view'
 import { useI18n } from '@/i18n/context'
 
+import { RuntimeProjectReceipts } from './runtime-project-receipts'
 import type { OrganizationEditProposal } from './types'
 
 /** Downloads are derived copies of the retained proposal, never a read of the
@@ -11,6 +12,9 @@ import type { OrganizationEditProposal } from './types'
 export function RuntimeEditProposal({ proposal }: { proposal: OrganizationEditProposal }) {
   const { t } = useI18n()
   const copy = t.organizationRuntime.edits
+  const workCopy = t.organizationWork
+  const files = proposal.files ?? [proposal]
+  const heading = files.length > 1 ? workCopy.projectProposal : copy.heading
   const urls = useRef(new Set<string>())
   const [downloadError, setDownloadError] = useState(false)
   const applied = proposal.status === 'applied'
@@ -18,15 +22,8 @@ export function RuntimeEditProposal({ proposal }: { proposal: OrganizationEditPr
   const stale = !applied && proposal.currentRevision !== proposal.baseRevision
   const advanced = applied && proposal.currentRevision !== proposal.appliedRevision
 
-  const name =
-    proposal.sourcePath
-      .split(/[\\/]/)
-      .pop()
-      ?.replace(/[<>:"|?*]/g, '_')
-      .split('')
-      .map(character => (character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127 ? '_' : character))
-      .join('')
-      .replace(/^\.+$/, 'workspace-file') || 'workspace-file'
+  const filename = (path: string) => (files.length > 1 ? path.replace(/[\\/]/g, '__') : path.split(/[\\/]/).pop() ?? '')
+    .replace(/[<>:"|?*]/g, '_').split('').map(character => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127 ? '_' : character).join('').replace(/^\.+$/, 'workspace-file') || 'workspace-file'
 
   useEffect(() => {
     const retained = urls.current
@@ -66,8 +63,8 @@ export function RuntimeEditProposal({ proposal }: { proposal: OrganizationEditPr
   }
 
   return (
-    <section aria-label={copy.heading}>
-      <h3>{copy.heading}</h3>
+    <section aria-label={heading}>
+      <h3>{heading}</h3>
       <p className="eid-note">
         {applied
           ? copy.appliedNote
@@ -123,21 +120,16 @@ export function RuntimeEditProposal({ proposal }: { proposal: OrganizationEditPr
       </dl>
       {stale && <p className="eid-note">{copy.staleNote}</p>}
       {advanced && <p className="eid-note">{copy.advancedNote}</p>}
-      <h4>{copy.diff}</h4>
-      <p className="eid-note">{copy.diffNote}</p>
-      <LogView aria-label={copy.diff} className="max-h-96">
-        {proposal.diff}
-      </LogView>
-      <div className="eid-inline">
-        {reviewed && (
-          <Button onClick={() => download(proposal.newContent, name)} size="sm" variant="secondary">
-            {copy.downloadFile}
-          </Button>
-        )}
-        <Button onClick={() => download(proposal.diff, `${name}.patch`)} size="sm" variant="secondary">
-          {copy.downloadPatch}
-        </Button>
-      </div>
+      <h4>{workCopy.proposalFiles} ({files.length})</h4>
+      {files.map(file => <section aria-label={file.sourcePath} key={file.sourcePath}>
+        {files.length > 1 && <><h4 className="eid-result-text">{file.sourcePath}</h4>
+        <dl className="eid-runtime-facts"><dt>{copy.baseRevision}</dt><dd>{file.baseRevision}</dd><dt>{copy.baseDigest}</dt><dd>{file.baseSha256}</dd><dt>{copy.newDigest}</dt><dd>{file.newSha256}</dd></dl></>}
+        <h5>{copy.diff}</h5><p className="eid-note">{copy.diffNote}</p><LogView aria-label={copy.diff} className="max-h-96">{file.diff}</LogView>
+        <details><summary>{workCopy.baseContent}</summary><LogView aria-label={workCopy.baseContent} className="max-h-96">{file.baseContent}</LogView></details>
+        <details><summary>{workCopy.proposedContent}</summary><LogView aria-label={workCopy.proposedContent} className="max-h-96">{file.newContent}</LogView></details>
+        <div className="eid-inline">{reviewed && <Button aria-label={files.length > 1 ? `${copy.downloadFile}: ${file.sourcePath}` : undefined} onClick={() => download(file.newContent, filename(file.sourcePath))} size="sm" variant="secondary">{copy.downloadFile}</Button>}<Button aria-label={files.length > 1 ? `${copy.downloadPatch}: ${file.sourcePath}` : undefined} onClick={() => download(file.diff, `${filename(file.sourcePath)}.patch`)} size="sm" variant="secondary">{copy.downloadPatch}</Button></div>
+      </section>)}
+      <RuntimeProjectReceipts proposal={proposal} />
       {downloadError && <p role="alert">{copy.downloadFailed}</p>}
       <p className="eid-note">{copy.downloadNote}</p>
       <p className="eid-note">{copy.mergeNote}</p>

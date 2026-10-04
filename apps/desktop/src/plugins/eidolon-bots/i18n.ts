@@ -37,6 +37,7 @@ import { getPluginCtx } from './shared'
 type BotsMessages = {
   /** Left rail: the bot + group-chat roster. */
   roster: {
+    paneTitle: string
     search: string
     searchPlaceholder: string
     newBotOrGroup: string
@@ -268,6 +269,7 @@ type BotsMessages = {
 
 const en: BotsMessages = {
   roster: {
+    paneTitle: 'Profile chats',
     search: 'Search bots and group chats',
     searchPlaceholder: 'Search bots and group chats…',
     newBotOrGroup: 'New bot or group chat',
@@ -486,6 +488,7 @@ const en: BotsMessages = {
 
 const ja: BotsMessages = {
   roster: {
+    paneTitle: 'プロファイルのチャット',
     search: 'ボットとグループチャットを検索',
     searchPlaceholder: 'ボットとグループチャットを検索…',
     newBotOrGroup: '新しいボットまたはグループチャット',
@@ -703,6 +706,7 @@ const ja: BotsMessages = {
 
 const zh: BotsMessages = {
   roster: {
+    paneTitle: '配置档案聊天',
     search: '搜索机器人和群聊',
     searchPlaceholder: '搜索机器人和群聊…',
     newBotOrGroup: '新建机器人或群聊',
@@ -916,6 +920,7 @@ const zh: BotsMessages = {
 
 const zhHant: BotsMessages = {
   roster: {
+    paneTitle: '設定檔聊天',
     search: '搜尋機器人和群組聊天',
     searchPlaceholder: '搜尋機器人和群組聊天…',
     newBotOrGroup: '新增機器人或群組聊天',

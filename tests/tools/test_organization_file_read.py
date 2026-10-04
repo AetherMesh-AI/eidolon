@@ -598,3 +598,59 @@ def test_managed_maximum_source_keeps_full_hash_in_character_truncated_pages(fil
             assert result["next_offset"] > offset
             offset = result["next_offset"]
         assert "".join(pieces) == original
+
+
+@pytest.mark.linux_only
+def test_scoped_discovery_and_literal_search_never_follow_links_or_expose_credentials(files, tmp_path):
+    root, _ = files
+    (root / 'nested').mkdir()
+    (root / 'nested' / 'code.py').write_text('first match\nsecond match\n', encoding='utf-8')
+    (root / '.env').write_text('TOP_SECRET=first', encoding='utf-8')
+    outside = tmp_path / 'outside.txt'
+    outside.write_text('first outside', encoding='utf-8')
+    (root / 'link.txt').symlink_to(outside)
+    os.link(outside, root / 'hard.txt')
+    (root / 'opaque.pdf').write_bytes(b'%PDF-first')
+    with bounded.organization_file_read_scope((str(root),), 3000) as scope:
+        listed = json.loads(scope.discover_files({'path': 'root0'}))
+        assert listed['success'] and not listed['truncated']
+        assert {row['path'] for row in listed['files']} == {'root0/notes.txt', 'root0/nested', 'root0/nested/code.py'}
+        assert next(row for row in listed['files'] if row['path'] == 'root0/nested')['kind'] == 'directory'
+        searched = json.loads(scope.discover_files({'path': 'root0', 'query': 'first'}, search=True))
+        assert searched['success'] and searched['scannedBytes'] > 0
+        assert {row['path'] for row in searched['matches']} == {'root0/notes.txt', 'root0/nested/code.py'}
+        assert all(row['line'] == 1 for row in searched['matches'])
+        assert 'TOP_SECRET' not in json.dumps(searched) and 'outside' not in json.dumps(searched)
+        assert json.loads(scope.discover_files({'path': 'root0/../'}))['blocked']
+        assert json.loads(scope.discover_files({'path': 'root0/link.txt'}))['blocked']
+        assert json.loads(scope.discover_files({'path': 'root0', 'query': 'ghp_' + 'A' * 36}, search=True))['blocked']
+    assert json.loads(scope.discover_files({'path': 'root0'}))['blocked']
+
+
+@pytest.mark.linux_only
+def test_discovery_has_real_entry_depth_result_and_search_byte_bounds(files):
+    root, _ = files
+    for i in range(550):
+        (root / f'note-{i:04d}.txt').write_text('needle\n', encoding='utf-8')
+    with bounded.organization_file_read_scope((str(root),), 1000) as scope:
+        raw = scope.discover_files({'path': 'root0', 'limit': 100})
+        assert len(raw) <= 1000
+        result = json.loads(raw)
+        assert result['success'] and result['truncated'] and 0 < len(result['files']) < 100
+        raw = scope.discover_files({'path': 'root0', 'query': 'absent', 'limit': 100}, search=True)
+        result = json.loads(raw)
+        assert result['truncated'] and result['scannedEntries'] == 500 and result['matches'] == []
+        assert result['scannedBytes'] <= bounded.MAX_FILE_BYTES
+
+
+@pytest.mark.linux_only
+def test_exact_source_handoff_reader_preserves_bytes_and_ignores_managed_resolver(files):
+    root, _ = files
+    original = '\ufeffcafé\r\n  trailing  '
+    (root / 'notes.txt').write_bytes(original.encode('utf-8'))
+    with bounded.organization_file_read_scope((str(root),), 1000,
+            resolve_workspace_source=lambda *_: pytest.fail('Handoff must read original source bytes')) as scope:
+        result = scope.read_exact_source('root0/notes.txt')
+    import hashlib
+    assert result['content'].encode('utf-8') == original.encode('utf-8')
+    assert result['sha256'] == hashlib.sha256(original.encode('utf-8')).hexdigest()

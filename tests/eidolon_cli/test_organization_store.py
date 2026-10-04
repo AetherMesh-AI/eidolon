@@ -46,6 +46,20 @@ def review(store, approved=True):
     return claim
 
 
+def accept_objective(store):
+    integrate = store.claim_next()
+    assert integrate['type'] == 'request.integrate'
+    store.finish(integrate, {'summary': 'Integrated decision brief', 'deliverable': 'Full integrated decision brief and analysis.'})
+    accept = store.claim_next()
+    assert accept['type'] == 'request.accept' and accept['agent_id'] != integrate['agent_id']
+    context = store.context(accept)
+    ids = [item['id'] for item in context['evidence']]
+    store.finish(accept, {'approved': True, 'summary': 'Entire objective is satisfied by the integrated brief.',
+                          'evidenceIds': ids, 'conflicts': [], 'criteriaResults': [
+                              {'criterion': item, 'satisfied': True, 'evidenceIds': ids, 'reason': 'Exact integrated text covers the criterion.'}
+                              for item in context['objective']['acceptanceCriteria']]})
+
+
 def test_real_ledger_runs_dag_review_and_restart_with_no_unreviewed_completion(store):
     obj = objective(store)
     plan(store)
@@ -67,6 +81,8 @@ def test_real_ledger_runs_dag_review_and_restart_with_no_unreviewed_completion(s
     assert restarted.context(second)['dependencies'][0]['deliverable'] == evidence[0]['content']
     restarted.finish(second, {'summary': 'Assessment', 'deliverable': 'A clear comparison of the supplied tradeoffs.'})
     review(restarted)
+    assert restarted.snapshot()["objectives"][0]["status"] != "completed"
+    accept_objective(restarted)
     snapshot = restarted.snapshot()
     assert snapshot['objectives'][0]['id'] == obj['id']
     assert snapshot['objectives'][0]['status'] == 'completed'
@@ -220,6 +236,7 @@ def test_every_visible_task_retains_its_latest_artifact_reference(store):
         for _ in range(12):
             work(store, 'Full retained text: ' + 'x'*3000)
             review(store)
+        accept_objective(store)
     snapshot = store.snapshot()
     assert len(snapshot['tasks']) == 108
     assert all(task['evidence'] for task in snapshot['tasks'])

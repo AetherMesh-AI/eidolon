@@ -19,11 +19,24 @@ export const CRON_ROUTE = '/cron'
 export const PROFILES_ROUTE = '/profiles'
 export const AGENTS_ROUTE = '/agents'
 export const STARMAP_ROUTE = '/starmap'
+// Saved legacy links remain pages even while the optional plugin is disabled.
+export const LEGACY_KANBAN_ROUTE = '/kanban'
 
-export const ORGANIZATION_PATHS = ['/home', '/objectives', '/activity', '/knowledge', '/organization'] as const
+export const ORGANIZATION_PATHS = [
+  '/home',
+  '/objectives',
+  '/activity',
+  '/knowledge',
+  '/organization',
+  '/requests',
+  '/legacy-organization',
+  '/organization-preview'
+] as const
 
 export function isOrganizationRoute(path: string): boolean {
-  return ORGANIZATION_PATHS.some(route => routePathname(path) === route) || routePathname(path).startsWith('/objectives/')
+  return (
+    ORGANIZATION_PATHS.some(route => routePathname(path) === route) || routePathname(path).startsWith('/objectives/')
+  )
 }
 
 export type AppView =
@@ -82,7 +95,7 @@ export const APP_ROUTES = [
 ] as const satisfies readonly AppRoute[]
 
 const APP_VIEW_BY_PATH = new Map<string, AppView>(APP_ROUTES.map(route => [route.path, route.view]))
-const RESERVED_PATHS: ReadonlySet<string> = new Set(APP_ROUTES.map(route => route.path))
+const RESERVED_PATHS: ReadonlySet<string> = new Set([...APP_ROUTES.map(route => route.path), ...ORGANIZATION_PATHS])
 
 // ── Contributed routes — the `routes` registry area ─────────────────────────
 // A contribution mounts a FULL PAGE in the workspace pane at `data.path`
@@ -167,7 +180,13 @@ export function isNewChatRoute(pathname: string): boolean {
 export function routeSessionId(pathname: string): string | null {
   const path = routePathname(pathname)
 
-  if (!path.startsWith(SESSION_ROUTE_PREFIX) || RESERVED_PATHS.has(path) || isOrganizationRoute(path) || isContributedPath(path)) {
+  if (
+    !path.startsWith(SESSION_ROUTE_PREFIX) ||
+    RESERVED_PATHS.has(path) ||
+    path === LEGACY_KANBAN_ROUTE ||
+    isOrganizationRoute(path) ||
+    isContributedPath(path)
+  ) {
     return null
   }
 
@@ -200,13 +219,15 @@ export function sessionRoute(sessionId: string): string {
 export function appViewForPath(pathname: string): AppView {
   const path = routePathname(pathname)
 
-  if (isOrganizationRoute(path)) {return 'organization'}
+  if (isOrganizationRoute(path)) {
+    return 'organization'
+  }
 
   if (isNewChatRoute(path) || routeSessionId(path)) {
     return 'chat'
   }
 
-  if (isContributedPath(path)) {
+  if (path === LEGACY_KANBAN_ROUTE || isContributedPath(path)) {
     return 'extension'
   }
 

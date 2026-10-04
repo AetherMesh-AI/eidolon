@@ -57,7 +57,7 @@ import {
 } from './group-chat'
 import { groupWorkspaceOwnerKey } from './group-membership'
 import { annotateOrphanedGroupChatMembers } from './hygiene'
-import { BOTS_LOCALES } from './i18n'
+import { BOTS_LOCALES, botsText } from './i18n'
 import { displayName } from './labels'
 import { startBotRelay, stopBotRelay } from './relay'
 import { $activityToasts } from './roster-actions'
@@ -94,8 +94,9 @@ export default {
   id: ID,
   name: 'Bots',
   description:
-    'Bot Mode — a one-chat-per-agent roster with avatars, routines, group chats, and bot-to-bot messaging. Ships with the app; disable here if unwanted.',
+    'Legacy profile Bot Chats, with their existing history, routines and group chats. Profiles are separate from organization employees. Disable here if unwanted.',
   register(ctx: PluginContext) {
+    let disposed = false
     setPluginCtx(ctx)
     // The user's own roster sections. Read once at register; every mutation
     // writes through.
@@ -113,6 +114,15 @@ export default {
       ctx.onDispose(disposeLocales)
       ctx.onDispose(stopFaceClock)
       ctx.onDispose(stopBotRelay)
+      ctx.onDispose(() => {
+        disposed = true
+        bumpBotOpenGeneration()
+        $botsPaneVisible.set(false)
+        $botChatFocused.set(false)
+        $openBotChat.set(null)
+        host.setWorkspaceScope?.('sessions')
+        setPluginCtx(null)
+      })
     }
 
     // @-mention autocomplete: typing "@rese…" in ANY composer offers the
@@ -364,7 +374,7 @@ export default {
     ctx.register({
       id: 'pane',
       area: 'panes',
-      title: 'Bots',
+      title: botsText().roster.paneTitle,
       // dock: explicit adoption gesture — CENTER-STACK into the sessions zone
       // so the sidebar grows a SESSIONS | BOTS tab strip instead of splitting
       // two cramped panes down the column. Center is safe now: insertAtGroup
@@ -444,6 +454,10 @@ export default {
       let unregisterRoutines: null | (() => void) = null
 
       const syncRoutinesPane = () => {
+        if (disposed) {
+          return
+        }
+
         if (botChatOwnsWorkspace()) {
           unregisterRoutines ??= registerRoutinesPane()
         } else if (unregisterRoutines) {

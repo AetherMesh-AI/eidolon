@@ -292,7 +292,8 @@ def test_real_agent_and_profile_resolution_against_local_provider(tmp_path, monk
             "objective": {"title": "Analyze", "description": "First finding. Second finding."},
             "timeoutSeconds": 20,
         }, threading.Event())
-        assert result == output
+        assert {key: value for key, value in result.items() if key != "usage"} == output
+        assert result["usage"] == {"inputTokens": 30, "outputTokens": 20}
         assert received
         assert all(path == "/v1/chat/completions" for path, _ in received)
         for _, body in received:

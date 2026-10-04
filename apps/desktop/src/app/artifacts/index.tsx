@@ -108,10 +108,15 @@ const itemsLabel = (f: ArtifactFilter, a: Translations['artifacts']) =>
   f === 'link' ? a.itemsLink : f === 'file' ? a.itemsFile : a.itemsGeneric
 
 interface ArtifactsViewProps extends React.ComponentProps<'section'> {
+  embedded?: boolean
   setStatusbarItemGroup?: SetStatusbarItemGroup
 }
 
-export function ArtifactsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...props }: ArtifactsViewProps) {
+export function ArtifactsView({
+  setStatusbarItemGroup: _setStatusbarItemGroup,
+  embedded = false,
+  ...props
+}: ArtifactsViewProps) {
   const { t } = useI18n()
   const a = t.artifacts
   const navigate = useNavigate()
@@ -319,6 +324,7 @@ export function ArtifactsView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
     <PageSearchShell
       {...props}
       activeTab={kindFilter}
+      embedded={embedded}
       onSearchChange={setQuery}
       onTabChange={id => setKindFilter(id as typeof kindFilter)}
       searchHidden={counts.all === 0}

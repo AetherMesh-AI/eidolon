@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { MemoryRouter } from 'react-router'
+import { Link, MemoryRouter } from 'react-router'
 import { expect, it, vi } from 'vitest'
 
 import { createRuntimeAdapter, type OrganizationGateway } from './runtime-adapter'
@@ -115,5 +115,26 @@ it('does not navigate away after the user leaves an in-flight submission', async
   const created = snapshot('Old intent')
   await act(async () => {pending.resolve({ objective: created.objectives[0], snapshot: created }); await Promise.resolve()})
   expect(screen.queryByRole('heading', { name: 'Old intent' })).toBeNull()
+  view.unmount()
+})
+
+
+it('reuses an uncertain admission after the composer is unmounted and reopened', async () => {
+  const initial = snapshot()
+  const request = vi.fn().mockImplementation((method: string) => method === 'organization.create' ? Promise.reject(new Error('Acknowledgement lost')) : Promise.resolve(initial))
+  const adapter = adapterFor(request)
+  const view = render(<MemoryRouter initialEntries={['/home']}><Link to="/home">Return to intake</Link><OrganizationWorkspace adapter={adapter} /></MemoryRouter>)
+  await waitFor(() => expect(adapter.getSnapshot().connection?.state).toBe('ready'))
+  fireEvent.change(screen.getByRole('textbox', { name: 'Objective' }), { target: { value: 'The same goal' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Create objective' }))
+  await screen.findByText('Acknowledgement lost')
+  fireEvent.click(screen.getByRole('link', { name: 'Ask a question' }))
+  fireEvent.click(screen.getByRole('link', { name: 'Return to intake' }))
+  fireEvent.change(screen.getByRole('textbox', { name: 'Objective' }), { target: { value: 'The same goal' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Create objective' }))
+  await screen.findByText('Acknowledgement lost')
+  const calls = request.mock.calls.filter(call => call[0] === 'organization.create')
+  expect(calls).toHaveLength(2)
+  expect(calls[1][1].idempotencyKey).toBe(calls[0][1].idempotencyKey)
   view.unmount()
 })

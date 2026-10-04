@@ -458,3 +458,34 @@ describe('reviewed managed workspace edit evidence', () => {
     expect(screen.queryByText('Applied to managed workspace; source project unchanged.')).toBeNull()
   })
 })
+
+it('exposes every reviewed project file, failed deterministic checks and historical source observations without claiming tests ran', async () => {
+  const first = proposal({ status: 'approved', reviewStatus: 'approved' })
+  const second = { sourcePath: 'root-1/settings.json', baseRevision: 0, baseSha256: 'a'.repeat(64), newSha256: 'e'.repeat(64), baseContent: '{"enabled":false}\n', newContent: '{"enabled":true}\n', diff: '-false\n+true\n' }
+
+  const edits: OrganizationEditProposal = { ...first, files: [first, second], validationReceipt: {
+    runner: 'eidolon.declarative-validation', runnerVersion: 1, scope: 'managed_workspace', status: 'failed',
+    inputs: [{ path: second.sourcePath, revision: 1, sha256: second.newSha256 }],
+    checks: [{ kind: 'json_value', path: second.sourcePath, passed: false, reason: 'Expected setting was not present.' }],
+    notExecuted: ['project_commands', 'functional_tests'], limitations: 'No project commands or functional tests executed.', requestId: 'validate', resultSha256: 'f'.repeat(64), created: 1791072000
+  } }
+
+  const current = artifact(edits)
+  const { adapter } = harness(vi.fn().mockResolvedValue(current))
+  const blobs: Blob[] = []
+  vi.spyOn(URL, 'createObjectURL').mockImplementation(blob => {blobs.push(blob as Blob);
+
+ return 'blob:project-file'})
+  vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
+  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+  const view = render(<RuntimeArtifact adapter={adapter} evidenceId="proof" onClose={vi.fn()} snapshot={snapshot()} title="Project evidence" />)
+  const file = within(await screen.findByRole('region', { name: second.sourcePath }))
+  expect(file.getByLabelText('Full proposed diff').textContent).toBe(second.diff)
+  expect(file.getByLabelText('Exact proposed content').textContent).toBe(second.newContent)
+  fireEvent.click(file.getByRole('button', { name: `Download reviewed file: ${second.sourcePath}` }))
+  expect(Array.from(await blobBytes(blobs[0]))).toEqual(Array.from(new TextEncoder().encode(second.newContent)))
+  expect(screen.getByText('Expected setting was not present.')).toBeTruthy()
+  expect(screen.getByText('No project commands or functional tests executed.')).toBeTruthy()
+  expect(within(screen.getByRole('region', { name: 'Source verification receipt' })).getByText('Not recorded')).toBeTruthy()
+  view.unmount()
+})

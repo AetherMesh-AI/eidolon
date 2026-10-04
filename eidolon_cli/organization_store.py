@@ -17,6 +17,9 @@ import uuid
 from datetime import datetime, timezone
 
 from eidolon_cli.organization_config import OrganizationSettings
+from eidolon_cli.organization_acceptance import ACCEPTANCE_SCHEMA, OrganizationAcceptanceStore, final_artifact
+from eidolon_cli.organization_owner import OWNER_SCHEMA, OrganizationOwnerStore
+from eidolon_cli.organization_project_workspace import project_validation_view, project_validation_artifact
 from eidolon_cli.organization_receipts import (
     RECEIPT_SCHEMA, OrganizationReceiptStore, evidence_receipts, fence_receipts,
 )
@@ -48,6 +51,7 @@ CREATE TABLE IF NOT EXISTS requests (
  attempts INTEGER NOT NULL DEFAULT 0, reason TEXT, available REAL NOT NULL DEFAULT 0,
  payload TEXT NOT NULL DEFAULT '{}');
 CREATE INDEX IF NOT EXISTS request_queue ON requests(status, priority DESC, created);
+CREATE INDEX IF NOT EXISTS request_objective_status ON requests(objective_id,status);
 CREATE TABLE IF NOT EXISTS evidence (
  id TEXT PRIMARY KEY, objective_id TEXT NOT NULL, task_id TEXT NOT NULL REFERENCES tasks(id),
  request_id TEXT NOT NULL UNIQUE REFERENCES requests(id), content TEXT NOT NULL,
@@ -79,26 +83,32 @@ def _text(value, field, limit=10000):
     return value.strip()
 
 
-class OrganizationStore(OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
+class OrganizationStore(OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
     def __init__(self, path: Path | str, settings: OrganizationSettings | None = None):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
-            conn.executescript(_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA)
+            conn.executescript(_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA)
             self.settings = settings or persisted_settings(conn) or OrganizationSettings()
         with self._write() as conn:
+            self._migrate_acceptance(conn)
             self._adopt_policy(conn)
             roles = [("owner", "Owner", "Owner", None, []),
-                     ("executive", "Executive", "Executive", "owner", []),
+                     ("executive", "Executive", "Executive", "owner", ["request.accept"]),
                      ("director", "Director", "Director", "executive", ["request.hire"]),
-                     ("manager", "Manager", "Manager", "director", ["request.plan"]),
+                     ("manager", "Manager", "Manager", "director", ["request.plan", "request.integrate"]),
                      ("reviewer", "Reviewer", "Employee", "manager", ["request.review"]),
-                     ("control:apply", "Workspace applier", "Employee", "manager", ["request.apply"])]
+                     ("control:apply", "Workspace applier", "Employee", "manager", ["request.apply", "request.validate"])]
             for ident, name, role, manager, accepts in roles:
                 conn.execute("INSERT OR IGNORE INTO agents VALUES (?,?,?,?,?,?)",
                              (ident, name, role, manager, self.settings.team, json.dumps(accepts)))
             conn.execute("UPDATE agents SET team=? WHERE id IN ('owner','executive','director','manager','reviewer','control:apply')", (self.settings.team,))
+            for ident, accepts in [('executive', ['request.accept']), ('manager', ['request.plan', 'request.integrate']), ('control:apply', ['request.apply', 'request.validate'])]:
+                conn.execute('UPDATE agents SET accepts=? WHERE id=?', (json.dumps(accepts), ident))
             self._sync_staff(conn)
+            self.migrate_open_project_validation(conn)
+            for row in conn.execute("SELECT objective_id FROM objective_control WHERE status='pending'").fetchall():
+                self._maybe_integrate(conn, row['objective_id'])
 
     @contextlib.contextmanager
     def _connect(self):
@@ -130,18 +140,42 @@ class OrganizationStore(OrganizationStaffingStore, OrganizationReceiptStore, Org
     @staticmethod
     def _request(conn, objective, request_type, team, priority, task=None, payload=None):
         ident = _id("req")
+        payload = dict(payload or {})
+        if payload.get('evidenceIds'):
+            hashes = {}
+            for evidence_id in payload['evidenceIds']:
+                artifact = conn.execute('SELECT sha256 FROM evidence WHERE id=? AND objective_id=?', (evidence_id, objective)).fetchone()
+                if artifact is None:
+                    artifact = conn.execute('SELECT sha256 FROM objective_deliverables WHERE id=? AND objective_id=?', (evidence_id, objective)).fetchone()
+                if artifact is None:
+                    project = project_validation_artifact(conn, evidence_id)
+                    if project is not None and project['objectiveId'] == objective:
+                        artifact = project
+                if artifact is None:
+                    raise ValueError('A new evidence-bound request requires persisted artifact hashes')
+                hashes[evidence_id] = artifact['sha256']
+            payload['evidenceHashes'] = hashes
         conn.execute("INSERT INTO requests(id,objective_id,task_id,type,team,priority,status,created,payload) VALUES (?,?,?,?,?,?,'queued',?,?)",
                      (ident, objective, task, request_type, team, priority, time.time(), json.dumps(payload or {})))
         return ident
 
-    def create_objective(self, title, description=None, priority="normal", *, idempotency_key):
+    def create_objective(self, title, description=None, priority="normal", *, idempotency_key, acceptance_criteria=None, delivery_mode="source_project", required_checks=None):
         title = _text(title, "Title", 500)
         description = _text(description or title, "Description", 30000)
+        from eidolon_cli.organization_acceptance import acceptance_criteria as normalize_criteria
+        criteria = normalize_criteria(acceptance_criteria, title if description == title else title + '\n\n' + description)
+        from eidolon_cli.organization_acceptance import required_checks as normalize_checks
+        checks = normalize_checks(required_checks if required_checks is not None else [])
+        if delivery_mode not in ('managed_artifact', 'source_project'):
+            raise ValueError('deliveryMode must be managed_artifact or source_project')
         key = _text(idempotency_key, "Idempotency key", 128)
-        if priority not in _PRIORITY:
+        if not isinstance(priority, str) or priority not in _PRIORITY:
             raise ValueError("Unknown priority")
         level = _PRIORITY[priority]
-        digest = hashlib.sha256(json.dumps([title, description, level]).encode()).hexdigest()
+        identity = ([title, description, level] if acceptance_criteria is None and delivery_mode == 'source_project' and not checks else
+                    {'title': title, 'description': description, 'priority': level, 'acceptanceCriteria': criteria,
+                     'deliveryMode': delivery_mode, 'requiredChecks': checks})
+        digest = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
         with self._write() as conn:
             self._require_current_policy(conn)
             old = conn.execute("SELECT * FROM objectives WHERE idempotency_key=?", (key,)).fetchone()
@@ -158,14 +192,18 @@ class OrganizationStore(OrganizationStaffingStore, OrganizationReceiptStore, Org
                 ident = _id("obj")
                 conn.execute("INSERT INTO objectives VALUES (?,?,?,?,?,?,?,0)",
                              (ident, key, digest, title, description, level, time.time()))
+                conn.execute("INSERT INTO objective_control(objective_id,criteria,status,round,max_replans,max_stages,delivery_mode,required_checks) VALUES (?,?,'pending',0,?,?,?,?)",
+                             (ident, json.dumps(criteria), self.settings.max_replans, self.settings.max_stages, delivery_mode, json.dumps(checks)))
                 self._request(conn, ident, "request.plan", self.settings.team, level)
                 self._event(conn, ident, "Objective accepted. Manager planning is queued.", "planning")
         # A duplicate may be older than the UI's settled-history window.
         from eidolon_cli.organization_snapshot import build_snapshot
         with self._connect() as conn:
-            return build_snapshot(conn, self.settings, objective_id=ident)["objectives"][0]
+            return build_snapshot(conn, self.settings, objective_id=ident, resolution_options=self.allowed_owner_resolutions)["objectives"][0]
 
     def _eligible(self, conn, request):
+        if request['type'] == 'request.validate' and self.edit_validate_unavailability(conn, request):
+            return [], None
         if request['type'] == 'request.apply' and self.edit_apply_unavailability(conn, request):
             return [], None
         busy = {r[0] for r in conn.execute("SELECT agent_id FROM requests WHERE status='running'")}
@@ -215,11 +253,35 @@ class OrganizationStore(OrganizationStaffingStore, OrganizationReceiptStore, Org
                 if request["attempts"] >= self.settings.max_attempts:
                     self._pending(conn, request, "Attempt limit reached; automatic execution has stopped.")
                     continue
+                control = conn.execute('SELECT * FROM objective_control WHERE objective_id=?', (request['objective_id'],)).fetchone()
+                stages = conn.execute('SELECT count(*) FROM objective_usage WHERE objective_id=?', (request['objective_id'],)).fetchone()[0]
+                if stages >= min(control['max_stages'], self.settings.max_stages):
+                    self._pending(conn, request, 'Objective stage budget exhausted. Create a revised objective to authorize more work.')
+                    continue
                 token = uuid.uuid4().hex
                 lease = time.time() + self.settings.lease_seconds
                 self._stamp_claim_policy(conn, request['id'])
+                payload = json.loads(request['payload'])
+                if payload.get('evidenceIds') and 'evidenceHashes' not in payload:
+                    # Legacy open reviews are bound when first dispatched by the
+                    # upgraded runtime, before any model sees the artifact bytes.
+                    hashes = {}
+                    for identifier in payload['evidenceIds']:
+                        artifact = conn.execute('SELECT sha256 FROM evidence WHERE id=? AND objective_id=?',
+                                                (identifier, request['objective_id'])).fetchone()
+                        if artifact is None:
+                            hashes = None
+                            break
+                        hashes[identifier] = artifact['sha256']
+                    if hashes is None:
+                        self._pending(conn, request, 'Legacy request evidence is missing; restore its exact artifact or request a bounded replan.')
+                        continue
+                    payload['evidenceHashes'] = hashes
+                    conn.execute('UPDATE requests SET payload=? WHERE id=?', (json.dumps(payload), request['id']))
                 conn.execute("UPDATE requests SET status='running',agent_id=?,token=?,lease=?,attempts=attempts+1,reason=NULL WHERE id=?",
                              (agent["id"], token, lease, request["id"]))
+                conn.execute('INSERT INTO objective_usage(request_id,token,objective_id,stage) VALUES (?,?,?,?)',
+                             (request['id'], token, request['objective_id'], request['type']))
                 if request["task_id"]:
                     status = "review" if request["type"] == "request.review" else "working"
                     conn.execute("UPDATE tasks SET status=? WHERE id=?", (status, request["task_id"]))
@@ -247,6 +309,16 @@ class OrganizationStore(OrganizationStaffingStore, OrganizationReceiptStore, Org
             if request is None:
                 raise ValueError("Request lease is no longer owned")
             objective = dict(conn.execute("SELECT id,title,description FROM objectives WHERE id=?", (request["objective_id"],)).fetchone())
+            control = conn.execute('SELECT * FROM objective_control WHERE objective_id=?', (request['objective_id'],)).fetchone()
+            objective['acceptanceCriteria'] = json.loads(control['criteria'])
+            objective['round'] = control['round']
+            objective['deliveryMode'] = control['delivery_mode']
+            objective['requiredChecks'] = json.loads(control['required_checks'])
+            objective['projectValidation'] = project_validation_view(conn, request['objective_id'])
+            if control['amended_scope']:
+                objective['originalDescription'] = objective['description']
+                objective['description'] = control['amended_scope']
+            owner_inputs = [dict(row) for row in conn.execute('SELECT action,text,created FROM owner_resolutions WHERE objective_id=? ORDER BY created', (request['objective_id'],))]
             task = conn.execute("SELECT * FROM tasks WHERE id=?", (request["task_id"],)).fetchone()
             task = dict(task) if task else None
             dependencies = []
@@ -265,6 +337,14 @@ class OrganizationStore(OrganizationStaffingStore, OrganizationReceiptStore, Org
             evidence = []
             for ident in payload.get("evidenceIds", []):
                 row = conn.execute("SELECT * FROM evidence WHERE id=? AND objective_id=?", (ident, request["objective_id"])).fetchone()
+                if row is None:
+                    artifact = final_artifact(conn, ident)
+                    if artifact and artifact['objective_id'] == request['objective_id']:
+                        evidence.append(artifact)
+                    elif artifact is None:
+                        project = project_validation_artifact(conn, ident)
+                        if project is not None and project['objectiveId'] == request['objective_id']:
+                            evidence.append(project)
                 if row:
                     evidence.append({**dict(row), 'toolReceipts': evidence_receipts(conn, row['id']),
                                      'editProposal': evidence_proposal(conn, row['id'])})
@@ -273,7 +353,8 @@ class OrganizationStore(OrganizationStaffingStore, OrganizationReceiptStore, Org
             if staff:
                 agent.update({'provider': staff.provider, 'model': staff.model})
             return {"objective": objective, "task": task, "agent": agent, "dependencies": dependencies,
-                    "evidence": evidence, "feedback": task["feedback"] if task else None,
+                    "evidence": evidence, "feedback": task["feedback"] if task else payload.get("feedback", control["summary"]),
+                    "ownerInputs": owner_inputs, "maxOutputTokens": self.settings.max_output_tokens,
                     "toolReceipts": [receipt for item in evidence for receipt in item['toolReceipts']],
                     "toolPolicy": self._tool_policy(conn, request),
                     "staffing": self._staffing_context(),
@@ -319,6 +400,7 @@ class OrganizationStore(OrganizationStaffingStore, OrganizationReceiptStore, Org
                 return False
             conn.execute("UPDATE requests SET status='queued',reason=?,token=NULL,lease=NULL,agent_id=NULL,attempts=MAX(0,attempts-1),available=? WHERE id=?",
                          (reason, time.time() + 1, request["id"]))
+            conn.execute('DELETE FROM objective_usage WHERE request_id=? AND token=?', (request['id'], request['token']))
             if request["task_id"]:
                 conn.execute("UPDATE tasks SET status='queued' WHERE id=?", (request["task_id"],))
             return True
@@ -363,6 +445,11 @@ class OrganizationStore(OrganizationStaffingStore, OrganizationReceiptStore, Org
                 return False
             if row["attempts"] >= self.settings.max_attempts:
                 raise ValueError("Attempt limit reached. Create a revised objective instead of replaying this request.")
+            from eidolon_cli.organization_owner import resolution_count
+            if resolution_count(conn, row['objective_id']) >= self.settings.max_owner_resolutions:
+                raise ValueError('Owner resolution limit reached; create a revised objective')
+            if row['type'] == 'request.merge':
+                raise ValueError('Source handoffs require an exact record_handoff resolution, not a replay')
             conn.execute("UPDATE requests SET status='queued',reason=NULL,available=0,agent_id=NULL WHERE id=?", (request_id,))
             conn.execute("INSERT INTO retry_receipts VALUES (?,?,?)", (key, request_id, time.time()))
             if row["task_id"]:
@@ -383,21 +470,37 @@ class OrganizationStore(OrganizationStaffingStore, OrganizationReceiptStore, Org
         if not isinstance(result, dict):
             raise ValueError("Agent result must be an object")
         if result.get("intervention"):
-            return self.fail(claim, _text(result["intervention"], "Intervention reason", 2000))
+            reason = _text(result["intervention"], "Intervention reason", 2000)
+            with self._write() as conn:
+                request = self._owned(conn, claim)
+                if request is None:
+                    return False
+                self._record_usage(conn, request, result)
+                if request['type'] == 'request.plan':
+                    self._merge_required_checks(conn, request['objective_id'], result.get('requiredChecks', []))
+                self._pending(conn, request, reason)
+                return True
         with self._write() as conn:
             request = self._owned(conn, claim)
             if request is None:
                 return False
             handlers = {"request.plan": self._finish_plan, "request.review": self._finish_review,
                         "request.hire": self._finish_hire, 'work.edit': self._finish_edit_work,
-                        'request.apply': self._finish_apply}
-            handler = handlers.get(request["type"], self._finish_work)
-            handler(conn, request, result)
+                        'request.apply': self._finish_apply,
+                        'request.integrate': self._finish_integrate, 'request.accept': self._finish_accept}
+            if request['type'] == 'request.validate':
+                handler = self._finish_validate
+            else:
+                handler = handlers.get(request["type"], self._finish_work)
+            self._record_usage(conn, request, result)
+            handler(conn, request, {key: value for key, value in result.items() if key != 'usage'})
             conn.execute("UPDATE requests SET status='completed',token=NULL,lease=NULL,reason=NULL WHERE id=?", (request["id"],))
             self._event(conn, request["objective_id"], f"{request['type']} finished.", "review" if request["type"] == "request.review" else "completion", request["agent_id"])
+            self._maybe_integrate(conn, request['objective_id'])
             return True
 
     def _finish_plan(self, conn, request, result):
+        self._merge_required_checks(conn, request['objective_id'], result.get('requiredChecks', []))
         tasks = result.get("tasks")
         if not isinstance(tasks, list) or not 1 <= len(tasks) <= self.settings.max_tasks:
             raise ValueError(f"Plan must contain 1–{self.settings.max_tasks} tasks")
@@ -421,6 +524,7 @@ class OrganizationStore(OrganizationStaffingStore, OrganizationReceiptStore, Org
             raise ValueError("Requested worker count must be an integer from 1 to 8")
         for values in normalized:
             conn.execute("INSERT INTO tasks(id,objective_id,title,description,type,team,priority,status,dependencies) VALUES (?,?,?,?,?,?,?,?,?)", values)
+            conn.execute('INSERT INTO objective_task_rounds SELECT ?,objective_id,round FROM objective_control WHERE objective_id=?', (values[0], request['objective_id']))
             self._request(conn, request["objective_id"], values[4], values[5], values[6], values[0])
         self._queue_staffing(conn, request, workers, normalized)
         self._event(conn, request["objective_id"], f"Manager created {len(tasks)} scoped tasks with explicit dependencies.", "planning", request["agent_id"])
@@ -440,7 +544,8 @@ class OrganizationStore(OrganizationStaffingStore, OrganizationReceiptStore, Org
         self._event(conn, request["objective_id"], "Deliverable saved; independent evidence-bound review requested.", "review", request["agent_id"])
 
     def _finish_review(self, conn, request, result):
-        expected = json.loads(request["payload"])["evidenceIds"]
+        payload = json.loads(request["payload"])
+        expected = payload["evidenceIds"]
         actual = result.get("evidenceIds")
         if (not expected or not isinstance(actual, list) or any(not isinstance(item, str) for item in actual)
                 or set(actual) != set(expected) or len(actual) != len(expected)):
@@ -454,7 +559,7 @@ class OrganizationStore(OrganizationStaffingStore, OrganizationReceiptStore, Org
             raise ValueError("Workers cannot approve their own deliverable")
         for ident in expected:
             ev = conn.execute("SELECT * FROM evidence WHERE id=? AND task_id=?", (ident, task["id"])).fetchone()
-            if ev is None or hashlib.sha256(ev["content"].encode()).hexdigest() != ev["sha256"]:
+            if ev is None or hashlib.sha256(ev["content"].encode()).hexdigest() != ev["sha256"] or (payload.get("evidenceHashes") is not None and payload["evidenceHashes"].get(ident) != ev["sha256"]):
                 raise ValueError("Persisted evidence is missing or has changed")
             self._verify_tool_evidence(conn, ident, require_read=task['type'] in {'work.inspect', 'work.edit'})
         self.validate_edit_review(conn, request, result)
@@ -479,8 +584,10 @@ class OrganizationStore(OrganizationStaffingStore, OrganizationReceiptStore, Org
         from eidolon_cli.organization_snapshot import build_snapshot
         with self._connect() as conn:
             conn.execute("BEGIN")
-            result = build_snapshot(conn, self.settings)
+            result = build_snapshot(conn, self.settings, resolution_options=self.allowed_owner_resolutions)
             if not self._policy_current(conn):
+                for request in result['requests']:
+                    request['allowedResolutions'] = []
                 result['runtime'].update({'state': 'policy_changed', 'capabilities': [], 'readRoots': [],
                     'readFileEnabled': False, 'workspaceApplyEnabled': False,
                     'scope': 'Organization grants or routing changed. Restart this runtime before submitting or retrying work.'})
@@ -491,7 +598,15 @@ class OrganizationStore(OrganizationStaffingStore, OrganizationReceiptStore, Org
         with self._connect() as conn:
             row = conn.execute("SELECT * FROM evidence WHERE id=?", (ident,)).fetchone()
             if row is None:
-                raise ValueError("Evidence not found in this organization")
+                final = final_artifact(conn, ident)
+                if final is None:
+                    project = project_validation_artifact(conn, ident)
+                    if project is not None:
+                        return {**project, 'taskId': None, 'kind': 'project_validation'}
+                    raise ValueError("Evidence not found in this organization")
+                return {'id': final['id'], 'objectiveId': final['objective_id'], 'taskId': None,
+                        'content': final['content'], 'summary': final['summary'], 'sha256': final['sha256'],
+                        'toolReceipts': [], 'createdAt': _iso(final['created']), 'kind': 'integrated_deliverable'}
             proposal = evidence_proposal(conn, row['id'])
             return {"id": row["id"], "objectiveId": row["objective_id"], "taskId": row["task_id"],
                     "content": row["content"], "summary": row["summary"], "sha256": row["sha256"],

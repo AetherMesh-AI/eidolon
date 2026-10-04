@@ -56,7 +56,8 @@ class OrganizationStaffingStore:
                          (ident, f'Reviewer · {team}', 'Employee', 'manager', team, '["request.review"]'))
             applier_id = 'control:apply:' + hashlib.sha256(team.encode()).hexdigest()[:16]
             conn.execute('INSERT OR IGNORE INTO agents VALUES (?,?,?,?,?,?)',
-                         (applier_id, f'Workspace applier · {team}', 'Employee', 'manager', team, '["request.apply"]'))
+                         (applier_id, f'Workspace applier · {team}', 'Employee', 'manager', team, '["request.apply","request.validate"]'))
+            conn.execute('UPDATE agents SET accepts=? WHERE id=?', ('["request.apply","request.validate"]', applier_id))
 
     def _staff(self, agent_id):
         return next((staff for staff in configured_workers(self.settings) if staff.id == agent_id), None)
@@ -81,7 +82,7 @@ class OrganizationStaffingStore:
         tools = []
         if (staff and request['type'] in {'work.inspect', 'work.edit'}
                 and not self._staff_reason(conn, {'id': staff.id}, request['type'])):
-            tools = [tool for tool in staff.tool_grants if tool == 'read_file' and tool in self.settings.tool_grants]
+            tools = [tool for tool in staff.tool_grants if tool in {'read_file', 'list_files', 'search_files'} and tool in self.settings.tool_grants]
         return {'tools': tools, 'readRoots': list(self.settings.read_roots),
                 'maxToolCalls': self.settings.max_tool_calls,
                 'maxResultChars': self.settings.max_tool_result_chars}
@@ -95,6 +96,10 @@ class OrganizationStaffingStore:
     def _route_reason(self, conn, request):
         if request['type'] == 'request.merge':
             return 'The reviewed output is in the managed workspace. Merging it into the source project requires owner intervention; no source file was overwritten.'
+        if request['type'] == 'request.validate':
+            reason = self.edit_validate_unavailability(conn, request)
+            if reason:
+                return reason
         if request['type'] == 'request.apply':
             reason = self.edit_apply_unavailability(conn, request)
             if reason:

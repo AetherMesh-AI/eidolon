@@ -1,6 +1,7 @@
 import { translateNow } from '@/i18n/runtime'
 
-import type { Objective, OrganizationArtifact, OrganizationEditProposal, OrganizationSnapshot, OrganizationToolEvidence, RuntimeOrganizationAdapter } from './types'
+import { validEditProposal } from './runtime-proposal-validation'
+import type { Objective, OrganizationArtifact, OrganizationSnapshot, OrganizationToolEvidence, RuntimeOrganizationAdapter } from './types'
 
 export interface OrganizationScope {
   /** Exact socket + registry connection + profile. Never use the profile alone. */
@@ -20,7 +21,15 @@ const emptySnapshot = (scope: OrganizationScope): OrganizationSnapshot => ({
   connection: { scope: scope.key, ownerScope: scope.ownerKey, state: scope.connected || scope.switching ? 'connecting' : 'disconnected' }
 })
 
-const message = (reason: unknown) => reason instanceof Error ? reason.message : 'Could not reach the organization runtime.'
+export function organizationErrorMessage(reason: unknown) {
+  const text = reason instanceof Error ? reason.message : 'Could not reach the organization runtime.'
+
+  return text.replace(/https?:\/\/[^\s"'<>]+/g, value => {
+    try {const url = new URL(value);
+
+ return `${url.origin}${url.pathname}`} catch {return '[connection URL]'}
+  }).replace(/(bearer\s+)\S+/gi, '$1[redacted]').replace(/((?:token|password|api[_-]?key|secret)=)[^\s&]+/gi, '$1[redacted]')
+}
 
 function validateSnapshot(value: OrganizationSnapshot): OrganizationSnapshot {
   if (!value || value.source !== 'runtime' || !['objectives', 'agents', 'tasks', 'activity', 'knowledge', 'requests'].every(field => Array.isArray(value[field as keyof OrganizationSnapshot])) || !value.runtime) {
@@ -28,47 +37,6 @@ function validateSnapshot(value: OrganizationSnapshot): OrganizationSnapshot {
   }
 
   return value
-}
-
-function validEditProposal(proposal: OrganizationEditProposal): boolean {
-  if (!proposal || typeof proposal !== 'object') {
-    return false
-  }
-
-  const revision = (value: unknown) => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
-
-  return (
-    ['id', 'workspaceId', 'sourcePath'].every(
-      field =>
-        typeof proposal[field as keyof OrganizationEditProposal] === 'string' &&
-        proposal[field as keyof OrganizationEditProposal] !== ''
-    ) &&
-    ['baseSha256', 'newSha256', 'proposalSha256'].every(
-      field =>
-        typeof proposal[field as keyof OrganizationEditProposal] === 'string' &&
-        /^[a-f0-9]{64}$/.test(proposal[field as keyof OrganizationEditProposal] as string)
-    ) &&
-    ['baseContent', 'newContent', 'diff'].every(
-      field => typeof proposal[field as keyof OrganizationEditProposal] === 'string'
-    ) &&
-    revision(proposal.baseRevision) &&
-    revision(proposal.currentRevision) &&
-    proposal.currentRevision >= proposal.baseRevision &&
-    ['proposed', 'approved', 'applied'].includes(proposal.status) &&
-    ['pending', 'approved', 'rejected'].includes(proposal.reviewStatus) &&
-    ['reviewReason', 'applicationReason'].every(
-      field =>
-        proposal[field as keyof OrganizationEditProposal] === undefined ||
-        typeof proposal[field as keyof OrganizationEditProposal] === 'string'
-    ) &&
-    (proposal.status === 'proposed' || proposal.reviewStatus === 'approved') &&
-    (proposal.status !== 'applied' ||
-      (revision(proposal.appliedRevision) &&
-        proposal.appliedRevision! > proposal.baseRevision &&
-        proposal.appliedRevision! <= proposal.currentRevision &&
-        typeof proposal.appliedAt === 'string' &&
-        Number.isFinite(Date.parse(proposal.appliedAt))))
-  )
 }
 
 /** Server-owned truth. Reads are single-flight and bounded; losing the last
@@ -91,6 +59,7 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
   const mutations = new Map<string, Promise<unknown>>()
   const createKeys = new Map<string, string>()
   const retryKeys = new Map<string, string>()
+  const resolutionKeys = new Map<string, string>()
 
   const publish = (next: OrganizationSnapshot) => {
     // A quiet snapshot poll must not repaint the whole organization graph.
@@ -127,6 +96,7 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
 
     if (next.key === scope.key && next.connected === scope.connected && next.switching === scope.switching) {return false}
     const changed = next.key !== scope.key
+    const ownerChanged = scope.ownerKey && next.ownerKey ? scope.ownerKey !== next.ownerKey : changed
     epoch++
     clearTimer()
     controllers.forEach(controller => controller.abort())
@@ -135,10 +105,9 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
     pendingWrites = 0
     mutations.clear()
 
-    if (changed) {createKeys.clear(); retryKeys.clear()}
     scope = next
     failures = 0
-    publish(changed ? emptySnapshot(scope) : { ...snapshot, connection: { ...snapshot.connection, scope: scope.key, ownerScope: scope.ownerKey, state: scope.connected || scope.switching ? 'connecting' : 'disconnected', error: undefined } })
+    publish(ownerChanged ? emptySnapshot(scope) : { ...snapshot, connection: { ...snapshot.connection, scope: scope.key, ownerScope: scope.ownerKey, state: scope.connected || scope.switching ? 'connecting' : 'disconnected', error: undefined } })
 
     return true
   }
@@ -177,7 +146,7 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
       } catch (reason) {
         if (current(token) && version === writeVersion && order >= lastApplied && !controller.signal.aborted) {
           failures++
-          publish({ ...snapshot, connection: { ...snapshot.connection, scope: scope.key, ownerScope: scope.ownerKey, state: 'error', error: message(reason) } })
+          publish({ ...snapshot, connection: { ...snapshot.connection, scope: scope.key, ownerScope: scope.ownerKey, state: 'error', error: organizationErrorMessage(reason) } })
         }
       } finally {
         controllers.delete(controller)
@@ -220,7 +189,7 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
         accept(resultSnapshot(value), order)
 
         return value
-      } finally {
+      } catch (reason) {throw new Error(organizationErrorMessage(reason))} finally {
         controllers.delete(controller)
         releaseScope()
 
@@ -259,7 +228,7 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
         if (result.editProposal != null && !validEditProposal(result.editProposal)) {throw new Error(translateNow('organizationRuntime.edits.invalid'))}
 
         return result
-      } finally {controllers.delete(controller); releaseScope()}
+      } catch (reason) {throw new Error(organizationErrorMessage(reason))} finally {controllers.delete(controller); releaseScope()}
     },
     async getToolReceipts(requestId) {
       resetScope()
@@ -278,7 +247,7 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
         if (!Array.isArray(result) || result.some(receipt => !receipt || typeof receipt.id !== 'string' || typeof receipt.toolCallId !== 'string' || typeof receipt.toolName !== 'string' || !receipt.arguments || typeof receipt.arguments !== 'object' || typeof receipt.createdAt !== 'string' || receipt.requestId !== requestId || (receipt.result !== undefined && typeof receipt.result !== 'string'))) {throw new Error(translateNow('organizationRuntime.auditInvalid'))}
 
         return result
-      } finally {controllers.delete(controller); releaseScope()}
+      } catch (reason) {throw new Error(organizationErrorMessage(reason))} finally {controllers.delete(controller); releaseScope()}
     },
     getSnapshot: () => snapshot,
     subscribe(listener) {
@@ -315,8 +284,8 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
       if (!title) {return Promise.reject(new Error('Describe an objective before submitting.'))}
       // Only fields the runtime implements cross this boundary. In particular,
       // prototype owner/status/progress edits never authorize runtime work.
-      const params = { title, description: metadata.description?.trim() || undefined, priority: metadata.priority }
-      const intent = JSON.stringify(params)
+      const params = { title, description: metadata.description?.trim() || undefined, priority: metadata.priority, acceptanceCriteria: metadata.acceptanceCriteria, deliveryMode: metadata.deliveryMode, requiredChecks: metadata.requiredChecks }
+      const intent = JSON.stringify([scope.ownerKey ?? scope.key, params])
       const key = idempotencyKey ?? createKeys.get(intent) ?? crypto.randomUUID()
       createKeys.set(intent, key)
 
@@ -326,11 +295,22 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
         return result.objective
       })
     },
+    resolveRequest(input) {
+      resetScope()
+      const params = { id: input.id, action: input.action, text: input.text?.trim() || undefined, evidenceIds: input.evidenceIds }
+      const intent = JSON.stringify([scope.ownerKey ?? scope.key, params])
+      const idempotencyKey = input.idempotencyKey ?? resolutionKeys.get(intent) ?? crypto.randomUUID()
+      resolutionKeys.set(intent, idempotencyKey)
+
+      return mutate<OrganizationSnapshot>(`resolve:${input.id}:${idempotencyKey}`, 'organization.resolve', { ...params, idempotencyKey }, value => value).then(() => {
+        if (resolutionKeys.get(intent) === idempotencyKey) {resolutionKeys.delete(intent)}
+      })
+    },
     cancelObjective: id => mutate<OrganizationSnapshot>(`cancel:${id}`, 'organization.cancel', { id }, value => value).then(() => undefined),
     retryRequest(id) {
       resetScope()
       const attempt = snapshot.requests?.find(request => request.id === id)?.attempts ?? 0
-      const intent = `${id}:${attempt}`
+      const intent = JSON.stringify([scope.ownerKey ?? scope.key, id, attempt])
       const idempotencyKey = retryKeys.get(intent) ?? crypto.randomUUID()
       retryKeys.set(intent, idempotencyKey)
 

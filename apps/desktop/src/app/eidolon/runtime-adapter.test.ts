@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { createRuntimeAdapter, type OrganizationGateway, type OrganizationScope } from './runtime-adapter'
+import { createRuntimeAdapter, organizationErrorMessage, type OrganizationGateway, type OrganizationScope } from './runtime-adapter'
 import type { Objective, OrganizationSnapshot } from './types'
 
 function deferred<T>() {
@@ -199,4 +199,27 @@ it('reads only the exact request audit and fences its late result across same-na
   later.resolve([tool])
   await assertion
   expect(h.listenerCount()).toBe(0)
+})
+
+
+it('redacts connection credentials from surfaced error messages without hiding the recoverable reason', () => {
+  const text = organizationErrorMessage(new Error('Reconnect failed for https://owner:password@example.test/path?token=secret. Authorization: Bearer abc123 api_key=private'))
+  expect(text).toContain('Reconnect failed')
+  expect(text).toContain('https://example.test/path')
+  expect(text).not.toMatch(/password|secret|abc123|private/)
+})
+
+
+it('retains unresolved intent keys by logical owner across profile switches without sharing them across owners', async () => {
+  const h = harness(vi.fn().mockRejectedValue(new Error('Acknowledgement lost')))
+  h.change({ key: 'a', ownerKey: 'owner-a', connected: true })
+  await expect(h.adapter.createObjective('same goal')).rejects.toThrow('Acknowledgement lost')
+  const a = h.request.mock.calls[0][1].idempotencyKey
+  h.change({ key: 'b', ownerKey: 'owner-b', connected: true })
+  await expect(h.adapter.createObjective('same goal')).rejects.toThrow('Acknowledgement lost')
+  const b = h.request.mock.calls[1][1].idempotencyKey
+  h.change({ key: 'a-new-socket', ownerKey: 'owner-a', connected: true })
+  await expect(h.adapter.createObjective('same goal')).rejects.toThrow('Acknowledgement lost')
+  expect(h.request.mock.calls[2][1].idempotencyKey).toBe(a)
+  expect(b).not.toBe(a)
 })

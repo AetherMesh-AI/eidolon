@@ -1,5 +1,7 @@
 import { useState } from 'react'
 
+import { useI18n } from '@/i18n/context'
+
 import { AgentAvatar } from './avatar'
 import { Inspector } from './inspector'
 import type { OrganizationSnapshot } from './types'
@@ -11,7 +13,10 @@ interface WorkGraphProps {
 }
 
 export function WorkGraph({ snapshot, objectiveId, onOpenEvidence }: WorkGraphProps) {
-  const tasks = snapshot.tasks.filter(item => item.objectiveId === objectiveId)
+  const { t } = useI18n()
+  const copy = t.organizationWork
+  const [showHistory, setShowHistory] = useState(false)
+  const tasks = snapshot.tasks.filter(item => item.objectiveId === objectiveId && (showHistory || (!item.historical && item.currentRound !== false)))
   const runtime = snapshot.source === 'runtime'
   const [selected, setSelected] = useState<string | null>(null)
   const [view, setView] = useState('Graph')
@@ -41,6 +46,7 @@ export function WorkGraph({ snapshot, objectiveId, onOpenEvidence }: WorkGraphPr
 
   return <>
     <div className="eid-toolbar"><h2>Work graph</h2><div className="eid-tabs">{['Graph', 'List'].map(mode => <button aria-pressed={view === mode} key={mode} onClick={() => setView(mode)}>{mode}</button>)}</div></div>
+    {runtime && snapshot.tasks.some(item => item.objectiveId === objectiveId && (item.historical || item.currentRound === false)) && <label><input checked={showHistory} onChange={event => setShowHistory(event.target.checked)} type="checkbox" />{copy.historyTasks}</label>}
     {runtime && <p>Runtime tasks, assignments and dependencies recorded by the connected gateway.</p>}
     {tasks.length ? <>
       <div className="eid-toolbar"><span>Scroll to pan · Select a task to inspect</span><button aria-label="Zoom out" onClick={() => setZoom(value => Math.max(0.5, value - 0.1))}>−</button><button onClick={() => setZoom(1)}>Reset view</button><button aria-label="Zoom in" onClick={() => setZoom(value => Math.min(1.5, value + 0.1))}>+</button></div>
@@ -61,7 +67,7 @@ export function WorkGraph({ snapshot, objectiveId, onOpenEvidence }: WorkGraphPr
           {tasks.map((item, index) => <li key={item.id} style={view === 'Graph' ? { position: 'absolute', left: position(index).x, top: position(index).y, width: cardWidth } : undefined}>
             <button aria-label={`Inspect task: ${item.title}`} className={`eid-row eid-task-${item.status}`} onClick={() => setSelected(item.id)} style={{ width: '100%', minHeight: 96, textAlign: 'left', ...(runtime && view === 'Graph' ? { height: rowHeight - 24, overflowY: 'auto', alignItems: 'flex-start' } : {}) }}>
               <AgentAvatar name={agentName(item.ownerId)} />
-              <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}><small>{runtime ? 'Runtime task · ' : ''}{agentName(item.ownerId)}</small><strong>{item.title}</strong>
+              <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}><small>{runtime ? 'Runtime task · ' : ''}{agentName(item.ownerId)}</small><strong>{item.title}</strong>{(item.historical || item.currentRound === false) && <small>{copy.historical}</small>}
                 {runtime && <><small>Team: {item.team || 'Not recorded'}</small><small>Type: {item.requestType || 'Not recorded'} · Priority: {item.priority || 'Not recorded'}</small></>}
                 <small>Depends on: {item.dependsOn.map(taskName).join(', ') || 'No prerequisites'}</small>
               </span><span className={`eid-status eid-status-${item.status}`}>{item.status}</span>

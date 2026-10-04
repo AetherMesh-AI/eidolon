@@ -118,6 +118,12 @@ def test_exact_utf8_application_is_durable_idempotent_and_keeps_source_merge_exp
     assert saved['appliedAt']
     assert _head(reopened, objective)['content'] == expected
     assert _count(reopened, 'edit_applications') == 1
+    validation = reopened.claim_next()
+    assert validation['type'] == 'request.validate'
+    assert reopened.finish(validation, {})
+    saved = reopened.evidence(evidence['id'])['editProposal']
+    assert saved['validationReceipt']['status'] == 'passed'
+    assert 'functional_tests' in saved['validationReceipt']['notExecuted']
     snapshot = reopened.snapshot()
     assert snapshot['objectives'][0]['status'] == 'needs_input'
     assert snapshot['tasks'][0]['status'] == 'completed'
@@ -416,6 +422,9 @@ def test_expired_apply_lease_and_duplicate_proposal_requests_cannot_advance_head
     with store._write() as conn:
         duplicate_id = store._request(conn, objective['id'], 'request.apply', apply['team'], apply['priority'],
                                       apply['task_id'], json.loads(apply['payload']))
+    validation = store.claim_next()
+    assert validation['type'] == 'request.validate'
+    assert store.finish(validation, {})
     duplicate = store.claim_next()
     assert duplicate['id'] == duplicate_id
     assert store.finish(duplicate, {})

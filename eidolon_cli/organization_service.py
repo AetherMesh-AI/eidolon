@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextvars
+from contextlib import ExitStack
 import hashlib
 import logging
 import os
@@ -132,6 +133,37 @@ class OrganizationService:
             self.start()
         return changed
 
+    def resolve(self, request_id: str, *, action: str, text: str | None = None,
+                evidence_ids: list[str] | None = None, idempotency_key: str) -> bool:
+        """Resolve a specific intervention only after its execution has stopped.
+
+        The ledger validates the action, evidence, policy generation and request
+        state. Shared request locks additionally fence a provider still unwinding
+        in another process after its lease became pending intervention. A lost
+        response can replay the exact committed resolution without another effect.
+        """
+        payload = dict(action=action, text=text, evidence_ids=evidence_ids,
+                       idempotency_key=idempotency_key)
+        with self._lock:
+            if self.store.resolution_recorded(request_id, **payload):
+                return False
+            if self._stop.is_set():
+                raise RuntimeError("Organization service is stopping; reconnect before resolving work")
+            objective_id = self.store.request_objective_id(request_id)
+            if any(record.claim.get("objective_id") == objective_id
+                   for record in self._running.values()):
+                raise ValueError("This objective still has an execution stopping or finishing; resolve it after that work exits")
+            with ExitStack() as locks:
+                for ident in self.store.objective_request_ids(objective_id):
+                    available = locks.enter_context(_ExecutionLock(
+                        self.home / "organization" / "execution-locks", ident))
+                    if not available:
+                        raise ValueError("This objective has an execution still active in another runtime; resolve it after that work exits")
+                changed = self.store.resolve(request_id, **payload)
+        if changed:
+            self.start()
+        return changed
+
     def stop(self, timeout: float = 5.0) -> bool:
         self._stop.set()
         # Persist uncertain work before waiting; SIGKILL may follow the grace.
@@ -185,7 +217,7 @@ class OrganizationService:
                     kind = record.claim.get("type", record.claim.get("kind"))
                     if kind == 'work.edit':
                         context['resolveWorkspaceSource'] = lambda path, loader: self.store.capture_workspace_source(record.claim, path, loader)
-                    record.result = {} if kind in {'request.hire', 'request.apply'} else self.executor(
+                    record.result = {} if kind in {'request.hire', 'request.apply', 'request.validate'} else self.executor(
                         record.claim, context, record.cancel)
         except Exception:
             # Provider exceptions can contain credentials or private request URLs.

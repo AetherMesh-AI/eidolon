@@ -1,5 +1,8 @@
 # Organization execution, inspection and reviewed workspace edits
 
+For the current owner-resolution queue, integrated acceptance, validation and
+legacy-surface behavior, see [Organization owner loop](organization-owner-loop.md).
+
 The Organization workspace now submits durable work to the Python backend. It no
 longer manufactures a team or task graph when an objective is entered. The
 separate example preview remains explicitly fictional and does not contact a
@@ -23,8 +26,9 @@ The manager creates a task graph. Eligible employees claim requests by request
 type, team and priority. Each deliverable is persisted before a separate reviewer
 checks it. Dependencies unlock only after approval. Open **Requests**, **Tasks**,
 **Activity**, and the artifact inspector to see real state and the full retained
-text. A completed objective requires every planned task to have passed review and
-every control request to have settled. Review is a model's assessment of supplied
+text. A completed new objective requires every current task to have passed review,
+required control work to have settled, and independent executive acceptance of an
+integrated deliverable against the current criteria. Review is a model's assessment of supplied
 context, not a guarantee that statements are true or an external action happened.
 
 ### Supported capabilities and visible limits
@@ -33,16 +37,22 @@ context, not a guarantee that statements are true or an external action happened
 - `work.analyze`: analyze that supplied context and retain the full analysis.
 - `work.inspect`: inspect explicitly granted local project text with `read_file`,
   then retain an analysis and exact tool-result receipts. Disabled by default.
-- `work.edit`: capture a known source file into an agent-owned workspace, read its
-  exact revision, and propose one exact replacement. Disabled by default.
+- `work.edit`: capture source files into an agent-owned workspace, read their
+  exact revisions, and propose a bounded group of replacements. Disabled by default.
 - `request.apply`: apply an independently approved proposal to the managed
   workspace only, with explicit organization and author `patch` grants.
-- `request.merge`: visible intervention for merging reviewed workspace output
-  into the original project. No source-project writer is enabled.
+- `request.validate`: check exact managed revisions using declarative validators.
+  This does not execute project commands or establish that a test suite passed.
+- `request.merge`: visible source delivery intervention. After applying the
+  exported output, the owner can ask the backend to verify original source bytes.
+  No source-project writer is enabled.
 - `request.plan`: the manager proposes an acyclic graph with explicit dependency
   indexes and acceptance criteria.
 - `request.review`: a distinct logical reviewer assesses the exact persisted
   artifact bytes, identified by evidence IDs and SHA-256 hashes.
+- `request.integrate`: the manager assembles a full objective deliverable.
+- `request.accept`: a distinct executive checks current criteria, exact task and
+  integrated evidence, conflicts, and explicit required checks.
 - `request.hire`: the director activates entries from the configured roster within
   the worker limit. Its visible route demands preserve planned worker teams and
   request types; the request itself routes through the director’s control team.
@@ -51,8 +61,8 @@ context, not a guarantee that statements are true or an external action happened
   profiles, grant permissions, install software, or mean real-world employment.
 
 Owner → Executive → Director → Manager → Employee is the authority hierarchy.
-The executive and director routing roles are policy-controlled; their presence
-is not evidence of a model call. The manager, worker and reviewer stages run as
+Director staffing and backend application/validation remain deterministic.
+Planning, working, reviewing, integration and executive acceptance run as
 separate bounded AIAgent turns. A new worker slot is available for actual claims,
 not a simulated activity animation.
 
@@ -128,6 +138,10 @@ organization:
   max_open_objectives: 20  # 1–100
   max_attempts: 2          # 1–3 attempts per request
   max_revisions: 2         # 0–3 review-requested revisions per task
+  max_replans: 2           # 0–3 additional objective planning rounds
+  max_stages: 120          # 4–300 admitted stages across the objective
+  max_owner_resolutions: 12 # 1–24 durable owner resolutions per objective
+  max_output_tokens: 8000  # 256–16000 per model call, not a spending cap
   lease_seconds: 45       # 15–300; live calls renew their leases
   timeout_seconds: 180    # 30–600 per stage
   team: general
@@ -189,6 +203,10 @@ same-profile provider route. The resolved identity must match; unavailable
 providers become intervention instead of silently falling back. Staffing does
 not create or connect separate profiles. Reviewers are independent logical turns,
 scoped to each configured team, and have no tools.
+
+Optional `list_files` and `search_files` grants provide bounded discovery and
+literal search through the same source boundary. Both organization and staff
+must explicitly grant each tool; `read_file` does not enable them implicitly.
 
 The current reader supports POSIX hosts with no-follow directory-descriptor
 operations (Linux/macOS). On unsupported hosts, including Windows, inspection
@@ -265,12 +283,13 @@ bytes, is binary, or exceeds **32,768 UTF-8 bytes** is refused. No redacted text
 silently written back as a replacement.
 
 One work.edit request proposes one exact, nonempty, unique oldText replacement in
-one existing file. newText may be empty to remove that substring. The backend
+each of at most eight existing files. newText may be empty to remove that substring. The backend
 checks a real completed read receipt for the target/base hash/revision and
 computes the new bytes and diff itself. Partial raw read pages are retained as
 partial observations; the separate reviewer receives the complete pinned base,
-proposed content and generated diff. Creating, deleting or moving whole files is
-not supported by this boundary.
+proposed content and generated diff. Each file retains the 32,768 UTF-8 byte limit;
+the whole proposal also has a combined byte limit. Creating, deleting or moving
+whole files is not supported by this boundary.
 
 The reviewer must identify the exact proposal ID and proposal hash when approving
 or rejecting it. Rejected proposals create only bounded revised work, with no
@@ -283,14 +302,19 @@ proposal and review. Repeated requests reuse the existing committed receipt.
 Cancellation before the application transaction prevents the change; cancellation
 after commit does not undo or conceal the retained application.
 
-After a successful managed application, the task reports the applied revision and
-the objective retains a visible request.merge intervention. This distinguishes a
+After a successful managed application, backend validation checks its exact
+revision manifest and retains an immutable receipt. Source-project delivery
+retains a visible request.merge intervention until original bytes are verified.
+An explicitly selected managed-artifact outcome does not require a source merge.
+This distinguishes a
 real editable output from an unperformed original-project change. No model,
 review decision, retry or client-supplied path can silently merge into the shared
 source folder. Download and inspect the output before merging it deliberately.
 Unified diff paths use the root aliases; a root0-only patch can be checked in the
 corresponding source root with strip level 2 (`git apply --check -p2`), after checking
 for concurrent source changes. Product execution never invokes Git or a shell.
+Source verification reads through the explicit no-follow boundary; it never
+writes originals or accepts an owner's unverified success claim.
 
 ## Developer verification and extension
 

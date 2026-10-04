@@ -1,15 +1,15 @@
-// Quitting with a turn in flight kills the backend mid-tool-call: the work is
-// lost, and anything the agent had half-written to disk stays half-written.
-// Renderers publish what they're running; the main process asks before it lets
+// Quitting can interrupt chat turns and the local organization scheduler.
+// Durable organization state survives; uncertain work needs review on restart.
+// Renderers publish active work; the main process asks before it lets
 // that go. The decision + copy live here (pure, testable) so main.ts only owns
 // the IPC and the dialog call.
 
 const MAX_LISTED = 4
 
 export interface ActiveWork {
-  /** Titles of sessions running a turn. Untitled sessions contribute a count only. */
+  /** Titles of active chats and objectives. Untitled work contributes a count only. */
   titles: string[]
-  /** Running turns, including untitled ones — always >= titles.length. */
+  /** Active work items, including queued organization work and untitled chats. */
   count: number
 }
 
@@ -82,11 +82,11 @@ export function quitPromptFor(work: ActiveWork, quittingForHandoff: boolean): nu
     detail: [
       lines.join('\n'),
       lines.length > 0 ? '' : null,
-      'Quitting stops the agent mid-turn. Any work it has not finished writing is lost.'
+      "Quitting stops this app's local runtime and can interrupt unfinished work. Saved organization work resumes when the runtime restarts; interrupted requests may need review before retrying. Work on a separately running backend may continue."
     ]
       .filter(line => line !== null)
       .join('\n')
       .trim(),
-    message: work.count === 1 ? 'Eidolon is still working on 1 chat.' : `Eidolon is still working on ${work.count} chats.`
+    message: work.count === 1 ? 'Eidolon has 1 active work item.' : `Eidolon has ${work.count} active work items.`
   }
 }

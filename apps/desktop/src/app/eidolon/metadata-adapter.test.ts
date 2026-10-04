@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 
-import { createPrototypeAdapter } from './adapter'
+import { createPrototypeAdapter } from '../../../test-fixtures/organization-prototype'
 
 it.each([-1, 101, NaN, Infinity])('rejects invalid progress %s atomically on create and update', progress => {
   const adapter = createPrototypeAdapter()

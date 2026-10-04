@@ -2,8 +2,9 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { expect, it } from 'vitest'
 
+import { createPrototypeAdapter } from '../../../test-fixtures/organization-prototype'
+
 import { Activity } from './activity'
-import { createPrototypeAdapter } from './adapter'
 
 it('offers the brief categories with opt-in fictional events and observable details', () => {
  const adapter = createPrototypeAdapter()
@@ -28,7 +29,7 @@ it('offers the brief categories with opt-in fictional events and observable deta
   expect(within(inspector).getByText('Fictional example · Not live')).toBeTruthy()
   expect(within(inspector).getByText(example.description!)).toBeTruthy()
   expect(within(inspector).getByRole('link', { name: 'Open objective' }).getAttribute('href')).toBe(`/objectives/${example.objectiveId}`)
-  fireEvent.keyDown(document, { key: 'Escape' })
+  fireEvent.keyDown(globalThis.document, { key: 'Escape' })
  }
 })
 
@@ -53,7 +54,7 @@ it('filters organization events and opens scoped details without dispatching', (
  fireEvent.click(screen.getAllByRole('button', { name: /Inspect event:/ })[0])
  expect(screen.getByRole('complementary', { name: 'Event details' })).toBeTruthy()
  expect(screen.getByRole('link', { name: 'Open objective' })).toBeTruthy()
- fireEvent.keyDown(document, { key: 'Escape' })
+ fireEvent.keyDown(globalThis.document, { key: 'Escape' })
  fireEvent.change(screen.getByRole('searchbox', { name: 'Search activity' }), { target: { value: 'no-match' } })
  expect(screen.getByText('No matching events')).toBeTruthy()
 })

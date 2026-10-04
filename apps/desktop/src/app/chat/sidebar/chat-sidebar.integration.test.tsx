@@ -24,12 +24,13 @@ const sessionRows = [
   makeSessionInfo({ id: 'tile-two', last_active: 2, profile: 'default', started_at: 1, title: 'Tile two' })
 ]
 
-const renderSidebar = (pathname: string, currentView: AppView) =>
+const renderSidebar = (pathname: string, currentView: AppView, historyOnly = false) =>
   render(
     <MemoryRouter initialEntries={[pathname]}>
       <SidebarProvider>
         <ChatSidebar
           currentView={currentView}
+          historyOnly={historyOnly}
           onArchiveSession={noop}
           onBranchSession={noop}
           onDeleteSession={noop}
@@ -98,6 +99,16 @@ describe('ChatSidebar navigation activity', () => {
     $removedSessionIds.set(new Set())
     $layoutTree.set(null)
     noteActiveTreeGroup(null)
+  })
+
+  it('retains ordinary sessions and new chat without duplicating shell navigation', () => {
+    renderSidebar('/requests', 'organization', true)
+    expect(screen.getByText('Tile one')).toBeTruthy()
+    expect(screen.getByText('Tile two')).toBeTruthy()
+    expect(screen.getAllByRole('button', { name: /New session/ }).length).toBeGreaterThan(0)
+    expect(screen.queryByRole('button', { name: 'Kanban' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Artifacts' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Capabilities' })).toBeNull()
   })
 
   it('keeps navigation and session activity coherent with the focused pane', () => {

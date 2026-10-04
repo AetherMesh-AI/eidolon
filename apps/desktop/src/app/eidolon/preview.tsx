@@ -1,13 +1,9 @@
 import './eidolon.css'
 
-// Isolated browser QA entry: deliberately imports no Electron or gateway modules.
+// Read/export-only historical entry. It never imports the gateway or writable
+// prototype harness and never migrates saved examples into dispatched work.
 import { createRoot } from 'react-dom/client'
-import { HashRouter, Navigate, Route, Routes } from 'react-router'
 
-import { createPrototypeAdapter } from './adapter'
-import { OrganizationRail } from './rail'
-import { OrganizationWorkspace } from './workspace'
+import { LegacyOrganizationHistory } from './legacy-history'
 
-const adapter = createPrototypeAdapter(window.localStorage)
-
-createRoot(document.getElementById('root')!).render(<HashRouter><div className="eidolon" style={{ display: 'grid', gridTemplateColumns: '240px minmax(0, 1fr)', height: '100vh' }}><OrganizationRail mode="prototype" sessions={<p>Runtime sessions are intentionally unavailable in this isolated preview.</p>} /><Routes><Route element={<Navigate replace to="/home" />} path="/" />{['/home', '/objectives', '/objectives/:id', '/organization', '/activity', '/knowledge'].map(path => <Route element={<OrganizationWorkspace adapter={adapter} />} key={path} path={path} />)}<Route element={<main className="eid-page"><h1>Runtime surface</h1><p>This destination uses the existing Eidolon runtime in the desktop application. It is intentionally not connected in this isolated preview.</p></main>} path="*" /></Routes></div></HashRouter>)
+createRoot(document.getElementById('root')!).render(<LegacyOrganizationHistory />)

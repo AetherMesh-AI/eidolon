@@ -15,6 +15,12 @@ import uuid
 from datetime import datetime, timezone
 
 
+from eidolon_cli.organization_project_workspace import (
+    PROJECT_SCHEMA, OrganizationProjectStore, project_spec, proposal_files,
+    verify_project_files, applied_manifest, validation_receipt, handoff_receipt,
+)
+from eidolon_cli.organization_project_validation import canonical, digest, parse_edit_result
+
 MAX_EDIT_BYTES = 32768
 EDIT_SCHEMA = """
 CREATE TABLE IF NOT EXISTS workspaces (
@@ -61,6 +67,8 @@ for _table in ('workspaces', 'workspace_roots', 'workspace_revisions', 'edit_pro
         EDIT_SCHEMA += (f'CREATE TRIGGER IF NOT EXISTS immutable_{_table}_{_operation.lower()} '
                         f'BEFORE {_operation} ON {_table} BEGIN '
                         "SELECT RAISE(ABORT, 'Immutable workspace record'); END;\n")
+
+EDIT_SCHEMA += PROJECT_SCHEMA
 
 
 def _hash(text):
@@ -114,12 +122,13 @@ def _diff(path, before, after):
                    for line in chunks)
 
 
-def _proposal_digest(row):
+def _proposal_digest(row, spec=None):
     # Versioned explicit fields avoid trusting a model-supplied diff or digest.
     fields = ('id', 'request_id', 'objective_id', 'task_id', 'evidence_id', 'evidence_sha256',
               'author_id', 'workspace_id', 'path', 'base_revision', 'base_sha256',
               'old_text', 'new_text', 'new_content', 'new_sha256', 'diff', 'source_receipt_id')
-    return _hash(json.dumps({'version': 1, **{field: row[field] for field in fields}},
+    return _hash(json.dumps({'version': 2 if spec else 1, **{field: row[field] for field in fields},
+                            **({'projectSpec': spec} if spec else {})},
                             sort_keys=True, ensure_ascii=False, separators=(',', ':')))
 
 
@@ -159,7 +168,7 @@ def _source_read(row, source):
 
 
 def _verify_proposal(conn, proposal):
-    if proposal is None or _proposal_digest(proposal) != proposal['sha256']:
+    if proposal is None or _proposal_digest(proposal, project_spec(conn, proposal)) != proposal['sha256']:
         raise ValueError('Edit proposal is missing or has changed')
     source = _verify_revision(_revision(conn, proposal['objective_id'], proposal['path'], proposal['base_revision']))
     if (source['sha256'] != proposal['base_sha256'] or source['workspace_id'] != proposal['workspace_id']
@@ -180,6 +189,7 @@ def _verify_proposal(conn, proposal):
                            (proposal['source_receipt_id'], proposal['evidence_id'])).fetchone()
     if not _source_read(receipt, source) or receipt['request_id'] != proposal['request_id']:
         raise ValueError('Edit proposal has no matching persisted successful source read')
+    verify_project_files(conn, proposal)
     return source
 
 
@@ -242,6 +252,21 @@ def proposal_view(conn, proposal_id, *, full=True):
     if applied:
         value.update({'appliedRevision': applied['applied_revision'],
                       'appliedAt': datetime.fromtimestamp(applied['created'], timezone.utc).isoformat()})
+    files = proposal_files(conn, row)
+    value['files'] = []
+    for item in files:
+        entry = {'sourcePath': item['path'], 'baseRevision': item['base_revision'],
+                 'baseSha256': item['base_sha256'], 'newSha256': item['new_sha256']}
+        if full:
+            source = _revision(conn, row['objective_id'], item['path'], item['base_revision'])
+            entry.update({'baseContent': source['content'], 'newContent': item['new_content'], 'diff': item['diff']})
+        value['files'].append(entry)
+    spec = project_spec(conn, row)
+    value['validations'] = spec['validations'] if spec else []
+    value['validationReceipt'] = validation_receipt(conn, row, verify=full)
+    value['sourceVerificationReceipt'] = handoff_receipt(conn, row)
+    value['scope'] = 'managed_workspace'
+    value['notExecuted'] = ['project_commands', 'functional_tests']
     return value
 
 
@@ -250,7 +275,7 @@ def evidence_proposal(conn, evidence_id, *, full=True):
     return proposal_view(conn, row['id'], full=full) if row else None
 
 
-class OrganizationEditStore:
+class OrganizationEditStore(OrganizationProjectStore):
     """Mixin using the store's BEGIN IMMEDIATE and current-lease primitives."""
 
     def _edit_grant_reason(self, conn, author_id, team, *, applying=False):
@@ -283,7 +308,8 @@ class OrganizationEditStore:
             original = conn.execute('SELECT team FROM requests WHERE id=?', (proposal['request_id'],)).fetchone()
             if original is None or original['team'] != request['team']:
                 raise ValueError('Application must preserve the exact source request team')
-            self._verify_root(conn, request['objective_id'], proposal['path'])
+            for item in proposal_files(conn, proposal):
+                self._verify_root(conn, request['objective_id'], item['path'])
         except ValueError as error:
             return str(error)
         return None
@@ -355,49 +381,52 @@ class OrganizationEditStore:
         if request is None or request['type'] != 'work.edit' or not request['task_id']:
             raise ValueError('Edit proposal requires a current work.edit lease')
         self._require_edit_grant(conn, request['agent_id'], request['team'])
-        edit = result.get('edit')
-        fields = {'path', 'baseRevision', 'baseSha256', 'oldText', 'newText'}
-        if not isinstance(edit, dict) or set(edit) != fields:
-            raise ValueError('Edit must specify exactly path, baseRevision, baseSha256, oldText, and newText')
-        self._verify_root(conn, request['objective_id'], edit['path'])
-        if type(edit['baseRevision']) is not int or edit['baseRevision'] < 0:
-            raise ValueError('Edit baseRevision must identify a captured workspace revision')
-        source = _verify_revision(_revision(conn, request['objective_id'], edit['path'], edit['baseRevision']))
-        if source['sha256'] != edit['baseSha256']:
-            raise ValueError('Edit baseSha256 does not match the captured source')
-        old, new = _exact_text(edit['oldText'], 'oldText'), _exact_text(edit['newText'], 'newText')
-        if not old or source['content'].find(old) < 0 or source['content'].find(old) != source['content'].rfind(old):
-            raise ValueError('oldText must match exactly one nonempty source substring')
-        updated = _safe_content(source['content'].replace(old, new, 1), 'Proposed content')
-        if updated == source['content']:
-            raise ValueError('Edit replacement must change the captured content')
+        result = parse_edit_result(result)
+        edits = result.get('edits', [result.get('edit')])
+        files = []
         receipts = conn.execute('SELECT * FROM tool_receipts WHERE request_id=? AND attempt=? ORDER BY created,id',
                                 (request['id'], request['attempts'])).fetchall()
         if any(row['status'] not in {'completed', 'failed'} for row in receipts):
             raise ValueError('Edit source receipts include unresolved or blocked tool calls')
-        receipt = next((row for row in receipts if _source_read(row, source)), None)
-        if receipt is None:
-            raise ValueError('Edit requires a matching persisted successful workspace source read')
-        diff = _diff(edit['path'], source['content'], updated)
+        for edit in edits:
+            self._verify_root(conn, request['objective_id'], edit['path'])
+            source = _verify_revision(_revision(conn, request['objective_id'], edit['path'], edit['baseRevision']))
+            if source['sha256'] != edit['baseSha256']:
+                raise ValueError('Edit baseSha256 does not match the captured source')
+            old, new = _exact_text(edit['oldText'], 'oldText'), _exact_text(edit['newText'], 'newText')
+            if not old or source['content'].find(old) < 0 or source['content'].find(old) != source['content'].rfind(old):
+                raise ValueError('oldText must match exactly one nonempty source substring')
+            updated = _safe_content(source['content'].replace(old, new, 1), 'Proposed content')
+            if updated == source['content']:
+                raise ValueError('Edit replacement must change the captured content')
+            receipt = next((row for row in receipts if _source_read(row, source)), None)
+            if receipt is None:
+                raise ValueError('Edit requires a matching persisted successful workspace source read')
+            files.append({'path': edit['path'], 'base_revision': source['revision'], 'base_sha256': source['sha256'],
+                          'old_text': old, 'new_text': new, 'new_content': updated, 'new_sha256': _hash(updated),
+                          'diff': _diff(edit['path'], source['content'], updated), 'source_receipt_id': receipt['id']})
+        if sum(len(item['new_content'].encode('utf-8')) for item in files) > 131072:
+            raise ValueError('Combined project output exceeds the 131072-byte limit')
+        spec = {'files': files, 'validations': result.get('validations', [])}
+        first = files[0]
+        source = _revision(conn, request['objective_id'], first['path'], first['base_revision'])
         proposal_id = 'proposal_' + uuid.uuid4().hex
-        descriptor = (f'Edit proposal {proposal_id} for {edit["path"]}.\n'
-                      f'Base revision: {source["revision"]}; source SHA-256: {source["sha256"]}.\n'
-                      f'Proposed SHA-256: {_hash(updated)}.\n'
-                      'Exact content and backend-generated diff are retained in the linked proposal. '
-                      'Original source files are unchanged.')
+        descriptor = (f'Project edit proposal {proposal_id} for {len(files)} file(s).\n'
+                      'Exact sources, backend-generated diffs, and declarative validation requirements are retained in the linked proposal. '
+                      'Original source files are unchanged. Project commands and functional tests are not available.')
         self._finish_work(conn, request, {'summary': result.get('summary'), 'deliverable': descriptor})
         evidence = conn.execute('SELECT * FROM evidence WHERE request_id=?', (request['id'],)).fetchone()
         proposal = {'id': proposal_id, 'request_id': request['id'],
                     'objective_id': request['objective_id'], 'task_id': request['task_id'],
                     'evidence_id': evidence['id'], 'evidence_sha256': evidence['sha256'],
                     'author_id': request['agent_id'], 'workspace_id': source['workspace_id'],
-                    'path': edit['path'], 'base_revision': source['revision'], 'base_sha256': source['sha256'],
-                    'old_text': old, 'new_text': new, 'new_content': updated, 'new_sha256': _hash(updated),
-                    'diff': diff, 'source_receipt_id': receipt['id'], 'created': time.time()}
-        proposal['sha256'] = _proposal_digest(proposal)
+                    **first, 'created': time.time()}
+        proposal['sha256'] = _proposal_digest(proposal, spec)
         columns = ','.join(proposal)
         conn.execute(f'INSERT INTO edit_proposals ({columns}) VALUES ({",".join("?" for _ in proposal)})',
                      tuple(proposal.values()))
+        conn.execute('INSERT INTO edit_project_specs VALUES (?,?,?,?)',
+                     (proposal_id, canonical(files), canonical(spec['validations']), digest(spec)))
         for review in conn.execute("SELECT id,payload FROM requests WHERE task_id=? AND type='request.review' AND status='queued'",
                                    (request['task_id'],)).fetchall():
             payload = json.loads(review['payload'])
@@ -452,10 +481,7 @@ class OrganizationEditStore:
             raise ValueError('Managed-workspace application requires a current application lease')
         if not isinstance(result, dict) or result:
             raise ValueError('Managed-workspace application takes no model-provided result or instructions')
-        agent = conn.execute('SELECT * FROM agents WHERE id=?', (request['agent_id'],)).fetchone()
-        if (agent is None or agent['role'] != 'Employee' or agent['team'] != request['team']
-                or json.loads(agent['accepts']) != ['request.apply'] or self._staff(agent['id']) is not None):
-            raise ValueError('Only the matching backend-controlled workspace applier can apply edits')
+        self._require_project_controller(conn, request)
         reason = self.edit_apply_unavailability(conn, request)
         if reason:
             raise ValueError(reason)
@@ -474,32 +500,32 @@ class OrganizationEditStore:
             committed = _verify_revision(_revision(conn, request['objective_id'], proposal['path'], previous['applied_revision']))
             if committed['sha256'] != previous['applied_sha256']:
                 raise ValueError('Committed application revision has changed')
-            conn.execute("UPDATE tasks SET status='completed' WHERE id=?", (request['task_id'],))
+            applied_manifest(conn, proposal)
+            checked = validation_receipt(conn, proposal)
+            conn.execute("UPDATE tasks SET status=? WHERE id=?",
+                         ("completed" if checked and checked["status"] == "passed" else "queued", request["task_id"]))
             return proposal_view(conn, proposal['id'])
-        head = _verify_revision(_revision(conn, request['objective_id'], proposal['path']))
-        if head['revision'] != source['revision'] or head['sha256'] != proposal['base_sha256']:
-            raise ValueError('Workspace base is stale; a new source read, proposal, and review are required')
-        applied_revision = head['revision'] + 1
+        files = proposal_files(conn, proposal)
+        for item in files:
+            head = _verify_revision(_revision(conn, request['objective_id'], item['path']))
+            if head['revision'] != item['base_revision'] or head['sha256'] != item['base_sha256']:
+                raise ValueError('Workspace base is stale; a new source read, proposal, and review are required')
         now = time.time()
-        conn.execute('INSERT INTO workspace_revisions VALUES (?,?,?,?,?,?,?)',
-                     (request['objective_id'], proposal['path'], applied_revision, proposal['workspace_id'],
-                      proposal['new_content'], proposal['new_sha256'], now))
-        conn.execute('UPDATE workspace_heads SET revision=? WHERE objective_id=? AND path=? AND revision=?',
-                     (applied_revision, request['objective_id'], proposal['path'], source['revision']))
+        for item in files:
+            conn.execute('INSERT INTO workspace_revisions VALUES (?,?,?,?,?,?,?)',
+                         (request['objective_id'], item['path'], item['base_revision'] + 1, proposal['workspace_id'],
+                          item['new_content'], item['new_sha256'], now))
+            conn.execute('UPDATE workspace_heads SET revision=? WHERE objective_id=? AND path=? AND revision=?',
+                         (item['base_revision'] + 1, request['objective_id'], item['path'], item['base_revision']))
+        applied_revision = proposal['base_revision'] + 1
         conn.execute('INSERT INTO edit_applications VALUES (?,?,?,?,?,?,?)',
                      (proposal['id'], request['id'], approval['request_id'], proposal['sha256'],
                       applied_revision, proposal['new_sha256'], now))
-        # This gate has no task_id: pending original-project integration must not
-        # retroactively relabel an already committed workspace application.
-        merge = self._request(conn, request['objective_id'], 'request.merge', request['team'], request['priority'],
-                              payload={'proposalId': proposal['id'], 'proposalSha256': proposal['sha256'],
-                                       'taskId': request['task_id'], 'workspaceId': proposal['workspace_id'],
-                                       'sourcePath': proposal['path'], 'appliedRevision': applied_revision})
-        self._pending(conn, conn.execute('SELECT * FROM requests WHERE id=?', (merge,)).fetchone(),
-                      'The reviewed edit was committed to the managed workspace. Original source files are unchanged; '
-                      'merging into the original project requires explicit intervention.')
-        conn.execute("UPDATE tasks SET status='completed' WHERE id=?", (request['task_id'],))
+        self._request(conn, request['objective_id'], 'request.validate', request['team'], request['priority'],
+                      request['task_id'], {'proposalId': proposal['id'], 'proposalSha256': proposal['sha256'],
+                                           'evidenceIds': [proposal['evidence_id']]})
+        conn.execute("UPDATE tasks SET status='queued' WHERE id=?", (request['task_id'],))
         self._event(conn, request['objective_id'],
-                    f'Managed-workspace revision {applied_revision} committed with its application receipt; source files are unchanged.',
+                    f'Atomically committed {len(files)} managed file revision(s); exact content validation queued. Source files are unchanged.',
                     'completion', request['agent_id'])
         return proposal_view(conn, proposal['id'])

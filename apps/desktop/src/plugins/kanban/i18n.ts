@@ -10,6 +10,8 @@ import { useMemo } from 'react'
 
 type KanbanMessages = {
   nav: string
+  legacyNotice: string
+  organizationLedger: string
   openBoard: string
   /** Command label — shows in the ⌘K palette AND as the keybind panel row,
    *  so it carries the "Kanban: " prefix the palette convention wants. */
@@ -212,7 +214,10 @@ type KanbanMessages = {
 }
 
 export const en: KanbanMessages = {
-  nav: 'Kanban',
+  nav: 'Legacy Kanban',
+  legacyNotice:
+    'Existing Kanban tasks, dispatcher and history remain here. This board is separate from the organization request ledger; records are not automatically migrated.',
+  organizationLedger: 'Open organization ledger',
   openBoard: 'Kanban: Open board',
   newTaskCommand: 'Kanban: New task',
   countTip: (running, ready) => `Kanban — ${running} running, ${ready} ready`,
@@ -234,7 +239,7 @@ export const en: KanbanMessages = {
   },
   arcRunning: 'An agent is working on this now.',
   arcStale: 'Claimed, but no worker heartbeat for 2+ minutes — the dispatcher will reclaim it.',
-  title: 'Kanban',
+  title: 'Legacy Kanban',
   orchestrationSettings: 'Orchestration settings',
   newTask: 'New task',
   filterCards: 'Filter cards…',
@@ -424,7 +429,10 @@ export const en: KanbanMessages = {
 }
 
 const ja: KanbanMessages = {
-  nav: 'カンバン',
+  nav: '従来のカンバン',
+  legacyNotice:
+    '既存のカンバンのタスク、ディスパッチャー、履歴はここに保持されます。このボードは組織のリクエスト台帳とは別で、記録は自動移行されません。',
+  organizationLedger: '組織の台帳を開く',
   openBoard: 'カンバン: ボードを開く',
   newTaskCommand: 'カンバン: 新しいタスク',
   countTip: (running, ready) => `カンバン — 実行中 ${running}、待機 ${ready}`,
@@ -446,7 +454,7 @@ const ja: KanbanMessages = {
   },
   arcRunning: 'エージェントが現在作業中です。',
   arcStale: '取得済みですが、2分以上ワーカーのハートビートがありません — ディスパッチャが再取得します。',
-  title: 'カンバン',
+  title: '従来のカンバン',
   orchestrationSettings: 'オーケストレーション設定',
   newTask: '新しいタスク',
   filterCards: 'カードを絞り込み…',
@@ -635,7 +643,9 @@ const ja: KanbanMessages = {
 }
 
 const zh: KanbanMessages = {
-  nav: '看板',
+  nav: '旧版看板',
+  legacyNotice: '现有看板任务、调度器和历史记录保留在此。此看板与组织请求账本分开，记录不会自动迁移。',
+  organizationLedger: '打开组织账本',
   openBoard: '看板：打开面板',
   newTaskCommand: '看板：新建任务',
   countTip: (running, ready) => `看板 — 运行中 ${running}、就绪 ${ready}`,
@@ -657,7 +667,7 @@ const zh: KanbanMessages = {
   },
   arcRunning: '有代理正在处理它。',
   arcStale: '已领取，但超过 2 分钟没有工作单元心跳 — 调度器将重新领取。',
-  title: '看板',
+  title: '旧版看板',
   orchestrationSettings: '编排设置',
   newTask: '新建任务',
   filterCards: '筛选卡片…',
@@ -843,7 +853,9 @@ const zh: KanbanMessages = {
 }
 
 const zhHant: KanbanMessages = {
-  nav: '看板',
+  nav: '舊版看板',
+  legacyNotice: '現有看板任務、排程器和歷史記錄保留於此。此看板與組織請求帳本分開，記錄不會自動遷移。',
+  organizationLedger: '開啟組織帳本',
   openBoard: '看板：開啟面板',
   newTaskCommand: '看板：新增任務',
   countTip: (running, ready) => `看板 — 執行中 ${running}、就緒 ${ready}`,
@@ -865,7 +877,7 @@ const zhHant: KanbanMessages = {
   },
   arcRunning: '有代理正在處理它。',
   arcStale: '已領取，但超過 2 分鐘沒有工作單元心跳 — 排程器將重新領取。',
-  title: '看板',
+  title: '舊版看板',
   orchestrationSettings: '編排設定',
   newTask: '新增任務',
   filterCards: '篩選卡片…',

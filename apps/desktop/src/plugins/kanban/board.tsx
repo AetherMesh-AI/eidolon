@@ -1363,6 +1363,13 @@ export function KanbanBoardPage() {
         </div>
       </header>
 
+      <div className="flex shrink-0 items-center gap-2 px-4 pb-2 text-xs text-(--ui-text-tertiary)">
+        <p>{k.legacyNotice}</p>
+        <Button onClick={() => host.navigate('/requests')} size="micro" variant="link">
+          {k.organizationLedger}
+        </Button>
+      </div>
+
       {settingsOpen && <OrchestrationPanel />}
 
       {board && <Intro />}

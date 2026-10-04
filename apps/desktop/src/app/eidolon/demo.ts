@@ -3,6 +3,7 @@ import type { OrganizationSnapshot } from './types'
 /** Fictional scenario. Never merged with gateway sessions or presented as live. */
 export function demoSnapshot(): OrganizationSnapshot {
   const timestamp = new Date().toISOString()
+
   return {
     decisions: [{ id: 'demo-decision', objectiveId: 'demo-identity', title: 'Review identity migration plan', summary: 'Fictional review gate before rollout. Approval affects this prototype only.', status: 'pending' }],
     objectives: [{ id: 'demo-identity', title: 'Unified identity architecture', description: 'Example scenario: unify account identity across game platforms.', status: 'active', ownerId: 'lead', createdAt: timestamp, source: 'prototype' },

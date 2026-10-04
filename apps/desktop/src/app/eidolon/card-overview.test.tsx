@@ -2,7 +2,8 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { expect, it } from 'vitest'
 
-import { createPrototypeAdapter } from './adapter'
+import { createPrototypeAdapter } from '../../../test-fixtures/organization-prototype'
+
 import { OrganizationWorkspace } from './workspace'
 
 it('identifies responsible teams from assigned agents and task owners, not roles', () => {
@@ -13,7 +14,7 @@ it('identifies responsible teams from assigned agents and task owners, not roles
   expect(card.getByText('Responsible team: Engineering')).toBeTruthy()
 })
 
-it.each(['Map', 'Grid', 'List'])('separates role, team and current assignment on %s agent cards', mode => {
+it.each(['Grid', 'List'])('separates role, team and current assignment on %s agent cards', mode => {
   const adapter = createPrototypeAdapter()
   adapter.loadDemo()
   render(<MemoryRouter initialEntries={['/organization']}><OrganizationWorkspace adapter={adapter} /></MemoryRouter>)

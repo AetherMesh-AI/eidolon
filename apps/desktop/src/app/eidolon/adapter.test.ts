@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { createPrototypeAdapter } from './adapter'
+import { createPrototypeAdapter } from '../../../test-fixtures/organization-prototype'
 
 describe('prototype organization objective lifecycle', () => {
   it.each(['{not-json', 'null', '{}'])('recovers unreadable persisted data %s without overwriting it', saved => {

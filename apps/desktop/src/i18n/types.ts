@@ -1,3 +1,4 @@
+import type { TipId } from '@/lib/tips/catalog'
 // Desktop i18n type contract.
 //
 // `Translations` is the single source of truth for every translatable string
@@ -5,7 +6,7 @@
 // partial locales should use `defineLocale()` so missing desktop-only strings
 // fall back to English while new keys remain type-checked.
 
-import type { TipId } from '@/lib/tips/catalog'
+import type { OrganizationWorkCopy } from './organization-work'
 
 export type Locale = 'en' | 'zh' | 'zh-hant' | 'ja' | 'ar' | 'ru'
 
@@ -51,6 +52,7 @@ interface AuxTaskCopy {
 }
 
 export interface Translations {
+  organizationWork: OrganizationWorkCopy
   organizationRuntime: {
     artifactLoading: string
     artifactError: string

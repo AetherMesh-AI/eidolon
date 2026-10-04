@@ -310,6 +310,8 @@ function searchResultToSession(result: SessionSearchResult): SessionInfo {
 
 interface ChatSidebarProps extends React.ComponentProps<typeof Sidebar> {
   currentView: AppView
+  /** The organization rail owns page navigation; retain chat creation/history here. */
+  historyOnly?: boolean
   onNavigate: (item: SidebarNavItem) => void
   onLoadMoreSessions: () => Promise<void> | void
   onLoadMoreMessaging?: (platform: string) => Promise<void> | void
@@ -331,6 +333,7 @@ interface ChatSidebarProps extends React.ComponentProps<typeof Sidebar> {
 
 export function ChatSidebar({
   currentView: routeView,
+  historyOnly = false,
   onNavigate,
   onLoadMoreSessions,
   onLoadMoreMessaging,
@@ -1495,10 +1498,15 @@ export function ChatSidebar({
       data-tour="sessions-sidebar"
     >
       <SidebarContent className="gap-0 overflow-hidden bg-transparent px-2.5">
-        <SidebarGroup className="shrink-0 p-0 pb-2 pt-[calc(var(--titlebar-height)+0.375rem)]">
+        <SidebarGroup
+          className={cn('shrink-0 p-0 pb-2', historyOnly ? 'pt-1' : 'pt-[calc(var(--titlebar-height)+0.375rem)]')}
+        >
           <SidebarGroupContent>
             <SidebarMenu className="gap-px">
-              {[...SIDEBAR_NAV, ...contributedNav].map(item => {
+              {(historyOnly
+                ? SIDEBAR_NAV.filter(item => item.id === 'new-session')
+                : [...SIDEBAR_NAV, ...contributedNav]
+              ).map(item => {
                 const isInteractive = Boolean(item.action) || Boolean(item.route)
 
                 const active =

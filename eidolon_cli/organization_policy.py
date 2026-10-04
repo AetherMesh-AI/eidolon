@@ -25,11 +25,11 @@ BEGIN SELECT RAISE(ABORT, 'Request requires a current organization policy'); END
 # Execution-slot/timeout knobs are each process's operational bounds. They may
 # differ while an old provider call is still unwinding. Grants, source roots,
 # staff identities/routes and worker capacity are authoritative shared policy.
-_AUTHORITY_FIELDS = ('team', 'capabilities', 'roster', 'tool_grants', 'read_roots', 'max_workers')
+_AUTHORITY_FIELDS = ('team', 'capabilities', 'roster', 'tool_grants', 'read_roots', 'max_workers', 'max_replans', 'max_stages', 'max_owner_resolutions', 'max_output_tokens')
 
 
 def _fingerprint(settings):
-    return hashlib.sha256(json.dumps({key: settings[key] for key in _AUTHORITY_FIELDS},
+    return hashlib.sha256(json.dumps({key: settings.get(key, getattr(OrganizationSettings, key)) for key in _AUTHORITY_FIELDS},
                                      sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
 
@@ -39,7 +39,9 @@ def persisted_settings(conn):
     if row is None:
         return None
     values = json.loads(row['settings'])
-    if _fingerprint(values) != row['fingerprint']:
+    legacy = hashlib.sha256(json.dumps({key: values[key] for key in _AUTHORITY_FIELDS if key in values},
+                                      sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    if _fingerprint(values) != row['fingerprint'] and legacy != row['fingerprint']:
         raise ValueError('Persisted organization policy does not match its identity')
     for key in ('capabilities', 'tool_grants', 'read_roots'):
         values[key] = tuple(values[key])

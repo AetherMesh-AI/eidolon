@@ -46,6 +46,17 @@ def test_manager_hire_read_and_evidence_bound_review_complete(tmp_path, monkeypa
                               "description": "Read root0/facts.txt and compare both exact costs, citing lines.", "dependsOn": []}]}
                     assert not body.get("tools")
                     assert any("read_file" in s["tools"] for s in ctx["staffing"])
+                elif kind == 'request.integrate':
+                    assert not body.get('tools')
+                    output = {'summary': 'Integrated cost comparison', 'deliverable': outcome['deliverable']}
+                elif kind == 'request.accept':
+                    assert not body.get('tools')
+                    ids = [item['id'] for item in ctx['evidence']]
+                    output = {'approved': True, 'summary': 'The complete objective is satisfied by the retained integrated analysis.',
+                              'evidenceIds': ids, 'conflicts': [], 'criteriaResults': [
+                                  {'criterion': criterion, 'satisfied': True, 'evidenceIds': ids,
+                                   'reason': 'The exact retained source supports the full cost comparison.'}
+                                  for criterion in ctx['objective']['acceptanceCriteria']]}
                 elif kind == "request.review":
                     proof = ctx["evidence"][0]
                     assert proof["content"] == outcome["deliverable"]
@@ -119,15 +130,15 @@ def test_manager_hire_read_and_evidence_bound_review_complete(tmp_path, monkeypa
             time.sleep(0.01)
         assert not errors
         assert snapshot["objectives"][0]["status"] == "completed", snapshot["requests"]
-        assert len(received) == 4 and len(reviewed) == 1
+        assert len(received) == 6 and len(reviewed) == 1
         assert all(row["status"] == "completed" for row in snapshot["requests"])
-        assert {row["type"] for row in snapshot["requests"]} == {"request.plan", "request.hire", "work.inspect", "request.review"}
+        assert {row["type"] for row in snapshot["requests"]} == {"request.plan", "request.hire", "work.inspect", "request.review", "request.integrate", "request.accept"}
         assert str(source) not in json.dumps(received)
         proof = store.evidence(reviewed[0]["id"])
         assert proof["content"] == outcome["deliverable"] and proof["toolReceipts"][0]["status"] == "completed"
         replay = store.create_objective("Compare costs", "Read root0/facts.txt and compare the costs.", idempotency_key="real-inspect-once")
         assert replay["id"] == objective["id"]
-        assert len(received) == 4
+        assert len(received) == 6
     finally:
         assert service.stop()
         server.shutdown()

@@ -158,9 +158,9 @@ describe('runtime organization rendering', () => {
 
   it('labels the rail runtime by default and identifies explicitly selected prototype mode', () => {
     const { rerender } = render(<MemoryRouter><OrganizationRail sessions={null} /></MemoryRouter>)
-    expect(screen.getByText(/Organization · Gateway runtime/)).toBeTruthy()
+    expect(screen.getByText(/Organization evidence · current connection and profile/)).toBeTruthy()
     expect(screen.queryByText(/Organization · Local prototype/)).toBeNull()
     rerender(<MemoryRouter><OrganizationRail mode="prototype" sessions={null} /></MemoryRouter>)
-    expect(screen.getByText(/Organization · Local prototype/)).toBeTruthy()
+    expect(screen.getAllByText('Legacy prototype history').some(element => element.className === 'eid-rail-footer')).toBe(true)
   })
 })
