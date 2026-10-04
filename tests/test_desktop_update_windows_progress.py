@@ -94,7 +94,11 @@ def test_progress_advances_while_the_orchestrator_blocks(tmp_path: Path) -> None
         )
 
     try:
-        deadline = time.monotonic() + 20
+        # PowerShell startup and eager C# compilation precede the listener's
+        # own 15s readiness handshake. Bound that cold start separately from
+        # the held-stage checks below, which exercise actual live progress.
+        startup_timeout = 60
+        deadline = time.monotonic() + startup_timeout
         shim_url = None
         while time.monotonic() < deadline:
             text = output_path.read_text(encoding="utf-8", errors="replace")
@@ -106,7 +110,12 @@ def test_progress_advances_while_the_orchestrator_blocks(tmp_path: Path) -> None
                 break
             time.sleep(0.1)
 
-        assert shim_url, output_path.read_text(encoding="utf-8", errors="replace")
+        assert shim_url, (
+            f"Windows PowerShell did not publish the progress URL within {startup_timeout}s "
+            f"(pid={process.pid}, exit_code={process.poll()!r}). "
+            "A None exit code means startup was still running.\n"
+            f"PowerShell output:\n{output_path.read_text(encoding='utf-8', errors='replace')}"
+        )
 
         # The URL prints BEFORE the orchestrator publishes its held stage —
         # sampling immediately races the publish and can catch the page's

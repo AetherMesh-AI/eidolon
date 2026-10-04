@@ -140,6 +140,9 @@ def _pack_into_staging(root: Path, content: str = "", returncode: int = 0):
 
 
 def test_gui_installs_packages_and_launches_desktop_app(tmp_path, monkeypatch, capsys):
+    # This orchestration fixture writes text, not a PE. Native integrity behavior
+    # is exercised separately in test_desktop_exe_integrity.py.
+    monkeypatch.setattr(main_desktop, "_desktop_exe_integrity_error", lambda _path: None)
     root = _make_desktop_tree(tmp_path)
     desktop_dir = root / "apps" / "desktop"
     monkeypatch.setattr(cli_main, "PROJECT_ROOT", root)
@@ -149,7 +152,7 @@ def test_gui_installs_packages_and_launches_desktop_app(tmp_path, monkeypatch, c
     pack_ok = subprocess.CompletedProcess(["npm", "run", "pack"], 0)
     launch_ok = subprocess.CompletedProcess([str(packaged_exe)], 0)
 
-    with patch("eidolon_cli.main.shutil.which", return_value="/usr/bin/npm"), \
+    with patch("eidolon_cli.main_install_repair._resolve_node_runtime_npm", return_value="/usr/bin/npm"), \
          patch("eidolon_cli.main_web_build._run_npm_install_deterministic", return_value=install_ok) as mock_install, \
          patch("eidolon_cli.main_desktop._desktop_build_needed", return_value=True), \
          patch("eidolon_cli.main_desktop._write_desktop_build_stamp"), \
@@ -1158,6 +1161,7 @@ def test_desktop_launch_options_ozone_hint_defaults_auto():
 def test_gui_bridges_ozone_hint_to_launch_env(tmp_path, monkeypatch):
     """COSMIC HUD: ``desktop.ozone_platform_hint: x11`` sets
     ``ELECTRON_OZONE_PLATFORM_HINT`` on the launched Electron process."""
+    monkeypatch.setattr(main_desktop, "_desktop_exe_integrity_error", lambda _path: None)
     root = _make_desktop_tree(tmp_path)
     monkeypatch.setattr(cli_main, "PROJECT_ROOT", root)
     _make_packaged_executable(root, monkeypatch)
@@ -1542,6 +1546,7 @@ def test_gui_failed_pack_leaves_previous_app_untouched(tmp_path, monkeypatch, ca
 
 
 def test_gui_successful_pack_swaps_new_app_into_release(tmp_path, monkeypatch):
+    monkeypatch.setattr(main_desktop, "_desktop_exe_integrity_error", lambda _path: None)
     root = _make_desktop_tree(tmp_path)
     desktop_dir = root / "apps" / "desktop"
     monkeypatch.setattr(cli_main, "PROJECT_ROOT", root)

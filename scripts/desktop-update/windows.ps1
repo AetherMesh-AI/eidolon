@@ -51,7 +51,9 @@ param(
     [switch]$SelfTestUi,
     [switch]$SelfTestPipeDrain,
     [switch]$SelfTestMarker,
-    [switch]$SelfTestWorkingDirectory
+    [switch]$SelfTestWorkingDirectory,
+    [switch]$SelfTestPythonInvocation,
+    [switch]$SelfTestRelaunchWait
 )
 
 if (-not $SelfTestUi -and -not $SelfTestPipeDrain -and -not $InstallRoot) {
@@ -600,24 +602,29 @@ function Remove-MarkerIfOwned {
     } catch {}
 }
 
-function Start-DesktopRelaunch {
-    # Returns $true only when a launch VERIFIABLY happened (WMI accepted and
-    # the pid exists, or the fallback spawn returned a live process). The
-    # finally block downgrades the on-screen/on-disk outcome when it didn't
-    # — the sibling truth contract to posix.sh's launch acceptance.
-    if (-not $RelaunchExe) { return $false }
-    # electron-builder replaces win-unpacked in place. After a successful
-    # update it can remove the old Hermes.exe before writing the replacement,
-    # so a one-shot existence check races the rebuild and strands the user.
-    $relaunchDeadline = (Get-Date).AddSeconds(120)
-    while (-not (Test-Path -LiteralPath $RelaunchExe)) {
-        if ((Get-Date) -ge $relaunchDeadline) {
-            Write-HandoffLog "WARNING: desktop relaunch executable did not reappear within 120s: $RelaunchExe"
+function Wait-DesktopRelaunchExecutable(
+    [string]$Executable,
+    [scriptblock]$Now = { Get-Date },
+    [scriptblock]$Sleep = { param($Milliseconds) Start-Sleep -Milliseconds $Milliseconds }
+) {
+    if (-not $Executable) { return $false }
+    # electron-builder replaces win-unpacked in place; allow its replacement
+    # executable to reappear without changing the established 120s/500ms policy.
+    $relaunchDeadline = (& $Now).AddSeconds(120)
+    while (-not (Test-Path -LiteralPath $Executable)) {
+        if ((& $Now) -ge $relaunchDeadline) {
+            Write-HandoffLog "WARNING: desktop relaunch executable did not reappear within 120s: $Executable"
             return $false
         }
-        Start-Sleep -Milliseconds 500
+        & $Sleep 500
         if ($script:Ui) { [System.Windows.Forms.Application]::DoEvents() }
     }
+    return $true
+}
+
+function Start-DesktopRelaunch {
+    # Returns true only after a real launch, never just after finding the file.
+    if (-not (Wait-DesktopRelaunchExecutable $RelaunchExe)) { return $false }
     Write-HandoffLog "relaunching desktop: $RelaunchExe"
     # DO NOT spawn Hermes.exe as our child: Electron/Chromium calls
     # AttachConsole(ATTACH_PARENT_PROCESS) at boot, so a Desktop launched
@@ -1182,6 +1189,16 @@ function Invoke-HermesStep([string]$Exe, [string[]]$HermesArgs, [string]$Tag) {
     return @{ Code = $code; Output = $all; TreeQuiesced = (-not $stalled -or $proc.HasExited); StartedAfterJobAssignment = $true }
 }
 
+function Invoke-EidolonPythonStep([string[]]$PythonArgs, [string]$Tag) {
+    # The console-script shim must remain replaceable during an update.
+    $python = Join-Path $InstallRoot "venv\Scripts\python.exe"
+    return Invoke-HermesStep $python $PythonArgs $Tag
+}
+
+function Invoke-EidolonModuleStep([string[]]$ModuleArgs, [string]$Tag) {
+    return Invoke-EidolonPythonStep (@("-m", "eidolon_cli.main") + $ModuleArgs) $Tag
+}
+
 function Set-InstallRootCurrentDirectory([string]$Root) {
     $resolved = [System.IO.Path]::GetFullPath($Root)
     [Environment]::CurrentDirectory = $resolved
@@ -1191,6 +1208,55 @@ function Set-InstallRootCurrentDirectory([string]$Root) {
 $finalCode = 1
 $finalMsg = "update did not complete"
 $script:TreeSafeToFinalize = $true
+
+# Native behavior fixtures use disposable InstallRoot contents only. These exit
+# before marker acquisition, real updates, or any Desktop process is launched.
+if ($SelfTestPythonInvocation) {
+    New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
+    Set-InstallRootCurrentDirectory $InstallRoot | Out-Null
+    $update = @("update", "--yes", "--gateway", "--force", "--branch", $Branch, "--keep-stash")
+    $results = @()
+    foreach ($case in @(
+        @{ Name = "update"; Arguments = $update },
+        @{ Name = "retry"; Arguments = $update },
+        @{ Name = "rebuild"; Arguments = @("desktop", "--force-build", "--build-only") }
+    )) {
+        $result = Invoke-EidolonModuleStep $case.Arguments $case.Name
+        $results += @{ Name = $case.Name; Code = $result.Code; Output = $result.Output;
+            StartedAfterJobAssignment = $result.StartedAfterJobAssignment }
+    }
+    $verify = Invoke-EidolonPythonStep @("-c", "import json,sys; print(json.dumps(dict(executable=sys.executable,argv=sys.argv[1:])))", "verify-fixture") "verify"
+    $results += @{ Name = "verify"; Code = $verify.Code; Output = $verify.Output;
+        StartedAfterJobAssignment = $verify.StartedAfterJobAssignment }
+    Write-Host ("SELF-TEST PYTHON INVOCATION: " + (ConvertTo-Json -InputObject $results -Depth 5 -Compress))
+    exit 0
+}
+
+if ($SelfTestRelaunchWait) {
+    New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
+    $results = @()
+    foreach ($case in @("present", "delayed", "missing", "empty")) {
+        $target = Join-Path $InstallRoot ("relaunch-" + $case + "-" + [Guid]::NewGuid().ToString("N") + ".exe")
+        if ($case -eq "present") { [System.IO.File]::WriteAllText($target, "fixture") }
+        if ($case -eq "empty") { $target = "" }
+        $clock = @{ Now = [DateTime]::UtcNow; Slept = 0; Intervals = @() }
+        $now = { $clock.Now }.GetNewClosure()
+        $sleep = {
+            param($Milliseconds)
+            $clock.Now = $clock.Now.AddMilliseconds($Milliseconds)
+            $clock.Slept += $Milliseconds
+            $clock.Intervals += $Milliseconds
+            if ($case -eq "delayed" -and $clock.Slept -ge 1500) {
+                [System.IO.File]::WriteAllText($target, "fixture")
+            }
+        }.GetNewClosure()
+        $ready = Wait-DesktopRelaunchExecutable -Executable $target -Now $now -Sleep $sleep
+        $results += @{ Name = $case; Ready = $ready; Slept = $clock.Slept; Intervals = $clock.Intervals }
+        if ($target -and (Test-Path -LiteralPath $target)) { Remove-Item -LiteralPath $target }
+    }
+    Write-Host ("SELF-TEST RELAUNCH WAIT: " + (ConvertTo-Json -InputObject $results -Depth 5 -Compress))
+    exit 0
+}
 
 # ── -SelfTestUi: drive the shim to both terminal states, no update ─────────
 # Manual QA for the Edge shell without a checkout or a real update. Exits
@@ -1587,7 +1653,7 @@ try {
         Write-HandoffLog $finalMsg
         exit $finalCode
     }
-    $updateArgs = @("-m", "eidolon_cli.main", "update", "--yes", "--gateway", "--force", "--branch", $Branch)
+    $updateArgs = @("update", "--yes", "--gateway", "--force", "--branch", $Branch)
     # --keep-stash: never re-apply local source edits after the update (they
     # stay parked in git stash). Probe --help first: the flag ships with newer
     # backends and an unknown flag would abort argparse with exit 2, which
@@ -1602,9 +1668,9 @@ try {
     } catch {
         Write-HandoffLog "could not probe update --help; running without --keep-stash"
     }
-    Write-HandoffLog ("running: python " + ($updateArgs -join " "))
+    Write-HandoffLog ("running: python -m eidolon_cli.main " + ($updateArgs -join " "))
     Publish-UiProgress "Updating code and dependencies"
-    $res = Invoke-HermesStep $pythonExe $updateArgs "update"
+    $res = Invoke-EidolonModuleStep $updateArgs "update"
     Write-HandoffLog "eidolon update exit code: $($res.Code)"
 
     $retryPolicyPath = Join-Path $PSScriptRoot "retry-policy.ps1"
@@ -1627,7 +1693,7 @@ try {
         # the remaining Desktop/skills stages of the full pipeline.
         Write-HandoffLog "first attempt left retryable update state; retrying once in a fresh process"
         Publish-UiProgress "Retrying update"
-        $res = Invoke-HermesStep $pythonExe $updateArgs "update"
+        $res = Invoke-EidolonModuleStep $updateArgs "update"
         Write-HandoffLog "retry exit code: $($res.Code)"
     }
 
@@ -1640,7 +1706,7 @@ try {
     if ($res.Code -eq 0 -and $res.Output -match "Desktop build failed") {
         Write-HandoffLog "eidolon update reported a desktop build failure (non-fatal there, fatal here); retrying build"
         Publish-UiProgress "Rebuilding Desktop"
-        $rebuild = Invoke-HermesStep $pythonExe @("-m", "eidolon_cli.main", "desktop", "--force-build", "--build-only") "rebuild"
+        $rebuild = Invoke-EidolonModuleStep @("desktop", "--force-build", "--build-only") "rebuild"
         Write-HandoffLog "desktop rebuild exit code: $($rebuild.Code)"
         if ($rebuild.Code -ne 0) { $desktopBuildFailed = $true }
     }
@@ -1648,7 +1714,7 @@ try {
     # A zero-exit update is not proof that the runtime survived the update.
     if ($res.Code -eq 0 -and -not $desktopBuildFailed) {
         $verifyCode = "import eidolon_cli.main; from eidolon_cli.desktop_update_verify import verify_windows_desktop_update; verify_windows_desktop_update()"
-        $verify = Invoke-HermesStep $pythonExe @("-c", $verifyCode) "verify"
+        $verify = Invoke-EidolonPythonStep @("-c", $verifyCode) "verify"
         if ($verify.Code -ne 0) {
             $finalCode = 8
             $finalMsg = "The updated Eidolon runtime or Desktop build failed verification. Repair the installation and review antivirus quarantine before retrying."
