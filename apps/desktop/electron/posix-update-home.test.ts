@@ -77,8 +77,16 @@ test.skipIf(process.platform === 'win32')('real detached worker acknowledges sta
       isReady: () => hasReadyPosixUpdater(home, child.pid, startedAt)
     })
 
+    // Capture the daemon's own evidence before stale-marker cleanup and fixture
+    // removal, so a native startup failure retains its actual cause in CI logs.
+    const evidence = [markerPath(home), path.join(home, 'logs', 'desktop-update-handoff.log')]
+      .map(file => {
+        try { return `${file}:\n${fs.readFileSync(file, 'utf8')}` }
+        catch { return `${file}: missing` }
+      }).join('\n')
+
     workerPid = readLiveUpdateMarker(home)?.pid
-    expect(outcome.ok).toBe(true)
+    expect(outcome.ok, `${JSON.stringify(outcome)}\n${evidence}`).toBe(true)
     expect(workerPid).not.toBe(child.pid)
     expect(hasReadyPosixUpdater(home, child.pid, startedAt - 1)).toBe(false)
     desktop.kill()
@@ -91,7 +99,7 @@ test.skipIf(process.platform === 'win32')('real detached worker acknowledges sta
     if (workerPid) { try { process.kill(workerPid, 'SIGKILL') } catch { /* Fixture already completed. */ } }
     fs.rmSync(tmp, { recursive: true, force: true })
   }
-}, 20_000)
+}, 30_000)
 
 test.skipIf(process.platform !== 'win32')('Windows handoff writes markers and results to the caller-selected home', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'eidolon-update-home-'))
@@ -107,4 +115,4 @@ test.skipIf(process.platform !== 'win32')('Windows handoff writes markers and re
     expect(fs.existsSync(markerPath(home))).toBe(false)
     expect(fs.existsSync(handoffResultPath(path.dirname(root)))).toBe(false)
   } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
-})
+}, 30_000)

@@ -356,6 +356,7 @@ export interface UpdaterHandoffOutcome {
 export interface ObserveUpdaterHandoffDeps {
   setTimeoutFn?: (callback: () => void, ms: number) => unknown
   clearTimeoutFn?: (timer: unknown) => void
+  nowFn?: () => number
   /** Detached launchers may exit successfully before their real worker starts. */
   isReady?: () => boolean
 }
@@ -374,9 +375,11 @@ export interface ObserveUpdaterHandoffDeps {
  * Success is: no `error` event AND either the child survives the settle
  * window or it exits 0 inside it (the Windows `cmd start` wrapper exits 0
  * immediately by design — see wrapHandoffForDetachedConsole). When isReady
- * is supplied, the real worker must also acknowledge startup at the end of
- * the window; the POSIX daemon launcher's exit alone proves nothing. Failure is a
- * spawn `error`, a non-zero exit, or a signal death inside the window.
+ * is supplied, the real worker must also acknowledge startup. After the minimum
+ * dwell, poll for up to ten seconds total: Apple's cold Python launcher can
+ * exceed the dwell while resolving its developer-tools interpreter. The POSIX
+ * launcher's exit alone proves nothing. Spawn errors, non-zero exits and signal
+ * deaths still fail immediately throughout this bounded observation.
  *
  * Children that expose no event interface (bare test doubles) settle as ok
  * after the window — the observation is a best-effort hardening, never a new
@@ -392,23 +395,17 @@ export function observeUpdaterHandoff(
   const clearTimeoutFn =
     deps.clearTimeoutFn ?? ((timer: unknown) => clearTimeout(timer as ReturnType<typeof setTimeout>))
 
-  const readinessOutcome = (): UpdaterHandoffOutcome => !deps.isReady || deps.isReady()
-    ? { ok: true }
-    : { ok: false, reason: 'not-ready', message: 'the detached updater did not acknowledge startup' }
+  const nowFn = deps.nowFn ?? (() => performance.now())
+  const readinessDeadline = nowFn() + Math.max(settleMs, 10_000)
 
   const observable = child as UpdaterChild & {
     once?: (event: string, listener: (...args: unknown[]) => void) => unknown
     removeListener?: (event: string, listener: (...args: unknown[]) => void) => unknown
   }
 
-  if (typeof observable.once !== 'function') {
-    return new Promise(resolve => {
-      setTimeoutFn(() => resolve(readinessOutcome()), settleMs)
-    })
-  }
-
   return new Promise(resolve => {
     let settled = false
+    let timer: unknown
 
     const finish = (outcome: UpdaterHandoffOutcome) => {
       if (settled) {
@@ -420,6 +417,24 @@ export function observeUpdaterHandoff(
       observable.removeListener?.('error', onError)
       observable.removeListener?.('exit', onExit)
       resolve(outcome)
+    }
+
+    const checkReadiness = () => {
+      if (settled) { return }
+
+      if (!deps.isReady || deps.isReady()) {
+        finish({ ok: true })
+
+        return
+      }
+
+      const remaining = readinessDeadline - nowFn()
+
+      if (remaining <= 0) {
+        finish({ ok: false, reason: 'not-ready', message: 'the detached updater did not acknowledge startup' })
+      } else {
+        timer = setTimeoutFn(checkReadiness, Math.min(100, remaining))
+      }
     }
 
     const onError = (...args: unknown[]) => {
@@ -456,9 +471,11 @@ export function observeUpdaterHandoff(
       if (!deps.isReady) { finish({ ok: true, code: code ?? 0, signal: null }) }
     }
 
-    const timer = setTimeoutFn(() => finish(readinessOutcome()), settleMs)
+    timer = setTimeoutFn(checkReadiness, settleMs)
 
-    observable.once('error', onError)
-    observable.once('exit', onExit)
+    if (typeof observable.once === 'function') {
+      observable.once('error', onError)
+      observable.once('exit', onExit)
+    }
   })
 }

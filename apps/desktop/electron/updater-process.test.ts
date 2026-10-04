@@ -343,21 +343,42 @@ class FakeChild {
 }
 
 function manualTimer() {
-  const pending: Array<() => void> = []
+  const pending = new Map<number, { callback: () => void; at: number }>()
+  let now = 0
+  let id = 0
+
+  const advance = (ms: number) => {
+    const target = now + ms
+
+    for (;;) {
+      const next = [...pending.entries()].sort((a, b) => a[1].at - b[1].at)[0]
+
+      if (!next || next[1].at > target) { break }
+
+      now = next[1].at
+      pending.delete(next[0])
+      next[1].callback()
+    }
+
+    now = target
+  }
 
   return {
     deps: {
-      setTimeoutFn: (callback: () => void, _ms: number) => {
-        pending.push(callback)
+      nowFn: () => now,
+      setTimeoutFn: (callback: () => void, ms: number) => {
+        pending.set(++id, { callback, at: now + ms })
 
-        return 0
+        return id
       },
-      clearTimeoutFn: () => {}
+      clearTimeoutFn: (timer: unknown) => { pending.delete(Number(timer)) }
     },
+    advance,
+    pendingCount: () => pending.size,
     fire: () => {
-      for (const callback of pending.splice(0)) {
-        callback()
-      }
+      const next = Math.min(...[...pending.values()].map(timer => timer.at))
+
+      if (Number.isFinite(next)) { advance(next - now) }
     }
   }
 }
@@ -426,12 +447,74 @@ test.each([false, true])('detached POSIX launcher exit needs the real worker ack
   const outcomePromise = observeUpdaterHandoff(child, 2500, { ...timer.deps, isReady: () => ready })
 
   child.emit('exit', 0, null)
-  timer.fire()
+  timer.advance(ready ? 2500 : 10_000)
 
   const outcome = await outcomePromise
   assert.equal(outcome.ok, ready)
 
   if (!ready) { assert.equal(outcome.reason, 'not-ready') }
+})
+
+test('POSIX readiness preserves the minimum dwell and accepts a delayed cold worker', async () => {
+  const child = new FakeChild()
+  const timer = manualTimer()
+  const checks: number[] = []
+
+  const outcomePromise = observeUpdaterHandoff(child, 2500, {
+    ...timer.deps,
+    isReady: () => {
+      checks.push(timer.deps.nowFn())
+
+      return timer.deps.nowFn() >= 3100
+    }
+  })
+
+  child.emit('exit', 0, null)
+  timer.advance(2499)
+  assert.deepEqual(checks, [])
+  timer.advance(601)
+
+  assert.deepEqual(await outcomePromise, { ok: true })
+  assert.deepEqual(checks, [2500, 2600, 2700, 2800, 2900, 3000, 3100])
+  assert.equal(timer.pendingCount(), 0)
+  assert.deepEqual(child.removed.sort(), ['error', 'exit'])
+})
+
+test('POSIX readiness fails closed after ten seconds without a live worker acknowledgement', async () => {
+  const child = new FakeChild()
+  const timer = manualTimer()
+  const checks: number[] = []
+
+  const outcomePromise = observeUpdaterHandoff(child, 2500, {
+    ...timer.deps,
+    isReady: () => { checks.push(timer.deps.nowFn());
+
+ return false }
+  })
+
+  child.emit('exit', 0, null)
+  timer.advance(9999)
+  assert.equal(timer.pendingCount(), 1)
+  timer.advance(1)
+
+  assert.equal((await outcomePromise).reason, 'not-ready')
+  assert.equal(checks[0], 2500)
+  assert.equal(checks.at(-1), 10_000)
+  assert.equal(timer.pendingCount(), 0)
+  assert.deepEqual(child.removed.sort(), ['error', 'exit'])
+})
+
+test('POSIX readiness grace still fails immediately on a spawn error', async () => {
+  const child = new FakeChild()
+  const timer = manualTimer()
+  const outcomePromise = observeUpdaterHandoff(child, 2500, { ...timer.deps, isReady: () => false })
+
+  timer.advance(2500)
+  child.emit('error', new Error('worker launch failed'))
+
+  assert.equal((await outcomePromise).reason, 'spawn-error')
+  assert.equal(timer.deps.nowFn(), 2500)
+  assert.equal(timer.pendingCount(), 0)
 })
 
 test('observeUpdaterHandoff settles ok when the child survives the window', async () => {

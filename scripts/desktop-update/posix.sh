@@ -692,7 +692,7 @@ import os, sys
 env = os.environ.copy()
 os.setsid()
 os.execve("/bin/bash", ["/bin/bash", sys.argv[1], *sys.argv[2:]], env)
-' "$SCRIPT_DIR/posix.sh" --daemonized "${ORIGINAL_ARGS[@]}" >>"$LOG" 2>&1 &
+' "$SCRIPT_DIR/posix.sh" --daemonized "${ORIGINAL_ARGS[@]}" >/dev/null 2>>"$LOG" &
   exit 0
 fi
 
