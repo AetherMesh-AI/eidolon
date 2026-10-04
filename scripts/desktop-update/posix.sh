@@ -64,8 +64,11 @@ done
 [ "$SELF_TEST_UI" -eq 1 ] || [ -n "$INSTALL_ROOT" ] || { echo "--install-root is required" >&2; exit 64; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-HERMES_HOME="${INSTALL_ROOT:+$(dirname "$INSTALL_ROOT")}"
+# Prepared source checkouts can live below desktop-source/ or outside the
+# profile entirely. The caller's home owns config, locks and update receipts.
+HERMES_HOME="${HERMES_HOME:-${INSTALL_ROOT:+$(dirname "$INSTALL_ROOT")}}"
 HERMES_HOME="${HERMES_HOME:-${TMPDIR:-/tmp}}"
+export HERMES_HOME
 MARKER="$HERMES_HOME/.eidolon-update-in-progress"
 LOG_DIR="$HERMES_HOME/logs"; mkdir -p "$LOG_DIR" 2>/dev/null || true
 LOG="$LOG_DIR/desktop-update-handoff.log"
@@ -353,11 +356,18 @@ linux_gate() {
 }
 
 mac_swap() {
-  local rebuilt="" c
-  for c in "$INSTALL_ROOT/apps/desktop/release/mac-arm64/Eidolon.app" \
-           "$INSTALL_ROOT/apps/desktop/release/mac/Eidolon.app"; do
-    [ -d "$c" ] && { rebuilt="$c"; break; }
-  done
+  [ "$FINAL_CODE" -eq 0 ] || return 0
+  local rebuilt=""
+  if [ ! -r "$SCRIPT_DIR/mac-bundle.sh" ] || ! . "$SCRIPT_DIR/mac-bundle.sh"; then
+    FINAL_CODE=6 FINAL_MSG="Code and dependencies updated, but the Desktop bundle verification helper is missing or could not load. The previous app was kept. Run the update again."
+    log "ERROR: could not load $SCRIPT_DIR/mac-bundle.sh"
+    return 1
+  fi
+  if ! rebuilt="$(find_macos_update_bundle "$INSTALL_ROOT/apps/desktop/release" "$(uname -m)")"; then
+    FINAL_CODE=6 FINAL_MSG="Code and dependencies updated, but no launchable Desktop app was built for this Mac. The previous app was kept. Run eidolon desktop --force-build from a terminal to retry."
+    log "ERROR: no compatible rebuilt app bundle under $INSTALL_ROOT/apps/desktop/release"
+    return 1
+  fi
 
   # Transactional swap: stage a full copy, move the old bundle aside, move
   # the copy in. Every step checked; a failed final move ROLLS BACK so the
@@ -676,12 +686,13 @@ if [ "$HANDOFF_DAEMONIZED" -ne 1 ]; then
   # as a flag. Appending here previously left HANDOFF_DAEMONIZED unset on
   # every re-exec, causing this block to re-fire forever (self-exec loop,
   # unbounded argv growth) whenever relaunch args were present.
-  /usr/bin/nohup /usr/bin/python3 -c '
+  /usr/bin/env -u PYTHONHOME -u PYTHONPATH -u PYTHONSTARTUP -u __PYVENV_LAUNCHER__ \
+    /usr/bin/nohup /usr/bin/python3 -c '
 import os, sys
 env = os.environ.copy()
 os.setsid()
 os.execve("/bin/bash", ["/bin/bash", sys.argv[1], *sys.argv[2:]], env)
-' "$SCRIPT_DIR/posix.sh" --daemonized "${ORIGINAL_ARGS[@]}" >/dev/null 2>&1 &
+' "$SCRIPT_DIR/posix.sh" --daemonized "${ORIGINAL_ARGS[@]}" >>"$LOG" 2>&1 &
   exit 0
 fi
 
@@ -802,13 +813,20 @@ if [ "$CODE" -ne 0 ] && [ "$CODE" -ne 2 ]; then
 fi
 trap 'on_signal TERM' TERM
 
-# Truthful completion: `eidolon update` calls a GUI build failure non-fatal
-# (exit 0). For a Desktop-driven update that would relaunch the OLD build
-# and call it success -- retry the build once, propagate honestly.
-if [ "$CODE" -eq 0 ] && printf '%s' "$OUT" | grep -q "Desktop build failed"; then
-  log "desktop build failed inside eidolon update; retrying build"
-  publish_stage "Rebuilding Desktop"
-  "${UPDATE_INVOKE[@]}" desktop --force-build --build-only >> "$LOG" 2>&1 || {
+# A source checkout prepared from a release archive has no release/dist yet,
+# so the regular CLI updater intentionally skips Desktop. Always reach the
+# Desktop command's artifact check here; its content stamp avoids rebuilding
+# an app the update already produced. CLI-only updates keep their opt-out.
+if [ "$CODE" -eq 0 ]; then
+  BUILD_ARGS=(desktop --build-only)
+  if printf '%s' "$OUT" | grep -q "Desktop build failed"; then
+    log "desktop build failed inside eidolon update; retrying build"
+    BUILD_ARGS=(desktop --force-build --build-only)
+  else
+    log "verifying the Desktop build after code update"
+  fi
+  publish_stage "Preparing Desktop app"
+  "${UPDATE_INVOKE[@]}" "${BUILD_ARGS[@]}" >> "$LOG" 2>&1 || {
     FINAL_CODE=6 FINAL_MSG="Code and dependencies updated, but the Desktop app rebuild failed - you are running the previous build. Run eidolon desktop --force-build from a terminal to retry."
     exit 6
   }

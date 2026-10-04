@@ -1360,7 +1360,11 @@ def _promote_staged_desktop_app(desktop_dir: Path, staging_dir: Path) -> Path:
     # Locally-built apps are ad-hoc signed; make them relaunchable after an
     # in-place self-update. Signs the STAGED bundle so the live app is never
     # half-signed. No-op on non-macOS and on real-identity builds.
-    _desktop_macos_relaunchable_fixup(desktop_dir, release_dir=staging_dir)
+    if not _desktop_macos_relaunchable_fixup(desktop_dir, release_dir=staging_dir):
+        _discard_desktop_staging(staging_dir)
+        print("✗ Desktop macOS signing verification failed; the rebuilt app was not installed.")
+        print(_PREVIOUS_APP_KEPT)
+        sys.exit(1)
 
     # Windows integrity gate: never declare the rebuild a success on a
     # Eidolon.exe Windows cannot load. Verified on the STAGED exe, so a failure

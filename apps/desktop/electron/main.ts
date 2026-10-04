@@ -92,7 +92,7 @@ import {
   BROWSER_WINDOW_WIDTH,
   buildBrowserWindowUrl
 } from './browser-windows'
-import { detectBundleSkew } from './bundle-skew'
+import { desktopUpdateAvailable, detectBundleSkew } from './bundle-skew'
 import { detectBundleSwap } from './bundle-swap'
 import { applyConnectionChange, sshQuitShouldBlock, teardownSshState } from './connection-apply'
 import {
@@ -392,7 +392,7 @@ import {
   resolveCommitLogSelection
 } from './update-count'
 import { waitForUpdateClearance } from './update-gate'
-import { readLiveUpdateMarker, updateHandoffConflict, writeUpdateMarker } from './update-marker'
+import { hasReadyPosixUpdater, readLiveUpdateMarker, updateHandoffConflict, writeUpdateMarker } from './update-marker'
 import { isOfficialSshRemote, OFFICIAL_REPO_HTTPS_URL } from './update-remote'
 import {
   collectRelaunchArgs,
@@ -3110,7 +3110,7 @@ async function checkUpdates() {
     branch,
     currentBranch,
     behind,
-    updateAvailable: behind === null || behind > 0,
+    updateAvailable: await desktopUpdateAvailable(behind, IS_PACKAGED ? INSTALL_STAMP : null, runGit, updateRoot),
     currentSha,
     targetSha,
     commits,
@@ -4471,7 +4471,11 @@ async function applyUpdatesPosixHandoff(opts: any) {
   // child through the dwell; on spawn error or early death, stay alive and
   // surface the failure instead of quitting into nothing.
   const dwellStartedAt = Date.now()
-  const handoffOutcome = await observeUpdaterHandoff(child, UPDATE_HANDOFF_DWELL_MS)
+
+  const handoffOutcome = await observeUpdaterHandoff(child, UPDATE_HANDOFF_DWELL_MS, {
+    // The launcher can exit 0 before its Python daemon has even started.
+    isReady: () => hasReadyPosixUpdater(HERMES_HOME, child.pid, updateStartedAt)
+  })
 
   if (!handoffOutcome.ok) {
     const message = `Update failed to start: ${handoffOutcome.message}. Eidolon will keep running — try again, or run \`eidolon update\` from a terminal.`

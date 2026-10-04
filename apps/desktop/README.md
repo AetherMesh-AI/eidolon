@@ -28,13 +28,29 @@ It operates on the runtime selected by your shell. An upstream installation is n
 
 ## Updating
 
-The desktop contains background update checks and a source-based rebuild path. The compatibility CLI command remains:
+The built-in updater follows the official Eidolon `main` branch and rebuilds the
+desktop locally. It does not download or install the latest release asset.
+Archive installations first ask permission to prepare an updatable source runtime.
+The CLI command for an already-selected Eidolon runtime is:
 
 ```bash
-hermes update
+eidolon update
 ```
 
 This updates the selected runtime, not an arbitrary Eidolon checkout. Review the repository, installed build, application home, and release instructions before using either update path. Do not treat upstream releases as Eidolon updates.
+
+On macOS, the app closes while a detached helper updates the source, verifies the
+desktop build, replaces the running `.app`, and reopens it. The optional progress
+window appears only for a supported Chrome/Chromium default browser; its absence
+does not establish a failure. Automatic reopening is still expected.
+
+The release version can remain unchanged across source updates. Compare the
+embedded commit shown in About, rather than the version number alone. A current
+source checkout with a provably older desktop build keeps the update action
+available so installation can be retried. Failures are recorded under the selected
+`HERMES_HOME` in `logs/desktop-update-handoff.log` and `.eidolon-update-result.json`;
+the next launch consumes the result and shows failures. These source-level checks
+do not replace installed-app acceptance on the target OS.
 
 ## Requirements
 

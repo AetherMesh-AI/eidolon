@@ -420,6 +420,20 @@ test('observeUpdaterHandoff accepts a clean exit 0 (Windows cmd start wrapper)',
   assert.equal(outcome.code, 0)
 })
 
+test.each([false, true])('detached POSIX launcher exit needs the real worker acknowledgement (%s)', async ready => {
+  const child = new FakeChild()
+  const timer = manualTimer()
+  const outcomePromise = observeUpdaterHandoff(child, 2500, { ...timer.deps, isReady: () => ready })
+
+  child.emit('exit', 0, null)
+  timer.fire()
+
+  const outcome = await outcomePromise
+  assert.equal(outcome.ok, ready)
+
+  if (!ready) { assert.equal(outcome.reason, 'not-ready') }
+})
+
 test('observeUpdaterHandoff settles ok when the child survives the window', async () => {
   const child = new FakeChild()
   const timer = manualTimer()

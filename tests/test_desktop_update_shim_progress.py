@@ -35,7 +35,7 @@ requires_posix_handoff = pytest.mark.skipif(
 @pytest.fixture
 def progress(tmp_path):
     """The real loopback server, over a status file the test drives."""
-    status = tmp_path / "hermes-update-status"
+    status = tmp_path / "eidolon-update-status"
     proc = subprocess.Popen(
         [
             sys.executable,
@@ -120,9 +120,10 @@ FAKE_HERMES = """#!/bin/bash
 # real update call; answer it without consuming a counted call so the
 # exits.N mapping below still refers to actual update attempts.
 case "$*" in *--help*) echo "--keep-stash"; exit 0 ;; esac
+[ "$1" = desktop ] && exit 0
 n="$(cat "$HERMES_TEST_CALLS" 2>/dev/null || echo 0)"; n=$((n + 1))
 printf '%s' "$n" > "$HERMES_TEST_CALLS"
-for f in "$TMPDIR"/hermes-update-status.[0-9]*; do
+for f in "$TMPDIR"/eidolon-update-status.[0-9]*; do
   case "$f" in *.tmp) continue ;; esac
   cp "$f" "$HERMES_TEST_CAPTURE.$n" 2>/dev/null
 done
@@ -132,9 +133,9 @@ exit "$(cat "$HERMES_TEST_EXITS.$n" 2>/dev/null || echo 0)"
 
 def _run_handoff(tmp_path, exits: dict[int, int]) -> list[dict]:
     """Run the real hand-off end to end; return the stage seen at each call."""
-    install_root = tmp_path / "hermes-agent"
+    install_root = tmp_path / "eidolon-agent"
     (install_root / "venv" / "bin").mkdir(parents=True)
-    hermes = install_root / "venv" / "bin" / "hermes"
+    hermes = install_root / "venv" / "bin" / "eidolon"
     hermes.write_text(FAKE_HERMES)
     hermes.chmod(0o755)
 
@@ -146,6 +147,7 @@ def _run_handoff(tmp_path, exits: dict[int, int]) -> list[dict]:
     env = {
         **os.environ,
         "TMPDIR": str(tmp_path),
+        "HERMES_HOME": str(tmp_path),
         "HERMES_TEST_CAPTURE": str(capture),
         "HERMES_TEST_CALLS": str(calls),
         "HERMES_TEST_EXITS": str(tmp_path / "exits"),
@@ -165,7 +167,7 @@ def _run_handoff(tmp_path, exits: dict[int, int]) -> list[dict]:
         check=True,
     )
 
-    result = tmp_path / ".hermes-update-result.json"
+    result = tmp_path / ".eidolon-update-result.json"
     deadline = time.monotonic() + 45
     while time.monotonic() < deadline and not result.exists():
         time.sleep(0.1)

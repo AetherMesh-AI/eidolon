@@ -1445,6 +1445,40 @@ def test_swap_staged_desktop_app_without_staged_exe_keeps_live_app(tmp_path):
     assert not staging.exists()
 
 
+def test_failed_signing_fixup_discards_staging_and_preserves_live_app(tmp_path, capsys):
+    """A failed signing gate must never promote its output, on any host.
+
+    This injects the gate result; native codesigning itself needs macOS.
+    Artifact discovery, staging cleanup, and the potential swap use real files.
+    """
+    root = _make_desktop_tree(tmp_path)
+    desktop_dir = root / "apps" / "desktop"
+    live_exe = desktop_dir / "release" / _packaged_exe_rel()
+    live_exe.parent.mkdir(parents=True)
+    live_exe.write_text("working previous app", encoding="utf-8")
+    staging = main_desktop._desktop_staging_dir(desktop_dir)
+    staged_exe = staging / _packaged_exe_rel()
+    staged_exe.parent.mkdir(parents=True)
+    staged_exe.write_text("new app whose signing failed", encoding="utf-8")
+
+    with (
+        patch.object(main_desktop, "_desktop_macos_relaunchable_fixup", return_value=False) as signing,
+        patch.object(main_desktop, "_ensure_desktop_exe_launchable", return_value=(staged_exe, False)) as integrity,
+        patch.object(main_desktop, "_stop_desktop_processes_locking_build", return_value=[]),
+        pytest.raises(SystemExit) as failure,
+    ):
+        main_desktop._promote_staged_desktop_app(desktop_dir, staging)
+
+    assert failure.value.code == 1
+    signing.assert_called_once_with(desktop_dir, release_dir=staging)
+    integrity.assert_not_called()
+    assert live_exe.read_text(encoding="utf-8") == "working previous app"
+    assert not staging.exists()
+    output = capsys.readouterr().out
+    assert "signing verification failed" in output
+    assert "previous desktop app was left untouched" in output
+
+
 def test_swap_staged_desktop_app_rolls_back_when_second_rename_fails(tmp_path, monkeypatch):
     root = _make_desktop_tree(tmp_path)
     desktop_dir = root / "apps" / "desktop"

@@ -5,10 +5,25 @@ import { dirname, join } from 'node:path'
 
 import { afterAll, describe, expect, it } from 'vitest'
 
-import { detectBundleSkew, isFallbackCommit, type RunGit, RUNTIME_PATHS } from './bundle-skew'
+import { desktopUpdateAvailable, detectBundleSkew, isFallbackCommit, type RunGit, RUNTIME_PATHS } from './bundle-skew'
 
 const REPO = '/repo'
 const STAMP = { commit: 'a'.repeat(40), source: 'ci' }
+
+it('keeps a desktop repair available after source reaches main, until the app build catches up', async () => {
+  const { base, repoRoot } = makeScratchRepo()
+  const git = scratchGit(repoRoot)
+
+  writeFiles(repoRoot, ['apps/desktop/src/app/updated-shell.tsx'])
+  git('add', '.')
+  git('commit', '-q', '-m', 'desktop feature')
+  const head = git('rev-parse', 'HEAD').trim()
+  const runGit = realGitRun(repoRoot)
+
+  expect(await desktopUpdateAvailable(0, { commit: base, source: 'local' }, runGit, repoRoot)).toBe(true)
+  expect(await desktopUpdateAvailable(0, { commit: head, source: 'local' }, runGit, repoRoot)).toBe(false)
+  expect(await desktopUpdateAvailable(0, null, runGit, repoRoot)).toBe(false)
+})
 
 function gitReturning(stdout: string, code = 0): RunGit {
   return async () => ({ code, stderr: '', stdout })

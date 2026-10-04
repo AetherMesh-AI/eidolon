@@ -1,0 +1,110 @@
+import { execFileSync, spawn } from 'node:child_process'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+
+import { expect, test } from 'vitest'
+
+import { handoffResultPath, readAndConsumeHandoffResult } from './handoff-result'
+import { hasReadyPosixUpdater, markerPath, readLiveUpdateMarker, writeUpdateMarker } from './update-marker'
+import { observeUpdaterHandoff, spawnUpdaterProcess } from './updater-process'
+
+test.skipIf(process.platform === 'win32').each(['managed-source', 'external-checkout', 'legacy-default'])(
+  'POSIX update preserves its owning home across %s checkout layouts', layout => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'eidolon-update-home-'))
+    const home = path.join(tmp, 'profile')
+
+    const root = layout === 'managed-source' ? path.join(home, 'desktop-source', 'checkout-fixture')
+      : layout === 'external-checkout' ? path.join(tmp, 'source') : path.join(home, 'eidolon-agent')
+
+    const bin = path.join(root, 'venv', 'bin')
+
+    const env = { ...process.env, HOME: tmp, TMPDIR: tmp, HERMES_HOME: home,
+      HERMES_UPDATE_SHIM_GRACE_SECONDS: '0' }
+
+    if (layout === 'legacy-default') { delete env.HERMES_HOME }
+
+    try {
+      fs.mkdirSync(bin, { recursive: true })
+      fs.mkdirSync(home, { recursive: true })
+      const cli = path.join(bin, 'eidolon')
+      fs.writeFileSync(cli, '#!/bin/bash\ncase "$*" in *--help*) echo --keep-stash; exit 0 ;; esac\n' +
+        'printf "%s" "$HERMES_HOME" > "$HOME/observed-home"\n' +
+        'test -f "$HERMES_HOME/.eidolon-update-in-progress" || exit 9\n')
+      fs.chmodSync(cli, 0o755)
+      execFileSync('/bin/bash', [path.resolve('../../scripts/desktop-update/posix.sh'),
+        '--daemonized', '--install-root', root, '--no-ui'], { env, timeout: 10_000 })
+
+      expect(fs.readFileSync(path.join(tmp, 'observed-home'), 'utf8')).toBe(home)
+      expect(fs.existsSync(handoffResultPath(home))).toBe(true)
+      expect(readAndConsumeHandoffResult(home)).toMatchObject({ ok: true, manual: false, exitCode: 0 })
+      expect(fs.existsSync(markerPath(home))).toBe(false)
+      expect(fs.existsSync(path.join(home, 'logs', 'desktop-update-handoff.log'))).toBe(true)
+
+      if (path.dirname(root) !== home) {
+        expect(fs.existsSync(handoffResultPath(path.dirname(root)))).toBe(false)
+      }
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  }, 15_000)
+
+test.skipIf(process.platform === 'win32')('real detached worker acknowledges startup despite inherited Python paths', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'eidolon-update-detach-'))
+  const home = path.join(tmp, 'profile')
+  const root = path.join(home, 'desktop-source', 'checkout-fixture')
+  const bin = path.join(root, 'venv', 'bin')
+  const desktop = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 15000)'], { stdio: 'ignore' })
+  let workerPid: number | undefined
+
+  try {
+    fs.mkdirSync(bin, { recursive: true })
+    const cli = path.join(bin, 'eidolon')
+    fs.writeFileSync(cli, '#!/bin/bash\nexit 0\n')
+    fs.chmodSync(cli, 0o755)
+    const startedAt = Math.floor(Date.now() / 1000)
+
+    const child = spawnUpdaterProcess('/bin/bash', [path.resolve('../../scripts/desktop-update/posix.sh'),
+      '--install-root', root, '--desktop-pid', String(desktop.pid), '--no-ui'], {
+      env: { ...process.env, HOME: tmp, TMPDIR: tmp, HERMES_HOME: home,
+        HERMES_UPDATE_STARTED_AT: String(startedAt), PYTHONHOME: path.join(tmp, 'missing-python'),
+        PYTHONPATH: path.join(tmp, 'missing-modules') },
+      detached: true, stdio: 'ignore'
+    })
+
+    writeUpdateMarker(home, child.pid, { startedAt })
+    expect(hasReadyPosixUpdater(home, child.pid, startedAt)).toBe(false)
+
+    const outcome = await observeUpdaterHandoff(child, 2500, {
+      isReady: () => hasReadyPosixUpdater(home, child.pid, startedAt)
+    })
+
+    workerPid = readLiveUpdateMarker(home)?.pid
+    expect(outcome.ok).toBe(true)
+    expect(workerPid).not.toBe(child.pid)
+    expect(hasReadyPosixUpdater(home, child.pid, startedAt - 1)).toBe(false)
+    desktop.kill()
+    await expect.poll(() => fs.existsSync(handoffResultPath(home)), { timeout: 10_000 }).toBe(true)
+    expect(readAndConsumeHandoffResult(home)).toMatchObject({ ok: true, exitCode: 0 })
+  } finally {
+    desktop.kill()
+    workerPid ??= readLiveUpdateMarker(home)?.pid
+
+    if (workerPid) { try { process.kill(workerPid, 'SIGKILL') } catch { /* Fixture already completed. */ } }
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
+}, 20_000)
+
+test.skipIf(process.platform !== 'win32')('Windows handoff writes markers and results to the caller-selected home', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'eidolon-update-home-'))
+  const home = path.join(tmp, 'profile')
+  const root = path.join(home, 'desktop-source', 'checkout-fixture')
+
+  try {
+    fs.mkdirSync(root, { recursive: true })
+    execFileSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+      path.resolve('../../scripts/desktop-update/windows.ps1'), '-InstallRoot', root, '-NoUi', '-SelfTestMarker'],
+    { env: { ...process.env, HERMES_HOME: home, TEMP: tmp }, timeout: 30_000 })
+    expect(readAndConsumeHandoffResult(home)).toMatchObject({ ok: true, exitCode: 0 })
+    expect(fs.existsSync(markerPath(home))).toBe(false)
+    expect(fs.existsSync(handoffResultPath(path.dirname(root)))).toBe(false)
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+})

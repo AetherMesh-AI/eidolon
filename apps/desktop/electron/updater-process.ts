@@ -276,6 +276,7 @@ export function resolveStagedUpdaterBinary(
   }
 
   const fileExists = deps.fileExists ?? stagedFileExists
+
   // Legacy binary is scoped to the already-selected Eidolon home.
   return ['eidolon-setup.exe', 'hermes-setup.exe']
     .map(name => path.join(hermesHome, name)).find(candidate => fileExists(candidate)) || null
@@ -343,7 +344,7 @@ export function spawnUpdaterProcess(
 export interface UpdaterHandoffOutcome {
   ok: boolean
   /** Set when ok is false. */
-  reason?: 'spawn-error' | 'early-exit'
+  reason?: 'spawn-error' | 'early-exit' | 'not-ready'
   /** Human-readable detail for logs (never contains argv secrets). */
   message?: string
   /** Exit code when the child exited inside the settle window. */
@@ -355,6 +356,8 @@ export interface UpdaterHandoffOutcome {
 export interface ObserveUpdaterHandoffDeps {
   setTimeoutFn?: (callback: () => void, ms: number) => unknown
   clearTimeoutFn?: (timer: unknown) => void
+  /** Detached launchers may exit successfully before their real worker starts. */
+  isReady?: () => boolean
 }
 
 /**
@@ -370,7 +373,9 @@ export interface ObserveUpdaterHandoffDeps {
  *
  * Success is: no `error` event AND either the child survives the settle
  * window or it exits 0 inside it (the Windows `cmd start` wrapper exits 0
- * immediately by design — see wrapHandoffForDetachedConsole). Failure is a
+ * immediately by design — see wrapHandoffForDetachedConsole). When isReady
+ * is supplied, the real worker must also acknowledge startup at the end of
+ * the window; the POSIX daemon launcher's exit alone proves nothing. Failure is a
  * spawn `error`, a non-zero exit, or a signal death inside the window.
  *
  * Children that expose no event interface (bare test doubles) settle as ok
@@ -387,6 +392,10 @@ export function observeUpdaterHandoff(
   const clearTimeoutFn =
     deps.clearTimeoutFn ?? ((timer: unknown) => clearTimeout(timer as ReturnType<typeof setTimeout>))
 
+  const readinessOutcome = (): UpdaterHandoffOutcome => !deps.isReady || deps.isReady()
+    ? { ok: true }
+    : { ok: false, reason: 'not-ready', message: 'the detached updater did not acknowledge startup' }
+
   const observable = child as UpdaterChild & {
     once?: (event: string, listener: (...args: unknown[]) => void) => unknown
     removeListener?: (event: string, listener: (...args: unknown[]) => void) => unknown
@@ -394,7 +403,7 @@ export function observeUpdaterHandoff(
 
   if (typeof observable.once !== 'function') {
     return new Promise(resolve => {
-      setTimeoutFn(() => resolve({ ok: true }), settleMs)
+      setTimeoutFn(() => resolve(readinessOutcome()), settleMs)
     })
   }
 
@@ -444,10 +453,10 @@ export function observeUpdaterHandoff(
       // Clean exit 0 inside the window is expected for wrapper shapes
       // (cmd.exe `start` on Windows exits immediately after launching the
       // real script in its own console).
-      finish({ ok: true, code: code ?? 0, signal: null })
+      if (!deps.isReady) { finish({ ok: true, code: code ?? 0, signal: null }) }
     }
 
-    const timer = setTimeoutFn(() => finish({ ok: true }), settleMs)
+    const timer = setTimeoutFn(() => finish(readinessOutcome()), settleMs)
 
     observable.once('error', onError)
     observable.once('exit', onExit)

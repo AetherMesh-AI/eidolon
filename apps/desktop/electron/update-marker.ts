@@ -109,9 +109,19 @@ export function readLiveUpdateMarker(
 ) {
   for (const file of [markerPath(hermesHome), path.join(hermesHome, '.hermes-update-in-progress')]) {
     const owner = readLiveUpdateMarkerFile(file, options)
+
     if (owner) {return owner}
   }
+
   return null
+}
+
+/** POSIX re-parents through a short-lived launcher; only its worker may acknowledge. */
+export function hasReadyPosixUpdater(hermesHome: string, launcherPid: number | undefined, startedAt: number) {
+  const now = Date.now()
+  const owner = readLiveUpdateMarker(hermesHome, { now: () => now })
+
+  return Boolean(owner && owner.pid !== launcherPid && now - owner.ageMs === startedAt * 1000)
 }
 
 /**

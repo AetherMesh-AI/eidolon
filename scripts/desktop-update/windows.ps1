@@ -81,7 +81,9 @@ try {
     $OutputEncoding = [System.Text.Encoding]::UTF8
 } catch {}
 $TempDir = if ($env:TEMP) { $env:TEMP } else { [System.IO.Path]::GetTempPath() }
-$HermesHome = if ($InstallRoot) { Split-Path -Parent $InstallRoot } else { $TempDir }
+# Source checkouts may be nested or external; keep the caller-selected profile home.
+$HermesHome = if ($env:HERMES_HOME) { $env:HERMES_HOME } elseif ($InstallRoot) { Split-Path -Parent $InstallRoot } else { $TempDir }
+$env:HERMES_HOME = $HermesHome
 Remove-Item Env:EIDOLON_HOME -ErrorAction SilentlyContinue
 $MarkerPath = Join-Path $HermesHome ".eidolon-update-in-progress"
 $LogDir = Join-Path $HermesHome "logs"

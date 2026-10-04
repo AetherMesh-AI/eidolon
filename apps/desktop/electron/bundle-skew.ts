@@ -131,3 +131,17 @@ export async function detectBundleSkew(
     return NOT_STALE
   }
 }
+
+/** A current source checkout can still need installation into the running app. */
+export async function desktopUpdateAvailable(
+  behind: number | null,
+  stamp: BundleSkewStamp | null,
+  runGit: RunGit,
+  repoRoot: string
+): Promise<boolean> {
+  if (behind === null || behind > 0) {
+    return true
+  }
+
+  return (await detectBundleSkew(stamp, runGit, repoRoot)).outOfSync
+}
