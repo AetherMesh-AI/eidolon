@@ -240,6 +240,8 @@ def _write_or_exit(payload: dict, reason: str) -> None:
 
 def main():
     _install_sidecar_publisher()
+    from eidolon_cli.organization_service import start_existing_services
+    start_existing_services()
 
     # The heartbeat row lets the orphan sweep tell "live but idle" from "truly orphaned",
     # so it must start BEFORE the sweep.
@@ -294,6 +296,9 @@ def main():
         if resp is not None:
             _write_or_exit(
                 resp, f"response write failed for method={method!r} (broken stdout pipe)")
+
+    from eidolon_cli.organization_service import stop_services
+    stop_services(timeout=_shutdown_grace_seconds())
 
 
 if __name__ == "__main__":

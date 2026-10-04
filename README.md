@@ -18,19 +18,19 @@ Memory is part of that direction. An agent should be able to retain useful conte
 
 ## Views in the desktop
 
-The desktop brings conversation and planning views together. Their presence in the interface does not mean an organization runtime is connected.
+The desktop brings conversation and organization work together. Organization views show the current backend connection and its supported execution scope.
 
 | View | Purpose and current boundary |
 | --- | --- |
 | Agent conversations | Return to an agent's canonical conversation. Synthetic persistence has bounded native evidence; actual AI conversation flows and reliable first-attempt switching are not yet accepted. |
-| Home | Enter an objective and inspect the local planning prototype. Creating an objective does not dispatch work to agents. |
-| Objectives | Browse goals and inspect overview, plan, tasks, activity, artifacts, and decisions. Plans are template scaffolds; progress and outcomes are local records, not verified execution. |
-| Organization | Inspect example agents, roles, and work relationships. The organization prototype is not a live team manager. |
-| Activity | Inspect and filter observable prototype events, not private model reasoning or a certified live execution history. |
-| Knowledge | Explore the memory/knowledge prototype. Durable organization knowledge and deliberate cross-agent sharing remain development work. |
+| Home | Submit an objective to the current profile's bounded organization runtime. Model work can incur provider charges. |
+| Objectives | Inspect the manager's task graph, typed requests, claims, reviews and retained deliverables. Unsupported work remains pending intervention. |
+| Organization | Inspect scoped Owner → Executive → Director → Manager → Employee roles, actual request assignments and bounded logical staffing. |
+| Activity | Inspect persisted request lifecycle events. These are observable execution records, not private model reasoning or a guarantee of correctness. |
+| Knowledge | Read retained organization deliverables and their evidence digests. Broader shared-memory capabilities remain development work. |
 | Workspace and capabilities | Existing routes expose artifacts, skills, messaging, scheduling, profiles, and settings. These are integration surfaces, not a claim of end-to-end Eidolon acceptance for every feature or platform. |
 
-Organization example data is fictional. The desktop prototype saves and restores organization records through browser-local storage (`window.localStorage`), separately from canonical conversation storage. This limited local persistence is not backend storage or acceptance of durable organization memory or cross-agent sharing. Local approvals do not grant runtime permissions, and recording an outcome does not prove that work ran.
+The first executable slice supports writing and analysis of submitted context through the existing AIAgent/provider stack, followed by independent evidence-bound review. It does not enable external tools or claim arbitrary tasks are solvable. See [organization execution, configuration and recovery](docs/organization-flow.md) for supported transports, limits and a runnable example. Offline integration tests cover real SQLite, RPC, scheduler and local HTTP provider paths; live-provider quality and installed-app acceptance still need verification. The separate isolated example preview remains fictional and never dispatches model work or grants permissions.
 
 ## Project principles
 

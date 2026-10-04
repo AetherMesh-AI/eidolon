@@ -18,6 +18,7 @@ export function Activity({ snapshot, objectiveId }: { snapshot: OrganizationSnap
  const [objective, setObjective] = useState('all')
  const [agent, setAgent] = useState('all')
  const [selected, setSelected] = useState<string | null>(null)
+ const runtime = snapshot.source === 'runtime'
 
  const items = snapshot.activity.filter(item =>
    (!objectiveId || item.objectiveId === objectiveId) && (kind === 'all' || eventCategory[item.kind] === kind) && (objective === 'all' || item.objectiveId === objective) &&
@@ -26,7 +27,7 @@ export function Activity({ snapshot, objectiveId }: { snapshot: OrganizationSnap
  const event = items.find(item => item.id === selected)
 
  return <><h2>Coordination timeline</h2>
-  <p>Human-readable coordination, decisions and outcomes. Prototype records are not live execution logs.</p>
+  <p>{runtime ? 'Runtime coordination, decisions and outcomes recorded by the connected gateway.' : 'Human-readable coordination, decisions and outcomes. Prototype records are not live execution logs.'}</p>
   <div className="eid-toolbar">
    <input aria-label="Search activity" onChange={e => setQuery(e.target.value)} placeholder="Search events" type="search" value={query} />
    <select aria-label="Event type" onChange={e => setKind(e.target.value)} value={kind}><option value="all">All</option>{Object.entries(categories).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
@@ -35,16 +36,16 @@ export function Activity({ snapshot, objectiveId }: { snapshot: OrganizationSnap
   </div>
   {items.length ? <ol className="eid-list">{items.map(item => <li key={item.id}>
    <button aria-label={`Inspect event: ${item.text}`} className="eid-row" onClick={() => setSelected(item.id)} style={{ width: '100%', textAlign: 'left' }}>
-    <AgentAvatar name={snapshot.agents.find(a => a.id === item.agentId)?.name || 'Organization'} /><span><small>{categories[eventCategory[item.kind]]} · {item.provenance === 'fictional' ? 'Fictional example' : 'Local prototype'}</small><strong>{item.text}</strong><small>{item.agentId ? snapshot.agents.find(a => a.id === item.agentId)?.name || 'Unlinked agent' : 'Organization'}{item.objectiveId ? ` · ${snapshot.objectives.find(o => o.id === item.objectiveId)?.title || 'Unlinked objective'}` : ''}</small></span>
+    <AgentAvatar name={snapshot.agents.find(a => a.id === item.agentId)?.name || 'Organization'} /><span><small>{categories[eventCategory[item.kind]]} · {runtime ? 'Runtime event' : item.provenance === 'fictional' ? 'Fictional example' : 'Local prototype'}</small><strong>{item.text}</strong><small>{item.agentId ? snapshot.agents.find(a => a.id === item.agentId)?.name || item.agentId : 'Organization'}{item.objectiveId ? ` · ${snapshot.objectives.find(o => o.id === item.objectiveId)?.title || item.objectiveId}` : ''}</small></span>
     <time dateTime={item.timestamp}>{new Date(item.timestamp).toLocaleString()}</time>
    </button>
-  </li>)}</ol> : <div className="eid-empty"><h2>{snapshot.activity.length ? 'No matching events' : 'No organization events yet'}</h2><p>Create an objective to record a local planning event.</p></div>}
+  </li>)}</ol> : <div className="eid-empty"><h2>{snapshot.activity.length ? 'No matching events' : 'No organization events yet'}</h2><p>{runtime ? 'Events appear when the gateway records organization activity.' : 'Create an objective to record a local planning event.'}</p></div>}
   <p><Link to="/processes">Inspect live process logs →</Link></p>
   {event && <Inspector kind="event" onClose={() => setSelected(null)} title={event.text}>
-   <p className="eid-eyebrow">{event.provenance === 'fictional' ? 'Fictional example · Not live' : 'Local prototype event · Not live'}</p><dl><dt>Category</dt><dd>{categories[eventCategory[event.kind]]}</dd><dt>Event type</dt><dd>{event.kind}</dd><dt>Recorded</dt><dd><time dateTime={event.timestamp}>{new Date(event.timestamp).toLocaleString()}</time></dd><dt>Agent</dt><dd>{snapshot.agents.find(item => item.id === event.agentId)?.name || 'No agent linked'}</dd></dl>
+   <p className="eid-eyebrow">{runtime ? 'Runtime event · Gateway record' : event.provenance === 'fictional' ? 'Fictional example · Not live' : 'Local prototype event · Not live'}</p><dl><dt>Category</dt><dd>{categories[eventCategory[event.kind]]}</dd><dt>Event type</dt><dd>{event.kind}</dd><dt>Recorded</dt><dd><time dateTime={event.timestamp}>{new Date(event.timestamp).toLocaleString()}</time></dd><dt>Agent</dt><dd>{snapshot.agents.find(item => item.id === event.agentId)?.name || event.agentId || 'No agent linked'}</dd>{runtime && <><dt>Event ID</dt><dd>{event.id}</dd><dt>Source</dt><dd>Connected gateway organization runtime</dd></>}</dl>
    {event.description && <><h3>Observable details</h3><p>{event.description}</p></>}
    {event.objectiveId && <Link to={`/objectives/${event.objectiveId}`}>Open objective</Link>}
-   <h3>Diagnostic context</h3><p>No runtime log or process identifier is attached. This record comes from the local prototype adapter.</p>
+   <h3>Diagnostic context</h3>{runtime ? <><p>{snapshot.runtime?.scope || 'Execution scope not reported by runtime.'}</p><p>Coordination events do not by themselves verify external tool execution. Inspect task evidence for recorded results and session identifiers.</p></> : <p>No runtime log or process identifier is attached. This record comes from the local prototype adapter.</p>}
   </Inspector>}
  </>
 }

@@ -3,6 +3,143 @@ import { defineFieldCopy } from '@/app/settings/field-copy'
 import { defineLocale } from './define-locale'
 
 export const ja = defineLocale({
+  organizationRuntime: {
+    artifactLoading: '成果物の全文を取得中',
+    artifactError: '成果物を取得できませんでした。',
+    artifactRetry: '成果物を再取得',
+    artifactRefresh: '成果物を更新',
+    artifactDigest: '成果物の SHA-256',
+    artifactRecorded: '記録日時',
+    artifactTask: 'タスク',
+    artifactLedgerNote:
+      '現在のプロファイルの証拠台帳に保存された全文です。ダイジェストは保存された出力を識別しますが、そのすべての主張を独立に検証するものではありません。',
+    edits: {
+      heading: '単一ファイルの編集提案',
+      proposalId: '提案 ID',
+      workspaceId: '管理対象ワークスペース ID',
+      sourcePath: 'ソースのエイリアスパス',
+      baseRevision: '基準ワークスペースリビジョン',
+      currentRevision: '現在のワークスペースリビジョン',
+      appliedRevision: '適用先ワークスペースリビジョン',
+      baseDigest: '基準の生バイト SHA-256',
+      newDigest: '変更後の生バイト SHA-256',
+      proposalDigest: '正確な提案の SHA-256',
+      review: 'この提案のレビュー',
+      application: '管理対象ワークスペースへの適用',
+      reviewReason: 'レビュー理由',
+      applicationReason: '適用理由',
+      reviewLabels: {
+        pending: 'レビュー待ち',
+        approved: '承認済み',
+        rejected: '却下'
+      },
+      notApplied: '未適用',
+      applied: '管理対象ワークスペースに適用済み',
+      appliedAt: '適用日時',
+      proposedNote: '提案段階です。レビューと適用は記録されておらず、元のプロジェクトは変更されていません。',
+      approvedNote:
+        'この提案は承認されました。管理対象ワークスペースには未適用で、元のプロジェクトも変更されていません。',
+      rejectedNote: 'レビューで提案が却下されました。未適用で、元のプロジェクトも変更されていません。',
+      appliedNote: '管理対象ワークスペースに適用済みです。元のプロジェクトは変更されていません。',
+      staleNote:
+        '管理対象ワークスペースのリビジョンが変更されています。この提案の基準は古いため、適用には新しい提案とレビューが必要です。',
+      advancedNote:
+        'この適用後に管理対象ワークスペースが更新されています。ダウンロードには、このレビュー済みバージョンが含まれます。',
+      diff: '提案された差分の全文',
+      diffNote:
+        'ランタイムが固定済みの完全な基準内容と置換内容から生成した差分です。生バイトのハッシュが正確なファイルバージョンを識別します。',
+      downloadFile: 'レビュー済みファイルをダウンロード',
+      downloadPatch: '提案パッチをダウンロード',
+      downloadNote:
+        'ダウンロードは保存済み提案のコピーです。レビュー済みファイルの UTF-8 バイト列と改行を保持し、ダウンロード自体では適用やマージは行いません。',
+      downloadFailed: 'ダウンロードを準備できませんでした。再試行してください。',
+      mergePending: '元のプロジェクトへのマージは手動対応待ちです。',
+      mergeNote:
+        '元のプロジェクトへのマージは手動で行ってください。レビュー済みファイルまたは提案パッチをダウンロードし、現在のソースと比較して、ご自身のプロジェクトツールでマージしてください。',
+      support: '管理対象ワークスペースの編集',
+      supported: '対応',
+      unsupported: '未対応',
+      supportUnknown: 'ワークスペース編集への対応状況は未報告',
+      grant: '設定済みパッチ権限',
+      granted: '設定済み・スタッフごとの権限も必要',
+      disabled: 'パッチ権限は未設定',
+      grantUnknown: 'パッチ権限は未報告',
+      scopeNote:
+        'レビューは適用権限を付与しません。管理対象ワークスペースへの適用には、別途設定されたパッチ権限と条件を満たすスタッフが必要です。元のプロジェクトファイルは上書きしません。',
+      invalid: 'ランタイムが無効な編集提案を返しました。'
+    },
+    auditReconnect: 'ツール実行記録を読むには組織ランタイムに再接続してください。',
+    auditScopeChanged: '接続先またはプロファイルが変更されました。元のプロファイルでリクエストを開き直してください。',
+    auditInvalid: 'ランタイムが無効なツール実行記録を返しました。',
+
+    model: 'モデル',
+    recentReceipts: '最近のツール呼び出し',
+    attempt: '試行',
+    requestId: 'リクエスト ID',
+
+    requestAuditNote: 'このリクエストの保存済みツール記録です。以前の試行も含まれます。',
+    auditError: 'ツール実行記録を取得できませんでした。',
+    auditLoading: 'ツール実行記録を取得中',
+    auditRetry: 'ツール記録を再取得',
+    moreReceipts: '完全なリクエスト記録あり・記録済みの呼び出し',
+    requestedRoutes: '要求された担当者の振り分け先',
+    requestedWorkers: '要求された担当者数',
+
+    configuration: '設定済みの機能',
+    rosterNote:
+      'このプロファイルの設定済みスタッフです。ライフサイクルと作業状況は別です。有効なスタッフだけが条件に合うリクエストを担当できます。',
+    provider: 'プロバイダー',
+    lifecycle: 'ライフサイクル',
+    lifecycleLabels: {
+      active: '有効',
+      available: '利用可能・未稼働',
+      disabled: '無効',
+      retired: '引退済み'
+    },
+    notReported: 'ランタイムから報告されていません',
+    tools: 'ツール',
+    noTools: 'テキストのみ・ツールは無効',
+    capabilities: '機能',
+    noCapabilities: '機能の報告はありません',
+    readGrant: 'ファイル読み取り権限',
+    readGranted: '設定済みルート内で有効',
+    readDisabled: '無効・送信されたテキストのみ',
+    readUnknown: '読み取り権限は報告されていません',
+    roots: '読み取りが許可されたルート',
+    noRoots: '読み取りルートの報告はありません',
+    scopeNote:
+      'ファイルの読み取りには対応するスタッフの機能と明示的な read_file 権限が必要です。権限はこの画面以外で設定します。再試行でアクセス範囲は拡大しません。',
+    maxToolCalls: '試行ごとのツール呼び出し上限',
+    receipts: 'ツール実行記録',
+    noReceipts: 'ツール実行記録はありません。',
+    receiptNote:
+      '完了の記録だけがツール呼び出しの成功を示します。実行中、ブロック、失敗、不明の呼び出しは成功した結果と区別されます。',
+    artifactNote:
+      'これらのツール記録は、この成果物を生成した作業リクエストに属します。結果のダイジェストは保存されたバイト列を識別しますが、出力のすべての主張を検証するものではありません。',
+    statusLabels: {
+      running: '実行中',
+      completed: '完了',
+      blocked: 'ブロック',
+      failed: '失敗',
+      unknown: '不明'
+    },
+    result: '保存されたツール結果',
+    preview: 'ツール結果のプレビュー',
+    noResult: '成功した結果は記録されていません。',
+    receiptId: '記録 ID',
+    toolCallId: 'ツール呼び出し ID',
+    path: 'パス',
+    offset: 'オフセット',
+    limit: '上限',
+    reason: '理由',
+    created: '開始',
+    completed: '終了',
+    digest: '結果の SHA-256',
+    routeReason: '振り分け・介入の理由',
+    routeUnknown: '振り分けや介入の理由は報告されていません。',
+    previewNote:
+      'リクエスト画面には最大20件の記録と各結果の2,000文字を表示します。保存されたツールの証拠はタスクの成果物を開いて確認してください。'
+  },
   sessionImport: {
     title: '別のアプリから続ける',
     subtitle: '会話をEidolonに取り込み、続きを始めましょう。',

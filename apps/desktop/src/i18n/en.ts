@@ -3,6 +3,143 @@ import { FIELD_DESCRIPTIONS, FIELD_LABELS } from '@/app/settings/constants'
 import type { Translations } from './types'
 
 export const en: Translations = {
+  organizationRuntime: {
+    artifactLoading: 'Retrieving full artifact',
+    artifactError: 'Could not retrieve the artifact.',
+    artifactRetry: 'Retry artifact',
+    artifactRefresh: 'Refresh artifact',
+    artifactDigest: 'Artifact SHA-256',
+    artifactRecorded: 'Recorded',
+    artifactTask: 'Task',
+    artifactLedgerNote:
+      'Full content from the current-profile evidence ledger. The digest identifies the retained output; it does not independently verify every claim in it.',
+    edits: {
+      heading: 'One-file edit proposal',
+      proposalId: 'Proposal ID',
+      workspaceId: 'Managed workspace ID',
+      sourcePath: 'Source alias path',
+      baseRevision: 'Base workspace revision',
+      currentRevision: 'Current workspace revision',
+      appliedRevision: 'Applied workspace revision',
+      baseDigest: 'Base raw-byte SHA-256',
+      newDigest: 'New raw-byte SHA-256',
+      proposalDigest: 'Exact proposal SHA-256',
+      review: 'Exact-proposal review',
+      application: 'Managed workspace application',
+      reviewReason: 'Review reason',
+      applicationReason: 'Application reason',
+      reviewLabels: {
+        pending: 'Pending review',
+        approved: 'Approved',
+        rejected: 'Rejected'
+      },
+      notApplied: 'Not applied',
+      applied: 'Applied to managed workspace',
+      appliedAt: 'Applied at',
+      proposedNote: 'Proposed only. Review and application are not recorded; the source project is unchanged.',
+      approvedNote:
+        'The exact proposal was approved. It has not been applied to the managed workspace; the source project is unchanged.',
+      rejectedNote: 'Review rejected this proposal. It has not been applied; the source project is unchanged.',
+      appliedNote: 'Applied to managed workspace; source project unchanged.',
+      staleNote:
+        'The managed workspace revision has changed. This proposal has a stale base and requires a new proposal and review before application.',
+      advancedNote:
+        'The managed workspace has advanced since this application. Downloads still contain this exact reviewed version.',
+      diff: 'Full proposed diff',
+      diffNote:
+        'The runtime generated this diff from the complete pinned base and replacement. The raw-byte hashes identify the exact file versions.',
+      downloadFile: 'Download reviewed file',
+      downloadPatch: 'Download proposed patch',
+      downloadNote:
+        'Downloads are copies of the retained proposal. The reviewed file preserves its UTF-8 bytes and line endings; downloading does not apply or merge it.',
+      downloadFailed: 'The download could not be prepared. Try again.',
+      mergePending: 'Source merge pending intervention.',
+      mergeNote:
+        'Merging into the source project is a manual step for you. Download the reviewed file or proposed patch, compare it with your current source, and merge with your own project tools.',
+      support: 'Managed workspace edits',
+      supported: 'Supported',
+      unsupported: 'Not supported',
+      supportUnknown: 'Workspace-edit support not reported',
+      grant: 'Configured patch grant',
+      granted: 'Configured · staff grants still required',
+      disabled: 'No patch grant configured',
+      grantUnknown: 'Patch grant not reported',
+      scopeNote:
+        'Review does not grant permission to apply. Managed workspace application requires a separately configured patch grant and eligible staff. It never overwrites source project files.',
+      invalid: 'The runtime returned an invalid edit proposal.'
+    },
+    auditReconnect: 'Reconnect the organization runtime to read tool execution receipts.',
+    auditScopeChanged: 'The connection or profile changed. Reopen the request in its original profile.',
+    auditInvalid: 'The runtime returned invalid tool execution receipts.',
+
+    model: 'Model',
+    recentReceipts: 'Recent tool calls',
+    attempt: 'Attempt',
+    requestId: 'Request ID',
+
+    requestAuditNote: 'Full retained tool records for this exact request, including earlier attempts.',
+    auditError: 'Could not retrieve tool execution receipts.',
+    auditLoading: 'Retrieving tool execution receipts',
+    auditRetry: 'Retry tool receipts',
+    moreReceipts: 'Full request audit available · recorded calls',
+    requestedRoutes: 'Requested worker routes',
+    requestedWorkers: 'Requested worker capacity',
+
+    configuration: 'Configured capabilities',
+    rosterNote:
+      'Configured staff from this profile. Lifecycle is separate from current work status; only active staff can claim matching requests.',
+    provider: 'Provider',
+    lifecycle: 'Lifecycle',
+    lifecycleLabels: {
+      active: 'Active',
+      available: 'Available · inactive',
+      disabled: 'Disabled',
+      retired: 'Retired'
+    },
+    notReported: 'Not reported by runtime',
+    tools: 'Tools',
+    noTools: 'Text-only · no tools enabled',
+    capabilities: 'Capabilities',
+    noCapabilities: 'No capabilities reported',
+    readGrant: 'Read-file grant',
+    readGranted: 'Enabled for configured roots',
+    readDisabled: 'Not enabled · submitted text only',
+    readUnknown: 'Read-file grant not reported',
+    roots: 'Granted read roots',
+    noRoots: 'No read roots reported',
+    scopeNote:
+      'File reads require a matching worker capability and an explicit read_file grant. Grants are configured outside this view; retrying a request does not broaden access.',
+    maxToolCalls: 'Tool-call limit per attempt',
+    receipts: 'Tool execution receipts',
+    noReceipts: 'No tool execution receipts recorded.',
+    receiptNote:
+      'Only completed receipts record successful tool calls. Running, blocked, failed, and unknown calls are separate from successful results.',
+    artifactNote:
+      'These tool records belong to the work request that produced this artifact. A result digest identifies retained bytes; it does not verify every claim in the output.',
+    statusLabels: {
+      running: 'Running',
+      completed: 'Completed',
+      blocked: 'Blocked',
+      failed: 'Failed',
+      unknown: 'Unknown'
+    },
+    result: 'Retained tool result',
+    preview: 'Tool result preview',
+    noResult: 'No successful result recorded.',
+    receiptId: 'Receipt ID',
+    toolCallId: 'Tool-call ID',
+    path: 'Path',
+    offset: 'Offset',
+    limit: 'Limit',
+    reason: 'Reason',
+    created: 'Started',
+    completed: 'Finished',
+    digest: 'Result SHA-256',
+    routeReason: 'Routing / intervention reason',
+    routeUnknown: 'No routing or intervention reason reported.',
+    previewNote:
+      'Request views show at most 20 receipts and 2,000 characters of each result. Open the task artifact for retained tool evidence.'
+  },
   sessionImport: {
     title: 'Continue from another app',
     subtitle: 'Bring a conversation into Eidolon and pick up where you left off.',

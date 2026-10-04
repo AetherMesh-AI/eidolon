@@ -147,3 +147,20 @@
 .eid-graph-scroll { overflow: auto; border: 1px solid var(--eidolon-border-subtle); border-radius: 8px; background: var(--eidolon-surface-1); }
 .eidolon .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 @media (prefers-reduced-motion: reduce) { .eidolon *, .eidolon *::before, .eidolon *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+
+.eid-runtime-status { margin-bottom: 24px; }
+.eid-result-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.eid-request-pending_intervention { color: var(--status-warning); }
+.eid-request-completed { color: var(--status-success); }
+.eid-request-cancelled, .eid-status-cancelled { color: var(--text-muted); }
+
+.eid-runtime-facts { display: grid; grid-template-columns: minmax(100px, 1fr) 2fr; gap: 8px 20px; }
+.eid-runtime-facts dt { color: var(--text-secondary); }
+.eid-runtime-facts dd { margin: 0; overflow-wrap: anywhere; }
+.eid-runtime-capabilities summary { cursor: pointer; color: var(--text-secondary); }
+.eid-tool-receipts > li { margin-top: 24px; }
+.eid-tool-receipts h4 { display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline; }
+.eid-tool-completed { color: var(--status-success); }
+.eid-tool-running { color: var(--status-info); }
+.eid-tool-blocked, .eid-tool-unknown { color: var(--status-warning); }
+.eid-tool-failed { color: var(--status-danger); }

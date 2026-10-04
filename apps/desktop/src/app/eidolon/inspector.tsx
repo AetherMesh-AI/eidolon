@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useRef } from 'react'
 
-export type InspectorKind = 'agent' | 'objective' | 'task' | 'artifact' | 'terminal' | 'process' | 'event'
+export type InspectorKind = 'agent' | 'objective' | 'task' | 'artifact' | 'terminal' | 'process' | 'event' | 'request'
 
 /** Shared non-modal detail surface. Native resource surfaces can supply their
  * own contents without conflating runtime resources with prototype entities. */
