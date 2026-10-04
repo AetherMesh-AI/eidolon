@@ -11,7 +11,7 @@ The native desktop application for [Eidolon](../../README.md), an independent pr
 | Agent conversations | Canonical per-agent chats, with bounded synthetic persistence evidence. Actual AI conversation flows and reliable first-attempt switching still need acceptance. |
 | Chat and previews | Streaming transcript, tool activity, file browser, and side-by-side previews are existing integration surfaces, not an end-to-end acceptance claim. |
 | Voice and settings | Existing voice controls and provider, model, tool, and credential settings depend on runtime configuration and external providers. |
-| Home, Objectives, Organization, Activity, Knowledge | Local planning and knowledge prototypes. Creating a plan does not dispatch work; local records do not establish durable organization memory or cross-agent sharing. |
+| Home, Objectives, Organization, Activity, Knowledge | Backend-owned objectives, typed requests, scoped worker claims, independent review and retained deliverables. Supports writing/analysis of submitted context and opt-in bounded local inspection/reviewed managed-workspace edits with configured staff and durable evidence; original-project merging remains intervention; unsupported capabilities need intervention. See [organization execution](../../docs/organization-flow.md). |
 | Updates | Existing source-based update machinery. A successful local fixture does not establish a supported installed-update path for every platform. |
 
 ## Trying the desktop

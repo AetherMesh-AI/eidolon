@@ -133,9 +133,11 @@ _DESKTOP_MCP_DISCOVERY_DELAY_S = 1.0
 async def _lifespan(app: "FastAPI"):
     from eidolon_cli import web_server_gateway as actions
     from eidolon_cli.web_server_lifecycle import BackendShutdownResult, retain_backend_shutdown
+    from eidolon_cli.organization_service import start_existing_services, stop_services
 
     app.state.shutdown_result = None
     reasons = []
+    organization_cancel = threading.Event()
     tasks = []
     threads = []
     stop_events = []
@@ -166,6 +168,16 @@ async def _lifespan(app: "FastAPI"):
         record_boot_fingerprint()
         from tui_gateway import methods_groups as hosted_groups
         import tui_gateway.server  # noqa: F401
+        def start_organization():
+            try:
+                start_existing_services()
+            except Exception:
+                _log.exception("Organization recovery failed during backend startup")
+            finally:
+                if organization_cancel.is_set():
+                    stop_services(timeout=1.0)
+        # A busy organization DB must not hold the backend's READY handshake.
+        start_thread("organization-startup", start_organization)
 
         hosted_cancel = threading.Event()
         stop_events.append(hosted_cancel)
@@ -211,6 +223,11 @@ async def _lifespan(app: "FastAPI"):
         # First close admission in EVERY backend mode, including partial startup.
         # Never recreate a terminal registry: unresolved ownership must survive.
         finish("action-fence", actions._ACTION_REGISTRY.fence)
+        def stop_organization():
+            organization_cancel.set()
+            if not stop_services(timeout=5.0):
+                reasons.append("organization-still-running")
+        finish("organization", stop_organization)
         try:
             drain = actions._stop_action_processes(timeout=5.0)
             if drain.status != "complete":

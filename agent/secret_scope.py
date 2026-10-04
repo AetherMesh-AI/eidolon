@@ -34,6 +34,25 @@ def is_multiplex_active() -> bool:
 
 
 _SECRET_SCOPE: ContextVar[Optional[Mapping[str, str]]] = ContextVar("_SECRET_SCOPE", default=None)
+_SECRET_SCOPE_REQUIRED: ContextVar[bool] = ContextVar("_SECRET_SCOPE_REQUIRED", default=False)
+
+
+def set_secret_scope_required(required: bool) -> Token:
+    """Require context-local secrets without changing other sessions' deployment mode.
+
+    Shared desktop backends can execute a non-launch profile without making the
+    entire process a gateway multiplexer. Those turns must not borrow missing
+    credentials from the launch profile's environment.
+    """
+    return _SECRET_SCOPE_REQUIRED.set(bool(required))
+
+
+def reset_secret_scope_required(token: Token) -> None:
+    _SECRET_SCOPE_REQUIRED.reset(token)
+
+
+def is_secret_scope_required() -> bool:
+    return _SECRET_SCOPE_REQUIRED.get()
 
 
 class UnscopedSecretError(RuntimeError):
@@ -124,11 +143,11 @@ def get_secret(name: str, default: Optional[str] = None) -> Optional[str]:
         val = scope.get(name)
         if val is not None:
             return val
-        return default if _MULTIPLEX_ACTIVE else _environ_or(name, default)
-    if _MULTIPLEX_ACTIVE:
+        return default if _MULTIPLEX_ACTIVE or _SECRET_SCOPE_REQUIRED.get() else _environ_or(name, default)
+    if _MULTIPLEX_ACTIVE or _SECRET_SCOPE_REQUIRED.get():
         raise UnscopedSecretError(
             f"get_secret({name!r}) called with no profile secret scope active "
-            f"while multiplexing is on. This credential read must run inside a "
+            f"while profile isolation is required. This credential read must run inside a "
             f"set_secret_scope(...) block (the per-turn / per-adapter profile "
             f"scope). Reading os.environ here would risk leaking another "
             f"profile's value. See docs/design/multiplexing-gateway.md "

@@ -341,6 +341,9 @@ def _shutdown_sessions() -> None:
     for step in (_flush_sessions_before_exit, _release_gateway_wake_owner):
         with contextlib.suppress(Exception):
             step()
+    with contextlib.suppress(Exception):
+        from eidolon_cli.organization_service import stop_services
+        stop_services(timeout=0.25)
     with _sessions_lock:
         sids = list(_sessions)
     for sid in sids:
@@ -3199,7 +3202,7 @@ from . import (  # noqa: E402
     methods_config_set as _methods_config_set, methods_images as _methods_images,
     methods_profiles as _methods_profiles, methods_prompt as _methods_prompt, methods_session as _methods_session,
     methods_tools as _methods_tools, prompt_turn as _prompt_turn, billing_view as _billing_view,
-    methods_projects as _methods_projects, methods_session_foreign as _methods_session_foreign,
+    methods_projects as _methods_projects, methods_organization as _methods_organization, methods_session_foreign as _methods_session_foreign,
     methods_session_control as _methods_session_control, methods_subagents as _methods_subagents)
 
 for _m in (
@@ -3210,6 +3213,6 @@ for _m in (
     _methods_browser_control, _methods_session, _methods_prompt, _methods_config,
     _methods_config_set, _methods_complete, _methods_tools, _methods_profiles, _methods_images,
     _methods_bot_relay, _prompt_turn, _billing_view, _methods_projects, _methods_session_foreign,
-    _methods_session_control, _methods_subagents):
+    _methods_session_control, _methods_subagents, _methods_organization):
     _m.register(sys.modules[__name__])
 del _m

@@ -544,6 +544,11 @@ def read_file_tool(path: str, offset: int = 1, limit: int = DEFAULT_READ_LIMIT, 
     guard (host only) → document extraction → binary-extension guard → Eidolon
     internal denylist → negative-result cache → dedup stub → real read.
     """
+    from tools.organization_file_read import get_organization_file_read_scope
+    organization_scope = get_organization_file_read_scope()
+    if organization_scope is not None:
+        return organization_scope.read_file(path, offset, limit)
+
     try:
         offset, limit = normalize_read_pagination(offset, limit)
 

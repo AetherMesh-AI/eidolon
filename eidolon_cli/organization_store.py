@@ -1,0 +1,500 @@
+"""Authoritative organization state. Model output proposes; transactions decide.
+
+Kanban intentionally permits manual/self-certified completion and fallback profile
+routing. Organization requests have stricter role, review and evidence contracts,
+so they use their own profile-scoped ledger while sharing the AIAgent runtime.
+"""
+from __future__ import annotations
+
+import contextlib
+import hashlib
+import json
+from pathlib import Path
+import re
+import sqlite3
+import time
+import uuid
+from datetime import datetime, timezone
+
+from eidolon_cli.organization_config import OrganizationSettings
+from eidolon_cli.organization_receipts import (
+    RECEIPT_SCHEMA, OrganizationReceiptStore, evidence_receipts, fence_receipts,
+)
+from eidolon_cli.organization_staffing import STAFF_SCHEMA, OrganizationStaffingStore
+from eidolon_cli.organization_edits import EDIT_SCHEMA, OrganizationEditStore, evidence_proposal
+from eidolon_cli.organization_policy import POLICY_SCHEMA, OrganizationPolicyStore, persisted_settings
+
+
+_TERMINAL = {"completed", "cancelled"}
+_PRIORITY = {"low": 1, "normal": 3, "high": 5, "P5": 1, "P4": 2, "P3": 3, "P2": 4, "P1": 5}
+_TYPE = re.compile(r"^[a-z][a-z0-9_]{0,31}\.[a-z][a-z0-9_]{0,31}$")
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS objectives (
+ id TEXT PRIMARY KEY, idempotency_key TEXT NOT NULL UNIQUE, input_hash TEXT NOT NULL,
+ title TEXT NOT NULL, description TEXT NOT NULL, priority INTEGER NOT NULL,
+ created REAL NOT NULL, cancelled INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS agents (
+ id TEXT PRIMARY KEY, name TEXT NOT NULL, role TEXT NOT NULL, manager_id TEXT,
+ team TEXT NOT NULL, accepts TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS tasks (
+ id TEXT PRIMARY KEY, objective_id TEXT NOT NULL REFERENCES objectives(id), title TEXT NOT NULL,
+ description TEXT NOT NULL, type TEXT NOT NULL, team TEXT NOT NULL, priority INTEGER NOT NULL,
+ status TEXT NOT NULL, dependencies TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 0,
+ author_id TEXT, result TEXT, feedback TEXT);
+CREATE TABLE IF NOT EXISTS requests (
+ id TEXT PRIMARY KEY, objective_id TEXT NOT NULL REFERENCES objectives(id), task_id TEXT REFERENCES tasks(id),
+ type TEXT NOT NULL, team TEXT NOT NULL, priority INTEGER NOT NULL, status TEXT NOT NULL,
+ created REAL NOT NULL, agent_id TEXT REFERENCES agents(id), token TEXT, lease REAL,
+ attempts INTEGER NOT NULL DEFAULT 0, reason TEXT, available REAL NOT NULL DEFAULT 0,
+ payload TEXT NOT NULL DEFAULT '{}');
+CREATE INDEX IF NOT EXISTS request_queue ON requests(status, priority DESC, created);
+CREATE TABLE IF NOT EXISTS evidence (
+ id TEXT PRIMARY KEY, objective_id TEXT NOT NULL, task_id TEXT NOT NULL REFERENCES tasks(id),
+ request_id TEXT NOT NULL UNIQUE REFERENCES requests(id), content TEXT NOT NULL,
+ sha256 TEXT NOT NULL, summary TEXT NOT NULL, created REAL NOT NULL);
+CREATE INDEX IF NOT EXISTS evidence_task_latest ON evidence(task_id,created DESC,id DESC);
+CREATE TABLE IF NOT EXISTS retry_receipts (
+ idempotency_key TEXT PRIMARY KEY, request_id TEXT NOT NULL REFERENCES requests(id), created REAL NOT NULL);
+CREATE TABLE IF NOT EXISTS reviews (
+ request_id TEXT PRIMARY KEY REFERENCES requests(id), task_id TEXT NOT NULL REFERENCES tasks(id),
+ agent_id TEXT NOT NULL, approved INTEGER NOT NULL, summary TEXT NOT NULL,
+ evidence_ids TEXT NOT NULL, created REAL NOT NULL);
+CREATE TABLE IF NOT EXISTS events (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, objective_id TEXT, agent_id TEXT,
+ kind TEXT NOT NULL, text TEXT NOT NULL, created REAL NOT NULL);
+"""
+
+
+def _id(prefix):
+    return f"{prefix}_{uuid.uuid4().hex}"
+
+
+def _iso(value):
+    return datetime.fromtimestamp(value, timezone.utc).isoformat() if value is not None else None
+
+
+def _text(value, field, limit=10000):
+    if not isinstance(value, str) or not value.strip() or len(value) > limit:
+        raise ValueError(f"{field} must be nonempty text of at most {limit} characters")
+    return value.strip()
+
+
+class OrganizationStore(OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
+    def __init__(self, path: Path | str, settings: OrganizationSettings | None = None):
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with self._connect() as conn:
+            conn.executescript(_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA)
+            self.settings = settings or persisted_settings(conn) or OrganizationSettings()
+        with self._write() as conn:
+            self._adopt_policy(conn)
+            roles = [("owner", "Owner", "Owner", None, []),
+                     ("executive", "Executive", "Executive", "owner", []),
+                     ("director", "Director", "Director", "executive", ["request.hire"]),
+                     ("manager", "Manager", "Manager", "director", ["request.plan"]),
+                     ("reviewer", "Reviewer", "Employee", "manager", ["request.review"]),
+                     ("control:apply", "Workspace applier", "Employee", "manager", ["request.apply"])]
+            for ident, name, role, manager, accepts in roles:
+                conn.execute("INSERT OR IGNORE INTO agents VALUES (?,?,?,?,?,?)",
+                             (ident, name, role, manager, self.settings.team, json.dumps(accepts)))
+            conn.execute("UPDATE agents SET team=? WHERE id IN ('owner','executive','director','manager','reviewer','control:apply')", (self.settings.team,))
+            self._sync_staff(conn)
+
+    @contextlib.contextmanager
+    def _connect(self):
+        conn = sqlite3.connect(self.path, timeout=10, isolation_level=None)
+        conn.row_factory = sqlite3.Row
+        try:
+            conn.execute("PRAGMA foreign_keys=ON")
+            conn.execute("PRAGMA journal_mode=WAL")
+            yield conn
+        finally:
+            conn.close()
+
+    @contextlib.contextmanager
+    def _write(self):
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                yield conn
+                conn.commit()
+            except BaseException:
+                conn.rollback()
+                raise
+
+    @staticmethod
+    def _event(conn, objective, text, kind="system", agent=None):
+        conn.execute("INSERT INTO events(objective_id,agent_id,kind,text,created) VALUES (?,?,?,?,?)",
+                     (objective, agent, kind, text, time.time()))
+
+    @staticmethod
+    def _request(conn, objective, request_type, team, priority, task=None, payload=None):
+        ident = _id("req")
+        conn.execute("INSERT INTO requests(id,objective_id,task_id,type,team,priority,status,created,payload) VALUES (?,?,?,?,?,?,'queued',?,?)",
+                     (ident, objective, task, request_type, team, priority, time.time(), json.dumps(payload or {})))
+        return ident
+
+    def create_objective(self, title, description=None, priority="normal", *, idempotency_key):
+        title = _text(title, "Title", 500)
+        description = _text(description or title, "Description", 30000)
+        key = _text(idempotency_key, "Idempotency key", 128)
+        if priority not in _PRIORITY:
+            raise ValueError("Unknown priority")
+        level = _PRIORITY[priority]
+        digest = hashlib.sha256(json.dumps([title, description, level]).encode()).hexdigest()
+        with self._write() as conn:
+            self._require_current_policy(conn)
+            old = conn.execute("SELECT * FROM objectives WHERE idempotency_key=?", (key,)).fetchone()
+            if old:
+                if old["input_hash"] != digest:
+                    raise ValueError("Idempotency key already belongs to a different objective")
+                ident = old["id"]
+            else:
+                count = conn.execute("SELECT count(DISTINCT objective_id) FROM requests WHERE status NOT IN ('completed','cancelled')").fetchone()[0]
+                if count >= self.settings.max_open_objectives:
+                    raise ValueError("Organization is at its open-objective limit; finish or cancel existing work first")
+                if conn.execute("SELECT count(*) FROM objectives").fetchone()[0] >= 1000:
+                    raise ValueError("Organization history capacity reached; no new work was admitted")
+                ident = _id("obj")
+                conn.execute("INSERT INTO objectives VALUES (?,?,?,?,?,?,?,0)",
+                             (ident, key, digest, title, description, level, time.time()))
+                self._request(conn, ident, "request.plan", self.settings.team, level)
+                self._event(conn, ident, "Objective accepted. Manager planning is queued.", "planning")
+        # A duplicate may be older than the UI's settled-history window.
+        from eidolon_cli.organization_snapshot import build_snapshot
+        with self._connect() as conn:
+            return build_snapshot(conn, self.settings, objective_id=ident)["objectives"][0]
+
+    def _eligible(self, conn, request):
+        if request['type'] == 'request.apply' and self.edit_apply_unavailability(conn, request):
+            return [], None
+        busy = {r[0] for r in conn.execute("SELECT agent_id FROM requests WHERE status='running'")}
+        author = None
+        if request["task_id"]:
+            author = conn.execute("SELECT author_id FROM tasks WHERE id=?", (request["task_id"],)).fetchone()[0]
+        staff = conn.execute("SELECT * FROM agents ORDER BY id").fetchall()
+        candidates = []
+        for agent in staff:
+            if self._staff_reason(conn, agent, request['type']):
+                continue
+            if agent["team"] != request["team"] or request["type"] not in json.loads(agent["accepts"]):
+                continue
+            if request["type"] == "request.review" and agent["id"] == author:
+                continue
+            candidates.append(agent)
+        return candidates, next((a for a in candidates if a["id"] not in busy), None)
+
+    @staticmethod
+    def _dependencies_ready(conn, request):
+        if not request["task_id"]:
+            return True
+        row = conn.execute("SELECT dependencies FROM tasks WHERE id=?", (request["task_id"],)).fetchone()
+        return all(conn.execute("SELECT status FROM tasks WHERE id=?", (ident,)).fetchone()[0] == "completed"
+                   for ident in json.loads(row[0]))
+
+    def claim_next(self):
+        with self._write() as conn:
+            if not self._policy_current(conn):
+                return None
+            if conn.execute("SELECT count(*) FROM requests WHERE status='running'").fetchone()[0] >= self.settings.max_inflight:
+                return None
+            rows = conn.execute("SELECT r.* FROM requests r JOIN objectives o ON o.id=r.objective_id WHERE r.status='queued' AND o.cancelled=0 AND r.available<=? ORDER BY r.priority DESC,r.created,r.id", (time.time(),)).fetchall()
+            for request in rows:
+                if not self._dependencies_ready(conn, request):
+                    continue
+                candidates, agent = self._eligible(conn, request)
+                if not candidates:
+                    if self._hiring_pending(conn, request):
+                        continue
+                    if self._ensure_route_hire(conn, request):
+                        continue
+                    self._pending(conn, request, self._route_reason(conn, request))
+                    continue
+                if agent is None:
+                    continue
+                if request["attempts"] >= self.settings.max_attempts:
+                    self._pending(conn, request, "Attempt limit reached; automatic execution has stopped.")
+                    continue
+                token = uuid.uuid4().hex
+                lease = time.time() + self.settings.lease_seconds
+                self._stamp_claim_policy(conn, request['id'])
+                conn.execute("UPDATE requests SET status='running',agent_id=?,token=?,lease=?,attempts=attempts+1,reason=NULL WHERE id=?",
+                             (agent["id"], token, lease, request["id"]))
+                if request["task_id"]:
+                    status = "review" if request["type"] == "request.review" else "working"
+                    conn.execute("UPDATE tasks SET status=? WHERE id=?", (status, request["task_id"]))
+                if not request["reason"]:
+                    self._event(conn, request["objective_id"], f"{agent['name']} claimed {request['type']}.", "delegation", agent["id"])
+                return dict(conn.execute("SELECT * FROM requests WHERE id=?", (request["id"],)).fetchone())
+        return None
+
+    def _owned(self, conn, claim):
+        if not self._policy_current(conn):
+            return None
+        return conn.execute("SELECT r.* FROM requests r JOIN objectives o ON o.id=r.objective_id JOIN request_policy p ON p.request_id=r.id WHERE r.id=? AND r.token=? AND r.status='running' AND r.lease>? AND o.cancelled=0 AND p.generation=?",
+                            (claim["id"], claim["token"], time.time(), self._policy_generation)).fetchone()
+
+    def heartbeat(self, claim):
+        with self._write() as conn:
+            if not self._owned(conn, claim):
+                return False
+            conn.execute("UPDATE requests SET lease=? WHERE id=?", (time.time() + self.settings.lease_seconds, claim["id"]))
+            return True
+
+    def context(self, claim):
+        with self._connect() as conn:
+            request = self._owned(conn, claim)
+            if request is None:
+                raise ValueError("Request lease is no longer owned")
+            objective = dict(conn.execute("SELECT id,title,description FROM objectives WHERE id=?", (request["objective_id"],)).fetchone())
+            task = conn.execute("SELECT * FROM tasks WHERE id=?", (request["task_id"],)).fetchone()
+            task = dict(task) if task else None
+            dependencies = []
+            if task:
+                for ident in json.loads(task["dependencies"]):
+                    ev = conn.execute("SELECT * FROM evidence WHERE task_id=? ORDER BY created DESC LIMIT 1", (ident,)).fetchone()
+                    if ev:
+                        dependencies.append({"taskId": ident, "summary": ev["summary"], "deliverable": ev["content"], "sha256": ev["sha256"],
+                                             "toolReceipts": evidence_receipts(conn, ev['id']),
+                                             'editProposal': evidence_proposal(conn, ev['id'])})
+            payload = json.loads(request["payload"])
+            if task and request["type"] != "request.review":
+                previous = conn.execute("SELECT id FROM evidence WHERE task_id=? ORDER BY created DESC LIMIT 1", (task["id"],)).fetchone()
+                if previous:
+                    payload["evidenceIds"] = [previous[0]]
+            evidence = []
+            for ident in payload.get("evidenceIds", []):
+                row = conn.execute("SELECT * FROM evidence WHERE id=? AND objective_id=?", (ident, request["objective_id"])).fetchone()
+                if row:
+                    evidence.append({**dict(row), 'toolReceipts': evidence_receipts(conn, row['id']),
+                                     'editProposal': evidence_proposal(conn, row['id'])})
+            agent = dict(conn.execute("SELECT id,name,role,team FROM agents WHERE id=?", (request["agent_id"],)).fetchone())
+            staff = self._staff(agent['id'])
+            if staff:
+                agent.update({'provider': staff.provider, 'model': staff.model})
+            return {"objective": objective, "task": task, "agent": agent, "dependencies": dependencies,
+                    "evidence": evidence, "feedback": task["feedback"] if task else None,
+                    "toolReceipts": [receipt for item in evidence for receipt in item['toolReceipts']],
+                    "toolPolicy": self._tool_policy(conn, request),
+                    "staffing": self._staffing_context(),
+                    "capabilities": list(self.settings.capabilities), "maxTasks": self.settings.max_tasks,
+                    "maxWorkers": self.settings.max_workers, "timeoutSeconds": self.settings.timeout_seconds,
+                    "workers": payload.get("workers")}
+
+    @staticmethod
+    def _pending(conn, request, reason):
+        fence_receipts(conn, request['id'], 'Execution stopped before the tool outcome was confirmed.')
+        conn.execute("UPDATE requests SET status='pending_intervention',reason=?,token=NULL,lease=NULL WHERE id=?", (reason[:2000], request["id"]))
+        if request["task_id"]:
+            conn.execute("UPDATE tasks SET status='blocked' WHERE id=?", (request["task_id"],))
+        OrganizationStore._event(conn, request["objective_id"], reason[:2000], "blocker", request["agent_id"])
+
+    def fail(self, claim, reason, retryable=False):
+        reason = _text(reason, "Failure reason", 2000)
+        with self._write() as conn:
+            request = self._owned(conn, claim)
+            if request is None:
+                return False
+            if retryable and request["attempts"] < self.settings.max_attempts:
+                fence_receipts(conn, request['id'], 'Execution failed before the tool outcome was confirmed.')
+                conn.execute("UPDATE requests SET status='queued',reason=?,token=NULL,lease=NULL,available=? WHERE id=?",
+                             (reason, time.time() + 5 * request["attempts"], request["id"]))
+                if request["task_id"]:
+                    conn.execute("UPDATE tasks SET status='queued' WHERE id=?", (request["task_id"],))
+                self._event(conn, request["objective_id"], f"Retry queued: {reason}", "blocker", request["agent_id"])
+            else:
+                self._pending(conn, request, reason)
+            return True
+
+    def defer(self, claim, reason):
+        """Release admission when an occupied OS slot prevented any model call.
+
+        Capacity waits are not failed attempts and need no owner intervention.
+        Only the scheduler invokes this before entering an executor.
+        """
+        reason = _text(reason, "Capacity reason", 2000)
+        with self._write() as conn:
+            request = self._owned(conn, claim)
+            if request is None:
+                return False
+            conn.execute("UPDATE requests SET status='queued',reason=?,token=NULL,lease=NULL,agent_id=NULL,attempts=MAX(0,attempts-1),available=? WHERE id=?",
+                         (reason, time.time() + 1, request["id"]))
+            if request["task_id"]:
+                conn.execute("UPDATE tasks SET status='queued' WHERE id=?", (request["task_id"],))
+            return True
+
+    def recover_expired(self):
+        with self._write() as conn:
+            rows = conn.execute("SELECT * FROM requests WHERE status='running' AND lease<=?", (time.time(),)).fetchall()
+            for request in rows:
+                self._pending(conn, request, "Execution lease expired or the backend restarted. Its outcome is unconfirmed; review before retrying.")
+            return len(rows)
+
+    def cancel(self, objective_id):
+        with self._write() as conn:
+            row = conn.execute("SELECT * FROM objectives WHERE id=?", (objective_id,)).fetchone()
+            if row is None:
+                raise ValueError("Objective not found")
+            if row["cancelled"]:
+                return False
+            for request in conn.execute("SELECT id FROM requests WHERE objective_id=?", (objective_id,)):
+                fence_receipts(conn, request['id'], 'Objective cancelled before the tool outcome was confirmed.')
+            conn.execute("UPDATE objectives SET cancelled=1 WHERE id=?", (objective_id,))
+            conn.execute("UPDATE requests SET status='cancelled',token=NULL,lease=NULL,reason='Cancelled by owner' WHERE objective_id=? AND status NOT IN ('completed','cancelled')", (objective_id,))
+            conn.execute("UPDATE tasks SET status='cancelled' WHERE objective_id=? AND status!='completed'", (objective_id,))
+            self._event(conn, objective_id, "Owner cancelled this objective. In-flight model calls are being interrupted; no further results will be accepted.")
+            return True
+
+    def retry(self, request_id, *, idempotency_key=None):
+        key = _text(idempotency_key or uuid.uuid4().hex, "Retry idempotency key", 128)
+        with self._write() as conn:
+            self._require_current_policy(conn)
+            receipt = conn.execute("SELECT request_id FROM retry_receipts WHERE idempotency_key=?", (key,)).fetchone()
+            if receipt is not None:
+                if receipt[0] != request_id:
+                    raise ValueError("Retry idempotency key belongs to a different request")
+                return False
+            row = conn.execute("SELECT r.*,o.cancelled FROM requests r JOIN objectives o ON o.id=r.objective_id WHERE r.id=?", (request_id,)).fetchone()
+            if row is None:
+                raise ValueError("Request not found")
+            if row["cancelled"]:
+                raise ValueError("Cancelled objectives cannot be retried")
+            if row["status"] != "pending_intervention":
+                return False
+            if row["attempts"] >= self.settings.max_attempts:
+                raise ValueError("Attempt limit reached. Create a revised objective instead of replaying this request.")
+            conn.execute("UPDATE requests SET status='queued',reason=NULL,available=0,agent_id=NULL WHERE id=?", (request_id,))
+            conn.execute("INSERT INTO retry_receipts VALUES (?,?,?)", (key, request_id, time.time()))
+            if row["task_id"]:
+                conn.execute("UPDATE tasks SET status='queued' WHERE id=?", (row["task_id"],))
+            self._event(conn, row["objective_id"], "Owner requested a bounded retry.", "planning")
+            return True
+
+    def retry_recorded(self, request_id, idempotency_key):
+        if not idempotency_key:
+            return False
+        with self._connect() as conn:
+            row = conn.execute("SELECT request_id FROM retry_receipts WHERE idempotency_key=?", (idempotency_key,)).fetchone()
+            if row is not None and row[0] != request_id:
+                raise ValueError("Retry idempotency key belongs to a different request")
+            return row is not None
+
+    def finish(self, claim, result):
+        if not isinstance(result, dict):
+            raise ValueError("Agent result must be an object")
+        if result.get("intervention"):
+            return self.fail(claim, _text(result["intervention"], "Intervention reason", 2000))
+        with self._write() as conn:
+            request = self._owned(conn, claim)
+            if request is None:
+                return False
+            handlers = {"request.plan": self._finish_plan, "request.review": self._finish_review,
+                        "request.hire": self._finish_hire, 'work.edit': self._finish_edit_work,
+                        'request.apply': self._finish_apply}
+            handler = handlers.get(request["type"], self._finish_work)
+            handler(conn, request, result)
+            conn.execute("UPDATE requests SET status='completed',token=NULL,lease=NULL,reason=NULL WHERE id=?", (request["id"],))
+            self._event(conn, request["objective_id"], f"{request['type']} finished.", "review" if request["type"] == "request.review" else "completion", request["agent_id"])
+            return True
+
+    def _finish_plan(self, conn, request, result):
+        tasks = result.get("tasks")
+        if not isinstance(tasks, list) or not 1 <= len(tasks) <= self.settings.max_tasks:
+            raise ValueError(f"Plan must contain 1–{self.settings.max_tasks} tasks")
+        normalized = []
+        ids = [_id("task") for _ in tasks]
+        for index, task in enumerate(tasks):
+            if not isinstance(task, dict):
+                raise ValueError("Each planned task must be an object")
+            request_type = _text(task.get("type"), "Request type", 65)
+            if not _TYPE.fullmatch(request_type) or request_type.startswith("request."):
+                raise ValueError("Planned tasks must use a work capability type; control requests are backend-owned")
+            dependencies = task.get("dependsOn", [])
+            if not isinstance(dependencies, list) or any(type(i) is not int or not 0 <= i < index for i in dependencies) or len(set(dependencies)) != len(dependencies):
+                raise ValueError("Task dependencies must reference unique earlier task indexes")
+            team = _text(task.get("team", self.settings.team), "Team", 64)
+            normalized.append((ids[index], request["objective_id"], _text(task.get("title"), "Task title", 500),
+                               _text(task.get("description"), "Task description", 10000), request_type, team,
+                               request["priority"], "queued", json.dumps([ids[i] for i in dependencies])))
+        workers = result.get("workers", 1)
+        if type(workers) is not int or workers < 1 or workers > 8:
+            raise ValueError("Requested worker count must be an integer from 1 to 8")
+        for values in normalized:
+            conn.execute("INSERT INTO tasks(id,objective_id,title,description,type,team,priority,status,dependencies) VALUES (?,?,?,?,?,?,?,?,?)", values)
+            self._request(conn, request["objective_id"], values[4], values[5], values[6], values[0])
+        self._queue_staffing(conn, request, workers, normalized)
+        self._event(conn, request["objective_id"], f"Manager created {len(tasks)} scoped tasks with explicit dependencies.", "planning", request["agent_id"])
+
+    def _finish_work(self, conn, request, result):
+        if request["type"] not in self.settings.capabilities or request["task_id"] is None:
+            raise ValueError("No executor is authorized for this request type")
+        summary = _text(result.get("summary"), "Work summary", 10000)
+        content = _text(result.get("deliverable"), "Deliverable", 100000)
+        evidence = _id("evidence")
+        conn.execute("INSERT INTO evidence VALUES (?,?,?,?,?,?,?,?)",
+                     (evidence, request["objective_id"], request["task_id"], request["id"], content,
+                      hashlib.sha256(content.encode()).hexdigest(), summary, time.time()))
+        self._link_tool_evidence(conn, request, evidence)
+        conn.execute("UPDATE tasks SET status='review',author_id=?,result=? WHERE id=?", (request["agent_id"], summary, request["task_id"]))
+        self._request(conn, request["objective_id"], "request.review", request["team"], request["priority"], request["task_id"], {"evidenceIds": [evidence]})
+        self._event(conn, request["objective_id"], "Deliverable saved; independent evidence-bound review requested.", "review", request["agent_id"])
+
+    def _finish_review(self, conn, request, result):
+        expected = json.loads(request["payload"])["evidenceIds"]
+        actual = result.get("evidenceIds")
+        if (not expected or not isinstance(actual, list) or any(not isinstance(item, str) for item in actual)
+                or set(actual) != set(expected) or len(actual) != len(expected)):
+            raise ValueError("Review must identify exactly the persisted deliverable evidence")
+        approved = result.get("approved")
+        if type(approved) is not bool:
+            raise ValueError("Review decision must be a boolean")
+        summary = _text(result.get("summary"), "Review summary", 10000)
+        task = conn.execute("SELECT * FROM tasks WHERE id=?", (request["task_id"],)).fetchone()
+        if task["author_id"] == request["agent_id"]:
+            raise ValueError("Workers cannot approve their own deliverable")
+        for ident in expected:
+            ev = conn.execute("SELECT * FROM evidence WHERE id=? AND task_id=?", (ident, task["id"])).fetchone()
+            if ev is None or hashlib.sha256(ev["content"].encode()).hexdigest() != ev["sha256"]:
+                raise ValueError("Persisted evidence is missing or has changed")
+            self._verify_tool_evidence(conn, ident, require_read=task['type'] in {'work.inspect', 'work.edit'})
+        self.validate_edit_review(conn, request, result)
+        conn.execute("INSERT INTO reviews VALUES (?,?,?,?,?,?,?)",
+                     (request["id"], task["id"], request["agent_id"], int(approved), summary, json.dumps(expected), time.time()))
+        if self.on_edit_review(conn, request, task, approved):
+            return
+        if approved:
+            conn.execute("UPDATE tasks SET status='completed',feedback=? WHERE id=?", (summary, task["id"]))
+        elif task["revision"] < self.settings.max_revisions:
+            conn.execute("UPDATE tasks SET status='queued',revision=revision+1,feedback=? WHERE id=?", (summary, task["id"]))
+            self._request(conn, request["objective_id"], task["type"], task["team"], task["priority"], task["id"])
+            self._event(conn, request["objective_id"], "Reviewer requested changes; a bounded revision is queued.", "review", request["agent_id"])
+        else:
+            ident = self._request(conn, request["objective_id"], task["type"], task["team"], task["priority"], task["id"])
+            pending = conn.execute("SELECT * FROM requests WHERE id=?", (ident,)).fetchone()
+            self._pending(conn, pending, "Review revision limit reached. Owner intervention is required: " + summary[:1500])
+            # This intervention is terminal for this objective: retries must not bypass the revision budget.
+            conn.execute("UPDATE requests SET attempts=? WHERE id=?", (self.settings.max_attempts, ident))
+
+    def snapshot(self):
+        from eidolon_cli.organization_snapshot import build_snapshot
+        with self._connect() as conn:
+            conn.execute("BEGIN")
+            result = build_snapshot(conn, self.settings)
+            if not self._policy_current(conn):
+                result['runtime'].update({'state': 'policy_changed', 'capabilities': [], 'readRoots': [],
+                    'readFileEnabled': False, 'workspaceApplyEnabled': False,
+                    'scope': 'Organization grants or routing changed. Restart this runtime before submitting or retrying work.'})
+            return result
+
+    def evidence(self, evidence_id):
+        ident = _text(evidence_id, "Evidence ID", 128)
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM evidence WHERE id=?", (ident,)).fetchone()
+            if row is None:
+                raise ValueError("Evidence not found in this organization")
+            proposal = evidence_proposal(conn, row['id'])
+            return {"id": row["id"], "objectiveId": row["objective_id"], "taskId": row["task_id"],
+                    "content": row["content"], "summary": row["summary"], "sha256": row["sha256"],
+                    "toolReceipts": evidence_receipts(conn, row['id']),
+                    **({'editProposal': proposal} if proposal is not None else {}),
+                    "createdAt": _iso(row["created"])}

@@ -321,10 +321,10 @@ def load_hermes_dotenv(
     # Multiplex gateway: while a routed profile-home override is active, copying that profile's .env
     # into os.environ would expose its credentials to sibling turns and every spawned child. Unscoped
     # startup loads keep the normal path; external sources still refresh against the profile mapping.
-    from agent.secret_scope import is_multiplex_active
+    from agent.secret_scope import is_multiplex_active, is_secret_scope_required
     from eidolon_constants import get_eidolon_home_override
 
-    if is_multiplex_active() and get_eidolon_home_override() is not None:
+    if is_secret_scope_required() or (is_multiplex_active() and get_eidolon_home_override() is not None):
         home_key = str(home_path.resolve())
         if home_key not in _SCOPED_SKIP_LOGGED:
             _SCOPED_SKIP_LOGGED.add(home_key)

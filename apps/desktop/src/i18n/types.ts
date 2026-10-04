@@ -51,6 +51,120 @@ interface AuxTaskCopy {
 }
 
 export interface Translations {
+  organizationRuntime: {
+    artifactLoading: string
+    artifactError: string
+    artifactRetry: string
+    artifactRefresh: string
+    artifactDigest: string
+    artifactRecorded: string
+    artifactTask: string
+    artifactLedgerNote: string
+    edits: {
+      heading: string
+      proposalId: string
+      workspaceId: string
+      sourcePath: string
+      baseRevision: string
+      currentRevision: string
+      appliedRevision: string
+      baseDigest: string
+      newDigest: string
+      proposalDigest: string
+      review: string
+      application: string
+      reviewReason: string
+      applicationReason: string
+      reviewLabels: {
+        pending: string
+        approved: string
+        rejected: string
+      }
+      notApplied: string
+      applied: string
+      appliedAt: string
+      proposedNote: string
+      approvedNote: string
+      rejectedNote: string
+      appliedNote: string
+      staleNote: string
+      advancedNote: string
+      diff: string
+      diffNote: string
+      downloadFile: string
+      downloadPatch: string
+      downloadNote: string
+      downloadFailed: string
+      mergePending: string
+      mergeNote: string
+      support: string
+      supported: string
+      unsupported: string
+      supportUnknown: string
+      grant: string
+      granted: string
+      disabled: string
+      grantUnknown: string
+      scopeNote: string
+      invalid: string
+    }
+    auditReconnect: string
+    auditScopeChanged: string
+    auditInvalid: string
+
+    model: string
+    recentReceipts: string
+    attempt: string
+    requestId: string
+
+    requestAuditNote: string
+    auditError: string
+    auditLoading: string
+    auditRetry: string
+    moreReceipts: string
+    requestedRoutes: string
+    requestedWorkers: string
+
+    configuration: string
+    rosterNote: string
+    provider: string
+    lifecycle: string
+    lifecycleLabels: { active: string; available: string; disabled: string; retired: string }
+    notReported: string
+    tools: string
+    noTools: string
+    capabilities: string
+    noCapabilities: string
+    readGrant: string
+    readGranted: string
+    readDisabled: string
+    readUnknown: string
+    roots: string
+    noRoots: string
+    scopeNote: string
+    maxToolCalls: string
+    receipts: string
+    noReceipts: string
+    receiptNote: string
+    artifactNote: string
+    statusLabels: { running: string; completed: string; blocked: string; failed: string; unknown: string }
+    result: string
+    preview: string
+    noResult: string
+    receiptId: string
+    toolCallId: string
+    path: string
+    offset: string
+    limit: string
+    reason: string
+    created: string
+    completed: string
+    digest: string
+    routeReason: string
+    routeUnknown: string
+    previewNote: string
+  }
+
   sessionImport: {
     title: string
     subtitle: string

@@ -1692,9 +1692,27 @@ DEFAULT_CONFIG = {
         # Keep in sync with cron.scheduler._DEFAULT_MEDIA_SEND_TIMEOUT.
         "media_send_timeout_seconds": 300,
     },
-    # Kanban multi-agent coordination. The dispatcher ticks every N seconds, reclaims stale claims,
-    # promotes dependency-satisfied todos to ready, and fires `eidolon -p <assignee> chat -q ...` per
-    # claimable task. Run ONE dispatcher per profile; two on the same kanban.db race for claims.
+    # Backend-owned organization requests. Grants are explicit and default empty;
+    # naming a capability does not grant access to external tools.
+    "organization": {
+        # Starts only for submitted/persisted organization work. Uses this
+        # profile's configured provider; no additional credentials or profiles.
+        "max_workers": 2,
+        "max_inflight": 2,
+        "max_tasks": 12,
+        "max_open_objectives": 20,
+        "max_attempts": 2,
+        "max_revisions": 2,
+        "lease_seconds": 45,
+        "timeout_seconds": 180,
+        "team": "general",
+        "capabilities": ["work.draft", "work.analyze"],
+        "tool_grants": [],
+        "read_roots": [],
+        "max_tool_calls": 8,
+        "max_tool_result_chars": 12000,
+    },
+    # Kanban multi-agent coordination retains its existing dispatch semantics.
     "kanban": {
         # Auto-subscribe the originating gateway/TUI session to completion + block events when
         # kanban_create is called from a session with a persistent delivery channel. Disable for

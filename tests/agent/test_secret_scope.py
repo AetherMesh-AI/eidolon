@@ -1,7 +1,28 @@
 """Tests for the profile-scoped credential primitive (Workstream A / Phase 2)."""
 import pytest
+import contextvars
 
 from agent import secret_scope as ss
+
+
+def test_context_local_strict_scope_does_not_borrow_launch_credentials(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "launch-profile-test-key")
+    token = ss.set_secret_scope({})
+    strict = ss.set_secret_scope_required(True)
+    try:
+        assert ss.get_secret("OPENROUTER_API_KEY") is None
+        assert contextvars.copy_context().run(ss.get_secret, "OPENROUTER_API_KEY") is None
+        # A distinct ordinary context keeps legitimate single-profile env injection.
+        assert contextvars.Context().run(ss.get_secret, "OPENROUTER_API_KEY") == "launch-profile-test-key"
+        clear = ss.set_secret_scope(None)
+        try:
+            with pytest.raises(ss.UnscopedSecretError):
+                ss.get_secret("OPENROUTER_API_KEY")
+        finally:
+            ss.reset_secret_scope(clear)
+    finally:
+        ss.reset_secret_scope_required(strict)
+        ss.reset_secret_scope(token)
 
 
 @pytest.fixture(autouse=True)

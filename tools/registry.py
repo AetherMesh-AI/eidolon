@@ -808,18 +808,24 @@ class ToolRegistry:
             error_type="tool_result_contract", tool=name, result_type=result_type)
 
     def dispatch(
-        self, name: str, args: dict, *, scope: Optional[str] = None, **kwargs) -> str | dict:
+        self, name: str, args: dict, *, scope: Optional[str] = None,
+        expected_handler: Optional[Callable] = None, **kwargs) -> str | dict:
         """Execute a tool handler by name: async handlers bridged via ``_run_async()``,
         results normalized, every exception returned as ``{"error": ...}``."""
         entry = self.get_entry(name, scope=scope)
         if not entry:
             return tool_error(f"Unknown tool: {name}")
+        # Capture the callable once: scoped executors can require a known
+        # implementation without locking the global registry during tool I/O.
+        handler = entry.handler
+        if expected_handler is not None and handler is not expected_handler:
+            return tool_error("Tool implementation changed before dispatch; execution was refused.")
         try:
             if entry.is_async:
                 from model_tools import _run_async
-                result = _run_async(entry.handler(args, **kwargs))
+                result = _run_async(handler(args, **kwargs))
             else:
-                result = entry.handler(args, **kwargs)
+                result = handler(args, **kwargs)
             return self._normalize_handler_result(name, result)
         except Exception as e:
             # exc_info already renders the exception, so keep the message copy bounded.

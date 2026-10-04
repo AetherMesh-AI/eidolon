@@ -620,3 +620,28 @@ def test_other_profile_home_does_not_bridge_process_config(tmp_path, monkeypatch
 
     # The other profile's .env value stands; the process config was not applied.
     assert os.getenv("TERMINAL_ENV") == "docker"
+
+
+def test_strict_profile_cold_agent_import_does_not_publish_sibling_dotenv(tmp_path):
+    """The first organization model turn may be the process's first AIAgent import."""
+    import subprocess
+    from pathlib import Path
+    home = tmp_path / 'sibling'
+    home.mkdir()
+    (home / '.env').write_text('OPENROUTER_API_KEY=sibling-test-key\n', encoding='utf-8')
+    code = '''
+import os, sys
+from pathlib import Path
+from agent.secret_scope import set_secret_scope, set_secret_scope_required, get_secret
+from eidolon_constants import set_eidolon_home_override
+os.environ['OPENROUTER_API_KEY'] = 'launch-test-key'
+set_eidolon_home_override(Path(sys.argv[1]))
+set_secret_scope({'OPENROUTER_API_KEY': 'sibling-test-key'})
+set_secret_scope_required(True)
+import run_agent
+assert os.environ['OPENROUTER_API_KEY'] == 'launch-test-key'
+assert get_secret('OPENROUTER_API_KEY') == 'sibling-test-key'
+'''
+    result = subprocess.run([sys.executable, '-c', code, str(home)], cwd=Path(__file__).resolve().parents[2],
+                            capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stderr

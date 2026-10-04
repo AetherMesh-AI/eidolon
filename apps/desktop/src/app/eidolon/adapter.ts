@@ -1,5 +1,5 @@
 import { demoSnapshot } from './demo'
-import type { Objective, ObjectiveMetadata, OrganizationAdapter, OrganizationSnapshot } from './types'
+import type { Objective, ObjectiveMetadata, OrganizationSnapshot, PrototypeOrganizationAdapter } from './types'
 
 function validateMetadata(metadata: ObjectiveMetadata) {
   const { progress } = metadata
@@ -9,7 +9,7 @@ function validateMetadata(metadata: ObjectiveMetadata) {
 
 /** Deliberately has no gateway or profile-store dependency. Local UI intent is
  * not evidence of autonomous execution, and must not create canonical sessions. */
-export function createPrototypeAdapter(storage?: Pick<Storage, 'getItem' | 'setItem'>): OrganizationAdapter {
+export function createPrototypeAdapter(storage?: Pick<Storage, 'getItem' | 'setItem'>): PrototypeOrganizationAdapter {
   const key = 'eidolon.organization.v1'
   let snapshot: OrganizationSnapshot = { objectives: [], agents: [], tasks: [], activity: [], knowledge: [] }
 
@@ -120,5 +120,3 @@ export function createPrototypeAdapter(storage?: Pick<Storage, 'getItem' | 'setI
     }
   }
 }
-
-export const organizationAdapter = createPrototypeAdapter(typeof window === 'undefined' ? undefined : window.localStorage)
