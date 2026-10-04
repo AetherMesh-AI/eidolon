@@ -44,8 +44,8 @@ opencode_free = OpenCodeFreeProfile(
     # override that keeps the SDK's "Bearer <placeholder>" off the wire (free tier 401s it).
     default_headers={
         "Authorization": "",
-        "HTTP-Referer": "https://hermes-agent.nousresearch.com",
-        "X-Title": "Hermes Agent",
+        "HTTP-Referer": "https://github.com/AetherMesh-AI/Eidolon",
+        "X-Title": "Eidolon",
         "User-Agent": f"HermesAgent/{_HERMES_VERSION}",
     },
     # laguna is the fastest non-UA-gated free model; big-pickle 429s every

@@ -1,8 +1,10 @@
 """Hermes Agent Uninstaller."""
 
 import os
+import ntpath
+import re
+import shlex
 import shutil
-import subprocess
 import sys
 from pathlib import Path
 
@@ -70,58 +72,88 @@ def get_project_root() -> Path:
 _SHELL_RC_NAMES = (".bashrc", ".bash_profile", ".profile", ".zshrc", ".zprofile")
 
 
-def _strip_hermes_path_lines(content: str) -> str:
-    """Drop the ``# Hermes Agent`` marker (+ its PATH line) and any hermes PATH line; squash blank runs."""
-    new_lines = []
-    skip_next = False
-    for line in content.split('\n'):
-        if '# Hermes Agent' in line or '# hermes-agent' in line:
-            skip_next = True
+def _strip_hermes_path_lines(content: str, hermes_home: Path | None = None,
+                             project_root: Path | None = None) -> str:
+    """Remove only a simple PATH prepend whose entire directory belongs to this install."""
+    home = hermes_home if hermes_home is not None else get_hermes_home()
+    root = project_root if project_root is not None else get_project_root()
+    owned = {str(p.absolute()) for p in (root, root / "venv" / "bin", root / ".venv" / "bin",
+                                       home / "node" / "bin")}
+    output = []
+    for line in content.splitlines(keepends=True):
+        match = re.fullmatch(r"\s*(?:export\s+)?PATH=([\"']?)([^:;\n]+):\$(?:PATH|\{PATH\})\1\s*", line)
+        directory = match.group(2) if match else None
+        if directory:
+            directory = directory.replace("${HOME}", str(Path.home())).replace("$HOME", str(Path.home()))
+            directory = os.path.abspath(os.path.expanduser(directory))
+        if directory in owned:
+            if output and re.match(r"\s*# (?:Eidolon|Hermes Agent|hermes-agent)(?:\s|$)", output[-1]):
+                output.pop()
             continue
-        if skip_next and ('hermes' in line.lower() and 'PATH' in line):
-            skip_next = False
-            continue
-        skip_next = False
-        if 'hermes' in line.lower() and ('PATH=' in line or 'path=' in line.lower()):
-            continue
-        new_lines.append(line)
-    new_content = '\n'.join(new_lines)
-    while '\n\n\n' in new_content:
-        new_content = new_content.replace('\n\n\n', '\n\n')
-    return new_content
+        output.append(line)
+    return "".join(output)
 
 
-def remove_path_from_shell_configs():
-    """Remove Hermes PATH entries from shell configuration files."""
+def remove_path_from_shell_configs(hermes_home: Path | None = None, project_root: Path | None = None):
+    """Preserve shared bin directories and shell code whose ownership is not provable."""
     removed_from = []
-    for config_path in (c for c in (Path.home() / n for n in _SHELL_RC_NAMES) if c.exists()):
+    for config_path in (Path.home() / n for n in _SHELL_RC_NAMES):
+        if not config_path.exists():
+            continue
         try:
             content = config_path.read_text(encoding="utf-8")
-            new_content = _strip_hermes_path_lines(content)
+            new_content = _strip_hermes_path_lines(content, hermes_home, project_root)
             if new_content != content:
                 from utils import atomic_write_text
-                # The user's own rc, never backed up: a bare write_text() truncates before the new
-                # content lands and a crash mid-write would leave an empty ~/.zshrc. Atomic replace
-                # also follows a symlinked rc; preserve_mode keeps its bits/owner (sudo-run uninstalls).
                 atomic_write_text(config_path, new_content, preserve_mode=True)
                 removed_from.append(config_path)
         except Exception as e:
             log_warn(f"Could not update {config_path}: {e}")
+    log_info("Shared or unverified shell PATH entries were preserved; review any stale entries manually.")
     return removed_from
 
 
-def remove_wrapper_script():
-    """Remove the hermes wrapper script if it exists."""
-    def _unlink_ours(wrapper: Path) -> bool:
-        # Only our wrapper (contains a hermes_cli / hermes-agent reference).
-        content = wrapper.read_text(encoding="utf-8")
-        return _unlink_if('hermes_cli' in content or 'hermes-agent' in content, wrapper)
+def _wrapper_targets_install(wrapper: Path, project_root: Path) -> bool:
+    root = project_root.resolve()
+    if wrapper.is_symlink():
+        return wrapper.resolve().is_relative_to(root)
+    try:
+        text = wrapper.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return False
+    for line in text.splitlines():
+        if not line.lstrip().startswith("exec "):
+            continue
+        try:
+            tokens = shlex.split(line, comments=True)[1:]
+        except ValueError:
+            continue
+        # Installer shims use an absolute interpreter and/or entrypoint. Variables,
+        # comments, and generic imports are not evidence of ownership.
+        if not tokens:
+            continue
+        executable = Path(tokens[0])
+        if executable.is_absolute() and executable.resolve().is_relative_to(root):
+            return True
+        if len(tokens) > 1 and (re.fullmatch(r"python[0-9.]*", executable.name)
+                                or executable.name in {"sh", "bash", "zsh", "dash"}):
+            script = Path(tokens[1])
+            if script.is_absolute() and script.resolve().is_relative_to(root):
+                return True
+    return False
 
-    candidates = (
-        bin_dir / name
-        for bin_dir in (Path.home() / ".local" / "bin", Path("/usr/local/bin"))
-        for name in ("hermes", "hermes-acp", "hermes-agent"))
-    return _remove_each((w for w in candidates if w.exists()), _unlink_ours)
+
+def remove_wrapper_script(project_root: Path | None = None):
+    root = project_root if project_root is not None else get_project_root()
+    def remove(wrapper: Path) -> bool:
+        if _wrapper_targets_install(wrapper, root):
+            wrapper.unlink()
+            return True
+        log_warn(f"Preserved unverified launcher {wrapper}; inspect its target before manual removal.")
+        return False
+    candidates = (bin_dir / name for bin_dir in _node_symlink_candidate_dirs()
+                  for name in ("hermes", "hermes-acp", "hermes-agent"))
+    return _remove_each((p for p in candidates if p.exists() or p.is_symlink()), remove)
 
 
 def _unlink_if(ours: bool, path: Path) -> bool:
@@ -162,97 +194,12 @@ def remove_node_symlinks(hermes_home: Path) -> list:
 
 
 def uninstall_gateway_service():
-    """Kill standalone gateways, then remove the per-platform service (systemd user+system /
-    launchd / Scheduled Task + Startup folder). Termux/Android has neither: only the kill applies."""
-    import platform
-    stopped_something = False
-    # 1. Kill any standalone gateway processes (all platforms, including Termux)
-    try:
-        from hermes_cli.gateway import kill_gateway_processes, find_gateway_pids
-        killed = kill_gateway_processes() if find_gateway_pids() else 0
-        if killed:
-            log_success(f"Killed {killed} running gateway process(es)")
-            stopped_something = True
-    except Exception as e:
-        log_warn(f"Could not check for gateway processes: {e}")
-
-    # Termux/Android has no systemd and no launchd — nothing left to do.
-    if os.getenv("TERMUX_VERSION") or "com.termux/files/usr" in os.getenv("PREFIX", ""):
-        return stopped_something
-
-    # 2. Per-platform service removal (systemd / launchd / Scheduled Task).
-    remover, warn_label = _GATEWAY_SERVICE_REMOVERS.get(platform.system(), (None, ""))
-    if remover is not None:
-        try:
-            stopped_something = remover() or stopped_something
-        except Exception as e:
-            log_warn(f"{warn_label}: {e}")
-    return stopped_something
+    """Shared Hermes service names/PIDs do not prove selected-install ownership."""
+    log_warn("Gateway services and processes were preserved because their selected-install ownership "
+             "cannot be verified. Stop and remove only this installation's gateway manually.")
+    return False
 
 
-def _remove_systemd_gateway() -> bool:
-    """Linux: uninstall systemd services (both user and system scopes)."""
-    from hermes_cli.gateway import _systemctl_cmd, get_service_name, get_systemd_unit_path
-    svc_name = get_service_name()
-    removed_any = False
-    for is_system, scope in ((False, "user"), (True, "system")):
-        unit_path = get_systemd_unit_path(system=is_system)
-        if not unit_path.exists():
-            continue
-        try:
-            if is_system and os.geteuid() != 0:  # windows-footgun: ok — Linux-only systemd path
-                log_warn(f"System gateway service exists at {unit_path} but needs sudo to remove")
-                continue
-            cmd = _systemctl_cmd(is_system)
-            for verb in ("stop", "disable"):
-                subprocess.run(cmd + [verb, svc_name], capture_output=True, check=False)
-            unit_path.unlink()
-            subprocess.run(cmd + ["daemon-reload"], capture_output=True, check=False)
-            log_success(f"Removed {scope} gateway service ({unit_path})")
-            removed_any = True
-        except Exception as e:
-            log_warn(f"Could not remove {scope} gateway service: {e}")
-    return removed_any
-
-
-def _remove_launchd_gateway() -> bool:
-    """macOS: uninstall launchd plist."""
-    from hermes_cli.gateway import get_launchd_plist_path
-    plist_path = get_launchd_plist_path()
-    if not plist_path.exists():
-        return False
-    subprocess.run(["launchctl", "unload", str(plist_path)], capture_output=True, check=False)
-    plist_path.unlink()
-    log_success(f"Removed macOS gateway service ({plist_path})")
-    return True
-
-
-def _remove_windows_gateway() -> bool:
-    """Windows: uninstall Scheduled Task + Startup-folder entry via ``gateway_windows`` (it owns
-    schtasks /Delete, the .cmd unlink and stopping the detached pythonw gateway)."""
-    from hermes_cli import gateway_windows as gw
-    if not any(probe() for probe in (gw.is_installed, gw.is_task_registered, gw.is_startup_entry_installed)):
-        return False
-    try:
-        gw.stop()
-    except Exception as e:
-        log_warn(f"Could not stop Windows gateway cleanly: {e}")
-    try:
-        gw.uninstall()
-        log_success("Removed Windows gateway (Scheduled Task + Startup entry)")
-        return True
-    except Exception as e:
-        log_warn(f"Could not fully uninstall Windows gateway: {e}")
-        return False
-
-
-# platform.system() -> (remover, warning label when the remover itself blows up)
-_GATEWAY_SERVICE_REMOVERS = {
-    "Linux": (_remove_systemd_gateway, "Could not check systemd gateway services"),
-    "Darwin": (_remove_launchd_gateway, "Could not remove launchd gateway service"),
-    "Windows": (_remove_windows_gateway, "Could not check Windows gateway service")}
-
-# Windows helpers. install.ps1 leaves four things no rc file covers: User-scope env vars
 # HERMES_HOME / HERMES_GIT_BASH_PATH (HKCU\Environment), User-scope PATH entries
 # (%LOCALAPPDATA%\hermes\git\{cmd,bin,usr\bin}, ...\hermes\node), PortableGit + Node copies
 # (~200MB) and the gateway-service dir. Direct winreg writes (not PowerShell): no subprocess, and
@@ -270,7 +217,7 @@ def _hermes_path_markers(hermes_home: Path, *, include_managed_bin: bool = False
 
 def remove_path_from_windows_registry(hermes_home: Path, *, include_managed_bin: bool = False) -> list[str]:
     """Strip Hermes-owned entries from User-scope PATH in the registry (see ``_hermes_path_markers``)."""
-    markers = tuple(m.lower() for m in _hermes_path_markers(hermes_home, include_managed_bin=include_managed_bin))
+    markers = tuple(ntpath.normcase(ntpath.normpath(m)) for m in _hermes_path_markers(hermes_home, include_managed_bin=include_managed_bin))
 
     def edit(winreg, key, removed):
         try:
@@ -280,7 +227,8 @@ def remove_path_from_windows_registry(hermes_home: Path, *, include_managed_bin:
         # Preserve REG_EXPAND_SZ vs REG_SZ so unexpanded %VARS% survive.
         kept: list[str] = []
         for entry in (e for e in path_value.split(";") if e):
-            is_ours = entry.rstrip("\\/").lower().startswith(markers)
+            normalized = ntpath.normcase(ntpath.normpath(entry.strip().strip('"'))).rstrip("\\/")
+            is_ours = any(normalized == marker or normalized.startswith(marker + "\\") for marker in markers)
             (removed if is_ours else kept).append(entry)
         if removed:
             winreg.SetValueEx(key, "Path", 0, path_type, ";".join(kept))
@@ -288,20 +236,27 @@ def remove_path_from_windows_registry(hermes_home: Path, *, include_managed_bin:
     return _edit_user_environment(edit, warn_label="Could not edit User PATH in registry")
 
 
-def remove_hermes_env_vars_windows() -> list[str]:
-    """Delete HERMES_HOME and HERMES_GIT_BASH_PATH from User-scope env vars."""
+def remove_hermes_env_vars_windows(hermes_home: Path | None = None) -> list[str]:
+    """Remove only variables whose current values prove ownership by the selected root."""
+    if hermes_home is None:
+        log_warn("Preserved shared HERMES_* environment variables; no selected home was provided.")
+        return []
+    root = ntpath.normcase(ntpath.normpath(str(hermes_home)))
+    git_root = ntpath.join(root, "git")
     def edit(winreg, key, removed):
         for name in ("HERMES_HOME", "HERMES_GIT_BASH_PATH"):
             try:
-                winreg.QueryValueEx(key, name)
+                value, _kind = winreg.QueryValueEx(key, name)
             except FileNotFoundError:
                 continue
-            try:
+            normalized = ntpath.normcase(ntpath.normpath(str(value)))
+            ours = normalized == root if name == "HERMES_HOME" else (
+                normalized == git_root or normalized.startswith(git_root + "\\"))
+            if ours:
                 winreg.DeleteValue(key, name)
                 removed.append(name)
-            except OSError as e:
-                log_warn(f"Could not delete {name} from User env: {e}")
-
+            else:
+                log_warn(f"Preserved {name}: its value does not belong to the selected installation.")
     return _edit_user_environment(edit, warn_label="Could not open User Environment key")
 
 
@@ -330,7 +285,7 @@ def remove_portable_tooling_windows(hermes_home: Path) -> list[Path]:
     return _remove_each((t for t in targets if t.exists()), lambda t: shutil.rmtree(t) or True)
 
 
-def remove_windows_bin_launchers(*, windows: bool | None = None) -> list[Path]:
+def remove_windows_bin_launchers(hermes_home: Path | None = None, *, windows: bool | None = None) -> list[Path]:
     """Delete the ``hermes`` launchers install.ps1 staged in the managed ``bin`` dir: every mode
     deletes the checkout, so a launcher pointing at ``<checkout>/venv`` would dangle (worse than
     command-not-found); the managed uv stays for keep-data reinstalls. Our own running trampoline is
@@ -340,8 +295,12 @@ def remove_windows_bin_launchers(*, windows: bool | None = None) -> list[Path]:
     try:
         # Lockstep launcher-name list — the same names install.ps1 and the startup heal stage here.
         from hermes_cli._install_repair import _WINDOWS_BIN_LAUNCHERS
-        from hermes_constants import get_default_hermes_root
-        bin_dir = get_default_hermes_root() / "bin"
+        from hermes_cli.gui_uninstall import owned_child
+        home = hermes_home if hermes_home is not None else get_hermes_home()
+        bin_dir = home / "bin"
+        if not owned_child(bin_dir / "hermes.exe", home):
+            log_warn(f"Preserved binary directory outside selected home: {bin_dir}")
+            return []
     except Exception as e:
         log_warn(f"Could not locate the managed binary dir: {e}")
         return []
@@ -390,26 +349,7 @@ def _uninstall_profile(profile) -> None:
     name = profile.name
     log_info(f"Uninstalling profile '{name}'...")
 
-    # 1. Gateway service, via `python -m hermes_cli.main` (the `hermes` wrapper may be half-gone).
-    hermes_invocation = [sys.executable, "-m", "hermes_cli.main", "--profile", name]
-    for subcmd in ("stop", "uninstall"):
-        try:
-            subprocess.run(
-                hermes_invocation + ["gateway", subcmd], capture_output=True, text=True,
-                encoding='utf-8', errors='replace', timeout=60, check=False)
-        except subprocess.TimeoutExpired:
-            log_warn(f"  Gateway {subcmd} timed out for '{name}'")
-        except Exception as e:
-            log_warn(f"  Could not run gateway {subcmd} for '{name}': {e}")
-
-    # 2. Remove the wrapper alias script at ~/.local/bin/<name> (if any).
-    alias_path = getattr(profile, "alias_path", None)
-    if alias_path and alias_path.exists():
-        try:
-            alias_path.unlink()
-            log_success(f"  Removed alias {alias_path}")
-        except Exception as e:
-            log_warn(f"  Could not remove alias {alias_path}: {e}")
+    log_warn(f"  Shared service and alias cleanup for '{name}' requires manual ownership verification.")
     # 3. Wipe the profile's HERMES_HOME directory.
     _rmtree_step(profile.path, indent="  ", fully=False)
 
@@ -423,15 +363,18 @@ def run_gui_uninstall(args):
     skip_confirm = bool(getattr(args, "yes", False))
 
     print()
-    _print_box("│         ⚕ Hermes Chat GUI Uninstaller                  │", Colors.MAGENTA)
+    _print_box("│         ⚕ Eidolon Desktop Uninstaller                  │", Colors.MAGENTA)
     print()
 
+    print("Shared/global app bundles are preserved; remove the Eidolon app with your OS app/package manager.")
+    if summary.get("manual_userdata"):
+        log_warn(f"Preserved unverified desktop data: {summary['manual_userdata']}. Review it manually.")
     if not summary["gui_installed"]:
-        print("No Hermes Chat GUI installation was found.")
+        print("No Eidolon Desktop installation was found.")
         print(f"  Checked: {hermes_home}, and the standard app locations for this OS.")
         return
 
-    print(color("This removes the Chat GUI only. The Hermes agent stays installed.", Colors.CYAN))
+    print(color("This removes the Chat GUI only. Eidolon stays installed.", Colors.CYAN))
     print()
     print(color("Will remove:", Colors.YELLOW, Colors.BOLD))
     for p in (*summary["source_built_artifacts"], *summary["packaged_app_paths"]):
@@ -441,7 +384,7 @@ def run_gui_uninstall(args):
     print()
     if agent_is_installed(hermes_home):
         print(color("Kept intact:", Colors.GREEN, Colors.BOLD))
-        print(f"  • The Hermes agent at {hermes_home / 'hermes-agent'}")
+        print(f"  • Eidolon at {hermes_home / 'hermes-agent'}")
         print(f"  • Your config, sessions, and secrets under {hermes_home}")
         print()
 
@@ -456,7 +399,7 @@ def run_gui_uninstall(args):
     print()
     _print_box("│            ✓ Chat GUI Uninstalled!                      │", Colors.GREEN)
     print()
-    print("The Hermes agent is still installed. Run 'hermes' to use the CLI,")
+    print("Eidolon is still installed. Run 'hermes' to use the CLI,")
     print("or 'hermes uninstall' to remove the agent too.")
     print()
 
@@ -487,7 +430,7 @@ def run_uninstall(args):
         return
 
     print()
-    _print_box("│            ⚕ Hermes Agent Uninstaller                  │", Colors.MAGENTA)
+    _print_box("│            ◇ Eidolon Uninstaller                  │", Colors.MAGENTA)
     print()
 
     # Show what will be affected
@@ -544,12 +487,12 @@ def run_uninstall(args):
     # Final confirmation
     print()
     if full_uninstall:
-        print(color("⚠️  WARNING: This will permanently delete ALL Hermes data!", Colors.RED, Colors.BOLD))
+        print(color("⚠️  WARNING: This will permanently delete ALL Eidolon data!", Colors.RED, Colors.BOLD))
         print(color("   Including: configs, API keys, sessions, scheduled jobs, logs", Colors.RED))
         if remove_profiles:
             print(color(f"   Plus {n_profiles} profile(s): {profile_names}", Colors.RED))
     else:
-        print("This will remove the Hermes code but keep your configuration and data.")
+        print("This will remove the Eidolon code but keep your configuration and data.")
 
     print()
     if not _confirm_yes("to confirm"):
@@ -567,14 +510,14 @@ def _print_uninstall_dry_run(*, project_root: Path, hermes_home: Path, full_unin
     print()
     print(color("Would inspect/remove:", Colors.YELLOW, Colors.BOLD))
     print("  • Gateway services and standalone gateway processes")
-    print("  • Hermes PATH entries from shell configs / Windows User PATH")
-    print("  • Hermes wrapper scripts and Hermes-managed node/npm/npx symlinks")
+    print("  • Eidolon PATH entries from shell configs / Windows User PATH")
+    print("  • Eidolon wrapper scripts and Eidolon-managed node/npm/npx symlinks")
     print("  • Desktop Chat GUI artifacts")
     print(f"  • Code checkout: {project_root}")
     if not full_uninstall:
-        print(f"  • Keep Hermes config/data: {hermes_home}")
+        print(f"  • Keep Eidolon config/data: {hermes_home}")
     else:
-        print(f"  • Hermes config/data: {hermes_home}")
+        print(f"  • Eidolon config/data: {hermes_home}")
         profiles = _discover_named_profiles() if _is_default_hermes_home(hermes_home) else []
         if profiles:
             print("  • Named profiles (interactive uninstall asks before removing):")
@@ -615,13 +558,16 @@ def _perform_uninstall(
     """The uninstall steps shared by the interactive and ``--yes`` paths: stop gateway -> strip PATH
     (rc files + Windows registry) -> wrapper/launchers/node symlinks -> Chat GUI artifacts -> delete
     the checkout -> (Windows) PortableGit/Node -> optionally ``$HERMES_HOME`` and named profiles."""
+    if hermes_home.resolve() in {Path.home().resolve(), Path(hermes_home.anchor)} or project_root.resolve() in {Path.home().resolve(), Path(project_root.anchor)}:
+        log_warn("Refusing an uninstall whose selected root is a home directory or filesystem root.")
+        return
     print()
     print(color("Uninstalling...", Colors.CYAN, Colors.BOLD))
     print()
     # 1. Stop and uninstall gateway service + kill standalone processes
     log_info("Checking for running gateway...")
     if not uninstall_gateway_service():
-        log_info("No gateway service or processes found")
+        log_info("No shared gateway services or processes were modified")
 
     # 2-3b. PATH entries, wrapper, Windows launchers, node symlinks. Windows: hermes_home is
     #    %VAR%-expanded because install.ps1 writes literal C:\Users\<u>\...; hermes\bin (launchers +
@@ -632,18 +578,18 @@ def _perform_uninstall(
     sweep_managed_bin = windows and full_uninstall and _is_default_hermes_home(hermes_home)
     for on_this_platform, label, remove, success_fmt, none_msg in (
         (True, "Removing PATH entries from shell configs...",
-         remove_path_from_shell_configs, "Updated {}", "No PATH entries found to remove in shell rc files"),
+         lambda: remove_path_from_shell_configs(hermes_home, project_root), "Updated {}", "No PATH entries found to remove in shell rc files"),
         (windows, "Removing PATH entries from Windows User environment...",
          lambda: remove_path_from_windows_registry(
              Path(os.path.expandvars(str(hermes_home))), include_managed_bin=sweep_managed_bin),
-         "Removed from User PATH: {}", "No Hermes-owned PATH entries in User environment"),
-        (windows, "Removing HERMES_HOME / HERMES_GIT_BASH_PATH User env vars...",
-         remove_hermes_env_vars_windows, "Removed User env var: {}", "No Hermes-set User env vars to remove"),
-        (True, "Removing hermes command...", remove_wrapper_script, "Removed {}", "No wrapper script found"),
+         "Removed from User PATH: {}", "No Eidolon-owned PATH entries in User environment"),
+        (windows and full_uninstall, "Removing selected-root HERMES_* User env vars...",
+         lambda: remove_hermes_env_vars_windows(hermes_home), "Removed User env var: {}", "No Eidolon-set User env vars to remove"),
+        (True, "Removing selected-install commands...", lambda: remove_wrapper_script(project_root), "Removed {}", "No wrapper script found"),
         (windows, "Removing Windows hermes launchers...",
-         remove_windows_bin_launchers, "Removed {}", "No Windows hermes launchers found"),
-        (True, "Removing Hermes-managed node/npm/npx symlinks...",
-         lambda: remove_node_symlinks(hermes_home), "Removed {}", "No Hermes-managed node/npm/npx symlinks found"),
+         lambda: remove_windows_bin_launchers(hermes_home), "Removed {}", "No Windows hermes launchers found"),
+        (True, "Removing Eidolon-managed node/npm/npx symlinks...",
+         lambda: remove_node_symlinks(hermes_home), "Removed {}", "No Eidolon-managed node/npm/npx symlinks found"),
     ):
         if on_this_platform:
             _remove_step(label, remove, success_fmt, none_msg)
@@ -660,7 +606,10 @@ def _perform_uninstall(
 
     # 4. Remove installation directory (code) — we may be running from inside it.
     log_info("Removing installation directory...")
-    _rmtree_step(project_root)
+    if project_root.resolve() == hermes_home.resolve() or (not full_uninstall and hermes_home.resolve().is_relative_to(project_root.resolve())):
+        log_warn("Preserved source directory because deleting it would also remove retained user data; remove it manually.")
+    else:
+        _rmtree_step(project_root)
     # 4b. Windows installer tooling (PortableGit, Node, gateway-service) is not user data:
     #     safe to remove in keep-data mode too.
     if windows:
@@ -673,8 +622,12 @@ def _perform_uninstall(
     if full_uninstall:
         # 5a. Named profiles' homes live under <default>/profiles/ (swept by the rmtree below),
         #     but their services + alias scripts live OUTSIDE the default root.
+        from hermes_cli.gui_uninstall import owned_child
         for prof in named_profiles if remove_profiles else ():
-            _uninstall_profile(prof)
+            if owned_child(prof.path, hermes_home):
+                _uninstall_profile(prof)
+            else:
+                log_warn(f"Preserved profile outside selected home: {prof.path}")
         log_info("Removing configuration and data...")
         _rmtree_step(hermes_home)
     else:
@@ -695,13 +648,13 @@ def _perform_uninstall(
     for line, col in _RELOAD_HINT[windows]:
         print(color(line, col) if col else line)
     print()
-    print("Thank you for using Hermes Agent! ⚕")
+    print("Thank you for using Eidolon! ⚕")
     print()
 
 
 _REINSTALL_HINT = {
-    True: "  iex (irm https://hermes-agent.nousresearch.com/install.ps1)",
-    False: "  curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash"}
+    True: "  iex (irm https://raw.githubusercontent.com/AetherMesh-AI/eidolon/main/scripts/install.ps1)",
+    False: "  curl -fsSL https://raw.githubusercontent.com/AetherMesh-AI/eidolon/main/scripts/install.sh | bash"}
 # windows -> [(line, color or None)]
 _RELOAD_HINT = {
     True: [("Open a new terminal (PowerShell / Windows Terminal) to pick up", Colors.YELLOW),

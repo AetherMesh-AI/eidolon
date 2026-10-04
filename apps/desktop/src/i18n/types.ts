@@ -290,22 +290,7 @@ export interface Translations {
   sendDiagnostics: {
     title: string
     privacyNotice: string
-    upload: string
-    uploading: string
-    cancel: string
     close: string
-    copyLink: string
-    uploadIdFallback: (id: string) => string
-    doneTitle: string
-    doneDescription: string
-    failedTitle: string
-    failedHint: string
-    handoffLead: string
-    links: {
-      discord: string
-      github: string
-      portal: string
-    }
   }
 
   titlebar: {

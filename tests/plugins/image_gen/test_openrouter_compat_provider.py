@@ -351,6 +351,10 @@ class TestGenerate:
                 prompt="a pet", aspect_ratio="square", reference_images=[str(ref)]
             )
 
+        headers = mock_post.call_args.kwargs["headers"]
+        assert headers["HTTP-Referer"] == "https://github.com/AetherMesh-AI/Eidolon"
+        assert headers["X-Title"] == "Eidolon"
+        assert headers["Authorization"] == "Bearer sk-or-test"
         payload = mock_post.call_args.kwargs["json"]
         assert payload["modalities"] == ["image", "text"]
         assert payload["image_config"]["aspect_ratio"] == "1:1"

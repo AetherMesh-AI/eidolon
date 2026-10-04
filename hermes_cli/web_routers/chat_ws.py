@@ -152,7 +152,7 @@ async def _close_unless_sidecar_allowed(ws: WebSocket) -> bool:
 # --- /api/console: the curated console engine, in-process, exchanging JSON
 # frames with the dashboard xterm overlay. Never spawns a PTY, shell or CLI.
 
-_CONSOLE_PROMPT = "hermes> "
+_CONSOLE_PROMPT = "eidolon> "
 _CONSOLE_COMMAND_TIMEOUT_SECONDS = 60.0
 _CONSOLE_OUTPUT_LIMIT = 50000
 

@@ -35,10 +35,10 @@ import { triggerHaptic } from '@/lib/haptics'
 import {
   AudioLines,
   GitForkIcon,
+  Info,
   Loader2Icon,
   RefreshCwIcon,
   SmilePlusIcon,
-  Upload,
   VolumeXIcon,
   XIcon
 } from '@/lib/icons'
@@ -565,7 +565,7 @@ const ErrorRecoveryActions: FC = () => {
         </button>
       )}
       <button className="aui-error-action" onClick={() => requestSendDiagnostics(diagnosticsText())} type="button">
-        <Upload className="size-3" />
+        <Info className="size-3" />
         {copy.errorSendDiagnostics}
       </button>
       <CopyButton

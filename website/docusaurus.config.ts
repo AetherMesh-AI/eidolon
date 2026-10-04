@@ -3,15 +3,16 @@ import type {Config} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
 
 const config: Config = {
-  title: 'Hermes Agent',
-  tagline: 'The self-improving AI agent',
-  favicon: 'img/favicon.ico',
+  title: 'Eidolon',
+  tagline: 'An experimental agent manager by AetherMesh',
+  favicon: 'img/eidolon.png',
 
-  url: 'https://hermes-agent.nousresearch.com',
+  // No public Eidolon documentation host has been configured yet.
+  url: process.env.EIDOLON_DOCS_URL || 'http://localhost:3000',
   baseUrl: '/docs/',
 
-  organizationName: 'NousResearch',
-  projectName: 'hermes-agent',
+  organizationName: 'AetherMesh-AI',
+  projectName: 'eidolon',
 
   onBrokenLinks: 'warn',
 
@@ -80,7 +81,7 @@ const config: Config = {
         docs: {
           routeBasePath: '/',  // Docs at the root of /docs/
           sidebarPath: './sidebars.ts',
-          editUrl: 'https://github.com/NousResearch/hermes-agent/edit/main/website/',
+          editUrl: 'https://github.com/AetherMesh-AI/eidolon/edit/main/website/',
         },
         blog: false,
         theme: {
@@ -91,21 +92,8 @@ const config: Config = {
   ],
 
   themeConfig: {
-    image: 'img/hermes-agent-banner.png',
-    // Algolia DocSearch (replaces @easyops-cn/docusaurus-search-local).
-    // The local plugin shipped a ~16 MB client-side lunr index that every
-    // visitor downloaded and hydrated before their first result; DocSearch
-    // answers from Algolia's servers with no client index at all. These are
-    // public search-only credentials — safe to commit (the admin key is not
-    // in the repo). Index is populated by the Algolia Crawler configured at
-    // crawler.algolia.com; contextualSearch scopes results to the active
-    // locale via the docusaurus_tag/lang facets the crawler records carry.
-    algolia: {
-      appId: '2JLBVEYZN5',
-      apiKey: '8fda2a49223ce185ac30c2dbf6898a07',
-      indexName: 'hermes docs',
-      contextualSearch: true,
-    },
+    image: 'img/eidolon.png',
+    // Upstream's Algolia account/index is not an Eidolon search service.
     colorMode: {
       defaultMode: 'dark',
       respectPrefersColorScheme: true,
@@ -117,10 +105,10 @@ const config: Config = {
       },
     },
     navbar: {
-      title: 'Hermes Agent',
+      title: 'Eidolon',
       logo: {
-        alt: 'Hermes Agent',
-        src: 'img/logo.png',
+        alt: 'Eidolon',
+        src: 'img/eidolon.png',
       },
       items: [
         {
@@ -135,7 +123,7 @@ const config: Config = {
           position: 'left',
         },
         {
-          href: 'https://hermes-agent.nousresearch.com/',
+          href: 'https://github.com/AetherMesh-AI/eidolon/releases',
           label: 'Download',
           position: 'left',
         },
@@ -144,18 +132,13 @@ const config: Config = {
           position: 'right',
         },
         {
-          href: 'https://hermes-agent.nousresearch.com',
+          href: 'https://github.com/AetherMesh-AI/eidolon',
           label: 'Home',
           position: 'right',
         },
         {
-          href: 'https://github.com/NousResearch/hermes-agent',
+          href: 'https://github.com/AetherMesh-AI/eidolon',
           label: 'GitHub',
-          position: 'right',
-        },
-        {
-          href: 'https://discord.gg/NousResearch',
-          label: 'Discord',
           position: 'right',
         },
       ],
@@ -175,21 +158,19 @@ const config: Config = {
         {
           title: 'Community',
           items: [
-            { label: 'Discord', href: 'https://discord.gg/NousResearch' },
-            { label: 'GitHub Issues', href: 'https://github.com/NousResearch/hermes-agent/issues' },
+            { label: 'GitHub Issues', href: 'https://github.com/AetherMesh-AI/eidolon/issues' },
             { label: 'Skills Hub', href: 'https://agentskills.io' },
           ],
         },
         {
           title: 'More',
           items: [
-            { label: 'Desktop Download', href: 'https://hermes-agent.nousresearch.com/' },
-            { label: 'GitHub', href: 'https://github.com/NousResearch/hermes-agent' },
-            { label: 'Nous Research', href: 'https://nousresearch.com' },
+            { label: 'Desktop Download', href: 'https://github.com/AetherMesh-AI/eidolon/releases' },
+            { label: 'GitHub', href: 'https://github.com/AetherMesh-AI/eidolon' },
           ],
         },
       ],
-      copyright: `Built by <a href="https://nousresearch.com">Nous Research</a> · MIT License · ${new Date().getFullYear()}`,
+      copyright: `Eidolon by <a href="https://github.com/AetherMesh-AI">AetherMesh</a> · Derived from Hermes Agent by Nous Research · MIT License · ${new Date().getFullYear()}`,
     },
     prism: {
       theme: prismThemes.github,

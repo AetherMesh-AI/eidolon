@@ -309,7 +309,7 @@ async fn run_update(app: AppHandle) -> Result<()> {
                 format!("{secs}s")
             };
             let msg = format!(
-                "Another Hermes update is already running (PID {}, started {} ago). \
+                "Another Eidolon update is already running (PID {}, started {} ago). \
                  Wait for it to finish, or close the window or dashboard tab that \
                  started it, then try again.",
                 owner.pid, elapsed
@@ -336,7 +336,7 @@ async fn run_update(app: AppHandle) -> Result<()> {
 
     let hermes = resolve_hermes(&install_root).ok_or_else(|| {
         let msg = format!(
-            "Could not find the hermes CLI under {}. Is Hermes installed? \
+            "Could not find the hermes CLI under {}. Is Eidolon installed? \
              Re-run the installer to repair the install.",
             install_root.display()
         );
@@ -499,7 +499,7 @@ async fn run_update(app: AppHandle) -> Result<()> {
             emit_stage(&app, "update", StageState::Succeeded, Some(update_ms), None);
         }
         Some(code) if code == UPDATE_EXIT_CONCURRENT => {
-            let msg = "Hermes is still running. Close all Hermes windows and try \
+            let msg = "Eidolon is still running. Close all Eidolon windows and try \
                        the update again."
                 .to_string();
             emit_stage(
@@ -672,7 +672,7 @@ async fn run_update(app: AppHandle) -> Result<()> {
                 &app,
                 None,
                 LogStream::Stderr,
-                &format!("[update] could not auto-launch desktop: {err}. Launch Hermes manually."),
+                &format!("[update] could not auto-launch desktop: {err}. Launch Eidolon manually."),
             );
         }
     } else if let Err(err) =
@@ -685,7 +685,7 @@ async fn run_update(app: AppHandle) -> Result<()> {
             &app,
             None,
             LogStream::Stdout,
-            &format!("[update] could not auto-launch desktop: {err}. Launch Hermes manually."),
+            &format!("[update] could not auto-launch desktop: {err}. Launch Eidolon manually."),
         );
     }
 
@@ -716,7 +716,7 @@ pub(crate) async fn wait_for_install_locks_free(install_root: &Path, app: &AppHa
     let lock_targets = install_lock_probe_paths(install_root);
     let deadline = Instant::now() + DESKTOP_EXIT_WAIT;
 
-    emit_log(app, Some(stage), LogStream::Stdout, "[handoff] waiting for Hermes to exit…");
+    emit_log(app, Some(stage), LogStream::Stdout, "[handoff] waiting for Eidolon to exit…");
 
     loop {
         let locked = locked_paths(&lock_targets);
@@ -733,7 +733,7 @@ pub(crate) async fn wait_for_install_locks_free(install_root: &Path, app: &AppHa
                 Some(stage),
                 LogStream::Stdout,
                 &format!(
-                    "[handoff] Hermes still holding install files ({}); locating backend shims…",
+                    "[handoff] Eidolon still holding install files ({}); locating backend shims…",
                     format_locked_paths(&locked)
                 ),
             );
@@ -793,20 +793,10 @@ fn install_lock_probe_paths(install_root: &Path) -> Vec<PathBuf> {
 }
 
 fn desktop_app_payload_paths(install_root: &Path) -> Vec<PathBuf> {
-    let release = install_root.join("apps").join("desktop").join("release");
-    if cfg!(target_os = "windows") {
-        vec![
-            release.join("win-unpacked").join("resources").join("app.asar"),
-            release.join("win-arm64-unpacked").join("resources").join("app.asar"),
-        ]
-    } else if cfg!(target_os = "macos") {
-        vec![
-            release.join("mac").join("Hermes.app").join("Contents").join("Resources").join("app.asar"),
-            release.join("mac-arm64").join("Hermes.app").join("Contents").join("Resources").join("app.asar"),
-        ]
-    } else {
-        vec![release.join("linux-unpacked").join("resources").join("app.asar")]
-    }
+    crate::desktop_artifacts::desktop_payload_paths(
+        install_root,
+        crate::desktop_artifacts::DesktopPlatform::current(),
+    )
 }
 
 fn locked_paths(paths: &[PathBuf]) -> Vec<PathBuf> {
@@ -1000,32 +990,13 @@ struct CmdResult {
 
 /// Path to the venv hermes shim under an install root, regardless of existence.
 fn venv_hermes(install_root: &Path) -> PathBuf {
-    if cfg!(target_os = "windows") {
-        install_root.join("venv").join("Scripts").join("hermes.exe")
-    } else {
-        install_root.join("venv").join("bin").join("hermes")
-    }
+    crate::install_cli::venv_cli(install_root, cfg!(target_os = "windows"))
 }
 
-/// Resolve the hermes CLI to drive. Prefer the venv shim in the install we
-/// just updated; fall back to `hermes` on PATH.
+/// Only drive the CLI belonging to the selected installation. A missing
+/// local shim surfaces the caller's repair guidance; PATH is never consulted.
 fn resolve_hermes(install_root: &Path) -> Option<PathBuf> {
-    let shim = venv_hermes(install_root);
-    if shim.exists() {
-        return Some(shim);
-    }
-    // PATH fallback. which-style probe via env, kept dependency-free.
-    let exe = if cfg!(target_os = "windows") { "hermes.exe" } else { "hermes" };
-    if let Ok(path) = std::env::var("PATH") {
-        let sep = if cfg!(target_os = "windows") { ';' } else { ':' };
-        for dir in path.split(sep) {
-            let cand = Path::new(dir).join(exe);
-            if cand.exists() {
-                return Some(cand);
-            }
-        }
-    }
-    None
+    crate::install_cli::resolve_cli(install_root, cfg!(target_os = "windows"))
 }
 
 fn update_child_env(install_root: &Path) -> Vec<(String, OsString)> {
@@ -1129,7 +1100,7 @@ async fn install_macos_app_update(
 
     let rebuilt_app = crate::bootstrap::resolve_hermes_desktop_app(install_root).ok_or_else(|| {
         anyhow!(
-            "desktop rebuild succeeded but no Hermes.app was found under {}",
+            "desktop rebuild succeeded but no Eidolon desktop app was found under {}",
             install_root.join("apps").join("desktop").join("release").display()
         )
     })?;

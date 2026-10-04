@@ -146,3 +146,21 @@ class TestMain:
         monkeypatch.setattr(m, "_build_server", lambda: CrashingServer())
         rc = m.main([])
         assert rc == 1
+
+
+def test_server_instructions_identify_eidolon_without_renaming_protocol(monkeypatch):
+    import sys
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from agent.transports import hermes_tools_mcp_server as module
+    import model_tools
+
+    factory = Mock()
+    monkeypatch.setitem(sys.modules, "mcp.server", SimpleNamespace(MCPServer=factory))
+    monkeypatch.setattr(model_tools, "get_tool_definitions", lambda **kwargs: [])
+    server = module._build_server()
+    assert server is factory.return_value
+    assert factory.call_args.args == ("hermes-tools",)
+    assert "Eidolon" in factory.call_args.kwargs["instructions"]
+    assert "Hermes Agent" not in factory.call_args.kwargs["instructions"]

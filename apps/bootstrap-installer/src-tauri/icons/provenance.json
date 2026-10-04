@@ -1,0 +1,5 @@
+{
+  "source": "apps/desktop/assets/icon.{png,icns,ico}",
+  "source_provenance": "apps/desktop/assets/app-icon-provenance.json",
+  "transform": "Byte-for-byte copies of the existing Eidolon desktop icons; no pixel modification."
+}

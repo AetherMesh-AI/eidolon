@@ -22,6 +22,9 @@ vi.mock('../chat', () => ({
   ChatView: ({ gateway }: { gateway: { id?: string } | null }) => <div data-testid="gateway">{gateway?.id}</div>
 }))
 vi.mock('../chat/sidebar', () => ({ ChatSidebar: () => null }))
+vi.mock('@/plugins/hermes-bots/roster-pane', () => ({ BotsPane: () => null }))
+vi.mock('../eidolon/rail', () => ({ OrganizationRail: () => null }))
+vi.mock('../eidolon/workspace', () => ({ OrganizationWorkspace: () => null }))
 vi.mock('../right-sidebar/terminal/chrome', () => ({ TerminalPaneChrome: () => null }))
 vi.mock('../shell/hooks/use-status-snapshot', () => ({ useStatusSnapshot: () => ({}) }))
 vi.mock('../shell/hooks/use-statusbar-items', () => ({

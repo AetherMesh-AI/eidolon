@@ -157,9 +157,6 @@ class _Runtime:
         self._sessions_lock = threading.RLock()
         self._task_creation_lock = threading.RLock()
         self._task_sessions_lock = threading.RLock()
-        # Guards the opt-in send pass: at most one in flight per process.
-        self._send_lock = threading.RLock()
-        self._send_thread: threading.Thread | None = None
         self._subscriber_name = f"{SUBSCRIBER_NAME}.{self.host.runtime_id}"
         self.subscriber = SharedMetricsSubscriber(
             SharedMetricsStore(), __version__, runtime_id=self.host.runtime_id
@@ -501,25 +498,9 @@ class _Runtime:
         self._release()
 
     def _release(self) -> None:
-        """Let an in-flight send finish briefly, then drop the atexit hook.
-
-        A short-lived CLI process would otherwise exit and kill the daemon send thread
-        mid-request — the common case for this feature's one cadence.
-        """
-        self._join_send_thread()
+        """Release the local metrics runtime's shutdown hook."""
         with contextlib.suppress(Exception):
             atexit.unregister(self.shutdown)
-
-    def _join_send_thread(self, timeout: float = 2.0) -> None:
-        """Bounded on purpose: pending packages stay in SQLite and go out next run, so
-        blocking on a slow network is the wrong trade; the daemon thread dies with the process."""
-        with self._send_lock:
-            thread = self._send_thread
-        if thread is not None and thread.is_alive():
-            try:
-                thread.join(timeout)
-            except Exception:
-                logger.debug("Shared-metrics send thread join failed", exc_info=True)
 
     def _session(self, event: dict[str, Any]) -> _MetricsSession | None:
         with self._sessions_lock:
@@ -753,48 +734,12 @@ class _Runtime:
         return True
 
     def _export(self) -> None:
-        exported = self._safe(self.subscriber.store.create_and_export_package_if_due)
-        # Sending must never delay the caller: _export runs on finish_task, the user's
-        # interactive path. The thread is about latency, not correctness.
-        if exported is not None:
-            self._safe(self._send_exported_packages)
-
-    def _send_exported_packages(self) -> None:
-        try:
-            resolved = _resolved_send_config()
-        except Exception:
-            logger.debug("Unable to read shared-metrics send policy", exc_info=True)
-            return
-
-        # Observe the consent EDGE before deciding whether to send: the dominant revocation
-        # case is "sending turned off while no pass is running", invisible to the send loop.
-        # Failures never break the export hook but log at warning (privacy-relevant).
+        # Export remains local. A stored send=true must not schedule network work.
+        self._safe(self.subscriber.store.create_and_export_package_if_due)
         self._guarded(
-            "Unable to record a shared-metrics consent transition",
-            _reconcile_store_consent, self.subscriber.store, resolved.send,
+            "Unable to close retired shared-metrics send consent",
+            _reconcile_store_consent, self.subscriber.store, False,
         )
-        if not resolved.send:
-            return
-
-        with self._send_lock:
-            # One in-flight pass per process; the next hook fire picks up what is pending.
-            if self._send_thread is None or not self._send_thread.is_alive():
-                self._send_thread = threading.Thread(
-                    target=self._run_send_pass, args=(resolved.endpoint,),
-                    name="hermes-shared-metrics-send", daemon=True,
-                )
-                self._send_thread.start()
-
-    def _run_send_pass(self, endpoint: str) -> None:
-        from hermes_cli.observability.shared_metrics_sender import SharedMetricsSender
-
-        def still_consented() -> bool:
-            """Re-read consent so revoking `send` stops an in-flight pass."""
-            resolved = _resolved_send_config()
-            return resolved.send and resolved.endpoint == endpoint
-
-        sender = SharedMetricsSender(self.subscriber.store, endpoint, consent_check=still_consented)
-        self._guarded("Shared-metrics send pass failed", sender.send_pending)
 
     def _event_metadata(self) -> dict[str, str]:
         return {

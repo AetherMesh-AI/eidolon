@@ -51,11 +51,11 @@ export default function ProgressScreen({ bootstrap }: ProgressProps) {
   }, [bootstrap.status])
 
   const isUpdate = mode === 'update'
-  const title = bootstrap.status === 'completed' ? 'Done' : isUpdate ? 'Updating Hermes' : 'Setting up Hermes Agent'
+  const title = bootstrap.status === 'completed' ? 'Done' : isUpdate ? 'Updating Eidolon' : 'Setting up Eidolon'
 
   const description = isUpdate
-    ? 'Hermes is updating to the latest version — this only takes a moment.'
-    : 'This is a one-time setup. The Hermes installer is downloading dependencies and configuring your machine. Subsequent launches will skip this step.'
+    ? 'Eidolon is updating. Keep this window open until it finishes.'
+    : 'Eidolon Setup is downloading dependencies and preparing the application. A completed installation can be launched without repeating setup.'
 
   const pct = Math.round(progress.fraction * 100)
 

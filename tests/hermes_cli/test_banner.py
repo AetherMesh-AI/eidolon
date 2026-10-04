@@ -52,7 +52,7 @@ def test_build_welcome_banner_title_falls_back_when_no_tag():
         )
 
     raw = buf.getvalue()
-    assert "Hermes Agent v" in raw, "Version label missing from title"
+    assert "Eidolon v" in raw, "Version label missing from title"
     assert "\x1b]8;" not in raw, "OSC-8 hyperlink should not be emitted without a tag"
 
 
@@ -87,11 +87,11 @@ def test_build_welcome_banner_non_moa_unchanged(tmp_path, monkeypatch):
 
 
 def test_version_label_has_numeric_channel_short_sha_and_honest_fallback():
-    from hermes_cli.eidolon_version import fallback, format_identity
+    from hermes_cli.eidolon_version import ANCHOR_COMMIT, fallback, format_identity
     value = fallback('a' * 40, None)
     assert format_identity(value) == '0.1.1 alpha · aaaaaaaaaaaa (version unavailable/unverified) (source status unknown)'
     value.update(version='0.1.12', versionSource='stamp', dirty=False,
-                 baseTag='alpha-v0.1.0', baseCommit='b' * 40, distance=12)
+                 baseTag='alpha-v0.1.0', baseCommit=ANCHOR_COMMIT, distance=12)
     assert format_identity(value) == '0.1.12 alpha · aaaaaaaaaaaa'
     value['dirty'] = True
     assert format_identity(value) == '0.1.12 alpha · aaaaaaaaaaaa (dirty source)'

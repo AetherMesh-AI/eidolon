@@ -2064,17 +2064,12 @@ DEFAULT_CONFIG = {
         "profile_build": "ask",
     },
     # Privacy-safe aggregate metrics in this profile's local telemetry dir. Collection (`enabled`)
-    # and transmission to Nous (`send`) are SEPARATE opt-ins; see
-    # docs/observability/relay-shared-metrics.md Appendix A for consent/retention.
+    # stays local. Legacy transmission settings are retained disabled for compatibility.
     "telemetry": {
         "shared_metrics": {
             "enabled": False,
-            # Requires `enabled` (`send` alone logs an error). A package is sent only if its whole
-            # period is inside a recorded consent window.
-            "send": False,
-            # Ingest endpoint (override for staging/local). Deliberately NOT env- overridable.
-            # Non-HTTPS refused unless the host is localhost.
-            "endpoint": "https://telemetry.nousresearch.com/v1/telemetry",
+            "send": False,  # retired: ignored even if an old profile sets it to true
+            "endpoint": "",
         },
     },
 

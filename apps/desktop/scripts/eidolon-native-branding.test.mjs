@@ -1,4 +1,4 @@
-import { test } from 'node:test'
+import { test } from 'vitest'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url)))
@@ -12,5 +12,5 @@ test('Eidolon desktop native metadata owns a distinct product identity', () => {
   }
   assert.equal(pkg.build.win.signAndEditExecutable, true)
   assert.equal(pkg.build.win.signExecutable, false)
-  assert.equal(pkg.author, 'Nous Research')
+  assert.equal(pkg.author, 'AetherMesh contributors')
 })

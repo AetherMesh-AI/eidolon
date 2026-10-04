@@ -9,7 +9,7 @@ def build_slack_parser(subparsers, *, cmd_slack: Callable) -> None:
     """Attach the ``slack`` subcommand to ``subparsers``."""
     slack_parser = subparsers.add_parser(
         "slack", help="Slack integration helpers (manifest generation, etc.)",
-        description="Slack integration helpers for Hermes.")
+        description="Slack integration helpers for Eidolon.")
     slack_sub = slack_parser.add_subparsers(dest="slack_command")
     slack_manifest = slack_sub.add_parser(
         "manifest",

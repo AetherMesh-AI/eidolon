@@ -117,9 +117,9 @@ export function selectSourceBackend(options: {
   const create = (root: string, name: string) => fileExists(path.join(root, 'hermes_cli', 'main.py'))
     ? createSourcePythonBackend(root, `${name} source at ${root}`, options.backendArgs, options) : null
   if (options.overrideRoot) {
-    const backend = create(path.resolve(options.overrideRoot), 'Hermes')
+    const backend = create(path.resolve(options.overrideRoot), 'Eidolon')
     if (backend) return backend
   }
-  if (!options.packaged) return create(options.sourceRepoRoot, 'Hermes')
+  if (!options.packaged) return create(options.sourceRepoRoot, 'Eidolon')
   return preparedSourceBackend(options.hermesHome, root => create(root, 'Eidolon'))
 }

@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+from hermes_cli.eidolon_update_policy import UPDATE_BRANCH, UPDATE_REPO
 from hermes_cli.update_cmd_common import _best_effort
 
 # Log-record parity with the origin module.
@@ -206,14 +207,18 @@ def _extract_zip_safely(zip_path: str, tmp_dir: str) -> None:
 
 
 def _extracted_root(tmp_dir: str, branch: str) -> str:
-    """GitHub ZIPs extract to ``hermes-agent-<branch>/``; fall back to the first non-``__MACOSX`` dir."""
-    extracted = os.path.join(tmp_dir, f"hermes-agent-{branch}")
-    if not os.path.isdir(extracted):
-        for d in os.listdir(tmp_dir):
-            candidate = os.path.join(tmp_dir, d)
-            if os.path.isdir(candidate) and d != "__MACOSX":
-                return candidate
-    return extracted
+    """Require this fork's archive root before staging any replacement files."""
+    expected = f"{UPDATE_REPO.rsplit('/', 1)[1]}-{branch}"
+    # GitHub's canonical repository name is lower-case "eidolon", while
+    # provenance/remote identifiers retain "Eidolon". Accept only that exact
+    # basename (case-insensitive), never an arbitrary extracted project.
+    matches = [
+        name for name in os.listdir(tmp_dir)
+        if name.casefold() == expected.casefold() and os.path.isdir(os.path.join(tmp_dir, name))
+    ]
+    if len(matches) != 1:
+        raise ValueError(f"Archive is not an {UPDATE_REPO} update: expected {expected}/")
+    return os.path.join(tmp_dir, matches[0])
 
 
 def _require_staging_space(extracted: str, entries: list[str], project_root: str) -> None:
@@ -279,7 +284,7 @@ def _download_and_swap_zip(branch: str, zip_url: str) -> None:
     print("→ Downloading latest version...")
     tmp_dir = tempfile.mkdtemp(prefix="hermes-update-")
     try:
-        zip_path = os.path.join(tmp_dir, f"hermes-agent-{branch}.zip")
+        zip_path = os.path.join(tmp_dir, f"{UPDATE_REPO.rsplit('/', 1)[1]}-{branch}.zip")
         urlretrieve(zip_url, zip_path)
         print("→ Extracting...")
         _extract_zip_safely(zip_path, tmp_dir)
@@ -310,7 +315,7 @@ def _download_and_swap_zip(branch: str, zip_url: str) -> None:
         print(f"✗ ZIP update failed: {e}")
         # Two-phase replace commits all or rolls all back, so no mixed tree here — don't push a needless reinstall.
         print("  Your existing install was left in place.")
-        print("  Re-run `hermes update` to retry; if the agent won't start, reinstall from https://hermes-agent.nousresearch.com")
+        print(f"  Re-run `hermes update` to retry; if the agent won't start, check https://github.com/{UPDATE_REPO}/releases")
         _m().sys.exit(1)
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -369,7 +374,7 @@ def _update_via_zip(args, *, had_desktop_app_before_update: bool = False) -> boo
     # The static archive would silently ignore --branch — the exact silent-divergence bug it exists to
     # prevent. Refuse rather than lie.
     branch = _m()._resolve_update_branch(args)
-    if branch != "main":
+    if branch != UPDATE_BRANCH:
         print(f"✗ --branch={branch} is not supported on the Windows ZIP-fallback update path.")
         print(
             "  This path runs when git file I/O is broken on the system. "
@@ -379,7 +384,7 @@ def _update_via_zip(args, *, had_desktop_app_before_update: bool = False) -> boo
         )
         _m().sys.exit(1)
     _abort_zip_update_if_dirty_tree()
-    _download_and_swap_zip(branch, f"https://github.com/NousResearch/hermes-agent/archive/refs/heads/{branch}.zip")
+    _download_and_swap_zip(branch, f"https://github.com/{UPDATE_REPO}/archive/refs/heads/{branch}.zip")
     _sweep_bytecode_after_update(branch)
     # Self-lock deferral: the code swap is committed; defer only the dependency sync when this process
     # holds a native extension the sync must rewrite.

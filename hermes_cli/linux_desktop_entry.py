@@ -1,4 +1,4 @@
-"""Install and remove the Linux desktop entry (``hermes.desktop``).
+"""Install and remove the Linux desktop entry (``eidolon.desktop``).
 
 The entry must be launch-context independent: ``Exec=`` is an absolute launcher that survives the
 venv (no ``#!/usr/bin/env python3`` escapes, no checkout-internal argv[0]), and ``Icon=`` is the
@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-DESKTOP_ENTRY_NAME = "hermes.desktop"
+DESKTOP_ENTRY_NAME = "eidolon.desktop"
 
 _SHELL_NAMES = ("bash", "sh", "dash", "zsh", "ksh")
 
@@ -392,15 +392,15 @@ def render_desktop_entry(exec_command: str, icon: str) -> str:
     return (
         "[Desktop Entry]\n"
         "Type=Application\n"
-        "Name=Hermes\n"
-        "GenericName=Hermes Desktop\n"
-        "Comment=Launch Hermes Desktop\n"
+        "Name=Eidolon\n"
+        "GenericName=Eidolon Desktop\n"
+        "Comment=Launch Eidolon Desktop\n"
         f"Exec={exec_command}\n"
         f"Icon={icon}\n"
         "Terminal=false\n"
         "Categories=Utility;\n"
         "StartupNotify=true\n"
-        "StartupWMClass=Hermes\n"
+        "StartupWMClass=Eidolon\n"
     )
 
 
@@ -468,7 +468,7 @@ def _hicolor_subdir(dimensions: Optional[tuple[int, int]]) -> str:
 
 
 def _hicolor_icon_dest(subdir: str) -> Path:
-    return _xdg_data_home() / "icons" / "hicolor" / subdir / "apps" / "hermes.png"
+    return _xdg_data_home() / "icons" / "hicolor" / subdir / "apps" / "eidolon.png"
 
 
 def _remove_stale_scalable_icon() -> bool:
@@ -528,7 +528,7 @@ def _write_hicolor_pngs(files: dict[str, bytes]) -> bool:
 
 
 def _install_icon_to_hicolor(icon: Path) -> bool:
-    """Install the app icon into the user's hicolor tree so ``Icon=hermes`` resolves without an
+    """Install the app icon into the user's hicolor tree so ``Icon=eidolon`` resolves without an
     absolute checkout path. Raster PNGs go to indexed fixed-size dirs, never ``scalable``."""
     try:
         raw = icon.read_bytes()
@@ -552,7 +552,7 @@ def _launcher_entry_management_enabled() -> bool:
     """Whether config.yaml allows rewriting an EXISTING launcher entry.
 
     ``desktop.manage_launcher_entry: false`` opts out of the every-launch
-    rewrite: a hand-edited ``hermes.desktop`` is then left alone instead
+    rewrite: a hand-edited ``eidolon.desktop`` is then left alone instead
     of silently reverting (#101097's clobber complaint). A MISSING entry
     is still created regardless — the opt-out protects user edits, not
     first-run presence. Any config error reads as enabled (default).
@@ -591,10 +591,12 @@ def install_desktop_entry(project_root: Path) -> Optional[Path]:
     # Prefer the themed name: the icon is COPIED into the hicolor tree, so the entry outlives the
     # checkout (an absolute Icon= path breaks when the checkout moves). Absolute path only when
     # the copy is impossible (read-only tree); themed name when the checkout has no icon at all.
-    icon_value = str(icon) if icon.is_file() else "hermes"
+    icon_value = str(icon) if icon.is_file() else "eidolon"
     if icon.is_file() and _install_icon_to_hicolor(icon):
-        icon_value = "hermes"
+        icon_value = "eidolon"
+    from hermes_constants import get_hermes_home
     contents = render_desktop_entry(resolve_exec_command(project_root), icon_value)
+    contents += f"X-Eidolon-Home={get_hermes_home().resolve()}\n"
 
     try:
         entry_path.parent.mkdir(parents=True, exist_ok=True)

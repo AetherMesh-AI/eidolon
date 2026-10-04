@@ -10,8 +10,8 @@ from providers import register_provider
 from providers.base import OMIT_TEMPERATURE, ProviderProfile
 
 _HEADERS = {
-    "HTTP-Referer": "https://hermes-agent.nousresearch.com",
-    "X-Title": "Hermes Agent",
+    "HTTP-Referer": "https://github.com/AetherMesh-AI/Eidolon",
+    "X-Title": "Eidolon",
     "User-Agent": f"HermesAgent/{_HERMES_VERSION}",
 }
 

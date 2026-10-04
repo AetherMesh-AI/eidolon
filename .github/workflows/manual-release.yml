@@ -119,7 +119,7 @@ jobs:
         run: npm run build --workspace apps/desktop
       - name: Package one installer or AppImage and verify native payload
         run: python .github/scripts/manual_release.py package
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: app-${{ matrix.platform }}-${{ matrix.arch }}
           path: ${{ runner.temp }}/eidolon-release/assets/*
@@ -128,7 +128,7 @@ jobs:
           retention-days: 7
           overwrite: false
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: inputs.release_mode == 'replacement-build-only'
         with:
           name: proof-${{ matrix.platform }}-${{ matrix.arch }}
@@ -168,7 +168,7 @@ jobs:
           RELEASE_PROOFS: ${{ runner.temp }}/release-proofs
           RELEASE_HANDOFF: ${{ runner.temp }}/release-handoff
         run: python3 .github/scripts/manual_release.py prepare-replacement
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: replacement-handoff
           path: ${{ runner.temp }}/release-handoff/*

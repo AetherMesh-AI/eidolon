@@ -1,12 +1,17 @@
 ---
 sidebar_position: 2
 title: "Installation"
-description: "Install Hermes Agent on Linux, macOS, WSL2, native Windows, or Android via Termux"
+description: "Install Eidolon on Linux, macOS, WSL2, native Windows, or Android via Termux"
 ---
 
 # Installation
 
-Get Hermes Agent up and running in under two minutes!
+:::caution Experimental build
+Consult the [current README](https://github.com/AetherMesh-AI/eidolon#readme) and [security policy](https://github.com/AetherMesh-AI/eidolon/blob/main/SECURITY.md). Platform and update behavior described here must be verified for the exact build; prior upstream release claims do not establish Eidolon acceptance.
+:::
+
+
+Eidolon is experimental. Use the current source or a release with explicit verification notes, and review the installer before running it. Native installation and recovery must be checked on your target OS.
 
 :::tip Platform Support
 For the full platform support matrix (which OSes, distribution methods, and
@@ -14,32 +19,32 @@ platform-gated features are supported), see **[Platform Support](./platform-supp
 :::
 
 ## Quick Install
-### With the Hermes Desktop installer on macOS or Windows (recommended)
-To easily install the command-line and desktop applications, [download the Hermes Desktop installer](https://hermes-agent.nousresearch.com/) from our website and run it.
+### With the Eidolon Desktop installer on macOS or Windows (release-specific verification required)
+To easily install the command-line and desktop applications, [download the Eidolon Desktop installer](https://github.com/AetherMesh-AI/eidolon/releases) from our website and run it.
 
-### Without Hermes Desktop:
-For a command-line only install without Hermes Desktop, run:
+### Without Eidolon Desktop:
+For a command-line only install without Eidolon Desktop, run:
 
 #### Linux / macOS / WSL2 / Android (Termux)
 ```bash
-curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/AetherMesh-AI/eidolon/main/scripts/install.sh | bash
 ```
 
 #### Windows (native)
 
 Run in powershell:
 ```powershell
-iex (irm https://hermes-agent.nousresearch.com/install.ps1) 
+iex (irm https://raw.githubusercontent.com/AetherMesh-AI/eidolon/main/scripts/install.ps1)
 ```
 
-If you want to install & run Hermes Desktop after a command-line only install, simply run
+If you want to install & run Eidolon Desktop after a command-line only install, simply run
 ```bash
 hermes desktop
 ```
 
 ### What the Installer Does
 
-The installer handles everything automatically — all dependencies (Python, Node.js, ripgrep, ffmpeg), the repo clone, virtual environment, global `hermes` command setup, and LLM provider configuration. By the end, you're ready to chat.
+The installer attempts the configured setup stages for dependencies (Python, Node.js, ripgrep, ffmpeg), the repo clone, virtual environment, global `hermes` command setup, and LLM provider configuration. A completed installer is not proof of a working provider connection; verify a conversation separately.
 
 #### Install Layout
 
@@ -47,10 +52,10 @@ Where the installer puts things depends on whether you're installing as a normal
 
 | Installer                              | Code lives at                  | `hermes` binary                         | Data directory                       |
 | -------------------------------------- | ------------------------------ | --------------------------------------- | ------------------------------------ |
-| Per-user (git installer)               | `~/.hermes/hermes-agent/`      | `~/.local/bin/hermes` (symlink)         | `~/.hermes/`                         |
-| Root-mode (`sudo curl … \| sudo bash`) | `/usr/local/lib/hermes-agent/` | `/usr/local/bin/hermes`                 | `/root/.hermes/` (or `$HERMES_HOME`) |
+| Per-user (git installer)               | `~/.eidolon/hermes-agent/`      | `~/.local/bin/hermes` (symlink)         | `~/.eidolon/`                         |
+| Root-mode (`sudo curl … \| sudo bash`) | `/usr/local/lib/hermes-agent/` | `/usr/local/bin/hermes`                 | `/root/.eidolon/` (or `$HERMES_HOME`) |
 
-The root-mode **FHS layout** (`/usr/local/lib/…`, `/usr/local/bin/hermes`) matches where other system-wide developer tools land on Linux. It's useful for shared-machine deployments where one system install should serve every user. Per-user config (auth, skills, sessions) still lives under each user's `~/.hermes/` or explicit `HERMES_HOME`.
+The root-mode **FHS layout** (`/usr/local/lib/…`, `/usr/local/bin/hermes`) matches where other system-wide developer tools land on Linux. It's useful for shared-machine deployments where one system install should serve every user. Per-user config (auth, skills, sessions) still lives under each user's `~/.eidolon/` or explicit `HERMES_HOME`.
 
 ### After Installation
 
@@ -72,18 +77,12 @@ hermes config get     # Inspect individual config values
 hermes setup          # Or run the full setup wizard to configure everything at once
 ```
 
-:::tip Fastest path: Nous Portal
-One subscription covers 300+ models plus the [Tool Gateway](/user-guide/features/tool-gateway) (web search, image generation, TTS, cloud browser). Skip the per-tool key juggling:
-
-```bash
-hermes setup --portal
-```
-
-That logs you in, sets Nous as your provider, and turns on the Tool Gateway in one command.
+:::note Optional Nous Portal
+Nous Portal remains a third-party provider option. If you choose it, `hermes setup --portal` starts its authentication and provider setup. Other providers and custom endpoints remain available; no subscription or hosted service is required by the Eidolon rebrand.
 :::
 
-:::tip Already running Hermes on another machine?
-You don't need to rebuild your setup from scratch. Restore a full backup with `hermes import` (see [Exporting Hermes to another machine](/reference/faq#exporting-hermes-to-another-machine)), or bring over a single agent with `hermes profile import` (see [Moving a single profile to another machine](/reference/faq#moving-a-single-profile-to-another-machine)). Note that a profile export excludes credentials by design, so an export alone is not a full backup — [`hermes backup` vs `hermes profile export`](/reference/faq#hermes-backup-vs-hermes-profile-export) explains which to use.
+:::tip Already running Eidolon on another machine?
+You don't need to rebuild your setup from scratch. Restore a full backup with `hermes import` (see [Exporting Eidolon to another machine](/reference/faq#exporting-hermes-to-another-machine)), or bring over a single agent with `hermes profile import` (see [Moving a single profile to another machine](/reference/faq#moving-a-single-profile-to-another-machine)). Note that a profile export excludes credentials by design, so an export alone is not a full backup — [`hermes backup` vs `hermes profile export`](/reference/faq#hermes-backup-vs-hermes-profile-export) explains which to use.
 :::
 
 ---
@@ -116,7 +115,7 @@ If you want to clone the repo and install from source — for contributing, runn
 
 ## Non-Sudo / System Service User Installs
 
-Running Hermes as a dedicated unprivileged user (e.g. a `hermes` systemd service account, or any user without `sudo` access) is supported. The only thing on the install path that genuinely needs root is Playwright's `--with-deps` step, which `apt`-installs shared libraries (`libnss3`, `libxkbcommon`, etc.) used by Chromium. The installer detects whether sudo is available and gracefully degrades when it isn't — it will install the Chromium binary into the service user's own Playwright cache and print the exact command an administrator needs to run separately.
+Running Eidolon as a dedicated unprivileged user (e.g. a `hermes` systemd service account, or any user without `sudo` access) is supported. The only thing on the install path that genuinely needs root is Playwright's `--with-deps` step, which `apt`-installs shared libraries (`libnss3`, `libxkbcommon`, etc.) used by Chromium. The installer detects whether sudo is available and gracefully degrades when it isn't — it will install the Chromium binary into the service user's own Playwright cache and print the exact command an administrator needs to run separately.
 
 **Recommended split (Debian/Ubuntu):**
 
@@ -128,12 +127,12 @@ Running Hermes as a dedicated unprivileged user (e.g. a `hermes` systemd service
 
 2. **As the unprivileged service user**, run the regular installer. It will detect the missing sudo, skip `--with-deps`, and install Chromium into the user's local Playwright cache:
    ```bash
-   curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
+   curl -fsSL https://raw.githubusercontent.com/AetherMesh-AI/eidolon/main/scripts/install.sh | bash
    ```
 
    If you want to skip the Playwright step entirely — for example because you're running headless and don't need browser automation — pass `--skip-browser`:
    ```bash
-   curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- --skip-browser
+   curl -fsSL https://raw.githubusercontent.com/AetherMesh-AI/eidolon/main/scripts/install.sh | bash -s -- --skip-browser
    ```
 
    The installer also pre-installs [`cua-driver`](../user-guide/features/computer-use.md) so the Computer Use toolset works the moment you enable it; pass `--skip-computer-use` to opt out (it will then install on demand when you enable the tool).
@@ -147,7 +146,7 @@ Running Hermes as a dedicated unprivileged user (e.g. a `hermes` systemd service
    sudo ln -s /home/hermes/.hermes/hermes-agent/venv/bin/hermes /usr/local/bin/hermes
    ```
 
-4. **Verify:** `hermes doctor` should now run cleanly. If you get `ModuleNotFoundError: No module named 'dotenv'`, you're invoking the repo source `hermes` file (`~/.hermes/hermes-agent/hermes`) with system Python instead of the venv launcher (`~/.hermes/hermes-agent/venv/bin/hermes`) — fix step 3.
+4. **Verify:** `hermes doctor` should now run cleanly. If you get `ModuleNotFoundError: No module named 'dotenv'`, you're invoking the repo source `hermes` file (`~/.eidolon/hermes-agent/hermes`) with system Python instead of the venv launcher (`~/.eidolon/hermes-agent/venv/bin/hermes`) — fix step 3.
 
 5. **Running the messaging gateway from this account?** A user-level service stops at logout and does not start at boot until you enable lingering for the service user:
 
@@ -173,13 +172,13 @@ For more diagnostics, run `hermes doctor` — it will tell you exactly what's mi
 
 ### Symlinked home directories and external storage
 
-Hermes supports a symlinked `HERMES_HOME` and symlinked home subdirectories,
+Eidolon supports a symlinked `HERMES_HOME` and symlinked home subdirectories,
 including `hooks`, `skills`, `sessions`, and `logs`. During home initialization,
 existing directory links are preserved, and permissions on linked directories
 (and descendants such as `logs/curator`) are left to their owner.
 
 If a link target is missing, inaccessible, or not a directory, initialization
-stops with a storage error naming the path and link target. Hermes does **not**
+stops with a storage error naming the path and link target. Eidolon does **not**
 replace the link or create its missing target: doing so could write data onto
 the local disk while an external or NAS volume is unmounted. Check the reported
 link, restore the mount or correct its target, and verify access permissions
@@ -193,4 +192,4 @@ an existing directory cannot establish that the intended volume is mounted.
 
 ## Install method auto-detection
 
-Hermes auto-detects whether it was installed via the git installer, Docker, or NixOS, and `hermes update` prints the matching update command for that path. There's no env var to set — the detection is based on the install layout (`~/.hermes/hermes-agent/` checkout, Docker image stamp, or Nix store path). `hermes doctor` also surfaces the detected method under its environment summary.
+Eidolon auto-detects whether it was installed via the git installer, Docker, or NixOS, and `hermes update` prints the matching update command for that path. There's no env var to set — the detection is based on the install layout (`~/.eidolon/hermes-agent/` checkout, Docker image stamp, or Nix store path). `hermes doctor` also surfaces the detected method under its environment summary.

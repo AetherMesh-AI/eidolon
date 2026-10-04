@@ -80,3 +80,17 @@ def test_setup_parser_accepts_telemetry_section():
 
     assert args.section == "telemetry"
     assert args.func is handler
+
+
+def test_enabling_local_metrics_retires_legacy_send_without_offering_upload(monkeypatch):
+    config = {"telemetry": {"shared_metrics": {"enabled": False, "send": True}}}
+    questions = []
+    consent = []
+    monkeypatch.setattr("hermes_cli.setup.prompt_yes_no", lambda question, default: questions.append(question) or True)
+    monkeypatch.setattr("hermes_cli.setup._record_send_consent_change", lambda *, enabled: consent.append(enabled))
+
+    setup_telemetry(config)
+
+    assert config["telemetry"]["shared_metrics"] == {"enabled": True, "send": False}
+    assert questions == ["Enable local metrics?"]
+    assert consent == [False]

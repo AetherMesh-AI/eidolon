@@ -237,24 +237,34 @@ def test_rollback_restores_backup_and_keeps_corrupt_copy(tmp_path):
 
 
 @pytest.mark.windows_only
-def test_gate_fails_clearly_without_backup(tmp_path, capsys):
+@pytest.mark.parametrize("filename", ["Eidolon.exe", "Hermes.exe"])
+@pytest.mark.parametrize("with_backup", [False, True])
+def test_gate_reports_actual_artifact_and_recovery(tmp_path, capsys, filename, with_backup):
     """``windows_only``: ``_ensure_desktop_exe_launchable`` is a documented
     no-op off Windows, so the fake was the only reason the gate ran at all.
     """
-    desktop_dir, exe = _win_tree(tmp_path)
+    desktop_dir, legacy_exe = _win_tree(tmp_path)
+    exe = legacy_exe.with_name(filename)
     fake = exe
     fake.parent.mkdir(parents=True)
     fake.write_bytes(b"<html>proxy error</html>" + b" " * 600)
+    if with_backup:
+        machine = next(iter(main_desktop._expected_windows_pe_machines()))
+        make_pe(exe.parent.with_name("win-unpacked.bak") / filename, machine)
 
     with patch("hermes_cli.main_desktop._purge_electron_build_cache", return_value=[]), \
          patch("hermes_cli.main_desktop._desktop_stamp_path", return_value=tmp_path / "stamp.json"):
         verified, rolled_back = main_desktop._ensure_desktop_exe_launchable(desktop_dir, exe)
 
-    assert verified is None
-    assert rolled_back is False
+    assert verified == (exe if with_backup else None)
+    assert rolled_back is with_backup
     out = capsys.readouterr().out
-    assert "integrity check" in out
-    assert "No usable backup" in out
+    assert f"The built {filename} failed its integrity check" in out
+    if with_backup:
+        assert f"restored the previous working {verified.name} from backup" in out
+    else:
+        assert "No usable backup" in out
+        assert "re-run the Eidolon" in out
 
 
 # ─── end-to-end: `hermes desktop --build-only` exits nonzero on corrupt exe ─

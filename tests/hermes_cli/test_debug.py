@@ -56,8 +56,13 @@ class TestUploadPasteRs:
         mock_resp.__enter__ = lambda s: s
         mock_resp.__exit__ = MagicMock(return_value=False)
 
-        with patch("hermes_cli.debug.urllib.request.urlopen", return_value=mock_resp):
+        with patch("hermes_cli.debug.urllib.request.urlopen", return_value=mock_resp) as urlopen:
             url = _upload_paste_rs("hello world")
+
+        request = urlopen.call_args.args[0]
+        assert request.full_url == "https://paste.rs/"
+        assert request.data == b"hello world"
+        assert request.get_header("User-agent") == "eidolon/debug-share"
 
         assert url == "https://paste.rs/abc123"
 
@@ -171,7 +176,7 @@ class TestMissingLogNote:
         snap = _capture_log_snapshot("desktop", tail_lines=10)
         assert snap.full_text is None
         assert "not on this host" in snap.tail_text
-        assert "Hermes Desktop" in snap.tail_text
+        assert "Eidolon Desktop" in snap.tail_text
         # The reader needs the path to collect by hand on the client machine.
         assert str(hermes_home / "logs" / "desktop.log") in snap.tail_text
 
@@ -760,10 +765,10 @@ class TestSweepExpiredPastes:
         assert len(_load_pending()) == 1
 
 
-class TestRunDebugSweepsOnInvocation:
-    """``run_debug`` must sweep expired pastes on every invocation."""
+class TestRunDebugHelpIsLocal:
+    """Printing debug help cannot cause background network requests."""
 
-    def test_run_debug_calls_sweep(self, hermes_home):
+    def test_run_debug_help_does_not_sweep(self, hermes_home):
         from hermes_cli.debug import run_debug
 
         args = MagicMock()
@@ -772,7 +777,7 @@ class TestRunDebugSweepsOnInvocation:
         with patch("hermes_cli.debug._sweep_expired_pastes") as mock_sweep:
             run_debug(args)
 
-        mock_sweep.assert_called_once()
+        mock_sweep.assert_not_called()
 
 
 class TestRunDebugDelete:
@@ -907,96 +912,6 @@ class TestCollectShareBundle:
         assert secret not in "\n".join(redacted.values())
 
 
-
-
-class TestBuildNousBundle:
-    def test_envelope_shape_and_gzip(self, hermes_home):
-        import gzip
-        import json as _json
-
-        from hermes_cli.debug import build_nous_bundle
-
-        files = {"report": "hello", "agent.log": "log line"}
-        blob = build_nous_bundle(files, redact=True)
-
-        # It's gzip — magic bytes.
-        assert blob[:2] == b"\x1f\x8b"
-        envelope = _json.loads(gzip.decompress(blob).decode())
-        assert envelope["format"] == "hermes-debug-share/1"
-        assert envelope["redacted"] is True
-        assert envelope["files"] == files
-        assert "created" in envelope
-
-    def test_redacted_false_recorded(self):
-        import gzip
-        import json as _json
-
-        from hermes_cli.debug import build_nous_bundle
-
-        blob = build_nous_bundle({"report": "x"}, redact=False)
-        envelope = _json.loads(gzip.decompress(blob).decode())
-        assert envelope["redacted"] is False
-
-
-class TestRunDebugShareNous:
-    def _args(self, **over):
-        class _A:
-            lines = 50
-            expire = 7
-            local = False
-            nous = True
-            no_redact = False
-            yes = True
-
-        a = _A()
-        for k, v in over.items():
-            setattr(a, k, v)
-        return a
-
-    def test_nous_success_prints_view_url(self, hermes_home, capsys):
-        from hermes_cli.debug import run_debug_share
-
-        res = {
-            "id": "id-1",
-            "viewUrl": "https://support.example.com/diagnostics/id-1",
-            "expiresAt": "2026-06-20T00:00:00Z",
-        }
-        with patch("hermes_cli.dump.run_dump"), patch(
-            "hermes_cli.diagnostics_upload.share_to_nous", return_value=res
-        ) as share:
-            run_debug_share(self._args())
-
-        out = capsys.readouterr().out
-        assert "Nous-INTERNAL" in out
-        assert "https://support.example.com/diagnostics/id-1" in out
-        assert "2026-06-20T00:00:00Z" in out
-        # The blob passed to share_to_nous must be gzip bytes.
-        blob = share.call_args[0][0]
-        assert isinstance(blob, (bytes, bytearray)) and blob[:2] == b"\x1f\x8b"
-
-    def test_nous_failure_suggests_local(self, hermes_home, capsys):
-        from hermes_cli.debug import run_debug_share
-
-        with patch("hermes_cli.dump.run_dump"), patch(
-            "hermes_cli.diagnostics_upload.share_to_nous",
-            side_effect=RuntimeError("service down"),
-        ):
-            with pytest.raises(SystemExit) as exc:
-                run_debug_share(self._args())
-        assert exc.value.code == 1
-        err = capsys.readouterr().err
-        assert "Nous upload failed" in err
-        assert "--local" in err
-
-    def test_nous_does_not_touch_pastebin(self, hermes_home):
-        from hermes_cli.debug import run_debug_share
-
-        res = {"id": "id-1", "viewUrl": "https://v"}
-        with patch("hermes_cli.dump.run_dump"), patch(
-            "hermes_cli.diagnostics_upload.share_to_nous", return_value=res
-        ), patch("hermes_cli.debug.upload_to_pastebin") as paste:
-            run_debug_share(self._args())
-        paste.assert_not_called()
 
 
 class TestDebugSlashCommand:

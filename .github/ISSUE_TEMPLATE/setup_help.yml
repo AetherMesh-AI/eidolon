@@ -1,5 +1,5 @@
 name: "🔧 Setup / Installation Help"
-description: Having trouble installing or configuring Hermes? Ask here.
+description: Having trouble installing or configuring Eidolon? Ask here.
 title: "[Setup]: "
 labels: ["setup"]
 body:
@@ -9,11 +9,9 @@ body:
         Sorry you're having trouble! Please fill out the details below so we can help.
 
         **Quick checks first:**
-        - Run `hermes debug share` and paste the links in the Debug Report section below
-        - If you're in a chat session, you can use `/debug` instead — it does the same thing
-        - Try `hermes update` to get the latest version
-        - Check the [README troubleshooting section](https://github.com/NousResearch/hermes-agent#troubleshooting)
-        - For general questions, consider the [Nous Research Discord](https://discord.gg/NousResearch) for faster help
+        - Check the [Eidolon overview](https://github.com/AetherMesh-AI/Eidolon/blob/main/README.md#trying-eidolon) and [releases](https://github.com/AetherMesh-AI/Eidolon/releases) for build-specific instructions and limitations
+        - Confirm which checkout, installed build, and application home you are using before running installation or update commands
+        - Include the exact steps and relevant sanitized errors below; no diagnostics upload is required
 
   - type: textarea
     id: description
@@ -70,33 +68,28 @@ body:
   - type: input
     id: hermes-version
     attributes:
-      label: Hermes Version
-      description: Output of `hermes version` (if install got that far)
-      placeholder: "2.1.0"
+      label: Eidolon Build / Source Revision
+      description: Version shown in About, release tag, or checkout commit, if available; mention local changes.
+      placeholder: "App version, release tag, or commit SHA"
 
   - type: textarea
     id: debug-report
     attributes:
-      label: Debug Report
+      label: Sanitized Diagnostics (optional)
       description: |
-        Run `hermes debug share` from your terminal and paste the links it prints here.
-        This uploads your system info, config, and recent logs to a paste service automatically.
-
-        If you're in an interactive chat session, you can also use the `/debug` slash command — it does the same thing.
-
-        If the upload fails or install didn't get that far, run `hermes debug share --local` and paste the output directly.
-        If even that doesn't work, run `hermes doctor` and paste that output instead.
+        If the runtime is usable, inspect diagnostics locally with `hermes debug share --local` against the affected Eidolon installation.
+        Review the output and include only minimum relevant, sanitized excerpts.
+        Do not post full logs, private conversations, credentials, raw environment dumps, or sensitive file paths.
+        For possible vulnerabilities, follow the repository's SECURITY.md before sharing details.
       placeholder: |
-        Report   https://paste.rs/abc123
-        agent.log   https://paste.rs/def456
-        gateway.log   https://paste.rs/ghi789
+        Relevant error message, with private details removed...
       render: shell
 
   - type: textarea
     id: error-output
     attributes:
-      label: Full Error Output
-      description: Paste the complete error message or traceback. This will be auto-formatted.
+      label: Sanitized Error Output
+      description: Paste the relevant error message or traceback after removing private information. This will be auto-formatted.
       render: shell
     validations:
       required: true
@@ -107,6 +100,6 @@ body:
       label: What I've Already Tried
       description: List any fixes or workarounds you've already attempted.
       placeholder: |
-        - Ran `hermes update`
-        - Tried reinstalling with `pip install -e ".[all]"`
-        - Checked that OPENROUTER_API_KEY is set in ~/.hermes/.env
+        - Checked the release instructions for my build
+        - Restarted the affected Eidolon installation
+        - Checked that the selected provider is configured, without sharing any credentials

@@ -44,7 +44,7 @@ def test_removes_both_launcher_forms_and_keeps_managed_uv(managed_bin: Path):
     assert (managed_bin / "uvx.exe").exists()
 
 
-def test_anchors_on_default_root_not_profile_home(
+def test_profile_uninstall_preserves_other_roots_launchers(
     managed_bin: Path, monkeypatch: pytest.MonkeyPatch
 ):
     """The launcher dir is per-machine; a profile HERMES_HOME must not
@@ -54,8 +54,8 @@ def test_anchors_on_default_root_not_profile_home(
 
     removed = uninstall.remove_windows_bin_launchers(windows=True)
 
-    assert sorted(p.name for p in removed) == ["hermes-acp.cmd", "hermes.exe"]
-    assert not (managed_bin / "hermes.exe").exists()
+    assert removed == []
+    assert (managed_bin / "hermes.exe").exists()
 
 
 def test_noop_on_posix(managed_bin: Path):
