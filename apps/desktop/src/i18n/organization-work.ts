@@ -126,6 +126,7 @@ const copy = {
   roster: ['Organization roster', '組織メンバー', '组织成员', '組織成員'],
   executionConfig: ['Execution configuration', '実行設定', '执行配置', '執行設定'],
   executionHistory: ['Execution history', '実行履歴', '执行历史', '執行歷程'],
+  legacyEventsEmpty: ['No saved prototype events in this read-only history.', 'この読み取り専用の履歴に保存済みのプロトタイプイベントはありません。', '此只读历史中没有已保存的原型事件。', '此唯讀歷程中沒有已儲存的原型事件。'],
   legacyTitle: ['Legacy prototype history', '旧プロトタイプ履歴', '旧原型历史', '舊原型歷程'],
   legacyNote: ['Read-only local records. Original saved bytes are preserved. Nothing here is submitted or replayed to the runtime.', '読み取り専用のローカル記録です。保存済みの元データは保持され、ランタイムに送信・再実行されません。', '只读本地记录。原始保存数据会保留，不会提交或重放到运行时。', '唯讀本機紀錄。原始儲存資料會保留，不會提交或重播到執行環境。'],
   legacyExport: ['Export original records', '元の記録をエクスポート', '导出原始记录', '匯出原始紀錄'],

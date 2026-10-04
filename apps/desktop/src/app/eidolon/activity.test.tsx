@@ -45,6 +45,16 @@ it('keeps event inspectors inside the current objective scope', () => {
  rerender(<MemoryRouter><Activity objectiveId="another-objective" snapshot={snapshot} /></MemoryRouter>)
  expect(screen.queryByRole('complementary', { name: 'Event details' })).toBeNull()
  expect(screen.queryByRole('button', { name: /Inspect event:/ })).toBeNull()
+ const scopedFilter = screen.getByRole('combobox', { name: 'Activity objective' })
+ expect(within(scopedFilter).getAllByRole('option')).toHaveLength(1)
+ expect(within(scopedFilter).getByRole('option', { name: 'another-objective' })).toHaveProperty('selected', true)
+ rerender(<MemoryRouter><Activity snapshot={snapshot} /></MemoryRouter>)
+ const globalFilter = screen.getByRole('combobox', { name: 'Activity objective' })
+ expect(globalFilter).toHaveProperty('disabled', false)
+ expect(within(globalFilter).getAllByRole('option')).toHaveLength(snapshot.objectives.length + 1)
+ fireEvent.change(globalFilter, { target: { value: 'demo-identity' } })
+ expect(screen.getAllByRole('button', { name: /Inspect event:/ })).toHaveLength(1)
+ expect(screen.getByRole('button', { name: `Inspect event: ${example.text}` })).toBeTruthy()
 })
 
 it('filters organization events and opens scoped details without dispatching', () => {
@@ -57,4 +67,12 @@ it('filters organization events and opens scoped details without dispatching', (
  fireEvent.keyDown(globalThis.document, { key: 'Escape' })
  fireEvent.change(screen.getByRole('searchbox', { name: 'Search activity' }), { target: { value: 'no-match' } })
  expect(screen.getByText('No matching events')).toBeTruthy()
+})
+
+
+it('describes empty prototype history as read-only without offering creation', () => {
+ const adapter = createPrototypeAdapter()
+ render(<MemoryRouter><Activity snapshot={adapter.getSnapshot()} /></MemoryRouter>)
+ expect(screen.getByText('No saved prototype events in this read-only history.')).toBeTruthy()
+ expect(screen.queryByText(/Create an objective/)).toBeNull()
 })

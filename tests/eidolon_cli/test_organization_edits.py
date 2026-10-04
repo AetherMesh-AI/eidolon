@@ -21,6 +21,7 @@ PATH = 'root0/example.txt'
 
 
 def _setup(tmp_path, *, tasks=1, content=SOURCE):
+    tmp_path = tmp_path.resolve()
     project = tmp_path / 'project'
     project.mkdir()
     source = project / 'example.txt'
@@ -90,7 +91,9 @@ def _count(store, table):
         return conn.execute(f'SELECT count(*) FROM {table}').fetchone()[0]
 
 
-def test_exact_utf8_application_is_durable_idempotent_and_keeps_source_merge_explicit(tmp_path):
+@pytest.mark.parametrize("native_os", [pytest.param("linux", marks=pytest.mark.linux_only),
+                                      pytest.param("macos", marks=pytest.mark.macos_only)])
+def test_exact_utf8_application_is_durable_idempotent_and_keeps_source_merge_explicit(tmp_path, native_os):
     store, source, objective = _setup(tmp_path)
     claim, evidence, result, _ = _propose(store, new=' new\tvalue ')
     proposal = evidence['editProposal']
@@ -138,9 +141,11 @@ def test_exact_utf8_application_is_durable_idempotent_and_keeps_source_merge_exp
     assert _head(reopened, objective)['content'] == expected
 
 
+@pytest.mark.parametrize("native_os", [pytest.param("linux", marks=pytest.mark.linux_only),
+                                      pytest.param("macos", marks=pytest.mark.macos_only)])
 @pytest.mark.parametrize('problem', ['no_read', 'invented_revision', 'wrong_hash', 'ambiguous', 'empty_old', 'no_change',
                                       'oversized_new', 'invented_diff', 'receipt_hash', 'receipt_revision', 'receipt_path'])
-def test_proposals_require_exact_bounded_source_and_current_persisted_receipt(tmp_path, problem):
+def test_proposals_require_exact_bounded_source_and_current_persisted_receipt(tmp_path, problem, native_os):
     store, _, objective = _setup(tmp_path, content='old old\r\nunique\r\n')
     claim = store.claim_next()
     source, receipt = _read(store, claim)
@@ -182,8 +187,10 @@ def test_proposals_require_exact_bounded_source_and_current_persisted_receipt(tm
     assert _count(store, 'edit_proposals') == _count(store, 'evidence') == 0
 
 
+@pytest.mark.parametrize("native_os", [pytest.param("linux", marks=pytest.mark.linux_only),
+                                      pytest.param("macos", marks=pytest.mark.macos_only)])
 @pytest.mark.parametrize('tamper', ['proposal_hash', 'proposal_bytes', 'review_hash', 'reviewer', 'evidence_bytes', 'review_rejected'])
-def test_apply_rejects_changed_proposal_review_or_evidence_atomically(tmp_path, tamper):
+def test_apply_rejects_changed_proposal_review_or_evidence_atomically(tmp_path, tamper, native_os):
     store, source, objective = _setup(tmp_path)
     _, evidence, _, _ = _propose(store)
     review, _ = _review(store)
@@ -210,7 +217,9 @@ def test_apply_rejects_changed_proposal_review_or_evidence_atomically(tmp_path, 
     assert source.read_bytes() == SOURCE.encode()
 
 
-def test_reviewer_must_echo_exact_proposal_and_rejection_does_not_queue_application(tmp_path):
+@pytest.mark.parametrize("native_os", [pytest.param("linux", marks=pytest.mark.linux_only),
+                                      pytest.param("macos", marks=pytest.mark.macos_only)])
+def test_reviewer_must_echo_exact_proposal_and_rejection_does_not_queue_application(tmp_path, native_os):
     store, _, _ = _setup(tmp_path)
     _, evidence, _, _ = _propose(store)
     review = store.claim_next()
@@ -230,8 +239,10 @@ def test_reviewer_must_echo_exact_proposal_and_rejection_does_not_queue_applicat
     assert store.claim_next()['type'] == 'work.edit'
 
 
+@pytest.mark.parametrize("native_os", [pytest.param("linux", marks=pytest.mark.linux_only),
+                                      pytest.param("macos", marks=pytest.mark.macos_only)])
 @pytest.mark.parametrize('change', ['org_patch', 'author_patch', 'disabled', 'retired', 'root_reorder'])
-def test_revoked_authority_or_root_rebinding_blocks_preclaim_and_inflight_apply(tmp_path, change):
+def test_revoked_authority_or_root_rebinding_blocks_preclaim_and_inflight_apply(tmp_path, change, native_os):
     store, source, objective = _setup(tmp_path)
     _, evidence, _, _ = _propose(store)
     _review(store)
@@ -260,7 +271,9 @@ def test_revoked_authority_or_root_rebinding_blocks_preclaim_and_inflight_apply(
     assert source.read_bytes() == SOURCE.encode()
 
 
-def test_two_reviewed_proposals_same_base_can_commit_only_once_across_connections(tmp_path):
+@pytest.mark.parametrize("native_os", [pytest.param("linux", marks=pytest.mark.linux_only),
+                                      pytest.param("macos", marks=pytest.mark.macos_only)])
+def test_two_reviewed_proposals_same_base_can_commit_only_once_across_connections(tmp_path, native_os):
     store, source, objective = _setup(tmp_path, tasks=2)
     first, second = store.claim_next(), store.claim_next()
     assert first['agent_id'] != second['agent_id']
@@ -313,7 +326,9 @@ def test_cancel_during_source_read_keeps_sqlite_unlocked_and_prevents_capture(tm
     assert _count(store, 'workspace_revisions') == _count(store, 'workspace_roots') == 0
 
 
-def test_cancellation_commits_before_apply_so_no_revision_is_published(tmp_path):
+@pytest.mark.parametrize("native_os", [pytest.param("linux", marks=pytest.mark.linux_only),
+                                      pytest.param("macos", marks=pytest.mark.macos_only)])
+def test_cancellation_commits_before_apply_so_no_revision_is_published(tmp_path, native_os):
     store, source, objective = _setup(tmp_path)
     _, evidence, _, _ = _propose(store)
     _review(store)
@@ -325,7 +340,9 @@ def test_cancellation_commits_before_apply_so_no_revision_is_published(tmp_path)
     assert source.read_bytes() == SOURCE.encode()
 
 
-def test_immutable_rows_and_exact_deletion_preserve_empty_file_revision(tmp_path):
+@pytest.mark.parametrize("native_os", [pytest.param("linux", marks=pytest.mark.linux_only),
+                                      pytest.param("macos", marks=pytest.mark.macos_only)])
+def test_immutable_rows_and_exact_deletion_preserve_empty_file_revision(tmp_path, native_os):
     store, source, objective = _setup(tmp_path, content='no newline')
     _, evidence, _, _ = _propose(store, old='no newline', new='')
     assert '\\ No newline at end of file' in evidence['editProposal']['diff']
@@ -339,7 +356,9 @@ def test_immutable_rows_and_exact_deletion_preserve_empty_file_revision(tmp_path
     assert source.is_file() and source.read_bytes() == b'no newline'
 
 
-def test_read_only_grants_allow_proposal_and_review_but_application_requires_explicit_patch(tmp_path):
+@pytest.mark.parametrize("native_os", [pytest.param("linux", marks=pytest.mark.linux_only),
+                                      pytest.param("macos", marks=pytest.mark.macos_only)])
+def test_read_only_grants_allow_proposal_and_review_but_application_requires_explicit_patch(tmp_path, native_os):
     store, source, objective = _setup(tmp_path)
     store.settings = replace(store.settings, tool_grants=('read_file',),
                              roster=tuple(replace(staff, tool_grants=('read_file',)) for staff in store.settings.roster))
@@ -353,7 +372,8 @@ def test_read_only_grants_allow_proposal_and_review_but_application_requires_exp
 
 
 @pytest.mark.parametrize('unsafe', ['bad\x00control', 'ghp_' + 'A' * 36, 'https://user:password@example.com',
-                                   'é' * (MAX_EDIT_BYTES // 2 + 1), '\ud800'])
+                                   'é' * (MAX_EDIT_BYTES // 2 + 1), '\ud800'],
+                         ids=['control', 'credential', 'url-credential', 'utf8-byte-overflow', 'invalid-surrogate'])
 def test_authoritative_capture_rejects_unsafe_or_oversized_alternate_loader_content(tmp_path, unsafe):
     store, _, _ = _setup(tmp_path)
     claim = store.claim_next()
@@ -362,8 +382,11 @@ def test_authoritative_capture_rejects_unsafe_or_oversized_alternate_loader_cont
     assert _count(store, 'workspace_revisions') == _count(store, 'workspace_roots') == 0
 
 
-@pytest.mark.parametrize('unsafe', ['bad\x00control', 'ghp_' + 'A' * 36, 'https://user:password@example.com'])
-def test_proposal_rejects_new_secret_or_control_content_without_silent_redaction(tmp_path, unsafe):
+@pytest.mark.parametrize("native_os", [pytest.param("linux", marks=pytest.mark.linux_only),
+                                      pytest.param("macos", marks=pytest.mark.macos_only)])
+@pytest.mark.parametrize('unsafe', ['bad\x00control', 'ghp_' + 'A' * 36, 'https://user:password@example.com'],
+                         ids=['control', 'credential', 'url-credential'])
+def test_proposal_rejects_new_secret_or_control_content_without_silent_redaction(tmp_path, unsafe, native_os):
     store, source, objective = _setup(tmp_path)
     claim = store.claim_next()
     read, _ = _read(store, claim)
@@ -375,7 +398,9 @@ def test_proposal_rejects_new_secret_or_control_content_without_silent_redaction
     assert source.read_bytes() == SOURCE.encode()
 
 
-def test_partial_read_of_maximum_source_binds_exact_full_utf8_revision_and_replacement(tmp_path):
+@pytest.mark.parametrize("native_os", [pytest.param("linux", marks=pytest.mark.linux_only),
+                                      pytest.param("macos", marks=pytest.mark.macos_only)])
+def test_partial_read_of_maximum_source_binds_exact_full_utf8_revision_and_replacement(tmp_path, native_os):
     content = '\ufeffold value\r\n' + ('é\n' * 10000)
     # Keep the exact byte limit observable without relying on the result budget.
     content += 'x' * (MAX_EDIT_BYTES - len(content.encode()))
@@ -394,7 +419,9 @@ def test_partial_read_of_maximum_source_binds_exact_full_utf8_revision_and_repla
     assert source.read_bytes() == content.encode()
 
 
-def test_overlapping_old_text_is_not_a_unique_replacement(tmp_path):
+@pytest.mark.parametrize("native_os", [pytest.param("linux", marks=pytest.mark.linux_only),
+                                      pytest.param("macos", marks=pytest.mark.macos_only)])
+def test_overlapping_old_text_is_not_a_unique_replacement(tmp_path, native_os):
     store, _, _ = _setup(tmp_path, content='aaa')
     claim = store.claim_next()
     read, _ = _read(store, claim)
@@ -405,7 +432,9 @@ def test_overlapping_old_text_is_not_a_unique_replacement(tmp_path):
     assert _count(store, 'edit_proposals') == 0
 
 
-def test_expired_apply_lease_and_duplicate_proposal_requests_cannot_advance_head_twice(tmp_path):
+@pytest.mark.parametrize("native_os", [pytest.param("linux", marks=pytest.mark.linux_only),
+                                      pytest.param("macos", marks=pytest.mark.macos_only)])
+def test_expired_apply_lease_and_duplicate_proposal_requests_cannot_advance_head_twice(tmp_path, native_os):
     store, _, objective = _setup(tmp_path)
     _, evidence, _, _ = _propose(store)
     _review(store)
@@ -434,7 +463,9 @@ def test_expired_apply_lease_and_duplicate_proposal_requests_cannot_advance_head
     assert sum(r['type'] == 'request.merge' for r in store.snapshot()['requests']) == 1
 
 
-def test_reopened_root_alias_cannot_rebind_existing_workspace_or_new_files(tmp_path):
+@pytest.mark.parametrize("native_os", [pytest.param("linux", marks=pytest.mark.linux_only),
+                                      pytest.param("macos", marks=pytest.mark.macos_only)])
+def test_reopened_root_alias_cannot_rebind_existing_workspace_or_new_files(tmp_path, native_os):
     store, _, objective = _setup(tmp_path)
     claim = store.claim_next()
     _read(store, claim)
@@ -452,7 +483,9 @@ def test_reopened_root_alias_cannot_rebind_existing_workspace_or_new_files(tmp_p
     assert _head(changed, objective)['content'] == SOURCE
 
 
-def test_full_proposal_view_rejects_detached_or_corrupted_immutable_evidence(tmp_path):
+@pytest.mark.parametrize("native_os", [pytest.param("linux", marks=pytest.mark.linux_only),
+                                      pytest.param("macos", marks=pytest.mark.macos_only)])
+def test_full_proposal_view_rejects_detached_or_corrupted_immutable_evidence(tmp_path, native_os):
     store, _, _ = _setup(tmp_path)
     _, evidence, _, receipt = _propose(store)
     with store._write() as conn:
@@ -466,21 +499,23 @@ def test_full_proposal_view_rejects_detached_or_corrupted_immutable_evidence(tmp
     ('old\r\nno newline', 'new\r\nlast\n'),
     ('old\nfinal\n', 'new\nfinal'),
     ('remove entire content', ''),
-])
+], ids=['bom-crlf', 'mixed-endings', 'no-final-newline', 'empty-output'])
 def test_backend_diff_roundtrips_exact_bytes_in_an_isolated_fixture(tmp_path, before, after):
     # The diff prefixes describe aliases; stripping a/root0 maps to this
     # explicitly selected derived copy. Production never invokes Git.
     fixture = tmp_path / 'copy.txt'
     fixture.write_bytes(before.encode('utf-8'))
-    result = subprocess.run(['git', 'apply', '-p2', '-'],
+    result = subprocess.run(['git', '-c', 'core.autocrlf=false', '-c', 'core.eol=lf', 'apply', '-p2', '-'],
                             input=_diff('root0/copy.txt', before, after).encode('utf-8'),
                             cwd=tmp_path, capture_output=True, timeout=10, check=False)
     assert result.returncode == 0, result.stderr.decode()
     assert fixture.read_bytes() == after.encode('utf-8')
 
 
+@pytest.mark.parametrize("native_os", [pytest.param("linux", marks=pytest.mark.linux_only),
+                                      pytest.param("macos", marks=pytest.mark.macos_only)])
 @pytest.mark.parametrize('change', ['patch', 'root', 'team'])
-def test_policy_revocation_by_another_store_fences_old_apply_even_after_policy_restoration(tmp_path, change):
+def test_policy_revocation_by_another_store_fences_old_apply_even_after_policy_restoration(tmp_path, change, native_os):
     old, source, objective = _setup(tmp_path)
     original_settings = old.settings
     _, evidence, _, _ = _propose(old)

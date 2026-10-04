@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, expect, it } from 'vitest'
 
@@ -23,4 +23,9 @@ it.each([1, 2, 300, 10000])('bounds objective rows and navigates/filter %i recor
   expect(globalThis.document.querySelectorAll('.eid-list a.eid-row').length).toBe(1)
   fireEvent.click(screen.getByRole('link', { name: new RegExp(`Goal ${String(count - 1).padStart(5, '0')}`) }))
   expect(screen.getByRole('heading', { name: `Goal ${String(count - 1).padStart(5, '0')}` })).toBeTruthy()
+  // A locked detail filter must not mount every unrelated objective as an option.
+  const activityObjective = screen.getByRole('combobox', { name: 'Activity objective' })
+  expect(activityObjective).toHaveProperty('disabled', true)
+  expect(activityObjective).toHaveProperty('value', `scale-${count - 1}`)
+  expect(within(activityObjective).getAllByRole('option')).toHaveLength(1)
 })

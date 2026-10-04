@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { Link } from 'react-router'
 
+import { useI18n } from '@/i18n/context'
+
 import { AgentAvatar } from './avatar'
 import { Inspector } from './inspector'
 import type { ActivityEvent, OrganizationSnapshot } from './types'
@@ -13,6 +15,7 @@ const eventCategory: Record<ActivityEvent['kind'], keyof typeof categories> = {
 }
 
 export function Activity({ snapshot, objectiveId }: { snapshot: OrganizationSnapshot; objectiveId?: string }) {
+ const { t } = useI18n()
  const [query, setQuery] = useState('')
  const [kind, setKind] = useState('all')
  const [objective, setObjective] = useState('all')
@@ -31,7 +34,8 @@ export function Activity({ snapshot, objectiveId }: { snapshot: OrganizationSnap
   <div className="eid-toolbar">
    <input aria-label="Search activity" onChange={e => setQuery(e.target.value)} placeholder="Search events" type="search" value={query} />
    <select aria-label="Event type" onChange={e => setKind(e.target.value)} value={kind}><option value="all">All</option>{Object.entries(categories).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
-   <select aria-label="Activity objective" disabled={!!objectiveId} onChange={e => setObjective(e.target.value)} value={objectiveId || objective}><option value="all">All objectives</option>{snapshot.objectives.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}</select>
+   {/* Scoped details lock this selector; mounting unrelated options defeats list pagination at large scale. */}
+   <select aria-label="Activity objective" disabled={!!objectiveId} onChange={e => setObjective(e.target.value)} value={objectiveId || objective}>{objectiveId ? <option value={objectiveId}>{snapshot.objectives.find(item => item.id === objectiveId)?.title ?? objectiveId}</option> : <><option value="all">All objectives</option>{snapshot.objectives.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}</>}</select>
    <select aria-label="Activity agent" onChange={e => setAgent(e.target.value)} value={agent}><option value="all">All agents</option>{snapshot.agents.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
   </div>
   {items.length ? <ol className="eid-list">{items.map(item => <li key={item.id}>
@@ -39,7 +43,7 @@ export function Activity({ snapshot, objectiveId }: { snapshot: OrganizationSnap
     <AgentAvatar name={snapshot.agents.find(a => a.id === item.agentId)?.name || 'Organization'} /><span><small>{categories[eventCategory[item.kind]]} · {runtime ? 'Runtime event' : item.provenance === 'fictional' ? 'Fictional example' : 'Local prototype'}</small><strong>{item.text}</strong><small>{item.agentId ? snapshot.agents.find(a => a.id === item.agentId)?.name || item.agentId : 'Organization'}{item.objectiveId ? ` · ${snapshot.objectives.find(o => o.id === item.objectiveId)?.title || item.objectiveId}` : ''}</small></span>
     <time dateTime={item.timestamp}>{new Date(item.timestamp).toLocaleString()}</time>
    </button>
-  </li>)}</ol> : <div className="eid-empty"><h2>{snapshot.activity.length ? 'No matching events' : 'No organization events yet'}</h2><p>{runtime ? 'Events appear when the gateway records organization activity.' : 'Create an objective to record a local planning event.'}</p></div>}
+  </li>)}</ol> : <div className="eid-empty"><h2>{snapshot.activity.length ? 'No matching events' : 'No organization events yet'}</h2><p>{runtime ? 'Events appear when the gateway records organization activity.' : t.organizationWork.legacyEventsEmpty}</p></div>}
   <p><Link to="/processes">Inspect live process logs →</Link></p>
   {event && <Inspector kind="event" onClose={() => setSelected(null)} title={event.text}>
    <p className="eid-eyebrow">{runtime ? 'Runtime event · Gateway record' : event.provenance === 'fictional' ? 'Fictional example · Not live' : 'Local prototype event · Not live'}</p><dl><dt>Category</dt><dd>{categories[eventCategory[event.kind]]}</dd><dt>Event type</dt><dd>{event.kind}</dd><dt>Recorded</dt><dd><time dateTime={event.timestamp}>{new Date(event.timestamp).toLocaleString()}</time></dd><dt>Agent</dt><dd>{snapshot.agents.find(item => item.id === event.agentId)?.name || event.agentId || 'No agent linked'}</dd>{runtime && <><dt>Event ID</dt><dd>{event.id}</dd><dt>Source</dt><dd>Connected gateway organization runtime</dd></>}</dl>

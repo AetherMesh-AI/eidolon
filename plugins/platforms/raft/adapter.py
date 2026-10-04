@@ -75,9 +75,11 @@ _RAFT_PROMPT_TURN_IDS: set[str] = set()
 
 
 def _resolve_raft_profile() -> str:
-    """Scope-aware ``RAFT_PROFILE``: a secondary multiplex profile configures Raft only via its own ``.env``
-    (secret scope) — ``os.environ`` would return the DEFAULT profile's value. Unscoped ``get_secret()`` raises."""
-    if _profile_scoped():
+    """Secondary multiplex/desktop profiles use only their own secret scope;
+    ``os.environ`` would return the launch profile's Raft identity instead."""
+    from agent.secret_scope import is_secret_scope_required
+
+    if _profile_scoped() or is_secret_scope_required():
         try:
             from agent.secret_scope import get_secret
             return (get_secret("RAFT_PROFILE") or "").strip()
@@ -571,11 +573,37 @@ def register(ctx) -> None:
             "Run `raft --profile {profile} manual get raft-cli-overview` to learn available Raft commands. "
             "Always pass `--profile {profile}` to every raft CLI call."
         ).format(profile=_resolve_raft_profile() or "your-agent-profile"))
+    # Catalog enumeration materializes every adapter, including unconfigured
+    # ones. Keep its metadata available without attaching Raft's turn effects
+    # to unrelated sessions. Setup already requires a gateway restart.
+    if not _lifecycle_hooks_configured():
+        return
     for hook_name, callback in (("on_session_start", _on_session_start), ("pre_llm_call", _on_pre_llm_call),
                                 ("pre_tool_call", _on_pre_tool_call), ("post_tool_call", _on_post_tool_call),
                                 ("post_llm_call", _on_post_llm_call), ("on_session_end", _on_session_end),
                                 ("on_session_finalize", _on_session_finalize)):
         ctx.register_hook(hook_name, callback)
+
+
+def _lifecycle_hooks_configured() -> bool:
+    if _resolve_raft_profile():
+        return True
+    # Preserve explicitly configured wake-only adapters, including legacy and
+    # nested gateway settings, without recursively materializing the catalog.
+    from eidolon_cli.config import load_config_readonly
+    from eidolon_constants import get_eidolon_home
+    from gateway.config_loader import bridge_platform_shared_keys, load_legacy_gateway_json, merge_platform_sections
+
+    cfg = load_config_readonly()
+    gateway = cfg.get("gateway") or {}
+    data = load_legacy_gateway_json(get_eidolon_home())
+    platforms = merge_platform_sections(cfg, gateway, data)
+    bridge_platform_shared_keys(cfg, gateway.get("platforms") if isinstance(gateway, dict) else None,
+                                data, platforms, [Platform("raft")])
+    configured = PlatformConfig.from_dict(platforms.get("raft", {}))
+    if configured.extra.get("_enabled_explicit") and not configured.enabled:
+        return False
+    return configured.enabled or _is_connected(configured)
 
 
 # ---- BEGIN PLUGIN-COMPAT (revert-scheduled; see COMPAT_MANIFEST.md) ----

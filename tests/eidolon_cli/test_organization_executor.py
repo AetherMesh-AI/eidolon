@@ -288,6 +288,18 @@ def test_real_agent_and_profile_resolution_against_local_provider(tmp_path, monk
         "agent": {"environment_probe": False}, "compression": {"enabled": False},
     }))
     try:
+        # Exercise the real Desktop serve preparation, not only a module import.
+        # A minimal fresh profile must retain ordinary backend registrations
+        # without enabling side-effectful turn hooks or suppressing the guard.
+        from types import SimpleNamespace
+        from eidolon_cli.main import _dashboard_prepare_runtime
+        from eidolon_cli.plugins import get_plugin_manager
+        from eidolon_cli.web_server_messaging import _messaging_platform_catalog
+        monkeypatch.setenv('HERMES_DESKTOP', '1')
+        assert _dashboard_prepare_runtime(SimpleNamespace(), True)
+        assert any(platform['id'] == 'raft' for platform in _messaging_platform_catalog())
+        assert any(plugin.enabled and plugin.manifest.kind == 'backend'
+                   for plugin in get_plugin_manager()._plugins.values())
         result = executor.execute({"type": "work.analyze"}, {
             "objective": {"title": "Analyze", "description": "First finding. Second finding."},
             "timeoutSeconds": 20,
@@ -439,6 +451,8 @@ def test_configured_hooks_and_prompt_middleware_are_not_invoked(runtime):
         try:
             result = executor.execute({"type": "work.draft"}, {}, threading.Event())
             assert "plugin" in result["intervention"]
+            assert 'organization-boundary-test' in result['intervention']
+            assert len(result['intervention']) <= 2000
             assert not calls and not runtime.instances and not runtime.sent
         finally:
             handle.dispose()

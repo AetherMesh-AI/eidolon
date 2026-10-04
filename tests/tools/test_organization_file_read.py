@@ -513,7 +513,7 @@ def test_managed_loader_preserves_raw_bytes_and_revision_pagination(files):
 @pytest.mark.parametrize("source", [
     "credential sk-examplecredential12345678901234567890\n",
     "https://user:password@example.test/source\n", "雪" * 10923,
-])
+], ids=["redacted-secret", "url-credential", "utf8-byte-overflow"])
 def test_managed_original_rejects_redaction_and_byte_overflow_before_capture(files, source):
     root, _ = files
     (root / "notes.txt").write_bytes(source.encode("utf-8"))

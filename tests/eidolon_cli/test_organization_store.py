@@ -172,7 +172,21 @@ def test_rejected_review_revises_with_evidence_then_stops_at_budget(tmp_path):
         store.retry(pending['id'])
 
 
-def test_invalid_plan_is_transactional_and_staffing_is_bounded(store):
+@pytest.mark.parametrize('first_type', ['work.draft', 'request.hire'])
+def test_invalid_plan_is_transactional_and_staffing_is_bounded(store, first_type):
+    def claim_independent_requests(ledger):
+        # Coarse platform clocks can give these independent requests the same
+        # timestamp. Either deterministic ID tie order must retain both the
+        # existing worker's authority and the director's capacity guard.
+        ordered_types = [first_type, next(kind for kind in ('work.draft', 'request.hire') if kind != first_type)]
+        with ledger._write() as conn:
+            for index, kind in enumerate(ordered_types):
+                conn.execute("UPDATE requests SET id=?,created=1 WHERE type=? AND status='queued'",
+                             (f'req_tied_{index}', kind))
+        claims = [ledger.claim_next(), ledger.claim_next()]
+        assert [claim['type'] for claim in claims] == ordered_types
+        return {claim['type']: claim for claim in claims}
+
     objective(store)
     claim = store.claim_next()
     with pytest.raises(ValueError, match='earlier'):
@@ -180,9 +194,8 @@ def test_invalid_plan_is_transactional_and_staffing_is_bounded(store):
     assert not store.snapshot()['tasks']
     assert store.snapshot()['requests'][0]['status'] == 'running'
     store.finish(claim, {'tasks': [{'title': 'Draft', 'description': 'Write it', 'type': 'work.draft', 'dependsOn': []}], 'workers': 2})
-    executing = store.claim_next()
-    hire = store.claim_next()
-    assert hire['type'] == 'request.hire'
+    claims = claim_independent_requests(store)
+    executing, hire = claims['work.draft'], claims['request.hire']
     assert store.claim_next() is None
     store.finish(hire, {})
     assert any(a['id'] == 'worker-2' for a in store.snapshot()['agents'])
@@ -191,8 +204,8 @@ def test_invalid_plan_is_transactional_and_staffing_is_bounded(store):
     other = OrganizationStore(store.path.parent/'other.db', replace(OrganizationSettings(), max_workers=1))
     objective(other)
     plan(other, [{'title':'Draft','description':'Write','type':'work.draft','dependsOn':[]}], workers=2)
-    other.claim_next()
-    excess = other.claim_next()
+    other_claims = claim_independent_requests(other)
+    excess = other_claims['request.hire']
     with pytest.raises(ValueError, match='capacity'):
         other.finish(excess, {})
     other.fail(excess, 'Staffing exceeds configured capacity')

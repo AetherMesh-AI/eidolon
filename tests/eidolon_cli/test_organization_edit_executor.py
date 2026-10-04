@@ -272,3 +272,18 @@ def test_real_agent_localhost_edit_round_cannot_dispatch_configured_patch(manage
         server.server_close()
         thread.join(3)
         config._LOAD_CONFIG_CACHE.clear()
+
+
+@pytest.mark.windows_only
+def test_native_windows_edit_execution_fails_closed_before_reads_or_provider(managed, monkeypatch):
+    from tools import organization_file_read
+    context, receipts, root, original = managed
+    monkeypatch.setattr(organization_file_read, '_open_root',
+                        lambda *_: pytest.fail('Unsupported Windows scope must not open a source root'))
+    monkeypatch.setattr(executor, '_create_agent',
+                        lambda *_args, **_kwargs: pytest.fail('Unsupported Windows scope must not start a provider'))
+    result = executor.execute({'type': 'work.edit'}, context, threading.Event())
+    assert 'POSIX no-follow' in result['intervention']
+    assert receipts == []
+    assert organization_file_read.get_organization_file_read_scope() is None
+    assert (root / 'notes.txt').read_bytes() == original.encode('utf-8')

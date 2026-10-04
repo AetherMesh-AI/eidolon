@@ -243,14 +243,22 @@ def test_review_requires_inspection_receipts_and_projects_each_result_once():
 
 def test_tool_hooks_are_rejected_and_staff_provider_cannot_fallback(monkeypatch):
     from eidolon_cli import config, plugins, runtime_provider
+    from eidolon_cli.plugins_manifest import PluginManifest
+
     cfg = {"model": {"provider": "custom:configured", "default": "configured-model"}}
     monkeypatch.setattr(config, "load_config_readonly", lambda: cfg)
     monkeypatch.setattr(plugins, "discover_plugins", lambda: None)
-    manager = SimpleNamespace(_system_prompt_sections=[], has_hook=lambda name: name == "pre_tool_call", has_middleware=lambda _: False)
+    manager = plugins.PluginManager()
+    plugin = plugins.PluginContext(PluginManifest(name="organization-tool-boundary-test"), manager)
+    handle = plugin.register_hook("pre_tool_call", lambda **_: pytest.fail("Blocked hook must not run"))
     monkeypatch.setattr(plugins, "get_plugin_manager", lambda: manager)
-    executor._guard_plugin_integrations()
-    with pytest.raises(executor.OrganizationExecutionError, match="plugin hooks"):
-        executor._guard_plugin_integrations(tool_mode=True)
+    try:
+        executor._guard_plugin_integrations()
+        with pytest.raises(executor.OrganizationExecutionError, match="plugin hooks") as error:
+            executor._guard_plugin_integrations(tool_mode=True)
+        assert "organization-tool-boundary-test" in str(error.value)
+    finally:
+        handle.dispose()
     monkeypatch.setattr(runtime_provider, "resolve_runtime_provider", lambda **kwargs: {
         "provider": "openrouter", "api_mode": "chat_completions", "base_url": "https://example.invalid/v1"})
     with pytest.raises(executor.OrganizationExecutionError, match="different provider"):

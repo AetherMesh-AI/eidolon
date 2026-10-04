@@ -96,17 +96,24 @@
 .eid-agent strong { display: block; font-size: 18px; margin-top: 5px; }
 .eid-agent p { font-size: 11px; margin: 6px 0 0; }
 .eid-inspector { border: 1px solid var(--eidolon-border); background: var(--eidolon-surface-2); border-radius: 8px; padding: 20px; margin-top: 20px; }
-.eid-rail { display: flex; flex-direction: column; height: 100%; min-height: 0; padding: 14px 10px; border-right: 1px solid var(--eidolon-border-subtle); }
+/* One outer overflow owner: expanding Advanced may make the rail taller than
+ * its pane, but must never shrink History through its own controls or footer. */
+.eid-rail { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; padding: 14px 10px; border-right: 1px solid var(--eidolon-border-subtle); }
+.eid-rail > * { flex-shrink: 0; }
 .eid-brand { font-weight: 600; letter-spacing: .18em; padding: 12px; font-size: 12px; }
 .eid-brand span { font-size: 19px; margin-right: 10px; color: var(--aether-400); }
 .eid-rail nav { display: flex; flex-direction: column; gap: 4px; padding: 12px 0; }
 .eid-rail nav a { display: flex; gap: 12px; align-items: center; padding: 9px 12px; color: var(--text-secondary); border-radius: 6px; }
 .eid-rail nav a:hover { background: var(--eidolon-surface-hover); }
 .eid-rail nav a[aria-current=page] { color: var(--aether-300); background: var(--eidolon-surface-3); box-shadow: inset 2px 0 var(--aether-500); }
-.eid-rail > details { flex: 0 0 auto; max-height: 35%; overflow: auto; }
-.eid-rail > section { display: flex; flex: 1 1 0; min-height: 0; flex-direction: column; }
+.eid-rail > details { flex: 0 0 auto; }
+.eid-rail-history { display: flex; flex: 1 0 auto; flex-direction: column; }
+.eid-rail-history > :is(h2, p) { flex-shrink: 0; }
 .eid-rail summary { cursor: pointer; padding: 12px; color: var(--text-secondary); font-size: 11px; }
-.eid-session-tree { display: flex; flex: 1 1 0; min-height: 0; overflow: hidden; }
+/* The canonical Sessions tree keeps its own list scrolling. Reserve enough
+ * height for its search, empty/list state and profile controls; the outer rail
+ * scrolls instead of clipping those controls when navigation is expanded. */
+.eid-session-tree { display: flex; flex: 1 0 20rem; min-height: 20rem; overflow: hidden; }
 .eid-rail-footer { font-size: 10px; color: var(--text-secondary); padding: 12px; border-top: 1px solid var(--eidolon-border-subtle); }
 @media (max-width: 700px) { .eid-page { padding: 24px 18px; } .eidolon h1 { font-size: 22px; } .eid-command { margin-top: 24px; } .eid-page-header { flex-direction: column; gap: 12px; } .eid-composer-tools { flex-wrap: wrap; } }
 .eid-demo-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 24px; color: var(--text-secondary); font-size: 11px; }

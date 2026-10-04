@@ -320,3 +320,62 @@ class TestMultiplexProfileScope:
             assert "--profile default-profile-slug" in ctx.platform_kwargs["platform_hint"]
         finally:
             set_multiplex_active(False)
+
+
+@pytest.mark.parametrize('case', [
+    pytest.param({}, id='unconfigured'),
+    pytest.param({'profile': '   '}, id='empty-profile'),
+    pytest.param({'profile': 'default-profile', 'hooks': True}, id='configured-default'),
+    pytest.param({'config': {'platforms': {'raft': {'enabled': True}}}, 'hooks': True}, id='explicit-wake-only'),
+    pytest.param({'profile': 'default-profile', 'scope': {}}, id='multiplex-missing'),
+    pytest.param({'profile': 'default-profile', 'scope': {'RAFT_PROFILE': 'secondary-profile'}, 'hooks': True}, id='multiplex-configured'),
+    pytest.param({'profile': 'default-profile', 'scope': {}, 'config': {'platforms': {'raft': {'enabled': True}}}, 'hooks': True}, id='multiplex-wake-only'),
+    pytest.param({'profile': 'default-profile', 'scope': {}, 'strict': True}, id='desktop-profile-missing'),
+    pytest.param({'profile': 'default-profile', 'scope': {'RAFT_PROFILE': 'secondary-profile'}, 'strict': True, 'hooks': True}, id='desktop-profile-configured'),
+    pytest.param({'config': {'gateway': {'platforms': {'raft': {'enabled': True}}}}, 'hooks': True}, id='nested-platform-wake-only'),
+    pytest.param({'config': {'gateway': {'raft': {'enabled': True}}}, 'hooks': True}, id='nested-gateway-wake-only'),
+    pytest.param({'config': {'raft': {'enabled': True}}, 'hooks': True}, id='top-level-wake-only'),
+    pytest.param({'legacy': {'platforms': {'raft': {'enabled': True}}}, 'hooks': True}, id='legacy-wake-only'),
+    pytest.param({'config': {'platforms': {'raft': {'extra': {'bridge_token': 'local-fixture'}}}}, 'hooks': True}, id='configured-external-bridge'),
+    pytest.param({'legacy': {'platforms': {'raft': {'enabled': True}}}, 'config': {'platforms': {'raft': {'enabled': False}}}}, id='explicit-disable-overrides-legacy'),
+    pytest.param({'config': {'gateway': {'platforms': {'raft': {'enabled': True}}}, 'platforms': {'raft': {'enabled': False}}}}, id='explicit-disable-overrides-nested'),
+])
+def test_catalog_keeps_raft_metadata_but_only_configured_profiles_register_hooks(
+    tmp_path, monkeypatch, multiplex_scope, case,
+):
+    from contextlib import ExitStack
+    from agent.secret_scope import reset_secret_scope, reset_secret_scope_required, set_secret_scope, set_secret_scope_required
+    from eidolon_cli import plugins
+    from eidolon_cli.organization_executor import OrganizationExecutionError, _guard_plugin_integrations
+    from gateway.platform_registry import platform_registry
+
+    home = tmp_path / 'catalog-profile'
+    home.mkdir()
+    monkeypatch.setenv('HERMES_HOME', str(home))
+    monkeypatch.delenv('RAFT_PROFILE', raising=False)
+    if 'profile' in case:
+        monkeypatch.setenv('RAFT_PROFILE', case['profile'])
+    (home / 'config.yaml').write_text(json.dumps(case.get('config', {})), encoding='utf-8')
+    if 'legacy' in case:
+        (home / 'gateway.json').write_text(json.dumps(case['legacy']), encoding='utf-8')
+    with ExitStack() as resources:
+        if case.get('strict'):
+            resources.callback(reset_secret_scope_required, set_secret_scope_required(True))
+            resources.callback(reset_secret_scope, set_secret_scope(case['scope']))
+        elif 'scope' in case:
+            multiplex_scope(case['scope'])
+        plugins.discover_plugins()
+        entries = platform_registry.plugin_entries()
+        raft = next(entry for entry in entries if entry.name == 'raft')
+        assert 'RAFT_PROFILE' in raft.required_env
+        manager = plugins.get_plugin_manager()
+        monkeypatch.setattr(manager, 'invoke_hook', lambda *_args, **_kwargs: pytest.fail('Guard must not invoke hooks'))
+        expected_hooks = case.get('hooks', False)
+        assert manager.has_hook('pre_llm_call') is expected_hooks
+        assert manager.has_hook('pre_tool_call') is expected_hooks
+        for tool_mode in (False, True):
+            if expected_hooks:
+                with pytest.raises(OrganizationExecutionError, match='raft-platform'):
+                    _guard_plugin_integrations(tool_mode=tool_mode)
+            else:
+                _guard_plugin_integrations(tool_mode=tool_mode)

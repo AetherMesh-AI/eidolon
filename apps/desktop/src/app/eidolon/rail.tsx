@@ -50,7 +50,7 @@ export function OrganizationRail({
   }
 
   return (
-    <aside aria-label="Eidolon navigation" className="eidolon eid-rail">
+    <aside aria-label="Eidolon navigation" className="eidolon eid-rail" tabIndex={0}>
       <div className="eid-brand">
         <span aria-hidden="true">◈</span>EIDOLON
       </div>
@@ -78,7 +78,7 @@ export function OrganizationRail({
         </nav>
         {pluginNav}
       </details>
-      <section aria-label={copy.navigationHistory}>
+      <section aria-label={copy.navigationHistory} className="eid-rail-history">
         <h2>{copy.navigationHistory}</h2>
         <p>{copy.historyNote}</p>
         <div className="eid-session-tree">{sessions}</div>

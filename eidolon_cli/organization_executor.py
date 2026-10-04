@@ -358,10 +358,26 @@ def _guard_plugin_integrations(*, tool_mode: bool = False) -> None:
     # decide whether its code is safe. Built-in lifecycle observers are separate
     # from this plugin registry, so ordinary accounting remains available.
     middleware = ("llm_request", "llm_execution", "tool_request", "tool_execution") if tool_mode else ("llm_request", "llm_execution")
-    if (any(manager.has_hook(name) for name in hooks)
-            or manager._system_prompt_sections
-            or any(manager.has_middleware(name) for name in middleware)):
-        raise OrganizationExecutionError("Configured model/session plugin hooks, prompt extensions or middleware are unsupported for text-only organization work.")
+    blocked = [('hook', name) for name in sorted(hooks) if manager.has_hook(name)]
+    blocked.extend(('system_prompt_section', name) for name in manager._system_prompt_sections)
+    blocked.extend(('middleware', name) for name in middleware if manager.has_middleware(name))
+    if blocked:
+        # Read ownership metadata only. Never invoke a callback, predicate, or
+        # renderer to decide whether a registration can be ignored safely.
+        def label(value):
+            return re.sub(r'[^a-zA-Z0-9_./:-]', '_', str(value))[:80]
+        descriptions = []
+        for kind, name in blocked[:8]:
+            owners = sorted({label(row.plugin_key) for row in manager._registration_order
+                             if row.active and row.kind == kind and row.key == name})
+            descriptions.append(f'{kind} {label(name)} (plugin: {", ".join(owners[:3]) or "unattributed registration"})')
+        detail = '; '.join(descriptions)[:1400]
+        if len(blocked) > 8:
+            detail += f'; and {len(blocked) - 8} more registrations'
+        raise OrganizationExecutionError(
+            'Configured model/session plugin hooks, prompt extensions or middleware are unsupported for text-only organization work. '
+            + detail + '. Review this profile\'s plugin configuration before retrying.')
+
 
 
 def _runtime_kwargs(context: dict, timeout: float) -> dict:

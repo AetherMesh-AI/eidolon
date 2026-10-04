@@ -141,22 +141,80 @@ test.beforeAll(async () => {
   }
 })
 
+test.afterEach(async ({}, testInfo) => {
+  await testInfo.attach('organization-provider-coverage', {
+    body: JSON.stringify({ stages, providerErrors, testStatus: testInfo.status,
+      expectedOutcome: 'unsupported capability intervention; no worker dispatch or completion' }, null, 2),
+    contentType: 'application/json'
+  })
+  if (fixture && !fixture.page.isClosed()) {
+    await fixture.page.screenshot({ path: testInfo.outputPath('native-finished-state.png') })
+  }
+})
+
 test.afterAll(async () => {
   await fixture?.cleanup()
   fixture = null
 })
 
-test('preserves unsupported work in Needs You across navigation and reload without completing it', async ({}, testInfo) => {
+test('preserves unsupported work and grants across navigation, dismissal, reload and cancellation', async ({}, testInfo) => {
   const page = fixture!.page
   const navigation = page.getByRole('complementary', { name: 'Eidolon navigation' })
   const primary = navigation.getByRole('navigation', { name: 'Primary', exact: true })
   const capture = async (name: string) => {
     await page.screenshot({ path: testInfo.outputPath(`${name}.png`) })
   }
+  const assertNoToolGrants = async () => {
+    const capabilities = page.getByRole('region', { name: 'Configured capabilities', exact: true })
+    await expect(capabilities.getByText('Not enabled · submitted text only', { exact: true })).toBeVisible()
+    await expect(capabilities.getByText('No patch grant configured', { exact: true })).toBeVisible()
+    await expect(capabilities.getByText(/Granted read roots/)).toHaveCount(0)
+  }
+
+  const mountedSidebar = await navigation.locator('[data-tour="sessions-sidebar"]').elementHandle()
+  expect(mountedSidebar).not.toBeNull()
+  expect(await page.evaluate(() => ({ width: innerWidth, height: innerHeight }))).toEqual({ width: 1220, height: 800 })
+  const assertRailLayout = async (name: string) => {
+    const geometry = await navigation.evaluate(rail => {
+      const heading = rail.querySelector('section h2')!.getBoundingClientRect()
+      const tree = rail.querySelector('.eid-session-tree')!.getBoundingClientRect()
+      const sidebar = rail.querySelector('[data-tour="sessions-sidebar"]')!.getBoundingClientRect()
+      const footer = rail.querySelector('.eid-rail-footer')!.getBoundingClientRect()
+      return { headingBottom: heading.bottom, treeTop: tree.top, treeBottom: tree.bottom,
+        treeLeft: tree.left, treeRight: tree.right, sidebarBottom: sidebar.bottom,
+        sidebarLeft: sidebar.left, sidebarRight: sidebar.right, footerTop: footer.top,
+        scrollTop: rail.scrollTop, overflow: rail.scrollHeight > rail.clientHeight }
+    })
+    expect(geometry.headingBottom).toBeLessThanOrEqual(geometry.treeTop + 1)
+    expect(geometry.treeBottom).toBeLessThanOrEqual(geometry.footerTop + 1)
+    expect(geometry.sidebarBottom).toBeLessThanOrEqual(geometry.treeBottom + 1)
+    expect(geometry.sidebarLeft).toBeGreaterThanOrEqual(geometry.treeLeft - 1)
+    expect(geometry.sidebarRight).toBeLessThanOrEqual(geometry.treeRight + 1)
+    await navigation.hover()
+    await page.mouse.wheel(0, 2000)
+    if (geometry.overflow) {
+      await expect.poll(() => navigation.evaluate(rail => rail.scrollTop)).toBeGreaterThan(geometry.scrollTop)
+    }
+    await expect(navigation.locator('.eid-rail-footer')).toBeInViewport({ ratio: 1 })
+    for (const label of ['New project', 'Manage gateways…']) {
+      const control = navigation.getByRole('button', { name: label, exact: true })
+      await expect(control).toBeInViewport({ ratio: 1 })
+      // Trial proves the actual native-rendered control is hit-testable without
+      // opening a dialog or changing the fixture's project/profile selection.
+      await control.click({ trial: true })
+    }
+    expect(await mountedSidebar!.evaluate(node => node.isConnected)).toBe(true)
+    await capture(name)
+    await navigation.hover()
+    await page.mouse.wheel(0, -2000)
+    await expect.poll(() => navigation.evaluate(rail => rail.scrollTop)).toBe(0)
+  }
 
   await primary.getByRole('link', { name: 'Command', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'What should the organization do?', exact: true })).toBeVisible()
+  await assertNoToolGrants()
   await capture('01-command')
+  await assertRailLayout('01b-collapsed-rail-controls')
   await primary.getByRole('link', { name: 'Needs You', exact: true }).click()
   await expect(page.getByText('Nothing needs your input', { exact: true })).toBeVisible()
 
@@ -172,6 +230,7 @@ test('preserves unsupported work in Needs You across navigation and reload witho
   // never be submitted to the runtime ledger merely by opening its history.
   await page.evaluate(({ key, bytes }) => localStorage.setItem(key, bytes), { key: legacyKey, bytes: legacyBytes })
   await navigation.getByText('Advanced and history', { exact: true }).click()
+  await assertRailLayout('03a-expanded-rail-controls')
   await navigation.getByRole('link', { name: 'Legacy prototype history', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Legacy prototype history', exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Retained prototype objective', exact: true })).toBeVisible()
@@ -180,8 +239,18 @@ test('preserves unsupported work in Needs You across navigation and reload witho
   await capture('03-read-only-legacy-history')
   expect(await page.evaluate(key => localStorage.getItem(key), legacyKey)).toBe(legacyBytes)
   expect(stages).toEqual([])
+  await navigation.getByText('Advanced and history', { exact: true }).click()
+  await assertRailLayout('03b-collapsed-history-controls')
+  await navigation.getByText('Advanced and history', { exact: true }).click()
+  await assertRailLayout('03c-reexpanded-history-controls')
 
   await primary.getByRole('link', { name: 'Command', exact: true }).click()
+  const deliveryScope = page.getByRole('combobox', { name: 'Delivery scope', exact: true })
+  await deliveryScope.selectOption('managed_artifact')
+  await assertNoToolGrants()
+  await deliveryScope.selectOption('source_project')
+  await expect(page.getByText('Choosing a delivery scope does not grant source writes or external access.', { exact: true })).toBeVisible()
+  await assertNoToolGrants()
   await page.getByRole('textbox', { name: 'Objective', exact: true }).fill(objectiveTitle)
   await page.getByRole('textbox', { name: 'Acceptance criteria', exact: true }).fill('An external deployment is actually performed; a text draft does not satisfy the objective.')
   await page.getByRole('button', { name: 'Create objective', exact: true }).click()
@@ -200,6 +269,11 @@ test('preserves unsupported work in Needs You across navigation and reload witho
   await expect(inspector).toBeVisible()
   await expect(inspector).toContainText('No eligible agent accepts work.deploy for team general')
   await capture('05-needs-you-inspector')
+  await inspector.getByRole('combobox', { name: 'Action', exact: true }).selectOption('amend_scope')
+  await inspector.getByRole('textbox', { name: 'Response', exact: true }).fill('Unsubmitted scope change must not replace the deployment requirement.')
+  await expect(inspector.getByRole('button', { name: 'Submit response', exact: true })).toBeEnabled()
+  await expect(inspector.getByText('Owner actions resolve the recorded cause. They never grant permissions or mark work complete.', { exact: true })).toBeVisible()
+  await capture('05b-unsubmitted-scope-change')
   await page.keyboard.press('Escape')
   await expect(inspector).toHaveCount(0)
   await expect(unsupported).toBeFocused()
@@ -207,16 +281,39 @@ test('preserves unsupported work in Needs You across navigation and reload witho
   await inspector.getByRole('button', { name: 'Close request details' }).click()
   await expect(inspector).toHaveCount(0)
   await expect(unsupported).toBeVisible()
+  await assertNoToolGrants()
 
   await page.reload()
   await expect(unsupported).toContainText('Pending intervention', { timeout: 60_000 })
   await expect(page.getByRole('combobox', { name: 'Status', exact: true })).toHaveValue('pending_intervention')
   await capture('06-needs-you-after-reload')
   expect(await page.evaluate(key => localStorage.getItem(key), legacyKey)).toBe(legacyBytes)
+  await assertNoToolGrants()
   expect(providerErrors).toEqual([])
   expect(stages).toEqual(['request.plan'])
-  await testInfo.attach('organization-provider-coverage', {
-    body: JSON.stringify({ stages, providerErrors, externalActionsPerformed: false, objectiveCompleted: false }, null, 2),
-    contentType: 'application/json'
-  })
+
+  // Cancellation is a durable terminal state, never a successful deployment.
+  await unsupported.click()
+  await inspector.getByRole('link', { name: 'Open objective', exact: true }).click()
+  await expect(page.getByRole('heading', { name: objectiveTitle, exact: true })).toBeVisible()
+  await expect(page.getByText('Unsubmitted scope change must not replace the deployment requirement.', { exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Cancel objective', exact: true }).click()
+  const objectiveHeader = page.locator('.eid-page-header').filter({ has: page.getByRole('heading', { name: objectiveTitle, exact: true }) })
+  await expect(objectiveHeader).toContainText('Cancelled')
+  await expect(unsupported).toContainText('Cancelled')
+  await expect(page.getByRole('button', { name: 'Cancel objective', exact: true })).toHaveCount(0)
+  await expect(page.getByText('No accepted final result yet.', { exact: true })).toBeVisible()
+  await capture('07-cancelled-objective')
+  await page.reload()
+  await expect(objectiveHeader).toContainText('Cancelled', { timeout: 60_000 })
+  await expect(unsupported).toContainText('Cancelled')
+  await assertNoToolGrants()
+  await primary.getByRole('link', { name: /^Needs You/ }).click()
+  await expect(page.getByText('Nothing needs your input', { exact: true })).toBeVisible()
+  await page.getByRole('combobox', { name: 'Status', exact: true }).selectOption('cancelled')
+  await expect(unsupported).toContainText('Cancelled')
+  await capture('08-cancelled-request-history')
+  expect(await page.evaluate(key => localStorage.getItem(key), legacyKey)).toBe(legacyBytes)
+  expect(providerErrors).toEqual([])
+  expect(stages).toEqual(['request.plan'])
 })

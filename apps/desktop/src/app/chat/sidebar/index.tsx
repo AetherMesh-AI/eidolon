@@ -1491,6 +1491,7 @@ export function ChatSidebar({
         // paints itself fully.
         'relative h-full min-w-0 overflow-hidden border-t-0 border-b-0 text-foreground transition-none',
         panesFlipped ? 'border-l border-r-0' : 'border-r border-l-0',
+        historyOnly && 'w-full',
         'border-(--sidebar-edge-border) bg-(--ui-sidebar-surface-background) opacity-100'
       )}
       collapsible="none"
