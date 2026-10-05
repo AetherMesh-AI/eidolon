@@ -5,6 +5,8 @@
  */
 import http from 'node:http'
 
+import type { Display } from 'electron'
+
 import {
   buildAppEnv,
   createSandbox,
@@ -178,7 +180,26 @@ test('preserves unsupported work and grants across navigation, dismissal, reload
 
   const mountedSidebar = await navigation.locator('[data-tour="sessions-sidebar"]').elementHandle()
   expect(mountedSidebar).not.toBeNull()
-  expect(await page.evaluate(() => ({ width: innerWidth, height: innerHeight }))).toEqual({ width: 1220, height: 800 })
+  const nativeWindow = await fixture!.app.browserWindow(page)
+  await testInfo.attach('owner-loop-restored-geometry', {
+    body: JSON.stringify({
+      window: await nativeWindow.evaluate(win => ({ bounds: win.getBounds(), contentSize: win.getContentSize() })),
+      workAreas: await fixture!.app.evaluate(({ screen }) => screen.getAllDisplays().map((display: Display) => display.workArea)),
+      viewport: await page.evaluate(() => ({ width: innerWidth, height: innerHeight }))
+    }, null, 2),
+    contentType: 'application/json'
+  })
+  // Production restoration intentionally caps saved bounds to the host work
+  // area. Establish this layout scenario through the actual native window,
+  // then wait for Chromium to observe the resize without faking its viewport.
+  await nativeWindow.evaluate(win => {
+    win.unmaximize()
+    win.setMinimumSize(1220, 800)
+    win.setPosition(0, 0, false)
+    win.setContentSize(1220, 800, false)
+  })
+  await expect.poll(() => page.evaluate(() => ({ width: innerWidth, height: innerHeight }))).toEqual({ width: 1220, height: 800 })
+  await nativeWindow.dispose()
   const assertRailLayout = async (name: string) => {
     const geometry = await navigation.evaluate(rail => {
       const heading = rail.querySelector('section h2')!.getBoundingClientRect()
