@@ -77,18 +77,22 @@ delivery mode and explicit required checks. On a persistent-identity runtime, ch
 an existing active Executive and one of its active Managers as the objective’s
 responsible leaders. Selection does not provision staff or expand permission. Choose managed-artifact delivery when
 the intended result is a reviewed downloadable patch or document. Choose
-source-project delivery when the result must also be verified in the original
-project. A delivery choice never grants file or account permissions.
+source-project delivery when the result needs a verified source handoff or an
+explicitly authorized new Git branch. A delivery choice never grants file or account permissions.
 
 Required checks are structured declarations:
 
 - `managed_validation`: the exact applied managed output needs passing retained
   validation evidence.
-- `source_integration`: the original source must be verified against the final
-  reviewed and validated managed output.
-- `project_tests`: functional project tests must have actually executed. The
-  current organization runtime has no authorized command runner. This check
-  therefore remains pending, even when syntax checks pass or a model approves.
+- `source_integration`: requires exact source-delivery evidence. The default
+  path verifies the owner's external handoff. An explicit `integrate_source`
+  grant instead enables a new reviewed Git branch after isolated tests and an
+  independent review of the exact tested snapshot.
+- `project_tests`: requires an actual successful, nonempty isolated test run over
+  the selected snapshot and a distinct review of its exact retained evidence.
+  The supported recipe is Python stdlib unittest on Linux with the required OS
+  isolation. Missing grants, unsupported hosts, failed or unconfirmed runs remain
+  pending even when syntax checks pass or a model approves.
 
 The manager may add requirements derived from the objective but cannot silently
 remove declared checks. Natural-language intent and judgment still depend on the
@@ -109,7 +113,8 @@ backend:
   replace the checklist and acceptance criteria for the amended scope; removing
   a requirement is shown before submission and retained in a before/after audit.
   Models and ordinary replans cannot remove requirements. A project-tests
-  requirement still blocks completion unless the owner explicitly changes it.
+  requirement blocks completion until its execution and review gates pass, or the
+  owner explicitly changes the requirement.
 - **Request a replan** preserves the objective and supplies feedback for a new
   bounded round.
 - **Retry configuration** rechecks the request after the owner fixes its provider,
@@ -170,11 +175,62 @@ identify exact revisions, hashes, checks and outcomes. These validators never
 execute project code, launch a shell, use credentials or access the network.
 Their success must not be reported as passing a project's test suite.
 
-For source-project delivery, export and inspect the reviewed output, then apply
-it deliberately through the owner's normal tools. The verification action reads
-the original files anew and checks the current final manifest. Missing grants,
-conflicts, changed source, invalid validation or unavailable hosts remain visible.
-Eidolon does not write the original project at this boundary.
+Without an explicit source-integration grant, source-project delivery keeps the
+existing manual path: export and inspect the reviewed output, then apply it
+through the owner's normal tools. The verification action reads the original
+files anew and checks the current final manifest. Missing grants, conflicts,
+changed source, invalid validation or unavailable hosts remain visible. This
+manual verification never writes the original project or counts as a test run.
+
+## Run controlled project tests and deliver a reviewed branch
+
+The owner can separately configure `run_tests` and `integrate_source` grants and
+an exact `project_grants` recipe in the current profile. Every project author
+needs the matching explicit staff grants; a delivery choice, reviewer approval,
+owner-response form or retry does not create them. See the
+[configuration example](organization-flow.md#opt-in-to-controlled-project-execution).
+
+The initial test runner is deliberately narrow: copied selected files, system
+Python's stdlib unittest, one process, no third-party dependencies, shell,
+network, subprocesses, threads or file creation. It permits one bounded writable
+scratch file at `/scratch/work.dat`. Linux bubblewrap namespaces, read-only
+source/runtime mounts and libseccomp are required. macOS and Windows project
+execution is unavailable; it stays in Needs You without falling back to a host
+command. A grant shown as configured is not proof that this host can establish
+the required isolation. This does not enable arbitrary local-Mac execution.
+
+The backend records `request.project_test`, then a separate `request.test_review`
+for a distinct reviewer. A failed test or negative review produces a visible
+`request.project_failed` intervention. Interrupted or unconfirmed execution stays
+unknown and cannot satisfy required tests or silently replay. Configured per-run
+resource limits, the objective deadline and the durable project-run limit bound
+execution; model review and final acceptance retain their existing budgets.
+
+Open an objective's **Latest project test execution** section for the latest run
+in the current round. It shows the exact snapshot digest, selected file hashes
+and revisions, reported test count, exit code, elapsed seconds, command arguments
+and recorded isolation scope. **Read exact test evidence** opens the full retained
+snapshot bytes, execution receipt, pinned source base and grant by evidence ID.
+No terminal receipt means no successful execution is inferred. Syntax validation,
+test-process success, independent test review and final acceptance are visibly
+separate facts. Tests can be inadequate or self-report success; a passing process
+is not independent proof of correctness.
+
+With `integrate_source`, `request.source_integrate` rechecks the exact reviewed
+and tested bytes, grant, source base and current preimages before delivery. It
+writes a new Git branch and the necessary Git objects while leaving the original
+HEAD, index and working tree unchanged. It does not merge, push, publish or deploy,
+and does not invoke repository hooks, filters, credential helpers or shell
+commands. The initial source integrator supports a bounded SHA-1 repository with
+an in-root `.git` directory at `root0`; unsupported repository layouts and
+conflicting source/index changes are refused.
+
+**Reviewed source branch** shows the exact branch ref, source-base commit,
+integration commit, tree and manifest digest. **Read exact source integration
+evidence** opens its separately retained proof. Test success alone never implies
+that source delivery occurred. Refreshing, reopening or restarting the backend
+preserves these ledger records; final acceptance still requires the current
+reviewed evidence and the objective's explicit checks.
 
 ## Runtime lifetime and cost visibility
 

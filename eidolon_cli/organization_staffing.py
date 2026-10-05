@@ -98,6 +98,8 @@ class OrganizationStaffingStore:
         typed = self._typed_context(conn, request)['requestContract']
         if typed.get('parentRequestId'):
             return f"No eligible persistent agent accepts {request['type']} for team {request['team']} with {typed['requiredAuthority']}. Owner response is required."
+        if request['type'] in {'request.project_test', 'request.source_integrate'}:
+            return self.project_stage_unavailability(conn, request) or 'The exact backend project controller is unavailable.'
         if request['type'] == 'request.merge':
             return 'The reviewed output is in the managed workspace. Merging it into the source project requires owner intervention; no source file was overwritten.'
         if request['type'] == 'request.validate':

@@ -123,10 +123,10 @@ class OrganizationService:
 
     def cancel(self, objective_id: str) -> bool:
         with self._lock:
-            changed = self.store.cancel(objective_id)
             for record in self._running.values():
                 if record.claim.get("objective_id") == objective_id:
                     record.cancel.set()
+            changed = self.store.cancel(objective_id)
             self._wake.set()
             return changed
 
@@ -286,8 +286,17 @@ class OrganizationService:
                     kind = record.claim.get("type", record.claim.get("kind"))
                     if kind == 'work.edit':
                         context['resolveWorkspaceSource'] = lambda path, loader: self.store.capture_workspace_source(record.claim, path, loader)
-                    record.result = {} if kind in {'request.hire', 'request.apply', 'request.validate'} else self.executor(
-                        record.claim, context, record.cancel)
+                    if kind in {'request.project_test', 'request.source_integrate'}:
+                        record.result = self.store.run_project_stage(record.claim, record.cancel)
+                    else:
+                        record.result = {} if kind in {'request.hire', 'request.apply', 'request.validate'} else self.executor(
+                            record.claim, context, record.cancel)
+        except ValueError as error:
+            # The project boundary reports only bounded, sanitized policy errors.
+            if record.claim.get("type") in {"request.project_test", "request.source_integrate"}:
+                record.error = str(error)[:2000]
+            else:
+                record.error = "Execution failed unexpectedly; review provider configuration before retrying"
         except Exception:
             # Provider exceptions can contain credentials or private request URLs.
             record.error = "Execution failed unexpectedly; review provider configuration before retrying"

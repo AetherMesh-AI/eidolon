@@ -73,6 +73,8 @@ export function RuntimeArtifact({ adapter, snapshot, evidenceId, title, onClose 
           <Button onClick={() => setAttempt(value => value + 1)} size="sm" variant="secondary">
             {copy.artifactRefresh}
           </Button>
+          {artifact.kind === 'project_execution' && <h3>{t.organizationWork.projectExecutionEvidence}</h3>}
+          {artifact.kind === 'source_integration' && <h3>{t.organizationWork.sourceIntegrationEvidence}</h3>}
           {artifact.editProposal && (
             <RuntimeEditProposal key={artifact.editProposal.id} proposal={artifact.editProposal} />
           )}
@@ -83,7 +85,7 @@ export function RuntimeArtifact({ adapter, snapshot, evidenceId, title, onClose 
             <dt>{copy.artifactRecorded}</dt>
             <dd>{new Date(artifact.createdAt).toLocaleString()}</dd>
             <dt>{copy.artifactTask}</dt>
-            <dd>{artifact.taskId}</dd>
+            <dd>{artifact.taskId ?? t.organizationWork.notRecorded}</dd>
           </dl>
           <p className="eid-note">{copy.artifactLedgerNote}</p>
           <RuntimeToolReceipts artifact full receipts={artifact.toolReceipts} />

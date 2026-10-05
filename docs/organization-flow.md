@@ -175,9 +175,15 @@ context, not a guarantee that statements are true or an external action happened
   workspace only, with explicit organization and author `patch` grants.
 - `request.validate`: check exact managed revisions using declarative validators.
   This does not execute project commands or establish that a test suite passed.
-- `request.merge`: visible source delivery intervention. After applying the
-  exported output, the owner can ask the backend to verify original source bytes.
-  No source-project writer is enabled.
+- `request.merge`: the default manual source-delivery intervention. After
+  applying exported output, the owner can ask the backend to verify source bytes.
+- `request.project_test`: runs an exact owner-configured Python unittest snapshot
+  through the Linux-only isolated runner, with explicit author and organization grants.
+- `request.test_review`: a distinct reviewer assesses the exact snapshot and run
+  receipt. Failed tests or review remain visible as `request.project_failed`.
+- `request.source_integrate`: with its separate grant, writes a new reviewed Git
+  branch after successful tests and independent review, preserving the original
+  HEAD, index and working tree.
 - `request.plan`: the manager proposes an acyclic graph with explicit dependency
   indexes and acceptance criteria.
 - `request.review`: a distinct logical reviewer assesses the exact persisted
@@ -200,8 +206,11 @@ Worker roles without discarding identity or work history. Staffing and backend
 application/validation remain deterministic. Planning, working, reviewing,
 integration and executive acceptance run as separate bounded AIAgent turns.
 
-Browsing, writes to source-project files, sending, purchasing and code execution
-are not enabled in this increment. File reads require the explicit inspection grant described below.
+Browsing, source working-tree writes, sending, purchasing and arbitrary command
+execution remain unavailable. The optional controlled runner supports only the
+fixed Python unittest recipe below, and optional source integration writes a new
+Git branch rather than modifying the original working tree. File reads require
+the explicit inspection grant described below.
 A request needing another tool or missing source material stays
 **Pending intervention**. The manager must preserve the requested outcome rather
 than pretend a text draft performed an external action. Valid unknown request
@@ -297,6 +306,8 @@ organization:
   capabilities: [work.draft, work.analyze]
   tool_grants: []          # no tool is enabled implicitly
   read_roots: []           # up to 8 explicit local directories
+  project_grants: []       # exact selected files and fixed test recipe; no inferred commands
+  max_project_runs: 4      # 1–12 durable run admissions per objective
   max_tool_calls: 8        # 1–20 per request attempt
   max_tool_result_chars: 12000 # 1000–20000 per retained tool result
 ```
@@ -460,8 +471,9 @@ Cancellation before the application transaction prevents the change; cancellatio
 after commit does not undo or conceal the retained application.
 
 After a successful managed application, backend validation checks its exact
-revision manifest and retains an immutable receipt. Source-project delivery
-retains a visible request.merge intervention until original bytes are verified.
+revision manifest and retains an immutable receipt. Without the separate source
+integration grant, source-project delivery retains a visible request.merge
+intervention until original bytes are verified.
 An explicitly selected managed-artifact outcome does not require a source merge.
 This distinguishes a
 real editable output from an unperformed original-project change. No model,
@@ -469,9 +481,79 @@ review decision, retry or client-supplied path can silently merge into the share
 source folder. Download and inspect the output before merging it deliberately.
 Unified diff paths use the root aliases; a root0-only patch can be checked in the
 corresponding source root with strip level 2 (`git apply --check -p2`), after checking
-for concurrent source changes. Product execution never invokes Git or a shell.
-Source verification reads through the explicit no-follow boundary; it never
-writes originals or accepts an owner's unverified success claim.
+for concurrent source changes. The manual verification path never invokes Git or
+a shell. Source verification reads through the explicit no-follow boundary; it
+never writes originals or accepts an owner's unverified success claim.
+
+## Opt in to controlled project execution
+
+This is a separate grant from inspection, managed edits and declarative syntax
+validation. Extend the current profile's existing organization configuration only
+after reviewing the exact files and intended source-branch permission:
+
+```yaml
+organization:
+  capabilities: [work.inspect, work.edit]
+  tool_grants: [read_file, patch, run_tests, integrate_source]
+  read_roots: [/absolute/path/to/approved-project]
+  max_project_runs: 4
+  project_grants:
+    - id: selected-unit-tests
+      files: [root0/app.py, root0/test_app.py]
+      execution:
+        recipe: python_unittest
+        root: root0
+        test_directory: .
+        pattern: test*.py
+        timeout_seconds: 10
+        cpu_seconds: 5
+        memory_mb: 256
+        scratch_mb: 16
+        output_bytes: 16384
+```
+
+This is a configuration fragment, not a replacement roster. Every explicit worker
+who authors this project's inspection or edit also needs `read_file`, `run_tests`
+and, for automatic source delivery, `integrate_source` in its `tool_grants`.
+Managed application still needs `patch`. Leaders remain tool-free. Omit
+`integrate_source` at both levels to keep manual source delivery. Reload the
+profile service after changing configuration. Neither models nor owner-response
+forms can add these grants or infer a command/file set.
+
+Each recipe names 1–64 exact alias paths in one read root; selected source and test
+bytes are bounded to 512 KiB total. Include every reviewed changed file and every
+file the suite needs. Missing imports do not trigger package installation or
+additional file access. Only `python_unittest` is supported. The runner uses
+system Python's standard library, one process, no shell, network, third-party
+dependencies, subprocesses, threads or file creation. Only the precreated
+`/scratch/work.dat` scratch file is writable. Timeout, CPU, memory, scratch and
+captured-output limits are explicit. No command runs on the original working tree.
+
+Required isolation currently exists only on Linux with modern bubblewrap, libseccomp, and an existing host policy that permits unprivileged user/network namespaces. Ubuntu 24.04 hosts with default AppArmor user-namespace restrictions can refuse setup; no security setting is changed or bypassed. Native verification uses Ubuntu 22.04 and the pinned official bubblewrap 0.12.0 build without setuid or file capabilities.
+Unavailable namespaces or runtime prerequisites fail closed. macOS/Windows
+execution remains Needs You, with no local host-command fallback. The desktop
+shows configured grants and recipes separately from runtime availability.
+
+The backend persists execution start, exact snapshot and grant before dispatch.
+A nonempty successful run still requires a distinct review of its exact retained
+bytes and receipt. The current snapshot, grants, source preimages and review are
+rechecked before they can satisfy acceptance. Failed, timed-out, cancelled and
+unconfirmed runs cannot be converted into passing evidence by model prose,
+owner attestation, syntax validation or retry. Unknown runs require inspection
+and an explicit bounded replan rather than automatic replay.
+
+With the optional `integrate_source` grant, source delivery requires passing tests
+and review, then creates a new local branch and exact Git objects without changing
+HEAD, the index or working-tree files. This bounded backend does not run Git,
+hooks, filters, signing programs or credential helpers. It supports an in-root
+`.git` SHA-1 repository at `root0`; unsupported layouts, concurrent source changes
+and changed reviewed preimages remain interventions. No merge, push, deployment
+or arbitrary filesystem write is performed.
+
+See [controlled tests and reviewed branches](organization-owner-loop.md#run-controlled-project-tests-and-deliver-a-reviewed-branch)
+for the desktop receipt fields, retained evidence links, recovery semantics and
+separation between test success, independent review, source delivery and final
+acceptance.
 
 ## Developer verification and extension
 

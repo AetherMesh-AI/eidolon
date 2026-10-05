@@ -143,3 +143,29 @@ describe('configured organization capabilities', () => {
     expect(screen.getByText('設定済みルート内で有効')).toBeTruthy()
   })
 })
+
+it('shows explicit project grants independently from host support, with exact recipes and no grant controls', () => {
+  const runtime = { ...snapshot.runtime!, projectExecutionEnabled: true, sourceIntegrationEnabled: false,
+    projectRecipes: [{ id: 'bounded-tests', root: 'root0', recipe: 'python_unittest', files: ['root0/app.py', 'root0/test_app.py'] }] }
+
+  const view = render(<RuntimeCapabilities runtime={runtime} />)
+  expect(screen.getByText('Project test grant').nextElementSibling?.textContent).toBe('Configured · availability checked at execution')
+  expect(screen.getByText('Source branch integration grant').nextElementSibling?.textContent).toBe('Not enabled')
+  expect(screen.getByText(/Linux with bubblewrap and libseccomp only/)).toBeTruthy()
+  expect(screen.getByText(/macOS and Windows execution is unavailable/)).toBeTruthy()
+  expect(screen.getByText(/No third-party dependencies, shell, network, subprocesses, threads or file creation/)).toBeTruthy()
+  const recipes = screen.getByText('Explicit project recipes (1)').closest('details')!
+  expect(recipes.open).toBe(false)
+  fireEvent.click(within(recipes).getByText('Explicit project recipes (1)'))
+  expect(recipes.open).toBe(true)
+  expect(within(recipes).getByText('root0/test_app.py')).toBeTruthy()
+  expect(within(recipes).getByText('python_unittest')).toBeTruthy()
+  expect(screen.queryByRole('button', { name: /grant|enable|run/i })).toBeNull()
+  view.rerender(<RuntimeCapabilities runtime={{ ...runtime, projectExecutionEnabled: false, sourceIntegrationEnabled: true, projectRecipes: [] }} />)
+  expect(screen.getByText('Project test grant').nextElementSibling?.textContent).toBe('Not enabled')
+  expect(screen.getByText('Source branch integration grant').nextElementSibling?.textContent).toBe('Configured · availability checked at execution')
+  expect(screen.getByText('No exact project recipe configured.')).toBeTruthy()
+  view.rerender(<RuntimeCapabilities runtime={snapshot.runtime!} />)
+  expect(screen.queryByText('Project test grant')).toBeNull()
+  expect(screen.queryByText('Supported project runner')).toBeNull()
+})

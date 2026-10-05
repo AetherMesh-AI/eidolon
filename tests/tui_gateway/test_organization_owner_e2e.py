@@ -226,9 +226,9 @@ def test_real_rpc_requires_explicit_owner_check_removal_then_accepts_amended_sco
     store = services.get_service().store
     first = _wait(lambda: next((row for row in store.snapshot()['requests'] if row['status'] == 'pending_intervention'), None))
     _rpc('organization.resolve', id=first['id'], action='provide_input', text='Launch on Monday, October 12.', idempotencyKey='date')
-    pending = _wait(lambda: next((row for row in store.snapshot()['requests'] if row['type'] == 'request.accept' and row['status'] == 'pending_intervention'), None))
+    pending = _wait(lambda: next((row for row in store.snapshot()['requests'] if row['type'] == 'request.project_test' and row['status'] == 'pending_intervention'), None))
     assert store.snapshot()['objectives'][0]['status'] == 'needs_input'
-    assert 'have not been executed' in pending['reason']
+    assert 'explicitly granted worker' in pending['reason']
     malformed = gateway.dispatch({'jsonrpc': '2.0', 'id': 1, 'method': 'organization.resolve', 'params': {
         'id': pending['id'], 'action': 'request_replan', 'text': 'Skip tests', 'requiredChecks': [], 'idempotencyKey': 'forbidden'}})
     assert malformed['error']['code'] == -32602

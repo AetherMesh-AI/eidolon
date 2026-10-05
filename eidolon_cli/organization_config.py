@@ -9,7 +9,7 @@ from eidolon_cli.organization_budget import OrganizationModelCost, money, parse_
 
 WORK_CAPABILITIES = ("work.draft", "work.analyze")
 SUPPORTED_WORK_CAPABILITIES = (*WORK_CAPABILITIES, "work.inspect", "work.edit")
-SUPPORTED_TOOL_GRANTS = ("read_file", "list_files", "search_files", "patch")
+SUPPORTED_TOOL_GRANTS = ("read_file", "list_files", "search_files", "patch", "run_tests", "integrate_source")
 
 
 @dataclass(frozen=True)
@@ -40,6 +40,8 @@ class OrganizationSettings:
     roster: tuple[OrganizationStaff, ...] | None = None
     tool_grants: tuple[str, ...] = ()
     read_roots: tuple[str, ...] = ()
+    project_grants: tuple = ()
+    max_project_runs: int = 4
     max_tool_calls: int = 8
     max_tool_result_chars: int = 12000
 
@@ -56,7 +58,7 @@ class OrganizationSettings:
                   "timeout_seconds": (30, 600), "max_tool_calls": (1, 20),
                   "max_context_tokens": (4096, 2000000), "max_model_calls": (1, 1000),
                   "max_total_tokens": (4096, 1000000000), "objective_timeout_seconds": (60, 604800),
-                  "max_tool_result_chars": (1000, 20000)}
+                  "max_tool_result_chars": (1000, 20000), "max_project_runs": (1, 12)}
         values = {}
         for key, (minimum, maximum) in limits.items():
             default = getattr(cls, key)
@@ -78,7 +80,7 @@ class OrganizationSettings:
             raise ValueError("organization.capabilities must select supported work capabilities")
         grants = raw.get("tool_grants", [])
         if not isinstance(grants, list) or any(v not in SUPPORTED_TOOL_GRANTS for v in grants):
-            raise ValueError("organization.tool_grants must select supported tools: read_file, list_files, search_files or managed-workspace patch")
+            raise ValueError("organization.tool_grants must select supported tools: read_file, list_files, search_files, patch, run_tests or integrate_source")
         roots = raw.get("read_roots", [])
         if (not isinstance(roots, list) or len(roots) > 8 or any(
             not isinstance(root, str) or not root.strip() or len(root) > 4096
@@ -86,6 +88,8 @@ class OrganizationSettings:
             or not Path(root).is_absolute() for root in roots
         )):
             raise ValueError("organization.read_roots must contain at most 8 bounded absolute filesystem paths")
+        from eidolon_cli.organization_project_config import parse_project_grants
+        values["project_grants"] = parse_project_grants(raw.get("project_grants", []), len(roots))
         settings = cls(**values, team=team.strip(), capabilities=tuple(dict.fromkeys(capabilities)),
                        tool_grants=tuple(dict.fromkeys(grants)), read_roots=tuple(dict.fromkeys(roots)))
         if "roster" in raw:

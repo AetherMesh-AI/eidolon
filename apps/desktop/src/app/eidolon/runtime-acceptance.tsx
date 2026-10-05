@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n/context'
 
+import { RuntimeProjectExecution } from './runtime-project-execution'
 import type { Objective } from './types'
 
 export function RuntimeAcceptance({
@@ -67,6 +68,9 @@ export function RuntimeAcceptance({
             {copy.finalManagedValidation}
           </Button>
         </section>
+      )}
+      {(objective.projectExecution || objective.requiredChecks?.includes('project_tests')) && (
+        <RuntimeProjectExecution execution={objective.projectExecution} onOpenEvidence={onOpenEvidence} />
       )}
       {usage && (
         <details>

@@ -7,6 +7,7 @@ so they use their own profile-scoped ledger while sharing the AIAgent runtime.
 from __future__ import annotations
 
 import contextlib
+from dataclasses import asdict
 import hashlib
 import json
 from pathlib import Path
@@ -26,6 +27,8 @@ from eidolon_cli.organization_receipts import (
 )
 from eidolon_cli.organization_staffing import STAFF_SCHEMA, OrganizationStaffingStore
 from eidolon_cli.organization_edits import EDIT_SCHEMA, OrganizationEditStore, evidence_proposal
+from eidolon_cli.organization_project_execution import (PROJECT_EXECUTION_SCHEMA, OrganizationProjectExecutionStore,
+    project_execution_artifact, project_execution_view)
 from eidolon_cli.organization_policy import POLICY_SCHEMA, OrganizationPolicyStore, resolve_settings
 from eidolon_cli.organization_requests import (REQUEST_SCHEMA, OrganizationRequestStore)
 from eidolon_cli.organization_management import MANAGEMENT_SCHEMA, OrganizationManagementStore
@@ -90,30 +93,32 @@ def _text(value, field, limit=10000):
     return value.strip()
 
 
-class OrganizationStore(OrganizationBudgetStore, OrganizationRequestStore, OrganizationManagementStore, OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
+class OrganizationStore(OrganizationProjectExecutionStore, OrganizationBudgetStore, OrganizationRequestStore, OrganizationManagementStore, OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
     def __init__(self, path: Path | str, settings: OrganizationSettings | None = None):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
-            conn.executescript(_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA)
+            conn.executescript(_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA)
             self.settings = resolve_settings(conn, settings)
         with self._write() as conn:
             self._migrate_acceptance(conn)
             self._migrate_budgets(conn)
+            self._migrate_project_execution_budgets(conn)
             self._adopt_policy(conn)
             roles = [("owner", "Owner", "Owner", None, []),
                      ("executive", "Executive", "Executive", "owner", ["request.accept"]),
                      ("director", "Staffing manager", "Manager", "executive", ["request.hire"]),
                      ("manager", "Manager", "Manager", "executive", ["request.plan", "request.integrate"]),
-                     ("reviewer", "Reviewer", "Worker", "manager", ["request.review"]),
+                     ("reviewer", "Reviewer", "Worker", "manager", ["request.review", "request.test_review"]),
+                     ("control:project", "Project executor", "Worker", "manager", ["request.project_test", "request.source_integrate"]),
                      ("control:apply", "Workspace applier", "Worker", "manager", ["request.apply", "request.validate"])]
             for ident, name, role, manager, accepts in roles:
                 conn.execute("INSERT OR IGNORE INTO agents VALUES (?,?,?,?,?,?)",
                              (ident, name, role, manager, self.settings.team, json.dumps(accepts)))
             # Capture legacy identity scope before synchronizing current routes.
             self._migrate_identities(conn)
-            conn.execute("UPDATE agents SET team=? WHERE id IN ('owner','executive','director','manager','reviewer','control:apply')", (self.settings.team,))
-            for ident, accepts in [('executive', ['request.accept']), ('manager', ['request.plan', 'request.integrate']), ('control:apply', ['request.apply', 'request.validate'])]:
+            conn.execute("UPDATE agents SET team=? WHERE id IN ('owner','executive','director','manager','reviewer','control:apply','control:project')", (self.settings.team,))
+            for ident, accepts in [('reviewer', ['request.review', 'request.test_review']), ('control:project', ['request.project_test', 'request.source_integrate']), ('executive', ['request.accept']), ('manager', ['request.plan', 'request.integrate']), ('control:apply', ['request.apply', 'request.validate'])]:
                 conn.execute('UPDATE agents SET accepts=? WHERE id=?', (json.dumps(accepts), ident))
             self._sync_staff(conn)
             self._migrate_identities(conn)
@@ -166,6 +171,10 @@ class OrganizationStore(OrganizationBudgetStore, OrganizationRequestStore, Organ
                     if project is not None and project['objectiveId'] == objective:
                         artifact = project
                 if artifact is None:
+                    project = project_execution_artifact(conn, evidence_id)
+                    if project is not None and project['objectiveId'] == objective:
+                        artifact = project
+                if artifact is None:
                     raise ValueError('A new evidence-bound request requires persisted artifact hashes')
                 hashes[evidence_id] = artifact['sha256']
             payload['evidenceHashes'] = hashes
@@ -209,6 +218,7 @@ class OrganizationStore(OrganizationBudgetStore, OrganizationRequestStore, Organ
                 ident = _id("obj")
                 conn.execute("INSERT INTO objectives VALUES (?,?,?,?,?,?,?,0)",
                              (ident, key, digest, title, description, level, time.time()))
+                conn.execute('INSERT INTO project_execution_budgets VALUES (?,?)', (ident, self.settings.max_project_runs))
                 manager = self._assign_objective(conn, ident, executive_id, manager_id)
                 conn.execute("INSERT INTO objective_control(objective_id,criteria,status,round,max_replans,max_stages,delivery_mode,required_checks) VALUES (?,?,'pending',0,?,?,?,?)",
                              (ident, json.dumps(criteria), self.settings.max_replans, self.settings.max_stages, delivery_mode, json.dumps(checks)))
@@ -221,6 +231,8 @@ class OrganizationStore(OrganizationBudgetStore, OrganizationRequestStore, Organ
             return build_snapshot(conn, self.settings, objective_id=ident, resolution_options=self.allowed_owner_resolutions)["objectives"][0]
 
     def _eligible(self, conn, request):
+        if request['type'] in {'request.project_test', 'request.source_integrate'} and self.project_stage_unavailability(conn, request):
+            return [], None
         if request['type'] == 'request.validate' and self.edit_validate_unavailability(conn, request):
             return [], None
         if request['type'] == 'request.apply' and self.edit_apply_unavailability(conn, request):
@@ -238,6 +250,10 @@ class OrganizationStore(OrganizationBudgetStore, OrganizationRequestStore, Organ
             if typed is False or self._staff_reason(conn, agent, request['type']):
                 continue
             if (typed is not True and agent["team"] != request["team"]) or request["type"] not in json.loads(agent["accepts"]):
+                continue
+            if request["type"] == "request.test_review" and conn.execute(
+                    "SELECT 1 FROM tasks WHERE objective_id=? AND author_id=?",
+                    (request["objective_id"], agent["id"])).fetchone():
                 continue
             if request["type"] == "request.review" and agent["id"] == author:
                 continue
@@ -356,6 +372,7 @@ class OrganizationStore(OrganizationBudgetStore, OrganizationRequestStore, Organ
             objective['deliveryMode'] = control['delivery_mode']
             objective['requiredChecks'] = json.loads(control['required_checks'])
             objective['projectValidation'] = project_validation_view(conn, request['objective_id'])
+            objective['projectExecution'] = project_execution_view(conn, request['objective_id'])
             if control['amended_scope']:
                 objective['originalDescription'] = objective['description']
                 objective['description'] = control['amended_scope']
@@ -386,7 +403,7 @@ class OrganizationStore(OrganizationBudgetStore, OrganizationRequestStore, Organ
                     if artifact and artifact['objective_id'] == request['objective_id']:
                         evidence.append(artifact)
                     elif artifact is None:
-                        project = project_validation_artifact(conn, ident)
+                        project = project_validation_artifact(conn, ident) or project_execution_artifact(conn, ident)
                         if project is not None and project['objectiveId'] == request['objective_id']:
                             evidence.append(project)
                 if row:
@@ -407,6 +424,8 @@ class OrganizationStore(OrganizationBudgetStore, OrganizationRequestStore, Organ
                     **self._typed_context(conn, request),
                     "agentContext": agent_context_view(conn, request['agent_id']), "dependencies": dependencies,
                     "organization": organization, "maxInflight": self.settings.max_inflight,
+                    "projectPolicy": {'recipes': [asdict(grant) for grant in self.settings.project_grants],
+                                      'runner': 'Linux bubblewrap; fixed single-process Python unittest; no network or host writes'},
                     "managementPolicy": {"maxMembers": self.settings.max_members,
                         "memberCount": len(self._staffing_context()),
                         "maxRequestDepth": self.settings.max_request_depth,
@@ -567,6 +586,8 @@ class OrganizationStore(OrganizationBudgetStore, OrganizationRequestStore, Organ
                         "request.plan": self._finish_plan, "request.review": self._finish_review,
                         "request.hire": self._finish_hire, 'work.edit': self._finish_edit_work,
                         'request.apply': self._finish_apply,
+                        'request.project_test': self._finish_project_test, 'request.test_review': self._finish_test_review,
+                        'request.source_integrate': self._finish_source_integration,
                         'request.integrate': self._finish_integrate, 'request.accept': self._finish_accept}
             if request['type'] == 'request.validate':
                 handler = self._finish_validate
@@ -693,6 +714,9 @@ class OrganizationStore(OrganizationBudgetStore, OrganizationRequestStore, Organ
                     project = project_validation_artifact(conn, ident)
                     if project is not None:
                         return {**project, 'taskId': None, 'kind': 'project_validation'}
+                    execution = project_execution_artifact(conn, ident)
+                    if execution is not None:
+                        return execution
                     raise ValueError("Evidence not found in this organization")
                 return {'id': final['id'], 'objectiveId': final['objective_id'], 'taskId': None,
                         'content': final['content'], 'summary': final['summary'], 'sha256': final['sha256'],

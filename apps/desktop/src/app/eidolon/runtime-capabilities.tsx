@@ -1,5 +1,6 @@
 import { useI18n } from '@/i18n/context'
 
+import { RuntimeProjectCapabilities } from './runtime-project-capabilities'
 import type { OrganizationRuntime } from './types'
 
 export function RuntimeCapabilities({ runtime }: { runtime: OrganizationRuntime }) {
@@ -65,6 +66,7 @@ export function RuntimeCapabilities({ runtime }: { runtime: OrganizationRuntime 
       )}
       <p className="eid-note">{copy.scopeNote}</p>
       {runtime.supportsWorkspaceEdits === true && <p className="eid-note">{copy.edits.scopeNote}</p>}
+      <RuntimeProjectCapabilities runtime={runtime} />
     </section>
   )
 }

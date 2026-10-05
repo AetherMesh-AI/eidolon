@@ -169,23 +169,17 @@ test('requires explicit check replacement, retains its audit, and completes only
   await createObjective(page, completionTitle, true)
   const header = objectiveHeader(page, completionTitle)
   const acceptance = page.getByRole('region', { name: 'Final acceptance', exact: true })
-  const blocked = page.getByRole('button', { name: 'Inspect request: request.accept', exact: true })
-  await expect(blocked).toContainText('have not been executed', { timeout: 90_000 })
+  const blocked = page.getByRole('button', { name: 'Inspect request: request.project_test', exact: true })
+  await expect(blocked).toContainText('Project execution requires', { timeout: 90_000 })
   await expect(blocked).toContainText('Pending intervention')
   await expect(header).not.toContainText('Completed')
   await expect(acceptance.getByText(projectTests, { exact: true })).toBeVisible()
   await expect(acceptance.getByText('No accepted final result yet.', { exact: true })).toBeVisible()
-  expect(stages.map(stage => stage.kind)).toEqual([
-    'request.plan',
-    'work.draft',
-    'request.review',
-    'request.integrate',
-    'request.accept'
-  ])
+  expect(stages.map(stage => stage.kind)).toEqual(['request.plan', 'work.draft', 'request.review'])
   expect(stages.every(stage => stage.requiredChecks.includes('project_tests'))).toBe(true)
   await page.screenshot({ path: testInfo.outputPath('01-unverified-model-approval-blocked.png') })
 
-  await blocked.click()
+  await page.getByRole('button', { name: 'Inspect request: request.review', exact: true }).click()
   const inspector = page.getByRole('complementary', { name: 'Request details' })
   await expect(inspector.getByRole('region', { name: 'Model and evidence audit', exact: true })).toHaveCount(0)
   await inspector.getByRole('button', { name: 'Inspect model and evidence audit', exact: true }).click()
@@ -205,7 +199,7 @@ test('requires explicit check replacement, retains its audit, and completes only
 
   expect(report.status).toBe('complete')
   expect(report.fullEvidence).toBe(true)
-  expect(report.artifacts.length).toBeGreaterThan(1)
+  expect(report.artifacts.length).toBeGreaterThan(0)
   expect(report.artifacts.every(artifact => artifact.id && /^[a-f0-9]{64}$/.test(artifact.sha256))).toBe(true)
   await expect(executionAudit.getByRole('region', { name: 'Model call reservations', exact: true })).toContainText(
     'mock-model'
@@ -215,6 +209,8 @@ test('requires explicit check replacement, retains its audit, and completes only
     body: JSON.stringify(report, null, 2),
     contentType: 'application/json'
   })
+  await inspector.getByRole('button', { name: 'Close request details', exact: true }).click()
+  await blocked.click()
   await inspector.getByRole('combobox', { name: 'Action', exact: true }).selectOption('amend_scope')
   const verification = inspector.getByRole('combobox', { name: 'Verification for amended scope', exact: true })
   await expect(verification).toHaveValue('keep')
@@ -232,7 +228,7 @@ test('requires explicit check replacement, retains its audit, and completes only
   await expect(acceptance.getByText(projectTests, { exact: true })).toBeVisible()
   await page.reload()
   await expect(blocked).toContainText('Pending intervention', { timeout: 60_000 })
-  expect(stages).toHaveLength(5)
+  expect(stages).toHaveLength(3)
   await blocked.click()
   await inspector.getByRole('combobox', { name: 'Action', exact: true }).selectOption('amend_scope')
   await expect(verification).toHaveValue('keep')
@@ -284,7 +280,7 @@ test('requires explicit check replacement, retains its audit, and completes only
   await history.locator('summary').click()
   await expect(history).toHaveText(audit, { useInnerText: true })
   await expect(header).not.toContainText('Completed')
-  expect(stages).toHaveLength(6)
+  expect(stages).toHaveLength(4)
   expect(ownerWrites).toHaveLength(1)
   expect(ownerWrites[0].params.requiredChecks).toEqual([])
   expect(ownerWrites[0].params.acceptanceCriteria).toEqual([amendedCriterion])
@@ -295,27 +291,33 @@ test('requires explicit check replacement, retains its audit, and completes only
   expect(replayed?.ownerResolutions).toHaveLength(1)
   expect(replayed?.status).not.toBe('completed')
   await expect(history).toHaveText(audit, { useInnerText: true })
-  expect(stages).toHaveLength(6)
+  expect(stages).toHaveLength(4)
   running.releasePlan()
 
   await expect(header).toContainText('Completed', { timeout: 90_000 })
   await expect(acceptance.getByText(recommendation, { exact: true })).toBeVisible()
   await expect(history).toHaveText(audit, { useInnerText: true })
   expect(providerErrors).toEqual([])
-  const firstRound = stages.slice(0, 5)
-  const secondRound = stages.slice(5)
-  expect(secondRound.map(stage => stage.kind)).toEqual(firstRound.map(stage => stage.kind))
-  expect(secondRound.map(stage => stage.agentId)).toEqual(firstRound.map(stage => stage.agentId))
+  const firstRound = stages.slice(0, 3)
+  const secondRound = stages.slice(3)
+  expect(secondRound.map(stage => stage.kind)).toEqual([
+    'request.plan',
+    'work.draft',
+    'request.review',
+    'request.integrate',
+    'request.accept'
+  ])
+  expect(secondRound.slice(0, 3).map(stage => stage.agentId)).toEqual(firstRound.map(stage => stage.agentId))
   expect(firstRound[1].agentId).toBe('worker-1')
   expect(firstRound[2].agentId).not.toBe(firstRound[1].agentId)
-  expect(firstRound[4].agentId).not.toBe(firstRound[3].agentId)
+  expect(secondRound[4].agentId).not.toBe(secondRound[3].agentId)
   expect(secondRound.every(stage => stage.requiredChecks.length === 0)).toBe(true)
   await page.screenshot({ path: testInfo.outputPath('04-independently-accepted-revised-scope.png') })
   await page.reload()
   await expect(header).toContainText('Completed', { timeout: 60_000 })
   await history.locator('summary').click()
   await expect(history).toHaveText(audit, { useInnerText: true })
-  expect(stages).toHaveLength(10)
+  expect(stages).toHaveLength(8)
 })
 
 // eslint-disable-next-line no-empty-pattern -- actual Electron lifecycle belongs to this spec

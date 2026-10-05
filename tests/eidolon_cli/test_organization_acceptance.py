@@ -181,11 +181,16 @@ def test_required_project_tests_cannot_be_invented_by_model_approval(tmp_path):
     _objective(store, required_checks=['project_tests'])
     _plan(store)
     _work_and_review(store)
-    accept = _integrate(store)
-    with pytest.raises(ValueError, match='have not been executed'):
-        store.finish(accept, _decision(store, accept))
-    assert store.snapshot()['objectives'][0]['status'] != 'completed'
-    assert store.context(accept)['objective']['requiredChecks'] == ['project_tests']
+    assert store.claim_next() is None
+    snapshot = store.snapshot()
+    gate = next(row for row in snapshot['requests'] if row['type'] == 'request.project_test')
+    assert gate['status'] == 'pending_intervention'
+    assert 'explicitly granted worker' in gate['reason']
+    assert snapshot['objectives'][0]['status'] != 'completed'
+    with store._connect() as conn:
+        with pytest.raises(ValueError, match='have not been executed'):
+            store._verify_required_checks(conn, gate['objectiveId'], ['project_tests'])
+    assert snapshot['objectives'][0]['requiredChecks'] == ['project_tests']
 
 
 def test_old_settled_history_migrates_once_without_reopening(tmp_path):

@@ -395,6 +395,15 @@ class OrganizationProjectStore:
             raise ValueError('Only the matching backend-controlled workspace applier can apply or validate edits')
 
     def _queue_source_handoff(self, conn, request, proposal):
+        if self._automatic_source(conn, request['objective_id']):
+            return
+        if self._execution_required(conn, request['objective_id']):
+            # Test the reviewed managed bytes before asking the owner to alter
+            # originals. Verified handoff can then preserve that same snapshot.
+            from eidolon_cli.organization_project_execution import project_execution_view
+            execution = project_execution_view(conn, request['objective_id'])
+            if execution is None or not execution['review'] or not execution['review']['approved']:
+                return
         objective = conn.execute('SELECT delivery_mode,required_checks FROM objective_control WHERE objective_id=?', (request['objective_id'],)).fetchone()
         # Existing databases retain their original explicit source-integration
         # semantics. The owner-loop migration supplies delivery_mode for new work.
@@ -430,6 +439,8 @@ class OrganizationProjectStore:
 
     def ensure_source_handoff(self, conn, objective_id):
         """Keep the source delivery obligation alive when a later round changes work."""
+        if self._automatic_source(conn, objective_id):
+            return not self.verified_source_integration(conn, objective_id)
         control = conn.execute('SELECT delivery_mode,required_checks FROM objective_control WHERE objective_id=?', (objective_id,)).fetchone()
         proposal = conn.execute('SELECT p.* FROM edit_proposals p JOIN edit_applications a ON a.proposal_id=p.id '
                                'WHERE p.objective_id=? ORDER BY a.created DESC,p.id DESC LIMIT 1', (objective_id,)).fetchone()
@@ -456,7 +467,7 @@ class OrganizationProjectStore:
             return
         manifest, _, _, checked = final_source_manifest(conn, objective_id)
         control = conn.execute('SELECT delivery_mode,required_checks FROM objective_control WHERE objective_id=?', (objective_id,)).fetchone()
-        if (control['delivery_mode'] == 'source_project' or require_source) and not self._verified_final_source(conn, objective_id, manifest, checked):
+        if (control['delivery_mode'] == 'source_project' or require_source) and not (self.verified_source_integration(conn, objective_id) or self._verified_final_source(conn, objective_id, manifest, checked)):
             raise ValueError('Source-project acceptance requires verified exact latest source integration, including retained prior-round edits')
         self.prepare_project_acceptance(conn, objective_id)
 

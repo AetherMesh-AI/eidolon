@@ -9,6 +9,7 @@ from eidolon_cli.organization_acceptance import usage_view
 from eidolon_cli.organization_owner import allowed_resolutions, scope_amendment_view
 from eidolon_cli.organization_requests import request_contract_view
 from eidolon_cli.organization_project_workspace import project_validation_view
+from eidolon_cli.organization_project_execution import project_execution_view
 
 
 def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
@@ -54,6 +55,7 @@ def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
                            'originalDescription': row['description'], 'deliveryMode': control['delivery_mode'],
                            'requiredChecks': json.loads(control['required_checks']),
                            'projectValidation': project_validation_view(conn, row['id'], full=False),
+                           'projectExecution': project_execution_view(conn, row['id'], full=False),
                            'acceptance': {'status': control['status'], 'criteria': json.loads(control['criteria']),
                                           'round': control['round'], 'maxReplans': min(control['max_replans'], settings.max_replans),
                                           'summary': control['summary'], 'deliverableId': control['deliverable_id'],
@@ -124,7 +126,7 @@ def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
                        'managedTeams': list(staff.managed_teams) if staff else [],
                        'lifecycle': lifecycle, 'provider': staff.provider if staff else None,
                        'model': staff.model if staff else None, 'tools': list(staff.tool_grants) if staff else [],
-                       'status': 'offline' if disabled else 'reviewing' if running and running['type'] in {'request.review', 'request.accept'} else 'executing' if running else 'needs_input' if blocked else 'idle',
+                       'status': 'offline' if disabled else 'reviewing' if running and running['type'] in {'request.review', 'request.test_review', 'request.accept'} else 'executing' if running else 'needs_input' if blocked else 'idle',
                        'summary': reason if disabled else running['type'] if running else blocked['reason'] if blocked else 'Persistent agent available for assignment activation.' if lifecycle == 'available' else 'Persistent identity retained; no work in progress.',
                        'objectiveId': (running or blocked)['objective_id'] if running or blocked else None})
     events = [{'id': f"event_{r['id']}", 'objectiveId': r['objective_id'], 'agentId': r['agent_id'],
@@ -161,4 +163,8 @@ def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
                         'readRoots': list(settings.read_roots), 'maxToolCalls': settings.max_tool_calls,
                         'supportsWorkspaceEdits': 'work.edit' in settings.capabilities,
                         'workspaceApplyEnabled': 'patch' in settings.tool_grants and settings.roster is not None,
+                        'projectExecutionEnabled': 'run_tests' in settings.tool_grants and bool(settings.project_grants),
+                        'sourceIntegrationEnabled': 'integrate_source' in settings.tool_grants and bool(settings.project_grants),
+                        'projectRecipes': [{'id': grant.id, 'root': grant.execution['root'], 'files': list(grant.files),
+                                            'recipe': grant.execution['recipe']} for grant in settings.project_grants],
                         'historyLimited': history_count > 25, 'artifactPreviewLimit': 2000}}

@@ -40,11 +40,11 @@ export const en: Translations = {
       notApplied: 'Not applied',
       applied: 'Applied to managed workspace',
       appliedAt: 'Applied at',
-      proposedNote: 'Proposed only. Review and application are not recorded; the source project is unchanged.',
+      proposedNote: 'Proposed only. Review and application are not recorded; the source working tree is unchanged.',
       approvedNote:
-        'The exact proposal was approved. It has not been applied to the managed workspace; the source project is unchanged.',
-      rejectedNote: 'Review rejected this proposal. It has not been applied; the source project is unchanged.',
-      appliedNote: 'Applied to managed workspace; source project unchanged.',
+        'The exact proposal was approved. It has not been applied to the managed workspace; the source working tree is unchanged.',
+      rejectedNote: 'Review rejected this proposal. It has not been applied; the source working tree is unchanged.',
+      appliedNote: 'Applied to managed workspace; source working tree unchanged.',
       staleNote:
         'The managed workspace revision has changed. This proposal has a stale base and requires a new proposal and review before application.',
       advancedNote:

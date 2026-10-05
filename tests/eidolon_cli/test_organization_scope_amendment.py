@@ -22,10 +22,12 @@ def test_owner_check_replacement_is_exact_atomic_durable_and_changes_acceptance(
     assert original['ownerResolutions'][0]['scopeAmendment']['choices']['requiredChecks'] is None
     _plan(store)
     _work_and_review(store)
-    accept = _integrate(store)
-    with pytest.raises(ValueError, match='have not been executed'):
-        store.finish(accept, _decision(store, accept))
-    store.fail(accept, 'Project test execution is still unavailable')
+    assert store.claim_next() is None
+    accept = next(row for row in store.snapshot()['requests'] if row['type'] == 'request.project_test')
+    assert accept['status'] == 'pending_intervention'
+    with store._connect() as conn:
+        with pytest.raises(ValueError, match='have not been executed'):
+            store._verify_required_checks(conn, accept['objectiveId'], ['project_tests'])
     before = store.snapshot()['objectives'][0]
     amendment = dict(required_checks=[], acceptance_criteria=['One evidence-backed recommendation'], idempotency_key='drop')
     with store._write() as conn:
@@ -98,10 +100,12 @@ def test_amendment_validation_replan_and_model_results_cannot_silently_drop_chec
     assert store.context(plan)['objective']['requiredChecks'] == ['project_tests']
     store.finish(plan, {'requiredChecks': [], 'tasks': [{'title': 'Analyze', 'description': 'Evidence-backed result', 'type': 'work.analyze'}]})
     _work_and_review(store)
-    accept = _integrate(store)
-    with pytest.raises(ValueError, match='have not been executed'):
-        store.finish(accept, {**_decision(store, accept), 'requiredChecks': []})
-    store.fail(accept, 'Tests still required')
+    assert store.claim_next() is None
+    accept = next(row for row in store.snapshot()['requests'] if row['type'] == 'request.project_test')
+    assert accept['status'] == 'pending_intervention'
+    with store._connect() as conn:
+        with pytest.raises(ValueError, match='have not been executed'):
+            store._verify_required_checks(conn, accept['objectiveId'], ['project_tests'])
     with pytest.raises(ValueError, match='unavailable'):
         store.resolve(accept['id'], 'amend_scope', 'Only document', required_checks=[], idempotency_key='over-round')
     assert store.snapshot()['objectives'][0]['requiredChecks'] == ['project_tests']

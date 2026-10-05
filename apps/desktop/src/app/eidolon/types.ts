@@ -32,6 +32,7 @@ export interface Objective extends ObjectiveMetadata {
   acceptance?: OrganizationAcceptance
   usage?: OrganizationUsage
   ownerResolutions?: OrganizationOwnerResolution[]
+  projectExecution?: OrganizationProjectExecution | null
   projectValidation?: {
     id: string
     status: 'passed' | 'failed'
@@ -149,9 +150,42 @@ export interface OrganizationArtifact {
   summary: string
   createdAt: string
   objectiveId: string
-  taskId: string
+  taskId: string | null
+  kind?: string
   toolReceipts?: OrganizationToolEvidence[]
   editProposal?: OrganizationEditProposal | null
+}
+export type OrganizationProjectExecutionStatus = 'passed' | 'failed' | 'blocked' | 'unsupported' | 'cancelled' | 'timed_out' | 'unknown'
+/** Backend-owned execution facts. A syntax-validation receipt cannot populate
+ * this record, and a passed run is separate from review and source integration. */
+export interface OrganizationProjectExecution {
+  id: string
+  requestId: string
+  round: number
+  snapshotSha256: string
+  status: OrganizationProjectExecutionStatus
+  receipt: {
+    status: OrganizationProjectExecutionStatus
+    exitCode?: number | null
+    testCount?: number | null
+    durationSeconds?: number | null
+    command?: string[] | null
+    reason?: string | null
+    isolation?: { backend: string; established: boolean; [key: string]: unknown } | null
+  }
+  review: { approved: boolean; reviewerId: string; summary: string; requestId: string } | null
+  sourceIntegration: {
+    evidenceId: string
+    status: 'integrated'
+    sourceBaseCommit: string
+    commit: string
+    tree: string
+    ref: string
+    manifestSha256: string
+    sourceWritesPerformed: true
+    workingTreeWritesPerformed: false
+  } | null
+  files: { path: string; sha256: string; revision: number }[]
 }
 /** Full immutable proposal bytes are available only through organization.evidence.
  * Review and application facts are owned by the managed-workspace runtime. */
@@ -432,6 +466,9 @@ export interface OrganizationRuntime {
   maxToolCalls?: number
   supportsWorkspaceEdits?: boolean
   workspaceApplyEnabled?: boolean
+  projectExecutionEnabled?: boolean
+  sourceIntegrationEnabled?: boolean
+  projectRecipes?: { id: string; root: string; files: string[]; recipe: string }[]
   management?: OrganizationManagement
 }
 export interface OrganizationConnection {

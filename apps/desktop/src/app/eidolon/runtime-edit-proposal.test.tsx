@@ -157,7 +157,7 @@ describe('reviewed managed workspace edit evidence', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Retained edit proposal/ }))
     const panel = within(screen.getByRole('complementary', { name: 'Artifact details' }))
     expect(
-      await panel.findByText('Proposed only. Review and application are not recorded; the source project is unchanged.')
+      await panel.findByText('Proposed only. Review and application are not recorded; the source working tree is unchanged.')
     ).toBeTruthy()
     expect(panel.getByLabelText('Full proposed diff').textContent).toBe(diff)
     expect(panel.getByText('root-1/notes.md')).toBeTruthy()
@@ -165,7 +165,7 @@ describe('reviewed managed workspace edit evidence', () => {
     expect(panel.getByText(currentArtifact.editProposal!.newSha256)).toBeTruthy()
     expect(panel.getByText(currentArtifact.editProposal!.proposalSha256)).toBeTruthy()
     expect(panel.queryByRole('button', { name: 'Download reviewed file' })).toBeNull()
-    expect(panel.queryByText('Applied to managed workspace; source project unchanged.')).toBeNull()
+    expect(panel.queryByText('Applied to managed workspace; source working tree unchanged.')).toBeNull()
 
     currentArtifact = artifact(
       proposal({ reviewStatus: 'rejected', reviewReason: 'The replacement omits a required paragraph.' })
@@ -184,7 +184,7 @@ describe('reviewed managed workspace edit evidence', () => {
     expect(await panel.findByText('Rejected')).toBeTruthy()
     expect(panel.getByText('The replacement omits a required paragraph.')).toBeTruthy()
     expect(panel.queryByRole('button', { name: 'Download reviewed file' })).toBeNull()
-    expect(panel.queryByText('Applied to managed workspace; source project unchanged.')).toBeNull()
+    expect(panel.queryByText('Applied to managed workspace; source working tree unchanged.')).toBeNull()
 
     currentArtifact = artifact(
       proposal({
@@ -206,12 +206,12 @@ describe('reviewed managed workspace edit evidence', () => {
     await act(() => adapter.refresh())
     expect(
       await panel.findByText(
-        'The exact proposal was approved. It has not been applied to the managed workspace; the source project is unchanged.'
+        'The exact proposal was approved. It has not been applied to the managed workspace; the source working tree is unchanged.'
       )
     ).toBeTruthy()
     expect(panel.getByText(currentArtifact.editProposal!.applicationReason!)).toBeTruthy()
     expect(panel.getByRole('button', { name: 'Download reviewed file' })).toBeTruthy()
-    expect(panel.queryByText('Applied to managed workspace; source project unchanged.')).toBeNull()
+    expect(panel.queryByText('Applied to managed workspace; source working tree unchanged.')).toBeNull()
 
     currentArtifact = artifact(
       proposal({
@@ -233,7 +233,7 @@ describe('reviewed managed workspace edit evidence', () => {
       ]
     }
     await act(() => adapter.refresh())
-    expect(await panel.findByText('Applied to managed workspace; source project unchanged.')).toBeTruthy()
+    expect(await panel.findByText('Applied to managed workspace; source working tree unchanged.')).toBeTruthy()
     expect(panel.getByText('Applied workspace revision').nextElementSibling?.textContent).toBe('2')
     expect(screen.getByRole('button', { name: 'Inspect request: request.merge' })).toBeTruthy()
     expect(screen.getByText(/Source merge pending intervention/)).toBeTruthy()
@@ -296,7 +296,7 @@ describe('reviewed managed workspace edit evidence', () => {
     const view = render(<RuntimeEditProposal proposal={edits} />)
     expect(screen.getByText(/This proposal has a stale base/)).toBeTruthy()
     expect(screen.getByText('Workspace revision is stale.')).toBeTruthy()
-    expect(screen.queryByText('Applied to managed workspace; source project unchanged.')).toBeNull()
+    expect(screen.queryByText('Applied to managed workspace; source working tree unchanged.')).toBeNull()
     expect(screen.getByText('Current workspace revision').nextElementSibling?.textContent).toBe('3')
     view.rerender(
       <RuntimeEditProposal
@@ -322,7 +322,7 @@ describe('reviewed managed workspace edit evidence', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Download reviewed file' }))
     expect(screen.getByRole('alert').textContent).toBe('The download could not be prepared. Try again.')
     expect(screen.getByRole('button', { name: 'Download reviewed file' })).toBeTruthy()
-    expect(screen.queryByText('Applied to managed workspace; source project unchanged.')).toBeNull()
+    expect(screen.queryByText('Applied to managed workspace; source working tree unchanged.')).toBeNull()
   })
 
   it('ignores earlier evidence after a newer refresh and never reopens a dismissed inspector', async () => {
@@ -385,14 +385,14 @@ describe('reviewed managed workspace edit evidence', () => {
         title="Edit evidence"
       />
     )
-    await screen.findByText('Applied to managed workspace; source project unchanged.')
+    await screen.findByText('Applied to managed workspace; source working tree unchanged.')
     fireEvent.click(screen.getByRole('button', { name: 'Refresh artifact' }))
     expect(await screen.findByRole('alert')).toBeTruthy()
     expect(screen.getByText('The runtime returned an invalid edit proposal.')).toBeTruthy()
-    expect(screen.queryByText('Applied to managed workspace; source project unchanged.')).toBeNull()
+    expect(screen.queryByText('Applied to managed workspace; source working tree unchanged.')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Download reviewed file' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Retry artifact' }))
-    expect(await screen.findByText('Applied to managed workspace; source project unchanged.')).toBeTruthy()
+    expect(await screen.findByText('Applied to managed workspace; source working tree unchanged.')).toBeTruthy()
   })
 
   it('rejects malformed or contradictory proposal bytes and fences a late read across profile connections', async () => {
@@ -455,7 +455,7 @@ describe('reviewed managed workspace edit evidence', () => {
     )
     expect(screen.getByRole('region', { name: '単一ファイルの編集提案' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'レビュー済みファイルをダウンロード' })).toBeTruthy()
-    expect(screen.queryByText('Applied to managed workspace; source project unchanged.')).toBeNull()
+    expect(screen.queryByText('Applied to managed workspace; source working tree unchanged.')).toBeNull()
   })
 })
 

@@ -1723,6 +1723,8 @@ DEFAULT_CONFIG = {
         "capabilities": ["work.draft", "work.analyze"],
         "tool_grants": [],
         "read_roots": [],
+        "project_grants": [],
+        "max_project_runs": 4,
         "max_tool_calls": 8,
         "max_tool_result_chars": 12000,
     },

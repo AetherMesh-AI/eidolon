@@ -30,7 +30,7 @@ _AUTHORITY_FIELDS = ('team', 'capabilities', 'roster', 'tool_grants', 'read_root
                      'max_replans', 'max_stages', 'max_owner_resolutions', 'max_output_tokens',
                      'max_members', 'max_request_depth', 'max_requests_per_stage',
                      'max_context_tokens', 'max_model_calls', 'max_total_tokens', 'objective_timeout_seconds',
-                     'max_cost_usd', 'model_costs')
+                     'max_cost_usd', 'model_costs', 'project_grants', 'max_project_runs')
 
 
 def _fingerprint(settings):
@@ -57,6 +57,8 @@ def persisted_settings(conn):
             for staff in values['roster'])
     from eidolon_cli.organization_budget import parse_model_costs
     values['model_costs'] = parse_model_costs(values.get('model_costs', []))
+    from eidolon_cli.organization_project_config import parse_project_grants
+    values['project_grants'] = parse_project_grants(values.get('project_grants', []), len(values['read_roots']))
     # Legacy ledgers may already have more than the newly introduced default.
     # Their existing explicit members survive migration; the hard bound is 64.
     if 'max_members' not in values:

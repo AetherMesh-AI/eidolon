@@ -148,6 +148,12 @@ class OrganizationAcceptanceStore:
             raise ValueError('Objective acceptance requires its retained current-round aggregate project validation')
         if proof is not None:
             rows.append(project_validation_artifact(conn, proof['id']))
+        if self._execution_required(conn, objective_id):
+            _, execution = self.verify_project_tests(conn, objective_id)
+            rows.append(execution)
+        source = self.current_source_evidence(conn, objective_id)
+        if source is not None:
+            rows.append(source)
         return rows
 
     def _maybe_integrate(self, conn, objective_id):
@@ -159,6 +165,10 @@ class OrganizationAcceptanceStore:
             return
         tasks = current_tasks(conn, objective_id)
         if not tasks or any(task['status'] != 'completed' for task in tasks):
+            return
+        if self.ensure_project_execution(conn, objective_id):
+            return
+        if self.ensure_source_integration(conn, objective_id):
             return
         if self.ensure_source_handoff(conn, objective_id):
             return
@@ -247,7 +257,7 @@ class OrganizationAcceptanceStore:
 
     def _verify_required_checks(self, conn, objective_id, checks):
         if 'project_tests' in checks:
-            raise ValueError('Required project tests have not been executed by an authorized runtime; model approval cannot satisfy this check')
+            self.verify_project_tests(conn, objective_id)
         # The project module validates current per-path heads across rounds.
         # Historical failed/superseded proposals remain evidence, not obligations
         # that can only be satisfied by falsifying their original observations.
@@ -292,6 +302,6 @@ class OrganizationAcceptanceStore:
             values = [usage[key] for key in ('inputTokens', 'outputTokens')]
             if any(value is not None and (type(value) is not int or not 0 <= value <= 2**63-1) for value in values):
                 raise ValueError('Token usage must be nonnegative integers or unknown')
-        if request['type'] in {'request.hire', 'request.apply', 'request.validate'}:
+        if request['type'] in {'request.hire', 'request.apply', 'request.validate', 'request.project_test', 'request.source_integrate'}:
             values = [0, 0]
         conn.execute('UPDATE objective_usage SET input_tokens=?,output_tokens=?,completed=1 WHERE request_id=? AND token=?', (*values, request['id'], request['token']))
