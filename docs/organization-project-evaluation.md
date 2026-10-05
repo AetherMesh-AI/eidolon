@@ -15,8 +15,10 @@ Loopback proxy bypass is scoped to the fixture lifetime and restored afterward;
 live-provider runs retain the caller's deliberate proxy settings.
 
 The fixed `python_unittest` recipe requires the supported Linux OS-isolation
-backend. Unsupported hosts retain a real failure receipt and exit 2, never fall
+backend. Unsupported hosts retain an explicit intervention and exit 2, never fall
 back to running project code directly on the host, and never integrate source.
+Windows stops at the earlier POSIX no-follow file-read gate, before worker or
+test execution; hosts reaching the test runner retain its actual failure receipt.
 Exit 0 requires exact delivered source and unchanged tests, actual isolated test
 execution, independent review and acceptance, and a verified new Git branch.
 Other unsuccessful outcomes exit 1. The temporary project/profile/branch are

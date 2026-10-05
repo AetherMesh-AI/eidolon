@@ -533,6 +533,8 @@ class OrganizationStore(OrganizationProjectExecutionStore, OrganizationBudgetSto
                 raise ValueError('Owner resolution limit reached; create a revised objective')
             if self._typed_context(conn, row)['requestContract'].get('parentRequestId') is not None:
                 raise ValueError('Linked requests require an exact response, not a replay')
+            if row['type'] == 'request.project_failed':
+                raise ValueError('Failed project tests require a bounded replan and new reviewed snapshot; this diagnostic gate cannot be replayed')
             if row['type'] == 'request.merge':
                 raise ValueError('Source handoffs require an exact record_handoff resolution, not a replay')
             conn.execute("UPDATE requests SET status='queued',reason=NULL,available=0,agent_id=NULL WHERE id=?", (request_id,))

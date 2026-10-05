@@ -54,7 +54,7 @@ def allowed_resolutions(conn, request, settings):
     def descriptor(action, label, text=False):
         return {'action': action, 'label': label, 'requiresText': text, 'requiresEvidence': False}
     result = []
-    if request['type'] != 'request.merge' and request['attempts'] < settings.max_attempts and not json.loads(request['payload']).get('budgetExhausted'):
+    if request['type'] not in {'request.merge', 'request.project_failed'} and request['attempts'] < settings.max_attempts and not json.loads(request['payload']).get('budgetExhausted'):
         result.append(descriptor('retry_configuration', 'Retry after fixing configuration'))
         if request['type'] in {'request.plan', 'request.review', 'request.integrate', 'request.accept'} or request['type'].startswith('work.'):
             result.append(descriptor('provide_input', 'Provide missing input', True))

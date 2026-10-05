@@ -18,6 +18,8 @@ import {
 import { startMockServer } from './mock-server'
 import { exactOrganizationEvidence, type OrganizationEvidenceContext } from './organization-evidence'
 import { organizationProviderTarget } from './organization-provider-target'
+import { projectProviderResponse } from './organization-project-response'
+import { createProjectSource } from './organization-project-source'
 
 export const projectTitle = 'Fix addition and verify the reviewed source branch'
 export const projectCriterion =
@@ -231,8 +233,7 @@ export async function setupProjectFixture(options: { budgetLimited?: boolean; ho
   const pendingReplies: Array<() => void> = []
   const mock = await startMockServer()
   const sandbox = createSandbox('organization-project')
-  const source = path.join(sandbox.root, 'source')
-  fs.mkdirSync(source)
+  const source = createProjectSource(sandbox.root)
   fs.writeFileSync(path.join(source, 'app.py'), originalApp)
   fs.writeFileSync(path.join(source, 'test_app.py'), projectTests)
   const git = (...args: string[]) =>
@@ -270,22 +271,13 @@ export async function setupProjectFixture(options: { budgetLimited?: boolean; ho
             evidenceIds: submitted.context.evidence?.map(row => row.id) ?? []
           })
           const message = responseFor(kind, submitted.context, payload!, runEvidence)
+          const completion = projectProviderResponse(message, stages.length, payload!.stream)
           const reply = () => {
             if (response.destroyed) {
               return
             }
-            assert.equal(payload!.stream, false)
             response.writeHead(200, { 'Content-Type': 'application/json' })
-            response.end(
-              JSON.stringify({
-                id: `project-fixture-${stages.length}`,
-                object: 'chat.completion',
-                created: 1,
-                model: 'mock-model',
-                choices: [{ index: 0, message, finish_reason: 'tool_calls' in message ? 'tool_calls' : 'stop' }],
-                usage: { prompt_tokens: 30, completion_tokens: 20, total_tokens: 50 }
-              })
-            )
+            response.end(JSON.stringify(completion))
           }
           if (options.holdPlan && kind === 'request.plan') {
             pendingReplies.push(reply)

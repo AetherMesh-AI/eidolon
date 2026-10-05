@@ -17,14 +17,17 @@ def _rpc(method, **params):
     return response['result']
 
 
-def _wait(check):
-    deadline = time.monotonic() + 25
+def _wait(check, *, diagnostics=None):
+    # Native Windows may spend several transport-setup cycles completing both
+    # planning rounds. Require the same terminal state without a 25s host race.
+    deadline = time.monotonic() + 90
     while time.monotonic() < deadline:
         value = check()
         if value:
             return value
         time.sleep(0.02)
-    raise AssertionError('The real organization flow did not settle')
+    detail = json.dumps(diagnostics(), default=str)[:16000] if diagnostics else 'No additional diagnostic callback'
+    raise AssertionError('The real organization flow did not settle; bounded diagnostics: ' + detail)
 
 
 @pytest.fixture
@@ -147,7 +150,8 @@ def test_real_provider_individual_approvals_cannot_complete_conflicting_objectiv
     received, errors = local_provider
     _rpc('organization.create', title='Reconcile conflicting analyses', acceptanceCriteria=['One consistent launch date'], idempotencyKey='conflicts')
     store = services.get_service().store
-    _wait(lambda: store.snapshot()['objectives'][0]['status'] == 'needs_input')
+    _wait(lambda: store.snapshot()['objectives'][0]['status'] == 'needs_input',
+          diagnostics=lambda: {'snapshot': store.snapshot(), 'stages': [kind for kind, _ in received], 'errors': errors})
     snapshot = store.snapshot()
     assert not errors
     objective = snapshot['objectives'][0]

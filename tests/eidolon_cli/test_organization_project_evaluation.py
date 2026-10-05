@@ -1,8 +1,11 @@
 """Opt-in billing and exact, nonbillable real-pipeline fixture evaluation."""
 import json
+import logging
 import os
 from pathlib import Path
 import socket
+import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -82,7 +85,20 @@ def test_explicit_live_route_uses_only_current_selected_secret_and_disposable_co
         reset_secret_scope(scope)
 
 
-def test_default_evaluation_runs_real_local_pipeline_without_credentials_or_external_network(tmp_path, monkeypatch, capsys):
+@pytest.mark.parametrize("symlinked_parent", [
+    pytest.param(False, id="plain_temp"),
+    pytest.param(True, id="linux_symlink_temp", marks=pytest.mark.linux_only),
+    pytest.param(True, id="macos_symlink_temp", marks=pytest.mark.macos_only),
+])
+def test_default_evaluation_runs_real_local_pipeline_without_credentials_or_external_network(tmp_path, monkeypatch, capsys, symlinked_parent):
+    if symlinked_parent:
+        real_parent, alias_parent = tmp_path / "real-temp-parent", tmp_path / "alias-temp-parent"
+        real_parent.mkdir()
+        alias_parent.symlink_to(real_parent.resolve(), target_is_directory=True)
+        temporary_directory = evaluation.tempfile.TemporaryDirectory
+        # Change only this entrypoint's factory, not the product runner's temp paths.
+        monkeypatch.setattr(evaluation, "tempfile", SimpleNamespace(
+            TemporaryDirectory=lambda **kwargs: temporary_directory(dir=alias_parent, **kwargs)))
     monkeypatch.setenv("OPENAI_API_KEY", "must-never-be-used")
     monkeypatch.setenv("OPENAI_BASE_URL", "https://must-never-be-contacted.invalid")
     # A TEST-NET proxy would receive loopback requests without the scoped bypass.
@@ -106,6 +122,10 @@ def test_default_evaluation_runs_real_local_pipeline_without_credentials_or_exte
     def inspect_disposable_files(root, route, **kwargs):
         report = run(root, route, **kwargs)
         temporary_roots.append(root)
+        import eidolon_logging as logs
+        assert not any(getattr(handler, "baseFilename", None)
+                       and Path(handler.baseFilename).resolve().is_relative_to(root)
+                       for handler in logs._queued_file_handlers)
         assert not (root / "profile" / ".env").exists()
         for file in root.rglob("*"):
             if file.is_file():
@@ -123,8 +143,14 @@ def test_default_evaluation_runs_real_local_pipeline_without_credentials_or_exte
     assert connections and report["billing"] == "nonbillable_loopback_only"
     assert report["mode"] == "deterministic_local_fixture"
     assert report["fixtureErrors"] == []
-    assert "work.inspect" in report["fixtureStages"] and "work.edit" in report["fixtureStages"]
-    assert "request.review" in report["fixtureStages"]
+    if sys.platform == "win32":
+        # Native Windows correctly blocks at the earlier no-follow read gate.
+        assert report["fixtureStages"] == ["request.plan"]
+        assert report["projectExecution"] is None
+        assert any("POSIX no-follow directory-descriptor support" in reason for reason in report["interventions"])
+    else:
+        assert "work.inspect" in report["fixtureStages"] and "work.edit" in report["fixtureStages"], report["interventions"]
+        assert "request.review" in report["fixtureStages"]
     assert report["checks"]["originalSourceAndIndexUnchanged"]
     assert report["checks"]["serviceStopped"] and report["checks"]["noRemotePush"]
     assert "must-never-be-used" not in report_path.read_text()
@@ -136,6 +162,30 @@ def test_default_evaluation_runs_real_local_pipeline_without_credentials_or_exte
         assert code == 2 and report["outcome"] == "unsupported"
         assert report["objectiveStatus"] == "needs_input"
         assert report["sourceIntegration"] is None and report["deliveredFiles"] is None
+        assert report["testReview"] is None and report["finalDeliverable"] is None
+        assert not report["checks"]["objectiveAccepted"]
         assert not report["checks"]["isolatedTestsPassed"]
         assert "request.test_review" not in report["fixtureStages"]
         assert "request.integrate" not in report["fixtureStages"]
+
+
+def test_disposable_profile_log_cleanup_preserves_callers_logging(tmp_path):
+    import eidolon_logging as logs
+
+    profile = tmp_path / "disposable"
+    profile.mkdir()
+    caller = logging.FileHandler(tmp_path / "caller.log")
+    owned = logging.FileHandler(profile / "evaluation.log")
+    logs._register_queued_handler(caller)
+    logs._register_queued_handler(owned)
+    try:
+        logging.getLogger("evaluation-test").warning("Flush before disposing")
+        evaluation.close_profile_logs(profile)
+        assert owned.stream is None and owned not in logs._queued_file_handlers
+        assert caller in logs._queued_file_handlers and caller.stream is not None
+        logging.getLogger("evaluation-test").warning("Caller logging still works")
+        logs.flush_log_queue()
+        assert "Flush before disposing" in (profile / "evaluation.log").read_text()
+        assert "Caller logging still works" in (tmp_path / "caller.log").read_text()
+    finally:
+        evaluation.close_profile_logs(tmp_path)

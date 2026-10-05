@@ -528,3 +528,37 @@ def test_manual_source_handoff_after_test_review_preserves_exact_test_snapshot(t
                              'evidenceIds': ids} for item in criteria], 'conflicts': []})
     assert store.snapshot()['objectives'][0]['status'] == 'completed'
     assert 'integrate_source' not in store.settings.tool_grants
+
+
+@pytest.mark.linux_only
+def test_failed_project_gate_requires_bounded_replan_instead_of_replay(tmp_path, monkeypatch):
+    from eidolon_cli import organization_project_runner as runner
+    store, _, objective, _ = _reviewed_project(tmp_path)
+    dispatched = []
+    def failed(files, grant, cancel):
+        dispatched.append(files)
+        return {**_simulated_terminal_result(files), 'status': 'failed', 'exitCode': 1}
+    monkeypatch.setattr(runner, 'run_project_tests', failed)
+    claim = store.claim_next()
+    store.run_project_stage(claim, threading.Event())
+    assert store.finish(claim, {})
+    with store._connect() as conn:
+        gate = conn.execute("SELECT * FROM requests WHERE objective_id=? AND type='request.project_failed'",
+                            (objective['id'],)).fetchone()
+        assert gate['status'] == 'pending_intervention'
+        actions = {item['action'] for item in store.allowed_owner_resolutions(conn, gate)}
+        assert 'retry_configuration' not in actions
+        assert {'request_replan', 'amend_scope'}.issubset(actions)
+        identifier = gate['id']
+    with pytest.raises(ValueError):
+        store.resolve(identifier, 'retry_configuration', idempotency_key='invalid-failed-gate-retry')
+    with pytest.raises(ValueError):
+        store.retry(identifier, idempotency_key='invalid-legacy-retry')
+    assert store.resolve(identifier, 'request_replan', 'Revise the reviewed implementation and test coverage',
+                         idempotency_key='reviewed-project-replan')
+    plan = store.claim_next()
+    assert plan['type'] == 'request.plan' and json.loads(plan['payload'])['round'] == 1
+    assert len(dispatched) == 1
+    with store._connect() as conn:
+        assert conn.execute('SELECT status FROM requests WHERE id=?', (identifier,)).fetchone()[0] == 'cancelled'
+        assert conn.execute('SELECT count(*) FROM project_run_starts').fetchone()[0] == 1

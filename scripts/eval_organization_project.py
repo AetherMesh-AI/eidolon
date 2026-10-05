@@ -216,14 +216,39 @@ def isolated_profile(home, secret):
     try:
         yield
     finally:
-        for key, value in previous.items():
-            if value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = value
-        reset_secret_scope(secret_token)
-        reset_secret_scope_required(required_token)
-        reset_eidolon_home_override(home_token)
+        try:
+            close_profile_logs(home)
+        finally:
+            for key, value in previous.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+            reset_secret_scope(secret_token)
+            reset_secret_scope_required(required_token)
+            reset_eidolon_home_override(home_token)
+
+
+def close_profile_logs(home):
+    """Release this disposable profile's log/lock handles before Windows cleanup."""
+    import eidolon_logging as logs
+    with logs._queue_state_lock:
+        owned = [handler for handler in logs._queued_file_handlers
+                 if getattr(handler, "baseFilename", None)
+                 and Path(handler.baseFilename).resolve().is_relative_to(home.resolve())]
+        if not owned:
+            return
+        listener = logs._queue_listener
+        if listener is not None:
+            listener.stop()
+            logs._queue_listener = None
+        logs._queued_file_handlers[:] = [handler for handler in logs._queued_file_handlers if handler not in owned]
+        try:
+            for handler in owned:
+                handler.close()
+        finally:
+            if listener is not None and logs._queued_file_handlers:
+                logs._start_queue_listener_locked()
 
 
 def configuration(source, route):
@@ -316,7 +341,8 @@ def run_evaluation(root, route, *, live=False):
               "noRemotePush": not integration or integration["remotePushPerformed"] is False}
     reasons = [row["reason"] for row in snapshot["requests"] if row["status"] == "pending_intervention"]
     unsupported = bool(run and run["status"] == "unsupported") or (
-        sys.platform == "win32" and not run and any("unsupported" in str(reason).lower() or "unavailable" in str(reason).lower() for reason in reasons))
+        sys.platform == "win32" and not run and any(
+            "POSIX no-follow directory-descriptor support" in str(reason) for reason in reasons))
     no_extra_branch = _git(source, "for-each-ref", "--format=%(refname)", "refs/heads/") == "refs/heads/main"
     safe_unsupported = unsupported and original_unchanged and stopped and not integration and no_extra_branch
     outcome = "passed" if all(checks.values()) else "unsupported" if safe_unsupported else "failed"
@@ -342,11 +368,14 @@ def main(argv=None):
     except (ValueError, OSError) as error:
         cli.error(str(error))
     with tempfile.TemporaryDirectory(prefix="eidolon-project-evaluation-") as directory, redirect_stdout(sys.stderr):
+        # macOS temp paths may traverse /var -> /private/var. Canonicalize only
+        # this freshly owned directory; granted project paths still fail closed.
+        root = Path(directory).resolve()
         if route:
-            report = run_evaluation(Path(directory), route, live=True)
+            report = run_evaluation(root, route, live=True)
         else:
             with local_provider() as (fixture, calls, errors):
-                report = run_evaluation(Path(directory), fixture)
+                report = run_evaluation(root, fixture)
                 report.update(fixtureStages=calls, fixtureErrors=errors)
                 if errors:
                     report["outcome"] = "failed"
