@@ -148,6 +148,7 @@ test.beforeAll(async () => {
   }
 })
 
+// eslint-disable-next-line no-empty-pattern -- fixture lifecycle is managed by this spec
 test.afterEach(async ({}, testInfo) => {
   await testInfo.attach('organization-provider-coverage', {
     body: JSON.stringify({ stages, providerErrors, providerRequests, testStatus: testInfo.status,
@@ -164,6 +165,7 @@ test.afterAll(async () => {
   fixture = null
 })
 
+// eslint-disable-next-line no-empty-pattern -- fixture lifecycle is managed by this spec
 test('preserves unsupported work and grants across navigation, dismissal, reload and cancellation', async ({}, testInfo) => {
   const page = fixture!.page
   const navigation = page.getByRole('complementary', { name: 'Eidolon navigation' })
@@ -200,6 +202,7 @@ test('preserves unsupported work and grants across navigation, dismissal, reload
   })
   await expect.poll(() => page.evaluate(() => ({ width: innerWidth, height: innerHeight }))).toEqual({ width: 1220, height: 800 })
   await nativeWindow.dispose()
+
   const assertRailLayout = async (name: string) => {
     const geometry = await navigation.evaluate(rail => {
       const heading = rail.querySelector('section h2')!.getBoundingClientRect()
