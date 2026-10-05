@@ -379,7 +379,10 @@ test('configures scoped staffing, answers the requesting worker, and retains mem
     await inspector.getByRole('link', { name: 'Open objective', exact: true }).click()
   } else {
     await primary.getByRole('link', { name: 'Objectives', exact: true }).click()
-    await page.getByRole('link', { name: objectiveTitle, exact: true }).click()
+    await page
+      .getByRole('link')
+      .filter({ has: page.getByText(objectiveTitle, { exact: true }) })
+      .click()
   }
 
   const header = page

@@ -29,7 +29,12 @@ function objectiveHeader(page: Page, title: string) {
 
 async function openObjective(page: Page, title: string) {
   await primary(page).getByRole('link', { name: 'Objectives', exact: true }).click()
-  await page.getByRole('link', { name: title, exact: true }).click()
+  // The real row's accessible name also includes its description and status.
+  // Match its exact title child without treating that extra context as absence.
+  await page
+    .getByRole('link')
+    .filter({ has: page.getByText(title, { exact: true }) })
+    .click()
   await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
 }
 
@@ -125,6 +130,15 @@ test.afterEach(async ({}, testInfo) => {
     })
 
     if (!running.fixture.page.isClosed()) {
+      const uiState = await running.fixture.page.locator('body').ariaSnapshot()
+      await testInfo.attach('completion-ui-state', { body: uiState, contentType: 'text/plain' })
+
+      if (testInfo.status !== testInfo.expectedStatus) {
+        // Capture before closing Electron; reporter-generated error context
+        // runs later and cannot inspect a renderer already torn down here.
+        console.error(`Completion failure state (${testInfo.title}):\n${uiState}`)
+      }
+
       await running.fixture.page.screenshot({ path: testInfo.outputPath('native-completion-final-state.png') })
     }
   } finally {
@@ -231,8 +245,18 @@ test('requires explicit check replacement, retains its audit, and completes only
   await expect(inspector).toContainText('It does not run or pass any test.')
   await page.screenshot({ path: testInfo.outputPath('02-explicit-verification-replacement.png') })
   await inspector.getByRole('button', { name: 'Submit response', exact: true }).click()
-  await expect(inspector).toHaveCount(0)
   await expect.poll(() => stages.filter(stage => stage.kind === 'request.plan').length).toBe(2)
+  await expect(inspector.getByRole('button', { name: 'Submit response', exact: true })).toHaveCount(0)
+
+  // A successful snapshot can unmount the response form before its promise
+  // closes the inspector, leaving the cancelled original request as a receipt.
+  // Dismiss that read-only receipt explicitly, as in the typed-request flow.
+  if (await inspector.isVisible()) {
+    await expect(inspector).toContainText('Cancelled')
+    await inspector.getByRole('button', { name: 'Close request details', exact: true }).click()
+  }
+
+  await expect(inspector).toHaveCount(0)
   const revisedPlan = stages[stages.length - 1]
   expect(revisedPlan.scope).toBe(amendedScope)
   expect(revisedPlan.requiredChecks).toEqual([])
