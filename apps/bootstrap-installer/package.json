@@ -1,7 +1,7 @@
 {
   "name": "@aethermesh/bootstrap-installer",
   "private": true,
-  "version": "0.2.0-alpha",
+  "version": "0.3.0-alpha",
   "description": "Eidolon Setup, an experimental desktop agent manager installer from AetherMesh.",
   "type": "module",
   "scripts": {

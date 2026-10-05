@@ -1,6 +1,6 @@
 [package]
 name = "eidolon-bootstrap"
-version = "0.2.0-alpha"
+version = "0.3.0-alpha"
 description = "Eidolon Setup, an experimental desktop agent manager installer"
 authors = ["AetherMesh contributors", "Nous Research (upstream Hermes Agent)"]
 edition = "2021"

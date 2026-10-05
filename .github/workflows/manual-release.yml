@@ -12,10 +12,10 @@ on:
           - new-release
           - replacement-build-only
       version_tag:
-        description: 'New tag must match the declared release, e.g. v0.2.0-alpha; historical replacement uses alpha-v0.1.0'
+        description: 'New tag must match the declared release, e.g. v0.3.0-alpha; historical replacement uses alpha-v0.1.0'
         type: string
         required: true
-        default: v0.2.0-alpha
+        default: v0.3.0-alpha
       changelog:
         description: 'Release notes as Markdown CONTENT, not a filename; never stored in the repository'
         type: string

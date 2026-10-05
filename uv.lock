@@ -1670,7 +1670,7 @@ wheels = [
 
 [[package]]
 name = "eidolon-agent"
-version = "0.2.0a0"
+version = "0.3.0a0"
 source = { editable = "." }
 dependencies = [
     { name = "certifi" },

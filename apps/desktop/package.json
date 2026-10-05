@@ -2,7 +2,7 @@
   "name": "eidolon",
   "productName": "Eidolon",
   "private": true,
-  "version": "0.2.0-alpha",
+  "version": "0.3.0-alpha",
   "description": "Eidolon, an experimental desktop agent manager from AetherMesh.",
   "author": "AetherMesh contributors",
   "repository": {

@@ -12,7 +12,7 @@ from pathlib import Path
 import re
 import subprocess
 
-RELEASE_VERSION = '0.2.0-alpha'
+RELEASE_VERSION = '0.3.0-alpha'
 COMPATIBILITY_VERSION = RELEASE_VERSION
 CHANNEL = 'alpha'
 REPOSITORY = 'AetherMesh-AI/Eidolon'
