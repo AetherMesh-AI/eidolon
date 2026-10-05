@@ -6,7 +6,7 @@ from eidolon_cli.organization_roster import configured_staff, staff_unavailabili
 from eidolon_cli.organization_identity import agent_identity_view, agent_context_view, task_assignment_view, objective_assignment_view
 from eidolon_cli.organization_edits import evidence_proposal
 from eidolon_cli.organization_acceptance import usage_view
-from eidolon_cli.organization_owner import allowed_resolutions
+from eidolon_cli.organization_owner import allowed_resolutions, scope_amendment_view
 from eidolon_cli.organization_requests import request_contract_view
 from eidolon_cli.organization_project_workspace import project_validation_view
 
@@ -47,7 +47,7 @@ def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
             if history_count > 25:
                 continue
         final = conn.execute('SELECT * FROM objective_deliverables WHERE id=?', (control['deliverable_id'],)).fetchone()
-        resolutions = [{'id': item['id'], 'requestId': item['request_id'], 'action': item['action'], 'text': item['text'], 'evidenceIds': json.loads(item['evidence_ids']), 'createdAt': _iso(item['created'])} for item in conn.execute('SELECT * FROM owner_resolutions WHERE objective_id=? ORDER BY created', (row['id'],))]
+        resolutions = [{'id': item['id'], 'requestId': item['request_id'], 'action': item['action'], 'text': item['text'], 'evidenceIds': json.loads(item['evidence_ids']), 'createdAt': _iso(item['created']), 'scopeAmendment': scope_amendment_view(conn, item['id'])} for item in conn.execute('SELECT * FROM owner_resolutions WHERE objective_id=? ORDER BY created', (row['id'],))]
         acceptance_review = conn.execute('SELECT * FROM objective_acceptances WHERE objective_id=? AND round=? ORDER BY created DESC LIMIT 1', (row['id'], control['round'])).fetchone()
         done = sum(t['status'] == 'completed' for t in work)
         objectives.append({'id': row['id'], 'title': row['title'], 'description': control['amended_scope'] or row['description'],

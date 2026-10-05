@@ -217,3 +217,44 @@ def test_managed_project_proof_is_rpc_retrievable_and_bound_into_final_acceptanc
         assert not any(row['type'] == 'request.merge' for row in reopened.snapshot()['requests'])
     finally:
         assert service.stop()
+
+
+def test_real_rpc_requires_explicit_owner_check_removal_then_accepts_amended_scope(local_provider):
+    received, errors = local_provider
+    _rpc('organization.create', title='Write launch brief', description='Launch details and required project tests.',
+         requiredChecks=['project_tests'], acceptanceCriteria=['State one exact owner-confirmed launch date'], idempotencyKey='tests-required')
+    store = services.get_service().store
+    first = _wait(lambda: next((row for row in store.snapshot()['requests'] if row['status'] == 'pending_intervention'), None))
+    _rpc('organization.resolve', id=first['id'], action='provide_input', text='Launch on Monday, October 12.', idempotencyKey='date')
+    pending = _wait(lambda: next((row for row in store.snapshot()['requests'] if row['type'] == 'request.accept' and row['status'] == 'pending_intervention'), None))
+    assert store.snapshot()['objectives'][0]['status'] == 'needs_input'
+    assert 'have not been executed' in pending['reason']
+    malformed = gateway.dispatch({'jsonrpc': '2.0', 'id': 1, 'method': 'organization.resolve', 'params': {
+        'id': pending['id'], 'action': 'request_replan', 'text': 'Skip tests', 'requiredChecks': [], 'idempotencyKey': 'forbidden'}})
+    assert malformed['error']['code'] == -32602
+    _wait(lambda: not services.get_service()._running)
+    params = dict(id=pending['id'], action='amend_scope', text='Only document the confirmed launch date; project tests are outside this scope.',
+                  requiredChecks=[], acceptanceCriteria=['State one exact owner-confirmed launch date'], idempotencyKey='narrow')
+    _rpc('organization.resolve', **params)
+    _rpc('organization.resolve', **params)
+    _wait(lambda: store.snapshot()['objectives'][0]['status'] == 'completed')
+    result = _rpc('organization.snapshot')['objectives'][0]
+    assert not errors and result['requiredChecks'] == []
+    amendments = [row for row in result['ownerResolutions'] if row['action'] == 'amend_scope']
+    assert len(amendments) == 1
+    audit = amendments[0]['scopeAmendment']
+    assert audit['before']['requiredChecks'] == ['project_tests'] and audit['after']['requiredChecks'] == []
+    assert audit['before']['round'] == 0 and audit['after']['round'] == 1
+    accepted_context = [context for kind, context in received if kind == 'request.accept'][-1]
+    assert accepted_context['objective']['description'] == params['text']
+    assert accepted_context['objective']['requiredChecks'] == []
+    assert result['result'] == _rpc('organization.evidence', id=result['acceptance']['deliverableId'])['content']
+    final_request = next(row for row in store.snapshot()['requests'] if row['type'] == 'request.accept' and row['status'] == 'completed')
+    execution_audit = _rpc('organization.executionAudit', id=final_request['id'])
+    assert execution_audit['requestId'] == final_request['id'] and execution_audit['modelCalls']
+    assert execution_audit['contexts'][-1]['report']['status'] == 'complete'
+    assert any(item['id'] == result['acceptance']['deliverableId'] for item in execution_audit['contexts'][-1]['report']['artifacts'])
+    wrong_profile = gateway.dispatch({'jsonrpc': '2.0', 'id': 1, 'method': 'organization.executionAudit', 'params': {'id': 'foreign-request'}})
+    assert wrong_profile['error']['code'] == -32602
+    assert services.stop_services()
+    assert _rpc('organization.snapshot')['objectives'][0]['ownerResolutions'] == result['ownerResolutions']

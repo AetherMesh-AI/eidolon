@@ -105,6 +105,11 @@ backend:
 - **Provide missing input** retains an answer and resumes that exact request
   within its existing attempt budget.
 - **Amend scope** records a changed scope and starts a bounded planning round.
+  Existing required checks are preserved by default. The owner can explicitly
+  replace the checklist and acceptance criteria for the amended scope; removing
+  a requirement is shown before submission and retained in a before/after audit.
+  Models and ordinary replans cannot remove requirements. A project-tests
+  requirement still blocks completion unless the owner explicitly changes it.
 - **Request a replan** preserves the objective and supplies feedback for a new
   bounded round.
 - **Retry configuration** rechecks the request after the owner fixes its provider,
@@ -211,3 +216,68 @@ type/team eligibility or evidence-bound completion.
 Providers, model identities, established runtime transports, contributor credit
 and legal attribution remain intact. This increment does not add VM/OS selection,
 remote web deployment, a P2P dependency or agent-pet infrastructure.
+
+## Keep completion within an explicit budget
+
+Every objective captures durable call, token, deadline and optional configured USD
+ceilings. Retries, linked answers, scope amendments, replans and backend restarts
+continue the same budget. A stopped runtime rejects new owner mutations before
+writing their idempotency receipts; reconnecting can safely submit the same key.
+A cancelled, expired or superseded lease can never publish a late completion.
+
+The usage panel distinguishes observed provider token totals from conservative
+admission reservations. Before a provider dispatch, the runtime reserves its whole
+input/output allowance and all bounded transport attempts. Unreported usage,
+interruption and unused fallback attempts do not refund that reservation. This
+can stop earlier than an invoice would suggest, but it cannot manufacture a zero
+cost from missing usage. Old ledgers retain an explicit unknown-history marker. An active objective with
+prior unbudgeted model calls requires a separately budgeted objective before more
+calls; earlier work is never silently treated as free. Never-executed queued work
+can resume, and settled history keeps its original completed meaning.
+
+Optional USD admission uses only owner-configured exact provider/model rates.
+Eidolon does not fetch, guess or fabricate token prices. These rates must be
+chosen to conservatively cover the intended route; the resulting number is a
+configured admission ceiling, not a provider invoice or a promise about current
+pricing, taxes, cache tiers or externally billed charges. Missing exact-route
+rates under a USD ceiling block dispatch. Changing providers does not bypass the
+original objective ceiling. No billing account or credential is created.
+
+The objective deadline includes time waiting for owner answers. Execution receives
+only the remaining time, and expired work cannot commit a result. Exhausted
+budgets show an intervention with no ineffective retry controls. A separately
+submitted revised objective is needed to authorize another budget.
+
+## Inspect exact evidence without overfilling the model
+
+Artifact, dependency and edit-file bodies are deduplicated by SHA-256. Exact
+identity references remain attached to every source; the full originals remain
+available in the evidence inspector. The actual configured model window, output
+reserve and protocol headroom determine each input allowance. The conservative
+text bound uses UTF-8 bytes instead of assuming that every four characters are
+one token. Submitted wire inputs are checked again before dispatch.
+
+When all exact evidence will not fit together, evidence-only stages use bounded
+hierarchical reads. Each read retains its original source hash, exact contiguous
+UTF-8 range, chunk hash, submitted input hash and explicit findings/conflicts.
+The backend verifies complete coverage with no omitted bytes, gaps or overlaps.
+The final synthesis labels these findings as model summaries rather than original
+proof. Final acceptance compares every original range with the complete integrated
+candidate. Any negative source review or unresolved conflict prevents approval;
+partial coverage cannot establish completion. A maximum number of passes, the
+same request deadline and the objective call/token/cost budgets still apply.
+If the full candidate, required metadata or final findings cannot fit, the request
+stops with an actionable scope/model intervention instead of silently dropping
+material. Replanning alone is not presented as a cure for an unchanged oversized
+proof set.
+
+Open a request and choose **Inspect model and evidence audit** to inspect retained
+context modes, exact hashes/ranges, read findings and model reservations across
+attempts. This is read-only and scoped to the connected profile.
+
+Duplicate tasks in one plan, duplicate linked requests and repeated answered
+requests are rejected without creating extra work. An unanswered question can
+escalate to a different specialist team, but sending the same question back around
+its ancestry is stopped as no-progress ping-pong. Existing dependency-cycle,
+request-depth, revision, replan and stage limits remain enforced. A denial remains
+binding context; repeated requests do not create permission.

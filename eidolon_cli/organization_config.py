@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from eidolon_cli.organization_roster import OrganizationStaff, parse_roster
+from eidolon_cli.organization_budget import OrganizationModelCost, money, parse_model_costs
 
 
 WORK_CAPABILITIES = ("work.draft", "work.analyze")
@@ -26,6 +27,12 @@ class OrganizationSettings:
     max_stages: int = 120
     max_owner_resolutions: int = 12
     max_output_tokens: int = 8000
+    max_context_tokens: int = 128000
+    max_model_calls: int = 120
+    max_total_tokens: int = 8000000
+    objective_timeout_seconds: int = 86400
+    max_cost_usd: str | None = None
+    model_costs: tuple[OrganizationModelCost, ...] = ()
     lease_seconds: int = 45
     timeout_seconds: int = 180
     team: str = "general"
@@ -47,6 +54,8 @@ class OrganizationSettings:
                   "max_revisions": (0, 3), "max_replans": (0, 3), "max_stages": (4, 300),
                   "max_owner_resolutions": (1, 24), "max_output_tokens": (256, 16000), "lease_seconds": (15, 300),
                   "timeout_seconds": (30, 600), "max_tool_calls": (1, 20),
+                  "max_context_tokens": (4096, 2000000), "max_model_calls": (1, 1000),
+                  "max_total_tokens": (4096, 1000000000), "objective_timeout_seconds": (60, 604800),
                   "max_tool_result_chars": (1000, 20000)}
         values = {}
         for key, (minimum, maximum) in limits.items():
@@ -57,6 +66,10 @@ class OrganizationSettings:
             if type(value) is not int or not minimum <= value <= maximum:
                 raise ValueError(f"organization.{key} must be between {minimum} and {maximum}")
             values[key] = value
+        values["max_cost_usd"] = money(raw["max_cost_usd"], "organization.max_cost_usd", allow_zero=False) if raw.get("max_cost_usd") is not None else None
+        values["model_costs"] = parse_model_costs(raw.get("model_costs", []))
+        if values["max_context_tokens"] <= values["max_output_tokens"] + 2048:
+            raise ValueError("organization.max_context_tokens must leave input space beyond output and protocol reserves")
         team = raw.get("team", "general")
         if not isinstance(team, str) or not team.strip() or len(team) > 64:
             raise ValueError("organization.team must be a nonempty name of at most 64 characters")

@@ -187,11 +187,18 @@ class OrganizationRequestStore:
         count = conn.execute('SELECT count(*) FROM request_contracts c JOIN requests r ON r.id=c.request_id WHERE r.objective_id=? AND c.parent_request_id IS NOT NULL', (parent['objective_id'],)).fetchone()[0]
         if count + len(proposals) > 24:
             raise ValueError('Objective typed-request capacity reached; human intervention is required')
+        from eidolon_cli.organization_loop import reject_repeated_requests
+        for item in proposals:
+            if 'managementProposal' in item:
+                item['managementProposal'] = canonical_management_proposal(item['managementProposal'], self.settings.team)
         ancestors = {parent['id']}
         ancestor = contract['parent_request_id']
         while ancestor:
+            if ancestor in ancestors:
+                raise ValueError('Request ancestry contains a cycle; owner intervention is required')
             ancestors.add(ancestor)
             ancestor = conn.execute('SELECT parent_request_id FROM request_contracts WHERE request_id=?', (ancestor,)).fetchone()[0]
+        reject_repeated_requests(conn, parent, proposals, ancestors)
         for item in proposals:
             for dependency in item['dependencyIds']:
                 target = conn.execute('SELECT r.objective_id,r.status,c.parent_request_id FROM requests r JOIN request_contracts c ON c.request_id=r.id WHERE r.id=?', (dependency,)).fetchone()
@@ -338,6 +345,11 @@ class OrganizationRequestStore:
                     raise ValueError('Response idempotency key belongs to different input')
                 return False
             request = conn.execute('SELECT * FROM requests WHERE id=?', (identifier,)).fetchone()
+            if request is not None:
+                from eidolon_cli.organization_budget import budget_reason
+                reason = budget_reason(conn, request['objective_id'], self.settings)
+                if reason:
+                    raise ValueError(reason)
             if request is None or response_options(conn, request) is None:
                 raise ValueError('This typed request is not awaiting an owner response')
             if conn.execute('SELECT cancelled FROM objectives WHERE id=?', (request['objective_id'],)).fetchone()[0]:

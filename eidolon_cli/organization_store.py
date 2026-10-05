@@ -17,6 +17,7 @@ import uuid
 from datetime import datetime, timezone
 
 from eidolon_cli.organization_config import OrganizationSettings
+from eidolon_cli.organization_budget import BUDGET_SCHEMA, OrganizationBudgetStore, budget_reason, budget_view
 from eidolon_cli.organization_acceptance import ACCEPTANCE_SCHEMA, OrganizationAcceptanceStore, final_artifact
 from eidolon_cli.organization_owner import OWNER_SCHEMA, OrganizationOwnerStore
 from eidolon_cli.organization_project_workspace import project_validation_view, project_validation_artifact
@@ -89,15 +90,16 @@ def _text(value, field, limit=10000):
     return value.strip()
 
 
-class OrganizationStore(OrganizationRequestStore, OrganizationManagementStore, OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
+class OrganizationStore(OrganizationBudgetStore, OrganizationRequestStore, OrganizationManagementStore, OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
     def __init__(self, path: Path | str, settings: OrganizationSettings | None = None):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
-            conn.executescript(_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA)
+            conn.executescript(_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA)
             self.settings = resolve_settings(conn, settings)
         with self._write() as conn:
             self._migrate_acceptance(conn)
+            self._migrate_budgets(conn)
             self._adopt_policy(conn)
             roles = [("owner", "Owner", "Owner", None, []),
                      ("executive", "Executive", "Executive", "owner", ["request.accept"]),
@@ -210,6 +212,7 @@ class OrganizationStore(OrganizationRequestStore, OrganizationManagementStore, O
                 manager = self._assign_objective(conn, ident, executive_id, manager_id)
                 conn.execute("INSERT INTO objective_control(objective_id,criteria,status,round,max_replans,max_stages,delivery_mode,required_checks) VALUES (?,?,'pending',0,?,?,?,?)",
                              (ident, json.dumps(criteria), self.settings.max_replans, self.settings.max_stages, delivery_mode, json.dumps(checks)))
+                self._initialize_budget(conn, ident)
                 self._request(conn, ident, "request.plan", manager['team'], level)
                 self._event(conn, ident, "Objective accepted. Manager planning is queued.", "planning")
         # A duplicate may be older than the UI's settled-history window.
@@ -279,6 +282,10 @@ class OrganizationStore(OrganizationRequestStore, OrganizationManagementStore, O
                     continue
                 if agent is None:
                     continue
+                reason = budget_reason(conn, request["objective_id"], self.settings)
+                if reason:
+                    self._pending(conn, request, reason)
+                    continue
                 if request["attempts"] >= self.settings.max_attempts:
                     self._pending(conn, request, "Attempt limit reached; automatic execution has stopped.")
                     continue
@@ -327,7 +334,11 @@ class OrganizationStore(OrganizationRequestStore, OrganizationManagementStore, O
 
     def heartbeat(self, claim):
         with self._write() as conn:
-            if not self._owned(conn, claim):
+            request = self._owned(conn, claim)
+            if request is None:
+                return False
+            if time.time() >= budget_view(conn, request['objective_id'], self.settings)['deadlineTimestamp']:
+                self._pending(conn, request, 'Objective deadline reached; the in-flight result will not be accepted.')
                 return False
             conn.execute("UPDATE requests SET lease=? WHERE id=?", (time.time() + self.settings.lease_seconds, claim["id"]))
             return True
@@ -348,6 +359,7 @@ class OrganizationStore(OrganizationRequestStore, OrganizationManagementStore, O
             if control['amended_scope']:
                 objective['originalDescription'] = objective['description']
                 objective['description'] = control['amended_scope']
+            budget = budget_view(conn, request['objective_id'], self.settings)
             owner_inputs = [dict(row) for row in conn.execute('SELECT action,text,created FROM owner_resolutions WHERE objective_id=? ORDER BY created', (request['objective_id'],))]
             task = conn.execute("SELECT * FROM tasks WHERE id=?", (request["task_id"],)).fetchone()
             task = dict(task) if task else None
@@ -358,7 +370,7 @@ class OrganizationStore(OrganizationRequestStore, OrganizationManagementStore, O
                 for ident in json.loads(task["dependencies"]):
                     ev = conn.execute("SELECT * FROM evidence WHERE task_id=? ORDER BY created DESC LIMIT 1", (ident,)).fetchone()
                     if ev:
-                        dependencies.append({"taskId": ident, "summary": ev["summary"], "deliverable": ev["content"], "sha256": ev["sha256"],
+                        dependencies.append({"evidenceId": ev["id"], "taskId": ident, "summary": ev["summary"], "deliverable": ev["content"], "sha256": ev["sha256"],
                                              "toolReceipts": evidence_receipts(conn, ev['id']),
                                              'editProposal': evidence_proposal(conn, ev['id'])})
             payload = json.loads(request["payload"])
@@ -402,11 +414,13 @@ class OrganizationStore(OrganizationRequestStore, OrganizationManagementStore, O
                         "newMemberTools": [], "globalGrantExpansion": False},
                     "evidence": evidence, "feedback": task["feedback"] if task else payload.get("feedback", control["summary"]),
                     "ownerInputs": owner_inputs, "maxOutputTokens": self.settings.max_output_tokens,
+                    "maxContextTokens": self.settings.max_context_tokens,
+                    "costBudgetEnabled": budget["configuredCostLimitUsd"] is not None,
                     "toolReceipts": [receipt for item in evidence for receipt in item['toolReceipts']],
                     "toolPolicy": self._tool_policy(conn, request),
                     "staffing": self._staffing_context(),
                     "capabilities": list(self.settings.capabilities), "maxTasks": self.settings.max_tasks,
-                    "maxWorkers": self.settings.max_workers, "timeoutSeconds": self.settings.timeout_seconds,
+                    "maxWorkers": self.settings.max_workers, "timeoutSeconds": max(0.001, min(self.settings.timeout_seconds, budget["deadlineTimestamp"] - time.time())),
                     "workers": payload.get("workers")}
 
     @staticmethod
@@ -490,6 +504,9 @@ class OrganizationStore(OrganizationRequestStore, OrganizationManagementStore, O
                 raise ValueError("Cancelled objectives cannot be retried")
             if row["status"] != "pending_intervention":
                 return False
+            reason = budget_reason(conn, row["objective_id"], self.settings)
+            if reason:
+                raise ValueError(reason)
             if row["attempts"] >= self.settings.max_attempts:
                 raise ValueError("Attempt limit reached. Create a revised objective instead of replaying this request.")
             from eidolon_cli.organization_owner import resolution_count
@@ -524,6 +541,9 @@ class OrganizationStore(OrganizationRequestStore, OrganizationManagementStore, O
                 request = self._owned(conn, claim)
                 if request is None:
                     return False
+                if time.time() >= budget_view(conn, request['objective_id'], self.settings)['deadlineTimestamp']:
+                    self._pending(conn, request, 'Objective deadline reached; the result was not accepted.')
+                    return False
                 self._record_usage(conn, request, result)
                 if request['type'] == 'request.plan':
                     self._merge_required_checks(conn, request['objective_id'], result.get('requiredChecks', []))
@@ -533,6 +553,10 @@ class OrganizationStore(OrganizationRequestStore, OrganizationManagementStore, O
             request = self._owned(conn, claim)
             if request is None:
                 return False
+            if time.time() >= budget_view(conn, request['objective_id'], self.settings)['deadlineTimestamp']:
+                self._pending(conn, request, 'Objective deadline reached; the result was not accepted.')
+                return False
+            self._verify_context_completion(conn, request, result)
             if 'requests' in result:
                 if set(result) - {'requests', 'usage', 'memory'}:
                     raise ValueError('A paused stage may only return its typed requests')
@@ -562,6 +586,8 @@ class OrganizationStore(OrganizationRequestStore, OrganizationManagementStore, O
         tasks = result.get("tasks")
         if not isinstance(tasks, list) or not 1 <= len(tasks) <= self.settings.max_tasks:
             raise ValueError(f"Plan must contain 1–{self.settings.max_tasks} tasks")
+        from eidolon_cli.organization_loop import reject_duplicate_tasks
+        reject_duplicate_tasks(tasks)
         normalized = []
         ids = [_id("task") for _ in tasks]
         for index, task in enumerate(tasks):

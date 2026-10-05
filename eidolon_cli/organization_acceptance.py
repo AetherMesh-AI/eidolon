@@ -63,7 +63,8 @@ def final_artifact(conn, identifier):
 
 def usage_view(conn, control, settings):
     rows = conn.execute('SELECT * FROM objective_usage WHERE objective_id=?', (control['objective_id'],)).fetchall()
-    return {'stages': len(rows), 'stageLimit': min(control['max_stages'], settings.max_stages),
+    from eidolon_cli.organization_budget import budget_view
+    return {**budget_view(conn, control['objective_id'], settings), 'stages': len(rows), 'stageLimit': min(control['max_stages'], settings.max_stages),
             'inputTokens': sum(row['input_tokens'] or 0 for row in rows),
             'outputTokens': sum(row['output_tokens'] or 0 for row in rows),
             'usageComplete': all(row['input_tokens'] is not None and row['output_tokens'] is not None for row in rows),

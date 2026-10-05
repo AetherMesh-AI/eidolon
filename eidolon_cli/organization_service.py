@@ -113,6 +113,14 @@ class OrganizationService:
                 self._thread.start()
         self._wake.set()
 
+    def create_objective(self, *args, **kwargs):
+        with self._lock:
+            if self._stop.is_set():
+                raise RuntimeError("Organization service is stopping; reconnect before creating work")
+            objective = self.store.create_objective(*args, **kwargs)
+            self.start()
+            return objective
+
     def cancel(self, objective_id: str) -> bool:
         with self._lock:
             changed = self.store.cancel(objective_id)
@@ -128,13 +136,16 @@ class OrganizationService:
                 return False
             if request_id in self._running:
                 raise ValueError("The previous execution is still stopping; retry after it exits")
+            if self._stop.is_set():
+                raise RuntimeError("Organization service is stopping; reconnect before retrying work")
             changed = self.store.retry(request_id, idempotency_key=idempotency_key)
-        if changed:
-            self.start()
-        return changed
+            if changed:
+                self.start()
+            return changed
 
     def resolve(self, request_id: str, *, action: str, text: str | None = None,
-                evidence_ids: list[str] | None = None, idempotency_key: str) -> bool:
+                evidence_ids: list[str] | None = None, idempotency_key: str,
+                required_checks: list[str] | None = None, acceptance_criteria: list[str] | None = None) -> bool:
         """Resolve a specific intervention only after its execution has stopped.
 
         The ledger validates the action, evidence, policy generation and request
@@ -143,7 +154,7 @@ class OrganizationService:
         response can replay the exact committed resolution without another effect.
         """
         payload = dict(action=action, text=text, evidence_ids=evidence_ids,
-                       idempotency_key=idempotency_key)
+                       idempotency_key=idempotency_key, required_checks=required_checks, acceptance_criteria=acceptance_criteria)
         with self._lock:
             if self.store.resolution_recorded(request_id, **payload):
                 return False
@@ -160,9 +171,9 @@ class OrganizationService:
                     if not available:
                         raise ValueError("This objective has an execution still active in another runtime; resolve it after that work exits")
                 changed = self.store.resolve(request_id, **payload)
-        if changed:
-            self.start()
-        return changed
+            if changed:
+                self.start()
+            return changed
 
     def respond(self, request_id: str, *, text: str, decision: str, idempotency_key: str) -> bool:
         with self._lock:
@@ -178,9 +189,9 @@ class OrganizationService:
                     raise ValueError("The request is still executing in another runtime")
                 changed = self.store.respond(request_id, **payload)
                 self.settings = self.store.settings
-        if changed:
-            self.start()
-        return changed
+            if changed:
+                self.start()
+            return changed
 
     def refresh_configuration(self):
         """Adopt another runtime's validated ledger policy without restarting chat."""
@@ -216,14 +227,14 @@ class OrganizationService:
                                                        idempotency_key=idempotency_key)
             self.settings = self.store.settings
             self.store.refresh_unhandled_requests()
-        self.start()
-        return result
+            self.start()
+            return result
 
     def stop(self, timeout: float = 5.0) -> bool:
-        self._stop.set()
         # Persist uncertain work before waiting; SIGKILL may follow the grace.
         persisted = True
         with self._lock:
+            self._stop.set()
             for record in self._running.values():
                 record.cancel.set()
             for record in self._running.values():
@@ -268,6 +279,9 @@ class OrganizationService:
                         'recordToolStart': lambda call_id, name, args: self.store.record_tool_start(record.claim, call_id, name, args),
                         'recordToolFinish': lambda ident, result, status: self.store.record_tool_finish(record.claim, ident, result, status),
                         'requestToolReceipts': lambda: self.store.request_tool_receipts(record.claim),
+                        'reserveModelCall': lambda **values: self.store.reserve_model_call(record.claim, **values),
+                        'recordContextReceipt': lambda report: self.store.record_context_receipt(record.claim, report),
+                        'recordEvidencePass': lambda report: self.store.record_evidence_pass(record.claim, report),
                     })
                     kind = record.claim.get("type", record.claim.get("kind"))
                     if kind == 'work.edit':

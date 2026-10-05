@@ -97,12 +97,11 @@ def _(params, service):
     if priority not in ("low", "normal", "high", "P1", "P2", "P3", "P4", "P5"):
         raise ValueError("priority must be low, normal, high, or P1–P5")
     organization = service()
-    objective = organization.store.create_objective(title, description, priority,
+    objective = organization.create_objective(title, description, priority,
                                                      idempotency_key=key, acceptance_criteria=params.get("acceptanceCriteria"),
                                                      delivery_mode=params.get("deliveryMode", "source_project"), required_checks=params.get("requiredChecks"),
                                                      executive_id=_organization_text(params, "executiveId", 64, optional=True),
                                                      manager_id=_organization_text(params, "managerId", 64, optional=True))
-    organization.start()
     return {"objective": objective, "snapshot": _organization_snapshot(organization)}
 
 
@@ -127,12 +126,14 @@ def _(params, service):
 
 @_organization_method("organization.resolve")
 def _(params, service):
-    _organization_params(params, {"id", "action", "text", "evidenceIds", "idempotencyKey"})
+    _organization_params(params, {"id", "action", "text", "evidenceIds", "requiredChecks", "acceptanceCriteria", "idempotencyKey"})
     organization = service()
     organization.resolve(_organization_text(params, "id", 128),
                          action=_organization_text(params, "action", 64),
                          text=_organization_text(params, "text", 12000, optional=True),
                          evidence_ids=params.get("evidenceIds"),
+                         required_checks=params.get("requiredChecks"),
+                         acceptance_criteria=params.get("acceptanceCriteria"),
                          idempotency_key=_organization_text(params, "idempotencyKey", 128))
     return _organization_snapshot(organization)
 
@@ -171,6 +172,12 @@ def _(params, service):
 def _(params, service):
     _organization_params(params, {"id"})
     return service().store.tool_receipts(_organization_text(params, "id", 128))
+
+
+@_organization_method("organization.executionAudit")
+def _(params, service):
+    _organization_params(params, {"id"})
+    return service().store.execution_audit(_organization_text(params, "id", 128))
 
 
 def register(server):

@@ -245,3 +245,19 @@ it.each(['response', 'configuration'])('fences late %s mutations across profiles
   const retry = h.request.mock.calls.findLast(call => call[0] === (kind === 'response' ? 'organization.respond' : 'organization.configure'))!
   expect(retry[1].idempotencyKey).toBe(key)
 })
+
+it('reads exact execution audits and rejects mismatched or late same-name profile responses', async () => {
+  const audit = { requestId: 'review', contexts: [{ attemptToken: 'attempt', createdAt: '2026-10-04T00:00:00Z', report: { mode: 'hierarchical', status: 'complete' } }], evidencePasses: [], modelCalls: [] }
+  const later = deferred<typeof audit>()
+  const h = harness(vi.fn().mockResolvedValueOnce(audit).mockResolvedValueOnce({ ...audit, requestId: 'other' }).mockReturnValueOnce(later.promise))
+  await expect(h.adapter.getExecutionAudit!('review')).resolves.toEqual(audit)
+  expect(h.request.mock.calls[0].slice(0, 2)).toEqual(['organization.executionAudit', { id: 'review' }])
+  await expect(h.adapter.getExecutionAudit!('review')).rejects.toThrow('invalid execution audit')
+  const pending = h.adapter.getExecutionAudit!('review')
+  const assertion = expect(pending).rejects.toThrow('connection or profile changed')
+  h.change({ key: 'connection-b:default:socket-2', connected: true })
+  expect(h.request.mock.calls[2][3].aborted).toBe(true)
+  later.resolve(audit)
+  await assertion
+  expect(h.listenerCount()).toBe(0)
+})

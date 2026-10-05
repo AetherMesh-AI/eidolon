@@ -39,6 +39,7 @@ def runtime(monkeypatch):
             self.kwargs = kwargs
             self.__dict__.update(kwargs)
             self.tools, self.valid_tool_names = [], set()
+            self.context_compressor = SimpleNamespace(context_length=256000)
             self.owner = threading.get_ident()
             self.closed = threading.Event()
             self.interrupted = threading.Event()
@@ -48,7 +49,8 @@ def runtime(monkeypatch):
             self.prompt = user_message
             if state.behavior:
                 return state.behavior(self)
-            self._interruptible_api_call(state.wire)
+            self._interruptible_api_call({**state.wire, "messages": [
+                *state.wire.get("messages", []), {"role": "user", "content": user_message}]})
             return {"final_response": json.dumps(state.output)}
 
         def _resolved_api_call_timeout(self):

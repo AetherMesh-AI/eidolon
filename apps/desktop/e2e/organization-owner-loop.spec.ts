@@ -120,7 +120,8 @@ test.beforeAll(async () => {
   const provider = await localOrganizationProvider(mock.url)
   const sandbox = createSandbox('organization-owner-loop')
   try {
-    writeMockProviderConfig(sandbox.hermesHome, provider.url, undefined, 'approvals:\n  mode: manual\norganization:\n  max_inflight: 1\n  max_stages: 4')
+    writeMockProviderConfig(sandbox.hermesHome, provider.url, undefined,
+      'approvals:\n  mode: manual\norganization:\n  max_inflight: 1\n  max_stages: 4\n  max_context_tokens: 32768\n  max_output_tokens: 2048', 128000)
     writeEnvFile(sandbox.hermesHome)
     const { app, page } = await launchDesktop(buildAppEnv(sandbox))
     fixture = {

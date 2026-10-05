@@ -1,7 +1,7 @@
 import { translateNow } from '@/i18n/runtime'
 
 import { validEditProposal } from './runtime-proposal-validation'
-import type { Objective, OrganizationArtifact, OrganizationSnapshot, OrganizationToolEvidence, RuntimeOrganizationAdapter } from './types'
+import type { Objective, OrganizationArtifact, OrganizationExecutionAudit, OrganizationSnapshot, OrganizationToolEvidence, RuntimeOrganizationAdapter } from './types'
 
 export interface OrganizationScope {
   /** Exact socket + registry connection + profile. Never use the profile alone. */
@@ -251,6 +251,26 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
         return result
       } catch (reason) {throw new Error(organizationErrorMessage(reason))} finally {controllers.delete(controller); releaseScope()}
     },
+    async getExecutionAudit(requestId) {
+      resetScope()
+      const token = epoch
+      const controller = new AbortController()
+
+      if (!scope.connected) {throw new Error(translateNow('organizationRuntime.auditReconnect'))}
+      controllers.add(controller)
+      watchScope()
+
+      try {
+        const result = await gateway.request<OrganizationExecutionAudit>('organization.executionAudit', { id: requestId }, 15000, controller.signal)
+
+        if (!current(token) || controller.signal.aborted) {throw new Error(translateNow('organizationRuntime.auditScopeChanged'))}
+        const validReport = (row: OrganizationExecutionAudit['contexts'][number]) => row && typeof row.attemptToken === 'string' && typeof row.createdAt === 'string' && row.report && typeof row.report === 'object' && !Array.isArray(row.report)
+
+        if (!result || result.requestId !== requestId || !Array.isArray(result.contexts) || !Array.isArray(result.evidencePasses) || !Array.isArray(result.modelCalls) || !result.contexts.every(validReport) || !result.evidencePasses.every(validReport) || result.modelCalls.some(call => !call || call.request_id !== requestId || typeof call.id !== 'string' || typeof call.provider !== 'string' || typeof call.model !== 'string' || typeof call.createdAt !== 'string' || !Number.isFinite(call.input_limit) || !Number.isFinite(call.output_limit) || (call.reserved_cost_usd !== null && typeof call.reserved_cost_usd !== 'string'))) {throw new Error(translateNow('organizationWork.executionAuditInvalid'))}
+
+        return result
+      } catch (reason) {throw new Error(organizationErrorMessage(reason))} finally {controllers.delete(controller); releaseScope()}
+    },
     getSnapshot: () => snapshot,
     subscribe(listener) {
       listeners.add(listener)
@@ -299,7 +319,7 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
     },
     resolveRequest(input) {
       resetScope()
-      const params = { id: input.id, action: input.action, text: input.text?.trim() || undefined, evidenceIds: input.evidenceIds }
+      const params = { id: input.id, action: input.action, text: input.text?.trim() || undefined, evidenceIds: input.evidenceIds, requiredChecks: input.requiredChecks, acceptanceCriteria: input.acceptanceCriteria }
       const intent = JSON.stringify([scope.ownerKey ?? scope.key, params])
       const idempotencyKey = input.idempotencyKey ?? resolutionKeys.get(intent) ?? crypto.randomUUID()
       resolutionKeys.set(intent, idempotencyKey)

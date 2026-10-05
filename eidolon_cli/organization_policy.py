@@ -28,7 +28,9 @@ BEGIN SELECT RAISE(ABORT, 'Request requires a current organization policy'); END
 # configuration changes still advance the generation, even for concurrency.
 _AUTHORITY_FIELDS = ('team', 'capabilities', 'roster', 'tool_grants', 'read_roots', 'max_workers',
                      'max_replans', 'max_stages', 'max_owner_resolutions', 'max_output_tokens',
-                     'max_members', 'max_request_depth', 'max_requests_per_stage')
+                     'max_members', 'max_request_depth', 'max_requests_per_stage',
+                     'max_context_tokens', 'max_model_calls', 'max_total_tokens', 'objective_timeout_seconds',
+                     'max_cost_usd', 'model_costs')
 
 
 def _fingerprint(settings):
@@ -53,6 +55,8 @@ def persisted_settings(conn):
             **{key: tuple(staff.get(key, ())) for key in (
                 'capabilities', 'tool_grants', 'responsibilities', 'authority', 'managed_teams')}})
             for staff in values['roster'])
+    from eidolon_cli.organization_budget import parse_model_costs
+    values['model_costs'] = parse_model_costs(values.get('model_costs', []))
     # Legacy ledgers may already have more than the newly introduced default.
     # Their existing explicit members survive migration; the hard bound is 64.
     if 'max_members' not in values:

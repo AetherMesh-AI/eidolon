@@ -188,7 +188,8 @@ def _evidence_ids(context: dict) -> list[str]:
             raise OrganizationExecutionError("Review evidence must contain artifact records.")
         identifier = _text(item.get("id"), "Evidence id", limit=200)
         content = item.get("content")
-        _text(content, "Evidence content")
+        if not isinstance(content, str) or not content.strip():
+            raise OrganizationExecutionError("Evidence content must be nonempty exact text.")
         if item.get("sha256") != hashlib.sha256(content.encode("utf-8")).hexdigest():
             raise OrganizationExecutionError("Review evidence does not match its persisted content hash.")
         if identifier in ids:
@@ -388,6 +389,56 @@ def _guard_wire_models(runtime: dict, options: Any) -> None:
                     _guard_wire_models(runtime, item)
 
 
+def _guard_wire_controls(options: Any, model: str, *, api_mode=None) -> None:
+    """SDK body overrides must not replace proof, route, output cap or fan out."""
+    if not isinstance(options, dict):
+        return
+    caps = {'max_tokens', 'max_completion_tokens', 'max_output_tokens', 'maxTokens'}
+    allowed = {model}
+    if api_mode == 'anthropic_messages':
+        from agent.anthropic_message_convert import normalize_model_name
+        allowed.update(normalize_model_name(model, preserve_dots=preserve) for preserve in (False, True))
+    wire_model = options.get('model', options.get('modelId', model))
+    if wire_model not in allowed:
+        raise OrganizationExecutionError('A provider override changed the exact organization model; no alternate route was authorized.')
+    def walk(value, nested=False):
+        if isinstance(value, list):
+            for item in value:
+                walk(item, nested)
+            return
+        if not isinstance(value, dict):
+            return
+        for key, item in value.items():
+            if key in {'conversation', 'previous_response_id'} and item is not None:
+                raise OrganizationExecutionError('Provider-side conversation history is outside the exact submitted organization context; no hidden input was authorized.')
+            if key == 'background' and item not in (None, False):
+                raise OrganizationExecutionError('Background provider execution cannot preserve the bounded organization execution lease.')
+            if key in {'truncation', 'truncation_strategy', 'truncate_prompt_tokens', 'truncate', 'context_management'}:
+                disabled = item is None or (key == 'truncation' and item == 'disabled') or (key == 'truncate' and item is False) or (key == 'context_management' and item == [])
+                if not disabled:
+                    raise OrganizationExecutionError('Provider-side truncation or compaction cannot preserve exact organization evidence; no shortened input was authorized.')
+            if key in {'prompt', 'system_prompt'}:
+                raise OrganizationExecutionError('A provider override introduced unsubmitted organization instructions.')
+            if key in _CONTENT_KEYS:
+                if nested:
+                    raise OrganizationExecutionError('A nested provider override could replace the exact organization input.')
+                continue
+            if key in {'model', 'modelId'} and item != wire_model:
+                raise OrganizationExecutionError('A provider override changed the exact organization model; no alternate route was authorized.')
+            if key in {'n', 'best_of', 'candidate_count', 'num_return_sequences', 'num_generations'} and item != 1:
+                raise OrganizationExecutionError('Multiple generated candidates cannot enforce the organization output-token budget.')
+            if nested and key in caps and (key not in options or item != options[key]):
+                # Bedrock's native inferenceConfig is the sole nested output cap.
+                raise OrganizationExecutionError('A nested provider override changed the organization output-token limit.')
+            if key == 'inferenceConfig':
+                if isinstance(item, dict):
+                    walk({name: val for name, val in item.items() if name != 'maxTokens'}, True)
+                continue
+            if isinstance(item, (dict, list)):
+                walk(item, True)
+    walk(options)
+
+
 def _guard_scoped_credentials(provider: Any, model_config: Any, runtime: dict | None = None) -> None:
     """SDK identity chains do not yet honor the organization's profile ContextVar."""
     from agent.secret_scope import is_multiplex_active, is_secret_scope_required
@@ -419,6 +470,10 @@ def _guard_plugin_integrations(*, tool_mode: bool = False) -> None:
     from eidolon_cli.config import load_config_readonly
     from eidolon_cli.plugins import discover_plugins, get_plugin_manager
 
+    from agent.relay_runtime import get_runtime
+    relay = get_runtime(create=False)
+    if relay is not None and relay.managed_execution_enabled():
+        raise OrganizationExecutionError('Managed model interception cannot preserve exact organization input and bounded physical sends.')
     configured = iter_configured_hooks(load_config_readonly())
     hooks = _TURN_HOOKS | _TOOL_HOOKS if tool_mode else _TURN_HOOKS
     if any(spec.event in hooks for spec in configured):
@@ -501,6 +556,43 @@ def _runtime_kwargs(context: dict, timeout: float) -> dict:
     }
 
 
+def _bounded_bedrock_request(agent, api_kwargs):
+    """Use an organization-local retry policy, leaving the shared SDK untouched."""
+    from agent.chat_completion_nonstream import _NonStreamRequest
+
+    class BoundedConverseRequest(_NonStreamRequest):
+        def _call(self):
+            client = None
+            try:
+                from botocore.config import Config
+                from agent.bedrock_adapter import (
+                    _require_boto3, normalize_converse_response, recover_from_cache_point_rejection,
+                )
+                options = dict(self.api_kwargs)
+                region = options.pop('__bedrock_region__', 'us-east-1')
+                options.pop('__bedrock_converse__', None)
+                remaining = max(0.1, agent._organization_deadline - time.monotonic())
+                client = _require_boto3().client('bedrock-runtime', region_name=region,
+                    config=Config(retries={'mode': 'standard', 'total_max_attempts': 1},
+                                  connect_timeout=min(60, remaining), read_timeout=min(60, remaining)))
+                try:
+                    raw = client.converse(**options)
+                except Exception as exc:
+                    retry = recover_from_cache_point_rejection(exc, options)
+                    if retry is None:
+                        raise
+                    agent._organization_check(retry)
+                    raw = client.converse(**retry)
+                self.result['response'] = normalize_converse_response(raw)
+            except Exception as exc:
+                self.result['error'] = exc
+            finally:
+                if client is not None:
+                    client.close()
+
+    return BoundedConverseRequest(agent, api_kwargs)
+
+
 class _ToolFreeBoundary:
     """No-tool default, with an explicit scoped executor at send/dispatch boundaries."""
 
@@ -521,9 +613,84 @@ class _ToolFreeBoundary:
             else:
                 execution.check_wire(self, options)
             _guard_wire_models(runtime, options)
+            _guard_wire_controls(options, self.model, api_mode=self.api_mode)
         except OrganizationExecutionError as exc:
             self._organization_intervention = str(exc)
             raise
+
+    def _create_request_openai_client(self, *, reason, api_kwargs=None):
+        client = super()._create_request_openai_client(reason=reason, api_kwargs=api_kwargs)
+        if getattr(self, '_organization_reserve', None) is not None:
+            from openai import OpenAI, AzureOpenAI
+            from agent.gemini_native_adapter import GeminiNativeClient, _effective_gemini_max_output_tokens
+            if type(client) is GeminiNativeClient:
+                options = api_kwargs or {}
+                extra = options.get('extra_body') or {}
+                effective = _effective_gemini_max_output_tokens(options.get('max_tokens'),
+                    extra.get('thinking_config') or extra.get('thinkingConfig'))
+                if effective > self._organization_output_limit:
+                    self._organization_intervention = 'The native Gemini thinking adapter exceeds the organization output-token cap. Use a route or reasoning setting that honors the configured cap.'
+                    raise OrganizationExecutionError(self._organization_intervention)
+            elif type(client) not in {OpenAI, AzureOpenAI} or client.max_retries != 0:
+                self._organization_intervention = 'This provider client cannot establish bounded physical sends. Use a supported direct API client with SDK retries disabled.'
+                raise OrganizationExecutionError(self._organization_intervention)
+        return client
+
+    def _create_request_anthropic_client(self, *, reason):
+        client = super()._create_request_anthropic_client(reason=reason)
+        if getattr(self, '_organization_reserve', None) is not None:
+            from anthropic import Anthropic, AnthropicBedrock, AnthropicVertex
+            if type(client) not in {Anthropic, AnthropicBedrock, AnthropicVertex} or client.max_retries != 0:
+                self._organization_intervention = 'This Anthropic client cannot establish bounded physical sends. Use a supported direct API client with SDK retries disabled.'
+                raise OrganizationExecutionError(self._organization_intervention)
+        return client
+
+    def _build_system_prompt(self, system_message=None):
+        # These fresh scoped sessions already supply the entire fixed system
+        # contract via ephemeral_system_prompt. Ambient chat instructions and
+        # plugin/profile prompt additions are neither evidence nor a tool grant.
+        return ''
+
+    def _organization_reserve_call(self, options, *, attempts=None):
+        from eidolon_cli.organization_evidence import CONTEXT_RESERVE_TOKENS, contains_exact_prompt, require_fits, wire_input_bound
+        expected = getattr(self, '_organization_prompt', None)
+        if expected and any(key in options for key in _CONTENT_KEYS) and not contains_exact_prompt(options, expected):
+            self._organization_intervention = 'The runtime omitted or rewrote exact organization input; no partial evidence was accepted.'
+            raise OrganizationExecutionError(self._organization_intervention)
+        limit = getattr(self, '_organization_input_limit', None)
+        if limit is not None:
+            try:
+                require_fits(wire_input_bound(options), limit)
+            except OrganizationExecutionError as exc:
+                self._organization_intervention = str(exc)
+                raise
+        reserve = getattr(self, '_organization_reserve', None)
+        if reserve is None:
+            return
+        output = getattr(self, '_organization_output_limit', 8000)
+        caps = [options[key] for key in ('max_tokens', 'max_completion_tokens', 'max_output_tokens') if key in options]
+        inference = options.get('inferenceConfig')
+        if isinstance(inference, dict) and 'maxTokens' in inference:
+            caps.append(inference['maxTokens'])
+        if any(type(cap) is not int or not 0 < cap <= output for cap in caps):
+            self._organization_intervention = 'The provider request exceeds the configured organization output-token limit.'
+            raise OrganizationExecutionError(self._organization_intervention)
+        if not caps:
+            self._organization_intervention = 'This provider request has no enforceable output-token cap; select a direct API transport that supports one.'
+            raise OrganizationExecutionError(self._organization_intervention)
+        output = max(caps)
+        # OpenAI/Anthropic SDK clients disable their own retries. Responses may
+        # reconnect once; Anthropic may retry once without streaming. Reserve
+        # both potential sends conservatively; unused reservations are retained.
+        if attempts is None:
+            attempts = 2 if self.api_mode in {'codex_responses', 'anthropic_messages', 'bedrock_converse'} else 1
+        for _ in range(attempts):
+            try:
+                reserve(provider=str(self.provider or ''), model=str(options.get('model') or options.get('modelId') or self.model),
+                        input_limit=wire_input_bound(options) + CONTEXT_RESERVE_TOKENS, output_limit=output)
+            except ValueError as exc:
+                self._organization_intervention = str(exc)
+                raise OrganizationExecutionError(str(exc)) from exc
 
     def _interruptible_api_call(self, api_kwargs: dict):
         self._organization_check(api_kwargs)
@@ -531,7 +698,10 @@ class _ToolFreeBoundary:
         from agent.chat_completion_nonstream import _NonStreamRequest
 
         _check_stale_giveup(self)
-        request = _NonStreamRequest(self, api_kwargs)
+        self._organization_reserve_call(api_kwargs)
+        request = (_bounded_bedrock_request(self, api_kwargs)
+                   if self.api_mode == 'bedrock_converse' and getattr(self, '_organization_reserve', None)
+                   else _NonStreamRequest(self, api_kwargs))
         try:
             return request.run()
         finally:
@@ -543,18 +713,19 @@ class _ToolFreeBoundary:
 
     def _interruptible_streaming_api_call(self, api_kwargs: dict, *, on_first_delta=None):
         self._organization_check(api_kwargs)
-        from agent.chat_completion_helpers import (
-            _check_stale_giveup, _stream_codex_passthrough, _StreamingCall,
-        )
-
-        if self.api_mode == "codex_responses":
+        from agent.chat_completion_helpers import _check_stale_giveup, _stream_codex_passthrough, _StreamingCall
+        if self.api_mode == 'codex_responses':
             return _stream_codex_passthrough(self, api_kwargs, on_first_delta)
-        if self.api_mode == "bedrock_converse":
-            # There is no token-streaming consumer for organization work.
-            # Converse's existing nonstream dispatcher owns its provider thread;
-            # _BedrockStream's detached worker has no external join handle.
+        if self.api_mode == 'bedrock_converse':
             return self._interruptible_api_call(api_kwargs)
+        from agent.chat_completion_helpers import env_int
+        # Account for every possible inner retry before the joined worker starts.
+        # Generic streaming does not expose per-attempt callbacks to the owner.
+        attempts = max(1, env_int('HERMES_STREAM_RETRIES', 2) + 1)
+        if self.api_mode == 'anthropic_messages':
+            attempts *= 2
         _check_stale_giveup(self)
+        self._organization_reserve_call(api_kwargs, attempts=attempts)
         request = _StreamingCall(self, api_kwargs, on_first_delta)
         try:
             return request.run()
@@ -588,6 +759,12 @@ class _ToolFreeBoundary:
         # Runtime identity is a request snapshot. A settings edit must not swap
         # to an unguarded external-agent transport between admission and send.
         return False
+
+    def _compress_context(self, *args, **kwargs):
+        self._organization_intervention = (
+            "Exact organization evidence cannot be replaced by automatic context compression. "
+            "Select a larger configured model or restructure the objective with the owner.")
+        raise OrganizationExecutionError(self._organization_intervention)
 
     def _handle_max_iterations(self, *args, **kwargs):
         # The generic fallback issues an additional direct summary request. That
@@ -652,7 +829,8 @@ def _continuity_prompt_context(context):
 
 def _prompt(request: dict, context: dict, kind: str) -> str:
     from eidolon_cli.organization_tool_executor import OrganizationToolExecution, validate_retained_receipts
-    validate_retained_receipts(context.get("toolReceipts", []))
+    for receipt in context.get("toolReceipts", []):
+        validate_retained_receipts([receipt])
     for dependency in context.get("dependencies", []):
         if isinstance(dependency, dict):
             validate_retained_receipts(dependency.get("toolReceipts", []))
@@ -671,31 +849,10 @@ def _prompt(request: dict, context: dict, kind: str) -> str:
     safe_context["team"] = (context.get("agent") or {}).get("team", "general")
     from eidolon_cli.organization_tool_executor import public_tool_policy
     safe_context["toolPolicy"] = public_tool_policy(context)
-    # Each receipt can occur in evidence, dependencies and the review's flat
-    # list. Send its bytes once, retaining exact ID references at every source.
-    receipts = {row['id']: row for row in context.get('toolReceipts', [])}
-    for key in ('evidence', 'dependencies'):
-        records = []
-        for item in context.get(key, []):
-            linked = item.get('toolReceipts', [])
-            for row in linked:
-                existing = receipts.get(row['id'])
-                if existing is not None and existing != row:
-                    raise OrganizationExecutionError('Linked tool evidence disagrees across source records.')
-                receipts[row['id']] = row
-            records.append({**{name: value for name, value in item.items() if name != 'toolReceipts'},
-                            'toolReceiptIds': [row['id'] for row in linked]})
-        if key in safe_context:
-            safe_context[key] = records
-    safe_context['toolReceipts'] = list(receipts.values())
+    from eidolon_cli.organization_evidence import project_evidence, exact_json
+    safe_context = project_evidence(safe_context)
     safe_request = {key: request[key] for key in ("title", "description", "type", "kind", "team") if key in request}
-    try:
-        data = json.dumps({"request": safe_request, "context": safe_context}, ensure_ascii=False, allow_nan=False)
-    except (ValueError, TypeError, RecursionError) as exc:
-        raise OrganizationExecutionError("Submitted context must be JSON-compatible data.") from exc
-    maximum_context = 2 * 1024 * 1024 if any(item.get("editProposal") for item in context.get("evidence", [])) else _MAX_TEXT
-    if len(data) > maximum_context:
-        raise OrganizationExecutionError("Submitted context exceeds the supported text size; reduce it and retry.")
+    data = exact_json({"request": safe_request, "context": safe_context})
     return _STAGE_PROMPTS[kind] + "\n\nSubmitted context:\n" + data
 
 
@@ -730,6 +887,10 @@ A transport ignoring cancellation remains in the scheduler's occupied slot.
                           ephemeral_system_prompt=_CONTINUITY_SYSTEM + (EDIT_SYSTEM if kind == "work.edit" else INSPECT_SYSTEM))
         if cancel.is_set() or time.monotonic() >= deadline:
             raise OrganizationExecutionError("Organization execution was cancelled or timed out during provider setup.")
+        from eidolon_cli.organization_evidence import (
+            context_report, final_hierarchy_prompt, hierarchical_prompts, parse_read_result,
+            require_fits, prompt_input_bound, verify_context_receipt, record_evidence_audit,
+        )
         agent = _create_agent(kwargs, cancel, deadline, execution)
 
         def watch() -> None:
@@ -737,30 +898,96 @@ A transport ignoring cancellation remains in the scheduler's occupied slot.
                 if cancel.is_set() or time.monotonic() >= deadline:
                     if not cancel.is_set():
                         timed_out.set()
-                    agent.interrupt("Organization execution cancelled or timed out.", hard_cancel=True)
+                    current = agent
+                    if current is not None:
+                        current.interrupt("Organization execution cancelled or timed out.", hard_cancel=True)
                     return
 
         watcher = threading.Thread(target=watch, name="organization-cancel", daemon=True)
         watcher.start()
-        _guard_plugin_integrations(tool_mode=execution is not None)
-        agent._organization_check()
-        result = agent.run_conversation(user_message=prompt)
-        if cancel.is_set() or timed_out.is_set() or time.monotonic() >= deadline:
-            raise OrganizationExecutionError("Organization execution was cancelled or timed out; no result was accepted.")
-        if agent._organization_intervention:
-            raise OrganizationExecutionError(agent._organization_intervention)
-        if not isinstance(result, dict) or any(result.get(flag) for flag in ("failed", "partial", "interrupted")):
-            raise OrganizationExecutionError("The model did not produce a complete result; check provider availability and retry.")
-        parsed = _parse_output(result.get("final_response"), kind, context)
+        report = context_report(request, context, prompt, kwargs['ephemeral_system_prompt'], agent,
+                                getattr(execution, 'schemas', ()))
+        report['mode'] = 'direct'
+        input_limit, output_limit = report['inputLimitTokens'], report['outputReserveTokens']
+        usage = []
+
+        def invoke(content):
+            if cancel.is_set() or timed_out.is_set() or time.monotonic() >= deadline:
+                raise OrganizationExecutionError("Organization execution was cancelled or timed out; no result was accepted.")
+            agent._organization_prompt = content
+            agent._organization_input_limit = input_limit
+            agent._organization_output_limit = output_limit
+            agent._organization_reserve = context.get('reserveModelCall')
+            _guard_plugin_integrations(tool_mode=execution is not None)
+            agent._organization_check()
+            result = agent.run_conversation(user_message=content)
+            usage.append((getattr(agent, 'session_prompt_tokens', None), getattr(agent, 'session_completion_tokens', None)))
+            if cancel.is_set() or timed_out.is_set() or time.monotonic() >= deadline:
+                raise OrganizationExecutionError("Organization execution was cancelled or timed out; no result was accepted.")
+            if agent._organization_intervention:
+                raise OrganizationExecutionError(agent._organization_intervention)
+            if not isinstance(result, dict) or result.get("completed") is False or any(result.get(flag) for flag in ("failed", "partial", "interrupted")):
+                raise OrganizationExecutionError("The model did not produce a complete result; check provider availability and retry.")
+            return result.get('final_response')
+
+        passes = []
+        if report['status'] == 'overflow':
+            if execution is not None:
+                # File-tool turns retain live result history, so they must fit
+                # directly; evidence-only synthesis uses the bounded read path.
+                record_evidence_audit(context, 'recordContextReceipt', report)
+                require_fits(report['inputTokenUpperBound'], input_limit)
+            submitted, base, sources, plans = hierarchical_prompts(prompt, kwargs['ephemeral_system_prompt'], input_limit, kind)
+            for index, (read_prompt, proof) in enumerate(plans):
+                if index:
+                    previous, agent = agent, None
+                    previous.close()
+                    agent = _create_agent(kwargs, cancel, deadline)
+                response = parse_read_result(invoke(read_prompt))
+                retained = {**proof, **response}
+                record_evidence_audit(context, 'recordEvidencePass', retained)
+                passes.append(retained)
+            final_prompt = final_hierarchy_prompt(submitted, base, passes, _STAGE_PROMPTS[kind])
+            final_bound = prompt_input_bound(final_prompt, kwargs['ephemeral_system_prompt'])
+            report.update(mode='hierarchical', fullEvidence=False, sources=sources, passCount=len(passes),
+                          originalPromptSha256=report['promptSha256'], originalInputTokenUpperBound=report['inputTokenUpperBound'],
+                          promptSha256=hashlib.sha256(final_prompt.encode()).hexdigest(), inputTokenUpperBound=final_bound,
+                          status='complete' if final_bound <= input_limit else 'overflow')
+            record_evidence_audit(context, 'recordContextReceipt', report)
+            require_fits(final_bound, input_limit)
+            verify_context_receipt(context, report, passes, approved=False)
+            if kind in {'request.review', 'request.accept'} and any(not row['approved'] or row['conflicts'] for row in passes):
+                # A final model cannot override an exact independent read's
+                # negative finding merely because the compact summary sounds good.
+                blockers = '; '.join(row['findings'][:300] for row in passes if not row['approved'] or row['conflicts'])
+                denial = {'approved': False, 'summary': 'Independent exact evidence checks rejected completion: ' + blockers[:1500],
+                          'evidenceIds': _evidence_ids(context)}
+                if kind == 'request.accept':
+                    denial.update(criteriaResults=[{'criterion': criterion, 'satisfied': False,
+                        'evidenceIds': [], 'reason': 'Exact-source review found unresolved blockers: ' + blockers[:1200]}
+                        for criterion in context['objective']['acceptanceCriteria']],
+                        conflicts=[value for row in passes for value in row['conflicts']][:24])
+                else:
+                    proposals = [item['editProposal'] for item in context.get('evidence', []) if item.get('editProposal')]
+                    if proposals:
+                        denial.update(proposalId=proposals[0]['id'], proposalSha256=proposals[0]['proposalSha256'])
+                return _parse_output(json.dumps(denial), kind, context)
+            previous, agent = agent, None
+            previous.close()
+            agent = _create_agent(kwargs, cancel, deadline)
+            prompt = final_prompt
+        else:
+            record_evidence_audit(context, 'recordContextReceipt', report)
+        parsed = _parse_output(invoke(prompt), kind, context)
+        if parsed.get('approved'):
+            verify_context_receipt(context, report, passes, approved=True)
         if execution is not None and not ({"intervention", "requests"} & parsed.keys()):
             execution.verify_completion(parsed.get("edits", parsed.get("edit")))
-        if hasattr(agent, 'session_prompt_tokens') or hasattr(agent, 'session_completion_tokens'):
-            # Runtime counters start at zero even when the provider omits usage.
-            # A nonempty model stage cannot establish a measured zero-token call.
-            observed = (getattr(agent, 'session_prompt_tokens', None),
-                        getattr(agent, 'session_completion_tokens', None))
+        if any(hasattr(agent, name) for name in ('session_prompt_tokens', 'session_completion_tokens')):
+            # Unknown/interrupted reservations are never converted to measured zero.
             parsed['usage'] = dict(zip(('inputTokens', 'outputTokens'),
-                                      (value if type(value) is int and value > 0 else None for value in observed)))
+                (sum(column) if all(type(value) is int and value > 0 for value in column) else None
+                 for column in zip(*usage))))
         return parsed
     except OrganizationExecutionError as exc:
         return {"intervention": str(exc)}
