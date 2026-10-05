@@ -191,3 +191,74 @@ def test_legacy_unknown_call_usage_parks_only_executed_open_work(tmp_path):
     admitted = reopened.claim_next()
     assert admitted['objective_id'] == queued['id']
     assert reopened.snapshot()['objectives'][1]['status'] == 'needs_input'
+
+
+def test_project_budget_exhaustion_blocks_staff_activation_before_inspection_and_survives_restart(tmp_path):
+    source = (tmp_path / 'source').resolve()
+    source.mkdir()
+    original = {'app.py': 'def add(left, right):\n    return left - right\n',
+                'test_app.py': 'import unittest\nfrom app import add\n'}
+    for name, content in original.items():
+        (source / name).write_bytes(content.encode())
+    grants = ['read_file', 'patch', 'run_tests', 'integrate_source']
+    settings = OrganizationSettings.from_config({'organization': {
+        'max_workers': 1, 'max_inflight': 1, 'max_model_calls': 1,
+        'max_context_tokens': 65536, 'max_output_tokens': 2048,
+        'capabilities': ['work.inspect', 'work.edit'], 'tool_grants': grants,
+        'read_roots': [str(source)],
+        'project_grants': [{'id': 'addition', 'files': ['root0/app.py', 'root0/test_app.py'],
+                            'execution': {'recipe': 'python_unittest', 'timeout_seconds': 10}}],
+        'roster': [{'id': 'editor', 'name': 'Project editor', 'team': 'general',
+                    'capabilities': ['work.inspect', 'work.edit'], 'tool_grants': grants}]}})
+    store = OrganizationStore(tmp_path / 'organization' / 'state.db', settings)
+    objective = store.create_objective('Fix and verify addition', idempotency_key='budgeted-project',
+        required_checks=['project_tests', 'managed_validation', 'source_integration'])
+    plan = store.claim_next()
+    assert plan['type'] == 'request.plan'
+    call_id = store.reserve_model_call(plan, provider='local', model='fixture', input_limit=3072, output_limit=512)
+    assert store.finish(plan, {'workers': 1, 'tasks': [
+        {'title': 'Inspect addition and its tests', 'type': 'work.inspect', 'team': 'general',
+         'agentId': 'editor', 'description': 'Inspect root0/app.py and root0/test_app.py.', 'dependsOn': []},
+        {'title': 'Fix addition without weakening tests', 'type': 'work.edit', 'team': 'general',
+         'agentId': 'editor', 'description': 'Correct subtraction to addition.', 'dependsOn': [0]}]})
+    reason = 'Objective model-call budget exhausted. Automatic execution has stopped.'
+
+    def assert_stopped(current):
+        # One scheduler pass parks the control request; the next observes its
+        # downstream inactive worker. Neither pass may admit execution.
+        assert current.claim_next() is None
+        assert current.claim_next() is None
+        snapshot = current.snapshot()
+        requests = {row['type']: row for row in snapshot['requests']}
+        assert requests['request.plan']['status'] == 'completed'
+        assert requests['request.hire']['status'] == 'pending_intervention'
+        assert reason in requests['request.hire']['reason']
+        assert requests['request.hire']['attempts'] == 0
+        assert requests['work.inspect']['status'] == 'pending_intervention'
+        assert 'not activated; request.hire is required' in requests['work.inspect']['reason']
+        assert requests['work.inspect']['attempts'] == requests['work.edit']['attempts'] == 0
+        assert requests['work.edit']['status'] == 'queued'
+        assert snapshot['objectives'][0]['projectExecution'] is None
+        assert snapshot['objectives'][0]['status'] == 'needs_input'
+        assert usage(current, objective)['modelCalls'] == usage(current, objective)['modelCallLimit'] == 1
+        assert [row['id'] for row in current.execution_audit(plan['id'])['modelCalls']] == [call_id]
+        with current._connect() as conn:
+            assert conn.execute("SELECT active FROM staff_state WHERE agent_id='editor'").fetchone()[0] == 0
+            for table in ('tool_receipts', 'edit_proposals', 'project_run_starts', 'project_source_receipts'):
+                assert conn.execute('SELECT count(*) FROM ' + table).fetchone()[0] == 0
+        assert {name: (source / name).read_bytes().decode() for name in original} == original
+        return requests['request.hire']['id']
+
+    blocked_id = assert_stopped(store)
+    reopened = OrganizationStore(store.path, settings)
+    assert assert_stopped(reopened) == blocked_id
+    assert reopened.cancel(objective['id'])
+    cancelled = OrganizationStore(store.path, settings)
+    assert cancelled.claim_next() is None
+    snapshot = cancelled.snapshot()
+    assert snapshot['objectives'][0]['status'] == 'cancelled'
+    assert snapshot['objectives'][0]['projectExecution'] is None
+    assert all(row['status'] == ('completed' if row['type'] == 'request.plan' else 'cancelled')
+               for row in snapshot['requests'])
+    assert usage(cancelled, objective)['modelCalls'] == 1
+    assert {name: (source / name).read_bytes().decode() for name in original} == original

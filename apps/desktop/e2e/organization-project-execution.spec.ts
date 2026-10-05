@@ -238,10 +238,17 @@ test('keeps the model budget blocked across process restart and cancellation wit
   let { page } = running.fixture
   await createObjective(page)
   const reason = 'Objective model-call budget exhausted. Automatic execution has stopped.'
-  await expect(page.getByRole('button', { name: 'Inspect request: work.inspect', exact: true })).toContainText(reason, {
+  // Configured workers need deterministic activation. The exhausted model
+  // budget parks that control request before inspection is eligible.
+  const blocked = () => page.getByRole('button', { name: 'Inspect request: request.hire', exact: true })
+  await expect(blocked()).toContainText(reason, {
     timeout: 90_000
   })
-  const assertStopped = async () => {
+  const assertStopped = async (cancelled = false) => {
+    await expect(blocked()).toContainText(cancelled ? 'Cancelled' : reason)
+    await expect(page.getByRole('button', { name: 'Inspect request: work.inspect', exact: true })).toContainText(
+      cancelled ? 'Cancelled' : 'not activated; request.hire is required'
+    )
     expect(running!.stages.map(stage => stage.kind)).toEqual(['request.plan'])
     expect(running!.providerErrors).toEqual([])
     await expect(page.getByRole('region', { name: 'Latest project test execution', exact: true })).toContainText(
@@ -256,13 +263,13 @@ test('keeps the model budget blocked across process restart and cancellation wit
   await running.restart()
   page = running.fixture.page
   await openObjective(page)
-  await expect(page.getByRole('button', { name: 'Inspect request: work.inspect', exact: true })).toContainText(reason)
+  await expect(blocked()).toContainText(reason)
   await assertStopped()
   await page.getByRole('button', { name: 'Cancel objective', exact: true }).click()
   await expect(header(page)).toContainText('Cancelled')
   await page.reload()
   await expect(header(page)).toContainText('Cancelled', { timeout: 60_000 })
-  await assertStopped()
+  await assertStopped(true)
   await page.screenshot({ path: testInfo.outputPath('02-cancelled-project-budget-history.png') })
 })
 
