@@ -176,3 +176,10 @@
 .eid-resolution-form { display: flex; flex-direction: column; gap: 16px; margin-top: 20px; }
 .eid-resolution-form > label { display: flex; flex-direction: column; gap: 8px; }
 .eid-owner-history { margin-top: 24px; }
+
+.eid-management-fields { display: flex; flex-direction: column; gap: 16px; border: 0; padding: 0; margin: 0; }
+.eid-management-fields > label:not(.eid-inline) { display: flex; flex-direction: column; gap: 8px; }
+.eid-management-fields fieldset { border: 0; padding: 0; }
+.eid-management-fields legend { margin-bottom: 12px; color: var(--ui-text-primary); }
+.eid-management-fields fieldset label { margin-top: 8px; }
+.eid-request-waiting_response { color: var(--ui-text-secondary); }

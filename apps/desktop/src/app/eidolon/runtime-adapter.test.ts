@@ -223,3 +223,25 @@ it('retains unresolved intent keys by logical owner across profile switches with
   expect(h.request.mock.calls[2][1].idempotencyKey).toBe(a)
   expect(b).not.toBe(a)
 })
+
+it.each(['response', 'configuration'])('fences late %s mutations across profiles and retains an uncertain owner-scoped identity', async kind => {
+  const pending = deferred<OrganizationSnapshot>()
+  const h = harness(vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValue(runtimeSnapshot('Other profile')))
+  const configuration = { roster: [], max_inflight: 2, max_members: 16 }
+  const submit = () => kind === 'response' ? h.adapter.respondRequest({ id: 'question', text: 'Exact answer', decision: 'answered' }) : h.adapter.configureOrganization({ configuration, expectedGeneration: 2 })
+  const old = submit()
+  const assertion = expect(old).rejects.toThrow('connection or profile changed')
+  await settle()
+  const key = h.request.mock.calls[0][1].idempotencyKey
+  const signal = h.request.mock.calls[0][3]
+  h.change({ key: 'connection-b:default:socket-2', connected: true })
+  expect(signal.aborted).toBe(true)
+  await h.adapter.refresh()
+  pending.resolve(runtimeSnapshot('Old private result'))
+  await assertion
+  expect(h.adapter.getSnapshot().objectives[0].title).toBe('Other profile')
+  h.change({ key: 'connection-a:default:socket-1', connected: true })
+  await submit()
+  const retry = h.request.mock.calls.findLast(call => call[0] === (kind === 'response' ? 'organization.respond' : 'organization.configure'))!
+  expect(retry[1].idempotencyKey).toBe(key)
+})

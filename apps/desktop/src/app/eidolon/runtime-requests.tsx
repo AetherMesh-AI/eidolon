@@ -10,6 +10,7 @@ import { useI18n } from '@/i18n/context'
 
 import { Inspector } from './inspector'
 import { RuntimeArtifact } from './runtime-artifact'
+import { hasCompleteManagementProposal, responseDecisions, RuntimeRequestContext } from './runtime-request-context'
 import { RuntimeRequestToolReceipts, ToolReceiptSummary } from './runtime-tool-receipts'
 import type {
   Objective,
@@ -39,7 +40,7 @@ export function filterOrganizationRequests(
         (filters.team === 'all' || request.team === filters.team) &&
         (filters.priority === 'all' || String(request.priority) === filters.priority) &&
         (filters.type === 'all' || request.type === filters.type) &&
-        `${request.type} ${request.team} ${request.reason ?? ''} ${snapshot.objectives.find(item => item.id === request.objectiveId)?.title ?? ''}`
+        `${request.type} ${request.team} ${request.reason ?? ''} ${request.requestedOutcome ?? ''} ${request.requesterId ?? ''} ${snapshot.objectives.find(item => item.id === request.objectiveId)?.title ?? ''}`
           .toLowerCase()
           .includes(filters.query.toLowerCase())
     )
@@ -119,6 +120,7 @@ function ResolutionForm({
   const permittedEvidence = [...new Set(evidence)]
   const selectedEvidence = evidenceIds.filter(id => permittedEvidence.includes(id))
   const unavailable = snapshot.connection?.state !== 'ready' || request.status !== 'pending_intervention'
+  const approvalBlocked = request.type === 'request.hire' && action === 'approve_request' && !hasCompleteManagementProposal(request.managementProposal)
 
   // eslint-disable-next-line no-restricted-syntax -- fence a dismissed response, not shared state
   useEffect(() => {
@@ -134,6 +136,7 @@ function ResolutionForm({
       !resolution ||
       sending.current ||
       unavailable ||
+      approvalBlocked ||
       (resolution.requiresText && !text.trim()) ||
       (resolution.requiresEvidence && !selectedEvidence.length)
     ) {
@@ -143,8 +146,9 @@ function ResolutionForm({
     sending.current = true
     setPending(true)
     setError('')
-    void adapter
-      .resolveRequest({ id: request.id, action: resolution.action, text, evidenceIds: selectedEvidence })
+    const decision = responseDecisions[resolution.action as keyof typeof responseDecisions]
+    const response = decision ? adapter.respondRequest({ id: request.id, text, decision }) : adapter.resolveRequest({ id: request.id, action: resolution.action, text, evidenceIds: selectedEvidence })
+    void response
       .then(() => {
         if (active.current) {
           onClose()
@@ -176,6 +180,7 @@ function ResolutionForm({
         }}
       >
         <p className="eid-note">{copy.queueNote}</p>
+        {approvalBlocked && <p role="alert">{copy.proposalMissing}</p>}
         {resolutions.length ? (
           <>
             <label>
@@ -261,6 +266,7 @@ function ResolutionForm({
                 disabled={
                   pending ||
                   unavailable ||
+                  approvalBlocked ||
                   !resolution ||
                   (resolution.requiresText && !text.trim()) ||
                   (resolution.requiresEvidence && !selectedEvidence.length)
@@ -322,6 +328,7 @@ export function RuntimeRequests({
 
   const [groupBy, setGroupBy] = useState<'team' | 'priority' | 'type' | 'status'>('team')
   const [selected, setSelected] = useState<string | null>(null)
+  const [artifactId, setArtifactId] = useState<string | null>(null)
   const [pending, setPending] = useState<string | null>(null)
   const [error, setError] = useState('')
   const active = useRef(true)
@@ -400,7 +407,7 @@ export function RuntimeRequests({
           >
             <option value="pending_intervention">{copy.needsYou}</option>
             <option value="all">{copy.allRequests}</option>
-            {(['queued', 'running', 'completed', 'cancelled'] as const).map(value => (
+            {(['queued', 'running', 'waiting_response', 'completed', 'cancelled'] as const).map(value => (
               <option key={value} value={value}>
                 {copy[value]}
               </option>
@@ -475,6 +482,7 @@ export function RuntimeRequests({
                     <small>
                       {copy.team}: {item.team} · {copy.priority}: {priorityLabel(item.priority)} · {item.attempts}
                     </small>
+                    {item.requestedOutcome && <small>{item.requestedOutcome}</small>}
                     {item.reason && (
                       <small>
                         {runtimeCopy.routeReason}: <span>{item.reason}</span>
@@ -560,6 +568,7 @@ export function RuntimeRequests({
             <dt>Task ID</dt>
             <dd>{request.taskId || runtimeCopy.notReported}</dd>
           </dl>
+          {(request.requesterId || request.requestedOutcome || request.response || request.managementProposal) && <RuntimeRequestContext onEvidence={setArtifactId} request={request} snapshot={snapshot} />}
           <Link to={`/objectives/${request.objectiveId}`}>{copy.openObjective}</Link>
           {request.type === 'request.merge' && <p className="eid-note">{runtimeCopy.edits.mergeNote}</p>}
           {request.status === 'pending_intervention' && !terminal && (
@@ -574,6 +583,7 @@ export function RuntimeRequests({
           <RuntimeRequestToolReceipts adapter={adapter} key={request.id} request={request} />
         </Inspector>
       )}
+      {artifactId && <RuntimeArtifact adapter={adapter} evidenceId={artifactId} key={artifactId} onClose={() => setArtifactId(null)} snapshot={snapshot} title={copy.evidence} />}
       <OwnerResolutionHistory objectiveId={objective?.id} snapshot={snapshot} />
     </section>
   )

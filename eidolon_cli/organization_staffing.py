@@ -90,10 +90,14 @@ class OrganizationStaffingStore:
         return [{'id': staff.id, 'name': staff.name, 'team': staff.team,
                  'capabilities': list(staff.capabilities), 'tools': list(staff.tool_grants),
                  'enabled': staff.enabled, 'role': staff.role, 'managerId': staff.manager_id,
-                 'responsibilities': list(staff.responsibilities), 'purpose': staff.purpose, 'availableReason': staff_unavailability(staff, self.settings)}
+                 'responsibilities': list(staff.responsibilities), 'purpose': staff.purpose,
+                 'authority': list(staff.authority), 'managedTeams': list(staff.managed_teams), 'scope': staff.scope, 'availableReason': staff_unavailability(staff, self.settings)}
                 for staff in configured_staff(self.settings)]
 
     def _route_reason(self, conn, request):
+        typed = self._typed_context(conn, request)['requestContract']
+        if typed.get('parentRequestId'):
+            return f"No eligible persistent agent accepts {request['type']} for team {request['team']} with {typed['requiredAuthority']}. Owner response is required."
         if request['type'] == 'request.merge':
             return 'The reviewed output is in the managed workspace. Merging it into the source project requires owner intervention; no source file was overwritten.'
         if request['type'] == 'request.validate':
@@ -150,10 +154,15 @@ class OrganizationStaffingStore:
                                     for staff in configured_workers(self.settings)) for task_request in task_requests)
         if workers > len(active) or (self.settings.roster is not None and missing_route):
             self._request(conn, request['objective_id'], 'request.hire', self.settings.team, request['priority'],
-                          payload={'workers': workers, 'routes': [{'team': team, 'type': kind} for team, kind in routes]})
+                          payload={'workers': workers, 'routes': [{'team': team, 'type': kind} for team, kind in routes]},
+                          requester_id=request['agent_id'])
 
     def _finish_hire(self, conn, request, result):
         payload = json.loads(request['payload'])
+        if 'managementProposal' in payload:
+            self.apply_management(conn, request, payload['managementProposal'], request['agent_id'])
+            self._record_response(conn, request, request['agent_id'], 'approved', 'Applied the exact authorized staffing/reorganization proposal.')
+            return
         routes = [(route['team'], route['type']) for route in payload.get('routes', [])]
         active = self._active_staff(conn)
         needed = []

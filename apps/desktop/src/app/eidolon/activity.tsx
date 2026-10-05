@@ -10,7 +10,7 @@ import type { ActivityEvent, OrganizationSnapshot } from './types'
 const categories = { assignment: 'Assignments', decision: 'Decisions', tool: 'Tools', file: 'Files', review: 'Reviews', system: 'System' } as const
 
 const eventCategory: Record<ActivityEvent['kind'], keyof typeof categories> = {
- delegation: 'assignment', completion: 'assignment', decision: 'decision', tool: 'tool', file: 'file',
+ question: 'decision', delegation: 'assignment', completion: 'assignment', decision: 'decision', tool: 'tool', file: 'file',
  approval: 'review', blocker: 'review', review: 'review', planning: 'system', knowledge: 'system', message: 'system', system: 'system',
 }
 

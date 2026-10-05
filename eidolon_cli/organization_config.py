@@ -15,6 +15,9 @@ SUPPORTED_TOOL_GRANTS = ("read_file", "list_files", "search_files", "patch")
 class OrganizationSettings:
     max_workers: int = 2
     max_inflight: int = 2
+    max_members: int = 16
+    max_request_depth: int = 4
+    max_requests_per_stage: int = 4
     max_tasks: int = 12
     max_open_objectives: int = 20
     max_attempts: int = 2
@@ -38,7 +41,8 @@ class OrganizationSettings:
         raw = config.get("organization", {})
         if not isinstance(raw, dict):
             raise ValueError("organization must be a configuration object")
-        limits = {"max_workers": (1, 8), "max_inflight": (1, 4), "max_tasks": (1, 24),
+        limits = {"max_workers": (1, 8), "max_inflight": (1, 4), "max_members": (1, 64),
+                  "max_request_depth": (1, 8), "max_requests_per_stage": (1, 8), "max_tasks": (1, 24),
                   "max_open_objectives": (1, 100), "max_attempts": (1, 3),
                   "max_revisions": (0, 3), "max_replans": (0, 3), "max_stages": (4, 300),
                   "max_owner_resolutions": (1, 24), "max_output_tokens": (256, 16000), "lease_seconds": (15, 300),
@@ -46,7 +50,10 @@ class OrganizationSettings:
                   "max_tool_result_chars": (1000, 20000)}
         values = {}
         for key, (minimum, maximum) in limits.items():
-            value = raw.get(key, getattr(cls, key))
+            default = getattr(cls, key)
+            if key == "max_members" and isinstance(raw.get("roster"), list):
+                default = max(default, len(raw["roster"]))
+            value = raw.get(key, default)
             if type(value) is not int or not minimum <= value <= maximum:
                 raise ValueError(f"organization.{key} must be between {minimum} and {maximum}")
             values[key] = value

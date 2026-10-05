@@ -60,6 +60,8 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
   const createKeys = new Map<string, string>()
   const retryKeys = new Map<string, string>()
   const resolutionKeys = new Map<string, string>()
+  const responseKeys = new Map<string, string>()
+  const configurationKeys = new Map<string, string>()
 
   const publish = (next: OrganizationSnapshot) => {
     // A quiet snapshot poll must not repaint the whole organization graph.
@@ -304,6 +306,28 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
 
       return mutate<OrganizationSnapshot>(`resolve:${input.id}:${idempotencyKey}`, 'organization.resolve', { ...params, idempotencyKey }, value => value).then(() => {
         if (resolutionKeys.get(intent) === idempotencyKey) {resolutionKeys.delete(intent)}
+      })
+    },
+    respondRequest(input) {
+      resetScope()
+      const params = { id: input.id, text: input.text.trim(), decision: input.decision }
+      const intent = JSON.stringify([scope.ownerKey ?? scope.key, params])
+      const idempotencyKey = input.idempotencyKey ?? responseKeys.get(intent) ?? crypto.randomUUID()
+      responseKeys.set(intent, idempotencyKey)
+
+      return mutate<OrganizationSnapshot>(`respond:${input.id}:${idempotencyKey}`, 'organization.respond', { ...params, idempotencyKey }, value => value).then(() => {
+        if (responseKeys.get(intent) === idempotencyKey) {responseKeys.delete(intent)}
+      })
+    },
+    configureOrganization(input) {
+      resetScope()
+      const params = { configuration: input.configuration, expectedGeneration: input.expectedGeneration }
+      const intent = JSON.stringify([scope.ownerKey ?? scope.key, params])
+      const idempotencyKey = input.idempotencyKey ?? configurationKeys.get(intent) ?? crypto.randomUUID()
+      configurationKeys.set(intent, idempotencyKey)
+
+      return mutate<OrganizationSnapshot>(`configure:${idempotencyKey}`, 'organization.configure', { ...params, idempotencyKey }, value => value).then(() => {
+        if (configurationKeys.get(intent) === idempotencyKey) {configurationKeys.delete(intent)}
       })
     },
     cancelObjective: id => mutate<OrganizationSnapshot>(`cancel:${id}`, 'organization.cancel', { id }, value => value).then(() => undefined),

@@ -469,7 +469,8 @@ class OrganizationEditStore(OrganizationProjectStore):
             return False
         self._request(conn, request['objective_id'], 'request.apply', request['team'], request['priority'],
                       request['task_id'], {'proposalId': proposal['id'], 'proposalSha256': proposal['sha256'],
-                                           'evidenceIds': [proposal['evidence_id']], 'reviewRequestId': request['id']})
+                                           'evidenceIds': [proposal['evidence_id']], 'reviewRequestId': request['id']},
+                      requester_id=request['agent_id'])
         conn.execute("UPDATE tasks SET status='queued',feedback=? WHERE id=?", (review['summary'], task['id']))
         self._event(conn, request['objective_id'], 'Exact edit approved; managed-workspace application queued.',
                     'review', request['agent_id'])
@@ -523,7 +524,7 @@ class OrganizationEditStore(OrganizationProjectStore):
                       applied_revision, proposal['new_sha256'], now))
         self._request(conn, request['objective_id'], 'request.validate', request['team'], request['priority'],
                       request['task_id'], {'proposalId': proposal['id'], 'proposalSha256': proposal['sha256'],
-                                           'evidenceIds': [proposal['evidence_id']]})
+                                           'evidenceIds': [proposal['evidence_id']]}, requester_id=request['agent_id'])
         conn.execute("UPDATE tasks SET status='queued' WHERE id=?", (request['task_id'],))
         self._event(conn, request['objective_id'],
                     f'Atomically committed {len(files)} managed file revision(s); exact content validation queued. Source files are unchanged.',

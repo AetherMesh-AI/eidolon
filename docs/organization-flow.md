@@ -18,7 +18,7 @@ closing the desktop does not delete identities or their history. A disconnected
 UI labels its last received snapshot; it does not claim the backend is running.
 
 The roster is not a count of concurrently running model calls. Explicit roster
-configuration accepts up to 64 entries; `max_inflight` independently bounds occupied
+configuration is bounded by `max_members` (default 16, configurable from 1 to 64); `max_inflight` independently bounds occupied
 execution slots. `max_workers` only seeds the initial default worker pool when
 `roster` is omitted. A specialist can take successive compatible assignments without
 being replaced by a new identity. Changing concurrency does not trim the roster.
@@ -49,7 +49,7 @@ Manager selection. This selects responsibility for planning, integration and
 acceptance; it does not create or activate staff. Existing callers that omit these
 IDs keep the established default Executive and Manager.
 
-Example explicit roster in the current profile’s `config.yaml`:
+Use **Organization → Manage organization** to create and edit members in the current profile. The equivalent initial configuration shape is:
 
 ```yaml
 organization:
@@ -96,9 +96,49 @@ to a Manager, and each Executive to the human Owner. `responsibilities` accepts 
 to 12 nonempty strings of up to 500 characters; `purpose` accepts up to 3,000
 characters. Existing configured IDs are reconciled without changing their durable
 identity or retained context. Removing an entry retires it; adding the same ID back
-reuses its identity. Restart the profile’s service to adopt configuration changes.
-This increment does not add roster-management actions, a new request protocol,
-new decision/permission workflows, or an autonomous execution loop.
+reuses its identity. Desktop roster and capacity saves apply transactionally to the
+live profile; no file edit or restart is needed for these management actions.
+The editor preserves untouched settings, validates role/reporting relationships,
+and refuses stale-generation writes. Responsibility text describes a member's job;
+it does not grant authority. Accepted `capabilities` routes and explicit `authority`
+are separate requirements for handling a typed request.
+
+### Typed requests and scoped management
+
+A stage can pause its assignment with a bounded `requests` list. Each request
+retains its type, requester identity, requested outcome, required authority, parent
+request, dependency IDs and evidence IDs. Supported kinds are:
+
+- `request.question`: peers require both this accepted type and `answer.question`.
+- `request.decision`: peers require both this accepted type and `answer.decision`.
+- `request.hire`: a Manager or Executive must accept this type and have explicit
+  `staff.manage` authority. It can apply the exact proposed member upserts and
+  explicitly selected work/memory transfers within its own team and `managed_teams`.
+  `*` explicitly permits all teams. New autonomous members start tool-free and
+  cannot introduce a new provider/model pair or authority their manager lacks.
+- `request.permission`: always reaches the human owner. Its recorded decision
+  cannot change credentials, tools, roots or execution grants.
+
+No eligible handler means a visible Needs You action. Questions/decisions accept
+an owner answer; hiring and permission present approve/deny actions. The staffing
+proposal is complete and visible before approval, including any transfers.
+Responses retain text, responder, decision and time. Parent requests remain
+`waiting_response` until linked responses settle, then resume on the exact
+persistent requester with those responses as context. Independent work continues.
+Answers are not external-action evidence, and denied permission remains binding.
+
+Request trees default to depth 4 and at most 4 child requests per stage. The ledger
+also bounds typed requests to 24 per objective and rejects dependency cycles.
+Exhaustion stays visible for human handling; responses do not erase execution
+budgets. This does not add arbitrary project command execution.
+
+**Manage organization** also supports explicit same-role handoffs. Select exact
+open assignments and optionally bounded retained memory; completed work remains
+attributed to the original identity. The runtime checks active execution,
+capabilities, teams, reporting lines and objective leadership before applying the
+configuration and transfers together. Recent changes show actor, linked request,
+subject and before/after state. Provider credentials and global tool grants remain
+outside these management actions.
 
 ## Try a supported objective
 
@@ -145,11 +185,12 @@ context, not a guarantee that statements are true or an external action happened
 - `request.integrate`: the manager assembles a full objective deliverable.
 - `request.accept`: a distinct executive checks current criteria, exact task and
   integrated evidence, conflicts, and explicit required checks.
-- `request.hire`: the staffing manager activates existing configured worker
-  identities. Its visible route demands preserve planned worker teams and request
-  types. Without an explicit roster, the initial worker pool uses this profile’s
-  settings. An explicit empty roster has no fallback workers. Activation does not
-  create profiles, grant permissions, install software, or mean real-world employment.
+- `request.hire`: legacy staffing demands activate eligible existing workers;
+  linked typed staffing requests can create or update persistent members through
+  exact scoped proposals and audited transfers. Without an explicit roster, the
+  initial worker pool uses this profile's settings. An explicit empty roster has
+  no fallback workers. Staffing does not create profiles, grant new tool access,
+  install software, or mean real-world employment.
 
 The human Owner sets direction for Executive → Manager → Worker. The old Director
 is now a Manager; its stable `director` ID and historical request, event and
@@ -227,6 +268,9 @@ The `organization` section of the existing profile `config.yaml` supports:
 organization:
   max_workers: 2           # 1–8 initial default workers, only when roster is omitted
   max_inflight: 2          # 1–4 occupied execution slots, independent of roster size
+  max_members: 16          # 1–64 persistent configured members
+  max_request_depth: 4     # bounded linked-request ancestry
+  max_requests_per_stage: 4 # bounded questions/decisions/hire/permission requests per stage
   max_tasks: 12            # 1–24 tasks per manager plan
   max_open_objectives: 20  # 1–100
   max_attempts: 2          # 1–3 attempts per request

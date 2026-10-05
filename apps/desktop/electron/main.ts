@@ -406,6 +406,7 @@ import {
   windowsUpdatePrerequisiteError,
   wrapHandoffForDetachedConsole
 } from './updater-process'
+import { captureUpdaterStartupLog } from './updater-startup-log'
 import {
   formatBlockerMessage,
   formatProbeFailedMessage,
@@ -4438,6 +4439,8 @@ async function applyUpdatesPosixHandoff(opts: any) {
     }
   }
 
+  const startupLog = captureUpdaterStartupLog(HERMES_HOME)
+
   const child = spawnUpdaterProcess(handoff.command, args, {
     cwd: HERMES_HOME,
     env: {
@@ -4478,7 +4481,10 @@ async function applyUpdatesPosixHandoff(opts: any) {
   })
 
   if (!handoffOutcome.ok) {
-    const message = `Update failed to start: ${handoffOutcome.message}. Eidolon will keep running — try again, or run \`eidolon update\` from a terminal.`
+    const details = startupLog.readNewTail()
+
+    const message = `Update failed to start: ${handoffOutcome.message}. Eidolon will keep running — try again, or run \`eidolon update\` from a terminal.` +
+      (details ? `\n\n${details}` : '') + `\n\nDetails: ${startupLog.path}`
 
     rememberLog(`[updates] posix hand-off not viable, aborting quit: ${handoffOutcome.message}`)
     emitUpdateProgress({ stage: 'error', message, percent: null })

@@ -17,7 +17,8 @@ CREATE INDEX IF NOT EXISTS owner_resolution_objective ON owner_resolutions(objec
 def resolution_count(conn, objective_id):
     explicit = conn.execute('SELECT count(*) FROM owner_resolutions WHERE objective_id=?', (objective_id,)).fetchone()[0]
     legacy = conn.execute('SELECT count(*) FROM retry_receipts rr JOIN requests r ON r.id=rr.request_id WHERE r.objective_id=?', (objective_id,)).fetchone()[0]
-    return explicit + legacy
+    typed = conn.execute('SELECT count(*) FROM request_response_receipts rr JOIN requests r ON r.id=rr.request_id WHERE r.objective_id=?', (objective_id,)).fetchone()[0]
+    return explicit + legacy + typed
 
 
 def allowed_resolutions(conn, request, settings):
@@ -86,6 +87,11 @@ class OrganizationOwnerStore:
         return identifier, key, body, ids, digest
 
     def allowed_owner_resolutions(self, conn, request):
+        from eidolon_cli.organization_requests import response_options
+        typed = response_options(conn, request)
+        if typed is not None:
+            cancelled = conn.execute('SELECT cancelled FROM objectives WHERE id=?', (request['objective_id'],)).fetchone()[0]
+            return typed if not cancelled and resolution_count(conn, request['objective_id']) < self.settings.max_owner_resolutions else []
         result = allowed_resolutions(conn, request, self.settings)
         if request['status'] == 'pending_intervention' and request['type'] == 'request.merge':
             # The edit module validates immutable proposal/application identity;

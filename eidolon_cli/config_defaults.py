@@ -1699,6 +1699,9 @@ DEFAULT_CONFIG = {
         # profile's configured provider; no additional credentials or profiles.
         "max_workers": 2,
         "max_inflight": 2,
+        "max_members": 16,
+        "max_request_depth": 4,
+        "max_requests_per_stage": 4,
         "max_tasks": 12,
         "max_open_objectives": 20,
         "max_attempts": 2,

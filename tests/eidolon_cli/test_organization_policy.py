@@ -16,9 +16,9 @@ def test_policy_change_fences_claims_and_stale_admission_but_owner_can_cancel(tm
     assert not first.heartbeat(claim)
     assert not first.finish(claim, {'tasks': []})
     assert first.claim_next() is None
-    with pytest.raises(ValueError, match='restart this runtime'):
+    with pytest.raises(ValueError, match='grants or routing changed'):
         first.create_objective('New request', idempotency_key='stale')
-    with pytest.raises(ValueError, match='restart this runtime'):
+    with pytest.raises(ValueError, match='grants or routing changed'):
         first.retry(claim['id'], idempotency_key='stale-retry')
     snapshot = first.snapshot()
     assert snapshot['runtime']['state'] == 'policy_changed'

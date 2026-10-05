@@ -115,7 +115,7 @@ def _stage_record(conn, request, result, *, historical=False):
                           'UNION ALL SELECT summary,evidence_ids,created FROM objective_acceptances '
                           'WHERE request_id=?', (request['id'], request['id'])).fetchone()
     summary = (artifacts[0]['summary'] if artifacts else review['summary'] if review else
-               result.get('summary') or f"Completed {request['type']}.")
+               result.get('summary') or result.get('answer') or f"Completed {request['type']}.")
     evidence = [item['id'] for item in artifacts] if artifacts else json.loads(review['evidence_ids']) if review else []
     created = (artifacts[0]['created'] if artifacts else review['created'] if review else
                request['created'] if historical else time.time())

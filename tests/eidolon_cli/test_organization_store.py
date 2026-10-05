@@ -180,7 +180,12 @@ def test_invalid_plan_is_transactional_and_staffing_is_bounded(store, first_type
         # existing worker's authority and the director's capacity guard.
         ordered_types = [first_type, next(kind for kind in ('work.draft', 'request.hire') if kind != first_type)]
         with ledger._write() as conn:
+            # These synthetic tied IDs also own a durable contract. Retarget
+            # the fixture atomically rather than leaving dangling provenance.
+            conn.execute('PRAGMA defer_foreign_keys=ON')
             for index, kind in enumerate(ordered_types):
+                conn.execute("UPDATE request_contracts SET request_id=? WHERE request_id IN (SELECT id FROM requests WHERE type=? AND status='queued')",
+                             (f'req_tied_{index}', kind))
                 conn.execute("UPDATE requests SET id=?,created=1 WHERE type=? AND status='queued'",
                              (f'req_tied_{index}', kind))
         claims = [ledger.claim_next(), ledger.claim_next()]

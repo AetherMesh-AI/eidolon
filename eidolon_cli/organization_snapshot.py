@@ -7,6 +7,7 @@ from eidolon_cli.organization_identity import agent_identity_view, agent_context
 from eidolon_cli.organization_edits import evidence_proposal
 from eidolon_cli.organization_acceptance import usage_view
 from eidolon_cli.organization_owner import allowed_resolutions
+from eidolon_cli.organization_requests import request_contract_view
 from eidolon_cli.organization_project_workspace import project_validation_view
 
 
@@ -119,6 +120,8 @@ def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
                        'team': row['team'], **agent_identity_view(conn, row['id']),
                        'persistent': True, 'context': agent_context_view(conn, row['id']),
                        'capabilities': accepts, 'requestTypes': accepts,
+                       'authority': list(staff.authority) if staff else [], 'scope': staff.scope if staff else '',
+                       'managedTeams': list(staff.managed_teams) if staff else [],
                        'lifecycle': lifecycle, 'provider': staff.provider if staff else None,
                        'model': staff.model if staff else None, 'tools': list(staff.tool_grants) if staff else [],
                        'status': 'offline' if disabled else 'reviewing' if running and running['type'] in {'request.review', 'request.accept'} else 'executing' if running else 'needs_input' if blocked else 'idle',
@@ -135,7 +138,7 @@ def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
     for row in conn.execute('SELECT * FROM tool_receipts ORDER BY created DESC,id DESC LIMIT 200'):
         if row['request_id'] in visible_requests:
             receipt_groups.setdefault(row['request_id'], []).append(receipt_view(row))
-    ui_requests = [{'id': r['id'], 'objectiveId': r['objective_id'], 'taskId': r['task_id'], 'type': r['type'],
+    ui_requests = [{**request_contract_view(conn, r), 'id': r['id'], 'objectiveId': r['objective_id'], 'taskId': r['task_id'], 'type': r['type'],
                     'team': r['team'], 'priority': r['priority'], 'status': r['status'], 'agentId': r['agent_id'],
                     'allowedResolutions': resolution_options(conn, r) if resolution_options else allowed_resolutions(conn, r, settings),
                     'reason': r['reason'], 'attempts': r['attempts'], 'leaseExpiresAt': _iso(r['lease']),

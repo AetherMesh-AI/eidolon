@@ -87,7 +87,7 @@ export function OrganizationWorkspaceView({ adapter }: { adapter: OrganizationAd
       {pathname === '/requests' && adapter.mode === 'runtime' && <RuntimeRequests adapter={adapter} key={snapshot.connection?.ownerScope ?? snapshot.connection?.scope} snapshot={snapshot} />}
       {pathname === '/activity' && <Activity key={snapshot.connection?.scope} snapshot={snapshot} />}
       {pathname === '/knowledge' && (adapter.mode === 'runtime' ? <Knowledge adapter={adapter} key={snapshot.connection?.scope} snapshot={snapshot} /> : <MemoryWeb items={snapshot.knowledge} />)}
-      {pathname === '/organization' && <Organization key={snapshot.connection?.scope} snapshot={snapshot} />}
+      {pathname === '/organization' && <Organization adapter={adapter.mode === 'runtime' ? adapter : undefined} key={snapshot.connection?.ownerScope ?? snapshot.connection?.scope} snapshot={snapshot} />}
     </div>
   </main>
 }

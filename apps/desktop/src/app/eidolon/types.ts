@@ -111,7 +111,7 @@ export interface ActivityEvent {
   id: string
   objectiveId?: string
   agentId?: string
-  kind: 'planning' | 'delegation' | 'completion' | 'blocker' | 'approval' | 'knowledge' | 'message' | 'decision' | 'tool' | 'file' | 'review' | 'system'
+  kind: 'question' | 'planning' | 'delegation' | 'completion' | 'blocker' | 'approval' | 'knowledge' | 'message' | 'decision' | 'tool' | 'file' | 'review' | 'system'
   provenance?: 'fictional'
   description?: string
   text: string
@@ -233,7 +233,7 @@ export interface OrganizationToolReceipt {
 export interface OrganizationToolEvidence extends OrganizationToolReceipt {
   result?: string
 }
-export type OrganizationResolutionAction = 'provide_input' | 'amend_scope' | 'retry_configuration' | 'request_replan' | 'record_handoff'
+export type OrganizationResolutionAction = 'answer_request' | 'approve_request' | 'deny_request' | 'provide_input' | 'amend_scope' | 'retry_configuration' | 'request_replan' | 'record_handoff'
 export interface OrganizationResolution {
   action: OrganizationResolutionAction
   label: string
@@ -280,7 +280,7 @@ export interface OrganizationRequest {
   type: string
   team: string
   priority: number
-  status: 'queued' | 'running' | 'completed' | 'pending_intervention' | 'cancelled'
+  status: 'queued' | 'running' | 'completed' | 'pending_intervention' | 'waiting_response' | 'cancelled'
   agentId?: string
   reason?: string
   attempts: number
@@ -291,7 +291,83 @@ export interface OrganizationRequest {
   toolReceiptsTruncated?: boolean
   requestedRoutes?: { team: string; type: string }[]
   requestedWorkers?: number
+  requesterId?: string
+  requestedOutcome?: string
+  requiredAuthority?: string
+  parentRequestId?: string | null
+  dependencyIds?: string[]
+  evidenceIds?: string[]
+  response?: OrganizationRequestResponse | null
+  managementProposal?: OrganizationManagementProposal | null
   allowedResolutions?: OrganizationResolution[]
+}
+export interface OrganizationRequestResponse {
+  text: string
+  responderId: string
+  decision?: 'answered' | 'approved' | 'denied'
+  createdAt: string
+}
+export interface OrganizationResponseInput {
+  id: string
+  text: string
+  decision: 'answered' | 'approved' | 'denied'
+  idempotencyKey?: string
+}
+/** Exact backend-owned roster configuration. Edits preserve fields not changed. */
+export interface OrganizationMemberConfiguration {
+  id: string
+  name: string
+  role: 'Executive' | 'Manager' | 'Worker'
+  manager_id: string
+  team: string
+  capabilities: string[]
+  enabled: boolean
+  provider: string | null
+  model: string | null
+  tool_grants: string[]
+  responsibilities: string[]
+  purpose: string
+  scope?: string
+  authority: string[]
+  managed_teams: string[]
+}
+export interface OrganizationTransfer {
+  fromAgentId: string
+  toAgentId: string
+  taskIds: string[]
+  includeMemory: boolean
+}
+export interface OrganizationManagementProposal {
+  members: OrganizationMemberConfiguration[]
+  transfers: OrganizationTransfer[]
+}
+export interface OrganizationConfiguration {
+  roster: OrganizationMemberConfiguration[]
+  max_inflight: number
+  max_members: number
+  transfers?: OrganizationTransfer[]
+}
+export interface OrganizationConfigureInput {
+  configuration: OrganizationConfiguration
+  expectedGeneration: number
+  idempotencyKey?: string
+}
+export interface OrganizationManagementChange {
+  id: string
+  requestId: string | null
+  actorId: string
+  kind: string
+  subjectId: string
+  before: unknown
+  after: unknown
+  createdAt: string
+}
+export interface OrganizationManagement {
+  generation: number
+  configuration: OrganizationConfiguration
+  recentChanges?: OrganizationManagementChange[]
+  allowedTools: string[]
+  allowedCapabilities: string[]
 }
 export interface OrganizationRuntime {
   capabilities: string[]
@@ -310,6 +386,7 @@ export interface OrganizationRuntime {
   maxToolCalls?: number
   supportsWorkspaceEdits?: boolean
   workspaceApplyEnabled?: boolean
+  management?: OrganizationManagement
 }
 export interface OrganizationConnection {
   scope: string
@@ -345,6 +422,8 @@ export interface RuntimeOrganizationAdapter extends OrganizationReader {
   cancelObjective(id: string): Promise<void>
   retryRequest(id: string): Promise<void>
   resolveRequest(input: OrganizationResolutionInput): Promise<void>
+  respondRequest(input: OrganizationResponseInput): Promise<void>
+  configureOrganization(input: OrganizationConfigureInput): Promise<void>
   refresh(): Promise<void>
   getEvidence(id: string): Promise<OrganizationArtifact>
   getToolReceipts(requestId: string): Promise<OrganizationToolEvidence[]>

@@ -25,7 +25,9 @@ from eidolon_cli.organization_receipts import (
 )
 from eidolon_cli.organization_staffing import STAFF_SCHEMA, OrganizationStaffingStore
 from eidolon_cli.organization_edits import EDIT_SCHEMA, OrganizationEditStore, evidence_proposal
-from eidolon_cli.organization_policy import POLICY_SCHEMA, OrganizationPolicyStore, persisted_settings
+from eidolon_cli.organization_policy import POLICY_SCHEMA, OrganizationPolicyStore, resolve_settings
+from eidolon_cli.organization_requests import (REQUEST_SCHEMA, OrganizationRequestStore)
+from eidolon_cli.organization_management import MANAGEMENT_SCHEMA, OrganizationManagementStore
 from eidolon_cli.organization_identity import (
     IDENTITY_SCHEMA, OrganizationIdentityStore, agent_context_view, agent_identity_view,
     task_assignment_view, objective_assignment_view,
@@ -87,13 +89,13 @@ def _text(value, field, limit=10000):
     return value.strip()
 
 
-class OrganizationStore(OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
+class OrganizationStore(OrganizationRequestStore, OrganizationManagementStore, OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
     def __init__(self, path: Path | str, settings: OrganizationSettings | None = None):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
-            conn.executescript(_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA)
-            self.settings = settings or persisted_settings(conn) or OrganizationSettings()
+            conn.executescript(_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA)
+            self.settings = resolve_settings(conn, settings)
         with self._write() as conn:
             self._migrate_acceptance(conn)
             self._adopt_policy(conn)
@@ -113,6 +115,7 @@ class OrganizationStore(OrganizationIdentityStore, OrganizationAcceptanceStore, 
                 conn.execute('UPDATE agents SET accepts=? WHERE id=?', (json.dumps(accepts), ident))
             self._sync_staff(conn)
             self._migrate_identities(conn)
+            self._migrate_request_contracts(conn)
             self.migrate_open_project_validation(conn)
             for row in conn.execute("SELECT objective_id FROM objective_control WHERE status='pending'").fetchall():
                 self._maybe_integrate(conn, row['objective_id'])
@@ -132,11 +135,13 @@ class OrganizationStore(OrganizationIdentityStore, OrganizationAcceptanceStore, 
     def _write(self):
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
+            previous = (self.settings, getattr(self, '_policy_generation', None), getattr(self, '_policy_fingerprint', None))
             try:
                 yield conn
                 conn.commit()
             except BaseException:
                 conn.rollback()
+                self.settings, self._policy_generation, self._policy_fingerprint = previous
                 raise
 
     @staticmethod
@@ -145,7 +150,7 @@ class OrganizationStore(OrganizationIdentityStore, OrganizationAcceptanceStore, 
                      (objective, agent, kind, text, time.time()))
 
     @staticmethod
-    def _request(conn, objective, request_type, team, priority, task=None, payload=None):
+    def _request(conn, objective, request_type, team, priority, task=None, payload=None, *, requester_id=None):
         ident = _id("req")
         payload = dict(payload or {})
         if payload.get('evidenceIds'):
@@ -164,6 +169,7 @@ class OrganizationStore(OrganizationIdentityStore, OrganizationAcceptanceStore, 
             payload['evidenceHashes'] = hashes
         conn.execute("INSERT INTO requests(id,objective_id,task_id,type,team,priority,status,created,payload) VALUES (?,?,?,?,?,?,'queued',?,?)",
                      (ident, objective, task, request_type, team, priority, time.time(), json.dumps(payload or {})))
+        OrganizationRequestStore._insert_request_contract(conn, ident, requester_id=requester_id)
         return ident
 
     def create_objective(self, title, description=None, priority="normal", *, idempotency_key, acceptance_criteria=None, delivery_mode="source_project", required_checks=None, executive_id=None, manager_id=None):
@@ -223,11 +229,12 @@ class OrganizationStore(OrganizationIdentityStore, OrganizationAcceptanceStore, 
         staff = conn.execute("SELECT * FROM agents ORDER BY id").fetchall()
         candidates = []
         for agent in staff:
-            if not self._assignment_allows(conn, request, agent):
+            if not self._assignment_allows(conn, request, agent) or not self._continuation_allows(conn, request, agent):
                 continue
-            if self._staff_reason(conn, agent, request['type']):
+            typed = self._typed_eligible(conn, request, agent)
+            if typed is False or self._staff_reason(conn, agent, request['type']):
                 continue
-            if agent["team"] != request["team"] or request["type"] not in json.loads(agent["accepts"]):
+            if (typed is not True and agent["team"] != request["team"]) or request["type"] not in json.loads(agent["accepts"]):
                 continue
             if request["type"] == "request.review" and agent["id"] == author:
                 continue
@@ -236,6 +243,8 @@ class OrganizationStore(OrganizationIdentityStore, OrganizationAcceptanceStore, 
 
     @staticmethod
     def _dependencies_ready(conn, request):
+        if not OrganizationRequestStore._request_dependencies_ready(conn, request):
+            return False
         if not request["task_id"]:
             return True
         row = conn.execute("SELECT dependencies FROM tasks WHERE id=?", (request["task_id"],)).fetchone()
@@ -246,10 +255,18 @@ class OrganizationStore(OrganizationIdentityStore, OrganizationAcceptanceStore, 
         with self._write() as conn:
             if not self._policy_current(conn):
                 return None
-            if conn.execute("SELECT count(*) FROM requests WHERE status='running'").fetchone()[0] >= self.settings.max_inflight:
+            running = conn.execute("SELECT type,payload FROM requests WHERE status='running'").fetchall()
+            # Membership changes have one short exclusive ledger stage. Queue
+            # behind existing work, rather than converting capacity into an
+            # unnecessary owner approval or fencing unrelated assignments.
+            if len(running) >= self.settings.max_inflight or any(
+                    row['type'] == 'request.hire' and 'managementProposal' in json.loads(row['payload'])
+                    for row in running):
                 return None
             rows = conn.execute("SELECT r.* FROM requests r JOIN objectives o ON o.id=r.objective_id WHERE r.status='queued' AND o.cancelled=0 AND r.available<=? ORDER BY r.priority DESC,r.created,r.id", (time.time(),)).fetchall()
             for request in rows:
+                if running and request['type'] == 'request.hire' and 'managementProposal' in json.loads(request['payload']):
+                    continue
                 if not self._dependencies_ready(conn, request):
                     continue
                 candidates, agent = self._eligible(conn, request)
@@ -367,15 +384,22 @@ class OrganizationStore(OrganizationIdentityStore, OrganizationAcceptanceStore, 
             agent.update(agent_identity_view(conn, request['agent_id']))
             staff = self._staff(agent['id'])
             if staff:
-                agent.update({'provider': staff.provider, 'model': staff.model})
+                agent.update({'provider': staff.provider, 'model': staff.model, 'scope': staff.scope,
+                              'authority': list(staff.authority), 'managedTeams': list(staff.managed_teams)})
             organization = {'agents': [
                 {'id': row['id'], 'name': row['name'], 'role': row['role'], 'managerId': row['manager_id'],
                  'team': row['team'], 'capabilities': json.loads(row['accepts']),
                  'responsibilities': agent_identity_view(conn, row['id'])['responsibilities']}
                 for row in conn.execute('SELECT * FROM agents ORDER BY id')]}
             return {"objective": objective, "task": task, "agent": agent,
+                    **self._typed_context(conn, request),
                     "agentContext": agent_context_view(conn, request['agent_id']), "dependencies": dependencies,
                     "organization": organization, "maxInflight": self.settings.max_inflight,
+                    "managementPolicy": {"maxMembers": self.settings.max_members,
+                        "memberCount": len(self._staffing_context()),
+                        "maxRequestDepth": self.settings.max_request_depth,
+                        "maxRequestsPerStage": self.settings.max_requests_per_stage,
+                        "newMemberTools": [], "globalGrantExpansion": False},
                     "evidence": evidence, "feedback": task["feedback"] if task else payload.get("feedback", control["summary"]),
                     "ownerInputs": owner_inputs, "maxOutputTokens": self.settings.max_output_tokens,
                     "toolReceipts": [receipt for item in evidence for receipt in item['toolReceipts']],
@@ -471,6 +495,8 @@ class OrganizationStore(OrganizationIdentityStore, OrganizationAcceptanceStore, 
             from eidolon_cli.organization_owner import resolution_count
             if resolution_count(conn, row['objective_id']) >= self.settings.max_owner_resolutions:
                 raise ValueError('Owner resolution limit reached; create a revised objective')
+            if self._typed_context(conn, row)['requestContract'].get('parentRequestId') is not None:
+                raise ValueError('Linked requests require an exact response, not a replay')
             if row['type'] == 'request.merge':
                 raise ValueError('Source handoffs require an exact record_handoff resolution, not a replay')
             conn.execute("UPDATE requests SET status='queued',reason=NULL,available=0,agent_id=NULL WHERE id=?", (request_id,))
@@ -507,7 +533,14 @@ class OrganizationStore(OrganizationIdentityStore, OrganizationAcceptanceStore, 
             request = self._owned(conn, claim)
             if request is None:
                 return False
-            handlers = {"request.plan": self._finish_plan, "request.review": self._finish_review,
+            if 'requests' in result:
+                if set(result) - {'requests', 'usage', 'memory'}:
+                    raise ValueError('A paused stage may only return its typed requests')
+                self._record_usage(conn, request, result)
+                self._raise_requests(conn, request, result['requests'])
+                return True
+            handlers = {"request.question": self._finish_response, "request.decision": self._finish_response,
+                        "request.plan": self._finish_plan, "request.review": self._finish_review,
                         "request.hire": self._finish_hire, 'work.edit': self._finish_edit_work,
                         'request.apply': self._finish_apply,
                         'request.integrate': self._finish_integrate, 'request.accept': self._finish_accept}
@@ -520,6 +553,7 @@ class OrganizationStore(OrganizationIdentityStore, OrganizationAcceptanceStore, 
             self._remember_agent_finish(conn, request, result)
             conn.execute("UPDATE requests SET status='completed',token=NULL,lease=NULL,reason=NULL WHERE id=?", (request["id"],))
             self._event(conn, request["objective_id"], f"{request['type']} finished.", "review" if request["type"] == "request.review" else "completion", request["agent_id"])
+            self._resume_answered_parent(conn, request)
             self._maybe_integrate(conn, request['objective_id'])
             return True
 
@@ -550,7 +584,8 @@ class OrganizationStore(OrganizationIdentityStore, OrganizationAcceptanceStore, 
             conn.execute("INSERT INTO tasks(id,objective_id,title,description,type,team,priority,status,dependencies) VALUES (?,?,?,?,?,?,?,?,?)", values)
             self._assign_task(conn, values[0], specification, request['agent_id'])
             conn.execute('INSERT INTO objective_task_rounds SELECT ?,objective_id,round FROM objective_control WHERE objective_id=?', (values[0], request['objective_id']))
-            self._request(conn, request["objective_id"], values[4], values[5], values[6], values[0])
+            self._request(conn, request["objective_id"], values[4], values[5], values[6], values[0],
+                          requester_id=request["agent_id"])
         self._queue_staffing(conn, request, workers, normalized)
         self._event(conn, request["objective_id"], f"Manager created {len(tasks)} scoped tasks with explicit dependencies.", "planning", request["agent_id"])
 
@@ -565,7 +600,8 @@ class OrganizationStore(OrganizationIdentityStore, OrganizationAcceptanceStore, 
                       hashlib.sha256(content.encode()).hexdigest(), summary, time.time()))
         self._link_tool_evidence(conn, request, evidence)
         conn.execute("UPDATE tasks SET status='review',author_id=?,result=? WHERE id=?", (request["agent_id"], summary, request["task_id"]))
-        self._request(conn, request["objective_id"], "request.review", request["team"], request["priority"], request["task_id"], {"evidenceIds": [evidence]})
+        self._request(conn, request["objective_id"], "request.review", request["team"], request["priority"], request["task_id"], {"evidenceIds": [evidence]},
+                      requester_id=request["agent_id"])
         self._event(conn, request["objective_id"], "Deliverable saved; independent evidence-bound review requested.", "review", request["agent_id"])
 
     def _finish_review(self, conn, request, result):
@@ -596,10 +632,12 @@ class OrganizationStore(OrganizationIdentityStore, OrganizationAcceptanceStore, 
             conn.execute("UPDATE tasks SET status='completed',feedback=? WHERE id=?", (summary, task["id"]))
         elif task["revision"] < self.settings.max_revisions:
             conn.execute("UPDATE tasks SET status='queued',revision=revision+1,feedback=? WHERE id=?", (summary, task["id"]))
-            self._request(conn, request["objective_id"], task["type"], task["team"], task["priority"], task["id"])
+            self._request(conn, request["objective_id"], task["type"], task["team"], task["priority"], task["id"],
+                          requester_id=request["agent_id"])
             self._event(conn, request["objective_id"], "Reviewer requested changes; a bounded revision is queued.", "review", request["agent_id"])
         else:
-            ident = self._request(conn, request["objective_id"], task["type"], task["team"], task["priority"], task["id"])
+            ident = self._request(conn, request["objective_id"], task["type"], task["team"], task["priority"], task["id"],
+                                  requester_id=request["agent_id"])
             pending = conn.execute("SELECT * FROM requests WHERE id=?", (ident,)).fetchone()
             self._pending(conn, pending, "Review revision limit reached. Owner intervention is required: " + summary[:1500])
             # This intervention is terminal for this objective: retries must not bypass the revision budget.
@@ -610,12 +648,13 @@ class OrganizationStore(OrganizationIdentityStore, OrganizationAcceptanceStore, 
         with self._connect() as conn:
             conn.execute("BEGIN")
             result = build_snapshot(conn, self.settings, resolution_options=self.allowed_owner_resolutions)
+            result['runtime']['management'] = self.management_view(conn)
             if not self._policy_current(conn):
                 for request in result['requests']:
                     request['allowedResolutions'] = []
                 result['runtime'].update({'state': 'policy_changed', 'capabilities': [], 'readRoots': [],
                     'readFileEnabled': False, 'workspaceApplyEnabled': False,
-                    'scope': 'Organization grants or routing changed. Restart this runtime before submitting or retrying work.'})
+                    'scope': 'Organization grants or routing changed. Wait for active work to stop, then refresh Organization before submitting or retrying work.'})
             return result
 
     def evidence(self, evidence_id):

@@ -202,7 +202,8 @@ class OrganizationAcceptanceStore:
                       content, hashlib.sha256(content.encode()).hexdigest(), summary, json.dumps(expected), time.time()))
         conn.execute("UPDATE objective_control SET status='reviewing',deliverable_id=? WHERE objective_id=?", (ident, request['objective_id']))
         self._request(conn, request['objective_id'], 'request.accept', self._objective_agent(conn, request['objective_id'], 'Executive')['team'], request['priority'],
-                      payload={'evidenceIds': [*expected, ident], 'round': control['round']})
+                      payload={'evidenceIds': [*expected, ident], 'round': control['round']},
+                      requester_id=request['agent_id'])
 
     def _finish_accept(self, conn, request, result):
         from eidolon_cli.organization_store import _text
@@ -232,11 +233,13 @@ class OrganizationAcceptanceStore:
         if approved:
             conn.execute("UPDATE objective_control SET status='accepted',summary=? WHERE objective_id=?", (summary, request['objective_id']))
         elif control['round'] < min(control['max_replans'], self.settings.max_replans):
-            self._replan(conn, request['objective_id'], summary, completing_request=request['id'])
+            self._replan(conn, request['objective_id'], summary, completing_request=request['id'],
+                         requester_id=request['agent_id'])
         else:
             conn.execute("UPDATE objective_control SET status='blocked',summary=? WHERE objective_id=?", (summary, request['objective_id']))
             ident = self._request(conn, request['objective_id'], 'request.accept', self._objective_agent(conn, request['objective_id'], 'Executive')['team'], request['priority'],
-                                  payload={'evidenceIds': expected, 'round': control['round'], 'budgetExhausted': True})
+                                  payload={'evidenceIds': expected, 'round': control['round'], 'budgetExhausted': True},
+                                  requester_id=request['agent_id'])
             self._pending(conn, conn.execute('SELECT * FROM requests WHERE id=?', (ident,)).fetchone(),
                           'Objective replan limit reached. Final deliverable rejected: ' + summary[:1500])
             conn.execute('UPDATE requests SET attempts=? WHERE id=?', (self.settings.max_attempts, ident))
@@ -251,7 +254,7 @@ class OrganizationAcceptanceStore:
                                                  require_source='source_integration' in checks,
                                                  require_validation='managed_validation' in checks)
 
-    def _replan(self, conn, objective_id, feedback, *, completing_request=None):
+    def _replan(self, conn, objective_id, feedback, *, completing_request=None, requester_id='owner'):
         from eidolon_cli.organization_receipts import fence_receipts
         control = conn.execute('SELECT * FROM objective_control WHERE objective_id=?', (objective_id,)).fetchone()
         if control['round'] >= min(control['max_replans'], self.settings.max_replans):
@@ -275,7 +278,8 @@ class OrganizationAcceptanceStore:
         conn.execute("UPDATE objective_control SET round=round+1,status='replanning',summary=?,deliverable_id=NULL WHERE objective_id=?", (feedback, objective_id))
         objective = conn.execute('SELECT * FROM objectives WHERE id=?', (objective_id,)).fetchone()
         self._request(conn, objective_id, 'request.plan', self._objective_agent(conn, objective_id, 'Manager')['team'], objective['priority'],
-                      payload={'round': control['round'] + 1, 'feedback': feedback, 'evidenceIds': previous})
+                      payload={'round': control['round'] + 1, 'feedback': feedback, 'evidenceIds': previous},
+                      requester_id=requester_id)
         self._event(conn, objective_id, 'A bounded objective replan is queued. Previous artifacts and decisions remain in history.', 'planning')
 
     def _record_usage(self, conn, request, result):

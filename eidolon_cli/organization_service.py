@@ -79,7 +79,7 @@ class OrganizationService:
                  poll_seconds: float = 0.25):
         self.store = store
         self.home = Path(home or get_eidolon_home()).resolve()
-        self.settings = settings or OrganizationSettings()
+        self.settings = settings or store.settings
         self.executor = executor or _execute
         self.poll_seconds = max(0.01, poll_seconds)
         self._lock = threading.RLock()
@@ -164,6 +164,61 @@ class OrganizationService:
             self.start()
         return changed
 
+    def respond(self, request_id: str, *, text: str, decision: str, idempotency_key: str) -> bool:
+        with self._lock:
+            payload = dict(text=text, decision=decision, idempotency_key=idempotency_key)
+            if self.store.response_recorded(request_id, **payload):
+                return False
+            if self._stop.is_set():
+                raise RuntimeError("Organization service is stopping; reconnect before responding")
+            if request_id in self._running:
+                raise ValueError("The request execution is still stopping; answer after it exits")
+            with _ExecutionLock(self.home / "organization" / "execution-locks", request_id) as acquired:
+                if not acquired:
+                    raise ValueError("The request is still executing in another runtime")
+                changed = self.store.respond(request_id, **payload)
+                self.settings = self.store.settings
+        if changed:
+            self.start()
+        return changed
+
+    def refresh_configuration(self):
+        """Adopt another runtime's validated ledger policy without restarting chat."""
+        from eidolon_cli.organization_policy import persisted_settings
+        with self._lock:
+            if self._running:
+                return False
+            with self.store._connect() as conn:
+                conn.execute('BEGIN')
+                if self.store._policy_current(conn):
+                    return False
+                settings = persisted_settings(conn)
+                policy = conn.execute('SELECT generation,fingerprint FROM organization_policy WHERE id=1').fetchone()
+                if settings is None or policy is None:
+                    raise ValueError('Organization configuration is unavailable')
+                self.store.settings = self.settings = settings
+                self.store._policy_generation = policy['generation']
+                self.store._policy_fingerprint = policy['fingerprint']
+            self._wake.set()
+            return True
+
+    def configure(self, configuration: dict, *, expected_generation: int, idempotency_key: str):
+        with self._lock:
+            if self.store.configuration_recorded(configuration, expected_generation=expected_generation,
+                                                 idempotency_key=idempotency_key):
+                return self.store.configure_organization(configuration, expected_generation=expected_generation,
+                                                        idempotency_key=idempotency_key)
+            if self._stop.is_set():
+                raise RuntimeError("Organization service is stopping; reconnect before configuring")
+            if self._running:
+                raise ValueError("Organization executions are active or stopping; configure after they exit")
+            result = self.store.configure_organization(configuration, expected_generation=expected_generation,
+                                                       idempotency_key=idempotency_key)
+            self.settings = self.store.settings
+            self.store.refresh_unhandled_requests()
+        self.start()
+        return result
+
     def stop(self, timeout: float = 5.0) -> bool:
         self._stop.set()
         # Persist uncertain work before waiting; SIGKILL may follow the grace.
@@ -243,6 +298,7 @@ class OrganizationService:
                     else:
                         try:
                             self.store.finish(record.claim, record.result)
+                            self.settings = self.store.settings
                         except ValueError as exc:
                             self.store.fail(record.claim, str(exc)[:2000], retryable=False)
                 del self._running[request_id]
@@ -297,6 +353,7 @@ class OrganizationService:
                     if self._stop.is_set() and not self._running:
                         return
                     if not self._stop.is_set():
+                        self.refresh_configuration()
                         self.store.recover_expired()
                         self._fill_slots()
             except Exception:
@@ -322,9 +379,11 @@ def get_service() -> OrganizationService:
         if service is None or (service._stop.is_set() and not service.running):
             from eidolon_cli.config import load_config
             settings = from_config(load_config())
-            service = OrganizationService(OrganizationStore(path, settings=settings),
-                                          settings=settings, home=path.parent.parent)
+            store = OrganizationStore(path, settings=settings)
+            service = OrganizationService(store, settings=store.settings, home=path.parent.parent)
             _services[path] = service
+        else:
+            service.refresh_configuration()
         return service
 
 

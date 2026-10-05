@@ -137,6 +137,26 @@ def _(params, service):
     return _organization_snapshot(organization)
 
 
+@_organization_method("organization.respond")
+def _(params, service):
+    _organization_params(params, {"id", "text", "decision", "idempotencyKey"})
+    organization = service()
+    organization.respond(_organization_text(params, "id", 128),
+                         text=_organization_text(params, "text", 12000),
+                         decision=_organization_text(params, "decision", 64),
+                         idempotency_key=_organization_text(params, "idempotencyKey", 128))
+    return _organization_snapshot(organization)
+
+
+@_organization_method("organization.configure")
+def _(params, service):
+    _organization_params(params, {"configuration", "expectedGeneration", "idempotencyKey"})
+    organization = service()
+    organization.configure(params.get("configuration"), expected_generation=params.get("expectedGeneration"),
+                           idempotency_key=_organization_text(params, "idempotencyKey", 128))
+    return _organization_snapshot(organization)
+
+
 @_organization_method("organization.evidence")
 def _(params, service):
     _organization_params(params, {"id"})

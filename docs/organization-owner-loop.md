@@ -24,6 +24,52 @@ Workers. Existing profile chats retain their separate canonical identity.
 For configuration, memory bounds and a scoped roster example, see
 [Persistent identities and reusable specialists](organization-flow.md#persistent-identities-and-reusable-specialists).
 
+## Manage members without leaving the desktop
+
+Organization → **Manage organization** edits the connected profile's persistent
+roster. Create or select a member, choose its role and reporting leader, team,
+purpose, scope and responsibilities, then select accepted request types and the
+separate response/staffing authority. Provider and model overrides are a pair;
+leave both empty to inherit the profile's configured provider/model. Worker tool
+choices are restricted to tools already granted to this organization. Leaders
+remain tool-free. A staffing manager's scope includes its own team and any explicit
+managed teams; `*` deliberately includes every team.
+
+The persistent member limit is distinct from concurrent execution slots. Disabling
+assignments preserves the identity, memory and historical work. Configuration
+saves use a generation check and idempotency receipt. A stale editor asks the owner
+to review current settings instead of overwriting another change. A lost response
+can be retried safely without duplicating the change.
+
+For reorganization, add an explicit handoff, choose source and destination members
+with the same role, and select exact open assignments and optionally bounded memory.
+The runtime validates reporting lines, teams, capabilities and active execution
+before applying the complete change atomically. Completed history stays with its
+original identity. Recent organization changes expose the actor, linked request,
+subject, before/after configuration and transfer receipt.
+
+## Answer linked agent requests
+
+A worker or leader can pause its assignment with a `request.question`,
+`request.decision`, `request.hire` or `request.permission`. The parent request is
+`waiting_response`; other independent work can continue. Each request retains the
+requester, requested outcome, required authority, parent, dependencies and evidence
+links. Authorized persistent peers answer questions and decisions only when both
+the accepted request type and explicit authority match. Staffing additionally
+requires `staff.manage` and a matching team scope. Permission always reaches the
+human owner and records a scoped decision without changing credentials or grants.
+
+Needs You shows unhandled requests with the backend's permitted answer, approve or
+deny actions. Hiring displays the exact proposed member configurations and selected
+assignment/memory transfers before approval. Approval applies that recorded proposal;
+it does not accept arbitrary new tool access. Answers and decisions are retained
+with responder identity and time. Once all linked requests are answered, the exact
+requesting assignment resumes with those responses in context. Reloading the desktop
+retains member identities, responses, work and the audit trail. Linked request trees
+default to depth 4 and at most 4 children per stage, with at most 24 typed requests
+per objective. Cycles and exhausted limits remain visible for human handling.
+These bounded request controls do not add arbitrary project execution.
+
 ## Submit an outcome and its criteria
 
 Home accepts the objective, supplied context, acceptance criteria, priority,

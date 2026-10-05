@@ -686,8 +686,28 @@ if [ "$HANDOFF_DAEMONIZED" -ne 1 ]; then
   # as a flag. Appending here previously left HANDOFF_DAEMONIZED unset on
   # every re-exec, causing this block to re-fire forever (self-exec loop,
   # unbounded argv growth) whenever relaunch args were present.
+  # Apple's /usr/bin/python3 is a developer-tools launcher, not a guaranteed
+  # interpreter. A healthy Eidolon install must update without Xcode/CLT.
+  # Keep the system fallback for repairing a broken managed venv, but validate
+  # each candidate before handing it the detached worker.
+  DAEMON_PYTHON=""
+  for candidate in "$INSTALL_ROOT/venv/bin/python3" "$INSTALL_ROOT/venv/bin/python" \
+      "$(command -v python3 2>/dev/null)" /usr/bin/python3; do
+    [ -x "$candidate" ] || continue
+    if /usr/bin/env -u PYTHONHOME -u PYTHONPATH -u PYTHONSTARTUP -u __PYVENV_LAUNCHER__ \
+        "$candidate" -c 'import encodings, os' >/dev/null 2>>"$LOG"; then
+      DAEMON_PYTHON="$candidate"
+      break
+    fi
+    log "hand-off interpreter failed: $candidate"
+  done
+  if [ -z "$DAEMON_PYTHON" ]; then
+    log "Update could not start: no working Python interpreter was found. Repair the Eidolon runtime and retry."
+    exit 1
+  fi
+  log "hand-off interpreter: $DAEMON_PYTHON"
   /usr/bin/env -u PYTHONHOME -u PYTHONPATH -u PYTHONSTARTUP -u __PYVENV_LAUNCHER__ \
-    /usr/bin/nohup /usr/bin/python3 -c '
+    /usr/bin/nohup "$DAEMON_PYTHON" -c '
 import os, sys
 env = os.environ.copy()
 os.setsid()

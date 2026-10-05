@@ -1,13 +1,16 @@
 import { useState } from 'react'
 import { Link } from 'react-router'
 
+import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n/context'
 import type { OrganizationRosterCopy } from '@/i18n/organization-roster'
 
 import { AgentContext } from './agent-context'
 import { AgentAvatar } from './avatar'
 import { Inspector } from './inspector'
-import type { OrganizationAgent, OrganizationSnapshot } from './types'
+import { OrganizationManagementForm } from './runtime-management-form'
+import { OrganizationManagementHistory } from './runtime-management-history'
+import type { OrganizationAgent, OrganizationSnapshot, RuntimeOrganizationAdapter } from './types'
 
 function currentAssignment(snapshot: OrganizationSnapshot, agent: OrganizationAgent, copy: OrganizationRosterCopy) {
   const tasks = snapshot.tasks.filter(task => (task.ownerId === agent.id || task.reviewerId === agent.id || task.managingAgentId === agent.id || task.assignedById === agent.id) && task.status !== 'completed' && task.status !== 'cancelled')
@@ -17,12 +20,13 @@ function currentAssignment(snapshot: OrganizationSnapshot, agent: OrganizationAg
   return snapshot.source === 'runtime' ? 'No current task assignment recorded' : snapshot.objectives.find(objective => objective.id === agent.objectiveId)?.title || 'Unknown · no current assignment recorded'
 }
 
-export function Organization({ snapshot }: { snapshot: OrganizationSnapshot }) {
+export function Organization({ snapshot, adapter }: { snapshot: OrganizationSnapshot; adapter?: RuntimeOrganizationAdapter }) {
   const { t } = useI18n()
   const copy = t.organizationRuntime
   const roster = t.organizationRoster
   const roles: Record<string, string> = { Owner: roster.owner, Executive: roster.executive, Manager: roster.manager, Worker: roster.worker, Director: roster.manager, Employee: roster.worker }
   const [selected, setSelected] = useState<string | null>(null)
+  const [managing, setManaging] = useState(false)
   const [mode, setMode] = useState('List')
   const [query, setQuery] = useState('')
   const runtime = snapshot.source === 'runtime'
@@ -45,6 +49,7 @@ export function Organization({ snapshot }: { snapshot: OrganizationSnapshot }) {
         <dt>{roster.executionState}</dt><dd>{snapshot.runtime?.state ?? copy.notReported}</dd>
       </dl>
     </>}
+    {adapter && snapshot.runtime?.management && <Button disabled={snapshot.connection?.state !== 'ready'} onClick={() => {setSelected(null); setManaging(true)}} variant="secondary">{roster.manage}</Button>}
     <div className="eid-toolbar"><label className="eid-filter">Find an agent<input onChange={event => setQuery(event.target.value)} placeholder="Name or responsibility…" value={query} /></label><div aria-label="Organization layout" className="eid-tabs">{['Grid', 'List'].map(item => <button aria-pressed={mode === item} key={item} onClick={() => setMode(item)}>{item}</button>)}</div></div>
     <div aria-label={`${mode} of organization`} className={`eid-organization eid-organization-${mode.toLowerCase()}`}>
       {agents.map(item => <button aria-label={`Inspect ${item.name}`} className={`eid-agent eid-agent-${item.status}`} key={item.id} onClick={() => setSelected(item.id)}>
@@ -54,6 +59,8 @@ export function Organization({ snapshot }: { snapshot: OrganizationSnapshot }) {
     </div>
     {!agents.length && <div className="eid-empty"><h2>{query ? 'No matching agents' : 'No connected organization agents'}</h2><p>{query ? 'Try another name, team, or responsibility.' : runtime ? 'The connected gateway has not reported any organization agents.' : 'Load the explicitly fictional example to explore the map, or inspect existing runtime configuration.'}</p></div>}
     <div className="eid-inline"><Link className="eid-button" to="/profiles">Manage runtime profiles</Link><Link to="/agents">Inspect live agents →</Link></div>
+    {runtime && <OrganizationManagementHistory snapshot={snapshot} />}
+    {managing && adapter && snapshot.runtime?.management && <OrganizationManagementForm adapter={adapter} key={snapshot.connection?.ownerScope ?? snapshot.connection?.scope} management={snapshot.runtime.management} onClose={() => setManaging(false)} snapshot={snapshot} />}
     {agent && <Inspector kind="agent" onClose={() => setSelected(null)} title={agent.name}>
       <p className="eid-eyebrow">{runtime ? 'Runtime agent · Gateway record' : 'Prototype agent · Not live'}</p><AgentAvatar name={agent.name} /><p>{roles[agent.role] || agent.role}</p>
       <dl>{runtime && <><dt>{copy.lifecycle}</dt><dd>{agent.lifecycle ? copy.lifecycleLabels[agent.lifecycle] : copy.notReported}</dd><dt>{copy.provider}</dt><dd>{agent.provider || copy.notReported}</dd></>}<dt>Status</dt><dd>● {agent.status}</dd><dt>Team</dt><dd>{agent.team?.trim() || 'Unknown · team not recorded'}</dd><dt>Reports to</dt><dd>{managerName(agent)}</dd><dt>Direct reports</dt><dd>{snapshot.agents.filter(item => item.managerId === agent.id).map(item => item.name).join(', ') || 'None'}</dd><dt>Model</dt><dd>{agent.model || unavailable}</dd><dt>Context usage / capacity</dt><dd>{(agent.context?.used !== undefined || agent.context?.capacity !== undefined) ? `${agent.context.used ?? 'Unknown'} / ${agent.context.capacity ?? 'Unknown'} tokens` : unavailable}</dd><dt>Tools</dt><dd>{agent.tools?.join(', ') || (runtime && agent.tools ? copy.noTools : unavailable)}</dd>{runtime && <><dt>Request types</dt><dd>{agent.requestTypes?.join(', ') || 'Not reported by runtime'}</dd></>}</dl>

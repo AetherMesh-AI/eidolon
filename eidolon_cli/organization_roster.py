@@ -12,7 +12,10 @@ if TYPE_CHECKING:
 
 _ID = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
 _RESERVED_IDS = frozenset({"owner", "executive", "director", "manager", "reviewer"})
-_FIELDS = frozenset({"id", "name", "team", "capabilities", "enabled", "provider", "model", "tool_grants", "role", "manager_id", "responsibilities", "purpose"})
+TYPED_REQUESTS = ("request.question", "request.decision", "request.permission")
+SUPPORTED_AUTHORITY = ("answer.question", "answer.decision", "staff.manage")
+
+_FIELDS = frozenset({"id", "name", "team", "capabilities", "enabled", "provider", "model", "tool_grants", "role", "manager_id", "responsibilities", "purpose", "scope", "authority", "managed_teams"})
 
 
 @dataclass(frozen=True)
@@ -29,6 +32,9 @@ class OrganizationStaff:
     manager_id: str = "manager"
     responsibilities: tuple[str, ...] = ()
     purpose: str = ""
+    scope: str = ""
+    authority: tuple[str, ...] = ()
+    managed_teams: tuple[str, ...] = ()
 
 
 def _text(value, field, maximum):
@@ -42,8 +48,8 @@ def parse_roster(raw, settings: OrganizationSettings) -> tuple[OrganizationStaff
     """Parse definitions only; absent resources stay unavailable without being installed."""
     from eidolon_cli.organization_config import SUPPORTED_WORK_CAPABILITIES, SUPPORTED_TOOL_GRANTS
 
-    if not isinstance(raw, list) or len(raw) > 64:
-        raise ValueError("organization.roster must be a list of at most 64 persistent staff entries")
+    if not isinstance(raw, list) or len(raw) > settings.max_members:
+        raise ValueError(f"organization.roster must be a list of at most {settings.max_members} persistent staff entries (max_members)")
     result = []
     seen = set()
     for entry in raw:
@@ -56,10 +62,12 @@ def parse_roster(raw, settings: OrganizationSettings) -> tuple[OrganizationStaff
         name = _text(entry.get("name"), f"organization.roster.{ident}.name", 100)
         team = _text(entry.get("team", settings.team), f"organization.roster.{ident}.team", 64)
         role = entry.get("role", "Worker")
-        routes = {"Worker": SUPPORTED_WORK_CAPABILITIES,
-                  "Manager": ("request.plan", "request.integrate", "request.hire"),
-                  "Executive": ("request.accept",)}
-        if role not in routes:
+        defaults = {"Worker": (), "Manager": ("request.plan", "request.integrate", "request.hire"),
+                    "Executive": ("request.accept",)}
+        routes = {"Worker": (*SUPPORTED_WORK_CAPABILITIES, *TYPED_REQUESTS),
+                  "Manager": (*defaults["Manager"], *TYPED_REQUESTS),
+                  "Executive": (*defaults["Executive"], "request.hire", *TYPED_REQUESTS)}
+        if not isinstance(role, str) or role not in routes:
             raise ValueError(f"organization.roster.{ident}.role must be Executive, Manager or Worker")
         manager_id = entry.get("manager_id", {"Worker": "manager", "Manager": "executive", "Executive": "owner"}[role])
         if not isinstance(manager_id, str) or not _ID.fullmatch(manager_id) or manager_id == ident:
@@ -73,7 +81,24 @@ def parse_roster(raw, settings: OrganizationSettings) -> tuple[OrganizationStaff
             purpose = _text(purpose, "Agent purpose", 3000)
         elif purpose != "":
             raise ValueError("Agent purpose must be text")
-        capabilities = entry.get("capabilities", [] if role == "Worker" else list(routes[role]))
+        scope = entry.get("scope", "")
+        if scope:
+            scope = _text(scope, "Agent scope", 3000)
+        elif scope != "":
+            raise ValueError("Agent scope must be text")
+        authority = entry.get("authority", [])
+        if (not isinstance(authority, list)
+                or any(value not in SUPPORTED_AUTHORITY for value in authority)):
+            raise ValueError("Agent authority must select answer.question, answer.decision or staff.manage")
+        if "staff.manage" in authority and role == "Worker":
+            raise ValueError("Staff management authority requires a Manager or Executive")
+        managed_teams = entry.get("managed_teams", [])
+        if not isinstance(managed_teams, list) or len(managed_teams) > 64:
+            raise ValueError("Agent managed_teams must be a list of at most 64 teams")
+        managed_teams = tuple(dict.fromkeys(_text(value, "Managed team", 64) for value in managed_teams))
+        if managed_teams and "staff.manage" not in authority:
+            raise ValueError("Agent managed_teams requires explicit staff.manage authority")
+        capabilities = entry.get("capabilities", list(defaults[role]))
         if (not isinstance(capabilities, list)
                 or any(value not in routes[role] for value in capabilities)):
             raise ValueError(f"organization.roster.{ident}.capabilities must select supported capabilities for its role")
@@ -94,7 +119,8 @@ def parse_roster(raw, settings: OrganizationSettings) -> tuple[OrganizationStaff
             model = _text(model, f"organization.roster.{ident}.model", 300)
         result.append(OrganizationStaff(ident, name, team, tuple(dict.fromkeys(capabilities)),
                                         enabled, provider, model, tuple(dict.fromkeys(grants)),
-                                        role, manager_id, responsibilities, purpose))
+                                        role, manager_id, responsibilities, purpose, scope,
+                                        tuple(dict.fromkeys(authority)), managed_teams))
         seen.add(ident)
     roles = {"owner": "Owner", "executive": "Executive", "director": "Manager", "manager": "Manager",
              **{staff.id: staff.role for staff in result}}
@@ -111,7 +137,7 @@ def configured_staff(settings: OrganizationSettings) -> tuple[OrganizationStaff,
         return settings.roster
     return tuple(OrganizationStaff(f"worker-{index}", f"Worker {index}", settings.team,
                                    settings.capabilities, tool_grants=tuple(tool for tool in settings.tool_grants if tool == 'read_file'))
-                 for index in range(1, settings.max_workers + 1))
+                 for index in range(1, min(settings.max_workers, settings.max_members) + 1))
 
 
 def configured_workers(settings: OrganizationSettings) -> tuple[OrganizationStaff, ...]:
@@ -135,7 +161,7 @@ def staff_unavailability(staff: OrganizationStaff | None, settings: Organization
         return next(iter(reasons), f"Configured staff {staff.name} has no enabled work capabilities.")
     if request_type not in staff.capabilities:
         return f"Configured staff {staff.name} does not accept {request_type}."
-    if staff.role == "Worker" and request_type not in settings.capabilities:
+    if staff.role == "Worker" and request_type.startswith("work.") and request_type not in settings.capabilities:
         return f"The organization has not enabled {request_type}."
     if request_type in {"work.inspect", "work.edit"}:
         if "read_file" not in settings.tool_grants or "read_file" not in staff.tool_grants:
