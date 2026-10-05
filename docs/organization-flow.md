@@ -211,8 +211,14 @@ There is no generic fallback that silently assigns an incompatible worker.
 HTTP-based providers continue through the existing runtime resolver. Transports
 that inherently expose external tools and cannot enforce the exact tool grant, such
 as native app-server/ACP routes and search-enabled models, are blocked for this
-organization execution. Other Eidolon chat/provider surfaces are unchanged. Existing
-provider configuration, credentials and permission boundaries are not expanded.
+organization execution. Other Eidolon chat/provider surfaces are unchanged. Organization admission also
+requires a verifiable output cap, single-candidate semantics and bounded physical
+transport attempts. Routes that drop the cap (such as consumer Codex Responses),
+raise it later (such as native Gemini thinking), expose managed relay fan-out or
+use an unbounded custom client remain pending before inference. Supported native
+Anthropic model aliases are preserved; Bedrock uses an organization-local bounded
+SDK client without changing shared chat clients. Existing provider configuration,
+credentials and permission boundaries are not expanded.
 
 When a shared backend executes another profile, missing credentials cannot fall
 back to the launch profile. That isolated mode requires an explicit provider and
@@ -278,7 +284,13 @@ organization:
   max_replans: 2           # 0–3 additional objective planning rounds
   max_stages: 120          # 4–300 admitted stages across the objective
   max_owner_resolutions: 12 # 1–24 durable owner resolutions per objective
-  max_output_tokens: 8000  # 256–16000 per model call, not a spending cap
+  max_output_tokens: 8000  # 256–16000 per model call
+  max_context_tokens: 128000 # 4096–2000000; also bounded by the actual model window
+  max_model_calls: 120     # 1–1000 conservative physical-attempt reservations
+  max_total_tokens: 8000000 # 4096–1000000000 reserved input + output tokens
+  objective_timeout_seconds: 86400 # 60–604800, includes waiting for owner input
+  max_cost_usd: null       # optional explicit configured-cost admission ceiling
+  model_costs: []          # exact provider/model and conservative USD rates; no guessed prices
   lease_seconds: 45       # 15–300; live calls renew their leases
   timeout_seconds: 180    # 30–600 per stage
   team: general
@@ -291,8 +303,16 @@ organization:
 
 Limits do not authorize external actions. Staff, tools or providers are never
 silently installed or broadened to satisfy a request. Disabling a capability
-removes it from eligible worker routing. A provider turn is also token/iteration
-bounded; normal provider billing and limits still apply.
+removes it from eligible worker routing. A provider turn is also token/iteration bounded; normal provider billing and limits
+still apply. See [completion budgets and evidence](organization-owner-loop.md#keep-completion-within-an-explicit-budget)
+for reservation accounting, deadlines and audited bounded evidence reads.
+
+Each optional model_costs entry has exactly provider, model,
+input_usd_per_million and output_usd_per_million. Rates are explicit nonnegative
+USD decimal ceilings configured by the owner, not a bundled price catalog.
+A non-null max_cost_usd requires a matching exact route before each send. No
+example monetary rates are supplied because provider charges vary. Counters and
+original objective ceilings survive configuration changes and restarts.
 
 ## Opt in to real local file inspection
 

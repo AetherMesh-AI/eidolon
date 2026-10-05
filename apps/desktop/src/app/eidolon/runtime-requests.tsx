@@ -10,7 +10,14 @@ import { useI18n } from '@/i18n/context'
 
 import { Inspector } from './inspector'
 import { RuntimeArtifact } from './runtime-artifact'
+import { RuntimeExecutionAudit } from './runtime-execution-audit'
 import { hasCompleteManagementProposal, responseDecisions, RuntimeRequestContext } from './runtime-request-context'
+import {
+  amendmentCriteria,
+  ScopeAmendmentAudit,
+  type ScopeAmendmentDraft,
+  ScopeAmendmentFields
+} from './runtime-scope-amendment'
 import { RuntimeRequestToolReceipts, ToolReceiptSummary } from './runtime-tool-receipts'
 import type {
   Objective,
@@ -82,6 +89,7 @@ export function OwnerResolutionHistory({
                   {copy.evidence}: {entry.evidenceIds.join(', ')}
                 </p>
               )}
+              {entry.scopeAmendment && <ScopeAmendmentAudit amendment={entry.scopeAmendment} />}
               {!objectiveId && <Link to={`/objectives/${entry.objective.id}`}>{entry.objective.title}</Link>}
             </li>
           ))}
@@ -109,6 +117,7 @@ function ResolutionForm({
   const resolutions = request.allowedResolutions ?? []
   const [action, setAction] = useState<OrganizationResolutionAction | ''>(resolutions[0]?.action ?? '')
   const [text, setText] = useState('')
+  const [amendment, setAmendment] = useState<ScopeAmendmentDraft>({ criteria: '' })
   const [artifactId, setArtifactId] = useState<string | null>(null)
   const [evidenceIds, setEvidenceIds] = useState<string[]>([])
   const [pending, setPending] = useState(false)
@@ -120,7 +129,16 @@ function ResolutionForm({
   const permittedEvidence = [...new Set(evidence)]
   const selectedEvidence = evidenceIds.filter(id => permittedEvidence.includes(id))
   const unavailable = snapshot.connection?.state !== 'ready' || request.status !== 'pending_intervention'
-  const approvalBlocked = request.type === 'request.hire' && action === 'approve_request' && !hasCompleteManagementProposal(request.managementProposal)
+  const criteria = amendmentCriteria(amendment, text)
+  const amendmentInvalid = action === 'amend_scope' && criteria.invalid
+
+  const currentChecks =
+    snapshot.objectives.find(objective => objective.id === request.objectiveId)?.requiredChecks ?? []
+
+  const approvalBlocked =
+    request.type === 'request.hire' &&
+    action === 'approve_request' &&
+    !hasCompleteManagementProposal(request.managementProposal)
 
   // eslint-disable-next-line no-restricted-syntax -- fence a dismissed response, not shared state
   useEffect(() => {
@@ -137,6 +155,7 @@ function ResolutionForm({
       sending.current ||
       unavailable ||
       approvalBlocked ||
+      amendmentInvalid ||
       (resolution.requiresText && !text.trim()) ||
       (resolution.requiresEvidence && !selectedEvidence.length)
     ) {
@@ -147,7 +166,19 @@ function ResolutionForm({
     setPending(true)
     setError('')
     const decision = responseDecisions[resolution.action as keyof typeof responseDecisions]
-    const response = decision ? adapter.respondRequest({ id: request.id, text, decision }) : adapter.resolveRequest({ id: request.id, action: resolution.action, text, evidenceIds: selectedEvidence })
+
+    const response = decision
+      ? adapter.respondRequest({ id: request.id, text, decision })
+      : adapter.resolveRequest({
+          id: request.id,
+          action: resolution.action,
+          text,
+          evidenceIds: selectedEvidence,
+          ...(action === 'amend_scope'
+            ? { requiredChecks: amendment.requiredChecks, acceptanceCriteria: criteria.criteria }
+            : {})
+        })
+
     void response
       .then(() => {
         if (active.current) {
@@ -202,7 +233,15 @@ function ResolutionForm({
                 ))}
               </select>
             </label>
-            {action === 'amend_scope' && <p className="eid-note">{copy.amendScopeNote}</p>}
+            {action === 'amend_scope' && (
+              <ScopeAmendmentFields
+                currentChecks={currentChecks}
+                disabled={pending || unavailable}
+                draft={amendment}
+                onChange={setAmendment}
+              />
+            )}
+            {amendmentInvalid && <p role="alert">{copy.criteriaInvalid}</p>}
             <label>
               {copy.response}
               <Textarea
@@ -267,6 +306,7 @@ function ResolutionForm({
                   pending ||
                   unavailable ||
                   approvalBlocked ||
+                  amendmentInvalid ||
                   !resolution ||
                   (resolution.requiresText && !text.trim()) ||
                   (resolution.requiresEvidence && !selectedEvidence.length)
@@ -568,7 +608,9 @@ export function RuntimeRequests({
             <dt>Task ID</dt>
             <dd>{request.taskId || runtimeCopy.notReported}</dd>
           </dl>
-          {(request.requesterId || request.requestedOutcome || request.response || request.managementProposal) && <RuntimeRequestContext onEvidence={setArtifactId} request={request} snapshot={snapshot} />}
+          {(request.requesterId || request.requestedOutcome || request.response || request.managementProposal) && (
+            <RuntimeRequestContext onEvidence={setArtifactId} request={request} snapshot={snapshot} />
+          )}
           <Link to={`/objectives/${request.objectiveId}`}>{copy.openObjective}</Link>
           {request.type === 'request.merge' && <p className="eid-note">{runtimeCopy.edits.mergeNote}</p>}
           {request.status === 'pending_intervention' && !terminal && (
@@ -581,9 +623,25 @@ export function RuntimeRequests({
             />
           )}
           <RuntimeRequestToolReceipts adapter={adapter} key={request.id} request={request} />
+          {adapter.getExecutionAudit && (
+            <RuntimeExecutionAudit
+              adapter={adapter}
+              key={`${snapshot.connection?.scope}:${request.id}`}
+              request={request}
+            />
+          )}
         </Inspector>
       )}
-      {artifactId && <RuntimeArtifact adapter={adapter} evidenceId={artifactId} key={artifactId} onClose={() => setArtifactId(null)} snapshot={snapshot} title={copy.evidence} />}
+      {artifactId && (
+        <RuntimeArtifact
+          adapter={adapter}
+          evidenceId={artifactId}
+          key={artifactId}
+          onClose={() => setArtifactId(null)}
+          snapshot={snapshot}
+          title={copy.evidence}
+        />
+      )}
       <OwnerResolutionHistory objectiveId={objective?.id} snapshot={snapshot} />
     </section>
   )

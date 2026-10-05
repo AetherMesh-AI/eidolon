@@ -205,3 +205,20 @@ def test_retry_and_cancel_acknowledgements_are_idempotent(monkeypatch):
     first = _rpc('organization.cancel', id=objective['id'])
     second = _rpc('organization.cancel', id=objective['id'])
     assert first == second
+
+
+def test_create_rpc_stopping_service_does_not_admit_or_consume_objective_identity(monkeypatch):
+    organization = services.get_service()
+    assert organization.stop()
+    params = {'title': 'Admit after reconnect', 'idempotencyKey': 'shutdown-admission'}
+    with monkeypatch.context() as stopped:
+        # A request can already hold this service when shutdown wins its lock.
+        stopped.setattr(services, 'get_service', lambda: organization)
+        response = server.dispatch({'jsonrpc': '2.0', 'id': 1, 'method': 'organization.create', 'params': params})
+    assert response['error']['code'] == 5071 and 'stopping' in response['error']['message']
+    assert organization.store.snapshot()['objectives'] == []
+    first = _rpc('organization.create', **params)
+    duplicate = _rpc('organization.create', **params)
+    assert first['objective']['id'] == duplicate['objective']['id']
+    _wait(lambda: services.get_service().store.snapshot()['objectives'][0]['status'] == 'completed')
+    assert len(services.get_service().store.snapshot()['objectives']) == 1

@@ -4,13 +4,14 @@ export const objectiveStatusLabels = {
 } as const
 export type ObjectiveStatus = keyof typeof objectiveStatusLabels
 export type WorkStatus = 'working' | 'active' | 'thinking' | 'executing' | 'reviewing' | 'needs_input' | 'idle' | 'waiting' | 'review' | 'offline'
+export type OrganizationRequiredCheck = 'project_tests' | 'managed_validation' | 'source_integration'
 export interface ObjectiveMetadata {
   executiveId?: string
   managerId?: string
   description?: string
   acceptanceCriteria?: string[]
   deliveryMode?: 'source_project' | 'managed_artifact'
-  requiredChecks?: ('project_tests' | 'managed_validation' | 'source_integration')[]
+  requiredChecks?: OrganizationRequiredCheck[]
   priority?: 'low' | 'normal' | 'high' | 'P5' | 'P4' | 'P3' | 'P2' | 'P1'
   agentId?: string
   progress?: number
@@ -233,6 +234,26 @@ export interface OrganizationToolReceipt {
 export interface OrganizationToolEvidence extends OrganizationToolReceipt {
   result?: string
 }
+export interface OrganizationExecutionReport {
+  attemptToken: string
+  createdAt: string
+  report: Record<string, unknown>
+}
+export interface OrganizationExecutionAudit {
+  requestId: string
+  contexts: OrganizationExecutionReport[]
+  evidencePasses: OrganizationExecutionReport[]
+  modelCalls: {
+    id: string
+    request_id: string
+    provider: string
+    model: string
+    input_limit: number
+    output_limit: number
+    reserved_cost_usd: string | null
+    createdAt: string
+  }[]
+}
 export type OrganizationResolutionAction = 'answer_request' | 'approve_request' | 'deny_request' | 'provide_input' | 'amend_scope' | 'retry_configuration' | 'request_replan' | 'record_handoff'
 export interface OrganizationResolution {
   action: OrganizationResolutionAction
@@ -242,11 +263,26 @@ export interface OrganizationResolution {
   evidenceIds?: string[]
   sourceManifest?: { path: string; revision: number; sha256: string; proposalId: string; evidenceId: string }[]
 }
+export interface OrganizationScopeState {
+  scope: string
+  acceptanceCriteria: string[]
+  requiredChecks: OrganizationRequiredCheck[]
+  round: number
+}
+export interface OrganizationScopeAmendment {
+  inputSha256: string
+  sha256: string
+  choices: { requiredChecks: OrganizationRequiredCheck[] | null; acceptanceCriteria: string[] | null }
+  before: OrganizationScopeState
+  after: OrganizationScopeState
+}
 export interface OrganizationResolutionInput {
   id: string
   action: OrganizationResolutionAction
   text?: string
   evidenceIds?: string[]
+  requiredChecks?: OrganizationRequiredCheck[]
+  acceptanceCriteria?: string[]
   idempotencyKey?: string
 }
 export interface OrganizationOwnerResolution {
@@ -256,6 +292,7 @@ export interface OrganizationOwnerResolution {
   text: string
   evidenceIds: string[]
   createdAt: string
+  scopeAmendment?: OrganizationScopeAmendment | null
 }
 export interface OrganizationAcceptance {
   status: 'pending' | 'integrating' | 'reviewing' | 'accepted' | 'replanning' | 'blocked' | 'legacy_completed'
@@ -272,6 +309,15 @@ export interface OrganizationUsage {
   inputTokens: number
   usageComplete: boolean
   perCallOutputLimit: number
+  modelCalls?: number
+  modelCallLimit?: number
+  reservedTokens?: number
+  tokenLimit?: number
+  deadlineAt?: string
+  configuredCostReservedUsd?: string | null
+  configuredCostLimitUsd?: string | null
+  legacyUsageUnknown?: boolean
+  budgetScope?: string
 }
 export interface OrganizationRequest {
   id: string
@@ -427,5 +473,6 @@ export interface RuntimeOrganizationAdapter extends OrganizationReader {
   refresh(): Promise<void>
   getEvidence(id: string): Promise<OrganizationArtifact>
   getToolReceipts(requestId: string): Promise<OrganizationToolEvidence[]>
+  getExecutionAudit?(requestId: string): Promise<OrganizationExecutionAudit>
 }
 export type OrganizationAdapter = StaticOrganizationAdapter | RuntimeOrganizationAdapter

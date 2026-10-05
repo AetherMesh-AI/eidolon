@@ -156,6 +156,7 @@ export function createSandbox(prefix: string): Sandbox {
  *   section, used by the interim-message e2e test.
  * @param extraConfig optional top-level YAML sections for a test scenario.
  * @param modelContextLength optional primary-model context limit.
+ * @param modelStreaming optional explicit provider streaming choice.
  */
 export function writeMockProviderConfig(
   hermesHome: string,
@@ -163,6 +164,7 @@ export function writeMockProviderConfig(
   extraDisplayConfig?: string,
   extraConfig?: string,
   modelContextLength?: number,
+  modelStreaming?: boolean,
 ): void {
   const configPath = path.join(hermesHome, 'config.yaml')
 
@@ -197,7 +199,7 @@ export function writeMockProviderConfig(
 model:
   default: mock-model
   provider: mock
-${modelContextLength ? `  context_length: ${modelContextLength}\n` : ''}providers:
+${modelContextLength ? `  context_length: ${modelContextLength}\n` : ''}${typeof modelStreaming === 'boolean' ? `  streaming: ${modelStreaming}\n` : ''}providers:
   mock:
     api: ${mockUrl}/v1
     name: Mock

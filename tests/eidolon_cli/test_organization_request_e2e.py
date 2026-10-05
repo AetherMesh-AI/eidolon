@@ -1,6 +1,7 @@
 """Real local-provider staffing, typed request, and persistent continuation flow."""
 from collections import Counter
 import json
+import hashlib
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -90,7 +91,11 @@ def test_hire_question_answer_resumes_same_identity_through_acceptance(tmp_path,
                     assert context['requestContract']['requestedOutcome'] == 'Who is the audience?'
                     output = {'answer': answer_text, 'decision': 'answered'}
                 elif kind == 'request.review':
-                    assert context['evidence'][0]['content'] == deliverable
+                    artifact = context['evidence'][0]
+                    exact = context['evidenceBodies'][artifact['content']['bodySha256']]
+                    assert hashlib.sha256(exact.encode()).hexdigest() == artifact['sha256']
+                    assert len(exact.encode()) == artifact['content']['utf8Bytes']
+                    assert exact == deliverable
                     output = {'approved': True, 'summary': 'Brief satisfies the assigned scope.',
                               'evidenceIds': [item['id'] for item in context['evidence']]}
                 elif kind == 'request.integrate':

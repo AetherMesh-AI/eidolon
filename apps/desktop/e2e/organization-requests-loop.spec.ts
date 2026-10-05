@@ -13,6 +13,7 @@ import {
   writeMockProviderConfig
 } from './fixtures'
 import { startMockServer } from './mock-server'
+import { exactOrganizationEvidence, type OrganizationEvidenceContext } from './organization-evidence'
 import { organizationProviderTarget } from './organization-provider-target'
 import { expect, test } from './test'
 
@@ -39,11 +40,10 @@ const proposedMember = {
   managed_teams: []
 }
 
-interface StageContext {
+interface StageContext extends OrganizationEvidenceContext {
   objective: { title: string; acceptanceCriteria: string[] }
   agent: { id: string }
   requestResponses?: Array<{ type: string; response: { text: string; decision: string } }>
-  evidence?: Array<{ id: string }>
 }
 const stages: Array<{ kind: string; agentId: string; responses: unknown }> = []
 const providerErrors: string[] = []
@@ -53,7 +53,16 @@ test.setTimeout(240_000)
 
 function resultFor(kind: string, context: StageContext) {
   const responses = context.requestResponses ?? []
-  const evidenceIds = context.evidence?.map(item => item.id) ?? []
+  const evidence = exactOrganizationEvidence(context)
+
+  if (
+    ['request.review', 'request.integrate', 'request.accept'].includes(kind) &&
+    (!evidence.length || evidence.some(item => item.content !== deliverable))
+  ) {
+    throw new Error('The full audience-specific brief did not reach its reviewer or integrator')
+  }
+
+  const evidenceIds = evidence.map(item => item.id)
 
   const handlers: Record<string, () => unknown> = {
     'request.plan': () =>
@@ -244,7 +253,8 @@ test.beforeAll(async () => {
       sandbox.hermesHome,
       provider.url,
       undefined,
-      'approvals:\n  mode: manual\norganization:\n  max_inflight: 1\n  max_stages: 40'
+      'approvals:\n  mode: manual\norganization:\n  max_inflight: 1\n  max_stages: 40\n  max_context_tokens: 32768\n  max_output_tokens: 2048',
+      32768
     )
     writeEnvFile(sandbox.hermesHome)
     const { app, page } = await launchDesktop(buildAppEnv(sandbox))

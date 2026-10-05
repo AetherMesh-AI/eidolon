@@ -59,7 +59,10 @@ def test_manager_hire_read_and_evidence_bound_review_complete(tmp_path, monkeypa
                                   for criterion in ctx['objective']['acceptanceCriteria']]}
                 elif kind == "request.review":
                     proof = ctx["evidence"][0]
-                    assert proof["content"] == outcome["deliverable"]
+                    exact = ctx["evidenceBodies"][proof["content"]["bodySha256"]]
+                    assert hashlib.sha256(exact.encode()).hexdigest() == proof["sha256"]
+                    assert len(exact.encode()) == proof["content"]["utf8Bytes"]
+                    assert exact == outcome["deliverable"]
                     receipt = next(row for row in ctx['toolReceipts'] if row['id'] == proof['toolReceiptIds'][0])
                     assert receipt["status"] == "completed" and receipt["toolName"] == "read_file"
                     assert receipt["resultSha256"] == hashlib.sha256(receipt["result"].encode()).hexdigest()

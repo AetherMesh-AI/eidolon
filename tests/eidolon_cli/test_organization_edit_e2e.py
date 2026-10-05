@@ -75,6 +75,12 @@ def test_real_edit_proposal_review_and_separate_workspace_apply_gate(tmp_path, m
                     assert kind == "request.review" and not body.get("tools")
                     artifact = context["evidence"][0]
                     proposal = artifact["editProposal"]
+                    for field in ("baseContent", "newContent", "diff"):
+                        reference = proposal[field]
+                        exact = context["evidenceBodies"][reference["bodySha256"]]
+                        assert hashlib.sha256(exact.encode()).hexdigest() == reference["bodySha256"]
+                        assert len(exact.encode()) == reference["utf8Bytes"]
+                        proposal[field] = exact
                     assert proposal["baseContent"].encode() == original.encode()
                     assert proposal["newContent"].encode() == replacement.encode()
                     assert proposal["baseSha256"] == hashlib.sha256(original.encode()).hexdigest()

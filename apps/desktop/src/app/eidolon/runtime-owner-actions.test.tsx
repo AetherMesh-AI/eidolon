@@ -114,3 +114,136 @@ it('requires exact handoff evidence and dismisses without dispatch or permission
   expect(fixture.request.mock.calls.some(call => call[0] === 'organization.resolve')).toBe(false)
   fixture.view.unmount()
 })
+
+it('preserves checks by default and only sends an explicit replacement for an amended scope, with durable retry identity and audit', async () => {
+  const initial = snapshot()
+  initial.objectives[0].requiredChecks = ['project_tests']
+  initial.requests![0].allowedResolutions = [
+    { action: 'amend_scope', label: 'Amend scope', requiresText: true, requiresEvidence: false },
+    { action: 'request_replan', label: 'Replan', requiresText: true, requiresEvidence: false }
+  ]
+  const fixture = setup(initial)
+  fireEvent.click(await screen.findByRole('button', { name: 'Respond to request' }))
+  expect(screen.getByRole('region', { name: 'Current required verification' }).textContent).toContain('Project tests')
+  expect(screen.getByRole('combobox', { name: 'Verification for amended scope' })).toHaveProperty('value', 'keep')
+  fireEvent.change(screen.getByRole('textbox', { name: 'Response' }), {
+    target: { value: 'Prepare documentation only.' }
+  })
+  fixture.request.mockImplementation((method: string) =>
+    method === 'organization.resolve' ? Promise.reject(new Error('Acknowledgement lost')) : Promise.resolve(initial)
+  )
+  fireEvent.click(screen.getByRole('button', { name: 'Submit response' }))
+  await screen.findByText('Acknowledgement lost')
+  const preserved = fixture.request.mock.calls.find(call => call[0] === 'organization.resolve')![1]
+  expect(preserved.requiredChecks).toBeUndefined()
+  fireEvent.change(screen.getByRole('combobox', { name: 'Verification for amended scope' }), {
+    target: { value: 'replace' }
+  })
+  expect(screen.getByText(/Removing a requirement allows final acceptance without that verification/)).toBeTruthy()
+  const tests = screen.getByRole('checkbox', { name: /Project tests/ })
+  expect(tests).toHaveProperty('checked', true)
+  fireEvent.click(tests)
+  fireEvent.change(screen.getByRole('textbox', { name: 'Acceptance criteria' }), {
+    target: { value: 'Document the exact findings\nExplain which checks were not executed' }
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Submit response' }))
+  await waitFor(() =>
+    expect(fixture.request.mock.calls.filter(call => call[0] === 'organization.resolve')).toHaveLength(2)
+  )
+  await screen.findByText('Acknowledgement lost')
+  const changed = fixture.request.mock.calls.filter(call => call[0] === 'organization.resolve')[1][1]
+  expect(changed).toMatchObject({
+    requiredChecks: [],
+    acceptanceCriteria: ['Document the exact findings', 'Explain which checks were not executed']
+  })
+  expect(changed.idempotencyKey).not.toBe(preserved.idempotencyKey)
+  fireEvent.click(screen.getByRole('button', { name: 'Submit response' }))
+  await waitFor(() =>
+    expect(fixture.request.mock.calls.filter(call => call[0] === 'organization.resolve')).toHaveLength(3)
+  )
+  expect(fixture.request.mock.calls.filter(call => call[0] === 'organization.resolve')[2][1].idempotencyKey).toBe(
+    changed.idempotencyKey
+  )
+  await screen.findByText('Acknowledgement lost')
+  fireEvent.change(screen.getByRole('combobox', { name: 'Action' }), { target: { value: 'request_replan' } })
+  expect(screen.queryByRole('combobox', { name: 'Verification for amended scope' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Submit response' }))
+  await waitFor(() =>
+    expect(fixture.request.mock.calls.filter(call => call[0] === 'organization.resolve')).toHaveLength(4)
+  )
+  const replan = fixture.request.mock.calls.filter(call => call[0] === 'organization.resolve')[3][1]
+  expect(replan.requiredChecks).toBeUndefined()
+  expect(replan.acceptanceCriteria).toBeUndefined()
+  await screen.findByText('Acknowledgement lost')
+  fireEvent.click(screen.getByRole('button', { name: 'Close response' }))
+  const completed = snapshot()
+  completed.requests![0].status = 'completed'
+  completed.objectives[0].ownerResolutions = [
+    {
+      id: 'amendment',
+      requestId: 'request',
+      action: 'amend_scope',
+      text: changed.text,
+      evidenceIds: [],
+      createdAt: '2026-10-04T12:00:00Z',
+      scopeAmendment: {
+        inputSha256: 'input-digest',
+        sha256: 'audit-digest',
+        choices: { requiredChecks: [], acceptanceCriteria: changed.acceptanceCriteria },
+        before: {
+          scope: 'Original full implementation',
+          acceptanceCriteria: ['Execute project tests'],
+          requiredChecks: ['project_tests'],
+          round: 0
+        },
+        after: { scope: changed.text, acceptanceCriteria: changed.acceptanceCriteria, requiredChecks: [], round: 1 }
+      }
+    }
+  ]
+  fixture.request.mockResolvedValue(completed)
+  await act(async () => {
+    await fixture.adapter.refresh()
+  })
+  expect(screen.getByRole('region', { name: 'Before amendment', hidden: true }).textContent).toMatch(
+    /Original full implementation.*Execute project tests.*Project tests/
+  )
+  expect(screen.getByRole('region', { name: 'After amendment', hidden: true }).textContent).toContain(
+    'No explicit verification requirements'
+  )
+  expect(screen.getByText(/audit-digest/)).toBeTruthy()
+  fixture.view.unmount()
+})
+
+it('bounds amended criteria and keeps cancelling or switching profiles from leaking a replacement choice', async () => {
+  const initial = snapshot()
+  initial.objectives[0].requiredChecks = ['project_tests']
+  initial.requests![0].allowedResolutions = [
+    { action: 'amend_scope', label: 'Amend', requiresText: true, requiresEvidence: false }
+  ]
+  const fixture = setup(initial)
+  fireEvent.click(await screen.findByRole('button', { name: 'Respond to request' }))
+  fireEvent.change(screen.getByRole('textbox', { name: 'Response' }), { target: { value: 'x'.repeat(2001) } })
+  expect(screen.getByRole('button', { name: 'Submit response' })).toHaveProperty('disabled', true)
+  expect(screen.getByRole('alert').textContent).toContain('at most 12 criteria')
+  fireEvent.change(screen.getByRole('textbox', { name: 'Acceptance criteria' }), {
+    target: { value: 'One verifiable result' }
+  })
+  expect(screen.getByRole('button', { name: 'Submit response' })).toHaveProperty('disabled', false)
+  fireEvent.change(screen.getByRole('textbox', { name: 'Acceptance criteria' }), {
+    target: { value: Array(13).fill('Outcome').join('\n') }
+  })
+  expect(screen.getByRole('button', { name: 'Submit response' })).toHaveProperty('disabled', true)
+  fireEvent.change(screen.getByRole('combobox', { name: 'Verification for amended scope' }), {
+    target: { value: 'replace' }
+  })
+  fireEvent.click(screen.getByRole('checkbox', { name: /Project tests/ }))
+  fireEvent.click(screen.getByRole('button', { name: 'Close response' }))
+  expect(fixture.request.mock.calls.some(call => call[0] === 'organization.resolve')).toBe(false)
+  fireEvent.click(screen.getByRole('button', { name: 'Respond to request' }))
+  expect(screen.getByRole('combobox', { name: 'Verification for amended scope' })).toHaveProperty('value', 'keep')
+  expect(screen.getByRole('textbox', { name: 'Acceptance criteria' })).toHaveProperty('value', '')
+  fixture.request.mockResolvedValue({ ...initial, requests: [], objectives: [] })
+  act(() => fixture.switchScope({ key: 'socket-b', ownerKey: 'owner-b', connected: true }))
+  await waitFor(() => expect(screen.queryByRole('form', { name: 'Respond to request' })).toBeNull())
+  fixture.view.unmount()
+})

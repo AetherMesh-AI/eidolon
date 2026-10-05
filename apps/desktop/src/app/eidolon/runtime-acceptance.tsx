@@ -55,7 +55,19 @@ export function RuntimeAcceptance({
           {copy.openDeliverable}
         </Button>
       )}
-      {objective.projectValidation && <section aria-label={copy.finalManagedValidation}><h3>{copy.finalManagedValidation}</h3><p>{copy[objective.projectValidation.status]}</p><p className="eid-note">{copy.validationNote}</p><p>{copy.notExecuted}: {objective.projectValidation.notExecuted.join(', ')}</p><Button onClick={() => onOpenEvidence(objective.projectValidation!.id)} size="sm" variant="secondary">{copy.finalManagedValidation}</Button></section>}
+      {objective.projectValidation && (
+        <section aria-label={copy.finalManagedValidation}>
+          <h3>{copy.finalManagedValidation}</h3>
+          <p>{copy[objective.projectValidation.status]}</p>
+          <p className="eid-note">{copy.validationNote}</p>
+          <p>
+            {copy.notExecuted}: {objective.projectValidation.notExecuted.join(', ')}
+          </p>
+          <Button onClick={() => onOpenEvidence(objective.projectValidation!.id)} size="sm" variant="secondary">
+            {copy.finalManagedValidation}
+          </Button>
+        </section>
+      )}
       {usage && (
         <details>
           <summary>{copy.usage}</summary>
@@ -68,8 +80,43 @@ export function RuntimeAcceptance({
             <dd>
               {usage.inputTokens} / {usage.outputTokens}
             </dd>
+            {usage.modelCalls !== undefined && usage.modelCallLimit !== undefined && (
+              <>
+                <dt>{copy.modelCalls}</dt>
+                <dd>
+                  {usage.modelCalls} / {usage.modelCallLimit}
+                </dd>
+              </>
+            )}
+            {usage.reservedTokens !== undefined && usage.tokenLimit !== undefined && (
+              <>
+                <dt>{copy.reservedTokens}</dt>
+                <dd>
+                  {usage.reservedTokens} / {usage.tokenLimit}
+                </dd>
+              </>
+            )}
+            {usage.deadlineAt && (
+              <>
+                <dt>{copy.objectiveDeadline}</dt>
+                <dd>
+                  <time dateTime={usage.deadlineAt}>{new Date(usage.deadlineAt).toLocaleString()}</time>
+                </dd>
+              </>
+            )}
+            {usage.configuredCostLimitUsd != null && (
+              <>
+                <dt>{copy.configuredCost}</dt>
+                <dd>
+                  {usage.configuredCostReservedUsd ?? copy.unknownUsage} / {usage.configuredCostLimitUsd}
+                </dd>
+              </>
+            )}
           </dl>
           <p className="eid-note">{usage.usageComplete ? copy.usageNote : copy.incompleteUsage}</p>
+          {usage.budgetScope && <p className="eid-note">{copy.reservationNote}</p>}
+          {usage.configuredCostLimitUsd != null && <p className="eid-note">{copy.configuredCostNote}</p>}
+          {usage.legacyUsageUnknown && <p className="eid-note">{copy.legacyUsageUnknown}</p>}
         </details>
       )}
     </section>
