@@ -9,7 +9,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   native-completion:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -21,7 +21,7 @@ jobs:
       - name: Install sandbox runtime
         run: sudo apt-get update -qq && sudo apt-get install -y bubblewrap libseccomp2
       - name: Organization contract and recovery suite
-        run: scripts/run_tests.sh tests/eidolon_cli/test_organization*.py tests/tui_gateway/test_organization*.py -j 4
+        run: EIDOLON_REQUIRE_PROJECT_SANDBOX=1 scripts/run_tests.sh tests/eidolon_cli/test_organization*.py tests/tui_gateway/test_organization*.py -j 4
       - name: Real nonbillable project completion
         run: .venv/bin/python scripts/eval_organization_project.py --report organization-project-report.json
       - name: Retain exact completion evidence
