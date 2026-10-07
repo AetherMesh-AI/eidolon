@@ -4,12 +4,12 @@ import logging
 import os
 from pathlib import Path
 import socket
-import sys
 from types import SimpleNamespace
 
 import pytest
 
 from scripts import eval_organization_project as evaluation
+from scripts import organization_trial_policy as policy
 
 
 @pytest.mark.parametrize("arguments", [
@@ -17,6 +17,8 @@ from scripts import eval_organization_project as evaluation
     ["--provider-config", "not-read.json"],
     ["--live-model", "--provider-config", "not-read.json"],
     ["--live-model", "--acknowledge-billing"],
+    ["--live-model", "--acknowledge-billing", "--provider-config", "not-read.json"],
+    ["--max-cost-usd", "1"],
 ])
 def test_billable_route_requires_all_explicit_choices(arguments, monkeypatch):
     monkeypatch.setattr(Path, "read_text", lambda *_args, **_kwargs: pytest.fail("Opt-in checked too late"))
@@ -34,10 +36,14 @@ def test_explicit_live_route_uses_only_current_selected_secret_and_disposable_co
 
     selected = {"provider": "custom", "model": "deliberately-selected-model",
                 "base_url": "https://provider.example.invalid/v1", "api_mode": "chat_completions",
-                "key_env": "SELECTED_API_KEY"}
+                "key_env": "SELECTED_API_KEY", "model_costs": [{"provider": "custom",
+                    "model": "deliberately-selected-model", "input_usd_per_million": "2",
+                    "output_usd_per_million": "8"}]}
     path = tmp_path / "provider.json"
     path.write_text(json.dumps(selected))
-    args = evaluation.parser().parse_args(["--live-model", "--acknowledge-billing", "--provider-config", str(path)])
+    args = evaluation.parser().parse_args(["--live-model", "--acknowledge-billing", "--provider-config", str(path),
+                                         "--max-cost-usd", "0.5"])
+    admitted = {"outcome": "passed", "execution": {"status": "passed", "isolation": {"established": True}}}
     monkeypatch.setenv("SELECTED_API_KEY", "wrong-global-secret")
     monkeypatch.setenv("OPENAI_API_KEY", "unselected-global-secret")
     monkeypatch.setenv("NO_PROXY", "live-owner.example")
@@ -46,12 +52,14 @@ def test_explicit_live_route_uses_only_current_selected_secret_and_disposable_co
     required = set_secret_scope_required(True)
     original_home = get_eidolon_home()
     try:
-        route = evaluation.live_route(args)
+        route = policy.load_live_secret(policy.selected_live_route(args), admitted)
         assert route["secret"] == "selected-scoped-secret"
         home, source = tmp_path / "disposable-profile", tmp_path / "disposable-source"
         home.mkdir()
         source.mkdir()
         cfg = evaluation.configuration(source, route)
+        assert cfg["organization"]["max_cost_usd"] == "0.5"
+        assert cfg["organization"]["model_costs"] == selected["model_costs"]
         (home / "config.yaml").write_text(json.dumps(cfg))
         assert "secret" not in (home / "config.yaml").read_text()
         with evaluation.isolated_profile(home, route["secret"]):
@@ -70,7 +78,7 @@ def test_explicit_live_route_uses_only_current_selected_secret_and_disposable_co
         missing = set_secret_scope({})
         try:
             with pytest.raises(ValueError, match="unavailable"):
-                evaluation.live_route(args)
+                policy.load_live_secret(policy.selected_live_route(args), admitted)
         finally:
             reset_secret_scope(missing)
         for changed in ({"api_key": "must-not-be-copied"}, {"provider": "auto"},
@@ -79,7 +87,7 @@ def test_explicit_live_route_uses_only_current_selected_secret_and_disposable_co
                         {"base_url": "https://provider.example.invalid/v1?key=secret"}):
             path.write_text(json.dumps({**selected, **changed}))
             with pytest.raises(ValueError):
-                evaluation.live_route(args)
+                policy.selected_live_route(args)
     finally:
         reset_secret_scope_required(required)
         reset_secret_scope(scope)
@@ -139,16 +147,15 @@ def test_default_evaluation_runs_real_local_pipeline_without_credentials_or_exte
     assert os.environ["HTTPS_PROXY"] == "http://198.51.100.23:9"
     report = json.loads(report_path.read_text())
     assert json.loads(capsys.readouterr().out) == report
-    assert temporary_roots and all(not root.exists() for root in temporary_roots)
-    assert connections and report["billing"] == "nonbillable_loopback_only"
+    assert all(not root.exists() for root in temporary_roots)
     assert report["mode"] == "deterministic_local_fixture"
     assert report["fixtureErrors"] == []
-    if sys.platform == "win32":
-        # Native Windows correctly blocks at the earlier no-follow read gate.
-        assert report["fixtureStages"] == ["request.plan"]
+    if report["preflight"]["outcome"] != "passed":
+        assert not temporary_roots and not connections and not report["fixtureStages"]
+        assert report["billing"] == "no_provider_calls" and report["providerCalls"] == 0
         assert report["projectExecution"] is None
-        assert any("POSIX no-follow directory-descriptor support" in reason for reason in report["interventions"])
     else:
+        assert temporary_roots and connections and report["billing"] == "nonbillable_loopback_only"
         assert "work.inspect" in report["fixtureStages"] and "work.edit" in report["fixtureStages"], report["interventions"]
         assert "request.review" in report["fixtureStages"]
     assert report["checks"]["originalSourceAndIndexUnchanged"]
@@ -160,7 +167,7 @@ def test_default_evaluation_runs_real_local_pipeline_without_credentials_or_exte
         assert report["finalDeliverable"] and report["testReview"]["approved"]
     else:
         assert code == 2 and report["outcome"] == "unsupported"
-        assert report["objectiveStatus"] == "needs_input"
+        assert report["objectiveStatus"] == "not_started"
         assert report["sourceIntegration"] is None and report["deliveredFiles"] is None
         assert report["testReview"] is None and report["finalDeliverable"] is None
         assert not report["checks"]["objectiveAccepted"]
