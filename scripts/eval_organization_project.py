@@ -2,8 +2,10 @@
 """Evaluate the real organization pipeline on one disposable addition project.
 
 Default: deterministic, nonbillable loopback provider. A real provider requires
-both --live-model and --acknowledge-billing, plus an explicit credential-free
-provider config. This is a narrow fixture evaluation, not a production runner.
+both --live-model and --acknowledge-billing, an explicit credential-free provider
+and price configuration, and --max-cost-usd. Native isolation is preflighted
+before any credential access or provider startup. This is a narrow fixture
+evaluation, not a production runner.
 """
 from __future__ import annotations
 
@@ -14,17 +16,20 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
-import re
 import subprocess
 import sys
 import tempfile
 import threading
 import time
-from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+from scripts.organization_trial_policy import (
+    COST_LIMITATION, add_live_arguments, budget_configuration, load_live_secret,
+    native_preflight, selected_live_route,
+)
 
 BEFORE = "def add(left, right):\n    return left - right\n"
 AFTER = "def add(left, right):\n    return left + right\n"
@@ -56,48 +61,11 @@ KEY_NAME = "EIDOLON_PROJECT_EVALUATION_API_KEY"
 
 def parser():
     result = argparse.ArgumentParser(description=__doc__)
-    result.add_argument("--live-model", action="store_true", help=(
-        "Use the deliberately configured real model; authorize read_file, patch, run_tests and "
-        "integrate_source only for the disposable two-file fixture. Never a production repository."))
-    result.add_argument("--acknowledge-billing", action="store_true",
-                        help="Acknowledge that up to 16 bounded provider calls may incur charges.")
-    result.add_argument("--provider-config", type=Path,
-                        help="Explicit JSON direct-provider configuration; no inline secrets or profile inheritance.")
+    add_live_arguments(result)
+    result.add_argument("--preflight", action="store_true", help=(
+        "Check the native sandbox only, without reading credentials or starting any model provider."))
     result.add_argument("--report", type=Path, help="Write the structured JSON report here (also printed to stdout).")
     return result
-
-
-def live_route(args):
-    """Read only the explicitly selected route and credential; never discover auth."""
-    if not args.live_model:
-        if args.acknowledge_billing or args.provider_config:
-            raise ValueError("--provider-config and --acknowledge-billing require --live-model")
-        return None
-    if not args.acknowledge_billing or not args.provider_config:
-        raise ValueError("--live-model requires --acknowledge-billing and --provider-config")
-    raw = json.loads(args.provider_config.read_text(encoding="utf-8"))
-    fields = {"provider", "model", "base_url", "api_mode", "key_env"}
-    if not isinstance(raw, dict) or set(raw) != fields:
-        raise ValueError("Provider JSON requires exactly provider, model, base_url, api_mode and key_env; no secrets")
-    if raw["provider"] != "custom" or raw["api_mode"] != "chat_completions":
-        raise ValueError("This evaluation supports only an explicit custom direct chat_completions API route")
-    if any(not isinstance(raw[key], str) or not raw[key].strip() or len(raw[key]) > 300 for key in fields):
-        raise ValueError("Provider settings must be bounded nonempty strings")
-    endpoint = urlsplit(raw["base_url"])
-    if (endpoint.scheme != "https" or not endpoint.hostname or endpoint.username or endpoint.password
-            or endpoint.query or endpoint.fragment):
-        raise ValueError("Live base_url must be an explicit HTTPS endpoint without credentials, query or fragment")
-    if not re.fullmatch(r"[A-Z][A-Z0-9_]*", raw["key_env"]):
-        raise ValueError("key_env must name one existing credential variable")
-    from agent.secret_scope import get_secret, UnscopedSecretError
-    from eidolon_cli.auth import has_usable_secret
-    try:
-        secret = get_secret(raw["key_env"])
-    except UnscopedSecretError:
-        raise ValueError("No current credential scope is available; implicit profile discovery is disabled") from None
-    if not isinstance(secret, str) or not has_usable_secret(secret):
-        raise ValueError("The explicitly selected credential is unavailable in the current secret scope")
-    return {"model": raw["model"], "base_url": raw["base_url"].rstrip("/"), "secret": secret}
 
 
 def _exact(value, context):
@@ -257,7 +225,8 @@ def configuration(source, route):
             "providers": {"evaluation": {"base_url": route["base_url"], "key_env": KEY_NAME,
                                          "default_model": route["model"], "api_mode": "chat_completions"}},
             "agent": {"environment_probe": False}, "compression": {"enabled": False},
-            "organization": {**LIMITS, "capabilities": ["work.inspect", "work.edit"], "tool_grants": grants,
+            "organization": {**LIMITS, **budget_configuration(route),
+                "capabilities": ["work.inspect", "work.edit"], "tool_grants": grants,
                 "read_roots": [str(source)], "project_grants": [{"id": "addition",
                     "files": ["root0/app.py", "root0/test_app.py"],
                     "execution": {"recipe": "python_unittest", "timeout_seconds": 10}}],
@@ -349,7 +318,8 @@ def run_evaluation(root, route, *, live=False):
     return {"schemaVersion": 1, "mode": "live_model" if live else "deterministic_local_fixture",
             "billing": "explicitly_acknowledged_provider_calls" if live else "nonbillable_loopback_only",
             "model": route["model"], "outcome": outcome, "objectiveStatus": item["status"],
-            "limits": LIMITS, "usage": item["usage"], "checks": checks, "interventions": reasons,
+            "limits": {**LIMITS, **budget_configuration(route)}, "usage": item["usage"],
+            "checks": checks, "interventions": reasons,
             "projectExecution": proof, "testReview": run["review"] if run else None,
             "sourceIntegration": integration, "deliveredFiles": delivered,
             "deliveredSha256": {name: hashlib.sha256(content.encode()).hexdigest() for name, content in (delivered or {}).items()},
@@ -357,21 +327,47 @@ def run_evaluation(root, route, *, live=False):
             "acceptance": item["acceptance"], "temporaryProjectRemovedAfterReport": True,
             "limitations": "One small addition fixture; no production repository writes, remote push or deployment. "
                             "Fixture mode exercises the real pipeline but does not measure model intelligence. "
-                            "Unsupported isolation is not a passing evaluation. Token reservations are not a provider invoice."}
+                            "Unsupported isolation is not a passing evaluation. " + COST_LIMITATION}
+
+
+def preflight_report(preflight, *, live=False, only=False, route=None):
+    """Keep failed admission visibly distinct from an attempted model evaluation."""
+    return {"schemaVersion": 1, "mode": "sandbox_preflight" if only else
+            "live_model" if live else "deterministic_local_fixture", "billing": "no_provider_calls",
+            "model": route["model"] if route else "organization-evaluation-fixture",
+            "outcome": preflight["outcome"], "objectiveStatus": "not_started",
+            "limits": {**LIMITS, **budget_configuration(route)} if route else LIMITS,
+            "preflight": preflight, "providerCalls": 0, "executionStarted": False,
+            "usage": None, "checks": {"originalSourceAndIndexUnchanged": True, "serviceStopped": True,
+                "exactDeliveredSourceAndTests": False, "exactTestedSnapshot": False,
+                "isolatedTestsPassed": False, "independentTestReview": False, "independentAcceptance": False,
+                "objectiveAccepted": False, "verifiedNewSourceBranch": False, "noRemotePush": True},
+            "interventions": [] if preflight["outcome"] == "passed" else [preflight["execution"]["reason"]],
+            "projectExecution": None, "testReview": None, "sourceIntegration": None, "deliveredFiles": None,
+            "deliveredSha256": {}, "finalDeliverable": None, "acceptance": None,
+            "fixtureStages": [], "fixtureErrors": [], "temporaryProjectRemovedAfterReport": True,
+            "limitations": preflight["limitations"] + " " + COST_LIMITATION}
 
 
 def main(argv=None):
     cli = parser()
     args = cli.parse_args(argv)
     try:
-        route = live_route(args)
+        route = selected_live_route(args)
     except (ValueError, OSError) as error:
         cli.error(str(error))
     with tempfile.TemporaryDirectory(prefix="eidolon-project-evaluation-") as directory, redirect_stdout(sys.stderr):
         # macOS temp paths may traverse /var -> /private/var. Canonicalize only
         # this freshly owned directory; granted project paths still fail closed.
         root = Path(directory).resolve()
-        if route:
+        preflight = native_preflight()
+        if args.preflight or preflight["outcome"] != "passed":
+            report = preflight_report(preflight, live=args.live_model, only=args.preflight, route=route)
+        elif route:
+            try:
+                route = load_live_secret(route, preflight)
+            except ValueError as error:
+                cli.error(str(error))
             report = run_evaluation(root, route, live=True)
         else:
             with local_provider() as (fixture, calls, errors):
@@ -379,6 +375,7 @@ def main(argv=None):
                 report.update(fixtureStages=calls, fixtureErrors=errors)
                 if errors:
                     report["outcome"] = "failed"
+        report["preflight"] = preflight
     encoded = json.dumps(report, indent=2, sort_keys=True) + "\n"
     if args.report:
         args.report.write_text(encoded, encoding="utf-8")
