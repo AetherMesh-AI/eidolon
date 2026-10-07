@@ -377,6 +377,8 @@ export function RuntimeRequests({
   const terminal = objective?.status === 'completed' || objective?.status === 'cancelled'
   const disconnected = snapshot.connection && snapshot.connection.state !== 'ready'
   const requests = filterOrganizationRequests(allRequests, filters, snapshot)
+  const narrowed = filters.team !== 'all' || filters.priority !== 'all' || filters.type !== 'all' || Boolean(filters.query)
+  const authoritative = snapshot.connection?.state === 'ready'
   const groups = new Map<string, OrganizationRequest[]>()
   const priorities = [copy.lowest, copy.low, copy.normal, copy.high, copy.highest]
   const priorityLabel = (value: number) => priorities[value - 1] ?? String(value)
@@ -498,7 +500,7 @@ export function RuntimeRequests({
       {!requests.length && (
         <EmptyState
           description={copy.queueEmptyNote}
-          title={filters.status === 'pending_intervention' && !filters.query ? copy.noNeeds : copy.noRequests}
+          title={!authoritative ? copy.requestsUnverified : narrowed ? copy.noMatchingRequests : filters.status === 'pending_intervention' ? copy.noNeeds : copy.noRequests}
         />
       )}
       {[...groups].map(([group, items]) => (

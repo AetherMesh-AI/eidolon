@@ -138,3 +138,34 @@ it('reuses an uncertain admission after the composer is unmounted and reopened',
   expect(calls[1][1].idempotencyKey).toBe(calls[0][1].idempotencyKey)
   view.unmount()
 })
+
+
+it.each(['/objectives/objective', '/requests'])('preserves an owner response through reconnects but isolates a new owner on %s', async path => {
+  const initial = snapshot('Pending question')
+  initial.requests = [{ id: 'question', objectiveId: 'objective', type: 'request.question', team: 'research', priority: 3, status: 'pending_intervention', attempts: 1, createdAt: '2026-10-04T00:00:00Z', allowedResolutions: [{ action: 'answer_request', label: 'Answer request', requiresText: true, requiresEvidence: false }] }]
+  let scope = { key: 'socket-a', ownerKey: 'owner-a', connected: true }
+
+  let scopeChanged = () => {}
+
+  const adapter = createRuntimeAdapter({
+    getScope: () => scope,
+    subscribeScope(listener) { scopeChanged = listener;
+
+ return () => {} },
+    request: async <T,>() => initial as T
+  })
+
+  const view = open(adapter, path)
+  fireEvent.click(await screen.findByRole('button', { name: 'Inspect request: request.question' }))
+  fireEvent.change(screen.getByRole('textbox', { name: 'Response' }), { target: { value: 'Retain this answer for this owner' } })
+  act(() => { scope = { ...scope, key: 'socket-b', connected: false }; scopeChanged() })
+  expect(screen.getByRole('textbox', { name: 'Response' })).toHaveProperty('value', 'Retain this answer for this owner')
+  expect(screen.getByRole('textbox', { name: 'Response' })).toHaveProperty('disabled', true)
+  act(() => { scope = { ...scope, connected: true }; scopeChanged() })
+  await waitFor(() => expect(screen.getByRole('textbox', { name: 'Response' })).toHaveProperty('disabled', false))
+  expect(screen.getByRole('textbox', { name: 'Response' })).toHaveProperty('value', 'Retain this answer for this owner')
+  act(() => { scope = { key: 'socket-c', ownerKey: 'owner-b', connected: true }; scopeChanged() })
+  fireEvent.click(await screen.findByRole('button', { name: 'Inspect request: request.question' }))
+  expect(screen.getByRole('textbox', { name: 'Response' })).toHaveProperty('value', '')
+  view.unmount()
+})

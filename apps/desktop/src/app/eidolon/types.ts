@@ -474,6 +474,7 @@ export interface OrganizationRuntime {
 export interface OrganizationConnection {
   scope: string
   ownerScope?: string
+  ownerRoute?: { connectionId: string; profile: string }
   state: 'connecting' | 'ready' | 'disconnected' | 'error'
   error?: string
   lastUpdatedAt?: string

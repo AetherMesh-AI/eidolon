@@ -29,3 +29,19 @@ it.each([1, 2, 300, 10000])('bounds objective rows and navigates/filter %i recor
   expect(activityObjective).toHaveProperty('value', `scale-${count - 1}`)
   expect(within(activityObjective).getAllByRole('option')).toHaveLength(1)
 })
+
+
+it('distinguishes filtered results from an empty ledger and restores work by clearing filters', () => {
+  const adapter = createPrototypeAdapter()
+  adapter.createObjective('Existing objective')
+  render(<MemoryRouter initialEntries={['/objectives']}><OrganizationWorkspace adapter={adapter} /></MemoryRouter>)
+  fireEvent.change(screen.getByRole('textbox', { name: 'Search objectives' }), { target: { value: 'no matching title' } })
+  expect(screen.getByRole('heading', { name: 'No matching objectives' })).toBeTruthy()
+  expect(screen.queryByRole('heading', { name: 'No objectives yet' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
+  expect(screen.getByRole('link', { name: /Existing objective/ })).toBeTruthy()
+  fireEvent.change(screen.getByRole('combobox', { name: 'Status' }), { target: { value: 'completed' } })
+  expect(screen.getByRole('heading', { name: 'No matching objectives' })).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
+  expect(screen.getByRole('link', { name: /Existing objective/ })).toBeTruthy()
+})

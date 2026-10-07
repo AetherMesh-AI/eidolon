@@ -829,3 +829,32 @@ describe('selectConnection', () => {
     expect($connection.get()?.mode).toBe('remote')
   })
 })
+
+describe('page-owned source switching', () => {
+  it.each(['success', 'failed-commit', 'same-source'] as const)('preserves the page without bypassing session isolation on %s', async outcome => {
+    setConnectionsRegistry(registry)
+    $connection.set({ connectionId: 'local', mode: 'local', profile: 'default' })
+    $activeSessionId.set('previous-runtime')
+
+    if (outcome === 'same-source') { $showAllProfiles.set(true) }
+
+    if (outcome === 'failed-commit') {
+      ensureGatewayAgent.mockImplementation(async (_connectionId, _profile, options) => {
+        options?.beforeActivate?.()
+        throw new Error('Activation failed')
+      })
+    }
+
+    const switching = selectConnection(outcome === 'same-source' ? 'local' : 'homelab', { profile: 'default', preserveRoute: true })
+
+    if (outcome === 'failed-commit') {
+      await expect(switching).rejects.toThrow('Activation failed')
+      expect(recoverActiveSourceAfterFailedGatewaySwitch).toHaveBeenCalledTimes(1)
+    } else { await switching }
+
+    expect(requestFreshSession).not.toHaveBeenCalled()
+    expect(beforeConnectionSwitch).toHaveBeenCalledTimes(outcome === 'same-source' ? 0 : 1)
+    expect($activeSessionId.get()).toBe(outcome === 'same-source' ? 'previous-runtime' : null)
+    expect($pendingConnectionId.get()).toBeNull()
+  })
+})

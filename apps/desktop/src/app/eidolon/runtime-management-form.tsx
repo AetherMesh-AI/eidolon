@@ -149,6 +149,13 @@ export function OrganizationManagementForm({
           >
             {copy.addMember}
           </Button>
+          {member && selected >= baseline.configuration.roster.length && (
+            <Button onClick={() => {
+              setDraft(current => ({ ...current, roster: current.roster.filter((_, index) => index !== selected) }))
+              setSelected(Math.max(0, selected - 1))
+              setError('')
+            }} size="sm" type="button" variant="secondary">{copy.removeUnsavedMember}</Button>
+          )}
           {member && (
             <OrganizationMemberFields
               existing={selected < baseline.configuration.roster.length}

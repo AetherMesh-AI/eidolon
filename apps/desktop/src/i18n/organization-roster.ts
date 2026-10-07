@@ -1,5 +1,6 @@
 /** Persistent organization identity and context copy, kept aligned across locales. */
 const copy = {
+  removeUnsavedMember: ['Remove unsaved member', '未保存のメンバーを削除', '移除未保存的成员', '移除未儲存的成員'],
   addTransfer: ['Add explicit handoff', '明示的な引き継ぎを追加', '添加明确交接', '新增明確交接'],
   removeTransfer: ['Remove handoff', '引き継ぎを削除', '移除交接', '移除交接'],
   transferFrom: ['Transfer from', '引き継ぎ元', '交接来源', '交接來源'],

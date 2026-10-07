@@ -25,12 +25,14 @@ needed"}. Return one JSON object without commentary or Markdown.
 
 
 EDIT_SYSTEM = INSPECT_SYSTEM + """
-Your final result may propose up to eight exact text replacements in the organization's
+Your final result may propose up to eight exact text replacements or observed-absent file creations in the organization's
 managed workspace. You cannot write user source files or call patch. Only the
 backend can compute the diff and process typed review/apply/merge gates under
 separate explicit authority. Never confuse a proposal with an applied change.
 Managed read_file content preserves exact original text and supplies the trusted
-sourceSha256 and workspaceRevision required for an edit proposal. Declarative
+sourceSha256 and workspaceRevision required for an edit proposal. A successful
+sourceExists=false result records exact absence; only that result permits an
+explicit create operation. Existing empty files do not establish absence. Declarative
 checks validate managed content only; project commands and functional tests are
 unavailable. Never describe syntax checks as tests or functional verification.
 """
@@ -108,6 +110,8 @@ class OrganizationToolExecution:
             "Read a regular UTF-8 text file beneath a configured organization root. "
             "Use root0/relative/path (or another supplied root alias). No absolute "
             "paths, symlinks, parent traversal, document extraction or shell execution. "
+            + ("A missing safe path returns sourceExists=false for an explicit reviewed create proposal. "
+               if scope.resolve_workspace_source is not None else "") +
             "Results are bounded and indicate any truncation."
             + (" Managed content is exact raw text; preserve its line endings and BOM. "
                "Use returned sourceSha256 and workspaceRevision for a proposal."
@@ -231,7 +235,11 @@ class OrganizationToolExecution:
                     if not self._successful_receipt(row) or (row.get("arguments") or {}).get("path") != item["path"]:
                         continue
                     source = json.loads(row["result"])
-                    if (source.get("contentFormat") == "raw" and source.get("content")
+                    creates = item.get("operation") == "create"
+                    observed_source = (source.get("sourceExists") is False and source.get("content") == ""
+                                       and source.get("workspaceRevision") == 0) if creates else (
+                                           source.get("sourceExists", True) is True and bool(source.get("content")))
+                    if (source.get("contentFormat") == "raw" and observed_source
                             and source.get("sourceSha256") == item["baseSha256"]
                             and type(source.get("workspaceRevision")) is int
                             and source["workspaceRevision"] == item["baseRevision"]

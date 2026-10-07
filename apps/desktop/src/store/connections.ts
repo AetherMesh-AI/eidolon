@@ -264,6 +264,9 @@ export interface SelectConnectionOptions {
   /** Land on this profile of the target source instead of the one last used
    *  there. The fleet profile rail passes the exact square the user clicked. */
   profile?: null | string
+  /** A page-owned switch keeps its navigation intent. The commit hook still
+   * resets machine-bound draft state; only the extra new-chat route is skipped. */
+  preserveRoute?: boolean
 }
 
 export async function selectConnection(connectionId: string, options: SelectConnectionOptions = {}): Promise<void> {
@@ -319,7 +322,8 @@ export async function selectConnection(connectionId: string, options: SelectConn
     // registry identity with the profile so the next create names local::x /
     // <source>::x exactly, never a bare profile string.
     captureNewChatSource()
-    requestFreshSession()
+
+    if (!options.preserveRoute) { requestFreshSession() }
     await rememberConnection(connectionId)
 
     return
@@ -434,7 +438,8 @@ export async function selectConnection(connectionId: string, options: SelectConn
 
       $newChatProfile.set(targetProfile)
       captureNewChatSource()
-      requestFreshSession()
+
+      if (!options.preserveRoute) { requestFreshSession() }
       await refreshActiveProfile()
     }
   } catch (error) {
@@ -445,7 +450,8 @@ export async function selectConnection(connectionId: string, options: SelectConn
         // lists (no scope moved): repaint it and land on a fresh draft there,
         // matching what a failed Settings apply leaves behind.
         recoverActiveSourceAfterFailedGatewaySwitch(token)
-        requestFreshSession()
+
+        if (!options.preserveRoute) { requestFreshSession() }
       }
 
       throw error

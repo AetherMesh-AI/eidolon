@@ -99,6 +99,19 @@ def _check_lexical_path(parts: tuple[str, ...], profile_prefixes: tuple[tuple[st
         raise OrganizationFileReadError("Protected credential or internal paths cannot be read.")
 
 
+def _check_project_write_path(parts):
+    denied = {".git", ".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker", ".netrc", ".npmrc",
+              ".pypirc", ".pgpass", ".git-credentials", "credentials", "credentials.json",
+              "application_default_credentials.json", "id_rsa", "id_ed25519", "id_dsa", "id_ecdsa"}
+    normalized = [part.lower() for part in parts]
+    env_templates = {".env.example", ".env.sample", ".env.template"}
+    if (any(part in denied or part.endswith((".pem", ".key", ".p12", ".pfx"))
+            or (part.startswith(".env.") and part not in env_templates) for part in normalized)
+            or any(left == ".config" and right in {"gh", "gcloud"}
+                   for left, right in zip(normalized, normalized[1:]))):
+        raise OrganizationFileReadError("Credential and Git-internal paths cannot be created or integrated.")
+
+
 def _open_file(root_fd: int, parts: tuple[str, ...]) -> int:
     directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
     fd = os.dup(root_fd)
@@ -160,9 +173,13 @@ def _validate_edit_source(content: str) -> str:
 
 def _validate_workspace_source(source: dict) -> str:
     if (not isinstance(source, dict)
-            or set(source) != {"content", "sourceSha256", "workspaceRevision", "workspaceId"}):
+            or set(source) not in ({"content", "sourceSha256", "workspaceRevision", "workspaceId"},
+                                  {"content", "sourceSha256", "workspaceRevision", "workspaceId", "sourceExists"})):
         raise OrganizationFileReadError("Managed source is missing its trusted revision metadata.")
     content = _validate_edit_source(source["content"])
+    if (type(source.get("sourceExists", True)) is not bool
+            or (source.get("sourceExists") is False and (content or source["workspaceRevision"] != 0))):
+        raise OrganizationFileReadError("Managed absence must be an exact empty revision-zero observation.")
     if (source["sourceSha256"] != hashlib.sha256(content.encode("utf-8")).hexdigest()
             or type(source["workspaceRevision"]) is not int or not 0 <= source["workspaceRevision"] <= 2**63 - 1
             or not isinstance(source["workspaceId"], str) or not 1 <= len(source["workspaceId"]) <= 200):
@@ -268,6 +285,8 @@ class OrganizationFileReadScope:
         if managed:
             result.update({key: source[key] for key in ("sourceSha256", "workspaceRevision", "workspaceId")})
             result["contentFormat"] = "raw"
+            if "sourceExists" in source:
+                result["sourceExists"] = source["sourceExists"]
         separator = "" if managed else "\n"
         kept: list[str] = []
         for number, line in enumerate(selected, start=offset):
@@ -441,7 +460,7 @@ class OrganizationFileReadScope:
             except OrganizationFileReadError as error:
                 return self._error(str(error), blocked=True)
 
-    def read_exact_source(self, path: str) -> dict:
+    def read_exact_source(self, path: str, *, allow_missing=False) -> dict:
         """Trusted backend observation of bounded source bytes, never model output.
 
         This always reads the original granted descriptor, bypassing the managed
@@ -463,6 +482,11 @@ class OrganizationFileReadScope:
                     content, size = _read_text(fd, MAX_EDIT_BYTES)
                 finally:
                     os.close(fd)
+            except FileNotFoundError:
+                if allow_missing:
+                    _check_project_write_path(_path_parts(absolute, absolute=True))
+                    return {"content": "", "size": 0, "sha256": hashlib.sha256(b"").hexdigest(), "exists": False}
+                raise OrganizationFileReadError("Source is unavailable or contains a symlink or non-directory.") from None
             except OSError:
                 raise OrganizationFileReadError("Source is unavailable or contains a symlink or non-directory.") from None
             _validate_edit_source(content)
@@ -487,7 +511,13 @@ class OrganizationFileReadScope:
                     with self._lock:
                         if self._closed:
                             raise OrganizationFileReadError("Organization file read scope has closed.")
-                        fd = _open_file(root_fd, parts)
+                        try:
+                            fd = _open_file(root_fd, parts)
+                        except FileNotFoundError:
+                            if self.resolve_workspace_source is not None:
+                                _check_project_write_path(_path_parts(absolute, absolute=True))
+                                return None
+                            raise
                         try:
                             content, _ = _read_text(fd, MAX_EDIT_BYTES if self.resolve_workspace_source else MAX_FILE_BYTES)
                         finally:

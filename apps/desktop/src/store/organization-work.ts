@@ -45,10 +45,21 @@ export function organizationWorkSummary(snapshot: OrganizationSnapshot): Organiz
 // An inactive profile may still be working on its own backend. Remember only
 // this small summary until that owner is visited and reconciled again. Unknown
 // completion is never reported as idle just because the foreground changed.
+export interface OrganizationOwnerWork {
+  ownerScope: string
+  route?: { connectionId: string; profile: string }
+  profile: string
+  work: OrganizationWork
+}
+// Renderer-only routing facts; the quit-guard bridge receives only the summary above.
+export const $organizationWorkOwners = atom<OrganizationOwnerWork[]>([])
+const ownerContexts = new Map<string, Pick<OrganizationOwnerWork, 'route' | 'profile'>>()
 const workByOwner = new Map<string, OrganizationWork>()
 
 export function clearOrganizationWork() {
   workByOwner.clear()
+  ownerContexts.clear()
+  $organizationWorkOwners.set([])
   $organizationWork.set(NO_ORGANIZATION_WORK)
 }
 
@@ -63,6 +74,11 @@ export function publishOrganizationWork(snapshot: OrganizationSnapshot) {
     return
   }
 
+  const context = ownerContexts.get(owner)
+  ownerContexts.set(owner, {
+    route: snapshot.connection?.ownerRoute ?? context?.route,
+    profile: snapshot.connection?.ownerRoute?.profile ?? snapshot.runtime?.profile ?? context?.profile ?? ''
+  })
   const current = organizationWorkSummary(snapshot)
   const previous = workByOwner.get(owner)
 
@@ -83,6 +99,16 @@ export function publishOrganizationWork(snapshot: OrganizationSnapshot) {
     next.needsYou += work.needsYou
     next.titles.push(...work.titles.filter(title => !next.titles.includes(title)))
     next.stale ||= (work.count > 0 || work.needsYou > 0) && (key !== owner || work.stale)
+  }
+
+  const owners = [...workByOwner].filter(([, work]) => work.count || work.needsYou).map(([key, work]) => ({
+    ownerScope: key,
+    ...ownerContexts.get(key)!,
+    work: { ...work, stale: key !== owner || work.stale }
+  }))
+
+  if (JSON.stringify(owners) !== JSON.stringify($organizationWorkOwners.get())) {
+    $organizationWorkOwners.set(owners)
   }
 
   if (JSON.stringify(next) !== JSON.stringify($organizationWork.get())) {
