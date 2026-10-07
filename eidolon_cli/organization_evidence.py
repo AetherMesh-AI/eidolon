@@ -12,7 +12,7 @@ from typing import Any
 
 CONTEXT_RESERVE_TOKENS = 2048
 DEFAULT_CONTEXT_LIMIT = 128_000
-_BODY_FIELDS = frozenset({'baseContent', 'newContent', 'diff'})
+_BODY_FIELDS = frozenset({'baseContent', 'newContent', 'diff', 'content'})
 _INPUT_FIELDS = frozenset({'messages', 'input', 'system', 'instructions', 'tools',
                            'functions', 'toolConfig', 'response_format', 'text', 'extra_body'})
 
@@ -114,8 +114,9 @@ def project_evidence(context: dict) -> dict:
                 if (item.get('sha256') != artifact.get('sha256')
                         or item.get('deliverable') != artifact.get('content')):
                     raise _error('Dependency evidence identity disagrees with its persisted artifact.')
-            if record.get('editProposal') is not None:
-                record['editProposal'] = proposal(record['editProposal'])
+            for details in ('editProposal', 'projectValidation'):
+                if record.get(details) is not None:
+                    record[details] = proposal(record[details])
             records.append(record)
         if key in context:
             projected[key] = records

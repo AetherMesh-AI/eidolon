@@ -1,5 +1,8 @@
 /** Copy for the canonical organization ledger surfaces, kept together across locales. */
 const copy = {
+  noMatchingObjectives: ['No matching objectives', '一致する目標はありません', '没有匹配的目标', '沒有符合的目標'],
+  objectiveFilterHint: ['Try another search or clear the filters to see your objectives.', '検索条件を変えるか、フィルターを解除して目標を表示してください。', '尝试其他搜索或清除筛选条件以查看目标。', '請嘗試其他搜尋或清除篩選條件以查看目標。'],
+  clearFilters: ['Clear filters', 'フィルターを解除', '清除筛选', '清除篩選'],
   waiting_response: ['Waiting for response', '回答待ち', '等待回复', '等待回覆'],
   answer_request: ['Answer request', 'リクエストに回答', '回复请求', '回覆請求'],
   approve_request: ['Approve request', 'リクエストを承認', '批准请求', '核准請求'],

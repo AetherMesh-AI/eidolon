@@ -62,13 +62,22 @@ def verify_project_files(conn, proposal):
     total = 0
     for item in files:
         source = _verify_revision(_revision(conn, proposal['objective_id'], item['path'], item['base_revision']))
+        create = item.get('operation') == 'create'
+        if item.get('operation', 'update') not in {'update', 'create'}:
+            raise ValueError('Unsupported project file operation')
+        if create:
+            exact_change = (not source['source_exists'] and source['revision'] == 0 and item['old_text'] == ''
+                            and item['new_content'] == item['new_text'])
+        else:
+            exact_change = (source['source_exists'] and bool(item['old_text'])
+                            and source['content'].find(item['old_text']) >= 0
+                            and source['content'].find(item['old_text']) == source['content'].rfind(item['old_text'])
+                            and source['content'].replace(item['old_text'], item['new_text'], 1) == item['new_content'])
         if (source['workspace_id'] != proposal['workspace_id'] or source['sha256'] != item['base_sha256']
-                or not item['old_text'] or source['content'].find(item['old_text']) < 0
-                or source['content'].find(item['old_text']) != source['content'].rfind(item['old_text'])
-                or source['content'].replace(item['old_text'], item['new_text'], 1) != item['new_content']
+                or not exact_change
                 or _hash(_safe_content(item['new_content'], 'Proposed content')) != item['new_sha256']
-                or _diff(item['path'], source['content'], item['new_content']) != item['diff']):
-            raise ValueError('Project file does not match its exact source and replacement')
+                or _diff(item['path'], source['content'], item['new_content'], create=create) != item['diff']):
+            raise ValueError('Project file does not match its exact source and operation')
         receipt = conn.execute('SELECT r.* FROM tool_receipts r JOIN evidence_tools e ON e.receipt_id=r.id '
                                'WHERE r.id=? AND e.evidence_id=?',
                                (item['source_receipt_id'], proposal['evidence_id'])).fetchone()
@@ -78,7 +87,7 @@ def verify_project_files(conn, proposal):
     if total > 131072:
         raise ValueError('Project output exceeds the combined byte limit')
     primary = files[0]
-    if any(primary[key] != proposal[key] for key in primary):
+    if any(primary[key] != proposal[key] for key in primary if key != 'operation'):
         raise ValueError('Primary edit does not match its project manifest')
     spec = project_spec(conn, proposal)
     if spec:
@@ -271,6 +280,17 @@ def project_validation_artifact(conn, identifier):
     if row is None:
         return None
     proof = _project_validation_row(conn, row, full=True)
+    # A partial replan retains unchanged files from older task rounds. The
+    # receipt's hashes establish lineage, but final reviewers also need those
+    # exact bodies to judge the combined deliverable independently.
+    from eidolon_cli.organization_edits import _revision, _verify_revision
+    sources = []
+    for item in proof['manifest']:
+        revision = _verify_revision(_revision(conn, row['objective_id'], item['path'], item['revision']))
+        if revision['sha256'] != item['sha256']:
+            raise ValueError('Final managed source no longer matches its validation manifest')
+        sources.append({**item, 'content': revision['content']})
+    proof['sourceFiles'] = sources
     return {'id': row['id'], 'objectiveId': row['objective_id'], 'content': row['result'],
             'sha256': row['result_sha256'], 'summary': f'Final managed validation: {proof["filesCount"]} exact files, '
                 f'{proof["checksCount"]} content checks. Project commands and functional tests were not executed.',

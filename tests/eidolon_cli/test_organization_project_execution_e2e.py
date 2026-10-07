@@ -45,17 +45,20 @@ def _exact(value, context):
     return text
 
 
-def _native_project_loop(tmp_path, monkeypatch):
+def _native_project_loop(tmp_path, monkeypatch, *, create=False):
     from eidolon_cli import config
     from tools import file_tools
 
     source, home = tmp_path / "source", tmp_path / "profile"
     source.mkdir()
     home.mkdir()
-    (source / "app.py").write_bytes(BEFORE.encode())
-    (source / "test_app.py").write_bytes(TESTS.encode())
+    if create:
+        (source / "README.md").write_text("Implement integer addition with regression tests.\n")
+    else:
+        (source / "app.py").write_bytes(BEFORE.encode())
+        (source / "test_app.py").write_bytes(TESTS.encode())
     _git(source, "init", "--initial-branch=main")
-    _git(source, "-c", "user.name=Local fixture", "-c", "user.email=fixture@localhost", "add", "app.py", "test_app.py")
+    _git(source, "-c", "user.name=Local fixture", "-c", "user.email=fixture@localhost", "add", *( ["README.md"] if create else ["app.py", "test_app.py"]))
     _git(source, "-c", "user.name=Local fixture", "-c", "user.email=fixture@localhost", "commit", "-m", "Exact starting project")
     source_head = _git(source, "rev-parse", "HEAD")
     source_index = (source / ".git" / "index").read_bytes()
@@ -87,20 +90,34 @@ def _native_project_loop(tmp_path, monkeypatch):
                     assert not body.get("tools")
                     output = {"workers": 1, "tasks": [
                         {"title": "Inspect addition and its tests", "type": "work.inspect", "team": "general",
-                         "agentId": "editor", "description": "Read root0/app.py and root0/test_app.py and identify the subtraction bug.", "dependsOn": []},
+                         "agentId": "editor", "description": ("Read root0/README.md and identify the implementation requirements." if create else "Read root0/app.py and root0/test_app.py and identify the subtraction bug."), "dependsOn": []},
                         {"title": "Fix addition without weakening tests", "type": "work.edit", "team": "general",
-                         "agentId": "editor", "description": "Change left - right to left + right in root0/app.py; retain all tests.", "dependsOn": [0]}]}
+                         "agentId": "editor", "description": ("Create root0/app.py and root0/test_app.py with addition and regression assertions." if create else "Change left - right to left + right in root0/app.py; retain all tests."), "dependsOn": [0]}]}
                 elif kind in {"work.inspect", "work.edit"}:
                     assert [tool["function"]["name"] for tool in body["tools"]] == ["read_file"]
                     results = [m for m in body["messages"] if m["role"] == "tool"]
-                    paths = ["root0/app.py", "root0/test_app.py"] if kind == "work.inspect" else ["root0/app.py"]
+                    paths = (["root0/README.md"] if create else ["root0/app.py", "root0/test_app.py"]) if kind == "work.inspect" else (["root0/app.py", "root0/test_app.py"] if create else ["root0/app.py"])
                     if len(results) < len(paths):
                         self.respond({"role": "assistant", "content": None, "tool_calls": [{
                             "id": f"read-{kind}-{len(results)}", "type": "function",
                             "function": {"name": "read_file", "arguments": json.dumps({"path": paths[len(results)]})}}]}, "tool_calls")
                         return
                     result = json.loads(results[0]["content"])
-                    if kind == "work.inspect":
+                    if kind == "work.inspect" and create:
+                        assert "Implement integer addition" in result["content"]
+                        output = {"summary": "Addition and regression coverage are required", "deliverable":
+                                  "root0/README.md requests integer addition. Create implementation and independent positive, negative and zero cases."}
+                    elif kind == "work.edit" and create:
+                        edits = []
+                        for path, message, content in zip(paths, results, (AFTER, TESTS)):
+                            observed = json.loads(message["content"])
+                            assert observed["sourceExists"] is False and observed["content"] == ""
+                            edits.append({"operation": "create", "path": path,
+                                          "baseRevision": observed["workspaceRevision"],
+                                          "baseSha256": observed["sourceSha256"], "newText": content})
+                        output = {"summary": "Create addition and three regression cases", "edits": edits,
+                                  "validations": [{"kind": "python_syntax", "path": path} for path in paths]}
+                    elif kind == "work.inspect":
                         assert result["content"] == "1|def add(left, right):\n2|    return left - right"
                         assert "self.assertEqual(add(2, 3), 5)" in json.loads(results[1]["content"])["content"]
                         output = {"summary": "Found subtraction where addition is required", "deliverable":
@@ -117,9 +134,14 @@ def _native_project_loop(tmp_path, monkeypatch):
                     proposal = evidence[0].get("editProposal")
                     if proposal:
                         files = proposal.get("files", [proposal])
-                        assert len(files) == 1
-                        assert _exact(files[0]["baseContent"], context) == BEFORE
-                        assert _exact(files[0]["newContent"], context) == AFTER
+                        if create:
+                            assert len(files) == 2 and all(item["operation"] == "create" for item in files)
+                            assert all(_exact(item["baseContent"], context) == "" for item in files)
+                            assert {_exact(item["newContent"], context) for item in files} == {AFTER, TESTS}
+                        else:
+                            assert len(files) == 1
+                            assert _exact(files[0]["baseContent"], context) == BEFORE
+                            assert _exact(files[0]["newContent"], context) == AFTER
                         output.update(proposalId=proposal["id"], proposalSha256=proposal["proposalSha256"])
                 elif kind == "request.test_review":
                     assert not body.get("tools") and len(evidence) == 1
@@ -201,8 +223,11 @@ def _native_project_loop(tmp_path, monkeypatch):
         assert "resolveWorkspaceSource" not in json.dumps(received)
         assert _git(source, "rev-parse", "HEAD") == source_head
         assert (source / ".git" / "index").read_bytes() == source_index
-        assert (source / "app.py").read_bytes() == BEFORE.encode()
-        assert (source / "test_app.py").read_bytes() == TESTS.encode()
+        if create:
+            assert not (source / "app.py").exists() and not (source / "test_app.py").exists()
+        else:
+            assert (source / "app.py").read_bytes() == BEFORE.encode()
+            assert (source / "test_app.py").read_bytes() == TESTS.encode()
         assert _git(source, "status", "--porcelain") == ""
         if sys.platform == "linux" and os.environ.get("EIDOLON_REQUIRE_PROJECT_SANDBOX") == "1":
             assert run and run["status"] == "passed", snapshot["requests"]
@@ -216,6 +241,8 @@ def _native_project_loop(tmp_path, monkeypatch):
             assert receipt["status"] == "integrated" and receipt["sourceBaseCommit"] == source_head
             assert receipt["workingTreeWritesPerformed"] is False and receipt["indexWritesPerformed"] is False
             assert receipt["remotePushPerformed"] is False
+            if create:
+                assert all(item["operation"] == "create" and item["sourceBlob"] is None for item in receipt["files"])
             assert _git(source, "rev-parse", receipt["ref"]) == receipt["commit"]
             assert _git(source, "show", receipt["commit"] + ":app.py") == AFTER.strip()
             assert _git(source, "show", receipt["commit"] + ":test_app.py") == TESTS.strip()
@@ -265,8 +292,9 @@ def _native_project_loop(tmp_path, monkeypatch):
 
 
 @pytest.mark.linux_only
-def test_native_linux_project_goal_inspect_edit_test_review_integrate_accept(tmp_path, monkeypatch):
-    _native_project_loop(tmp_path, monkeypatch)
+@pytest.mark.parametrize("create", [False, True])
+def test_native_linux_project_goal_inspect_edit_test_review_integrate_accept(tmp_path, monkeypatch, create):
+    _native_project_loop(tmp_path, monkeypatch, create=create)
 
 
 @pytest.mark.macos_only

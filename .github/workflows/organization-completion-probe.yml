@@ -9,7 +9,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   native-completion:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -19,7 +19,7 @@ jobs:
       - name: Install declared test dependencies
         run: python -m venv .venv && .venv/bin/python -m pip install -e '.[dev]'
       - name: Install sandbox runtime
-        run: sudo apt-get update -qq && sudo apt-get install -y bubblewrap libseccomp2
+        run: bash .github/scripts/install-probe-bwrap.sh
       - name: Organization contract and recovery suite
         run: EIDOLON_REQUIRE_PROJECT_SANDBOX=1 scripts/run_tests.sh tests/eidolon_cli/test_organization*.py tests/tui_gateway/test_organization*.py -j 4
       - name: Real nonbillable project completion
@@ -30,4 +30,46 @@ jobs:
         with:
           name: organization-completion-evidence
           path: organization-project-report.json
+          if-no-files-found: warn
+  desktop-completion:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    env:
+      CI: 'true'
+      EIDOLON_REQUIRE_PROJECT_SANDBOX: '1'
+      OPENAI_API_KEY: ''
+      OPENROUTER_API_KEY: ''
+      NOUS_API_KEY: ''
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '26'
+          cache: npm
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+      - name: Install graphical and sandbox runtime
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb libgtk-3-0 libnotify4 libnss3 libxss1 libxtst6 xdg-utils libatspi2.0-0 libdrm2 libgbm1 libasound2
+          bash .github/scripts/install-probe-bwrap.sh
+      - name: Install declared dependencies
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install -e '.[dev]'
+          npm ci
+      - name: Build desktop
+        run: npm run build --workspace apps/desktop
+      - name: Verify real persistent organization flows
+        working-directory: apps/desktop
+        run: xvfb-run -a --server-args='-screen 0 1280x1024x24' npx playwright test e2e/organization-owner-loop.spec.ts e2e/organization-requests-loop.spec.ts e2e/organization-completion-loop.spec.ts e2e/organization-project-execution.spec.ts --workers=1 --reporter=list
+      - name: Retain desktop evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: organization-desktop-evidence
+          path: |
+            apps/desktop/test-results/
+            apps/desktop/playwright-report/
           if-no-files-found: warn

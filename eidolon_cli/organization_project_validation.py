@@ -91,8 +91,13 @@ def parse_edit_result(value):
         raise ValueError('A project proposal requires 1–8 exact file edits')
     paths = set()
     for edit in edits:
-        if not isinstance(edit, dict) or set(edit) != {'path', 'baseRevision', 'baseSha256', 'oldText', 'newText'}:
-            raise ValueError('Edit must specify exactly path, baseRevision, baseSha256, oldText, and newText')
+        if not isinstance(edit, dict):
+            raise ValueError('Each edit must be an exact file operation')
+        create = edit.get('operation') == 'create'
+        fields = ({'operation', 'path', 'baseRevision', 'baseSha256', 'newText'} if create
+                  else {'path', 'baseRevision', 'baseSha256', 'oldText', 'newText'})
+        if set(edit) != fields:
+            raise ValueError('Edit must specify an exact replacement or explicit create operation')
         _alias_path(edit['path'])
         if edit['path'] in paths:
             raise ValueError('A project proposal cannot edit the same path more than once')
@@ -101,10 +106,15 @@ def parse_edit_result(value):
             raise ValueError('Edit baseRevision must be a nonnegative bounded integer')
         if not isinstance(edit['baseSha256'], str) or not _HASH.fullmatch(edit['baseSha256']):
             raise ValueError('Edit baseSha256 must be the exact source SHA-256')
-        if not _edit_text(edit['oldText'], 'oldText'):
+        if not create and not _edit_text(edit['oldText'], 'oldText'):
             raise ValueError('oldText must be nonempty')
+        if create and edit['baseRevision'] != 0:
+            raise ValueError('File creation requires the observed absent revision zero')
         _edit_text(edit['newText'], 'newText')
-    if sum(len((edit['oldText'] + edit['newText']).encode('utf-8')) for edit in edits) > MAX_PROJECT_BYTES * 2:
+    ordered = sorted(paths)
+    if any(right.startswith(left + '/') for left, right in zip(ordered, ordered[1:])):
+        raise ValueError('Project file paths cannot overlap as files and directories')
+    if sum(len((edit.get('oldText', '') + edit['newText']).encode('utf-8')) for edit in edits) > MAX_PROJECT_BYTES * 2:
         raise ValueError('Combined replacements exceed the project byte limit')
     checks = normalize_validations(value.get('validations', []), paths)
     result = {'summary': value['summary'].strip(), 'edit' if legacy else 'edits': dict(edits[0]) if legacy else [dict(e) for e in edits]}
