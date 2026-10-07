@@ -1,7 +1,7 @@
 name: Organization completion probe
 on:
   push:
-    branches: [probe/org-completion-20261007]
+    branches: [probe/org-completion-*]
 permissions:
   contents: read
 concurrency:
