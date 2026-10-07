@@ -273,4 +273,6 @@ it('keeps secrets out of renderer scope identity while retaining endpoint and pr
   const scope = getScope()
   expect(scope.key).not.toMatch(/password|secret|token|user:/)
   expect(scope.ownerKey).toContain('https://example.test/path')
+  expect(scope.ownerRoute).toEqual({ connectionId: routing.connectionId, profile: $activeGatewayProfile.get() })
+  expect(JSON.stringify(scope.ownerRoute)).not.toMatch(/password|secret|token|https/)
 })

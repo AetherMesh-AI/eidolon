@@ -1,6 +1,11 @@
 import { useI18n } from '@/i18n'
 
 const en = {
+  workOwners: 'Work by connection and profile',
+  openRequests: 'Open requests',
+  unknownSource: 'Unrecorded connection',
+  unknownProfile: 'Unrecorded profile',
+  sourceUnavailable: 'This work’s connection could not be opened. Select its connection and profile, then reopen Requests.',
   work: 'Organization work',
   running: 'running',
   queued: 'queued',
@@ -27,6 +32,11 @@ type Copy = typeof en
 const copies: Record<string, Copy> = {
   en,
   ja: {
+    workOwners: '接続とプロファイル別の作業',
+    openRequests: 'リクエストを開く',
+    unknownSource: '未記録の接続',
+    unknownProfile: '未記録のプロファイル',
+    sourceUnavailable: 'この作業の接続を開けません。接続とプロファイルを選び、リクエストを開き直してください。',
     work: '組織の作業',
     running: '実行中',
     queued: '待機中',
@@ -48,6 +58,11 @@ const copies: Record<string, Copy> = {
     unavailable: '組織のランタイムに接続して証拠を表示してください。'
   },
   zh: {
+    workOwners: '按连接和配置档案显示工作',
+    openRequests: '打开请求',
+    unknownSource: '未记录的连接',
+    unknownProfile: '未记录的配置档案',
+    sourceUnavailable: '无法打开此工作的连接。请选择其连接和配置档案，然后重新打开请求。',
     work: '组织工作',
     running: '运行中',
     queued: '排队中',
@@ -67,6 +82,11 @@ const copies: Record<string, Copy> = {
     unavailable: '连接组织运行时以查看证据。'
   },
   'zh-hant': {
+    workOwners: '依連線與設定檔顯示工作',
+    openRequests: '開啟請求',
+    unknownSource: '未記錄的連線',
+    unknownProfile: '未記錄的設定檔',
+    sourceUnavailable: '無法開啟此工作的連線。請選擇其連線與設定檔，再重新開啟請求。',
     work: '組織工作',
     running: '執行中',
     queued: '排隊中',

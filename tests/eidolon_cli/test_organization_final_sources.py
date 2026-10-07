@@ -30,7 +30,7 @@ def test_retained_prior_round_source_reaches_final_review(tmp_path, native_os):
         context = store.context(integrate)
         projected = project_evidence(context)
         aggregate = next(item for item in projected["evidence"] if item.get("projectValidation"))
-        files = aggregate["projectValidation"]["sourceFiles"]
+        files = aggregate["projectSources"]
         exact = next(item for item in files if item["path"] == retained["sourcePath"])
         assert exact["evidenceId"] == original
         assert exact["sha256"] == retained["newSha256"]

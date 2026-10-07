@@ -28,7 +28,7 @@ import {
   recoverActiveSourceAfterFailedGatewaySwitch
 } from '@/store/gateway-switch'
 import { notifyError } from '@/store/notifications'
-import { $activeGatewayProfile, $profiles, ensureGatewayProfile } from '@/store/profile'
+import { $activeGatewayProfile, $freshSessionRequest, $profiles, ensureGatewayProfile } from '@/store/profile'
 import {
   $activeSessionId,
   $awaitingResponse,
@@ -575,7 +575,7 @@ describe('useGatewayBoot remote reconnect loop (real hook, fake socket)', () => 
     expect(beforeConnectionSwitch).toHaveBeenCalledTimes(1)
   })
 
-  it("#93937: the Sessions switcher never publishes the new source while the previous backend's runtime id is still bound", async () => {
+  it.each([false, true])("#93937: source switching isolates the prior runtime and honors preserveRoute=%s", async preserveRoute => {
     // Real stores end to end: real useGatewayBoot, real gateway registry, real
     // selectConnection, fake sockets. Boot on the primary VPS with a transcript
     // open (its runtime id was minted by THAT backend), then switch sources
@@ -635,7 +635,8 @@ describe('useGatewayBoot remote reconnect loop (real hook, fake socket)', () => 
       }
     })
 
-    const switching = selectConnection('coder-remote')
+    const freshRequestsBefore = $freshSessionRequest.get()
+    const switching = selectConnection('coder-remote', { preserveRoute })
     await flushAsync()
     await flushAsync()
     await flushAsync()
@@ -649,6 +650,7 @@ describe('useGatewayBoot remote reconnect loop (real hook, fake socket)', () => 
     expect(published).toEqual(published.map(() => ({ activeSessionId: null, switching: true })))
     expect(bindingAtDial).toBe('a93bb39d')
     expect(beforeConnectionSwitch).toHaveBeenCalledTimes(1)
+    expect($freshSessionRequest.get() - freshRequestsBefore).toBe(preserveRoute ? 0 : 1)
     expect($connection.get()?.connectionId).toBe('coder-remote')
     expect(isActivePrimary()).toBe(false)
     expect($activeSessionId.get()).toBeNull()

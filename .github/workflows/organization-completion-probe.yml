@@ -21,7 +21,7 @@ jobs:
       - name: Install sandbox runtime
         run: bash .github/scripts/install-probe-bwrap.sh
       - name: Organization contract and recovery suite
-        run: EIDOLON_REQUIRE_PROJECT_SANDBOX=1 scripts/run_tests.sh tests/eidolon_cli/test_organization*.py tests/tui_gateway/test_organization*.py -j 4
+        run: EIDOLON_REQUIRE_PROJECT_SANDBOX=1 scripts/run_tests.sh tests/eidolon_cli/test_organization*.py tests/tui_gateway/test_organization*.py tests/tools/test_organization_file_read.py -j 4
       - name: Real nonbillable project completion
         run: .venv/bin/python scripts/eval_organization_project.py --report organization-project-report.json
       - name: Retain exact completion evidence
@@ -59,6 +59,11 @@ jobs:
           python -m venv .venv
           .venv/bin/python -m pip install -e '.[dev]'
           npm ci
+      - name: Check organization UI and connection lifecycle
+        working-directory: apps/desktop
+        run: |
+          npm run typecheck
+          ../../node_modules/.bin/vitest run src/app/eidolon src/app/contrib/organization-shell.test.tsx src/app/contrib/surfaces.test.tsx src/app/artifacts/workspace.test.tsx src/store/organization-work.test.ts src/store/active-work.test.ts src/store/connections.test.ts src/app/gateway/hooks/use-gateway-boot.test.tsx src/app/session/hooks/use-session-actions.test.tsx scripts/desktop-update-ui.test.mjs --maxWorkers=2
       - name: Build desktop
         run: npm run build --workspace apps/desktop
       - name: Verify real persistent organization flows

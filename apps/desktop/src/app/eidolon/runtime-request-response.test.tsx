@@ -270,3 +270,26 @@ it('keeps malformed staffing data inspectable and deniable without allowing appr
   })
   view.unmount()
 })
+
+it('does not claim all clear when filters hide another team’s pending intervention', async () => {
+  const initial = snapshot()
+  initial.requests!.push({ ...initial.requests![0], id: 'done', team: 'engineering', type: 'work.draft', status: 'completed' })
+  const view = open(vi.fn().mockResolvedValue(initial))
+  await screen.findByRole('button', { name: 'Inspect request: request.question' })
+  fireEvent.change(screen.getByRole('combobox', { name: 'Team' }), { target: { value: 'engineering' } })
+  expect(screen.queryByText('Nothing needs your input')).toBeNull()
+  expect(screen.getByText('No matching requests')).toBeTruthy()
+  fireEvent.change(screen.getByRole('combobox', { name: 'Team' }), { target: { value: 'all' } })
+  expect(screen.getByRole('button', { name: 'Inspect request: request.question' })).toBeTruthy()
+  view.unmount()
+})
+
+it('waits for authoritative request state before asserting nothing needs input', async () => {
+  let resolve!: (value: OrganizationSnapshot) => void
+  const view = open(() => new Promise<OrganizationSnapshot>(yes => { resolve = yes }))
+  expect(screen.queryByText('Nothing needs your input')).toBeNull()
+  await waitFor(() => expect(resolve).toBeTypeOf('function'))
+  await act(async () => { resolve({ ...snapshot(), requests: [] }) })
+  expect(await screen.findByText('Nothing needs your input')).toBeTruthy()
+  view.unmount()
+})

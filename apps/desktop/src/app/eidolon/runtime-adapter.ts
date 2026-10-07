@@ -7,6 +7,7 @@ export interface OrganizationScope {
   /** Exact socket + registry connection + profile. Never use the profile alone. */
   key: string
   ownerKey?: string
+  ownerRoute?: { connectionId: string; profile: string }
   connected: boolean
   switching?: boolean
 }
@@ -18,7 +19,7 @@ export interface OrganizationGateway {
 
 const emptySnapshot = (scope: OrganizationScope): OrganizationSnapshot => ({
   source: 'runtime', objectives: [], agents: [], tasks: [], activity: [], knowledge: [], requests: [],
-  connection: { scope: scope.key, ownerScope: scope.ownerKey, state: scope.connected || scope.switching ? 'connecting' : 'disconnected' }
+  connection: { scope: scope.key, ownerScope: scope.ownerKey, ownerRoute: scope.ownerRoute, state: scope.connected || scope.switching ? 'connecting' : 'disconnected' }
 })
 
 export function organizationErrorMessage(reason: unknown) {
@@ -82,7 +83,7 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
     lastApplied = order
     failures = 0
     const unchanged = JSON.stringify({ ...snapshot, connection: undefined }) === JSON.stringify({ ...next, connection: undefined })
-    publish({ ...next, connection: { scope: scope.key, ownerScope: scope.ownerKey, state: 'ready', lastUpdatedAt: unchanged ? snapshot.connection?.lastUpdatedAt : new Date().toISOString() } })
+    publish({ ...next, connection: { scope: scope.key, ownerScope: scope.ownerKey, ownerRoute: scope.ownerRoute, state: 'ready', lastUpdatedAt: unchanged ? snapshot.connection?.lastUpdatedAt : new Date().toISOString() } })
   }
 
   const schedule = (delay?: number) => {
@@ -109,7 +110,7 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
 
     scope = next
     failures = 0
-    publish(ownerChanged ? emptySnapshot(scope) : { ...snapshot, connection: { ...snapshot.connection, scope: scope.key, ownerScope: scope.ownerKey, state: scope.connected || scope.switching ? 'connecting' : 'disconnected', error: undefined } })
+    publish(ownerChanged ? emptySnapshot(scope) : { ...snapshot, connection: { ...snapshot.connection, scope: scope.key, ownerScope: scope.ownerKey, ownerRoute: scope.ownerRoute, state: scope.connected || scope.switching ? 'connecting' : 'disconnected', error: undefined } })
 
     return true
   }
@@ -148,7 +149,7 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
       } catch (reason) {
         if (current(token) && version === writeVersion && order >= lastApplied && !controller.signal.aborted) {
           failures++
-          publish({ ...snapshot, connection: { ...snapshot.connection, scope: scope.key, ownerScope: scope.ownerKey, state: 'error', error: organizationErrorMessage(reason) } })
+          publish({ ...snapshot, connection: { ...snapshot.connection, scope: scope.key, ownerScope: scope.ownerKey, ownerRoute: scope.ownerRoute, state: 'error', error: organizationErrorMessage(reason) } })
         }
       } finally {
         controllers.delete(controller)

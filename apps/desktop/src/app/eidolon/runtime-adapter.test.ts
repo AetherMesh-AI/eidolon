@@ -261,3 +261,16 @@ it('reads exact execution audits and rejects mismatched or late same-name profil
   await assertion
   expect(h.listenerCount()).toBe(0)
 })
+
+
+it('uses transport-owned routing metadata instead of backend-supplied connection fields', async () => {
+  const forged = { ...runtimeSnapshot(), connection: { scope: 'forged', state: 'ready', ownerRoute: { connectionId: 'wrong', profile: 'wrong' } } }
+  const h = harness(vi.fn().mockResolvedValue(forged))
+  const route = { connectionId: 'remote-a', profile: 'research' }
+  h.change({ key: 'real-socket', ownerKey: 'real-owner', ownerRoute: route, connected: true })
+  const unsubscribe = h.adapter.subscribe(() => {})
+  await settle()
+  expect(h.adapter.getSnapshot().connection?.ownerRoute).toEqual(route)
+  expect(h.adapter.getSnapshot().connection?.ownerScope).toBe('real-owner')
+  unsubscribe()
+})

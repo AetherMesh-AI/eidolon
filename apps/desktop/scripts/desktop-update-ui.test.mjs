@@ -98,3 +98,14 @@ test('continues displaying a healthy long update while progress remains reachabl
   assert.equal(document.getElementById('title').textContent, 'Updating Hermes')
   assert.equal(document.getElementById('line').textContent, 'Building Desktop')
 })
+
+test('shows actionable update failure text without interpreting markup or exposing URL credentials', async () => {
+  const message = 'Replacement denied <img src=x onerror=alert(1)> https://user:private@example.test/install?token=hidden Bearer abc123 Authorization: Basic encodedprivate api_key=veryprivate {"token":"jsonprivate"} password="multi word credential" HTTPS://name:uppersecret@example.test/path?key=upperhidden'
+  const document = openPage(async () => ({ ok: true, json: async () => ({ status: 'error', message }) }))
+  await vi.advanceTimersByTimeAsync(1000)
+  const line = document.getElementById('line')
+  assert.match(line.textContent, /Replacement denied/)
+  assert.match(line.textContent, /eidolon debug share/)
+  assert.equal(line.querySelector('img'), null)
+  assert.doesNotMatch(line.textContent, /private|hidden|abc123|credential|uppersecret/)
+})

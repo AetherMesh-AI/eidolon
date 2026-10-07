@@ -114,7 +114,7 @@ def project_evidence(context: dict) -> dict:
                 if (item.get('sha256') != artifact.get('sha256')
                         or item.get('deliverable') != artifact.get('content')):
                     raise _error('Dependency evidence identity disagrees with its persisted artifact.')
-            for details in ('editProposal', 'projectValidation'):
+            for details in ('editProposal', 'projectSources'):
                 if record.get(details) is not None:
                     record[details] = proposal(record[details])
             records.append(record)

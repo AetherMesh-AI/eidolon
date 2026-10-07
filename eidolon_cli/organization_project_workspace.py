@@ -290,11 +290,10 @@ def project_validation_artifact(conn, identifier):
         if revision['sha256'] != item['sha256']:
             raise ValueError('Final managed source no longer matches its validation manifest')
         sources.append({**item, 'content': revision['content']})
-    proof['sourceFiles'] = sources
     return {'id': row['id'], 'objectiveId': row['objective_id'], 'content': row['result'],
             'sha256': row['result_sha256'], 'summary': f'Final managed validation: {proof["filesCount"]} exact files, '
                 f'{proof["checksCount"]} content checks. Project commands and functional tests were not executed.',
-            'toolReceipts': [], 'projectValidation': proof, 'createdAt': proof['createdAt']}
+            'toolReceipts': [], 'projectValidation': proof, 'projectSources': sources, 'createdAt': proof['createdAt']}
 
 
 class OrganizationProjectStore:
