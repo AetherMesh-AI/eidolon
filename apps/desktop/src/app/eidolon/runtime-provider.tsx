@@ -5,26 +5,12 @@ import { $activeGatewayRoute, $gateway, activeGatewayConnectionId } from '@/stor
 import { $activeGatewayProfile, $gatewaySwapTarget } from '@/store/profile'
 import { $connection, $gatewayState } from '@/store/session'
 
+import { organizationEndpointIdentity, organizationOwnerKey } from './organization-owner'
 import { createRuntimeAdapter } from './runtime-adapter'
 import type { OrganizationSnapshot, RuntimeOrganizationAdapter } from './types'
 
 const socketIds = new WeakMap<object, number>()
 let nextSocketId = 0
-
-/** URL credentials and query tokens are not part of renderer-visible identity. */
-function endpointIdentity(value?: string) {
-  if (!value) {
-    return null
-  }
-
-  try {
-    const url = new URL(value)
-
-    return `${url.origin}${url.pathname}`
-  } catch {
-    return null
-  }
-}
 
 interface FormOwner {
   connectionId: string | null
@@ -56,11 +42,7 @@ export function createOrganizationScopeReader() {
       socketIds.set(gateway, ++nextSocketId)
     }
 
-    let ownerKey = JSON.stringify([
-      connectionId ?? (connection?.mode === 'remote' ? endpointIdentity(connection.baseUrl) : 'local'),
-      logicalProfile,
-      connection?.mode === 'remote' ? endpointIdentity(connection.baseUrl) : null
-    ])
+    let ownerKey = organizationOwnerKey(connectionId, logicalProfile, connection)
 
     if (
       !connection &&
@@ -78,13 +60,14 @@ export function createOrganizationScopeReader() {
         connectionId,
         $activeGatewayRoute.get(),
         logicalProfile,
-        endpointIdentity(connection?.baseUrl),
+        organizationEndpointIdentity(connection?.baseUrl),
         connection?.profile,
         connection?.sharedPrimary,
         connection?.sharedRemote,
         profile
       ]),
       ownerKey,
+      ownerRoute: connectionId && sourceMatches && descriptorMatches ? { connectionId, profile: logicalProfile } : undefined,
       connected: Boolean(
         connection &&
         gateway &&

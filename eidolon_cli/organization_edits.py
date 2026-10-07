@@ -37,6 +37,9 @@ CREATE TABLE IF NOT EXISTS workspace_heads (
  objective_id TEXT NOT NULL REFERENCES objectives(id), path TEXT NOT NULL,
  revision INTEGER NOT NULL, PRIMARY KEY(objective_id,path),
  FOREIGN KEY(objective_id,path,revision) REFERENCES workspace_revisions(objective_id,path,revision));
+CREATE TABLE IF NOT EXISTS workspace_absent_sources (
+ objective_id TEXT NOT NULL REFERENCES objectives(id), path TEXT NOT NULL,
+ PRIMARY KEY(objective_id,path));
 CREATE TABLE IF NOT EXISTS edit_proposals (
  id TEXT PRIMARY KEY, request_id TEXT NOT NULL UNIQUE REFERENCES requests(id),
  objective_id TEXT NOT NULL REFERENCES objectives(id), task_id TEXT NOT NULL REFERENCES tasks(id),
@@ -61,7 +64,7 @@ CREATE TABLE IF NOT EXISTS edit_applications (
 """
 # Immutable records are also protected from accidental SQL updates by future
 # consumers. Hash verification remains necessary when reading durable evidence.
-for _table in ('workspaces', 'workspace_roots', 'workspace_revisions', 'edit_proposals',
+for _table in ('workspaces', 'workspace_roots', 'workspace_revisions', 'workspace_absent_sources', 'edit_proposals',
                'edit_reviews', 'edit_applications'):
     for _operation in ('UPDATE', 'DELETE'):
         EDIT_SCHEMA += (f'CREATE TRIGGER IF NOT EXISTS immutable_{_table}_{_operation.lower()} '
@@ -115,9 +118,11 @@ def _lines(content):
     return [part + '\n' for part in parts[:-1]] + ([parts[-1]] if parts[-1] else [])
 
 
-def _diff(path, before, after):
+def _diff(path, before, after, *, create=False):
+    if create and not after:
+        return '--- /dev/null\n+++ b/' + path + '\n'
     chunks = difflib.unified_diff(_lines(before), _lines(after),
-                                  fromfile='a/' + path, tofile='b/' + path)
+                                  fromfile='/dev/null' if create else 'a/' + path, tofile='b/' + path)
     return ''.join(line if line.endswith('\n') else line + '\n\\ No newline at end of file\n'
                    for line in chunks)
 
@@ -133,16 +138,18 @@ def _proposal_digest(row, spec=None):
 
 
 def _revision(conn, objective_id, path, revision=None):
+    query = ('SELECT v.*, NOT (v.revision=0 AND EXISTS (SELECT 1 FROM workspace_absent_sources a '
+             'WHERE a.objective_id=v.objective_id AND a.path=v.path)) AS source_exists FROM workspace_revisions v ')
     if revision is None:
-        return conn.execute('SELECT v.* FROM workspace_revisions v JOIN workspace_heads h '
-                            'USING(objective_id,path,revision) WHERE v.objective_id=? AND v.path=?',
-                            (objective_id, path)).fetchone()
-    return conn.execute('SELECT * FROM workspace_revisions WHERE objective_id=? AND path=? AND revision=?',
+        return conn.execute(query + 'JOIN workspace_heads h USING(objective_id,path,revision) '
+                            'WHERE v.objective_id=? AND v.path=?', (objective_id, path)).fetchone()
+    return conn.execute(query + 'WHERE v.objective_id=? AND v.path=? AND v.revision=?',
                         (objective_id, path, revision)).fetchone()
 
 
 def _verify_revision(row):
-    if row is None or _hash(_safe_content(row['content'], 'Workspace content')) != row['sha256']:
+    if (row is None or _hash(_safe_content(row['content'], 'Workspace content')) != row['sha256']
+            or (not row['source_exists'] and (row['revision'] != 0 or row['content']))):
         raise ValueError('Workspace revision is missing or has changed')
     return row
 
@@ -164,20 +171,15 @@ def _source_read(row, source):
             and result.get('workspaceId') == source['workspace_id']
             and type(result.get('workspaceRevision')) is int
             and result['workspaceRevision'] == source['revision']
-            and result.get('sourceSha256') == source['sha256'])
+            and result.get('sourceSha256') == source['sha256']
+            and type(result.get('sourceExists', True)) is bool
+            and result.get('sourceExists', True) == bool(source['source_exists']))
 
 
 def _verify_proposal(conn, proposal):
     if proposal is None or _proposal_digest(proposal, project_spec(conn, proposal)) != proposal['sha256']:
         raise ValueError('Edit proposal is missing or has changed')
     source = _verify_revision(_revision(conn, proposal['objective_id'], proposal['path'], proposal['base_revision']))
-    if (source['sha256'] != proposal['base_sha256'] or source['workspace_id'] != proposal['workspace_id']
-            or _hash(_safe_content(proposal['new_content'], 'Proposed content')) != proposal['new_sha256']
-            or not proposal['old_text'] or source['content'].find(proposal['old_text']) < 0
-            or source['content'].find(proposal['old_text']) != source['content'].rfind(proposal['old_text'])
-            or source['content'].replace(proposal['old_text'], proposal['new_text'], 1) != proposal['new_content']
-            or _diff(proposal['path'], source['content'], proposal['new_content']) != proposal['diff']):
-        raise ValueError('Edit proposal does not match its exact source and replacement')
     evidence = conn.execute('SELECT * FROM evidence WHERE id=?', (proposal['evidence_id'],)).fetchone()
     if (evidence is None or evidence['request_id'] != proposal['request_id']
             or evidence['task_id'] != proposal['task_id'] or evidence['objective_id'] != proposal['objective_id']
@@ -255,7 +257,7 @@ def proposal_view(conn, proposal_id, *, full=True):
     files = proposal_files(conn, row)
     value['files'] = []
     for item in files:
-        entry = {'sourcePath': item['path'], 'baseRevision': item['base_revision'],
+        entry = {'sourcePath': item['path'], 'operation': item.get('operation', 'update'), 'baseRevision': item['base_revision'],
                  'baseSha256': item['base_sha256'], 'newSha256': item['new_sha256']}
         if full:
             source = _revision(conn, row['objective_id'], item['path'], item['base_revision'])
@@ -342,9 +344,12 @@ class OrganizationEditStore(OrganizationProjectStore):
             self._require_edit_grant(conn, request['agent_id'], request['team'])
             alias, identity = self._verify_root(conn, request['objective_id'], path)
             existing = _revision(conn, request['objective_id'], path)
-        content = None
+        content, source_exists = None, True
         if existing is None:
             content = loader()
+            source_exists = content is not None
+            if not source_exists:
+                content = ''
             if isinstance(content, bytes):
                 try:
                     content = content.decode('utf-8')
@@ -360,6 +365,10 @@ class OrganizationEditStore(OrganizationProjectStore):
                 raise ValueError('Source root changed during capture')
             current = _revision(conn, request['objective_id'], path)
             if current is None:
+                paths = conn.execute('SELECT path FROM workspace_heads WHERE objective_id=?',
+                                     (request['objective_id'],)).fetchall()
+                if any(path.startswith(row['path'] + '/') or row['path'].startswith(path + '/') for row in paths):
+                    raise ValueError('Managed file paths cannot overlap as files and directories')
                 if content is None:
                     raise ValueError('Captured workspace source is missing')
                 conn.execute('INSERT OR IGNORE INTO workspace_roots VALUES (?,?,?)',
@@ -371,10 +380,13 @@ class OrganizationEditStore(OrganizationProjectStore):
                 conn.execute('INSERT INTO workspace_revisions VALUES (?,?,0,?,?,?,?)',
                              (request['objective_id'], path, workspace, content, _hash(content), time.time()))
                 conn.execute('INSERT INTO workspace_heads VALUES (?,?,0)', (request['objective_id'], path))
+                if not source_exists:
+                    conn.execute('INSERT INTO workspace_absent_sources VALUES (?,?)', (request['objective_id'], path))
                 current = _revision(conn, request['objective_id'], path)
             _verify_revision(current)
             return {'content': current['content'], 'sourceSha256': current['sha256'],
-                    'workspaceRevision': current['revision'], 'workspaceId': current['workspace_id']}
+                    'workspaceRevision': current['revision'], 'workspaceId': current['workspace_id'],
+                    'sourceExists': bool(current['source_exists'])}
 
     def _finish_edit_work(self, conn, request, result):
         request = self._owned(conn, request)
@@ -393,18 +405,26 @@ class OrganizationEditStore(OrganizationProjectStore):
             source = _verify_revision(_revision(conn, request['objective_id'], edit['path'], edit['baseRevision']))
             if source['sha256'] != edit['baseSha256']:
                 raise ValueError('Edit baseSha256 does not match the captured source')
-            old, new = _exact_text(edit['oldText'], 'oldText'), _exact_text(edit['newText'], 'newText')
-            if not old or source['content'].find(old) < 0 or source['content'].find(old) != source['content'].rfind(old):
-                raise ValueError('oldText must match exactly one nonempty source substring')
-            updated = _safe_content(source['content'].replace(old, new, 1), 'Proposed content')
-            if updated == source['content']:
-                raise ValueError('Edit replacement must change the captured content')
+            create = edit.get('operation') == 'create'
+            old, new = _exact_text(edit.get('oldText', ''), 'oldText'), _exact_text(edit['newText'], 'newText')
+            if create:
+                if source['source_exists'] or source['revision'] != 0:
+                    raise ValueError('File creation requires an exact observed absent source')
+                updated = _safe_content(new, 'Proposed content')
+            else:
+                if (not source['source_exists'] or not old or source['content'].find(old) < 0
+                        or source['content'].find(old) != source['content'].rfind(old)):
+                    raise ValueError('oldText must match exactly one nonempty source substring')
+                updated = _safe_content(source['content'].replace(old, new, 1), 'Proposed content')
+                if updated == source['content']:
+                    raise ValueError('Edit replacement must change the captured content')
             receipt = next((row for row in receipts if _source_read(row, source)), None)
             if receipt is None:
                 raise ValueError('Edit requires a matching persisted successful workspace source read')
             files.append({'path': edit['path'], 'base_revision': source['revision'], 'base_sha256': source['sha256'],
                           'old_text': old, 'new_text': new, 'new_content': updated, 'new_sha256': _hash(updated),
-                          'diff': _diff(edit['path'], source['content'], updated), 'source_receipt_id': receipt['id']})
+                          'diff': _diff(edit['path'], source['content'], updated, create=create),
+                          'source_receipt_id': receipt['id'], **({'operation': 'create'} if create else {})})
         if sum(len(item['new_content'].encode('utf-8')) for item in files) > 131072:
             raise ValueError('Combined project output exceeds the 131072-byte limit')
         spec = {'files': files, 'validations': result.get('validations', [])}
@@ -420,7 +440,7 @@ class OrganizationEditStore(OrganizationProjectStore):
                     'objective_id': request['objective_id'], 'task_id': request['task_id'],
                     'evidence_id': evidence['id'], 'evidence_sha256': evidence['sha256'],
                     'author_id': request['agent_id'], 'workspace_id': source['workspace_id'],
-                    **first, 'created': time.time()}
+                    **{key: value for key, value in first.items() if key != 'operation'}, 'created': time.time()}
         proposal['sha256'] = _proposal_digest(proposal, spec)
         columns = ','.join(proposal)
         conn.execute(f'INSERT INTO edit_proposals ({columns}) VALUES ({",".join("?" for _ in proposal)})',

@@ -14,7 +14,8 @@ pytestmark = pytest.mark.linux_only
 
 
 def git(repo, *args, input=None):
-    return subprocess.run(["git", "-C", str(repo), *args], input=input, capture_output=True,
+    # Fixture setup must not race its own read-only metadata assertions.
+    return subprocess.run(["git", "-c", "maintenance.auto=false", "-c", "gc.auto=0", "-C", str(repo), *args], input=input, capture_output=True,
                           check=True, env={"PATH": os.environ["PATH"], "HOME": str(repo.parent),
                                            "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull,
                                            "GIT_AUTHOR_NAME": "Test", "GIT_AUTHOR_EMAIL": "test@localhost",

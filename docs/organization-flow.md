@@ -450,14 +450,27 @@ proposed content that requires secret redaction, contains disallowed control
 bytes, is binary, or exceeds **32,768 UTF-8 bytes** is refused. No redacted text is
 silently written back as a replacement.
 
-One work.edit request proposes one exact, nonempty, unique oldText replacement in
-each of at most eight existing files. newText may be empty to remove that substring. The backend
-checks a real completed read receipt for the target/base hash/revision and
-computes the new bytes and diff itself. Partial raw read pages are retained as
-partial observations; the separate reviewer receives the complete pinned base,
-proposed content and generated diff. Each file retains the 32,768 UTF-8 byte limit;
-the whole proposal also has a combined byte limit. Creating, deleting or moving
-whole files is not supported by this boundary.
+One work.edit request proposes up to eight exact file operations. An existing-file
+replacement requires a nonempty, unique oldText substring; newText may be empty to
+remove that substring. A new file requires a successful read_file observation with
+sourceExists=false, baseRevision=0 and the returned baseSha256, followed by an
+explicit operation=create proposal with complete newText (and no oldText). An
+existing empty file is not an absent source. Missing parent directories are allowed,
+but symlink/non-directory traversal, protected credential/Git paths, overlapping
+file/directory paths, binary content and invented absence are refused.
+
+The backend checks a real completed read receipt for each exact target, source
+presence, base hash and revision, and computes the new bytes and diff itself.
+Absent revision-zero provenance is immutable and remains distinct from a created
+empty file. Partial raw read pages are retained as partial observations; the
+separate reviewer receives the complete pinned base, proposed content, operation
+and generated diff. Each file retains the 32,768 UTF-8 byte limit; the whole proposal
+is limited to 128 KiB. Deleting or moving whole files is not supported by this
+boundary. Application creates only managed revisions; source files and parent
+directories remain untouched. With explicit project-test/source-integration grants,
+new files participate in the exact tested snapshot and new local Git branch. If a
+create target appears in the working tree, index or pinned source commit, execution
+or integration stops rather than replacing it.
 
 The reviewer must identify the exact proposal ID and proposal hash when approving
 or rejecting it. Rejected proposals create only bounded revised work, with no

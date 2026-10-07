@@ -1,18 +1,22 @@
 import { useStore } from '@nanostores/react'
-import { useEffect } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, NavLink, useNavigate } from 'react-router'
 
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
 import { EmptyState } from '@/components/ui/empty-state'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Tip } from '@/components/ui/tooltip'
 import { useContributions } from '@/contrib/react/use-contributions'
-import { $organizationWork, publishOrganizationWork } from '@/store/organization-work'
+import { $pendingConnectionId } from '@/store/connections'
+import { $organizationWork, $organizationWorkOwners, publishOrganizationWork } from '@/store/organization-work'
+import { $gatewaySwapTarget } from '@/store/profile'
 
-import { useRuntimeOrganization } from '../eidolon/runtime-provider'
+import { createOrganizationScopeReader, useRuntimeOrganization } from '../eidolon/runtime-provider'
 import { navigateToWorkspacePage, SIDEBAR_NAV_AREA, type SidebarNavContribution } from '../routes'
 
 import { useOrganizationShellCopy } from './organization-copy'
+import { OrganizationWorkPicker } from './organization-work-picker'
 
 /** The shell owns this subscription even while every organization page is
  * closed. All pages consume the provider's one adapter and poll lifecycle. */
@@ -30,6 +34,9 @@ export function OrganizationActiveWorkBridge() {
 
 export function OrganizationWorkIndicator() {
   const work = useStore($organizationWork)
+  const owners = useStore($organizationWorkOwners)
+  const [open, setOpen] = useState(false)
+  const readScope = useMemo(createOrganizationScopeReader, [])
   const copy = useOrganizationShellCopy()
   const navigate = useNavigate()
 
@@ -40,10 +47,17 @@ export function OrganizationWorkIndicator() {
   const label = `${copy.work}: ${work.running} ${copy.running}, ${work.queued} ${copy.queued}, ${work.needsYou} ${copy.needsYou}${work.stale ? ` · ${copy.stale}` : ''}`
 
   return (
-    <Tip label={label}>
+    <Popover onOpenChange={setOpen} open={open}><Tip label={label}><PopoverTrigger asChild>
       <Button
         aria-label={label}
-        onClick={() => navigateToWorkspacePage(navigate, '/requests')}
+        onClick={event => {
+          const scope = readScope()
+
+          if (owners.length === 1 && scope.connected && owners[0].ownerScope === scope.ownerKey && !$pendingConnectionId.get() && !$gatewaySwapTarget.get()) {
+            event.preventDefault()
+            navigateToWorkspacePage(navigate, '/requests')
+          }
+        }}
         size="micro"
         variant="ghost"
       >
@@ -55,7 +69,7 @@ export function OrganizationWorkIndicator() {
           {work.stale ? ` · ${copy.lastKnown}` : ''}
         </span>
       </Button>
-    </Tip>
+    </PopoverTrigger></Tip><PopoverContent>{open && <OrganizationWorkPicker onClose={() => setOpen(false)} owners={owners} />}</PopoverContent></Popover>
   )
 }
 

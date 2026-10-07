@@ -188,21 +188,23 @@ class OrganizationProjectExecutionStore:
         snapshot, total = [], 0
         with organization_file_read_scope(self.settings.read_roots, self.settings.max_tool_result_chars) as scope:
             for path in grant.files:
-                source = scope.read_exact_source(path)
+                baseline = _verify_revision(_revision(conn, objective_id, path, 0)) if path in managed else None
+                created = baseline is not None and not baseline['source_exists']
+                source = scope.read_exact_source(path, allow_missing=created and not source_verified)
                 content, sha256, revision = source['content'], source['sha256'], 0
                 base_sha256 = source['sha256']
                 if path in managed:
-                    baseline = _verify_revision(_revision(conn, objective_id, path, 0))
                     current = managed[path]
                     expected_source = current['sha256'] if source_verified else baseline['sha256']
-                    if source['sha256'] != expected_source:
+                    expected_exists = source_verified or not created
+                    if source.get('exists', True) != expected_exists or source['sha256'] != expected_source:
                         raise ValueError('Source preimage changed after inspection; replan against current source before execution')
-                    base_sha256 = baseline['sha256']
+                    base_sha256 = None if created else baseline['sha256']
                     content, sha256, revision = current['content'], current['sha256'], current['revision']
                     self._verify_root(conn, objective_id, path)
                 total += len(content.encode('utf-8'))
                 snapshot.append({'path': path, 'content': content, 'sha256': sha256, 'revision': revision,
-                                 'base_sha256': base_sha256})
+                                 'base_sha256': base_sha256, **({'operation': 'create'} if created else {})})
         if total > 524288:
             raise ValueError('Project execution snapshot exceeds its 512 KiB total byte limit')
         return snapshot

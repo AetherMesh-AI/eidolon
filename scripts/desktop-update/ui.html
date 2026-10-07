@@ -241,7 +241,13 @@
       settle('error')
       glyphEl.textContent = '\u2715'
       titleEl.textContent = 'Failed to update'
-      lineEl.innerHTML = 'Run <code>eidolon debug share</code> in a terminal to send a report.'
+      const detail = typeof state.message === 'string' ? state.message
+        .replace(/https?:\/\/[^\s"'<>]+/gi, '[connection URL]')
+        .replace(/((?:bearer|basic)\s+)\S+/gi, '$1[redacted]')
+        .replace(/((?:token|password|api[_-]?key|secret)["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s&,}]+)/gi, '$1[redacted]')
+        .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '')
+        .slice(0, 2000).trim() : ''
+      lineEl.textContent = `${detail ? `${detail}\n\n` : ''}Run eidolon debug share in a terminal to send a report.`
     }
   }
 

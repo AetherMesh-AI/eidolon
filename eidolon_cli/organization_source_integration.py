@@ -43,26 +43,16 @@ def source_base_sha256(source_base):
     return _digest(source_base)
 
 
-def _protected_parts(parts):
-    denied = {".git", ".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker", ".netrc", ".npmrc",
-              ".pypirc", ".pgpass", ".git-credentials", "credentials", "credentials.json",
-              "application_default_credentials.json", "id_rsa", "id_ed25519", "id_dsa", "id_ecdsa"}
-    normalized = [part.lower() for part in parts]
-    env_templates = {".env.example", ".env.sample", ".env.template"}
-    if (any(part in denied or part.endswith((".pem", ".key", ".p12", ".pfx"))
-            or (part.startswith(".env.") and part not in env_templates) for part in normalized)
-            or any(left == ".config" and right in {"gh", "gcloud"}
-                   for left, right in zip(normalized, normalized[1:]))):
-        raise SourceIntegrationError("Credential and Git-internal paths cannot be integrated.")
-
-
 def _parts(path):
-    from tools.organization_file_read import _path_parts, _check_lexical_path, _profile_credential_prefixes
+    from tools.organization_file_read import _path_parts, _check_lexical_path, _profile_credential_prefixes, _check_project_write_path
     parts = _path_parts(path, absolute=False)
     if len(path) > 1024 or len(parts) < 2 or parts[0] != "root0":
         raise SourceIntegrationError("Source integration requires canonical root0 paths.")
     _check_lexical_path(parts[1:], _profile_credential_prefixes())
-    _protected_parts(parts[1:])
+    try:
+        _check_project_write_path(parts[1:])
+    except ValueError as error:
+        raise SourceIntegrationError(str(error)) from None
     return parts[1:]
 
 
@@ -230,12 +220,15 @@ def _apply_delta(base, delta):
 
 class _Repository:
     def __init__(self, roots, cancel=None):
-        from tools.organization_file_read import _require_posix_support, _open_root, _path_parts, _profile_credential_prefixes
+        from tools.organization_file_read import _require_posix_support, _open_root, _path_parts, _profile_credential_prefixes, _check_project_write_path
         _require_posix_support()
         if not isinstance(roots, (list, tuple)) or len(roots) != 1:
             raise SourceIntegrationError("Source integration currently requires one explicitly granted repository root.")
         self.path = roots[0]
-        _protected_parts(_path_parts(self.path, absolute=True))
+        try:
+            _check_project_write_path(_path_parts(self.path, absolute=True))
+        except ValueError as error:
+            raise SourceIntegrationError(str(error)) from None
         self.cancel = cancel
         self.prefixes = _profile_credential_prefixes()
         self.stack = ExitStack()
