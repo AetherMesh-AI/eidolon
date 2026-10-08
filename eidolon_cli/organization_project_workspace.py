@@ -485,8 +485,20 @@ class OrganizationProjectStore:
         """Final evidence fence spans retained project state across objective rounds."""
         if conn.execute('SELECT 1 FROM edit_applications a JOIN edit_proposals p ON p.id=a.proposal_id '
                         'WHERE p.objective_id=?', (objective_id,)).fetchone() is None:
-            if require_source or require_validation:
-                raise ValueError('Required project validation or source integration has no applied project evidence')
+            if require_validation:
+                raise ValueError('Required managed validation has no applied project evidence')
+            automatic_source = self._automatic_source(conn, objective_id)
+            # Inspection snapshots can be tested and published without any managed
+            # edit. Preserve their delivery obligation even after grant revocation,
+            # but do not turn legacy text or tests-only objectives into source work.
+            source_project = self._wants_source(conn, objective_id) and (
+                automatic_source or self._execution_projects(conn, objective_id)
+                or conn.execute('SELECT 1 FROM project_run_starts WHERE objective_id=? '
+                                'AND source_base IS NOT NULL LIMIT 1', (objective_id,)).fetchone())
+            if (require_source or source_project) and (
+                    not automatic_source or not self.verified_source_integration(conn, objective_id)):
+                raise ValueError('Source-project acceptance requires verified exact current-round source integration '
+                                 'for every selected project')
             return
         manifest, _, _, checked = final_source_manifest(conn, objective_id)
         control = conn.execute('SELECT delivery_mode,required_checks FROM objective_control WHERE objective_id=?', (objective_id,)).fetchone()
