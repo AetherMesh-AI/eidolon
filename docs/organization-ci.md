@@ -17,7 +17,10 @@ No branch protection, repository setting, secret, or permission grant is changed
 - macOS and Windows: a deliberately smaller native ledger, migration, recovery,
   receipt, policy and project-execution guard suite. Spawned-process config tests
   cover delayed reopen/startup/watchers, invalid-file pauses and idempotent repair
-  without replaying claims or resetting model-call reservations. These hosts verify honest
+  without replaying claims or resetting model-call reservations. The unchanged
+  large artifact-retention lifecycle has its own file so short ledger contracts
+  do not consume its per-file timeout on slower Windows runners; no timeout or
+  assertion is relaxed. These hosts verify honest
   unsupported execution; they do not claim Linux sandbox support.
 - Linux desktop: organization UI/store/shell tests and synthetic fixture helpers,
   full desktop type checks and production build, followed by all six organization

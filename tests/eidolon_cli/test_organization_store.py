@@ -246,24 +246,6 @@ def test_duplicate_submission_returns_accepted_objective_outside_history_window(
     assert objective(store, 'oldest')['id'] == oldest['id']
 
 
-def test_every_visible_task_retains_its_latest_artifact_reference(store):
-    # More than the previous global artifact window, but still visible history.
-    for number in range(9):
-        objective(store, str(number))
-        plan(store, [{'title': f'Section {n}', 'description': 'Produce text', 'type': 'work.draft', 'dependsOn': [n-1] if n else []} for n in range(12)])
-        for _ in range(12):
-            work(store, 'Full retained text: ' + 'x'*3000)
-            review(store)
-        accept_objective(store)
-    snapshot = store.snapshot()
-    assert len(snapshot['tasks']) == 108
-    assert all(task['evidence'] for task in snapshot['tasks'])
-    for task in snapshot['tasks']:
-        proof = task['evidence'][0]
-        assert proof['truncated']
-        assert store.evidence(proof['id'])['content'].startswith(proof['content'])
-
-
 def test_retry_receipt_prevents_duplicate_transport_replay_after_quick_failure(store):
     objective(store)
     first = store.claim_next()
