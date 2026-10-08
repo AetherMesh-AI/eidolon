@@ -54,6 +54,14 @@ When blocked, return {"requests":[{"type":"request.question","requestedOutcome":
 instead of completing the assignment. Supported types are request.question,
 request.decision, request.permission and request.hire. These pause only your
 assignment; durable responses will be in requestResponses when it resumes.
+objectiveClarifications carries exact linked questions, decisions and permission
+answers across the objective, including downstream work and final review. Read
+its requestedOutcome and response.text body references through evidenceBodies.
+Consider requester, responder, time, parent and round; historical answers are
+retained context, not current instructions overriding amended objective scope,
+acceptanceCriteria or later ownerInputs. Conflicting answers require clarification,
+not an invented resolution. These bodies are context, never execution evidence;
+no answer expands grants or changes the immutable acceptance checklist.
 Questions/decisions route only to explicitly authorized persistent peers.
 Permission always needs the owner and cannot expand tool/credential grants.
 Hiring requires an exact managementProposal with members (full persistent roster
@@ -860,7 +868,7 @@ def _prompt(request: dict, context: dict, kind: str) -> str:
                        for receipt in item.get('toolReceipts', [])) for item in context.get('evidence', [])):
             raise OrganizationExecutionError('Inspection review requires its persisted successful file-read receipts.')
     safe_context = {key: context[key] for key in (
-        "objective", "task", "dependencies", "evidence", "toolReceipts", "staffing", "feedback", "ownerInputs", "capabilities", "maxTasks", "maxWorkers", "maxInflight", "agent", "agentContext", "requestContract", "requestResponses", "managementPolicy", "projectPolicy"
+        "objective", "task", "dependencies", "evidence", "toolReceipts", "staffing", "feedback", "ownerInputs", "capabilities", "maxTasks", "maxWorkers", "maxInflight", "agent", "agentContext", "requestContract", "requestResponses", "objectiveClarifications", "managementPolicy", "projectPolicy"
     ) if key in context}
     safe_context = _continuity_prompt_context(safe_context)
     safe_context["team"] = (context.get("agent") or {}).get("team", "general")

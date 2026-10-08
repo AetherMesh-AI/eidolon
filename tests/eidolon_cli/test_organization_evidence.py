@@ -167,3 +167,32 @@ def test_acceptance_rejects_negative_missing_tampered_or_impossibly_large_proof(
     blocked = executor.execute({'type': model.stage}, context, threading.Event())
     assert 'intervention' in blocked
     assert not model.prompts and not model.reservations
+
+
+def test_exact_clarification_overflow_is_read_and_cannot_be_omitted_from_acceptance(model):
+    context = large_context(model)
+    context['evidence'].append(artifact('final', 'The candidate makes an unsupported public-release claim.',
+                                        kind='integrated_deliverable'))
+    model.stage = 'request.accept'
+    # Each response fits the ledger's 12,000-character limit. The collection
+    # exceeds the model window and must use complete audited source reads.
+    context['objectiveClarifications'] = [
+        {'id': f'question-{index}', 'type': 'request.question', 'requesterId': 'manager',
+         'requestedOutcome': f'What applies to component {index}?', 'round': 0, 'historical': False,
+         'response': {'responderId': 'owner', 'decision': 'answered', 'createdAt': '2026-10-08T00:00:00Z',
+                      'text': f'Component {index}: ' + ('Exact retained details. ' * 490) +
+                              (' No public release was authorized.' if index == 11 else '')}}
+        for index in range(12)]
+    model.negative = 'No public release was authorized.'
+    result = executor.execute({'type': model.stage}, context, threading.Event())
+    assert result.get('approved') is False, result
+    assert result['conflicts']
+    chunks = [json.loads(prompt.split('Submitted context:\n', 1)[1])['sourceChunk']
+              for prompt in model.prompts]
+    for clarification in context['objectiveClarifications']:
+        assert clarification['response']['text'] in chunks
+    verify_context_receipt(context, model.reports[0], model.passes, approved=False)
+    changed = copy.deepcopy({key: value for key, value in context.items() if not callable(value)})
+    changed['objectiveClarifications'][-1]['response']['text'] = 'Release authorized.'
+    with pytest.raises(executor.OrganizationExecutionError):
+        verify_context_receipt(changed, model.reports[0], model.passes, approved=False)

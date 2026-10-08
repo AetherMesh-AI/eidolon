@@ -44,6 +44,12 @@ def test_hire_question_answer_resumes_same_identity_through_acceptance(tmp_path,
                               if message['role'] == 'user' and 'Submitted context:\n' in message.get('content', ''))
                 data = json.loads(prompt.split('Submitted context:\n', 1)[1])
                 kind, context = data['request']['type'], data['context']
+                if kind in {'request.review', 'request.integrate', 'request.accept'}:
+                    clarification, = context['objectiveClarifications']
+                    assert clarification['requestedOutcome']['bodySha256'] in context['evidenceBodies']
+                    assert context['evidenceBodies'][clarification['response']['text']['bodySha256']] == answer_text
+                    assert clarification['response']['responderId'] == ('owner' if owner_fallback else 'advisor')
+                    assert not clarification['historical']
                 provider_calls[kind] += 1
                 assert not body.get('tools')
                 if kind == 'request.plan':

@@ -120,6 +120,11 @@ def project_evidence(context: dict) -> dict:
             records.append(record)
         if key in context:
             projected[key] = records
+    if 'objectiveClarifications' in context:
+        projected['objectiveClarifications'] = [
+            {**item, 'requestedOutcome': body(item['requestedOutcome']),
+             'response': {**item['response'], 'text': body(item['response']['text'])}}
+            for item in context['objectiveClarifications']]
     projected['toolReceipts'] = list(receipts.values())
     if bodies:
         projected['evidenceBodies'] = bodies
