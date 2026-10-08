@@ -123,8 +123,13 @@ immutable, and the existing runtime revocation fences remain authoritative.
 ### Why this first slice does not save automatically
 
 Gateway discovery, cold service startup and ledger reopen now serialize source
-reads and policy adoption through the ledger write transaction. Invalid profile
-YAML durably pauses same-profile hosts; valid repair is idempotent and does not
+reads and policy adoption through the ledger write transaction. Scoped hosts also
+re-read local `.env` values inside that transaction, replacing removed entries
+rather than retaining a stale snapshot. Unscoped process environment variables
+and external-secret-source snapshots retain their existing lifecycles; changes
+to those sources require the corresponding reload or restart. This does not
+claim cross-process synchronization of every external configuration source.
+Invalid profile YAML durably pauses same-profile hosts; valid repair is idempotent and does not
 replay unknown work or reset model reservations. These observer guarantees do
 not make file replacement atomic with a ledger update: a process can still crash
 between those two durable writes. File compensation alone does not solve that

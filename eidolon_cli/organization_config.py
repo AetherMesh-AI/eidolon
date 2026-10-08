@@ -1,5 +1,6 @@
 """Bounded policy for the organization control plane, independent of providers."""
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -145,3 +146,23 @@ def load_profile_configuration(home, *, require_sources=False):
     if enabled and require_sources:
         raise ProfileSourcesRequired()
     return OrganizationSettings.from_config(config), enabled
+
+
+@contextmanager
+def profile_configuration_scope(home):
+    """Refresh profile-local expansion inputs after acquiring the ledger writer.
+
+    Ambient process configuration retains its existing semantics. Scoped hosts
+    must replace their old snapshot, including keys removed from the local file.
+    Existing external-source values are reused; hydration never occurs here.
+    """
+    from agent.secret_scope import (build_profile_secret_scope, current_secret_scope,
+                                    is_secret_scope_required, reset_secret_scope, set_secret_scope)
+    token = None
+    if current_secret_scope() is not None or is_secret_scope_required():
+        token = set_secret_scope(build_profile_secret_scope(home))
+    try:
+        yield
+    finally:
+        if token is not None:
+            reset_secret_scope(token)

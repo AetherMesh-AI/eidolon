@@ -210,3 +210,49 @@ else:
              if path.is_file() and 'organization' not in path.relative_to(tmp_path).parts}
     assert after == before
     assert not store.heartbeat(claim)
+
+
+@pytest.mark.parametrize('edit', ['change', 'remove'])
+def test_delayed_profile_scope_cannot_restore_revoked_root(tmp_path, monkeypatch, edit):
+    before_root, after_root = tmp_path / 'before', tmp_path / 'after'
+    monkeypatch.setenv('ORG_ROOT', str(before_root))  # Scoped removal must not revive ambient state.
+    _config(tmp_path, read_roots=['${ORG_ROOT}'], tool_grants=['read_file'])
+    (tmp_path / '.env').write_text('ORG_ROOT=' + str(before_root))
+    store = OrganizationStore(tmp_path / 'organization' / 'state.db',
+        OrganizationSettings(team='before', read_roots=(str(before_root),), tool_grants=('read_file',)))
+    store.create_objective('Existing synthetic claim', idempotency_key='existing')
+    claim = store.claim_next()
+    stale, entered, release, stale_result = _run(tmp_path, 'gateway', delayed=True)
+    fresh = None
+    try:
+        assert entered.wait(30)
+        (tmp_path / '.env').write_text('ORG_ROOT=' + str(after_root) if edit == 'change' else '')
+        fresh, _, _, fresh_result = _run(tmp_path, 'gateway', delayed=False)
+        expected = ('ok', 'before') if edit == 'change' else ('error', 'InvalidUserConfigError')
+        assert fresh_result.get(timeout=30) == expected
+        fresh.join(30)
+        assert fresh.exitcode == 0
+        updated = OrganizationStore(store.path)
+        generation = updated._policy_generation
+        assert not store.heartbeat(claim)
+        release.set()
+        assert stale_result.get(timeout=30) == expected
+        stale.join(30)
+        assert stale.exitcode == 0
+        final = OrganizationStore(store.path)
+        assert final._policy_generation == generation
+        if edit == 'change':
+            assert final.settings.read_roots == (str(after_root),)
+        else:
+            with final._connect() as conn:
+                assert final._policy_paused(conn)
+        assert final.claim_next() is None
+        assert final.snapshot()['requests'][0]['status'] == 'pending_intervention'
+    finally:
+        release.set()
+        for worker in (stale, fresh):
+            if worker is not None:
+                worker.join(30)
+                if worker.is_alive():
+                    worker.terminate()
+                    worker.join(30)
