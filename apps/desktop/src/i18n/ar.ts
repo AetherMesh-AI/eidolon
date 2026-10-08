@@ -1,6 +1,8 @@
 import { defineLocale } from './define-locale'
+import { organizationConversationsAr } from './organization-conversations'
 
 export const ar = defineLocale({
+  organizationConversations: organizationConversationsAr,
   sessionImport: {
     title: 'المتابعة من تطبيق آخر',
     subtitle: 'انقل محادثة إلى Eidolon وتابع من حيث توقفت.',

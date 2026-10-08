@@ -65,6 +65,11 @@ class OrganizationStaffingStore:
         return {row[0] for row in conn.execute("SELECT s.agent_id FROM staff_state s JOIN agents a ON a.id=s.agent_id WHERE s.active=1 AND a.role='Worker'")}
 
     def _staff_reason(self, conn, agent, request_type):
+        if request_type == 'request.message':
+            staff = self._communication_staff(conn, agent['id'])
+            state = conn.execute('SELECT active FROM staff_state WHERE agent_id=?', (agent['id'],)).fetchone()
+            return (staff_unavailability(staff, self.settings) or
+                    ('Message recipient is inactive.' if state is not None and not state['active'] else None))
         state = conn.execute('SELECT * FROM staff_state WHERE agent_id=?', (agent['id'],)).fetchone()
         if state is None:
             return None
@@ -104,6 +109,8 @@ class OrganizationStaffingStore:
                 for staff in configured_staff(self.settings)]
 
     def _route_reason(self, conn, request):
+        if request['type'] == 'request.message':
+            return 'Internal message recipient is unavailable or communication scope was revoked. Restore the permitted recipient and retry, or cancel this objective.'
         typed = self._typed_context(conn, request)['requestContract']
         if typed.get('parentRequestId'):
             return f"No eligible persistent agent accepts {request['type']} for team {request['team']} with {typed['requiredAuthority']}. Owner response is required."

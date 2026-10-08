@@ -1,5 +1,6 @@
 """Bounded UI projections of the authoritative organization ledger."""
 import json
+from eidolon_cli.organization_conversations import conversations_view
 from eidolon_cli.organization_packages import planning_mode, packages_view, task_package_id
 from eidolon_cli.organization_projects import objective_projects, task_project, public_project
 from eidolon_cli.organization_attention import attention_view
@@ -179,7 +180,7 @@ def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
                   'kind': 'artifact', 'body': r['content'] + ('\n\n[Preview truncated. Open this artifact to read the full retained deliverable.]' if r['truncated'] else '')}
                  for r in evidence]
     return {'source': 'runtime', 'objectives': objectives, 'agents': agents, 'tasks': ui_tasks, 'activity': events,
-            'knowledge': knowledge, 'decisions': [], 'requests': ui_requests, 'attention': attention_view(conn, objective_id=objective_id),
+            'conversations': conversations_view(conn, visible), 'knowledge': knowledge, 'decisions': [], 'requests': ui_requests, 'attention': attention_view(conn, objective_id=objective_id),
             'outcomes': outcomes_view(conn, objective_id=objective_id),
             'runtime': {'history': history_counts(conn), 'state': 'ready', 'capabilities': list(settings.capabilities), 'maxWorkers': settings.max_workers,
                         'maxInflight': settings.max_inflight, 'rosterCount': len(agents),

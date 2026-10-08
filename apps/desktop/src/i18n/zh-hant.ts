@@ -1,10 +1,12 @@
 import { defineFieldCopy } from '@/app/settings/field-copy'
 
 import { defineLocale } from './define-locale'
+import { organizationConversationsZhHant } from './organization-conversations'
 import { organizationRosterZhHant } from './organization-roster'
 import { organizationWorkZhHant } from './organization-work'
 
 export const zhHant = defineLocale({
+  organizationConversations: organizationConversationsZhHant,
   organizationWork: organizationWorkZhHant,
   organizationRoster: organizationRosterZhHant,
   organizationRuntime: {

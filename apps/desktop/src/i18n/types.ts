@@ -6,6 +6,7 @@ import type { TipId } from '@/lib/tips/catalog'
 // partial locales should use `defineLocale()` so missing desktop-only strings
 // fall back to English while new keys remain type-checked.
 
+import type { OrganizationConversationsCopy } from './organization-conversations'
 import type { OrganizationRosterCopy } from './organization-roster'
 import type { OrganizationWorkCopy } from './organization-work'
 
@@ -53,6 +54,7 @@ interface AuxTaskCopy {
 }
 
 export interface Translations {
+  organizationConversations: OrganizationConversationsCopy
   organizationWork: OrganizationWorkCopy
   organizationRoster: OrganizationRosterCopy
   organizationRuntime: {

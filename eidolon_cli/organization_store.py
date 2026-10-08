@@ -17,6 +17,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 
+from eidolon_cli.organization_conversations import CONVERSATION_SCHEMA, OrganizationConversationStore
 from eidolon_cli.organization_packages import (PACKAGE_SCHEMA, OrganizationPackageStore, package_dependencies_ready, task_package_id)
 from eidolon_cli.organization_config import OrganizationSettings
 from eidolon_cli.organization_project_registry import REGISTRY_SCHEMA
@@ -101,12 +102,12 @@ def _text(value, field, limit=10000):
     return value.strip()
 
 
-class OrganizationStore(OrganizationPackageStore, OrganizationOutcomeStore, OrganizationAttentionStore, OrganizationHistoryStore, OrganizationCoordinationStore, OrganizationProjectExecutionStore, OrganizationBudgetStore, OrganizationRequestStore, OrganizationManagementStore, OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
+class OrganizationStore(OrganizationConversationStore, OrganizationPackageStore, OrganizationOutcomeStore, OrganizationAttentionStore, OrganizationHistoryStore, OrganizationCoordinationStore, OrganizationProjectExecutionStore, OrganizationBudgetStore, OrganizationRequestStore, OrganizationManagementStore, OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
     def __init__(self, path: Path | str, settings: OrganizationSettings | None = None):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
-            conn.executescript(_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA + COORDINATION_SCHEMA + HISTORY_SCHEMA + ATTENTION_SCHEMA + PROJECTS_SCHEMA + OUTCOME_SCHEMA + REGISTRY_SCHEMA + PACKAGE_SCHEMA)
+            conn.executescript(_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA + COORDINATION_SCHEMA + HISTORY_SCHEMA + ATTENTION_SCHEMA + PROJECTS_SCHEMA + OUTCOME_SCHEMA + REGISTRY_SCHEMA + PACKAGE_SCHEMA + CONVERSATION_SCHEMA)
         self.settings = settings or OrganizationSettings()
         with self._write() as conn:
             self.settings = resolve_settings(conn, settings)
@@ -254,6 +255,8 @@ class OrganizationStore(OrganizationPackageStore, OrganizationOutcomeStore, Orga
             return build_snapshot(conn, self.settings, objective_id=ident, resolution_options=self.allowed_owner_resolutions)["objectives"][0]
 
     def _eligible(self, conn, request):
+        if request["type"] == "request.message":
+            return self._message_eligible(conn, request)
         if request['type'] in {'request.project_test', 'request.source_integrate'} and self.project_stage_unavailability(conn, request):
             return [], None
         if request['type'] == 'request.validate' and self.edit_validate_unavailability(conn, request):
@@ -390,11 +393,15 @@ class OrganizationStore(OrganizationPackageStore, OrganizationOutcomeStore, Orga
             conn.execute("UPDATE requests SET lease=? WHERE id=?", (time.time() + self.settings.lease_seconds, claim["id"]))
             return True
 
-    def context(self, claim):
-        with self._connect() as conn:
+    def context(self, claim, *, mark_read=True):
+        with (self._write() if mark_read else self._connect()) as conn:
             request = self._owned(conn, claim)
             if request is None:
                 raise ValueError("Request lease is no longer owned")
+            if request["type"] == "request.message":
+                return self._message_delivery_context(conn, request, mark_read=mark_read)
+            if mark_read:
+                self._read_internal_replies(conn, request)
             objective = dict(conn.execute("SELECT id,title,description FROM objectives WHERE id=?", (request["objective_id"],)).fetchone())
             objective.update(objective_assignment_view(conn, request['objective_id']))
             objective['projects'] = [public_project(project) for project in objective_projects(conn, request['objective_id'])]
@@ -465,7 +472,7 @@ class OrganizationStore(OrganizationPackageStore, OrganizationOutcomeStore, Orga
             return {"objective": objective, "task": task, "agent": agent, **package_context,
                     **({'projectExecutionHistory': payload['projectExecutionHistory']}
                        if request['type'] in {'request.plan', 'request.decompose'} and 'projectExecutionHistory' in payload else {}),
-                    **self._typed_context(conn, request),
+                    **self._typed_context(conn, request), **self._internal_context(conn, request),
                     "agentContext": agent_context_view(conn, request['agent_id']), "dependencies": dependencies,
                     "organization": organization, "maxInflight": self.settings.max_inflight,
                     "projectPolicy": {'projects': objective['projects'], 'recipes': [asdict(grant) for grant in self.settings.project_grants],
@@ -611,6 +618,8 @@ class OrganizationStore(OrganizationPackageStore, OrganizationOutcomeStore, Orga
                 if time.time() >= budget_view(conn, request['objective_id'], self.settings)['deadlineTimestamp']:
                     self._pending(conn, request, 'Objective deadline reached; the result was not accepted.')
                     return False
+                if request['type'] == 'request.message' and set(result) - {'intervention', 'usage'}:
+                    raise ValueError('Message delivery intervention must not also reply, update memory, or propose requests')
                 self._record_usage(conn, request, result)
                 if request['type'] in {'request.plan', 'request.decompose'}:
                     self._merge_required_checks(conn, request['objective_id'], result.get('requiredChecks', []))
@@ -623,14 +632,22 @@ class OrganizationStore(OrganizationPackageStore, OrganizationOutcomeStore, Orga
             if time.time() >= budget_view(conn, request['objective_id'], self.settings)['deadlineTimestamp']:
                 self._pending(conn, request, 'Objective deadline reached; the result was not accepted.')
                 return False
+            if request['type'] == 'request.message' and set(result) - {'reply', 'usage'}:
+                raise ValueError('Message delivery may only return one reply; no memory, requests or completion authority')
             self._verify_context_completion(conn, request, result)
+            if 'messages' in result:
+                if set(result) - {'messages', 'usage', 'memory'}:
+                    raise ValueError('A messaging pause cannot also finish work or raise formal requests')
+                self._record_usage(conn, request, result)
+                self._send_internal_messages(conn, request, result['messages'])
+                return True
             if 'requests' in result:
                 if set(result) - {'requests', 'usage', 'memory'}:
                     raise ValueError('A paused stage may only return its typed requests')
                 self._record_usage(conn, request, result)
                 self._raise_requests(conn, request, result['requests'])
                 return True
-            handlers = {"request.question": self._finish_response, "request.decision": self._finish_response,
+            handlers = {"request.message": self._finish_internal_reply, "request.question": self._finish_response, "request.decision": self._finish_response,
                         "request.decompose": self._finish_decompose, "request.plan": self._finish_plan, "request.review": self._finish_review,
                         "request.hire": self._finish_hire, 'work.edit': self._finish_edit_work,
                         'request.apply': self._finish_apply,
@@ -643,9 +660,14 @@ class OrganizationStore(OrganizationPackageStore, OrganizationOutcomeStore, Orga
                 handler = handlers.get(request["type"], self._finish_work)
             self._record_usage(conn, request, result)
             handler(conn, request, {key: value for key, value in result.items() if key not in {'usage', 'memory'}})
-            self._remember_agent_finish(conn, request, result)
+            if request["type"] != "request.message":
+                self._remember_agent_finish(conn, request, result)
             conn.execute("UPDATE requests SET status='completed',token=NULL,lease=NULL,reason=NULL WHERE id=?", (request["id"],))
-            self._event(conn, request["objective_id"], f"{request['type']} finished.", "review" if request["type"] == "request.review" else "completion", request["agent_id"])
+            if request['type'] == 'request.message':
+                self._event(conn, request['objective_id'], 'Internal reply recorded; linked work still requires its normal review.', 'question', request['agent_id'])
+            else:
+                self._event(conn, request["objective_id"], f"{request['type']} finished.", "review" if request["type"] == "request.review" else "completion", request["agent_id"])
+            self._resume_message_parent(conn, request)
             self._resume_answered_parent(conn, request)
             self._maybe_integrate(conn, request['objective_id'])
             return True

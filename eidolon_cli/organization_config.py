@@ -37,6 +37,7 @@ class OrganizationSettings:
     lease_seconds: int = 45
     timeout_seconds: int = 180
     team: str = "general"
+    communication_scope: str = "collaborators"
     capabilities: tuple[str, ...] = WORK_CAPABILITIES
     roster: tuple[OrganizationStaff, ...] | None = None
     tool_grants: tuple[str, ...] = ()
@@ -77,6 +78,10 @@ class OrganizationSettings:
         values["model_costs"] = parse_model_costs(raw.get("model_costs", []))
         if values["max_context_tokens"] <= values["max_output_tokens"] + 2048:
             raise ValueError("organization.max_context_tokens must leave input space beyond output and protocol reserves")
+        communication = raw.get("communication_scope", "collaborators")
+        if not isinstance(communication, str) or communication not in {"disabled", "same_team", "collaborators"}:
+            raise ValueError("organization.communication_scope must be disabled, same_team or collaborators")
+        values["communication_scope"] = communication
         team = raw.get("team", "general")
         if not isinstance(team, str) or not team.strip() or len(team) > 64:
             raise ValueError("organization.team must be a nonempty name of at most 64 characters")

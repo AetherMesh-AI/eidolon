@@ -1,10 +1,12 @@
 import { FIELD_DESCRIPTIONS, FIELD_LABELS } from '@/app/settings/constants'
 
+import { organizationConversationsEn } from './organization-conversations'
 import { organizationRosterEn } from './organization-roster'
 import { organizationWorkEn } from './organization-work'
 import type { Translations } from './types'
 
 export const en: Translations = {
+  organizationConversations: organizationConversationsEn,
   organizationWork: organizationWorkEn,
   organizationRoster: organizationRosterEn,
   organizationRuntime: {

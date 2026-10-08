@@ -32,7 +32,7 @@ BEGIN SELECT RAISE(ABORT, 'Request requires a current organization policy'); END
 
 # Startup operational settings can differ between processes. Explicit owner
 # configuration changes still advance the generation, even for concurrency.
-_AUTHORITY_FIELDS = ('team', 'capabilities', 'roster', 'tool_grants', 'read_roots', 'max_workers',
+_AUTHORITY_FIELDS = ('communication_scope', 'team', 'capabilities', 'roster', 'tool_grants', 'read_roots', 'max_workers',
                      'max_replans', 'max_stages', 'max_tasks', 'max_owner_resolutions', 'max_output_tokens',
                      'max_members', 'max_request_depth', 'max_requests_per_stage',
                      'max_context_tokens', 'max_model_calls', 'max_total_tokens', 'objective_timeout_seconds',
