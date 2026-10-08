@@ -274,3 +274,45 @@ it('uses transport-owned routing metadata instead of backend-supplied connection
   expect(h.adapter.getSnapshot().connection?.ownerScope).toBe('real-owner')
   unsubscribe()
 })
+
+describe('optional configuration-only setup guidance', () => {
+  const setup = {
+    version: 1 as const,
+    provider: { status: 'warning' as const, blockers: ['codex_app_server' as const], inheritedMembers: 131, overriddenMembers: 0 },
+    backgroundOptIn: false
+  }
+
+  it('retains guidance for large multi-team rosters without altering intake or connection readiness', async () => {
+    const snapshot = runtimeSnapshot('Existing work')
+    snapshot.runtime!.setup = setup
+    const h = harness(vi.fn().mockResolvedValue(snapshot))
+    const off = h.adapter.subscribe(vi.fn())
+    await settle()
+    expect(h.adapter.getSnapshot().runtime?.setup).toEqual(setup)
+    expect(h.adapter.getSnapshot().connection?.state).toBe('ready')
+    expect(h.request.mock.calls.map(call => call[0])).toEqual(['organization.snapshot'])
+    off()
+  })
+
+  it.each([
+    null,
+    { ...setup, version: 2 },
+    { ...setup, backgroundOptIn: 'true' },
+    { ...setup, provider: null },
+    { ...setup, provider: { ...setup.provider, status: 'ready' } },
+    { ...setup, provider: { ...setup.provider, blockers: [] } },
+    { ...setup, provider: { ...setup.provider, blockers: ['unknown'] } },
+    { ...setup, provider: { ...setup.provider, inheritedMembers: -1 } },
+    { ...setup, provider: { ...setup.provider, overriddenMembers: 0.5 } }
+  ])('omits unsupported guidance while preserving the authoritative work snapshot: %j', async malformed => {
+    const snapshot = runtimeSnapshot('Retained work')
+    snapshot.runtime!.setup = malformed as never
+    const h = harness(vi.fn().mockResolvedValue(snapshot))
+    const off = h.adapter.subscribe(vi.fn())
+    await settle()
+    expect(h.adapter.getSnapshot().runtime?.setup).toBeUndefined()
+    expect(h.adapter.getSnapshot().objectives[0].title).toBe('Retained work')
+    expect(h.adapter.getSnapshot().connection?.state).toBe('ready')
+    off()
+  })
+})

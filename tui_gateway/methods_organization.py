@@ -24,8 +24,11 @@ def _organization_text(params: dict, name: str, maximum: int, *, optional: bool 
 
 def _organization_snapshot(organization):
     from eidolon_cli.profiles import get_active_profile_name
+    from eidolon_cli.config import load_config_readonly
+    from eidolon_cli.organization_setup import setup_view
     result = organization.store.snapshot()
     result["runtime"]["profile"] = get_active_profile_name()
+    result["runtime"]["setup"] = setup_view(load_config_readonly(), result['agents'])
     return result
 
 

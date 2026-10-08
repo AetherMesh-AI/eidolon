@@ -2,6 +2,8 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { Link, MemoryRouter, Route, Routes } from 'react-router'
 import { beforeEach, expect, it, vi } from 'vitest'
 
+vi.mock('@/store/settings-scope', () => ({ setSettingsScope: vi.fn() }))
+
 const routing = vi.hoisted(() => ({ connectionId: 'a', epoch: 1 }))
 vi.mock('@/store/gateway', async () => {
   const { atom } = await import('nanostores')
