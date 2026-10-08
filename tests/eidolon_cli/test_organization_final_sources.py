@@ -1,4 +1,5 @@
 """Final review sees all exact managed output, including retained prior rounds."""
+from tests.organization_package_helpers import claim_after_decomposition
 import pytest
 from tests.eidolon_cli.test_organization_edits import _setup, _review
 from tests.eidolon_cli.test_organization_project_workflow import project_proposal, apply_validate
@@ -16,7 +17,7 @@ def test_retained_prior_round_source_reaches_final_review(tmp_path, native_os):
     validation = store.claim_next()
     store.fail(validation, 'Validation outcome not committed')
     store.resolve(validation['id'], 'request_replan', 'Repair first file, preserve second', idempotency_key='repair-artifact')
-    plan = store.claim_next()
+    plan = claim_after_decomposition(store)
     store.finish(plan, {'workers': 1, 'tasks': [{'title': 'Repair', 'description': 'Repair first file, preserve second', 'type': 'work.edit', 'team': 'engineering'}]})
     project_proposal(store, source, second=False, old='new value', new='final value')
     apply_validate(store)

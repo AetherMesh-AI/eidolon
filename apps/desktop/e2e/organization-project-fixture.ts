@@ -17,9 +17,10 @@ import {
 } from './fixtures'
 import { startMockServer } from './mock-server'
 import { exactOrganizationEvidence, type OrganizationEvidenceContext } from './organization-evidence'
-import { organizationProviderTarget } from './organization-provider-target'
+import { organizationPackageProposal } from './organization-package-proposal'
 import { projectProviderResponse } from './organization-project-response'
 import { createProjectSource } from './organization-project-source'
+import { organizationProviderTarget } from './organization-provider-target'
 
 export const projectTitle = 'Fix addition and verify the reviewed source branch'
 export const projectCriterion =
@@ -95,6 +96,10 @@ function responseFor(kind: string, context: ProjectContext, payload: ProviderPay
   const evidence = exactOrganizationEvidence(context)
   const evidenceIds = evidence.map(item => item.id)
   const textResult = (output: object) => ({ role: 'assistant', content: JSON.stringify(output) })
+  if (kind === 'request.decompose') {
+    assert.equal(payload.tools?.length ?? 0, 0)
+    return textResult(organizationPackageProposal(context, 2))
+  }
   if (kind === 'request.plan') {
     assert.equal(payload.tools?.length ?? 0, 0)
     return textResult({
@@ -279,7 +284,7 @@ export async function setupProjectFixture(options: { budgetLimited?: boolean; ho
             response.writeHead(200, { 'Content-Type': 'application/json' })
             response.end(JSON.stringify(completion))
           }
-          if (options.holdPlan && kind === 'request.plan') {
+          if (options.holdPlan && kind === 'request.decompose') {
             pendingReplies.push(reply)
           } else {
             reply()

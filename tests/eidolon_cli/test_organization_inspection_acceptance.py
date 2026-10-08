@@ -1,4 +1,5 @@
 """Real Git/SQLite acceptance proof; command outcomes are synthetic ledger inputs."""
+from tests.organization_package_helpers import claim_after_decomposition
 from dataclasses import replace
 import json
 from pathlib import Path
@@ -34,7 +35,7 @@ def inspection_objective(tmp_path, monkeypatch, *, delivery_mode, explicit_sourc
     monkeypatch.setattr(runner, 'run_project_tests', lambda files, grant, cancel: _simulated_terminal_result(files))
     if not legacy:
         return store, objective, reviewed_inspections(store, objective)
-    plan = store.claim_next()
+    plan = claim_after_decomposition(store)
     assert plan['type'] == 'request.plan'
     store.finish(plan, {'workers': 1, 'tasks': [{'title': 'Inspect the legacy project',
         'description': 'Read the selected project file.', 'type': 'work.inspect',

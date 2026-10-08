@@ -56,7 +56,7 @@ def allowed_resolutions(conn, request, settings):
     result = []
     if request['type'] not in {'request.merge', 'request.project_failed'} and request['attempts'] < settings.max_attempts and not json.loads(request['payload']).get('budgetExhausted'):
         result.append(descriptor('retry_configuration', 'Retry after fixing configuration'))
-        if request['type'] in {'request.plan', 'request.review', 'request.integrate', 'request.accept'} or request['type'].startswith('work.'):
+        if request['type'] in {'request.decompose', 'request.plan', 'request.review', 'request.integrate', 'request.accept'} or request['type'].startswith('work.'):
             result.append(descriptor('provide_input', 'Provide missing input', True))
     if control['round'] < min(control['max_replans'], settings.max_replans):
         result.extend([descriptor('amend_scope', 'Amend scope and replan', True),

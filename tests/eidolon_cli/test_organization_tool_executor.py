@@ -1,4 +1,5 @@
 """Actual read dispatch, durable receipt fences and direct-API tool boundaries."""
+from tests.organization_package_helpers import claim_after_decomposition
 import copy
 import contextvars
 import hashlib
@@ -488,7 +489,7 @@ def test_persisted_project_binding_controls_real_tools_and_revocation(tmp_path):
                     'capabilities': ['work.inspect'], 'tool_grants': grants}]}})
     store = OrganizationStore(tmp_path / 'state.db', settings)
     store.create_objective('Inspect selected project', idempotency_key='bound-read', project_ids=['second'])
-    planner = store.claim_next()
+    planner = claim_after_decomposition(store)
     assert public_tool_policy(store.context(planner)) == {'tools': [], 'readRoots': []}
     store.finish(planner, {'workers': 1, 'tasks': [{'title': 'Read second project',
         'description': 'Inspect the selected source.', 'type': 'work.inspect',

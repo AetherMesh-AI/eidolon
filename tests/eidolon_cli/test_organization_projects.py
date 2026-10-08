@@ -1,4 +1,5 @@
 """Owner selection, durable project routing and fail-closed authority changes."""
+from tests.organization_package_helpers import claim_after_decomposition
 from dataclasses import replace
 import json
 import sqlite3
@@ -42,7 +43,7 @@ def test_explicit_project_selection_survives_restart_and_routes_independent_work
     assert store.create_objective('Update both repos', project_ids=['alpha', 'beta'], idempotency_key='both')['id'] == objective['id']
     with pytest.raises(ValueError, match='different objective'):
         store.create_objective('Update both repos', project_ids=['alpha'], idempotency_key='both')
-    plan = store.claim_next()
+    plan = claim_after_decomposition(store)
     prompt = _prompt(plan, store.context(plan), 'request.plan')
     assert all(root not in prompt for root in settings.read_roots)
     output = {'tasks': [plan_task('alpha', 0), plan_task('beta', 1)], 'workers': 2}
@@ -101,10 +102,10 @@ def test_project_authority_cannot_be_inferred_or_expanded(tmp_path, attack):
     if attack == 'cross_root': specification['writePaths'] = ['root1/example.txt']
     if attack == 'missing_project': specification.pop('projectId')
     if attack == 'missing_paths': specification.pop('writePaths')
-    claim = store.claim_next()
+    claim = claim_after_decomposition(store)
     with pytest.raises(ValueError):
         store.finish(claim, {'tasks': [specification], 'workers': 1})
     # Invalid model output rolls back atomically; no partial task survives.
     snapshot = store.snapshot()
     assert snapshot['tasks'] == []
-    assert snapshot['requests'][0]['status'] == 'running'
+    assert next(r for r in snapshot['requests'] if r['id'] == claim['id'])['status'] == 'running'

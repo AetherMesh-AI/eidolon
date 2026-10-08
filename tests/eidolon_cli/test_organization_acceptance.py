@@ -9,6 +9,7 @@ import pytest
 
 from eidolon_cli.organization_config import OrganizationSettings
 from eidolon_cli.organization_store import OrganizationStore, _SCHEMA
+from tests.organization_package_helpers import decompose
 
 
 def _objective(store, **kwargs):
@@ -17,6 +18,7 @@ def _objective(store, **kwargs):
 
 
 def _plan(store):
+    decompose(store)
     claim = store.claim_next()
     assert claim['type'] == 'request.plan'
     store.finish(claim, {'tasks': [{'title': 'Analyze', 'description': 'Support the recommendation', 'type': 'work.analyze'}]})
@@ -54,9 +56,10 @@ def _decision(store, claim, approved=True):
 def test_clarification_resume_acceptance_is_durable_exact_and_not_task_completion(tmp_path):
     store = OrganizationStore(tmp_path / 'state.db')
     objective = _objective(store)
+    decompose(store)
     plan = store.claim_next()
     store.finish(plan, {'intervention': 'Which facts should be prioritized?'})
-    request = store.snapshot()['requests'][0]
+    request = next(row for row in store.snapshot()['requests'] if row['id'] == plan['id'])
     assert 'provide_input' in [item['action'] for item in request['allowedResolutions']]
     assert store.resolve(plan['id'], 'provide_input', 'Prefer lower operational risk.', idempotency_key='answer')
     assert not store.resolve(plan['id'], 'provide_input', 'Prefer lower operational risk.', idempotency_key='answer')
@@ -161,7 +164,7 @@ def test_scope_amendment_is_audited_replans_without_changing_grants(tmp_path):
 
 
 def test_objective_stage_budget_survives_reopen_and_reports_unknown_usage(tmp_path):
-    store = OrganizationStore(tmp_path / 'state.db', replace(OrganizationSettings(), max_stages=4))
+    store = OrganizationStore(tmp_path / 'state.db', replace(OrganizationSettings(), max_stages=5))
     _objective(store)
     _plan(store)
     _work_and_review(store)
@@ -171,7 +174,7 @@ def test_objective_stage_budget_survives_reopen_and_reports_unknown_usage(tmp_pa
     reopened = OrganizationStore(store.path)
     objective = reopened.snapshot()['objectives'][0]
     assert objective['status'] == 'needs_input'
-    assert objective['usage']['stages'] == objective['usage']['stageLimit'] == 4
+    assert objective['usage']['stages'] == objective['usage']['stageLimit'] == 5
     assert objective['usage']['outputTokens'] == 12 and not objective['usage']['usageComplete']
     assert all(not item['allowedResolutions'] for item in reopened.snapshot()['requests'])
 
@@ -258,6 +261,7 @@ def test_acceptance_request_binds_hashes_even_if_artifact_hash_is_recomputed(tmp
 def test_legacy_retry_cannot_bypass_owner_budget_on_an_unroutable_task(tmp_path):
     store = OrganizationStore(tmp_path / 'state.db', replace(OrganizationSettings(), max_owner_resolutions=1))
     _objective(store)
+    decompose(store)
     plan = store.claim_next()
     store.finish(plan, {'tasks': [{'title': 'Unsupported', 'description': 'A missing capability', 'type': 'work.external'}]})
     assert store.claim_next() is None

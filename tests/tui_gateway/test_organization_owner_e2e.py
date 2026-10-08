@@ -1,4 +1,5 @@
 """RPC → profile runtime → localhost provider → retained final acceptance."""
+from tests.organization_package_helpers import decomposition_result
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
@@ -54,7 +55,9 @@ def local_provider(tmp_path, monkeypatch):
                 received.append((kind, context))
                 conflicts = objective['title'] == 'Reconcile conflicting analyses'
                 ids = [item['id'] for item in context.get('evidence', [])]
-                if kind == 'request.plan':
+                if kind == 'request.decompose':
+                    output = decomposition_result(context)
+                elif kind == 'request.plan':
                     if not conflicts and not context.get('ownerInputs'):
                         output = {'intervention': 'Which launch date should the final brief use?'}
                     else:

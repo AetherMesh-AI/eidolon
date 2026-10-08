@@ -7,6 +7,7 @@ from eidolon_cli.organization_config import OrganizationSettings
 from eidolon_cli.organization_executor import _parse_output, _prompt, OrganizationExecutionError
 from eidolon_cli.organization_roster import configured_workers, select_staff_activation
 from eidolon_cli.organization_store import OrganizationStore
+from tests.organization_package_helpers import decompose
 
 
 def settings():
@@ -25,6 +26,7 @@ def settings():
 def finish_goal(store, key):
     objective = store.create_objective('Lunavale services', idempotency_key=key,
                                        executive_id='lunavale', manager_id='services')
+    decompose(store)
     plan = store.claim_next()
     assert plan['agent_id'] == 'services'
     assert store.context(plan)['agent']['role'] == 'Manager'

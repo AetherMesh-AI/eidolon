@@ -1,5 +1,6 @@
 """Bounded UI projections of the authoritative organization ledger."""
 import json
+from eidolon_cli.organization_packages import planning_mode, packages_view, task_package_id
 from eidolon_cli.organization_projects import objective_projects, task_project, public_project
 from eidolon_cli.organization_attention import attention_view
 from eidolon_cli.organization_outcomes import outcomes_view
@@ -64,7 +65,7 @@ def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
         resolutions = [{'id': item['id'], 'requestId': item['request_id'], 'action': item['action'], 'text': item['text'], 'evidenceIds': json.loads(item['evidence_ids']), 'createdAt': _iso(item['created']), 'scopeAmendment': scope_amendment_view(conn, item['id'])} for item in conn.execute('SELECT * FROM owner_resolutions WHERE objective_id=? ORDER BY created', (row['id'],))]
         acceptance_review = conn.execute('SELECT * FROM objective_acceptances WHERE objective_id=? AND round=? ORDER BY created DESC LIMIT 1', (row['id'], control['round'])).fetchone()
         done = sum(t['status'] == 'completed' for t in work)
-        objectives.append({'history': history, 'id': row['id'], 'title': row['title'], 'description': control['amended_scope'] or row['description'],
+        objectives.append({'planningMode': planning_mode(conn, row['id']), 'workPackages': packages_view(conn, row['id']), 'history': history, 'id': row['id'], 'title': row['title'], 'description': control['amended_scope'] or row['description'],
                            'projects': [public_project(project) for project in objective_projects(conn, row['id'])], 'originalDescription': row['description'], 'deliveryMode': control['delivery_mode'],
                            'requiredChecks': json.loads(control['required_checks']),
                            'projectValidation': project_validation_view(conn, row['id'], full=False),
@@ -80,7 +81,7 @@ def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
                            'ownerId': 'manager' if control['status'] == 'legacy_completed' else objective_assignment_view(conn, row['id'])['executiveId'], 'priority': f"P{6-row['priority']}",
                            'progress': round(100 * done / len(work)) if work else 0,
                            'result': (final['content'] if final else '\n\n'.join(t['result'] or '' for t in work)) if status == 'completed' else None,
-                           'phase': 'Legacy reviewed outcome' if control['status'] == 'legacy_completed' else 'Accepted integrated outcome' if status == 'completed' else 'Integrated outcome acceptance' if control['status'] in {'integrating', 'reviewing'} else 'Pending intervention' if status == 'needs_input' else 'Manager planning' if not work else 'Execution and review'})
+                           'phase': 'Legacy reviewed outcome' if control['status'] == 'legacy_completed' else 'Accepted integrated outcome' if status == 'completed' else 'Integrated outcome acceptance' if control['status'] in {'integrating', 'reviewing'} else 'Pending intervention' if status == 'needs_input' else ('Executive decomposition and manager planning' if planning_mode(conn, row['id']) == 'executive_packages' else 'Legacy manager planning') if not work else 'Execution and review'})
     visible = {o['id'] for o in objectives}
     tasks = [t for t in tasks if t['objective_id'] in visible]
     requests = [r for r in requests if r['objective_id'] in visible]
@@ -106,7 +107,7 @@ def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
         proof = evidence_by_task.get(task['id'], [])
         scope = conn.execute('SELECT paths FROM task_write_scopes WHERE task_id=?', (task['id'],)).fetchone()
         binding = task_project(conn, task['id'])
-        ui_tasks.append({'projectId': binding['id'] if binding else None, 'writePaths': json.loads(scope['paths']) if scope else None,
+        ui_tasks.append({'workPackageId': task_package_id(conn, task['id']), 'projectId': binding['id'] if binding else None, 'writePaths': json.loads(scope['paths']) if scope else None,
                          'coordination': coordination_view(conn, task['id']), 'id': task['id'], 'objectiveId': task['objective_id'], 'title': task['title'],
                          'currentRound': rounds.get(task['id']) == controls[task['objective_id']]['round'],
                          'historical': rounds.get(task['id']) != controls[task['objective_id']]['round'],

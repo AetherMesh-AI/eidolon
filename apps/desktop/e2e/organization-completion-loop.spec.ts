@@ -173,8 +173,13 @@ test('requires explicit check replacement, retains its audit, and completes only
   await expect(header).not.toContainText('Completed')
   await expect(acceptance.getByText(projectTests, { exact: true })).toBeVisible()
   await expect(acceptance.getByText('No accepted final result yet.', { exact: true })).toBeVisible()
-  expect(stages.map(stage => stage.kind)).toEqual(['request.plan', 'work.draft', 'request.review'])
+  expect(stages.map(stage => stage.kind)).toEqual(['request.decompose', 'request.plan', 'work.draft', 'request.review'])
   expect(stages.every(stage => stage.requiredChecks.includes('project_tests'))).toBe(true)
+  const packages = page.getByRole('region', { name: 'Manager work packages', exact: true })
+  await expect(packages.getByText('Completed', { exact: true })).toBeVisible()
+  await expect(packages).toContainText('Responsible manager')
+  await expect(packages).toContainText('Executive delegation')
+  await expect(header).not.toContainText('Completed')
   await page.screenshot({ path: testInfo.outputPath('01-unverified-model-approval-blocked.png') })
   await primary(page).getByRole('link', { name: 'Objectives', exact: true }).click()
   await expect(
@@ -239,7 +244,7 @@ test('requires explicit check replacement, retains its audit, and completes only
   await expect(acceptance.getByText(projectTests, { exact: true })).toBeVisible()
   await page.reload()
   await expect(blocked).toContainText('Pending intervention', { timeout: 60_000 })
-  expect(stages).toHaveLength(3)
+  expect(stages).toHaveLength(4)
   await blocked.click()
   await inspector.getByRole('combobox', { name: 'Action', exact: true }).selectOption('amend_scope')
   await expect(verification).toHaveValue('keep')
@@ -291,7 +296,7 @@ test('requires explicit check replacement, retains its audit, and completes only
   await history.locator('summary').click()
   await expect(history).toHaveText(audit, { useInnerText: true })
   await expect(header).not.toContainText('Completed')
-  expect(stages).toHaveLength(4)
+  expect(stages).toHaveLength(6)
   expect(ownerWrites).toHaveLength(1)
   expect(ownerWrites[0].params.requiredChecks).toEqual([])
   expect(ownerWrites[0].params.acceptanceCriteria).toEqual([amendedCriterion])
@@ -304,7 +309,7 @@ test('requires explicit check replacement, retains its audit, and completes only
   expect(replayed?.ownerResolutions).toHaveLength(1)
   expect(replayed?.status).not.toBe('completed')
   await expect(history).toHaveText(audit, { useInnerText: true })
-  expect(stages).toHaveLength(4)
+  expect(stages).toHaveLength(6)
   // Finish via the real provider while the owner is composing elsewhere.
   // Poll the real gateway receipt, never seed terminal state or intercept RPC.
   await primary(page).getByRole('link', { name: 'Command', exact: true }).click()
@@ -356,29 +361,33 @@ test('requires explicit check replacement, retains its audit, and completes only
   await history.locator('summary').click()
 
   await expect(header).toContainText('Completed', { timeout: 90_000 })
+  await packages.getByText('Previous-round packages (1)', { exact: true }).click()
+  await expect(packages.getByRole('list', { name: 'Previous-round packages', exact: true })).toContainText('Completed')
+  await expect(packages.getByRole('list', { name: 'Current round', exact: true })).toContainText('Completed')
   await expect(acceptance.getByText(recommendation, { exact: true })).toBeVisible()
   await expect(history).toHaveText(audit, { useInnerText: true })
   expect(providerErrors).toEqual([])
-  const firstRound = stages.slice(0, 3)
-  const secondRound = stages.slice(3)
+  const firstRound = stages.slice(0, 4)
+  const secondRound = stages.slice(4)
   expect(secondRound.map(stage => stage.kind)).toEqual([
+    'request.decompose',
     'request.plan',
     'work.draft',
     'request.review',
     'request.integrate',
     'request.accept'
   ])
-  expect(secondRound.slice(0, 3).map(stage => stage.agentId)).toEqual(firstRound.map(stage => stage.agentId))
-  expect(firstRound[1].agentId).toBe('worker-1')
-  expect(firstRound[2].agentId).not.toBe(firstRound[1].agentId)
-  expect(secondRound[4].agentId).not.toBe(secondRound[3].agentId)
+  expect(secondRound.slice(0, 4).map(stage => stage.agentId)).toEqual(firstRound.map(stage => stage.agentId))
+  expect(firstRound[2].agentId).toBe('worker-1')
+  expect(firstRound[3].agentId).not.toBe(firstRound[2].agentId)
+  expect(secondRound[5].agentId).not.toBe(secondRound[4].agentId)
   expect(secondRound.every(stage => stage.requiredChecks.length === 0)).toBe(true)
   await page.screenshot({ path: testInfo.outputPath('04-independently-accepted-revised-scope.png') })
   await page.reload()
   await expect(header).toContainText('Completed', { timeout: 60_000 })
   await history.locator('summary').click()
   await expect(history).toHaveText(audit, { useInnerText: true })
-  expect(stages).toHaveLength(8)
+  expect(stages).toHaveLength(10)
 
   const inbox = () => page.getByRole('region', { name: 'Outcomes inbox', exact: true })
   const receipt = () => inbox().getByRole('listitem', { name: completionTitle, exact: true })
@@ -442,7 +451,7 @@ test('requires explicit check replacement, retains its audit, and completes only
     .getByRole('link', { name: /^Needs You/ })
     .click()
   await expect(page.getByText('Nothing needs your input', { exact: true })).toBeVisible()
-  expect(stages).toHaveLength(8)
+  expect(stages).toHaveLength(10)
   expect(providerErrors).toEqual([])
 })
 
@@ -470,13 +479,13 @@ test('retains a visible model-call intervention across full process restart and 
       'Durable reservations include interrupted or unreported model calls and are never refunded.'
     )
     await details.scrollIntoViewIfNeeded()
-    expect(running!.stages.map(stage => stage.kind)).toEqual(['request.plan'])
+    expect(running!.stages.map(stage => stage.kind)).toEqual(['request.decompose'])
     expect(running!.providerErrors).toEqual([])
 
     return details.locator('time').getAttribute('datetime')
   }
 
-  let blocked = page.getByRole('button', { name: 'Inspect request: work.draft', exact: true })
+  let blocked = page.getByRole('button', { name: 'Inspect request: request.plan', exact: true })
   await expect(blocked).toContainText(reason, { timeout: 90_000 })
   const deadline = await assertBlocked()
   expect(deadline).toBeTruthy()
@@ -494,7 +503,7 @@ test('retains a visible model-call intervention across full process restart and 
   await running.restart()
   page = running.fixture.page
   await openObjective(page, budgetTitle)
-  blocked = page.getByRole('button', { name: 'Inspect request: work.draft', exact: true })
+  blocked = page.getByRole('button', { name: 'Inspect request: request.plan', exact: true })
   await expect(blocked).toContainText(reason)
   expect(await assertBlocked()).toBe(deadline)
   await page.screenshot({ path: testInfo.outputPath('02-budget-survives-electron-restart.png') })
@@ -523,5 +532,5 @@ test('retains a visible model-call intervention across full process restart and 
   await cancelled.getByRole('link', { name: budgetTitle, exact: true }).click()
   await expect(objectiveHeader(page, budgetTitle)).toContainText('Cancelled')
   expect(await assertBlocked()).toBe(deadline)
-  expect(running.stages.map(stage => stage.kind)).toEqual(['request.plan'])
+  expect(running.stages.map(stage => stage.kind)).toEqual(['request.decompose'])
 })

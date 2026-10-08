@@ -1,4 +1,5 @@
 """Adversarial exact-grant and evidence boundaries with real SQLite/filesystem I/O."""
+from tests.organization_package_helpers import claim_after_decomposition
 from dataclasses import replace
 import hashlib
 import json
@@ -226,7 +227,7 @@ def test_same_file_prior_author_remains_in_current_revision_authority(tmp_path):
         store._replan(conn, objective['id'], 'Refine current reviewed content with a different author')
     store = OrganizationStore(store.path, replace(store.settings, roster=tuple(
         replace(member, enabled=False) if member.id == old_author else member for member in store.settings.roster)))
-    plan = store.claim_next()
+    plan = claim_after_decomposition(store)
     assert plan['type'] == 'request.plan'
     assert store.finish(plan, {'workers': 1, 'tasks': [{'title': 'Refine the reviewed source',
         'description': 'Refine a different line while retaining the previous reviewed change', 'type': 'work.edit', 'team': 'engineering'}]})
@@ -430,7 +431,7 @@ def test_original_run_budget_survives_restart_and_only_exact_success_reuses(tmp_
     store = OrganizationStore(store.path, replace(store.settings, max_project_runs=1))
     objective = store.create_objective('Bounded original project budget', idempotency_key='limited-project',
                                        delivery_mode='managed_artifact', required_checks=['project_tests'])
-    plan = store.claim_next()
+    plan = claim_after_decomposition(store)
     assert store.finish(plan, {'workers': 1, 'tasks': [{'title': 'Make one reviewed source improvement',
         'description': 'Replace old value', 'type': 'work.edit', 'team': 'engineering'}]})
     claim = store.claim_next()
@@ -556,7 +557,7 @@ def test_failed_project_gate_requires_bounded_replan_instead_of_replay(tmp_path,
         store.retry(identifier, idempotency_key='invalid-legacy-retry')
     assert store.resolve(identifier, 'request_replan', 'Revise the reviewed implementation and test coverage',
                          idempotency_key='reviewed-project-replan')
-    plan = store.claim_next()
+    plan = claim_after_decomposition(store)
     assert plan['type'] == 'request.plan' and json.loads(plan['payload'])['round'] == 1
     assert len(dispatched) == 1
     with store._connect() as conn:
@@ -571,7 +572,7 @@ def test_later_round_test_review_clarification_uses_retained_run_round(tmp_path,
     first = store.claim_next()
     store.fail(first, 'Need a revised plan before editing')
     store.resolve(first['id'], 'request_replan', 'Keep the same exact edit in a fresh round', idempotency_key='round-one')
-    plan = store.claim_next()
+    plan = claim_after_decomposition(store)
     store.finish(plan, {'workers': 1, 'tasks': [{'title': 'Revised edit', 'description': 'Replace old value.',
                                               'type': 'work.edit', 'team': 'engineering'}]})
     _propose(store)

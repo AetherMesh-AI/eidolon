@@ -19,6 +19,43 @@ def settings(**raw):
     return OrganizationSettings.from_config({"organization": raw})
 
 
+def test_executive_decomposition_defaults_and_explicit_routes_preserve_role_tool_boundaries():
+    from eidolon_cli.organization_requests import canonical_management_proposal
+
+    leader = {"id": "leader", "name": "Leader", "role": "Executive"}
+    configured = settings(roster=[leader])
+    executive = configured.roster[0]
+    assert {"request.decompose", "request.accept"}.issubset(executive.capabilities)
+    assert staff_unavailability(executive, configured, "request.decompose") is None
+    proposal = canonical_management_proposal({"members": [leader]}, configured.team)
+    assert tuple(proposal["members"][0]["capabilities"]) == executive.capabilities
+    explicit = settings(roster=[{**leader, "capabilities": ["request.decompose"]}])
+    assert explicit.roster[0].capabilities == ("request.decompose",)
+    for role in ("Worker", "Manager"):
+        with pytest.raises(ValueError, match="capabilities"):
+            settings(roster=[{**leader, "role": role, "capabilities": ["request.decompose"]}])
+    with pytest.raises(ValueError, match="tool-free"):
+        settings(tool_grants=["read_file"], roster=[{**leader, "tool_grants": ["read_file"]}])
+
+
+def test_management_package_handoff_requires_exact_unique_nonempty_selections():
+    from eidolon_cli.organization_requests import canonical_management_proposal
+
+    transfer = {"fromAgentId": "services", "toAgentId": "runtime", "workPackageIds": ["package-1"]}
+    proposal = {"transfers": [transfer]}
+    canonical = canonical_management_proposal(proposal, "general")
+    assert canonical["transfers"] == [{**transfer, "taskIds": [], "includeMemory": False}]
+    for ids in (None, "package-1", {}, [None], [""], ["x" * 129], ["package-1"] * 2,
+                [f"package-{index}" for index in range(101)], []):
+        with pytest.raises(ValueError):
+            canonical_management_proposal({"transfers": [{**transfer, "workPackageIds": ids}]}, "general")
+    with pytest.raises(ValueError, match="only once"):
+        canonical_management_proposal({"transfers": [transfer, {**transfer, "toAgentId": "third"}]}, "general")
+    memory = canonical_management_proposal({"transfers": [{"fromAgentId": "services",
+              "toAgentId": "runtime", "includeMemory": True}]}, "general")
+    assert memory["transfers"][0]["workPackageIds"] == []
+
+
 def test_absent_roster_has_persistent_defaults_and_empty_roster_never_falls_back():
     legacy = settings()
     assert legacy.capabilities == WORK_CAPABILITIES

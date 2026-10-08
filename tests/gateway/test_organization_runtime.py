@@ -1,5 +1,6 @@
 """Real durable organization admission hosted independently of a desktop client."""
 from __future__ import annotations
+from tests.organization_package_helpers import decomposition_result
 
 import asyncio
 from dataclasses import replace
@@ -56,6 +57,8 @@ def test_gateway_only_completes_reviewed_objective(home, monkeypatch):
         kind = request['type']
         stages.append(kind)
         evidence = [item['id'] for item in context.get('evidence', [])]
+        if kind == 'request.decompose':
+            return decomposition_result(context)
         if kind == 'request.plan':
             return {'tasks': [{'title': 'Analyze', 'description': 'Analyze supplied facts', 'type': 'work.analyze'}]}
         if kind == 'work.analyze':
@@ -76,7 +79,7 @@ def test_gateway_only_completes_reviewed_objective(home, monkeypatch):
     try:
         host.start()
         wait_for(lambda: store.snapshot()['objectives'][0]['status'] == 'completed')
-        assert stages == ['request.plan', 'work.analyze', 'request.review', 'request.integrate', 'request.accept']
+        assert stages == ['request.decompose', 'request.plan', 'work.analyze', 'request.review', 'request.integrate', 'request.accept']
         reopened = OrganizationStore(store.path)
         assert reopened.snapshot()['objectives'][0]['status'] == 'completed'
     finally:

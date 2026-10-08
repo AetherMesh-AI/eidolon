@@ -79,6 +79,95 @@ def runtime(monkeypatch):
     return state
 
 
+def _work_package(**overrides):
+    return {"title": "Analyze requirements", "description": "Assess the requested behavior",
+            "managerId": "services", "criterionIndexes": [0], "projectIds": ["service"],
+            "dependsOn": [], "maxTasks": 2, **overrides}
+
+
+@pytest.mark.parametrize("value", [
+    {}, {"workPackages": None}, {"workPackages": {}}, {"workPackages": []},
+    {"workPackages": [_work_package()] * 9}, {"workPackages": [None]},
+    {"workPackages": [_work_package()], "tasks": []},
+    *({"workPackages": [_work_package(**{field: value})]}
+      for field, values in {
+          "title": [None, ""], "description": [None, ""], "managerId": [None, ""],
+          "criterionIndexes": [None, {}, [], [True], [-1], ["0"], [0, 0], list(range(13))],
+          "projectIds": [None, {}, "service", [None], [""], ["service", "service"]],
+          "dependsOn": [None, {}, [True], ["0"], [-1], [0]],
+          "maxTasks": [None, True, 0, -1, 1.5, "1", 5],
+          "tool_grants": [["read_file"]],
+      }.items() for value in values),
+    *({"workPackages": [{key: value for key, value in _work_package().items() if key != field}]}
+      for field in _work_package()),
+    {"workPackages": [_work_package(), _work_package(dependsOn=[0, 0])]},
+    {"workPackages": [_work_package(maxTasks=3), _work_package(maxTasks=2)]},
+    {"workPackages": [_work_package()], "requiredChecks": "project_tests"},
+])
+def test_executive_decomposition_rejects_malformed_or_unbounded_protocol(value):
+    with pytest.raises(executor.OrganizationExecutionError):
+        executor._parse_output(json.dumps(value), "request.decompose", {"maxTasks": 4})
+
+
+def test_executive_and_scoped_manager_keep_authority_in_backend_and_tools_disabled(runtime):
+    cancel = threading.Event()
+    packages = [_work_package(), _work_package(title="Plan integration", managerId="runtime",
+                                             criterionIndexes=[1], dependsOn=[0], maxTasks=1)]
+    context = {"maxTasks": 4, "objective": {"description": "Root objective",
+               "acceptanceCriteria": ["Analyze service", "Integrate runtime"]},
+               "agent": {"id": "leader", "role": "Executive"},
+               "toolPolicy": {"tools": ["read_file"]}}
+    runtime.output = {"workPackages": packages, "requiredChecks": ["project_tests"]}
+    assert executor.execute({"type": "request.decompose"}, context, cancel) == runtime.output
+    assert runtime.instances[-1].kwargs["enabled_toolsets"] == []
+    assert "workPackages" in runtime.instances[-1].prompt
+    # Shape validation cannot silently rewrite a manager, project or criterion.
+    candidate = _work_package(managerId="unconfigured", projectIds=["not-owner-selected"],
+                              criterionIndexes=[99])
+    assert executor._parse_output(json.dumps({"workPackages": [candidate]}),
+                                  "request.decompose", context)["workPackages"] == [candidate]
+    runtime.output = {"requests": [{"type": "request.question", "team": "general",
+                                   "requestedOutcome": "Which service is in scope?"}]}
+    requests = executor.execute({"type": "request.decompose"}, context, cancel)["requests"]
+    assert requests[0]["requestedOutcome"] == runtime.output["requests"][0]["requestedOutcome"]
+    assert requests[0]["requiredAuthority"] == "answer.question"
+    runtime.output = {"intervention": "Need a configured recipe", "requiredChecks": ["project_tests"]}
+    assert executor.execute({"type": "request.decompose"}, context, cancel) == runtime.output
+
+    package = {"id": "package-1", "round": 0, **packages[0]}
+    scoped = {**context, "workPackage": package, "workPackages": [package,
+              {"id": "package-2", "round": 0, **packages[1]}],
+              "agent": {"id": "services", "role": "Manager"}}
+    task = {"title": "Inspect", "description": "Assess service", "type": "work.inspect",
+            "team": "runtime", "managerId": "runtime", "projectId": "service", "dependsOn": []}
+    runtime.output = {"tasks": [task], "workers": 1, "requiredChecks": ["project_tests"]}
+    expected = runtime.output.copy()
+    assert executor.execute({"type": "request.plan"}, scoped, cancel) == expected
+    prompt = runtime.instances[-1].prompt
+    submitted = json.loads(prompt.split("Submitted context:\n", 1)[1])["context"]
+    assert submitted["workPackage"] == package
+    assert submitted["workPackages"] == scoped["workPackages"]
+    assert submitted["objective"] == context["objective"]
+    assert runtime.instances[-1].kwargs["enabled_toolsets"] == []
+    refs = {"workPackageId": package["id"], "managerId": package["managerId"],
+            "round": package["round"], "projectIds": package["projectIds"],
+            "criterionIndexes": package["criterionIndexes"]}
+    runtime.output.update(refs)
+    assert executor.execute({"type": "request.plan"}, scoped, cancel) == expected
+    for field, invalid in {"workPackageId": "other", "managerId": "other", "round": 1,
+                           "projectIds": [], "criterionIndexes": [1], "tools": ["shell"]}.items():
+        with pytest.raises(executor.OrganizationExecutionError):
+            executor._parse_output(json.dumps({**runtime.output, field: invalid}), "request.plan", scoped)
+    for invalid in ({**expected, "tasks": [task] * 3},
+                    {**expected, "tasks": [{**task, "projectId": "other"}]},
+                    {**expected, "round": False}, {**expected, "criterionIndexes": [False]}):
+        with pytest.raises(executor.OrganizationExecutionError):
+            executor._parse_output(json.dumps(invalid), "request.plan", scoped)
+    # Existing unscoped planning retains its cross-manager and project behavior.
+    legacy = {**expected, "tasks": [{**task, "projectId": "other"}] * 3}
+    assert executor._parse_output(json.dumps(legacy), "request.plan", context) == legacy
+
+
 def test_configured_provider_and_strict_stage_outputs(runtime):
     context = {"objective": {"title": "Summarize my material", "description": "Submitted text"},
                "maxTasks": 12, "maxWorkers": 2}

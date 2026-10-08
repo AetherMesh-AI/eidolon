@@ -1,4 +1,5 @@
 """Project-scoped execution ledger and real independent repository integration."""
+from tests.organization_package_helpers import claim_after_decomposition
 from dataclasses import replace
 import json
 import os
@@ -53,7 +54,7 @@ def configured(tmp_path, *, selected=('alpha', 'beta'), source=False):
 
 
 def reviewed_inspections(store, objective, *, projects=('alpha', 'beta')):
-    plan = store.claim_next()
+    plan = claim_after_decomposition(store)
     assert plan['type'] == 'request.plan'
     store.finish(plan, {'workers': 1, 'tasks': [
         {'title': f'Inspect {name}', 'description': 'Read the exact selected project file.',
@@ -248,7 +249,7 @@ def _native_two_repository_loop(tmp_path, native_os):
     objective = store.create_objective('Correct both repositories', idempotency_key='native-two',
         delivery_mode='source_project', required_checks=['project_tests', 'managed_validation', 'source_integration'],
         project_ids=['alpha', 'beta'])
-    claim = store.claim_next()
+    claim = claim_after_decomposition(store)
     assert claim['type'] == 'request.plan'
     store.finish(claim, {'workers': 1, 'tasks': [
         {'title': f'Correct {name}', 'description': 'Fix subtraction to addition and preserve the regression.',

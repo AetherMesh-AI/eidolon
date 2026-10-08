@@ -260,6 +260,7 @@ it('submits only explicitly selected task and memory handoffs and shows the retu
       dependsOn: []
     }
   ]
+  expect(validTransfers([{ fromAgentId: 'writer', toAgentId: 'second-writer', taskIds: ['open-task'], workPackageIds: [], includeMemory: false }], initial.runtime!.management!.configuration, initial)).toBe(true)
   const request = vi.fn().mockResolvedValue(initial)
   const view = open(request)
   fireEvent.click(await screen.findByRole('button', { name: 'Manage organization' }))
@@ -392,5 +393,67 @@ it('saves exact objective leadership without open tasks or memory and clears sel
     expect(validTransfers([{ ...transfer, objectiveIds }], configuration, initial)).toBe(false)
   }
 
+  view.unmount()
+})
+
+it('preserves explicit package-only handoffs and executive decomposition through the management form and RPC', async () => {
+  const initial = snapshot()
+  initial.agents.push(
+    { ...initial.agents[0], id: 'owner', name: 'Owner', role: 'Owner' },
+    { ...initial.agents[0], id: 'executive', name: 'Executive', role: 'Executive' },
+    { ...initial.agents[0], id: 'third-manager', name: 'Third manager' }
+  )
+  initial.runtime!.management!.configuration.roster.push(
+    { ...member, id: 'next-manager', name: 'Next manager', role: 'Manager', manager_id: 'executive', capabilities: ['request.plan'], tool_grants: [] },
+    { ...member, id: 'next-executive', name: 'Next executive', role: 'Executive', manager_id: 'owner', capabilities: ['request.decompose', 'request.accept'], tool_grants: [] }
+  )
+  const workPackage = {
+    id: 'selected-package', objectiveId: 'goal', round: 1, managerId: 'manager',
+    title: 'Deliver reviewed API', description: 'Planning has completed; the root is awaiting acceptance.',
+    criterionIndexes: [0], projectIds: [], dependencyIds: [], maxTasks: 1,
+    planRequestId: 'package-plan', status: 'completed' as const, taskIds: []
+  }
+  const objective = {
+    id: 'goal', title: 'Release', description: '', ownerId: 'executive', managerId: 'manager', executiveId: 'executive',
+    source: 'runtime' as const, status: 'active' as const, createdAt: '', planningMode: 'executive_packages' as const,
+    acceptance: { status: 'reviewing' as const, criteria: ['Reviewed release'], round: 1, maxReplans: 2, summary: null, deliverableId: null },
+    workPackages: [workPackage,
+      { ...workPackage, id: 'old-package', title: 'Previous package', round: 0 },
+      { ...workPackage, id: 'other-package', title: 'Other manager package', managerId: 'third-manager' }
+    ]
+  }
+  initial.objectives = [objective, {
+    ...objective, id: 'settled', status: 'completed',
+    workPackages: [{ ...workPackage, objectiveId: 'settled', id: 'settled-package', title: 'Settled package' }]
+  }]
+  const request = vi.fn().mockResolvedValue(initial)
+  const view = open(request)
+  fireEvent.click(await screen.findByRole('button', { name: 'Manage organization' }))
+  const form = within(screen.getByRole('form', { name: 'Manage organization' }))
+  fireEvent.change(form.getByRole('combobox', { name: 'Member' }), { target: { value: '2' } })
+  expect(form.getByRole('checkbox', { name: 'request.decompose' })).toHaveProperty('checked', true)
+  fireEvent.click(form.getByRole('button', { name: 'Add explicit handoff' }))
+  const from = form.getByRole('combobox', { name: 'Transfer from' })
+  fireEvent.change(from, { target: { value: 'manager' } })
+  fireEvent.change(form.getByRole('combobox', { name: 'Transfer to' }), { target: { value: 'next-manager' } })
+  const packages = within(form.getByRole('group', { name: 'Work package ownership transfer' }))
+  expect(packages.queryByRole('checkbox', { name: /Previous package|Other manager package|Settled package/ })).toBeNull()
+  fireEvent.click(packages.getByRole('checkbox', { name: /Deliver reviewed API/ }))
+  expect(form.getByRole('button', { name: 'Save organization' })).toHaveProperty('disabled', false)
+  fireEvent.change(from, { target: { value: 'third-manager' } })
+  fireEvent.change(from, { target: { value: 'manager' } })
+  expect(form.getByRole('checkbox', { name: /Deliver reviewed API/ })).toHaveProperty('checked', false)
+  fireEvent.change(form.getByRole('combobox', { name: 'Transfer to' }), { target: { value: 'next-manager' } })
+  fireEvent.click(form.getByRole('checkbox', { name: /Deliver reviewed API/ }))
+  fireEvent.click(form.getByRole('button', { name: 'Save organization' }))
+  await waitFor(() => expect(request.mock.calls.some(call => call[0] === 'organization.configure')).toBe(true))
+  const saved = request.mock.calls.find(call => call[0] === 'organization.configure')![1].configuration
+  const transfer = { fromAgentId: 'manager', toAgentId: 'next-manager', taskIds: [], workPackageIds: [workPackage.id], includeMemory: false }
+  expect(saved.transfers).toEqual([transfer])
+  expect(saved.roster.find((item: OrganizationMemberConfiguration) => item.id === 'next-executive').capabilities).toEqual(['request.decompose', 'request.accept'])
+  for (const workPackageIds of [['old-package'], ['other-package'], ['settled-package'], ['missing'], [workPackage.id, workPackage.id]]) {
+    expect(validTransfers([{ ...transfer, workPackageIds }], saved, initial)).toBe(false)
+  }
+  expect(validTransfers([transfer, { ...transfer, toAgentId: 'third-manager' }], saved, initial)).toBe(false)
   view.unmount()
 })

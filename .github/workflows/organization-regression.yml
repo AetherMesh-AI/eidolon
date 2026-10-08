@@ -120,6 +120,10 @@ jobs:
             tests/eidolon_cli/test_organization_paused_handoffs.py \
             tests/eidolon_cli/test_organization_leadership_routes.py \
             tests/eidolon_cli/test_organization_persistent_leadership.py \
+            tests/eidolon_cli/test_organization_work_packages.py \
+            tests/eidolon_cli/test_organization_work_packages_e2e.py \
+            tests/eidolon_cli/test_organization_package_handoffs.py \
+            tests/eidolon_cli/test_organization_package_evidence.py \
             tests/eidolon_cli/test_organization_history.py \
             tests/eidolon_cli/test_organization_attention.py \
             tests/eidolon_cli/test_organization_outcomes.py \

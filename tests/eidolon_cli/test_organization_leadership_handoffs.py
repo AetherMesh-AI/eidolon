@@ -4,6 +4,7 @@ import json
 import pytest
 
 from eidolon_cli.organization_store import OrganizationStore
+from tests.organization_package_helpers import claim_after_decomposition
 from tests.eidolon_cli.test_organization_management import (
     apply, configure, hire_request, member, settings, staffing_store,
 )
@@ -159,7 +160,7 @@ def test_objective_handoff_rejects_unowned_or_out_of_scope_work_atomically(tmp_p
         request = hire_request(store, proposal)
     if invalid == 'outside':
         # The staffing actor can manage red members, but not this blue objective's task scope.
-        assert store.finish(store.claim_next(), {'tasks': [
+        assert store.finish(claim_after_decomposition(store), {'tasks': [
             {'title': 'Blue work', 'description': 'Outside scope', 'type': 'work.draft', 'team': 'blue'}]})
         proposal = {'transfers': [transfer]}
         request = hire_request(store, proposal)
@@ -186,7 +187,7 @@ def test_objective_handoff_preserves_unselected_peer_question_continuation(tmp_p
               member('source', manager_id='team-lead')]
     store = OrganizationStore(tmp_path / 'organization.db', settings(*roster))
     goal = store.create_objective('Keep distinct responsibilities', idempotency_key='goal', manager_id='team-lead')
-    assert store.finish(store.claim_next(), {'tasks': [
+    assert store.finish(claim_after_decomposition(store), {'tasks': [
         {'title': 'Draft', 'description': 'Needs a peer answer', 'team': 'red', 'type': 'work.draft', 'agentId': 'source'}]})
     assert store.finish(store.claim_next(), {})  # Activate the configured worker.
     work = store.claim_next()

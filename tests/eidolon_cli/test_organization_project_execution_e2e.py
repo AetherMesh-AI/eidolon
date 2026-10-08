@@ -1,4 +1,5 @@
 """Native real-provider project loop: copied tests are never model-produced receipts."""
+from tests.organization_package_helpers import decomposition_result
 import hashlib
 import json
 import os
@@ -86,7 +87,9 @@ def _native_project_loop(tmp_path, monkeypatch, *, create=False):
                 for row, content in zip(evidence, bodies):
                     assert hashlib.sha256(content.encode()).hexdigest() == row["sha256"]
                 evidence_ids = [row["id"] for row in evidence]
-                if kind == "request.plan":
+                if kind == 'request.decompose':
+                    output = decomposition_result(context)
+                elif kind == "request.plan":
                     assert not body.get("tools")
                     output = {"workers": 1, "tasks": [
                         {"title": "Inspect addition and its tests", "type": "work.inspect", "team": "general",

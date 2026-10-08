@@ -272,10 +272,10 @@ it('keeps malformed staffing data inspectable and deniable without allowing appr
   view.unmount()
 })
 
-it('shows exact objective leadership IDs before staffing approval and validates optional IDs without rejecting legacy proposals', async () => {
+it('shows exact objective leadership and package IDs before staffing approval without rejecting legacy proposals', async () => {
   const transfer = {
     fromAgentId: 'manager', toAgentId: 'next-manager', taskIds: [], includeMemory: false,
-    objectiveIds: ['goal-before-planning', 'goal-awaiting-acceptance']
+    objectiveIds: ['goal-before-planning', 'goal-awaiting-acceptance'], workPackageIds: ['package-before-planning', 'package-awaiting-acceptance']
   }
 
   const proposal = { members: [], transfers: [transfer] }
@@ -295,6 +295,7 @@ it('shows exact objective leadership IDs before staffing approval and validates 
   const inspector = within(screen.getByRole('complementary', { name: 'Request details' }))
   const preview = within(inspector.getByRole('region', { name: 'Exact staffing proposal' }))
   expect(preview.getByText(`Objective leadership IDs: ${transfer.objectiveIds.join(', ')}`)).toBeTruthy()
+  expect(preview.getByText(`Work package IDs: ${transfer.workPackageIds.join(', ')}`)).toBeTruthy()
   expect(preview.getByText('Task ID: ∅')).toBeTruthy()
   expect(preview.getByText('manager → next-manager')).toBeTruthy()
   fireEvent.change(inspector.getByRole('textbox', { name: 'Response' }), {
@@ -306,6 +307,10 @@ it('shows exact objective leadership IDs before staffing approval and validates 
   expect(hasCompleteManagementProposal({ members: [], transfers: [{
     fromAgentId: 'writer', toAgentId: 'next-writer', taskIds: ['task-1'], includeMemory: false
   }] })).toBe(true)
+
+  for (const workPackageIds of [null, 'package-before-planning', [42], [''], ['package', 'package']]) {
+    expect(hasCompleteManagementProposal({ members: [], transfers: [{ ...transfer, workPackageIds }] } as unknown as OrganizationRequest['managementProposal'])).toBe(false)
+  }
 
   for (const objectiveIds of [null, 'goal-before-planning', [42], [''], ['goal', 'goal']]) {
     expect(hasCompleteManagementProposal({

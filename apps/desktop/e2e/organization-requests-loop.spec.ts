@@ -14,6 +14,7 @@ import {
 } from './fixtures'
 import { startMockServer } from './mock-server'
 import { exactOrganizationEvidence, type OrganizationEvidenceContext } from './organization-evidence'
+import { organizationPackageProposal } from './organization-package-proposal'
 import { organizationProviderTarget } from './organization-provider-target'
 import { expect, test } from './test'
 
@@ -65,6 +66,7 @@ function resultFor(kind: string, context: StageContext) {
   const evidenceIds = evidence.map(item => item.id)
 
   const handlers: Record<string, () => unknown> = {
+    'request.decompose': () => organizationPackageProposal(context, 1),
     'request.plan': () =>
       responses.some(item => item.type === 'request.hire' && item.response.decision === 'approved')
         ? {

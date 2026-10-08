@@ -101,6 +101,7 @@ it('offers scoped setup navigation on Home and Organization without starting wor
   expect(panel.getByText(/The effective provider route has not been resolved/)).toBeTruthy()
   expect(panel.getByText(/Authentication, model availability and execution have not been tested/)).toBeTruthy()
   fireEvent.click(panel.getByText('Review roster, repository and background configuration'))
+  expect(panel.getByText('executive: Legacy manager planning')).toBeTruthy()
   expect(panel.getByText('Members using profile defaults').nextElementSibling?.textContent).toBe('3')
   expect(panel.getByText('Background gateway opt-in').nextElementSibling?.textContent).toBe('Configured')
   expect(panel.getByText(/Opt-in does not prove a gateway is running/)).toBeTruthy()
@@ -133,7 +134,9 @@ it('keeps unchecked, stale, legacy and retired configuration distinct and locali
     { ...member('retired', 'Worker', []), lifecycle: 'retired' },
     { ...member('legacy', 'Worker', []), provider: undefined, model: undefined },
     member('apply', 'Worker', ['control.apply']),
-    member('director', 'Manager', ['request.hire'])
+    member('director', 'Manager', ['request.hire']),
+    member('decomposer', 'Executive', ['request.decompose']),
+    member('new-executive', 'Executive', ['request.decompose', 'request.accept'])
   )
 
   const draw = (state: OrganizationSnapshot, locale = 'en') => (
@@ -147,6 +150,8 @@ it('keeps unchecked, stale, legacy and retired configuration distinct and locali
 
   const view = render(draw(initial))
   expect(screen.getByText('Provider execution not checked')).toBeTruthy()
+  expect(screen.getByText('new-executive: Executive delegation')).toBeTruthy()
+  expect(within(screen.getByRole('button', { name: 'Inspect decomposer' })).getByText('Provider: Uses profile default · Model: Uses profile default')).toBeTruthy()
   expect(
     within(screen.getByRole('button', { name: 'Inspect writer' })).getByText(
       'Provider: Uses profile default · Model: Uses profile default'

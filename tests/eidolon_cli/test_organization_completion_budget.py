@@ -1,3 +1,4 @@
+from tests.organization_package_helpers import claim_after_decomposition
 from dataclasses import replace
 import threading
 import time
@@ -147,7 +148,7 @@ def test_replanning_keeps_model_call_budget_and_cannot_resume_exhausted_objectiv
     reserve(store, claim)
     store.finish(claim, {'intervention': 'Need bounded new plan'})
     assert store.resolve(claim['id'], 'request_replan', 'Try a different plan', idempotency_key='replan')
-    plan = store.claim_next()
+    plan = claim_after_decomposition(store)
     reserve(store, plan)
     store.finish(plan, {'intervention': 'No more calls permitted'})
     assert usage(store, objective)['modelCalls'] == 2
@@ -213,7 +214,7 @@ def test_project_budget_exhaustion_blocks_staff_activation_before_inspection_and
     store = OrganizationStore(tmp_path / 'organization' / 'state.db', settings)
     objective = store.create_objective('Fix and verify addition', idempotency_key='budgeted-project',
         required_checks=['project_tests', 'managed_validation', 'source_integration'])
-    plan = store.claim_next()
+    plan = claim_after_decomposition(store)
     assert plan['type'] == 'request.plan'
     call_id = store.reserve_model_call(plan, provider='local', model='fixture', input_limit=3072, output_limit=512)
     assert store.finish(plan, {'workers': 1, 'tasks': [
@@ -258,7 +259,7 @@ def test_project_budget_exhaustion_blocks_staff_activation_before_inspection_and
     snapshot = cancelled.snapshot()
     assert snapshot['objectives'][0]['status'] == 'cancelled'
     assert snapshot['objectives'][0]['projectExecution'] is None
-    assert all(row['status'] == ('completed' if row['type'] == 'request.plan' else 'cancelled')
+    assert all(row['status'] == ('completed' if row['type'] in {'request.decompose', 'request.plan'} else 'cancelled')
                for row in snapshot['requests'])
     assert usage(cancelled, objective)['modelCalls'] == 1
     assert {name: (source / name).read_bytes().decode() for name in original} == original

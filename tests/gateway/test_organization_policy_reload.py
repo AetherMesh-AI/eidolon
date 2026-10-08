@@ -1,4 +1,5 @@
 """Live config changes share durable fences with every profile-local runtime."""
+from tests.organization_package_helpers import claim_after_decomposition
 from dataclasses import replace
 import json
 import threading
@@ -46,7 +47,7 @@ def test_live_revocation_fences_peers_without_replaying_or_releasing_live_capaci
     store.configure_organization({'roster': retained_roster, 'max_inflight': 2, 'max_members': 20},
                                 expected_generation=store._policy_generation, idempotency_key='owner-roster')
     store.create_objective('Inspect selected source', project_ids=['source'], idempotency_key='source')
-    assert store.finish(store.claim_next(), {'workers': 2, 'tasks': [
+    assert store.finish(claim_after_decomposition(store), {'workers': 2, 'tasks': [
         {'title': 'Inspect ' + name, 'description': 'Read README for ' + name, 'type': 'work.inspect',
          'team': 'engineering', 'projectId': 'source', 'agentId': name} for name in ['reader-a', 'reader-b']]})
     release = threading.Event()

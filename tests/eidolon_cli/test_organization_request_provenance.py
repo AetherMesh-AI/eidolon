@@ -1,10 +1,11 @@
 """Actor-authored control requests keep the actual persistent requester."""
+from tests.organization_package_helpers import claim_after_decomposition
 from eidolon_cli.organization_store import OrganizationStore
 
 
 def _start_work(store):
     store.create_objective('Prepare a supported recommendation', idempotency_key='goal')
-    planner = store.claim_next()
+    planner = claim_after_decomposition(store)
     store.finish(planner, {'tasks': [
         {'title': 'Analyze', 'description': 'Support the recommendation', 'type': 'work.analyze'},
     ]})
@@ -62,12 +63,12 @@ def test_executive_and_owner_replans_keep_distinct_requester_provenance(tmp_path
             for criterion in context['objective']['acceptanceCriteria']],
     })
     executive_replan = store.claim_next()
-    assert executive_replan['type'] == 'request.plan'
+    assert executive_replan['type'] == 'request.decompose'
     assert _request(store, executive_replan['id'])['requesterId'] == acceptance['agent_id']
     store.fail(executive_replan, 'Owner scope clarification required.')
     store.resolve(executive_replan['id'], 'request_replan', 'Use the revised owner scope.', idempotency_key='owner-replan')
     owner_replan = store.claim_next()
-    assert owner_replan['type'] == 'request.plan' and owner_replan['id'] != executive_replan['id']
+    assert owner_replan['type'] == 'request.decompose' and owner_replan['id'] != executive_replan['id']
     assert _request(store, owner_replan['id'])['requesterId'] == 'owner'
-    assert _request(store, original_plan['id'])['requesterId'] == 'owner'
+    assert _request(store, original_plan['id'])['requesterId'] == acceptance['agent_id']
     assert _request(store, executive_replan['id'])['requesterId'] == acceptance['agent_id']

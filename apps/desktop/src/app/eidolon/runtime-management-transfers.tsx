@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button'
 import { controlVariants } from '@/components/ui/control'
 import { useI18n } from '@/i18n/context'
 
-import { transferObjectives, transferTasks } from './runtime-management'
+import { transferObjectives, transferTasks, transferWorkPackages } from './runtime-management'
 import type { OrganizationConfiguration, OrganizationSnapshot, OrganizationTransfer } from './types'
 
 export function OrganizationTransferFields({
@@ -41,6 +41,10 @@ export function OrganizationTransferFields({
         delete next.objectiveIds
       }
 
+      if (!next.workPackageIds?.length) {
+        delete next.workPackageIds
+      }
+
       return next
     }))
 
@@ -53,6 +57,8 @@ export function OrganizationTransferFields({
         const tasks = transferTasks(snapshot, transfer.fromAgentId)
         const objectives = transferObjectives(snapshot, transfer.fromAgentId, source?.role)
         const objectiveIds = transfer.objectiveIds ?? []
+        const packages = transferWorkPackages(snapshot, transfer.fromAgentId)
+        const workPackageIds = transfer.workPackageIds ?? []
 
         return (
           <fieldset className="eid-management-fields" key={index}>
@@ -61,7 +67,7 @@ export function OrganizationTransferFields({
               <select
                 className={controlVariants()}
                 onChange={event =>
-                  update(index, { fromAgentId: event.target.value, toAgentId: '', taskIds: [], objectiveIds: [] })
+                  update(index, { fromAgentId: event.target.value, toAgentId: '', taskIds: [], objectiveIds: [], workPackageIds: [] })
                 }
                 value={transfer.fromAgentId}
               >
@@ -114,6 +120,26 @@ export function OrganizationTransferFields({
                 ) : (
                   <p>{copy.noTransferObjectives}</p>
                 )}
+              </fieldset>
+            )}
+            {source?.role === 'Manager' && (
+              <fieldset>
+                <legend>{copy.transferWorkPackages}</legend>
+                <p className="eid-note">{copy.transferWorkPackagesNote}</p>
+                {packages.length ? packages.map(item => (
+                  <label className="eid-inline" key={item.id}>
+                    <input
+                      checked={workPackageIds.includes(item.id)}
+                      onChange={event => update(index, {
+                        workPackageIds: event.target.checked
+                          ? [...workPackageIds, item.id]
+                          : workPackageIds.filter(id => id !== item.id)
+                      })}
+                      type="checkbox"
+                    />
+                    {item.title} · {item.id}
+                  </label>
+                )) : <p>{copy.noTransferWorkPackages}</p>}
               </fieldset>
             )}
             <fieldset>

@@ -6,6 +6,7 @@ import pytest
 from eidolon_cli.organization_config import OrganizationSettings
 from eidolon_cli.organization_executor import _parse_output, _prompt, OrganizationExecutionError
 from eidolon_cli.organization_store import OrganizationStore
+from tests.organization_package_helpers import decompose
 
 
 def ledger(tmp_path, roster=None):
@@ -20,6 +21,7 @@ def ledger(tmp_path, roster=None):
 
 def start_work(store):
     objective = store.create_objective('Prepare a useful brief', idempotency_key='goal')
+    decompose(store)
     plan = store.claim_next()
     store.finish(plan, {'tasks': [{'title': 'Draft', 'description': 'Write the brief',
                                  'type': 'work.draft', 'agentId': 'writer'}]})
@@ -152,10 +154,40 @@ def test_model_wire_parser_preserves_typed_request_and_uses_durable_answers(tmp_
         _parse_output(json.dumps({**payload, 'deliverable': 'premature'}), 'work.draft', {})
 
 
+@pytest.mark.parametrize('upstream_stage', ['request.plan', 'work.draft'])
+def test_typed_dependencies_cannot_deadlock_upstream_package_planning_or_work(tmp_path, upstream_stage):
+    from tests.eidolon_cli import test_organization_work_packages as packages
+
+    store, _ = packages.make_store(tmp_path)
+    decomposition = packages.decompose(store)
+    plans = [store.claim_next() for _ in range(3)]
+    upstream = next(claim for claim in plans if claim['agent_id'] == 'lead-a')
+    for plan in plans:
+        if plan['id'] != upstream['id'] or upstream_stage == 'work.draft':
+            assert store.finish(plan, packages.plan_output(plan))
+    if upstream_stage == 'work.draft':
+        workers = [packages.next_nonstaffing(store), packages.next_nonstaffing(store)]
+        upstream = next(claim for claim in workers if claim['agent_id'] == 'writer-a')
+    snapshot = store.snapshot()
+    dependent = next(task for task in snapshot['tasks'] if task['assignedAgentId'] == 'writer-c')
+    request = next(row for row in snapshot['requests']
+                   if row['taskId'] == dependent['id'] and row['type'] == 'work.draft')
+    proposal = {'type': 'request.question', 'requestedOutcome': 'Read the dependent finding first',
+                'dependencyIds': [request['id']]}
+    before = packages.ledger_dump(store)
+    with pytest.raises(ValueError, match='acyclic'):
+        store.finish(upstream, {'requests': [proposal]})
+    assert packages.ledger_dump(store) == before
+    assert store.heartbeat(upstream)
+    # Already-completed upstream context is an acyclic dependency and stays usable.
+    assert store.finish(upstream, {'requests': [{**proposal, 'dependencyIds': [decomposition['id']]}]})
+
+
 @pytest.mark.parametrize('kind', ['request.question', 'request.decision', 'request.permission'])
 def test_planning_clarification_survives_downstream_restart_and_replan(tmp_path, kind):
     store = ledger(tmp_path)
     objective = store.create_objective('Prepare a brief', idempotency_key='clarified')
+    decompose(store)
     plan = store.claim_next()
     ask(store, plan, kind, team='owner-only')
     assert store.claim_next() is None
@@ -198,6 +230,7 @@ def test_planning_clarification_survives_downstream_restart_and_replan(tmp_path,
     # promoting old-round answers to current acceptance criteria.
     store.fail(accept, 'Scope needs changing')
     store.resolve(accept['id'], 'amend_scope', 'Now prepare a public audience brief', idempotency_key='amend')
+    decompose(store)
     replanned = store.claim_next()
     context = store.context(replanned)
     assert context['objectiveClarifications'][0]['historical'] is True
@@ -221,6 +254,7 @@ def test_planning_clarification_survives_downstream_restart_and_replan(tmp_path,
     assert context['objective']['acceptanceCriteria'] == ['Now prepare a public audience brief']
     store.finish(resumed_plan, {'intervention': 'Waiting for scope'})
     other = store.create_objective('Separate brief', idempotency_key='separate')
+    decompose(store)
     next_plan = store.claim_next()
     assert next_plan['objective_id'] == other['id'] != objective['id']
     assert store.context(next_plan)['objectiveClarifications'] == []

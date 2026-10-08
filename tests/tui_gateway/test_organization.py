@@ -1,5 +1,6 @@
 """Real RPC → durable ledger → scheduler contracts, with deterministic model turns."""
 from __future__ import annotations
+from tests.organization_package_helpers import decomposition_result
 
 import threading
 import time
@@ -32,7 +33,9 @@ def _rpc(method, **params):
 
 def _deterministic(request, context, cancel):
     kind = request["type"]
-    if kind == "request.plan":
+    if kind == 'request.decompose':
+        return decomposition_result(context)
+    elif kind == "request.plan":
         return {"workers": 2, "tasks": [
             {"title": "Draft supplied context", "description": "Use the supplied context", "type": "work.draft"}]}
     if kind == 'request.accept':

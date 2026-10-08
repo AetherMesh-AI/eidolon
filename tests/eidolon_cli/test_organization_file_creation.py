@@ -1,4 +1,5 @@
 """Absent sources stay distinct from empty files through exact reviewed creation."""
+from tests.organization_package_helpers import claim_after_decomposition
 from dataclasses import replace
 import hashlib
 import json
@@ -133,7 +134,7 @@ def test_created_source_lineage_survives_replan_and_refuses_source_conflicts(tmp
     apply_validate(store)
     merge = next(row for row in store.snapshot()['requests'] if row['type'] == 'request.merge')
     store.resolve(merge['id'], 'request_replan', 'Refine the new source', idempotency_key='replan-create')
-    plan = store.claim_next()
+    plan = claim_after_decomposition(store)
     store.finish(plan, {'workers': 1, 'tasks': [{'title': 'Refine creation', 'description': 'Refine new source',
                                                'type': 'work.edit', 'team': 'engineering'}]})
     claim = store.claim_next()

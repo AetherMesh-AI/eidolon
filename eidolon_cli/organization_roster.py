@@ -63,7 +63,7 @@ def parse_roster(raw, settings: OrganizationSettings) -> tuple[OrganizationStaff
         team = _text(entry.get("team", settings.team), f"organization.roster.{ident}.team", 64)
         role = entry.get("role", "Worker")
         defaults = {"Worker": (), "Manager": ("request.plan", "request.integrate", "request.hire"),
-                    "Executive": ("request.accept",)}
+                    "Executive": ("request.decompose", "request.accept")}
         routes = {"Worker": (*SUPPORTED_WORK_CAPABILITIES, *TYPED_REQUESTS),
                   "Manager": (*defaults["Manager"], *TYPED_REQUESTS),
                   "Executive": (*defaults["Executive"], "request.hire", *TYPED_REQUESTS)}

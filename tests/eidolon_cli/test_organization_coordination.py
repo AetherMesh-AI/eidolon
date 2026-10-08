@@ -1,4 +1,5 @@
 """Real ledger ownership, concurrency and recovery without provider calls."""
+from tests.organization_package_helpers import claim_after_decomposition
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 import json
@@ -27,7 +28,7 @@ def ledger(tmp_path, paths, dependencies=None, roots=None):
                     'capabilities': ['work.edit'], 'tool_grants': ['read_file', 'patch']} for i in range(4)]}})
     store = OrganizationStore(tmp_path / 'state.db', settings)
     objective = store.create_objective('Maintain the projects', idempotency_key='goal')
-    plan = store.claim_next()
+    plan = claim_after_decomposition(store)
     tasks = [{'title': f'Edit {i}', 'description': 'Make a scoped change', 'type': 'work.edit',
               'team': 'engineering', 'agentId': f'editor-{i}',
               **({'writePaths': scope} if scope is not None else {}),
@@ -223,7 +224,7 @@ def test_bounded_replan_releases_old_scope_without_replacing_persistent_ownershi
     store.fail(claim, 'Need a revised exact file scope', retryable=False)
     assert store.resolve(claim['id'], 'request_replan', text='Use the other file instead', idempotency_key='replan')
     assert task(store, claim)['coordination']['state'] == 'released'
-    plan = store.claim_next()
+    plan = claim_after_decomposition(store)
     store.finish(plan, {'tasks': [{'title': 'Revised scope', 'description': 'Change the other file',
         'type': 'work.edit', 'team': 'engineering', 'agentId': claim['agent_id'], 'writePaths': ['root0/other.txt']}]})
     revised = store.claim_next()

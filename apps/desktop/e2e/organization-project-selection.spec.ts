@@ -83,7 +83,7 @@ test('retains both owner-selected repository IDs across reconnect and full nativ
   )
   await assertRetainedProjects(page)
   expect(running.providerErrors).toEqual([])
-  expect(running.stages.map(stage => stage.projectIds)).toEqual([['backend', 'frontend']])
+  expect(running.stages.map(stage => stage.projectIds)).toEqual([['backend', 'frontend'], ['backend', 'frontend']])
   await page.screenshot({ path: testInfo.outputPath('project-selection-created.png') })
 
   await page.reload()
@@ -99,5 +99,5 @@ test('retains both owner-selected repository IDs across reconnect and full nativ
   await expect(page.getByRole('heading', { name: projectSelectionTitle, exact: true })).toBeVisible()
   await assertRetainedProjects(page)
   expect(running.providerErrors).toEqual([])
-  expect(running.stages.map(stage => stage.projectIds)).toEqual([['backend', 'frontend']])
+  expect(running.stages.map(stage => stage.projectIds)).toEqual([['backend', 'frontend'], ['backend', 'frontend']])
 })

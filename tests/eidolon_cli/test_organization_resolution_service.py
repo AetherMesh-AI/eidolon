@@ -13,7 +13,7 @@ def pending_plan(tmp_path):
     store = OrganizationStore(tmp_path / "organization" / "state.db")
     objective = store.create_objective("Draft an evidence-based brief", idempotency_key="objective")
     claim = store.claim_next()
-    assert claim["type"] == "request.plan"
+    assert claim["type"] == "request.decompose"
     assert store.fail(claim, "The requested source facts are missing")
     service = OrganizationService(store, home=tmp_path)
     return service, objective, claim

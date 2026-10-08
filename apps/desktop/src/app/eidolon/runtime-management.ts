@@ -13,7 +13,7 @@ export const responseCapabilities = ['request.question', 'request.decision']
 
 export function memberCapabilities(role: OrganizationMemberConfiguration['role'], management: OrganizationManagement) {
   const roles = {
-    Executive: ['request.accept', 'request.hire'],
+    Executive: ['request.decompose', 'request.accept', 'request.hire'],
     Manager: ['request.plan', 'request.integrate', 'request.hire'],
     Worker: management.allowedCapabilities
   }
@@ -62,6 +62,14 @@ export function transferObjectives(snapshot: OrganizationSnapshot, source: strin
   )
 }
 
+export function transferWorkPackages(snapshot: OrganizationSnapshot, source: string) {
+  return snapshot.objectives
+    .filter(objective => objective.status !== 'completed' && objective.status !== 'cancelled')
+    .flatMap(objective => (objective.workPackages ?? []).filter(item =>
+      item.managerId === source && item.round === objective.acceptance?.round
+    ))
+}
+
 export function validTransfers(
   transfers: OrganizationTransfer[],
   configuration: OrganizationConfiguration,
@@ -69,6 +77,7 @@ export function validTransfers(
 ) {
   const roles = new Map([...snapshot.agents, ...configuration.roster].map(agent => [agent.id, agent.role]))
   const selectedTasks = transfers.flatMap(transfer => transfer.taskIds)
+  const selectedPackages = transfers.flatMap(transfer => transfer.workPackageIds ?? [])
 
   const selectedLeadership = transfers.flatMap(transfer =>
     (transfer.objectiveIds ?? []).map(id => `${roles.get(transfer.fromAgentId)}:${id}`)
@@ -77,6 +86,7 @@ export function validTransfers(
   return (
     transfers.length <= 64 &&
     new Set(selectedTasks).size === selectedTasks.length &&
+    new Set(selectedPackages).size === selectedPackages.length &&
     new Set(selectedLeadership).size === selectedLeadership.length &&
     new Set(transfers.map(transfer => `${transfer.fromAgentId}:${transfer.toAgentId}`)).size === transfers.length &&
     transfers.every(
@@ -84,7 +94,12 @@ export function validTransfers(
         transfer.fromAgentId !== transfer.toAgentId &&
         roles.has(transfer.fromAgentId) &&
         roles.get(transfer.fromAgentId) === roles.get(transfer.toAgentId) &&
-        (transfer.includeMemory || transfer.taskIds.length > 0 || (transfer.objectiveIds?.length ?? 0) > 0) &&
+        (transfer.includeMemory || transfer.taskIds.length > 0 || (transfer.objectiveIds?.length ?? 0) > 0 || (transfer.workPackageIds?.length ?? 0) > 0) &&
+        (transfer.workPackageIds === undefined ||
+          (Array.isArray(transfer.workPackageIds) && transfer.workPackageIds.length <= 100 &&
+            (transfer.workPackageIds.length === 0 || roles.get(transfer.fromAgentId) === 'Manager') && transfer.workPackageIds.every(id =>
+              typeof id === 'string' && transferWorkPackages(snapshot, transfer.fromAgentId).some(item => item.id === id)
+            ))) &&
         transfer.taskIds.every(id => transferTasks(snapshot, transfer.fromAgentId).some(task => task.id === id)) &&
         (transfer.objectiveIds ?? []).every(id =>
           transferObjectives(snapshot, transfer.fromAgentId, roles.get(transfer.fromAgentId)).some(

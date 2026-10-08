@@ -17,6 +17,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 
+from eidolon_cli.organization_packages import (PACKAGE_SCHEMA, OrganizationPackageStore, package_dependencies_ready, task_package_id)
 from eidolon_cli.organization_config import OrganizationSettings
 from eidolon_cli.organization_project_registry import REGISTRY_SCHEMA
 from eidolon_cli.organization_projects import (PROJECTS_SCHEMA, selected_projects, objective_projects, task_project, bind_task_project, validate_objective_projects, public_project)
@@ -100,12 +101,12 @@ def _text(value, field, limit=10000):
     return value.strip()
 
 
-class OrganizationStore(OrganizationOutcomeStore, OrganizationAttentionStore, OrganizationHistoryStore, OrganizationCoordinationStore, OrganizationProjectExecutionStore, OrganizationBudgetStore, OrganizationRequestStore, OrganizationManagementStore, OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
+class OrganizationStore(OrganizationPackageStore, OrganizationOutcomeStore, OrganizationAttentionStore, OrganizationHistoryStore, OrganizationCoordinationStore, OrganizationProjectExecutionStore, OrganizationBudgetStore, OrganizationRequestStore, OrganizationManagementStore, OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
     def __init__(self, path: Path | str, settings: OrganizationSettings | None = None):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
-            conn.executescript(_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA + COORDINATION_SCHEMA + HISTORY_SCHEMA + ATTENTION_SCHEMA + PROJECTS_SCHEMA + OUTCOME_SCHEMA + REGISTRY_SCHEMA)
+            conn.executescript(_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA + COORDINATION_SCHEMA + HISTORY_SCHEMA + ATTENTION_SCHEMA + PROJECTS_SCHEMA + OUTCOME_SCHEMA + REGISTRY_SCHEMA + PACKAGE_SCHEMA)
         self.settings = settings or OrganizationSettings()
         with self._write() as conn:
             self.settings = resolve_settings(conn, settings)
@@ -113,10 +114,11 @@ class OrganizationStore(OrganizationOutcomeStore, OrganizationAttentionStore, Or
             self._migrate_reservations(conn)
             self._migrate_acceptance(conn)
             self._migrate_budgets(conn)
+            self._migrate_planning(conn)
             self._migrate_project_execution_budgets(conn)
             self._adopt_policy(conn, resume=settings is not None)
             roles = [("owner", "Owner", "Owner", None, []),
-                     ("executive", "Executive", "Executive", "owner", ["request.accept"]),
+                     ("executive", "Executive", "Executive", "owner", ["request.decompose", "request.accept"]),
                      ("director", "Staffing manager", "Manager", "executive", ["request.hire"]),
                      ("manager", "Manager", "Manager", "executive", ["request.plan", "request.integrate"]),
                      ("reviewer", "Reviewer", "Worker", "manager", ["request.review", "request.test_review"]),
@@ -128,7 +130,7 @@ class OrganizationStore(OrganizationOutcomeStore, OrganizationAttentionStore, Or
             # Capture legacy identity scope before synchronizing current routes.
             self._migrate_identities(conn)
             conn.execute("UPDATE agents SET team=? WHERE id IN ('owner','executive','director','manager','reviewer','control:apply','control:project')", (self.settings.team,))
-            for ident, accepts in [('reviewer', ['request.review', 'request.test_review']), ('control:project', ['request.project_test', 'request.source_integrate']), ('executive', ['request.accept']), ('manager', ['request.plan', 'request.integrate']), ('control:apply', ['request.apply', 'request.validate'])]:
+            for ident, accepts in [('reviewer', ['request.review', 'request.test_review']), ('control:project', ['request.project_test', 'request.source_integrate']), ('executive', ['request.decompose', 'request.accept']), ('manager', ['request.plan', 'request.integrate']), ('control:apply', ['request.apply', 'request.validate'])]:
                 conn.execute('UPDATE agents SET accepts=? WHERE id=?', (json.dumps(accepts), ident))
             self._sync_staff(conn)
             self._migrate_identities(conn)
@@ -239,12 +241,13 @@ class OrganizationStore(OrganizationOutcomeStore, OrganizationAttentionStore, Or
                 for project in projects:
                     conn.execute('INSERT INTO objective_projects VALUES (?,?,?)', (ident, project['id'], json.dumps(project, sort_keys=True)))
                 conn.execute('INSERT INTO project_execution_budgets VALUES (?,?)', (ident, self.settings.max_project_runs))
-                manager = self._assign_objective(conn, ident, executive_id, manager_id)
+                self._assign_objective(conn, ident, executive_id, manager_id)
+                mode = self._initialize_planning(conn, ident)
                 conn.execute("INSERT INTO objective_control(objective_id,criteria,status,round,max_replans,max_stages,delivery_mode,required_checks) VALUES (?,?,'pending',0,?,?,?,?)",
                              (ident, json.dumps(criteria), self.settings.max_replans, self.settings.max_stages, delivery_mode, json.dumps(checks)))
                 self._initialize_budget(conn, ident)
-                self._request(conn, ident, "request.plan", manager['team'], level)
-                self._event(conn, ident, "Objective accepted. Manager planning is queued.", "planning")
+                self._queue_objective_planning(conn, ident, level)
+                self._event(conn, ident, "Objective accepted. " + ("Executive decomposition" if mode == "executive_packages" else "Legacy manager planning") + " is queued.", "planning")
         # A duplicate may be older than the UI's settled-history window.
         from eidolon_cli.organization_snapshot import build_snapshot
         with self._connect() as conn:
@@ -282,7 +285,7 @@ class OrganizationStore(OrganizationOutcomeStore, OrganizationAttentionStore, Or
 
     @staticmethod
     def _dependencies_ready(conn, request):
-        if not OrganizationRequestStore._request_dependencies_ready(conn, request):
+        if not package_dependencies_ready(conn, request) or not OrganizationRequestStore._request_dependencies_ready(conn, request):
             return False
         if not request["task_id"]:
             return True
@@ -411,13 +414,14 @@ class OrganizationStore(OrganizationOutcomeStore, OrganizationAttentionStore, Or
             task = dict(task) if task else None
             if task:
                 task.update(task_assignment_view(conn, task['id']))
+                task['workPackageId'] = task_package_id(conn, task['id'])
                 scope = conn.execute('SELECT paths FROM task_write_scopes WHERE task_id=?', (task['id'],)).fetchone()
                 binding = task_project(conn, task['id'])
                 task['projectId'] = binding['id'] if binding else None
                 task['project'] = public_project(binding) if binding else None
                 task['writePaths'] = json.loads(scope['paths']) if scope else None
                 task['coordination'] = coordination_view(conn, task['id'])
-            dependencies = []
+            dependencies = self._package_dependency_evidence(conn, request)
             if task:
                 for ident in json.loads(task["dependencies"]):
                     ev = conn.execute("SELECT * FROM evidence WHERE task_id=? ORDER BY created DESC LIMIT 1", (ident,)).fetchone()
@@ -455,9 +459,12 @@ class OrganizationStore(OrganizationOutcomeStore, OrganizationAttentionStore, Or
                  'team': row['team'], 'capabilities': json.loads(row['accepts']),
                  'responsibilities': agent_identity_view(conn, row['id'])['responsibilities']}
                 for row in conn.execute('SELECT * FROM agents ORDER BY id')]}
-            return {"objective": objective, "task": task, "agent": agent,
+            package_context = self._package_context(conn, request)
+            objective["planningMode"] = package_context["planningMode"]
+            max_tasks = conn.execute("SELECT max_tasks FROM objective_planning WHERE objective_id=?", (request["objective_id"],)).fetchone()[0]
+            return {"objective": objective, "task": task, "agent": agent, **package_context,
                     **({'projectExecutionHistory': payload['projectExecutionHistory']}
-                       if request['type'] == 'request.plan' and 'projectExecutionHistory' in payload else {}),
+                       if request['type'] in {'request.plan', 'request.decompose'} and 'projectExecutionHistory' in payload else {}),
                     **self._typed_context(conn, request),
                     "agentContext": agent_context_view(conn, request['agent_id']), "dependencies": dependencies,
                     "organization": organization, "maxInflight": self.settings.max_inflight,
@@ -475,7 +482,7 @@ class OrganizationStore(OrganizationOutcomeStore, OrganizationAttentionStore, Or
                     "toolReceipts": [receipt for item in evidence for receipt in item['toolReceipts']],
                     "toolPolicy": self._tool_policy(conn, request),
                     "staffing": self._staffing_context(),
-                    "capabilities": list(self.settings.capabilities), "maxTasks": self.settings.max_tasks,
+                    "capabilities": list(self.settings.capabilities), "maxTasks": min(max_tasks, self.settings.max_tasks),
                     "maxWorkers": self.settings.max_workers, "timeoutSeconds": max(0.001, min(self.settings.timeout_seconds, budget["deadlineTimestamp"] - time.time())),
                     "workers": payload.get("workers")}
 
@@ -605,7 +612,7 @@ class OrganizationStore(OrganizationOutcomeStore, OrganizationAttentionStore, Or
                     self._pending(conn, request, 'Objective deadline reached; the result was not accepted.')
                     return False
                 self._record_usage(conn, request, result)
-                if request['type'] == 'request.plan':
+                if request['type'] in {'request.plan', 'request.decompose'}:
                     self._merge_required_checks(conn, request['objective_id'], result.get('requiredChecks', []))
                 self._pending(conn, request, reason)
                 return True
@@ -624,7 +631,7 @@ class OrganizationStore(OrganizationOutcomeStore, OrganizationAttentionStore, Or
                 self._raise_requests(conn, request, result['requests'])
                 return True
             handlers = {"request.question": self._finish_response, "request.decision": self._finish_response,
-                        "request.plan": self._finish_plan, "request.review": self._finish_review,
+                        "request.decompose": self._finish_decompose, "request.plan": self._finish_plan, "request.review": self._finish_review,
                         "request.hire": self._finish_hire, 'work.edit': self._finish_edit_work,
                         'request.apply': self._finish_apply,
                         'request.project_test': self._finish_project_test, 'request.test_review': self._finish_test_review,
@@ -644,6 +651,7 @@ class OrganizationStore(OrganizationOutcomeStore, OrganizationAttentionStore, Or
             return True
 
     def _finish_plan(self, conn, request, result):
+        package = self._validate_package_plan(conn, request, result)
         self._merge_required_checks(conn, request['objective_id'], result.get('requiredChecks', []))
         tasks = result.get("tasks")
         if not isinstance(tasks, list) or not 1 <= len(tasks) <= self.settings.max_tasks:
@@ -671,11 +679,15 @@ class OrganizationStore(OrganizationOutcomeStore, OrganizationAttentionStore, Or
         for values, specification in zip(normalized, tasks):
             conn.execute("INSERT INTO tasks(id,objective_id,title,description,type,team,priority,status,dependencies) VALUES (?,?,?,?,?,?,?,?,?)", values)
             bind_task_project(conn, values[0], specification, self.settings)
+            if package is not None:
+                conn.execute('INSERT INTO task_work_packages VALUES (?,?)', (values[0], package['id']))
             self._assign_task(conn, values[0], specification, request['agent_id'])
             self._set_write_scope(conn, values[0], specification)
             conn.execute('INSERT INTO objective_task_rounds SELECT ?,objective_id,round FROM objective_control WHERE objective_id=?', (values[0], request['objective_id']))
             self._request(conn, request["objective_id"], values[4], values[5], values[6], values[0],
                           requester_id=request["agent_id"])
+        if package is not None:
+            conn.execute('UPDATE manager_work_packages SET plan=? WHERE id=?', (json.dumps(result, sort_keys=True), package['id']))
         self._queue_staffing(conn, request, workers, normalized)
         self._event(conn, request["objective_id"], f"Manager created {len(tasks)} scoped tasks with explicit dependencies.", "planning", request["agent_id"])
 

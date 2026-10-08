@@ -1,4 +1,5 @@
 """Full real organization scheduler/provider/read/receipt/review flow, on localhost."""
+from tests.organization_package_helpers import decomposition_result
 import hashlib
 import json
 import threading
@@ -41,7 +42,9 @@ def test_manager_hire_read_and_evidence_bound_review_complete(tmp_path, monkeypa
                               if m["role"] == "user" and "Submitted context:\n" in m.get("content", ""))
                 data = json.loads(prompt.split("Submitted context:\n", 1)[1])
                 kind, ctx = data["request"]["type"], data["context"]
-                if kind == "request.plan":
+                if kind == 'request.decompose':
+                    output = decomposition_result(ctx)
+                elif kind == "request.plan":
                     output = {"workers": 2, "tasks": [{"title": "Inspect cost source", "type": "work.inspect", "team": "general",
                               "description": "Read root0/facts.txt and compare both exact costs, citing lines.", "dependsOn": []}]}
                     assert not body.get("tools")
@@ -133,15 +136,15 @@ def test_manager_hire_read_and_evidence_bound_review_complete(tmp_path, monkeypa
             time.sleep(0.01)
         assert not errors
         assert snapshot["objectives"][0]["status"] == "completed", snapshot["requests"]
-        assert len(received) == 6 and len(reviewed) == 1
+        assert len(received) == 7 and len(reviewed) == 1
         assert all(row["status"] == "completed" for row in snapshot["requests"])
-        assert {row["type"] for row in snapshot["requests"]} == {"request.plan", "request.hire", "work.inspect", "request.review", "request.integrate", "request.accept"}
+        assert {row["type"] for row in snapshot["requests"]} == {"request.decompose", "request.plan", "request.hire", "work.inspect", "request.review", "request.integrate", "request.accept"}
         assert str(source) not in json.dumps(received)
         proof = store.evidence(reviewed[0]["id"])
         assert proof["content"] == outcome["deliverable"] and proof["toolReceipts"][0]["status"] == "completed"
         replay = store.create_objective("Compare costs", "Read root0/facts.txt and compare the costs.", idempotency_key="real-inspect-once")
         assert replay["id"] == objective["id"]
-        assert len(received) == 6
+        assert len(received) == 7
     finally:
         assert service.stop()
         server.shutdown()

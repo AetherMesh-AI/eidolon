@@ -1,4 +1,5 @@
 """Real SQLite and granted filesystem coverage for the bounded project pipeline."""
+from tests.organization_package_helpers import claim_after_decomposition
 from dataclasses import replace
 import hashlib
 import json
@@ -177,7 +178,7 @@ def test_successive_same_path_edits_supersede_merge_gate_and_verify_final_manife
     first_merge = next(r for r in store.snapshot()['requests'] if r['type'] == 'request.merge')
     # A bounded replan preserves managed revisions and the historical proposal.
     store.resolve(first_merge['id'], 'request_replan', 'Refine the first file again', idempotency_key='replan')
-    plan = store.claim_next()
+    plan = claim_after_decomposition(store)
     assert plan['type'] == 'request.plan'
     store.finish(plan, {'workers': 1, 'tasks': [{'title': 'Refine', 'description': 'Refine current output',
                                              'type': 'work.edit', 'team': 'engineering'}]})
@@ -284,7 +285,7 @@ def test_successful_replan_supersedes_failed_checks_without_erasing_failed_histo
     apply_validate(store)
     failed = next(row for row in store.snapshot()['requests'] if row['type'] == 'request.validation_failed')
     store.resolve(failed['id'], 'request_replan', 'Correct the failed output', idempotency_key='correct')
-    plan = store.claim_next()
+    plan = claim_after_decomposition(store)
     store.finish(plan, {'workers': 1, 'tasks': [{'title': 'Correct', 'description': 'Correct assertion',
                                              'type': 'work.edit', 'team': 'engineering'}]})
     fixed_evidence = project_proposal(store, source, second=False, old='new value', new='final value',
@@ -337,7 +338,7 @@ def test_draft_only_replan_cannot_accept_while_original_project_is_unchanged(tmp
                        roster=tuple(replace(staff, capabilities=('work.edit', 'work.draft')) for staff in store.settings.roster))
     store = OrganizationStore(store.path, settings)
     store.resolve(gate['id'], 'request_replan', 'Write a summary of progress', idempotency_key='summary-plan')
-    plan = store.claim_next()
+    plan = claim_after_decomposition(store)
     store.finish(plan, {'workers': 1, 'tasks': [{'title': 'Summarize', 'description': 'Summarize progress',
                                              'type': 'work.draft', 'team': 'engineering'}]})
     work = store.claim_next()
@@ -449,7 +450,7 @@ def test_unknown_superseded_validation_stays_unknown_without_poisoning_repaired_
     assert stopped['type'] == 'request.validate'
     assert store.fail(stopped, 'Backend stopped before validation receipt committed')
     store.resolve(stopped['id'], 'request_replan', 'Repair and validate latest output', idempotency_key='unknown-replan')
-    plan = store.claim_next()
+    plan = claim_after_decomposition(store)
     store.finish(plan, {'workers': 1, 'tasks': [{'title': 'Repair', 'description': 'Verify final output',
                                              'type': 'work.edit', 'team': 'engineering'}]})
     final_evidence = project_proposal(store, source, second=False, old='new value', new='final value')
@@ -554,7 +555,7 @@ def test_managed_only_partial_repair_has_immutable_aggregate_validation_artifact
     validation = store.claim_next()
     store.fail(validation, 'Validation outcome not committed')
     store.resolve(validation['id'], 'request_replan', 'Repair the managed artifact', idempotency_key='repair-artifact')
-    plan = store.claim_next()
+    plan = claim_after_decomposition(store)
     store.finish(plan, {'workers': 1, 'tasks': [{'title': 'Repair', 'description': 'Repair first file, preserve second',
                                              'type': 'work.edit', 'team': 'engineering'}]})
     final_evidence = project_proposal(store, source, second=False, old='new value', new='final value',
