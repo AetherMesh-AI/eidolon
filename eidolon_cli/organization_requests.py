@@ -236,7 +236,9 @@ class OrganizationRequestStore:
                 continue
             if request['task_id']:
                 task = conn.execute('SELECT dependencies FROM tasks WHERE id=?', (request['task_id'],)).fetchone()
-                for dependency in json.loads(task['dependencies']):
+                from eidolon_cli.organization_coordination import coordination_view
+                blockers = coordination_view(conn, request['task_id'])['blockingTaskIds']
+                for dependency in set(json.loads(task['dependencies']) + blockers):
                     todo.extend(row[0] for row in conn.execute("SELECT id FROM requests WHERE task_id=? AND status NOT IN ('completed','cancelled')", (dependency,)))
             contract = conn.execute('SELECT dependencies FROM request_contracts WHERE request_id=?', (identifier,)).fetchone()
             if contract:

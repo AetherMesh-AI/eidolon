@@ -310,7 +310,9 @@ class OrganizationEditStore(OrganizationProjectStore):
             original = conn.execute('SELECT team FROM requests WHERE id=?', (proposal['request_id'],)).fetchone()
             if original is None or original['team'] != request['team']:
                 raise ValueError('Application must preserve the exact source request team')
-            for item in proposal_files(conn, proposal):
+            files = proposal_files(conn, proposal)
+            self._verify_write_scope(conn, request, [item['path'] for item in files])
+            for item in files:
                 self._verify_root(conn, request['objective_id'], item['path'])
         except ValueError as error:
             return str(error)
@@ -395,6 +397,7 @@ class OrganizationEditStore(OrganizationProjectStore):
         self._require_edit_grant(conn, request['agent_id'], request['team'])
         result = parse_edit_result(result)
         edits = result.get('edits', [result.get('edit')])
+        self._verify_write_scope(conn, request, [edit['path'] for edit in edits])
         files = []
         receipts = conn.execute('SELECT * FROM tool_receipts WHERE request_id=? AND attempt=? ORDER BY created,id',
                                 (request['id'], request['attempts'])).fetchall()

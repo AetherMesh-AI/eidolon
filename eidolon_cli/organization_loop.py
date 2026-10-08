@@ -46,6 +46,7 @@ def reject_duplicate_tasks(tasks):
         values = {name: normalized_text(item[name]) if isinstance(item.get(name), str) else item.get(name)
                   for name in ('title', 'description', 'type', 'team', 'agentId', 'managerId')}
         values['dependsOn'] = item.get('dependsOn', [])
+        values['writePaths'] = item.get('writePaths')
         key = json.dumps(values, sort_keys=True)
         if key in seen:
             raise ValueError('Plan contains duplicate tasks with the same outcome, route and dependencies')

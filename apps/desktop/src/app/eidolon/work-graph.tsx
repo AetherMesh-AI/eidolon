@@ -4,6 +4,7 @@ import { useI18n } from '@/i18n/context'
 
 import { AgentAvatar } from './avatar'
 import { Inspector } from './inspector'
+import { TaskCoordination } from './task-coordination'
 import type { OrganizationSnapshot } from './types'
 
 interface WorkGraphProps {
@@ -70,6 +71,7 @@ export function WorkGraph({ snapshot, objectiveId, onOpenEvidence }: WorkGraphPr
               <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}><small>{runtime ? 'Runtime task · ' : ''}{agentName(item.ownerId)}</small><strong>{item.title}</strong>{(item.historical || item.currentRound === false) && <small>{copy.historical}</small>}
                 {runtime && <><small>Team: {item.team || 'Not recorded'}</small><small>Type: {item.requestType || 'Not recorded'} · Priority: {item.priority || 'Not recorded'}</small></>}
                 <small>Depends on: {item.dependsOn.map(taskName).join(', ') || 'No prerequisites'}</small>
+                {runtime && <TaskCoordination task={item} tasks={snapshot.tasks} />}
               </span><span className={`eid-status eid-status-${item.status}`}>{item.status}</span>
             </button>
           </li>)}
@@ -91,6 +93,7 @@ export function WorkGraph({ snapshot, objectiveId, onOpenEvidence }: WorkGraphPr
         <dt>Inputs</dt><dd>{task.inputs?.join(', ') || (runtime ? 'No inputs recorded' : 'Unavailable · No execution data')}</dd><dt>Results</dt><dd>{task.results?.join(', ') || (runtime ? 'No results recorded' : 'Unavailable · No execution data')}</dd>
         <dt>Dependencies</dt><dd>{task.dependsOn.map(taskName).join(', ') || 'None'}</dd>
       </dl>
+      {runtime && <TaskCoordination task={task} tasks={snapshot.tasks} />}
       <h3>Runtime identity</h3>
       {runtime ? <>
         <p>Task ID: {task.id}</p><p>{sessionIds.length ? `Evidence sessions: ${sessionIds.join(', ')}` : 'No runtime session recorded in task evidence'}</p>
