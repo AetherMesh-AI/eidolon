@@ -236,17 +236,12 @@ def _transfer_objective(conn, source, target, objective_id, actor=None):
                               'JOIN objectives o ON o.id=a.objective_id '
                               'JOIN objective_control c ON c.objective_id=o.id WHERE a.objective_id=?',
                               (objective_id,)).fetchone()
-    if assignment is None or assignment['cancelled'] or assignment['status'] == 'accepted':
+    if assignment is None or assignment['cancelled'] or assignment['status'] in {'accepted', 'legacy_completed'}:
         raise ValueError('Objective transfers must identify existing open objectives')
     if assignment[field] != source['id']:
         raise ValueError('Transfer source does not own the exact objective leadership')
     if actor:
-        from eidolon_cli.organization_projects import objective_projects
-        teams = {row['team'] for row in conn.execute(
-            'SELECT DISTINCT team FROM tasks WHERE objective_id=?', (objective_id,))}
-        teams.update(project['team'] for project in objective_projects(conn, objective_id))
-        if any(not _team_allowed(actor, team) for team in teams):
-            raise ValueError('Transferred objective work is outside the actor managed teams')
+        _validate_objective_scope(conn, objective_id, actor)
     kinds = ('request.plan', 'request.integrate') if source['role'] == 'Manager' else ('request.accept',)
     if not set(kinds).issubset(json.loads(target['accepts'])):
         raise ValueError('Objective leadership destination must accept its planning/integration or acceptance routes')
@@ -267,7 +262,16 @@ def _transfer_objective(conn, source, target, objective_id, actor=None):
                      (target['id'], source['id'], objective_id, kind))
 
 
-def _validate_open_assignments(conn):
+def _validate_objective_scope(conn, objective_id, actor):
+    from eidolon_cli.organization_projects import objective_projects
+    teams = {row['team'] for row in conn.execute(
+        'SELECT DISTINCT team FROM tasks WHERE objective_id=?', (objective_id,))}
+    teams.update(project['team'] for project in objective_projects(conn, objective_id))
+    if any(not _team_allowed(actor, team) for team in teams):
+        raise ValueError('Objective work is outside the actor managed teams')
+
+
+def _validate_open_assignments(conn, previous_teams, actor=None):
     rows = conn.execute("SELECT t.id,t.team,t.type,a.agent_id,a.manager_id FROM tasks t "
                         "JOIN task_assignments a ON a.task_id=t.id WHERE t.status NOT IN ('completed','cancelled')")
     for row in rows:
@@ -288,7 +292,8 @@ def _validate_open_assignments(conn):
 
 
     for row in conn.execute("SELECT a.* FROM objective_assignments a JOIN objectives o ON o.id=a.objective_id "
-                            "JOIN objective_control c ON c.objective_id=o.id WHERE o.cancelled=0 AND c.status!='accepted'"):
+                            "JOIN objective_control c ON c.objective_id=o.id WHERE o.cancelled=0 "
+                            "AND c.status NOT IN ('accepted','legacy_completed')"):
         manager = conn.execute('SELECT * FROM agents WHERE id=?', (row['manager_id'],)).fetchone()
         executive = conn.execute('SELECT * FROM agents WHERE id=?', (row['executive_id'],)).fetchone()
         retired = conn.execute("SELECT 1 FROM staff_state WHERE agent_id IN (?,?) AND active=0",
@@ -296,6 +301,24 @@ def _validate_open_assignments(conn):
         if (not manager or not executive or manager['role'] != 'Manager' or executive['role'] != 'Executive'
                 or manager['manager_id'] != executive['id'] or retired):
             raise ValueError('Reorganization requires an explicit full open-objective handoff before changing its leadership')
+        for leader, routes in ((manager, ('request.plan', 'request.integrate')),
+                               (executive, ('request.accept',))):
+            missing = set(routes) - set(json.loads(leader['accepts']))
+            if missing:
+                raise ValueError(f"Open objective {row['objective_id']} requires {leader['id']} to accept "
+                                 f"{', '.join(sorted(missing))}; retain these capabilities or explicitly transfer "
+                                 'its objectiveIds to another qualified leader')
+            previous_team = previous_teams.get(leader['id'])
+            if previous_team is None or previous_team == leader['team']:
+                continue
+            if actor:
+                _validate_objective_scope(conn, row['objective_id'], actor)
+            # Team is routing metadata, not a new leader or a task/project grant.
+            # Keep exact paused owners and all completed authorship unchanged.
+            for kind in routes:
+                conn.execute("UPDATE requests SET team=? WHERE objective_id=? AND type=? AND team!=? "
+                             "AND status NOT IN ('completed','cancelled')",
+                             (leader['team'], row['objective_id'], kind, leader['team']))
 
 
 class OrganizationManagementStore:
@@ -445,6 +468,7 @@ class OrganizationManagementStore:
             acting = next((staff for staff in configured_staff(updated) if staff.id == actor_id), None)
             if acting is None or not acting.enabled or "request.hire" not in acting.capabilities:
                 raise ValueError("Staff management cannot disable its own active request route")
+        previous_teams = {row['id']: row['team'] for row in conn.execute('SELECT id,team FROM agents')}
         self.settings = updated
         self._sync_staff(conn)
         self._migrate_identities(conn)
@@ -472,7 +496,7 @@ class OrganizationManagementStore:
                    {'toAgentId': target, 'team': destination['team'], 'taskIds': tasks,
                     'objectiveIds': objectives,
                     'includeMemory': include_memory, 'memory': memory})
-        _validate_open_assignments(conn)
+        _validate_open_assignments(conn, previous_teams, actor)
         self._validate_paused_work(conn)
         after = _configuration(updated)
         conn.execute('INSERT INTO organization_configuration VALUES (1,?,?) ON CONFLICT(id) '
