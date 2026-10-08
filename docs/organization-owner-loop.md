@@ -106,7 +106,12 @@ Required checks are structured declarations:
 - `source_integration`: requires exact source-delivery evidence. The default
   path verifies the owner's external handoff. An explicit `integrate_source`
   grant instead enables a new reviewed Git branch after isolated tests and an
-  independent review of the exact tested snapshot.
+  independent review of the exact tested snapshot. Reviewed inspection-only
+  snapshots can satisfy this check without an edit when every selected project
+  has its own verified current-round test, review and source-branch receipts and
+  the required grants remain current. Source-project delivery for selected
+  repositories requires the same proof; an explicit `managed_validation` check
+  still requires applied managed edits.
 - `project_tests`: requires an actual successful, nonempty isolated test run over
   the selected snapshot and a distinct review of its exact retained evidence.
   The supported recipe is Python stdlib unittest on Linux with the required OS
