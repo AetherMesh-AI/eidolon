@@ -545,7 +545,28 @@ export interface OrganizationConnection {
   error?: string
   lastUpdatedAt?: string
 }
+/** Retained internal identities and messages; owner inspection never acknowledges delivery. */
+export interface OrganizationConversation {
+  id: string
+  subject: string
+  objectiveId: string
+  taskId: string | null
+  projectId: string | null
+  participants: { id: string; name: string; team: string }[]
+  status: 'waiting_reply' | 'answered' | 'needs_input' | 'cancelled'
+  messages: {
+    id: string
+    senderId: string
+    recipientId: string
+    body: string
+    createdAt: string
+    readAt: string | null
+    replyToId: string | null
+  }[]
+  waitingAgentId: string | null
+}
 export interface OrganizationSnapshot {
+  conversations?: OrganizationConversation[]
   outcomes?: OrganizationOutcomePage
   attention?: OrganizationAttentionPage
   source?: 'prototype' | 'runtime'

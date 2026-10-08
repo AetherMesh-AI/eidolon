@@ -205,7 +205,7 @@ class OrganizationBudgetStore:
         if receipt is None:
             raise ValueError('Evidence passes require a complete terminal context receipt')
         from eidolon_cli.organization_evidence import verify_context_receipt
-        verify_context_receipt(self.context(dict(request)), json.loads(receipt[0]), passes,
+        verify_context_receipt(self.context(dict(request), mark_read=False), json.loads(receipt[0]), passes,
                                approved=result.get('approved') is True)
 
     def execution_audit(self, request_id):

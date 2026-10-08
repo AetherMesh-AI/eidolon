@@ -1,6 +1,7 @@
 import { translateNow } from '@/i18n/runtime'
 
 import { type OrganizationAttentionPage, validAttentionPage } from './runtime-attention-types'
+import { normalizeConversations } from './runtime-conversation-contract'
 import type { HistoryPage } from './runtime-history-types'
 import { type OrganizationOutcomePage, validOutcomePage } from './runtime-outcome-types'
 import { validProjectSave, validProjectSetup } from './runtime-project-setup-contract'
@@ -53,9 +54,13 @@ function validateSnapshot(value: OrganizationSnapshot): OrganizationSnapshot {
     throw new Error(translateNow('organizationWork.outcomeInvalid'))
   }
 
-  return value.runtime.setup !== undefined && !validOrganizationSetup(value.runtime.setup)
-    ? { ...value, runtime: { ...value.runtime, setup: undefined } }
-    : value
+  let conversations: OrganizationSnapshot['conversations']
+
+  try {conversations = normalizeConversations(value.conversations)} catch {throw new Error(translateNow('organizationConversations.invalid'))}
+
+  return { ...value, conversations, runtime: value.runtime.setup !== undefined && !validOrganizationSetup(value.runtime.setup)
+    ? { ...value.runtime, setup: undefined }
+    : value.runtime }
 }
 
 /** Server-owned truth. Reads are single-flight and bounded; losing the last
