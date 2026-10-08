@@ -98,8 +98,14 @@ jobs:
             suite: all
             label: Organization core (macos-latest)
           - os: windows-latest
-            suite: ledger-projects
-            label: Organization core (windows-latest) - ledger and projects
+            suite: ledger-identity
+            label: Organization core (windows-latest) - ledger and identity
+          - os: windows-latest
+            suite: outcomes-attention
+            label: Organization core (windows-latest) - outcomes and attention
+          - os: windows-latest
+            suite: projects-config
+            label: Organization core (windows-latest) - projects and configuration
           - os: windows-latest
             suite: leadership-packages
             label: Organization core (windows-latest) - leadership and packages
@@ -120,23 +126,35 @@ jobs:
           uv pip install --no-deps pytest-timeout==2.4.0
       - name: Verify host-native ledger, recovery and unsupported execution guards
         run: |
-          ledger_project_tests=(
+          ledger_identity_tests=(
             tests/eidolon_cli/test_organization_store.py
             tests/eidolon_cli/test_organization_artifact_retention.py
             tests/eidolon_cli/test_organization_identity.py
+            tests/eidolon_cli/test_organization_identity_memory.py
+            tests/eidolon_cli/test_organization_identity_assignments.py
             tests/eidolon_cli/test_organization_history.py
+            tests/eidolon_cli/test_organization_cross_feature_recovery.py
+            tests/eidolon_cli/test_organization_tool_receipts.py
+          )
+          outcomes_attention_tests=(
             tests/eidolon_cli/test_organization_attention.py
             tests/eidolon_cli/test_organization_outcomes.py
-            tests/eidolon_cli/test_organization_cross_feature_recovery.py
+            tests/eidolon_cli/test_organization_outcomes_revisions.py
+            tests/eidolon_cli/test_organization_outcomes_pagination.py
+            tests/eidolon_cli/test_organization_outcomes_validation.py
+            tests/gateway/test_organization_policy_reload.py
+            tests/tui_gateway/test_organization_outcomes.py
+          )
+          projects_config_tests=(
             tests/eidolon_cli/test_organization_project_registry.py
+            tests/eidolon_cli/test_organization_project_registry_processes.py
+            tests/eidolon_cli/test_organization_project_registry_conflicts.py
+            tests/eidolon_cli/test_organization_project_registry_links.py
             tests/eidolon_cli/test_organization_project_portability.py
-            tests/eidolon_cli/test_organization_tool_receipts.py
             tests/eidolon_cli/test_organization_multi_project_execution.py
             tests/eidolon_cli/test_organization_inspection_acceptance.py
             tests/eidolon_cli/test_organization_project_execution_e2e.py
-            tests/gateway/test_organization_policy_reload.py
             tests/gateway/test_organization_config_serialization.py
-            tests/tui_gateway/test_organization_outcomes.py
             tests/tui_gateway/test_organization_project_setup.py
           )
           leadership_package_tests=(
@@ -153,8 +171,10 @@ jobs:
             tests/eidolon_cli/test_organization_package_evidence.py
           )
           case '${{ matrix.suite }}' in
-            all) native_tests=("${ledger_project_tests[@]}" "${leadership_package_tests[@]}") ;;
-            ledger-projects) native_tests=("${ledger_project_tests[@]}") ;;
+            all) native_tests=("${ledger_identity_tests[@]}" "${outcomes_attention_tests[@]}" "${projects_config_tests[@]}" "${leadership_package_tests[@]}") ;;
+            ledger-identity) native_tests=("${ledger_identity_tests[@]}") ;;
+            outcomes-attention) native_tests=("${outcomes_attention_tests[@]}") ;;
+            projects-config) native_tests=("${projects_config_tests[@]}") ;;
             leadership-packages) native_tests=("${leadership_package_tests[@]}") ;;
             *) echo 'Unknown native suite' >&2; exit 1 ;;
           esac
