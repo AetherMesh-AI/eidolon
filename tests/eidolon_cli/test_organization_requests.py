@@ -150,3 +150,77 @@ def test_model_wire_parser_preserves_typed_request_and_uses_durable_answers(tmp_
     assert 'The board' in _prompt(resumed, store.context(resumed), resumed['type'])
     with pytest.raises(OrganizationExecutionError, match='only return'):
         _parse_output(json.dumps({**payload, 'deliverable': 'premature'}), 'work.draft', {})
+
+
+@pytest.mark.parametrize('kind', ['request.question', 'request.decision', 'request.permission'])
+def test_planning_clarification_survives_downstream_restart_and_replan(tmp_path, kind):
+    store = ledger(tmp_path)
+    objective = store.create_objective('Prepare a brief', idempotency_key='clarified')
+    plan = store.claim_next()
+    ask(store, plan, kind, team='owner-only')
+    assert store.claim_next() is None
+    question = next(row for row in store.snapshot()['requests'] if row['type'] == kind)
+    answer = 'Use the customer audience. The internal engineering audience is wrong.'
+    decision = 'answered' if kind == 'request.question' else 'denied'
+    grants = store.settings.tool_grants
+    store.respond(question['id'], answer, decision, idempotency_key='answer')
+    store = OrganizationStore(store.path, store.settings)
+    plan = store.claim_next()
+    context = store.context(plan)
+    clarification, = context['objectiveClarifications']
+    assert clarification['response']['text'] == answer
+    assert clarification['response']['responderId'] == 'owner'
+    assert clarification['response']['decision'] == decision
+    assert store.settings.tool_grants == grants
+    assert clarification['response']['createdAt']
+    assert clarification['originRequestId'] == plan['id']
+    criteria = context['objective']['acceptanceCriteria']
+    store.finish(plan, {'tasks': [{'title': 'Draft', 'description': 'Write a brief',
+                                 'type': 'work.draft', 'agentId': 'writer'}]})
+    store.finish(store.claim_next(), {})  # existing staffing controller
+    work = store.claim_next()
+    clarification['parentStatus'] = 'completed'
+    assert store.context(work)['objectiveClarifications'] == [clarification]
+    store.finish(work, {'summary': 'Brief', 'deliverable': 'A brief without copied clarification text.'})
+    review = store.claim_next()
+    ids = [item['id'] for item in store.context(review)['evidence']]
+    store.finish(review, {'approved': True, 'summary': 'Reviewed', 'evidenceIds': ids})
+    integrate = store.claim_next()
+    store.finish(integrate, {'summary': 'Combined', 'deliverable': 'Integrated brief.'})
+    accept = store.claim_next()
+    context = store.context(accept)
+    assert context['objective']['acceptanceCriteria'] == criteria
+    assert context['objectiveClarifications'] == [clarification]
+    from eidolon_cli.organization_evidence import project_evidence
+    wire = project_evidence(context)
+    assert wire['evidenceBodies'][wire['objectiveClarifications'][0]['response']['text']['bodySha256']] == answer
+    # A new explicit owner scope amendment preserves history without silently
+    # promoting old-round answers to current acceptance criteria.
+    store.fail(accept, 'Scope needs changing')
+    store.resolve(accept['id'], 'amend_scope', 'Now prepare a public audience brief', idempotency_key='amend')
+    replanned = store.claim_next()
+    context = store.context(replanned)
+    assert context['objectiveClarifications'][0]['historical'] is True
+    assert context['objectiveClarifications'][0]['round'] == 0
+    assert context['objective']['round'] == 1
+    assert context['objective']['description'] == 'Now prepare a public audience brief'
+    assert context['objective']['acceptanceCriteria'] == ['Now prepare a public audience brief']
+    ask(store, replanned)
+    advisor = store.claim_next()
+    assert advisor['type'] == 'request.question'
+    nested = ask(store, advisor, team='owner-only')
+    assert store.claim_next() is None
+    store.respond(nested['id'], 'Public readers, with no internal details.', idempotency_key='nested-answer')
+    advisor = store.claim_next()
+    store.finish(advisor, {'answer': 'Use the public reader scope.'})
+    resumed_plan = store.claim_next()
+    context = store.context(resumed_plan)
+    nested_context = next(row for row in context['objectiveClarifications'] if row['id'] == nested['id'])
+    assert nested_context['originRequestId'] == replanned['id']
+    assert nested_context['round'] == 1 and nested_context['historical'] is False
+    assert context['objective']['acceptanceCriteria'] == ['Now prepare a public audience brief']
+    store.finish(resumed_plan, {'intervention': 'Waiting for scope'})
+    other = store.create_objective('Separate brief', idempotency_key='separate')
+    next_plan = store.claim_next()
+    assert next_plan['objective_id'] == other['id'] != objective['id']
+    assert store.context(next_plan)['objectiveClarifications'] == []

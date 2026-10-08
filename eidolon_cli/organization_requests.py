@@ -284,7 +284,55 @@ class OrganizationRequestStore:
         replies = []
         for row in conn.execute('SELECT r.* FROM requests r JOIN request_contracts c ON c.request_id=r.id JOIN request_responses a ON a.request_id=r.id WHERE c.parent_request_id=? ORDER BY a.created,r.id', (request['id'],)):
             replies.append({'id': row['id'], 'type': row['type'], 'team': row['team'], **request_contract_view(conn, row)})
-        return {'requestContract': contract, 'requestResponses': replies}
+        # Every downstream assignment needs the exact clarification, even when
+        # its planner did not repeat it in a task description or memory summary.
+        # The existing per-objective typed-request limit bounds this collection.
+        clarifications = []
+        current_round = conn.execute('SELECT round FROM objective_control WHERE objective_id=?',
+                                     (request['objective_id'],)).fetchone()[0]
+        for row in conn.execute(
+                "SELECT r.*,p.type AS parent_type,p.status AS parent_status,p.task_id AS parent_task_id,"
+                "p.payload AS parent_payload,t.round AS task_round FROM requests r "
+                "JOIN request_contracts c ON c.request_id=r.id "
+                "JOIN request_responses a ON a.request_id=r.id "
+                "JOIN requests p ON p.id=c.parent_request_id "
+                "LEFT JOIN objective_task_rounds t ON t.task_id=p.task_id "
+                "WHERE r.objective_id=? AND r.type IN ('request.question','request.decision','request.permission') "
+                "ORDER BY a.created,r.id", (request['objective_id'],)):
+            record = request_contract_view(conn, row)
+            origin = row
+            # Nested questions inherit their originating assignment's round,
+            # not round zero merely because a question has no task of its own.
+            ancestor = record['parentRequestId']
+            while origin['parent_type'] in REQUEST_AUTHORITY:
+                origin = conn.execute(
+                    'SELECT p.type AS parent_type,p.payload AS parent_payload,t.round AS task_round,'
+                    'c.parent_request_id FROM request_contracts c JOIN requests p ON p.id=c.parent_request_id '
+                    'LEFT JOIN objective_task_rounds t ON t.task_id=p.task_id WHERE c.request_id=?',
+                    (ancestor,)).fetchone()
+                if origin is None:
+                    raise ValueError('Clarification origin is missing')
+                ancestor = origin['parent_request_id']
+            origin_payload = json.loads(origin['parent_payload'])
+            if origin['parent_type'] == 'request.test_review':
+                run = conn.execute('SELECT round FROM project_run_starts WHERE id=? AND objective_id=?',
+                                   (origin_payload.get('runId'), request['objective_id'])).fetchone()
+                if run is None:
+                    raise ValueError('Clarification project review origin is missing')
+                round_number = run['round']
+            else:
+                round_number = (origin['task_round'] if origin['task_round'] is not None else
+                                origin_payload.get('round', 0))
+            clarifications.append({
+                'id': row['id'], 'type': row['type'], 'team': row['team'],
+                **{key: record[key] for key in ('requesterId', 'requestedOutcome', 'requiredAuthority',
+                                               'parentRequestId', 'response')},
+                'parentRequestType': row['parent_type'], 'parentStatus': row['parent_status'],
+                'taskId': row['parent_task_id'], 'round': round_number, 'originRequestId': ancestor,
+                'historical': round_number != current_round or row['parent_status'] == 'cancelled',
+            })
+        return {'requestContract': contract, 'requestResponses': replies,
+                'objectiveClarifications': clarifications}
 
     def _finish_response(self, conn, request, result):
         from eidolon_cli.organization_store import _text

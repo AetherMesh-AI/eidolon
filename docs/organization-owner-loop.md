@@ -70,6 +70,25 @@ default to depth 4 and at most 4 children per stage, with at most 24 typed reque
 per objective. Cycles and exhausted limits remain visible for human handling.
 These bounded request controls do not add arbitrary project execution.
 
+Exact answered questions, decisions and permission requests also accompany later
+work, independent task review, integration and final acceptance for that same
+objective. The organization retains the question, answer, requester, responder,
+time, originating assignment and planning round; a planner does not need to copy
+the answer into every task description. Answers from earlier rounds or cancelled
+assignments are explicitly historical. They remain available for context but do
+not override the current amended scope, acceptance checklist or later owner input.
+Conflicting answers require clarification rather than silently selecting one.
+Neither an answer nor a permission approval expands tool or credential grants.
+
+Question and answer bodies use the existing lossless, hash-deduplicated context
+projection. Oversized tool-free stages use mandatory audited reads of every exact
+source range, including clarification text. Tool-using stages must fit the complete
+context or stop visibly for a larger configured context or narrower scope. No
+clarification is silently shortened to make a prompt fit. These reads establish
+what context the execution received, not whether a real model understood or
+faithfully applied the owner's intent.
+
+
 ## Submit an outcome and its criteria
 
 Home accepts the objective, supplied context, acceptance criteria, priority,
