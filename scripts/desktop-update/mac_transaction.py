@@ -2,6 +2,8 @@
 """Unprivileged, recoverable app replacement. Never discards a prior transaction."""
 from __future__ import annotations
 
+import ctypes
+import errno
 import hashlib
 import json
 import os
@@ -14,6 +16,21 @@ import uuid
 
 class ReplacementError(Exception):
     pass
+
+
+
+def rename_noreplace(source: Path, destination: Path) -> Path:
+    # Darwin RENAME_EXCL atomically rejects *any* existing destination, even
+    # an empty directory. A check followed by ordinary rename can clobber it.
+    rename = getattr(ctypes.CDLL(None, use_errno=True), 'renamex_np', None)
+    if rename is None:
+        raise OSError(errno.ENOSYS, 'Exclusive app replacement is not supported')
+    rename.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+    rename.restype = ctypes.c_int
+    if rename(os.fsencode(source), os.fsencode(destination), 0x00000004) != 0:
+        code = ctypes.get_errno()
+        raise OSError(code, os.strerror(code), str(source), None, str(destination))
+    return destination
 
 
 def bundle_identity(bundle: Path) -> dict:
@@ -91,18 +108,18 @@ def replace_bundle(source: Path, target: Path) -> Path:
             raise ReplacementError('The staged app does not match the new build.')
         journal['phase'] = 'staged'
         save_journal(workspace, journal)
-        target.rename(backup)
+        rename_noreplace(target, backup)
         moved = True
         journal['phase'] = 'previous-moved'
         save_journal(workspace, journal)
         staged_stat = staged.stat()
         staged_identity = (staged_stat.st_dev, staged_stat.st_ino)
-        staged.rename(target)
+        rename_noreplace(staged, target)
         if bundle_identity(target) != expected:
             raise ReplacementError('The installed app does not match the verified new build.')
         journal['phase'] = 'installed'
         save_journal(workspace, journal)
-        workspace.rename(archived)
+        rename_noreplace(workspace, archived)
         return archived
     except (OSError, ValueError, ReplacementError, subprocess.SubprocessError) as error:
         detail = str(error)
@@ -115,13 +132,13 @@ def replace_bundle(source: Path, target: Path) -> Path:
                     target_stat = target.lstat()
                     if (target_stat.st_dev, target_stat.st_ino) != staged_identity:
                         raise ReplacementError('The target was changed outside this transaction; it was not moved.')
-                    target.rename(workspace / 'failed.app')
-                backup.rename(target)
+                    rename_noreplace(target, workspace / 'failed.app')
+                rename_noreplace(backup, target)
                 if bundle_identity(target) != previous:
                     raise ReplacementError('Restored app identity does not match the previous app.')
             journal.update(phase='restored' if moved else 'unchanged', error=detail)
             save_journal(workspace, journal)
-            workspace.rename(archived)
+            rename_noreplace(workspace, archived)
         except (OSError, ValueError, ReplacementError) as recovery_error:
             raise ReplacementError(f'Installation and recovery need attention: {detail}; {recovery_error}. Preserved files and journal: {workspace}. New build: {source}.') from error
         raise ReplacementError(f'The new app could not be installed: {detail}. The previous app was {"restored" if moved else "kept"}. Preserved files and journal: {archived}. New build: {source}. Use Finder to replace {target}, approving any macOS prompt, or ask your administrator.') from error

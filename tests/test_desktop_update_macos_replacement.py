@@ -135,7 +135,7 @@ def test_macos_replacement_keeps_denied_app_and_reports_manual_install(tmp_path,
 
 
 @pytest.mark.macos_only
-@pytest.mark.parametrize('fault', ['install', 'interrupted', 'rollback', 'identity', 'external'])
+@pytest.mark.parametrize('fault', ['install', 'interrupted', 'rollback', 'identity', 'external', 'external-empty'])
 def test_macos_transaction_preserves_recovery_and_fences_retries(tmp_path, monkeypatch, fault):
     import importlib.util
     module_path = Path(__file__).resolve().parents[1] / 'scripts/desktop-update/mac_transaction.py'
@@ -158,7 +158,7 @@ def test_macos_transaction_preserves_recovery_and_fences_retries(tmp_path, monke
     previous = bundle(target, 'old')
     expected = bundle(source, 'new')
     workspace = Path(str(target) + '.eidolon-update')
-    rename = Path.rename
+    rename = module.rename_noreplace
 
     identity = module.bundle_identity
     identity_failed = False
@@ -173,6 +173,9 @@ def test_macos_transaction_preserves_recovery_and_fences_retries(tmp_path, monke
 
     def injected_rename(path, destination):
         if path == workspace / 'new.app' and fault != 'identity':
+            if fault == 'external-empty':
+                target.mkdir()
+                return rename(path, destination)
             if fault == 'external':
                 bundle(target, 'external')
             if fault == 'interrupted':
@@ -183,7 +186,7 @@ def test_macos_transaction_preserves_recovery_and_fences_retries(tmp_path, monke
         return rename(path, destination)
 
     with monkeypatch.context() as patch:
-        patch.setattr(Path, 'rename', injected_rename)
+        patch.setattr(module, 'rename_noreplace', injected_rename)
         patch.setattr(module, 'bundle_identity', injected_identity)
         with pytest.raises(KeyboardInterrupt if fault == 'interrupted' else module.ReplacementError):
             module.replace_bundle(source, target)
@@ -199,6 +202,8 @@ def test_macos_transaction_preserves_recovery_and_fences_retries(tmp_path, monke
     else:
         if fault == 'external':
             assert module.bundle_identity(target)['version'] == 'external'
+        elif fault == 'external-empty':
+            assert target.is_dir() and not list(target.iterdir())
         else:
             assert not target.exists()
         assert module.bundle_identity(workspace / 'previous.app') == previous
