@@ -1,7 +1,7 @@
 """Objective handoffs preserve independent peer-question continuations."""
 from eidolon_cli.organization_store import OrganizationStore
 from tests.organization_package_helpers import claim_after_decomposition
-from tests.eidolon_cli.test_organization_management import configure, member, settings
+from tests.organization_management_helpers import configure, member, settings
 
 
 def test_objective_handoff_preserves_unselected_peer_question_continuation(tmp_path):
