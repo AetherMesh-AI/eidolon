@@ -34,6 +34,7 @@ export function Command({
   const executiveId = metadata.executiveId ?? (executives.some(agent => agent.id === 'executive') ? 'executive' : '')
   const managers = snapshot.agents.filter(agent => agent.role === 'Manager' && agent.lifecycle === 'active' && agent.managerId === executiveId && ['request.plan', 'request.integrate'].every(capability => agent.capabilities.includes(capability)))
   const managerId = metadata.managerId ?? (managers.some(agent => agent.id === 'manager') ? 'manager' : '')
+  const availableProjects = snapshot.runtime?.availableProjects ?? []
   const validOwnership = executives.some(agent => agent.id === executiveId) && managers.some(agent => agent.id === managerId)
 
   // eslint-disable-next-line no-restricted-syntax -- component lifetime guard, not a mirrored atom
@@ -54,6 +55,18 @@ export function Command({
 
     if (hasOwnership && !validOwnership) {
       setError(roster.ownershipRequired)
+
+      return
+    }
+
+    if (availableProjects.length && (metadata.deliveryMode ?? 'source_project') === 'source_project' && !metadata.projectIds?.length) {
+      setError(copy.projectSelectionRequired)
+
+      return
+    }
+
+    if (metadata.projectIds?.some(id => !availableProjects.some(project => project.id === id))) {
+      setError(copy.projectSelectionChanged)
 
       return
     }
@@ -147,6 +160,17 @@ export function Command({
           </select>
           <p className="eid-note">{roster.ownershipNote}</p>
         </>}
+        {availableProjects.length > 0 && <fieldset disabled={submitting}>
+          <legend>{copy.objectiveProjects}</legend>
+          <p className="eid-note">{copy.projectSelectionNote}</p>
+          {availableProjects.map(project => <label className="eid-inline" key={project.id}>
+            <input checked={metadata.projectIds?.includes(project.id) ?? false} onChange={event => setMetadata({ ...metadata, projectIds: event.target.checked
+                ? [...(metadata.projectIds ?? []), project.id]
+                : metadata.projectIds?.filter(id => id !== project.id) })}
+              type="checkbox" />
+            <span>{project.id} · {project.root} · {project.team}</span>
+          </label>)}
+        </fieldset>}
         <label htmlFor="eid-context">{copy.submittedContext}</label>
         <Textarea
           disabled={submitting}

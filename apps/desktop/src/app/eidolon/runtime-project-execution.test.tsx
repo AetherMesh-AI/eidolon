@@ -188,7 +188,7 @@ it('keeps syntax checks, a real run, independent review and branch delivery sepa
     ...artifact,
     id: 'exact-source-receipt',
     kind: 'source_integration',
-    content: JSON.stringify(current.objectives[0].projectExecution!.sourceIntegration)
+    content: JSON.stringify((current.objectives[0].projectExecution as OrganizationProjectExecution).sourceIntegration)
   }
 
   request.mockImplementation((method: string) =>
@@ -276,4 +276,22 @@ it('reports unavailable, failed, timed-out and unknown outcomes without inventin
 
   expect(panel.getByText(/No terminal receipt is available/)).toBeTruthy()
   expect(screen.queryByRole('button', { name: /retry|grant|approve|complete/i })).toBeNull()
+})
+
+it('keeps each bound repository outcome and pending execution separate', () => {
+  const open = vi.fn()
+  const frontend = execution()
+  render(<RuntimeAcceptance objective={{ ...objective(), projectExecution: { projects: [
+    { projectId: 'frontend', execution: frontend },
+    { projectId: 'backend', execution: null }
+  ] } }} onOpenEvidence={open} />)
+  const completed = within(screen.getByRole('region', { name: 'Latest project test execution: frontend' }))
+  const pending = within(screen.getByRole('region', { name: 'Latest project test execution: backend' }))
+  expect(completed.getByText('Passed')).toBeTruthy()
+  expect(pending.getByText('No project test execution receipt recorded.')).toBeTruthy()
+  expect(pending.queryByText('Passed')).toBeNull()
+  expect(pending.queryByRole('button', { name: 'Read exact test evidence' })).toBeNull()
+  fireEvent.click(completed.getByRole('button', { name: 'Read exact test evidence' }))
+  expect(open).toHaveBeenCalledWith(frontend.id)
+  expect(screen.getByText('No accepted final result yet.')).toBeTruthy()
 })

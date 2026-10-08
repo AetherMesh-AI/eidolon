@@ -53,10 +53,18 @@ def _run_row(conn, identifier):
         (identifier,)).fetchone()
 
 
-def _latest_run(conn, objective_id):
+def _latest_run(conn, objective_id, project_id=None):
     return conn.execute('SELECT s.id FROM project_run_starts s JOIN objective_control c '
         'ON c.objective_id=s.objective_id AND c.round=s.round WHERE s.objective_id=? '
-        'ORDER BY s.created DESC,s.id DESC LIMIT 1', (objective_id,)).fetchone()
+        "AND json_extract((SELECT payload FROM requests WHERE id=s.request_id),'$.projectId') IS ? "
+        'ORDER BY s.created DESC,s.id DESC LIMIT 1', (objective_id, project_id)).fetchone()
+
+
+def _run_project_id(conn, row):
+    request = conn.execute('SELECT objective_id,payload FROM requests WHERE id=?', (row['request_id'],)).fetchone()
+    if request is None or request['objective_id'] != row['objective_id']:
+        raise ValueError('Project run request does not match its objective')
+    return json.loads(request['payload']).get('projectId')
 
 
 def project_execution_artifact(conn, identifier):
@@ -72,7 +80,8 @@ def project_execution_artifact(conn, identifier):
     # review. Hashes alone are not substitutes for reviewing the tested code.
     body = canonical({'snapshot': snapshot, 'execution': record,
                       'sourceBase': json.loads(row['source_base']) if row['source_base'] else None,
-                      'grant': json.loads(row['grant_record'])})
+                      'grant': json.loads(row['grant_record']),
+                      **({'projectId': _run_project_id(conn, row)} if _run_project_id(conn, row) is not None else {})})
     return {'id': row['id'], 'objectiveId': row['objective_id'], 'taskId': None,
             'kind': 'project_execution', 'content': body, 'sha256': hashlib.sha256(body.encode()).hexdigest(),
             'summary': f"Project test execution: {record['status']}. Exact snapshot and bounded runtime receipt retained.",
@@ -96,8 +105,13 @@ def source_integration_artifact(conn, identifier):
             'toolReceipts': [], 'createdAt': datetime.fromtimestamp(row['created'], timezone.utc).isoformat()}
 
 
-def project_execution_view(conn, objective_id, *, full=False):
-    latest = _latest_run(conn, objective_id)
+def project_execution_view(conn, objective_id, *, full=False, project_id=None):
+    from eidolon_cli.organization_projects import objective_projects
+    projects = objective_projects(conn, objective_id)
+    if projects and project_id is None:
+        return {'projects': [dict(projectId=project['id'], execution=project_execution_view(
+            conn, objective_id, full=full, project_id=project['id'])) for project in projects]}
+    latest = _latest_run(conn, objective_id, project_id)
     if latest is None:
         return None
     row = _run_row(conn, latest['id'])
@@ -142,16 +156,51 @@ class OrganizationProjectExecutionStore:
                                         (objective_id,)).fetchone()[0])
         return 'project_tests' in checks or self._automatic_source(conn, objective_id)
 
-    def _project_grant(self, conn, objective_id):
+    def _execution_projects(self, conn, objective_id):
+        from eidolon_cli.organization_projects import validate_objective_projects
+        return validate_objective_projects(conn, objective_id, self.settings)
+
+    def verify_project_coverage(self, conn, objective_id):
         from eidolon_cli.organization_acceptance import current_tasks
-        tasks = current_tasks(conn, objective_id)
+        from eidolon_cli.organization_projects import task_project
+        required = {project['id'] for project in self._execution_projects(conn, objective_id)}
+        if not required:
+            return
+        tasks = [task['id'] for task in current_tasks(conn, objective_id)
+                 if task['type'] in {'work.inspect', 'work.edit'} and task['status'] == 'completed']
+        # Retained, independently reviewed applied edits still contribute to the
+        # objective after a replan. Their full lineage is verified by acceptance.
+        tasks.extend(row['task_id'] for row in conn.execute(
+            'SELECT DISTINCT p.task_id FROM edit_proposals p JOIN edit_applications a '
+            'ON a.proposal_id=p.id JOIN tasks t ON t.id=p.task_id '
+            "WHERE p.objective_id=? AND t.status='completed'", (objective_id,)))
+        covered = {(task_project(conn, task_id) or {}).get('id') for task_id in tasks}
+        if required - covered:
+            raise ValueError('Every selected project requires independently reviewed file work before objective integration')
+
+    def _execution_project(self, conn, objective_id, project_id):
+        projects = self._execution_projects(conn, objective_id)
+        if not projects and project_id is None:
+            return None
+        for project in projects:
+            if project['id'] == project_id:
+                return project
+        raise ValueError('Project stage requires an exact owner-bound projectId')
+
+    def _project_grant(self, conn, objective_id, project_id=None):
+        from eidolon_cli.organization_acceptance import current_tasks
+        project = self._execution_project(conn, objective_id, project_id)
+        from eidolon_cli.organization_projects import task_project
+        tasks = [task for task in current_tasks(conn, objective_id)
+                 if project is None or (task_project(conn, task['id']) or {}).get('id') == project_id]
         authors = {task['author_id']: task['type'] for task in tasks if task['type'] in {'work.inspect', 'work.edit'}}
         # Earlier same-path changes remain in later revisions even when the
         # latest proposal has a different author. Conservatively retain every
         # applied contributor's grant requirement across objective rounds.
-        for item in conn.execute('SELECT DISTINCT p.author_id FROM edit_proposals p JOIN edit_applications a '
+        for item in conn.execute('SELECT DISTINCT p.author_id,p.task_id FROM edit_proposals p JOIN edit_applications a '
                                  'ON a.proposal_id=p.id WHERE p.objective_id=?', (objective_id,)):
-            authors[item['author_id']] = 'work.edit'
+            if project is None or (task_project(conn, item['task_id']) or {}).get('id') == project_id:
+                authors[item['author_id']] = 'work.edit'
         if not authors:
             raise ValueError('Project execution requires an independently reviewed inspection or edit by an explicitly granted worker')
         required = {'read_file', 'run_tests'}
@@ -164,6 +213,12 @@ class OrganizationProjectExecutionStore:
             if (staff is None or not staff.enabled or not required.issubset(staff.tool_grants)
                     or self._staff_reason(conn, {'id': author}, authors[author])):
                 raise ValueError('Every project author requires explicit current read_file/run_tests and, for source integration, integrate_source grants')
+        if project is not None:
+            grants = [grant for grant in self.settings.project_grants
+                      if grant.id == project['recipe'] and grant.execution['root'] == project['root']]
+            if len(grants) != 1:
+                raise ValueError('Bound project requires its exact current owner recipe')
+            return grants[0]
         roots = {row['path'].split('/')[0] for row in conn.execute(
             'SELECT path FROM workspace_heads WHERE objective_id=?', (objective_id,))}
         grants = [grant for grant in self.settings.project_grants
@@ -179,6 +234,9 @@ class OrganizationProjectExecutionStore:
         applied = conn.execute('SELECT 1 FROM edit_applications a JOIN edit_proposals p ON p.id=a.proposal_id '
                                'WHERE p.objective_id=?', (objective_id,)).fetchone()
         managed = {item['path']: item for item in final_source_manifest(conn, objective_id)[0]} if applied else {}
+        if self._execution_projects(conn, objective_id):
+            managed = {path: item for path, item in managed.items()
+                       if path.split('/')[0] == grant.execution['root']}
         source_verified = False
         if managed and not self._automatic_source(conn, objective_id):
             manifest, _, _, checked = final_source_manifest(conn, objective_id)
@@ -210,7 +268,7 @@ class OrganizationProjectExecutionStore:
         return snapshot
 
     def _verify_current_snapshot(self, conn, row):
-        grant = self._project_grant(conn, row['objective_id'])
+        grant = self._project_grant(conn, row['objective_id'], _run_project_id(conn, row))
         if canonical(asdict(grant)) != row['grant_record']:
             raise ValueError('Project execution recipe or file grant changed; run a newly reviewed snapshot')
         if digest(self._project_snapshot(conn, row['objective_id'], grant)) != row['snapshot_sha256']:
@@ -223,6 +281,9 @@ class OrganizationProjectExecutionStore:
         row = _run_row(conn, identifier)
         if row is None or row['record'] is None:
             raise ValueError('Project execution is unconfirmed; inspect the retained start before any retry')
+        latest = _latest_run(conn, row['objective_id'], _run_project_id(conn, row))
+        if latest is None or latest['id'] != identifier:
+            raise ValueError('Project execution is not the latest current project run')
         artifact = project_execution_artifact(conn, identifier)
         result = artifact['projectExecution']
         from eidolon_cli.organization_project_runner import snapshot_digest
@@ -248,6 +309,8 @@ class OrganizationProjectExecutionStore:
                                                        (row['objective_id'],))}
             if (proof is None or not proof['approved'] or proof['type'] != 'request.test_review'
                     or proof['status'] != 'completed' or proof['reviewer_id'] in authors
+                    or json.loads(proof['payload']).get('projectId') != _run_project_id(conn, row)
+                    or json.loads(proof['payload']).get('runId') != identifier
                     or proof['result_sha256'] != artifact['sha256']
                     or json.loads(proof['payload']).get('evidenceHashes') != {identifier: artifact['sha256']}):
                 raise ValueError('Project test acceptance requires a distinct reviewer of the exact retained run and snapshot')
@@ -256,19 +319,24 @@ class OrganizationProjectExecutionStore:
     def ensure_project_execution(self, conn, objective_id):
         if not self._execution_required(conn, objective_id):
             return False
-        latest = _latest_run(conn, objective_id)
-        if latest:
-            self._verify_project_run(conn, latest['id'])
-            return False
+        projects = self._execution_projects(conn, objective_id) or [None]
         objective = conn.execute('SELECT priority FROM objectives WHERE id=?', (objective_id,)).fetchone()
         control = conn.execute('SELECT round FROM objective_control WHERE objective_id=?', (objective_id,)).fetchone()
-        self._request(conn, objective_id, 'request.project_test', self.settings.team, objective['priority'],
-                      payload={'round': control['round']})
-        return True
+        queued = False
+        for project in projects:
+            project_id = project['id'] if project else None
+            latest = _latest_run(conn, objective_id, project_id)
+            if latest:
+                self._verify_project_run(conn, latest['id'])
+                continue
+            self._request(conn, objective_id, 'request.project_test', self.settings.team,
+                          objective['priority'], payload={'round': control['round'], **({'projectId': project_id} if project else {})})
+            queued = True
+        return queued
 
     def project_stage_unavailability(self, conn, request):
         try:
-            self._project_grant(conn, request['objective_id'])
+            self._project_grant(conn, request['objective_id'], json.loads(request['payload']).get('projectId'))
             if request['type'] == 'request.project_test':
                 if self._reusable_project_run(conn, request) is not None:
                     return None
@@ -314,7 +382,7 @@ class OrganizationProjectExecutionStore:
                 raise ValueError(reason)
             if self._reusable_project_run(conn, request) is not None:
                 return {}
-            grant = self._project_grant(conn, request['objective_id'])
+            grant = self._project_grant(conn, request['objective_id'], json.loads(request['payload']).get('projectId'))
             snapshot = self._project_snapshot(conn, request['objective_id'], grant)
             source_base = None
             if self._automatic_source(conn, request['objective_id']):
@@ -354,20 +422,24 @@ class OrganizationProjectExecutionStore:
         outcome = artifact['projectExecution']
         if outcome['status'] != 'passed':
             gate = self._request(conn, request['objective_id'], 'request.project_failed', request['team'], request['priority'],
-                                 payload={'evidenceIds': [row['id']], 'runId': row['id']})
+                                 payload={'evidenceIds': [row['id']], 'runId': row['id'],
+                                          **({'projectId': json.loads(request['payload'])['projectId']} if 'projectId' in json.loads(request['payload']) else {})})
             self._pending(conn, conn.execute('SELECT * FROM requests WHERE id=?', (gate,)).fetchone(),
                           'Project tests did not pass: ' + str(outcome.get('reason') or outcome['status'])[:1200]
                           + '. Inspect the retained outcome and replan; no source integration was performed.')
             return
         self._verify_project_run(conn, row['id'], review=False)
         self._request(conn, request['objective_id'], 'request.test_review', request['team'], request['priority'],
-                      payload={'evidenceIds': [row['id']], 'runId': row['id']})
+                      payload={'evidenceIds': [row['id']], 'runId': row['id'],
+                                          **({'projectId': json.loads(request['payload'])['projectId']} if 'projectId' in json.loads(request['payload']) else {})})
 
     def _finish_test_review(self, conn, request, result):
         from eidolon_cli.organization_store import _text
         payload = json.loads(request['payload'])
         row, artifact = self._verify_project_run(conn, payload.get('runId'), review=False)
-        if (type(result.get('approved')) is not bool or result.get('evidenceIds') != [row['id']]
+        if (row['objective_id'] != request['objective_id']
+                or _run_project_id(conn, row) != payload.get('projectId')
+                or type(result.get('approved')) is not bool or result.get('evidenceIds') != [row['id']]
                 or payload.get('evidenceHashes') != {row['id']: artifact['sha256']}
                 or request['agent_id'] in {item[0] for item in conn.execute(
                     'SELECT DISTINCT author_id FROM tasks WHERE objective_id=?', (request['objective_id'],))}):
@@ -387,8 +459,17 @@ class OrganizationProjectExecutionStore:
                 self._pending(conn, conn.execute('SELECT * FROM requests WHERE id=?', (gate,)).fetchone(),
                               'Independent project test review rejected the result and the replan budget is exhausted. ' + summary[:1000])
 
-    def verify_project_tests(self, conn, objective_id):
-        row = _latest_run(conn, objective_id)
+    def verify_project_test_runs(self, conn, objective_id):
+        projects = self._execution_projects(conn, objective_id) or [None]
+        return [self.verify_project_tests(conn, objective_id, project['id'] if project else None)
+                for project in projects]
+
+    def verify_project_tests(self, conn, objective_id, project_id=None):
+        projects = self._execution_projects(conn, objective_id)
+        if projects and project_id is None:
+            return self.verify_project_test_runs(conn, objective_id)[0]
+        self._execution_project(conn, objective_id, project_id)
+        row = _latest_run(conn, objective_id, project_id)
         if row is None:
             raise ValueError('Required project tests have not been executed by an authorized runtime; model approval cannot satisfy this check')
         return self._verify_project_run(conn, row['id'])
@@ -396,13 +477,19 @@ class OrganizationProjectExecutionStore:
     def ensure_source_integration(self, conn, objective_id):
         if not self._automatic_source(conn, objective_id):
             return False
-        row, _ = self.verify_project_tests(conn, objective_id)
-        if self.verified_source_integration(conn, objective_id):
-            return False
+        projects = self._execution_projects(conn, objective_id) or [None]
         objective = conn.execute('SELECT priority FROM objectives WHERE id=?', (objective_id,)).fetchone()
-        self._request(conn, objective_id, 'request.source_integrate', self.settings.team, objective['priority'],
-                      payload={'runId': row['id'], 'evidenceIds': [row['id']]})
-        return True
+        queued = False
+        for project in projects:
+            project_id = project['id'] if project else None
+            row, _ = self.verify_project_tests(conn, objective_id, project_id)
+            if self.verified_source_integration(conn, objective_id, project_id):
+                continue
+            self._request(conn, objective_id, 'request.source_integrate', self.settings.team,
+                          objective['priority'], payload={'runId': row['id'], 'evidenceIds': [row['id']],
+                          **({'projectId': project_id} if project else {})})
+            queued = True
+        return queued
 
     def _run_source_stage(self, claim, cancel):
         from eidolon_cli.organization_source_integration import integrate_source, source_manifest_sha256, source_base_sha256
@@ -411,8 +498,9 @@ class OrganizationProjectExecutionStore:
             if request is None or cancel.is_set() or not self._automatic_source(conn, request['objective_id']):
                 raise ValueError('Source integration requires a current uncancelled explicitly granted lease')
             self._require_project_execution_controller(request)
-            row, _ = self.verify_project_tests(conn, request['objective_id'])
             payload = json.loads(request['payload'])
+            self._execution_project(conn, request['objective_id'], payload.get('projectId'))
+            row, _ = self.verify_project_tests(conn, request['objective_id'], payload.get('projectId'))
             if row['id'] != payload.get('runId') or not row['source_base']:
                 raise ValueError('Source integration has no exact reviewed tested source base')
             snapshot, base = json.loads(row['snapshot']), json.loads(row['source_base'])
@@ -442,18 +530,22 @@ class OrganizationProjectExecutionStore:
         self._require_project_execution_controller(request)
         if result or not conn.execute('SELECT 1 FROM project_source_receipts WHERE request_id=?', (request['id'],)).fetchone():
             raise ValueError('Source integration requires its exact backend-persisted receipt')
-        if not self.verified_source_integration(conn, request['objective_id']):
+        if not self.verified_source_integration(conn, request['objective_id'], json.loads(request['payload']).get('projectId')):
             raise ValueError('Source integration receipt does not match current reviewed test evidence')
 
-    def verified_source_integration(self, conn, objective_id):
-        latest = _latest_run(conn, objective_id)
+    def verified_source_integration(self, conn, objective_id, project_id=None):
+        projects = self._execution_projects(conn, objective_id)
+        if projects and project_id is None:
+            return all(self.verified_source_integration(conn, objective_id, project['id']) for project in projects)
+        self._execution_project(conn, objective_id, project_id)
+        latest = _latest_run(conn, objective_id, project_id)
         if latest is None:
             return False
         row = conn.execute('SELECT * FROM project_source_receipts WHERE run_id=? ORDER BY created DESC LIMIT 1',
                            (latest['id'],)).fetchone()
         if row is None:
             return False
-        run, _ = self.verify_project_tests(conn, objective_id)
+        run, _ = self.verify_project_tests(conn, objective_id, project_id)
         receipt = json.loads(row['record'])
         from eidolon_cli.organization_source_integration import source_manifest_sha256, verify_source_integration
         if (digest(receipt) != row['sha256'] or receipt.get('status') != 'integrated'
@@ -463,12 +555,17 @@ class OrganizationProjectExecutionStore:
                                   json.loads(run['snapshot']), receipt)
         return True
 
-    def current_source_evidence(self, conn, objective_id):
+    def current_source_evidences(self, conn, objective_id):
+        projects = self._execution_projects(conn, objective_id) or [None]
+        return [source for project in projects if (source := self.current_source_evidence(
+            conn, objective_id, project['id'] if project else None)) is not None]
+
+    def current_source_evidence(self, conn, objective_id, project_id=None):
         if not self._automatic_source(conn, objective_id):
             return None
-        if not self.verified_source_integration(conn, objective_id):
+        if not self.verified_source_integration(conn, objective_id, project_id):
             raise ValueError('Current objective source branch integration is not verified')
-        row = _latest_run(conn, objective_id)
+        row = _latest_run(conn, objective_id, project_id)
         source = conn.execute('SELECT request_id FROM project_source_receipts WHERE run_id=? ORDER BY created DESC LIMIT 1',
                               (row['id'],)).fetchone()
         return source_integration_artifact(conn, 'project_source_' + source['request_id'])

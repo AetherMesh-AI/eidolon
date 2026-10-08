@@ -420,3 +420,109 @@ def test_discovery_without_its_explicit_grant_never_starts_a_receipt(inspection)
         with pytest.raises(executor.OrganizationExecutionError, match='outside'):
             agent._execute_tool_calls(SimpleNamespace(tool_calls=[_call('root0', name='list_files')]), [], 'task')
     assert receipts.rows == []
+
+
+@pytest.mark.linux_only
+@pytest.mark.parametrize('name,extra', [('read_file', {}), ('list_files', {}), ('search_files', {'query': 'project'})])
+def test_project_scope_keeps_original_alias_and_blocks_other_roots(inspection, tmp_path, name, extra):
+    from eidolon_cli.organization_tool_executor import public_tool_policy
+
+    context, receipts, root = inspection
+    second = tmp_path / 'second-project'
+    second.mkdir()
+    (second / 'notes.txt').write_text('second project evidence\n', encoding='utf-8')
+    (root / 'notes.txt').write_text('other project evidence\n', encoding='utf-8')
+    context['toolPolicy'].update(tools=['read_file', 'list_files', 'search_files'],
+                                 readRoots=[str(root), str(second)], readRootAliases=['root1'])
+    assert public_tool_policy(context)['readRoots'] == ['root1']
+    with tool_execution(context, 'work.inspect') as execution:
+        assert execution.scope.root_aliases == ('root1',)
+        agent, messages = _agent(execution), []
+        path = 'root1/notes.txt' if name == 'read_file' else 'root1'
+        agent._execute_tool_calls(SimpleNamespace(tool_calls=[_call(path, name=name, **extra)]), messages, 'task-project')
+        assert json.loads(messages[0]['content'])['success'] is True
+        assert 'other project evidence' not in messages[0]['content']
+        if name == 'read_file':
+            assert 'second project evidence' in messages[0]['content']
+        else:
+            assert 'root1/notes.txt' in messages[0]['content']
+    # Each denied attempt is durable and cannot use the ordinary file backend.
+    for denied in (('root0/notes.txt', str(root / 'notes.txt')) if name == 'read_file'
+                   else ('root0', str(root))):
+        with tool_execution(context, 'work.inspect') as execution:
+            agent = _agent(execution)
+            with pytest.raises(executor.OrganizationExecutionError, match='blocked'):
+                agent._execute_tool_calls(SimpleNamespace(tool_calls=[_call(denied, name=name, call_id='deny-' + denied, **extra)]), [], 'task-project')
+            assert receipts.rows[-1]['status'] == 'blocked'
+
+
+@pytest.mark.linux_only
+@pytest.mark.parametrize('aliases', [None, [], ['root2'], ['root0', 'root0'], [0], '/host/root'])
+def test_invalid_project_root_restrictions_never_restore_legacy_grants(inspection, aliases):
+    context, _, _ = inspection
+    context['toolPolicy']['readRootAliases'] = aliases
+    with pytest.raises(executor.OrganizationExecutionError):
+        with tool_execution(context, 'work.inspect'):
+            pytest.fail('Invalid restriction granted filesystem access')
+
+
+@pytest.mark.linux_only
+def test_persisted_project_binding_controls_real_tools_and_revocation(tmp_path):
+    from dataclasses import replace
+    from eidolon_cli.organization_config import OrganizationSettings
+    from eidolon_cli.organization_store import OrganizationStore
+    from eidolon_cli.organization_tool_executor import public_tool_policy
+
+    roots = [tmp_path / 'first', tmp_path / 'second']
+    for index, root in enumerate(roots):
+        root.mkdir()
+        (root / 'notes.txt').write_text(f'project {index} source\n', encoding='utf-8')
+    grants = ['read_file', 'list_files', 'search_files']
+    settings = OrganizationSettings.from_config({'organization': {
+        'capabilities': ['work.inspect'], 'tool_grants': grants,
+        'read_roots': [str(root) for root in roots],
+        'project_grants': [{'id': 'second-tests', 'files': ['root1/notes.txt'],
+                            'execution': {'recipe': 'python_unittest', 'root': 'root1'}}],
+        'projects': [{'id': 'second', 'root': 'root1', 'recipe': 'second-tests', 'team': 'engineering'}],
+        'roster': [{'id': 'reader', 'name': 'Reader', 'team': 'engineering',
+                    'capabilities': ['work.inspect'], 'tool_grants': grants}]}})
+    store = OrganizationStore(tmp_path / 'state.db', settings)
+    store.create_objective('Inspect selected project', idempotency_key='bound-read', project_ids=['second'])
+    planner = store.claim_next()
+    assert public_tool_policy(store.context(planner)) == {'tools': [], 'readRoots': []}
+    store.finish(planner, {'workers': 1, 'tasks': [{'title': 'Read second project',
+        'description': 'Inspect the selected source.', 'type': 'work.inspect',
+        'team': 'engineering', 'projectId': 'second', 'dependsOn': []}]})
+    hire = store.claim_next()
+    assert hire['type'] == 'request.hire'
+    store.finish(hire, {})
+    claim = store.claim_next()
+    context = store.context(claim)
+    assert context['task']['projectId'] == 'second'
+    assert public_tool_policy(context)['readRoots'] == ['root1']
+    context.update(recordToolStart=lambda call, name, args: store.record_tool_start(claim, call, name, args),
+                   recordToolFinish=lambda receipt, result, status: store.record_tool_finish(claim, receipt, result, status),
+                   requestToolReceipts=lambda: store.tool_receipts(claim['id']))
+    with tool_execution(context, 'work.inspect') as execution:
+        agent, messages = _agent(execution), []
+        calls = [_call('root1/notes.txt'), _call('root1', name='list_files', call_id='list'),
+                 _call('root1', name='search_files', call_id='search', query='project')]
+        agent._execute_tool_calls(SimpleNamespace(tool_calls=calls), messages, claim['task_id'])
+        assert all(json.loads(message['content'])['success'] for message in messages)
+        assert 'project 1 source' in messages[0]['content']
+        assert len(store.tool_receipts(claim['id'])) == 3
+        for name, path, extra in [('read_file', 'root0/notes.txt', {}), ('list_files', 'root0', {}),
+                                  ('search_files', 'root0', {'query': 'project'})]:
+            agent = _agent(execution)
+            with pytest.raises(executor.OrganizationExecutionError, match='blocked'):
+                agent._execute_tool_calls(SimpleNamespace(tool_calls=[_call(path, name=name, call_id='deny-' + name, **extra)]), [], claim['task_id'])
+            assert store.tool_receipts(claim['id'])[-1]['status'] == 'blocked'
+        # A running worker cannot continue under a revoked owner binding, even
+        # with a previously captured policy and still-open source descriptor.
+        assert len(store.tool_receipts(claim['id'])) == 6
+        agent = _agent(execution)
+        store.settings = replace(settings, projects=())
+        with pytest.raises(ValueError, match='binding changed or was revoked'):
+            store.context(claim)
+        with pytest.raises(executor.OrganizationExecutionError, match='Tool audit could not start'):
+            agent._execute_tool_calls(SimpleNamespace(tool_calls=[_call('root1/notes.txt', call_id='revoked')]), [], claim['task_id'])

@@ -82,7 +82,7 @@ evidence. Return a single JSON object, without commentary or Markdown.
 """
 _STAGE_PROMPTS = {
     "request.plan": """Act as the manager. Add requiredChecks for explicit requirements you identify: project_tests, managed_validation, source_integration. Preserve existing owner requiredChecks; never remove them. project_tests requires the explicit fixed recipe in projectPolicy plus each author’s run_tests grant. The backend executes it after reviewed edits; do not issue commands yourself. Missing recipe/grant stays intervention with project_tests preserved. Owner inputs are clarifications; revised scope is objective.description.  Decompose the objective into a small,
-useful dependency graph. For every work.edit task, declare writePaths as exact root-alias file paths (for example ["root0/src/module.py"]). Declare all intended writes together. Independent paths may run concurrently; overlapping paths wait through review and application. writePaths confer no new tool authority. Use dependsOn for semantic dependencies even when paths differ. Preserve the user's actual objective; do not substitute
+useful dependency graph. When objective.projects is nonempty, every work.inspect/work.edit task must name projectId from that owner-selected list and use its exact team; all edit writePaths must stay within that project root. Projects are existing authority, never host paths to choose. Cross-project semantic dependencies use dependsOn; independent projects can overlap. For every work.edit task, declare writePaths as exact root-alias file paths (for example ["root0/src/module.py"]). Declare all intended writes together. Independent paths may run concurrently; overlapping paths wait through review and application. writePaths confer no new tool authority. Use dependsOn for semantic dependencies even when paths differ. Preserve the user's actual objective; do not substitute
 a draft for a requested external action. Supported text-only work types are
 work.draft and work.analyze. Select exact configured team/capability routes from
 staffing when supplied. work.inspect is also supported only when present in
@@ -235,7 +235,7 @@ def _parse_plan(value: dict, context: dict) -> dict:
         # Unknown kinds/teams stay intact so the router records no eligible worker;
         # rewriting them to general/draft would silently change the objective.
         assignment = {}
-        for field in ("agentId", "managerId"):
+        for field in ("agentId", "managerId", "projectId"):
             if field in task:
                 assignment[field] = _text(task[field], f"Task {field}", limit=64)
         if 'writePaths' in task:

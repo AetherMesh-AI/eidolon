@@ -8,7 +8,15 @@ export const objectiveStatusLabels = {
 export type ObjectiveStatus = keyof typeof objectiveStatusLabels
 export type WorkStatus = 'working' | 'active' | 'thinking' | 'executing' | 'reviewing' | 'needs_input' | 'idle' | 'waiting' | 'review' | 'offline'
 export type OrganizationRequiredCheck = 'project_tests' | 'managed_validation' | 'source_integration'
+export interface OrganizationProjectBinding {
+  id: string
+  root: string
+  recipe: string
+  team: string
+  readRoot?: string
+}
 export interface ObjectiveMetadata {
+  projectIds?: string[]
   executiveId?: string
   managerId?: string
   description?: string
@@ -23,6 +31,7 @@ export interface ObjectiveMetadata {
   autonomyIntent?: string
 }
 export interface Objective extends ObjectiveMetadata {
+  projects?: OrganizationProjectBinding[]
   history?: HistoryState
   id: string
   title: string
@@ -36,7 +45,7 @@ export interface Objective extends ObjectiveMetadata {
   acceptance?: OrganizationAcceptance
   usage?: OrganizationUsage
   ownerResolutions?: OrganizationOwnerResolution[]
-  projectExecution?: OrganizationProjectExecution | null
+  projectExecution?: OrganizationProjectExecution | OrganizationProjectExecutions | null
   projectValidation?: {
     id: string
     status: 'passed' | 'failed'
@@ -92,6 +101,7 @@ export interface OrganizationAgent {
   objectiveId?: string
 }
 export interface OrganizationTask {
+  projectId?: string | null
   id: string
   objectiveId: string
   title: string
@@ -170,6 +180,9 @@ export interface OrganizationArtifact {
 export type OrganizationProjectExecutionStatus = 'passed' | 'failed' | 'blocked' | 'unsupported' | 'cancelled' | 'timed_out' | 'unknown'
 /** Backend-owned execution facts. A syntax-validation receipt cannot populate
  * this record, and a passed run is separate from review and source integration. */
+export interface OrganizationProjectExecutions {
+  projects: { projectId: string; execution: OrganizationProjectExecution | null }[]
+}
 export interface OrganizationProjectExecution {
   id: string
   requestId: string
@@ -464,6 +477,7 @@ export interface OrganizationManagement {
   allowedCapabilities: string[]
 }
 export interface OrganizationRuntime {
+  availableProjects?: OrganizationProjectBinding[]
   history?: HistoryCounts
   capabilities: string[]
   state: string

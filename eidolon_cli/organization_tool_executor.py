@@ -53,7 +53,11 @@ def public_tool_policy(context: dict) -> dict:
     """Only capability names and logical aliases may enter model context."""
     policy = context.get("toolPolicy") or {}
     tools, roots = policy.get("tools", []), policy.get("readRoots", [])
-    return {"tools": [name for name in tools if name in {"read_file", "list_files", "search_files"}], "readRoots": [f"root{i}" for i in range(len(roots))]}
+    aliases = [f"root{i}" for i in range(len(roots))]
+    if "readRootAliases" in policy:
+        selected = policy["readRootAliases"]
+        aliases = [alias for alias in aliases if isinstance(selected, list) and alias in selected]
+    return {"tools": [name for name in tools if name in {"read_file", "list_files", "search_files"}], "readRoots": aliases}
 
 
 def validate_retained_receipts(receipts) -> None:
@@ -332,6 +336,8 @@ def tool_execution(context: dict, kind: str):
     roots = policy.get("readRoots")
     if not isinstance(roots, list) or not roots or any(not isinstance(root, str) or not root for root in roots):
         raise _error("Inspection requires explicitly configured local read roots.")
+    if "readRootAliases" in policy and not isinstance(policy["readRootAliases"], list):
+        raise _error("Inspection requires an explicit list of granted read-root aliases.")
     _bounded_int(policy.get("maxToolCalls"), "maxToolCalls", 1, 20)
     _bounded_int(policy.get("maxResultChars"), "maxResultChars", 1000, 20000)
     if any(not callable(context.get(name)) for name in ("recordToolStart", "recordToolFinish", "requestToolReceipts")):
@@ -341,7 +347,8 @@ def tool_execution(context: dict, kind: str):
         raise _error("Edit work requires trusted managed-workspace source resolution from the organization scheduler.")
     from tools.organization_file_read import organization_file_read_scope, OrganizationFileReadError
     try:
-        with organization_file_read_scope(tuple(roots), policy["maxResultChars"], resolve_workspace_source=resolver) as scope:
+        with organization_file_read_scope(tuple(roots), policy["maxResultChars"], resolve_workspace_source=resolver,
+                                          allowed_root_aliases=policy.get("readRootAliases")) as scope:
             yield OrganizationToolExecution(context, scope)
     except OrganizationFileReadError as exc:
         raise _error(str(exc)) from exc

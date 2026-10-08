@@ -223,3 +223,30 @@ def test_create_rpc_stopping_service_does_not_admit_or_consume_objective_identit
     assert first['objective']['id'] == duplicate['objective']['id']
     _wait(lambda: services.get_service().store.snapshot()['objectives'][0]['status'] == 'completed')
     assert len(services.get_service().store.snapshot()['objectives']) == 1
+
+
+def test_create_rpc_binds_configured_project_ids_and_rejects_host_paths(tmp_path, monkeypatch):
+    import yaml
+
+    root = tmp_path / 'source'
+    root.mkdir()
+    home = get_eidolon_home()
+    home.mkdir(parents=True, exist_ok=True)
+    (home / 'config.yaml').write_text(yaml.safe_dump({'organization': {
+        'read_roots': [str(root)],
+        'project_grants': [{'id': 'suite', 'files': ['root0/test_app.py'], 'execution': {}}],
+        'projects': [{'id': 'frontend', 'root': 'root0', 'recipe': 'suite', 'team': 'web'}],
+    }}))
+    monkeypatch.setattr(services.OrganizationService, 'start', lambda self: None)
+    initial = _rpc('organization.snapshot')
+    assert initial['runtime']['availableProjects'][0]['id'] == 'frontend'
+    accepted = _rpc('organization.create', title='Selected repository', idempotencyKey='selected', projectIds=['frontend'])
+    binding = accepted['objective']['projects'][0]
+    assert binding == {'id': 'frontend', 'root': 'root0', 'recipe': 'suite', 'team': 'web'}
+    repeated = _rpc('organization.create', title='Selected repository', idempotencyKey='selected', projectIds=['frontend'])
+    assert repeated['objective']['id'] == accepted['objective']['id']
+    for project_ids in ([str(root)], 'frontend', ['frontend', 'frontend']):
+        response = server.dispatch({'jsonrpc': '2.0', 'id': 1, 'method': 'organization.create',
+            'params': {'title': 'Unapproved project', 'idempotencyKey': 'invalid', 'projectIds': project_ids}})
+        assert response['error']['code'] == -32602
+    assert len(_rpc('organization.snapshot')['objectives']) == 1

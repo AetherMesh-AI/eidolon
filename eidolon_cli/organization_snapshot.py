@@ -1,5 +1,6 @@
 """Bounded UI projections of the authoritative organization ledger."""
 import json
+from eidolon_cli.organization_projects import objective_projects, task_project, public_project
 from eidolon_cli.organization_attention import attention_view
 from eidolon_cli.organization_coordination import coordination_view
 from eidolon_cli.organization_store import _iso
@@ -63,7 +64,7 @@ def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
         acceptance_review = conn.execute('SELECT * FROM objective_acceptances WHERE objective_id=? AND round=? ORDER BY created DESC LIMIT 1', (row['id'], control['round'])).fetchone()
         done = sum(t['status'] == 'completed' for t in work)
         objectives.append({'history': history, 'id': row['id'], 'title': row['title'], 'description': control['amended_scope'] or row['description'],
-                           'originalDescription': row['description'], 'deliveryMode': control['delivery_mode'],
+                           'projects': [public_project(project) for project in objective_projects(conn, row['id'])], 'originalDescription': row['description'], 'deliveryMode': control['delivery_mode'],
                            'requiredChecks': json.loads(control['required_checks']),
                            'projectValidation': project_validation_view(conn, row['id'], full=False),
                            'projectExecution': project_execution_view(conn, row['id'], full=False),
@@ -103,7 +104,8 @@ def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
         latest = next((r for r in reversed(requests) if r['task_id'] == task['id']), None)
         proof = evidence_by_task.get(task['id'], [])
         scope = conn.execute('SELECT paths FROM task_write_scopes WHERE task_id=?', (task['id'],)).fetchone()
-        ui_tasks.append({'writePaths': json.loads(scope['paths']) if scope else None,
+        binding = task_project(conn, task['id'])
+        ui_tasks.append({'projectId': binding['id'] if binding else None, 'writePaths': json.loads(scope['paths']) if scope else None,
                          'coordination': coordination_view(conn, task['id']), 'id': task['id'], 'objectiveId': task['objective_id'], 'title': task['title'],
                          'currentRound': rounds.get(task['id']) == controls[task['objective_id']]['round'],
                          'historical': rounds.get(task['id']) != controls[task['objective_id']]['round'],
@@ -186,6 +188,7 @@ def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
                         'workspaceApplyEnabled': 'patch' in settings.tool_grants and settings.roster is not None,
                         'projectExecutionEnabled': 'run_tests' in settings.tool_grants and bool(settings.project_grants),
                         'sourceIntegrationEnabled': 'integrate_source' in settings.tool_grants and bool(settings.project_grants),
+                        'availableProjects': [{'id': project.id, 'root': project.root, 'recipe': project.recipe, 'team': project.team} for project in settings.projects],
                         'projectRecipes': [{'id': grant.id, 'root': grant.execution['root'], 'files': list(grant.files),
                                             'recipe': grant.execution['recipe']} for grant in settings.project_grants],
                         'historyLimited': history_count > 25, 'artifactPreviewLimit': 2000}}

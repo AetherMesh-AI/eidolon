@@ -41,6 +41,7 @@ class OrganizationSettings:
     tool_grants: tuple[str, ...] = ()
     read_roots: tuple[str, ...] = ()
     project_grants: tuple = ()
+    projects: tuple = ()
     max_project_runs: int = 4
     max_tool_calls: int = 8
     max_tool_result_chars: int = 12000
@@ -90,8 +91,10 @@ class OrganizationSettings:
             raise ValueError("organization.read_roots must contain at most 8 bounded absolute filesystem paths")
         from eidolon_cli.organization_project_config import parse_project_grants
         values["project_grants"] = parse_project_grants(raw.get("project_grants", []), len(roots))
+        from eidolon_cli.organization_projects import parse_projects
+        values["projects"] = parse_projects(raw.get("projects", []), roots, values["project_grants"])
         settings = cls(**values, team=team.strip(), capabilities=tuple(dict.fromkeys(capabilities)),
-                       tool_grants=tuple(dict.fromkeys(grants)), read_roots=tuple(dict.fromkeys(roots)))
+                       tool_grants=tuple(dict.fromkeys(grants)), read_roots=tuple(roots))
         if "roster" in raw:
             from dataclasses import replace
             settings = replace(settings, roster=parse_roster(raw["roster"], settings))

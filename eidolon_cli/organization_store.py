@@ -18,6 +18,7 @@ import uuid
 from datetime import datetime, timezone
 
 from eidolon_cli.organization_config import OrganizationSettings
+from eidolon_cli.organization_projects import (PROJECTS_SCHEMA, selected_projects, objective_projects, task_project, bind_task_project, validate_objective_projects, public_project)
 from eidolon_cli.organization_attention import ATTENTION_SCHEMA, OrganizationAttentionStore
 from eidolon_cli.organization_history import HISTORY_SCHEMA, OrganizationHistoryStore, history_counts
 from eidolon_cli.organization_coordination import COORDINATION_SCHEMA, OrganizationCoordinationStore, coordination_view
@@ -101,7 +102,7 @@ class OrganizationStore(OrganizationAttentionStore, OrganizationHistoryStore, Or
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
-            conn.executescript(_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA + COORDINATION_SCHEMA + HISTORY_SCHEMA + ATTENTION_SCHEMA)
+            conn.executescript(_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA + COORDINATION_SCHEMA + HISTORY_SCHEMA + ATTENTION_SCHEMA + PROJECTS_SCHEMA)
             self.settings = resolve_settings(conn, settings)
         with self._write() as conn:
             self._migrate_reservations(conn)
@@ -188,7 +189,7 @@ class OrganizationStore(OrganizationAttentionStore, OrganizationHistoryStore, Or
         OrganizationRequestStore._insert_request_contract(conn, ident, requester_id=requester_id)
         return ident
 
-    def create_objective(self, title, description=None, priority="normal", *, idempotency_key, acceptance_criteria=None, delivery_mode="source_project", required_checks=None, executive_id=None, manager_id=None):
+    def create_objective(self, title, description=None, priority="normal", *, idempotency_key, acceptance_criteria=None, delivery_mode="source_project", required_checks=None, executive_id=None, manager_id=None, project_ids=None):
         title = _text(title, "Title", 500)
         description = _text(description or title, "Description", 30000)
         from eidolon_cli.organization_acceptance import acceptance_criteria as normalize_criteria
@@ -197,6 +198,9 @@ class OrganizationStore(OrganizationAttentionStore, OrganizationHistoryStore, Or
         checks = normalize_checks(required_checks if required_checks is not None else [])
         if delivery_mode not in ('managed_artifact', 'source_project'):
             raise ValueError('deliveryMode must be managed_artifact or source_project')
+        projects = selected_projects(project_ids, self.settings)
+        if self.settings.projects and delivery_mode == 'source_project' and not projects:
+            raise ValueError('Source-project objectives must explicitly select configured projectIds')
         key = _text(idempotency_key, "Idempotency key", 128)
         if not isinstance(priority, str) or priority not in _PRIORITY:
             raise ValueError("Unknown priority")
@@ -206,6 +210,8 @@ class OrganizationStore(OrganizationAttentionStore, OrganizationHistoryStore, Or
                      'deliveryMode': delivery_mode, 'requiredChecks': checks})
         if executive_id is not None or manager_id is not None:
             identity = {'objective': identity, 'executiveId': executive_id, 'managerId': manager_id}
+        if projects:
+            identity = {'objective': identity, 'projects': projects}
         digest = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
         with self._write() as conn:
             self._require_current_policy(conn)
@@ -224,6 +230,8 @@ class OrganizationStore(OrganizationAttentionStore, OrganizationHistoryStore, Or
                 ident = _id("obj")
                 conn.execute("INSERT INTO objectives VALUES (?,?,?,?,?,?,?,0)",
                              (ident, key, digest, title, description, level, time.time()))
+                for project in projects:
+                    conn.execute('INSERT INTO objective_projects VALUES (?,?,?)', (ident, project['id'], json.dumps(project, sort_keys=True)))
                 conn.execute('INSERT INTO project_execution_budgets VALUES (?,?)', (ident, self.settings.max_project_runs))
                 manager = self._assign_objective(conn, ident, executive_id, manager_id)
                 conn.execute("INSERT INTO objective_control(objective_id,criteria,status,round,max_replans,max_stages,delivery_mode,required_checks) VALUES (?,?,'pending',0,?,?,?,?)",
@@ -316,6 +324,11 @@ class OrganizationStore(OrganizationAttentionStore, OrganizationHistoryStore, Or
                 if stages >= min(control['max_stages'], self.settings.max_stages):
                     self._pending(conn, request, 'Objective stage budget exhausted. Create a revised objective to authorize more work.')
                     continue
+                try:
+                    validate_objective_projects(conn, request['objective_id'], self.settings)
+                except ValueError as exc:
+                    self._pending(conn, request, str(exc))
+                    continue
                 if not self._validate_claim_write_scope(conn, request):
                     continue
                 token = uuid.uuid4().hex
@@ -375,6 +388,7 @@ class OrganizationStore(OrganizationAttentionStore, OrganizationHistoryStore, Or
                 raise ValueError("Request lease is no longer owned")
             objective = dict(conn.execute("SELECT id,title,description FROM objectives WHERE id=?", (request["objective_id"],)).fetchone())
             objective.update(objective_assignment_view(conn, request['objective_id']))
+            objective['projects'] = [public_project(project) for project in objective_projects(conn, request['objective_id'])]
             control = conn.execute('SELECT * FROM objective_control WHERE objective_id=?', (request['objective_id'],)).fetchone()
             objective['acceptanceCriteria'] = json.loads(control['criteria'])
             objective['round'] = control['round']
@@ -392,6 +406,9 @@ class OrganizationStore(OrganizationAttentionStore, OrganizationHistoryStore, Or
             if task:
                 task.update(task_assignment_view(conn, task['id']))
                 scope = conn.execute('SELECT paths FROM task_write_scopes WHERE task_id=?', (task['id'],)).fetchone()
+                binding = task_project(conn, task['id'])
+                task['projectId'] = binding['id'] if binding else None
+                task['project'] = public_project(binding) if binding else None
                 task['writePaths'] = json.loads(scope['paths']) if scope else None
                 task['coordination'] = coordination_view(conn, task['id'])
             dependencies = []
@@ -436,7 +453,7 @@ class OrganizationStore(OrganizationAttentionStore, OrganizationHistoryStore, Or
                     **self._typed_context(conn, request),
                     "agentContext": agent_context_view(conn, request['agent_id']), "dependencies": dependencies,
                     "organization": organization, "maxInflight": self.settings.max_inflight,
-                    "projectPolicy": {'recipes': [asdict(grant) for grant in self.settings.project_grants],
+                    "projectPolicy": {'projects': objective['projects'], 'recipes': [asdict(grant) for grant in self.settings.project_grants],
                                       'runner': 'Linux bubblewrap; fixed single-process Python unittest; no network or host writes'},
                     "managementPolicy": {"maxMembers": self.settings.max_members,
                         "memberCount": len(self._staffing_context()),
@@ -645,6 +662,7 @@ class OrganizationStore(OrganizationAttentionStore, OrganizationHistoryStore, Or
             raise ValueError("Requested worker count must be an integer from 1 to 64")
         for values, specification in zip(normalized, tasks):
             conn.execute("INSERT INTO tasks(id,objective_id,title,description,type,team,priority,status,dependencies) VALUES (?,?,?,?,?,?,?,?,?)", values)
+            bind_task_project(conn, values[0], specification, self.settings)
             self._assign_task(conn, values[0], specification, request['agent_id'])
             self._set_write_scope(conn, values[0], specification)
             conn.execute('INSERT INTO objective_task_rounds SELECT ?,objective_id,round FROM objective_control WHERE objective_id=?', (values[0], request['objective_id']))

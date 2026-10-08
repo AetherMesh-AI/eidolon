@@ -259,7 +259,7 @@ def test_rejects_gitdir_redirect_and_multiple_roots(repo, tmp_path):
     original.write_text("gitdir: " + str(external) + "\n")
     with pytest.raises(source.SourceIntegrationError):
         source.prepare_source_integration((str(repo),))
-    with pytest.raises(source.SourceIntegrationError, match="one explicitly"):
+    with pytest.raises(source.SourceIntegrationError, match="exact project manifest"):
         source.prepare_source_integration((str(repo), str(tmp_path)))
 
 
@@ -565,3 +565,33 @@ def test_lease_expiring_during_final_preimage_check_still_blocks_publication(rep
         source.integrate_source(roots, base, manifest, grant=grant, integration_id="request-1",
                                 before_publish=expires_at_boundary)
     assert not list((repo / ".git/refs/heads/eidolon").glob("*"))
+
+
+def test_integrates_only_selected_root_alias_and_rejects_cross_project_proof(repo, tmp_path):
+    other = tmp_path / 'other'
+    other.mkdir()
+    git(other, 'init', '-b', 'main')
+    (other / 'sample.txt').write_bytes(b'before\n')
+    git(other, 'add', '.')
+    git(other, 'commit', '-m', 'Second independent repository')
+    roots = (str(repo), str(other))
+    manifest = [{**edit(), 'path': 'root1/sample.txt'}]
+    original = {root: (git(root, 'rev-parse', 'HEAD'), (root / '.git/index').read_bytes())
+                for root in (repo, other)}
+    base = source.prepare_source_integration(roots, manifest)
+    grant = {'sourceIntegration': True, 'sourceBaseSha256': source.source_base_sha256(base),
+             'manifestSha256': source.source_manifest_sha256(manifest)}
+    receipt = source.integrate_source(roots, base, manifest, grant=grant, integration_id='second-project')
+    assert base['rootAlias'] == receipt['rootAlias'] == 'root1'
+    assert git(other, 'show', receipt['ref'] + ':sample.txt') == b'after\n'
+    assert git(repo, 'for-each-ref', '--format=%(refname)', 'refs/heads/eidolon/') == b''
+    assert source.verify_source_integration(roots, base, manifest, receipt)
+    for root in (repo, other):
+        assert (git(root, 'rev-parse', 'HEAD'), (root / '.git/index').read_bytes()) == original[root]
+        assert (root / 'sample.txt').read_bytes() == b'before\n'
+    with pytest.raises(source.SourceIntegrationError, match='pinned repository root'):
+        source.verify_source_integration(roots, base, [edit()], receipt)
+    with pytest.raises(source.SourceIntegrationError, match='one exact repository root'):
+        source.prepare_source_integration(roots, [edit(), *manifest])
+    with pytest.raises(source.SourceIntegrationError):
+        source.verify_source_integration(tuple(reversed(roots)), base, manifest, receipt)

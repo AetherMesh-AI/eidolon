@@ -44,7 +44,7 @@ def reject_duplicate_tasks(tasks):
         if not isinstance(item, dict):
             continue  # The canonical plan validator reports malformed fields.
         values = {name: normalized_text(item[name]) if isinstance(item.get(name), str) else item.get(name)
-                  for name in ('title', 'description', 'type', 'team', 'agentId', 'managerId')}
+                  for name in ('title', 'description', 'type', 'team', 'agentId', 'managerId', 'projectId')}
         values['dependsOn'] = item.get('dependsOn', [])
         values['writePaths'] = item.get('writePaths')
         key = json.dumps(values, sort_keys=True)

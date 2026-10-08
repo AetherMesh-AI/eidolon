@@ -8,6 +8,9 @@ longer manufactures a team or task graph when an objective is entered. The
 separate example preview remains explicitly fictional and does not contact a
 provider.
 
+For owner-selected repository bindings, cross-repository tasks and per-project evidence,
+see [Multi-repository objectives](organization-projects.md).
+
 ## Persistent identities and reusable specialists
 
 Open **Organization** before, during or after an objective to inspect the same

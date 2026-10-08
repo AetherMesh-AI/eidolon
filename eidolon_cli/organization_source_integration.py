@@ -46,8 +46,8 @@ def source_base_sha256(source_base):
 def _parts(path):
     from tools.organization_file_read import _path_parts, _check_lexical_path, _profile_credential_prefixes, _check_project_write_path
     parts = _path_parts(path, absolute=False)
-    if len(path) > 1024 or len(parts) < 2 or parts[0] != "root0":
-        raise SourceIntegrationError("Source integration requires canonical root0 paths.")
+    if len(path) > 1024 or len(parts) < 2 or not re.fullmatch(r"root(?:0|[1-9][0-9]*)", parts[0]):
+        raise SourceIntegrationError("Source integration requires canonical root alias paths.")
     _check_lexical_path(parts[1:], _profile_credential_prefixes())
     try:
         _check_project_write_path(parts[1:])
@@ -93,6 +93,8 @@ def _manifest(manifest):
                        "sha256": after, "content": content})
     if size > MAX_MANIFEST_BYTES:
         raise SourceIntegrationError("Reviewed source manifest exceeds its byte limit.")
+    if len({path.split("/")[0] for path in seen}) != 1:
+        raise SourceIntegrationError("Source integration requires one exact repository root per manifest.")
     paths = sorted(seen)
     if any(right.startswith(left + "/") for left, right in zip(paths, paths[1:])):
         raise SourceIntegrationError("Reviewed source paths overlap as files and directories.")
@@ -219,12 +221,15 @@ def _apply_delta(base, delta):
 
 
 class _Repository:
-    def __init__(self, roots, cancel=None):
+    def __init__(self, roots, cancel=None, *, root_alias="root0"):
         from tools.organization_file_read import _require_posix_support, _open_root, _path_parts, _profile_credential_prefixes, _check_project_write_path
         _require_posix_support()
-        if not isinstance(roots, (list, tuple)) or len(roots) != 1:
-            raise SourceIntegrationError("Source integration currently requires one explicitly granted repository root.")
-        self.path = roots[0]
+        if (not isinstance(roots, (list, tuple)) or not isinstance(root_alias, str)
+                or not re.fullmatch(r"root(?:0|[1-9][0-9]*)", root_alias)
+                or int(root_alias[4:]) >= len(roots)):
+            raise SourceIntegrationError("Source integration requires an explicitly granted repository root alias.")
+        self.root_alias = root_alias
+        self.path = roots[int(root_alias[4:])]
         try:
             _check_project_write_path(_path_parts(self.path, absolute=True))
         except ValueError as error:
@@ -685,7 +690,7 @@ def _preimages(repo, source_base, manifest):
 
 def _base(repo):
     head = repo.head()
-    return {"version": 1, "rootAlias": "root0", "rootIdentity": _identity(os.fstat(repo.root)),
+    return {"version": 1, "rootAlias": repo.root_alias, "rootIdentity": _identity(os.fstat(repo.root)),
             "gitIdentity": _identity(os.fstat(repo.git)), "rootPathSha256": hashlib.sha256(repo.path.encode()).hexdigest(), **head, "tree": repo.commit_tree(head["head"])}
 
 
@@ -701,10 +706,14 @@ def _failure_boundary():
 
 def prepare_source_integration(read_roots, manifest=None):
     """Read-only pin of the granted repository identity, HEAD, and parent tree."""
-    with _failure_boundary(), _Repository(read_roots) as repo:
+    reviewed = _manifest(manifest) if manifest is not None else None
+    if reviewed is None and len(read_roots) != 1:
+        raise SourceIntegrationError("Multiple roots require an exact project manifest.")
+    alias = reviewed[0]['path'].split('/')[0] if reviewed else 'root0'
+    with _failure_boundary(), _Repository(read_roots, root_alias=alias) as repo:
         source_base = {**_base(repo), "preparedAt": int(time.time())}
         if manifest is not None:
-            _preimages(repo, source_base, _manifest(manifest))
+            _preimages(repo, source_base, reviewed)
         if _base(repo) != {key: value for key, value in source_base.items() if key != "preparedAt"}:
             raise SourceIntegrationError("Source HEAD changed while the integration base was prepared.")
         repo.assert_attached()
@@ -763,7 +772,10 @@ def integrate_source(read_roots, source_base, manifest, *, grant, integration_id
         ref = "refs/heads/eidolon/" + request_hash[:32]
         if before_publish is not None and not callable(before_publish):
             raise SourceIntegrationError("Source publication guard must be a trusted callable.")
-        with _Repository(read_roots, cancel) as repo, ExitStack() as locks:
+        alias = reviewed[0]['path'].split('/')[0]
+        if source_base.get('rootAlias') != alias:
+            raise SourceIntegrationError("Source manifest does not match its pinned repository root.")
+        with _Repository(read_roots, cancel, root_alias=alias) as repo, ExitStack() as locks:
             _check_base(repo, source_base)
             lock_paths = [(".git", "HEAD"), (".git", "packed-refs"), (".git", "index")]
             if source_base["headRef"]:
@@ -818,7 +830,7 @@ def integrate_source(read_roots, source_base, manifest, *, grant, integration_id
                 os.fsync(ref_parent)
             # The link is transiently hard-linked to our lock until this context exits.
             receipt = {"version": 1, "status": "integrated", "scope": "local_source_branch",
-                       "rootAlias": "root0", "rootIdentity": source_base["rootIdentity"],
+                       "rootAlias": repo.root_alias, "rootIdentity": source_base["rootIdentity"],
                        "sourceBaseSha256": base_hash, "sourceBaseCommit": source_base["head"],
                        "sourceBaseTree": source_base["tree"], "manifestSha256": manifest_hash,
                        "requestSha256": request_hash, "commit": commit, "tree": tree, "ref": ref,
@@ -835,7 +847,7 @@ def _verify_receipt(repo, source_base, reviewed, receipt):
     repo.packs = None
     if (not isinstance(receipt, dict) or receipt.get("version") != 1
             or receipt.get("status") != "integrated" or receipt.get("scope") != "local_source_branch"
-            or receipt.get("rootAlias") != "root0" or receipt.get("rootIdentity") != source_base["rootIdentity"]
+            or receipt.get("rootAlias") != repo.root_alias or source_base.get("rootAlias") != repo.root_alias or receipt.get("rootIdentity") != source_base["rootIdentity"]
             or receipt.get("sourceBaseSha256") != source_base_sha256(source_base)
             or receipt.get("sourceBaseCommit") != source_base["head"]
             or receipt.get("sourceBaseTree") != source_base["tree"]
@@ -937,5 +949,10 @@ def verify_source_integration(read_roots, source_base, manifest, receipt):
     provenance. Its exact parent, branch ref, complete result tree and reviewed
     blobs must still exist and match the immutable receipt.
     """
-    with _failure_boundary(), _Repository(read_roots) as repo:
-        return _verify_receipt(repo, source_base, _manifest(manifest), receipt)
+    with _failure_boundary():
+        reviewed = _manifest(manifest)
+        alias = reviewed[0]['path'].split('/')[0]
+        if source_base.get('rootAlias') != alias:
+            raise SourceIntegrationError("Source manifest does not match its pinned repository root.")
+        with _Repository(read_roots, root_alias=alias) as repo:
+            return _verify_receipt(repo, source_base, reviewed, receipt)
