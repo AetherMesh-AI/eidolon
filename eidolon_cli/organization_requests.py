@@ -179,6 +179,10 @@ class OrganizationRequestStore:
 
     def _raise_requests(self, conn, parent, specifications):
         proposals = normalize_requests(specifications)
+        if conn.execute("SELECT 1 FROM tool_receipts WHERE request_id=? AND attempt=? "
+                        "AND status IN ('running','unknown','blocked')",
+                        (parent['id'], parent['execution_count'])).fetchone():
+            raise ValueError('Unresolved or blocked tool calls require outcome review before this stage can pause')
         contract = conn.execute('SELECT * FROM request_contracts WHERE request_id=?', (parent['id'],)).fetchone()
         if len(proposals) > self.settings.max_requests_per_stage:
             raise ValueError('Stage typed-request capacity reached')

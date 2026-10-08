@@ -63,7 +63,8 @@ CREATE TABLE IF NOT EXISTS requests (
  id TEXT PRIMARY KEY, objective_id TEXT NOT NULL REFERENCES objectives(id), task_id TEXT REFERENCES tasks(id),
  type TEXT NOT NULL, team TEXT NOT NULL, priority INTEGER NOT NULL, status TEXT NOT NULL,
  created REAL NOT NULL, agent_id TEXT REFERENCES agents(id), token TEXT, lease REAL,
- attempts INTEGER NOT NULL DEFAULT 0, reason TEXT, available REAL NOT NULL DEFAULT 0,
+ attempts INTEGER NOT NULL DEFAULT 0, execution_count INTEGER NOT NULL DEFAULT 0,
+ reason TEXT, available REAL NOT NULL DEFAULT 0,
  payload TEXT NOT NULL DEFAULT '{}');
 CREATE INDEX IF NOT EXISTS request_queue ON requests(status, priority DESC, created);
 CREATE INDEX IF NOT EXISTS request_objective_status ON requests(objective_id,status);
@@ -106,6 +107,7 @@ class OrganizationStore(OrganizationOutcomeStore, OrganizationAttentionStore, Or
             conn.executescript(_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA + COORDINATION_SCHEMA + HISTORY_SCHEMA + ATTENTION_SCHEMA + PROJECTS_SCHEMA + OUTCOME_SCHEMA)
             self.settings = resolve_settings(conn, settings)
         with self._write() as conn:
+            self._migrate_receipt_executions(conn)
             self._migrate_reservations(conn)
             self._migrate_acceptance(conn)
             self._migrate_budgets(conn)
@@ -354,7 +356,7 @@ class OrganizationStore(OrganizationOutcomeStore, OrganizationAttentionStore, Or
                     payload['evidenceHashes'] = hashes
                     conn.execute('UPDATE requests SET payload=? WHERE id=?', (json.dumps(payload), request['id']))
                 self._reserve_task(conn, request)
-                conn.execute("UPDATE requests SET status='running',agent_id=?,token=?,lease=?,attempts=attempts+1,reason=NULL WHERE id=?",
+                conn.execute("UPDATE requests SET status='running',agent_id=?,token=?,lease=?,attempts=attempts+1,execution_count=execution_count+1,reason=NULL WHERE id=?",
                              (agent["id"], token, lease, request["id"]))
                 conn.execute('INSERT INTO objective_usage(request_id,token,objective_id,stage) VALUES (?,?,?,?)',
                              (request['id'], token, request['objective_id'], request['type']))
