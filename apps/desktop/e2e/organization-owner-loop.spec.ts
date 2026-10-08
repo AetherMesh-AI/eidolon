@@ -291,6 +291,7 @@ test('preserves unsupported work and grants across navigation, dismissal, reload
   await capture('04-unsupported-objective')
 
   await primary.getByRole('link', { name: /^Needs You/ }).click()
+  await page.getByRole('button', { name: 'Request queue', exact: true }).click()
   await expect(page.getByRole('combobox', { name: 'Status', exact: true })).toHaveValue('pending_intervention')
   await expect(unsupported).toBeVisible()
   await unsupported.click()
@@ -313,6 +314,7 @@ test('preserves unsupported work and grants across navigation, dismissal, reload
   await assertNoToolGrants()
 
   await page.reload()
+  await page.getByRole('button', { name: 'Request queue', exact: true }).click({ timeout: 60_000 })
   await expect(unsupported).toContainText('Pending intervention', { timeout: 60_000 })
   await expect(page.getByRole('combobox', { name: 'Status', exact: true })).toHaveValue('pending_intervention')
   await capture('06-needs-you-after-reload')
@@ -339,6 +341,7 @@ test('preserves unsupported work and grants across navigation, dismissal, reload
   await assertNoToolGrants()
   await primary.getByRole('link', { name: /^Needs You/ }).click()
   await expect(page.getByText('Nothing needs your input', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Request queue', exact: true }).click()
   await page.getByRole('combobox', { name: 'Status', exact: true }).selectOption('cancelled')
   await expect(unsupported).toContainText('Cancelled')
   await capture('08-cancelled-request-history')

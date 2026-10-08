@@ -1,3 +1,4 @@
+import type { OrganizationAttentionPage, OrganizationAttentionQuery, OrganizationAttentionSeen } from './runtime-attention-types'
 import type { HistoryCounts, HistoryMutation, HistoryPage, HistoryQuery, HistoryState } from './runtime-history-types'
 
 export const objectiveStatusLabels = {
@@ -366,6 +367,8 @@ export interface OrganizationUsage {
 }
 export interface OrganizationRequest {
   id: string
+  /** Revision of the blocker content in this exact request projection. */
+  attentionRevision?: number
   objectiveId: string
   taskId?: string
   type: string
@@ -492,6 +495,7 @@ export interface OrganizationConnection {
   lastUpdatedAt?: string
 }
 export interface OrganizationSnapshot {
+  attention?: OrganizationAttentionPage
   source?: 'prototype' | 'runtime'
   requests?: OrganizationRequest[]
   runtime?: OrganizationRuntime
@@ -514,6 +518,8 @@ export interface StaticOrganizationAdapter extends OrganizationReader {
 
 export interface RuntimeOrganizationAdapter extends OrganizationReader {
   readonly mode: 'runtime'
+  getAttention?(input?: OrganizationAttentionQuery): Promise<OrganizationAttentionPage>
+  markAttentionSeen?(input: OrganizationAttentionSeen): Promise<void>
   getHistory?(input?: HistoryQuery): Promise<HistoryPage>
   getHistoryObjective?(id: string): Promise<OrganizationSnapshot>
   setObjectiveArchived?(input: HistoryMutation): Promise<void>

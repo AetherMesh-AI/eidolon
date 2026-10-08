@@ -5,11 +5,13 @@ import { Button } from '@/components/ui/button'
 import { controlVariants } from '@/components/ui/control'
 import { EmptyState } from '@/components/ui/empty-state'
 import { SearchField } from '@/components/ui/search-field'
+import { SegmentedControl } from '@/components/ui/segmented-control'
 import { Textarea } from '@/components/ui/textarea'
 import { useI18n } from '@/i18n/context'
 
 import { Inspector } from './inspector'
 import { RuntimeArtifact } from './runtime-artifact'
+import { RuntimeAttentionInbox } from './runtime-attention'
 import { RuntimeExecutionAudit } from './runtime-execution-audit'
 import { hasCompleteManagementProposal, responseDecisions, RuntimeRequestContext } from './runtime-request-context'
 import {
@@ -367,6 +369,7 @@ export function RuntimeRequests({
   })
 
   const [groupBy, setGroupBy] = useState<'team' | 'priority' | 'type' | 'status'>('team')
+  const [view, setView] = useState<'inbox' | 'queue'>('inbox')
   const [selected, setSelected] = useState<string | null>(null)
   const [artifactId, setArtifactId] = useState<string | null>(null)
   const [pending, setPending] = useState<string | null>(null)
@@ -381,6 +384,8 @@ export function RuntimeRequests({
   const authoritative = snapshot.connection?.state === 'ready'
   const groups = new Map<string, OrganizationRequest[]>()
   const priorities = [copy.lowest, copy.low, copy.normal, copy.high, copy.highest]
+  const supportsInbox = !objective && !!snapshot.attention && !!adapter.getAttention
+  const inbox = supportsInbox && view === 'inbox'
   const priorityLabel = (value: number) => priorities[value - 1] ?? String(value)
 
   const groupLabel = (item: OrganizationRequest) =>
@@ -438,6 +443,11 @@ export function RuntimeRequests({
           </Button>
         )}
       </div>
+      {supportsInbox && <SegmentedControl onChange={setView} options={[
+        { id: 'inbox', label: copy.attentionInbox }, { id: 'queue', label: copy.attentionQueue }
+      ]} value={view} />}
+      {inbox && <RuntimeAttentionInbox adapter={adapter} onInspect={setSelected} snapshot={snapshot} />}
+      {!inbox && <>
       {!objective && <p className="eid-note">{copy.queueNote}</p>}
       <div className="eid-toolbar">
         <label>
@@ -576,6 +586,7 @@ export function RuntimeRequests({
           {runtimeCopy.edits.mergePending} {runtimeCopy.edits.mergeNote}
         </p>
       )}
+      </>}
       {request && (
         <Inspector kind="request" onClose={() => setSelected(null)} title={request.type}>
           <dl>

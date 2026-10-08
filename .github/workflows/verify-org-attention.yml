@@ -1,0 +1,79 @@
+name: Organization attention verification
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/verify-org-attention.yml'
+permissions:
+  contents: read
+jobs:
+  ledger:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Install runtime and test tools
+        run: |
+          python -m venv .venv
+          if [ -x .venv/bin/python ]; then PY=.venv/bin/python; else PY=.venv/Scripts/python.exe; fi
+          "$PY" -m pip install -e . pytest==8.4.2 pytest-asyncio==1.2.0 pytest-timeout==2.4.0 ruff==0.15.10
+      - name: Verify native attention durability and scope
+        run: |
+          git rev-parse HEAD HEAD^{tree}
+          scripts/run_tests.sh tests/eidolon_cli/test_organization_attention.py tests/tui_gateway/test_organization_attention.py tests/eidolon_cli/test_organization_history.py tests/tui_gateway/test_organization_history.py -j 3
+      - name: Verify complete organization backend
+        if: runner.os == 'Linux'
+        run: |
+          scripts/run_tests.sh tests/eidolon_cli/test_organization*.py tests/tui_gateway/test_organization*.py tests/tools/test_organization_file_read.py -j 4
+          .venv/bin/python scripts/check_compat_pointers.py
+  desktop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Install locked desktop and runtime dependencies
+        run: |
+          npm ci
+          python -m venv .venv
+          .venv/bin/python -m pip install -e .
+      - name: Verify organization components, adapter and types
+        working-directory: apps/desktop
+        run: |
+          npx vitest run src/app/eidolon src/store/organization-work.test.ts src/app/contrib/organization-shell.test.tsx
+          npm run typecheck
+      - name: Build desktop
+        working-directory: apps/desktop
+        run: npm run build
+      - name: Verify native owner attention and response loop
+        working-directory: apps/desktop
+        run: xvfb-run -a npx playwright test e2e/organization-requests-loop.spec.ts e2e/organization-owner-loop.spec.ts e2e/organization-completion-loop.spec.ts --workers=1
+      - name: Retain native owner-flow evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: organization-attention-native-evidence
+          path: |
+            apps/desktop/test-results/
+            apps/desktop/playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore

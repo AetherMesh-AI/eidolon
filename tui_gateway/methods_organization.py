@@ -87,6 +87,21 @@ def _(params, service):
     return snapshot
 
 
+@_organization_method("organization.attention")
+def _(params, service):
+    _organization_params(params, {"limit", "before", "unreadOnly"})
+    return service().store.attention(limit=params.get("limit", 100), before=params.get("before"),
+                                     unread_only=params.get("unreadOnly", False))
+
+
+@_organization_method("organization.markAttentionSeen")
+def _(params, service):
+    _organization_params(params, {"id", "revision"})
+    organization = service()
+    organization.store.mark_attention_seen(_organization_text(params, "id", 128), params.get("revision"))
+    return _organization_snapshot(organization)
+
+
 @_organization_method("organization.create")
 def _(params, service):
     _organization_params(params, {"title", "description", "priority", "idempotencyKey", "acceptanceCriteria", "deliveryMode", "requiredChecks", "executiveId", "managerId"})
