@@ -20,6 +20,7 @@ import { RuntimeStatus } from './runtime-detail'
 import { RuntimeHistoryBrowser, RuntimeHistoryObjectiveDetail } from './runtime-history'
 import { RuntimeOutcomeInbox } from './runtime-outcomes'
 import { RuntimeRequests } from './runtime-requests'
+import { RuntimeSetup } from './runtime-setup'
 import { type Objective, objectiveStatusLabels, type OrganizationAdapter, type OrganizationSnapshot, type RuntimeOrganizationAdapter } from './types'
 import { WorkGraph } from './work-graph'
 
@@ -86,6 +87,7 @@ export function OrganizationWorkspaceView({ adapter }: { adapter: OrganizationAd
   return <main aria-label="Organization workspace" className="eidolon eid-workspace">
     <div className="eid-page">
       {adapter.mode === 'prototype' ? <div className="eid-demo-bar"><span>{copy.legacyDemo} · {copy.legacyNote}</span></div> : <RuntimeStatus adapter={adapter} snapshot={snapshot} />}
+      {adapter.mode === 'runtime' && (pathname === '/home' || pathname === '/organization') && <RuntimeSetup snapshot={snapshot} />}
       {pathname === '/home' && <>{adapter.mode === 'runtime' && <Command adapter={adapter} key={snapshot.connection?.ownerScope ?? snapshot.connection?.scope} snapshot={snapshot} />}{snapshot.objectives.length > 0 && <section><h2>In motion</h2><ObjectiveList objectives={snapshot.objectives.slice(0, 4)} snapshot={snapshot} /></section>}</>}
       {titles[pathname] && <header className="eid-page-header"><div><p className="eid-eyebrow">Eidolon · Organization</p><h1>{titles[pathname]}</h1></div><span className="eid-prototype">{adapter.mode === 'runtime' ? 'Runtime' : 'Local prototype'}</span></header>}
       {pathname === '/objectives' && <>{adapter.mode === 'runtime' && snapshot.outcomes && adapter.getOutcomes && <RuntimeOutcomeInbox adapter={adapter} key={snapshot.connection?.ownerScope ?? snapshot.connection?.scope} snapshot={snapshot} />}{snapshot.runtime?.historyLimited && !snapshot.runtime.history && <p className="eid-note">All open objectives and the latest 25 completed or cancelled objectives are shown. Older history remains in the backend ledger.</p>}<div className="eid-toolbar"><label className="eid-filter">Search objectives<input onChange={event => setQuery(event.target.value)} placeholder="Find an objective…" value={query} /></label><label className="eid-filter">Status<select onChange={event => setFilter(event.target.value)} value={filter}><option value="all">All statuses</option>{Object.entries(objectiveStatusLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label><Link className="eid-primary" to="/home">New objective</Link></div><ObjectiveList objectives={snapshot.objectives.filter(item => (filter === 'all' || item.status === filter) && item.title.toLowerCase().includes(query.toLowerCase()))} onClearFilters={filter !== 'all' || query ? () => { setFilter('all'); setQuery('') } : undefined} snapshot={snapshot} />{adapter.mode === 'runtime' && <RuntimeHistoryBrowser adapter={adapter} key={snapshot.connection?.ownerScope ?? snapshot.connection?.scope} snapshot={snapshot} />}</>}

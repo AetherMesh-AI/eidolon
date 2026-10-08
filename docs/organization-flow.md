@@ -756,3 +756,35 @@ controls acknowledgement and reopening.
 
 Older backends without attention support continue to show the existing Requests
 queue. They cannot offer durable mark-seen state until the backend is upgraded.
+
+## First-use setup guidance
+
+Home and Organization show a read-only **Organization setup** panel. A connected
+ledger is not proof that its provider can execute work. The panel separates those
+facts before the owner submits an objective:
+
+- **Review profile model** and **Review provider accounts** open the existing
+  settings for the currently connected organization profile. They do not sign in,
+  change providers, or provision credentials.
+- Model-using members without overrides inherit that profile's provider and
+  model. Configured overrides and inherited members are counted separately;
+  human owners and deterministic control executors are excluded.
+- An explicit canonical Codex app-server selection produces a configuration
+  warning: Organization cannot use that transport. The effective route has not
+  been resolved; resolver fallbacks may differ. All routes remain untested,
+  including aliases that might resolve to custom endpoints. No login, provider resolution, account probe, inference, or cost
+  estimate is performed. Execution retains every existing admission check.
+- The roster and repository details report configuration, not successful
+  execution. **Manage organization** changes roster and capacity within existing
+  authority. Repository work still needs explicit organization and worker grants,
+  roots, and exact recipes in the profile configuration. Registering a repository
+  does not grant access. Submitted-text work can use managed-artifact delivery.
+- Background opt-in is only a configuration fact. Work after desktop quit also
+  needs the existing gateway running on an awake host. This panel never starts,
+  installs or enables a gateway, and it cannot certify host availability.
+
+The panel does not disable intake based on a provider warning. Durable queued work
+and executable readiness are separate; submitted work may pause for intervention.
+Submitting an objective may incur provider charges. Disconnected snapshots are
+marked stale, with settings shortcuts withheld until the profile is known and
+connected. Older runtimes keep working and show that setup guidance is unavailable.

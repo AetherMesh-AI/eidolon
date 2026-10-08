@@ -4,6 +4,7 @@ import { type OrganizationAttentionPage, validAttentionPage } from './runtime-at
 import type { HistoryPage } from './runtime-history-types'
 import { type OrganizationOutcomePage, validOutcomePage } from './runtime-outcome-types'
 import { validEditProposal } from './runtime-proposal-validation'
+import { validOrganizationSetup } from './runtime-setup-contract'
 import type { Objective, OrganizationArtifact, OrganizationExecutionAudit, OrganizationSnapshot, OrganizationToolEvidence, RuntimeOrganizationAdapter } from './types'
 
 export interface OrganizationScope {
@@ -48,7 +49,9 @@ function validateSnapshot(value: OrganizationSnapshot): OrganizationSnapshot {
     throw new Error(translateNow('organizationWork.outcomeInvalid'))
   }
 
-  return value
+  return value.runtime.setup !== undefined && !validOrganizationSetup(value.runtime.setup)
+    ? { ...value, runtime: { ...value.runtime, setup: undefined } }
+    : value
 }
 
 /** Server-owned truth. Reads are single-flight and bounded; losing the last

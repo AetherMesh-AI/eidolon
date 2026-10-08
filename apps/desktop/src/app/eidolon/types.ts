@@ -93,8 +93,8 @@ export interface OrganizationAgent {
   requestTypes?: string[]
   status: WorkStatus
   summary: string
-  model?: string
-  provider?: string
+  model?: string | null
+  provider?: string | null
   lifecycle?: 'active' | 'available' | 'disabled' | 'retired'
   context?: OrganizationAgentContext
   tools?: string[]
@@ -478,6 +478,17 @@ export interface OrganizationManagement {
   allowedCapabilities: string[]
 }
 export interface OrganizationRuntime {
+  /** Configuration-only guidance; never authentication or live execution proof. */
+  setup?: {
+    version: 1
+    provider: {
+      status: 'warning' | 'unchecked'
+      blockers: 'codex_app_server'[]
+      inheritedMembers: number
+      overriddenMembers: number
+    }
+    backgroundOptIn: boolean
+  }
   availableProjects?: OrganizationProjectBinding[]
   history?: HistoryCounts
   capabilities: string[]
