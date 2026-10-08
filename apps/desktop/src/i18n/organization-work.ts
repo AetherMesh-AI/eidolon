@@ -151,7 +151,7 @@ const copy = {
   managementProposal: ['Exact staffing proposal', '正確な人員配置提案', '确切人员配置方案', '確切人員配置方案'],
   proposalNote: ['Approval applies these exact member configurations and transfers. Existing identities and history are retained.', '承認すると、表示されたメンバー設定と移管が適用されます。既存の識別情報と履歴は保持されます。', '批准后将应用这些确切的成员配置及转移。现有身份和历史将保留。', '核准後將套用這些確切的成員設定及移轉。現有身分和歷程將保留。'],
   proposalMissing: ['The runtime has not supplied a complete staffing proposal. Refresh before approving.', '完全な人員配置提案がありません。承認前に更新してください。', '运行时未提供完整人员配置方案。请刷新后再批准。', '執行階段未提供完整人員配置方案。請重新整理後再核准。'],
-  transfers: ['Assignment and memory transfers', '担当と記憶の移管', '任务及记忆转移', '任務及記憶移轉'],
+  transfers: ['Leadership, assignment and memory transfers', '責任者・担当・記憶の移管', '负责人、任务及记忆转移', '負責人、任務及記憶移轉'],
   includeMemory: ['Include retained memory', '保存された記憶を含める', '包括保留记忆', '包含保留記憶'],
 
   mainQuestion: ['What should the organization do?', '組織に何を任せますか？', '你希望组织做什么？', '你希望組織做什麼？'],

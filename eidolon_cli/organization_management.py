@@ -122,10 +122,10 @@ def _validate_agent_members(proposal, settings, actor):
 def _transfer_rows(value):
     if not isinstance(value, list) or len(value) > 64:
         raise ValueError('Transfers must be a list of at most 64 explicit source and destination entries')
-    seen_tasks, seen_pairs = set(), set()
+    seen_tasks, seen_objectives, seen_pairs = set(), set(), set()
     for transfer in value:
-        if not isinstance(transfer, dict) or set(transfer) - {'fromAgentId', 'toAgentId', 'taskIds', 'includeMemory'}:
-            raise ValueError('Transfers must contain fromAgentId, toAgentId, taskIds and includeMemory only')
+        if not isinstance(transfer, dict) or set(transfer) - {'fromAgentId', 'toAgentId', 'taskIds', 'objectiveIds', 'includeMemory'}:
+            raise ValueError('Transfers must contain fromAgentId, toAgentId, taskIds, objectiveIds and includeMemory only')
         source, target = transfer.get('fromAgentId'), transfer.get('toAgentId')
         tasks = transfer.get('taskIds', [])
         if (not isinstance(source, str) or not isinstance(target, str) or not source or not target
@@ -135,14 +135,21 @@ def _transfer_rows(value):
                 or any(not isinstance(task, str) or not 1 <= len(task) <= 128 for task in tasks)
                 or len(set(tasks)) != len(tasks) or seen_tasks.intersection(tasks)):
             raise ValueError('Transfer taskIds must identify unique bounded open work, without overlapping transfers')
+        objectives = transfer.get('objectiveIds', [])
+        if (not isinstance(objectives, list) or len(objectives) > 100
+                or any(not isinstance(ident, str) or not 1 <= len(ident) <= 128 for ident in objectives)
+                or len(set(objectives)) != len(objectives)
+                or any((source, ident) in seen_objectives for ident in objectives)):
+            raise ValueError('Transfer objectiveIds must identify unique bounded objective leadership')
         include_memory = transfer.get('includeMemory', False)
         if type(include_memory) is not bool:
             raise ValueError('Transfer includeMemory must be a boolean')
-        if not tasks and not include_memory:
-            raise ValueError('A transfer must explicitly select open tasks or bounded memory')
+        if not tasks and not objectives and not include_memory:
+            raise ValueError('A transfer must explicitly select open tasks, objective leadership or bounded memory')
         seen_tasks.update(tasks)
+        seen_objectives.update((source, ident) for ident in objectives)
         seen_pairs.add((source, target))
-        yield source, target, tasks, include_memory
+        yield source, target, tasks, objectives, include_memory
 
 
 def _copy_memory(conn, source, target):
@@ -160,7 +167,7 @@ def _copy_memory(conn, source, target):
             'retainedItems': sum(len(values) for values in merged.values())}
 
 
-def _transfer_tasks(conn, source, target, task_ids, actor_id, actor=None):
+def _transfer_tasks(conn, source, target, task_ids, actor_id, actor=None, objective_ids=()):
     moved_objectives = set()
     for task_id in task_ids:
         task = conn.execute('SELECT t.*,a.agent_id AS assigned_agent,a.manager_id AS assigned_manager '
@@ -206,7 +213,7 @@ def _transfer_tasks(conn, source, target, task_ids, actor_id, actor=None):
             assignment = conn.execute('SELECT * FROM objective_assignments WHERE objective_id=?', (task['objective_id'],)).fetchone()
             if assignment is None or (assignment['executive_id'] != source['id'] and task['objective_id'] not in moved_objectives):
                 raise ValueError('Transfer source does not oversee the exact task objective')
-        if source['role'] != 'Worker':
+        if source['role'] != 'Worker' and task['objective_id'] not in objective_ids:
             field = 'manager_id' if source['role'] == 'Manager' else 'executive_id'
             assignment = conn.execute('SELECT * FROM objective_assignments WHERE objective_id=?', (task['objective_id'],)).fetchone()
             if assignment and assignment[field] == source['id']:
@@ -216,24 +223,48 @@ def _transfer_tasks(conn, source, target, task_ids, actor_id, actor=None):
                     if source['role'] == 'Executive':
                         raise ValueError('An executive handoff must explicitly select every open task in its objective')
                     continue
-                if source['role'] == 'Manager':
-                    conn.execute('UPDATE objective_assignments SET manager_id=?,executive_id=? WHERE objective_id=?',
-                                 (target['id'], target['manager_id'], task['objective_id']))
-                    kinds = ('request.plan', 'request.integrate')
-                else:
-                    manager = conn.execute('SELECT manager_id FROM agents WHERE id=?', (assignment['manager_id'],)).fetchone()
-                    if manager is None or manager['manager_id'] != target['id']:
-                        raise ValueError('Executive handoff requires the objective manager to report to its destination')
-                    conn.execute('UPDATE objective_assignments SET executive_id=? WHERE objective_id=?',
-                                 (target['id'], task['objective_id']))
-                    kinds = ('request.accept',)
+                _transfer_objective(conn, source, target, task['objective_id'], actor)
                 moved_objectives.add(task['objective_id'])
-                for kind in kinds:
-                    conn.execute("UPDATE requests SET team=?,agent_id=NULL WHERE objective_id=? AND type=? AND status NOT IN ('completed','cancelled')",
-                                 (target['team'], task['objective_id'], kind))
-                conn.execute('UPDATE request_continuations SET agent_id=? WHERE agent_id=? AND request_id IN '
-                             "(SELECT id FROM requests WHERE objective_id=? AND status NOT IN ('completed','cancelled'))",
-                             (target['id'], source['id'], task['objective_id']))
+
+
+def _transfer_objective(conn, source, target, objective_id, actor=None):
+    """Move explicit leadership independently of delegated or terminal tasks."""
+    field = {'Manager': 'manager_id', 'Executive': 'executive_id'}.get(source['role'])
+    if field is None:
+        raise ValueError('Only Managers and Executives may transfer objective leadership')
+    assignment = conn.execute('SELECT a.*,o.cancelled,c.status FROM objective_assignments a '
+                              'JOIN objectives o ON o.id=a.objective_id '
+                              'JOIN objective_control c ON c.objective_id=o.id WHERE a.objective_id=?',
+                              (objective_id,)).fetchone()
+    if assignment is None or assignment['cancelled'] or assignment['status'] == 'accepted':
+        raise ValueError('Objective transfers must identify existing open objectives')
+    if assignment[field] != source['id']:
+        raise ValueError('Transfer source does not own the exact objective leadership')
+    if actor:
+        from eidolon_cli.organization_projects import objective_projects
+        teams = {row['team'] for row in conn.execute(
+            'SELECT DISTINCT team FROM tasks WHERE objective_id=?', (objective_id,))}
+        teams.update(project['team'] for project in objective_projects(conn, objective_id))
+        if any(not _team_allowed(actor, team) for team in teams):
+            raise ValueError('Transferred objective work is outside the actor managed teams')
+    kinds = ('request.plan', 'request.integrate') if source['role'] == 'Manager' else ('request.accept',)
+    if not set(kinds).issubset(json.loads(target['accepts'])):
+        raise ValueError('Objective leadership destination must accept its planning/integration or acceptance routes')
+    if source['role'] == 'Manager':
+        conn.execute('UPDATE objective_assignments SET manager_id=? WHERE objective_id=?',
+                     (target['id'], objective_id))
+    else:
+        # Related manager/executive handoffs can appear in either order. The
+        # transaction validates their final reporting line, never an implicit
+        # executive replacement through a manager's configured parent.
+        conn.execute('UPDATE objective_assignments SET executive_id=? WHERE objective_id=?',
+                     (target['id'], objective_id))
+    for kind in kinds:
+        conn.execute("UPDATE requests SET team=?,agent_id=NULL WHERE objective_id=? AND type=? AND status NOT IN ('completed','cancelled')",
+                     (target['team'], objective_id, kind))
+        conn.execute('UPDATE request_continuations SET agent_id=? WHERE agent_id=? AND request_id IN '
+                     "(SELECT id FROM requests WHERE objective_id=? AND type=? AND status NOT IN ('completed','cancelled'))",
+                     (target['id'], source['id'], objective_id, kind))
 
 
 def _validate_open_assignments(conn):
@@ -385,11 +416,18 @@ class OrganizationManagementStore:
                 if historical and not _team_allowed(actor, historical['team']):
                     raise ValueError('Staff management cannot adopt a retained identity outside its managed teams')
         sources = {}
-        for source, target, tasks, include_memory in transfer_rows:
+        for source, target, tasks, objectives, include_memory in transfer_rows:
             row = conn.execute('SELECT * FROM agents WHERE id=?', (source,)).fetchone()
             if row is None:
                 raise ValueError('Transfer source must identify an existing persistent agent')
             sources[source] = dict(row)
+        selected_leadership = set()
+        for source, target, tasks, objectives, include_memory in transfer_rows:
+            for objective_id in objectives:
+                selection = (sources[source]['role'], objective_id)
+                if selection in selected_leadership:
+                    raise ValueError('Each objective leadership role may be transferred only once per configuration')
+                selected_leadership.add(selection)
         if request_id and actor_id != 'owner':
             acting = next((staff for staff in configured_staff(updated) if staff.id == actor_id), None)
             if acting is None or not acting.enabled or "request.hire" not in acting.capabilities:
@@ -402,7 +440,7 @@ class OrganizationManagementStore:
         for staff in current.values():
             if staff.enabled and previous_members.get(staff.id) != _plain(asdict(staff)):
                 conn.execute("UPDATE staff_state SET active=1 WHERE agent_id=?", (staff.id,))
-        for source, target, tasks, include_memory in transfer_rows:
+        for source, target, tasks, objectives, include_memory in transfer_rows:
             destination = conn.execute('SELECT * FROM agents WHERE id=?', (target,)).fetchone()
             source_row = sources[source]
             if destination is None or target not in current or not current[target].enabled:
@@ -411,11 +449,15 @@ class OrganizationManagementStore:
                 raise ValueError('Transfers require source and destination members with the same role')
             if actor and (not _team_allowed(actor, source_row['team']) or not _team_allowed(actor, destination['team'])):
                 raise ValueError('Context and work transfers must remain within the actor managed teams')
-            _transfer_tasks(conn, source_row, destination, tasks, actor_id, actor)
+            _transfer_tasks(conn, source_row, destination, tasks, actor_id, actor,
+                            {ident for role, ident in selected_leadership if role == source_row['role']})
+            for objective_id in objectives:
+                _transfer_objective(conn, source_row, destination, objective_id, actor)
             memory = _copy_memory(conn, source, target) if include_memory else None
             _audit(conn, actor_id, request_id, 'transfer', source,
                    {'fromAgentId': source, 'team': source_row['team']},
                    {'toAgentId': target, 'team': destination['team'], 'taskIds': tasks,
+                    'objectiveIds': objectives,
                     'includeMemory': include_memory, 'memory': memory})
         _validate_open_assignments(conn)
         after = _configuration(updated)

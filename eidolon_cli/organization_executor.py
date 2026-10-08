@@ -65,7 +65,9 @@ no answer expands grants or changes the immutable acceptance checklist.
 Questions/decisions route only to explicitly authorized persistent peers.
 Permission always needs the owner and cannot expand tool/credential grants.
 Hiring requires an exact managementProposal with members (full persistent roster
-entry upserts) and optional transfers (fromAgentId, toAgentId, taskIds, includeMemory).
+entry upserts) and optional transfers (fromAgentId, toAgentId, taskIds, objectiveIds, includeMemory).
+objectiveIds explicitly transfers objective leadership, including before planning or after tasks
+finish; task assignments and memory move only when separately selected.
 Use staff.manage only within the supplied authority and bounded staffing policy;
 otherwise the request reaches the owner. Never create disposable subagents.
 Do not repeat a request that already has a response. A denial is binding; either

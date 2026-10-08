@@ -3,6 +3,7 @@ import { MemoryRouter } from 'react-router'
 import { expect, it, vi } from 'vitest'
 
 import { createRuntimeAdapter, type OrganizationGateway } from './runtime-adapter'
+import { hasCompleteManagementProposal } from './runtime-request-context'
 import type { OrganizationRequest, OrganizationSnapshot } from './types'
 import { OrganizationWorkspace } from './workspace'
 
@@ -268,6 +269,50 @@ it('keeps malformed staffing data inspectable and deniable without allowing appr
     decision: 'denied',
     text: 'The proposal is invalid.'
   })
+  view.unmount()
+})
+
+it('shows exact objective leadership IDs before staffing approval and validates optional IDs without rejecting legacy proposals', async () => {
+  const transfer = {
+    fromAgentId: 'manager', toAgentId: 'next-manager', taskIds: [], includeMemory: false,
+    objectiveIds: ['goal-before-planning', 'goal-awaiting-acceptance']
+  }
+
+  const proposal = { members: [], transfers: [transfer] }
+
+  const initial = snapshot({
+    type: 'request.hire',
+    managementProposal: proposal,
+    requiredAuthority: 'staff.manage',
+    allowedResolutions: [
+      { action: 'approve_request', label: 'Approve', requiresText: true, requiresEvidence: false }
+    ]
+  })
+
+  const request = vi.fn().mockResolvedValue(initial)
+  const view = open(request)
+  fireEvent.click(await screen.findByRole('button', { name: 'Inspect request: request.hire' }))
+  const inspector = within(screen.getByRole('complementary', { name: 'Request details' }))
+  const preview = within(inspector.getByRole('region', { name: 'Exact staffing proposal' }))
+  expect(preview.getByText(`Objective leadership IDs: ${transfer.objectiveIds.join(', ')}`)).toBeTruthy()
+  expect(preview.getByText('Task ID: ∅')).toBeTruthy()
+  expect(preview.getByText('manager → next-manager')).toBeTruthy()
+  fireEvent.change(inspector.getByRole('textbox', { name: 'Response' }), {
+    target: { value: 'Approve the listed leadership handoffs.' }
+  })
+  fireEvent.click(inspector.getByRole('button', { name: 'Submit response' }))
+  await waitFor(() => expect(request.mock.calls.some(call => call[0] === 'organization.respond')).toBe(true))
+  expect(request.mock.calls.find(call => call[0] === 'organization.respond')![1]).toMatchObject({ decision: 'approved' })
+  expect(hasCompleteManagementProposal({ members: [], transfers: [{
+    fromAgentId: 'writer', toAgentId: 'next-writer', taskIds: ['task-1'], includeMemory: false
+  }] })).toBe(true)
+
+  for (const objectiveIds of [null, 'goal-before-planning', [42], [''], ['goal', 'goal']]) {
+    expect(hasCompleteManagementProposal({
+      members: [], transfers: [{ ...transfer, objectiveIds }]
+    } as unknown as OrganizationRequest['managementProposal'])).toBe(false)
+  }
+
   view.unmount()
 })
 

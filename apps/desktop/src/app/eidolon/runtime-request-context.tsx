@@ -38,6 +38,10 @@ export function hasCompleteManagementProposal(
         typeof transfer.fromAgentId === 'string' &&
         typeof transfer.toAgentId === 'string' &&
         Array.isArray(transfer.taskIds) &&
+        (transfer.objectiveIds === undefined ||
+          (Array.isArray(transfer.objectiveIds) &&
+            transfer.objectiveIds.every(id => typeof id === 'string' && Boolean(id.trim())) &&
+            new Set(transfer.objectiveIds).size === transfer.objectiveIds.length)) &&
         typeof transfer.includeMemory === 'boolean'
     )
   )
@@ -167,6 +171,11 @@ export function ManagementProposal({ proposal }: { proposal: OrganizationManagem
                 <p>
                   {roster.taskId}: {transfer.taskIds.join(', ') || '∅'}
                 </p>
+                {transfer.objectiveIds !== undefined && (
+                  <p>
+                    {roster.objectiveLeadershipIds}: {transfer.objectiveIds.join(', ') || '∅'}
+                  </p>
+                )}
                 <p>
                   {copy.includeMemory}: {String(transfer.includeMemory)}
                 </p>

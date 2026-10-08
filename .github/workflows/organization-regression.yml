@@ -115,6 +115,8 @@ jobs:
             tests/eidolon_cli/test_organization_store.py \
             tests/eidolon_cli/test_organization_artifact_retention.py \
             tests/eidolon_cli/test_organization_identity.py \
+            tests/eidolon_cli/test_organization_management.py \
+            tests/eidolon_cli/test_organization_persistent_leadership.py \
             tests/eidolon_cli/test_organization_history.py \
             tests/eidolon_cli/test_organization_attention.py \
             tests/eidolon_cli/test_organization_outcomes.py \

@@ -443,6 +443,7 @@ export interface OrganizationTransfer {
   fromAgentId: string
   toAgentId: string
   taskIds: string[]
+  objectiveIds?: string[]
   includeMemory: boolean
 }
 export interface OrganizationManagementProposal {

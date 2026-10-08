@@ -122,14 +122,17 @@ def canonical_management_proposal(proposal, team):
                 for field in ('provider', 'model')):
             raise ValueError('Management member execution fields have invalid types')
     for transfer in transfers:
-        if set(transfer) - {'fromAgentId', 'toAgentId', 'taskIds', 'includeMemory'}:
+        if set(transfer) - {'fromAgentId', 'toAgentId', 'taskIds', 'objectiveIds', 'includeMemory'}:
             raise ValueError('Management transfers contain unsupported fields')
         if (any(not isinstance(transfer.get(field), str) or not transfer[field]
                 or len(transfer[field]) > 64 for field in ('fromAgentId', 'toAgentId'))
                 or not isinstance(transfer['taskIds'], list) or len(transfer['taskIds']) > 100
                 or any(not isinstance(item, str) or not item or len(item) > 128 for item in transfer['taskIds'])
+                or not isinstance(transfer.get('objectiveIds', []), list)
+                or len(transfer.get('objectiveIds', [])) > 100
+                or any(not isinstance(item, str) or not item or len(item) > 128 for item in transfer.get('objectiveIds', []))
                 or type(transfer['includeMemory']) is not bool):
-            raise ValueError('Management transfers require exact typed identities, task IDs and memory choice')
+            raise ValueError('Management transfers require exact typed identities, task/objective IDs and memory choice')
     return {'members': members, 'transfers': transfers}
 
 

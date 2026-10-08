@@ -32,6 +32,10 @@ const copy = {
   transferFrom: ['Transfer from', '引き継ぎ元', '交接来源', '交接來源'],
   transferTo: ['Transfer to', '引き継ぎ先', '交接目标', '交接目標'],
   transferTasks: ['Exact open assignments', '対象の未完了割り当て', '确切未完成任务', '確切未完成任務'],
+  transferObjectives: ['Objective leadership transfer', '目標の責任者の引き継ぎ', '目标负责人交接', '目標負責人交接'],
+  transferObjectivesNote: ['Transfer leadership of selected open objectives, even when they have no open assignments. Select assignments separately to move their ownership.', '未完了の割り当てがなくても、選択した未完了の目標の責任者を引き継ぎます。割り当ての担当を移す場合は別途選択してください。', '交接所选未完成目标的负责人，即使目标没有未完成任务。要转移任务归属，请单独选择任务。', '交接所選未完成目標的負責人，即使目標沒有未完成任務。要轉移任務歸屬，請另行選擇任務。'],
+  noTransferObjectives: ['No open objectives led by this member.', 'このメンバーが担当する未完了の目標はありません。', '此成员没有负责的未完成目标。', '此成員沒有負責的未完成目標。'],
+  objectiveLeadershipIds: ['Objective leadership IDs', '責任者を引き継ぐ目標 ID', '负责人交接目标 ID', '負責人交接目標 ID'],
   noTransferTasks: ['No open assignments for this member.', 'このメンバーの未完了割り当てはありません。', '此成员没有未完成任务。', '此成員沒有未完成任務。'],
   transferNote: ['Select the exact work and optional bounded memory to hand off to a member with the same role. Completed history stays with its original identity. The runtime checks active work and capability compatibility before applying.', '同じ役割のメンバーへ引き継ぐ作業と、任意の上限付き記憶を選択します。完了履歴は元の識別情報に残ります。適用前に実行中の作業と機能の互換性を確認します。', '选择要交接给相同角色成员的确切工作及可选的有界记忆。已完成历史保留在原身份中。运行时会在应用前检查活动工作及能力兼容性。', '選擇要交接給相同角色成員的確切工作及選填的有限記憶。已完成歷程保留在原身分中。執行階段會在套用前檢查活動工作及能力相容性。'],
 
