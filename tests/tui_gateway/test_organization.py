@@ -176,7 +176,8 @@ def test_web_lifespan_resumes_queued_rows_and_stops_scheduler(monkeypatch):
     first = store.create_objective("Queued before boot", idempotency_key="boot-1")
     with TestClient(web_server.app):
         service = services.get_service()
-        assert service.running
+        # Web startup recovers organization state on a background thread.
+        _wait(lambda: service.running)
         _wait(lambda: store.snapshot()["objectives"][0]["status"] == "completed")
     assert not service.running
     store.create_objective("Queued before restart", idempotency_key="boot-2")

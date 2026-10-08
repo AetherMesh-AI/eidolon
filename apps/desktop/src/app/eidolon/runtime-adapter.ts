@@ -1,5 +1,6 @@
 import { translateNow } from '@/i18n/runtime'
 
+import type { HistoryPage } from './runtime-history-types'
 import { validEditProposal } from './runtime-proposal-validation'
 import type { Objective, OrganizationArtifact, OrganizationExecutionAudit, OrganizationSnapshot, OrganizationToolEvidence, RuntimeOrganizationAdapter } from './types'
 
@@ -63,6 +64,7 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
   const resolutionKeys = new Map<string, string>()
   const responseKeys = new Map<string, string>()
   const configurationKeys = new Map<string, string>()
+  const historyKeys = new Map<string, string>()
 
   const publish = (next: OrganizationSnapshot) => {
     // A quiet snapshot poll must not repaint the whole organization graph.
@@ -210,8 +212,60 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
     return result
   }
 
+  const readHistory = async <T,>(method: string, params: Record<string, unknown>): Promise<T> => {
+    resetScope()
+    const token = epoch
+    const controller = new AbortController()
+
+    if (!scope.connected) {throw new Error(translateNow('organizationRuntime.auditReconnect'))}
+    controllers.add(controller)
+    watchScope()
+
+    try {
+      const result = await gateway.request<T>(method, params, 15000, controller.signal)
+
+      if (!current(token) || controller.signal.aborted) {throw new Error(translateNow('organizationRuntime.auditScopeChanged'))}
+
+      return result
+    } catch (reason) {throw new Error(organizationErrorMessage(reason))} finally {controllers.delete(controller); releaseScope()}
+  }
+
   return {
     mode: 'runtime',
+    async getHistory(input = {}) {
+      const result = await readHistory<HistoryPage>('organization.history', { ...input })
+      const validCount = (value: unknown) => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+
+      if (!result || !Array.isArray(result.items) || result.items.length > 50 ||
+          (result.nextCursor !== null && typeof result.nextCursor !== 'string') || !result.counts ||
+          !['current', 'archived', 'currentLimit', 'archiveLimit'].every(key => validCount(result.counts[key as keyof HistoryPage['counts']])) ||
+          result.items.some(item => !item || typeof item.id !== 'string' || typeof item.title !== 'string' || typeof item.createdAt !== 'string' ||
+            !['completed', 'cancelled', 'open'].includes(item.status) || !item.history || typeof item.history.archived !== 'boolean' ||
+            !validCount(item.history.revision) || typeof item.history.canArchive !== 'boolean' || typeof item.history.canRestore !== 'boolean' ||
+            (item.history.blocker !== null && typeof item.history.blocker !== 'string'))) {
+        throw new Error('The runtime returned an invalid organization history page.')
+      }
+
+      return result
+    },
+    async getHistoryObjective(id) {
+      const result = validateSnapshot(await readHistory<OrganizationSnapshot>('organization.historyObjective', { id }))
+
+      if (result.objectives.length !== 1 || result.objectives[0].id !== id) {throw new Error('The runtime returned a different history objective.')}
+
+      return { ...result, connection: snapshot.connection }
+    },
+    setObjectiveArchived(input) {
+      resetScope()
+      const params = { id: input.id, archived: input.archived, expectedRevision: input.expectedRevision }
+      const intent = JSON.stringify([scope.ownerKey ?? scope.key, params])
+      const idempotencyKey = input.idempotencyKey ?? historyKeys.get(intent) ?? crypto.randomUUID()
+      historyKeys.set(intent, idempotencyKey)
+
+      return mutate<OrganizationSnapshot>(`history:${idempotencyKey}`, 'organization.archive', { ...params, idempotencyKey }, value => value).then(() => {
+        if (historyKeys.get(intent) === idempotencyKey) {historyKeys.delete(intent)}
+      })
+    },
     async getEvidence(id) {
       resetScope()
       const token = epoch

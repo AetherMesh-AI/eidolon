@@ -18,6 +18,7 @@ import uuid
 from datetime import datetime, timezone
 
 from eidolon_cli.organization_config import OrganizationSettings
+from eidolon_cli.organization_history import HISTORY_SCHEMA, OrganizationHistoryStore, history_counts
 from eidolon_cli.organization_coordination import COORDINATION_SCHEMA, OrganizationCoordinationStore, coordination_view
 from eidolon_cli.organization_budget import BUDGET_SCHEMA, OrganizationBudgetStore, budget_reason, budget_view
 from eidolon_cli.organization_acceptance import ACCEPTANCE_SCHEMA, OrganizationAcceptanceStore, final_artifact
@@ -94,12 +95,12 @@ def _text(value, field, limit=10000):
     return value.strip()
 
 
-class OrganizationStore(OrganizationCoordinationStore, OrganizationProjectExecutionStore, OrganizationBudgetStore, OrganizationRequestStore, OrganizationManagementStore, OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
+class OrganizationStore(OrganizationHistoryStore, OrganizationCoordinationStore, OrganizationProjectExecutionStore, OrganizationBudgetStore, OrganizationRequestStore, OrganizationManagementStore, OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
     def __init__(self, path: Path | str, settings: OrganizationSettings | None = None):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
-            conn.executescript(_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA + COORDINATION_SCHEMA)
+            conn.executescript(_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA + COORDINATION_SCHEMA + HISTORY_SCHEMA)
             self.settings = resolve_settings(conn, settings)
         with self._write() as conn:
             self._migrate_reservations(conn)
@@ -215,8 +216,9 @@ class OrganizationStore(OrganizationCoordinationStore, OrganizationProjectExecut
                 count = conn.execute("SELECT count(DISTINCT objective_id) FROM requests WHERE status NOT IN ('completed','cancelled')").fetchone()[0]
                 if count >= self.settings.max_open_objectives:
                     raise ValueError("Organization is at its open-objective limit; finish or cancel existing work first")
-                if conn.execute("SELECT count(*) FROM objectives").fetchone()[0] >= 1000:
-                    raise ValueError("Organization history capacity reached; no new work was admitted")
+                history = history_counts(conn)
+                if history["current"] >= history["currentLimit"]:
+                    raise ValueError("Current-objective capacity reached; archive completed or cancelled history before admitting new work")
                 ident = _id("obj")
                 conn.execute("INSERT INTO objectives VALUES (?,?,?,?,?,?,?,0)",
                              (ident, key, digest, title, description, level, time.time()))
@@ -507,6 +509,8 @@ class OrganizationStore(OrganizationCoordinationStore, OrganizationProjectExecut
                 raise ValueError("Objective not found")
             if row["cancelled"]:
                 return False
+            if conn.execute("SELECT 1 FROM objective_history WHERE objective_id=? AND archived=1", (objective_id,)).fetchone():
+                raise ValueError("Archived history cannot be cancelled; restore its history visibility first")
             for request in conn.execute("SELECT id FROM requests WHERE objective_id=?", (objective_id,)):
                 fence_receipts(conn, request['id'], 'Objective cancelled before the tool outcome was confirmed.')
             conn.execute("UPDATE objectives SET cancelled=1 WHERE id=?", (objective_id,))

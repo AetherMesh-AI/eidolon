@@ -2,6 +2,7 @@
 import json
 from eidolon_cli.organization_coordination import coordination_view
 from eidolon_cli.organization_store import _iso
+from eidolon_cli.organization_history import history_counts, history_view, live_history_references
 from eidolon_cli.organization_receipts import receipt_view
 from eidolon_cli.organization_roster import configured_staff, staff_unavailability
 from eidolon_cli.organization_identity import agent_identity_view, agent_context_view, task_assignment_view, objective_assignment_view
@@ -14,20 +15,27 @@ from eidolon_cli.organization_project_execution import project_execution_view
 
 
 def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
-    # Keep every open objective visible; only completed history is windowed.
-    rows = (conn.execute("SELECT * FROM objectives WHERE id=?", (objective_id,)).fetchall()
-            if objective_id else conn.execute("SELECT * FROM objectives ORDER BY created DESC LIMIT 1000").fetchall())
-    requests = [dict(row) for row in conn.execute("SELECT * FROM requests ORDER BY created")]
-    tasks = [dict(row) for row in conn.execute("SELECT * FROM tasks ORDER BY rowid")]
+    # Archive changes only the projection. Exact reads still resolve every ID.
+    # Bound poll work to the current ledger instead of loading archived task,
+    # request and receipt content then discarding it in Python.
+    selection = ("SELECT id FROM objectives WHERE id=?" if objective_id else
+                 "SELECT o.id FROM objectives o LEFT JOIN objective_history h ON h.objective_id=o.id "
+                 "WHERE coalesce(h.archived,0)=0")
+    arguments = (objective_id,) if objective_id else ()
+    rows = conn.execute(f"SELECT * FROM objectives WHERE id IN ({selection}) ORDER BY created DESC", arguments).fetchall()
+    requests = [dict(row) for row in conn.execute(f"SELECT * FROM requests WHERE objective_id IN ({selection}) ORDER BY created", arguments)]
+    tasks = [dict(row) for row in conn.execute(f"SELECT * FROM tasks WHERE objective_id IN ({selection}) ORDER BY rowid", arguments)]
     task_groups, request_groups = {}, {}
     for task in tasks:
         task_groups.setdefault(task['objective_id'], []).append(task)
     for request in requests:
         request_groups.setdefault(request['objective_id'], []).append(request)
-    controls = {row['objective_id']: row for row in conn.execute('SELECT * FROM objective_control')}
-    rounds = {row['task_id']: row['round'] for row in conn.execute('SELECT * FROM objective_task_rounds')}
+    controls = {row['objective_id']: row for row in conn.execute(f'SELECT * FROM objective_control WHERE objective_id IN ({selection})', arguments)}
+    rounds = {row['task_id']: row['round'] for row in conn.execute(
+        f'SELECT * FROM objective_task_rounds WHERE task_id IN (SELECT id FROM tasks WHERE objective_id IN ({selection}))', arguments)}
     objectives = []
     history_count = 0
+    live_references = live_history_references(conn)
     for row in rows:
         control = controls[row['id']]
         work = [task for task in task_groups.get(row['id'], []) if rounds.get(task['id']) == control['round']]
@@ -44,15 +52,16 @@ def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
             status = 'active'
         else:
             status = 'waiting'
-        if status in {'completed', 'cancelled'}:
+        history = history_view(conn, row['id'], live_references=live_references)
+        if status in {'completed', 'cancelled'} and (history['canArchive'] or history['archived']):
             history_count += 1
-            if history_count > 25:
+            if history_count > 25 and not objective_id:
                 continue
         final = conn.execute('SELECT * FROM objective_deliverables WHERE id=?', (control['deliverable_id'],)).fetchone()
         resolutions = [{'id': item['id'], 'requestId': item['request_id'], 'action': item['action'], 'text': item['text'], 'evidenceIds': json.loads(item['evidence_ids']), 'createdAt': _iso(item['created']), 'scopeAmendment': scope_amendment_view(conn, item['id'])} for item in conn.execute('SELECT * FROM owner_resolutions WHERE objective_id=? ORDER BY created', (row['id'],))]
         acceptance_review = conn.execute('SELECT * FROM objective_acceptances WHERE objective_id=? AND round=? ORDER BY created DESC LIMIT 1', (row['id'], control['round'])).fetchone()
         done = sum(t['status'] == 'completed' for t in work)
-        objectives.append({'id': row['id'], 'title': row['title'], 'description': control['amended_scope'] or row['description'],
+        objectives.append({'history': history, 'id': row['id'], 'title': row['title'], 'description': control['amended_scope'] or row['description'],
                            'originalDescription': row['description'], 'deliveryMode': control['delivery_mode'],
                            'requiredChecks': json.loads(control['required_checks']),
                            'projectValidation': project_validation_view(conn, row['id'], full=False),
@@ -134,13 +143,16 @@ def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
                        'objectiveId': (running or blocked)['objective_id'] if running or blocked else None})
     events = [{'id': f"event_{r['id']}", 'objectiveId': r['objective_id'], 'agentId': r['agent_id'],
                'kind': r['kind'], 'text': r['text'], 'timestamp': _iso(r['created']), 'source': 'runtime'}
-              for r in conn.execute('SELECT * FROM events ORDER BY id DESC LIMIT 500') if r['objective_id'] in visible]
+              for r in conn.execute('SELECT * FROM events WHERE objective_id IN (' + ','.join('?' for _ in visible) + ') ORDER BY id DESC LIMIT 500', tuple(visible))] if visible else []
     receipt_groups = {}
-    counts = {row['request_id']: row['total'] for row in conn.execute('SELECT request_id,count(*) AS total FROM tool_receipts GROUP BY request_id')}
+    counts = {row['request_id']: row['total'] for row in conn.execute(
+        f'SELECT request_id,count(*) AS total FROM tool_receipts WHERE request_id IN '
+        f'(SELECT id FROM requests WHERE objective_id IN ({selection})) GROUP BY request_id', arguments)}
     # Only bounded recent previews ride a poll. The exact-request RPC and the
     # artifact inspector retain every receipt, including failed/no-artifact work.
     visible_requests = {request['id'] for request in requests}
-    for row in conn.execute('SELECT * FROM tool_receipts ORDER BY created DESC,id DESC LIMIT 200'):
+    for row in conn.execute('SELECT * FROM tool_receipts WHERE request_id IN (SELECT id FROM requests WHERE objective_id IN (' +
+                            ','.join('?' for _ in visible) + ')) ORDER BY created DESC,id DESC LIMIT 200', tuple(visible)) if visible else []:
         if row['request_id'] in visible_requests:
             receipt_groups.setdefault(row['request_id'], []).append(receipt_view(row))
     ui_requests = [{**request_contract_view(conn, r), 'id': r['id'], 'objectiveId': r['objective_id'], 'taskId': r['task_id'], 'type': r['type'],
@@ -158,7 +170,7 @@ def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
                  for r in evidence]
     return {'source': 'runtime', 'objectives': objectives, 'agents': agents, 'tasks': ui_tasks, 'activity': events,
             'knowledge': knowledge, 'decisions': [], 'requests': ui_requests,
-            'runtime': {'state': 'ready', 'capabilities': list(settings.capabilities), 'maxWorkers': settings.max_workers,
+            'runtime': {'history': history_counts(conn), 'state': 'ready', 'capabilities': list(settings.capabilities), 'maxWorkers': settings.max_workers,
                         'maxInflight': settings.max_inflight, 'rosterCount': len(agents),
                         'workingCount': sum(agent['status'] in {'executing', 'reviewing'} for agent in agents),
                         'scope': 'Writing and analysis of submitted context; configured work.inspect staff may read explicitly granted local text files. Other tools and unsupported requests require intervention.',

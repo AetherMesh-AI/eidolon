@@ -1,3 +1,5 @@
+import type { HistoryCounts, HistoryMutation, HistoryPage, HistoryQuery, HistoryState } from './runtime-history-types'
+
 export const objectiveStatusLabels = {
   planning: 'Planning', active: 'Active', waiting: 'Waiting', needs_input: 'Needs Input',
   blocked: 'Blocked', completed: 'Completed', paused: 'Paused', archived: 'Archived', cancelled: 'Cancelled',
@@ -20,6 +22,7 @@ export interface ObjectiveMetadata {
   autonomyIntent?: string
 }
 export interface Objective extends ObjectiveMetadata {
+  history?: HistoryState
   id: string
   title: string
   description: string
@@ -458,6 +461,7 @@ export interface OrganizationManagement {
   allowedCapabilities: string[]
 }
 export interface OrganizationRuntime {
+  history?: HistoryCounts
   capabilities: string[]
   state: string
   maxWorkers: number
@@ -510,6 +514,9 @@ export interface StaticOrganizationAdapter extends OrganizationReader {
 
 export interface RuntimeOrganizationAdapter extends OrganizationReader {
   readonly mode: 'runtime'
+  getHistory?(input?: HistoryQuery): Promise<HistoryPage>
+  getHistoryObjective?(id: string): Promise<OrganizationSnapshot>
+  setObjectiveArchived?(input: HistoryMutation): Promise<void>
   createObjective(title: string, metadata?: ObjectiveMetadata, idempotencyKey?: string): Promise<Objective>
   cancelObjective(id: string): Promise<void>
   retryRequest(id: string): Promise<void>

@@ -1,7 +1,7 @@
 import './eidolon.css'
 
 import { lazy, Suspense, useState, useSyncExternalStore } from 'react'
-import { Link, useLocation } from 'react-router'
+import { Link, useLocation, useMatch } from 'react-router'
 
 import { Button } from '@/components/ui/button'
 import { Loader } from '@/components/ui/loader'
@@ -16,7 +16,8 @@ import { MetadataSummary } from './objective-metadata'
 import { ObjectiveOverview } from './objective-overview'
 import { Organization } from './organization'
 import { RuntimeArtifact } from './runtime-artifact'
-import { RuntimeObjectiveDetail, RuntimeStatus } from './runtime-detail'
+import { RuntimeStatus } from './runtime-detail'
+import { RuntimeHistoryBrowser, RuntimeHistoryObjectiveDetail } from './runtime-history'
 import { RuntimeRequests } from './runtime-requests'
 import { type Objective, objectiveStatusLabels, type OrganizationAdapter, type OrganizationSnapshot, type RuntimeOrganizationAdapter } from './types'
 import { WorkGraph } from './work-graph'
@@ -75,6 +76,7 @@ export function OrganizationWorkspaceView({ adapter }: { adapter: OrganizationAd
   const copy = t.organizationWork
   const snapshot = useSyncExternalStore(adapter.subscribe, adapter.getSnapshot)
   const { pathname } = useLocation()
+  const objectiveRoute = useMatch('/objectives/:objectiveId')
   const [filter, setFilter] = useState('all')
   const [query, setQuery] = useState('')
   const objective = snapshot.objectives.find(item => pathname === `/objectives/${item.id}`)
@@ -85,8 +87,8 @@ export function OrganizationWorkspaceView({ adapter }: { adapter: OrganizationAd
       {adapter.mode === 'prototype' ? <div className="eid-demo-bar"><span>{copy.legacyDemo} · {copy.legacyNote}</span></div> : <RuntimeStatus adapter={adapter} snapshot={snapshot} />}
       {pathname === '/home' && <>{adapter.mode === 'runtime' && <Command adapter={adapter} key={snapshot.connection?.ownerScope ?? snapshot.connection?.scope} snapshot={snapshot} />}{snapshot.objectives.length > 0 && <section><h2>In motion</h2><ObjectiveList objectives={snapshot.objectives.slice(0, 4)} snapshot={snapshot} /></section>}</>}
       {titles[pathname] && <header className="eid-page-header"><div><p className="eid-eyebrow">Eidolon · Organization</p><h1>{titles[pathname]}</h1></div><span className="eid-prototype">{adapter.mode === 'runtime' ? 'Runtime' : 'Local prototype'}</span></header>}
-      {pathname === '/objectives' && <>{snapshot.runtime?.historyLimited && <p className="eid-note">All open objectives and the latest 25 completed or cancelled objectives are shown. Older history remains in the backend ledger.</p>}<div className="eid-toolbar"><label className="eid-filter">Search objectives<input onChange={event => setQuery(event.target.value)} placeholder="Find an objective…" value={query} /></label><label className="eid-filter">Status<select onChange={event => setFilter(event.target.value)} value={filter}><option value="all">All statuses</option>{Object.entries(objectiveStatusLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label><Link className="eid-primary" to="/home">New objective</Link></div><ObjectiveList objectives={snapshot.objectives.filter(item => (filter === 'all' || item.status === filter) && item.title.toLowerCase().includes(query.toLowerCase()))} onClearFilters={filter !== 'all' || query ? () => { setFilter('all'); setQuery('') } : undefined} snapshot={snapshot} /></>}
-      {pathname.startsWith('/objectives/') && (objective ? adapter.mode === 'runtime' ? <RuntimeObjectiveDetail adapter={adapter} key={`${snapshot.connection?.ownerScope ?? snapshot.connection?.scope}:${objective.id}`} objective={objective} snapshot={snapshot} /> : <StaticObjectiveDetail key={objective.id} objective={objective} snapshot={snapshot} /> : adapter.mode === 'runtime' && snapshot.connection?.state !== 'ready' ? <p>Waiting for the current profile’s organization snapshot.</p> : <div className="eid-empty"><h1>Objective not found</h1><p>{adapter.mode === 'runtime' ? 'This objective is not in the current connection and profile snapshot.' : 'This objective is not in the local prototype.'}</p><Link to="/objectives">Back to objectives</Link></div>)}
+      {pathname === '/objectives' && <>{snapshot.runtime?.historyLimited && !snapshot.runtime.history && <p className="eid-note">All open objectives and the latest 25 completed or cancelled objectives are shown. Older history remains in the backend ledger.</p>}<div className="eid-toolbar"><label className="eid-filter">Search objectives<input onChange={event => setQuery(event.target.value)} placeholder="Find an objective…" value={query} /></label><label className="eid-filter">Status<select onChange={event => setFilter(event.target.value)} value={filter}><option value="all">All statuses</option>{Object.entries(objectiveStatusLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label><Link className="eid-primary" to="/home">New objective</Link></div><ObjectiveList objectives={snapshot.objectives.filter(item => (filter === 'all' || item.status === filter) && item.title.toLowerCase().includes(query.toLowerCase()))} onClearFilters={filter !== 'all' || query ? () => { setFilter('all'); setQuery('') } : undefined} snapshot={snapshot} />{adapter.mode === 'runtime' && <RuntimeHistoryBrowser adapter={adapter} key={snapshot.connection?.ownerScope ?? snapshot.connection?.scope} snapshot={snapshot} />}</>}
+      {pathname.startsWith('/objectives/') && (adapter.mode === 'runtime' ? <RuntimeHistoryObjectiveDetail adapter={adapter} key={`${snapshot.connection?.ownerScope ?? snapshot.connection?.scope}:${pathname}`} objectiveId={objectiveRoute?.params.objectiveId ?? ''} snapshot={snapshot} /> : objective ? <StaticObjectiveDetail key={objective.id} objective={objective} snapshot={snapshot} /> : <div className="eid-empty"><h1>Objective not found</h1><p>This objective is not in the local prototype.</p><Link to="/objectives">Back to objectives</Link></div>)}
       {pathname === '/requests' && adapter.mode === 'runtime' && <RuntimeRequests adapter={adapter} key={snapshot.connection?.ownerScope ?? snapshot.connection?.scope} snapshot={snapshot} />}
       {pathname === '/activity' && <Activity key={snapshot.connection?.scope} snapshot={snapshot} />}
       {pathname === '/knowledge' && (adapter.mode === 'runtime' ? <Knowledge adapter={adapter} key={snapshot.connection?.scope} snapshot={snapshot} /> : <MemoryWeb items={snapshot.knowledge} />)}
