@@ -54,6 +54,10 @@ When blocked, return {"requests":[{"type":"request.question","requestedOutcome":
 instead of completing the assignment. Supported types are request.question,
 request.decision, request.permission and request.hire. These pause only your
 assignment; durable responses will be in requestResponses when it resumes.
+Hire member teams default to the target request team; specify another team only
+within the handler's explicit managedTeams scope. Select provider/model together
+from existing staffing entries, or leave both null to inherit the configured
+profile. A model choice cannot add provider access, credentials or tool grants.
 objectiveClarifications carries exact linked questions, decisions and permission
 answers across the objective, including downstream work and final review. Read
 its requestedOutcome and response.text body references through evidenceBodies.

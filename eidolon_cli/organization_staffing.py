@@ -97,6 +97,7 @@ class OrganizationStaffingStore:
     def _staffing_context(self):
         return [{'id': staff.id, 'name': staff.name, 'team': staff.team,
                  'capabilities': list(staff.capabilities), 'tools': list(staff.tool_grants),
+                 'provider': staff.provider, 'model': staff.model,
                  'enabled': staff.enabled, 'role': staff.role, 'managerId': staff.manager_id,
                  'responsibilities': list(staff.responsibilities), 'purpose': staff.purpose,
                  'authority': list(staff.authority), 'managedTeams': list(staff.managed_teams), 'scope': staff.scope, 'availableReason': staff_unavailability(staff, self.settings)}
