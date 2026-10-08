@@ -253,7 +253,7 @@ def _native_two_repository_loop(tmp_path, native_os):
     store.finish(claim, {'workers': 1, 'tasks': [
         {'title': f'Correct {name}', 'description': 'Fix subtraction to addition and preserve the regression.',
          'type': 'work.edit', 'team': 'engineering', 'agentId': 'inspector', 'projectId': name,
-         'writePaths': [f'root{i}/test_sample.py'], 'dependsOn': []}
+         'writePaths': [f'root{i}/test_sample.py'], 'dependsOn': [0] if i else []}
         for i, name in enumerate(('alpha', 'beta'))]})
     seen_tests, seen_sources, unavailable = set(), set(), False
     for _ in range(40):
@@ -265,8 +265,32 @@ def _native_two_repository_loop(tmp_path, native_os):
             with store._connect() as conn:
                 from eidolon_cli.organization_projects import task_project
                 project = task_project(conn, claim['task_id'])
+                if project['id'] == 'beta':
+                    alpha = conn.execute('SELECT t.* FROM tasks t JOIN task_projects p ON p.task_id=t.id '
+                                         "WHERE t.objective_id=? AND p.project_id='alpha'", (objective['id'],)).fetchone()
+                    assert alpha['status'] == 'completed'
+                    artifact = conn.execute('SELECT * FROM evidence WHERE task_id=? ORDER BY created DESC LIMIT 1',
+                                            (alpha['id'],)).fetchone()
+                    dependency = store.context(claim)['dependencies']
+                    assert len(dependency) == 1
+                    assert dependency[0]['taskId'] == alpha['id']
+                    assert dependency[0]['evidenceId'] == artifact['id']
+                    assert dependency[0]['sha256'] == artifact['sha256']
+                    assert dependency[0]['deliverable'] == artifact['content']
+                    assert dependency[0]['editProposal']['sourcePath'] == 'root0/test_sample.py'
+                    assert dependency[0]['editProposal']['validationReceipt']['status'] == 'passed'
             path = project['root'] + '/test_sample.py'
-            observed, _ = _read(store, claim, path=path)
+            from tools.organization_file_read import OrganizationFileReadError
+            try:
+                observed, _ = _read(store, claim, path=path)
+            except OrganizationFileReadError as error:
+                # The direct-store fixture owns the service failure boundary.
+                # Preserve the real platform refusal rather than fabricate a
+                # successful read or silently skip the native Windows path.
+                assert native_os == 'windows'
+                assert str(error) == 'Organization file reads require POSIX no-follow directory-descriptor support.'
+                assert store.fail(claim, str(error), retryable=False)
+                continue
             result = {'summary': 'Correct addition without changing the assertion', 'edits': [{
                 'path': path, 'baseRevision': observed['workspaceRevision'], 'baseSha256': observed['sourceSha256'],
                 'oldText': 'return a - b', 'newText': 'return a + b'}],
@@ -319,8 +343,27 @@ def _native_two_repository_loop(tmp_path, native_os):
     if native_os == 'windows':
         assert current['status'] == 'needs_input'
         assert not seen_tests and not seen_sources
-        assert any('POSIX no-follow directory-descriptor support' in str(row['reason'])
-                   for row in store.snapshot()['requests'] if row['status'] == 'pending_intervention')
+        reopened = OrganizationStore(store.path, settings)
+        blocked = [row for row in reopened.snapshot()['requests']
+                   if row['type'] == 'work.edit' and row['status'] == 'pending_intervention']
+        assert len(blocked) == 1
+        assert all('POSIX no-follow directory-descriptor support' in str(row['reason']) for row in blocked)
+        tasks = {item['projectId']: item for item in reopened.snapshot()['tasks']
+                 if item['objectiveId'] == objective['id']}
+        assert tasks['alpha']['status'] == 'blocked'
+        assert tasks['beta']['status'] == 'queued'
+        assert tasks['beta']['coordination']['state'] == 'waiting'
+        assert tasks['beta']['coordination']['blockingTaskIds'] == [tasks['alpha']['id']]
+        with reopened._connect() as conn:
+            assert conn.execute('SELECT attempts FROM requests WHERE task_id=? AND type=?',
+                                (tasks['beta']['id'], 'work.edit')).fetchone()[0] == 0
+            for table in ('edit_proposals', 'project_run_starts', 'project_run_results',
+                          'project_run_reviews', 'project_source_receipts', 'objective_deliverables'):
+                assert conn.execute('SELECT count(*) FROM ' + table).fetchone()[0] == 0
+            assert conn.execute("SELECT count(*) FROM tool_receipts WHERE status='completed'").fetchone()[0] == 0
+        for root in settings.read_roots:
+            assert git(Path(root), 'for-each-ref', '--format=%(refname)', 'refs/heads/').splitlines() == [b'refs/heads/main']
+        assert reopened.claim_next() is None
         return
     if native_os == 'linux' and os.environ.get('EIDOLON_REQUIRE_PROJECT_SANDBOX') == '1':
         assert not unavailable, current
