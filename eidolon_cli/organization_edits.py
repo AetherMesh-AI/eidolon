@@ -400,7 +400,7 @@ class OrganizationEditStore(OrganizationProjectStore):
         self._verify_write_scope(conn, request, [edit['path'] for edit in edits])
         files = []
         receipts = conn.execute('SELECT * FROM tool_receipts WHERE request_id=? AND attempt=? ORDER BY created,id',
-                                (request['id'], request['attempts'])).fetchall()
+                                (request['id'], request['execution_count'])).fetchall()
         if any(row['status'] not in {'completed', 'failed'} for row in receipts):
             raise ValueError('Edit source receipts include unresolved or blocked tool calls')
         for edit in edits:

@@ -102,6 +102,23 @@ def _safe_arguments(arguments, name='read_file'):
 class OrganizationReceiptStore:
     """Mixin over OrganizationStore's transaction and ownership primitives."""
 
+    def _migrate_receipt_executions(self, conn):
+        # Clarification pauses refund the retry budget, but each new execution
+        # needs fresh evidence and an independent provider call-ID namespace.
+        columns = {row['name'] for row in conn.execute('PRAGMA table_info(requests)')}
+        if 'execution_count' not in columns:
+            conn.execute('ALTER TABLE requests ADD COLUMN execution_count INTEGER NOT NULL DEFAULT 0')
+            conn.execute('UPDATE requests SET execution_count=MAX(attempts, '
+                         'COALESCE((SELECT MAX(attempt) FROM tool_receipts WHERE request_id=requests.id),0))')
+            # Old pauses could carry an unresolved call into the next claim.
+            # Do not let the new namespace silently turn that uncertainty into
+            # fresh work without the existing explicit intervention recovery.
+            for request in conn.execute(
+                    "SELECT r.* FROM requests r WHERE r.status IN ('waiting_response','queued') "
+                    "AND EXISTS (SELECT 1 FROM tool_receipts t WHERE t.request_id=r.id AND t.attempt>r.attempts "
+                    "AND t.status IN ('running','unknown','blocked'))").fetchall():
+                self._pending(conn, request, 'A paused legacy execution has an unresolved or blocked tool outcome; review before retrying.')
+
     def record_tool_start(self, claim, call_id, name, arguments):
         if not isinstance(call_id, str) or not call_id or len(call_id) > 200:
             raise ValueError('Tool call ID must be bounded nonempty text')
@@ -115,18 +132,18 @@ class OrganizationReceiptStore:
             if request['type'] not in {'work.inspect', 'work.edit'} or name not in self._tool_policy(conn, request)['tools']:
                 raise ValueError('This request and agent do not have the required tool grant')
             old = conn.execute('SELECT * FROM tool_receipts WHERE request_id=? AND attempt=? AND tool_call_id=?',
-                               (request['id'], request['attempts'], call_id)).fetchone()
+                               (request['id'], request['execution_count'], call_id)).fetchone()
             if old:
                 if old['tool_name'] != name or old['arguments'] != safe_arguments:
                     raise ValueError('Tool call ID was reused with different arguments')
                 return {**receipt_view(old, full=True), 'created': False}
             count = conn.execute('SELECT count(*) FROM tool_receipts WHERE request_id=? AND attempt=?',
-                                 (request['id'], request['attempts'])).fetchone()[0]
+                                 (request['id'], request['execution_count'])).fetchone()[0]
             if count >= self.settings.max_tool_calls:
                 raise ValueError('Tool call limit reached; no additional tool was dispatched')
             ident = 'tool_' + uuid.uuid4().hex
             conn.execute("INSERT INTO tool_receipts(id,request_id,attempt,tool_call_id,tool_name,arguments,status,created) "
-                         "VALUES (?,?,?,?,?,?,'running',?)", (ident, request['id'], request['attempts'],
+                         "VALUES (?,?,?,?,?,?,'running',?)", (ident, request['id'], request['execution_count'],
                          call_id, name, safe_arguments, time.time()))
             self._event(conn, request['objective_id'], f'{name} started under its configured read grant.',
                         'tool', request['agent_id'])
@@ -144,10 +161,11 @@ class OrganizationReceiptStore:
             raise ValueError('Redacted tool result exceeds its retained evidence budget')
         digest = hashlib.sha256(result.encode()).hexdigest()
         with self._write() as conn:
-            if self._owned(conn, claim) is None:
+            request = self._owned(conn, claim)
+            if request is None:
                 raise ValueError('Tool execution lease is no longer owned; outcome is unconfirmed')
             row = conn.execute('SELECT * FROM tool_receipts WHERE id=? AND request_id=? AND attempt=?',
-                               (receipt_id, claim['id'], claim['attempts'])).fetchone()
+                               (receipt_id, claim['id'], request['execution_count'])).fetchone()
             if row is None:
                 raise ValueError('Tool receipt does not belong to this request attempt')
             if status == 'completed' and not successful_observation(result, row['tool_name']):
@@ -166,11 +184,12 @@ class OrganizationReceiptStore:
 
     def request_tool_receipts(self, claim):
         with self._connect() as conn:
-            if self._owned(conn, claim) is None:
+            request = self._owned(conn, claim)
+            if request is None:
                 raise ValueError('Tool execution lease is no longer owned')
             return [receipt_view(row, full=True) for row in conn.execute(
                 'SELECT * FROM tool_receipts WHERE request_id=? AND attempt=? ORDER BY created,id',
-                (claim['id'], claim['attempts']))]
+                (claim['id'], request['execution_count']))]
 
     def tool_receipts(self, request_id):
         if not isinstance(request_id, str) or not request_id or len(request_id) > 128:
@@ -183,7 +202,7 @@ class OrganizationReceiptStore:
 
     def _link_tool_evidence(self, conn, request, evidence_id):
         receipts = conn.execute('SELECT * FROM tool_receipts WHERE request_id=? AND attempt=? ORDER BY created,id',
-                                (request['id'], request['attempts'])).fetchall()
+                                (request['id'], request['execution_count'])).fetchall()
         if request['type'] in {'work.inspect', 'work.edit'}:
             if (not any(r['status'] == 'completed' and r['tool_name'] == 'read_file'
                         and successful_read(r['result']) for r in receipts)

@@ -393,8 +393,14 @@ terminal, hosted OCR or arbitrary Python is invoked by this reader.
 
 Every tool call writes a lease-fenced receipt before dispatch and finalizes its
 redacted result and SHA-256 before the next model round. Duplicate tool IDs within
-an attempt reuse a confirmed result only; an unresolved outcome is not replayed.
-Cancellation, expiry or policy removal leaves an unfinished receipt `unknown`.
+one execution reuse a confirmed result only; an unresolved outcome is not replayed.
+Each resumed execution gets a durable fresh receipt namespace, even when asking
+for clarification refunds its retry budget. Historical reads remain in the audit
+but cannot replace a fresh read or support a new artifact as current evidence.
+An unresolved or blocked call requires outcome review before a stage may pause.
+Upgrading a legacy paused/queued request with such calls preserves them and leaves
+that request awaiting intervention. Cancellation, expiry or policy removal leaves
+an unfinished receipt `unknown`.
 A successful inspection artifact must link actual successful read receipts, and
 review checks those retained results alongside the artifact. Model-generated
 claims cannot supply or replace tool receipts. An OS read is not a proof that
