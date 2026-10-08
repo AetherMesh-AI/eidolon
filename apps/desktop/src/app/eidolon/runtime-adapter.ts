@@ -3,9 +3,10 @@ import { translateNow } from '@/i18n/runtime'
 import { type OrganizationAttentionPage, validAttentionPage } from './runtime-attention-types'
 import type { HistoryPage } from './runtime-history-types'
 import { type OrganizationOutcomePage, validOutcomePage } from './runtime-outcome-types'
+import { validProjectSetup } from './runtime-project-setup-contract'
 import { validEditProposal } from './runtime-proposal-validation'
 import { validOrganizationSetup } from './runtime-setup-contract'
-import type { Objective, OrganizationArtifact, OrganizationExecutionAudit, OrganizationSnapshot, OrganizationToolEvidence, RuntimeOrganizationAdapter } from './types'
+import type { Objective, OrganizationArtifact, OrganizationExecutionAudit, OrganizationProjectDraft, OrganizationProjectSetup, OrganizationSnapshot, OrganizationToolEvidence, RuntimeOrganizationAdapter } from './types'
 
 export interface OrganizationScope {
   /** Exact socket + registry connection + profile. Never use the profile alone. */
@@ -245,6 +246,32 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
 
   return {
     mode: 'runtime',
+    async getProjectSetup() {
+      const version = writeVersion
+      const result = await readHistory<OrganizationProjectSetup>('organization.projectSetup', {})
+
+      if (version !== writeVersion) {throw new Error(translateNow('organizationWork.projectSetupChanged'))}
+
+      if (!validProjectSetup(result)) {throw new Error(translateNow('organizationWork.projectSetupInvalid'))}
+
+      return result
+    },
+    async prepareProjectDraft(input) {
+      const { id, root, recipe, team } = input.project
+      const params = { project: { id, root, recipe, team }, expectedRevision: input.expectedRevision }
+      const version = writeVersion
+      const result = await readHistory<OrganizationProjectDraft>('organization.projectDraft', params)
+
+      if (version !== writeVersion) {throw new Error(translateNow('organizationWork.projectSetupChanged'))}
+
+      if (!result || result.version !== 1 || result.revision !== input.expectedRevision ||
+          !result.project || !['id', 'root', 'recipe', 'team'].every(key => result.project[key as keyof typeof params.project] === params.project[key as keyof typeof params.project]) ||
+          typeof result.yaml !== 'string' || !result.yaml.trim() || result.yaml.length > 4096) {
+        throw new Error(translateNow('organizationWork.projectSetupInvalid'))
+      }
+
+      return result
+    },
     async getOutcomes(input = {}) {
       const version = writeVersion
       const result = await readHistory<OrganizationOutcomePage>('organization.outcomes', { ...input }, translateNow('organizationWork.outcomeOffline'))

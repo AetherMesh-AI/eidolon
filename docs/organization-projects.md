@@ -96,3 +96,37 @@ Actual functional execution requires supported Linux isolation. macOS and Window
 continue to fail closed where that isolation or safe filesystem primitives are
 unsupported. A managed result or a model's approval alone is never proof that
 project tests or source integration happened.
+
+## Guided repository configuration drafts
+
+The desktop Organization page can prepare a repository binding from the current
+profile's existing root aliases, exact execution recipes, and configured teams.
+Only unused root aliases and a new canonical project ID are valid; the registry
+still has a maximum of eight bindings. The form never accepts a filesystem path
+or creates a grant, recipe, team, credential, or background-execution setting.
+
+`organization.projectSetup` exposes the bounded choices and a revision covering
+the current file and durable policy. `organization.projectDraft` validates the
+selection against that revision and returns one YAML list item for owner review.
+It does **not** save, activate, or change any project or objective. Refresh after a
+configuration conflict; the same-profile form retains its entered selection.
+Switching profile clears the form's previous profile state. Open objectives and
+managed project settings block preparing a change.
+
+The owner can copy the list item into their profile's existing
+`organization.projects` list after reviewing it, preserving other entries and
+checking the configuration again before applying it. A draft is not a durable
+approval or reservation of aliases, grants, teams, or runtime readiness. Its
+choices may become stale after preparation. Existing objective bindings stay
+immutable, and the existing runtime revocation fences remain authoritative.
+
+### Why this first slice does not save automatically
+
+Current gateway discovery and cold service startup read YAML before acquiring
+policy-adoption transactions. Combining a file replacement with a ledger update
+cannot guarantee atomic activation: a concurrent reader can hold a stale or
+provisional snapshot, and a process can crash between the two durable writes.
+File compensation alone does not solve that race. Automatic setup requires a
+separate design for durable intent, source revision validation, admission fencing,
+and recovery across every file-backed configuration adoption path. Until then,
+this surface deliberately has no configuration-write RPC.
