@@ -278,6 +278,9 @@ class OrganizationAcceptanceStore:
             previous.append(proof['id'])
         if control['deliverable_id']:
             previous.append(control['deliverable_id'])
+        from eidolon_cli.organization_project_execution import replan_project_history
+        project_history = replan_project_history(conn, objective_id, control['round'])
+        previous.extend(identifier for attempt in project_history for identifier in attempt['evidenceIds'])
         for row in conn.execute("SELECT * FROM requests WHERE objective_id=? AND status NOT IN ('completed','cancelled')", (objective_id,)).fetchall():
             if row['id'] == completing_request:
                 continue
@@ -287,7 +290,8 @@ class OrganizationAcceptanceStore:
         conn.execute("UPDATE objective_control SET round=round+1,status='replanning',summary=?,deliverable_id=NULL WHERE objective_id=?", (feedback, objective_id))
         objective = conn.execute('SELECT * FROM objectives WHERE id=?', (objective_id,)).fetchone()
         self._request(conn, objective_id, 'request.plan', self._objective_agent(conn, objective_id, 'Manager')['team'], objective['priority'],
-                      payload={'round': control['round'] + 1, 'feedback': feedback, 'evidenceIds': previous},
+                      payload={'round': control['round'] + 1, 'feedback': feedback, 'evidenceIds': previous,
+                               **({'projectExecutionHistory': project_history} if project_history else {})},
                       requester_id=requester_id)
         self._event(conn, objective_id, 'A bounded objective replan is queued. Previous artifacts and decisions remain in history.', 'planning')
 

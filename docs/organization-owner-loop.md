@@ -152,6 +152,13 @@ objective. This also applies across backend processes. No resolution implicitly
 changes credentials, source roots, tools, profiles or execution permissions.
 There is no generic Mark done action.
 
+Owner replans, scope amendments and automatic review rejections supply the new
+tool-free planner with exact retained project-run and source-receipt artifacts,
+linked to their project, run and original round. Earlier attempts remain available
+even when another replan happens before a new execution. Interrupted starts are
+explicitly unknown and have no invented result. This is historical planning
+context: the new round still requires its own current execution and review proof.
+
 ## Accept the whole objective
 
 Task evidence is saved before independent review. Once current tasks and required

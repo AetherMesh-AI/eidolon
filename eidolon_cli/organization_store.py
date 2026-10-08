@@ -454,6 +454,8 @@ class OrganizationStore(OrganizationOutcomeStore, OrganizationAttentionStore, Or
                  'responsibilities': agent_identity_view(conn, row['id'])['responsibilities']}
                 for row in conn.execute('SELECT * FROM agents ORDER BY id')]}
             return {"objective": objective, "task": task, "agent": agent,
+                    **({'projectExecutionHistory': payload['projectExecutionHistory']}
+                       if request['type'] == 'request.plan' and 'projectExecutionHistory' in payload else {}),
                     **self._typed_context(conn, request),
                     "agentContext": agent_context_view(conn, request['agent_id']), "dependencies": dependencies,
                     "organization": organization, "maxInflight": self.settings.max_inflight,
