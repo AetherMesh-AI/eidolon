@@ -611,7 +611,7 @@ def test_relaunchable_fixup_falls_back_to_legacy_adhoc_on_failure(tmp_path, monk
     monkeypatch.setattr(main_desktop, "_desktop_macos_local_codesign", boom)
 
     assert cli_main._desktop_macos_relaunchable_fixup(desktop_dir) is True
-    assert ["xattr", "-cr", str(app)] in calls
+    assert not any(Path(call[0]).name == "xattr" for call in calls)
     assert ["/usr/bin/codesign", "--force", "--deep", "--sign", "-", str(app)] in calls
 
 

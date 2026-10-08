@@ -1,0 +1,92 @@
+name: Mac real source update proof
+on:
+  push:
+    branches: ['test/mac-commit-update-20261008']
+    paths: ['.github/workflows/mac-commit-update-e2e.yml', '.github/scripts/mac-update-e2e.mjs', 'eidolon_cli/main_desktop.py', 'tests/eidolon_cli/test_desktop_quarantine.py']
+permissions:
+  contents: read
+jobs:
+  actual-electron-source-update:
+    runs-on: macos-15
+    timeout-minutes: 75
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      UV_PROJECT_ENVIRONMENT: venv
+      SOURCE_COMMIT: 53ab5d6b2287b931457335931f91d36ef017dbad
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.22.3'
+          architecture: arm64
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
+        with:
+          version: '0.9.28'
+          enable-cache: false
+      - name: Prepare owned two-commit local origin on fixed main
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          cp .github/scripts/mac-update-e2e.mjs "$RUNNER_TEMP/mac-update-e2e.mjs"
+          cp eidolon_cli/main_desktop.py "$RUNNER_TEMP/main_desktop.py"
+          cp tests/eidolon_cli/test_desktop_quarantine.py "$RUNNER_TEMP/test_desktop_quarantine.py"
+          cp tests/eidolon_cli/test_gui_command.py "$RUNNER_TEMP/test_gui_command.py"
+          git checkout -B main "$SOURCE_COMMIT"
+          cp "$RUNNER_TEMP/main_desktop.py" eidolon_cli/main_desktop.py
+          cp "$RUNNER_TEMP/test_desktop_quarantine.py" tests/eidolon_cli/test_desktop_quarantine.py
+          cp "$RUNNER_TEMP/test_gui_command.py" tests/eidolon_cli/test_gui_command.py
+          git config user.name 'Eidolon CI fixture'
+          git config user.email 'ci-fixture@example.invalid'
+          printf 'Synthetic owned update fixture A\n' > apps/desktop/public/mac-update-proof.txt
+          git add apps/desktop/public/mac-update-proof.txt eidolon_cli/main_desktop.py tests/eidolon_cli/test_desktop_quarantine.py tests/eidolon_cli/test_gui_command.py
+          git commit -m 'test: owned native update fixture A with quarantine preservation'
+          OLD=$(git rev-parse HEAD)
+          printf 'Synthetic owned update fixture B\n' > apps/desktop/public/mac-update-proof.txt
+          git add apps/desktop/public/mac-update-proof.txt
+          git commit -m 'test: owned native update fixture B'
+          NEW=$(git rev-parse HEAD)
+          git clone --bare . "$RUNNER_TEMP/mac-update-origin.git"
+          git remote set-url origin "$RUNNER_TEMP/mac-update-origin.git"
+          git reset --hard "$OLD"
+          echo "OLD_SHA=$OLD" >> "$GITHUB_ENV"
+          echo "NEW_SHA=$NEW" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/mac-update-evidence"
+          printf '{"fixedBase":"%s","oldSha":"%s","newSha":"%s","sourceTransport":"local bare origin, real Git fetch"}\n' "$SOURCE_COMMIT" "$OLD" "$NEW" > "$RUNNER_TEMP/mac-update-evidence/source-fixture.json"
+      - name: Install real runtime and locked desktop dependencies
+        run: |
+          uv sync --locked --python 3.11 --extra all --extra dev
+          npm ci --include=dev --include=optional
+      - name: Require source rebuild to preserve quarantine restrictions
+        run: |
+          # Do not execute the legacy broad quarantine-removal path. This is
+          # a fail-closed safety gate, not a stubbed or skipped update test.
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('eidolon_cli/main_desktop.py').read_text()
+          assert 'subprocess.run(["xattr", "-cr", str(app)]' not in source, 'BLOCKED: production rebuild unconditionally clears app xattrs; no quarantine bypass is authorized'
+          PY
+      - name: Native quarantine-preserving signing regression
+        run: venv/bin/python -m pytest -q tests/eidolon_cli/test_gui_command.py tests/eidolon_cli/test_desktop_quarantine.py
+      - name: Build the old real application
+        run: |
+          mkdir -p "$RUNNER_TEMP/mac-old-build-home"
+          env -u GITHUB_SHA -u GITHUB_REF_NAME HOME="$RUNNER_TEMP/mac-old-build-home" HERMES_HOME="$RUNNER_TEMP/mac-old-build-home/.eidolon" venv/bin/eidolon desktop --force-build --build-only
+      - name: Exercise production IPC and two-version source update
+        run: |
+          node "$RUNNER_TEMP/mac-update-e2e.mjs" \
+            --app "$GITHUB_WORKSPACE/apps/desktop/release/mac-arm64/Eidolon.app" \
+            --source "$GITHUB_WORKSPACE" --old-sha "$OLD_SHA" --new-sha "$NEW_SHA" \
+            --home "$RUNNER_TEMP/mac-update-isolated-home" \
+            --evidence "$RUNNER_TEMP/mac-update-evidence"
+      - name: Upload proof and failure diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: Eidolon-mac-source-update-proof
+          path: ${{ runner.temp }}/mac-update-evidence
+          retention-days: 14
+          if-no-files-found: warn
