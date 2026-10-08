@@ -121,7 +121,7 @@ class OrganizationPolicyStore:
         It is not an atomic file-plus-database write protocol.
         """
         from eidolon_cli.organization_config import load_profile_configuration, ProfileSourcesRequired
-        from eidolon_cli.config import InvalidUserConfigError
+        from eidolon_cli.config_primitives import InvalidUserConfigError
         error = None
         with self._write() as conn:
             try:

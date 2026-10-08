@@ -11,7 +11,9 @@ No branch protection, repository setting, secret, or permission grant is changed
   messaging gateway, tools and scripts suites, plus the organization skill
   namespace contract. This includes legacy schema migration, clarification and
   recovery, live policy changes, exact execution receipts, multi-repository
-  acceptance, attention and durable outcomes. Uses the canonical per-file runner.
+  acceptance, attention and durable outcomes. Shared config/env/managed-scope and
+  gateway import compatibility suites cover the strict reader’s pure primitives.
+  Uses the canonical per-file runner.
 - macOS and Windows: a deliberately smaller native ledger, migration, recovery,
   receipt, policy and project-execution guard suite. Spawned-process config tests
   cover delayed reopen/startup/watchers, invalid-file pauses and idempotent repair

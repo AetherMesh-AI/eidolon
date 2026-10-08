@@ -66,8 +66,9 @@ def _config(home, team='before', **extra):
     home.mkdir(parents=True, exist_ok=True)
     content = '# Preserve this owner comment\n' + json.dumps({'private': 'synthetic-private-value',
         'organization': {'team': team, 'gateway_enabled': False, **extra}}) + '\n'
-    (home / 'config.yaml').write_text(content)
-    return content.encode()
+    content = content.replace('\n', '\r\n').encode()
+    (home / 'config.yaml').write_bytes(content)
+    return content
 
 
 def _run(home, mode, *, delayed):
@@ -119,8 +120,11 @@ def test_delayed_host_cannot_restore_policy_read_before_newer_commit(tmp_path, m
 
 @pytest.mark.parametrize('invalid', ['organization: [', 'organization:\n  max_inflight: -1\n',
     'organization: &recursive {gateway_enabled: true, self: *recursive}',
-    'organization: {read_roots: [/synthetic], project_grants: [{id: check, files: [[bad]], execution: {root: root0}}]}'])
+    'nested-grant'])
 def test_invalid_startup_fences_peers_and_recovery_never_replays(tmp_path, invalid):
+    if invalid == 'nested-grant':
+        invalid = json.dumps({'organization': {'read_roots': [str(tmp_path)],
+            'project_grants': [{'id': 'check', 'files': [[]], 'execution': {'root': 'root0'}}]}})
     _config(tmp_path)
     store = OrganizationStore(tmp_path / 'organization' / 'state.db', OrganizationSettings(team='before'))
     store.create_objective('Synthetic active work', idempotency_key='active')
@@ -156,3 +160,53 @@ def test_invalid_startup_fences_peers_and_recovery_never_replays(tmp_path, inval
         assert recovered.claim_next() is None
         assert recovered.snapshot()['requests'][0]['attempts'] == claim['attempts']
     assert (tmp_path / 'config.yaml').read_bytes() == content
+
+
+@pytest.mark.parametrize('mode', ['startup', 'gateway'])
+def test_cold_strict_policy_import_has_no_config_repair_or_private_output(tmp_path, mode):
+    import os
+    import subprocess
+    import sys
+
+    store = OrganizationStore(tmp_path / 'organization' / 'state.db')
+    store.create_objective('Cold import synthetic work', idempotency_key='cold')
+    claim = store.claim_next()
+    marker = 'SYNTHETIC-PRIVATE-PARSER-CONTENT-NEVER-LOG'
+    content = ('organization: ["' + marker).encode()
+    (tmp_path / 'config.yaml').write_bytes(content)
+    (tmp_path / '.env').write_bytes(b'UNUSED_SYNTHETIC_VALUE="fixture-only"\r\n')
+    before = {path.relative_to(tmp_path): path.read_bytes() for path in tmp_path.rglob('*')
+              if path.is_file() and 'organization' not in path.relative_to(tmp_path).parts}
+    probe = r'''
+import json, sys
+from pathlib import Path
+from types import SimpleNamespace
+calls = []
+def record(frame, event, arg):
+    if event == 'call' and frame.f_code.co_name in {'_discover_providers', 'load_config', '_backup_corrupt_config'}:
+        calls.append(frame.f_code.co_name)
+sys.setprofile(record)
+try:
+    if sys.argv[2] == 'startup':
+        from eidolon_cli.organization_service import get_service
+        get_service()
+    else:
+        from gateway.organization_runtime import GatewayOrganizationRuntime
+        GatewayOrganizationRuntime(SimpleNamespace())._discover_home(Path(sys.argv[1]))
+except Exception as error:
+    print(json.dumps({'error': type(error).__name__, 'calls': calls}))
+else:
+    raise AssertionError('Invalid profile was admitted')
+'''
+    env = dict(os.environ, HERMES_HOME=str(tmp_path))
+    env.pop('EIDOLON_HOME', None)
+    completed = subprocess.run([sys.executable, '-c', probe, str(tmp_path), mode],
+                               env=env, capture_output=True, text=True, timeout=90)
+    assert completed.returncode == 0, completed.stderr
+    assert json.loads(completed.stdout) == {'error': 'InvalidUserConfigError', 'calls': []}
+    assert marker not in completed.stdout + completed.stderr
+    assert completed.stderr == ''
+    after = {path.relative_to(tmp_path): path.read_bytes() for path in tmp_path.rglob('*')
+             if path.is_file() and 'organization' not in path.relative_to(tmp_path).parts}
+    assert after == before
+    assert not store.heartbeat(claim)

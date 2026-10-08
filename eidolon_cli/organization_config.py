@@ -109,8 +109,10 @@ def from_config(config: dict) -> OrganizationSettings:
 def profile_organization(home):
     """One strict, uncached read with profile expansion and managed precedence."""
     import yaml
-    from eidolon_cli import config
-    with config._CONFIG_LOCK:
+    from eidolon_cli.config_primitives import (
+        InvalidUserConfigError, _CONFIG_LOCK, _expand_env_vars, _merge_managed_overlay,
+    )
+    with _CONFIG_LOCK:
         try:
             try:
                 content = (Path(home) / 'config.yaml').read_bytes()
@@ -119,13 +121,13 @@ def profile_organization(home):
             raw = yaml.safe_load(content)
             if raw is not None and not isinstance(raw, dict):
                 raise ValueError('Profile configuration must be a mapping')
-            expanded, _ = config._merge_managed_overlay(config._expand_env_vars(
+            expanded, _ = _merge_managed_overlay(_expand_env_vars(
                 {'organization': (raw or {}).get('organization', {})}))
             if not isinstance(expanded.get('organization'), dict):
                 raise ValueError('Organization configuration must be a mapping')
             return expanded
         except (OSError, UnicodeError, ValueError, TypeError, yaml.YAMLError):
-            raise config.InvalidUserConfigError(
+            raise InvalidUserConfigError(
                 'Organization configuration is invalid; repair the profile configuration before resuming work') from None
 
 

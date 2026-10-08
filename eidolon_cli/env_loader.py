@@ -109,7 +109,9 @@ def _hydrate_profile_secret_sources(home: Path) -> dict[str, str]:
         return get_secret_source_values(home)
 
     try:
-        cfg = _load_secrets_config(home)
+        # Profile-policy hydration must not import the interactive config loader:
+        # its recovery reads can write backups before authoritative validation.
+        cfg = _load_secrets_config(home, use_cache=False)
     except Exception:  # noqa: BLE001 — external sources must not block routing
         return {}
     if not cfg:
@@ -515,14 +517,14 @@ def _remediation_hint(source_name: str, error_kind, secrets_cfg: dict, *, scope:
         return ""
 
 
-def _load_secrets_config(home_path: Path) -> dict:
+def _load_secrets_config(home_path: Path, *, use_cache: bool = True) -> dict:
     """Read just the ``secrets:`` section of config.yaml, isolated so a malformed config can't break dotenv."""
     config_path = home_path / "config.yaml"
     if not config_path.exists():
         return {}
     # Prefer the shared raw-config cache: this is the first config.yaml read of a normal startup, so
     # populating it lets main.py's early bridge and eidolon_logging reuse one parse instead of 3-4.
-    if home_path == _process_eidolon_home():
+    if use_cache and home_path == _process_eidolon_home():
         try:
             from eidolon_cli.config import read_raw_config
 

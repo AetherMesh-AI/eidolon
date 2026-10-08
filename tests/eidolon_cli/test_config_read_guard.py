@@ -35,6 +35,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 ALLOWLIST = {
     # Canonical loader owners.
     "eidolon_cli/config.py",
+    # Strict organization authority owner: one uncached source snapshot under
+    # its ledger write lock, with shared profile expansion and managed overlay.
+    # General recovery loaders can write backups or return last-known-good data.
+    "eidolon_cli/organization_config.py",
     "gateway/config.py",
     # load_gateway_config()'s config.yaml phase lives here (extracted from
     # gateway/config.py); same owner, same managed-overlay contract.

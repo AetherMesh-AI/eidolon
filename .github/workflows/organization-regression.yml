@@ -73,6 +73,14 @@ jobs:
           scripts/run_tests.sh tests/eidolon_cli/test_organization*.py tests/tui_gateway/test_organization*.py tests/gateway/test_organization*.py tests/tools/test_organization*.py tests/scripts/test_organization*.py tests/agent/test_org_skill_namespace.py -j 4
           .venv/bin/ruff check eidolon_cli/organization*.py tui_gateway/methods_organization.py
           .venv/bin/python scripts/check_compat_pointers.py
+      - name: Verify shared config primitives and gateway import compatibility
+        run: |
+          scripts/run_tests.sh tests/eidolon_cli/test_config*.py \
+            tests/eidolon_cli/test_env_loader.py tests/eidolon_cli/test_env_export*.py \
+            tests/eidolon_cli/test_env_load_cache.py tests/eidolon_cli/test_managed_scope*.py \
+            tests/agent/test_secret_scope*.py tests/gateway/test_config*.py \
+            tests/gateway/test_delivery*.py tests/gateway/test_dead_targets.py \
+            tests/gateway/test_session*.py tests/gateway/test_restart*.py tests/gateway/test_shutdown*.py -j 4
 
   native-core:
     name: Organization core (${{ matrix.os }})

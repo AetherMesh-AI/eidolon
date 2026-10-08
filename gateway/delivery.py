@@ -9,7 +9,7 @@ from datetime import datetime
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Any
 
-from eidolon_cli.config import get_eidolon_home
+from eidolon_constants import get_eidolon_home
 
 from .config import Platform, GatewayConfig, PlatformConfig
 from .session import SessionSource
