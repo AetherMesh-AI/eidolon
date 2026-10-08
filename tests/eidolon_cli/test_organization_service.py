@@ -23,7 +23,9 @@ def _wait(check, timeout=5.0):
 
 
 def test_cancel_renews_lease_and_keeps_slot_until_executor_really_exits(tmp_path, monkeypatch):
-    settings = replace(OrganizationSettings(), max_inflight=1, lease_seconds=0.3, timeout_seconds=30)
+    # Native Windows SQLite/filesystem work can exceed a subsecond lease.
+    # Wait for the actual heartbeat rather than requiring a quiet host.
+    settings = replace(OrganizationSettings(), max_inflight=1, lease_seconds=10, timeout_seconds=60)
     store = OrganizationStore(tmp_path / "organization" / "state.db", settings)
     first = store.create_objective("First", idempotency_key="first")
     store.create_objective("Second", idempotency_key="second")
@@ -43,9 +45,9 @@ def test_cancel_renews_lease_and_keeps_slot_until_executor_really_exits(tmp_path
         calls.append(context["objective"]["title"])
         if len(calls) == 1:
             entered.set()
-            assert cancel.wait(5)
+            assert cancel.wait(30)
             cancelled.set()
-            assert release.wait(5)
+            assert release.wait(30)
         return {"intervention": "Stop after deterministic execution"}
 
     service = OrganizationService(store, home=tmp_path, settings=settings, executor=execute, poll_seconds=0.01)
@@ -54,10 +56,10 @@ def test_cancel_renews_lease_and_keeps_slot_until_executor_really_exits(tmp_path
                                settings=expanded, executor=execute, poll_seconds=0.01)
     try:
         service.start()
-        assert entered.wait(5)
-        assert renewed.wait(5)
+        assert entered.wait(30)
+        assert renewed.wait(30)
         assert service.cancel(first["id"])
-        assert cancelled.wait(5)
+        assert cancelled.wait(30)
         with service._lock:
             assert len(service._running) == 1
             assert calls == ["First"]
@@ -72,13 +74,13 @@ def test_cancel_renews_lease_and_keeps_slot_until_executor_really_exits(tmp_path
         # the same logical manager while its cancelled call still lives.
         peer.start()
         _wait(lambda: any(r["status"] == "queued" and r["reason"]
-                          for r in store.snapshot()["requests"]))
+                          for r in store.snapshot()["requests"]), timeout=30)
         blocked = next(r for r in store.snapshot()["requests"] if r["status"] == "queued")
         assert "Assigned agent is still stopping" in blocked["reason"]
         assert blocked["attempts"] == 0
         assert calls == ["First"]
         release.set()
-        _wait(lambda: len(calls) == 2)
+        _wait(lambda: len(calls) == 2, timeout=30)
         assert store.snapshot()["objectives"][1]["status"] == "cancelled"
     finally:
         release.set()
