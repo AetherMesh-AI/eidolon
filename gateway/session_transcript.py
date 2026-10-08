@@ -7,7 +7,6 @@ from __future__ import annotations
 import contextlib
 import logging
 import threading
-from agent.turn_context import extract_api_content_sidecar
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 if TYPE_CHECKING:
@@ -327,6 +326,8 @@ class SessionTranscriptMixin:
 
     def _append_transcript_message(self, session_id: str, message: Dict[str, Any]) -> None:
         """Write one transcript row. Caller handles retry queuing."""
+        from agent.turn_context import extract_api_content_sidecar
+
         _db = self._db_for_session_id(session_id)
         if _db is None:
             # Named profile with no resolvable home yet: defer (caller queues) instead of writing

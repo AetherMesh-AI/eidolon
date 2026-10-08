@@ -1,5 +1,6 @@
 """Bounded policy for the organization control plane, independent of providers."""
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -103,3 +104,65 @@ class OrganizationSettings:
 
 def from_config(config: dict) -> OrganizationSettings:
     return OrganizationSettings.from_config(config)
+
+
+
+def profile_organization(home):
+    """One strict, uncached read with profile expansion and managed precedence."""
+    import yaml
+    from eidolon_cli.config_primitives import (
+        InvalidUserConfigError, _CONFIG_LOCK, _expand_env_vars, _merge_managed_overlay,
+    )
+    with _CONFIG_LOCK:
+        try:
+            try:
+                content = (Path(home) / 'config.yaml').read_bytes()
+            except FileNotFoundError:
+                content = b''
+            raw = yaml.safe_load(content)
+            if raw is not None and not isinstance(raw, dict):
+                raise ValueError('Profile configuration must be a mapping')
+            expanded, _ = _merge_managed_overlay(_expand_env_vars(
+                {'organization': (raw or {}).get('organization', {})}))
+            if not isinstance(expanded.get('organization'), dict):
+                raise ValueError('Organization configuration must be a mapping')
+            return expanded
+        except (OSError, UnicodeError, ValueError, TypeError, yaml.YAMLError):
+            raise InvalidUserConfigError(
+                'Organization configuration is invalid; repair the profile configuration before resuming work') from None
+
+
+class ProfileSourcesRequired(RuntimeError):
+    """A cold enabled gateway must hydrate sources before policy validation."""
+
+
+def load_profile_configuration(home, *, require_sources=False):
+    """File-backed adopters call this while holding the ledger write lock.
+
+    Bypass the general loader's cache, fallback and config-repair writes.
+    """
+    config = profile_organization(home)
+    enabled = config['organization'].get('gateway_enabled') is True
+    if enabled and require_sources:
+        raise ProfileSourcesRequired()
+    return OrganizationSettings.from_config(config), enabled
+
+
+@contextmanager
+def profile_configuration_scope(home):
+    """Refresh profile-local expansion inputs after acquiring the ledger writer.
+
+    Ambient process configuration retains its existing semantics. Scoped hosts
+    must replace their old snapshot, including keys removed from the local file.
+    Existing external-source values are reused; hydration never occurs here.
+    """
+    from agent.secret_scope import (build_profile_secret_scope, current_secret_scope,
+                                    is_secret_scope_required, reset_secret_scope, set_secret_scope)
+    token = None
+    if current_secret_scope() is not None or is_secret_scope_required():
+        token = set_secret_scope(build_profile_secret_scope(home))
+    try:
+        yield
+    finally:
+        if token is not None:
+            reset_secret_scope(token)

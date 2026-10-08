@@ -11,9 +11,16 @@ No branch protection, repository setting, secret, or permission grant is changed
   messaging gateway, tools and scripts suites, plus the organization skill
   namespace contract. This includes legacy schema migration, clarification and
   recovery, live policy changes, exact execution receipts, multi-repository
-  acceptance, attention and durable outcomes. Uses the canonical per-file runner.
+  acceptance, attention and durable outcomes. Shared config/env/managed-scope and
+  gateway import compatibility suites cover the strict reader’s pure primitives.
+  Uses the canonical per-file runner.
 - macOS and Windows: a deliberately smaller native ledger, migration, recovery,
-  receipt, policy and project-execution guard suite. These hosts verify honest
+  receipt, policy and project-execution guard suite. Spawned-process config tests
+  cover delayed reopen/startup/watchers, invalid-file pauses and idempotent repair
+  without replaying claims or resetting model-call reservations. The unchanged
+  large artifact-retention lifecycle has its own file so short ledger contracts
+  do not consume its per-file timeout on slower Windows runners; no timeout or
+  assertion is relaxed. These hosts verify honest
   unsupported execution; they do not claim Linux sandbox support.
 - Linux desktop: organization UI/store/shell tests and synthetic fixture helpers,
   full desktop type checks and production build, followed by all six organization
@@ -46,13 +53,15 @@ Use Python 3.12 and Node 24. Install from the committed lockfiles:
 
 ```sh
 python -m pip install uv==0.12.23
-uv sync --locked --python 3.12 --extra dev
+uv sync --locked --python 3.12 --extra dev --extra slack
 uv pip install --no-deps pytest-timeout==2.4.0
 npm ci
 ```
 
 Runtime and development dependencies are taken from `uv.lock`; the timeout plugin
-is an exact-pinned CI tool installed without dependency resolution. `npm ci` uses
+is an exact-pinned CI tool installed without dependency resolution. The Linux
+compatibility lane includes the locked Slack extra for gateway HTTP/API and
+Slack configuration imports; it does not connect a Slack account. `npm ci` uses
 the root npm lockfile. Actions are SHA-pinned, GitHub-owned, and have only
 `contents: read`; checkout does not persist credentials. No secrets are inherited.
 

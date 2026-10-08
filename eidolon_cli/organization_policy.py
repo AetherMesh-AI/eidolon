@@ -99,28 +99,60 @@ def resolve_settings(conn, seed_settings=None):
 
 class OrganizationPolicyStore:
     def reload_configuration(self, settings):
-        """Validate file policy against owner-managed membership atomically."""
+        """Explicit in-memory policy adoption; file hosts use reload_profile_configuration."""
         with self._write() as conn:
-            updated = resolve_settings(conn, settings)
-            if updated == self.settings and self._policy_current(conn):
-                return False
-            self.settings = updated
-            self._adopt_policy(conn, resume=True)
-            conn.execute("UPDATE agents SET team=? WHERE id IN ('owner','executive','director','manager','reviewer','control:apply','control:project')", (self.settings.team,))
-            self._sync_staff(conn)
-            self._migrate_identities(conn)
-            return True
+            return self._reload_configuration(conn, settings)
+
+    def _reload_configuration(self, conn, settings):
+        updated = resolve_settings(conn, settings)
+        if updated == self.settings and self._policy_current(conn):
+            return False
+        self.settings = updated
+        self._adopt_policy(conn, resume=True)
+        conn.execute("UPDATE agents SET team=? WHERE id IN ('owner','executive','director','manager','reviewer','control:apply','control:project')", (self.settings.team,))
+        self._sync_staff(conn)
+        self._migrate_identities(conn)
+        return True
+
+    def reload_profile_configuration(self, home, *, require_sources=False):
+        """Serialize the source read with adoption, including invalid-file pauses.
+
+        This fences cooperating ledger hosts, not arbitrary external editors.
+        It is not an atomic file-plus-database write protocol.
+        """
+        from eidolon_cli.organization_config import load_profile_configuration, profile_configuration_scope, ProfileSourcesRequired
+        from eidolon_cli.config_primitives import InvalidUserConfigError
+        error = None
+        with self._write() as conn, profile_configuration_scope(home):
+            try:
+                settings, enabled = load_profile_configuration(home, require_sources=require_sources)
+                settings = resolve_settings(conn, settings)
+            except ProfileSourcesRequired:
+                raise  # No policy adoption or pause before cold source hydration.
+            except Exception:
+                # Raise only after committing the pause; raising inside _write
+                # would roll back the cross-process execution fence.
+                self._pause_configuration(conn)
+                error = InvalidUserConfigError('Organization configuration is invalid; repair the profile configuration before resuming work')
+            else:
+                self._reload_configuration(conn, settings)
+        if error is not None:
+            raise error from None
+        return enabled
 
     def pause_configuration(self):
         """Invalid file policy fences every host, preserving the last good policy."""
         with self._write() as conn:
-            if self._policy_paused(conn):
-                return False
-            conn.execute('INSERT INTO organization_policy_pause VALUES (1)')
-            conn.execute('UPDATE organization_policy SET generation=generation+1 WHERE id=1')
-            for request in conn.execute("SELECT * FROM requests WHERE status='running'").fetchall():
-                self._pending(conn, request, 'Organization configuration is invalid. This execution was fenced; repair the profile configuration and review its outcome before retrying.')
-            return True
+            return self._pause_configuration(conn)
+
+    def _pause_configuration(self, conn):
+        if self._policy_paused(conn):
+            return False
+        conn.execute('INSERT INTO organization_policy_pause VALUES (1)')
+        conn.execute('UPDATE organization_policy SET generation=generation+1 WHERE id=1')
+        for request in conn.execute("SELECT * FROM requests WHERE status='running'").fetchall():
+            self._pending(conn, request, 'Organization configuration is invalid. This execution was fenced; repair the profile configuration and review its outcome before retrying.')
+        return True
 
     @staticmethod
     def _policy_paused(conn):

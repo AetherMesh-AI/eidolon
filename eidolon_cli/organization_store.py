@@ -105,8 +105,9 @@ class OrganizationStore(OrganizationOutcomeStore, OrganizationAttentionStore, Or
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
             conn.executescript(_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA + COORDINATION_SCHEMA + HISTORY_SCHEMA + ATTENTION_SCHEMA + PROJECTS_SCHEMA + OUTCOME_SCHEMA)
-            self.settings = resolve_settings(conn, settings)
+        self.settings = settings or OrganizationSettings()
         with self._write() as conn:
+            self.settings = resolve_settings(conn, settings)
             self._migrate_receipt_executions(conn)
             self._migrate_reservations(conn)
             self._migrate_acceptance(conn)

@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 from typing import Dict, Optional
 
-from eidolon_cli.config import get_eidolon_home
+from eidolon_constants import get_eidolon_home
 
 logger = logging.getLogger(__name__)
 

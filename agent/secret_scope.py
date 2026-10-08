@@ -189,7 +189,7 @@ def load_env_file(env_path: Path) -> Dict[str, str]:
     except (FileNotFoundError, OSError, UnicodeDecodeError):
         return secrets
 
-    from eidolon_cli.config import _parse_env_value
+    from eidolon_cli.config_primitives import _parse_env_value
 
     for raw in text.splitlines():
         line = raw.strip()
