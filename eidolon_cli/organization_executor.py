@@ -369,6 +369,9 @@ def _guard_tool_options(options: Any) -> None:
 def _guard_route(runtime: dict, model: str) -> None:
     provider = str(runtime.get("provider") or "").lower()
     url = str(runtime.get("base_url") or "").lower()
+    if runtime.get("api_mode") == "codex_app_server":
+        from eidolon_cli.organization_subscription import APP_SERVER_BLOCKER
+        raise OrganizationExecutionError(APP_SERVER_BLOCKER)
     if (runtime.get("api_mode") not in _WIRE_MODES or runtime.get("command")
             or url.startswith(("acp:", "acp+tcp:", "moa:")) or provider in {"copilot-acp", "moa"}):
         raise OrganizationExecutionError(
@@ -759,7 +762,8 @@ class _ToolFreeBoundary:
         raise OrganizationExecutionError(self._organization_intervention)
 
     def _run_codex_app_server_turn(self, *args, **kwargs):
-        self._organization_intervention = "Native app-server execution cannot enforce the text-only boundary."
+        from eidolon_cli.organization_subscription import APP_SERVER_BLOCKER
+        self._organization_intervention = APP_SERVER_BLOCKER
         raise OrganizationExecutionError(self._organization_intervention)
 
     def _try_refresh_env_client_credentials(self):
