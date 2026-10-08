@@ -2,7 +2,7 @@
 import pytest
 
 from tests.organization_package_helpers import claim_after_decomposition
-from tests.eidolon_cli.test_organization_management import (
+from tests.organization_management_helpers import (
     apply, configure, hire_request, member, settings, staffing_store,
 )
 

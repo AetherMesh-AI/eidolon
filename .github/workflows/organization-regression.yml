@@ -107,8 +107,11 @@ jobs:
             suite: projects-config
             label: Organization core (windows-latest) - projects and configuration
           - os: windows-latest
-            suite: leadership-packages
-            label: Organization core (windows-latest) - leadership and packages
+            suite: leadership-staffing
+            label: Organization core (windows-latest) - leadership and staffing
+          - os: windows-latest
+            suite: work-packages
+            label: Organization core (windows-latest) - work packages
     defaults:
       run:
         shell: bash
@@ -157,25 +160,39 @@ jobs:
             tests/gateway/test_organization_config_serialization.py
             tests/tui_gateway/test_organization_project_setup.py
           )
-          leadership_package_tests=(
-            tests/eidolon_cli/test_organization_management.py
-            tests/eidolon_cli/test_organization_leadership_handoffs.py
+          leadership_staffing_tests=(
+            tests/eidolon_cli/test_organization_management_configuration.py
+            tests/eidolon_cli/test_organization_management_staffing.py
+            tests/eidolon_cli/test_organization_management_transfers.py
+            tests/eidolon_cli/test_organization_management_leadership.py
+            tests/eidolon_cli/test_organization_leadership_handoffs_planning.py
+            tests/eidolon_cli/test_organization_leadership_handoffs_integration.py
+            tests/eidolon_cli/test_organization_leadership_handoffs_acceptance.py
+            tests/eidolon_cli/test_organization_leadership_handoffs_work.py
             tests/eidolon_cli/test_organization_leadership_handoff_validation.py
             tests/eidolon_cli/test_organization_leadership_handoff_continuation.py
             tests/eidolon_cli/test_organization_paused_handoffs.py
-            tests/eidolon_cli/test_organization_leadership_routes.py
+            tests/eidolon_cli/test_organization_leadership_routes_owner.py
+            tests/eidolon_cli/test_organization_leadership_routes_agent.py
+            tests/eidolon_cli/test_organization_leadership_routes_rollback.py
             tests/eidolon_cli/test_organization_persistent_leadership.py
+          )
+          work_package_tests=(
             tests/eidolon_cli/test_organization_work_packages.py
             tests/eidolon_cli/test_organization_work_packages_e2e.py
-            tests/eidolon_cli/test_organization_package_handoffs.py
+            tests/eidolon_cli/test_organization_package_handoffs_routes.py
+            tests/eidolon_cli/test_organization_package_handoffs_transfers.py
+            tests/eidolon_cli/test_organization_package_handoffs_obligations.py
+            tests/eidolon_cli/test_organization_package_handoffs_validation.py
             tests/eidolon_cli/test_organization_package_evidence.py
           )
           case '${{ matrix.suite }}' in
-            all) native_tests=("${ledger_identity_tests[@]}" "${outcomes_attention_tests[@]}" "${projects_config_tests[@]}" "${leadership_package_tests[@]}") ;;
+            all) native_tests=("${ledger_identity_tests[@]}" "${outcomes_attention_tests[@]}" "${projects_config_tests[@]}" "${leadership_staffing_tests[@]}" "${work_package_tests[@]}") ;;
             ledger-identity) native_tests=("${ledger_identity_tests[@]}") ;;
             outcomes-attention) native_tests=("${outcomes_attention_tests[@]}") ;;
             projects-config) native_tests=("${projects_config_tests[@]}") ;;
-            leadership-packages) native_tests=("${leadership_package_tests[@]}") ;;
+            leadership-staffing) native_tests=("${leadership_staffing_tests[@]}") ;;
+            work-packages) native_tests=("${work_package_tests[@]}") ;;
             *) echo 'Unknown native suite' >&2; exit 1 ;;
           esac
           scripts/run_tests.sh "${native_tests[@]}" -j 3

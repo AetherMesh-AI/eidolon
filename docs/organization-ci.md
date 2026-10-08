@@ -28,17 +28,21 @@ No branch protection, repository setting, secret, or permission grant is changed
   and after commit, race stale writers, retain definitions through restart and
   revoke changed authority. Export/import and recovery snapshots run on all hosts;
   symlink/junction retarget cases execute only on their actual supported OS.
-  Windows runs four disjoint logical shards (ledger/identity, outcomes/attention,
-  projects/configuration and leadership/packages), while macOS runs their full union.
+  Windows runs five disjoint logical shards (ledger/identity, outcomes/attention,
+  projects/configuration, leadership/staffing and work packages), while macOS runs their full union.
   Recorded PR34 Windows file times approached the unchanged 300-second cap
   (leadership handoffs: 266.9 seconds). PR36's same-tree ledger/projects run took
   609.7 seconds before merge, then hit the 15-minute job ceiling after merge:
   identity and outcome files exceeded 300 seconds, while project registration
-  reached 297.9 seconds. Native filesystem I/O variance must not erase coverage.
+  reached 297.9 seconds. The unchanged leadership lane later exposed the same
+  300-second ceiling in handoffs, route retention, management and package transfers.
+  Native filesystem I/O variance must not erase coverage.
   Lifecycle, atomic-validation and peer-continuation handoffs, identity/assignment,
   outcome lifecycle/pagination, and registration/recovery contracts therefore have
   separate files with identical collected cases and unchanged test bodies,
-  decorators and assertions. No test is dropped or repeated between Windows shards.
+  assertions and helpers. Large parametrized invariants use disjoint case partitions
+  around one unchanged shared invariant body; collection checks preserve every exact
+  parameter case and host marker once. No test is dropped or repeated between Windows shards.
   Native jobs retain the 15-minute limit and three file
   workers; the existing Windows check name is an aggregate gate that fails if
   any native matrix entry fails, is cancelled or is skipped.
@@ -124,10 +128,10 @@ CI=true EIDOLON_REQUIRE_PROJECT_SANDBOX=1 xvfb-run -a \
 
 ## Cost and evidence
 
-Each matching commit runs eight jobs: one Linux backend (20-minute limit), one
-Linux desktop (25 minutes), one macOS core (15 minutes), four disjoint Windows
+Each matching commit runs nine jobs: one Linux backend (20-minute limit), one
+Linux desktop (25 minutes), one macOS core (15 minutes), five disjoint Windows
 core shards (15 minutes each), and the retained native aggregate gate (2 minutes).
-That is a maximum of 122 aggregate runner-minutes before billing multipliers.
+That is a maximum of 137 aggregate runner-minutes before billing multipliers.
 These are ceilings, not observed consumption or a price quote. Billing depends on the
 repository plan, included minutes and platform rates. There is no scheduled run,
 paid model call, service credential, or new runner class.

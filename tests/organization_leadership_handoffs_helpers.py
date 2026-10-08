@@ -1,17 +1,10 @@
-"""Explicit objective leadership survives task lifecycle and independent handoffs."""
+"""Shared real-ledger leadership handoffs setup and invariants."""
 import json
-
-import pytest
-
 from eidolon_cli.organization_store import OrganizationStore
-from tests.eidolon_cli.test_organization_management import configure, member, settings
+from tests.organization_management_helpers import configure, member, settings
 
 
-@pytest.mark.parametrize(('role', 'stage', 'paused'), [
-    (role, stage, paused) for role in ('Manager', 'Executive', 'Both')
-    for stage in ('request.plan', 'request.integrate', 'request.accept') for paused in (False, True)
-] + [('Manager', 'work.draft', False), ('Split', 'work.draft', False), ('Split', 'work.draft', True)])
-def test_objective_leadership_handoff_without_open_tasks_survives_restart(tmp_path, stage, role, paused):
+def assert_objective_leadership_handoff_without_open_tasks_survives_restart(tmp_path, stage, role, paused):
     roster = [member('lead-one', role='Executive', capabilities=['request.accept']),
               member('lead-two', role='Executive', capabilities=['request.accept']),
               member('team-lead', role='Manager', manager_id='lead-one',
