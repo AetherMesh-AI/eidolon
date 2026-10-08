@@ -871,8 +871,8 @@ def _desktop_macos_relaunchable_fixup(
     """Re-sign a locally-built macOS app so in-place self-update doesn't reset TCC grants.
 
     A rebuilt ad-hoc bundle (new cdhash, no stable Designated Requirement) reports
-    "Eidolon is damaged" and loses every grant. Clear quarantine xattrs, then sign
-    with ``desktop.macos_signing_identity`` or identifier-pinned ad-hoc, keeping
+    "Eidolon is damaged" and loses every grant. Sign with
+    ``desktop.macos_signing_identity`` or identifier-pinned ad-hoc, keeping
     entitlements; legacy deep ad-hoc as fallback. No-op with a publisher identity
     (CSC_LINK / APPLE_SIGNING_IDENTITY; callers may pass the decision so a later
     dotenv load can't reverse it) or an intact Developer ID signature.
@@ -899,7 +899,8 @@ def _desktop_macos_relaunchable_fixup(
         return False
     if _desktop_macos_has_valid_real_signature(app):
         return True
-    subprocess.run(["xattr", "-cr", str(app)], check=False)
+    # Signing must preserve quarantine and other provenance metadata. A
+    # downloaded app still requires normal macOS approval before launching.
     identity = _desktop_macos_local_signing_identity() or "-"
     try:
         if _desktop_macos_local_codesign(app, desktop_dir=desktop_dir, identity=identity):

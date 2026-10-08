@@ -7,6 +7,9 @@ on:
       - 'apps/desktop/electron/mac-update-preflight*'
       - 'apps/desktop/electron/main.ts'
       - 'tests/test_desktop_update_macos_replacement.py'
+      - 'eidolon_cli/main_desktop.py'
+      - 'tests/eidolon_cli/test_desktop_quarantine.py'
+      - 'tests/eidolon_cli/test_gui_command.py'
       - '.github/workflows/desktop-update-recovery.yml'
       - '.github/scripts/test-desktop-update-recovery-ui.mjs'
   push:
@@ -16,6 +19,9 @@ on:
       - 'apps/desktop/electron/mac-update-preflight*'
       - 'apps/desktop/electron/main.ts'
       - 'tests/test_desktop_update_macos_replacement.py'
+      - 'eidolon_cli/main_desktop.py'
+      - 'tests/eidolon_cli/test_desktop_quarantine.py'
+      - 'tests/eidolon_cli/test_gui_command.py'
       - '.github/workflows/desktop-update-recovery.yml'
       - '.github/scripts/test-desktop-update-recovery-ui.mjs'
 permissions:
@@ -57,6 +63,8 @@ jobs:
           cat "$RUNNER_TEMP/updater-baseline.log"
           test "$status" -eq 1
           grep -q 'assert True is not True' "$RUNNER_TEMP/updater-baseline.log"
+      - name: Verify signing preserves quarantine and provenance
+        run: scripts/run_tests.sh tests/eidolon_cli/test_gui_command.py tests/eidolon_cli/test_desktop_quarantine.py
       - name: Verify native bundle replacement, denial, interruption and rollback
         run: |
           scripts/run_tests.sh tests/test_desktop_update_macos_replacement.py tests/test_desktop_update_shim_progress.py tests/test_desktop_update_shim_profile_cleanup.py -j 2
