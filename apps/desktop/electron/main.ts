@@ -237,6 +237,7 @@ import { createHudSnapShortcut } from './hud-snap-shortcut'
 import { buildHudWindowUrl } from './hud-url'
 import { resolveHudWindowing } from './hud-windowing'
 import { createLinkTitleWindow, guardLinkTitleSession, readLinkTitleWindowTitle } from './link-title-window'
+import { macUpdatePreflight } from './mac-update-preflight'
 import { ensureMainWindow } from './main-window-lifecycle'
 import {
   assertManagedUpdatePreflightClear,
@@ -4392,6 +4393,16 @@ async function applyUpdatesPosixHandoff(opts: any) {
     return { ok: false, error: 'update-already-running', message: handoffConflict.message }
   }
 
+  const targetApp = IS_MAC ? runningAppBundle() : process.execPath
+  const replacementError = IS_MAC ? await macUpdatePreflight(targetApp) : null
+
+  if (replacementError) {
+    rememberLog(`[updates] refusing macOS hand-off: ${replacementError.message}`)
+    emitUpdateProgress({ stage: 'error', message: replacementError.message, percent: null })
+
+    return replacementError
+  }
+
   // ── Pre-flight state.db integrity guard (#68474) ──
   preflightStateDb(HERMES_HOME, rememberLog)
 
@@ -4419,8 +4430,6 @@ async function applyUpdatesPosixHandoff(opts: any) {
   // only a binary the rebuild replaced with a launchable sandbox helper —
   // replaying the original launch context (filtered args, cwd, sandbox
   // opt-out) so a deep-link or --no-sandbox launch survives the update.
-  const targetApp = IS_MAC ? runningAppBundle() : process.execPath
-
   if (targetApp) {
     args.push('--relaunch-target', targetApp)
   }

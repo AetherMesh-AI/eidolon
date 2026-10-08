@@ -355,6 +355,14 @@ linux_gate() {
   GATE=manual GATE_MSG="Update complete, but the rebuilt app can't relaunch itself (its sandbox helper needs root ownership). Reopen Eidolon to finish."
 }
 
+mac_update_python() {
+  local candidate
+  for candidate in "$INSTALL_ROOT/venv/bin/python3" "$INSTALL_ROOT/venv/bin/python"; do
+    if tcc_probe_python "$candidate"; then printf '%s\n' "$candidate"; return 0; fi
+  done
+  return 1
+}
+
 mac_swap() {
   [ "$FINAL_CODE" -eq 0 ] || return 0
   local rebuilt=""
@@ -369,33 +377,18 @@ mac_swap() {
     return 1
   fi
 
-  # Transactional swap: stage a full copy, move the old bundle aside, move
-  # the copy in. Every step checked; a failed final move ROLLS BACK so the
-  # user always has a launchable app, and the result file tells the truth.
-  if [ "$FINAL_CODE" -eq 0 ] && [ -n "$rebuilt" ] && [ -d "$RELAUNCH_TARGET" ] && [ "$rebuilt" != "$RELAUNCH_TARGET" ]; then
-    publish_stage "Installing the new app"
-    rm -rf "$RELAUNCH_TARGET.new" "$RELAUNCH_TARGET.old" 2>/dev/null || true
-    if ! /usr/bin/ditto "$rebuilt" "$RELAUNCH_TARGET.new"; then
-      rm -rf "$RELAUNCH_TARGET.new" 2>/dev/null || true
-      DONE_NOTE="Update complete, but the new app could not be staged; the previous version was kept. Run the update again."
-      log "WARNING: bundle copy failed; keeping existing app"
-    elif ! mv "$RELAUNCH_TARGET" "$RELAUNCH_TARGET.old"; then
-      rm -rf "$RELAUNCH_TARGET.new" 2>/dev/null || true
-      DONE_NOTE="Update complete, but the new app could not replace the old one; the previous version was kept. Run the update again."
-      log "WARNING: could not move old bundle aside; keeping existing app"
-    elif ! mv "$RELAUNCH_TARGET.new" "$RELAUNCH_TARGET"; then
-      if mv "$RELAUNCH_TARGET.old" "$RELAUNCH_TARGET"; then
-        rm -rf "$RELAUNCH_TARGET.new" 2>/dev/null || true
-        DONE_NOTE="Update complete, but the new app could not be installed; the previous version was restored. Run the update again."
-        log "WARNING: bundle install failed; rolled back to the previous app"
-      else
-        FINAL_CODE=7 FINAL_MSG="The update finished but installing the new app failed and the previous app could not be restored. Reinstall Eidolon (the rebuilt app is at $rebuilt)."
-        log "ERROR: bundle install failed AND rollback failed"
-      fi
-    else
-      rm -rf "$RELAUNCH_TARGET.old" 2>/dev/null || true
-      log "swapped app bundle"
-    fi
+  local py message
+  py="$(mac_update_python)" || {
+    FINAL_CODE=7 MANUAL=1 FINAL_MSG="The new app was built, but no working Python interpreter is available to install it. The previous app and new build at $rebuilt were kept."
+    return 1
+  }
+  publish_stage "Installing the new app"
+  if message="$("$py" "$SCRIPT_DIR/mac_transaction.py" "$rebuilt" "$RELAUNCH_TARGET" 2>&1)"; then
+    log "$message"
+  else
+    FINAL_CODE=7 MANUAL=1 FINAL_MSG="$message"
+    log "ERROR: $message"
+    return 1
   fi
 }
 
@@ -420,10 +413,10 @@ launch_app() { # attempted BEFORE the terminal event (launch acceptance is
     # A supplied target that no longer exists is a REJECTED launch (the
     # swap failed badly or the bundle vanished) — not "no launch due".
     [ -d "$RELAUNCH_TARGET" ] || { log "WARNING: relaunch target missing: $RELAUNCH_TARGET"; return 1; }
-    /usr/bin/xattr -dr com.apple.quarantine "$RELAUNCH_TARGET" 2>/dev/null || true
-    # `open` talks to launchd and FAILS LOUDLY on a broken/unlaunchable
-    # bundle — its exit code IS launch acceptance here.
-    /usr/bin/open "$RELAUNCH_TARGET" || { log "WARNING: open rejected the app"; return 1; }
+    local py
+    py="$(mac_update_python)" || { log "WARNING: no working interpreter for relaunch verification"; return 1; }
+    "$py" "$SCRIPT_DIR/mac_relaunch.py" "$RELAUNCH_TARGET" >> "$LOG" 2>&1 \
+      || { log "WARNING: app relaunch did not become ready"; return 1; }
   elif [ "$GATE" = "relaunch" ]; then
     # setsid only proves the wrapper shell started, so verify acceptance:
     # spawn, then confirm the child is still alive shortly after — an
@@ -501,7 +494,9 @@ finish() {
   fi
   rm -f "$STATUS" "$STATUS.tmp" "$LOG_DIR/desktop-update-ui-port" 2>/dev/null || true
 }
-trap finish EXIT
+# The outcome may change during bundle replacement inside the EXIT trap.
+# Publish and return the same final status rather than the pre-swap CLI status.
+trap 'finish; exit "$FINAL_CODE"' EXIT
 
 # ── legacy macOS TCC anchor self-heal (#95759) ──────────────────────────────
 # The reverted TCC interpreter anchor (#95425/#95541) left some installs with
