@@ -1695,6 +1695,8 @@ DEFAULT_CONFIG = {
     # Backend-owned organization requests. Grants are explicit and default empty;
     # naming a capability does not grant access to external tools.
     "organization": {
+        # Opt in to existing-ledger execution in the detached messaging gateway.
+        "gateway_enabled": False,
         # Starts only for submitted/persisted organization work. Uses this
         # profile's configured provider; no additional credentials or profiles.
         "max_workers": 2,

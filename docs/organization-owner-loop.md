@@ -241,6 +241,37 @@ work and evidence persist; queued work resumes when that runtime restarts and
 unconfirmed calls require review before retry. A separately running remote
 backend may continue. Closing a window is not a promise of always-on execution.
 
+An existing messaging gateway can also host the organization without the desktop.
+This requires explicit `organization.gateway_enabled: true` in that profile's
+`config.yaml` and an existing organization ledger. The default is off. This option
+does not install/start an OS service, enable login startup, create credentials or
+add execution grants. The gateway process must already be running on an awake
+host; it is not cloud failover.
+
+The gateway discovers existing ledgers every five seconds, including an objective
+created after gateway launch. It serves the launch profile and only the named
+profiles allowed by that gateway's multiplex configuration. Each profile must opt
+in separately and retains its own credentials and budget. Changes to the gateway's
+multiplex mode/allowlist require a gateway restart; newly created profiles already
+covered by that configuration are discovered automatically.
+
+Desktop and gateway schedulers share durable claims and process-level execution
+fences. Active organization calls count toward gateway drain/restart waiting and
+prevent idle suspension. Gateway drain pauses new admissions without spending
+attempts; clearing an external drain permits queued work to resume. Stopping one
+host never cancels another host's calls. Closing the desktop
+may still interrupt a call it owns: the gateway continues remaining queued work,
+but that interrupted call stays unconfirmed and needs review. Disabling the
+profile's gateway option stops only its gateway-owned scheduler on the next
+discovery pass. Invalid configuration also pauses it. Queued work and evidence
+are retained, and late results after shutdown admission closes are rejected.
+
+Recovery failures back off to at most a sixty-second discovery delay without
+blocking other profiles or messaging. Provider execution failures remain bounded
+interventions; background discovery cannot replay an unknown call, refund its
+reservation or reset its attempt/deadline budget. Needs You remains the place to
+resolve these interventions. This option adds no automatic external notifications.
+
 Per-objective usage reports admitted stages and provider-reported token counts.
 Unreported or interrupted token usage stays unknown. `max_stages` bounds admission
 across the objective, `max_replans` bounds additional planning rounds,

@@ -161,6 +161,11 @@ class GatewayShutdownMixin:
             return time.monotonic() - self.started_at
 
     # Active-work accounting
+    def _active_organization_work_count(self) -> int:
+        """Only this gateway's executions, with no SQLite access on the loop."""
+        runtime = getattr(self, '_organization_runtime', None)
+        return runtime.active_execution_count if runtime is not None else 0
+
     def _active_work_count(self) -> int:
         """All agent work the gateway must expose and drain as one total."""
         return (
@@ -168,6 +173,7 @@ class GatewayShutdownMixin:
             + self._active_cron_job_count()
             + self._active_api_run_count()
             + self._active_deferred_agent_worker_count()
+            + self._active_organization_work_count()
         )
 
     @staticmethod
@@ -392,6 +398,7 @@ class GatewayShutdownMixin:
                 return busy_sentinel
 
         cron_count = _read_or_awake("cron work count", self._running_cron_job_count, 1)
+        organization_count = _read_or_awake("organization work count", self._active_organization_work_count, 1)
         api_count = _read_or_awake("api work count", lambda: self._api_server_hook("active_agent_work_count"), 1)
         # An attached dashboard/desktop/TUI client (heartbeat mtime) is inbound activity — folded into
         # the inbound clock, not a conjunct, so a lingering marker cannot pin the box.
@@ -401,7 +408,7 @@ class GatewayShutdownMixin:
         if seen is not None and seen > last_inbound:
             last_inbound = seen
         return is_idle(
-            active_work_count=self._running_agent_count() + cron_count + api_count,
+            active_work_count=self._running_agent_count() + cron_count + api_count + organization_count,
             seconds_since_last_inbound=time.time() - last_inbound,
             idle_timeout_seconds=self._scale_to_zero_idle_timeout_seconds(),
             has_live_background_work=self._scale_to_zero_has_live_background_work(),
@@ -1552,6 +1559,9 @@ class GatewayShutdownMixin:
         self._running = False
         self._clear_plugin_message_injector()
         self._draining = True
+        from gateway.organization_runtime import stop_gateway_organization
+        if not await stop_gateway_organization(self):
+            logger.warning("Organization work did not finish stopping; retained outcomes remain unconfirmed")
         # getattr-guards: shutdown-path test doubles may lack the room worker / systemd watchdog.
         stop_room_worker = getattr(self, "_stop_hosted_room_worker", None)
         if callable(stop_room_worker):
@@ -1859,6 +1869,7 @@ class GatewayShutdownMixin:
             "active_agents": self._running_agent_count(),
             "active_cron_jobs": self._active_cron_job_count(),
             "active_api_runs": self._active_api_run_count(),
+            "active_organization_executions": self._active_organization_work_count(),
             "active_deferred_agent_workers": ctx.deferred_count(),
             "restart_drain_timeout": self._restart_drain_timeout,
             "watchdog_delay_s": resolve_shutdown_watchdog_delay(self._restart_drain_timeout),
