@@ -90,6 +90,20 @@ def _(params, service):
     return snapshot
 
 
+@_organization_method("organization.projectSetup")
+def _(params, service):
+    from eidolon_cli.organization_project_setup import project_setup
+    _organization_params(params, set())
+    return project_setup()
+
+
+@_organization_method("organization.projectDraft")
+def _(params, service):
+    from eidolon_cli.organization_project_setup import project_draft
+    _organization_params(params, {"project", "expectedRevision"})
+    return project_draft(params.get("project"), params.get("expectedRevision"))
+
+
 @_organization_method("organization.attention")
 def _(params, service):
     _organization_params(params, {"limit", "before", "unreadOnly"})

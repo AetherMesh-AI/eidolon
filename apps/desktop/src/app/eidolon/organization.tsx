@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 
 import { Button } from '@/components/ui/button'
@@ -11,6 +11,7 @@ import { AgentAvatar } from './avatar'
 import { Inspector } from './inspector'
 import { OrganizationManagementForm } from './runtime-management-form'
 import { OrganizationManagementHistory } from './runtime-management-history'
+import { OrganizationProjectSetupForm } from './runtime-project-setup'
 import { inheritsProfileModel } from './runtime-setup'
 import { TaskCoordination, taskCoordinationLabel } from './task-coordination'
 import type { OrganizationAgent, OrganizationSnapshot, RuntimeOrganizationAdapter } from './types'
@@ -30,6 +31,9 @@ export function Organization({ snapshot, adapter }: { snapshot: OrganizationSnap
   const roles: Record<string, string> = { Owner: roster.owner, Executive: roster.executive, Manager: roster.manager, Worker: roster.worker, Director: roster.manager, Employee: roster.worker }
   const [selected, setSelected] = useState<string | null>(null)
   const [managing, setManaging] = useState(false)
+  const [projectScope, setProjectScope] = useState<string | null>(null)
+
+  useEffect(() => {setProjectScope(null)}, [snapshot.connection?.scope])
   const [mode, setMode] = useState('List')
   const [query, setQuery] = useState('')
   const runtime = snapshot.source === 'runtime'
@@ -54,6 +58,8 @@ export function Organization({ snapshot, adapter }: { snapshot: OrganizationSnap
       </dl>
     </>}
     {adapter && snapshot.runtime?.management && <Button disabled={snapshot.connection?.state !== 'ready'} onClick={() => {setSelected(null); setManaging(true)}} variant="secondary">{roster.manage}</Button>}
+    {runtime && adapter?.getProjectSetup && adapter.prepareProjectDraft && <Button disabled={snapshot.connection?.state !== 'ready'} onClick={() => {setSelected(null); setManaging(false); setProjectScope(snapshot.connection!.scope)}} variant="secondary">{t.organizationWork.projectSetup}</Button>}
+    {adapter && projectScope !== null && projectScope === snapshot.connection?.scope && <OrganizationProjectSetupForm adapter={adapter} key={projectScope} onClose={() => setProjectScope(null)} snapshot={snapshot} />}
     <div className="eid-toolbar"><label className="eid-filter">Find an agent<input onChange={event => setQuery(event.target.value)} placeholder="Name or responsibility…" value={query} /></label><div aria-label="Organization layout" className="eid-tabs">{['Grid', 'List'].map(item => <button aria-pressed={mode === item} key={item} onClick={() => setMode(item)}>{item}</button>)}</div></div>
     <div aria-label={`${mode} of organization`} className={`eid-organization eid-organization-${mode.toLowerCase()}`}>
       {agents.map(item => <button aria-label={`Inspect ${item.name}`} className={`eid-agent eid-agent-${item.status}`} key={item.id} onClick={() => setSelected(item.id)}>

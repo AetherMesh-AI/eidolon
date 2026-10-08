@@ -543,7 +543,25 @@ export interface StaticOrganizationAdapter extends OrganizationReader {
   readonly mode: 'prototype'
 }
 
+export interface OrganizationProjectDraft {
+  version: 1
+  revision: string
+  project: OrganizationProjectBinding
+  yaml: string
+}
+export interface OrganizationProjectSetup {
+  version: 1
+  revision: string
+  projects: OrganizationProjectBinding[]
+  roots: string[]
+  recipes: { id: string; root: string }[]
+  teams: string[]
+  blocked: boolean
+  blockers: string[]
+}
 export interface RuntimeOrganizationAdapter extends OrganizationReader {
+  getProjectSetup?(): Promise<OrganizationProjectSetup>
+  prepareProjectDraft?(input: { project: OrganizationProjectBinding; expectedRevision: string }): Promise<OrganizationProjectDraft>
   readonly mode: 'runtime'
   getOutcomes?(input?: OrganizationOutcomeQuery): Promise<OrganizationOutcomePage>
   markOutcomeSeen?(input: OrganizationOutcomeSeen): Promise<void>
