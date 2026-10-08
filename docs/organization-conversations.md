@@ -22,8 +22,10 @@ An optional `threadId` continues the same two-person thread and exact subject.
 The backend supplies sender identity, objective/task/project linkage and timestamps
 from the owned lease; a model cannot supply or spoof those values. Sending suspends
 that assignment. The backend queues a tool-free `request.message` turn on the exact
-recipient's existing identity. The recipient returns `{"reply":"…"}` or an
-intervention. It cannot recursively send messages, raise formal requests, change
+recipient's existing identity. The recipient receives a backend-owned
+`conversation.replyToMessageId` naming the exact message for this delivery, even when several messages are pending in the
+same thread. It returns `{"reply":"…"}` or an intervention. It cannot recursively
+send messages, raise formal requests, change
 memory, use tools, approve work, or report completion during that delivery.
 After all its replies are durable, the original assignment resumes on the original
 sender. The sender may then raise a formal question, decision, staffing, or permission
@@ -78,6 +80,8 @@ sensitive information. Do not put secrets in tasks or messages.
 The permanent organization regression workflow discovers the ledger, privacy,
 restart, scope and synthetic local-provider tests under `test_organization_conversation*`.
 The wire test runs the production executor through worker message → exact recipient
-reply → restarted original worker completion, with three persisted model-call
-reservations. No live account, network model call, or external message is needed.
+reply → restarted original worker completion, with six persisted model-call
+reservations, including two same-thread messages delivered in reverse order. Each
+reply must attach to the exact message selected by its lease. No live account,
+network model call, or external message is needed.
 Desktop behavioral and native Electron checks cover owner inspection separately.

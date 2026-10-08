@@ -226,6 +226,9 @@ class OrganizationConversationStore:
             raise ValueError(reason or 'Message recipient does not own this delivery')
         thread = conn.execute('SELECT * FROM internal_threads WHERE id=?', (message['thread_id'],)).fetchone()
         conversation = conversation_view(conn, thread, agent_id=request['agent_id'])
+        # Several messages may share a thread; queue/read order is not the
+        # delivery identity. Only this leased message owns the eventual reply.
+        conversation['replyToMessageId'] = message['id']
         # Private memory has no project tags. Never leak it into reply generation.
         # Only the recipient's own retained work in this shared objective is input.
         participants = objective_participants(conn, request['objective_id'])

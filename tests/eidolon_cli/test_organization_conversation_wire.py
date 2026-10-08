@@ -4,6 +4,8 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import pytest
+
 from eidolon_cli.organization_executor import execute
 from eidolon_cli.organization_store import OrganizationStore
 from tests.eidolon_cli.test_organization_requests import ledger, start_work
@@ -33,13 +35,31 @@ def test_real_provider_exchange_resumes_work_and_charges_each_turn(tmp_path, mon
             kind = submitted['request']['type']
             if kind == 'request.message':
                 assert set(submitted['context']) == {'agent', 'agentContext', 'conversation'}
-                result = {'reply': 'The board is the audience. Put the main finding first.'}
+                conversation = submitted['context']['conversation']
+                unanswered = [row for row in conversation['messages']
+                              if row['senderId'] == 'writer' and not any(
+                                  reply['replyToId'] == row['id'] for reply in conversation['messages'])]
+                selected = next((row for row in unanswered
+                                 if row['id'] == conversation.get('replyToMessageId')), None)
+                if selected is None and len(unanswered) > 1:
+                    result = {'intervention': 'Which exact pending message owns this delivery?'}
+                else:
+                    selected = selected or unanswered[0]
+                    result = {'reply': 'Answer for ' + selected['body']}
             elif not submitted['context']['internalConversations']:
                 result = {'messages': [{'recipientId': 'advisor', 'subject': 'Audience', 'body': 'Which audience?'}]}
             else:
-                answer = submitted['context']['internalConversations'][0]['messages'][-1]['body']
-                assert 'board' in answer
-                result = {'summary': 'Board brief', 'deliverable': 'Main finding for the board. Supporting details follow.'}
+                conversation = submitted['context']['internalConversations'][0]
+                if len(conversation['messages']) == 2:
+                    result = {'messages': [
+                        {'recipientId': 'advisor', 'threadId': conversation['id'], 'subject': 'Audience',
+                         'body': body} for body in ('What is the preferred length?', 'When is the brief due?')]}
+                else:
+                    by_id = {row['id']: row for row in conversation['messages']}
+                    for reply in conversation['messages']:
+                        if reply['replyToId']:
+                            assert reply['body'] == 'Answer for ' + by_id[reply['replyToId']]['body']
+                    result = {'summary': 'Board brief', 'deliverable': 'Main finding for the board. Supporting details follow.'}
             payload = {'id': 'fixture', 'object': 'chat.completion', 'created': 1,
                        'model': 'conversation-fixture', 'choices': [{'index': 0, 'finish_reason': 'stop',
                        'message': {'role': 'assistant', 'content': json.dumps(result)}}],
@@ -82,10 +102,31 @@ def test_real_provider_exchange_resumes_work_and_charges_each_turn(tmp_path, mon
         resumed = store.claim_next()
         assert resumed['id'] == work['id'] and resumed['agent_id'] == work['agent_id']
         turn(resumed)
-        assert len(seen) == 3
-        assert len(store.execution_audit(work['id'])['modelCalls']) == 2
+        # The same thread now has two outstanding messages. Dispatch the later
+        # one first: neither chronological order nor unread state pins a lease.
+        with store._write() as conn:
+            pending = conn.execute("SELECT r.id FROM requests r JOIN internal_messages m ON m.delivery_request_id=r.id WHERE r.status='queued' ORDER BY m.rowid").fetchall()
+            assert len(pending) == 2
+            conn.execute('UPDATE requests SET created=created-10 WHERE id=?', (pending[-1]['id'],))
+        for index in (1, 0):
+            store = OrganizationStore(store.path)
+            reply_claim = store.claim_next()
+            assert reply_claim['id'] == pending[index]['id']
+            conversation = store.context(reply_claim, mark_read=False)['conversation']
+            with pytest.raises(ValueError, match='only return one reply'):
+                store.finish(reply_claim, {'reply': 'Wrong target',
+                                           'replyToMessageId': conversation['messages'][0]['id']})
+            assert store.heartbeat(reply_claim)
+            turn(reply_claim)
+            assert len(store.execution_audit(reply_claim['id'])['modelCalls']) == 1
+        store = OrganizationStore(store.path)
+        final = store.claim_next()
+        assert final['id'] == work['id'] and final['agent_id'] == work['agent_id']
+        turn(final)
+        assert len(seen) == 6
+        assert len(store.execution_audit(work['id'])['modelCalls']) == 3
         assert len(store.execution_audit(delivery['id'])['modelCalls']) == 1
-        assert len(store.execution_audit(work['id'])['contexts']) == 2
+        assert len(store.execution_audit(work['id'])['contexts']) == 3
         assert store.snapshot()['conversations'][0]['status'] == 'answered'
         assert store.claim_next()['type'] == 'request.review'
     finally:
