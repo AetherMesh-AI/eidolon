@@ -1,5 +1,6 @@
 """Bounded UI projections of the authoritative organization ledger."""
 import json
+from eidolon_cli.organization_attention import attention_view
 from eidolon_cli.organization_coordination import coordination_view
 from eidolon_cli.organization_store import _iso
 from eidolon_cli.organization_history import history_counts, history_view, live_history_references
@@ -155,7 +156,12 @@ def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
                             ','.join('?' for _ in visible) + ')) ORDER BY created DESC,id DESC LIMIT 200', tuple(visible)) if visible else []:
         if row['request_id'] in visible_requests:
             receipt_groups.setdefault(row['request_id'], []).append(receipt_view(row))
-    ui_requests = [{**request_contract_view(conn, r), 'id': r['id'], 'objectiveId': r['objective_id'], 'taskId': r['task_id'], 'type': r['type'],
+    attention_revisions = {row['request_id']: row['revision'] for row in conn.execute(
+        'SELECT a.request_id,a.revision FROM owner_attention a JOIN requests r ON r.id=a.request_id '
+        f"WHERE r.status='pending_intervention' AND r.objective_id IN ({selection})", arguments)}
+    ui_requests = [{**request_contract_view(conn, r),
+                    **({'attentionRevision': attention_revisions[r['id']]} if r['id'] in attention_revisions else {}),
+                    'id': r['id'], 'objectiveId': r['objective_id'], 'taskId': r['task_id'], 'type': r['type'],
                     'team': r['team'], 'priority': r['priority'], 'status': r['status'], 'agentId': r['agent_id'],
                     'allowedResolutions': resolution_options(conn, r) if resolution_options else allowed_resolutions(conn, r, settings),
                     'reason': r['reason'], 'attempts': r['attempts'], 'leaseExpiresAt': _iso(r['lease']),
@@ -169,7 +175,7 @@ def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
                   'kind': 'artifact', 'body': r['content'] + ('\n\n[Preview truncated. Open this artifact to read the full retained deliverable.]' if r['truncated'] else '')}
                  for r in evidence]
     return {'source': 'runtime', 'objectives': objectives, 'agents': agents, 'tasks': ui_tasks, 'activity': events,
-            'knowledge': knowledge, 'decisions': [], 'requests': ui_requests,
+            'knowledge': knowledge, 'decisions': [], 'requests': ui_requests, 'attention': attention_view(conn, objective_id=objective_id),
             'runtime': {'history': history_counts(conn), 'state': 'ready', 'capabilities': list(settings.capabilities), 'maxWorkers': settings.max_workers,
                         'maxInflight': settings.max_inflight, 'rosterCount': len(agents),
                         'workingCount': sum(agent['status'] in {'executing', 'reviewing'} for agent in agents),

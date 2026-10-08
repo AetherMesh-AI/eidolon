@@ -382,6 +382,7 @@ test('retains a visible model-call intervention across full process restart and 
     .getByRole('link', { name: /^Needs You/ })
     .click()
   await expect(page.getByText('Nothing needs your input', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Request queue', exact: true }).click()
   await page.getByRole('combobox', { name: 'Status', exact: true }).selectOption('cancelled')
   await expect(blocked).toContainText('Cancelled')
   await page.screenshot({ path: testInfo.outputPath('03-cancelled-budget-request-history.png') })

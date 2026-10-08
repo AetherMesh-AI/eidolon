@@ -1,5 +1,6 @@
 import { translateNow } from '@/i18n/runtime'
 
+import { type OrganizationAttentionPage, validAttentionPage } from './runtime-attention-types'
 import type { HistoryPage } from './runtime-history-types'
 import { validEditProposal } from './runtime-proposal-validation'
 import type { Objective, OrganizationArtifact, OrganizationExecutionAudit, OrganizationSnapshot, OrganizationToolEvidence, RuntimeOrganizationAdapter } from './types'
@@ -36,6 +37,10 @@ export function organizationErrorMessage(reason: unknown) {
 function validateSnapshot(value: OrganizationSnapshot): OrganizationSnapshot {
   if (!value || value.source !== 'runtime' || !['objectives', 'agents', 'tasks', 'activity', 'knowledge', 'requests'].every(field => Array.isArray(value[field as keyof OrganizationSnapshot])) || !value.runtime) {
     throw new Error('This backend did not return a supported organization snapshot. Update the runtime and reconnect.')
+  }
+
+  if (value.attention !== undefined && !validAttentionPage(value.attention)) {
+    throw new Error(translateNow('organizationWork.attentionInvalid'))
   }
 
   return value
@@ -212,12 +217,12 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
     return result
   }
 
-  const readHistory = async <T,>(method: string, params: Record<string, unknown>): Promise<T> => {
+  const readHistory = async <T,>(method: string, params: Record<string, unknown>, offlineMessage?: string): Promise<T> => {
     resetScope()
     const token = epoch
     const controller = new AbortController()
 
-    if (!scope.connected) {throw new Error(translateNow('organizationRuntime.auditReconnect'))}
+    if (!scope.connected) {throw new Error(offlineMessage ?? translateNow('organizationRuntime.auditReconnect'))}
     controllers.add(controller)
     watchScope()
 
@@ -232,6 +237,19 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
 
   return {
     mode: 'runtime',
+    async getAttention(input = {}) {
+      const version = writeVersion
+      const result = await readHistory<OrganizationAttentionPage>('organization.attention', { ...input }, translateNow('organizationWork.attentionOffline'))
+
+      if (version !== writeVersion) {throw new Error(translateNow('organizationWork.attentionChanged'))}
+
+      if (!validAttentionPage(result)) {throw new Error(translateNow('organizationWork.attentionInvalid'))}
+
+      return result
+    },
+    markAttentionSeen(input) {
+      return mutate<OrganizationSnapshot>(`attention:${input.id}:${input.revision}`, 'organization.markAttentionSeen', { id: input.id, revision: input.revision }, value => value).then(() => undefined)
+    },
     async getHistory(input = {}) {
       const result = await readHistory<HistoryPage>('organization.history', { ...input })
       const validCount = (value: unknown) => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0

@@ -312,7 +312,7 @@ test.afterAll(async () => {
 })
 
 // eslint-disable-next-line no-empty-pattern -- fixture lifecycle is managed by this spec
-test('configures scoped staffing, answers the requesting worker, and retains members and response history after reload', async ({}, testInfo) => {
+test('retains owner attention across reloads, answers the requesting worker, and preserves scoped staffing history', async ({}, testInfo) => {
   const page = fixture!.page
 
   const primary = page
@@ -364,6 +364,20 @@ test('configures scoped staffing, answers the requesting worker, and retains mem
   const questionRow = page.getByRole('button', { name: 'Inspect request: request.question', exact: true })
   await expect(questionRow).toContainText('Pending intervention', { timeout: 90_000 })
   await primary.getByRole('link', { name: /^Needs You/ }).click()
+  const inbox = page.getByRole('region', { name: 'Attention inbox', exact: true })
+  await expect(inbox).toContainText('Needs You: 1 · Unread: 1')
+  // A returning owner sees the durable blocker even when it arrived off-page.
+  await page.reload()
+  await expect(inbox).toContainText('Needs You: 1 · Unread: 1', { timeout: 60_000 })
+  await inbox.getByRole('button', { name: 'Mark seen', exact: true }).click()
+  await expect(inbox).toContainText('Needs You: 1 · Unread: 0')
+  await expect(inbox.getByRole('button', { name: 'Seen', exact: true })).toBeDisabled()
+  await page.reload()
+  await expect(inbox).toContainText('Needs You: 1 · Unread: 0', { timeout: 60_000 })
+  await expect(inbox.getByRole('button', { name: 'Seen', exact: true })).toBeDisabled()
+  // Acknowledgement cannot answer the question or resume the blocked worker.
+  expect(stages.filter(stage => stage.kind === 'work.draft')).toHaveLength(1)
+  await page.screenshot({ path: testInfo.outputPath('02-durable-seen-blocker.png') })
   await questionRow.click()
   const inspector = page.getByRole('complementary', { name: 'Request details' })
   await expect(inspector.getByText(question, { exact: true })).toBeVisible()
@@ -410,7 +424,9 @@ test('configures scoped staffing, answers the requesting worker, and retains mem
   ).toBeVisible()
   await page.keyboard.press('Escape')
   await primary.getByRole('link', { name: /^Needs You/ }).click()
+  await expect(inbox).toContainText('Needs You: 0 · Unread: 0')
   await expect(page.getByText('Nothing needs your input', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Request queue', exact: true }).click()
   await page.getByRole('combobox', { name: 'Status', exact: true }).selectOption('all')
   await questionRow.click()
   await expect(page.getByRole('region', { name: 'Recorded response' }).getByText(answer, { exact: true })).toBeVisible()

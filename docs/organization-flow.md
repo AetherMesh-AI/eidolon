@@ -697,3 +697,59 @@ These limits are local safety bounds, not a claim of unlimited disk retention.
 Existing artifact download and request-audit inspectors remain available through
 an exact history objective. Full-ledger backup/retention administration remains a
 separate concern; this archive flow does not permanently purge old records.
+
+## Revisit owner attention after being away
+
+**Needs You → Attention inbox** lists the current profile's unresolved
+interventions. The unread count identifies blockers the owner has not yet marked
+seen. **Mark seen** records only that the displayed revision was inspected: the
+request stays pending, remains in **Needs you**, and still requires its existing
+answer, permission, retry, or resolution control. It never approves a proposal,
+grants a tool, retries a request, or starts execution.
+
+Seen state survives reconnects and backend restarts. A request becomes unread
+again when it reenters pending intervention, its reason or meaningful payload
+changes, or its owner-visible routing/contract changes. Repeated polling and
+identical writes do not create new attention; JSON whitespace and object-key
+ordering do not count as payload changes. A delayed mark-seen action must match
+the exact observed revision and cannot acknowledge a newer blocker. Refresh the
+list if that action reports the request changed.
+
+Use **Unread** to find changed older blockers without paging through already-seen
+ones. **All blockers** retains both seen and unread interventions. Resolution or
+cancellation removes a request from attention automatically. Archive never hides
+an unresolved intervention through the owner controls, and archived history is
+excluded from current attention. Restoring settled history does not reopen work.
+Attention is local owner metadata; no email, desktop notification, external
+recipient, provider call, or new authority is introduced.
+
+The authenticated organization RPC boundary exposes:
+
+- `organization.snapshot` includes `attention: {items, unread, total, hasMore,
+  nextCursor}`. Each item has `requestId`, `objectiveId`, positive integer
+  `revision`, `seen`, `createdAt`, and `updatedAt`. `total` counts all current
+  unarchived pending interventions; `unread` counts their unseen revisions.
+  Pending request content carries `attentionRevision` from the same snapshot
+  transaction. Clients must only mark a page item seen when its revision matches
+  the displayed request's revision; otherwise refresh the full snapshot first.
+- `organization.attention({limit?, before?, unreadOnly?, profile?})` reads at most
+  100 entries per page (default 100). Pages use stable newest-request-first order;
+  `before` is the prior page's `nextCursor`. Counts always cover the whole current
+  profile, while `hasMore` and `nextCursor` describe the selected filter. A cursor
+  remains valid when its request is resolved, seen, or archived. An unread filter
+  makes new content on older requests discoverable independently of this order.
+- `organization.markAttentionSeen({id, revision, profile?})` marks that exact
+  current generation seen and returns a fresh snapshot. Repeating the same
+  acknowledgement is safe. Missing, resolved, archived, or changed generations
+  return a refresh-required invalid-parameters error. It cannot mark another
+  profile's request or accept a client-supplied actor or request state.
+
+Exact history-objective reads scope attention to that objective. The durable
+metadata stores only one row per retained request, rather than an unbounded
+notification stream. Initial migration makes existing pending requests unread;
+for those requests the original creation time is the earliest known attention
+time. Revision identity, rather than timestamps or a live event subscription,
+controls acknowledgement and reopening.
+
+Older backends without attention support continue to show the existing Requests
+queue. They cannot offer durable mark-seen state until the backend is upgraded.

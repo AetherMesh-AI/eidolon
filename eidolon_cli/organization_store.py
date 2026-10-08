@@ -18,6 +18,7 @@ import uuid
 from datetime import datetime, timezone
 
 from eidolon_cli.organization_config import OrganizationSettings
+from eidolon_cli.organization_attention import ATTENTION_SCHEMA, OrganizationAttentionStore
 from eidolon_cli.organization_history import HISTORY_SCHEMA, OrganizationHistoryStore, history_counts
 from eidolon_cli.organization_coordination import COORDINATION_SCHEMA, OrganizationCoordinationStore, coordination_view
 from eidolon_cli.organization_budget import BUDGET_SCHEMA, OrganizationBudgetStore, budget_reason, budget_view
@@ -95,12 +96,12 @@ def _text(value, field, limit=10000):
     return value.strip()
 
 
-class OrganizationStore(OrganizationHistoryStore, OrganizationCoordinationStore, OrganizationProjectExecutionStore, OrganizationBudgetStore, OrganizationRequestStore, OrganizationManagementStore, OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
+class OrganizationStore(OrganizationAttentionStore, OrganizationHistoryStore, OrganizationCoordinationStore, OrganizationProjectExecutionStore, OrganizationBudgetStore, OrganizationRequestStore, OrganizationManagementStore, OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
     def __init__(self, path: Path | str, settings: OrganizationSettings | None = None):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
-            conn.executescript(_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA + COORDINATION_SCHEMA + HISTORY_SCHEMA)
+            conn.executescript(_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA + COORDINATION_SCHEMA + HISTORY_SCHEMA + ATTENTION_SCHEMA)
             self.settings = resolve_settings(conn, settings)
         with self._write() as conn:
             self._migrate_reservations(conn)
@@ -127,6 +128,7 @@ class OrganizationStore(OrganizationHistoryStore, OrganizationCoordinationStore,
             self._migrate_identities(conn)
             self._migrate_request_contracts(conn)
             self.migrate_open_project_validation(conn)
+            self._migrate_attention(conn)
             for row in conn.execute("SELECT objective_id FROM objective_control WHERE status='pending'").fetchall():
                 self._maybe_integrate(conn, row['objective_id'])
 
