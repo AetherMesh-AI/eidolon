@@ -2,6 +2,7 @@ import { translateNow } from '@/i18n/runtime'
 
 import { type OrganizationAttentionPage, validAttentionPage } from './runtime-attention-types'
 import type { HistoryPage } from './runtime-history-types'
+import { type OrganizationOutcomePage, validOutcomePage } from './runtime-outcome-types'
 import { validEditProposal } from './runtime-proposal-validation'
 import type { Objective, OrganizationArtifact, OrganizationExecutionAudit, OrganizationSnapshot, OrganizationToolEvidence, RuntimeOrganizationAdapter } from './types'
 
@@ -41,6 +42,10 @@ function validateSnapshot(value: OrganizationSnapshot): OrganizationSnapshot {
 
   if (value.attention !== undefined && !validAttentionPage(value.attention)) {
     throw new Error(translateNow('organizationWork.attentionInvalid'))
+  }
+
+  if (value.outcomes !== undefined && !validOutcomePage(value.outcomes)) {
+    throw new Error(translateNow('organizationWork.outcomeInvalid'))
   }
 
   return value
@@ -237,6 +242,19 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
 
   return {
     mode: 'runtime',
+    async getOutcomes(input = {}) {
+      const version = writeVersion
+      const result = await readHistory<OrganizationOutcomePage>('organization.outcomes', { ...input }, translateNow('organizationWork.outcomeOffline'))
+
+      if (version !== writeVersion) {throw new Error(translateNow('organizationWork.outcomeChanged'))}
+
+      if (!validOutcomePage(result)) {throw new Error(translateNow('organizationWork.outcomeInvalid'))}
+
+      return result
+    },
+    markOutcomeSeen(input) {
+      return mutate<OrganizationSnapshot>(`outcome:${input.id}:${input.revision}`, 'organization.markOutcomeSeen', { id: input.id, revision: input.revision }, value => value).then(() => undefined)
+    },
     async getAttention(input = {}) {
       const version = writeVersion
       const result = await readHistory<OrganizationAttentionPage>('organization.attention', { ...input }, translateNow('organizationWork.attentionOffline'))

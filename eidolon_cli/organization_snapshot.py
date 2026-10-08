@@ -2,6 +2,7 @@
 import json
 from eidolon_cli.organization_projects import objective_projects, task_project, public_project
 from eidolon_cli.organization_attention import attention_view
+from eidolon_cli.organization_outcomes import outcomes_view
 from eidolon_cli.organization_coordination import coordination_view
 from eidolon_cli.organization_store import _iso
 from eidolon_cli.organization_history import history_counts, history_view, live_history_references
@@ -178,6 +179,7 @@ def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
                  for r in evidence]
     return {'source': 'runtime', 'objectives': objectives, 'agents': agents, 'tasks': ui_tasks, 'activity': events,
             'knowledge': knowledge, 'decisions': [], 'requests': ui_requests, 'attention': attention_view(conn, objective_id=objective_id),
+            'outcomes': outcomes_view(conn, objective_id=objective_id),
             'runtime': {'history': history_counts(conn), 'state': 'ready', 'capabilities': list(settings.capabilities), 'maxWorkers': settings.max_workers,
                         'maxInflight': settings.max_inflight, 'rosterCount': len(agents),
                         'workingCount': sum(agent['status'] in {'executing', 'reviewing'} for agent in agents),

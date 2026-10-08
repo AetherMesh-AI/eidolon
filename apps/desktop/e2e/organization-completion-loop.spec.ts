@@ -1,4 +1,6 @@
 /** Actual Electron → gateway → durable ledger → loopback HTTP provider. */
+import { createHash } from 'node:crypto'
+
 import type { Page } from '@playwright/test'
 
 import {
@@ -15,7 +17,7 @@ import { expect, test } from './test'
 const projectTests = 'Project tests (requires external verification when unavailable)'
 let running: Awaited<ReturnType<typeof setupCompletionFixture>> | undefined
 
-test.setTimeout(240_000)
+test.setTimeout(360_000)
 
 function primary(page: Page) {
   return page
@@ -34,6 +36,7 @@ async function openObjective(page: Page, title: string) {
   await page
     .getByRole('link')
     .filter({ has: page.getByText(title, { exact: true }) })
+    .first()
     .click()
   await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
 }
@@ -64,25 +67,22 @@ interface RecordedResolution {
   params: Record<string, unknown>
 }
 
-async function replayResolution(page: Page, recorded: RecordedResolution) {
+async function organizationRequest<T>(page: Page, recorded: RecordedResolution, method: string) {
   const destination = new URL(recorded.url)
   expect(destination.protocol).toBe('ws:')
   expect(['127.0.0.1', 'localhost', '[::1]']).toContain(destination.hostname)
 
-  // Replay the exact UI-produced idempotency key over the real local transport,
-  // without calling the store directly or mutating the renderer's cached state.
+  // Read durable receipts and replay the UI-produced owner resolution over
+  // real local transport, without mocking RPC or changing renderer state.
   return page.evaluate(
-    async ({ url, params }) =>
-      new Promise<{
-        error?: unknown
-        result?: { objectives: Array<{ title: string; status: string; ownerResolutions: unknown[] }> }
-      }>((resolve, reject) => {
+    async ({ url, params, method }) =>
+      new Promise<{ error?: unknown; result?: T }>((resolve, reject) => {
         const socket = new WebSocket(url)
-        const id = 'e2e-owner-amendment-replay'
+        const id = `e2e-${method}`
 
         const timeout = setTimeout(() => {
           socket.close()
-          reject(new Error('Owner resolution replay timed out'))
+          reject(new Error('Organization request timed out'))
         }, 15_000)
 
         socket.addEventListener(
@@ -90,13 +90,11 @@ async function replayResolution(page: Page, recorded: RecordedResolution) {
           () => {
             clearTimeout(timeout)
             socket.close()
-            reject(new Error('Owner resolution replay connection failed'))
+            reject(new Error('Organization request connection failed'))
           },
           { once: true }
         )
-        socket.addEventListener('open', () =>
-          socket.send(JSON.stringify({ jsonrpc: '2.0', id, method: 'organization.resolve', params }))
-        )
+        socket.addEventListener('open', () => socket.send(JSON.stringify({ jsonrpc: '2.0', id, method, params })))
         socket.addEventListener('message', event => {
           const response = JSON.parse(String(event.data))
 
@@ -109,7 +107,7 @@ async function replayResolution(page: Page, recorded: RecordedResolution) {
           resolve(response)
         })
       }),
-    recorded
+    { ...recorded, method }
   )
 }
 
@@ -150,7 +148,7 @@ test.afterEach(async ({}, testInfo) => {
 // eslint-disable-next-line no-empty-pattern -- actual Electron lifecycle belongs to this spec
 test('requires explicit check replacement, retains its audit, and completes only after fresh independent acceptance', async ({}, testInfo) => {
   running = await setupCompletionFixture(false)
-  const { page } = running.fixture
+  let { page } = running.fixture
   const { stages, providerErrors } = running
   const ownerWrites: RecordedResolution[] = []
   page.on('websocket', socket =>
@@ -178,6 +176,16 @@ test('requires explicit check replacement, retains its audit, and completes only
   expect(stages.map(stage => stage.kind)).toEqual(['request.plan', 'work.draft', 'request.review'])
   expect(stages.every(stage => stage.requiredChecks.includes('project_tests'))).toBe(true)
   await page.screenshot({ path: testInfo.outputPath('01-unverified-model-approval-blocked.png') })
+  await primary(page).getByRole('link', { name: 'Objectives', exact: true }).click()
+  await expect(
+    page.getByRole('region', { name: 'Outcomes inbox', exact: true }).getByText('No outcomes yet', { exact: true })
+  ).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Outcomes inbox', exact: true }).getByRole('listitem')).toHaveCount(0)
+  await primary(page)
+    .getByRole('link', { name: /^Needs You/ })
+    .click()
+  await expect(blocked).toContainText('Pending intervention')
+  await openObjective(page, completionTitle)
 
   await page.getByRole('button', { name: 'Inspect request: request.review', exact: true }).click()
   const inspector = page.getByRole('complementary', { name: 'Request details' })
@@ -285,14 +293,64 @@ test('requires explicit check replacement, retains its audit, and completes only
   expect(ownerWrites[0].params.requiredChecks).toEqual([])
   expect(ownerWrites[0].params.acceptanceCriteria).toEqual([amendedCriterion])
   expect(ownerWrites[0].params.idempotencyKey).toEqual(expect.any(String))
-  const replay = await replayResolution(page, ownerWrites[0])
+  const replay = await organizationRequest<{
+    objectives: Array<{ title: string; status: string; ownerResolutions: unknown[] }>
+  }>(page, ownerWrites[0], 'organization.resolve')
   expect(replay.error).toBeUndefined()
   const replayed = replay.result?.objectives.find(objective => objective.title === completionTitle)
   expect(replayed?.ownerResolutions).toHaveLength(1)
   expect(replayed?.status).not.toBe('completed')
   await expect(history).toHaveText(audit, { useInnerText: true })
   expect(stages).toHaveLength(4)
+  // Finish via the real provider while the owner is composing elsewhere.
+  // Poll the real gateway receipt, never seed terminal state or intercept RPC.
+  await primary(page).getByRole('link', { name: 'Command', exact: true }).click()
+  const nextObjective = page.getByRole('textbox', { name: 'Objective', exact: true })
+  await nextObjective.fill('Keep my foreground draft')
+  await nextObjective.focus()
+  const foregroundUrl = page.url()
   running.releasePlan()
+  interface OutcomePage {
+    items: Array<{
+      title: string
+      status: string
+      seen: boolean
+      deliverableId: string
+      acceptanceRequestId: string
+      evidenceIds: string[]
+    }>
+    unread: number
+    total: number
+  }
+  const readOutcomes = () =>
+    organizationRequest<OutcomePage>(page, { url: ownerWrites[0].url, params: {} }, 'organization.outcomes')
+  await expect
+    .poll(
+      async () => {
+        const receipt = await readOutcomes()
+        expect(receipt.error).toBeUndefined()
+        return receipt.result?.items.find(item => item.title === completionTitle)?.status
+      },
+      { timeout: 90_000 }
+    )
+    .toBe('accepted')
+  expect(page.url()).toBe(foregroundUrl)
+  await expect(nextObjective).toHaveValue('Keep my foreground draft')
+  await expect(nextObjective).toBeFocused()
+  await expect(primary(page).getByLabel('Unread outcomes: 1', { exact: true })).toBeVisible()
+  const outcomes = (await readOutcomes()).result!
+  expect(outcomes.unread).toBe(1)
+  expect(outcomes.total).toBe(1)
+  expect(outcomes.items[0]).toMatchObject({ seen: false, status: 'accepted' })
+  expect(outcomes.items[0].deliverableId).toBeTruthy()
+  expect(outcomes.items[0].acceptanceRequestId).toBeTruthy()
+  expect(outcomes.items[0].evidenceIds.length).toBeGreaterThan(0)
+  await testInfo.attach('durable-accepted-outcome-before-owner-return', {
+    body: JSON.stringify(outcomes, null, 2),
+    contentType: 'application/json'
+  })
+  await openObjective(page, completionTitle)
+  await history.locator('summary').click()
 
   await expect(header).toContainText('Completed', { timeout: 90_000 })
   await expect(acceptance.getByText(recommendation, { exact: true })).toBeVisible()
@@ -318,6 +376,71 @@ test('requires explicit check replacement, retains its audit, and completes only
   await history.locator('summary').click()
   await expect(history).toHaveText(audit, { useInnerText: true })
   expect(stages).toHaveLength(8)
+
+  const inbox = () => page.getByRole('region', { name: 'Outcomes inbox', exact: true })
+  const receipt = () => inbox().getByRole('listitem', { name: completionTitle, exact: true })
+  const openInbox = async () => {
+    await primary(page).getByRole('link', { name: 'Objectives', exact: true }).click()
+    await expect(receipt()).toContainText('Accepted')
+  }
+  const inspectDeliverable = async () => {
+    await receipt().getByRole('link', { name: completionTitle, exact: true }).click()
+    await expect(objectiveHeader(page, completionTitle)).toContainText('Completed')
+    await page.getByRole('button', { name: 'Read final deliverable', exact: true }).click()
+    const artifact = page.getByRole('complementary', { name: 'Artifact details', exact: true })
+    await expect(artifact.locator('p.eid-result-text').first()).toHaveText(recommendation)
+    await expect(artifact.locator('dd.eid-result-text')).toHaveText(
+      createHash('sha256').update(recommendation).digest('hex')
+    )
+    await artifact.getByRole('button', { name: 'Close artifact details', exact: true }).click()
+  }
+  await openInbox()
+  await expect(receipt().getByRole('button', { name: 'Mark seen', exact: true })).toBeVisible()
+  await inspectDeliverable()
+  await openInbox()
+  // Merely reading the retained result is not acknowledgement.
+  await expect(receipt().getByRole('button', { name: 'Mark seen', exact: true })).toBeVisible()
+  await page.reload()
+  await expect(receipt().getByRole('button', { name: 'Mark seen', exact: true })).toBeVisible({ timeout: 60_000 })
+  await running.restart()
+  page = running.fixture.page
+  await openInbox()
+  await expect(receipt().getByRole('button', { name: 'Mark seen', exact: true })).toBeVisible()
+  await inspectDeliverable()
+  const acceptedBeforeSeen = await page.getByRole('region', { name: 'Final acceptance', exact: true }).innerText()
+  await openInbox()
+  await receipt().getByRole('button', { name: 'Mark seen', exact: true }).click()
+  await expect(receipt().getByRole('button', { name: 'Seen', exact: true })).toBeVisible()
+  await expect(primary(page).getByLabel('Unread outcomes: 1', { exact: true })).toHaveCount(0)
+  await inbox().getByRole('button', { name: 'Unread', exact: true }).click()
+  await expect(inbox().getByText('No unread outcomes', { exact: true })).toBeVisible()
+  await expect(receipt()).toHaveCount(0)
+  await inbox().getByRole('button', { name: 'All outcomes', exact: true }).click()
+  await inspectDeliverable()
+  await expect(page.getByRole('region', { name: 'Final acceptance', exact: true })).toHaveText(acceptedBeforeSeen, {
+    useInnerText: true
+  })
+  await page.getByRole('button', { name: 'Archive objective', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Restore to current history', exact: true })).toBeVisible()
+  await openInbox()
+  await expect(receipt()).toContainText('Archived history')
+  await expect(receipt().getByRole('button', { name: 'Seen', exact: true })).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('05-seen-archived-outcome.png') })
+  await running.restart()
+  page = running.fixture.page
+  await openInbox()
+  await expect(receipt()).toContainText('Archived history')
+  await expect(receipt().getByRole('button', { name: 'Seen', exact: true })).toBeVisible()
+  await inspectDeliverable()
+  await expect(page.getByRole('region', { name: 'Final acceptance', exact: true })).toHaveText(acceptedBeforeSeen, {
+    useInnerText: true
+  })
+  await primary(page)
+    .getByRole('link', { name: /^Needs You/ })
+    .click()
+  await expect(page.getByText('Nothing needs your input', { exact: true })).toBeVisible()
+  expect(stages).toHaveLength(8)
+  expect(providerErrors).toEqual([])
 })
 
 // eslint-disable-next-line no-empty-pattern -- actual Electron lifecycle belongs to this spec
@@ -386,4 +509,16 @@ test('retains a visible model-call intervention across full process restart and 
   await page.getByRole('combobox', { name: 'Status', exact: true }).selectOption('cancelled')
   await expect(blocked).toContainText('Cancelled')
   await page.screenshot({ path: testInfo.outputPath('03-cancelled-budget-request-history.png') })
+  await primary(page).getByRole('link', { name: 'Objectives', exact: true }).click()
+  const cancelled = page
+    .getByRole('region', { name: 'Outcomes inbox', exact: true })
+    .getByRole('listitem', { name: budgetTitle, exact: true })
+  await expect(cancelled).toContainText('Cancelled')
+  await expect(cancelled).not.toContainText('Accepted')
+  await cancelled.getByRole('button', { name: 'Mark seen', exact: true }).click()
+  await expect(cancelled.getByRole('button', { name: 'Seen', exact: true })).toBeVisible()
+  await cancelled.getByRole('link', { name: budgetTitle, exact: true }).click()
+  await expect(objectiveHeader(page, budgetTitle)).toContainText('Cancelled')
+  expect(await assertBlocked()).toBe(deadline)
+  expect(running.stages.map(stage => stage.kind)).toEqual(['request.plan'])
 })

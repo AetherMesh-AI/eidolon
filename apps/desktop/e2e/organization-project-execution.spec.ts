@@ -39,6 +39,7 @@ async function openObjective(page: Page) {
   await page
     .getByRole('link')
     .filter({ has: page.getByText(projectTitle, { exact: true }) })
+    .first()
     .click()
   await expect(header(page)).toBeVisible()
 }
@@ -143,6 +144,8 @@ test('retains exact native test, independent review and branch receipts, or an h
       'completed'
     )
   }
+  let retainedExactTest = ''
+  let retainedExactSource = ''
   if (state === 'completed') {
     expect(process.platform).toBe('linux')
     await expect(fact(execution, 'Reported test count')).toHaveText('3')
@@ -161,6 +164,7 @@ test('retains exact native test, independent review and branch receipts, or an h
     expect(running.git('show', `${commit}:test_app.py`)).toBe(projectTests.trim())
     expect(await fact(branch, 'Source base commit').innerText()).toBe(running.sourceHead)
     const exactTest = await readExactArtifact(page, 'Read exact test evidence')
+    retainedExactTest = exactTest
     const proof = JSON.parse(exactTest) as { execution: unknown; snapshot: Array<{ path: string; content: string }> }
     expect(proof.execution).toEqual(running.runEvidence[0].execution)
     expect(Object.fromEntries(proof.snapshot.map(file => [file.path, file.content]))).toEqual({
@@ -168,6 +172,7 @@ test('retains exact native test, independent review and branch receipts, or an h
       'root0/test_app.py': projectTests
     })
     const exactSource = await readExactArtifact(page, 'Read exact source integration evidence')
+    retainedExactSource = exactSource
     expect(JSON.parse(exactSource)).toMatchObject({
       status: 'integrated',
       ref,
@@ -230,6 +235,37 @@ test('retains exact native test, independent review and branch receipts, or an h
   expect(running.stages).toHaveLength(modelCalls)
   running.assertSourceUntouched()
   await page.screenshot({ path: testInfo.outputPath('02-native-receipt-after-process-restart.png') })
+  if (state === 'completed') {
+    await page.getByRole('button', { name: 'Archive objective', exact: true }).click()
+    await expect(page.getByRole('button', { name: 'Restore to current history', exact: true })).toBeVisible()
+    await primary(page).getByRole('link', { name: 'Objectives', exact: true }).click()
+    const outcome = page
+      .getByRole('region', { name: 'Outcomes inbox', exact: true })
+      .getByRole('listitem', { name: projectTitle, exact: true })
+    await expect(outcome).toContainText('Accepted')
+    await expect(outcome).toContainText('Archived history')
+    await expect(outcome.getByRole('button', { name: 'Mark seen', exact: true })).toBeVisible()
+    await outcome.getByRole('link', { name: projectTitle, exact: true }).click()
+    expect(await readExactArtifact(page, 'Read exact test evidence')).toBe(retainedExactTest)
+    expect(await readExactArtifact(page, 'Read exact source integration evidence')).toBe(retainedExactSource)
+    await expect(page.getByRole('region', { name: 'Latest project test execution', exact: true })).toHaveText(
+      beforeRestart,
+      { useInnerText: true }
+    )
+    expect(running.stages).toHaveLength(modelCalls)
+    running.assertSourceUntouched()
+    await page.screenshot({ path: testInfo.outputPath('03-archived-inbox-exact-project-evidence.png') })
+  } else {
+    await primary(page).getByRole('link', { name: 'Objectives', exact: true }).click()
+    await expect(
+      page.getByRole('region', { name: 'Outcomes inbox', exact: true }).getByText('No outcomes yet', { exact: true })
+    ).toBeVisible()
+    await expect(page.getByRole('region', { name: 'Outcomes inbox', exact: true }).getByRole('listitem')).toHaveCount(0)
+    await primary(page)
+      .getByRole('link', { name: /^Needs You/ })
+      .click()
+    await expect(pending().first()).toBeVisible()
+  }
 })
 
 // eslint-disable-next-line no-empty-pattern -- actual Electron lifecycle belongs to the scenario

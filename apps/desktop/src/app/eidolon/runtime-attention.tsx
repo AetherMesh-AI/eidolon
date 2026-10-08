@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -8,96 +8,14 @@ import { Loader } from '@/components/ui/loader'
 import { SegmentedControl } from '@/components/ui/segmented-control'
 import { useI18n } from '@/i18n/context'
 
-import type { OrganizationAttentionItem, OrganizationAttentionPage } from './runtime-attention-types'
+import type { OrganizationAttentionPage } from './runtime-attention-types'
+import { RevisionSeenControl, sameConnection } from './runtime-inbox-seen'
 import type { OrganizationSnapshot, RuntimeOrganizationAdapter } from './types'
 
 interface AttentionProps {
   adapter: RuntimeOrganizationAdapter
   snapshot: OrganizationSnapshot
   onInspect(id: string): void
-}
-
-function sameConnection(adapter: RuntimeOrganizationAdapter, snapshot: OrganizationSnapshot) {
-  const current = adapter.getSnapshot().connection
-
-  return (
-    current?.scope === snapshot.connection?.scope &&
-    current?.ownerScope === snapshot.connection?.ownerScope &&
-    current?.state === 'ready'
-  )
-}
-
-interface SeenControlProps extends Pick<AttentionProps, 'adapter' | 'snapshot'> {
-  item: OrganizationAttentionItem
-  disabled: boolean
-  onChanged(): void
-}
-
-function SeenControl({ adapter, snapshot, item, disabled, onChanged }: SeenControlProps) {
-  const { t } = useI18n()
-  const copy = t.organizationWork
-  const [pending, setPending] = useState(false)
-  const [error, setError] = useState('')
-  const sending = useRef(false)
-  const epoch = useRef(0)
-
-  // eslint-disable-next-line no-restricted-syntax -- fence the lifetime of this exact revision control
-  useEffect(() => {
-    const invalidated = epoch.current + 1
-    sending.current = false
-    setPending(false)
-    setError('')
-
-    return () => {
-      epoch.current = invalidated
-    }
-  }, [item.revision, snapshot.connection?.scope, snapshot.connection?.state])
-
-  const markSeen = async () => {
-    if (sending.current || disabled || item.seen || !adapter.markAttentionSeen || !sameConnection(adapter, snapshot)) {
-      return
-    }
-
-    const version = epoch.current
-    sending.current = true
-    setPending(true)
-    setError('')
-
-    try {
-      await adapter.markAttentionSeen({ id: item.requestId, revision: item.revision })
-
-      if (version === epoch.current && sameConnection(adapter, snapshot)) {
-        onChanged()
-      }
-    } catch (reason) {
-      if (version === epoch.current && sameConnection(adapter, snapshot)) {
-        setError(reason instanceof Error ? reason.message : copy.attentionWriteError)
-      }
-    } finally {
-      if (version === epoch.current) {
-        sending.current = false
-        setPending(false)
-      }
-    }
-  }
-
-  return (
-    <>
-      <Button disabled={disabled || pending || item.seen} onClick={() => void markSeen()} size="sm" variant="secondary">
-        {item.seen ? copy.attentionSeen : copy.attentionMarkSeen}
-      </Button>
-      {pending && <Loader label={copy.attentionSaving} />}
-      {error && (
-        <div role="alert">
-          <ErrorState description={error} title={copy.attentionWriteError}>
-            <Button disabled={disabled || pending} onClick={onChanged} size="sm" variant="secondary">
-              {copy.refresh}
-            </Button>
-          </ErrorState>
-        </div>
-      )}
-    </>
-  )
 }
 
 /** Bounded local projection of the request ledger. Inspection never acknowledges a row. */
@@ -243,11 +161,13 @@ export function RuntimeAttentionInbox({ adapter, snapshot, onInspect }: Attentio
                       </Badge>
                     </button>
                     {adapter.markAttentionSeen && (
-                      <SeenControl
+                      <RevisionSeenControl
                         adapter={adapter}
                         disabled={!ready || !fresh || loading || item.revision !== request.attentionRevision}
-                        item={item}
+                        errorTitle={copy.attentionWriteError}
+                        item={{ ...item, id: item.requestId }}
                         key={`${item.requestId}:${item.revision}`}
+                        markSeen={adapter.markAttentionSeen}
                         onChanged={refresh}
                         snapshot={snapshot}
                       />

@@ -387,3 +387,36 @@ escalate to a different specialist team, but sending the same question back arou
 its ancestry is stopped as no-progress ping-pong. Existing dependency-cycle,
 request-depth, revision, replan and stage limits remain enforced. A denial remains
 binding context; repeated requests do not create permission.
+
+## Return to an outcome after time away
+
+The Objectives page includes a separate **Outcomes** inbox. It is a bounded,
+profile-local projection of the existing organization ledger, including archived
+objectives. The Objectives navigation indicates unread outcomes. A completed
+objective is labelled accepted only when the authoritative acceptance state says
+so; cancelled and older legacy completions have distinct labels. Failed work and
+requests needing input remain in **Needs You**, not disguised as completion.
+
+Opening an outcome does not mark it seen. **Mark seen** acknowledges the exact
+version shown, independently of acceptance, execution permissions or blocker
+resolution. This acknowledgement survives a desktop or gateway restart and
+archive/restore. A materially changed outcome becomes unread again; a stale
+acknowledgement is rejected. Replanning or reopening removes the old terminal
+projection until the ledger has a terminal result again. The inbox stores bounded
+current receipt metadata per objective rather than a second deliverable or
+acceptance history. The existing objective ledger remains the source of history.
+
+Inspect the retained objective to read the integrated deliverable and its exact
+acceptance evidence. For source-project work, the existing per-project sections
+show the test execution ID and command, tested snapshot and file digests,
+independent reviewer, and retained source branch, commit and tree when those
+actually exist. A local branch receipt does not mean the branch was pushed,
+merged or released, and retained evidence is not a fresh revalidation of external
+Git refs or files that changed later. Managed-artifact results and legacy completions do not gain
+project-test or source-integration claims by appearing in the inbox. Cancellation
+is a stopping decision, not proof that every in-flight side effect was settled;
+retained execution receipts and archive blockers remain inspectable.
+
+This is an in-app inbox only. It sends no external messages, desktop notifications
+or new OS permission requests. Deterministic loopback-model tests exercise the
+persistence and delivery mechanics, not live-model judgment quality.
