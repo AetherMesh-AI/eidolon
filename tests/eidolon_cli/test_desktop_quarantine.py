@@ -1,7 +1,6 @@
 """Native signing must never remove a downloaded app's security provenance."""
 from __future__ import annotations
 
-import os
 from pathlib import Path
 import plistlib
 import shutil
@@ -43,8 +42,9 @@ def test_native_relaunch_fixup_preserves_quarantine_and_nested_metadata(tmp_path
                   (resource, "com.apple.quarantine", quarantine),
                   (resource, "org.eidolon.test.provenance", b"preserve nested metadata")]
     for target, attribute, value in attributes:
-        os.setxattr(target, attribute, value)
+        subprocess.run(["/usr/bin/xattr", "-wx", attribute, value.hex(), str(target)], check=True)
     assert main_desktop._desktop_macos_relaunchable_fixup(desktop, publisher_signing_configured=False)
     subprocess.run(["/usr/bin/codesign", "--verify", "--deep", "--strict", str(app)], check=True)
     for target, attribute, value in attributes:
-        assert os.getxattr(target, attribute) == value
+        observed = subprocess.check_output(["/usr/bin/xattr", "-px", attribute, str(target)], text=True)
+        assert bytes.fromhex(observed) == value
