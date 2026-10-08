@@ -64,7 +64,9 @@ test('fresh setup guides existing settings and refreshes known blockers without 
       .getByRole('region', { name: 'Organization setup', exact: true })
       .getByText('Configured transport needs review', { exact: true })
   ).toBeVisible()
-  await page.screenshot({ path: test.info().outputPath('organization-setup-known-blocker.png'), fullPage: true })
+  await page.getByRole('region', { name: 'Organization setup', exact: true }).screenshot({
+    path: test.info().outputPath('organization-setup-known-blocker.png')
+  })
   expect(fs.readFileSync(configPath, 'utf8')).toBe(blockedConfig)
   expect(mock.receivedPrompts.length).toBe(initialCalls)
 })
