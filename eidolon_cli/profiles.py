@@ -17,6 +17,9 @@ from typing import Dict, List, Optional, Tuple
 
 from agent.skill_utils import is_excluded_skill_path
 from eidolon_cli.archive_safe import archive_root_dirs, make_targz, normalize_archive_parts, safe_extract_targz
+from eidolon_cli.profiles_project_export import (
+    PROJECTS_EXPORT_FILENAME, PROJECTS_PRIVATE_EXPORT_ROOTS, stage_project_registry,
+)
 from eidolon_constants import clear_named_profile_deleted, mark_named_profile_deleted, named_profile_is_deleted
 
 logger = logging.getLogger(__name__)
@@ -107,6 +110,8 @@ _DEFAULT_EXPORT_INCLUDE_ROOT = frozenset({
     "system_prompt.md", "AGENTS.md", "CLAUDE.md", ".cursorrules",
     # Desktop appearance overlay (written/applied by the desktop app's export/import).
     "desktop.json",
+    # Inert identity metadata retained after import until explicit owner review.
+    PROJECTS_EXPORT_FILENAME,
     # User-facing skill, cron, and session artifacts
     "skills", "cron", "scripts", "sessions",
     # Plugin / memory surfaces (per-profile overrides live here)
@@ -1518,22 +1523,29 @@ def export_profile(name: str, output_path: str, extra_files: Optional[Dict[str, 
     # copy under a temp dir named after the canonical id: root allow-list for default,
     # credential exclusion for named profiles.
     def _ignore_credentials(directory: str, contents: list) -> set:
-        return _EXPORT_CREDENTIAL_FILES & set(contents)
+        ignored = _EXPORT_CREDENTIAL_FILES & set(contents)
+        if Path(directory) == profile_dir:
+            ignored |= PROJECTS_PRIVATE_EXPORT_ROOTS & set(contents)
+        return ignored
 
     ignore = _default_export_ignore(profile_dir) if canon == "default" else _ignore_credentials
     with tempfile.TemporaryDirectory() as tmpdir:
         staged = Path(tmpdir) / canon
         shutil.copytree(profile_dir, staged, symlinks=True, ignore=ignore)
         for rel, content in (extra_files or {}).items():
-            target = staged.joinpath(*normalize_archive_parts(rel))
+            parts = normalize_archive_parts(rel)
+            if parts[0] in PROJECTS_PRIVATE_EXPORT_ROOTS or parts[0] == PROJECTS_EXPORT_FILENAME:
+                raise ValueError("Organization project exports are generated from the registry, not extra files")
+            target = staged.joinpath(*parts)
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content, encoding="utf-8")
+        stage_project_registry(profile_dir, staged)
         _scrub_export_secrets(staged)
         return Path(make_targz(base, tmpdir, canon))
 
 
 def import_profile(archive_path: str, name: Optional[str] = None) -> Path:
-    """Import a profile from a tar.gz archive."""
+    """Import a profile; organization-projects.json remains inert owner-review metadata."""
     import tempfile
     archive = Path(archive_path)
     if not archive.exists():

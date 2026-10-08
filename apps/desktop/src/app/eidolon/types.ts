@@ -549,10 +549,26 @@ export interface OrganizationProjectDraft {
   project: OrganizationProjectBinding
   yaml: string
 }
+export interface OrganizationProjectSave {
+  version: 1
+  revision: string
+  project: OrganizationProjectBinding
+  saved: true
+}
+export interface OrganizationProjectSaveInput {
+  project: OrganizationProjectBinding
+  expectedRevision: string
+  idempotencyKey: string
+  confirmSave: true
+}
 export interface OrganizationProjectSetup {
   version: 1
   revision: string
   projects: OrganizationProjectBinding[]
+  storage?: 'profile-ledger'
+  ledgerProjects?: OrganizationProjectBinding[]
+  registryConflicts?: string[]
+  repair?: string | null
   roots: string[]
   recipes: { id: string; root: string }[]
   teams: string[]
@@ -562,6 +578,7 @@ export interface OrganizationProjectSetup {
 export interface RuntimeOrganizationAdapter extends OrganizationReader {
   getProjectSetup?(): Promise<OrganizationProjectSetup>
   prepareProjectDraft?(input: { project: OrganizationProjectBinding; expectedRevision: string }): Promise<OrganizationProjectDraft>
+  saveProject?(input: OrganizationProjectSaveInput, signal?: AbortSignal): Promise<OrganizationProjectSave>
   readonly mode: 'runtime'
   getOutcomes?(input?: OrganizationOutcomeQuery): Promise<OrganizationOutcomePage>
   markOutcomeSeen?(input: OrganizationOutcomeSeen): Promise<void>

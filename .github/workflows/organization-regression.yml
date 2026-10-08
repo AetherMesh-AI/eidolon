@@ -73,6 +73,10 @@ jobs:
           scripts/run_tests.sh tests/eidolon_cli/test_organization*.py tests/tui_gateway/test_organization*.py tests/gateway/test_organization*.py tests/tools/test_organization*.py tests/scripts/test_organization*.py tests/agent/test_org_skill_namespace.py -j 4
           .venv/bin/ruff check eidolon_cli/organization*.py tui_gateway/methods_organization.py
           .venv/bin/python scripts/check_compat_pointers.py
+      - name: Verify profile export and consistent recovery backups
+        run: |
+          scripts/run_tests.sh tests/eidolon_cli/test_backup*.py \
+            tests/eidolon_cli/test_profile_export*.py tests/eidolon_cli/test_profiles.py -j 4
       - name: Verify shared config primitives and gateway import compatibility
         run: |
           scripts/run_tests.sh tests/eidolon_cli/test_config*.py \
@@ -115,6 +119,8 @@ jobs:
             tests/eidolon_cli/test_organization_attention.py \
             tests/eidolon_cli/test_organization_outcomes.py \
             tests/eidolon_cli/test_organization_cross_feature_recovery.py \
+            tests/eidolon_cli/test_organization_project_registry.py \
+            tests/eidolon_cli/test_organization_project_portability.py \
             tests/eidolon_cli/test_organization_tool_receipts.py \
             tests/eidolon_cli/test_organization_multi_project_execution.py \
             tests/eidolon_cli/test_organization_inspection_acceptance.py \
@@ -149,7 +155,7 @@ jobs:
       - name: Verify components, fixture helpers and types before native work
         working-directory: apps/desktop
         run: |
-          npx vitest run src/app/eidolon src/store/organization-work.test.ts src/app/contrib/organization-shell.test.tsx e2e/organization-*.unit.test.ts
+          npx vitest run src/app/eidolon src/components/ui/confirm-dialog.test.tsx src/components/ui/confirm-dialog-unmount.test.tsx src/store/organization-work.test.ts src/app/contrib/organization-shell.test.tsx e2e/organization-*.unit.test.ts
           npm run typecheck
       - name: Install required native project isolation
         run: bash scripts/ci/organization-sandbox.sh

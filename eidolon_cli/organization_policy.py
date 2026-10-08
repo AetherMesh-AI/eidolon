@@ -61,6 +61,8 @@ def persisted_settings(conn):
             **{key: tuple(staff.get(key, ())) for key in (
                 'capabilities', 'tool_grants', 'responsibilities', 'authority', 'managed_teams')}})
             for staff in values['roster'])
+    for key in ('ledger_project_ids', 'project_registry_conflicts'):
+        values[key] = tuple(values.get(key, ()))
     from eidolon_cli.organization_budget import parse_model_costs
     values['model_costs'] = parse_model_costs(values.get('model_costs', []))
     from eidolon_cli.organization_project_config import parse_project_grants
@@ -81,11 +83,12 @@ def resolve_settings(conn, seed_settings=None):
     configuration. Revoking an organization tool grant still makes a retained
     member unavailable instead of silently granting it again or erasing history.
     """
+    from eidolon_cli.organization_project_registry import resolve_registry
     saved = persisted_settings(conn)
     base = seed_settings or saved or OrganizationSettings()
     row = conn.execute('SELECT configuration FROM organization_configuration WHERE id=1').fetchone()
     if row is None:
-        return base
+        return resolve_registry(conn, base)
     override = json.loads(row['configuration'])
     if set(override) != {'roster', 'max_inflight', 'max_members'}:
         raise ValueError('Persisted organization configuration contains unsupported settings')
@@ -94,7 +97,8 @@ def resolve_settings(conn, seed_settings=None):
     grants = list(dict.fromkeys([*raw['tool_grants'],
                                 *(grant for staff in raw['roster'] for grant in staff.get('tool_grants', []))]))
     validated = OrganizationSettings.from_config({'organization': {**raw, 'tool_grants': grants}})
-    return replace(validated, tool_grants=base.tool_grants)
+    return resolve_registry(conn, replace(validated, tool_grants=base.tool_grants,
+        ledger_project_ids=base.ledger_project_ids))
 
 
 class OrganizationPolicyStore:
@@ -146,7 +150,7 @@ class OrganizationPolicyStore:
             return self._pause_configuration(conn)
 
     def _pause_configuration(self, conn):
-        if self._policy_paused(conn):
+        if conn.execute('SELECT 1 FROM organization_policy_pause WHERE id=1').fetchone() is not None:
             return False
         conn.execute('INSERT INTO organization_policy_pause VALUES (1)')
         conn.execute('UPDATE organization_policy SET generation=generation+1 WHERE id=1')
@@ -156,10 +160,14 @@ class OrganizationPolicyStore:
 
     @staticmethod
     def _policy_paused(conn):
-        return conn.execute('SELECT 1 FROM organization_policy_pause WHERE id=1').fetchone() is not None
+        return (conn.execute('SELECT 1 FROM organization_policy_pause WHERE id=1').fetchone() is not None
+                or conn.execute('SELECT 1 FROM organization_project_registry_conflicts WHERE id=1').fetchone() is not None)
 
     def _adopt_policy(self, conn, *, exclude_request_id=None, force=False, resume=False):
-        if resume and self._policy_paused(conn):
+        from eidolon_cli.organization_project_registry import adopt_registry_status, resolve_registry
+        self.settings = resolve_registry(conn, self.settings)
+        force = adopt_registry_status(conn, self.settings) or force
+        if resume and conn.execute('SELECT 1 FROM organization_policy_pause WHERE id=1').fetchone() is not None:
             conn.execute('DELETE FROM organization_policy_pause WHERE id=1')
             force = True
         values = asdict(self.settings)

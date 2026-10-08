@@ -104,6 +104,15 @@ def _(params, service):
     return project_draft(params.get("project"), params.get("expectedRevision"))
 
 
+@_organization_method("organization.projectSave")
+def _(params, service):
+    from eidolon_cli.organization_project_setup import project_save
+    _organization_params(params, {"project", "expectedRevision", "idempotencyKey", "confirmSave"})
+    return project_save(params.get("project"), params.get("expectedRevision"),
+                        _organization_text(params, "idempotencyKey", 128),
+                        confirm_save=params.get("confirmSave"))
+
+
 @_organization_method("organization.attention")
 def _(params, service):
     _organization_params(params, {"limit", "before", "unreadOnly"})

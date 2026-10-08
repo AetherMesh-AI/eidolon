@@ -13,20 +13,27 @@ No branch protection, repository setting, secret, or permission grant is changed
   recovery, live policy changes, exact execution receipts, multi-repository
   acceptance, attention and durable outcomes. Shared config/env/managed-scope and
   gateway import compatibility suites cover the strict reader’s pure primitives.
-  Uses the canonical per-file runner.
+  Profile export and recovery-backup suites exercise metadata-only registration
+  portability and SQLite WAL snapshots. Uses the canonical per-file runner.
 - macOS and Windows: a deliberately smaller native ledger, migration, recovery,
   receipt, policy and project-execution guard suite. Spawned-process config tests
   cover delayed reopen/startup/watchers, invalid-file pauses and idempotent repair
   without replaying claims or resetting model-call reservations. The unchanged
   large artifact-retention lifecycle has its own file so short ledger contracts
   do not consume its per-file timeout on slower Windows runners; no timeout or
-  assertion is relaxed. These hosts verify honest
+  assertion is relaxed. Ledger registration tests kill actual subprocesses before
+  and after commit, race stale writers, retain definitions through restart and
+  revoke changed authority. Export/import and recovery snapshots run on all hosts;
+  symlink/junction retarget cases execute only on their actual supported OS.
+  These hosts verify honest
   unsupported execution; they do not claim Linux sandbox support.
 - Linux desktop: organization UI/store/shell tests and synthetic fixture helpers,
-  full desktop type checks and production build, followed by all six organization
+  full desktop type checks and production build, followed by the organization
   Electron specs under Xvfb, one worker with retries disabled. The specs cover
   setup, requests/attention, reconnect/restart, selected repositories, isolation,
-  cancellation/budgets, source acceptance and retained outcome evidence. Providers
+  cancellation/budgets, source acceptance and retained outcome evidence. Project
+  registration covers deliberate confirmation, restart persistence and revocation
+  while asserting that fixture YAML stays unchanged. Providers
   are local deterministic fixtures, not live model calls.
 
 Fast component/type failures stop the desktop job before native installation,
@@ -84,7 +91,8 @@ The Windows/macOS guard command is listed directly in the workflow.
 
 ```sh
 cd apps/desktop
-npx vitest run src/app/eidolon src/store/organization-work.test.ts \
+npx vitest run src/app/eidolon src/components/ui/confirm-dialog.test.tsx \
+  src/components/ui/confirm-dialog-unmount.test.tsx src/store/organization-work.test.ts \
   src/app/contrib/organization-shell.test.tsx e2e/organization-*.unit.test.ts
 npm run typecheck
 npm run build

@@ -1,11 +1,11 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { describe, expect, it, vi } from 'vitest'
 
 import { Organization } from './organization'
 import { createRuntimeAdapter, type OrganizationGateway, type OrganizationScope } from './runtime-adapter'
 import { validProjectBinding, validProjectSetup } from './runtime-project-setup-contract'
-import type { OrganizationProjectBinding, OrganizationProjectDraft, OrganizationProjectSetup, OrganizationSnapshot } from './types'
+import type { OrganizationProjectBinding, OrganizationProjectDraft, OrganizationProjectSave, OrganizationProjectSaveInput, OrganizationProjectSetup, OrganizationSnapshot } from './types'
 
 const binding: OrganizationProjectBinding = { id: 'new_repo', root: 'root1', recipe: 'other', team: 'Engineering' }
 const setup = (): OrganizationProjectSetup => ({ version: 1, revision: 'a'.repeat(64), roots: ['root0', 'root1'], recipes: [{ id: 'check', root: 'root0' }, { id: 'other', root: 'root1' }], teams: ['Engineering'], projects: [{ ...binding, id: 'existing', root: 'root0', recipe: 'check' }], blocked: false, blockers: [] })
@@ -23,7 +23,9 @@ function harness() {
   const listeners = new Set<() => void>()
   const read = vi.fn().mockImplementation(async () => setup())
   const write = vi.fn().mockImplementation(async ({ project, expectedRevision }) => ({ version: 1, revision: expectedRevision, project, yaml: `- id: ${project.id}\n  root: ${project.root}\n  recipe: ${project.recipe}\n  team: ${project.team}\n` }))
-  const request = vi.fn(async (method: string, params: Record<string, unknown>) => method === 'organization.projectSetup' ? read() : method === 'organization.projectDraft' ? write(params) : snapshot())
+  const snapshots = vi.fn().mockImplementation(async () => snapshot())
+  const save = vi.fn().mockImplementation(async ({ project }) => ({ version: 1, revision: 'b'.repeat(64), project, saved: true }))
+  const request = vi.fn(async (method: string, params: Record<string, unknown>, _timeout?: number, signal?: AbortSignal) => method === 'organization.projectSetup' ? read() : method === 'organization.projectDraft' ? write(params) : method === 'organization.projectSave' ? save(params, signal) : snapshots())
 
   const gateway: OrganizationGateway = { request: request as OrganizationGateway['request'], getScope: () => scope, subscribeScope(listener) {listeners.add(listener);
 
@@ -31,7 +33,7 @@ function harness() {
 
   const adapter = createRuntimeAdapter(gateway)
 
-  return { adapter, read, write, request, change() {scope = { key: 'profile-b', connected: true }; listeners.forEach(listener => listener())} }
+  return { adapter, read, write, save, snapshots, request, change() {scope = { key: 'profile-b', connected: true }; listeners.forEach(listener => listener())} }
 }
 
 async function open(h: ReturnType<typeof harness>) {
@@ -201,5 +203,182 @@ describe('guided repository registry setup', () => {
       h.write.mockResolvedValueOnce(invalid)
       await expect(h.adapter.prepareProjectDraft!({ project: binding, expectedRevision: setup().revision })).rejects.toThrow('invalid repository setup')
     }
+  })
+})
+
+
+const ledgerSetup = (): OrganizationProjectSetup => ({ ...setup(), storage: 'profile-ledger', ledgerProjects: [], registryConflicts: [], repair: null })
+const saveReceipt = (): OrganizationProjectSave => ({ version: 1, revision: 'b'.repeat(64), project: binding, saved: true })
+const saveInput = (): OrganizationProjectSaveInput => ({ project: binding, expectedRevision: setup().revision, idempotencyKey: 'save-reviewed-draft', confirmSave: true })
+
+async function prepare(h: ReturnType<typeof harness>) {
+  h.read.mockResolvedValue(ledgerSetup())
+  const view = await open(h)
+  fill()
+  fireEvent.click(screen.getByRole('button', { name: 'Prepare repository configuration' }))
+  await screen.findByLabelText('Repository configuration YAML')
+
+  return view
+}
+
+function review() {
+  fireEvent.click(screen.getByRole('button', { name: 'Review repository activation' }))
+
+  return within(screen.getByRole('dialog'))
+}
+
+describe('reviewed profile-ledger repository activation', () => {
+  it('requires deliberate review, saves once, and keeps the export after authoritative refresh', async () => {
+    const h = harness()
+    await prepare(h)
+    expect(h.save).not.toHaveBeenCalled()
+    const cancelled = review()
+    expect(cancelled.getByText(/stores this repository identity in this profile’s organization ledger/)).toBeTruthy()
+    expect(cancelled.getByText(/does not edit YAML, add permissions or start work/)).toBeTruthy()
+    fireEvent.keyDown(cancelled.getByRole('button', { name: 'Cancel' }), { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.getByLabelText('Repository ID')).toBeTruthy()
+    expect(h.save).not.toHaveBeenCalled()
+
+    const result = deferred<OrganizationProjectSave>()
+    h.save.mockReturnValue(result.promise)
+    const confirm = review().getByRole('button', { name: 'Save and activate repository' })
+    fireEvent.click(confirm)
+    fireEvent.click(confirm)
+    await waitFor(() => expect(h.save).toHaveBeenCalledTimes(1))
+    expect(h.save.mock.calls[0][0]).toEqual({ ...saveInput(), idempotencyKey: expect.any(String) })
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Review repository activation' }).disabled).toBe(true)
+    expect(screen.getByText(/A save already received may still complete/)).toBeTruthy()
+    h.read.mockResolvedValue({ ...ledgerSetup(), revision: saveReceipt().revision, projects: [...setup().projects, binding], ledgerProjects: [binding] })
+    await act(async () => result.resolve(saveReceipt()))
+    await screen.findByText('Repository saved in this profile’s organization ledger.')
+    await screen.findByRole('list', { name: 'Saved in this profile’s ledger' })
+    expect(screen.getByLabelText<HTMLTextAreaElement>('Repository configuration YAML').value).toContain('- id: new_repo')
+    expect(screen.getByRole('button', { name: 'Copy' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Review repository activation' })).toBeNull()
+  })
+
+  it('keeps an uncertain save retry idempotent, then refreshes stale drafts before accepting edits', async () => {
+    const h = harness()
+    h.save.mockRejectedValueOnce(new Error('Connection ended; refresh or retry'))
+    h.save.mockRejectedValueOnce(new Error('Project configuration changed; refresh setup'))
+    await prepare(h)
+    fireEvent.click(review().getByRole('button', { name: 'Save and activate repository' }))
+    await screen.findByText('Connection ended; refresh or retry')
+    expect(screen.getByLabelText('Repository configuration YAML')).toBeTruthy()
+    fireEvent.click(review().getByRole('button', { name: 'Save and activate repository' }))
+    await screen.findByText('Project configuration changed; refresh setup')
+    expect(h.save.mock.calls[0][0]).toEqual(h.save.mock.calls[1][0])
+    h.read.mockResolvedValue({ ...ledgerSetup(), revision: 'c'.repeat(64) })
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh setup' }))
+    await waitFor(() => expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Prepare repository configuration' }).disabled).toBe(false))
+    expect(screen.queryByRole('button', { name: 'Review repository activation' })).toBeNull()
+    expect(screen.getByLabelText<HTMLInputElement>('Repository ID').value).toBe(binding.id)
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare repository configuration' }))
+    await screen.findByLabelText('Repository configuration YAML')
+    fireEvent.change(screen.getByLabelText('Repository ID'), { target: { value: 'edited' } })
+    expect(screen.queryByRole('button', { name: 'Review repository activation' })).toBeNull()
+    expect(h.save).toHaveBeenCalledTimes(2)
+  })
+
+  it.each(['close', 'profile'] as const)('aborts a pending save on %s and ignores its late receipt', async reason => {
+    const h = harness()
+    const view = await prepare(h)
+    const result = deferred<OrganizationProjectSave>()
+    h.save.mockReturnValue(result.promise)
+    fireEvent.click(review().getByRole('button', { name: 'Save and activate repository' }))
+    await waitFor(() => expect(h.save).toHaveBeenCalledTimes(1))
+    const signal = h.save.mock.calls[0][1] as AbortSignal
+
+    if (reason === 'close') {fireEvent.click(screen.getByRole('button', { name: 'Close agent details' }))} else {
+      act(() => h.change())
+      view.rerender(<MemoryRouter><Organization adapter={h.adapter} snapshot={h.adapter.getSnapshot()} /></MemoryRouter>)
+    }
+
+    expect(signal.aborted).toBe(true)
+    expect(screen.queryByLabelText('Repository ID')).toBeNull()
+    await act(async () => result.resolve(saveReceipt()))
+    expect(screen.queryByText('Repository saved in this profile’s organization ledger.')).toBeNull()
+  })
+
+  it('cancels review on profile switch and gates saves on a supported unblocked ledger', async () => {
+    const h = harness()
+    const view = await prepare(h)
+    review()
+    const unsubscribe = h.adapter.subscribe(() => {})
+    act(() => h.change())
+    view.rerender(<MemoryRouter><Organization adapter={h.adapter} snapshot={h.adapter.getSnapshot()} /></MemoryRouter>)
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(h.save).not.toHaveBeenCalled()
+    unsubscribe()
+    view.unmount()
+
+    const older = harness()
+    const oldView = await open(older)
+    fill()
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare repository configuration' }))
+    await screen.findByLabelText('Repository configuration YAML')
+    expect(screen.queryByRole('button', { name: 'Review repository activation' })).toBeNull()
+    oldView.unmount()
+
+    const blocked = harness()
+    blocked.read.mockResolvedValue({ ...ledgerSetup(), blocked: true, blockers: ['registry_conflict'], ledgerProjects: [binding], registryConflicts: ['new_repo: configured root changed'], repair: 'Restore the original configured root, then refresh setup.' })
+    await open(blocked)
+    expect(screen.getByRole('list', { name: 'Repository conflicts' })).toBeTruthy()
+    expect(screen.getByText('Restore the original configured root, then refresh setup.')).toBeTruthy()
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Prepare repository configuration' }).disabled).toBe(true)
+    expect(blocked.save).not.toHaveBeenCalled()
+  })
+
+  it('waits for a fresh authoritative snapshot after a pre-save poll is discarded', async () => {
+    const h = harness()
+    await h.adapter.refresh()
+    const old = deferred<OrganizationSnapshot>()
+    h.snapshots.mockReturnValueOnce(old.promise)
+    const polling = h.adapter.refresh()
+    await waitFor(() => expect(h.snapshots).toHaveBeenCalledTimes(2))
+    const activated = { ...snapshot(), runtime: { ...snapshot().runtime!, availableProjects: [binding] } }
+    h.snapshots.mockResolvedValue(activated)
+    const saving = h.adapter.saveProject!(saveInput())
+    await waitFor(() => expect(h.save).toHaveBeenCalledTimes(1))
+    old.resolve(snapshot())
+    await polling
+    await saving
+    expect(h.snapshots).toHaveBeenCalledTimes(3)
+    expect(h.adapter.getSnapshot().runtime?.availableProjects).toEqual([binding])
+  })
+
+  it('fences unsent and obsolete writes, coalesces repeats, and rejects malformed receipts', async () => {
+    const h = harness()
+    await h.adapter.refresh()
+    const cancelled = new AbortController()
+    const unsent = h.adapter.saveProject!(saveInput(), cancelled.signal)
+    cancelled.abort()
+    await expect(unsent).rejects.toThrow()
+    expect(h.save).not.toHaveBeenCalled()
+    const result = deferred<OrganizationProjectSave>()
+    h.save.mockReturnValue(result.promise)
+    const first = h.adapter.saveProject!(saveInput())
+    const second = h.adapter.saveProject!(saveInput())
+    await waitFor(() => expect(h.save).toHaveBeenCalledTimes(1))
+    h.change()
+    result.resolve(saveReceipt())
+    await expect(first).rejects.toThrow()
+    await expect(second).rejects.toThrow()
+    expect(h.adapter.getSnapshot().connection?.scope).toBe('profile-b')
+
+    for (const invalid of [
+      { ...saveReceipt(), saved: false },
+      { ...saveReceipt(), revision: 'invalid' },
+      { ...saveReceipt(), project: { ...binding, root: 'root0' } }
+    ]) {
+      h.save.mockResolvedValueOnce(invalid)
+      await expect(h.adapter.saveProject!(saveInput())).rejects.toThrow('invalid repository setup')
+    }
+
+    expect(validProjectSetup(ledgerSetup())).toBe(true)
+    expect(validProjectSetup({ ...ledgerSetup(), ledgerProjects: [binding, binding] })).toBe(false)
+    expect(validProjectSetup({ ...ledgerSetup(), storage: 'yaml' })).toBe(false)
+    expect(validProjectSetup({ ...ledgerSetup(), repair: {} })).toBe(false)
   })
 })

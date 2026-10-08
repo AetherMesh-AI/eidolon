@@ -71,7 +71,9 @@ def _validate_owner_config(config, settings):
     raw.update({key: value for key, value in config.items() if key != 'transfers'})
     if raw['roster'] is None:
         raw['roster'] = _configuration(settings)['roster']
-    return OrganizationSettings.from_config({'organization': raw})
+    return replace(OrganizationSettings.from_config({'organization': raw}),
+                   ledger_project_ids=settings.ledger_project_ids,
+                   project_registry_conflicts=settings.project_registry_conflicts)
 
 
 def _validate_agent_members(proposal, settings, actor):
@@ -368,6 +370,10 @@ class OrganizationManagementStore:
         return result
 
     def _apply_configuration(self, conn, updated, transfers, actor_id, request_id, actor=None):
+        from eidolon_cli.organization_project_registry import resolve_registry
+        updated = resolve_registry(conn, updated)
+        if updated.project_registry_conflicts:
+            raise ValueError('This change would invalidate a registered project; retain its configured team and authority')
         before = _configuration(self.settings)
         transfer_rows = list(_transfer_rows(transfers))
         before_members = {staff['id']: staff for staff in before['roster']}
