@@ -105,6 +105,31 @@ def source_integration_artifact(conn, identifier):
             'toolReceipts': [], 'createdAt': datetime.fromtimestamp(row['created'], timezone.utc).isoformat()}
 
 
+def replan_project_history(conn, objective_id, round_number):
+    """Bind bounded prior attempts to their actual artifacts, never inferred outcomes.
+
+    Keep earlier rounds too: an amendment before another run must not erase the
+    failure being repaired. Current-run verification deliberately stays separate.
+    """
+    history = []
+    for start in conn.execute('SELECT id FROM project_run_starts WHERE objective_id=? AND round<=? '
+                              'ORDER BY round,created,id', (objective_id, round_number)):
+        row = _run_row(conn, start['id'])
+        artifact = project_execution_artifact(conn, row['id'])
+        review = conn.execute('SELECT * FROM project_run_reviews WHERE run_id=? ORDER BY created DESC LIMIT 1',
+                              (row['id'],)).fetchone()
+        evidence_ids = [row['id']] if artifact else []
+        evidence_ids.extend('project_source_' + source['request_id'] for source in conn.execute(
+            'SELECT request_id FROM project_source_receipts WHERE run_id=? ORDER BY created,request_id', (row['id'],)))
+        history.append({'runId': row['id'], 'requestId': row['request_id'],
+                        'projectId': _run_project_id(conn, row), 'round': row['round'],
+                        'status': artifact['projectExecution']['status'] if artifact else 'unknown',
+                        'snapshotSha256': row['snapshot_sha256'], 'evidenceIds': evidence_ids,
+                        'review': {'approved': bool(review['approved']), 'reviewerId': review['reviewer_id'],
+                                   'summary': review['summary'], 'requestId': review['request_id']} if review else None})
+    return history
+
+
 def project_execution_view(conn, objective_id, *, full=False, project_id=None):
     from eidolon_cli.organization_projects import objective_projects
     projects = objective_projects(conn, objective_id)
