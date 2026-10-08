@@ -125,7 +125,10 @@ class OrganizationBudgetStore:
                       created + self.settings.objective_timeout_seconds, self.settings.max_cost_usd, int(unknown)))
 
     def _migrate_budgets(self, conn):
-        for row in conn.execute('SELECT id FROM objectives').fetchall():
+        # Existing budgets retain their original ceilings and uncertainty. Only
+        # missing rows need legacy usage reconstruction, including on repair.
+        for row in conn.execute('SELECT o.id FROM objectives o LEFT JOIN objective_budgets b '
+                                'ON b.objective_id=o.id WHERE b.objective_id IS NULL').fetchall():
             self._initialize_budget(conn, row['id'], legacy=True)
 
     def reserve_model_call(self, claim, *, provider, model, input_limit, output_limit):
