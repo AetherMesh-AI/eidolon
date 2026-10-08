@@ -206,7 +206,8 @@ class OrganizationRequestStore:
         from eidolon_cli.organization_loop import reject_repeated_requests
         for item in proposals:
             if 'managementProposal' in item:
-                item['managementProposal'] = canonical_management_proposal(item['managementProposal'], self.settings.team)
+                item['managementProposal'] = canonical_management_proposal(
+                    item['managementProposal'], item.get('team', parent['team']))
         ancestors = {parent['id']}
         ancestor = contract['parent_request_id']
         while ancestor:
@@ -222,7 +223,7 @@ class OrganizationRequestStore:
                     raise ValueError('Request dependencies must be prior acyclic non-ancestor requests in this objective')
             payload = {'evidenceIds': item['evidenceIds']}
             if 'managementProposal' in item:
-                payload['managementProposal'] = canonical_management_proposal(item['managementProposal'], self.settings.team)
+                payload['managementProposal'] = item['managementProposal']
             ident = self._request(conn, parent['objective_id'], item['type'], item.get('team', parent['team']),
                                   parent['priority'], payload=payload)
             conn.execute('DELETE FROM request_contracts WHERE request_id=?', (ident,))
