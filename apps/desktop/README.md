@@ -39,10 +39,24 @@ eidolon update
 
 This updates the selected runtime, not an arbitrary Eidolon checkout. Review the repository, installed build, application home, and release instructions before using either update path. Do not treat upstream releases as Eidolon updates.
 
-On macOS, the app closes while a detached helper updates the source, verifies the
-desktop build, replaces the running `.app`, and reopens it. The optional progress
-window appears only for a supported Chrome/Chromium default browser; its absence
-does not establish a failure. Automatic reopening is still expected.
+On macOS, Update checks for known replacement restrictions before closing the
+app. A detached helper then updates the source, verifies the desktop build,
+replaces the running `.app`, and verifies that a fresh native app process remains
+running. The optional progress window appears only for a supported Chrome/Chromium
+default browser; its absence does not establish a failure.
+
+Replacement uses the current user's existing access only. If macOS denies replacing
+an installed app, the helper preserves the previous app and new build and reports
+that installation is incomplete. Use Finder to replace the app and approve any
+macOS prompt, or ask the administrator responsible for the installation. The updater
+does not change permissions, clear quarantine, or install a privileged helper.
+
+Each swap preserves its previous app and transaction journal in a uniquely named
+`.eidolon-update-*` sibling directory. These backups consume disk space and can be
+removed by the user after validating the updated app. An unfinished
+`.eidolon-update` directory (or legacy `.old`/`.new` bundle) blocks another swap;
+inspect the retained journal and app copies before attempting recovery. The helper
+never discards an interrupted transaction to make a retry proceed.
 
 The release version can remain unchanged across source updates. Compare the
 embedded commit shown in About, rather than the version number alone. A current
