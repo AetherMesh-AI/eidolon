@@ -22,10 +22,12 @@ jobs:
         with:
           node-version: '22.22.3'
           architecture: arm64
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
-          version: '0.9.28'
-          enable-cache: false
+          python-version: '3.11'
+          architecture: arm64
+      - name: Install pinned uv from PyPI
+        run: python3 -m pip install uv==0.9.28
       - name: Prepare owned two-commit local origin on fixed main
         shell: bash
         run: |
