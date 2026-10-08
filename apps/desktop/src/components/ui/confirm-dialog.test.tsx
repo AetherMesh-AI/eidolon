@@ -36,7 +36,7 @@ describe('ConfirmDialog secondary action', () => {
 
   it.each(['Enter', ' '])('leaves %s on Cancel and secondary actions to native button activation', async key => {
     const { onConfirm, onClose, onSecondary } = renderWithSecondary()
-    const cancel = await screen.findByRole('button', { name: 'Cancel', exact: true })
+    const cancel = await screen.findByRole('button', { name: /^Cancel$/ })
     cancel.focus()
     // jsdom does not synthesize keyboard button clicks. A non-cancelled event
     // plus the subsequent native click must keep the focused action's meaning.
@@ -62,8 +62,8 @@ describe('ConfirmDialog secondary action', () => {
     // eslint-disable-next-line no-restricted-globals -- asserting real focus requires the live document
     await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true))
     // eslint-disable-next-line no-restricted-globals -- asserting real focus requires the live document
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Confirm', exact: true }))
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm', exact: true }))
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: /^Confirm$/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Confirm$/ }))
 
     await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(1))
     expect(onSecondary).not.toHaveBeenCalled()
