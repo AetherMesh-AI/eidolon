@@ -43,6 +43,9 @@ can be retried safely without duplicating the change.
 
 For reorganization, add an explicit handoff, choose source and destination members
 with the same role, and select exact open assignments and optionally bounded memory.
+For managers and executives, select objective leadership separately from task
+assignments. This works before planning and after all tasks finish; delegated
+tasks keep their own managers unless explicitly selected for transfer.
 The runtime validates reporting lines, teams, capabilities and active execution
 before applying the complete change atomically. Completed history stays with its
 original identity. Recent organization changes expose the actor, linked request,

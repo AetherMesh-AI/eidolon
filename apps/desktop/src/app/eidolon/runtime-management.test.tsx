@@ -3,7 +3,7 @@ import { MemoryRouter } from 'react-router'
 import { expect, it, vi } from 'vitest'
 
 import { createRuntimeAdapter, type OrganizationGateway } from './runtime-adapter'
-import { validOrganizationConfiguration } from './runtime-management'
+import { validOrganizationConfiguration, validTransfers } from './runtime-management'
 import type { OrganizationMemberConfiguration, OrganizationSnapshot } from './types'
 import { OrganizationWorkspace } from './workspace'
 
@@ -288,7 +288,7 @@ it('submits only explicitly selected task and memory handoffs and shows the retu
   request.mockResolvedValue(updated)
   fireEvent.click(form.getByRole('button', { name: 'Save organization' }))
   await waitFor(() => expect(request.mock.calls.some(call => call[0] === 'organization.configure')).toBe(true))
-  expect(request.mock.calls.find(call => call[0] === 'organization.configure')![1].configuration.transfers).toEqual([
+  expect(request.mock.calls.find(call => call[0] === 'organization.configure')![1].configuration.transfers).toStrictEqual([
     { fromAgentId: 'writer', toAgentId: 'second-writer', taskIds: ['open-task'], includeMemory: true }
   ])
   const history = within(screen.getByRole('region', { name: 'Recent organization changes' }))
@@ -312,5 +312,85 @@ it('removes only unsaved new members while preserving other roster edits', async
   fireEvent.click(form.getByRole('button', { name: 'Save organization' }))
   await waitFor(() => expect(request.mock.calls.some(call => call[0] === 'organization.configure')).toBe(true))
   expect(request.mock.calls.find(call => call[0] === 'organization.configure')![1].configuration.roster).toEqual([{ ...member, name: 'Preserved name' }])
+  view.unmount()
+})
+
+it('saves exact objective leadership without open tasks or memory and clears selections when the source changes', async () => {
+  const initial = snapshot()
+  initial.agents.push(
+    { ...initial.agents[0], id: 'executive', name: 'Release executive', role: 'Executive' },
+    { ...initial.agents[0], id: 'next-executive', name: 'Next executive', role: 'Executive' },
+    { ...initial.agents[0], id: 'third-manager', name: 'Third manager' }
+  )
+  initial.runtime!.management!.configuration.roster.push({
+    ...member,
+    id: 'next-manager',
+    name: 'Next manager',
+    role: 'Manager',
+    manager_id: 'executive',
+    capabilities: ['request.plan', 'request.integrate'],
+    tool_grants: []
+  })
+
+  const objective = {
+    id: 'goal-before-planning',
+    title: 'Release awaiting a plan',
+    description: 'No tasks have been created',
+    ownerId: 'owner',
+    managerId: 'manager',
+    executiveId: 'executive',
+    status: 'planning' as const,
+    source: 'runtime' as const,
+    createdAt: '2026-10-04T00:00:00Z'
+  }
+
+  initial.objectives = [
+    objective,
+    { ...objective, id: 'goal-awaiting-acceptance', title: 'Release awaiting acceptance', status: 'needs_input' },
+    { ...objective, id: 'other-goal', title: 'Another manager’s goal', managerId: 'third-manager' },
+    { ...objective, id: 'completed-goal', title: 'Completed release', status: 'completed' },
+    { ...objective, id: 'cancelled-goal', title: 'Cancelled release', status: 'cancelled' }
+  ]
+  initial.tasks = [{
+    id: 'completed-task', objectiveId: 'goal-awaiting-acceptance', title: 'Completed release draft',
+    ownerId: 'writer', managingAgentId: 'manager', status: 'completed', dependsOn: []
+  }]
+  const request = vi.fn().mockResolvedValue(initial)
+  const view = open(request)
+  fireEvent.click(await screen.findByRole('button', { name: 'Manage organization' }))
+  const form = within(screen.getByRole('form', { name: 'Manage organization' }))
+  fireEvent.click(form.getByRole('button', { name: 'Add explicit handoff' }))
+  const from = form.getByRole('combobox', { name: 'Transfer from' })
+  fireEvent.change(from, { target: { value: 'manager' } })
+  fireEvent.change(form.getByRole('combobox', { name: 'Transfer to' }), { target: { value: 'next-manager' } })
+  const leadership = within(form.getByRole('group', { name: 'Objective leadership transfer' }))
+  expect(leadership.queryByRole('checkbox', { name: /Another manager’s goal|Completed release|Cancelled release/ })).toBeNull()
+  expect(form.getByText('No open assignments for this member.')).toBeTruthy()
+  fireEvent.click(leadership.getByRole('checkbox', { name: /Release awaiting a plan/ }))
+  expect(form.getByRole('button', { name: 'Save organization' })).toHaveProperty('disabled', false)
+  fireEvent.change(from, { target: { value: 'writer' } })
+  expect(form.queryByRole('checkbox', { name: /Release awaiting a plan/ })).toBeNull()
+  fireEvent.change(from, { target: { value: 'manager' } })
+  expect(form.getByRole('checkbox', { name: /Release awaiting a plan/ })).toHaveProperty('checked', false)
+  fireEvent.change(form.getByRole('combobox', { name: 'Transfer to' }), { target: { value: 'next-manager' } })
+  fireEvent.click(form.getByRole('checkbox', { name: /Release awaiting a plan/ }))
+  fireEvent.click(form.getByRole('checkbox', { name: /Release awaiting acceptance/ }))
+  fireEvent.click(form.getByRole('button', { name: 'Save organization' }))
+  await waitFor(() => expect(request.mock.calls.some(call => call[0] === 'organization.configure')).toBe(true))
+
+  const transfer = {
+    fromAgentId: 'manager', toAgentId: 'next-manager', taskIds: [],
+    objectiveIds: [objective.id, 'goal-awaiting-acceptance'], includeMemory: false
+  }
+
+  expect(request.mock.calls.find(call => call[0] === 'organization.configure')![1].configuration.transfers).toEqual([transfer])
+  const configuration = initial.runtime!.management!.configuration
+  expect(validTransfers([transfer, { ...transfer, fromAgentId: 'executive', toAgentId: 'next-executive' }], configuration, initial)).toBe(true)
+  expect(validTransfers([transfer, { ...transfer, toAgentId: 'third-manager' }], configuration, initial)).toBe(false)
+
+  for (const objectiveIds of [['missing-goal'], ['other-goal'], ['completed-goal'], ['cancelled-goal'], [objective.id, objective.id]]) {
+    expect(validTransfers([{ ...transfer, objectiveIds }], configuration, initial)).toBe(false)
+  }
+
   view.unmount()
 })

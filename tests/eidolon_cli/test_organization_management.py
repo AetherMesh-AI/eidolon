@@ -31,7 +31,8 @@ def staffing_store(tmp_path, *, authority=True, managed_teams=(), **values):
 
 
 def hire_request(store, proposal, actor='staffer', team='red', owner=False):
-    objective = store.create_objective('Scoped organization work', idempotency_key=str(time.time_ns()))
+    objective = store.create_objective('Scoped organization work', idempotency_key=str(time.time_ns()),
+                                       delivery_mode='managed_artifact')
     with store._write() as conn:
         request_id = store._request(conn, objective['id'], 'request.hire', team, 3,
                                     payload={'managementProposal': proposal})

@@ -137,7 +137,11 @@ budgets. This does not add arbitrary project command execution.
 
 **Manage organization** also supports explicit same-role handoffs. Select exact
 open assignments and optionally bounded retained memory; completed work remains
-attributed to the original identity. The runtime checks active execution,
+attributed to the original identity. Managers and executives can separately select
+exact open objectives (`objectiveIds`), including before planning and while
+integration or acceptance remains unfinished. Objective leadership does not move
+delegated task assignments or memory without those explicit selections.
+The runtime checks active execution,
 capabilities, teams, reporting lines and objective leadership before applying the
 configuration and transfers together. Recent changes show actor, linked request,
 subject and before/after state. Provider credentials and global tool grants remain

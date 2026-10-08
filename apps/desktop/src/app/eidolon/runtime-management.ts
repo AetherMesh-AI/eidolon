@@ -52,6 +52,16 @@ export function transferTasks(snapshot: OrganizationSnapshot, source: string) {
   )
 }
 
+export function transferObjectives(snapshot: OrganizationSnapshot, source: string, role?: string) {
+  return snapshot.objectives.filter(
+    objective =>
+      objective.status !== 'completed' &&
+      objective.status !== 'cancelled' &&
+      ((role === 'Manager' && objective.managerId === source) ||
+        (role === 'Executive' && objective.executiveId === source))
+  )
+}
+
 export function validTransfers(
   transfers: OrganizationTransfer[],
   configuration: OrganizationConfiguration,
@@ -60,17 +70,27 @@ export function validTransfers(
   const roles = new Map([...snapshot.agents, ...configuration.roster].map(agent => [agent.id, agent.role]))
   const selectedTasks = transfers.flatMap(transfer => transfer.taskIds)
 
+  const selectedLeadership = transfers.flatMap(transfer =>
+    (transfer.objectiveIds ?? []).map(id => `${roles.get(transfer.fromAgentId)}:${id}`)
+  )
+
   return (
     transfers.length <= 64 &&
     new Set(selectedTasks).size === selectedTasks.length &&
+    new Set(selectedLeadership).size === selectedLeadership.length &&
     new Set(transfers.map(transfer => `${transfer.fromAgentId}:${transfer.toAgentId}`)).size === transfers.length &&
     transfers.every(
       transfer =>
         transfer.fromAgentId !== transfer.toAgentId &&
         roles.has(transfer.fromAgentId) &&
         roles.get(transfer.fromAgentId) === roles.get(transfer.toAgentId) &&
-        (transfer.includeMemory || transfer.taskIds.length > 0) &&
-        transfer.taskIds.every(id => transferTasks(snapshot, transfer.fromAgentId).some(task => task.id === id))
+        (transfer.includeMemory || transfer.taskIds.length > 0 || (transfer.objectiveIds?.length ?? 0) > 0) &&
+        transfer.taskIds.every(id => transferTasks(snapshot, transfer.fromAgentId).some(task => task.id === id)) &&
+        (transfer.objectiveIds ?? []).every(id =>
+          transferObjectives(snapshot, transfer.fromAgentId, roles.get(transfer.fromAgentId)).some(
+            objective => objective.id === id
+          )
+        )
     )
   )
 }
