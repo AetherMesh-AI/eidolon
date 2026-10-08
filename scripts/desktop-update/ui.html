@@ -94,6 +94,13 @@
     color: var(--muted-foreground);
     white-space: pre-line;
   }
+  body.error #line, body.done #line {
+    max-width: 100%;
+    max-height: 45vh;
+    overflow: auto;
+    overflow-wrap: anywhere;
+    user-select: text;
+  }
   p code {
     font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
     font-size: 11px;

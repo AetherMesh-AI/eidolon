@@ -8,6 +8,7 @@ on:
       - 'apps/desktop/electron/main.ts'
       - 'tests/test_desktop_update_macos_replacement.py'
       - '.github/workflows/desktop-update-recovery.yml'
+      - '.github/scripts/test-desktop-update-recovery-ui.mjs'
   push:
     branches: [main, 'fix/desktop-update-recovery-20261008']
     paths:
@@ -16,6 +17,7 @@ on:
       - 'apps/desktop/electron/main.ts'
       - 'tests/test_desktop_update_macos_replacement.py'
       - '.github/workflows/desktop-update-recovery.yml'
+      - '.github/scripts/test-desktop-update-recovery-ui.mjs'
 permissions:
   contents: read
 concurrency:
@@ -61,4 +63,13 @@ jobs:
       - name: Verify pre-quit and handoff contracts
         working-directory: apps/desktop
         run: |
-          npx vitest run --project electron electron/mac-update-preflight.test.ts electron/handoff-result.test.ts electron/posix-update-home.test.ts electron/updater-process.test.ts
+          npx vitest run --project electron electron/mac-update-preflight.test.ts electron/handoff-result.test.ts electron/posix-update-home.test.ts electron/updater-process.test.ts scripts/desktop-update-ui.test.mjs
+      - name: Verify recovery paths remain readable in the updater window
+        run: node .github/scripts/test-desktop-update-recovery-ui.mjs
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: desktop-update-recovery-ui
+          path: replacement-evidence/
+          retention-days: 14
+          if-no-files-found: warn

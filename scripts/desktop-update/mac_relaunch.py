@@ -15,12 +15,14 @@ def running_app(target: Path) -> dict | None:
     script = '''ObjC.import('AppKit'); function run(argv) {
       const apps=$.NSWorkspace.sharedWorkspace.runningApplications;
       for(let i=0;i<apps.count;i++) { const app=apps.objectAtIndex(i);
-        if(app.bundleURL && ObjC.unwrap(app.bundleURL.path)===argv[0]
+        const bundleURL=app.bundleURL;
+        if(!bundleURL.isNil() && ObjC.unwrap(bundleURL.path)===argv[0]
            && !app.isTerminated) {
+          const executableURL=app.executableURL, launched=app.launchDate;
           return JSON.stringify({pid:Number(app.processIdentifier),
             ready:Boolean(app.isFinishedLaunching),
-            executable:ObjC.unwrap(app.executableURL.path),
-            started:Number(app.launchDate.timeIntervalSince1970)});
+            executable:executableURL.isNil() ? '' : ObjC.unwrap(executableURL.path),
+            started:launched.isNil() ? 0 : Number(launched.timeIntervalSince1970)});
         }
       } return ''; }'''
     result = subprocess.run(['/usr/bin/osascript', '-l', 'JavaScript', '-e', script, str(target)],
