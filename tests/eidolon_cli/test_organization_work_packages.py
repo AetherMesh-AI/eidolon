@@ -100,6 +100,19 @@ def ledger_dump(store):
         return '\n'.join(conn.iterdump())
 
 
+def order_plans(store, order):
+    if order is None:
+        return
+    # Keep the real scheduler and claims; only choose fixture timestamps so
+    # sibling order and coarse-clock ties do not depend on the host or UUIDs.
+    with store._write() as conn:
+        packages = conn.execute('SELECT manager_id,plan_request_id FROM manager_work_packages ORDER BY rowid').fetchall()
+        created = time.time() - len(packages)
+        for package in packages:
+            offset = 0 if order == 'tied' else order.index(package['manager_id'])
+            conn.execute('UPDATE requests SET created=? WHERE id=?', (created + offset, package['plan_request_id']))
+
+
 def test_independent_plans_overlap_and_dependencies_wait_for_every_exact_review(tmp_path):
     store, objective = make_store(tmp_path)
     first = decompose(store)
@@ -182,31 +195,44 @@ def test_invalid_decomposition_rolls_back_the_whole_package_set_and_can_retry(tm
     assert len(store.snapshot()['objectives'][0]['workPackages']) == 3
 
 
-@pytest.mark.parametrize('invalid', ['allocation', 'package-id', 'criteria', 'round', 'project', 'late-bad-task'])
-def test_partial_manager_plan_validation_is_atomic_and_cannot_duplicate_completed_plan(tmp_path, invalid):
+@pytest.mark.parametrize(('invalid', 'plan_order'), [
+    *[(invalid, None) for invalid in ['allocation', 'package-id', 'criteria', 'round', 'project', 'late-bad-task']],
+    pytest.param('package-id', ('lead-b', 'lead-a', 'lead-c'), id='reordered-foreign-package'),
+    pytest.param('criteria', ('lead-b', 'lead-c', 'lead-a'), id='reordered-foreign-criteria'),
+    pytest.param('late-bad-task', ('lead-c', 'lead-a', 'lead-b'), id='reordered-late-invalid-task'),
+])
+def test_partial_manager_plan_validation_is_atomic_and_cannot_duplicate_completed_plan(tmp_path, invalid, plan_order):
     store, _ = make_store(tmp_path, max_tasks=4)
     executive = store.claim_next()
     packages = package_output()
     if invalid == 'late-bad-task':
         packages['workPackages'][1]['maxTasks'] = 2
     assert store.finish(executive, packages)
+    order_plans(store, plan_order)
     first, second = store.claim_next(), store.claim_next()
+    if invalid == 'late-bad-task':
+        plans = [first, second, store.claim_next()]
+        assert {row['agent_id'] for row in plans} == {'lead-a', 'lead-b', 'lead-c'}
+        second = next(row for row in plans if store.context(row)['workPackage']['maxTasks'] == 2)
+        first = next(row for row in plans if row['id'] != second['id'])
     assert store.finish(first, plan_output(first))
+    context = store.context(second)
+    package = context['workPackage']
     output = plan_output(second)
     if invalid == 'allocation':
         output['tasks'].append({**output['tasks'][0], 'title': 'Unauthorized extra task'})
     elif invalid == 'package-id':
-        output['workPackageId'] = store.context(second)['workPackages'][0]['id']
+        output['workPackageId'] = next(row['id'] for row in context['workPackages'] if row['id'] != package['id'])
     elif invalid == 'criteria':
-        output['criterionIndexes'] = [2]
+        output['criterionIndexes'] = [next(index for index in range(len(CRITERIA)) if index not in package['criterionIndexes'])]
     elif invalid == 'round':
-        output['round'] = 1
+        output['round'] = package['round'] + 1
     elif invalid == 'project':
         output['tasks'][0]['projectId'] = 'not-in-package'
     else:
         output['tasks'].append({**output['tasks'][0], 'title': 'Invalid second task', 'agentId': 'missing-worker'})
     before = ledger_dump(store)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='Task agentId must identify a Worker' if invalid == 'late-bad-task' else None):
         store.finish(second, output)
     assert ledger_dump(store) == before
     assert store.heartbeat(second)
@@ -307,7 +333,8 @@ def test_preupgrade_objectives_keep_legacy_planning_while_new_objectives_decompo
     assert store.context(fresh)['planningMode'] == 'executive_packages'
 
 
-def test_selected_projects_are_covered_and_each_manager_is_confined_to_its_package(tmp_path):
+@pytest.mark.parametrize('plan_order', [None, 'tied', ('lead-c', 'lead-b', 'lead-a')], ids=['native', 'tied', 'reversed'])
+def test_selected_projects_are_covered_and_each_manager_is_confined_to_its_package(tmp_path, plan_order):
     roots = [tmp_path / name for name in ('alpha', 'beta')]
     for root in roots:
         root.mkdir()
@@ -330,20 +357,27 @@ def test_selected_projects_are_covered_and_each_manager_is_confined_to_its_packa
     output['workPackages'][0]['projectIds'] = ['alpha']
     output['workPackages'][1]['projectIds'] = ['beta']
     assert store.finish(claim, output)
-    plan = store.claim_next()
-    assert plan['agent_id'] == 'lead-a'
-    assert store.context(plan)['workPackage']['projectIds'] == ['alpha']
-    proposed = plan_output(plan)
-    proposed['tasks'][0]['projectId'] = 'beta'
-    before = ledger_dump(store)
-    with pytest.raises(ValueError, match='inside its work package'):
-        store.finish(plan, proposed)
-    assert ledger_dump(store) == before
-    proposed['tasks'][0]['projectId'] = 'alpha'
-    assert store.finish(plan, proposed)
-    task = store.snapshot()['tasks'][0]
-    assert task['projectId'] == 'alpha'
-    assert task['workPackageId'] == store.snapshot()['objectives'][0]['workPackages'][0]['id']
+    order_plans(store, plan_order)
+    plans = [store.claim_next(), store.claim_next(), store.claim_next()]
+    assert {row['agent_id'] for row in plans} == {'lead-a', 'lead-b', 'lead-c'}
+    for plan in plans:
+        package = store.context(plan)['workPackage']
+        expected_projects = {'lead-a': ['alpha'], 'lead-b': ['beta'], 'lead-c': []}[plan['agent_id']]
+        assert package['projectIds'] == expected_projects
+        proposed = plan_output(plan)
+        proposed['tasks'][0]['projectId'] = next(project for project in ('alpha', 'beta') if project not in expected_projects)
+        before = ledger_dump(store)
+        with pytest.raises(ValueError, match='inside its work package'):
+            store.finish(plan, proposed)
+        assert ledger_dump(store) == before
+        if expected_projects:
+            proposed['tasks'][0]['projectId'] = expected_projects[0]
+        else:
+            proposed['tasks'][0].pop('projectId')
+        assert store.finish(plan, proposed)
+        task = next(row for row in store.snapshot()['tasks'] if row['assignedAgentId'] == proposed['tasks'][0]['agentId'])
+        assert task['projectId'] == (expected_projects[0] if expected_projects else None)
+        assert task['workPackageId'] == package['id']
 
 
 def test_replan_retains_package_rounds_and_exact_old_evidence_without_reusing_ownership(tmp_path):
@@ -413,11 +447,14 @@ def test_original_and_lowered_task_caps_constrain_all_manager_plans(tmp_path):
     assert len(OrganizationStore(store.path).snapshot()['tasks']) == 2
 
 
-def test_reviewed_partial_work_cannot_integrate_while_other_manager_plans_are_unfinished(tmp_path):
+@pytest.mark.parametrize('plan_order', [None, ('lead-c', 'lead-b', 'lead-a')], ids=['native', 'reversed'])
+def test_reviewed_partial_work_cannot_integrate_while_other_manager_plans_are_unfinished(tmp_path, plan_order):
     store, _ = make_store(tmp_path)
     decompose(store)
+    order_plans(store, plan_order)
     plans = [store.claim_next(), store.claim_next(), store.claim_next()]
-    assert store.finish(plans[0], plan_output(plans[0]))
+    independent = next(row for row in plans if not store.context(row)['workPackage']['dependencyIds'])
+    assert store.finish(independent, plan_output(independent))
     work = next_nonstaffing(store)
     assert work['type'] == 'work.draft'
     assert store.finish(work, {'summary': 'First part', 'deliverable': 'One independently reviewed part only'})
@@ -428,7 +465,7 @@ def test_reviewed_partial_work_cannot_integrate_while_other_manager_plans_are_un
     assert all(row['status'] == 'completed' for row in snapshot['tasks'])
     assert sum(row['status'] == 'completed' for row in snapshot['objectives'][0]['workPackages']) == 1
     assert not any(row['type'] in {'request.integrate', 'request.accept'} for row in snapshot['requests'])
-    assert store.heartbeat(plans[1]) and store.heartbeat(plans[2])
+    assert all(store.heartbeat(row) for row in plans if row['id'] != independent['id'])
 
 
 def test_package_manager_can_route_worker_to_another_authorized_task_manager(tmp_path):

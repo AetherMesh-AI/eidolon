@@ -56,7 +56,7 @@ def _pause(store, claim):
     return claim
 
 
-def _prepared(tmp_path, *, stage='request.plan', project=False):
+def _prepared(tmp_path, *, stage='request.plan', project=False, plan_order=None):
     options = {}
     if project:
         options = {'read_roots': [str(tmp_path)],
@@ -74,26 +74,48 @@ def _prepared(tmp_path, *, stage='request.plan', project=False):
         assert store.claim_next() is None
         return store, goal, claim
     assert store.finish(claim, _decomposition(project))
-    source = store.claim_next()
-    assert source['type'] == 'request.plan' and source['agent_id'] == 'planner'
+    if plan_order:
+        # Exercise coarse-clock ties and peer-first dispatch without changing
+        # the scheduler or relying on randomly generated request IDs.
+        with store._write() as conn:
+            conn.execute("UPDATE requests SET created=? WHERE type='request.plan'", (claim['created'],))
+            if plan_order == 'reversed':
+                conn.execute("UPDATE requests SET created=created-1 WHERE type='request.plan' AND team='blue'")
+    plans = [store.claim_next(), store.claim_next()]
+    assert all(row['type'] == 'request.plan' for row in plans)
+    by_manager = {row['agent_id']: row for row in plans}
+    assert set(by_manager) == {'planner', 'peer'}
+    source = by_manager['planner']
     if stage == 'planned':
         _finish(store, source)
     else:
         _pause(store, source)
     # Leave peer planning paused too, so unrelated leadership changes must
     # preserve its exact route and continuation while scoped work can finish.
+    _pause(store, by_manager['peer'])
     for _ in range(20):
         claim = store.claim_next()
         if claim is None:
             break
-        if claim['type'] == 'request.plan':
-            assert claim['agent_id'] == 'peer'
-            _pause(store, claim)
-        else:
-            _finish(store, claim)
+        _finish(store, claim)
     else:
         pytest.fail('Scoped fixture work did not reach a stable paused state')
     return store, goal, source
+
+
+@pytest.mark.parametrize('plan_order', ['tied', 'reversed'])
+@pytest.mark.parametrize('stage', ['request.plan', 'planned'])
+def test_handoff_fixture_preserves_exact_routes_with_independent_plan_orders(tmp_path, stage, plan_order):
+    store, _, source = _prepared(tmp_path, stage=stage, plan_order=plan_order)
+    assert source['agent_id'] == 'planner'
+    with store._connect() as conn:
+        assert not conn.execute("SELECT 1 FROM requests WHERE status='running'").fetchone()
+        peer = conn.execute("SELECT * FROM requests WHERE type='request.plan' AND agent_id='peer'").fetchone()
+        assert peer['status'] == 'waiting_response'
+        assert conn.execute('SELECT agent_id FROM request_continuations WHERE request_id=?', (peer['id'],)).fetchone()[0] == 'peer'
+    package = next(row for row in _packages(store) if row['manager_id'] == 'planner')
+    configure(store, transfers=[{'fromAgentId': 'planner', 'toAgentId': 'successor',
+                                'workPackageIds': [package['id']]}])
 
 
 def _retained(store):
