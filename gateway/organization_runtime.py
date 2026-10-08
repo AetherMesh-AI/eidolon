@@ -88,8 +88,6 @@ class GatewayOrganizationRuntime:
                 logger.warning('Organization stop persistence is pending')
 
     def _discover_home(self, home):
-        from eidolon_cli.config import load_config, require_parseable_user_config
-        from eidolon_cli.organization_config import from_config
         from eidolon_cli.organization_service import OrganizationService
         from eidolon_cli.organization_store import OrganizationStore
 
@@ -103,36 +101,27 @@ class GatewayOrganizationRuntime:
             current = self._services.get(home)
         try:
             secret_token = set_secret_scope(build_profile_secret_scope(home))
-            require_parseable_user_config()
-            config = load_config()
-            raw = config.get('organization', {})
-            enabled = isinstance(raw, dict) and raw.get('gateway_enabled') is True
             path = home / 'organization' / 'state.db'
             if not path.is_file():
                 self._stop_home(home)
                 return
-            if enabled and (current is None or (not current.running and current._stop.is_set())):
-                # Resolve cold-profile sources before validating or adopting
-                # authority: unresolved placeholders may reject a valid root or
-                # falsely change a team and fence an existing desktop claim.
+            store = current.store if current is not None else self._stores.get(home)
+            if store is None:
+                store = OrganizationStore(path)
+                self._stores[home] = store
+            cold = current is None or (not current.running and current._stop.is_set())
+            from eidolon_cli.organization_config import ProfileSourcesRequired
+            try:
+                enabled = (current.reload_profile_configuration(require_sources=cold) if current is not None
+                           else store.reload_profile_configuration(home, require_sources=cold))
+            except ProfileSourcesRequired:
+                # The authoritative read found an opted-in cold profile. Leave
+                # the transaction before hydration, then read again from source.
                 from eidolon_cli.env_loader import hydrate_profile_secret_sources
                 hydrate_profile_secret_sources(home)
                 set_secret_scope(build_profile_secret_scope(home))
-                require_parseable_user_config()
-                config = load_config()
-                raw = config.get('organization', {})
-                enabled = isinstance(raw, dict) and raw.get('gateway_enabled') is True
-            settings = from_config(config)
-            if current is not None:
-                current.reload_configuration(settings)
-                store = current.store
-            else:
-                store = self._stores.get(home)
-                if store is None:
-                    store = OrganizationStore(path, settings=settings)
-                    self._stores[home] = store
-                else:
-                    store.reload_configuration(settings)
+                enabled = (current.reload_profile_configuration() if current is not None
+                           else store.reload_profile_configuration(home))
             if not enabled:
                 self._stop_home(home)
                 return
@@ -151,16 +140,9 @@ class GatewayOrganizationRuntime:
                 self._services[home] = service
                 service.start()
         except Exception:
-            # A cached desktop scheduler shares the same profile authority.
-            # Persist the pause, not just this gateway's local stop flag.
-            if current is not None:
-                current.pause_configuration()
-            elif (home / 'organization' / 'state.db').is_file():
-                store = self._stores.get(home)
-                if store is None:
-                    store = OrganizationStore(home / 'organization' / 'state.db')
-                    self._stores[home] = store
-                store.pause_configuration()
+            # Validation already committed its pause under the source-read lock.
+            # Pausing again here could overwrite another host's completed repair.
+            self._stop_home(home)
             raise
         finally:
             if secret_token is not None:

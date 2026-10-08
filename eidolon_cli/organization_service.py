@@ -223,6 +223,16 @@ class OrganizationService:
             self._wake.set()
             return changed
 
+    def reload_profile_configuration(self, *, require_sources=False):
+        with self._lock:
+            try:
+                enabled = self.store.reload_profile_configuration(self.home, require_sources=require_sources)
+            finally:
+                self.refresh_configuration()
+            self.settings = self.store.settings
+            self._wake.set()
+            return enabled
+
     def pause_configuration(self):
         self.close_admission()
         with self._lock:
@@ -467,10 +477,13 @@ def get_service() -> OrganizationService:
     with _services_lock:
         service = _services.get(path)
         if service is None or (service._stop.is_set() and not service.running):
-            from eidolon_cli.config import load_config, require_parseable_user_config
-            require_parseable_user_config()
-            settings = from_config(load_config())
-            store = OrganizationStore(path, settings=settings)
+            if not path.exists():
+                # Invalid first-run configuration must not provision a ledger.
+                # Existing ledgers validate under their write lock to pause peers.
+                from eidolon_cli.organization_config import load_profile_configuration
+                load_profile_configuration(path.parent.parent)
+            store = OrganizationStore(path)
+            store.reload_profile_configuration(path.parent.parent)
             service = OrganizationService(store, settings=store.settings, home=path.parent.parent)
             _services[path] = service
         else:

@@ -103,3 +103,43 @@ class OrganizationSettings:
 
 def from_config(config: dict) -> OrganizationSettings:
     return OrganizationSettings.from_config(config)
+
+
+
+def profile_organization(home):
+    """One strict, uncached read with profile expansion and managed precedence."""
+    import yaml
+    from eidolon_cli import config
+    with config._CONFIG_LOCK:
+        try:
+            try:
+                content = (Path(home) / 'config.yaml').read_bytes()
+            except FileNotFoundError:
+                content = b''
+            raw = yaml.safe_load(content)
+            if raw is not None and not isinstance(raw, dict):
+                raise ValueError('Profile configuration must be a mapping')
+            expanded, _ = config._merge_managed_overlay(config._expand_env_vars(
+                {'organization': (raw or {}).get('organization', {})}))
+            if not isinstance(expanded.get('organization'), dict):
+                raise ValueError('Organization configuration must be a mapping')
+            return expanded
+        except (OSError, UnicodeError, ValueError, TypeError, yaml.YAMLError):
+            raise config.InvalidUserConfigError(
+                'Organization configuration is invalid; repair the profile configuration before resuming work') from None
+
+
+class ProfileSourcesRequired(RuntimeError):
+    """A cold enabled gateway must hydrate sources before policy validation."""
+
+
+def load_profile_configuration(home, *, require_sources=False):
+    """File-backed adopters call this while holding the ledger write lock.
+
+    Bypass the general loader's cache, fallback and config-repair writes.
+    """
+    config = profile_organization(home)
+    enabled = config['organization'].get('gateway_enabled') is True
+    if enabled and require_sources:
+        raise ProfileSourcesRequired()
+    return OrganizationSettings.from_config(config), enabled

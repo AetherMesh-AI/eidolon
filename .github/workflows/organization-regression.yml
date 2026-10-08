@@ -111,6 +111,7 @@ jobs:
             tests/eidolon_cli/test_organization_inspection_acceptance.py \
             tests/eidolon_cli/test_organization_project_execution_e2e.py \
             tests/gateway/test_organization_policy_reload.py \
+            tests/gateway/test_organization_config_serialization.py \
             tests/tui_gateway/test_organization_outcomes.py \
             tests/tui_gateway/test_organization_project_setup.py -j 3
 

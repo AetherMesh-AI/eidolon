@@ -13,7 +13,9 @@ No branch protection, repository setting, secret, or permission grant is changed
   recovery, live policy changes, exact execution receipts, multi-repository
   acceptance, attention and durable outcomes. Uses the canonical per-file runner.
 - macOS and Windows: a deliberately smaller native ledger, migration, recovery,
-  receipt, policy and project-execution guard suite. These hosts verify honest
+  receipt, policy and project-execution guard suite. Spawned-process config tests
+  cover delayed reopen/startup/watchers, invalid-file pauses and idempotent repair
+  without replaying claims or resetting model-call reservations. These hosts verify honest
   unsupported execution; they do not claim Linux sandbox support.
 - Linux desktop: organization UI/store/shell tests and synthetic fixture helpers,
   full desktop type checks and production build, followed by all six organization

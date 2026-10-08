@@ -122,11 +122,13 @@ immutable, and the existing runtime revocation fences remain authoritative.
 
 ### Why this first slice does not save automatically
 
-Current gateway discovery and cold service startup read YAML before acquiring
-policy-adoption transactions. Combining a file replacement with a ledger update
-cannot guarantee atomic activation: a concurrent reader can hold a stale or
-provisional snapshot, and a process can crash between the two durable writes.
-File compensation alone does not solve that race. Automatic setup requires a
+Gateway discovery, cold service startup and ledger reopen now serialize source
+reads and policy adoption through the ledger write transaction. Invalid profile
+YAML durably pauses same-profile hosts; valid repair is idempotent and does not
+replay unknown work or reset model reservations. These observer guarantees do
+not make file replacement atomic with a ledger update: a process can still crash
+between those two durable writes. File compensation alone does not solve that
+crash boundary. Automatic setup requires a
 separate design for durable intent, source revision validation, admission fencing,
 and recovery across every file-backed configuration adoption path. Until then,
 this surface deliberately has no configuration-write RPC.

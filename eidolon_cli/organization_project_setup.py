@@ -98,9 +98,9 @@ def project_setup():
 def project_draft(project, expected_revision):
     """Validate one list item for owner review; never persist or activate it.
 
-    File persistence is deliberately absent: existing gateway/startup reloads
-    pre-read YAML outside policy adoption, so file + ledger writes cannot yet
-    guarantee crash-safe, cross-process project setup.
+    File persistence is deliberately absent: serialized policy observers do not
+    make filesystem replacement and ledger commits atomic. A durable pending
+    intent and recovery protocol is still required before enabling writes.
     """
     import yaml
     if not isinstance(expected_revision, str) or len(expected_revision) != 64:
