@@ -282,8 +282,18 @@ host never cancels another host's calls. Closing the desktop
 may still interrupt a call it owns: the gateway continues remaining queued work,
 but that interrupted call stays unconfirmed and needs review. Disabling the
 profile's gateway option stops only its gateway-owned scheduler on the next
-discovery pass. Invalid configuration also pauses it. Queued work and evidence
-are retained, and late results after shutdown admission closes are rejected.
+discovery pass. The same pass validates live organization settings and persists
+grant or project changes for every scheduler sharing that profile's ledger.
+Owner-managed roster and capacity overrides are retained. Revoked executions are
+cancelled and fenced; their tool outcomes remain unconfirmed, and their execution
+locks and capacity stay occupied until the calls actually exit. Restoring the
+old grants never silently retries those calls.
+
+Invalid configuration pauses admission durably for that profile, including an
+existing desktop scheduler. Other profiles continue independently. Reading the
+ledger or refreshing a stale desktop cannot clear the pause: validated profile
+configuration must be restored. Queued work and evidence are retained, and late
+results after revocation or shutdown admission closes are rejected.
 
 Recovery failures back off to at most a sixty-second discovery delay without
 blocking other profiles or messaging. Provider execution failures remain bounded

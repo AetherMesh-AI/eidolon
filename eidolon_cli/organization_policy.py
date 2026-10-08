@@ -17,6 +17,12 @@ CREATE TABLE IF NOT EXISTS organization_configuration (
  id INTEGER PRIMARY KEY CHECK(id=1), configuration TEXT NOT NULL, updated REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS request_policy (
  request_id TEXT PRIMARY KEY REFERENCES requests(id), generation INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS organization_policy_pause (
+ id INTEGER PRIMARY KEY CHECK(id=1));
+CREATE TRIGGER IF NOT EXISTS request_requires_unpaused_policy
+BEFORE UPDATE OF status ON requests WHEN NEW.status='running' AND EXISTS (
+ SELECT 1 FROM organization_policy_pause WHERE id=1)
+BEGIN SELECT RAISE(ABORT, 'Organization configuration is paused'); END;
 CREATE TRIGGER IF NOT EXISTS request_requires_current_policy
 BEFORE UPDATE OF status ON requests WHEN NEW.status='running' AND NOT EXISTS (
  SELECT 1 FROM request_policy c JOIN organization_policy p ON p.generation=c.generation
@@ -92,7 +98,38 @@ def resolve_settings(conn, seed_settings=None):
 
 
 class OrganizationPolicyStore:
-    def _adopt_policy(self, conn, *, exclude_request_id=None, force=False):
+    def reload_configuration(self, settings):
+        """Validate file policy against owner-managed membership atomically."""
+        with self._write() as conn:
+            updated = resolve_settings(conn, settings)
+            if updated == self.settings and self._policy_current(conn):
+                return False
+            self.settings = updated
+            self._adopt_policy(conn, resume=True)
+            conn.execute("UPDATE agents SET team=? WHERE id IN ('owner','executive','director','manager','reviewer','control:apply','control:project')", (self.settings.team,))
+            self._sync_staff(conn)
+            self._migrate_identities(conn)
+            return True
+
+    def pause_configuration(self):
+        """Invalid file policy fences every host, preserving the last good policy."""
+        with self._write() as conn:
+            if self._policy_paused(conn):
+                return False
+            conn.execute('INSERT INTO organization_policy_pause VALUES (1)')
+            conn.execute('UPDATE organization_policy SET generation=generation+1 WHERE id=1')
+            for request in conn.execute("SELECT * FROM requests WHERE status='running'").fetchall():
+                self._pending(conn, request, 'Organization configuration is invalid. This execution was fenced; repair the profile configuration and review its outcome before retrying.')
+            return True
+
+    @staticmethod
+    def _policy_paused(conn):
+        return conn.execute('SELECT 1 FROM organization_policy_pause WHERE id=1').fetchone() is not None
+
+    def _adopt_policy(self, conn, *, exclude_request_id=None, force=False, resume=False):
+        if resume and self._policy_paused(conn):
+            conn.execute('DELETE FROM organization_policy_pause WHERE id=1')
+            force = True
         values = asdict(self.settings)
         fingerprint = _fingerprint(values)
         serialized = json.dumps(values, sort_keys=True)
@@ -113,7 +150,7 @@ class OrganizationPolicyStore:
 
     def _policy_current(self, conn):
         row = conn.execute('SELECT generation,fingerprint FROM organization_policy WHERE id=1').fetchone()
-        return (row is not None and row['generation'] == self._policy_generation
+        return (not self._policy_paused(conn) and row is not None and row['generation'] == self._policy_generation
                 and row['fingerprint'] == self._policy_fingerprint)
 
     def _require_current_policy(self, conn):

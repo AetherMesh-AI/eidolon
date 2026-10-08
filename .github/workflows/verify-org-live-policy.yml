@@ -1,0 +1,44 @@
+name: Organization live policy verification
+on:
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/verify-org-live-policy.yml']
+permissions:
+  contents: read
+jobs:
+  python:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Install declared runtime and pinned test tools
+        run: |
+          python -m venv .venv
+          if [ "$RUNNER_OS" = Windows ]; then PY=.venv/Scripts/python.exe; else PY=.venv/bin/python; fi
+          "$PY" -m pip install -e . pytest==8.4.2 pytest-asyncio==1.2.0 pytest-timeout==2.4.0 ruff==0.15.10
+      - name: Verify live policy fencing on native hosts
+        env:
+          HERMES_TEST_FILE_RETRIES: '0'
+        run: |
+          git rev-parse HEAD HEAD^{tree}
+          scripts/run_tests.sh tests/gateway/test_organization_runtime.py tests/gateway/test_organization_policy_reload.py tests/eidolon_cli/test_organization_policy.py tests/eidolon_cli/test_organization_service.py -j 3
+      - name: Verify complete organization backend on Linux
+        if: runner.os == 'Linux'
+        env:
+          HERMES_TEST_FILE_RETRIES: '0'
+        run: |
+          scripts/run_tests.sh tests/eidolon_cli/test_organization*.py tests/tui_gateway/test_organization*.py tests/gateway/test_organization_runtime.py tests/gateway/test_organization_policy_reload.py tests/tools/test_organization_file_read.py -j 4
+          .venv/bin/ruff check eidolon_cli/organization*.py gateway/organization_runtime.py tests/gateway/test_organization_runtime.py tests/gateway/test_organization_policy_reload.py tests/eidolon_cli/test_organization_policy.py tests/tui_gateway/test_organization_requests.py
+          .venv/bin/python scripts/check_compat_pointers.py
