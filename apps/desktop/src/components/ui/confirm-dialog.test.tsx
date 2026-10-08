@@ -34,7 +34,27 @@ describe('ConfirmDialog secondary action', () => {
     expect(onConfirm).not.toHaveBeenCalled()
   })
 
-  it('still opens focused on Confirm, so Enter confirms rather than picking the secondary', async () => {
+  it.each(['Enter', ' '])('leaves %s on Cancel and secondary actions to native button activation', async key => {
+    const { onConfirm, onClose, onSecondary } = renderWithSecondary()
+    const cancel = await screen.findByRole('button', { name: 'Cancel', exact: true })
+    cancel.focus()
+    // jsdom does not synthesize keyboard button clicks. A non-cancelled event
+    // plus the subsequent native click must keep the focused action's meaning.
+    expect(fireEvent.keyDown(cancel, { key })).toBe(true)
+    expect(onConfirm).not.toHaveBeenCalled()
+    fireEvent.click(cancel)
+    expect(onClose).toHaveBeenCalledTimes(1)
+
+    const secondary = screen.getByRole('button', { name: 'Remove from sidebar' })
+    secondary.focus()
+    expect(fireEvent.keyDown(secondary, { key })).toBe(true)
+    expect(onConfirm).not.toHaveBeenCalled()
+    fireEvent.click(secondary)
+    expect(onSecondary).toHaveBeenCalledTimes(1)
+    expect(onConfirm).not.toHaveBeenCalled()
+  })
+
+  it('opens focused on Confirm without activating the secondary action', async () => {
     const { onConfirm, onSecondary } = renderWithSecondary()
 
     const dialog = await screen.findByRole('dialog')
@@ -42,7 +62,8 @@ describe('ConfirmDialog secondary action', () => {
     // eslint-disable-next-line no-restricted-globals -- asserting real focus requires the live document
     await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true))
     // eslint-disable-next-line no-restricted-globals -- asserting real focus requires the live document
-    fireEvent.keyDown(document.activeElement!, { key: 'Enter' })
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Confirm', exact: true }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm', exact: true }))
 
     await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(1))
     expect(onSecondary).not.toHaveBeenCalled()

@@ -191,7 +191,7 @@ def test_open_work_blocks_export_and_cancelled_history_keeps_bindings(configured
 
 
 def test_rpc_authentication_and_parameter_boundary(configured):
-    for method in ['organization.projectSetup', 'organization.projectDraft']:
+    for method in ['organization.projectSetup', 'organization.projectDraft', 'organization.projectSave']:
         request = {'jsonrpc': '2.0', 'id': 1, 'method': method, 'params': {}}
         assert server.handle_request(request)['error']['code'] == 4001
     for method, params in [
@@ -201,6 +201,14 @@ def test_rpc_authentication_and_parameter_boundary(configured):
         ('organization.projectDraft', {'project': PROJECT}),
         ('organization.projectDraft', {'project': PROJECT, 'expectedRevision': 1}),
         ('organization.projectDraft', {'project': PROJECT, 'expectedRevision': 'x' * 64, 'path': '/tmp/foreign'}),
+        ('organization.projectSave', {'project': PROJECT, 'expectedRevision': 'x' * 64,
+                                      'idempotencyKey': 'save', 'confirmSave': True, 'path': '/tmp/foreign'}),
+        ('organization.projectSave', {'project': PROJECT, 'expectedRevision': 'x' * 64,
+                                      'idempotencyKey': 'save', 'confirmSave': False}),
+        ('organization.projectSave', {'project': PROJECT, 'expectedRevision': 'x' * 64,
+                                      'idempotencyKey': 'save', 'confirmSave': 1}),
+        ('organization.projectSave', {'project': PROJECT, 'expectedRevision': 'x' * 64,
+                                      'idempotencyKey': 'save', 'confirmSave': True, 'profile': '../escape'}),
     ]:
         assert rpc(method, **params)['error']['code'] == -32602
     assert rpc('organization.addProject', project=PROJECT, expectedRevision='x' * 64)['error']['code'] == -32601

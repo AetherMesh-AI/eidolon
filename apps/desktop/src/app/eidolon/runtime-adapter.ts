@@ -3,10 +3,10 @@ import { translateNow } from '@/i18n/runtime'
 import { type OrganizationAttentionPage, validAttentionPage } from './runtime-attention-types'
 import type { HistoryPage } from './runtime-history-types'
 import { type OrganizationOutcomePage, validOutcomePage } from './runtime-outcome-types'
-import { validProjectSetup } from './runtime-project-setup-contract'
+import { validProjectSave, validProjectSetup } from './runtime-project-setup-contract'
 import { validEditProposal } from './runtime-proposal-validation'
 import { validOrganizationSetup } from './runtime-setup-contract'
-import type { Objective, OrganizationArtifact, OrganizationExecutionAudit, OrganizationProjectDraft, OrganizationProjectSetup, OrganizationSnapshot, OrganizationToolEvidence, RuntimeOrganizationAdapter } from './types'
+import type { Objective, OrganizationArtifact, OrganizationExecutionAudit, OrganizationProjectDraft, OrganizationProjectSave, OrganizationProjectSetup, OrganizationSnapshot, OrganizationToolEvidence, RuntimeOrganizationAdapter } from './types'
 
 export interface OrganizationScope {
   /** Exact socket + registry connection + profile. Never use the profile alone. */
@@ -180,8 +180,10 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
     return read
   }
 
-  function mutate<T>(key: string, method: string, params: Record<string, unknown>, resultSnapshot: (value: T) => OrganizationSnapshot): Promise<T> {
+  function mutate<T>(key: string, method: string, params: Record<string, unknown>, resultSnapshot: (value: T) => OrganizationSnapshot | undefined, signal?: AbortSignal): Promise<T> {
     resetScope()
+
+    if (signal?.aborted) {return Promise.reject(new Error(translateNow('organizationWork.projectSaveCancelled')))}
     const existing = mutations.get(key)
 
     if (existing) {return existing as Promise<T>}
@@ -196,6 +198,9 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
     controllers.add(controller)
     watchScope()
 
+    const abort = () => controller.abort()
+    signal?.addEventListener('abort', abort, { once: true })
+
     const result = (async () => {
       try {
         const value = await Promise.resolve().then(() => {
@@ -205,10 +210,13 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
         })
 
         if (!current(token) || controller.signal.aborted) {throw new Error('The connection or profile changed. Reopen the original profile to check this request.')}
-        accept(resultSnapshot(value), order)
+        const next = resultSnapshot(value)
+
+        if (next) {accept(next, order)}
 
         return value
       } catch (reason) {throw new Error(organizationErrorMessage(reason))} finally {
+        signal?.removeEventListener('abort', abort)
         controllers.delete(controller)
         releaseScope()
 
@@ -269,6 +277,32 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
           typeof result.yaml !== 'string' || !result.yaml.trim() || result.yaml.length > 4096) {
         throw new Error(translateNow('organizationWork.projectSetupInvalid'))
       }
+
+      return result
+    },
+    async saveProject(input, signal) {
+      resetScope()
+      const saveScope = scope.key
+      const previousRead = reading
+
+      if (input.confirmSave !== true) {throw new Error(translateNow('organizationWork.projectSaveConfirmationRequired'))}
+      const { id, root, recipe, team } = input.project
+      const params = { project: { id, root, recipe, team }, expectedRevision: input.expectedRevision, idempotencyKey: input.idempotencyKey, confirmSave: true }
+
+      const result = await mutate<OrganizationProjectSave>(`project:${input.idempotencyKey}`, 'organization.projectSave', params, value => {
+        if (!validProjectSave(value, params.project)) {throw new Error(translateNow('organizationWork.projectSetupInvalid'))}
+
+        return undefined
+      }, signal)
+
+      // An earlier poll is fenced by writeVersion and cannot acknowledge this
+      // mutation. Let it settle before asking for the post-save snapshot.
+      await previousRead
+
+      if (gateway.getScope().key !== saveScope || signal?.aborted) {throw new Error(translateNow('organizationRuntime.auditScopeChanged'))}
+      await refresh()
+
+      if (gateway.getScope().key !== saveScope || signal?.aborted) {throw new Error(translateNow('organizationRuntime.auditScopeChanged'))}
 
       return result
     },

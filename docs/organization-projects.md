@@ -97,7 +97,7 @@ continue to fail closed where that isolation or safe filesystem primitives are
 unsupported. A managed result or a model's approval alone is never proof that
 project tests or source integration happened.
 
-## Guided repository configuration drafts
+## Reviewed repository registration
 
 The desktop Organization page can prepare a repository binding from the current
 profile's existing root aliases, exact execution recipes, and configured teams.
@@ -115,25 +115,57 @@ managed project settings block preparing a change.
 
 The owner can copy the list item into their profile's existing
 `organization.projects` list after reviewing it, preserving other entries and
-checking the configuration again before applying it. A draft is not a durable
+checking the configuration again before applying it. Choose either ledger activation
+or manual YAML configuration for an identity, never both in the same profile.
+A draft is not a durable
 approval or reservation of aliases, grants, teams, or runtime readiness. Its
 choices may become stale after preparation. Existing objective bindings stay
 immutable, and the existing runtime revocation fences remain authoritative.
 
-### Why this first slice does not save automatically
+### Explicit ledger-only activation
 
-Gateway discovery, cold service startup and ledger reopen now serialize source
-reads and policy adoption through the ledger write transaction. Scoped hosts also
-re-read local `.env` values inside that transaction, replacing removed entries
-rather than retaining a stale snapshot. Unscoped process environment variables
-and external-secret-source snapshots retain their existing lifecycles; changes
-to those sources require the corresponding reload or restart. This does not
-claim cross-process synchronization of every external configuration source.
-Invalid profile YAML durably pauses same-profile hosts; valid repair is idempotent and does not
-replay unknown work or reset model reservations. These observer guarantees do
-not make file replacement atomic with a ledger update: a process can still crash
-between those two durable writes. File compensation alone does not solve that
-crash boundary. Automatic setup requires a
-separate design for durable intent, source revision validation, admission fencing,
-and recovery across every file-backed configuration adoption path. Until then,
-this surface deliberately has no configuration-write RPC.
+After preparing a draft, the owner may review and confirm **Save and activate**.
+The disclosure names the profile's organization ledger as the storage destination.
+`organization.projectSave` requires `confirmSave: true`, the draft revision, and
+an idempotency key. It does not edit `config.yaml`, start an objective or provider,
+or create filesystem roots, recipes, teams, tool permissions or credentials.
+Copying the draft remains available on older runtimes without this capability.
+
+One SQLite writer transaction re-reads profile sources, validates the source and
+policy revision, rejects open objectives/requests and managed configuration,
+checks execution locks for cancelled calls still unwinding, records the identity
+and its canonical-root/exact-recipe hash, adopts the effective policy, and records
+an idempotent receipt. A process crash before commit leaves none of those changes;
+a crash after commit leaves all of them. Retrying the same request returns its
+receipt without adding a duplicate. The new tables retain only identity metadata,
+binding hashes and receipts, never YAML bytes, private paths or provider secrets.
+
+YAML remains the grant authority. Ledger definitions contribute an additional,
+bounded identity layer; they never override a YAML identity or reuse its root
+alias. Duplicate IDs/roots, changed concrete roots or recipes, or missing teams
+retain the registered definition but durably fence organization admission. Every
+policy adopter preserves this fence, including reopen and ordinary reload. Setup
+shows the affected IDs and repair instructions. Restore the exact approved source
+binding or remove the conflicting YAML identity and reload; recovery never
+silently retargets an existing identity or replays unknown work. Owner staffing
+changes that would remove a required project team are rejected transactionally.
+Existing objective bindings, budgets and execution receipts remain unchanged.
+
+Profile export retains reviewable identity metadata without exporting the ledger;
+full backups and quick snapshots include consistent ledger copies. See
+[Project registration portability](organization-project-portability.md).
+
+### Source observation is not a file transaction
+
+Gateway discovery, cold startup and file policy reload serialize source reads
+and policy adoption through the ledger writer. Scoped hosts refresh local `.env`
+values there. Unscoped process environment variables and external-source caches
+retain their existing reload/restart lifecycles. An arbitrary external editor is
+not synchronized by SQLite: its edit after a source read is observed on the next
+normal file reload. No cross-resource or arbitrary-editor atomicity is claimed.
+
+Automatic YAML replacement deliberately remains absent. Even a durable intent
+followed by fsync and rename cannot prevent an independent editor changing the
+file between the final digest check and replacement. Atomic replacement is not a
+compare-and-swap. Keeping registration wholly in SQLite avoids that lost-update
+window and leaves comments, secrets and unrelated YAML bytes untouched.

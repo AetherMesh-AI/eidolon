@@ -1052,6 +1052,7 @@ _QUICK_STATE_FILES = (
     # Per-profile user stores, destroyed if the update flow replaces the file and the post-update
     # schema-init re-creates an empty one (#52889). Skipped when outside HERMES_HOME.
     "projects.db",                      # per-profile project store
+    "organization/state.db",            # durable project identities, policy and organization work
     "response_store.db",                # gateway conversation history / tool payloads
     "memory_store.db",                  # holographic memory facts/entities
     "verification_evidence.db",         # agent verification audit trail

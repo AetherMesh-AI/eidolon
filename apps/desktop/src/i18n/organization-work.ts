@@ -1,5 +1,17 @@
 /** Copy for the canonical organization ledger surfaces, kept together across locales. */
 const copy = {
+  projectSaveNote: ["Prepare a repository identity from an existing root, execution recipe and team. Review the draft before saving it to this profile.", "既存のルート、実行レシピ、チームからリポジトリ ID を作成します。このプロファイルに保存する前に下書きを確認してください。", "使用现有根目录、执行配方和团队准备仓库身份。保存到此配置前，请检查草稿。", "使用現有根目錄、執行配方和團隊準備儲存庫身分。儲存到此設定檔前，請檢查草稿。"],
+  projectSaveDisclosure: ["Saving stores this repository identity in this profile’s organization ledger and activates its existing root, execution recipe and team. It does not edit YAML, add permissions or start work. The YAML is an optional reviewed export or manual alternative. Do not also add a saved identity to this profile’s YAML.", "保存すると、このプロファイルの組織台帳にリポジトリ ID が記録され、既存のルート、実行レシピ、チームが有効になります。YAML の編集、権限の追加、作業の開始は行いません。YAML は確認用のエクスポートまたは手動設定の代替です。保存済みの ID をこのプロファイルの YAML にも追加しないでください。", "保存会将此仓库身份存入当前配置的组织台账，并激活其现有根目录、执行配方和团队。不会编辑 YAML、添加权限或启动工作。YAML 可供检查后导出或作为手动配置的替代方式。请勿再将已保存的身份添加到此配置的 YAML 中。", "儲存會將此儲存庫身分存入目前設定檔的組織台帳，並啟用其現有根目錄、執行配方和團隊。不會編輯 YAML、新增權限或啟動工作。YAML 可供檢查後匯出或作為手動設定的替代方式。請勿再將已儲存的身分新增到此設定檔的 YAML 中。"],
+  projectSaveReview: ["Review repository activation", "リポジトリの有効化を確認", "检查仓库激活", "檢查儲存庫啟用"],
+  projectSaveConfirm: ["Save and activate repository", "リポジトリを保存して有効化", "保存并激活仓库", "儲存並啟用儲存庫"],
+  projectSaveSaving: ["Saving repository…", "リポジトリを保存中…", "正在保存仓库…", "正在儲存儲存庫…"],
+  projectSaveSaved: ["Repository saved in this profile’s organization ledger.", "このプロファイルの組織台帳にリポジトリを保存しました。", "仓库已保存在此配置的组织台账中。", "儲存庫已儲存在此設定檔的組織台帳中。"],
+  projectSaveExisting: ["Saved in this profile’s ledger", "このプロファイルの台帳に保存済み", "已保存在此配置的台账中", "已儲存在此設定檔的台帳中"],
+  projectSaveConflicts: ["Repository conflicts", "リポジトリの競合", "仓库冲突", "儲存庫衝突"],
+  projectSavePendingNote: ["Closing stops waiting for this save. A save already received may still complete; refresh setup to check its status.", "閉じると保存の待機を終了します。受信済みの保存は完了する場合があります。設定を更新して状態を確認してください。", "关闭会停止等待此次保存。已接收的保存仍可能完成；请刷新设置以检查状态。", "關閉會停止等待此次儲存。已接收的儲存仍可能完成；請重新整理設定以檢查狀態。"],
+  projectSaveCancelled: ["Repository save cancelled before sending.", "送信前にリポジトリの保存をキャンセルしました。", "仓库保存已在发送前取消。", "儲存庫儲存已在傳送前取消。"],
+  projectSaveConfirmationRequired: ["Review and confirm this repository before saving.", "保存する前にこのリポジトリを確認してください。", "请检查并确认此仓库后再保存。", "請檢查並確認此儲存庫後再儲存。"],
+
   projectSetupOccupied: ["Already configured", "設定済み", "已配置", "已設定"],
   projectSetupRootConflict: ["Each repository must use a different root. Select an unused configured root.", "各リポジトリには異なるルートが必要です。未使用の設定済みルートを選択してください。", "每个仓库必须使用不同的根目录。请选择未使用的已配置根目录。", "每個儲存庫必須使用不同的根目錄。請選擇未使用的已設定根目錄。"],
   projectSetupLimit: ["This profile already has the maximum of eight repositories.", "このプロファイルはリポジトリ数の上限（8つ）に達しています。", "此配置已达到最多八个仓库的上限。", "此設定檔已達到最多八個儲存庫的上限。"],
