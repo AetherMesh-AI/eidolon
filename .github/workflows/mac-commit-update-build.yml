@@ -34,7 +34,7 @@ jobs:
       - name: Install locked workspace dependencies
         run: npm ci --include=dev --include=optional
       - name: Build exact main desktop source
-        run: npm run build --workspace apps/desktop
+        run: GITHUB_SHA="$SOURCE_COMMIT" npm run build --workspace apps/desktop
       - name: Package and validate user-copyable ARM64 app
         run: python3 "$RUNNER_TEMP/mac-commit-update-build.py"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
