@@ -31,8 +31,9 @@ The example illustrates bindings, not a complete runnable configuration. Existin
 organization and individual worker grants (`read_file`, `patch`, `run_tests`,
 `integrate_source` as needed), configured staff, and the runner's fixed recipe
 requirements remain necessary. Registering a project grants none of them. The
-runner remains the bounded Python unittest snapshot runner; it does not gain npm,
-shell, arbitrary commands, networking, dependencies, or filesystem permissions.
+runner supports fixed Python unittest and optional pytest snapshot recipes. It does
+not gain npm, shell, arbitrary commands, networking, dependency installation, or
+filesystem permissions.
 
 Up to eight unique project IDs and distinct aliases are supported. Recipes remain
 exact owner-maintained file lists. Alias positions are stable, including root1 and
@@ -169,3 +170,44 @@ followed by fsync and rename cannot prevent an independent editor changing the
 file between the final digest check and replacement. Atomic replacement is not a
 compare-and-swap. Keeping registration wholly in SQLite avoids that lost-update
 window and leaves comments, secrets and unrelated YAML bytes untouched.
+
+
+## Optional isolated pytest recipe
+
+An owner may explicitly select `recipe: python_pytest` in an existing project's
+execution grant. The default remains `python_unittest`; registration and model
+requests cannot switch the recipe or grant files. The same exact selected UTF-8
+snapshot, limits, independent test review, source preimage checks and unknown-run
+recovery apply. The default filename pattern remains `test*.py`; select another
+bounded `.py` pattern and test directory explicitly when needed.
+
+This supports pure-Python tests with ordinary assertions, parametrization, and
+in-memory fixtures, including explicitly selected `conftest.py` files. It is not
+general pytest compatibility. Temporary-file fixtures, subprocesses, threads,
+networking, unselected files, project-installed dependencies and arbitrary test
+commands remain unavailable. The only writable file is `/scratch/work.dat`.
+Pytest plugin autoload, project configuration/addopts, assertion rewriting and
+cache writes and the logging plugin (`caplog`) are disabled; capture uses Python streams. Conftest and test hooks
+are untrusted code inside the same sandbox and can falsify reported results,
+just as unittest code can. Independent review remains mandatory.
+
+The optional runner copies only Python source files from the application's own
+installed pytest 9.1.1, pluggy 1.6.0, packaging 26.0, iniconfig 2.3.0 and pygments
+2.20.0 packages. These versions match the repository lock. No complete virtualenv,
+site-packages directory, `.pth`, host plugin, home directory or project runtime is
+mounted. Missing, linked, unexpected or incompatible package payloads fail closed
+with an unsupported receipt. The runner never installs or downloads anything.
+
+System Python 3.10 additionally needs application-installed exceptiongroup 1.3.0,
+the pure-Python tomli 2.2.1 wheel and typing_extensions 4.15.0; native CI explicitly supplies these
+compatibility packages. They are not implied by installing the application dev
+extra on Python 3.11 or newer. System Python must be at least 3.10. Receipts retain
+system interpreter identity, installed dependency names/versions and hashes of
+the copied package files and complete runtime. These hashes describe the actual
+installed bytes; they are not upstream signatures or an authenticity guarantee.
+
+Successful acceptance requires actual Linux bubblewrap/seccomp isolation. The
+permanent Linux lane requires passing real pytest, failing/empty/incomplete test
+receipts, hostile-environment and forbidden-operation checks, and an independent
+review/source-integration loop. macOS and Windows retain their explicit unsupported
+behavior; there is no host execution fallback.
