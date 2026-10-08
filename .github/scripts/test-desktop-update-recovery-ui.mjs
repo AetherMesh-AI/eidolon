@@ -27,6 +27,7 @@ try {
   app = await _electron.launch({executablePath,args:[tmp],env:{...process.env},timeout:30000})
   const page = await app.firstWindow()
   await page.waitForFunction(() => document.body.className === 'error')
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('.wrap')).opacity === '1')
   assert.ok((await page.locator('#line').textContent()).startsWith(message))
   assert.equal(await page.locator('#line').locator('*').count(), 0)
   const geometry = await page.locator('#line').evaluate(el => {
