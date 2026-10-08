@@ -135,7 +135,7 @@ def test_macos_replacement_keeps_denied_app_and_reports_manual_install(tmp_path,
 
 
 @pytest.mark.macos_only
-@pytest.mark.parametrize('fault', ['install', 'interrupted', 'rollback'])
+@pytest.mark.parametrize('fault', ['install', 'interrupted', 'rollback', 'identity', 'external'])
 def test_macos_transaction_preserves_recovery_and_fences_retries(tmp_path, monkeypatch, fault):
     import importlib.util
     module_path = Path(__file__).resolve().parents[1] / 'scripts/desktop-update/mac_transaction.py'
@@ -160,8 +160,21 @@ def test_macos_transaction_preserves_recovery_and_fences_retries(tmp_path, monke
     workspace = Path(str(target) + '.eidolon-update')
     rename = Path.rename
 
+    identity = module.bundle_identity
+    identity_failed = False
+
+    def injected_identity(path):
+        nonlocal identity_failed
+        value = identity(path)
+        if fault == 'identity' and path == target and value == expected and not identity_failed:
+            identity_failed = True
+            return {**value, 'sha256': 'unexpected installed identity'}
+        return value
+
     def injected_rename(path, destination):
-        if path == workspace / 'new.app':
+        if path == workspace / 'new.app' and fault != 'identity':
+            if fault == 'external':
+                bundle(target, 'external')
             if fault == 'interrupted':
                 raise KeyboardInterrupt('process interrupted after old bundle moved')
             raise OSError('injected final rename failure')
@@ -171,19 +184,23 @@ def test_macos_transaction_preserves_recovery_and_fences_retries(tmp_path, monke
 
     with monkeypatch.context() as patch:
         patch.setattr(Path, 'rename', injected_rename)
+        patch.setattr(module, 'bundle_identity', injected_identity)
         with pytest.raises(KeyboardInterrupt if fault == 'interrupted' else module.ReplacementError):
             module.replace_bundle(source, target)
     assert module.bundle_identity(source) == expected
-    if fault == 'install':
+    if fault in ('install', 'identity'):
         assert module.bundle_identity(target) == previous
         archived = next(tmp_path.glob('Eidolon.app.eidolon-update-*'))
         assert json.loads((archived / 'transaction.json').read_text())['phase'] == 'restored'
-        assert module.bundle_identity(archived / 'new.app') == expected
+        assert module.bundle_identity(archived / ('failed.app' if fault == 'identity' else 'new.app')) == expected
         receipt = module.replace_bundle(source, target)
         assert module.bundle_identity(target) == expected
         assert module.bundle_identity(receipt / 'previous.app') == previous
     else:
-        assert not target.exists()
+        if fault == 'external':
+            assert module.bundle_identity(target)['version'] == 'external'
+        else:
+            assert not target.exists()
         assert module.bundle_identity(workspace / 'previous.app') == previous
         assert module.bundle_identity(workspace / 'new.app') == expected
         before = (workspace / 'transaction.json').read_bytes()

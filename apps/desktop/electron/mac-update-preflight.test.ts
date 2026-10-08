@@ -1,4 +1,5 @@
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
+import { once } from 'node:events'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -92,11 +93,20 @@ test.skipIf(process.platform !== 'darwin')('preflight preserves working apps and
   }
 }, 20_000)
 
-test.skipIf(process.platform !== 'darwin')('preflight rejects native unprivileged replacement restrictions without relaxing them', async () => {
+test.skipIf(process.platform !== 'darwin')('denied preflight preserves a running fixture and its native unprivileged restrictions', async () => {
   expect(process.geteuid(), 'Run the macOS fixture as an unprivileged account').not.toBe(0)
   const { root, parent, app, executable } = fixture()
+  fs.writeFileSync(executable, '#!/bin/sh\nprintf "ready\\n"\nIFS= read -r message\n')
+  // This proves filesystem/preflight preservation with a real process. It does
+  // not load Electron or exercise main.ts's app.quit ordering.
+  const runningApp = spawn(executable, { cwd: root, stdio: ['pipe', 'pipe', 'pipe'] })
 
   try {
+    await once(runningApp, 'spawn', { signal: AbortSignal.timeout(5000) })
+    const [ready] = await once(runningApp.stdout, 'data', { signal: AbortSignal.timeout(5000) })
+    expect(String(ready)).toBe('ready\n')
+    const originalPid = runningApp.pid
+    const originalInode = fs.statSync(app).ino
     const original = fs.readFileSync(executable)
 
     const assertDenied = async () => {
@@ -105,6 +115,11 @@ test.skipIf(process.platform !== 'darwin')('preflight rejects native unprivilege
       expect(result?.message).toContain('keep running')
       expect(result?.message).toContain('manually')
       expect(fs.readFileSync(executable)).toEqual(original)
+      expect(fs.statSync(app).ino).toBe(originalInode)
+      expect(runningApp.pid).toBe(originalPid)
+      expect(runningApp.exitCode).toBeNull()
+      expect(runningApp.signalCode).toBeNull()
+      expect(() => process.kill(originalPid, 0)).not.toThrow()
     }
 
     const mode = fs.statSync(parent).mode & 0o7777
@@ -145,6 +160,12 @@ test.skipIf(process.platform !== 'darwin')('preflight rejects native unprivilege
     expect(await macUpdatePreflight(app)).toBeNull()
     expect(fs.readdirSync(parent)).toEqual(['Eidolon.app'])
   } finally {
+    if (runningApp.pid && runningApp.exitCode === null && runningApp.signalCode === null) {
+      const stopped = once(runningApp, 'exit', { signal: AbortSignal.timeout(5000) })
+      runningApp.kill('SIGTERM')
+      await stopped
+    }
+
     fs.rmSync(root, { recursive: true, force: true })
   }
 }, 20_000)
