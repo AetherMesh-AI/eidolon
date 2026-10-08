@@ -214,14 +214,32 @@ class OrganizationService:
                 self.start()
             return changed
 
+    def reload_configuration(self, settings):
+        """Apply validated file grants without replacing live execution records."""
+        with self._lock:
+            changed = self.store.reload_configuration(settings)
+            self.settings = self.store.settings
+            self.refresh_configuration()
+            self._wake.set()
+            return changed
+
+    def pause_configuration(self):
+        self.close_admission()
+        with self._lock:
+            self.store.pause_configuration()
+
     def refresh_configuration(self):
-        """Adopt another runtime's validated ledger policy without restarting chat."""
+        """Cancel revoked claims before adopting another host's durable policy."""
         from eidolon_cli.organization_policy import persisted_settings
         with self._lock:
-            if self._running:
-                return False
             with self.store._connect() as conn:
                 conn.execute('BEGIN')
+                for record in self._running.values():
+                    if not record.fenced and self.store._owned(conn, record.claim) is None:
+                        record.cancel.set()
+                        record.fenced = True
+                if self.store._policy_paused(conn):
+                    return False
                 if self.store._policy_current(conn):
                     return False
                 settings = persisted_settings(conn)
@@ -420,11 +438,12 @@ class OrganizationService:
         while True:
             try:
                 with self._lock:
+                    if not self._stop.is_set():
+                        self.refresh_configuration()
                     self._maintain()
                     if self._stop.is_set() and not self._running:
                         return
                     if not self._stop.is_set():
-                        self.refresh_configuration()
                         self.store.recover_expired()
                         self._fill_slots()
             except Exception:
@@ -448,7 +467,8 @@ def get_service() -> OrganizationService:
     with _services_lock:
         service = _services.get(path)
         if service is None or (service._stop.is_set() and not service.running):
-            from eidolon_cli.config import load_config
+            from eidolon_cli.config import load_config, require_parseable_user_config
+            require_parseable_user_config()
             settings = from_config(load_config())
             store = OrganizationStore(path, settings=settings)
             service = OrganizationService(store, settings=store.settings, home=path.parent.parent)

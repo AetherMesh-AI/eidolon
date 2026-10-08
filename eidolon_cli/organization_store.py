@@ -112,7 +112,7 @@ class OrganizationStore(OrganizationOutcomeStore, OrganizationAttentionStore, Or
             self._migrate_acceptance(conn)
             self._migrate_budgets(conn)
             self._migrate_project_execution_budgets(conn)
-            self._adopt_policy(conn)
+            self._adopt_policy(conn, resume=settings is not None)
             roles = [("owner", "Owner", "Owner", None, []),
                      ("executive", "Executive", "Executive", "owner", ["request.accept"]),
                      ("director", "Staffing manager", "Manager", "executive", ["request.hire"]),

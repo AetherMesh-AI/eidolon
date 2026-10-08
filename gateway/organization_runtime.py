@@ -36,6 +36,9 @@ class GatewayOrganizationRuntime:
         self._stop = threading.Event()
         self._lock = threading.RLock()
         self._services = {}
+        # Policy handles have no scheduler or persistent SQLite connection.
+        # Disabled profiles still need validation and durable pause recovery.
+        self._stores = {}
         self._failures = {}
         self._thread = None
         # Do not inherit any UI/request transport or another profile's secrets.
@@ -95,6 +98,9 @@ class GatewayOrganizationRuntime:
         home_token = set_eidolon_home_override(home)
         required_token = set_secret_scope_required(True)
         secret_token = None
+        enabled = False
+        with self._lock:
+            current = self._services.get(home)
         try:
             secret_token = set_secret_scope(build_profile_secret_scope(home))
             require_parseable_user_config()
@@ -102,37 +108,60 @@ class GatewayOrganizationRuntime:
             raw = config.get('organization', {})
             enabled = isinstance(raw, dict) and raw.get('gateway_enabled') is True
             path = home / 'organization' / 'state.db'
-            if not enabled or not path.is_file():
+            if not path.is_file():
                 self._stop_home(home)
                 return
-            with self._lock:
-                current = self._services.get(home)
+            if enabled and (current is None or (not current.running and current._stop.is_set())):
+                # Resolve cold-profile sources before validating or adopting
+                # authority: unresolved placeholders may reject a valid root or
+                # falsely change a team and fence an existing desktop claim.
+                from eidolon_cli.env_loader import hydrate_profile_secret_sources
+                hydrate_profile_secret_sources(home)
+                set_secret_scope(build_profile_secret_scope(home))
+                require_parseable_user_config()
+                config = load_config()
+                raw = config.get('organization', {})
+                enabled = isinstance(raw, dict) and raw.get('gateway_enabled') is True
+            settings = from_config(config)
+            if current is not None:
+                current.reload_configuration(settings)
+                store = current.store
+            else:
+                store = self._stores.get(home)
+                if store is None:
+                    store = OrganizationStore(path, settings=settings)
+                    self._stores[home] = store
+                else:
+                    store.reload_configuration(settings)
+            if not enabled:
+                self._stop_home(home)
+                return
             if current is not None:
                 if current.running:
                     return  # Also wait for an old disabled call to unwind.
                 if not current._stop.is_set():
                     current.start()
                     return
-            # Match the gateway's normal cold-profile credential path. Only
-            # opted-in existing ledgers may hydrate configured external sources;
-            # no process-global environment or new credential is introduced.
-            from eidolon_cli.env_loader import hydrate_profile_secret_sources
-            hydrate_profile_secret_sources(home)
-            set_secret_scope(build_profile_secret_scope(home))
-            require_parseable_user_config()
-            config = load_config()
-            if (not isinstance(config.get('organization'), dict)
-                    or config['organization'].get('gateway_enabled') is not True):
-                return  # The owner may have disabled execution during hydration.
             # Existing ledgers are the only admission source. Configuration still
             # validates all grants and persisted membership through the real store.
-            store = OrganizationStore(path, settings=from_config(config))
             service = OrganizationService(store, settings=store.settings, home=home, can_dispatch=self.can_dispatch)
             with self._lock:
                 if self._stop.is_set():
                     return
                 self._services[home] = service
                 service.start()
+        except Exception:
+            # A cached desktop scheduler shares the same profile authority.
+            # Persist the pause, not just this gateway's local stop flag.
+            if current is not None:
+                current.pause_configuration()
+            elif (home / 'organization' / 'state.db').is_file():
+                store = self._stores.get(home)
+                if store is None:
+                    store = OrganizationStore(home / 'organization' / 'state.db')
+                    self._stores[home] = store
+                store.pause_configuration()
+            raise
         finally:
             if secret_token is not None:
                 reset_secret_scope(secret_token)

@@ -464,7 +464,8 @@ def test_close_admission_during_context_read_prevents_executor_dispatch(home, mo
         assert service.stop()
 
 
-def test_cold_opted_in_profile_hydrates_existing_secret_source_before_dispatch(home, monkeypatch):
+@pytest.mark.parametrize('root_from_source', [False, True])
+def test_cold_opted_in_profile_hydrates_existing_secret_source_before_dispatch(home, monkeypatch, root_from_source):
     from eidolon_cli import env_loader, profiles
     from agent.secret_scope import get_secret
     from eidolon_constants import get_eidolon_home
@@ -474,7 +475,8 @@ def test_cold_opted_in_profile_hydrates_existing_secret_source_before_dispatch(h
 
     def hydrate(profile):
         hydrated.append(profile)
-        values[str(profile.resolve())] = {'OPENAI_API_KEY': profile.name + '-source-test-only'}
+        values[str(profile.resolve())] = {'OPENAI_API_KEY': profile.name + '-source-test-only',
+                                         'ORG_ROOT': str(profile.resolve()), 'ORG_TEAM': profile.name + '-source-team'}
         return values[str(profile.resolve())]
 
     monkeypatch.setattr(env_loader, 'hydrate_profile_secret_sources', hydrate)
@@ -483,13 +485,21 @@ def test_cold_opted_in_profile_hydrates_existing_secret_source_before_dispatch(h
                         seen.append((get_eidolon_home().resolve(), get_secret('OPENAI_API_KEY')))
                         or {'intervention': 'Deterministic stop'})
     alpha, beta = (home / 'profiles' / name for name in ('alpha', 'beta'))
-    configure(alpha)
+    configure(alpha, team='${ORG_TEAM}', max_inflight=1,
+              read_roots=['${ORG_ROOT}' if root_from_source else str(alpha.resolve())])
     configure(beta, False)
+    desktop = OrganizationStore(alpha / 'organization' / 'state.db', replace(OrganizationSettings(),
+        team='alpha-source-team', max_inflight=1, read_roots=(str(alpha.resolve()),)))
+    desktop.create_objective('Already owned by desktop', idempotency_key='desktop')
+    desktop_claim = desktop.claim_next()
     ledger(alpha, 'Enabled')
     ledger(beta, 'Disabled')
     host = runtime(SimpleNamespace(multiplex_profiles=True, multiplex_profile_allowlist=['alpha', 'beta']))
     try:
         host.discover()
+        assert desktop.heartbeat(desktop_claim), 'Cold discovery must not adopt unresolved placeholder authority'
+        assert host._services[alpha.resolve()].store.settings.read_roots == (str(alpha.resolve()),)
+        assert desktop.finish(desktop_claim, {'intervention': 'End synthetic desktop execution'})
         wait_for(lambda: bool(seen))
         assert hydrated == [alpha.resolve()]
         assert seen == [(alpha.resolve(), 'alpha-source-test-only')]

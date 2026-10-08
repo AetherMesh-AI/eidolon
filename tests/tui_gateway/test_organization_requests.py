@@ -61,11 +61,17 @@ def test_config_rpc_live_refresh_preserves_saved_roster_and_exact_duplicate_with
     assert snapshot['runtime']['maxInflight'] == 1
     assert any(row['id'] == 'advisor' for row in snapshot['agents'])
     # Delivery retry may arrive after the successful configuration started work.
-    service._running['active-placeholder'] = object()
+    service.store.create_objective('Work admitted after configuration', idempotency_key='active')
+    claim = service.store.claim_next()
+    record = services._Running(claim)
+    service._running[claim['id']] = record
     try:
         assert rpc('organization.configure', **params)['runtime']['management'] == snapshot['runtime']['management']
+        assert not record.cancel.is_set()
+        assert service.store.heartbeat(claim)
     finally:
         service._running.clear()
+        service.store.fail(claim, 'End synthetic active execution')
     foreign = OrganizationStore(service.store.path)
     foreign.configure_organization({'max_inflight': 2}, expected_generation=foreign._policy_generation,
                                    idempotency_key='second-runtime')
