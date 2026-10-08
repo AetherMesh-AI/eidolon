@@ -420,7 +420,10 @@ class OrganizationProjectStore:
             # Test the reviewed managed bytes before asking the owner to alter
             # originals. Verified handoff can then preserve that same snapshot.
             from eidolon_cli.organization_project_execution import project_execution_view
-            execution = project_execution_view(conn, request['objective_id'])
+            from eidolon_cli.organization_projects import task_project
+            project = task_project(conn, request['task_id'])
+            execution = project_execution_view(conn, request['objective_id'],
+                                               project_id=project['id'] if project else None)
             if execution is None or not execution['review'] or not execution['review']['approved']:
                 return
         objective = conn.execute('SELECT delivery_mode,required_checks FROM objective_control WHERE objective_id=?', (request['objective_id'],)).fetchone()
@@ -458,6 +461,7 @@ class OrganizationProjectStore:
 
     def ensure_source_handoff(self, conn, objective_id):
         """Keep the source delivery obligation alive when a later round changes work."""
+        self.verify_project_coverage(conn, objective_id)
         if self._automatic_source(conn, objective_id):
             return not self.verified_source_integration(conn, objective_id)
         control = conn.execute('SELECT delivery_mode,required_checks FROM objective_control WHERE objective_id=?', (objective_id,)).fetchone()

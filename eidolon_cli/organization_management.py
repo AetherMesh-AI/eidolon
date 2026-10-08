@@ -168,6 +168,10 @@ def _transfer_tasks(conn, source, target, task_ids, actor_id, actor=None):
         if actor and not _team_allowed(actor, task['team']):
             raise ValueError('Transferred work is outside the actor managed teams')
         if source['role'] == 'Worker':
+            from eidolon_cli.organization_projects import task_project
+            binding = task_project(conn, task_id)
+            if binding and target['team'] != binding['team']:
+                raise ValueError('Project-bound work transfers must preserve its owner-approved project team')
             # Unpinned plans acquire an exact owner when a stage pauses. Only
             # that durable continuation, never a past claim or artifact author,
             # can authorize an explicit transfer of otherwise unassigned work.

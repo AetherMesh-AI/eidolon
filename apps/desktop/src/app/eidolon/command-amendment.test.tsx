@@ -59,3 +59,31 @@ it('submits selected persistent leaders and clears an incompatible manager when 
   expect(manager).toHaveProperty('value', '')
   expect(screen.queryByRole('option', { name: 'accountservices' })).toBeNull()
 })
+
+it('submits only selected configured repository IDs and keeps a failed submission editable', async () => {
+  const projects = [
+    { id: 'frontend', root: 'root0', recipe: 'web-tests', team: 'web' },
+    { id: 'backend', root: 'root1', recipe: 'api-tests', team: 'api' }
+  ]
+
+  const snapshot: OrganizationSnapshot = { source: 'runtime', objectives: [], agents: [], tasks: [], knowledge: [], activity: [], requests: [], runtime: { capabilities: [], scope: 'Configured projects', state: 'ready', maxWorkers: 2, availableProjects: projects } }
+  const request = vi.fn().mockImplementation((method: string) => method === 'organization.create' ? Promise.reject(new Error('Test admission paused')) : Promise.resolve(snapshot))
+  const adapter = createRuntimeAdapter({ request: request as OrganizationGateway['request'], getScope: () => ({ key: 'projects', connected: true }), subscribeScope: () => () => undefined })
+  render(<MemoryRouter initialEntries={['/home']}><OrganizationWorkspace adapter={adapter} /></MemoryRouter>)
+  const frontend = await screen.findByRole('checkbox', { name: /frontend/ })
+  const backend = screen.getByRole('checkbox', { name: /backend/ })
+  fireEvent.change(screen.getByRole('textbox', { name: 'Objective' }), { target: { value: 'Coordinate the release' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Create objective' }))
+  expect(screen.getByText('Select at least one repository for source-project delivery.')).toBeTruthy()
+  expect(request.mock.calls.some(call => call[0] === 'organization.create')).toBe(false)
+  fireEvent.click(frontend)
+  fireEvent.click(backend)
+  fireEvent.click(frontend)
+  fireEvent.click(screen.getByRole('button', { name: 'Create objective' }))
+  await screen.findByText('Test admission paused')
+  const params = request.mock.calls.find(call => call[0] === 'organization.create')![1]
+  expect(params.projectIds).toEqual(['backend'])
+  expect(JSON.stringify(params)).not.toContain('/owner/')
+  expect(backend).toHaveProperty('checked', true)
+  expect(backend).toHaveProperty('disabled', false)
+})

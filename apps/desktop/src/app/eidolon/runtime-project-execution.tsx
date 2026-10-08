@@ -5,11 +5,12 @@ import { useI18n } from '@/i18n/context'
 import type { OrganizationProjectExecution } from './types'
 
 interface RuntimeProjectExecutionProps {
+  projectId?: string
   execution?: OrganizationProjectExecution | null
   onOpenEvidence(id: string): void
 }
 
-export function RuntimeProjectExecution({ execution, onOpenEvidence }: RuntimeProjectExecutionProps) {
+export function RuntimeProjectExecution({ execution, projectId, onOpenEvidence }: RuntimeProjectExecutionProps) {
   const { t } = useI18n()
   const copy = t.organizationWork
   const receipt = execution?.receipt
@@ -26,8 +27,9 @@ export function RuntimeProjectExecution({ execution, onOpenEvidence }: RuntimePr
   }
 
   return (
-    <section aria-label={copy.projectExecution}>
+    <section aria-label={projectId ? `${copy.projectExecution}: ${projectId}` : copy.projectExecution}>
       <h3>{copy.projectExecution}</h3>
+      {projectId && <p>{copy.projectBinding}: {projectId}</p>}
       <p className="eid-note">{copy.projectExecutionNote}</p>
       {!execution || !receipt ? (
         <p>{copy.noProjectExecution}</p>

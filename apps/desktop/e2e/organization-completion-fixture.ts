@@ -1,5 +1,7 @@
 /** Scripted loopback inference only; all state and acceptance remain backend-owned. */
+import fs from 'node:fs'
 import http from 'node:http'
+import path from 'node:path'
 
 import {
   buildAppEnv,
@@ -12,9 +14,13 @@ import {
 } from './fixtures'
 import { startMockServer } from './mock-server'
 import { exactOrganizationEvidence, type OrganizationEvidenceContext } from './organization-evidence'
+import { projectSelectionConfiguration } from './organization-project-selection-config'
 import { organizationProviderTarget } from './organization-provider-target'
 
 export const completionTitle = 'Prepare the evidence-backed release recommendation'
+export const projectSelectionTitle = 'Coordinate the selected repository release'
+export const projectSelectionIntervention =
+  'Repository selection retained; execution is outside this selection fixture.'
 export const budgetTitle = 'Prepare a recommendation within one model call'
 export const originalScope = 'Recommend retaining the release safety gate and execute the project tests.'
 export const amendedScope = 'Document the recommendation only. Project tests are outside this revised scope.'
@@ -29,6 +35,7 @@ interface StageContext extends OrganizationEvidenceContext {
     description: string
     acceptanceCriteria: string[]
     requiredChecks: string[]
+    projects?: { id: string; root: string; team: string }[]
   }
   agent: { id: string }
 }
@@ -42,6 +49,7 @@ interface ProviderPayload {
 }
 
 export interface CompletionStage {
+  projectIds?: string[]
   kind: string
   agentId: string
   scope: string
@@ -106,12 +114,36 @@ function resultFor(kind: string, context: StageContext) {
   return handlers[kind]()
 }
 
-export async function setupCompletionFixture(budgetLimited: boolean) {
+interface CompletionFixtureOptions {
+  projectSelection?: boolean
+}
+
+export async function setupCompletionFixture(budgetLimited: boolean, options: CompletionFixtureOptions = {}) {
   const stages: CompletionStage[] = []
   const providerErrors: string[] = []
   const pendingReplies: Array<() => void> = []
   const mock = await startMockServer()
-  const sandbox = createSandbox(budgetLimited ? 'completion-budget' : 'completion-scope')
+
+  const sandbox = createSandbox(
+    options.projectSelection ? 'project-selection' : budgetLimited ? 'completion-budget' : 'completion-scope'
+  )
+
+  const projectIds = ['frontend', 'backend']
+
+  const projectRoots = options.projectSelection
+    ? projectIds.map(id => {
+        const root = path.join(sandbox.root, id)
+        fs.mkdirSync(root)
+
+        return root
+      })
+    : []
+
+  const projectConfig = options.projectSelection ? projectSelectionConfiguration(projectRoots) : {}
+
+  const projectYaml = Object.entries(projectConfig)
+    .map(([key, value]) => `\n  ${key}: ${JSON.stringify(value)}`)
+    .join('')
 
   const server = http.createServer((request, response) => {
     const chunks: Buffer[] = []
@@ -139,6 +171,7 @@ export async function setupCompletionFixture(budgetLimited: boolean) {
           const outputLimit = payload?.max_completion_tokens ?? payload?.max_tokens
           stages.push({
             kind,
+            projectIds: context.objective.projects?.map(project => project.id),
             agentId: context.agent.id,
             scope: context.objective.description,
             requiredChecks: context.objective.requiredChecks,
@@ -146,7 +179,11 @@ export async function setupCompletionFixture(budgetLimited: boolean) {
             outputLimit
           })
 
-          if (context.objective.title !== (budgetLimited ? budgetTitle : completionTitle) || payload?.tools?.length) {
+          if (
+            context.objective.title !==
+              (options.projectSelection ? projectSelectionTitle : budgetLimited ? budgetTitle : completionTitle) ||
+            payload?.tools?.length
+          ) {
             throw new Error('Unexpected objective or expanded tool grants')
           }
 
@@ -158,7 +195,19 @@ export async function setupCompletionFixture(budgetLimited: boolean) {
             throw new Error('The model-call ceiling allowed an additional HTTP completion')
           }
 
-          const content = JSON.stringify(resultFor(kind, context))
+          if (
+            options.projectSelection &&
+            (kind !== 'request.plan' ||
+              JSON.stringify(context.objective.projects?.map(project => project.id).sort()) !==
+                JSON.stringify(['backend', 'frontend']))
+          ) {
+            throw new Error('Selected repository IDs did not reach the real planner context')
+          }
+
+          const content = JSON.stringify(
+            options.projectSelection ? { intervention: projectSelectionIntervention } : resultFor(kind, context)
+          )
+
           const identity = { id: `completion-fixture-${stages.length}`, created: 1, model: 'mock-model' }
           const usage = { prompt_tokens: 30, completion_tokens: 30, total_tokens: 60 }
 
@@ -252,7 +301,7 @@ export async function setupCompletionFixture(budgetLimited: boolean) {
       sandbox.hermesHome,
       providerUrl,
       undefined,
-      `approvals:\n  mode: manual\norganization:\n  max_inflight: 1\n  max_stages: 40\n  max_context_tokens: 32768\n  max_output_tokens: 2048\n  max_model_calls: ${budgetLimited ? 1 : 40}`,
+      `approvals:\n  mode: manual\norganization:\n  max_inflight: 1\n  max_stages: 40\n  max_context_tokens: 32768\n  max_output_tokens: 2048\n  max_model_calls: ${budgetLimited ? 1 : 40}${projectYaml}`,
       // The agent requires a >=64K model window. The independent organization
       // policy above still admits at most 32K for this scripted scenario.
       128000,

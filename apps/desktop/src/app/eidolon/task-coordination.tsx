@@ -28,7 +28,7 @@ export function TaskCoordination({ task, tasks }: TaskCoordinationProps) {
   const copy = t.organizationWork
   const label = taskCoordinationLabel(task, copy)
 
-  if (!task.coordination && !task.writePaths?.length) {
+  if (!task.coordination && !task.writePaths?.length && !task.projectId) {
     return null
   }
 
@@ -39,6 +39,7 @@ export function TaskCoordination({ task, tasks }: TaskCoordinationProps) {
   }) ?? []
 
   return <span className="flex flex-col gap-1" style={{ overflowWrap: 'anywhere' }}>
+    {task.projectId && <small>{copy.projectBinding}: {task.projectId}</small>}
     {label && <small>{copy.taskCoordination}: {label}</small>}
     {task.coordination?.reason && <small>{copy.coordinationReason}: {task.coordination.reason}</small>}
     {blockers.length > 0 && <small>{copy.coordinationBlockers}: {blockers.join(', ')}</small>}

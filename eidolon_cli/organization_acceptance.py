@@ -117,6 +117,7 @@ class OrganizationAcceptanceStore:
                                  (request['id'], 'legacy-attempt-' + str(attempt), row['id'], request['type'], int(request['status'] == 'completed')))
 
     def _current_evidence(self, conn, objective_id):
+        self.verify_project_coverage(conn, objective_id)
         rows = []
         for task in current_tasks(conn, objective_id):
             if task['status'] != 'completed':
@@ -149,11 +150,8 @@ class OrganizationAcceptanceStore:
         if proof is not None:
             rows.append(project_validation_artifact(conn, proof['id']))
         if self._execution_required(conn, objective_id):
-            _, execution = self.verify_project_tests(conn, objective_id)
-            rows.append(execution)
-        source = self.current_source_evidence(conn, objective_id)
-        if source is not None:
-            rows.append(source)
+            rows.extend(execution for _, execution in self.verify_project_test_runs(conn, objective_id))
+        rows.extend(self.current_source_evidences(conn, objective_id))
         return rows
 
     def _maybe_integrate(self, conn, objective_id):

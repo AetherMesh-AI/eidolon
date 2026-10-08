@@ -1,5 +1,11 @@
 /** Copy for the canonical organization ledger surfaces, kept together across locales. */
 const copy = {
+  objectiveProjects: ['Objective repositories', '目標のリポジトリ', '目标仓库', '目標儲存庫'],
+  projectSelectionNote: ['Select configured repositories for source-project delivery. Unselected managed-artifact objectives are limited to writing without repository access.', 'ソースプロジェクトへの納品には設定済みリポジトリを選択してください。未選択の管理対象成果物はリポジトリにアクセスしない文章作成に限られます。', '源项目交付需选择已配置仓库。未选择仓库的托管成果目标仅限不访问仓库的写作。', '原始碼專案交付需選擇已設定儲存庫。未選擇儲存庫的受管理成果目標僅限不存取儲存庫的寫作。'],
+  projectSelectionRequired: ['Select at least one repository for source-project delivery.', 'ソースプロジェクトへの納品にはリポジトリを1つ以上選択してください。', '请至少选择一个仓库用于源项目交付。', '請至少選擇一個儲存庫用於原始碼專案交付。'],
+  projectSelectionChanged: ['A selected repository is no longer configured. Refresh and select again.', '選択されたリポジトリは設定から削除されました。更新して再選択してください。', '所选仓库已不在配置中。请刷新后重新选择。', '所選儲存庫已不在設定中。請重新整理後重新選擇。'],
+  projectBinding: ['Repository', 'リポジトリ', '仓库', '儲存庫'],
+
   attentionInbox: ['Attention inbox', '対応受信箱', '待处理收件箱', '待處理收件匣'],
   attentionQueue: ['Request queue', 'リクエスト一覧', '请求队列', '請求佇列'],
   attentionAll: ['All blockers', 'すべての要対応項目', '全部待处理项', '全部待處理項目'],

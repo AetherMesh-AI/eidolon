@@ -82,9 +82,17 @@ class OrganizationStaffingStore:
         if (staff and request['type'] in {'work.inspect', 'work.edit'}
                 and not self._staff_reason(conn, {'id': staff.id}, request['type'])):
             tools = [tool for tool in staff.tool_grants if tool in {'read_file', 'list_files', 'search_files'} and tool in self.settings.tool_grants]
-        return {'tools': tools, 'readRoots': list(self.settings.read_roots),
-                'maxToolCalls': self.settings.max_tool_calls,
-                'maxResultChars': self.settings.max_tool_result_chars}
+        policy = {'tools': tools, 'readRoots': list(self.settings.read_roots),
+                  'maxToolCalls': self.settings.max_tool_calls,
+                  'maxResultChars': self.settings.max_tool_result_chars}
+        from eidolon_cli.organization_projects import task_project, validate_objective_projects
+        projects = validate_objective_projects(conn, request['objective_id'], self.settings)
+        if projects:
+            project = task_project(conn, request['task_id']) if request['task_id'] else None
+            policy['readRootAliases'] = [project['root']] if project in projects else []
+            if not policy['readRootAliases']:
+                policy['tools'] = []
+        return policy
 
     def _staffing_context(self):
         return [{'id': staff.id, 'name': staff.name, 'team': staff.team,

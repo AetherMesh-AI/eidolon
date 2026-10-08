@@ -91,3 +91,14 @@ it('keeps waiting assignments attached to their worker and manager, and leaves l
   expect(screen.getByText('タスク調整: 待機中')).toBeTruthy()
   expect(screen.getByText('宣言された書き込みパス: root0/src/shared.ts')).toBeTruthy()
 })
+
+it('shows recorded repository bindings independently of write reservations without inventing legacy bindings', () => {
+  const value = snapshot()
+  const task = { ...value.tasks[0], projectId: 'frontend', coordination: undefined, writePaths: undefined }
+  const { rerender } = render(<MemoryRouter><WorkGraph objectiveId="objective" snapshot={{ ...value, tasks: [task] }} /></MemoryRouter>)
+  const row = screen.getByRole('button', { name: 'Inspect task: Update shared source' })
+  expect(within(row).getByText('Repository: frontend')).toBeTruthy()
+  expect(within(row).queryByText(/Task coordination:/)).toBeNull()
+  rerender(<MemoryRouter><WorkGraph objectiveId="objective" snapshot={{ ...value, tasks: [{ ...task, projectId: undefined }] }} /></MemoryRouter>)
+  expect(within(row).queryByText(/Repository:/)).toBeNull()
+})

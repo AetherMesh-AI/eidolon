@@ -70,7 +70,9 @@ export function RuntimeAcceptance({
         </section>
       )}
       {(objective.projectExecution || objective.requiredChecks?.includes('project_tests')) && (
-        <RuntimeProjectExecution execution={objective.projectExecution} onOpenEvidence={onOpenEvidence} />
+        objective.projectExecution && 'projects' in objective.projectExecution
+          ? objective.projectExecution.projects.map(project => <RuntimeProjectExecution execution={project.execution} key={project.projectId} onOpenEvidence={onOpenEvidence} projectId={project.projectId} />)
+          : <RuntimeProjectExecution execution={objective.projectExecution} onOpenEvidence={onOpenEvidence} />
       )}
       {usage && (
         <details>
