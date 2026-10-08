@@ -1,14 +1,49 @@
 """Package prerequisites retain exact independent proof before downstream work."""
 import hashlib
 import json
+from types import SimpleNamespace
 
 import pytest
 
-from eidolon_cli.organization_executor import _prompt
+from eidolon_cli.organization_evidence import context_report
+from eidolon_cli.organization_executor import _prompt, _SYSTEM
 from tests.eidolon_cli.test_organization_work_packages import (
     decompose, finish_review, ledger_dump, make_store, next_nonstaffing, plan_all,
     plan_output,
 )
+
+
+def test_independent_plan_receipt_survives_upstream_review_completion(tmp_path):
+    store, _ = make_store(tmp_path)
+    decompose(store)
+    plans = [store.claim_next() for _ in range(3)]
+    dependent = next(claim for claim in plans if claim['agent_id'] == 'lead-c')
+    context = store.context(dependent)
+    assert context['dependencies'] == []
+    agent = SimpleNamespace(provider='local', model='fixture',
+                            context_compressor=SimpleNamespace(context_length=128000))
+    report = context_report(dependent, context, _prompt(dependent, context, dependent['type']), _SYSTEM, agent)
+    store.record_context_receipt(dependent, report)
+    for claim in plans:
+        if claim != dependent:
+            assert store.finish(claim, plan_output(claim))
+    for _ in range(10):
+        claim = next_nonstaffing(store)
+        if claim is None:
+            break
+        if claim['type'] == 'request.review':
+            finish_review(store, claim)
+        else:
+            assert claim['type'] == 'work.draft'
+            assert store.finish(claim, {'summary': 'Prepared', 'deliverable': 'Reviewed upstream finding'})
+    upstream = [row for row in store.context(dependent)['workPackages']
+                if row['id'] in context['workPackage']['dependencyIds']]
+    assert len(upstream) == 2 and all(row['status'] == 'completed' for row in upstream)
+    assert store.context(dependent)['dependencies'] == []
+    assert store.finish(dependent, plan_output(dependent))
+    work = next_nonstaffing(store)
+    assert work['agent_id'] == 'writer-c'
+    assert {row['workPackageId'] for row in store.context(work)['dependencies']} == set(context['workPackage']['dependencyIds'])
 
 
 @pytest.mark.parametrize('corruption', [

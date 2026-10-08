@@ -117,6 +117,8 @@ server-owned package's description, criterionIndexes, projectIds and maxTasks.
 The full objective and root acceptanceCriteria remain authoritative; your package
 serves its assigned criteria without changing or replacing the whole objective.
 workPackages contains all package views so you can understand the dependency graph.
+Prerequisite artifact bodies are deliberately absent during independent planning;
+the backend supplies the exact reviewed bodies when your dependent tasks execute.
 Other Managers independently plan their own packages. Do not plan their work or
 increase your package's allocation or project scope. Preserve existing cross-manager
 worker routing, exact teams, reporting scope and grants within your package.

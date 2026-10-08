@@ -214,7 +214,10 @@ class OrganizationPackageStore:
         from eidolon_cli.organization_receipts import evidence_receipts
         from eidolon_cli.organization_edits import evidence_proposal
         package = request_package(conn, request)
-        if package is None:
+        # Managers plan independently before prerequisite packages finish. Their
+        # evidence manifest must not change as sibling work completes mid-call.
+        # Only dispatched task stages consume the stable reviewed dependencies.
+        if package is None or request['type'] == 'request.plan':
             return []
         result = []
         for identifier in json.loads(package['dependencies']):

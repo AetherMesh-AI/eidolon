@@ -19,8 +19,9 @@ def test_real_provider_overlaps_manager_plans_and_accepts_reviewed_package_depen
     home = tmp_path / 'profile'
     home.mkdir()
     calls, errors, seen_clarifications, dependency_sources = [], [], [], []
-    planning = {name: threading.Event() for name in 'ab'}
+    planning = {name: threading.Event() for name in 'abc'}
     overlapping = threading.Event()
+    upstream_reviewed = threading.Event()
     answer = 'Prepare the combined finding for external readers, with exact source attribution.'
     sources = {f'writer-{name}': f'Exact independently authored finding {name}: café 中文.' for name in 'ab'}
     final = 'Both independent findings support one combined recommendation for external readers.'
@@ -64,12 +65,18 @@ def test_real_provider_overlaps_manager_plans_and_accepts_reviewed_package_depen
                     package = context['workPackage']
                     assert package['managerId'] == actor
                     assert len(context['workPackages']) == 3
+                    assert context['dependencies'] == []
                     name = actor.rsplit('-', 1)[-1]
-                    if name in planning:
-                        planning[name].set()
+                    planning[name].set()
+                    if name in 'ab':
                         other = 'b' if name == 'a' else 'a'
                         assert planning[other].wait(15), 'Independent Manager plans were serialized'
+                        assert planning['c'].wait(15), 'Dependent Manager never began independent planning'
                         overlapping.set()
+                    else:
+                        # Complete upstream work while this provider response is
+                        # in flight. Its original planning receipt stays valid.
+                        assert upstream_reviewed.wait(30), 'Upstream work could not finish during independent planning'
                     # Scoped context is authoritative; models need not echo package IDs.
                     output = {'tasks': [{'title': f'Finding {name}', 'description': f'Prepare the scoped finding {name}',
                                          'type': 'work.draft', 'team': 'general', 'agentId': f'writer-{name}',
@@ -158,6 +165,10 @@ def test_real_provider_overlaps_manager_plans_and_accepts_reviewed_package_depen
         deadline = time.monotonic() + 75
         while time.monotonic() < deadline:
             snapshot = store.snapshot()
+            upstream = [package for package in snapshot['objectives'][0]['workPackages']
+                        if package['managerId'] in {'lead-a', 'lead-b'}]
+            if len(upstream) == 2 and all(package['status'] == 'completed' for package in upstream):
+                upstream_reviewed.set()
             if errors or snapshot['objectives'][0]['status'] == 'completed':
                 break
             pending = [row for row in snapshot['requests'] if row['status'] == 'pending_intervention']
@@ -169,7 +180,7 @@ def test_real_provider_overlaps_manager_plans_and_accepts_reviewed_package_depen
                     break
             time.sleep(0.02)
         assert not errors, errors
-        assert answered and overlapping.is_set()
+        assert answered and overlapping.is_set() and upstream_reviewed.is_set()
         assert snapshot['objectives'][0]['status'] == 'completed', snapshot['requests']
         assert service.stop()
         reopened = OrganizationStore(store.path)
