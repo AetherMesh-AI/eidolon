@@ -2,6 +2,7 @@
 from dataclasses import replace
 import json
 import subprocess
+import tempfile
 import threading
 import time
 
@@ -148,22 +149,41 @@ def test_selected_conftest(selected_fixture): assert selected_fixture == 42
 
 
 @pytest.mark.linux_only
-def test_real_pytest_limits_and_cancellation_are_terminal(isolated_linux):
+def test_real_pytest_limits_and_cancellation_are_terminal(isolated_linux, tmp_path, monkeypatch):
     noisy = run_project_tests(snapshot('def test_output():\n    print("x" * 100000)\n    assert False\n'),
                               replace(GRANT, output_bytes=1024))
     assert noisy['status'] == 'failed', json.dumps(noisy)
+    assert noisy['testCount'] == 1, json.dumps(noisy)
     assert noisy['stdoutTruncated'] or noisy['stderrTruncated']
-    cancel = threading.Event()
-    timer = threading.Timer(2, cancel.set)
-    timer.start()
+    cancel, done = threading.Event(), threading.Event()
+    monkeypatch.setattr(tempfile, 'tempdir', str(tmp_path))
+
+    def after_project_started():
+        while not done.wait(0.02):
+            for path in tmp_path.glob('eidolon-project-*/work.dat'):
+                try:
+                    if path.read_bytes() == b'READY':
+                        cancel.set()
+                        return
+                except FileNotFoundError:
+                    pass  # Native cleanup can remove the file between observations.
+
+    observer = threading.Thread(target=after_project_started)
+    observer.start()
     try:
-        stopped = run_project_tests(snapshot('def test_wait():\n    while True: pass\n'), GRANT, cancel)
+        stopped = run_project_tests(snapshot(
+            'from pathlib import Path\ndef test_wait():\n'
+            '    Path("/scratch/work.dat").write_text("READY")\n    while True: pass\n'),
+            replace(GRANT, cpu_seconds=30), cancel)
     finally:
-        timer.cancel()
-        timer.join()
+        done.set()
+        observer.join(5)
+    assert not observer.is_alive()
+    assert cancel.is_set(), json.dumps(stopped)
+    assert stopped['isolation']['established'], json.dumps(stopped)
     assert stopped['status'] == 'cancelled', json.dumps(stopped)
-    assert stopped['exitCode'] != 0
-    assert stopped['durationSeconds'] < 10
+    assert type(stopped['exitCode']) is int and stopped['exitCode'] != 0
+
 
 
 @pytest.mark.linux_only

@@ -187,7 +187,7 @@ general pytest compatibility. Temporary-file fixtures, subprocesses, threads,
 networking, unselected files, project-installed dependencies and arbitrary test
 commands remain unavailable. The only writable file is `/scratch/work.dat`.
 Pytest plugin autoload, project configuration/addopts, assertion rewriting and
-cache writes are disabled; capture uses Python streams. Conftest and test hooks
+cache writes and the logging plugin (`caplog`) are disabled; capture uses Python streams. Conftest and test hooks
 are untrusted code inside the same sandbox and can falsify reported results,
 just as unittest code can. Independent review remains mandatory.
 

@@ -85,7 +85,7 @@ def _pytest_suite(root, config):
     sys.path.insert(1, root)
     code = pytest.main([
         '-c', '/pytest.ini', '--rootdir', root, '--confcutdir', root,
-        '--assert=plain', '--capture=sys', '-v', '-p', 'no:cacheprovider',
+        '--assert=plain', '--capture=sys', '-v', '-p', 'no:cacheprovider', '-p', 'no:logging',
         '-o', 'python_files=' + config['pattern'], '-o', 'pythonpath=',
         '--', os.path.join(root, config['test_directory']),
     ], plugins=[result])
