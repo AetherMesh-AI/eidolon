@@ -1,5 +1,7 @@
 """Optional pytest remains inside the exact same native isolation boundary."""
 from dataclasses import replace
+import json
+import subprocess
 import threading
 import time
 
@@ -26,8 +28,11 @@ def test_bundle_uses_only_pinned_packages_and_rejects_linked_or_missing_payloads
         info.mkdir()
         (info / 'METADATA').write_text(f'Name: {name}\nVersion: {version}\n')
         for module in modules:
-            (root / module).mkdir()
-            (root / module / '__init__.py').write_text('raise AssertionError("never import on the host")\n')
+            path = root / module
+            if path.suffix != '.py':
+                path.mkdir()
+                path = path / '__init__.py'
+            path.write_text('raise AssertionError("never import on the host")\n')
     (root / 'owner-secret').write_text('not a package')
     (root / 'dangerous.pth').write_text('import untrusted_host_code\n')
     monkeypatch.setattr(bundle.sysconfig, 'get_path', lambda key: str(root))
@@ -73,6 +78,12 @@ def test_real_installed_bundle_is_copied_and_fingerprinted_without_project_impor
             pytest.fail(str(error))
         pytest.skip('Optional installed bundle unavailable: ' + str(error))
     assert valid_pytest_identity(identity)
+    # Only the trusted framework is imported here; no project file is executed.
+    imported = subprocess.run(['/usr/bin/python3', '-I', '-S', '-B', '-c',
+        'import sys; sys.path.insert(0, sys.argv[1]); import pytest; print(pytest.__version__)',
+        str(runtime / 'runner-packages')], cwd='/', env={}, capture_output=True, text=True, timeout=10)
+    assert imported.returncode == 0, imported.stderr
+    assert imported.stdout.strip() == PACKAGES['pytest'][0]
     assert not (runtime / 'runner-packages' / 'pytest_asyncio').exists()
     assert not (runtime / 'runner-packages' / 'sitecustomize.py').exists()
     assert not (runtime / 'runner-packages' / 'pytest' / '__init__.py').stat().st_mode & 0o222
@@ -90,9 +101,9 @@ def test_real_installed_bundle_is_copied_and_fingerprinted_without_project_impor
 ])
 def test_real_pytest_pass_failure_skip_and_missing_completion(isolated_linux, test, status, count):
     result = run_project_tests(snapshot(test), GRANT)
-    assert result['status'] == status, result
+    assert result['status'] == status, json.dumps(result)
     assert result['runner'] == 'eidolon.isolated-python-pytest'
-    assert result['testCount'] == count
+    assert result['testCount'] == count, json.dumps(result)
     assert result['isolation']['established']
     assert valid_pytest_identity(result['runtime'])
 
@@ -130,7 +141,7 @@ def test_selected_conftest(selected_fixture): assert selected_fixture == 42
     # Selected config remains untrusted data: no arbitrary host/plugin options.
     files += snapshot('[pytest]\naddopts = --unknown-host-option\n', 'root0/pytest.ini')
     result = run_project_tests(files, GRANT)
-    assert result['status'] == 'passed', result
+    assert result['status'] == 'passed', json.dumps(result)
     assert result['isolation']['processLimit'] == 1
     assert not marker.exists()
     assert secret.read_text() == 'owner data'
@@ -140,7 +151,7 @@ def test_selected_conftest(selected_fixture): assert selected_fixture == 42
 def test_real_pytest_limits_and_cancellation_are_terminal(isolated_linux):
     noisy = run_project_tests(snapshot('def test_output():\n    print("x" * 100000)\n    assert False\n'),
                               replace(GRANT, output_bytes=1024))
-    assert noisy['status'] == 'failed', noisy
+    assert noisy['status'] == 'failed', json.dumps(noisy)
     assert noisy['stdoutTruncated'] or noisy['stderrTruncated']
     cancel = threading.Event()
     timer = threading.Timer(2, cancel.set)
@@ -150,7 +161,7 @@ def test_real_pytest_limits_and_cancellation_are_terminal(isolated_linux):
     finally:
         timer.cancel()
         timer.join()
-    assert stopped['status'] == 'cancelled', stopped
+    assert stopped['status'] == 'cancelled', json.dumps(stopped)
     assert stopped['exitCode'] != 0
     assert stopped['durationSeconds'] < 10
 
@@ -160,7 +171,7 @@ def test_real_pytest_directory_and_pattern_are_owner_selected(isolated_linux):
     files = snapshot('def test_wrong(): assert False\n')
     files += snapshot('def test_right(): assert True\n', 'root0/checks/check_answer.py')
     result = run_project_tests(files, replace(GRANT, test_directory='checks', pattern='check_*.py'))
-    assert result['status'] == 'passed', result
+    assert result['status'] == 'passed', json.dumps(result)
     assert result['testCount'] == 1
 
 

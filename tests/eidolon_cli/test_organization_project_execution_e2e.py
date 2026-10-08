@@ -153,15 +153,16 @@ def _native_project_loop(tmp_path, monkeypatch, *, create=False, recipe="python_
                     assert execution["status"] == "passed" and execution["exitCode"] == 0
                     assert execution["testCount"] == 3 and execution["isolation"]["established"] is True
                     assert {row["path"]: row["content"] for row in exact["snapshot"]} == {"root0/app.py": AFTER, "root0/test_app.py": TESTS}
-                    assert "test_positive" in execution["stderr"] and "test_negative" in execution["stderr"]
+                    output_stream = execution["stdout"] if recipe == "python_pytest" else execution["stderr"]
+                    assert "test_positive" in output_stream and "test_negative" in output_stream, json.dumps(execution)
                     test_evidence.append(evidence[0]["id"])
-                    output = {"approved": True, "summary": "Three genuine assertions exercise positive, negative and zero operands on the exact copied implementation. Isolation excludes host/network access; this is bounded unittest coverage.", "evidenceIds": evidence_ids}
+                    output = {"approved": True, "summary": "Three genuine assertions exercise positive, negative and zero operands on the exact copied implementation. Isolation excludes host/network access; this is bounded Python test coverage.", "evidenceIds": evidence_ids}
                 elif kind == "request.integrate":
                     assert not body.get("tools")
                     assert any(row.get("kind") == "project_execution" for row in evidence)
                     assert any(row.get("kind") == "source_integration" for row in evidence)
                     output = {"summary": "Reviewed addition fix and tested source branch", "deliverable":
-                              "Addition now handles positive, negative and zero operands. Three real isolated unittest cases passed on the exact reviewed bytes, independently reviewed before new local Git-branch integration. The original worktree and index are unchanged. No remote push or deployment occurred."}
+                              "Addition now handles positive, negative and zero operands. Three real isolated Python test cases passed on the exact reviewed bytes, independently reviewed before new local Git-branch integration. The original worktree and index are unchanged. No remote push or deployment occurred."}
                 else:
                     assert kind == "request.accept" and not body.get("tools")
                     output = {"approved": True, "summary": "Exact test evidence and verified source-branch receipt satisfy every criterion.",
@@ -233,7 +234,7 @@ def _native_project_loop(tmp_path, monkeypatch, *, create=False, recipe="python_
             assert (source / "test_app.py").read_bytes() == TESTS.encode()
         assert _git(source, "status", "--porcelain") == ""
         if sys.platform == "linux" and os.environ.get("EIDOLON_REQUIRE_PROJECT_SANDBOX") == "1":
-            assert run and run["status"] == "passed", snapshot["requests"]
+            assert run and run["status"] == "passed", json.dumps(run or snapshot["requests"])
         if run and run["status"] == "passed":
             assert sys.platform == "linux"
             assert item["status"] == "completed", snapshot["requests"]

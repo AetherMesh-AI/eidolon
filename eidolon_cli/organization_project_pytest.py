@@ -12,7 +12,7 @@ import sysconfig
 
 
 PACKAGES = {
-    'pytest': ('9.1.1', ('pytest', '_pytest')),
+    'pytest': ('9.1.1', ('pytest', '_pytest', 'py.py')),
     'pluggy': ('1.6.0', ('pluggy',)),
     'packaging': ('26.0', ('packaging',)),
     'iniconfig': ('2.3.0', ('iniconfig',)),
