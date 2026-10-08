@@ -1,5 +1,15 @@
 /** Copy for the canonical organization ledger surfaces, kept together across locales. */
 const copy = {
+  taskCoordination: ['Task coordination', 'タスク調整', '任务协调', '任務協調'],
+  coordinationUnscoped: ['Unscoped', '範囲未指定', '范围未指定', '範圍未指定'],
+  coordinationReady: ['Ready', '準備完了', '已就绪', '已就緒'],
+  coordinationWaiting: ['Waiting', '待機中', '等待中', '等待中'],
+  coordinationReserved: ['Reserved', '予約済み', '已保留', '已保留'],
+  coordinationReleased: ['Released', '解放済み', '已释放', '已釋放'],
+  coordinationReason: ['Coordination reason', '調整の理由', '协调原因', '協調原因'],
+  coordinationBlockers: ['Waiting on tasks', '待機対象のタスク', '正在等待的任务', '正在等待的任務'],
+  declaredWritePaths: ['Declared write paths', '宣言された書き込みパス', '声明的写入路径', '宣告的寫入路徑'],
+  writePathsUnspecified: ['Not specified', '未指定', '未指定', '未指定'],
   noMatchingRequests: ['No matching requests', '一致するリクエストはありません', '没有匹配的请求', '沒有符合的請求'],
   requestsUnverified: ['Request state has not been verified', 'リクエストの状態を確認できていません', '请求状态尚未确认', '請求狀態尚未確認'],
   noMatchingObjectives: ['No matching objectives', '一致する目標はありません', '没有匹配的目标', '沒有符合的目標'],

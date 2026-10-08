@@ -617,3 +617,40 @@ policy, tests at the actual execution boundary, eligible roster routing, and
 completion evidence/review semantics. Merely adding a type label or prompt is not
 enough. Durable requests and unknown-type intervention are the extension path to
 broader work; this is not a claim that arbitrary objectives are already solvable.
+
+### Durable file ownership and parallel work
+
+Managers can declare `writePaths` on each `work.edit` task, for example
+`["root0/src/accounts.py", "root0/tests/test_accounts.py"]`. These are exact
+configured-root file aliases, not glob patterns or additional permissions. The
+entire set is reserved atomically before the worker starts. Edits outside the
+set are rejected; ordinary reference reads may still use existing read grants.
+
+Independent file sets and repositories can execute together within the existing
+worker and in-flight limits. Conflicting sets wait without consuming attempts
+or model-stage budget. Repository identity uses the canonical Git common
+directory and repository-relative path, so aliases and linked worktrees cannot
+claim the same logical file twice. Paths are conservatively case-folded and Unicode-normalized, including
+on case-sensitive filesystems. Existing unscoped edit tasks require exclusive
+edit ownership until a bounded replan supplies exact paths.
+
+Ownership lasts through independent review, bounded revisions, managed
+application and validation. Expired leases and uncertain outcomes retain it;
+they still need the existing owner recovery decision. Completed, cancelled or
+superseded tasks release ownership. A waiting task owns no partial set, and
+request-cycle validation includes file-ownership waits. Queue aging adds one
+priority level per waiting minute so newer high-priority work cannot indefinitely
+starve an older ready request. Existing deadlines, call budgets and attempt
+limits remain in force.
+
+The work graph and persistent agents' assigned-work lists show coordination
+separately from lifecycle status: declared paths, reservation state, dependency
+or conflicting-ownership waits, and the blocking task. A reservation is not a
+claim that a model is currently executing. Restarting the backend preserves the
+same task, manager and agent identities and their retained evidence.
+
+This coordinates the existing bounded organization executor. It does not grant
+arbitrary writes, commands or providers, or widen project recipes. Source
+integration still creates independently verified local Git branches through its
+existing serialized controller and Git metadata locks; multi-root source
+integration in one objective is not introduced by task-level parallelism.

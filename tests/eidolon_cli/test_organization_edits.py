@@ -275,7 +275,18 @@ def test_revoked_authority_or_root_rebinding_blocks_preclaim_and_inflight_apply(
                                       pytest.param("macos", marks=pytest.mark.macos_only)])
 def test_two_reviewed_proposals_same_base_can_commit_only_once_across_connections(tmp_path, native_os):
     store, source, objective = _setup(tmp_path, tasks=2)
-    first, second = store.claim_next(), store.claim_next()
+    first = store.claim_next()
+    assert store.claim_next() is None
+    # Model an execution admitted by the pre-ownership scheduler. New claims
+    # serialize this collision, but the final stale-base fence must still hold
+    # for legacy in-flight proposals after an upgrade.
+    with store._write() as conn:
+        row = conn.execute("SELECT * FROM requests WHERE type='work.edit' AND status='queued'").fetchone()
+        store._stamp_claim_policy(conn, row['id'])
+        other_agent = 'editor-1' if first['agent_id'] == 'editor-0' else 'editor-0'
+        conn.execute("UPDATE requests SET status='running',agent_id=?,token='legacy-token',lease=?,attempts=1 WHERE id=?",
+                     (other_agent, time.time() + 60, row['id']))
+        second = dict(conn.execute('SELECT * FROM requests WHERE id=?', (row['id'],)).fetchone())
     assert first['agent_id'] != second['agent_id']
     _, evidence_a, _, _ = _propose(store, first, new='first choice')
     _, evidence_b, _, _ = _propose(store, second, new='second choice')

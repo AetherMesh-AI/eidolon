@@ -18,6 +18,7 @@ import uuid
 from datetime import datetime, timezone
 
 from eidolon_cli.organization_config import OrganizationSettings
+from eidolon_cli.organization_coordination import COORDINATION_SCHEMA, OrganizationCoordinationStore, coordination_view
 from eidolon_cli.organization_budget import BUDGET_SCHEMA, OrganizationBudgetStore, budget_reason, budget_view
 from eidolon_cli.organization_acceptance import ACCEPTANCE_SCHEMA, OrganizationAcceptanceStore, final_artifact
 from eidolon_cli.organization_owner import OWNER_SCHEMA, OrganizationOwnerStore
@@ -93,14 +94,15 @@ def _text(value, field, limit=10000):
     return value.strip()
 
 
-class OrganizationStore(OrganizationProjectExecutionStore, OrganizationBudgetStore, OrganizationRequestStore, OrganizationManagementStore, OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
+class OrganizationStore(OrganizationCoordinationStore, OrganizationProjectExecutionStore, OrganizationBudgetStore, OrganizationRequestStore, OrganizationManagementStore, OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
     def __init__(self, path: Path | str, settings: OrganizationSettings | None = None):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
-            conn.executescript(_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA)
+            conn.executescript(_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA + COORDINATION_SCHEMA)
             self.settings = resolve_settings(conn, settings)
         with self._write() as conn:
+            self._migrate_reservations(conn)
             self._migrate_acceptance(conn)
             self._migrate_budgets(conn)
             self._migrate_project_execution_budgets(conn)
@@ -282,11 +284,11 @@ class OrganizationStore(OrganizationProjectExecutionStore, OrganizationBudgetSto
                     row['type'] == 'request.hire' and 'managementProposal' in json.loads(row['payload'])
                     for row in running):
                 return None
-            rows = conn.execute("SELECT r.* FROM requests r JOIN objectives o ON o.id=r.objective_id WHERE r.status='queued' AND o.cancelled=0 AND r.available<=? ORDER BY r.priority DESC,r.created,r.id", (time.time(),)).fetchall()
+            rows = conn.execute("SELECT r.* FROM requests r JOIN objectives o ON o.id=r.objective_id WHERE r.status='queued' AND o.cancelled=0 AND r.available<=? ORDER BY r.priority + CAST(MAX(0, ? - r.created)/60 AS INTEGER) DESC,r.created,r.id", (time.time(), time.time())).fetchall()
             for request in rows:
                 if running and request['type'] == 'request.hire' and 'managementProposal' in json.loads(request['payload']):
                     continue
-                if not self._dependencies_ready(conn, request):
+                if not self._dependencies_ready(conn, request) or not self._coordination_ready(conn, request):
                     continue
                 candidates, agent = self._eligible(conn, request)
                 if not candidates:
@@ -310,6 +312,8 @@ class OrganizationStore(OrganizationProjectExecutionStore, OrganizationBudgetSto
                 if stages >= min(control['max_stages'], self.settings.max_stages):
                     self._pending(conn, request, 'Objective stage budget exhausted. Create a revised objective to authorize more work.')
                     continue
+                if not self._validate_claim_write_scope(conn, request):
+                    continue
                 token = uuid.uuid4().hex
                 lease = time.time() + self.settings.lease_seconds
                 self._stamp_claim_policy(conn, request['id'])
@@ -330,6 +334,7 @@ class OrganizationStore(OrganizationProjectExecutionStore, OrganizationBudgetSto
                         continue
                     payload['evidenceHashes'] = hashes
                     conn.execute('UPDATE requests SET payload=? WHERE id=?', (json.dumps(payload), request['id']))
+                self._reserve_task(conn, request)
                 conn.execute("UPDATE requests SET status='running',agent_id=?,token=?,lease=?,attempts=attempts+1,reason=NULL WHERE id=?",
                              (agent["id"], token, lease, request["id"]))
                 conn.execute('INSERT INTO objective_usage(request_id,token,objective_id,stage) VALUES (?,?,?,?)',
@@ -382,6 +387,9 @@ class OrganizationStore(OrganizationProjectExecutionStore, OrganizationBudgetSto
             task = dict(task) if task else None
             if task:
                 task.update(task_assignment_view(conn, task['id']))
+                scope = conn.execute('SELECT paths FROM task_write_scopes WHERE task_id=?', (task['id'],)).fetchone()
+                task['writePaths'] = json.loads(scope['paths']) if scope else None
+                task['coordination'] = coordination_view(conn, task['id'])
             dependencies = []
             if task:
                 for ident in json.loads(task["dependencies"]):
@@ -632,6 +640,7 @@ class OrganizationStore(OrganizationProjectExecutionStore, OrganizationBudgetSto
         for values, specification in zip(normalized, tasks):
             conn.execute("INSERT INTO tasks(id,objective_id,title,description,type,team,priority,status,dependencies) VALUES (?,?,?,?,?,?,?,?,?)", values)
             self._assign_task(conn, values[0], specification, request['agent_id'])
+            self._set_write_scope(conn, values[0], specification)
             conn.execute('INSERT INTO objective_task_rounds SELECT ?,objective_id,round FROM objective_control WHERE objective_id=?', (values[0], request['objective_id']))
             self._request(conn, request["objective_id"], values[4], values[5], values[6], values[0],
                           requester_id=request["agent_id"])

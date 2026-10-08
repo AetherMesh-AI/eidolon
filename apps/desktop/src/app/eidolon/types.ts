@@ -106,6 +106,14 @@ export interface OrganizationTask {
   inputs?: string[]
   results?: string[]
   dependsOn: string[]
+  /** Exact root-aliased paths. Missing, null or empty means legacy unspecified scope. */
+  writePaths?: string[] | null
+  /** Backend-owned scheduling facts, separate from lifecycle and assignment ownership. */
+  coordination?: {
+    state: 'unscoped' | 'ready' | 'waiting' | 'reserved' | 'released'
+    reason: string | null
+    blockingTaskIds: string[]
+  }
   historical?: boolean
   currentRound?: boolean
 }
