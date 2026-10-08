@@ -50,13 +50,15 @@ Use Python 3.12 and Node 24. Install from the committed lockfiles:
 
 ```sh
 python -m pip install uv==0.12.23
-uv sync --locked --python 3.12 --extra dev
+uv sync --locked --python 3.12 --extra dev --extra slack
 uv pip install --no-deps pytest-timeout==2.4.0
 npm ci
 ```
 
 Runtime and development dependencies are taken from `uv.lock`; the timeout plugin
-is an exact-pinned CI tool installed without dependency resolution. `npm ci` uses
+is an exact-pinned CI tool installed without dependency resolution. The Linux
+compatibility lane includes the locked Slack extra for gateway HTTP/API and
+Slack configuration imports; it does not connect a Slack account. `npm ci` uses
 the root npm lockfile. Actions are SHA-pinned, GitHub-owned, and have only
 `contents: read`; checkout does not persist credentials. No secrets are inherited.
 
