@@ -256,6 +256,8 @@ test('retains exact native test, independent review and branch receipts, or an h
     running.assertSourceUntouched()
     await page.screenshot({ path: testInfo.outputPath('03-archived-inbox-exact-project-evidence.png') })
   } else {
+    const blockedRequestName = await pending().first().getAttribute('aria-label')
+    expect(blockedRequestName).toBeTruthy()
     await primary(page).getByRole('link', { name: 'Objectives', exact: true }).click()
     await expect(
       page.getByRole('region', { name: 'Outcomes inbox', exact: true }).getByText('No outcomes yet', { exact: true })
@@ -264,7 +266,13 @@ test('retains exact native test, independent review and branch receipts, or an h
     await primary(page)
       .getByRole('link', { name: /^Needs You/ })
       .click()
-    await expect(pending().first()).toBeVisible()
+    // Follow the same request identity into attention; this surface renders
+    // the blocker reason rather than the queue's 'Pending intervention' label.
+    await expect(
+      page
+        .getByRole('region', { name: 'Attention inbox', exact: true })
+        .getByRole('button', { name: blockedRequestName!, exact: true })
+    ).toContainText(projectTitle)
   }
 })
 

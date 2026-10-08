@@ -184,7 +184,10 @@ test('requires explicit check replacement, retains its audit, and completes only
   await primary(page)
     .getByRole('link', { name: /^Needs You/ })
     .click()
-  await expect(blocked).toContainText('Pending intervention')
+  // Attention rows show the blocker reason, not the request-queue status label.
+  await expect(blocked).toContainText(
+    'Project execution requires an independently reviewed inspection or edit by an explicitly granted worker'
+  )
   await openObjective(page, completionTitle)
 
   await page.getByRole('button', { name: 'Inspect request: request.review', exact: true }).click()
