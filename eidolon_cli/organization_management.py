@@ -400,6 +400,19 @@ class OrganizationManagementStore:
                      (key, current['id'], actor_id, input_hash, _json(result), time.time()))
         return result
 
+    def _validate_paused_work(self, conn):
+        # A paused stage owns its worker even when the plan left agent_id unset.
+        # Check the final transaction state, so explicit transfers or reporting
+        # line changes can preserve that route without discarding its context.
+        for request in conn.execute(
+                "SELECT r.* FROM requests r JOIN request_continuations c ON c.request_id=r.id "
+                "JOIN tasks t ON t.id=r.task_id JOIN objectives o ON o.id=r.objective_id "
+                "WHERE r.type=t.type AND r.status NOT IN ('completed','cancelled') "
+                "AND t.status NOT IN ('completed','cancelled') AND o.cancelled=0"):
+            candidates, _ = self._eligible(conn, request)
+            if not candidates:
+                raise ValueError('Reorganization must preserve the paused worker route or explicitly transfer its task')
+
     def _apply_configuration(self, conn, updated, transfers, actor_id, request_id, actor=None):
         from eidolon_cli.organization_project_registry import resolve_registry
         updated = resolve_registry(conn, updated)
@@ -460,6 +473,7 @@ class OrganizationManagementStore:
                     'objectiveIds': objectives,
                     'includeMemory': include_memory, 'memory': memory})
         _validate_open_assignments(conn)
+        self._validate_paused_work(conn)
         after = _configuration(updated)
         conn.execute('INSERT INTO organization_configuration VALUES (1,?,?) ON CONFLICT(id) '
                      'DO UPDATE SET configuration=excluded.configuration,updated=excluded.updated', (_json(after), time.time()))
