@@ -130,6 +130,19 @@ class OrganizationService:
             self._wake.set()
             return changed
 
+    def set_objective_archived(self, objective_id: str, archived: bool, *, expected_revision: int,
+                               idempotency_key: str):
+        """Never hide a cancelled provider that is still unwinding in any process."""
+        with self._lock:
+            if any(record.claim.get('objective_id') == objective_id for record in self._running.values()):
+                raise ValueError('This objective still has an execution stopping or finishing; archive after it exits')
+            with ExitStack() as locks:
+                for ident in self.store.objective_request_ids(objective_id):
+                    if not locks.enter_context(_ExecutionLock(self.home / 'organization' / 'execution-locks', ident)):
+                        raise ValueError('This objective has an execution still active in another runtime; archive after it exits')
+                return self.store.set_objective_archived(objective_id, archived,
+                    expected_revision=expected_revision, idempotency_key=idempotency_key)
+
     def retry(self, request_id: str, *, idempotency_key: str | None = None) -> bool:
         with self._lock:
             if self.store.retry_recorded(request_id, idempotency_key):

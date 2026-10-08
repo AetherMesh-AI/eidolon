@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { type ReactNode, useState } from 'react'
 import { Link } from 'react-router'
 
 import { Button } from '@/components/ui/button'
@@ -32,7 +32,7 @@ export function RuntimeStatus({ adapter, snapshot }: { adapter: RuntimeOrganizat
   </section>
 }
 
-export function RuntimeObjectiveDetail({ objective, adapter, snapshot }: { objective: Objective; adapter: RuntimeOrganizationAdapter; snapshot: OrganizationSnapshot }) {
+export function RuntimeObjectiveDetail({ objective, adapter, snapshot, historyControls }: { objective: Objective; adapter: RuntimeOrganizationAdapter; snapshot: OrganizationSnapshot; historyControls?: ReactNode }) {
   const { t } = useI18n()
   const copy = t.organizationWork
   const [tab, setTab] = useState('work')
@@ -48,6 +48,7 @@ export function RuntimeObjectiveDetail({ objective, adapter, snapshot }: { objec
     <div className="eid-inline"><span>{t.organizationRoster.objectiveExecutive} · {owner?.name || objective.ownerId || 'Not assigned'}</span>{objective.managerId && <span>{t.organizationRoster.objectiveManager} · {manager?.name || objective.managerId}</span>}<Button onClick={() => setInspecting(true)} size="sm" variant="secondary">Inspect objective</Button></div>
     {inspecting && <Inspector kind="objective" onClose={() => setInspecting(false)} title={objective.title}><MetadataSummary objective={objective} /><dl><dt>Status</dt><dd>{objective.status}</dd><dt>Owner</dt><dd>{owner?.name || objective.ownerId}</dd><dt>Tasks</dt><dd>{tasks.length}</dd><dt>Result</dt><dd className="eid-result-text">{objective.result || 'No reviewed result yet.'}</dd></dl><p>State and completion are reported by the current-profile runtime.</p></Inspector>}
     {evidenceId && <RuntimeArtifact adapter={adapter} evidenceId={evidenceId} key={evidenceId} onClose={() => setEvidenceId(null)} snapshot={snapshot} title="Full task evidence" />}
+    {historyControls}
     <RuntimeRequests adapter={adapter} objective={objective} snapshot={snapshot} />
     <div aria-label="Objective views" className="eid-tabs" role="tablist">{(['work', 'activity', 'artifacts', 'decisions'] as const).map(name => <button aria-selected={tab === name} key={name} onClick={() => setTab(name)} role="tab">{copy[name]}</button>)}</div>
     <section aria-label={tab} role="tabpanel">

@@ -114,6 +114,29 @@ def _(params, service):
     return _organization_snapshot(organization)
 
 
+@_organization_method("organization.history")
+def _(params, service):
+    _organization_params(params, {"query", "state", "before", "limit"})
+    return service().store.history(query=params.get("query", ""), state=params.get("state", "archived"),
+                                   before=params.get("before"), limit=params.get("limit", 25))
+
+
+@_organization_method("organization.historyObjective")
+def _(params, service):
+    _organization_params(params, {"id"})
+    return service().store.history_objective(_organization_text(params, "id", 128))
+
+
+@_organization_method("organization.archive")
+def _(params, service):
+    _organization_params(params, {"id", "archived", "expectedRevision", "idempotencyKey"})
+    organization = service()
+    organization.set_objective_archived(_organization_text(params, "id", 128), params.get("archived"),
+        expected_revision=params.get("expectedRevision"),
+        idempotency_key=_organization_text(params, "idempotencyKey", 128))
+    return _organization_snapshot(organization)
+
+
 @_organization_method("organization.retry")
 def _(params, service):
     _organization_params(params, {"id", "idempotencyKey"})

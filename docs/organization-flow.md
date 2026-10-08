@@ -654,3 +654,45 @@ arbitrary writes, commands or providers, or widen project recipes. Source
 integration still creates independently verified local Git branches through its
 existing serialized controller and Git metadata locks; multi-root source
 integration in one objective is not introduced by task-level parallelism.
+
+## Keep settled organization history without filling the current workspace
+
+On **Objectives**, open **Objective history** to search retained objective
+names and submitted descriptions, switch between current and archived history,
+and page through older records. Open any listed objective to inspect its exact
+retained work, acceptance, artifacts and request audits, including objectives
+outside the current workspace's latest-25 settled-history window.
+
+**Archive history** is an explicit owner action for completed or cancelled work.
+It removes the objective from ordinary workspace polling while retaining the
+original objective, task and request IDs, dependency links, evidence bytes and
+hashes, review and execution receipts, identity assignments, and agent context.
+Nothing is moved to another database or deleted. The authenticated current-profile
+boundary is the same one used for the organization's other owner controls.
+There is no automatic archiving policy.
+
+Archiving is refused while requests or tasks remain unfinished, an intervention
+is unresolved, a tool/project outcome is unconfirmed, another objective has a
+live dependency or child request, or a cancelled execution is still stopping in
+this or another backend process. Cancelled work with unconfirmed execution stays
+visible even when it is older than the normal settled-history window.
+
+**Restore history** returns the same terminal objective to the current history
+view. It does not resume execution, replenish budgets, change permissions or
+reopen an accepted/cancelled objective. Archive and restore use a version check
+plus immutable idempotency receipts: an old tab cannot overwrite a later change,
+and retrying a lost response cannot duplicate or reverse the action.
+
+Storage remains deliberately finite: at most 1,000 current objectives and 10,000
+archived objectives, with at most 100 audited archive/restore transitions per
+objective. Archiving settled work releases current-objective admission capacity;
+it does not change the separate open-objective, task, stage, provider-call or
+execution limits. Capacity exhaustion fails closed while retaining existing
+records; it never silently evicts data. History reads return at most 50 entries
+per page. Ordinary snapshots read current work rather than loading all archived
+tasks, requests and receipt content into the UI.
+
+These limits are local safety bounds, not a claim of unlimited disk retention.
+Existing artifact download and request-audit inspectors remain available through
+an exact history objective. Full-ledger backup/retention administration remains a
+separate concern; this archive flow does not permanently purge old records.
