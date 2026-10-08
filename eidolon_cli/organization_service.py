@@ -76,13 +76,15 @@ class _Running:
 class OrganizationService:
     def __init__(self, store: OrganizationStore, *, home: Path | None = None,
                  settings: OrganizationSettings | None = None, executor: Executor | None = None,
-                 poll_seconds: float = 0.25):
+                 poll_seconds: float = 0.25, can_dispatch: Callable[[], bool] | None = None):
         self.store = store
         self.home = Path(home or get_eidolon_home()).resolve()
         self.settings = settings or store.settings
         self.executor = executor or _execute
+        self.can_dispatch = can_dispatch or (lambda: True)
         self.poll_seconds = max(0.01, poll_seconds)
         self._lock = threading.RLock()
+        self._admission_lock = threading.Lock()
         self._wake = threading.Event()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -97,6 +99,12 @@ class OrganizationService:
         secrets = current_secret_scope() if get_eidolon_home().resolve() == self.home else None
         self._context.run(set_secret_scope, dict(secrets) if secrets is not None
                           else self._context.run(build_profile_secret_scope, self.home))
+
+    @property
+    def active_execution_count(self) -> int:
+        """Conservative in-memory count, including cancelled calls unwinding."""
+        with self._admission_lock:
+            return len(self._running)
 
     @property
     def running(self) -> bool:
@@ -243,6 +251,17 @@ class OrganizationService:
             self.start()
             return result
 
+    def close_admission(self) -> None:
+        """Fence new dispatch immediately, without waiting for SQLite or threads."""
+        self._stop.set()
+        # This lock only protects the running-record map, never SQLite work or
+        # provider setup. Teardown can signal calls even while the scheduler is
+        # blocked reading/writing the ledger under its coordinator lock.
+        with self._admission_lock:
+            for record in self._running.values():
+                record.cancel.set()
+        self._wake.set()
+
     def stop(self, timeout: float = 5.0) -> bool:
         # Persist uncertain work before waiting; SIGKILL may follow the grace.
         persisted = True
@@ -278,7 +297,8 @@ class OrganizationService:
                     record.error = "A previous execution is still active; waiting for it to exit"
                     record.deferred = True
                     return
-                if record.cancel.is_set():
+                if record.cancel.is_set() or self._stop.is_set():
+                    record.cancel.set()
                     record.error = "Execution interrupted before it started"
                     return
                 with _ExecutionLock(self.home / "organization" / "agent-locks",
@@ -299,6 +319,14 @@ class OrganizationService:
                     kind = record.claim.get("type", record.claim.get("kind"))
                     if kind == 'work.edit':
                         context['resolveWorkspaceSource'] = lambda path, loader: self.store.capture_workspace_source(record.claim, path, loader)
+                    if record.cancel.is_set() or self._stop.is_set():
+                        record.cancel.set()
+                        record.error = "Execution interrupted before dispatch"
+                        return
+                    if not self.can_dispatch():
+                        record.deferred = True
+                        record.error = "Host is draining; waiting before dispatch"
+                        return
                     if kind in {'request.project_test', 'request.source_integrate'}:
                         record.result = self.store.run_project_stage(record.claim, record.cancel)
                     else:
@@ -329,7 +357,7 @@ class OrganizationService:
                         self.store.defer(record.claim, record.error)
                     elif record.error is not None:
                         self.store.fail(record.claim, record.error, retryable=False)
-                    elif record.cancel.is_set():
+                    elif record.cancel.is_set() or self._stop.is_set():
                         self.store.fail(record.claim, "Execution interrupted; review outcome before retry", retryable=False)
                     else:
                         try:
@@ -337,7 +365,8 @@ class OrganizationService:
                             self.settings = self.store.settings
                         except ValueError as exc:
                             self.store.fail(record.claim, str(exc)[:2000], retryable=False)
-                del self._running[request_id]
+                with self._admission_lock:
+                    del self._running[request_id]
             elif self._stop.is_set():
                 self._fence(record, "Backend stopped during execution; outcome needs review before retry")
             elif now - record.started >= self.settings.timeout_seconds:
@@ -358,7 +387,7 @@ class OrganizationService:
         return None
 
     def _fill_slots(self) -> None:
-        while not self._stop.is_set() and len(self._running) < self.settings.max_inflight:
+        while not self._stop.is_set() and self.can_dispatch() and len(self._running) < self.settings.max_inflight:
             slot = self._execution_slot()
             if slot is None:
                 return
@@ -367,6 +396,9 @@ class OrganizationService:
                 claim = self.store.claim_next()
                 if claim is None:
                     return
+                if self._stop.is_set() or not self.can_dispatch():
+                    self.store.defer(claim, "Runtime stopped or draining before execution; queued for the next host")
+                    return
                 request_id = str(claim["id"])
                 if request_id in self._running:
                     self.store.defer(claim, "A previous execution is still active; waiting for it to exit")
@@ -374,7 +406,10 @@ class OrganizationService:
                 record = _Running(claim, execution_slot=slot)
                 record.thread = threading.Thread(target=self._context.copy().run, args=(self._work, record),
                                                  daemon=True, name="organization-" + request_id[:12])
-                self._running[request_id] = record
+                with self._admission_lock:
+                    self._running[request_id] = record
+                    if self._stop.is_set():
+                        record.cancel.set()
                 record.thread.start()
                 admitted = True
             finally:

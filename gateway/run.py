@@ -5320,17 +5320,24 @@ async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = 
         finally:
             _shutdown_gateway_health_export(runner)
 
-    cron_stop, cron_provider, cron_thread, housekeeping_thread = (
-        _start_gateway_start_cron_and_housekeeping(runner))
+    from gateway.organization_runtime import GatewayOrganizationRuntime, stop_gateway_organization
+    runner._organization_runtime = GatewayOrganizationRuntime(
+        runner.config, can_dispatch=lambda: not (runner._draining or runner._external_drain_active))
+    runner._organization_runtime.start()
+    try:
+        cron_stop, cron_provider, cron_thread, housekeeping_thread = (
+            _start_gateway_start_cron_and_housekeeping(runner))
 
-    # READY only once adapters, cron and housekeeping run; missing systemd state just disables watchdog.
-    runner._start_systemd_watchdog()
+        # READY only once adapters, cron and housekeeping run; missing systemd state just disables watchdog.
+        runner._start_systemd_watchdog()
 
-    await runner.wait_for_shutdown()
+        await runner.wait_for_shutdown()
 
-    return await _start_gateway_shutdown_tail(
-        runner, _control_server, cron_stop, cron_provider, cron_thread, housekeeping_thread,
-        _planned_stop_watcher_stop, _planned_stop_watcher_thread, _signal_initiated_shutdown)
+        return await _start_gateway_shutdown_tail(
+            runner, _control_server, cron_stop, cron_provider, cron_thread, housekeeping_thread,
+            _planned_stop_watcher_stop, _planned_stop_watcher_thread, _signal_initiated_shutdown)
+    finally:
+        await stop_gateway_organization(runner)
 
 
 def _guard_corrupt_user_config() -> None:

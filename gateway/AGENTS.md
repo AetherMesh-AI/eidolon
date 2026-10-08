@@ -90,6 +90,14 @@ replaced by #92091's `pause-for-update`. Do NOT "fix" gateway-dies-with-app by r
 gateway under the backend, and do NOT "fix" update locks by widening the tree-kill. Gateways stamp
 `code_sha`/`code_version` into `gateway_state.json` (`status.py`) so the updater can verify a fleet.
 
+The messaging gateway may host existing organization ledgers when each profile
+explicitly enables `organization.gateway_enabled`. `organization_runtime.py`
+owns discovery and lifecycle only; `OrganizationService` owns durable admission,
+leases, budgets and cross-process fences. Never add a second dispatcher or replay
+unknown outcomes. Discovery and SQLite shutdown stay off the adapter event loop.
+Gateway stop must fence organization admission before draining other work. This
+does not install a service or enable OS login startup.
+
 ## Profiles and secrets in adapters
 
 - **Token locks.** An adapter that connects with a unique credential (bot token, API key) calls

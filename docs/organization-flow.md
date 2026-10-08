@@ -281,6 +281,7 @@ The `organization` section of the existing profile `config.yaml` supports:
 
 ```yaml
 organization:
+  gateway_enabled: false # opt in to existing-ledger execution in a running messaging gateway
   max_workers: 2           # 1–8 initial default workers, only when roster is omitted
   max_inflight: 2          # 1–4 occupied execution slots, independent of roster size
   max_members: 16          # 1–64 persistent configured members
