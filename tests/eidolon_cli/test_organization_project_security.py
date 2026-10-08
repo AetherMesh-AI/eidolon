@@ -562,3 +562,36 @@ def test_failed_project_gate_requires_bounded_replan_instead_of_replay(tmp_path,
     with store._connect() as conn:
         assert conn.execute('SELECT status FROM requests WHERE id=?', (identifier,)).fetchone()[0] == 'cancelled'
         assert conn.execute('SELECT count(*) FROM project_run_starts').fetchone()[0] == 1
+
+
+@pytest.mark.linux_only
+def test_later_round_test_review_clarification_uses_retained_run_round(tmp_path, monkeypatch):
+    from eidolon_cli import organization_project_runner as runner
+    store, _, objective, _ = _project(tmp_path)
+    first = store.claim_next()
+    store.fail(first, 'Need a revised plan before editing')
+    store.resolve(first['id'], 'request_replan', 'Keep the same exact edit in a fresh round', idempotency_key='round-one')
+    plan = store.claim_next()
+    store.finish(plan, {'workers': 1, 'tasks': [{'title': 'Revised edit', 'description': 'Replace old value.',
+                                              'type': 'work.edit', 'team': 'engineering'}]})
+    _propose(store)
+    _review(store)
+    assert store.finish(store.claim_next(), {})
+    assert store.finish(store.claim_next(), {})
+    # This is ledger provenance coverage, not a claim of native test execution.
+    monkeypatch.setattr(runner, 'run_project_tests', lambda files, grant, cancel: _simulated_terminal_result(files))
+    test = store.claim_next()
+    store.run_project_stage(test, threading.Event())
+    assert store.finish(test, {})
+    review = store.claim_next()
+    assert review['type'] == 'request.test_review'
+    store.finish(review, {'requests': [{'type': 'request.question', 'requestedOutcome': 'Which outcome matters?',
+                                       'team': 'owner-only'}]})
+    assert store.claim_next() is None
+    question = next(row for row in store.snapshot()['requests'] if row['parentRequestId'] == review['id'])
+    store.respond(question['id'], 'Retain the exact regression coverage.', idempotency_key='review-answer')
+    resumed = store.claim_next()
+    clarification, = store.context(resumed)['objectiveClarifications']
+    assert clarification['originRequestId'] == review['id']
+    assert clarification['round'] == 1 and clarification['historical'] is False
+    assert store.context(resumed)['objective']['id'] == objective['id']

@@ -313,8 +313,16 @@ class OrganizationRequestStore:
                 if origin is None:
                     raise ValueError('Clarification origin is missing')
                 ancestor = origin['parent_request_id']
-            round_number = (origin['task_round'] if origin['task_round'] is not None else
-                            json.loads(origin['parent_payload']).get('round', 0))
+            origin_payload = json.loads(origin['parent_payload'])
+            if origin['parent_type'] == 'request.test_review':
+                run = conn.execute('SELECT round FROM project_run_starts WHERE id=? AND objective_id=?',
+                                   (origin_payload.get('runId'), request['objective_id'])).fetchone()
+                if run is None:
+                    raise ValueError('Clarification project review origin is missing')
+                round_number = run['round']
+            else:
+                round_number = (origin['task_round'] if origin['task_round'] is not None else
+                                origin_payload.get('round', 0))
             clarifications.append({
                 'id': row['id'], 'type': row['type'], 'team': row['team'],
                 **{key: record[key] for key in ('requesterId', 'requestedOutcome', 'requiredAuthority',
