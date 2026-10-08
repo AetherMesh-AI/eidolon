@@ -248,7 +248,13 @@ class OrganizationIdentityStore:
 
     @staticmethod
     def _assignment_allows(conn, request, agent):
-        role = {'request.plan': 'Manager', 'request.integrate': 'Manager',
+        from eidolon_cli.organization_packages import request_package
+        package = request_package(conn, request)
+        if request['type'] == 'request.plan' and package is not None:
+            executive = OrganizationIdentityStore._objective_agent(conn, request['objective_id'], 'Executive')
+            return (package['manager_id'] == agent['id'] and agent['role'] == 'Manager'
+                    and agent['manager_id'] == executive['id'])
+        role = {'request.decompose': 'Executive', 'request.plan': 'Manager', 'request.integrate': 'Manager',
                 'request.accept': 'Executive'}.get(request['type'])
         if role:
             return OrganizationIdentityStore._objective_agent(conn, request['objective_id'], role)['id'] == agent['id']

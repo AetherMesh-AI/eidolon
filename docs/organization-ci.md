@@ -11,13 +11,16 @@ No branch protection, repository setting, secret, or permission grant is changed
   messaging gateway, tools and scripts suites, plus the organization skill
   namespace contract. This includes legacy schema migration, clarification and
   recovery, live policy changes, exact execution receipts, multi-repository
-  acceptance, attention and durable outcomes. Shared config/env/managed-scope and
-  gateway import compatibility suites cover the strict reader’s pure primitives.
+  acceptance, attention and durable outcomes. Executive work-package contracts
+  add atomic decomposition, exact manager routing, shared allocations, dependent
+  execution, old-objective migration and explicit package handoffs. Shared
+  config/env/managed-scope and gateway import compatibility suites cover the strict reader’s pure primitives.
   Profile export and recovery-backup suites exercise metadata-only registration
   portability and SQLite WAL snapshots. Uses the canonical per-file runner.
 - macOS and Windows: a deliberately smaller native ledger, migration, recovery,
-  receipt, policy and project-execution guard suite. Spawned-process config tests
-  cover delayed reopen/startup/watchers, invalid-file pauses and idempotent repair
+  receipt, policy and project-execution guard suite, including the durable
+  work-package and scripted executor lifecycle contracts. Spawned-process config
+  tests cover delayed reopen/startup/watchers, invalid-file pauses and idempotent repair
   without replaying claims or resetting model-call reservations. The unchanged
   large artifact-retention lifecycle has its own file so short ledger contracts
   do not consume its per-file timeout on slower Windows runners; no timeout or
@@ -25,6 +28,14 @@ No branch protection, repository setting, secret, or permission grant is changed
   and after commit, race stale writers, retain definitions through restart and
   revoke changed authority. Export/import and recovery snapshots run on all hosts;
   symlink/junction retarget cases execute only on their actual supported OS.
+  Windows runs two disjoint logical shards (ledger/projects and leadership/packages),
+  while macOS runs their full union. Recorded PR34 Windows file times approached
+  the unchanged 300-second cap (leadership handoffs: 266.9 seconds), with large
+  same-tree I/O variance. Lifecycle, atomic-validation and peer-continuation
+  handoffs therefore have separate files with identical collected cases and
+  unchanged assertions. Native jobs retain the 15-minute limit and three file
+  workers; the existing Windows check name is an aggregate gate that fails if
+  any native matrix entry fails, is cancelled or is skipped.
   These hosts verify honest
   unsupported execution; they do not claim Linux sandbox support.
 - Linux desktop: organization UI/store/shell tests and synthetic fixture helpers,
@@ -34,7 +45,12 @@ No branch protection, repository setting, secret, or permission grant is changed
   cancellation/budgets, source acceptance and retained outcome evidence. Project
   registration covers deliberate confirmation, restart persistence and revocation
   while asserting that fixture YAML stays unchanged. Providers
-  are local deterministic fixtures, not live model calls.
+  are local deterministic fixtures, not live model calls. Package UI tests cover
+  current/historical ownership, task provenance, acceptance separation, exact
+  handoff selections and legacy admission guidance. The completion, request,
+  owner and project fixtures include executive decomposition; native completion
+  asserts that completed packages alone cannot produce an accepted objective.
+  See [work-package design and rollout](organization-work-packages.md).
 
 Fast component/type failures stop the desktop job before native installation,
 production build and Electron. The backend and OS guard jobs run independently

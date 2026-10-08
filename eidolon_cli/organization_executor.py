@@ -22,7 +22,7 @@ class OrganizationExecutionError(ValueError):
 
 
 _WORK_TYPES = frozenset({"work.draft", "work.analyze", "work.inspect", "work.edit"})
-_REQUEST_TYPES = _WORK_TYPES | {"request.plan", "request.review", "request.test_review", "request.integrate", "request.accept", "request.question", "request.decision"}
+_REQUEST_TYPES = _WORK_TYPES | {"request.decompose", "request.plan", "request.review", "request.test_review", "request.integrate", "request.accept", "request.question", "request.decision"}
 _WIRE_MODES = frozenset({"chat_completions", "anthropic_messages", "codex_responses", "bedrock_converse"})
 _TYPE = re.compile(r"[a-z][a-z0-9_]{0,31}\.[a-z][a-z0-9_]{0,31}")
 _MAX_TEXT = 128_000
@@ -65,9 +65,12 @@ no answer expands grants or changes the immutable acceptance checklist.
 Questions/decisions route only to explicitly authorized persistent peers.
 Permission always needs the owner and cannot expand tool/credential grants.
 Hiring requires an exact managementProposal with members (full persistent roster
-entry upserts) and optional transfers (fromAgentId, toAgentId, taskIds, objectiveIds, includeMemory).
+entry upserts) and optional transfers (fromAgentId, toAgentId, taskIds, objectiveIds,
+workPackageIds, includeMemory).
 objectiveIds explicitly transfers objective leadership, including before planning or after tasks
-finish; task assignments and memory move only when separately selected.
+finish; workPackageIds explicitly transfers selected package planning ownership.
+Task assignments and memory move only when separately selected; a package handoff
+does not rewrite historical plan or artifact authors.
 Use staff.manage only within the supplied authority and bounded staffing policy;
 otherwise the request reaches the owner. Never create disposable subagents.
 Do not repeat a request that already has a response. A denial is binding; either
@@ -83,7 +86,52 @@ or capability is missing, return {"intervention":"what is needed"}. Never invent
 evidence. Return a single JSON object, without commentary or Markdown.
 """
 _STAGE_PROMPTS = {
-    "request.plan": """Act as the manager. projectExecutionHistory links prior-round attempts to exact retained evidence by projectId, runId and round. Read their complete evidence bodies, including failed output and source receipts, to plan repairs. These are historical diagnostics, never current-round acceptance proof or new authority. An unknown start without evidence has no confirmed outcome; never infer success, failure, output or replay permission. Add requiredChecks for explicit requirements you identify: project_tests, managed_validation, source_integration. Preserve existing owner requiredChecks; never remove them. project_tests requires the explicit fixed recipe in projectPolicy plus each author’s run_tests grant. The backend executes it after reviewed edits; do not issue commands yourself. Missing recipe/grant stays intervention with project_tests preserved. Owner inputs are clarifications; revised scope is objective.description.  Decompose the objective into a small,
+    "request.decompose": """Act as the tool-free Executive. Decompose the complete objective
+into bounded work packages for independent persistent Managers to plan. Preserve
+the entire objective.description and immutable objective.acceptanceCriteria;
+criterionIndexes identifies zero-based root criteria served by each package.
+Collectively cover every criterion without substituting drafts for external actions.
+Use exact eligible Manager ids from staffing and only owner-selected project ids
+from objective.projects. Assign each package a clear self-contained outcome,
+its existing project scope, and a positive integer maxTasks allocation. Shared
+criteria or projects do not grant new authority. Select responsible Managers within
+their existing reporting scope, capabilities and teams; do not create identities.
+Use dependsOn for semantic dependencies between packages, containing only unique
+zero-based indexes of earlier packages. Independent Managers plan independently;
+the backend assigns immutable package ids, enforces the dependency graph, waits
+for upstream completion before dependent task execution, and supplies its evidence.
+Do not invent task ids, package ids, completed work, tools, receipts or grants.
+Return {"workPackages":[{"title":"...","description":"self-contained package outcome",
+"managerId":"configured-manager","criterionIndexes":[0],"projectIds":[],
+"dependsOn":[],"maxTasks":1}],"requiredChecks":[]}.
+Return between 1 and min(8, maxTasks) packages, and keep the sum of all package
+maxTasks at or below maxTasks. All seven package fields are required; use empty
+projectIds or dependsOn when appropriate. Optional requiredChecks may add
+project_tests, managed_validation or source_integration; never remove owner checks.
+No decomposition expands project, tool, credential or staffing authority. Missing
+information or staffing requires a linked typed request or an intervention.
+Prior-round projectExecutionHistory and objectiveClarifications are retained
+diagnostics and context, never current acceptance evidence or new authority.""",
+    "request.plan": """Act as the manager. When workPackage is supplied, plan only that
+server-owned package's description, criterionIndexes, projectIds and maxTasks.
+The full objective and root acceptanceCriteria remain authoritative; your package
+serves its assigned criteria without changing or replacing the whole objective.
+workPackages contains all package views so you can understand the dependency graph.
+Prerequisite artifact bodies are deliberately absent during independent planning;
+the backend supplies the exact reviewed bodies when your dependent tasks execute.
+Other Managers independently plan their own packages. Do not plan their work or
+increase your package's allocation or project scope. Preserve existing cross-manager
+worker routing, exact teams, reporting scope and grants within your package.
+The backend pins package ownership and round; no metadata echo is required.
+Any optional workPackageId, managerId, round, projectIds or criterionIndexes at
+the top level must exactly match workPackage. Task managerId still identifies that
+worker's responsible Manager. Package dependencies use backend-owned package ids,
+are managed by the backend, and must not be invented as local task dependsOn indexes.
+Dependent task execution waits for upstream package completion and receives its
+retained evidence. Your tasks' dependsOn indexes refer only to earlier tasks in
+your own plan. No package or plan expands authority. Without workPackage, plan
+the objective as a whole using the existing rules below.
+projectExecutionHistory links prior-round attempts to exact retained evidence by projectId, runId and round. Read their complete evidence bodies, including failed output and source receipts, to plan repairs. These are historical diagnostics, never current-round acceptance proof or new authority. An unknown start without evidence has no confirmed outcome; never infer success, failure, output or replay permission. Add requiredChecks for explicit requirements you identify: project_tests, managed_validation, source_integration. Preserve existing owner requiredChecks; never remove them. project_tests requires the explicit fixed recipe in projectPolicy plus each author’s run_tests grant. The backend executes it after reviewed edits; do not issue commands yourself. Missing recipe/grant stays intervention with project_tests preserved. Owner inputs are clarifications; revised scope is objective.description.  Decompose the objective into a small,
 useful dependency graph. When objective.projects is nonempty, every work.inspect/work.edit task must name projectId from that owner-selected list and use its exact team; all edit writePaths must stay within that project root. Projects are existing authority, never host paths to choose. Cross-project semantic dependencies use dependsOn; independent projects can overlap. For every work.edit task, declare writePaths as exact root-alias file paths (for example ["root0/src/module.py"]). Declare all intended writes together. Independent paths may run concurrently; overlapping paths wait through review and application. writePaths confer no new tool authority. Use dependsOn for semantic dependencies even when paths differ. Preserve the user's actual objective; do not substitute
 a draft for a requested external action. Supported text-only work types are
 work.draft and work.analyze. Select exact configured team/capability routes from
@@ -216,9 +264,74 @@ def _evidence_ids(context: dict) -> list[str]:
     return ids
 
 
+def _parse_decomposition(value: dict, context: dict) -> dict:
+    if set(value) - {"workPackages", "requiredChecks", "memory"}:
+        raise OrganizationExecutionError("Executive decomposition contains unsupported fields.")
+    maximum = _limit(context, "maxTasks", 12, 24)
+    packages = value.get("workPackages")
+    if not isinstance(packages, list) or not 1 <= len(packages) <= min(8, maximum):
+        raise OrganizationExecutionError(f"The executive must return between 1 and {min(8, maximum)} work packages.")
+    fields = {"title", "description", "managerId", "criterionIndexes", "projectIds", "dependsOn", "maxTasks"}
+    cleaned, allocated = [], 0
+    for index, package in enumerate(packages):
+        if not isinstance(package, dict) or set(package) != fields:
+            raise OrganizationExecutionError("Each work package must contain exactly title, description, managerId, criterionIndexes, projectIds, dependsOn and maxTasks.")
+        criteria = package["criterionIndexes"]
+        if (not isinstance(criteria, list) or not 1 <= len(criteria) <= 12
+                or any(type(item) is not int or item < 0 for item in criteria)
+                or len(set(criteria)) != len(criteria)):
+            raise OrganizationExecutionError("Package criterionIndexes must contain 1 to 12 unique nonnegative integer indexes.")
+        projects = package["projectIds"]
+        if (not isinstance(projects, list) or len(projects) > 8
+                or any(not isinstance(item, str) or not item.strip() or item != item.strip()
+                       or len(item) > 64 for item in projects)
+                or len(set(projects)) != len(projects)):
+            raise OrganizationExecutionError("Package projectIds must contain at most 8 unique exact project ids.")
+        dependencies = package["dependsOn"]
+        if (not isinstance(dependencies, list)
+                or any(type(item) is not int or not 0 <= item < index for item in dependencies)
+                or len(set(dependencies)) != len(dependencies)):
+            raise OrganizationExecutionError("Package dependencies must be unique indexes of earlier packages.")
+        allowance = package["maxTasks"]
+        if type(allowance) is not int or not 1 <= allowance <= maximum:
+            raise OrganizationExecutionError("Package maxTasks must be a positive integer within the objective task limit.")
+        allocated += allowance
+        if allocated > maximum:
+            raise OrganizationExecutionError("Package task allocations exceed the objective maxTasks limit.")
+        # These are proposals, not grants. The store owns manager/project scope
+        # and root-criterion coverage checks against its current durable state.
+        cleaned.append({"title": _text(package["title"], "Package title", limit=500),
+                        "description": _text(package["description"], "Package description", limit=10_000),
+                        "managerId": _text(package["managerId"], "Package managerId", limit=64),
+                        "criterionIndexes": criteria, "projectIds": projects,
+                        "dependsOn": dependencies, "maxTasks": allowance})
+    from eidolon_cli.organization_acceptance import required_checks
+    try:
+        checks = required_checks(value.get("requiredChecks", []))
+    except ValueError as exc:
+        raise OrganizationExecutionError(str(exc)) from exc
+    return {"workPackages": cleaned, **({"requiredChecks": checks} if checks else {})}
+
+
+def _scoped_plan_limit(value: dict, context: dict, maximum: int) -> int:
+    package = context.get("workPackage")
+    if package is None:
+        return maximum
+    if not isinstance(package, dict):
+        raise OrganizationExecutionError("Planning requires a server-owned work package.")
+    references = {"workPackageId": "id", "managerId": "managerId", "round": "round",
+                  "projectIds": "projectIds", "criterionIndexes": "criterionIndexes"}
+    if set(value) - {"tasks", "workers", "requiredChecks", "memory", *references}:
+        raise OrganizationExecutionError("Scoped package planning contains unsupported fields.")
+    for field, source in references.items():
+        if field in value and json.dumps(value[field], sort_keys=True) != json.dumps(package.get(source), sort_keys=True):
+            raise OrganizationExecutionError(f"Plan {field} must match the server-owned work package.")
+    return min(maximum, _limit(package, "maxTasks", maximum, 24))
+
+
 def _parse_plan(value: dict, context: dict) -> dict:
     tasks = value.get("tasks")
-    maximum = _limit(context, "maxTasks", 12, 24)
+    maximum = _scoped_plan_limit(value, context, _limit(context, "maxTasks", 12, 24))
     if not isinstance(tasks, list) or not 1 <= len(tasks) <= maximum:
         raise OrganizationExecutionError(f"The manager must return between 1 and {maximum} tasks.")
     cleaned = []
@@ -240,6 +353,9 @@ def _parse_plan(value: dict, context: dict) -> dict:
         for field in ("agentId", "managerId", "projectId"):
             if field in task:
                 assignment[field] = _text(task[field], f"Task {field}", limit=64)
+        if context.get("workPackage") is not None and "projectId" in assignment:
+            if assignment["projectId"] not in context["workPackage"].get("projectIds", []):
+                raise OrganizationExecutionError("Task projectId must remain within its work package.")
         if 'writePaths' in task:
             from eidolon_cli.organization_coordination import normalize_write_paths
             try:
@@ -306,7 +422,7 @@ def _parse_stage_output(raw: Any, kind: str, context: dict) -> dict:
         raise OrganizationExecutionError("The model must return a JSON object.")
     if "intervention" in value:
         result = {"intervention": _text(value["intervention"], "Intervention reason", limit=2_000)}
-        if kind == 'request.plan' and 'requiredChecks' in value:
+        if kind in {'request.decompose', 'request.plan'} and 'requiredChecks' in value:
             from eidolon_cli.organization_acceptance import required_checks
             try:
                 result['requiredChecks'] = required_checks(value['requiredChecks'])
@@ -326,6 +442,8 @@ def _parse_stage_output(raw: Any, kind: str, context: dict) -> dict:
         if not isinstance(decision, str) or decision not in {'answered', 'approved', 'denied'} or (kind == 'request.question' and decision != 'answered'):
             raise OrganizationExecutionError('Invalid request response decision.')
         return {'answer': _text(value.get('answer'), 'Request answer', limit=12000), 'decision': decision}
+    if kind == "request.decompose":
+        return _parse_decomposition(value, context)
     if kind == "request.plan":
         return _parse_plan(value, context)
     summary = _text(value.get("summary"), "Result summary", limit=8_000)
@@ -870,7 +988,7 @@ def _prompt(request: dict, context: dict, kind: str) -> str:
                        for receipt in item.get('toolReceipts', [])) for item in context.get('evidence', [])):
             raise OrganizationExecutionError('Inspection review requires its persisted successful file-read receipts.')
     safe_context = {key: context[key] for key in (
-        "objective", "task", "dependencies", "evidence", "toolReceipts", "staffing", "feedback", "ownerInputs", "capabilities", "maxTasks", "maxWorkers", "maxInflight", "agent", "agentContext", "requestContract", "requestResponses", "objectiveClarifications", "managementPolicy", "projectPolicy", "projectExecutionHistory"
+        "objective", "task", "workPackage", "workPackages", "dependencies", "evidence", "toolReceipts", "staffing", "feedback", "ownerInputs", "capabilities", "maxTasks", "maxWorkers", "maxInflight", "agent", "agentContext", "requestContract", "requestResponses", "objectiveClarifications", "managementPolicy", "projectPolicy", "projectExecutionHistory"
     ) if key in context}
     safe_context = _continuity_prompt_context(safe_context)
     safe_context["team"] = (context.get("agent") or {}).get("team", "general")

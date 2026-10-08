@@ -83,7 +83,7 @@ def normalize_requests(value):
 def canonical_management_proposal(proposal, team):
     """Show the exact defaults to a human before accepting the stored proposal."""
     defaults = {'Worker': [], 'Manager': ['request.plan', 'request.integrate', 'request.hire'],
-                'Executive': ['request.accept']}
+                'Executive': ['request.decompose', 'request.accept']}
     leaders = {'Worker': 'manager', 'Manager': 'executive', 'Executive': 'owner'}
     members = []
     for member in proposal.get('members', []):
@@ -101,7 +101,7 @@ def canonical_management_proposal(proposal, team):
     for transfer in proposal.get('transfers', []):
         if not isinstance(transfer, dict):
             raise ValueError('Management transfers must be objects')
-        transfers.append({'taskIds': [], 'includeMemory': False, **transfer})
+        transfers.append({'taskIds': [], 'workPackageIds': [], 'includeMemory': False, **transfer})
     text_fields = {'id': 64, 'name': 100, 'team': 64, 'role': 20, 'manager_id': 64,
                    'purpose': 3000, 'scope': 3000}
     array_fields = {'capabilities': 16, 'tool_grants': 8, 'responsibilities': 12,
@@ -121,8 +121,9 @@ def canonical_management_proposal(proposal, team):
                 member[field] is not None and (not isinstance(member[field], str) or len(member[field]) > 300)
                 for field in ('provider', 'model')):
             raise ValueError('Management member execution fields have invalid types')
+    selected_packages = set()
     for transfer in transfers:
-        if set(transfer) - {'fromAgentId', 'toAgentId', 'taskIds', 'objectiveIds', 'includeMemory'}:
+        if set(transfer) - {'fromAgentId', 'toAgentId', 'taskIds', 'objectiveIds', 'workPackageIds', 'includeMemory'}:
             raise ValueError('Management transfers contain unsupported fields')
         if (any(not isinstance(transfer.get(field), str) or not transfer[field]
                 or len(transfer[field]) > 64 for field in ('fromAgentId', 'toAgentId'))
@@ -131,8 +132,16 @@ def canonical_management_proposal(proposal, team):
                 or not isinstance(transfer.get('objectiveIds', []), list)
                 or len(transfer.get('objectiveIds', [])) > 100
                 or any(not isinstance(item, str) or not item or len(item) > 128 for item in transfer.get('objectiveIds', []))
+                or not isinstance(transfer['workPackageIds'], list) or len(transfer['workPackageIds']) > 100
+                or any(not isinstance(item, str) or not item or len(item) > 128 for item in transfer['workPackageIds'])
                 or type(transfer['includeMemory']) is not bool):
-            raise ValueError('Management transfers require exact typed identities, task/objective IDs and memory choice')
+            raise ValueError('Management transfers require exact typed identities, task/objective/work package IDs and memory choice')
+        packages = transfer['workPackageIds']
+        if len(set(packages)) != len(packages) or selected_packages.intersection(packages):
+            raise ValueError('Management transfers must select each work package only once')
+        selected_packages.update(packages)
+        if not (transfer['taskIds'] or transfer.get('objectiveIds') or packages or transfer['includeMemory']):
+            raise ValueError('Management transfers must select tasks, objectives, work packages or memory')
     return {'members': members, 'transfers': transfers}
 
 
@@ -172,7 +181,7 @@ class OrganizationRequestStore:
         request = conn.execute('SELECT * FROM requests WHERE id=?', (request_id,)).fetchone()
         payload = json.loads(request['payload'])
         assignment = conn.execute('SELECT * FROM objective_assignments WHERE objective_id=?', (request['objective_id'],)).fetchone()
-        requester = requester_id or ('owner' if request['type'] == 'request.plan' else
+        requester = requester_id or ('owner' if request['type'] in {'request.decompose', 'request.plan'} else
                                     assignment['manager_id'] if assignment else 'manager')
         task = conn.execute('SELECT title FROM tasks WHERE id=?', (request['task_id'],)).fetchone()
         outcome = requested_outcome or (task['title'] if task else request['type'].replace('.', ': '))
@@ -242,6 +251,8 @@ class OrganizationRequestStore:
             if request is None or request['status'] in {'completed', 'cancelled'}:
                 continue
             if request['task_id']:
+                from eidolon_cli.organization_packages import package_dependency_requests
+                todo.extend(package_dependency_requests(conn, request['task_id']))
                 task = conn.execute('SELECT dependencies FROM tasks WHERE id=?', (request['task_id'],)).fetchone()
                 from eidolon_cli.organization_coordination import coordination_view
                 blockers = coordination_view(conn, request['task_id'])['blockingTaskIds']

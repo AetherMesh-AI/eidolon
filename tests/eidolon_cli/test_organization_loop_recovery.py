@@ -1,4 +1,5 @@
 """No-progress loops stop visibly without losing retained responses or identities."""
+from tests.organization_package_helpers import claim_after_decomposition
 import pytest
 
 from eidolon_cli.organization_config import OrganizationSettings
@@ -15,7 +16,7 @@ def store_with_advisors(tmp_path):
     ]}})
     store = OrganizationStore(tmp_path / 'state.db', settings)
     objective = store.create_objective('Write the brief', idempotency_key='goal')
-    plan = store.claim_next()
+    plan = claim_after_decomposition(store)
     store.finish(plan, {'tasks': [{'title': 'Draft', 'description': 'Write the brief', 'type': 'work.draft', 'agentId': 'writer'}]})
     hire = store.claim_next()
     store.finish(hire, {})
@@ -77,7 +78,7 @@ def test_specialist_escalation_can_cross_teams_but_ping_pong_cannot_return(tmp_p
 def test_duplicate_plan_cannot_schedule_redundant_tasks_or_self_cycles(tmp_path):
     store = OrganizationStore(tmp_path / 'state.db')
     store.create_objective('One result', idempotency_key='goal')
-    plan = store.claim_next()
+    plan = claim_after_decomposition(store)
     task = {'title': 'Analyze', 'description': 'Analyze the supplied facts', 'type': 'work.analyze', 'team': 'general'}
     with pytest.raises(ValueError, match='duplicate tasks'):
         store.finish(plan, {'tasks': [task, {**task, 'title': ' Analyze '}]})
@@ -92,7 +93,7 @@ def test_duplicate_plan_cannot_schedule_redundant_tasks_or_self_cycles(tmp_path)
 def test_duplicate_guard_preserves_distinct_case_sensitive_source_targets(tmp_path):
     store = OrganizationStore(tmp_path / 'state.db')
     store.create_objective('Analyze both source targets', idempotency_key='goal')
-    plan = store.claim_next()
+    plan = claim_after_decomposition(store)
     assert store.finish(plan, {'tasks': [
         {'title': 'Analyze README', 'description': 'Analyze supplied root0/README facts', 'type': 'work.analyze'},
         {'title': 'Analyze readme', 'description': 'Analyze supplied root0/readme facts', 'type': 'work.analyze'},

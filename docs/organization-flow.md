@@ -11,6 +11,12 @@ provider.
 For owner-selected repository bindings, cross-repository tasks and per-project evidence,
 see [Multi-repository objectives](organization-projects.md).
 
+New objectives normally begin with executive decomposition into bounded,
+durable manager work packages. See [Executive manager work packages](organization-work-packages.md)
+for delegation, shared limits, package handoffs and historical criteria. Objectives
+created before migration, or admitted under an explicitly accept-only executive,
+retain legacy manager-first planning; their persisted mode does not change on restart.
+
 ## Persistent identities and reusable specialists
 
 Open **Organization** before, during or after an objective to inspect the same
@@ -48,8 +54,10 @@ requirements. Leaders remain tool-free.
 
 Home lets the owner choose an existing active Executive and one of that Executive’s
 active Managers for a new objective. Switching the Executive clears an incompatible
-Manager selection. This selects responsibility for planning, integration and
-acceptance; it does not create or activate staff. Existing callers that omit these
+Manager selection. This selects the responsible executive and root integration
+manager. An executive with decomposition capability delegates package planning to
+eligible managers; legacy mode starts with the selected manager. Selection does
+not create or activate staff. Existing callers that omit these
 IDs keep the established default Executive and Manager.
 
 Use **Organization → Manage organization** to create and edit members in the current profile. The equivalent initial configuration shape is:
@@ -140,7 +148,9 @@ open assignments and optionally bounded retained memory; completed work remains
 attributed to the original identity. Managers and executives can separately select
 exact open objectives (`objectiveIds`), including before planning and while
 integration or acceptance remains unfinished. Objective leadership does not move
-delegated task assignments or memory without those explicit selections.
+delegated task assignments or memory without those explicit selections. Managers
+can also select current `workPackageIds` in open objectives to transfer package
+ownership; package selection is independent from tasks and root leadership.
 The runtime checks active execution,
 capabilities, teams, reporting lines and objective leadership before applying the
 configuration and transfers together. Recent changes show actor, linked request,
@@ -191,8 +201,10 @@ context, not a guarantee that statements are true or an external action happened
 - `request.source_integrate`: with its separate grant, writes a new reviewed Git
   branch after successful tests and independent review, preserving the original
   HEAD, index and working tree.
-- `request.plan`: the manager proposes an acyclic graph with explicit dependency
-  indexes and acceptance criteria.
+- `request.decompose`: the selected executive allocates durable manager packages
+  covering the root criteria and selected projects within the shared task ceiling.
+- `request.plan`: the exact package manager proposes an acyclic task graph within
+  that package’s scope and allowance. Legacy mode plans the objective directly.
 - `request.review`: a distinct logical reviewer assesses the exact persisted
   artifact bytes, identified by evidence IDs and SHA-256 hashes.
 - `request.integrate`: the manager assembles a full objective deliverable.
@@ -294,7 +306,7 @@ organization:
   max_members: 16          # 1–64 persistent configured members
   max_request_depth: 4     # bounded linked-request ancestry
   max_requests_per_stage: 4 # bounded questions/decisions/hire/permission requests per stage
-  max_tasks: 12            # 1–24 tasks per manager plan
+  max_tasks: 12            # 1–24 shared across current-round package plans (legacy: one plan)
   max_open_objectives: 20  # 1–100
   max_attempts: 2          # 1–3 attempts per request
   max_revisions: 2         # 0–3 review-requested revisions per task

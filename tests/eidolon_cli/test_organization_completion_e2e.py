@@ -1,4 +1,5 @@
 """Large retained evidence through real SQLite, scheduler, AIAgent and loopback HTTP."""
+from tests.organization_package_helpers import claim_after_decomposition
 import hashlib
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -97,7 +98,7 @@ def test_large_reviewed_artifacts_recover_and_exact_negative_proof_blocks_accept
     store = OrganizationStore(home / 'organization' / 'state.db', OrganizationSettings.from_config(cfg))
     objective = store.create_objective('Integrate six reviewed components', idempotency_key='large-objective',
                                        acceptance_criteria=['One supported integrated recommendation'])
-    plan = store.claim_next()
+    plan = claim_after_decomposition(store)
     store.finish(plan, {'tasks': [{'title': f'Component {index}', 'description': f'Prepare component {index}',
                                   'type': 'work.draft', 'dependsOn': []} for index in range(6)]})
     retained = []

@@ -6,6 +6,7 @@ import { type OrganizationOutcomePage, validOutcomePage } from './runtime-outcom
 import { validProjectSave, validProjectSetup } from './runtime-project-setup-contract'
 import { validEditProposal } from './runtime-proposal-validation'
 import { validOrganizationSetup } from './runtime-setup-contract'
+import { validWorkPackages } from './runtime-work-package-contract'
 import type { Objective, OrganizationArtifact, OrganizationExecutionAudit, OrganizationProjectDraft, OrganizationProjectSave, OrganizationProjectSetup, OrganizationSnapshot, OrganizationToolEvidence, RuntimeOrganizationAdapter } from './types'
 
 export interface OrganizationScope {
@@ -41,6 +42,8 @@ function validateSnapshot(value: OrganizationSnapshot): OrganizationSnapshot {
   if (!value || value.source !== 'runtime' || !['objectives', 'agents', 'tasks', 'activity', 'knowledge', 'requests'].every(field => Array.isArray(value[field as keyof OrganizationSnapshot])) || !value.runtime) {
     throw new Error('This backend did not return a supported organization snapshot. Update the runtime and reconnect.')
   }
+
+  if (!validWorkPackages(value)) {throw new Error(translateNow('organizationWork.packageInvalid'))}
 
   if (value.attention !== undefined && !validAttentionPage(value.attention)) {
     throw new Error(translateNow('organizationWork.attentionInvalid'))

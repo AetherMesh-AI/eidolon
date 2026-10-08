@@ -41,6 +41,14 @@ export function WorkGraph({ snapshot, objectiveId, onOpenEvidence }: WorkGraphPr
   const height = Math.max(1, ...levels.map(level => levels.filter(item => item === level).length)) * rowHeight + 24
   const task = tasks.find(item => item.id === selected)
   const agentName = (id: string) => snapshot.agents.find(item => item.id === id)?.name || id
+  const packages = snapshot.objectives.find(item => item.id === objectiveId)?.workPackages ?? []
+
+  const packageName = (id: string) => {
+    const item = packages.find(candidate => candidate.id === id)
+
+    return item ? `${item.title} (${id})` : id
+  }
+
   const taskName = (id: string) => tasks.find(item => item.id === id)?.title || id
   const reviews = task ? tasks.filter(item => item.requestType === 'review' && item.dependsOn.includes(task.id)) : []
   const sessionIds = [...new Set(task?.evidence?.flatMap(item => item.sessionId ? [item.sessionId] : []) || [])]
@@ -69,6 +77,7 @@ export function WorkGraph({ snapshot, objectiveId, onOpenEvidence }: WorkGraphPr
             <button aria-label={`Inspect task: ${item.title}`} className={`eid-row eid-task-${item.status}`} onClick={() => setSelected(item.id)} style={{ width: '100%', minHeight: 96, textAlign: 'left', ...(runtime && view === 'Graph' ? { height: rowHeight - 24, overflowY: 'auto', alignItems: 'flex-start' } : {}) }}>
               <AgentAvatar name={agentName(item.ownerId)} />
               <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}><small>{runtime ? 'Runtime task · ' : ''}{agentName(item.ownerId)}</small><strong>{item.title}</strong>{(item.historical || item.currentRound === false) && <small>{copy.historical}</small>}
+                {runtime && item.workPackageId && <small>{copy.workPackage}: {packageName(item.workPackageId)}</small>}
                 {runtime && <><small>Team: {item.team || 'Not recorded'}</small><small>Type: {item.requestType || 'Not recorded'} · Priority: {item.priority || 'Not recorded'}</small></>}
                 <small>Depends on: {item.dependsOn.map(taskName).join(', ') || 'No prerequisites'}</small>
                 {runtime && <TaskCoordination task={item} tasks={snapshot.tasks} />}
@@ -83,7 +92,8 @@ export function WorkGraph({ snapshot, objectiveId, onOpenEvidence }: WorkGraphPr
       <dl>
         <dt>Owner</dt><dd>{agentName(task.ownerId)}</dd><dt>Assigned by</dt><dd>{task.assignedById ? agentName(task.assignedById) : 'Unknown · Not recorded'}</dd>
         {runtime && task.managingAgentId && <><dt>{t.organizationRoster.managingAgent}</dt><dd>{agentName(task.managingAgentId)}</dd></>}
-        <dt>Status</dt><dd>{task.status}</dd><dt>Priority</dt><dd>{task.priority || 'Unknown · Not recorded'}</dd>
+        <dt>Status</dt><dd>{task.status}</dd>
+        {runtime && task.workPackageId && <><dt>{copy.workPackage}</dt><dd className="eid-result-text">{packageName(task.workPackageId)}</dd></>}<dt>Priority</dt><dd>{task.priority || 'Unknown · Not recorded'}</dd>
         {runtime && <><dt>Team</dt><dd>{task.team || 'Not recorded by runtime'}</dd><dt>Request type</dt><dd>{task.requestType || 'Not recorded by runtime'}</dd><dt>Assigned reviewer</dt><dd>{task.reviewerId ? agentName(task.reviewerId) : 'No reviewer recorded'}</dd></>}
         <dt>Review</dt><dd>{task.review || 'Unknown · Not recorded'}</dd>
         {runtime && <><dt>Reviewers</dt><dd>{reviews.map(item => `${agentName(item.ownerId)} · ${item.title} (${item.status})`).join('; ') || 'No dependent review task recorded'}</dd>{task.requestType === 'review' && <><dt>Reviews work by</dt><dd>{task.dependsOn.map(id => { const dependency = tasks.find(item => item.id === id);

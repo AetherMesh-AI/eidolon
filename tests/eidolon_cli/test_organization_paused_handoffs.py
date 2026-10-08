@@ -3,6 +3,7 @@ import pytest
 
 from eidolon_cli.organization_config import OrganizationSettings
 from eidolon_cli.organization_store import OrganizationStore
+from tests.organization_package_helpers import claim_after_decomposition
 
 
 def _member(ident, **values):
@@ -21,7 +22,7 @@ def _paused_work(tmp_path, *, pinned):
     store = OrganizationStore(tmp_path / 'organization.db', settings)
     store.create_objective('Retain a worker conversation', idempotency_key='work',
                            manager_id='old-manager')
-    plan = store.claim_next()
+    plan = claim_after_decomposition(store)
     task = {'title': 'Draft', 'description': 'Ask who will read this brief.', 'type': 'work.draft',
             'team': 'red', 'managerId': 'old-manager'}
     if pinned:
@@ -50,7 +51,7 @@ def _change(store, proposal, *, agent_mode, key):
         return None, lambda: store.configure_organization(
             config, expected_generation=store._policy_generation, idempotency_key=key)
     objective = store.create_objective('Apply the scoped reorganization', idempotency_key=key)
-    plan = store.claim_next()
+    plan = claim_after_decomposition(store)
     assert plan['objective_id'] == objective['id'] and plan['type'] == 'request.plan'
     assert store.finish(plan, {'requests': [
         {'type': 'request.hire', 'team': 'red', 'requestedOutcome': 'Apply the exact staffing proposal.',

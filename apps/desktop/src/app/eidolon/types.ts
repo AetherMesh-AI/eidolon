@@ -31,7 +31,29 @@ export interface ObjectiveMetadata {
   milestone?: string
   autonomyIntent?: string
 }
+/** Durable executive delegation. Package completion never implies final acceptance. */
+export interface OrganizationWorkPackage {
+  id: string
+  objectiveId: string
+  round: number
+  managerId: string
+  title: string
+  description: string
+  /** Zero-based positions in the root criteria of this package's round. */
+  criterionIndexes: number[]
+  /** Exact criterion text captured for these positions in the package round. */
+  criteria?: string[]
+  projectIds: string[]
+  dependencyIds: string[]
+  maxTasks: number
+  planRequestId: string
+  status: 'planning' | 'planned' | 'working' | 'completed' | 'blocked' | 'cancelled'
+  taskIds: string[]
+}
 export interface Objective extends ObjectiveMetadata {
+  /** Absent on older runtimes. Never infer package delegation from task ownership. */
+  planningMode?: 'executive_packages' | 'legacy'
+  workPackages?: OrganizationWorkPackage[]
   projects?: OrganizationProjectBinding[]
   history?: HistoryState
   id: string
@@ -102,6 +124,7 @@ export interface OrganizationAgent {
   objectiveId?: string
 }
 export interface OrganizationTask {
+  workPackageId?: string | null
   projectId?: string | null
   id: string
   objectiveId: string
@@ -444,6 +467,7 @@ export interface OrganizationTransfer {
   toAgentId: string
   taskIds: string[]
   objectiveIds?: string[]
+  workPackageIds?: string[]
   includeMemory: boolean
 }
 export interface OrganizationManagementProposal {

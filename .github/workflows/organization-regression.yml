@@ -87,13 +87,22 @@ jobs:
             tests/gateway/test_session*.py tests/gateway/test_restart*.py tests/gateway/test_shutdown*.py -j 4
 
   native-core:
-    name: Organization core (${{ matrix.os }})
+    name: ${{ matrix.label }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        include:
+          - os: macos-latest
+            suite: all
+            label: Organization core (macos-latest)
+          - os: windows-latest
+            suite: ledger-projects
+            label: Organization core (windows-latest) - ledger and projects
+          - os: windows-latest
+            suite: leadership-packages
+            label: Organization core (windows-latest) - leadership and packages
     defaults:
       run:
         shell: bash
@@ -111,29 +120,59 @@ jobs:
           uv pip install --no-deps pytest-timeout==2.4.0
       - name: Verify host-native ledger, recovery and unsupported execution guards
         run: |
-          scripts/run_tests.sh \
-            tests/eidolon_cli/test_organization_store.py \
-            tests/eidolon_cli/test_organization_artifact_retention.py \
-            tests/eidolon_cli/test_organization_identity.py \
-            tests/eidolon_cli/test_organization_management.py \
-            tests/eidolon_cli/test_organization_leadership_handoffs.py \
-            tests/eidolon_cli/test_organization_paused_handoffs.py \
-            tests/eidolon_cli/test_organization_leadership_routes.py \
-            tests/eidolon_cli/test_organization_persistent_leadership.py \
-            tests/eidolon_cli/test_organization_history.py \
-            tests/eidolon_cli/test_organization_attention.py \
-            tests/eidolon_cli/test_organization_outcomes.py \
-            tests/eidolon_cli/test_organization_cross_feature_recovery.py \
-            tests/eidolon_cli/test_organization_project_registry.py \
-            tests/eidolon_cli/test_organization_project_portability.py \
-            tests/eidolon_cli/test_organization_tool_receipts.py \
-            tests/eidolon_cli/test_organization_multi_project_execution.py \
-            tests/eidolon_cli/test_organization_inspection_acceptance.py \
-            tests/eidolon_cli/test_organization_project_execution_e2e.py \
-            tests/gateway/test_organization_policy_reload.py \
-            tests/gateway/test_organization_config_serialization.py \
-            tests/tui_gateway/test_organization_outcomes.py \
-            tests/tui_gateway/test_organization_project_setup.py -j 3
+          ledger_project_tests=(
+            tests/eidolon_cli/test_organization_store.py
+            tests/eidolon_cli/test_organization_artifact_retention.py
+            tests/eidolon_cli/test_organization_identity.py
+            tests/eidolon_cli/test_organization_history.py
+            tests/eidolon_cli/test_organization_attention.py
+            tests/eidolon_cli/test_organization_outcomes.py
+            tests/eidolon_cli/test_organization_cross_feature_recovery.py
+            tests/eidolon_cli/test_organization_project_registry.py
+            tests/eidolon_cli/test_organization_project_portability.py
+            tests/eidolon_cli/test_organization_tool_receipts.py
+            tests/eidolon_cli/test_organization_multi_project_execution.py
+            tests/eidolon_cli/test_organization_inspection_acceptance.py
+            tests/eidolon_cli/test_organization_project_execution_e2e.py
+            tests/gateway/test_organization_policy_reload.py
+            tests/gateway/test_organization_config_serialization.py
+            tests/tui_gateway/test_organization_outcomes.py
+            tests/tui_gateway/test_organization_project_setup.py
+          )
+          leadership_package_tests=(
+            tests/eidolon_cli/test_organization_management.py
+            tests/eidolon_cli/test_organization_leadership_handoffs.py
+            tests/eidolon_cli/test_organization_leadership_handoff_validation.py
+            tests/eidolon_cli/test_organization_leadership_handoff_continuation.py
+            tests/eidolon_cli/test_organization_paused_handoffs.py
+            tests/eidolon_cli/test_organization_leadership_routes.py
+            tests/eidolon_cli/test_organization_persistent_leadership.py
+            tests/eidolon_cli/test_organization_work_packages.py
+            tests/eidolon_cli/test_organization_work_packages_e2e.py
+            tests/eidolon_cli/test_organization_package_handoffs.py
+            tests/eidolon_cli/test_organization_package_evidence.py
+          )
+          case '${{ matrix.suite }}' in
+            all) native_tests=("${ledger_project_tests[@]}" "${leadership_package_tests[@]}") ;;
+            ledger-projects) native_tests=("${ledger_project_tests[@]}") ;;
+            leadership-packages) native_tests=("${leadership_package_tests[@]}") ;;
+            *) echo 'Unknown native suite' >&2; exit 1 ;;
+          esac
+          scripts/run_tests.sh "${native_tests[@]}" -j 3
+
+  native-windows:
+    # Retain the existing check name. This gate cannot succeed if a native
+    # matrix entry fails, is cancelled or is skipped.
+    name: Organization core (windows-latest)
+    needs: native-core
+    if: ${{ always() }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 2
+    steps:
+      - name: Require every native shard
+        env:
+          NATIVE_RESULT: ${{ needs.native-core.result }}
+        run: test "$NATIVE_RESULT" = success
 
   desktop:
     name: Organization desktop and native smoke (Linux)

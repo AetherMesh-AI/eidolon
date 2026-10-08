@@ -8,6 +8,7 @@ import pytest
 from eidolon_cli.organization_config import OrganizationSettings
 from eidolon_cli.organization_roster import configured_staff
 from eidolon_cli.organization_store import OrganizationStore
+from tests.organization_package_helpers import claim_after_decomposition
 
 
 def member(ident, **values):
@@ -163,7 +164,7 @@ def test_owner_approves_only_exact_pending_proposal_and_cannot_change_global_pol
 
 def open_task(store, source='source'):
     objective = store.create_objective('Transfer scoped work', idempotency_key=str(time.time_ns()))
-    claim = store.claim_next()
+    claim = claim_after_decomposition(store)
     assert store.finish(claim, {'tasks': [{'title': 'Draft', 'description': 'Write this', 'team': 'red',
                                          'type': 'work.draft', 'agentId': source}], 'workers': 1})
     task_id = next(task['id'] for task in store.snapshot()['tasks'] if task['objectiveId'] == objective['id'])
@@ -333,7 +334,7 @@ def test_staffing_cannot_reuse_a_retired_cross_team_identity_to_acquire_its_memo
 def paused_unpinned_work(tmp_path):
     store = OrganizationStore(tmp_path / 'organization.db', settings(member('source', team='general')))
     objective = store.create_objective('Unpinned work and follow-up', idempotency_key='unpinned')
-    plan = store.claim_next()
+    plan = claim_after_decomposition(store)
     assert store.finish(plan, {'tasks': [
         {'title': 'Prior work', 'description': 'Write the first brief', 'type': 'work.draft'},
         {'title': 'Follow-up', 'description': 'Ask for the audience and continue', 'type': 'work.draft', 'dependsOn': [0]},
@@ -405,7 +406,7 @@ def test_unpinned_paused_transfer_rejects_unrelated_source_and_preserves_continu
 def test_unpinned_unclaimed_work_cannot_be_transferred_using_an_arbitrary_source(tmp_path):
     store = OrganizationStore(tmp_path / 'organization.db', settings(member('source', team='general')))
     store.create_objective('Unclaimed work', idempotency_key='unclaimed')
-    assert store.finish(store.claim_next(), {'tasks': [
+    assert store.finish(claim_after_decomposition(store), {'tasks': [
         {'title': 'Draft', 'description': 'Not yet owned by a worker', 'type': 'work.draft'}]})
     task = store.snapshot()['tasks'][0]
     with pytest.raises(ValueError, match='paused continuation'):

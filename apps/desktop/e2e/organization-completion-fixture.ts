@@ -14,6 +14,7 @@ import {
 } from './fixtures'
 import { startMockServer } from './mock-server'
 import { exactOrganizationEvidence, type OrganizationEvidenceContext } from './organization-evidence'
+import { organizationPackageProposal } from './organization-package-proposal'
 import { projectSelectionConfiguration } from './organization-project-selection-config'
 import { organizationProviderTarget } from './organization-provider-target'
 
@@ -71,6 +72,7 @@ function resultFor(kind: string, context: StageContext) {
   const evidenceIds = evidence.map(item => item.id)
 
   const handlers: Record<string, () => unknown> = {
+    'request.decompose': () => organizationPackageProposal(context, 1),
     'request.plan': () => ({
       tasks: [
         {
@@ -197,7 +199,7 @@ export async function setupCompletionFixture(budgetLimited: boolean, options: Co
 
           if (
             options.projectSelection &&
-            (kind !== 'request.plan' ||
+            (!['request.decompose', 'request.plan'].includes(kind) ||
               JSON.stringify(context.objective.projects?.map(project => project.id).sort()) !==
                 JSON.stringify(['backend', 'frontend']))
           ) {
@@ -205,7 +207,7 @@ export async function setupCompletionFixture(budgetLimited: boolean, options: Co
           }
 
           const content = JSON.stringify(
-            options.projectSelection ? { intervention: projectSelectionIntervention } : resultFor(kind, context)
+            options.projectSelection && kind === 'request.plan' ? { intervention: projectSelectionIntervention } : resultFor(kind, context)
           )
 
           const identity = { id: `completion-fixture-${stages.length}`, created: 1, model: 'mock-model' }

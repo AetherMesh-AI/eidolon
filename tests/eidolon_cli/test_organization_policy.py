@@ -1,4 +1,5 @@
 """A shared ledger's durable grants fence obsolete runtime instances."""
+from tests.organization_package_helpers import claim_after_decomposition
 from dataclasses import replace
 import sqlite3
 
@@ -11,7 +12,7 @@ from eidolon_cli.organization_store import OrganizationStore
 def test_policy_change_fences_claims_and_stale_admission_but_owner_can_cancel(tmp_path):
     first = OrganizationStore(tmp_path / 'state.db')
     objective = first.create_objective('Prepare a brief', idempotency_key='once')
-    claim = first.claim_next()
+    claim = claim_after_decomposition(first)
     changed = OrganizationStore(first.path, replace(first.settings, team='new-team'))
     assert not first.heartbeat(claim)
     assert not first.finish(claim, {'tasks': []})
@@ -49,7 +50,7 @@ def test_read_only_reopen_preserves_current_roster_and_policy_generation(tmp_pat
 def test_authority_aba_does_not_resurrect_old_runtime_or_lease(tmp_path):
     original = OrganizationStore(tmp_path / 'state.db')
     original.create_objective('Prepare a draft', idempotency_key='once')
-    claim = original.claim_next()
+    claim = claim_after_decomposition(original)
     OrganizationStore(original.path, replace(original.settings, capabilities=()))
     restored = OrganizationStore(original.path, original.settings)
     assert restored._policy_generation > original._policy_generation
@@ -66,7 +67,7 @@ def test_request_claim_requires_current_persisted_policy_stamp(tmp_path):
     store.create_objective('Prepare a draft', idempotency_key='once')
     with pytest.raises(sqlite3.IntegrityError, match='current organization policy'):
         with store._write() as conn:
-            conn.execute("UPDATE requests SET status='running',token='unstamped' WHERE type='request.plan'")
+            conn.execute("UPDATE requests SET status='running',token='unstamped' WHERE type='request.decompose'")
     claim = store.claim_next()
     assert claim['token'] != 'unstamped' and store.heartbeat(claim)
 

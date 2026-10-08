@@ -1,4 +1,5 @@
 """An owner's explicit scope decision is the only way to remove required checks."""
+from tests.organization_package_helpers import claim_after_decomposition
 import hashlib
 import json
 import sqlite3
@@ -96,7 +97,7 @@ def test_amendment_validation_replan_and_model_results_cannot_silently_drop_chec
             store.resolve(first['id'], 'amend_scope', oversized, idempotency_key='long')
     assert store.snapshot()['objectives'][0]['ownerResolutions'] == []
     store.resolve(first['id'], 'request_replan', 'Try another bounded approach.', idempotency_key='replan')
-    plan = store.claim_next()
+    plan = claim_after_decomposition(store)
     assert store.context(plan)['objective']['requiredChecks'] == ['project_tests']
     store.finish(plan, {'requiredChecks': [], 'tasks': [{'title': 'Analyze', 'description': 'Evidence-backed result', 'type': 'work.analyze'}]})
     _work_and_review(store)

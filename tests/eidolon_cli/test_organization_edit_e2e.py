@@ -1,4 +1,5 @@
 """Real localhost model, scoped source reader, durable review and workspace commit."""
+from tests.organization_package_helpers import decomposition_result
 import hashlib
 import json
 import threading
@@ -44,7 +45,9 @@ def test_real_edit_proposal_review_and_separate_workspace_apply_gate(tmp_path, m
                               if m["role"] == "user" and "Submitted context:\n" in m.get("content", ""))
                 data = json.loads(prompt.split("Submitted context:\n", 1)[1])
                 kind, context = data["request"]["type"], data["context"]
-                if kind == "request.plan":
+                if kind == 'request.decompose':
+                    output = decomposition_result(context)
+                elif kind == "request.plan":
                     assert not body.get("tools")
                     assert any("work.edit" in row["capabilities"] and "read_file" in row["tools"] for row in context["staffing"])
                     output = {"workers": 1, "tasks": [{"title": "Revise exact first line", "type": "work.edit", "team": "general",
@@ -143,7 +146,7 @@ def test_real_edit_proposal_review_and_separate_workspace_apply_gate(tmp_path, m
             time.sleep(0.01)
         assert not errors
         assert snapshot["objectives"][0]["status"] == "needs_input", snapshot["requests"]
-        assert len(received) == 4 and len(reviewed) == 1, snapshot["requests"]
+        assert len(received) == 5 and len(reviewed) == 1, snapshot["requests"]
         assert str(source) not in json.dumps(received)
         assert "resolveWorkspaceSource" not in json.dumps(received)
         proof = store.evidence(reviewed[0]["id"])
@@ -176,7 +179,7 @@ def test_real_edit_proposal_review_and_separate_workspace_apply_gate(tmp_path, m
             assert not any(row["type"] == "request.merge" for row in snapshot["requests"])
         assert target.read_bytes() == original.encode()
         replay = store.create_objective("Change the title", "Change Title before to Title after in root0/notes.txt.", idempotency_key="edit-once")
-        assert replay["id"] == objective["id"] and len(received) == 4
+        assert replay["id"] == objective["id"] and len(received) == 5
     finally:
         assert service.stop()
         server.shutdown()

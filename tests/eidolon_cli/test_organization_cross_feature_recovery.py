@@ -1,4 +1,5 @@
 """Combined state transitions must retain exact execution evidence."""
+from tests.organization_package_helpers import claim_after_decomposition
 import json
 
 import pytest
@@ -19,7 +20,7 @@ def test_read_pause_owner_answer_reopen_does_not_replay_prior_execution_receipt(
                     'tool_grants': ['read_file']}],
     }}))
     store.create_objective('Inspect the owner-confirmed source', idempotency_key='read-question')
-    store.finish(store.claim_next(), {'workers': 1, 'tasks': [{'title': 'Inspect source',
+    store.finish(claim_after_decomposition(store), {'workers': 1, 'tasks': [{'title': 'Inspect source',
         'description': 'Read, clarify and verify current source.', 'type': 'work.inspect'}]})
     store.finish(store.claim_next(), {})
     first = store.claim_next()

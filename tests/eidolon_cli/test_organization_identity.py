@@ -1,4 +1,5 @@
 """Persistent organization identity, assignment and memory contracts using SQLite."""
+from tests.organization_package_helpers import claim_after_decomposition
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 import hashlib
@@ -25,7 +26,7 @@ def _identity(store, agent='worker-1'):
 
 def _work_claim(store, key, **task_fields):
     obj = store.create_objective('Prepare ' + key, idempotency_key=key)
-    plan = store.claim_next()
+    plan = claim_after_decomposition(store)
     assert plan['type'] == 'request.plan'
     store.finish(plan, {'tasks': [{'title': key, 'description': 'Use the supplied source material.',
                                  'type': 'work.draft', **task_fields}], 'workers': 2})
@@ -212,7 +213,7 @@ def _domain_settings():
 def test_cross_manager_assignment_preserves_authority_and_exact_worker(tmp_path):
     store = OrganizationStore(tmp_path / 'state.db', _domain_settings())
     store.create_objective('Coordinate domains', idempotency_key='domains', manager_id='engineering')
-    planner = store.claim_next()
+    planner = claim_after_decomposition(store)
     assert planner['agent_id'] == 'engineering'
     assert store.finish(planner, {'tasks': [
         {'title': 'Research inputs', 'description': 'Develop research inputs.', 'type': 'work.draft',
@@ -238,7 +239,7 @@ def test_cross_manager_assignment_preserves_authority_and_exact_worker(tmp_path)
 def test_invalid_assignments_roll_back_entire_plan(tmp_path, assignment):
     store = OrganizationStore(tmp_path / 'state.db', _domain_settings())
     store.create_objective('Scoped work', idempotency_key='invalid-assignment')
-    claim = store.claim_next()
+    claim = claim_after_decomposition(store)
     with pytest.raises(ValueError, match='Task'):
         store.finish(claim, {'tasks': [{'title': 'Plan', 'description': 'Engineering work',
                                        'type': 'work.draft', 'team': 'engineering', **assignment}]})
@@ -267,7 +268,7 @@ def test_unpinned_scope_prefers_planners_existing_reports_over_new_same_team_man
     ]}})
     store = OrganizationStore(tmp_path / 'state.db', settings)
     store.create_objective('Keep appropriate scope', idempotency_key='scope')
-    planner = store.claim_next()
+    planner = claim_after_decomposition(store)
     assert planner['agent_id'] == 'manager'
     store.finish(planner, {'tasks': [{'title': 'Draft', 'description': 'Work with the established team.', 'type': 'work.draft'}]})
     hire = store.claim_next()

@@ -32,6 +32,7 @@ export function Command({
   const hasOwnership = snapshot.agents.some(agent => agent.persistent)
   const executives = snapshot.agents.filter(agent => agent.role === 'Executive' && agent.lifecycle === 'active' && agent.capabilities.includes('request.accept'))
   const executiveId = metadata.executiveId ?? (executives.some(agent => agent.id === 'executive') ? 'executive' : '')
+  const selectedExecutive = executives.find(agent => agent.id === executiveId)
   const managers = snapshot.agents.filter(agent => agent.role === 'Manager' && agent.lifecycle === 'active' && agent.managerId === executiveId && ['request.plan', 'request.integrate'].every(capability => agent.capabilities.includes(capability)))
   const managerId = metadata.managerId ?? (managers.some(agent => agent.id === 'manager') ? 'manager' : '')
   const availableProjects = snapshot.runtime?.availableProjects ?? []
@@ -159,6 +160,7 @@ export function Command({
             {managers.map(agent => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
           </select>
           <p className="eid-note">{roster.ownershipNote}</p>
+          {selectedExecutive && <p className="eid-note">{selectedExecutive.capabilities.includes('request.decompose') ? copy.packageExecutiveAdmission : copy.packageLegacyAdmission}</p>}
         </>}
         {availableProjects.length > 0 && <fieldset disabled={submitting}>
           <legend>{copy.objectiveProjects}</legend>

@@ -79,7 +79,11 @@ def fixture_response(body):
     kind, context = data["request"]["type"], data["context"]
     evidence = context.get("evidence", [])
     ids = [item["id"] for item in evidence]
-    if kind == "request.plan":
+    if kind == "request.decompose":
+        output = {"workPackages": [{"title": "Deliver the project outcome", "description": context["objective"]["description"],
+            "managerId": context["objective"]["managerId"], "criterionIndexes": list(range(len(context["objective"]["acceptanceCriteria"]))),
+            "projectIds": [p["id"] for p in context["objective"].get("projects", [])], "dependsOn": [], "maxTasks": context["maxTasks"]}]}
+    elif kind == "request.plan":
         output = {"workers": 1, "tasks": [
             {"title": "Inspect addition", "type": "work.inspect", "team": "general", "agentId": "editor",
              "description": "Read root0/app.py and root0/test_app.py and identify the subtraction bug.", "dependsOn": []},

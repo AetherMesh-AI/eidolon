@@ -285,7 +285,11 @@ class SyntheticTrialResponder:
         owner_inputs = context.get("ownerInputs", [])
         if replies or owner_inputs:
             self.owner_answer_seen = True
-        if kind == "request.plan":
+        if kind == "request.decompose":
+            output = {"workPackages": [{"title": "Deliver the project outcome", "description": context["objective"]["description"],
+                "managerId": context["objective"]["managerId"], "criterionIndexes": list(range(len(context["objective"]["acceptanceCriteria"]))),
+                "projectIds": [p["id"] for p in context["objective"].get("projects", [])], "dependsOn": [], "maxTasks": context["maxTasks"]}]}
+        elif kind == "request.plan":
             if self.scenario.owner_answer and not self.owner_answer_seen:
                 question = "For duplicate IDs, should deduplicate retain the earliest or latest occurrence?"
                 output = ({"requests": [{"type": "request.question", "requestedOutcome": question}]}

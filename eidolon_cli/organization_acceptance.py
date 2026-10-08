@@ -117,6 +117,9 @@ class OrganizationAcceptanceStore:
                                  (request['id'], 'legacy-attempt-' + str(attempt), row['id'], request['type'], int(request['status'] == 'completed')))
 
     def _current_evidence(self, conn, objective_id):
+        from eidolon_cli.organization_packages import packages_complete
+        if not packages_complete(conn, objective_id):
+            raise ValueError('Objective acceptance requires every manager package plan and reviewed task')
         self.verify_project_coverage(conn, objective_id)
         rows = []
         for task in current_tasks(conn, objective_id):
@@ -160,6 +163,9 @@ class OrganizationAcceptanceStore:
             return
         objective = conn.execute('SELECT * FROM objectives WHERE id=?', (objective_id,)).fetchone()
         if objective['cancelled'] or conn.execute("SELECT 1 FROM requests WHERE objective_id=? AND status NOT IN ('completed','cancelled')", (objective_id,)).fetchone():
+            return
+        from eidolon_cli.organization_packages import packages_complete
+        if not packages_complete(conn, objective_id):
             return
         tasks = current_tasks(conn, objective_id)
         if not tasks or any(task['status'] != 'completed' for task in tasks):
@@ -289,7 +295,7 @@ class OrganizationAcceptanceStore:
         conn.execute("UPDATE tasks SET status='cancelled' WHERE objective_id=? AND status!='completed'", (objective_id,))
         conn.execute("UPDATE objective_control SET round=round+1,status='replanning',summary=?,deliverable_id=NULL WHERE objective_id=?", (feedback, objective_id))
         objective = conn.execute('SELECT * FROM objectives WHERE id=?', (objective_id,)).fetchone()
-        self._request(conn, objective_id, 'request.plan', self._objective_agent(conn, objective_id, 'Manager')['team'], objective['priority'],
+        self._queue_objective_planning(conn, objective_id, objective['priority'],
                       payload={'round': control['round'] + 1, 'feedback': feedback, 'evidenceIds': previous,
                                **({'projectExecutionHistory': project_history} if project_history else {})},
                       requester_id=requester_id)

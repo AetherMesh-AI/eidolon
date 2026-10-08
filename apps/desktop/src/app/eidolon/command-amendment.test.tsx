@@ -31,7 +31,7 @@ it('submits selected persistent leaders and clears an incompatible manager when 
 
   const snapshot: OrganizationSnapshot = {
     source: 'runtime', objectives: [], tasks: [], knowledge: [], activity: [], requests: [],
-    agents: [leader('executive', 'Executive'), leader('manager', 'Manager', 'executive'), leader('lunavale', 'Executive'), leader('accountservices', 'Manager', 'lunavale'), { ...leader('disabled-manager', 'Manager', 'lunavale'), lifecycle: 'disabled' }, { ...leader('staffing-only', 'Manager', 'lunavale'), capabilities: ['request.hire'] }],
+    agents: [leader('executive', 'Executive'), leader('manager', 'Manager', 'executive'), { ...leader('lunavale', 'Executive'), capabilities: ['request.decompose', 'request.accept'] }, leader('accountservices', 'Manager', 'lunavale'), { ...leader('disabled-manager', 'Manager', 'lunavale'), lifecycle: 'disabled' }, { ...leader('staffing-only', 'Manager', 'lunavale'), capabilities: ['request.hire'] }],
     runtime: { capabilities: ['work.analyze'], scope: 'Submitted text', state: 'ready', maxWorkers: 2 }
   }
 
@@ -41,9 +41,12 @@ it('submits selected persistent leaders and clears an incompatible manager when 
   const executive = await screen.findByRole('combobox', { name: 'Executive owner' })
   const manager = screen.getByRole('combobox', { name: 'Responsible manager' })
   expect(executive).toHaveProperty('value', 'executive')
+  expect(screen.getByText(/^Legacy manager planning: the selected executive/)).toBeTruthy()
   expect(manager).toHaveProperty('value', 'manager')
   fireEvent.change(screen.getByRole('textbox', { name: 'Objective' }), { target: { value: 'Analyze account services' } })
   fireEvent.change(executive, { target: { value: 'lunavale' } })
+  expect(screen.getByText(/^Executive delegation: the selected executive/)).toBeTruthy()
+  expect(screen.queryByText(/^Legacy manager planning: the selected executive/)).toBeNull()
   expect(manager).toHaveProperty('value', '')
   expect(screen.queryByRole('option', { name: 'manager' })).toBeNull()
   expect(screen.queryByRole('option', { name: 'disabled-manager' })).toBeNull()
@@ -56,6 +59,7 @@ it('submits selected persistent leaders and clears an incompatible manager when 
   await screen.findByText('Test admission paused')
   expect(request.mock.calls.find(call => call[0] === 'organization.create')![1]).toMatchObject({ title: 'Analyze account services', executiveId: 'lunavale', managerId: 'accountservices' })
   fireEvent.change(executive, { target: { value: 'executive' } })
+  expect(screen.getByText(/^Legacy manager planning: the selected executive/)).toBeTruthy()
   expect(manager).toHaveProperty('value', '')
   expect(screen.queryByRole('option', { name: 'accountservices' })).toBeNull()
 })

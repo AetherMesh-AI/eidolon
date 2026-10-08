@@ -9,6 +9,7 @@ import pytest
 
 from eidolon_cli.organization_config import OrganizationSettings
 from eidolon_cli.organization_store import OrganizationStore
+from tests.organization_package_helpers import decompose
 
 
 @pytest.fixture
@@ -21,6 +22,7 @@ def objective(store, key='objective', **kwargs):
 
 
 def plan(store, tasks=None, **extra):
+    decompose(store)
     claim = store.claim_next()
     assert claim['type'] == 'request.plan'
     store.finish(claim, {'tasks': tasks or [
@@ -142,7 +144,7 @@ def test_priority_capacity_and_cancellation_fence_inflight_results(store):
     high = objective(store, 'high', priority='high')
     claim = store.claim_next()
     assert claim['objective_id'] == high['id']
-    assert store.claim_next() is None  # the manager slot is occupied
+    assert store.claim_next() is None  # the executive slot is occupied
     assert store.cancel(high['id'])
     assert not store.cancel(high['id'])
     assert not store.finish(claim, {'tasks': []})
@@ -193,11 +195,12 @@ def test_invalid_plan_is_transactional_and_staffing_is_bounded(store, first_type
         return {claim['type']: claim for claim in claims}
 
     objective(store)
+    decompose(store)
     claim = store.claim_next()
     with pytest.raises(ValueError, match='earlier'):
         store.finish(claim, {'tasks': [{'title': 'Bad graph', 'description': 'Cycle', 'type': 'work.draft', 'dependsOn': [0]}]})
     assert not store.snapshot()['tasks']
-    assert store.snapshot()['requests'][0]['status'] == 'running'
+    assert next(row for row in store.snapshot()['requests'] if row['id'] == claim['id'])['status'] == 'running'
     store.finish(claim, {'tasks': [{'title': 'Draft', 'description': 'Write it', 'type': 'work.draft', 'dependsOn': []}], 'workers': 2})
     claims = claim_independent_requests(store)
     executing, hire = claims['work.draft'], claims['request.hire']

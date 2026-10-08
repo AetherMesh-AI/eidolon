@@ -1,4 +1,5 @@
 """Real ledger contracts for grants, staffing and evidence-bound tool work."""
+from tests.organization_package_helpers import claim_after_decomposition
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 import hashlib
@@ -22,7 +23,7 @@ def _settings(tmp_path, **extra):
 
 def _plan(store, *, key='goal', team='engineering', kind='work.inspect', priority='high'):
     obj = store.create_objective('Inspect supplied project', idempotency_key=key, priority=priority)
-    manager = store.claim_next()
+    manager = claim_after_decomposition(store)
     store.finish(manager, {'workers': 1, 'tasks': [{'title': 'Inspect README',
         'description': 'Read the configured README and cite its actual contents.',
         'type': kind, 'team': team, 'dependsOn': []}]})

@@ -1,4 +1,5 @@
 """Real localhost-provider reads stay fresh across clarification and restart."""
+from tests.organization_package_helpers import decomposition_result
 from collections import Counter
 import hashlib
 import json
@@ -50,7 +51,9 @@ def _read_after_owner_answer_and_restart(tmp_path, monkeypatch):
                 data = json.loads(prompt.split('Submitted context:\n', 1)[1])
                 kind, context = data['request']['type'], data['context']
                 provider_calls[kind] += 1
-                if kind == 'request.plan':
+                if kind == 'request.decompose':
+                    output = decomposition_result(context)
+                elif kind == 'request.plan':
                     assert not body.get('tools')
                     output = {'workers': 1, 'tasks': [{'title': 'Compare current prices', 'type': 'work.inspect',
                               'description': 'Read root0/prices.txt and recommend the cheaper option using final prices.',
@@ -214,7 +217,7 @@ def _read_after_owner_answer_and_restart(tmp_path, monkeypatch):
         completed_work = next(request for request in snapshot['requests'] if request['id'] == work['id'])
         assert completed_work['attempts'] == settings.max_attempts == 1
         assert reader_identities[0] == reader_identities[1]
-        assert provider_calls == Counter({'request.plan': 1, 'work.inspect': 4, 'request.review': 1,
+        assert provider_calls == Counter({'request.decompose': 1, 'request.plan': 1, 'work.inspect': 4, 'request.review': 1,
                                          'request.integrate': 1, 'request.accept': 1})
         assert [stage for stage, _, _ in reviewed_stages] == ['request.review', 'request.integrate', 'request.accept']
         assert len({proof for _, proof, _ in reviewed_stages}) == 1

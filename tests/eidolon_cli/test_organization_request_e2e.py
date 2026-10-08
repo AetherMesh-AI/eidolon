@@ -1,4 +1,5 @@
 """Real local-provider staffing, typed request, and persistent continuation flow."""
+from tests.organization_package_helpers import claim_after_decomposition, decomposition_result
 from collections import Counter
 import json
 import hashlib
@@ -52,7 +53,9 @@ def test_hire_question_answer_resumes_same_identity_through_acceptance(tmp_path,
                     assert not clarification['historical']
                 provider_calls[kind] += 1
                 assert not body.get('tools')
-                if kind == 'request.plan':
+                if kind == 'request.decompose':
+                    output = decomposition_result(context)
+                elif kind == 'request.plan':
                     assert context['agent']['id'] == 'manager'
                     if not context['requestResponses']:
                         output = {'requests': [{'type': 'request.hire', 'team': 'general',
@@ -172,7 +175,7 @@ def test_hire_question_answer_resumes_same_identity_through_acceptance(tmp_path,
         assert not errors, errors
         assert snapshot['objectives'][0]['status'] == 'completed', snapshot['requests']
         assert len(writer_identities) == 2 and writer_identities[0] == writer_identities[1]
-        assert provider_calls == Counter({'request.plan': 2, 'work.draft': 2, 'request.review': 1,
+        assert provider_calls == Counter({'request.decompose': 1, 'request.plan': 2, 'work.draft': 2, 'request.review': 1,
                                          'request.integrate': 1, 'request.accept': 1,
                                          **({} if owner_fallback else {'request.question': 1})})
         assert all(request['status'] == 'completed' for request in snapshot['requests'])
@@ -257,7 +260,7 @@ def test_real_tool_worker_can_pause_for_question_before_reading(tmp_path, monkey
     config._LOAD_CONFIG_CACHE.clear()
     store = OrganizationStore(home / 'organization' / 'state.db', OrganizationSettings.from_config(cfg))
     store.create_objective('Inspect the requested source', idempotency_key='question-first')
-    plan = store.claim_next()
+    plan = claim_after_decomposition(store)
     store.finish(plan, {'workers': 1, 'tasks': [{'title': 'Inspect source', 'type': work_type,
                         'description': 'Ask for the exact source file before reading.', 'agentId': 'reader'}]})
     hire = store.claim_next()
@@ -295,7 +298,7 @@ def test_typed_dependencies_cannot_cycle_through_task_dependencies(tmp_path):
     ]}})
     store = OrganizationStore(tmp_path / 'state.db', settings)
     store.create_objective('Prepare and publish', idempotency_key='cyclic-requests')
-    plan = store.claim_next()
+    plan = claim_after_decomposition(store)
     store.finish(plan, {'workers': 1, 'tasks': [
         {'title': 'Prepare', 'description': 'Prepare the brief', 'type': 'work.draft', 'agentId': 'writer'},
         {'title': 'Publish', 'description': 'Prepare the publication', 'type': 'work.draft',
@@ -321,7 +324,7 @@ def test_staffing_request_waits_for_unrelated_live_work_without_owner_interventi
     ]}})
     store = OrganizationStore(tmp_path / 'state.db', settings)
     store.create_objective('Independent parallel assignments', idempotency_key='concurrent-hire')
-    store.finish(store.claim_next(), {'workers': 2, 'tasks': [
+    store.finish(claim_after_decomposition(store), {'workers': 2, 'tasks': [
         {'title': 'A', 'description': 'Prepare A', 'type': 'work.draft', 'agentId': 'writer-a'},
         {'title': 'B', 'description': 'Prepare B', 'type': 'work.draft', 'agentId': 'writer-b'},
     ]})

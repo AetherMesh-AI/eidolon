@@ -122,10 +122,10 @@ def _validate_agent_members(proposal, settings, actor):
 def _transfer_rows(value):
     if not isinstance(value, list) or len(value) > 64:
         raise ValueError('Transfers must be a list of at most 64 explicit source and destination entries')
-    seen_tasks, seen_objectives, seen_pairs = set(), set(), set()
+    seen_tasks, seen_objectives, seen_packages, seen_pairs = set(), set(), set(), set()
     for transfer in value:
-        if not isinstance(transfer, dict) or set(transfer) - {'fromAgentId', 'toAgentId', 'taskIds', 'objectiveIds', 'includeMemory'}:
-            raise ValueError('Transfers must contain fromAgentId, toAgentId, taskIds, objectiveIds and includeMemory only')
+        if not isinstance(transfer, dict) or set(transfer) - {'fromAgentId', 'toAgentId', 'taskIds', 'objectiveIds', 'workPackageIds', 'includeMemory'}:
+            raise ValueError('Transfers must contain fromAgentId, toAgentId, taskIds, objectiveIds, workPackageIds and includeMemory only')
         source, target = transfer.get('fromAgentId'), transfer.get('toAgentId')
         tasks = transfer.get('taskIds', [])
         if (not isinstance(source, str) or not isinstance(target, str) or not source or not target
@@ -141,15 +141,21 @@ def _transfer_rows(value):
                 or len(set(objectives)) != len(objectives)
                 or any((source, ident) in seen_objectives for ident in objectives)):
             raise ValueError('Transfer objectiveIds must identify unique bounded objective leadership')
+        packages = transfer.get('workPackageIds', [])
+        if (not isinstance(packages, list) or len(packages) > 100
+                or any(not isinstance(ident, str) or not 1 <= len(ident) <= 128 for ident in packages)
+                or len(set(packages)) != len(packages) or seen_packages.intersection(packages)):
+            raise ValueError('Transfer workPackageIds must identify unique bounded packages, without overlapping transfers')
         include_memory = transfer.get('includeMemory', False)
         if type(include_memory) is not bool:
             raise ValueError('Transfer includeMemory must be a boolean')
-        if not tasks and not objectives and not include_memory:
-            raise ValueError('A transfer must explicitly select open tasks, objective leadership or bounded memory')
+        if not tasks and not objectives and not packages and not include_memory:
+            raise ValueError('A transfer must explicitly select open tasks, objective leadership, work packages or bounded memory')
         seen_tasks.update(tasks)
         seen_objectives.update((source, ident) for ident in objectives)
+        seen_packages.update(packages)
         seen_pairs.add((source, target))
-        yield source, target, tasks, objectives, include_memory
+        yield source, target, tasks, objectives, packages, include_memory
 
 
 def _copy_memory(conn, source, target):
@@ -242,9 +248,9 @@ def _transfer_objective(conn, source, target, objective_id, actor=None):
         raise ValueError('Transfer source does not own the exact objective leadership')
     if actor:
         _validate_objective_scope(conn, objective_id, actor)
-    kinds = ('request.plan', 'request.integrate') if source['role'] == 'Manager' else ('request.accept',)
+    kinds = _objective_routes(conn, objective_id, source['role'])
     if not set(kinds).issubset(json.loads(target['accepts'])):
-        raise ValueError('Objective leadership destination must accept its planning/integration or acceptance routes')
+        raise ValueError('Objective leadership destination must accept its planning, integration or acceptance routes')
     if source['role'] == 'Manager':
         conn.execute('UPDATE objective_assignments SET manager_id=? WHERE objective_id=?',
                      (target['id'], objective_id))
@@ -262,11 +268,83 @@ def _transfer_objective(conn, source, target, objective_id, actor=None):
                      (target['id'], source['id'], objective_id, kind))
 
 
+def _objective_routes(conn, objective_id, role):
+    from eidolon_cli.organization_packages import planning_mode
+    hierarchical = planning_mode(conn, objective_id) == 'executive_packages'
+    if role == 'Executive':
+        return ('request.decompose', 'request.accept') if hierarchical else ('request.accept',)
+    return ('request.integrate',) if hierarchical else ('request.plan', 'request.integrate')
+
+
+def _validate_package_scope(conn, package, actor):
+    from eidolon_cli.organization_projects import objective_projects
+    teams = {row['team'] for row in conn.execute(
+        'SELECT t.team FROM tasks t JOIN task_work_packages p ON p.task_id=t.id WHERE p.package_id=?',
+        (package['id'],))}
+    projects = set(json.loads(package['project_ids']))
+    teams.update(project['team'] for project in objective_projects(conn, package['objective_id'])
+                 if project['id'] in projects)
+    if any(not _team_allowed(actor, team) for team in teams):
+        raise ValueError('Work package work is outside the actor managed teams')
+
+
+def _transfer_package(conn, source, target, package_id, actor=None):
+    if source['role'] != 'Manager':
+        raise ValueError('Only Managers may transfer work packages')
+    package = conn.execute('SELECT p.*,o.cancelled,c.status,c.round AS current_round '
+                           'FROM manager_work_packages p JOIN objectives o ON o.id=p.objective_id '
+                           'JOIN objective_control c ON c.objective_id=o.id WHERE p.id=?', (package_id,)).fetchone()
+    if (package is None or package['cancelled'] or package['status'] in {'accepted', 'legacy_completed'}
+            or package['round'] != package['current_round']):
+        raise ValueError('Work package transfers must identify current packages in existing open objectives')
+    if package['manager_id'] != source['id']:
+        raise ValueError('Transfer source does not own the exact work package')
+    if 'request.plan' not in json.loads(target['accepts']):
+        raise ValueError('Work package destination must accept request.plan')
+    if actor:
+        _validate_package_scope(conn, package, actor)
+    # Ownership can change after planning, but the retained plan, its author,
+    # and delegated task assignments are separate immutable/explicit records.
+    conn.execute('UPDATE manager_work_packages SET manager_id=? WHERE id=?', (target['id'], package_id))
+    conn.execute("UPDATE requests SET team=?,agent_id=NULL WHERE id=? AND status NOT IN ('completed','cancelled')",
+                 (target['team'], package['plan_request_id']))
+    conn.execute('UPDATE request_continuations SET agent_id=? WHERE agent_id=? AND request_id IN '
+                 "(SELECT id FROM requests WHERE id=? AND status NOT IN ('completed','cancelled'))",
+                 (target['id'], source['id'], package['plan_request_id']))
+
+
+def _validate_open_packages(conn, previous_teams, actor=None):
+    rows = conn.execute('SELECT p.*,a.executive_id FROM manager_work_packages p '
+                        'JOIN objective_assignments a ON a.objective_id=p.objective_id '
+                        'JOIN objectives o ON o.id=p.objective_id '
+                        'JOIN objective_control c ON c.objective_id=o.id WHERE o.cancelled=0 '
+                        "AND c.status NOT IN ('accepted','legacy_completed') AND p.round=c.round").fetchall()
+    from eidolon_cli.organization_identity import _leader_enabled
+    for package in rows:
+        manager = conn.execute('SELECT * FROM agents WHERE id=?', (package['manager_id'],)).fetchone()
+        if (manager is None or manager['role'] != 'Manager' or not _leader_enabled(conn, manager)
+                or manager['manager_id'] != package['executive_id']
+                or 'request.plan' not in json.loads(manager['accepts'])):
+            raise ValueError('Open work package requires its enabled planning Manager under the exact Executive; '
+                             'retain request.plan and its reporting line or explicitly transfer its workPackageIds')
+        previous_team = previous_teams.get(manager['id'])
+        if previous_team is None or previous_team == manager['team']:
+            continue
+        if actor:
+            _validate_package_scope(conn, package, actor)
+        conn.execute("UPDATE requests SET team=? WHERE id=? AND team!=? AND status NOT IN ('completed','cancelled')",
+                     (manager['team'], package['plan_request_id'], manager['team']))
+
+
 def _validate_objective_scope(conn, objective_id, actor):
     from eidolon_cli.organization_projects import objective_projects
     teams = {row['team'] for row in conn.execute(
         'SELECT DISTINCT team FROM tasks WHERE objective_id=?', (objective_id,))}
     teams.update(project['team'] for project in objective_projects(conn, objective_id))
+    teams.update(row['team'] for row in conn.execute(
+        'SELECT a.team FROM manager_work_packages p JOIN agents a ON a.id=p.manager_id '
+        'JOIN objective_control c ON c.objective_id=p.objective_id WHERE p.objective_id=? AND p.round=c.round',
+        (objective_id,)))
     if any(not _team_allowed(actor, team) for team in teams):
         raise ValueError('Objective work is outside the actor managed teams')
 
@@ -301,8 +379,8 @@ def _validate_open_assignments(conn, previous_teams, actor=None):
         if (not manager or not executive or manager['role'] != 'Manager' or executive['role'] != 'Executive'
                 or manager['manager_id'] != executive['id'] or retired):
             raise ValueError('Reorganization requires an explicit full open-objective handoff before changing its leadership')
-        for leader, routes in ((manager, ('request.plan', 'request.integrate')),
-                               (executive, ('request.accept',))):
+        for leader in (manager, executive):
+            routes = _objective_routes(conn, row['objective_id'], leader['role'])
             missing = set(routes) - set(json.loads(leader['accepts']))
             if missing:
                 raise ValueError(f"Open objective {row['objective_id']} requires {leader['id']} to accept "
@@ -319,6 +397,8 @@ def _validate_open_assignments(conn, previous_teams, actor=None):
                 conn.execute("UPDATE requests SET team=? WHERE objective_id=? AND type=? AND team!=? "
                              "AND status NOT IN ('completed','cancelled')",
                              (leader['team'], row['objective_id'], kind, leader['team']))
+
+    _validate_open_packages(conn, previous_teams, actor)
 
 
 class OrganizationManagementStore:
@@ -452,13 +532,13 @@ class OrganizationManagementStore:
                 if historical and not _team_allowed(actor, historical['team']):
                     raise ValueError('Staff management cannot adopt a retained identity outside its managed teams')
         sources = {}
-        for source, target, tasks, objectives, include_memory in transfer_rows:
+        for source, target, tasks, objectives, packages, include_memory in transfer_rows:
             row = conn.execute('SELECT * FROM agents WHERE id=?', (source,)).fetchone()
             if row is None:
                 raise ValueError('Transfer source must identify an existing persistent agent')
             sources[source] = dict(row)
         selected_leadership = set()
-        for source, target, tasks, objectives, include_memory in transfer_rows:
+        for source, target, tasks, objectives, packages, include_memory in transfer_rows:
             for objective_id in objectives:
                 selection = (sources[source]['role'], objective_id)
                 if selection in selected_leadership:
@@ -477,7 +557,7 @@ class OrganizationManagementStore:
         for staff in current.values():
             if staff.enabled and previous_members.get(staff.id) != _plain(asdict(staff)):
                 conn.execute("UPDATE staff_state SET active=1 WHERE agent_id=?", (staff.id,))
-        for source, target, tasks, objectives, include_memory in transfer_rows:
+        for source, target, tasks, objectives, packages, include_memory in transfer_rows:
             destination = conn.execute('SELECT * FROM agents WHERE id=?', (target,)).fetchone()
             source_row = sources[source]
             if destination is None or target not in current or not current[target].enabled:
@@ -490,11 +570,13 @@ class OrganizationManagementStore:
                             {ident for role, ident in selected_leadership if role == source_row['role']})
             for objective_id in objectives:
                 _transfer_objective(conn, source_row, destination, objective_id, actor)
+            for package_id in packages:
+                _transfer_package(conn, source_row, destination, package_id, actor)
             memory = _copy_memory(conn, source, target) if include_memory else None
             _audit(conn, actor_id, request_id, 'transfer', source,
                    {'fromAgentId': source, 'team': source_row['team']},
                    {'toAgentId': target, 'team': destination['team'], 'taskIds': tasks,
-                    'objectiveIds': objectives,
+                    'objectiveIds': objectives, 'workPackageIds': packages,
                     'includeMemory': include_memory, 'memory': memory})
         _validate_open_assignments(conn, previous_teams, actor)
         self._validate_paused_work(conn)

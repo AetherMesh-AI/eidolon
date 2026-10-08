@@ -1,5 +1,9 @@
 /** Persistent organization identity and context copy, kept aligned across locales. */
 const copy = {
+  transferWorkPackages: ['Work package ownership transfer', '作業パッケージの担当の引き継ぎ', '工作包归属交接', '工作套件歸屬交接'],
+  transferWorkPackagesNote: ['Transfer selected current-round packages in open objectives to another manager. Task assignments, objective leadership and retained memory require their own explicit selections.', '未完了の目標の現在のラウンドで、選択したパッケージを別のマネージャーへ引き継ぎます。タスクの割り当て、目標の責任者、保存された記憶はそれぞれ明示的な選択が必要です。', '将未完成目标中所选当前轮次的工作包交接给另一位经理。任务分配、目标负责人和保留记忆需要分别明确选择。', '將未完成目標中所選目前輪次的工作套件交接給另一位管理者。任務指派、目標負責人與保留記憶需要分別明確選取。'],
+  noTransferWorkPackages: ['No current packages owned by this manager in open objectives.', 'このマネージャーが担当する未完了の目標の現在のパッケージはありません。', '此经理在未完成目标中没有当前工作包。', '此管理者在未完成目標中沒有目前工作套件。'],
+  workPackageIds: ['Work package IDs', '作業パッケージ ID', '工作包 ID', '工作套件 ID'],
   setupDetails: ['Review roster, repository and background configuration', 'メンバー・リポジトリ・バックグラウンド設定を確認', '检查成员、仓库和后台配置', '檢查成員、儲存庫和背景設定'],
   setupWaiting: ['Connect to the organization runtime to load setup guidance.', '設定ガイドを読み込むには組織のランタイムに接続してください。', '请连接组织运行时以加载设置指引。', '請連線至組織執行階段以載入設定指引。'],
   setupTitle: ['Organization setup', '組織の設定', '组织设置', '組織設定'],

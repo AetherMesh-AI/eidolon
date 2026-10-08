@@ -13,6 +13,7 @@ const modelRequests = new Set([
   'work.analyze',
   'work.inspect',
   'work.edit',
+  'request.decompose',
   'request.plan',
   'request.review',
   'request.test_review',
@@ -102,6 +103,10 @@ export function RuntimeSetup({ snapshot }: RuntimeSetupProps) {
               <dd>{setup.provider.overriddenMembers}</dd>
               <dt>{copy.roster}</dt>
               <dd>{leaders && workers ? copy.setupRosterPresent : copy.setupRosterMissing}</dd>
+              {executives.length > 0 && <>
+                <dt>{t.organizationWork.packagePlanningMode}</dt>
+                <dd><ul>{executives.map(executive => <li key={executive.id}>{executive.name}: {executive.capabilities.includes('request.decompose') ? t.organizationWork.packageExecutiveMode : t.organizationWork.packageLegacyMode}</li>)}</ul></dd>
+              </>}
               <dt>{copy.setupProjects}</dt>
               <dd>{runtime?.availableProjects?.length ?? t.organizationRuntime.notReported}</dd>
               <dt>{t.organizationRuntime.readGrant}</dt>

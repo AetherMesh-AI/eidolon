@@ -1,4 +1,5 @@
 """Real SQLite archive boundaries, repeat/restart safety and retained references."""
+from tests.organization_package_helpers import claim_after_decomposition
 import json
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
@@ -23,7 +24,7 @@ def archive(store, objective, key='archive', revision=0):
 
 def test_reversible_archive_retains_identity_requests_audit_and_duplicate_receipts(store):
     obj = create(store)
-    claim = store.claim_next()
+    claim = claim_after_decomposition(store)
     store.cancel(obj['id'])
     before = store.history_objective(obj['id'])
     archived = archive(store, obj)
@@ -57,7 +58,7 @@ def test_reversible_archive_retains_identity_requests_audit_and_duplicate_receip
 def test_unsettled_objective_never_archives(store, phase):
     obj = create(store)
     if phase != 'planning':
-        claim = store.claim_next()
+        claim = claim_after_decomposition(store)
         if phase == 'pending_intervention':
             store.fail(claim, 'Needs owner input')
         elif phase == 'reviewing':
@@ -72,7 +73,7 @@ def test_unsettled_objective_never_archives(store, phase):
 
 def test_archive_preserves_cancelled_dag_and_blocks_live_external_dependencies(store):
     obj = create(store)
-    claim = store.claim_next()
+    claim = claim_after_decomposition(store)
     store.finish(claim, {'tasks': [
         {'title': 'First', 'description': 'First brief', 'type': 'work.draft', 'team': 'general', 'dependsOn': []},
         {'title': 'Second', 'description': 'Second brief', 'type': 'work.draft', 'team': 'general', 'dependsOn': [0]},
@@ -80,7 +81,7 @@ def test_archive_preserves_cancelled_dag_and_blocks_live_external_dependencies(s
     store.cancel(obj['id'])
     tasks = store.history_objective(obj['id'])['tasks']
     other = create(store, 'other')
-    other_claim = store.claim_next()
+    other_claim = claim_after_decomposition(store)
     store.finish(other_claim, {'tasks': [{'title': 'Other', 'description': 'Other brief', 'type': 'work.draft',
                                         'team': 'general', 'dependsOn': []}]})
     with store._write() as conn:
@@ -165,7 +166,7 @@ def test_concurrent_archive_has_one_receipt_and_transition_budget_is_durable(sto
 
 def test_accepted_history_keeps_reviewed_bytes_dependencies_and_agent_context(store):
     obj = create(store)
-    claim = store.claim_next()
+    claim = claim_after_decomposition(store)
     store.finish(claim, {'tasks': [{'title': 'Draft', 'description': 'Prepare a brief', 'type': 'work.draft',
                                   'team': 'general', 'dependsOn': []}]})
     worker = store.claim_next()
@@ -253,7 +254,7 @@ def test_archive_eligibility_query_work_does_not_grow_with_retained_task_history
         MAX_CURRENT_OBJECTIVES, MAX_ARCHIVED_OBJECTIVES, archive_blocker, live_history_references,
     )
     base = create(store)
-    claim = store.claim_next()
+    claim = claim_after_decomposition(store)
     store.finish(claim, {'tasks': [{'title': 'Task', 'description': 'Task detail', 'type': 'work.draft',
                                   'team': 'general', 'dependsOn': []}]})
     store.cancel(base['id'])

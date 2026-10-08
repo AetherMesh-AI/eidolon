@@ -1,4 +1,5 @@
 """Real ledger outcome lifecycle, offline writers and durable owner acknowledgements."""
+from tests.organization_package_helpers import claim_after_decomposition
 from concurrent.futures import ThreadPoolExecutor
 import sqlite3
 import threading
@@ -15,7 +16,7 @@ def store(tmp_path):
 
 def accepted(store, key='accepted'):
     objective = store.create_objective('A supported decision', idempotency_key=key, delivery_mode='managed_artifact')
-    claim = store.claim_next()
+    claim = claim_after_decomposition(store)
     assert claim['type'] == 'request.plan'
     store.finish(claim, {'tasks': [{'title': 'Analyze', 'description': 'Compare options', 'type': 'work.analyze'}]})
     claim = store.claim_next()

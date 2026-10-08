@@ -1,4 +1,5 @@
 """Replanning retains exact multi-project diagnostics without reusing stale proof."""
+from tests.organization_package_helpers import claim_after_decomposition
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -129,7 +130,7 @@ def test_owner_replan_and_amendment_retain_failed_and_unknown_projects_at_provid
     # original failed run or misrepresent the other project's interrupted start.
     for round_number in (1, 2):
         store = OrganizationStore(store.path)
-        plan = store.claim_next()
+        plan = claim_after_decomposition(store)
         assert plan['type'] == 'request.plan'
         context, result = assert_planner_evidence(store, plan, expected, planner_provider)
         assert context['objective']['round'] == round_number
@@ -198,7 +199,7 @@ def test_replan_retains_each_project_run_and_source_receipt_without_accepting_st
 
     assert set(reviewed) == {'alpha', 'beta'}
     store = OrganizationStore(store.path)
-    plan = store.claim_next()
+    plan = claim_after_decomposition(store)
     assert plan['type'] == 'request.plan'
     context, _ = assert_planner_evidence(store, plan, expected, planner_provider)
     history = {entry['projectId']: entry for entry in context['projectExecutionHistory']}

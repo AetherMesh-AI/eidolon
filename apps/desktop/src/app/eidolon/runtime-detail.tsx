@@ -12,6 +12,7 @@ import { RuntimeAcceptance } from './runtime-acceptance'
 import { RuntimeArtifact } from './runtime-artifact'
 import { RuntimeCapabilities } from './runtime-capabilities'
 import { RuntimeRequests } from './runtime-requests'
+import { RuntimeWorkPackages } from './runtime-work-packages'
 import type { Objective, OrganizationSnapshot, RuntimeOrganizationAdapter } from './types'
 import { WorkGraph } from './work-graph'
 import { Knowledge, Status } from './workspace'
@@ -46,7 +47,7 @@ export function RuntimeObjectiveDetail({ objective, adapter, snapshot, historyCo
     <Link className="eid-back" to="/objectives">← Objectives</Link>
     <header className="eid-page-header"><div><p className="eid-eyebrow">Objective · Runtime</p><h1>{objective.title}</h1><p className="eid-result-text">{objective.description}</p></div><Status status={objective.status} /></header>
     <div className="eid-inline"><span>{t.organizationRoster.objectiveExecutive} · {owner?.name || objective.ownerId || 'Not assigned'}</span>{objective.managerId && <span>{t.organizationRoster.objectiveManager} · {manager?.name || objective.managerId}</span>}<Button onClick={() => setInspecting(true)} size="sm" variant="secondary">Inspect objective</Button></div>
-    {inspecting && <Inspector kind="objective" onClose={() => setInspecting(false)} title={objective.title}><MetadataSummary objective={objective} /><dl><dt>Status</dt><dd>{objective.status}</dd><dt>Owner</dt><dd>{owner?.name || objective.ownerId}</dd><dt>Tasks</dt><dd>{tasks.length}</dd><dt>Result</dt><dd className="eid-result-text">{objective.result || 'No reviewed result yet.'}</dd></dl><p>State and completion are reported by the current-profile runtime.</p></Inspector>}
+    {inspecting && <Inspector kind="objective" onClose={() => setInspecting(false)} title={objective.title}><MetadataSummary objective={objective} /><RuntimeWorkPackages objective={objective} snapshot={snapshot} /><dl><dt>Status</dt><dd>{objective.status}</dd><dt>Owner</dt><dd>{owner?.name || objective.ownerId}</dd><dt>Tasks</dt><dd>{tasks.length}</dd><dt>Result</dt><dd className="eid-result-text">{objective.result || 'No reviewed result yet.'}</dd></dl><p>State and completion are reported by the current-profile runtime.</p></Inspector>}
     {evidenceId && <RuntimeArtifact adapter={adapter} evidenceId={evidenceId} key={evidenceId} onClose={() => setEvidenceId(null)} snapshot={snapshot} title="Full task evidence" />}
     {objective.projects?.length ? <section aria-label={copy.objectiveProjects}>
       <h2>{copy.objectiveProjects}</h2>
@@ -56,7 +57,7 @@ export function RuntimeObjectiveDetail({ objective, adapter, snapshot, historyCo
     <RuntimeRequests adapter={adapter} objective={objective} snapshot={snapshot} />
     <div aria-label="Objective views" className="eid-tabs" role="tablist">{(['work', 'activity', 'artifacts', 'decisions'] as const).map(name => <button aria-selected={tab === name} key={name} onClick={() => setTab(name)} role="tab">{copy[name]}</button>)}</div>
     <section aria-label={tab} role="tabpanel">
-      {tab === 'work' && <><RuntimeAcceptance objective={objective} onOpenEvidence={setEvidenceId} /><WorkGraph objectiveId={objective.id} onOpenEvidence={setEvidenceId} snapshot={snapshot} /></>}
+      {tab === 'work' && <><RuntimeAcceptance objective={objective} onOpenEvidence={setEvidenceId} /><RuntimeWorkPackages objective={objective} snapshot={snapshot} /><WorkGraph objectiveId={objective.id} onOpenEvidence={setEvidenceId} snapshot={snapshot} /></>}
       {tab === 'activity' && <Activity objectiveId={objective.id} snapshot={snapshot} />}
       {tab === 'artifacts' && <Knowledge adapter={adapter} objectiveId={objective.id} snapshot={snapshot} />}
       {tab === 'decisions' && <><p>{copy.acceptanceNote}</p>{snapshot.decisions?.filter(item => item.objectiveId === objective.id).map(item => <article key={item.id}><h2>{item.title}</h2><Status status={item.status} /><p>{item.summary}</p></article>)}</>}

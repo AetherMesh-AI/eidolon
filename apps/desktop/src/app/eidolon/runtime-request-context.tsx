@@ -42,6 +42,10 @@ export function hasCompleteManagementProposal(
           (Array.isArray(transfer.objectiveIds) &&
             transfer.objectiveIds.every(id => typeof id === 'string' && Boolean(id.trim())) &&
             new Set(transfer.objectiveIds).size === transfer.objectiveIds.length)) &&
+        (transfer.workPackageIds === undefined ||
+          (Array.isArray(transfer.workPackageIds) && transfer.workPackageIds.length <= 100 &&
+            transfer.workPackageIds.every(id => typeof id === 'string' && Boolean(id.trim())) &&
+            new Set(transfer.workPackageIds).size === transfer.workPackageIds.length)) &&
         typeof transfer.includeMemory === 'boolean'
     )
   )
@@ -174,6 +178,11 @@ export function ManagementProposal({ proposal }: { proposal: OrganizationManagem
                 {transfer.objectiveIds !== undefined && (
                   <p>
                     {roster.objectiveLeadershipIds}: {transfer.objectiveIds.join(', ') || '∅'}
+                  </p>
+                )}
+                {transfer.workPackageIds !== undefined && (
+                  <p>
+                    {roster.workPackageIds}: {transfer.workPackageIds.join(', ') || '∅'}
                   </p>
                 )}
                 <p>

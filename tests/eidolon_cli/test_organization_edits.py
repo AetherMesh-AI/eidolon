@@ -1,4 +1,5 @@
 """Exact reviewed workspace revisions exercised through independent SQLite stores."""
+from tests.organization_package_helpers import claim_after_decomposition
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 import hashlib
@@ -34,7 +35,7 @@ def _setup(tmp_path, *, tasks=1, content=SOURCE):
                    for i in range(2)]}})
     store = OrganizationStore(tmp_path / 'state.db', settings)
     objective = store.create_objective('Improve the project', priority='high', idempotency_key='one')
-    plan = store.claim_next()
+    plan = claim_after_decomposition(store)
     store.finish(plan, {'workers': tasks, 'tasks': [{'title': f'Edit {i}', 'description': 'Replace old value.',
          'type': 'work.edit', 'team': 'engineering'} for i in range(tasks)]})
     hire = store.claim_next()

@@ -33,15 +33,24 @@ BEGIN SELECT RAISE(ABORT, 'Request requires a current organization policy'); END
 # Startup operational settings can differ between processes. Explicit owner
 # configuration changes still advance the generation, even for concurrency.
 _AUTHORITY_FIELDS = ('team', 'capabilities', 'roster', 'tool_grants', 'read_roots', 'max_workers',
-                     'max_replans', 'max_stages', 'max_owner_resolutions', 'max_output_tokens',
+                     'max_replans', 'max_stages', 'max_tasks', 'max_owner_resolutions', 'max_output_tokens',
                      'max_members', 'max_request_depth', 'max_requests_per_stage',
                      'max_context_tokens', 'max_model_calls', 'max_total_tokens', 'objective_timeout_seconds',
                      'max_cost_usd', 'model_costs', 'project_grants', 'max_project_runs', 'projects')
 
 
-def _fingerprint(settings):
-    return hashlib.sha256(json.dumps({key: settings.get(key, getattr(OrganizationSettings, key)) for key in _AUTHORITY_FIELDS},
+def _fingerprint(settings, fields=_AUTHORITY_FIELDS):
+    return hashlib.sha256(json.dumps({key: settings.get(key, getattr(OrganizationSettings, key)) for key in fields},
                                      sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
+def _retained_fingerprints(settings):
+    # Before package planning, max_tasks was persisted but excluded from the
+    # authority hash. Older ledgers also hashed only fields present at the time.
+    previous_fields = tuple(key for key in _AUTHORITY_FIELDS if key != 'max_tasks')
+    return {_fingerprint(settings, fields)
+            for version in (_AUTHORITY_FIELDS, previous_fields)
+            for fields in (version, tuple(key for key in version if key in settings))}
 
 
 def persisted_settings(conn):
@@ -50,9 +59,7 @@ def persisted_settings(conn):
     if row is None:
         return None
     values = json.loads(row['settings'])
-    legacy = hashlib.sha256(json.dumps({key: values[key] for key in _AUTHORITY_FIELDS if key in values},
-                                      sort_keys=True, separators=(',', ':')).encode()).hexdigest()
-    if _fingerprint(values) != row['fingerprint'] and legacy != row['fingerprint']:
+    if row['fingerprint'] not in _retained_fingerprints(values):
         raise ValueError('Persisted organization policy does not match its identity')
     for key in ('capabilities', 'tool_grants', 'read_roots'):
         values[key] = tuple(values[key])
@@ -174,7 +181,9 @@ class OrganizationPolicyStore:
         fingerprint = _fingerprint(values)
         serialized = json.dumps(values, sort_keys=True)
         previous = conn.execute('SELECT * FROM organization_policy WHERE id=1').fetchone()
-        changed = force or previous is None or previous['fingerprint'] != fingerprint
+        # A hash-format upgrade alone is not an authority change. Compare the
+        # validated retained settings using today's complete authority fields.
+        changed = force or previous is None or _fingerprint(json.loads(previous['settings'])) != fingerprint
         generation = 1 if previous is None else previous['generation'] + int(changed)
         conn.execute('INSERT INTO organization_policy VALUES (1,?,?,?) ON CONFLICT(id) DO UPDATE SET '
                      'generation=excluded.generation,fingerprint=excluded.fingerprint,settings=excluded.settings',

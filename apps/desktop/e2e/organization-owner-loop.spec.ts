@@ -17,6 +17,7 @@ import {
   writeMockProviderConfig
 } from './fixtures'
 import { startMockServer } from './mock-server'
+import { organizationPackageProposal } from './organization-package-proposal'
 import { organizationProviderTarget } from './organization-provider-target'
 import { expect, test } from './test'
 
@@ -55,14 +56,14 @@ async function localOrganizationProvider(mockUrl: string) {
         if (message && typeof message.content === 'string') {
           const submitted = JSON.parse(message.content.split('Submitted context:\n', 2)[1]) as {
             request: { type: string }
-            context: { objective: { title: string } }
+            context: { objective: { title: string; acceptanceCriteria: string[] } }
           }
           const kind = submitted.request.type
           stages.push(kind)
-          if (kind !== 'request.plan' || submitted.context.objective.title !== objectiveTitle || payload?.tools?.length) {
+          if (!['request.decompose', 'request.plan'].includes(kind) || submitted.context.objective.title !== objectiveTitle || payload?.tools?.length) {
             throw new Error(`Unexpected organization provider request: ${kind}`)
           }
-          const content = JSON.stringify({
+          const content = JSON.stringify(kind === 'request.decompose' ? organizationPackageProposal(submitted.context, 1) : {
             tasks: [{ title: 'Deploy to external production', description: 'Perform the requested external deployment, without substituting a draft.', type: 'work.deploy', team: 'general', dependsOn: [] }],
             workers: 1
           })
@@ -321,7 +322,7 @@ test('preserves unsupported work and grants across navigation, dismissal, reload
   expect(await page.evaluate(key => localStorage.getItem(key), legacyKey)).toBe(legacyBytes)
   await assertNoToolGrants()
   expect(providerErrors).toEqual([])
-  expect(stages).toEqual(['request.plan'])
+  expect(stages).toEqual(['request.decompose', 'request.plan'])
 
   // Cancellation is a durable terminal state, never a successful deployment.
   await unsupported.click()
@@ -347,5 +348,5 @@ test('preserves unsupported work and grants across navigation, dismissal, reload
   await capture('08-cancelled-request-history')
   expect(await page.evaluate(key => localStorage.getItem(key), legacyKey)).toBe(legacyBytes)
   expect(providerErrors).toEqual([])
-  expect(stages).toEqual(['request.plan'])
+  expect(stages).toEqual(['request.decompose', 'request.plan'])
 })
