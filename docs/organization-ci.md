@@ -28,6 +28,14 @@ No branch protection, repository setting, secret, or permission grant is changed
   and after commit, race stale writers, retain definitions through restart and
   revoke changed authority. Export/import and recovery snapshots run on all hosts;
   symlink/junction retarget cases execute only on their actual supported OS.
+  Windows runs two disjoint logical shards (ledger/projects and leadership/packages),
+  while macOS runs their full union. Recorded PR34 Windows file times approached
+  the unchanged 300-second cap (leadership handoffs: 266.9 seconds), with large
+  same-tree I/O variance. Lifecycle, atomic-validation and peer-continuation
+  handoffs therefore have separate files with identical collected cases and
+  unchanged assertions. Native jobs retain the 15-minute limit and three file
+  workers; the existing Windows check name is an aggregate gate that fails if
+  any native matrix entry fails, is cancelled or is skipped.
   These hosts verify honest
   unsupported execution; they do not claim Linux sandbox support.
 - Linux desktop: organization UI/store/shell tests and synthetic fixture helpers,
