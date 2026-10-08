@@ -1,5 +1,6 @@
 import type { OrganizationAttentionPage, OrganizationAttentionQuery, OrganizationAttentionSeen } from './runtime-attention-types'
 import type { HistoryCounts, HistoryMutation, HistoryPage, HistoryQuery, HistoryState } from './runtime-history-types'
+import type { OrganizationOutcomePage, OrganizationOutcomeQuery, OrganizationOutcomeSeen } from './runtime-outcome-types'
 
 export const objectiveStatusLabels = {
   planning: 'Planning', active: 'Active', waiting: 'Waiting', needs_input: 'Needs Input',
@@ -509,6 +510,7 @@ export interface OrganizationConnection {
   lastUpdatedAt?: string
 }
 export interface OrganizationSnapshot {
+  outcomes?: OrganizationOutcomePage
   attention?: OrganizationAttentionPage
   source?: 'prototype' | 'runtime'
   requests?: OrganizationRequest[]
@@ -532,6 +534,8 @@ export interface StaticOrganizationAdapter extends OrganizationReader {
 
 export interface RuntimeOrganizationAdapter extends OrganizationReader {
   readonly mode: 'runtime'
+  getOutcomes?(input?: OrganizationOutcomeQuery): Promise<OrganizationOutcomePage>
+  markOutcomeSeen?(input: OrganizationOutcomeSeen): Promise<void>
   getAttention?(input?: OrganizationAttentionQuery): Promise<OrganizationAttentionPage>
   markAttentionSeen?(input: OrganizationAttentionSeen): Promise<void>
   getHistory?(input?: HistoryQuery): Promise<HistoryPage>

@@ -85,6 +85,7 @@ export const SidebarSurface = memo(function SidebarSurface({
       onNavigate={to => navigateToWorkspacePage(navigate, to)}
       pluginNav={<PluginNavigation />}
       sessions={<ChatSidebar currentView={currentView} historyOnly {...latestActions} />}
+      unreadOutcomes={organization?.snapshot.outcomes?.unread ?? 0}
     />
   )
 })

@@ -12,12 +12,14 @@ export function OrganizationRail({
   sessions,
   pluginNav,
   needsYouCount = 0,
+  unreadOutcomes = 0,
   onNavigate,
   mode = 'runtime'
 }: {
   sessions: ReactNode
   pluginNav?: ReactNode
   needsYouCount?: number
+  unreadOutcomes?: number
   onNavigate?: (to: string) => void
   mode?: 'prototype' | 'runtime'
 }) {
@@ -56,9 +58,14 @@ export function OrganizationRail({
       </div>
       <nav aria-label="Primary">
         {destinations.map(({ to, label, icon: Icon }) => (
-          <NavLink key={to} onClick={event => linkAction(event, to)} to={to}>
+          <NavLink aria-label={to === '/objectives' ? label : undefined} key={to} onClick={event => linkAction(event, to)} to={to}>
             <Icon aria-hidden="true" size={16} />
             <span>{label}</span>
+            {to === '/objectives' && unreadOutcomes > 0 && (
+              <Badge aria-label={`${copy.outcomeUnread}: ${unreadOutcomes}`} size="xs" variant="warn">
+                {unreadOutcomes}
+              </Badge>
+            )}
             {to === '/requests' && needsYouCount > 0 && (
               <Badge size="xs" variant="warn">
                 {needsYouCount}

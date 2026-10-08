@@ -102,6 +102,21 @@ def _(params, service):
     return _organization_snapshot(organization)
 
 
+@_organization_method("organization.outcomes")
+def _(params, service):
+    _organization_params(params, {"limit", "before", "unreadOnly"})
+    return service().store.outcomes(limit=params.get("limit", 100), before=params.get("before"),
+                                    unread_only=params.get("unreadOnly", False))
+
+
+@_organization_method("organization.markOutcomeSeen")
+def _(params, service):
+    _organization_params(params, {"id", "revision"})
+    organization = service()
+    organization.store.mark_outcome_seen(_organization_text(params, "id", 128), params.get("revision"))
+    return _organization_snapshot(organization)
+
+
 @_organization_method("organization.create")
 def _(params, service):
     _organization_params(params, {"title", "description", "priority", "idempotencyKey", "acceptanceCriteria", "deliveryMode", "requiredChecks", "executiveId", "managerId", "projectIds"})
