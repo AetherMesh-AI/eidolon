@@ -1,4 +1,4 @@
-"""Trusted single-process unittest entry point, copied into the isolated runtime.
+"""Trusted single-process Python test entry point, copied into the isolated runtime.
 
 This file must remain stdlib-only. It executes only after bubblewrap has created
 the namespaces and read-only mounts. No project import precedes the hard limits.
@@ -64,6 +64,34 @@ def _restrict(seccomp_path, config):
         library.seccomp_release(context)
 
 
+
+def _pytest_suite(root, config):
+    # Import trusted framework before adding the project; no host environment,
+    # plugin entry points, sitecustomize, .pth files or project ini is loaded.
+    os.environ['PYTEST_DISABLE_PLUGIN_AUTOLOAD'] = '1'
+    sys.path.insert(0, '/runner-packages')
+    import pytest
+
+    class Results:
+        count = 0
+        skipped = 0
+
+        def pytest_runtest_logreport(self, report):
+            if report.when == 'call' or report.skipped:
+                self.count += 1
+                self.skipped += int(report.skipped)
+
+    result = Results()
+    sys.path.insert(1, root)
+    code = pytest.main([
+        '-c', '/pytest.ini', '--rootdir', root, '--confcutdir', root,
+        '--assert=plain', '--capture=sys', '-p', 'no:cacheprovider',
+        '-o', 'python_files=' + config['pattern'], '-o', 'pythonpath=',
+        '--', os.path.join(root, config['test_directory']),
+    ], plugins=[result])
+    return result.count, result.skipped, code == 0 and result.count > result.skipped
+
+
 def main():
     status_fd = int(sys.argv[1])
     seccomp_path = sys.argv[2]
@@ -95,8 +123,12 @@ def main():
         report({'phase': 'unsupported', 'reason': str(error)[:1000]})
         return 125
     root = '/project/' + config['root']
-    sys.path.insert(0, root)
     try:
+        if config['recipe'] == 'python_pytest':
+            count, skipped, passed = _pytest_suite(root, config)
+            report({'phase': 'completed', 'testCount': count, 'skippedCount': skipped, 'passed': passed})
+            return 0 if passed else 1
+        sys.path.insert(0, root)
         suite = unittest.TestLoader().discover(
             start_dir=os.path.join(root, config['test_directory']), pattern=config['pattern'], top_level_dir=root)
         result = unittest.TextTestRunner(verbosity=2).run(suite)

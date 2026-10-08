@@ -15,9 +15,9 @@ from eidolon_cli.organization_store import OrganizationStore
 from tests.eidolon_cli.test_organization_edits import _setup, _propose, _review, PATH
 
 
-def _project(tmp_path):
+def _project(tmp_path, recipe="python_unittest"):
     store, source, objective = _setup(tmp_path)
-    grants = parse_project_grants([{'id': 'sample', 'files': [PATH], 'execution': {}}], 1)
+    grants = parse_project_grants([{'id': 'sample', 'files': [PATH], 'execution': {'recipe': recipe}}], 1)
     staff = tuple(replace(member, tool_grants=tuple(dict.fromkeys((*member.tool_grants, 'run_tests'))))
                   for member in store.settings.roster)
     store = OrganizationStore(store.path, replace(store.settings, roster=staff,
@@ -28,8 +28,8 @@ def _project(tmp_path):
     return store, source, objective, grants[0]
 
 
-def _reviewed_project(tmp_path):
-    store, source, objective, grant = _project(tmp_path)
+def _reviewed_project(tmp_path, recipe="python_unittest"):
+    store, source, objective, grant = _project(tmp_path, recipe)
     _propose(store)
     _review(store)
     assert store.finish(store.claim_next(), {})

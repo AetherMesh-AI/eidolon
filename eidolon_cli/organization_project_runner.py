@@ -1,4 +1,4 @@
-"""Fail-closed, OS-isolated execution of exact managed Python unittest snapshots.
+"""Fail-closed, OS-isolated execution of exact managed Python test snapshots.
 
 The initial recipe is intentionally small: system Python's stdlib, one process,
 no network, no dependencies, no shell and one bounded writable scratch file.
@@ -30,8 +30,8 @@ _MAX_BYTES = 524288
 _ENV = {'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8'}
 _NAMESPACES = ('user', 'mnt', 'pid', 'net', 'ipc', 'uts')
 _LIMITATIONS = (
-    'Only the copied, explicitly selected files are tested. Python stdlib unittest only; '
-    'no third-party dependencies, subprocesses, threads, shell, network or file creation. '
+    'Only the copied, explicitly selected files are tested. Fixed Python unittest or pytest recipe; '
+    'no project dependency installation, subprocesses, threads, shell, network or file creation. '
     'Scratch is one writable /scratch/work.dat file. A passed test process is not '
     'independent proof of correctness: test code can falsify assertions or test reporting. '
     'This does not publish, deploy or modify the original source project.'
@@ -64,10 +64,10 @@ def normalize_execution_grant(value):
     if isinstance(value, ProjectExecutionGrant):
         value = asdict(value)
     if not isinstance(value, dict) or set(value) - set(ProjectExecutionGrant.__dataclass_fields__):
-        raise ValueError('Execution grant must select only the supported fixed unittest recipe and limits')
+        raise ValueError('Execution grant must select only the supported fixed test recipe and limits')
     values = {**asdict(ProjectExecutionGrant()), **value}
-    if values['recipe'] != 'python_unittest':
-        raise ValueError('Only the fixed python_unittest execution recipe is supported')
+    if values['recipe'] not in ('python_unittest', 'python_pytest'):
+        raise ValueError('Only the fixed python_unittest and python_pytest execution recipes are supported')
     if not isinstance(values['root'], str) or not re.fullmatch(r'root(?:0|[1-9][0-9]*)', values['root']):
         raise ValueError('Execution root must be a canonical read-root alias')
     if not _relative_path(values['test_directory'], dot=True):
@@ -213,9 +213,9 @@ class _RuntimeManifest(list):
         self.root = root
 
 
-def _prepare_runtime(base, python, ldd, budget):
+def _prepare_runtime(base, python, ldd, budget, recipe="python_unittest"):
     info = json.loads(_host_program(python, ['-I', '-S', '-c',
-        'import json,sys,sysconfig; print(json.dumps({"version":sys.version,"stdlib":sysconfig.get_path("stdlib"),'
+        'import json,sys,sysconfig; print(json.dumps({"version":sys.version,"versionInfo":list(sys.version_info[:3]),"stdlib":sysconfig.get_path("stdlib"),'
         '"multiarch":sysconfig.get_config_var("MULTIARCH")}))'], budget))
     stdlib = Path(info['stdlib'])
     if not stdlib.is_relative_to('/usr/lib') or not re.fullmatch(r'python3\.[0-9]+', stdlib.name):
@@ -257,6 +257,20 @@ def _prepare_runtime(base, python, ldd, budget):
         _copy_runtime_file(source, runtime / str(source).lstrip('/'), manifest, executable=source == Path(python))
         if sum(item['bytes'] for item in manifest) > 128 * 1024 * 1024:
             raise _Unsupported('System Python runtime exceeds supported aggregate byte limit')
+    dependencies = []
+    if recipe == 'python_pytest':
+        from eidolon_cli.organization_project_pytest import PytestBundleUnavailable, pytest_bundle
+        try:
+            package_files, dependencies = pytest_bundle(info['versionInfo'], budget)
+        except PytestBundleUnavailable as error:
+            raise _Unsupported(str(error)) from None
+        for package_source, relative in package_files:
+            budget.check()
+            _copy_runtime_file(package_source, runtime / 'runner-packages' / relative, manifest)
+        (runtime / 'pytest.ini').write_text('[pytest]\n', encoding='ascii')
+        (runtime / 'pytest.ini').chmod(0o444)
+        manifest.append({'path': '/pytest.ini', 'sha256': hashlib.sha256(b'[pytest]\n').hexdigest(),
+                         'bytes': len(b'[pytest]\n'), 'mode': 0o444})
     helper = Path(__file__).with_name('organization_project_bootstrap.py')
     _copy_runtime_file(helper, runtime / 'runner.py', manifest)
     # Read-only root bind mounts cannot create missing mountpoints afterward.
@@ -268,9 +282,13 @@ def _prepare_runtime(base, python, ldd, budget):
     if sum(item['bytes'] for item in manifest) > 128 * 1024 * 1024:
         raise _Unsupported('System Python runtime exceeds supported aggregate byte limit')
     identity = {'executable': python, 'executableSha256': next(item['sha256'] for item in manifest if item['path'] == python),
-                'version': info['version'], 'runtimeSha256': digest(sorted(manifest, key=lambda item: item['path'])),
+                'version': info['version'], 'versionInfo': info['versionInfo'], 'runtimeSha256': digest(sorted(manifest, key=lambda item: item['path'])),
                 'fileCount': len(manifest), 'bytes': sum(item['bytes'] for item in manifest),
-                'stdlibOnly': True}
+                'stdlibOnly': recipe == 'python_unittest', 'dependencies': dependencies}
+    if dependencies:
+        identity['dependencyFilesSha256'] = digest(sorted(
+            (item for item in manifest if item['path'].startswith('/runner-packages/')),
+            key=lambda item: item['path']))
     return runtime, str(seccomp), identity
 
 
@@ -407,7 +425,7 @@ def _apply_process_result(receipt, exit_code, output, totals, forced, parent_nam
         receipt.update(testCount=count, skippedCount=skipped)
     passed = valid and count > skipped and final['passed'] and exit_code == 0
     receipt.update(status='passed' if passed else 'failed',
-                   reason='Nonempty unittest suite completed successfully.' if passed else
+                   reason='Nonempty Python test suite completed successfully.' if passed else
                    'Test execution failed, ran no unskipped tests, exceeded a resource limit, or did not return a complete result.')
 
 
@@ -428,6 +446,7 @@ Unsupported hosts and failed setup never fall back to host Python execution.
                'sourceWritesPerformed': False, 'limitations': _LIMITATIONS}
     try:
         grant = normalize_execution_grant(grant)
+        receipt['runner'] = 'eidolon.isolated-' + grant.recipe.replace('_', '-')
         files = _snapshot(files)
         if any(item['path'].split('/')[0] != grant.root for item in files):
             raise ValueError('Every selected execution file must belong to the granted root')
@@ -439,7 +458,7 @@ Unsupported hosts and failed setup never fall back to host Python execution.
         bwrap, python, ldd = _platform_tools(budget)
         with tempfile.TemporaryDirectory(prefix='eidolon-project-') as directory:
             base = Path(directory)
-            runtime, seccomp, identity = _prepare_runtime(base, python, ldd, budget)
+            runtime, seccomp, identity = _prepare_runtime(base, python, ldd, budget, grant.recipe)
             receipt['runtime'] = identity
             source = base / 'source'
             source.mkdir()

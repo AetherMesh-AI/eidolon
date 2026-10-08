@@ -46,7 +46,7 @@ def _exact(value, context):
     return text
 
 
-def _native_project_loop(tmp_path, monkeypatch, *, create=False):
+def _native_project_loop(tmp_path, monkeypatch, *, create=False, recipe="python_unittest"):
     from eidolon_cli import config
     from tools import file_tools
 
@@ -196,7 +196,7 @@ def _native_project_loop(tmp_path, monkeypatch, *, create=False):
                             "read_roots": [str(source)], "max_workers": 1, "max_inflight": 1,
                             "max_context_tokens": 65536, "max_output_tokens": 2048,
                             "project_grants": [{"id": "addition", "files": ["root0/app.py", "root0/test_app.py"],
-                                                "execution": {"recipe": "python_unittest", "timeout_seconds": 10}}],
+                                                "execution": {"recipe": recipe, "timeout_seconds": 30}}],
                             "roster": [{"id": "editor", "name": "Project editor", "team": "general",
                                         "capabilities": ["work.inspect", "work.edit"], "tool_grants": grants}]}}
     (home / "config.yaml").write_text(json.dumps(cfg), encoding="utf-8")
@@ -296,8 +296,9 @@ def _native_project_loop(tmp_path, monkeypatch, *, create=False):
 
 @pytest.mark.linux_only
 @pytest.mark.parametrize("create", [False, True])
-def test_native_linux_project_goal_inspect_edit_test_review_integrate_accept(tmp_path, monkeypatch, create):
-    _native_project_loop(tmp_path, monkeypatch, create=create)
+@pytest.mark.parametrize("recipe", ["python_unittest", "python_pytest"])
+def test_native_linux_project_goal_inspect_edit_test_review_integrate_accept(tmp_path, monkeypatch, create, recipe):
+    _native_project_loop(tmp_path, monkeypatch, create=create, recipe=recipe)
 
 
 @pytest.mark.macos_only
@@ -313,8 +314,11 @@ def test_native_windows_project_loop_blocks_without_hidden_execution(tmp_path, m
 def _unsupported_runner_never_starts_a_child(monkeypatch):
     from eidolon_cli.organization_project_runner import run_project_tests
     monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: pytest.fail("Unsupported host launched a process"))
-    receipt = run_project_tests([{"path": "root0/test_app.py", "content": TESTS,
-        "sha256": hashlib.sha256(TESTS.encode()).hexdigest(), "revision": 0}], {"recipe": "python_unittest"})
+    for recipe in ("python_unittest", "python_pytest"):
+        receipt = run_project_tests([{"path": "root0/test_app.py", "content": TESTS,
+            "sha256": hashlib.sha256(TESTS.encode()).hexdigest(), "revision": 0}], {"recipe": recipe})
+        assert receipt["status"] == "unsupported"
+        assert receipt["command"] == []
     assert receipt["status"] == "unsupported"
     assert receipt["isolation"]["established"] is False
     assert receipt["exitCode"] is None and receipt["testCount"] == 0
