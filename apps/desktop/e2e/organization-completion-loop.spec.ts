@@ -603,6 +603,13 @@ test('recovers an unanswerable linked question through a bounded scope amendment
   expect(stages.at(-1)?.scope).toBe(amendedScope)
   expect(providerErrors).toEqual([])
   await page.reload()
+  // Re-enter through the visible UI after reload; DOM text can be available
+  // before Electron has painted the restored route.
+  await openObjective(page, completionTitle)
   await expect(header).toContainText('Completed', { timeout: 60_000 })
+  await expect(
+    page.getByRole('region', { name: 'Final acceptance', exact: true }).getByText(recommendation, { exact: true })
+  ).toBeVisible()
+  await header.scrollIntoViewIfNeeded()
   await page.screenshot({ path: testInfo.outputPath('linked-question-recovered-outcome.png') })
 })
