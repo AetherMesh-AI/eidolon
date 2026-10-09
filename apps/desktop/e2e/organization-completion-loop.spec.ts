@@ -3,7 +3,6 @@ import { createHash } from 'node:crypto'
 
 import type { Page } from '@playwright/test'
 
-import { openOrganizationDisclosure } from './organization-disclosures'
 import {
   amendedCriterion,
   amendedScope,
@@ -13,6 +12,7 @@ import {
   recommendation,
   setupCompletionFixture
 } from './organization-completion-fixture'
+import { openOrganizationDisclosure } from './organization-disclosures'
 import { expect, test } from './test'
 
 const projectTests = 'Project tests (requires external verification when unavailable)'
@@ -305,9 +305,11 @@ test('requires explicit check replacement, retains its audit, and completes only
   expect(ownerWrites[0].params.requiredChecks).toEqual([])
   expect(ownerWrites[0].params.acceptanceCriteria).toEqual([amendedCriterion])
   expect(ownerWrites[0].params.idempotencyKey).toEqual(expect.any(String))
+
   const replay = await organizationRequest<{
     objectives: Array<{ title: string; status: string; ownerResolutions: unknown[] }>
   }>(page, ownerWrites[0], 'organization.resolve')
+
   expect(replay.error).toBeUndefined()
   const replayed = replay.result?.objectives.find(objective => objective.title === completionTitle)
   expect(replayed?.ownerResolutions).toHaveLength(1)
@@ -334,13 +336,16 @@ test('requires explicit check replacement, retains its audit, and completes only
     unread: number
     total: number
   }
+
   const readOutcomes = () =>
     organizationRequest<OutcomePage>(page, { url: ownerWrites[0].url, params: {} }, 'organization.outcomes')
+
   await expect
     .poll(
       async () => {
         const receipt = await readOutcomes()
         expect(receipt.error).toBeUndefined()
+
         return receipt.result?.items.find(item => item.title === completionTitle)?.status
       },
       { timeout: 90_000 }
@@ -395,10 +400,12 @@ test('requires explicit check replacement, retains its audit, and completes only
 
   const inbox = () => page.getByRole('region', { name: 'Outcomes inbox', exact: true })
   const receipt = () => inbox().getByRole('listitem', { name: completionTitle, exact: true })
+
   const openInbox = async () => {
     await primary(page).getByRole('link', { name: 'Objectives', exact: true }).click()
     await expect(receipt()).toContainText('Accepted')
   }
+
   const inspectDeliverable = async () => {
     await receipt().getByRole('link', { name: completionTitle, exact: true }).click()
     await expect(objectiveHeader(page, completionTitle)).toContainText('Completed')
@@ -410,6 +417,7 @@ test('requires explicit check replacement, retains its audit, and completes only
     )
     await artifact.getByRole('button', { name: 'Close artifact details', exact: true }).click()
   }
+
   await openInbox()
   await expect(receipt().getByRole('button', { name: 'Mark seen', exact: true })).toBeVisible()
   await inspectDeliverable()
@@ -526,9 +534,11 @@ test('retains a visible model-call intervention across full process restart and 
   await expect(blocked).toContainText('Cancelled')
   await page.screenshot({ path: testInfo.outputPath('03-cancelled-budget-request-history.png') })
   await primary(page).getByRole('link', { name: 'Objectives', exact: true }).click()
+
   const cancelled = page
     .getByRole('region', { name: 'Outcomes inbox', exact: true })
     .getByRole('listitem', { name: budgetTitle, exact: true })
+
   await expect(cancelled).toContainText('Cancelled')
   await expect(cancelled).not.toContainText('Accepted')
   await cancelled.getByRole('button', { name: 'Mark seen', exact: true }).click()
@@ -537,4 +547,62 @@ test('retains a visible model-call intervention across full process restart and 
   await expect(objectiveHeader(page, budgetTitle)).toContainText('Cancelled')
   expect(await assertBlocked()).toBe(deadline)
   expect(running.stages.map(stage => stage.kind)).toEqual(['request.decompose'])
+})
+
+// eslint-disable-next-line no-empty-pattern -- actual Electron lifecycle belongs to this spec
+test('recovers an unanswerable linked question through a bounded scope amendment and fresh acceptance', async ({}, testInfo) => {
+  running = await setupCompletionFixture(false, { linkedQuestion: true })
+  const { page } = running.fixture
+  const { stages, providerErrors } = running
+  await createObjective(page, completionTitle, false)
+  const question = page.getByRole('button', { name: 'Inspect request: request.question', exact: true })
+  await expect(question).toContainText('Pending intervention', { timeout: 90_000 })
+  expect(stages.map(stage => stage.kind)).toEqual(['request.decompose', 'request.plan', 'work.draft'])
+  await question.click()
+  const inspector = page.getByRole('complementary', { name: 'Request details' })
+  await expect(inspector).toContainText('The external fact is unavailable.')
+  const action = inspector.getByRole('combobox', { name: 'Action', exact: true })
+  await expect(action).toHaveValue('answer_request')
+  await action.selectOption('amend_scope')
+  await inspector.getByRole('textbox', { name: 'Response', exact: true }).fill(amendedScope)
+  await inspector.getByRole('textbox', { name: 'Acceptance criteria', exact: true }).fill(amendedCriterion)
+  await page.screenshot({ path: testInfo.outputPath('linked-question-scope-recovery.png') })
+  await inspector.getByRole('button', { name: 'Submit response', exact: true }).click()
+  await expect.poll(() => stages.filter(stage => stage.kind === 'request.plan').length).toBe(2)
+  await expect(inspector.getByRole('button', { name: 'Submit response', exact: true })).toHaveCount(0)
+
+  if (await inspector.isVisible()) {
+    await expect(inspector).toContainText('Cancelled')
+    await inspector.getByRole('button', { name: 'Close request details', exact: true }).click()
+  }
+
+  const header = objectiveHeader(page, completionTitle)
+  await expect(header).not.toContainText('Completed')
+  expect(stages.at(-1)?.scope).toBe(amendedScope)
+  expect(stages.at(-1)?.acceptanceCriteria).toEqual([amendedCriterion])
+  await page.reload()
+  await expect(header).toBeVisible({ timeout: 60_000 })
+  const history = page.locator('.eid-owner-history')
+  await history.locator('summary').click()
+  await expect(history.locator('summary')).toContainText('(1)')
+  await expect(history.getByRole('region', { name: 'After amendment', exact: true })).toContainText(amendedScope)
+  await expect(header).not.toContainText('Completed')
+  running.releasePlan()
+  await expect(header).toContainText('Completed', { timeout: 90_000 })
+  expect(stages.map(stage => stage.kind)).toEqual([
+    'request.decompose',
+    'request.plan',
+    'work.draft',
+    'request.decompose',
+    'request.plan',
+    'work.draft',
+    'request.review',
+    'request.integrate',
+    'request.accept'
+  ])
+  expect(stages.at(-1)?.scope).toBe(amendedScope)
+  expect(providerErrors).toEqual([])
+  await page.reload()
+  await expect(header).toContainText('Completed', { timeout: 60_000 })
+  await page.screenshot({ path: testInfo.outputPath('linked-question-recovered-outcome.png') })
 })

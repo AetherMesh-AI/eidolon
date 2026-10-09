@@ -123,7 +123,14 @@ class OrganizationOwnerStore:
         if typed is not None:
             cancelled = conn.execute('SELECT cancelled FROM objectives WHERE id=?', (request['objective_id'],)).fetchone()[0]
             from eidolon_cli.organization_budget import budget_reason
-            return typed if not cancelled and not budget_reason(conn, request['objective_id'], self.settings) and resolution_count(conn, request['objective_id']) < self.settings.max_owner_resolutions else []
+            if cancelled or budget_reason(conn, request['objective_id'], self.settings) or resolution_count(conn, request['objective_id']) >= self.settings.max_owner_resolutions:
+                return []
+            # An owner may be unable to answer within the existing scope. Use
+            # the same bounded objective recovery, never replay a linked request
+            # or manufacture an answer/approval to unblock its parent.
+            recovery = [item for item in allowed_resolutions(conn, request, self.settings)
+                        if item['action'] in {'amend_scope', 'request_replan'}]
+            return [*typed, *recovery]
         result = allowed_resolutions(conn, request, self.settings)
         if request['status'] == 'pending_intervention' and request['type'] == 'request.merge':
             # The edit module validates immutable proposal/application identity;

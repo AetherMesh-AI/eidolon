@@ -67,6 +67,11 @@ deny actions. The request inspector links to its parent assignment, including th
 recorded task scope, even when the parent is outside the current queue filter.
 Back preserves an unsubmitted response; Close or Escape closes the complete
 inspector trail. Navigation alone does not answer a request or resume work.
+If a linked question, decision, permission or staffing request cannot be resolved
+within the current scope, the owner can amend scope or request a bounded replan.
+This cancels the old request tree without inventing an answer or approval, retains
+its history, and requires fresh work and independent acceptance. Existing execution
+locks and objective, replan and owner-resolution limits still apply.
 Hiring displays the exact proposed member configurations and selected
 assignment/memory transfers before approval. Approval applies that recorded proposal;
 it does not accept arbitrary new tool access. Answers and decisions are retained
