@@ -171,6 +171,8 @@ const copy = {
   requestedOutcome: ['Requested outcome', '希望する結果', '预期结果', '預期結果'],
   requiredAuthority: ['Required authority', '必要な権限', '所需权限', '所需權限'],
   parentRequest: ['Parent request', '親リクエスト', '父请求', '父請求'],
+  openParentRequest: ['Open parent request', '親リクエストを開く', '打开父请求', '開啟父請求'],
+  taskScope: ['Task scope', 'タスクの範囲', '任务范围', '任務範圍'],
   dependencies: ['Dependencies', '依存関係', '依赖项', '相依項目'],
   responseRecorded: ['Recorded response', '記録された回答', '已记录回复', '已記錄回覆'],
   questionRouting: ['Question routing history', '質問の振り分け履歴', '问题路由历史', '問題路由歷程'],

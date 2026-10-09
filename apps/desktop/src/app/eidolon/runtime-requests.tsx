@@ -28,6 +28,7 @@ import type {
   OrganizationSnapshot,
   RuntimeOrganizationAdapter
 } from './types'
+import { useRequestNavigation } from './use-request-navigation'
 
 export interface RequestFilters {
   status: string
@@ -370,17 +371,24 @@ export function RuntimeRequests({
 
   const [groupBy, setGroupBy] = useState<'team' | 'priority' | 'type' | 'status'>('team')
   const [view, setView] = useState<'inbox' | 'queue'>('inbox')
-  const [selected, setSelected] = useState<string | null>(null)
+
+  const navigation = useRequestNavigation(
+    allRequests,
+    JSON.stringify([snapshot.connection?.ownerScope ?? snapshot.connection?.scope, objective?.id])
+  )
+
   const [artifactId, setArtifactId] = useState<string | null>(null)
   const [pending, setPending] = useState<string | null>(null)
   const [error, setError] = useState('')
   const active = useRef(true)
   const busy = useRef(false)
-  const request = allRequests.find(item => item.id === selected)
   const terminal = objective?.status === 'completed' || objective?.status === 'cancelled'
   const disconnected = snapshot.connection && snapshot.connection.state !== 'ready'
   const requests = filterOrganizationRequests(allRequests, filters, snapshot)
-  const narrowed = filters.team !== 'all' || filters.priority !== 'all' || filters.type !== 'all' || Boolean(filters.query)
+
+  const narrowed =
+    filters.team !== 'all' || filters.priority !== 'all' || filters.type !== 'all' || Boolean(filters.query)
+
   const authoritative = snapshot.connection?.state === 'ready'
   const groups = new Map<string, OrganizationRequest[]>()
   const priorities = [copy.lowest, copy.low, copy.normal, copy.high, copy.highest]
@@ -446,7 +454,7 @@ export function RuntimeRequests({
       {supportsInbox && <SegmentedControl onChange={setView} options={[
         { id: 'inbox', label: copy.attentionInbox }, { id: 'queue', label: copy.attentionQueue }
       ]} value={view} />}
-      {inbox && <RuntimeAttentionInbox adapter={adapter} onInspect={setSelected} snapshot={snapshot} />}
+      {inbox && <RuntimeAttentionInbox adapter={adapter} onInspect={navigation.open} snapshot={snapshot} />}
       {!inbox && <>
       {!objective && <p className="eid-note">{copy.queueNote}</p>}
       <div className="eid-toolbar">
@@ -522,7 +530,7 @@ export function RuntimeRequests({
                 <button
                   aria-label={`${copy.inspectRequest}: ${item.type}`}
                   className="eid-row"
-                  onClick={() => setSelected(item.id)}
+                  onClick={() => navigation.open(item.id)}
                 >
                   <span>
                     <strong>{item.type}</strong>
@@ -560,7 +568,7 @@ export function RuntimeRequests({
                   (item.allowedResolutions?.length ? (
                     <Button
                       disabled={!!pending || Boolean(disconnected)}
-                      onClick={() => setSelected(item.id)}
+                      onClick={() => navigation.open(item.id)}
                       size="sm"
                       variant="secondary"
                     >
@@ -587,64 +595,82 @@ export function RuntimeRequests({
         </p>
       )}
       </>}
-      {request && (
-        <Inspector kind="request" onClose={() => setSelected(null)} title={request.type}>
-          <dl>
-            <dt>{copy.status}</dt>
-            <dd>{copy[request.status]}</dd>
-            <dt>{copy.team}</dt>
-            <dd>{request.team}</dd>
-            <dt>{copy.priority}</dt>
-            <dd>{priorityLabel(request.priority)}</dd>
-            <dt>Claimed by</dt>
-            <dd>
-              {request.agentId
-                ? (snapshot.agents.find(agent => agent.id === request.agentId)?.name ?? request.agentId)
-                : 'No worker claimed this request'}
-            </dd>
-            <dt>{runtimeCopy.routeReason}</dt>
-            <dd>{request.reason || runtimeCopy.routeUnknown}</dd>
-            {typeof request.requestedWorkers === 'number' && (
-              <>
-                <dt>{runtimeCopy.requestedWorkers}</dt>
-                <dd>{request.requestedWorkers}</dd>
-              </>
+      {navigation.trail.map((request, index) => (
+        <div hidden={index !== navigation.trail.length - 1} key={request.id}>
+          <Inspector kind="request" onClose={navigation.close} title={request.type}>
+            {index > 0 && (
+              <Button onClick={navigation.back} size="sm" variant="secondary">
+                {t.common.back}
+              </Button>
             )}
-            {request.requestedRoutes?.length ? (
-              <>
-                <dt>{runtimeCopy.requestedRoutes}</dt>
-                <dd>{request.requestedRoutes.map(route => `${route.type} → ${route.team}`).join('; ')}</dd>
-              </>
-            ) : null}
-            <dt>Request ID</dt>
-            <dd>{request.id}</dd>
-            <dt>Task ID</dt>
-            <dd>{request.taskId || runtimeCopy.notReported}</dd>
-          </dl>
-          {(request.requesterId || request.requestedOutcome || request.response || request.managementProposal) && (
-            <RuntimeRequestContext onEvidence={setArtifactId} request={request} snapshot={snapshot} />
-          )}
-          <Link to={`/objectives/${request.objectiveId}`}>{copy.openObjective}</Link>
-          {request.type === 'request.merge' && <p className="eid-note">{runtimeCopy.edits.mergeNote}</p>}
-          {request.status === 'pending_intervention' && !terminal && (
-            <ResolutionForm
-              adapter={adapter}
-              key={`${snapshot.connection?.ownerScope ?? snapshot.connection?.scope}:${request.id}`}
-              onClose={() => setSelected(null)}
-              request={request}
-              snapshot={snapshot}
-            />
-          )}
-          <RuntimeRequestToolReceipts adapter={adapter} key={request.id} request={request} />
-          {adapter.getExecutionAudit && (
-            <RuntimeExecutionAudit
-              adapter={adapter}
-              key={`${snapshot.connection?.scope}:${request.id}`}
-              request={request}
-            />
-          )}
-        </Inspector>
-      )}
+            <dl>
+              <dt>{copy.status}</dt>
+              <dd>{copy[request.status]}</dd>
+              <dt>{copy.team}</dt>
+              <dd>{request.team}</dd>
+              <dt>{copy.priority}</dt>
+              <dd>{priorityLabel(request.priority)}</dd>
+              <dt>Claimed by</dt>
+              <dd>
+                {request.agentId
+                  ? (snapshot.agents.find(agent => agent.id === request.agentId)?.name ?? request.agentId)
+                  : 'No worker claimed this request'}
+              </dd>
+              <dt>{runtimeCopy.routeReason}</dt>
+              <dd>{request.reason || runtimeCopy.routeUnknown}</dd>
+              {typeof request.requestedWorkers === 'number' && (
+                <>
+                  <dt>{runtimeCopy.requestedWorkers}</dt>
+                  <dd>{request.requestedWorkers}</dd>
+                </>
+              )}
+              {request.requestedRoutes?.length ? (
+                <>
+                  <dt>{runtimeCopy.requestedRoutes}</dt>
+                  <dd>{request.requestedRoutes.map(route => `${route.type} → ${route.team}`).join('; ')}</dd>
+                </>
+              ) : null}
+              <dt>Request ID</dt>
+              <dd>{request.id}</dd>
+              <dt>Task ID</dt>
+              <dd>{request.taskId || runtimeCopy.notReported}</dd>
+            </dl>
+            {(request.taskId ||
+              request.parentRequestId ||
+              request.requesterId ||
+              request.requestedOutcome ||
+              request.response ||
+              request.managementProposal) && (
+              <RuntimeRequestContext
+                onEvidence={setArtifactId}
+                onParent={navigation.openParent}
+                parent={index === navigation.trail.length - 1 ? navigation.parent : navigation.trail[index + 1]}
+                request={request}
+                snapshot={snapshot}
+              />
+            )}
+            <Link to={`/objectives/${request.objectiveId}`}>{copy.openObjective}</Link>
+            {request.type === 'request.merge' && <p className="eid-note">{runtimeCopy.edits.mergeNote}</p>}
+            {request.status === 'pending_intervention' && !terminal && (
+              <ResolutionForm
+                adapter={adapter}
+                key={`${snapshot.connection?.ownerScope ?? snapshot.connection?.scope}:${request.id}`}
+                onClose={navigation.close}
+                request={request}
+                snapshot={snapshot}
+              />
+            )}
+            <RuntimeRequestToolReceipts adapter={adapter} key={request.id} request={request} />
+            {adapter.getExecutionAudit && (
+              <RuntimeExecutionAudit
+                adapter={adapter}
+                key={`${snapshot.connection?.scope}:${request.id}`}
+                request={request}
+              />
+            )}
+          </Inspector>
+        </div>
+      ))}
       {artifactId && (
         <RuntimeArtifact
           adapter={adapter}
