@@ -180,6 +180,46 @@ def test_unresolved_questions_stay_owner_visible_and_never_refresh_into_a_loop(t
         assert current['allowedResolutions'] == []  # Expired objectives cannot authorize another turn.
     elif case != 'cancelled':
         assert current['allowedResolutions'][0]['action'] == 'answer_request'
+    if case == 'denied':
+        denial, = current['questionRouting']['receipts']
+        assert denial['agentId'] == 'z-manager' and denial['outcome'] == 'denied'
+        assert denial['text'] == 'I explicitly refuse this request.'
+        assert store.respond(question['id'], 'Owner confirms the board audience.', idempotency_key='owner-after-denial')
+        assert not store.respond(question['id'], 'Owner confirms the board audience.', idempotency_key='owner-after-denial')
+        resumed = OrganizationStore(store.path).claim_next()
+        assert resumed['id'] == parent['id'] and resumed['agent_id'] == 'writer'
+        response, = store.context(resumed)['requestResponses']
+        assert response['response']['responderId'] == 'owner'
+        assert response['response']['text'] == 'Owner confirms the board audience.'
+        assert response['questionRouting']['receipts'] == [denial]
+
+
+@pytest.mark.parametrize('leader', ['z-manager', 'chief'])
+@pytest.mark.parametrize('restriction', ['team', 'capability'])
+def test_management_relationship_never_grants_team_or_question_capability(tmp_path, leader, restriction):
+    store, _, plan = question_store(tmp_path)
+    parent = work_claim(store, plan)
+    question = ask(store, parent)
+    roster = []
+    for member in store.settings.roster:
+        if member.id == leader:
+            changes = ({'team': 'other-team'} if restriction == 'team' else
+                       {'capabilities': tuple(kind for kind in member.capabilities if kind != 'request.question')})
+            member = replace(member, **changes)
+        roster.append(member)
+    store.reload_configuration(replace(store.settings, roster=tuple(roster)))
+    selected = store.claim_next()
+    if leader == 'z-manager':
+        assert selected['agent_id'] == 'chief' and selected['id'] == question['id']
+        assert store.finish(selected, {'answer': 'The board.'})
+    else:
+        assert selected['agent_id'] == 'z-manager'
+        assert store.finish(selected, {'cannot_answer': 'The Executive needs to answer.'})
+        assert store.claim_next() is None
+        assert request_view(store, question['id'])['status'] == 'pending_intervention'
+    receipts = request_view(store, question['id'])['questionRouting']['receipts']
+    excluded, = [receipt for receipt in receipts if receipt['agentId'] == leader]
+    assert excluded['outcome'] == 'ineligible' and excluded['text']
 
 
 def test_busy_assigned_manager_keeps_priority_over_idle_executive(tmp_path):
