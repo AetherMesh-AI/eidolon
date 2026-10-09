@@ -17,6 +17,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 
+from eidolon_cli.organization_owner_chat import OWNER_CHAT_SCHEMA, OrganizationOwnerChatStore
 from eidolon_cli.organization_conversations import CONVERSATION_SCHEMA, OrganizationConversationStore
 from eidolon_cli.organization_packages import (PACKAGE_SCHEMA, OrganizationPackageStore, package_dependencies_ready, task_package_id)
 from eidolon_cli.organization_config import OrganizationSettings
@@ -102,15 +103,16 @@ def _text(value, field, limit=10000):
     return value.strip()
 
 
-class OrganizationStore(OrganizationConversationStore, OrganizationPackageStore, OrganizationOutcomeStore, OrganizationAttentionStore, OrganizationHistoryStore, OrganizationCoordinationStore, OrganizationProjectExecutionStore, OrganizationBudgetStore, OrganizationRequestStore, OrganizationManagementStore, OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
+class OrganizationStore(OrganizationOwnerChatStore, OrganizationConversationStore, OrganizationPackageStore, OrganizationOutcomeStore, OrganizationAttentionStore, OrganizationHistoryStore, OrganizationCoordinationStore, OrganizationProjectExecutionStore, OrganizationBudgetStore, OrganizationRequestStore, OrganizationManagementStore, OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
     def __init__(self, path: Path | str, settings: OrganizationSettings | None = None):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
-            conn.executescript(_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA + COORDINATION_SCHEMA + HISTORY_SCHEMA + ATTENTION_SCHEMA + PROJECTS_SCHEMA + OUTCOME_SCHEMA + REGISTRY_SCHEMA + PACKAGE_SCHEMA + CONVERSATION_SCHEMA)
+            conn.executescript(_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA + COORDINATION_SCHEMA + HISTORY_SCHEMA + ATTENTION_SCHEMA + PROJECTS_SCHEMA + OUTCOME_SCHEMA + REGISTRY_SCHEMA + PACKAGE_SCHEMA + CONVERSATION_SCHEMA + OWNER_CHAT_SCHEMA)
         self.settings = settings or OrganizationSettings()
         with self._write() as conn:
             self.settings = resolve_settings(conn, settings)
+            self._migrate_owner_chat(conn)
             self._migrate_receipt_executions(conn)
             self._migrate_reservations(conn)
             self._migrate_acceptance(conn)

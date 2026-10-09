@@ -1,7 +1,9 @@
 import { defineLocale } from './define-locale'
 import { organizationConversationsAr } from './organization-conversations'
+import { organizationOwnerChatAr } from './organization-owner-chat'
 
 export const ar = defineLocale({
+  organizationOwnerChat: organizationOwnerChatAr,
   organizationConversations: organizationConversationsAr,
   sessionImport: {
     title: 'المتابعة من تطبيق آخر',

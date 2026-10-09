@@ -1,6 +1,7 @@
 import type { OrganizationAttentionPage, OrganizationAttentionQuery, OrganizationAttentionSeen } from './runtime-attention-types'
 import type { HistoryCounts, HistoryMutation, HistoryPage, HistoryQuery, HistoryState } from './runtime-history-types'
 import type { OrganizationOutcomePage, OrganizationOutcomeQuery, OrganizationOutcomeSeen } from './runtime-outcome-types'
+import type { OwnerChatCancel, OwnerChatSend, OwnerChatTarget, OwnerChatThread } from './runtime-owner-chat-types'
 
 export const objectiveStatusLabels = {
   planning: 'Planning', active: 'Active', waiting: 'Waiting', needs_input: 'Needs Input',
@@ -622,6 +623,10 @@ export interface OrganizationProjectSetup {
   blockers: string[]
 }
 export interface RuntimeOrganizationAdapter extends OrganizationReader {
+  openOwnerChat?(input: { agentId: string; identityId: string }): Promise<OwnerChatThread>
+  readOwnerChat?(input: OwnerChatTarget): Promise<OwnerChatThread>
+  sendOwnerChat?(input: OwnerChatSend): Promise<OwnerChatThread>
+  cancelOwnerChat?(input: OwnerChatCancel): Promise<OwnerChatThread>
   getProjectSetup?(): Promise<OrganizationProjectSetup>
   prepareProjectDraft?(input: { project: OrganizationProjectBinding; expectedRevision: string }): Promise<OrganizationProjectDraft>
   saveProject?(input: OrganizationProjectSaveInput, signal?: AbortSignal): Promise<OrganizationProjectSave>

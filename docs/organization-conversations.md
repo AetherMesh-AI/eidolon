@@ -85,3 +85,10 @@ reservations, including two same-thread messages delivered in reverse order. Eac
 reply must attach to the exact message selected by its lease. No live account,
 network model call, or external message is needed.
 Desktop behavioral and native Electron checks cover owner inspection separately.
+
+## Owner-initiated member chat
+
+The separate [owner/member text conversation](organization-owner-chat.md) allows
+the owner to initiate discussion with any persistent member. Its independent
+identity ledger, privacy scope and finite budget do not turn this internal-thread
+inspection surface into a composer or confer formal decision authority.

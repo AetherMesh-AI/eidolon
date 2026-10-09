@@ -182,7 +182,7 @@ def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
     return {'source': 'runtime', 'objectives': objectives, 'agents': agents, 'tasks': ui_tasks, 'activity': events,
             'conversations': conversations_view(conn, visible), 'knowledge': knowledge, 'decisions': [], 'requests': ui_requests, 'attention': attention_view(conn, objective_id=objective_id),
             'outcomes': outcomes_view(conn, objective_id=objective_id),
-            'runtime': {'history': history_counts(conn), 'state': 'ready', 'capabilities': list(settings.capabilities), 'maxWorkers': settings.max_workers,
+            'runtime': {'history': history_counts(conn), 'state': 'ready', 'capabilities': [*settings.capabilities, 'owner_chat'], 'maxWorkers': settings.max_workers,
                         'maxInflight': settings.max_inflight, 'rosterCount': len(agents),
                         'workingCount': sum(agent['status'] in {'executing', 'reviewing'} for agent in agents),
                         'scope': 'Writing and analysis of submitted context; configured work.inspect staff may read explicitly granted local text files. Other tools and unsupported requests require intervention.',

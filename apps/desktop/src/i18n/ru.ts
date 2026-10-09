@@ -2,6 +2,7 @@ import { defineFieldCopy } from '@/app/settings/field-copy'
 
 import { defineLocale } from './define-locale'
 import { organizationConversationsRu } from './organization-conversations'
+import { organizationOwnerChatRu } from './organization-owner-chat'
 
 // RU_PLURAL: (count, one, few, many) — русские формы сущ. падежа
 // RU_NOUN: (count, one, few, many) — формы род. множественного
@@ -25,6 +26,7 @@ const RU_NOUN = (count: number | string, one: string, few: string, many: string)
 }
 
 export const ru = defineLocale({
+  organizationOwnerChat: organizationOwnerChatRu,
   organizationConversations: organizationConversationsRu,
   sessionImport: {
     title: 'Продолжить из другого приложения',

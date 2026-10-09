@@ -99,12 +99,14 @@ class OrganizationService:
         secrets = current_secret_scope() if get_eidolon_home().resolve() == self.home else None
         self._context.run(set_secret_scope, dict(secrets) if secrets is not None
                           else self._context.run(build_profile_secret_scope, self.home))
+        from eidolon_cli.organization_owner_chat_service import OwnerChatService
+        self.owner_chat = OwnerChatService(self)
 
     @property
     def active_execution_count(self) -> int:
         """Conservative in-memory count, including cancelled calls unwinding."""
         with self._admission_lock:
-            return len(self._running)
+            return len(self._running) + self.owner_chat.active_count
 
     @property
     def running(self) -> bool:
@@ -282,6 +284,7 @@ class OrganizationService:
     def close_admission(self) -> None:
         """Fence new dispatch immediately, without waiting for SQLite or threads."""
         self._stop.set()
+        self.owner_chat.close_admission()
         # This lock only protects the running-record map, never SQLite work or
         # provider setup. Teardown can signal calls even while the scheduler is
         # blocked reading/writing the ledger under its coordinator lock.
@@ -292,7 +295,10 @@ class OrganizationService:
 
     def stop(self, timeout: float = 5.0) -> bool:
         # Persist uncertain work before waiting; SIGKILL may follow the grace.
-        persisted = True
+        started = time.monotonic()
+        self.close_admission()
+        persisted = self.owner_chat.stop(timeout)
+        timeout = max(0.0, timeout - (time.monotonic() - started))
         with self._lock:
             self._stop.set()
             for record in self._running.values():
@@ -476,7 +482,7 @@ def get_service() -> OrganizationService:
     path = state_path()
     with _services_lock:
         service = _services.get(path)
-        if service is None or (service._stop.is_set() and not service.running):
+        if service is None or (service._stop.is_set() and not service.running and not service.owner_chat.active_count):
             if not path.exists():
                 # Invalid first-run configuration must not provision a ledger.
                 # Existing ledgers validate under their write lock to pause peers.

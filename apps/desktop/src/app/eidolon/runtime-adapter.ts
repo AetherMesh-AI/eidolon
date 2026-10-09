@@ -4,6 +4,8 @@ import { type OrganizationAttentionPage, validAttentionPage } from './runtime-at
 import { normalizeConversations } from './runtime-conversation-contract'
 import type { HistoryPage } from './runtime-history-types'
 import { type OrganizationOutcomePage, validOutcomePage } from './runtime-outcome-types'
+import { validOwnerChatThread } from './runtime-owner-chat-contract'
+import type { OwnerChatThread } from './runtime-owner-chat-types'
 import { validProjectSave, validProjectSetup } from './runtime-project-setup-contract'
 import { validEditProposal } from './runtime-proposal-validation'
 import { validOrganizationSetup } from './runtime-setup-contract'
@@ -260,8 +262,51 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
     } catch (reason) {throw new Error(organizationErrorMessage(reason))} finally {controllers.delete(controller); releaseScope()}
   }
 
+  const chatResult = (value: unknown, identityId: string, threadId?: string, agentId?: string): OwnerChatThread => {
+    if (!validOwnerChatThread(value) || value.identityId !== identityId ||
+        (threadId !== undefined && value.id !== threadId) || (agentId !== undefined && value.agentId !== agentId) ||
+        (snapshot.runtime?.profile !== undefined && value.profile !== snapshot.runtime.profile)) {
+      throw new Error(translateNow('organizationOwnerChat.invalid'))
+    }
+
+    return value
+  }
+
   return {
     mode: 'runtime',
+    async openOwnerChat(input) {
+      const params = { agentId: input.agentId, identityId: input.identityId }
+      const result = await mutate<OwnerChatThread>(`chat-open:${input.identityId}`, 'organization.ownerChat.open', params, () => undefined)
+
+      return chatResult(result, input.identityId, undefined, input.agentId)
+    },
+    async readOwnerChat(input) {
+      const version = writeVersion
+      const result = await readHistory<OwnerChatThread>('organization.ownerChat.read', { threadId: input.threadId, identityId: input.identityId })
+
+      if (version !== writeVersion) {throw new Error(translateNow('organizationOwnerChat.changed'))}
+
+      return chatResult(result, input.identityId, input.threadId)
+    },
+    async sendOwnerChat(input) {
+      const { threadId, identityId, text, replyToMessageId, idempotencyKey } = input
+      const result = await mutate<OwnerChatThread>(`chat-send:${idempotencyKey}`, 'organization.ownerChat.send', { threadId, identityId, text, replyToMessageId, idempotencyKey }, () => undefined)
+      const thread = chatResult(result, identityId, threadId)
+
+      const turn = thread.turns.find(item => item.idempotencyKey === idempotencyKey)
+
+      if (!turn || !thread.messages.some(message => message.id === turn.ownerMessageId && message.role === 'owner' && message.text === text && message.replyToMessageId === replyToMessageId)) {
+        throw new Error(translateNow('organizationOwnerChat.invalid'))
+      }
+
+      return thread
+    },
+    async cancelOwnerChat(input) {
+      const { threadId, identityId, turnId } = input
+      const result = await mutate<OwnerChatThread>(`chat-cancel:${threadId}:${turnId}`, 'organization.ownerChat.cancel', { threadId, identityId, turnId }, () => undefined)
+
+      return chatResult(result, identityId, threadId)
+    },
     async getProjectSetup() {
       const version = writeVersion
       const result = await readHistory<OrganizationProjectSetup>('organization.projectSetup', {})
