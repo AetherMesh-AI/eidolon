@@ -17,6 +17,7 @@ def test_provider_question_uses_leadership_and_preserves_exact_shared_accounting
     from eidolon_cli.organization_budget import budget_view
     store, objective, plan = question_store(tmp_path)
     work = work_claim(store, plan)
+    origin_task = store.context(work)['task']
     question = 'Which audience? Keep the exact wording — including punctuation.'
     answer = 'The board. Keep a technical appendix.'
     escalation = 'I cannot answer; the Executive has the audience details.'
@@ -36,6 +37,12 @@ def test_provider_question_uses_leadership_and_preserves_exact_shared_accounting
                 context, kind = data['context'], data['request']['type']
                 seen.append((context['agent']['id'], kind))
                 if kind == 'request.question':
+                    origin = context['requestOrigin']
+                    assert origin['requestId'] == work['id']
+                    assert origin['requestType'] == work['type']
+                    assert origin['task']['id'] == work['task_id']
+                    assert origin['task']['description'] == origin_task['description']
+                    assert origin['workPackageId'] == origin_task['workPackageId']
                     assert context['requestContract']['requestedOutcome'] == question
                     assert context['requestContract']['requesterId'] == 'writer'
                     if context['agent']['id'] == 'z-manager' and escalate:

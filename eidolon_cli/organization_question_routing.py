@@ -77,6 +77,27 @@ def assignment_route(conn, request):
 
 class OrganizationQuestionRoutingStore:
     @staticmethod
+    def _question_origin_context(conn, request):
+        """Carry the bound assignment, never the requester's private context or grants."""
+        route = conn.execute('SELECT assignment FROM question_routes WHERE request_id=?',
+                             (request['id'],)).fetchone()
+        if route is None:
+            return {}
+        binding = json.loads(route['assignment'])
+        origin = conn.execute('SELECT * FROM requests WHERE id=? AND objective_id=?',
+                              (binding.get('originId'), request['objective_id'])).fetchone()
+        if origin is None:
+            return {}
+        from eidolon_cli.organization_packages import request_package
+        package = request_package(conn, origin)
+        task = conn.execute('SELECT id,title,description,type,team,revision,feedback FROM tasks '
+                            'WHERE id=? AND objective_id=?',
+                            (origin['task_id'], request['objective_id'])).fetchone()
+        return {'requestOrigin': {'requestId': origin['id'], 'requestType': origin['type'],
+                                  'workPackageId': package['id'] if package else None,
+                                  'task': dict(task) if task else None}}
+
+    @staticmethod
     def _initialize_question_route(conn, request_id):
         request = conn.execute('SELECT * FROM requests WHERE id=?', (request_id,)).fetchone()
         if request['type'] == 'request.question':

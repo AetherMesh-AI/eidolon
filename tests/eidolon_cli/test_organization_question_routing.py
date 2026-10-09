@@ -54,6 +54,52 @@ def request_view(store, identifier):
     return next(row for row in store.snapshot()['requests'] if row['id'] == identifier)
 
 
+@pytest.mark.parametrize('stage', ['work', 'plan'])
+def test_question_context_retains_exact_assignment_without_copying_requester_memory(tmp_path, stage):
+    store, _, plan = question_store(tmp_path, package_manager='z-manager')
+    parent = work_claim(store, plan) if stage == 'work' else plan
+    if stage == 'work':
+        assert store.finish(parent, {'summary': 'Initial brief', 'deliverable': 'Draft for an unspecified audience.'})
+        review = store.claim_next()
+        assert review['type'] == 'request.review'
+        feedback = 'Revise for the board audience; retain the technical appendix and explain its scope.'
+        assert store.finish(review, {'approved': False, 'summary': feedback,
+                                     'evidenceIds': [item['id'] for item in store.context(review)['evidence']]})
+        parent = store.claim_next()
+        assert parent['type'] == 'work.draft'
+    private_fact = 'Private requester memory unrelated to the delegated assignment.'
+    with store._write() as conn:
+        conn.execute('UPDATE agent_context SET memory=? WHERE agent_id=?',
+                     (json.dumps({'facts': [private_fact], 'decisions': [], 'lessons': [], 'openQuestions': []}),
+                      parent['agent_id']))
+    before = store.context(parent)
+    assert private_fact in before['agentContext']['memory']['facts']
+    assert 'requestOrigin' not in before
+    ask(store, parent)
+    store = OrganizationStore(store.path)
+    answer = store.claim_next()
+    context = store.context(answer)
+    origin = context['requestOrigin']
+    assert origin['requestId'] == parent['id']
+    assert origin['requestType'] == parent['type']
+    assert origin['workPackageId'] == before['workPackage']['id']
+    if stage == 'work':
+        assert origin['task']['revision'] == 1
+        assert origin['task']['feedback'] == feedback
+        assert origin['task'] == {key: before['task'][key] for key in
+                                  ('id', 'title', 'description', 'type', 'team', 'revision', 'feedback')}
+    else:
+        assert origin['task'] is None
+    assert set(origin) == {'requestId', 'requestType', 'workPackageId', 'task'}
+    assert context['task'] is None  # The leader is answering, not taking over work.
+    assert private_fact not in json.dumps(context)
+    assert context['toolPolicy']['tools'] == []
+    assert store.finish(answer, {'answer': 'Use the board audience for this assignment.'})
+    resumed = OrganizationStore(store.path).claim_next()
+    assert resumed['id'] == parent['id'] and resumed['agent_id'] == parent['agent_id']
+    assert 'requestOrigin' not in store.context(resumed)
+
+
 @pytest.mark.parametrize('mode', ['manager', 'escalate', 'skip', 'package_manager', 'legacy'])
 def test_question_follows_assignment_and_keeps_one_request_across_restart(tmp_path, mode):
     store, objective, plan = question_store(tmp_path, manager_authority=mode != 'skip',
