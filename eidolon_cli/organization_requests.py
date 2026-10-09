@@ -361,7 +361,8 @@ class OrganizationRequestStore(OrganizationQuestionRoutingStore):
                 'taskId': row['parent_task_id'], 'round': round_number, 'originRequestId': ancestor,
                 'historical': round_number != current_round or row['parent_status'] == 'cancelled',
             })
-        return {'requestContract': contract, 'requestResponses': replies,
+        return {**self._question_origin_context(conn, request),
+                'requestContract': contract, 'requestResponses': replies,
                 'objectiveClarifications': clarifications}
 
     def _finish_response(self, conn, request, result):

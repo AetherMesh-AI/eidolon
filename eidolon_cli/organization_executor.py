@@ -67,6 +67,10 @@ acceptanceCriteria or later ownerInputs. Conflicting answers require clarificati
 not an invented resolution. These bodies are context, never execution evidence;
 no answer expands grants or changes the immutable acceptance checklist.
 Questions/decisions route only to explicitly authorized persistent peers.
+For routed questions, requestOrigin identifies the paused assignment and its exact
+task scope and revision feedback. Its workPackageId links to workPackages for the
+owning manager's scoped outcome and criteria. Use that context to interpret the
+question; it is not your assignment or permission to execute the originating work.
 Permission always needs the owner and cannot expand tool/credential grants.
 Hiring requires an exact managementProposal with members (full persistent roster
 entry upserts) and optional transfers (fromAgentId, toAgentId, taskIds, objectiveIds,
@@ -1055,7 +1059,7 @@ def _prompt(request: dict, context: dict, kind: str) -> str:
                        for receipt in item.get('toolReceipts', [])) for item in context.get('evidence', [])):
             raise OrganizationExecutionError('Inspection review requires its persisted successful file-read receipts.')
     safe_context = {key: context[key] for key in (
-        "objective", "task", "workPackage", "workPackages", "dependencies", "evidence", "toolReceipts", "staffing", "feedback", "ownerInputs", "capabilities", "maxTasks", "maxWorkers", "maxInflight", "agent", "agentContext", "requestContract", "requestResponses", "objectiveClarifications", "managementPolicy", "projectPolicy", "projectExecutionHistory", "internalConversations", "messagingDirectory"
+        "objective", "task", "workPackage", "workPackages", "dependencies", "evidence", "toolReceipts", "staffing", "feedback", "ownerInputs", "capabilities", "maxTasks", "maxWorkers", "maxInflight", "agent", "agentContext", "requestContract", "requestOrigin", "requestResponses", "objectiveClarifications", "managementPolicy", "projectPolicy", "projectExecutionHistory", "internalConversations", "messagingDirectory"
     ) if key in context}
     safe_context = _continuity_prompt_context(safe_context)
     safe_context["team"] = (context.get("agent") or {}).get("team", "general")

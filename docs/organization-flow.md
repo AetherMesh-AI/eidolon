@@ -234,6 +234,13 @@ capability, and existing team and policy eligibility. A busy Manager waits; an
 ineligible leader is skipped with a retained reason. Missing or changed ownership
 goes to the owner rather than an unrelated same-team advisor.
 
+The leader receives `requestOrigin`: the bound originating request, its exact task
+description and revision feedback, and its work-package ID. That ID identifies the
+scoped outcome and criteria in the supplied `workPackages`. This context survives
+restart and follows the same question to the Executive, so a short clarification
+does not lose the assignment it concerns. The leader still receives its own private
+memory and tool policy; the originating task is context, not an execution grant.
+
 A handler may return `{"cannot_answer":"reason"}` to pass the original question
 forward once. Denial, uncertainty, transport failure, expired execution, exhausted
 limits, or no authorized next leader remains **Pending intervention**. The request
