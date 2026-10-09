@@ -83,6 +83,7 @@ def test_answer_and_replan_serialize_and_share_owner_capacity(tmp_path, monkeypa
     from concurrent.futures import ThreadPoolExecutor
     from contextlib import contextmanager
     from threading import Event
+    import sqlite3
 
     store, _, work, request = pending_question(tmp_path, max_owner_resolutions=1)
     peer = OrganizationStore(store.path)
@@ -97,6 +98,21 @@ def test_answer_and_replan_serialize_and_share_owner_capacity(tmp_path, monkeypa
             yield conn
 
     monkeypatch.setattr(store, '_write', hold_first_transaction)
+    connect = peer._connect
+
+    @contextmanager
+    def prove_peer_contention():
+        with connect() as conn:
+            # The winner cannot commit until this connection actually attempts
+            # its write and SQLite reports the occupied transaction lock.
+            conn.execute('PRAGMA busy_timeout=0')
+            with pytest.raises(sqlite3.OperationalError, match='database is locked'):
+                conn.execute('BEGIN IMMEDIATE')
+            conn.execute('PRAGMA busy_timeout=10000')
+            competing.set()
+            yield conn
+
+    monkeypatch.setattr(peer, '_connect', prove_peer_contention)
 
     def act(target, action):
         if action == 'answer':
@@ -105,7 +121,6 @@ def test_answer_and_replan_serialize_and_share_owner_capacity(tmp_path, monkeypa
 
     def compete():
         assert locked.wait(5)
-        competing.set()
         with pytest.raises(ValueError, match='unavailable|not awaiting'):
             act(peer, 'replan' if winner == 'answer' else 'answer')
 
