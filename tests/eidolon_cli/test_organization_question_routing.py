@@ -58,6 +58,15 @@ def request_view(store, identifier):
 def test_question_context_retains_exact_assignment_without_copying_requester_memory(tmp_path, stage):
     store, _, plan = question_store(tmp_path, package_manager='z-manager')
     parent = work_claim(store, plan) if stage == 'work' else plan
+    if stage == 'work':
+        assert store.finish(parent, {'summary': 'Initial brief', 'deliverable': 'Draft for an unspecified audience.'})
+        review = store.claim_next()
+        assert review['type'] == 'request.review'
+        feedback = 'Revise for the board audience; retain the technical appendix and explain its scope.'
+        assert store.finish(review, {'approved': False, 'summary': feedback,
+                                     'evidenceIds': [item['id'] for item in store.context(review)['evidence']]})
+        parent = store.claim_next()
+        assert parent['type'] == 'work.draft'
     private_fact = 'Private requester memory unrelated to the delegated assignment.'
     with store._write() as conn:
         conn.execute('UPDATE agent_context SET memory=? WHERE agent_id=?',
@@ -75,6 +84,8 @@ def test_question_context_retains_exact_assignment_without_copying_requester_mem
     assert origin['requestType'] == parent['type']
     assert origin['workPackageId'] == before['workPackage']['id']
     if stage == 'work':
+        assert origin['task']['revision'] == 1
+        assert origin['task']['feedback'] == feedback
         assert origin['task'] == {key: before['task'][key] for key in
                                   ('id', 'title', 'description', 'type', 'team', 'revision', 'feedback')}
     else:
