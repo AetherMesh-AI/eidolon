@@ -68,20 +68,28 @@ for (const [relative, contents] of sentinels) {
   const file = path.join(hermesHome, relative)
   fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, contents)
 }
-// A valid SQLite database in an inactive profile proves byte-level persistence
-// without pretending a synthetic row is a real conversation/backend test.
+// A synthetic SQLite row proves payload persistence without pretending it is
+// a provider conversation. The running backend may legitimately add its schema.
 const database = path.join(hermesHome, 'profiles/proof/state.db')
 run(python, ['-c', 'import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); c.execute("create table preservation_proof(value text)"); c.execute("insert into preservation_proof values (?)",("synthetic profile persistence",)); c.commit(); c.close()', database], { env })
-const databaseBytes = fs.readFileSync(database)
 function verifyData() {
   for (const [relative, contents] of sentinels) {
-    if (relative !== 'config.yaml') assert.equal(read(path.join(hermesHome, relative)), contents, relative)
+    if (!relative.endsWith('config.yaml')) {
+      // Do not ask assert to construct unbounded diffs of changing files.
+      assert(read(path.join(hermesHome, relative)) === contents, `Preserved fixture changed: ${relative}`)
+    }
   }
-  // Runtime migrations may add defaults; preserve the configured value rather
-  // than treating an additive, legitimate migration as user data loss.
-  assert.equal(run(python, ['-c', 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["model"]["default"])', path.join(hermesHome, 'config.yaml')], { env }), 'ci-no-provider')
-  assert.deepEqual(fs.readFileSync(database), databaseBytes)
+  // Runtime migrations may add defaults; preserve explicit settings, not byte
+  // layout or generated schema pages in a live database.
+  for (const [relative, expected] of [['config.yaml', 'ci-no-provider'], ['profiles/proof/config.yaml', 'ci-profile-no-provider']]) {
+    const actual = run(python, ['-c', 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["model"]["default"])', path.join(hermesHome, relative)], { env })
+    assert(actual === expected, `Configured model changed: ${relative}`)
+  }
+  const persisted = JSON.parse(run(python, ['-c', 'import sqlite3,sys,json; c=sqlite3.connect("file:"+sys.argv[1]+"?mode=ro",uri=True,timeout=10); print(json.dumps({"integrity":c.execute("pragma integrity_check").fetchone()[0],"rows":c.execute("select value from preservation_proof").fetchall()})); c.close()', database], { env }))
+  assert.equal(persisted.integrity, 'ok')
+  assert(JSON.stringify(persisted.rows) === JSON.stringify([['synthetic profile persistence']]), 'Profile SQLite payload changed')
 }
+
 const require = createRequire(path.join(source, 'apps/desktop/package.json'))
 const { _electron: electron } = require('playwright')
 let instance, oldPid, newPid, polling
