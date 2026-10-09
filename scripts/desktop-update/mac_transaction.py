@@ -13,6 +13,10 @@ import subprocess
 import sys
 import uuid
 
+# These helpers also run directly from the detached shell handoff.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from eidolon_cli.eidolon_version import valid_sha, validate_identity
+
 
 class ReplacementError(Exception):
     pass
@@ -62,6 +66,21 @@ def bundle_identity(bundle: Path) -> dict:
             'identifier': str(info.get('CFBundleIdentifier', ''))}
 
 
+def verify_source_commit(bundle: Path, expected_commit: str) -> str:
+    """Automatic updates require clean, pinned provenance, not just equal bytes."""
+    if not valid_sha(expected_commit):
+        raise ReplacementError('The updated source commit could not be verified. Retry the update from a Git checkout.')
+    stamp_path = bundle / 'Contents/Resources/install-stamp.json'
+    try:
+        stamp = json.loads(stamp_path.read_text())
+    except (OSError, ValueError) as error:
+        raise ReplacementError(f'The new app is missing readable build provenance at {stamp_path}. Use a clean updated checkout, run eidolon desktop --force-build, then retry the update.') from error
+    if not validate_identity(stamp) or stamp.get('commit') != expected_commit or stamp.get('dirty') is not False:
+        actual = stamp.get('commit', 'unknown') if isinstance(stamp, dict) else 'unknown'
+        raise ReplacementError(f'The new app does not prove a clean build of updated source {expected_commit} (app commit: {actual}). Use a clean updated checkout, run eidolon desktop --force-build, then retry the update.')
+    return expected_commit
+
+
 def save_journal(workspace: Path, journal: dict) -> None:
     temporary = workspace / 'transaction.tmp'
     with temporary.open('w') as stream:
@@ -76,13 +95,17 @@ def save_journal(workspace: Path, journal: dict) -> None:
         os.close(descriptor)
 
 
-def replace_bundle(source: Path, target: Path) -> Path:
+def replace_bundle(source: Path, target: Path, expected_commit: str) -> Path:
     if not target.is_absolute() or target.is_symlink() or target.parent.is_symlink():
         raise ReplacementError('The installed app must be an absolute, non-symlink bundle path.')
     workspace = Path(str(target) + '.eidolon-update')
     if os.path.lexists(workspace):
         raise ReplacementError(f'An active or interrupted update exists at {workspace}. Its app copies and journal were preserved. Review recovery before retrying.')
     source = source.resolve(strict=True)
+    try:
+        verify_source_commit(source, expected_commit)
+    except ReplacementError as error:
+        raise ReplacementError(f'{error} The previous app was kept.') from error
     if source == target.resolve(strict=True):
         return target
     expected = bundle_identity(source)
@@ -98,12 +121,14 @@ def replace_bundle(source: Path, target: Path) -> Path:
     staged = workspace / 'new.app'
     backup = workspace / 'previous.app'
     journal = {'schema': 1, 'source': str(source), 'target': str(target),
-               'expected': expected, 'previous': previous, 'phase': 'preparing'}
+               'expected': expected, 'expected_source_commit': expected_commit,
+               'previous': previous, 'phase': 'preparing'}
     moved = False
     staged_identity = None
     try:
         save_journal(workspace, journal)
         subprocess.run(['/usr/bin/ditto', str(source), str(staged)], check=True, capture_output=True, text=True)
+        verify_source_commit(staged, expected_commit)
         if bundle_identity(staged) != expected:
             raise ReplacementError('The staged app does not match the new build.')
         journal['phase'] = 'staged'
@@ -115,6 +140,7 @@ def replace_bundle(source: Path, target: Path) -> Path:
         staged_stat = staged.stat()
         staged_identity = (staged_stat.st_dev, staged_stat.st_ino)
         rename_noreplace(staged, target)
+        verify_source_commit(target, expected_commit)
         if bundle_identity(target) != expected:
             raise ReplacementError('The installed app does not match the verified new build.')
         journal['phase'] = 'installed'
@@ -145,11 +171,11 @@ def replace_bundle(source: Path, target: Path) -> Path:
 
 
 def main() -> int:
-    if sys.platform != 'darwin' or len(sys.argv) != 3:
+    if sys.platform != 'darwin' or len(sys.argv) != 4:
         return 64
     try:
-        receipt = replace_bundle(Path(sys.argv[1]), Path(sys.argv[2]))
-        print(f'Installed app verified. Previous app and transaction receipt: {receipt}')
+        receipt = replace_bundle(Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3])
+        print(f'Installed app verified: source commit={sys.argv[3]}. Previous app and transaction receipt: {receipt}')
         return 0
     except (OSError, ValueError, ReplacementError) as error:
         print(str(error))

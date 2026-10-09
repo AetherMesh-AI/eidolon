@@ -1,6 +1,6 @@
 /** Native, real packaged Electron IPC -> source update -> rebuild -> swap -> relaunch.
  * Run only on an ephemeral macOS CI runner. No updater/build/relaunch substitutes.
- * Inputs: --app --source --old-sha --new-sha --home --evidence.
+ * Inputs: --app --source --old-sha --new-sha --home --evidence --build-stamp.
  * The prepared source must be OLD with a real venv and origin already at NEW.
  */
 import assert from 'node:assert/strict'
@@ -11,7 +11,7 @@ import { execFileSync } from 'node:child_process'
 
 const args = Object.fromEntries(Array.from({ length: (process.argv.length - 2) / 2 }, (_, i) =>
   [process.argv[2 + i * 2].replace(/^--/, ''), process.argv[3 + i * 2]]))
-for (const key of ['app', 'source', 'old-sha', 'new-sha', 'home', 'evidence']) assert(args[key], `Missing --${key}`)
+for (const key of ['app', 'source', 'old-sha', 'new-sha', 'home', 'evidence', 'build-stamp']) assert(args[key], `Missing --${key}`)
 assert.equal(process.platform, 'darwin', 'Native macOS required; no platform simulation')
 assert.equal(process.arch, 'arm64', 'Native Apple Silicon required')
 assert.equal(process.env.GITHUB_ACTIONS, 'true', 'Ephemeral GitHub CI only')
@@ -29,16 +29,23 @@ const run = (cmd, argv, options = {}) => execFileSync(cmd, argv, { encoding: 'ut
 const git = (...argv) => run('git', ['-C', source, ...argv])
 assert.equal(git('rev-parse', 'HEAD'), args['old-sha'])
 assert.notEqual(args['old-sha'], args['new-sha'])
+git('diff', '--exit-code', args['old-sha'], args['new-sha'], '--', 'apps/desktop', 'package.json', 'package-lock.json')
 const python = path.join(source, 'venv/bin/python')
 assert(fs.existsSync(path.join(source, 'venv/bin/eidolon')), 'Real installed CLI required')
 const hermesHome = path.join(home, '.eidolon')
 const applications = path.join(home, 'Applications')
 fs.mkdirSync(hermesHome)
+const cacheStampPath = path.join(hermesHome, 'desktop-build-stamp.json')
+fs.copyFileSync(fs.realpathSync(args['build-stamp']), cacheStampPath)
+const cacheStamp = JSON.parse(fs.readFileSync(cacheStampPath))
+assert.equal(cacheStamp.sourceMode, false)
+assert.match(cacheStamp.contentHash, /^[0-9a-f]{64}$/)
 fs.mkdirSync(applications)
 const appPath = path.join(applications, 'Eidolon.app')
 run('/usr/bin/ditto', [fs.realpathSync(args.app), appPath])
 const stamp = bundle => JSON.parse(fs.readFileSync(path.join(bundle, 'Contents/Resources/install-stamp.json')))
 assert.equal(stamp(appPath).commit, args['old-sha'])
+assert.equal(stamp(appPath).dirty, false)
 const env = { ...process.env, HOME: home, HERMES_HOME: hermesHome,
   HERMES_DESKTOP_HERMES_ROOT: source, CSC_IDENTITY_AUTO_DISCOVERY: 'false' }
 for (const key of ['EIDOLON_HOME', 'HERMES_DESKTOP_USER_DATA_DIR', 'HERMES_DESKTOP_BOOT_FAKE',
@@ -46,7 +53,7 @@ for (const key of ['EIDOLON_HOME', 'HERMES_DESKTOP_USER_DATA_DIR', 'HERMES_DESKT
 const report = { schema: 1, startedAt: new Date().toISOString(), platform: process.platform,
   architecture: process.arch, oldSha: args['old-sha'], newSha: args['new-sha'],
   home, source, appPath, signing: 'Ad-hoc signed; not notarized',
-  scope: 'Owned two-commit source fixture; real packaged Electron, production IPC, CLI fetch/build, transaction and LaunchServices relaunch', stages: [] }
+  scope: 'Owned two-commit source fixture with identical desktop content and valid old cache; real packaged Electron, production IPC, CLI fetch/build, transaction and LaunchServices relaunch', stages: [] }
 const save = () => fs.writeFileSync(path.join(evidence, 'report.json'), JSON.stringify(report, null, 2))
 const stage = (name, details = {}) => { report.stages.push({ name, at: new Date().toISOString(), ...details }); save(); console.log(name, JSON.stringify(details)) }
 const read = file => { try { return fs.readFileSync(file, 'utf8') } catch (error) { if (error.code === 'ENOENT') return ''; throw error } }
@@ -108,7 +115,9 @@ function runningApp() {
   return out ? JSON.parse(out) : null
 }
 try {
-  stage('fixture-prepared', { oldStamp: stamp(appPath) })
+  const currentContentHash = run(python, ['-c', 'from pathlib import Path; import sys; from eidolon_cli.main_desktop import _compute_desktop_content_hash; print(_compute_desktop_content_hash(Path(sys.argv[1])))', source], { env, cwd: source })
+  assert.equal(currentContentHash, cacheStamp.contentHash, 'Real old cache must be valid so provenance is the reason to rebuild')
+  stage('fixture-prepared', { oldStamp: stamp(appPath), cacheStamp, unchangedDesktopContent: true })
   instance = await electron.launch({ executablePath: path.join(appPath, 'Contents/MacOS/Eidolon'), env, timeout: 120_000 })
   oldPid = instance.process().pid
   const main = await instance.evaluate(({ app }) => ({ packaged: app.isPackaged, ready: app.isReady(), version: app.getVersion(), userData: app.getPath('userData'), execPath: process.execPath, pid: process.pid }))
@@ -176,7 +185,19 @@ try {
   await until(() => /Relaunched app verified: pid=/.test(read(handoffLog)), 40 * 60_000, 'real source update, rebuild, swap and verified relaunch')
   assert.equal(git('rev-parse', 'HEAD'), args['new-sha'])
   const newStamp = stamp(appPath)
+  report.targetIdentity = { expectedCommit: args['new-sha'], installedCommit: newStamp.commit, sourceCommit: git('rev-parse', 'HEAD'), cachedCommit: args['old-sha'], initialCacheContentHash: cacheStamp.contentHash }
+  if (args['expect-stale-cache'] === 'true' && newStamp.commit === args['old-sha'] && report.targetIdentity.sourceCommit === args['new-sha']) {
+    const currentHash = run(python, ['-c', 'from pathlib import Path; import sys; from eidolon_cli.main_desktop import _compute_desktop_content_hash; print(_compute_desktop_content_hash(Path(sys.argv[1])))', source], { env, cwd: source })
+    assert.equal(currentHash, cacheStamp.contentHash, 'Baseline must reproduce with unchanged real desktop cache content')
+    const observed = runningApp()
+    assert(observed?.ready); assert.notEqual(observed.pid, oldPid); newPid = observed.pid
+    report.targetIdentity.observed = observed
+    report.targetIdentity.actualStamp = newStamp
+    report.targetIdentity.currentContentHash = currentHash
+    throw Object.assign(new Error('Source reached NEW but matching cached desktop was installed with OLD embedded commit'), { code: 'STALE_CACHE_REPRODUCED' })
+  }
   assert.equal(newStamp.commit, args['new-sha'])
+  assert.equal(newStamp.dirty, false)
   assert.equal(newStamp.version, report.stages[0].oldStamp.version)
   assert.equal(newStamp.distance, report.stages[0].oldStamp.distance + 1)
   const observed = runningApp()
@@ -188,6 +209,10 @@ try {
   const archive = path.join(applications, archives[0])
   const receipt = JSON.parse(read(path.join(archive, 'transaction.json')))
   assert.equal(receipt.phase, 'installed'); assert.equal(receipt.target, appPath)
+  assert.equal(receipt.expected_source_commit, args['new-sha'])
+  const handoffResult = JSON.parse(read(path.join(evidence, 'handoff-result-observed.json')))
+  assert.equal(handoffResult.ok, true)
+  assert.equal(handoffResult.expected_source_commit, args['new-sha'])
   assert.notEqual(receipt.previous.sha256, receipt.expected.sha256)
   assert.equal(stamp(path.join(archive, 'previous.app')).commit, args['old-sha'])
   // Independently re-hash both complete bundles with the production identity owner.
@@ -196,10 +221,15 @@ try {
   verifyData()
   fs.copyFileSync(path.join(archive, 'transaction.json'), path.join(evidence, 'transaction.json'))
   stage('replacement-ready-and-profile-preserved', { oldPid, newPid, observed, newStamp, recoveryArchive: archive, receipt })
+  assert.notEqual(args['expect-stale-cache'], 'true', 'Baseline did not reproduce the expected stale-cache provenance failure')
   report.ok = true
   report.readinessScope = 'Native LaunchServices isFinishedLaunching, stable fresh PID and exact executable; renderer/provider conversation after relaunch is not asserted.'
 } catch (error) {
-  report.ok = false; report.error = error.stack; throw error
+  report.ok = false; report.error = error.stack
+  if (args['expect-stale-cache'] === 'true' && error.code === 'STALE_CACHE_REPRODUCED') {
+    report.expectedFailure = 'stale-cache-provenance-reproduced'
+    stage('baseline-reproduced-stale-cache-provenance', report.targetIdentity)
+  } else { throw error }
 } finally {
   if (polling) clearInterval(polling)
   report.finishedAt = new Date().toISOString(); save()

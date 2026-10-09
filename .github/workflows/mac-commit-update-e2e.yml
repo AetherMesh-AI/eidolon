@@ -7,12 +7,18 @@ permissions:
   contents: read
 jobs:
   actual-electron-source-update:
+    name: Native source update (${{ matrix.variant }})
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [baseline, fixed]
     runs-on: macos-15
     timeout-minutes: 75
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       UV_PROJECT_ENVIRONMENT: venv
-      SOURCE_COMMIT: 53ab5d6b2287b931457335931f91d36ef017dbad
+      SOURCE_COMMIT: 63ffc20b04f761c8514199e83c834eae1daa8b6c
+      FIXTURE_VARIANT: ${{ matrix.variant }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -34,22 +40,25 @@ jobs:
           set -euo pipefail
           test "$(uname -m)" = arm64
           cp .github/scripts/mac-update-e2e.mjs "$RUNNER_TEMP/mac-update-e2e.mjs"
-          cp eidolon_cli/main_desktop.py "$RUNNER_TEMP/main_desktop.py"
-          cp tests/eidolon_cli/test_desktop_quarantine.py "$RUNNER_TEMP/test_desktop_quarantine.py"
-          cp tests/eidolon_cli/test_gui_command.py "$RUNNER_TEMP/test_gui_command.py"
+          mkdir -p "$RUNNER_TEMP/candidate"
+          FILES=(eidolon_cli/main_desktop.py scripts/desktop-update/posix.sh scripts/desktop-update/mac_transaction.py scripts/desktop-update/mac_relaunch.py tests/eidolon_cli/test_gui_command.py tests/eidolon_cli/test_desktop_quarantine.py tests/test_desktop_update_macos_replacement.py)
+          for file in "${FILES[@]}"; do
+            mkdir -p "$RUNNER_TEMP/candidate/$(dirname "$file")"
+            cp "$file" "$RUNNER_TEMP/candidate/$file"
+          done
           git checkout -B main "$SOURCE_COMMIT"
-          cp "$RUNNER_TEMP/main_desktop.py" eidolon_cli/main_desktop.py
-          cp "$RUNNER_TEMP/test_desktop_quarantine.py" tests/eidolon_cli/test_desktop_quarantine.py
-          cp "$RUNNER_TEMP/test_gui_command.py" tests/eidolon_cli/test_gui_command.py
+          if [ "$FIXTURE_VARIANT" = fixed ]; then
+            for file in "${FILES[@]}"; do cp "$RUNNER_TEMP/candidate/$file" "$file"; done
+          fi
           git config user.name 'Eidolon CI fixture'
           git config user.email 'ci-fixture@example.invalid'
           printf 'Synthetic owned update fixture A\n' > apps/desktop/public/mac-update-proof.txt
-          git add apps/desktop/public/mac-update-proof.txt eidolon_cli/main_desktop.py tests/eidolon_cli/test_desktop_quarantine.py tests/eidolon_cli/test_gui_command.py
-          git commit -m 'test: owned native update fixture A with quarantine preservation'
+          git add apps/desktop/public/mac-update-proof.txt "${FILES[@]}"
+          git commit -m "test: owned native update fixture A ($FIXTURE_VARIANT)"
           OLD=$(git rev-parse HEAD)
-          printf 'Synthetic owned update fixture B\n' > apps/desktop/public/mac-update-proof.txt
-          git add apps/desktop/public/mac-update-proof.txt
-          git commit -m 'test: owned native update fixture B'
+          printf 'Synthetic root-only commit; Desktop content is unchanged.\n' > mac-update-provenance-proof.txt
+          git add mac-update-provenance-proof.txt
+          git commit -m 'test: root-only update must refresh embedded commit provenance'
           NEW=$(git rev-parse HEAD)
           git clone --bare . "$RUNNER_TEMP/mac-update-origin.git"
           git remote set-url origin "$RUNNER_TEMP/mac-update-origin.git"
@@ -57,7 +66,7 @@ jobs:
           echo "OLD_SHA=$OLD" >> "$GITHUB_ENV"
           echo "NEW_SHA=$NEW" >> "$GITHUB_ENV"
           mkdir -p "$RUNNER_TEMP/mac-update-evidence"
-          printf '{"fixedBase":"%s","oldSha":"%s","newSha":"%s","sourceTransport":"local bare origin, real Git fetch"}\n' "$SOURCE_COMMIT" "$OLD" "$NEW" > "$RUNNER_TEMP/mac-update-evidence/source-fixture.json"
+          printf '{"fixedBase":"%s","oldSha":"%s","newSha":"%s","sourceTransport":"local bare origin, real Git fetch","variant":"%s"}\n' "$SOURCE_COMMIT" "$OLD" "$NEW" "$FIXTURE_VARIANT" > "$RUNNER_TEMP/mac-update-evidence/source-fixture.json"
       - name: Install real runtime and locked desktop dependencies
         run: |
           uv sync --locked --python 3.11 --extra all --extra dev
@@ -72,18 +81,21 @@ jobs:
           assert 'subprocess.run(["xattr", "-cr", str(app)]' not in source, 'BLOCKED: production rebuild unconditionally clears app xattrs; no quarantine bypass is authorized'
           PY
       - name: Native quarantine-preserving signing regression
-        run: venv/bin/python -m pytest -q tests/eidolon_cli/test_gui_command.py tests/eidolon_cli/test_desktop_quarantine.py
+        run: venv/bin/python -m pytest -q tests/eidolon_cli/test_gui_command.py tests/eidolon_cli/test_desktop_quarantine.py tests/test_desktop_update_macos_replacement.py
       - name: Build the old real application
         run: |
           mkdir -p "$RUNNER_TEMP/mac-old-build-home"
           env -u GITHUB_SHA -u GITHUB_REF_NAME HOME="$RUNNER_TEMP/mac-old-build-home" HERMES_HOME="$RUNNER_TEMP/mac-old-build-home/.eidolon" venv/bin/eidolon desktop --force-build --build-only
       - name: Exercise production IPC and two-version source update
         run: |
+          EXPECT_STALE=false
+          if [ "$FIXTURE_VARIANT" = baseline ]; then EXPECT_STALE=true; fi
           node "$RUNNER_TEMP/mac-update-e2e.mjs" \
             --app "$GITHUB_WORKSPACE/apps/desktop/release/mac-arm64/Eidolon.app" \
             --source "$GITHUB_WORKSPACE" --old-sha "$OLD_SHA" --new-sha "$NEW_SHA" \
             --home "$RUNNER_TEMP/mac-update-isolated-home" \
-            --evidence "$RUNNER_TEMP/mac-update-evidence"
+            --build-stamp "$RUNNER_TEMP/mac-old-build-home/.eidolon/desktop-build-stamp.json" \
+            --evidence "$RUNNER_TEMP/mac-update-evidence" --expect-stale-cache "$EXPECT_STALE"
       - name: Collect fixture diagnostics even after observer termination
         if: always()
         shell: bash
@@ -98,7 +110,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: Eidolon-mac-source-update-proof
+          name: Eidolon-mac-source-update-proof-${{ matrix.variant }}
           path: ${{ runner.temp }}/mac-update-evidence
           retention-days: 14
           if-no-files-found: warn
