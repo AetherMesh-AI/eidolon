@@ -68,7 +68,7 @@ export async function setupOwnerChatFixture() {
           assert.equal(submitted.conversation.identityId, submitted.identity.identityId)
           assert.equal(submitted.conversation.messages[0].text, firstMessage)
           calls.push(payload!)
-          assert.ok(calls.length <= 3, 'No automatic provider retry or duplicate replay')
+          assert.ok(calls.length <= 27, 'No automatic provider retry or duplicate replay')
           const latestText = submitted.conversation.messages.at(-1)?.text
           const content = JSON.stringify({
             reply:

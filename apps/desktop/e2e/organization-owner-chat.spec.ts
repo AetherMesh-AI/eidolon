@@ -20,7 +20,10 @@ interface ThreadView {
   id: string
   identityId: string
   canSend: boolean
-  messages: Array<{ text: string; role: string }>
+  messages: Array<{ id: string; text: string; role: string }>
+  latestMessageId: string | null
+  activeTurnId: string | null
+  history: { hasMore: boolean }
   turns: Array<{ status: string }>
   budget: { callsReserved: number; tokensReserved: number; remainingCalls: number; maxCalls: number; version: number }
   renewalReceipt: { id: string; idempotencyKey: string } | null
@@ -240,4 +243,62 @@ test('retains exact worker chat, deduplicates owner send and fences a cancelled 
   expect(continued.result?.id).toBe(accepted.result?.id)
   expect(continued.result?.budget.callsReserved).toBe(3)
   await page.screenshot({ path: test.info().outputPath('native-owner-chat-continued.png') })
+
+  // Fill one bounded page using explicit fixture sends through the actual
+  // authenticated gateway. These are loopback scripted-provider calls only.
+  let latest = continued.result!
+  await expect
+    .poll(
+      async () => {
+        const read = await rpc<ThreadView>(page, sends[0], 'organization.ownerChat.read', identity)
+        expect(read.error).toBeUndefined()
+        expect(read.result).toBeDefined()
+        latest = read.result!
+        return latest.activeTurnId === null && latest.canSend
+      },
+      { timeout: 30_000 }
+    )
+    .toBe(true)
+  for (let index = 3; index < 27; index++) {
+    const sent = await rpc<ThreadView>(page, sends[0], 'organization.ownerChat.send', {
+      ...identity,
+      text: `History fixture message ${index}`,
+      replyToMessageId: latest.latestMessageId,
+      idempotencyKey: `native-history-${index}`
+    })
+    expect(sent.error).toBeUndefined()
+    await expect
+      .poll(
+        async () => {
+          const read = await rpc<ThreadView>(page, sends[0], 'organization.ownerChat.read', identity)
+          expect(read.error).toBeUndefined()
+          expect(read.result).toBeDefined()
+          latest = read.result!
+          return latest.activeTurnId === null && latest.canSend
+        },
+        { timeout: 30_000 }
+      )
+      .toBe(true)
+    expect(latest.turns.at(-1)?.status).toBe('completed')
+    expect(latest.budget.callsReserved).toBe(index + 1)
+  }
+  expect(running.calls).toHaveLength(27)
+  expect(latest.history.hasMore).toBe(true)
+  const latestAnchor = latest.latestMessageId
+  await page.reload()
+  conversation = await openWorkerChat(page)
+  await expect(conversation.getByText(firstMessage, { exact: true })).toHaveCount(0)
+  await conversation.getByRole('button', { name: 'Load earlier messages', exact: true }).click()
+  await expect(conversation.getByText(firstMessage, { exact: true })).toBeVisible()
+  await expect(conversation.getByText(secondMessage, { exact: true })).toBeVisible()
+  await page.screenshot({ path: test.info().outputPath('native-owner-chat-earlier-history.png') })
+  await conversation.getByRole('button', { name: 'Return to latest messages', exact: true }).click()
+  await expect(conversation.getByText('History fixture message 26', { exact: true })).toBeVisible()
+  await expect(conversation.getByText(firstMessage, { exact: true })).toHaveCount(0)
+  const afterHistory = await rpc<ThreadView>(page, sends[0], 'organization.ownerChat.read', identity)
+  expect(afterHistory.result?.latestMessageId).toBe(latestAnchor)
+  expect(afterHistory.result?.budget).toEqual(latest.budget)
+  expect(running.calls).toHaveLength(27)
+  expect(running.providerErrors).toEqual([])
+  await page.screenshot({ path: test.info().outputPath('native-owner-chat-latest-history.png') })
 })
