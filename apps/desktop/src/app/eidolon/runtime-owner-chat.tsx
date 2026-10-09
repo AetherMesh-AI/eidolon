@@ -4,6 +4,7 @@ import { Link } from 'react-router'
 import { useStickToBottom } from 'use-stick-to-bottom'
 
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { EmptyState } from '@/components/ui/empty-state'
 import { ErrorState } from '@/components/ui/error-state'
 import { Loader } from '@/components/ui/loader'
@@ -14,8 +15,9 @@ import type { OrganizationOwnerChatCopy } from '@/i18n/organization-owner-chat'
 import { ArrowUp, MessageCircle } from '@/lib/icons'
 
 import { AgentAvatar } from './avatar'
-import { $ownerChatDrafts, setOwnerChatDraft } from './runtime-owner-chat-drafts'
-import type { OwnerChatThread, OwnerChatTurn } from './runtime-owner-chat-types'
+import { OwnerChatRenewalRejected } from './runtime-owner-chat-contract'
+import { $ownerChatDrafts, $ownerChatRenewals, setOwnerChatDraft } from './runtime-owner-chat-drafts'
+import type { OwnerChatRenew, OwnerChatThread, OwnerChatTurn } from './runtime-owner-chat-types'
 import type { OrganizationAgent, OrganizationSnapshot, RuntimeOrganizationAdapter } from './types'
 import { useOwnerChat } from './use-owner-chat'
 
@@ -81,11 +83,20 @@ function OwnerChatTranscript({ thread, sendRevision }: { thread: OwnerChatThread
                   {copy.replyTo}: {target.text.slice(0, 80)}
                 </Button>
               )}
+              {!target && message.replyToMessageId && <p className="eid-note">{copy.retainedAnchor}</p>}
               <p className="eid-owner-chat-bubble">{message.text}</p>
               {turn && (
                 <div className="eid-owner-chat-turn" role="status">
                   <span>{turnLabel(turn, copy)}</span>
                   {turn.reason && <p className="eid-result-text">{turn.reason}</p>}
+                  {(turn.context?.omittedMessageCount ?? 0) > 0 && (
+                    <p className="eid-note">
+                      {copy.contextCutoff}{' '}
+                      {copy.contextAudit
+                        .replace('{count}', String(turn.context?.omittedMessageCount))
+                        .replace('{id}', turn.context?.oldestIncludedMessageId ?? '—')}
+                    </p>
+                  )}
                 </div>
               )}
             </li>
@@ -110,13 +121,26 @@ function OwnerChatPanel({
   const { t } = useI18n()
   const drafts = useStore($ownerChatDrafts)
   const draft = drafts[draftKey]
+  const renewalIntents = useStore($ownerChatRenewals)
+  const renewalIntent = renewalIntents[draftKey]
+  const [review, setReview] = useState<{ intent: OwnerChatRenew; tokens: number } | null>(null)
 
-  const { thread, verified, busy, error, changed, cancelUncertain, refresh, send, cancel, copy } = useOwnerChat(
-    adapter,
-    snapshot,
-    agent,
-    draftKey
-  )
+  const {
+    thread,
+    verified,
+    busy,
+    error,
+    changed,
+    cancelUncertain,
+    refresh,
+    send,
+    cancel,
+    copy,
+    historyPage,
+    loadEarlier,
+    showLatest,
+    renew
+  } = useOwnerChat(adapter, snapshot, agent, draftKey)
 
   const ready = snapshot.connection?.state === 'ready'
 
@@ -137,7 +161,29 @@ function OwnerChatPanel({
   const text = draft?.text ?? ''
   const length = [...text.trim()].length
   const limit = thread?.limits.maxMessageChars ?? 6000
-  const latest = thread?.messages.at(-1)
+
+  const latest =
+    thread?.messages.find(message => message.id === thread.latestMessageId) ??
+    (thread?.latestMessageId === undefined ? thread?.messages.at(-1) : undefined)
+
+  const page = historyPage ?? thread
+
+  const reviewRenewal = () => {
+    if (!thread?.renewal || thread.budget.version === undefined || thread.policyGeneration === undefined) {
+      return
+    }
+
+    const intent = renewalIntent ?? {
+      threadId: thread.id,
+      identityId: thread.identityId,
+      idempotencyKey: crypto.randomUUID(),
+      expectedBudgetVersion: thread.budget.version,
+      expectedPolicyGeneration: thread.policyGeneration,
+      additionalCalls: thread.renewal.maxAdditionalCalls
+    }
+
+    setReview({ intent, tokens: intent.additionalCalls * thread.renewal.tokensPerCall })
+  }
 
   return (
     <div className="eid-owner-chat-panel">
@@ -171,12 +217,65 @@ function OwnerChatPanel({
             {t.organizationRuntime.model}: {thread.recipient.model || copy.profileRoute}
           </p>
           <p className="eid-note">{copy.providerUsage}</p>
-          <OwnerChatTranscript sendRevision={sendRevision} thread={thread} />
+          <p className="eid-note">{copy.contextWindow}</p>
+          {historyPage && <p className="eid-note">{copy.historyPage}</p>}
+          <div className="eid-owner-chat-actions">
+            {page?.history?.hasMore && (
+              <Button disabled={!ready || !!busy} onClick={() => void loadEarlier()} size="sm" variant="secondary">
+                {copy.earlier}
+              </Button>
+            )}
+            {historyPage && (
+              <Button onClick={showLatest} size="sm" variant="secondary">
+                {copy.latest}
+              </Button>
+            )}
+          </div>
+          <OwnerChatTranscript sendRevision={sendRevision} thread={page!} />
           <p className="eid-note">
             {copy.calls}: {thread.budget.remainingCalls} / {thread.budget.maxCalls} · {copy.tokens}:{' '}
             {thread.budget.tokensReserved} / {thread.budget.maxTokens}
           </p>
           <p className="eid-note">{copy.budgetNote}</p>
+          {renewalIntent && busy !== 'renew' && <p role="status">{copy.renewUncertain}</p>}
+          {thread.renewal && adapter.renewOwnerChat && (
+            <Button
+              disabled={!ready || !!busy || inactive || (!renewalIntent && (!verified || !thread.renewal.canRenew))}
+              onClick={reviewRenewal}
+              size="sm"
+              variant="secondary"
+            >
+              {renewalIntent ? copy.renewRetry : copy.renew}
+            </Button>
+          )}
+          <ConfirmDialog
+            confirmLabel={copy.renewConfirm}
+            description={
+              review
+                ? copy.renewReview
+                    .replace('{calls}', String(review.intent.additionalCalls))
+                    .replace('{tokens}', String(review.tokens))
+                : ''
+            }
+            onClose={() => setReview(null)}
+            onConfirm={async () => {
+              if (!review) {
+                return
+              }
+
+              try {
+                await renew(review.intent)
+              } catch (reason) {
+                if (reason instanceof OwnerChatRenewalRejected) {
+                  setReview(null)
+                }
+
+                throw reason
+              }
+            }}
+            open={!!review}
+            title={copy.renew}
+          />
         </>
       )}
       {busy === 'read' && !thread && <Loader label={copy.loading} />}
@@ -307,7 +406,9 @@ export function OrganizationOwnerChat({
     adapter.cancelOwnerChat
   )
 
-  if (agent.role === 'Owner' || agent.id.startsWith('control:')) {return null}
+  if (agent.role === 'Owner' || agent.id.startsWith('control:')) {
+    return null
+  }
 
   return (
     <section aria-label={copy.heading} className="eid-owner-chat">

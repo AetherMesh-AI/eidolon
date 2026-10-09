@@ -15,6 +15,8 @@ import { startMockServer } from './mock-server'
 import { organizationProviderTarget } from './organization-provider-target'
 
 export const firstMessage = 'Owner chat fixture: please explain your role using only this conversation.'
+export const continuedMessage = 'Owner chat fixture: continue after explicit allowance renewal.'
+export const continuedReply = 'The same conversation continues with the renewed finite allowance.'
 export const secondMessage = 'Owner chat fixture: hold this second reply while I cancel.'
 export const firstReply =
   'I can discuss my role here. Please use Create objective for work and formal controls for permissions.'
@@ -66,8 +68,12 @@ export async function setupOwnerChatFixture() {
           assert.equal(submitted.conversation.identityId, submitted.identity.identityId)
           assert.equal(submitted.conversation.messages[0].text, firstMessage)
           calls.push(payload!)
-          assert.ok(calls.length <= 2, 'No automatic provider retry or duplicate replay')
-          const content = JSON.stringify({ reply: contents.includes(secondMessage) ? lateReply : firstReply })
+          assert.ok(calls.length <= 3, 'No automatic provider retry or duplicate replay')
+          const latestText = submitted.conversation.messages.at(-1)?.text
+          const content = JSON.stringify({
+            reply:
+              latestText === secondMessage ? lateReply : latestText === continuedMessage ? continuedReply : firstReply
+          })
           const identity = { id: `owner-chat-${calls.length}`, created: 1, model: 'mock-model' }
           const usage = { prompt_tokens: 40, completion_tokens: 40, total_tokens: 80 }
 
@@ -98,7 +104,7 @@ export async function setupOwnerChatFixture() {
             }
           }
 
-          if (contents.includes(secondMessage)) {
+          if (latestText === secondMessage) {
             pending.push(reply)
           } else {
             reply()

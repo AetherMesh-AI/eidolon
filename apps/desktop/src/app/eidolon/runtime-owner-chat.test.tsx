@@ -4,7 +4,8 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 import { Organization } from './organization'
 import { OrganizationOwnerChat } from './runtime-owner-chat'
-import { $ownerChatDrafts } from './runtime-owner-chat-drafts'
+import { OwnerChatRenewalRejected } from './runtime-owner-chat-contract'
+import { $ownerChatDrafts, $ownerChatRenewals } from './runtime-owner-chat-drafts'
 import type { OwnerChatSend, OwnerChatThread } from './runtime-owner-chat-types'
 import {
   admittedChat,
@@ -17,6 +18,7 @@ import type { RuntimeOrganizationAdapter } from './types'
 
 beforeEach(() => {
   $ownerChatDrafts.set({})
+  $ownerChatRenewals.set({})
   vi.stubGlobal(
     'ResizeObserver',
     class {
@@ -271,7 +273,7 @@ it('keeps archived members readable and usage-exhausted conversations explicit w
   render(view())
   fireEvent.click(screen.getByRole('button', { name: 'Inspect Worker 1' }))
   fireEvent.click(screen.getByRole('button', { name: 'Chat' }))
-  await screen.findByText(/Continuing beyond this limit is not available in this version/)
+  await screen.findByText(/has reached its usage allowance/)
   expect(screen.getByText('Retained history')).toBeTruthy()
   expect((screen.getByRole('button', { name: 'Send message' }) as HTMLButtonElement).disabled).toBe(true)
 })
@@ -348,4 +350,129 @@ it('offers real member contacts across ranks and lifecycle, without treating Own
   }
 
   expect(h.adapter.openOwnerChat).not.toHaveBeenCalled()
+})
+
+it('reviews finite renewal costs, keeps an interrupted exact intent through remount, and never sends a provider turn', async () => {
+  const { h, view } = harness()
+  h.thread = {
+    ...h.thread,
+    policyGeneration: 7,
+    budget: { ...h.thread.budget, version: 2 },
+    renewal: {
+      canRenew: true,
+      maxAdditionalCalls: 3,
+      maxOutstandingCalls: 32,
+      maxCumulativeCalls: 1000000,
+      tokensPerCall: 34816,
+      unavailableReason: null
+    }
+  }
+  const pending = deferred<OwnerChatThread>()
+  h.adapter.renewOwnerChat = vi
+    .fn()
+    .mockReturnValueOnce(pending.promise)
+    .mockImplementation(async intent => ({
+      ...h.thread,
+      budget: { ...h.thread.budget, version: 3 },
+      renewalReceipt: {
+        id: 'receipt',
+        idempotencyKey: intent.idempotencyKey,
+        additionalCalls: 3,
+        budgetVersion: 3,
+        policyGeneration: 7,
+        createdAt: '2026-10-08T12:00:00Z'
+      }
+    }))
+  let rendered = render(view())
+  await open()
+  fireEvent.click(screen.getByRole('button', { name: 'Replenish allowance' }))
+  expect(screen.getByRole('dialog').textContent).toContain('3 sends')
+  expect(screen.getByRole('dialog').textContent).toContain('104448')
+  expect(screen.getByRole('dialog').textContent).toContain('Actual configured-provider usage charges apply')
+  expect(screen.getByRole('dialog').textContent).toContain('never refunded')
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }))
+  expect(h.adapter.renewOwnerChat).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: 'Replenish allowance' }))
+  const confirm = screen.getByRole('button', { name: 'Confirm additional allowance' })
+  fireEvent.click(confirm)
+  fireEvent.click(confirm)
+  expect(h.adapter.renewOwnerChat).toHaveBeenCalledOnce()
+  const intent = vi.mocked(h.adapter.renewOwnerChat).mock.calls[0][0]
+  expect(intent).toMatchObject({ additionalCalls: 3, expectedBudgetVersion: 2, expectedPolicyGeneration: 7 })
+  rendered.unmount()
+  await act(async () => pending.reject(new Error('Connection interrupted')))
+  rendered = render(view())
+  await open()
+  fireEvent.click(screen.getByRole('button', { name: 'Retry same allowance update' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm additional allowance' }))
+  await waitFor(() => expect(h.adapter.renewOwnerChat).toHaveBeenCalledTimes(2))
+  expect(vi.mocked(h.adapter.renewOwnerChat).mock.calls[1][0]).toEqual(intent)
+  expect(h.adapter.sendOwnerChat).not.toHaveBeenCalled()
+  rendered.unmount()
+  vi.mocked(h.adapter.renewOwnerChat).mockRejectedValueOnce(new OwnerChatRenewalRejected('Allowance changed before admission'))
+  rendered = render(view())
+  await open()
+  fireEvent.click(screen.getByRole('button', { name: 'Replenish allowance' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm additional allowance' }))
+  await screen.findByText('Allowance changed before admission')
+  expect(Object.keys($ownerChatRenewals.get())).toHaveLength(0)
+  expect(screen.queryByRole('dialog')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Check conversation' }))
+  await waitFor(() => expect((screen.getByRole('button', { name: 'Replenish allowance' }) as HTMLButtonElement).disabled).toBe(false))
+  rendered.unmount()
+})
+
+it('loads exact earlier pages while preserving the latest reply target and fences late history after navigation', async () => {
+  const { h, view } = harness()
+  h.thread = answeredChat(
+    admittedChat(h.thread, {
+      threadId: h.thread.id,
+      identityId: h.thread.identityId,
+      text: 'Recent question',
+      replyToMessageId: 'older-reply',
+      idempotencyKey: 'recent'
+    }),
+    'Recent reply'
+  )
+  h.thread = {
+    ...h.thread,
+    latestMessageId: h.thread.messages.at(-1)!.id,
+    history: { hasMore: true, oldestMessageId: h.thread.messages[0].id }
+  }
+
+  const older = {
+    ...h.thread,
+    messages: h.thread.messages.map(message => ({
+      ...message,
+      id: `old-${message.id}`,
+      text: `Earlier ${message.role}`
+    })),
+    history: { hasMore: true, oldestMessageId: 'old-owner-1' }
+  }
+
+  vi.mocked(h.adapter.readOwnerChat!).mockResolvedValueOnce(older)
+  const rendered = render(view())
+  const input = await open()
+  fireEvent.click(screen.getByRole('button', { name: 'Load earlier messages' }))
+  await screen.findByText('Earlier owner')
+  expect(h.adapter.readOwnerChat).toHaveBeenCalledWith({
+    threadId: h.thread.id,
+    identityId: h.thread.identityId,
+    beforeMessageId: h.thread.messages[0].id,
+    limit: 50
+  })
+  expect(screen.getByText(/Continuing after: Recent reply/)).toBeTruthy()
+  fireEvent.change(input, { target: { value: 'Continue latest' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
+  await waitFor(() => expect(h.adapter.sendOwnerChat).toHaveBeenCalledOnce())
+  expect(vi.mocked(h.adapter.sendOwnerChat!).mock.calls[0][0].replyToMessageId).toBe('reply-2')
+  const late = deferred<OwnerChatThread>()
+  vi.mocked(h.adapter.readOwnerChat!).mockReturnValueOnce(late.promise)
+  fireEvent.click(screen.getByRole('button', { name: 'Load earlier messages' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Hide conversation' }))
+  await act(async () => late.resolve({ ...older, messages: [{ ...older.messages[0], text: 'Late historical page' }] }))
+  fireEvent.click(screen.getByRole('button', { name: 'Chat' }))
+  await screen.findByText('Recent question')
+  expect(screen.queryByText('Late historical page')).toBeNull()
+  rendered.unmount()
 })

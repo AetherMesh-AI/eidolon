@@ -46,13 +46,13 @@ class OwnerChatService:
         thread_id = self.store.owner_chat_open(agent_id, identity_id)
         return self.read(thread_id, identity_id)
 
-    def read(self, thread_id, identity_id):
+    def read(self, thread_id, identity_id, before_message_id=None, limit=50):
         # Validate profile/identity before touching any fence name.
-        view = self.store.owner_chat_read(thread_id, identity_id)
+        view = self.store.owner_chat_read(thread_id, identity_id, before_message_id, limit)
         with self._fence(thread_id) as available:
             if available:
                 self.store.owner_chat_recover(thread_id, identity_id)
-                view = self.store.owner_chat_read(thread_id, identity_id)
+                view = self.store.owner_chat_read(thread_id, identity_id, before_message_id, limit)
             elif view['canSend']:
                 view.update(canSend=False, unavailableReason='The previous reply is still stopping; wait for its provider to exit.')
         from eidolon_cli.organization_owner_chat_executor import readiness_reason
@@ -61,7 +61,21 @@ class OwnerChatService:
             view.update(canSend=False, unavailableReason=reason)
         if self.organization._stop.is_set():
             view.update(canSend=False, unavailableReason='Backend is stopping; reconnect after its active replies exit.')
+            view['renewal'].update(canRenew=False, unavailableReason='Backend is stopping; reconnect before renewing.')
         return view
+
+    def renew(self, thread_id, identity_id, key, expected_version, expected_generation, additional_calls):
+        with self._lock:
+            if self.organization._stop.is_set():
+                raise RuntimeError('Backend is stopping; no owner-chat renewal was admitted')
+            try:
+                receipt = self.store.owner_chat_renew(thread_id, identity_id, key, expected_version, expected_generation, additional_calls)
+            except ValueError as exc:
+                # Only transaction validation failures prove this intent did not
+                # commit. Never classify a post-commit snapshot failure this way.
+                return {'renewalRejected': True, 'reason': str(exc), 'threadId': thread_id,
+                        'identityId': identity_id, 'idempotencyKey': key}
+            return {**self.read(thread_id, identity_id), 'renewalReceipt': receipt}
 
     def send(self, thread_id, identity_id, text, reply_to, key):
         with self._lock:
@@ -120,9 +134,7 @@ class OwnerChatService:
     def cancel(self, thread_id, identity_id, turn_id):
         exact_id(turn_id, 'turnId')
         with self._lock:
-            view = self.store.owner_chat_read(thread_id, identity_id)
-            if not any(turn['id'] == turn_id for turn in view['turns']):
-                raise ValueError('Turn does not belong to this exact owner conversation')
+            self.store.owner_chat_validate_turn(thread_id, identity_id, turn_id)
             self.store.owner_chat_finish(turn_id, status='cancelled', reason='Owner cancelled this reply; provider usage may already have occurred.')
             with self._running_lock:
                 if turn_id in self._running:

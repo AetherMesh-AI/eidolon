@@ -17,6 +17,11 @@ export interface OwnerChatTurn {
   reason: string | null
   createdAt: string
   finishedAt: string | null
+  context?: {
+    includedMessageIds: string[] | null
+    omittedMessageCount: number | null
+    oldestIncludedMessageId: string | null
+  }
 }
 
 export interface OwnerChatThread {
@@ -36,10 +41,30 @@ export interface OwnerChatThread {
   }
   messages: OwnerChatMessage[]
   turns: OwnerChatTurn[]
+  latestMessageId?: string | null
+  history?: { hasMore: boolean; oldestMessageId: string | null }
+  policyGeneration?: number
+  renewal?: {
+    canRenew: boolean
+    maxAdditionalCalls: number
+    maxOutstandingCalls: number
+    maxCumulativeCalls: number
+    tokensPerCall: number
+    unavailableReason: string | null
+  }
+  renewalReceipt?: {
+    id: string
+    idempotencyKey: string
+    additionalCalls: number
+    budgetVersion: number
+    policyGeneration: number
+    createdAt: string
+  } | null
   activeTurnId: string | null
   canSend: boolean
   unavailableReason: string | null
   budget: {
+    version?: number
     maxCalls: number
     callsReserved: number
     maxTokens: number
@@ -63,4 +88,16 @@ export interface OwnerChatSend extends OwnerChatTarget {
 
 export interface OwnerChatCancel extends OwnerChatTarget {
   turnId: string
+}
+
+export interface OwnerChatRead extends OwnerChatTarget {
+  beforeMessageId?: string | null
+  limit?: number
+}
+
+export interface OwnerChatRenew extends OwnerChatTarget {
+  idempotencyKey: string
+  expectedBudgetVersion: number
+  expectedPolicyGeneration: number
+  additionalCalls: number
 }

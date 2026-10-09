@@ -34,17 +34,56 @@ when the transport adapter is named `custom`. The selected identity and actual
 adapter/model are recorded separately; endpoint and credential details are not
 added to the conversation or its audit view.
 
-The conversation has its own durable admission budget, separate from objective
-budgets. This initial version allows 32 explicit turns per immutable member
-identity, reserves at most 32,768 input plus 2,048 output tokens per turn, and
-stops a turn after 90 seconds. Messages and replies are limited to 6,000
-characters. Context that exceeds the input bound is rejected instead of
-silently dropping earlier conversation. The lifetime reservation ceiling is
-1,114,112 tokens; actual reported usage is recorded separately when available. Calls and conservative token reservations survive errors, cancellation,
-and restarts. Cancellation prevents a late reply from being accepted but cannot
-promise the provider did no work or incurred no charge. Uncertain turns are never
-automatically replayed. Retrying delivery with the same idempotency key retrieves
-the same accepted turn instead of generating another call.
+The conversation has its own durable admission allowance, separate from objective
+budgets. It starts with 32 explicit sends per immutable member identity. Each
+send reserves at most 32,768 input plus 2,048 output tokens and stops after 90
+seconds. Messages and replies are limited to 6,000 characters. Actual provider
+usage is recorded separately from conservative reservations when available.
+Cancellation prevents a late reply from being accepted but cannot promise that
+the provider did no work or incurred no charge. Calls and token reservations
+survive errors, cancellation, restarts, and allowance renewal; they are never
+refunded. Uncertain turns are never automatically replayed. Retrying delivery
+with the same idempotency key retrieves the same accepted turn.
+
+### Deliberate allowance renewal
+
+The owner can review and confirm an additional allowance for this exact member's
+existing conversation. A renewal authorizes a finite number of future explicit
+sends; it does not send a message or start inference. Each renewal adds 1–32
+calls and their conservative token ceiling, with at most 32 unconsumed calls
+available at once. The cumulative technical ceiling is 1,000,000 calls per
+identity. This is a hard safety ceiling, not an automatic grant or a recommended
+budget. There is no timer, automatic renewal, identity replacement, or silent
+reset when the allowance runs out.
+
+The confirmation displays the additional sends and token exposure. These are
+admission bounds, not currency prices: actual configured-provider charges may
+apply. The authenticated owner RPC binds the request to the exact thread,
+identity, allowance version and organization policy generation. Its idempotency
+key identifies an immutable renewal receipt, so repeated delivery cannot add the
+allowance twice. A stale review must be refreshed; inactive or retired members
+cannot receive renewals. Previous usage and reservations remain intact.
+
+### Full history and bounded model context
+
+The full transcript remains in the identity-owned ledger. Reading it uses bounded
+pages (50 messages by default, at most 100), with an exact same-thread message
+cursor. Loading earlier messages never changes the latest reply target. The
+owner can continue reading earlier history without a provider call.
+
+Each admitted send deterministically selects at most 100 recent messages, then
+keeps the largest whole-turn suffix that fits the conservative input bound. It does not split an owner/reply pair or
+omit the exact message being replied to. If even the minimum required context
+cannot fit, admission fails before reserving a call. The turn records exact
+included message IDs and the omitted-message count; the UI makes clear that older
+messages are outside model context but remain in history. The executor uses the
+recorded selection rather than silently rebuilding a different context.
+
+There is no model-generated summary, extra paid summarization call, cross-thread
+retrieval or implicit access to other member conversations. The system prompt
+remains stable; the bounded conversation payload carries context provenance.
+To bring older material back into a discussion, the owner can explicitly quote
+it in a new message. Dedicated selection/retrieval controls are a later increment.
 
 ## Routing and voice
 
@@ -71,15 +110,7 @@ backend and a loopback scripted provider; it does not call a live model service.
 
 ## Next increments
 
-This is a bounded first chat slice, not the complete persistent-chat lifecycle.
-The initial allowance is visible and cannot currently be replenished in the UI.
-Before increasing it, add an explicit owner-configured chat budget or deliberate
-replenishment action that preserves all previous usage receipts, never resets on
-restart/rename, and shows the additional provider exposure before confirmation.
-Increasing allowance must accompany bounded, cache-aware context management;
-retain full history and exact reply provenance even when only an explicitly
-identified conversation summary and recent turns fit in a prompt. Never obtain
-continuation by replacing the member identity or silently starting another thread.
-
-Management-first unsolicited routing and local-first voice follow that text
-foundation. Neither is claimed as complete by this change.
+Management-first unsolicited routing, dedicated exact historical excerpt
+selection, and local-first voice follow this text foundation. None is claimed
+as complete by this change. Voice must reuse the exact conversation with explicit
+consent, cancellation, provider choice, and usage boundaries.
