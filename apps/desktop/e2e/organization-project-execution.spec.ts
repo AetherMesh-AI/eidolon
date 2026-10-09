@@ -1,6 +1,7 @@
 /** Actual native Electron → RPC → scheduler → SQLite → OS runner → source Git branch. */
 import type { Locator, Page } from '@playwright/test'
 
+import { openOrganizationDisclosure } from './organization-disclosures'
 import {
   correctedApp,
   projectCriterion,
@@ -45,6 +46,7 @@ async function openObjective(page: Page) {
 }
 async function createObjective(page: Page) {
   await primary(page).getByRole('link', { name: 'Command', exact: true }).click()
+  await openOrganizationDisclosure(page, 'Configured capabilities')
   const capabilities = page.getByRole('region', { name: 'Configured capabilities', exact: true })
   await expect(capabilities).toContainText('Project test grant')
   await expect(capabilities).toContainText('Source branch integration grant')
@@ -57,13 +59,16 @@ async function createObjective(page: Page) {
   await expect(capabilities).toContainText('root0/test_app.py')
   await expect(capabilities).toContainText('python_unittest')
   await page.getByRole('textbox', { name: 'Objective', exact: true }).fill(projectTitle)
+  await openOrganizationDisclosure(page, 'Context')
   await page
     .getByRole('textbox', { name: 'Submitted context (optional)', exact: true })
     .fill(
       'Inspect root0/app.py and root0/test_app.py. Fix subtraction to addition without weakening the tests. Independently review the edit, apply managed bytes, run the configured isolated unittest recipe, independently review its exact evidence, and create the reviewed local source branch.'
     )
+  await openOrganizationDisclosure(page, 'Acceptance criteria')
   await page.getByRole('textbox', { name: 'Acceptance criteria', exact: true }).fill(projectCriterion)
   await page.getByRole('combobox', { name: 'Delivery scope', exact: true }).selectOption('source_project')
+  await openOrganizationDisclosure(page, 'Verification and priority')
   for (const label of checks) {
     await page.getByRole('checkbox', { name: label, exact: true }).check()
   }

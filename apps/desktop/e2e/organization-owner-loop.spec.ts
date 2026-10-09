@@ -17,6 +17,7 @@ import {
   writeMockProviderConfig
 } from './fixtures'
 import { startMockServer } from './mock-server'
+import { openOrganizationDisclosure } from './organization-disclosures'
 import { organizationPackageProposal } from './organization-package-proposal'
 import { organizationProviderTarget } from './organization-provider-target'
 import { expect, test } from './test'
@@ -175,6 +176,7 @@ test('preserves unsupported work and grants across navigation, dismissal, reload
     await page.screenshot({ path: testInfo.outputPath(`${name}.png`) })
   }
   const assertNoToolGrants = async () => {
+    await openOrganizationDisclosure(page, 'Configured capabilities')
     const capabilities = page.getByRole('region', { name: 'Configured capabilities', exact: true })
     await expect(capabilities.getByText('Not enabled · submitted text only', { exact: true })).toBeVisible()
     await expect(capabilities.getByText('No patch grant configured', { exact: true })).toBeVisible()
@@ -206,7 +208,7 @@ test('preserves unsupported work and grants across navigation, dismissal, reload
 
   const assertRailLayout = async (name: string) => {
     const geometry = await navigation.evaluate(rail => {
-      const heading = rail.querySelector('section h2')!.getBoundingClientRect()
+      const heading = rail.querySelector('.eid-rail-history > summary')!.getBoundingClientRect()
       const tree = rail.querySelector('.eid-session-tree')!.getBoundingClientRect()
       const sidebar = rail.querySelector('[data-tour="sessions-sidebar"]')!.getBoundingClientRect()
       const footer = rail.querySelector('.eid-rail-footer')!.getBoundingClientRect()
@@ -244,6 +246,13 @@ test('preserves unsupported work and grants across navigation, dismissal, reload
   await expect(page.getByRole('heading', { name: 'What should the organization do?', exact: true })).toBeVisible()
   await assertNoToolGrants()
   await capture('01-command')
+  const historyDisclosure = navigation.locator('.eid-rail-history')
+  if (await historyDisclosure.getAttribute('open') !== null) {
+    await historyDisclosure.locator(':scope > summary').click()
+  }
+  await expect(navigation.getByRole('button', { name: 'New project', exact: true })).toBeHidden()
+  expect(await mountedSidebar!.evaluate(node => node.isConnected)).toBe(true)
+  await navigation.locator('.eid-rail-history > summary').click()
   await assertRailLayout('01b-collapsed-rail-controls')
   await primary.getByRole('link', { name: 'Needs You', exact: true }).click()
   await expect(page.getByText('Nothing needs your input', { exact: true })).toBeVisible()
@@ -259,7 +268,7 @@ test('preserves unsupported work and grants across navigation, dismissal, reload
   // Seed only a legacy local-storage fixture. It must remain exact and must
   // never be submitted to the runtime ledger merely by opening its history.
   await page.evaluate(({ key, bytes }) => localStorage.setItem(key, bytes), { key: legacyKey, bytes: legacyBytes })
-  await navigation.getByText('Advanced and history', { exact: true }).click()
+  await navigation.getByText('Tools and configuration', { exact: true }).click()
   await assertRailLayout('03a-expanded-rail-controls')
   await navigation.getByRole('link', { name: 'Legacy prototype history', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Legacy prototype history', exact: true })).toBeVisible()
@@ -269,9 +278,9 @@ test('preserves unsupported work and grants across navigation, dismissal, reload
   await capture('03-read-only-legacy-history')
   expect(await page.evaluate(key => localStorage.getItem(key), legacyKey)).toBe(legacyBytes)
   expect(stages).toEqual([])
-  await navigation.getByText('Advanced and history', { exact: true }).click()
+  await navigation.getByText('Tools and configuration', { exact: true }).click()
   await assertRailLayout('03b-collapsed-history-controls')
-  await navigation.getByText('Advanced and history', { exact: true }).click()
+  await navigation.getByText('Tools and configuration', { exact: true }).click()
   await assertRailLayout('03c-reexpanded-history-controls')
 
   await primary.getByRole('link', { name: 'Command', exact: true }).click()
@@ -282,6 +291,7 @@ test('preserves unsupported work and grants across navigation, dismissal, reload
   await expect(page.getByText('Choosing a delivery scope does not grant source writes or external access.', { exact: true })).toBeVisible()
   await assertNoToolGrants()
   await page.getByRole('textbox', { name: 'Objective', exact: true }).fill(objectiveTitle)
+  await openOrganizationDisclosure(page, 'Acceptance criteria')
   await page.getByRole('textbox', { name: 'Acceptance criteria', exact: true }).fill('An external deployment is actually performed; a text draft does not satisfy the objective.')
   await page.getByRole('button', { name: 'Create objective', exact: true }).click()
   await expect(page.getByRole('heading', { name: objectiveTitle, exact: true })).toBeVisible()

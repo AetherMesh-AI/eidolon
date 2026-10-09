@@ -1,35 +1,36 @@
 .eidolon {
-  --eidolon-bg: #09070d;
-  --eidolon-bg-deep: #060509;
-  --eidolon-surface-1: #100d16;
-  --eidolon-surface-2: #15111d;
-  --eidolon-surface-3: #1b1625;
-  --eidolon-surface-hover: #211a2d;
-  --eidolon-border-subtle: #251e30;
-  --eidolon-border: #332741;
-  --eidolon-border-strong: #49355c;
+  /* Organization surfaces share the desktop's light/dark foundation. Aether
+   * remains the accent; the user-selected theme owns contrast and elevation. */
+  --eidolon-bg: var(--ui-bg-editor);
+  --eidolon-bg-deep: var(--ui-bg-sidebar);
+  --eidolon-surface-1: var(--ui-bg-card);
+  --eidolon-surface-2: var(--ui-bg-quaternary);
+  --eidolon-surface-3: var(--ui-bg-tertiary);
+  --eidolon-surface-hover: var(--chrome-action-hover);
+  --eidolon-border-subtle: var(--ui-stroke-tertiary);
+  --eidolon-border: var(--ui-stroke-secondary);
+  --eidolon-border-strong: var(--ui-stroke-primary);
   --aether-600: #623484;
   --aether-500: #8051a6;
-  --aether-400: #9f78c2;
-  --aether-300: #bea0d9;
-  --text-primary: #f1edf5;
-  --text-secondary: #b4aabd;
-  --text-muted: #807588;
-  --status-success: #79a68a;
-  --status-warning: #c6a568;
-  --status-danger: #b96f79;
-  --status-info: #7899b5;
+  --aether-400: color-mix(in srgb, var(--aether-500) 75%, var(--ui-text-primary));
+  --aether-300: color-mix(in srgb, var(--aether-500) 65%, var(--ui-text-primary));
+  --text-primary: var(--ui-text-primary);
+  --text-secondary: var(--ui-text-secondary);
+  --text-muted: var(--ui-text-secondary);
+  --status-success: color-mix(in srgb, var(--ui-green) 65%, var(--ui-text-primary));
+  --status-warning: color-mix(in srgb, var(--ui-yellow) 65%, var(--ui-text-primary));
+  --status-danger: color-mix(in srgb, var(--ui-red) 65%, var(--ui-text-primary));
+  --status-info: color-mix(in srgb, var(--ui-blue) 65%, var(--ui-text-primary));
   color: var(--text-primary);
   background: var(--eidolon-bg);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: 13px;
-  line-height: 1.6;
-  color-scheme: dark;
+  line-height: 1.55;
 }
 .eidolon *, .eidolon *::before, .eidolon *::after { box-sizing: border-box; }
-.eidolon :is(button, a, input, textarea, select):focus-visible { outline: 2px solid var(--aether-400); outline-offset: 3px; }
+.eidolon :is(button, a, input, textarea, select, summary):focus-visible, .eid-rail:focus-visible { outline: 2px solid var(--aether-400); outline-offset: 3px; }
 .eidolon a { color: var(--aether-300); text-decoration: none; }
-.eidolon button, .eidolon input, .eidolon textarea, .eidolon select { font: inherit; color: inherit; }
+.eidolon button, .eidolon input, .eidolon textarea, .eidolon select { font: inherit; }
 .eidolon button { cursor: pointer; }
 .eidolon button:disabled { opacity: .45; cursor: not-allowed; }
 .eidolon h1 { margin: 0; font-size: 26px; font-weight: 550; letter-spacing: -.025em; line-height: 1.3; overflow-wrap: anywhere; }
@@ -37,37 +38,52 @@
 .eidolon p { color: var(--text-secondary); }
 .eidolon small { display: block; color: var(--text-secondary); font-size: 11px; }
 .eid-workspace { height: 100%; min-height: 0; overflow: auto; }
-.eid-page { max-width: 1180px; margin: auto; padding: 40px clamp(20px, 5vw, 64px) 64px; }
-.eid-page-header { display: flex; justify-content: space-between; align-items: start; gap: 24px; margin-bottom: 30px; }
+.eid-page { max-width: 1120px; margin: auto; padding: 28px clamp(20px, 3vw, 44px) 48px; }
+.eid-page-header { display: flex; justify-content: space-between; align-items: start; gap: 24px; margin-bottom: 24px; }
 .eid-eyebrow { font-size: 10px; letter-spacing: .16em; text-transform: uppercase; margin: 0 0 10px; }
 .eid-page .eid-eyebrow { color: var(--aether-300); }
 .eid-prototype { color: var(--text-secondary); white-space: nowrap; font-size: 10px; padding: 3px 8px; border: 1px solid var(--eidolon-border); border-radius: 4px; }
-.eid-command { max-width: 700px; margin: clamp(20px, 8vh, 100px) auto 60px; text-align: center; }
+.eid-command { max-width: 740px; margin: 32px auto 40px; text-align: left; }
 .eid-mark { font-size: 40px; color: var(--aether-400); margin-bottom: 10px; }
-.eid-command .eid-eyebrow { font-size: 12px; letter-spacing: .3em; }
-.eid-subtitle { margin: 12px 0 30px; }
-.eid-composer { background: var(--eidolon-surface-1); border: 1px solid var(--eidolon-border); border-radius: 12px; text-align: left; overflow: hidden; }
-.eid-composer:focus-within { border-color: var(--aether-500); box-shadow: 0 0 0 1px rgba(128,81,166,.18), 0 0 28px rgba(128,81,166,.08); }
-.eid-composer textarea { display: block; width: 100%; resize: vertical; min-height: 110px; max-height: 280px; padding: 20px; background: transparent; border: none; }
+.eid-command .eid-eyebrow { font-size: 12px; letter-spacing: .14em; }
+.eid-subtitle { margin: 10px 0 24px; max-width: 60ch; }
+.eid-composer { display: flex; flex-direction: column; gap: 10px; padding: 20px; background: var(--eidolon-surface-1); border: 1px solid var(--eidolon-border); border-radius: 12px; text-align: left; }
+.eid-composer:focus-within { border-color: var(--aether-500); box-shadow: 0 0 0 1px color-mix(in srgb, var(--aether-500) 18%, transparent); }
+.eid-composer textarea { width: 100%; resize: vertical; max-height: 280px; }
+.eid-composer #eid-objective { min-height: 96px; }
+.eid-command-ownership { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 10px 16px; }
+.eid-command-planning { grid-column: 1 / -1; font-size: 12px; color: var(--text-secondary); }
+.eid-command-planning summary { cursor: pointer; }
+.eid-command-planning[open] > p { margin-top: 10px; }
+.eid-composer :is(fieldset, .eid-note) { margin: 0; }
+.eid-form-disclosure { padding-block: 8px; border-top: 1px solid var(--eidolon-border-subtle); }
+.eid-form-disclosure summary { cursor: pointer; color: var(--text-primary); font-weight: 500; }
+.eid-form-disclosure[open] > :not(summary) { margin-top: 12px; }
+.eid-form-disclosure > label { display: block; }
+.eid-disclosure-value { margin-left: 12px; color: var(--text-secondary); font-size: 11px; font-weight: 400; }
+.eid-delivery-scope { display: flex; align-items: center; gap: 16px; }
+.eid-delivery-scope select { flex: 1; min-width: 0; }
 .eid-composer textarea:focus-visible { outline-offset: -3px; }
 .eid-priority { display: grid; gap: 6px; padding: 0 12px 12px; text-align: left; color: var(--text-secondary); }
 .eid-priority input[type="range"] { width: 100%; margin: 0; accent-color: var(--aether-400); }
 .eid-priority-endpoints { display: flex; justify-content: space-between; font-size: 11px; }
-.eid-composer-tools { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px; color: var(--text-secondary); font-size: 11px; }
+.eid-composer-tools { display: flex; align-items: center; justify-content: space-between; gap: 16px; color: var(--text-secondary); font-size: 12px; }
 .eidolon .eid-primary, .eidolon .eid-button { display: inline-flex; justify-content: center; align-items: center; gap: 12px; border: 1px solid var(--eidolon-border); border-radius: 6px; padding: 7px 12px; font-size: 12px; color: var(--text-primary); background: var(--eidolon-surface-2); white-space: nowrap; }
-.eidolon .eid-primary { background: var(--aether-600); border-color: var(--aether-500); }
-.eidolon .eid-primary:hover { background: var(--aether-500); }
+.eidolon .eid-primary { color: var(--dt-primary-foreground); background: var(--theme-primary); border-color: var(--theme-primary); }
+.eidolon .eid-primary:hover { background: color-mix(in srgb, var(--theme-primary) 90%, transparent); }
 .eid-inline { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin: 18px 0; color: var(--text-secondary); font-size: 12px; }
-.eid-command .eid-inline { justify-content: center; }
-.eid-note { font-size: 11px; }
+.eid-command .eid-inline { justify-content: flex-start; }
+.eid-note { font-size: 12px; line-height: 1.6; }
 .eid-toolbar { display: flex; flex-wrap: wrap; gap: 16px; align-items: end; margin-bottom: 24px; }
 .eid-filter { display: flex; flex-direction: column; gap: 6px; font-size: 11px; color: var(--text-secondary); margin-bottom: 16px; }
 .eid-toolbar .eid-filter { margin-bottom: 0; }
-.eid-filter input, .eid-filter select { background: var(--eidolon-surface-1); border: 1px solid var(--eidolon-border); border-radius: 6px; padding: 8px 12px; }
+.eid-filter input, .eid-filter select { color: var(--text-primary); background: var(--eidolon-surface-1); border: 1px solid var(--eidolon-border); border-radius: 6px; padding: 8px 12px; }
 .eid-list { padding: 0; list-style: none; }
 .eidolon .eid-row { display: flex; width: 100%; text-align: left; justify-content: space-between; align-items: center; gap: 20px; padding: 17px 12px; border: 0; border-bottom: 1px solid var(--eidolon-border-subtle); background: transparent; color: var(--text-primary); }
 .eid-row:hover { background: var(--eidolon-surface-hover); }
 .eid-row strong { font-weight: 500; }
+.eid-objective-summary { display: grid; gap: 5px; min-width: 0; }
+.eid-objective-summary strong { font-size: 15px; font-weight: 550; }
 .eid-status { font-size: 11px; white-space: nowrap; color: var(--aether-300); }
 .eid-status-paused, .eid-status-waiting, .eid-status-needs_input { color: var(--status-warning); }
 .eid-status-blocked { color: var(--status-danger); }
@@ -79,7 +95,7 @@
 .eid-back { display: inline-block; margin-bottom: 24px; font-size: 12px; }
 .eid-tabs { display: flex; gap: 20px; border-bottom: 1px solid var(--eidolon-border); margin-top: 30px; overflow-x: auto; }
 .eid-tabs button { background: none; border: none; border-bottom: 2px solid transparent; padding: 12px 0; color: var(--text-secondary); }
-.eid-tabs button[aria-selected=true] { color: var(--aether-300); border-bottom-color: var(--aether-500); }
+.eid-tabs button:is([aria-selected=true], [aria-pressed=true]) { color: var(--aether-300); border-bottom-color: var(--aether-500); }
 .eid-metrics { display: flex; gap: 40px; flex-wrap: wrap; margin: 30px 0; padding: 24px 0; border-block: 1px solid var(--eidolon-border-subtle); }
 .eid-metrics strong { display: block; font-size: 20px; font-weight: 500; margin-top: 8px; }
 .eid-timeline { padding: 0 0 0 18px; border-left: 1px solid var(--eidolon-border); list-style: none; }
@@ -98,23 +114,23 @@
 .eid-inspector { border: 1px solid var(--eidolon-border); background: var(--eidolon-surface-2); border-radius: 8px; padding: 20px; margin-top: 20px; }
 /* One outer overflow owner: expanding Advanced may make the rail taller than
  * its pane, but must never shrink History through its own controls or footer. */
-.eid-rail { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; padding: 14px 10px; border-right: 1px solid var(--eidolon-border-subtle); }
+.eid-rail { background: var(--eidolon-bg-deep); display: flex; flex-direction: column; height: 100%; min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; padding: 14px 10px; border-right: 1px solid var(--eidolon-border-subtle); }
 .eid-rail > * { flex-shrink: 0; }
-.eid-brand { font-weight: 600; letter-spacing: .18em; padding: 12px; font-size: 12px; }
-.eid-brand span { font-size: 19px; margin-right: 10px; color: var(--aether-400); }
+.eid-brand { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: -.02em; padding: 12px; font-size: 17px; }
 .eid-rail nav { display: flex; flex-direction: column; gap: 4px; padding: 12px 0; }
 .eid-rail nav a { display: flex; gap: 12px; align-items: center; padding: 9px 12px; color: var(--text-secondary); border-radius: 6px; }
 .eid-rail nav a:hover { background: var(--eidolon-surface-hover); }
 .eid-rail nav a[aria-current=page] { color: var(--aether-300); background: var(--eidolon-surface-3); box-shadow: inset 2px 0 var(--aether-500); }
 .eid-rail > details { flex: 0 0 auto; }
-.eid-rail-history { display: flex; flex: 1 0 auto; flex-direction: column; }
+.eid-rail-history { margin-top: 8px; }
+.eid-rail-history > p { padding-inline: 12px; font-size: 11px; }
 .eid-rail-history > :is(h2, p) { flex-shrink: 0; }
 .eid-rail summary { cursor: pointer; padding: 12px; color: var(--text-secondary); font-size: 11px; }
 /* The canonical Sessions tree keeps its own list scrolling. Reserve enough
  * height for its search, empty/list state and profile controls; the outer rail
  * scrolls instead of clipping those controls when navigation is expanded. */
 .eid-session-tree { display: flex; flex: 1 0 20rem; min-height: 20rem; overflow: hidden; }
-.eid-rail-footer { font-size: 10px; color: var(--text-secondary); padding: 12px; border-top: 1px solid var(--eidolon-border-subtle); }
+.eid-rail-footer { margin-top: auto; font-size: 10px; color: var(--text-secondary); padding: 12px; border-top: 1px solid var(--eidolon-border-subtle); }
 @media (max-width: 700px) { .eid-page { padding: 24px 18px; } .eidolon h1 { font-size: 22px; } .eid-command { margin-top: 24px; } .eid-page-header { flex-direction: column; gap: 12px; } .eid-composer-tools { flex-wrap: wrap; } }
 .eid-demo-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 24px; color: var(--text-secondary); font-size: 11px; }
 .eid-demo-bar > span { margin-right: auto; }
@@ -124,9 +140,18 @@
 .eid-organization-map > :nth-child(-n+2) { grid-column: 1 / -1; width: min(320px, 100%); justify-self: center; }
 .eid-organization-map > :not(:first-child) { border-top: 2px solid var(--aether-500); }
 .eid-organization .eid-agent { width: auto; text-align: left; display: flex; flex-direction: column; gap: 9px; }
-.eid-organization .eid-agent strong { font-size: 18px; }
+.eid-organization .eid-agent strong { font-size: 16px; font-weight: 600; }
 .eid-organization .eid-agent p { margin: 0; font-size: 12px; }
-.eid-organization-list .eid-agent { flex-direction: row; flex-wrap: wrap; align-items: center; }
+.eid-organization-list .eid-agent { display: grid; grid-template-columns: 32px minmax(150px, 1fr) minmax(160px, 1.5fr) auto; align-items: center; gap: 18px; min-width: 0; border: 0; border-bottom: 1px solid var(--eidolon-border-subtle); border-radius: 0; background: transparent; padding: 14px 8px; }
+.eid-organization-list { gap: 0; }
+.eid-agent-identity { display: grid; gap: 3px; min-width: 0; }
+.eid-agent-identity strong { margin: 0; }
+.eid-agent-meta { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; }
+.eid-agent:hover { background: var(--eidolon-surface-hover); }
+.eid-agent-identity > span, .eid-agent-assignment { font-size: 12px; color: var(--text-secondary); overflow-wrap: anywhere; }
+.eid-agent-state { display: grid; gap: 4px; }
+.eid-roster-details { margin-block: 16px; }
+.eid-roster-details summary { cursor: pointer; color: var(--text-secondary); }
 .eid-organization-list .eid-agent p { width: 100%; }
 .eid-status-working { color: var(--aether-300); }
 .eid-status-review, .eid-status-reviewing { color: var(--status-info); }
@@ -156,7 +181,13 @@
 .eidolon .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 @media (prefers-reduced-motion: reduce) { .eidolon *, .eidolon *::before, .eidolon *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
 
-.eid-runtime-status { margin-bottom: 24px; }
+.eid-runtime-status { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 24px; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--eidolon-border-subtle); font-size: 12px; }
+.eid-runtime-status > .eid-toolbar { margin: 0; align-items: center; }
+.eid-runtime-status > p { width: 100%; }
+.eid-runtime-disclosure { margin-left: auto; }
+.eid-runtime-disclosure[open] { width: 100%; }
+.eid-runtime-disclosure summary { cursor: pointer; color: var(--text-secondary); }
+.eid-runtime-disclosure[open] > section { margin-top: 20px; }
 .eid-result-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 .eid-request-pending_intervention { color: var(--status-warning); }
 .eid-request-completed { color: var(--status-success); }
@@ -183,3 +214,11 @@
 .eid-management-fields legend { margin-bottom: 12px; color: var(--ui-text-primary); }
 .eid-management-fields fieldset label { margin-top: 8px; }
 .eid-request-waiting_response { color: var(--ui-text-secondary); }
+
+@media (max-width: 900px) {
+  .eid-organization-list .eid-agent { grid-template-columns: 32px minmax(0, 1fr) auto; }
+  .eid-organization-list .eid-agent-assignment { grid-column: 2 / -1; grid-row: 2; }
+  .eid-command-ownership { grid-template-columns: 1fr; gap: 8px; }
+  .eid-command-planning { grid-column: auto; }
+  .eid-delivery-scope { align-items: stretch; flex-direction: column; gap: 8px; }
+}

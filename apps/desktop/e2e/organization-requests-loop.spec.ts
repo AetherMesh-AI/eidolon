@@ -13,6 +13,7 @@ import {
   writeMockProviderConfig
 } from './fixtures'
 import { startMockServer } from './mock-server'
+import { openOrganizationDisclosure } from './organization-disclosures'
 import { exactOrganizationEvidence, type OrganizationEvidenceContext } from './organization-evidence'
 import { organizationPackageProposal } from './organization-package-proposal'
 import { organizationProviderTarget } from './organization-provider-target'
@@ -354,10 +355,12 @@ test('retains owner attention across reloads, answers the requesting worker, and
 
   await primary.getByRole('link', { name: 'Command', exact: true }).click()
   await page.getByRole('textbox', { name: 'Objective', exact: true }).fill(objectiveTitle)
+  await openOrganizationDisclosure(page, 'Context')
   await page
     .getByRole('textbox', { name: 'Submitted context (optional)', exact: true })
     .fill('The release improves request routing while preserving existing permissions. Ask the owner for the audience.')
   await page.getByRole('combobox', { name: 'Delivery scope', exact: true }).selectOption('managed_artifact')
+  await openOrganizationDisclosure(page, 'Acceptance criteria')
   await page
     .getByRole('textbox', { name: 'Acceptance criteria', exact: true })
     .fill('The complete brief addresses the audience supplied by the owner and uses the supplied release facts.')

@@ -1,5 +1,9 @@
 /** Copy for the canonical organization ledger surfaces, kept together across locales. */
 const copy = {
+  addContext: ['Context', '背景情報', '背景信息', '背景資訊'],
+  completionOptions: ['Acceptance criteria', '受入基準', '验收标准', '驗收標準'],
+  verificationOptions: ['Verification and priority', '検証と優先度', '验证与优先级', '驗證與優先順序'],
+  detailsAdded: ['Added', '追加済み', '已添加', '已新增'],
   packageLegacyAdmission: ['Legacy manager planning: the selected executive accepts final review but does not decompose objectives into manager work packages.', '従来のマネージャー計画：選択したエグゼクティブは最終レビューを担当しますが、目標をマネージャーの作業パッケージに分解しません。', '旧版经理规划：所选主管负责最终审查，但不会将目标分解为经理工作包。', '舊版管理者規劃：所選主管負責最終審查，但不會將目標分解為管理者工作套件。'],
   packageExecutiveAdmission: ['Executive delegation: the selected executive first assigns bounded work packages to managers. Final acceptance remains separate.', 'エグゼクティブによる委任：選択したエグゼクティブがまず上限付きの作業パッケージをマネージャーに割り当てます。最終受入は別途行われます。', '主管委派：所选主管首先向经理分配有界工作包。最终验收仍单独进行。', '主管委派：所選主管首先向管理者指派有界工作套件。最終驗收仍另行進行。'],
   workPackages: ['Manager work packages', 'マネージャーの作業パッケージ', '经理工作包', '管理者工作套件'],
@@ -266,7 +270,7 @@ const copy = {
   objectives: ['Objectives', '目標', '目标', '目標'],
   organization: ['Organization', '組織', '组织', '組織'],
   settings: ['Settings', '設定', '设置', '設定'],
-  advanced: ['Advanced and history', '詳細と履歴', '高级及历史', '進階及歷程'],
+  advanced: ['Tools and configuration', 'ツールと設定', '工具与配置', '工具與設定'],
   skills: ['Skills', 'スキル', '技能', '技能'],
   messaging: ['Messaging', 'メッセージ連携', '消息集成', '訊息整合'],
   importHistory: ['Import history', '履歴をインポート', '导入历史', '匯入歷程'],

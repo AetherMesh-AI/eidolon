@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 
 import type { Page } from '@playwright/test'
 
+import { openOrganizationDisclosure } from './organization-disclosures'
 import {
   amendedCriterion,
   amendedScope,
@@ -44,7 +45,9 @@ async function openObjective(page: Page, title: string) {
 async function createObjective(page: Page, title: string, requireTests: boolean) {
   await primary(page).getByRole('link', { name: 'Command', exact: true }).click()
   await page.getByRole('textbox', { name: 'Objective', exact: true }).fill(title)
+  await openOrganizationDisclosure(page, 'Context')
   await page.getByRole('textbox', { name: 'Submitted context (optional)', exact: true }).fill(originalScope)
+  await openOrganizationDisclosure(page, 'Acceptance criteria')
   await page
     .getByRole('textbox', { name: 'Acceptance criteria', exact: true })
     .fill(
@@ -55,6 +58,7 @@ async function createObjective(page: Page, title: string, requireTests: boolean)
   await page.getByRole('combobox', { name: 'Delivery scope', exact: true }).selectOption('managed_artifact')
 
   if (requireTests) {
+    await openOrganizationDisclosure(page, 'Verification and priority')
     await page.getByRole('checkbox', { name: projectTests, exact: true }).check()
   }
 
