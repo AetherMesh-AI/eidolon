@@ -7,6 +7,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
+import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 
 const args = Object.fromEntries(Array.from({ length: (process.argv.length - 2) / 2 }, (_, i) =>
@@ -30,6 +31,13 @@ const git = (...argv) => run('git', ['-C', source, ...argv])
 assert.equal(git('rev-parse', 'HEAD'), args['old-sha'])
 assert.notEqual(args['old-sha'], args['new-sha'])
 git('diff', '--exit-code', args['old-sha'], args['new-sha'], '--', 'apps/desktop', 'package.json', 'package-lock.json')
+const wrapperPath = path.join(source, 'scripts/desktop-update/posix.sh')
+const initialWrapperBytes = fs.readFileSync(wrapperPath)
+const committedWrapperBytes = execFileSync('git', ['-C', source, 'show', `${args['old-sha']}:scripts/desktop-update/posix.sh`])
+assert(initialWrapperBytes.equals(committedWrapperBytes), 'Initial updater must exactly match OLD committed wrapper')
+const sha256 = value => createHash('sha256').update(value).digest('hex')
+const legacyTransactionCall = '"$py" "$SCRIPT_DIR/mac_transaction.py" "$rebuilt" "$RELAUNCH_TARGET" 2>&1'
+if (args['legacy-wrapper'] === 'true') assert(initialWrapperBytes.toString().includes(legacyTransactionCall), 'OLD must use legacy two-operand transaction invocation')
 const python = path.join(source, 'venv/bin/python')
 assert(fs.existsSync(path.join(source, 'venv/bin/eidolon')), 'Real installed CLI required')
 const hermesHome = path.join(home, '.eidolon')
@@ -52,7 +60,7 @@ for (const key of ['EIDOLON_HOME', 'HERMES_DESKTOP_USER_DATA_DIR', 'HERMES_DESKT
   'HERMES_DESKTOP_DEV_SERVER', 'ELECTRON_RUN_AS_NODE', 'GITHUB_SHA', 'GITHUB_REF_NAME']) delete env[key]
 const report = { schema: 1, startedAt: new Date().toISOString(), platform: process.platform,
   architecture: process.arch, oldSha: args['old-sha'], newSha: args['new-sha'],
-  home, source, appPath, signing: 'Ad-hoc signed; not notarized',
+  home, source, appPath, initialWrapper: { sourceCommit: args['old-sha'], sha256: sha256(initialWrapperBytes), transactionCallShape: args['legacy-wrapper'] === 'true' ? 'legacy source,target operands' : 'explicit source,target,expected_commit operands' }, signing: 'Ad-hoc signed; not notarized',
   scope: 'Owned two-commit source fixture with identical desktop content and valid old cache; real packaged Electron, production IPC, CLI fetch/build, transaction and LaunchServices relaunch', stages: [] }
 const save = () => fs.writeFileSync(path.join(evidence, 'report.json'), JSON.stringify(report, null, 2))
 const stage = (name, details = {}) => { report.stages.push({ name, at: new Date().toISOString(), ...details }); save(); console.log(name, JSON.stringify(details)) }
@@ -184,6 +192,7 @@ try {
   stage('old-process-quit', { oldPid })
   await until(() => /Relaunched app verified: pid=/.test(read(handoffLog)), 40 * 60_000, 'real source update, rebuild, swap and verified relaunch')
   assert.equal(git('rev-parse', 'HEAD'), args['new-sha'])
+  report.updatedWrapper = { sourceCommit: git('rev-parse', 'HEAD'), sha256: sha256(fs.readFileSync(wrapperPath)) }
   const newStamp = stamp(appPath)
   report.targetIdentity = { expectedCommit: args['new-sha'], installedCommit: newStamp.commit, sourceCommit: git('rev-parse', 'HEAD'), cachedCommit: args['old-sha'], initialCacheContentHash: cacheStamp.contentHash }
   if (args['expect-stale-cache'] === 'true' && newStamp.commit === args['old-sha'] && report.targetIdentity.sourceCommit === args['new-sha']) {
@@ -212,7 +221,11 @@ try {
   assert.equal(receipt.expected_source_commit, args['new-sha'])
   const handoffResult = JSON.parse(read(path.join(evidence, 'handoff-result-observed.json')))
   assert.equal(handoffResult.ok, true)
-  assert.equal(handoffResult.expected_source_commit, args['new-sha'])
+  if (handoffResult.expected_source_commit === undefined && args['legacy-wrapper'] === 'true') {
+    report.legacyWrapperResult = 'Old wrapper reports success without a commit field; new transaction journal and installed bundle independently enforce exact NEW.'
+  } else {
+    assert.equal(handoffResult.expected_source_commit, args['new-sha'])
+  }
   assert.notEqual(receipt.previous.sha256, receipt.expected.sha256)
   assert.equal(stamp(path.join(archive, 'previous.app')).commit, args['old-sha'])
   // Independently re-hash both complete bundles with the production identity owner.

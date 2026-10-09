@@ -15,7 +15,7 @@ import uuid
 
 # These helpers also run directly from the detached shell handoff.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from eidolon_cli.eidolon_version import valid_sha, validate_identity
+from eidolon_cli.eidolon_version import read_head, valid_sha, validate_identity
 
 
 class ReplacementError(Exception):
@@ -170,12 +170,23 @@ def replace_bundle(source: Path, target: Path, expected_commit: str) -> Path:
         raise ReplacementError(f'The new app could not be installed: {detail}. The previous app was {"restored" if moved else "kept"}. Preserved files and journal: {archived}. New build: {source}. Use Finder to replace {target}, approving any macOS prompt, or ask your administrator.') from error
 
 
+def legacy_source_commit() -> str:
+    # A shell started before a source update keeps running the old two-operand
+    # invocation against this newly updated helper. Trust only this checkout's
+    # Git HEAD, never the candidate app or a fallback build-identity stamp.
+    commit = read_head(Path(__file__).resolve().parents[2])
+    if not valid_sha(commit):
+        raise ReplacementError('The updated source commit could not be verified. The previous app was kept. Retry the update from a Git checkout.')
+    return commit
+
+
 def main() -> int:
-    if sys.platform != 'darwin' or len(sys.argv) != 4:
+    if sys.platform != 'darwin' or len(sys.argv) not in (3, 4):
         return 64
     try:
-        receipt = replace_bundle(Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3])
-        print(f'Installed app verified: source commit={sys.argv[3]}. Previous app and transaction receipt: {receipt}')
+        expected_commit = sys.argv[3] if len(sys.argv) == 4 else legacy_source_commit()
+        receipt = replace_bundle(Path(sys.argv[1]), Path(sys.argv[2]), expected_commit)
+        print(f'Installed app verified: source commit={expected_commit}. Previous app and transaction receipt: {receipt}')
         return 0
     except (OSError, ValueError, ReplacementError) as error:
         print(str(error))

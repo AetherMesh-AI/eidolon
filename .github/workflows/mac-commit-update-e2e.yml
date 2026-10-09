@@ -47,17 +47,19 @@ jobs:
             cp "$file" "$RUNNER_TEMP/candidate/$file"
           done
           git checkout -B main "$SOURCE_COMMIT"
-          if [ "$FIXTURE_VARIANT" = fixed ]; then
-            for file in "${FILES[@]}"; do cp "$RUNNER_TEMP/candidate/$file" "$file"; done
-          fi
           git config user.name 'Eidolon CI fixture'
           git config user.email 'ci-fixture@example.invalid'
           printf 'Synthetic owned update fixture A\n' > apps/desktop/public/mac-update-proof.txt
           git add apps/desktop/public/mac-update-proof.txt "${FILES[@]}"
           git commit -m "test: owned native update fixture A ($FIXTURE_VARIANT)"
           OLD=$(git rev-parse HEAD)
+          # OLD must run the released wrapper. Only NEW receives candidate
+          # fixes, exercising the real old-wrapper/new-helper upgrade boundary.
+          if [ "$FIXTURE_VARIANT" = fixed ]; then
+            for file in "${FILES[@]}"; do cp "$RUNNER_TEMP/candidate/$file" "$file"; done
+          fi
           printf 'Synthetic root-only commit; Desktop content is unchanged.\n' > mac-update-provenance-proof.txt
-          git add mac-update-provenance-proof.txt
+          git add mac-update-provenance-proof.txt "${FILES[@]}"
           git commit -m 'test: root-only update must refresh embedded commit provenance'
           NEW=$(git rev-parse HEAD)
           git clone --bare . "$RUNNER_TEMP/mac-update-origin.git"
@@ -95,7 +97,7 @@ jobs:
             --source "$GITHUB_WORKSPACE" --old-sha "$OLD_SHA" --new-sha "$NEW_SHA" \
             --home "$RUNNER_TEMP/mac-update-isolated-home" \
             --build-stamp "$RUNNER_TEMP/mac-old-build-home/.eidolon/desktop-build-stamp.json" \
-            --evidence "$RUNNER_TEMP/mac-update-evidence" --expect-stale-cache "$EXPECT_STALE"
+            --evidence "$RUNNER_TEMP/mac-update-evidence" --expect-stale-cache "$EXPECT_STALE" --legacy-wrapper true
       - name: Collect fixture diagnostics even after observer termination
         if: always()
         shell: bash
