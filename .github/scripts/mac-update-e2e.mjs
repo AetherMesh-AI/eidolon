@@ -106,8 +106,8 @@ try {
   const main = await instance.evaluate(({ app }) => ({ packaged: app.isPackaged, ready: app.isReady(), version: app.getVersion(), userData: app.getPath('userData'), execPath: process.execPath, pid: process.pid }))
   assert.equal(main.packaged, true); assert.equal(main.pid, oldPid)
   assert.equal(main.userData, path.join(hermesHome, 'desktop'))
-  await instance.evaluate(async ({ app }, file) => {
-    const fs = await import('node:fs')
+  await instance.evaluate(({ app }, file) => {
+    const fs = process.getBuiltinModule('fs')
     app.on('before-quit', () => fs.writeFileSync(file, JSON.stringify({ pid: process.pid, at: Date.now() })))
   }, oldQuitPath)
   const page = await instance.firstWindow({ timeout: 120_000 })

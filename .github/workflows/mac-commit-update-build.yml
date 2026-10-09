@@ -11,7 +11,7 @@ jobs:
     timeout-minutes: 40
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-      SOURCE_COMMIT: 53ab5d6b2287b931457335931f91d36ef017dbad
+      SOURCE_COMMIT: 63ffc20b04f761c8514199e83c834eae1daa8b6c
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -39,7 +39,7 @@ jobs:
         run: python3 "$RUNNER_TEMP/mac-commit-update-build.py"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: Eidolon-mac-arm64-53ab5d6b
+          name: Eidolon-mac-arm64-63ffc20b
           path: ${{ runner.temp }}/mac-commit-build/deliver/*
           retention-days: 14
           compression-level: 0

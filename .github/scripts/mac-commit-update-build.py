@@ -18,7 +18,8 @@ deliver = temp / 'deliver'
 deliver.mkdir()
 config = json.loads((root / 'apps/desktop/package.json').read_text())['build']
 config['directories'] = {'output': str(temp / 'package')}
-config['artifactName'] = 'Eidolon-mac-arm64-53ab5d6b.${ext}'
+artifact_stem = 'Eidolon-mac-arm64-' + identity['shortCommit']
+config['artifactName'] = artifact_stem + '.${ext}'
 config['publish'] = None
 config['mac']['identity'] = '-'
 config['mac']['notarize'] = False
@@ -26,7 +27,7 @@ config.pop('afterSign', None)
 config_file = temp / 'electron-builder.json'
 config_file.write_text(json.dumps(config))
 checks.run(['npm', 'run', 'builder', '--', '--config', str(config_file), '--mac', 'zip', '--arm64', '--publish', 'never'], cwd=root / 'apps/desktop')
-archive = temp / 'package/Eidolon-mac-arm64-53ab5d6b.zip'
+archive = temp / 'package' / (artifact_stem + '.zip')
 extracted = temp / 'extracted'
 checks.run(['ditto', '-x', '-k', str(archive), str(extracted)])
 app = extracted / 'Eidolon.app'
