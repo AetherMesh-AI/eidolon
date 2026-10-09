@@ -1,6 +1,6 @@
 import { atom } from 'nanostores'
 
-import type { OwnerChatSend } from './runtime-owner-chat-types'
+import type { OwnerChatRenew, OwnerChatSend } from './runtime-owner-chat-types'
 
 interface OwnerChatDraft {
   text: string
@@ -21,4 +21,21 @@ export function acknowledgeOwnerChatIntent(key: string, intent: OwnerChatSend) {
   if (draft?.intent?.idempotencyKey === intent.idempotencyKey) {
     setOwnerChatDraft(key, { text: draft.text === intent.text ? '' : draft.text })
   }
+}
+
+/** Preserve uncertain renewals across pane dismissal; retry never mints a new key. */
+export const $ownerChatRenewals = atom<Record<string, OwnerChatRenew>>({})
+
+export function setOwnerChatRenewal(key: string, intent: OwnerChatRenew) {
+  $ownerChatRenewals.set({ ...$ownerChatRenewals.get(), [key]: intent })
+}
+
+export function acknowledgeOwnerChatRenewal(key: string, idempotencyKey: string) {
+  if ($ownerChatRenewals.get()[key]?.idempotencyKey !== idempotencyKey) {
+    return
+  }
+
+  const next = { ...$ownerChatRenewals.get() }
+  delete next[key]
+  $ownerChatRenewals.set(next)
 }

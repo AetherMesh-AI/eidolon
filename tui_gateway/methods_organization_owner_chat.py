@@ -18,8 +18,15 @@ def _open(params, service):
 
 @_organization_method('organization.ownerChat.read', registry=_registry)
 def _read(params, service):
-    _organization_params(params, {'threadId', 'identityId'})
-    return _view(service().owner_chat.read(params.get('threadId'), params.get('identityId')))
+    _organization_params(params, {'threadId', 'identityId', 'beforeMessageId', 'limit'})
+    return _view(service().owner_chat.read(params.get('threadId'), params.get('identityId'), params.get('beforeMessageId'), params.get('limit', 50)))
+
+
+@_organization_method('organization.ownerChat.renew', registry=_registry)
+def _renew(params, service):
+    _organization_params(params, {'threadId', 'identityId', 'idempotencyKey', 'expectedBudgetVersion', 'expectedPolicyGeneration', 'additionalCalls'})
+    return _view(service().owner_chat.renew(params.get('threadId'), params.get('identityId'), params.get('idempotencyKey'),
+                                           params.get('expectedBudgetVersion'), params.get('expectedPolicyGeneration'), params.get('additionalCalls')))
 
 
 @_organization_method('organization.ownerChat.send', registry=_registry)

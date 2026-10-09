@@ -61,7 +61,9 @@ No branch protection, repository setting, secret, or permission grant is changed
   owner and project fixtures include executive decomposition; native completion
   asserts that completed packages alone cannot produce an accepted objective.
   Owner/member chat adds exact identity and reply routing, duplicate admission,
-  cancellation/late-response fencing, reload history, and a disabled future Call
+  cancellation/late-response fencing, explicit allowance review/cancel/renewal,
+  exact renewal replay and stale-review rejection, continuation after renewal,
+  reload history, and a disabled future Call
   control through the real Electron gateway and a loopback scripted provider.
   The separate chat admission/privacy contracts run on Linux, macOS, and Windows.
   See [owner chat boundaries](organization-owner-chat.md) and

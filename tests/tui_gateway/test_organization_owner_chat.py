@@ -399,3 +399,26 @@ def test_owner_request_rejects_sdk_fallback_that_follows_redirects(local_provide
     assert final['turns'][0]['status'] == 'uncertain'
     assert 'redirects are disabled' in final['turns'][0]['reason']
     assert received == [] and clients and all(client.is_closed() for client in clients)
+
+
+def test_renewal_rpc_is_idempotent_and_never_dispatches_provider(local_provider):
+    received, _, _ = local_provider
+    view = open_manager()
+    service = services.get_service()
+    turn, _ = service.store.owner_chat_reserve(view['id'], view['identityId'], 'Cancelled before dispatch', None, 'reserve-only')
+    service.store.owner_chat_finish(turn, status='cancelled')
+    params = {'threadId': view['id'], 'identityId': view['identityId'], 'idempotencyKey': 'renew-once',
+              'expectedBudgetVersion': view['budget']['version'], 'expectedPolicyGeneration': view['policyGeneration'], 'additionalCalls': 1}
+    renewed = rpc('organization.ownerChat.renew', **params)
+    duplicate = rpc('organization.ownerChat.renew', **params)
+    assert renewed['renewalReceipt'] == duplicate['renewalReceipt']
+    assert duplicate['budget']['remainingCalls'] == view['budget']['remainingCalls']
+    assert duplicate['budget']['callsReserved'] == 1 and received == []
+    history = rpc('organization.ownerChat.read', threadId=view['id'], identityId=view['identityId'], limit=1)
+    assert history['latestMessageId'] == renewed['latestMessageId']
+    rejected = rpc('organization.ownerChat.renew', **{**params, 'idempotencyKey': 'stale-renewal'})
+    assert rejected['renewalRejected'] is True and 'changed' in rejected['reason']
+    assert rpc('organization.ownerChat.read', threadId=view['id'], identityId=view['identityId'])['budget'] == renewed['budget']
+    malformed = gateway.dispatch({'jsonrpc': '2.0', 'id': 1, 'method': 'organization.ownerChat.renew',
+                                  'params': {**params, 'automatic': True}})
+    assert 'error' in malformed and received == []

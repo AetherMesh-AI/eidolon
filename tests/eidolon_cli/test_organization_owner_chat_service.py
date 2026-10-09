@@ -250,3 +250,26 @@ def test_shutdown_cannot_observe_an_unstarted_published_thread(tmp_path, monkeyp
     assert not sender.is_alive() and not stopper.is_alive() and not errors
     assert service.stop(timeout=60)
     assert service.owner_chat.read(thread, identity)['turns'][0]['status'] == 'uncertain'
+
+
+def test_renewal_snapshot_failure_is_uncertain_and_exact_retry_does_not_add_allowance(tmp_path, monkeypatch):
+    service, identity, thread = setup(tmp_path)
+    turn, _ = service.store.owner_chat_reserve(thread, identity, 'One explicit reservation', None, 'reserved')
+    service.store.owner_chat_finish(turn, status='cancelled')
+    before = service.owner_chat.read(thread, identity)
+    read = service.owner_chat.read
+    def failed_read(*args, **kwargs):
+        raise ValueError('Snapshot could not be delivered after commit')
+    monkeypatch.setattr(service.owner_chat, 'read', failed_read)
+    try:
+        with pytest.raises(ValueError, match='after commit'):
+            service.owner_chat.renew(thread, identity, 'renew-lost-result', before['budget']['version'], before['policyGeneration'], 1)
+        monkeypatch.setattr(service.owner_chat, 'read', read)
+        recovered = service.owner_chat.renew(thread, identity, 'renew-lost-result', before['budget']['version'], before['policyGeneration'], 1)
+        assert recovered['budget']['version'] == before['budget']['version'] + 1
+        assert recovered['budget']['callsReserved'] == before['budget']['callsReserved']
+        assert recovered['budget']['maxCalls'] == before['budget']['maxCalls'] + 1
+        rejected = service.owner_chat.renew(thread, identity, 'different-stale-key', before['budget']['version'], before['policyGeneration'], 1)
+        assert rejected['renewalRejected'] is True
+    finally:
+        assert service.stop(timeout=60)

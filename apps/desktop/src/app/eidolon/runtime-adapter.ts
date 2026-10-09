@@ -4,7 +4,7 @@ import { type OrganizationAttentionPage, validAttentionPage } from './runtime-at
 import { normalizeConversations } from './runtime-conversation-contract'
 import type { HistoryPage } from './runtime-history-types'
 import { type OrganizationOutcomePage, validOutcomePage } from './runtime-outcome-types'
-import { validOwnerChatThread } from './runtime-owner-chat-contract'
+import { OwnerChatRenewalRejected, validOwnerChatThread } from './runtime-owner-chat-contract'
 import type { OwnerChatThread } from './runtime-owner-chat-types'
 import { validProjectSave, validProjectSetup } from './runtime-project-setup-contract'
 import { validEditProposal } from './runtime-proposal-validation'
@@ -262,10 +262,11 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
     } catch (reason) {throw new Error(organizationErrorMessage(reason))} finally {controllers.delete(controller); releaseScope()}
   }
 
-  const chatResult = (value: unknown, identityId: string, threadId?: string, agentId?: string): OwnerChatThread => {
+  const chatResult = (value: unknown, identityId: string, threadId?: string, agentId?: string, historical = false): OwnerChatThread => {
     if (!validOwnerChatThread(value) || value.identityId !== identityId ||
         (threadId !== undefined && value.id !== threadId) || (agentId !== undefined && value.agentId !== agentId) ||
-        (snapshot.runtime?.profile !== undefined && value.profile !== snapshot.runtime.profile)) {
+        (snapshot.runtime?.profile !== undefined && value.profile !== snapshot.runtime.profile) ||
+        (!historical && value.latestMessageId !== undefined && value.latestMessageId !== (value.messages.at(-1)?.id ?? null))) {
       throw new Error(translateNow('organizationOwnerChat.invalid'))
     }
 
@@ -282,11 +283,11 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
     },
     async readOwnerChat(input) {
       const version = writeVersion
-      const result = await readHistory<OwnerChatThread>('organization.ownerChat.read', { threadId: input.threadId, identityId: input.identityId })
+      const result = await readHistory<OwnerChatThread>('organization.ownerChat.read', { threadId: input.threadId, identityId: input.identityId, ...(input.beforeMessageId !== undefined ? { beforeMessageId: input.beforeMessageId } : {}), ...(input.limit !== undefined ? { limit: input.limit } : {}) })
 
       if (version !== writeVersion) {throw new Error(translateNow('organizationOwnerChat.changed'))}
 
-      return chatResult(result, input.identityId, input.threadId)
+      return chatResult(result, input.identityId, input.threadId, undefined, Boolean(input.beforeMessageId))
     },
     async sendOwnerChat(input) {
       const { threadId, identityId, text, replyToMessageId, idempotencyKey } = input
@@ -296,6 +297,23 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
       const turn = thread.turns.find(item => item.idempotencyKey === idempotencyKey)
 
       if (!turn || !thread.messages.some(message => message.id === turn.ownerMessageId && message.role === 'owner' && message.text === text && message.replyToMessageId === replyToMessageId)) {
+        throw new Error(translateNow('organizationOwnerChat.invalid'))
+      }
+
+      return thread
+    },
+    async renewOwnerChat(input) {
+      const { threadId, identityId, idempotencyKey, expectedBudgetVersion, expectedPolicyGeneration, additionalCalls } = input
+      const result = await mutate<OwnerChatThread | { renewalRejected: true; reason: string; profile: string; threadId: string; identityId: string; idempotencyKey: string }>(`chat-renew:${idempotencyKey}`, 'organization.ownerChat.renew', { threadId, identityId, idempotencyKey, expectedBudgetVersion, expectedPolicyGeneration, additionalCalls }, () => undefined)
+
+      if (result && 'renewalRejected' in result && result.renewalRejected === true && result.threadId === threadId && result.identityId === identityId && result.idempotencyKey === idempotencyKey && result.profile === snapshot.runtime?.profile && typeof result.reason === 'string') {
+        throw new OwnerChatRenewalRejected(result.reason)
+      }
+
+      const thread = chatResult(result, identityId, threadId)
+      const receipt = thread.renewalReceipt
+
+      if (!receipt || receipt.idempotencyKey !== idempotencyKey || receipt.additionalCalls !== additionalCalls || receipt.budgetVersion !== expectedBudgetVersion + 1 || receipt.policyGeneration !== expectedPolicyGeneration) {
         throw new Error(translateNow('organizationOwnerChat.invalid'))
       }
 

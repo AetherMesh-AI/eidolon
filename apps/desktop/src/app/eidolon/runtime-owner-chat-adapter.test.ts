@@ -1,7 +1,7 @@
 import { expect, it, vi } from 'vitest'
 
 import { createRuntimeAdapter, type OrganizationGateway, type OrganizationScope } from './runtime-adapter'
-import { validOwnerChatThread } from './runtime-owner-chat-contract'
+import { OwnerChatRenewalRejected, validOwnerChatThread } from './runtime-owner-chat-contract'
 import type { OwnerChatSend, OwnerChatThread } from './runtime-owner-chat-types'
 import {
   admittedChat,
@@ -79,6 +79,14 @@ it('uses only identity-scoped chat RPCs, coalesces admission and verifies exact 
     identityId: thread.identityId,
     turnId: thread.turns[0].id
   })
+  const renewal = { threadId: thread.id, identityId: thread.identityId, idempotencyKey: 'renewal-key', expectedBudgetVersion: 0, expectedPolicyGeneration: 3, additionalCalls: 1 }
+  request.mockResolvedValueOnce({ ...thread, renewalReceipt: { id: 'receipt-id', idempotencyKey: renewal.idempotencyKey, additionalCalls: 1, budgetVersion: 1, policyGeneration: 3, createdAt: '2026-10-08T12:00:00Z' } })
+  await expect(adapter.renewOwnerChat!(renewal)).resolves.toHaveProperty('renewalReceipt.idempotencyKey', 'renewal-key')
+  expect(request.mock.calls.at(-1)?.[1]).toEqual(renewal)
+  request.mockResolvedValueOnce({ profile: 'default', renewalRejected: true, reason: 'Stale version', threadId: thread.id, identityId: thread.identityId, idempotencyKey: renewal.idempotencyKey })
+  await expect(adapter.renewOwnerChat!(renewal)).rejects.toBeInstanceOf(OwnerChatRenewalRejected)
+  request.mockRejectedValueOnce(new Error('Transport lost'))
+  await expect(adapter.renewOwnerChat!(renewal)).rejects.not.toBeInstanceOf(OwnerChatRenewalRejected)
   expect(
     request.mock.calls.every(
       ([method]) => method === 'organization.snapshot' || method.startsWith('organization.ownerChat.')
@@ -142,6 +150,18 @@ it('validates bounded history, exact reply edges, lifecycle gates and real turn 
   ]) {
     expect(validOwnerChatThread(invalid)).toBe(false)
   }
+
+  const paged = { ...done, latestMessageId: done.messages.at(-1)!.id, history: { hasMore: true, oldestMessageId: done.messages[0].id } }
+  expect(validOwnerChatThread(paged)).toBe(true)
+  expect(validOwnerChatThread({ ...paged, messages: [paged.messages[1]], history: { hasMore: true, oldestMessageId: paged.messages[1].id } })).toBe(true)
+
+  for (const invalid of [
+    { ...paged, messages: [{ ...paged.messages[0], replyToMessageId: paged.messages[0].id }, paged.messages[1]] },
+    { ...paged, messages: [{ ...paged.messages[0], replyToMessageId: paged.messages[1].id }, paged.messages[1]] },
+    { ...paged, turns: [{ ...paged.turns[0], context: { includedMessageIds: [paged.messages[0].id, paged.messages[0].id], omittedMessageCount: 0, oldestIncludedMessageId: paged.messages[0].id } }] },
+    { ...paged, turns: [{ ...paged.turns[0], context: { includedMessageIds: null, omittedMessageCount: 2, oldestIncludedMessageId: null } }] },
+    { ...paged, budget: { ...paged.budget, maxTokens: Number.MAX_SAFE_INTEGER + 1 } },
+  ]) { expect(validOwnerChatThread(invalid)).toBe(false) }
 
   for (const status of ['cancelled', 'timed_out', 'uncertain', 'blocked'] as const) {
     expect(

@@ -7,6 +7,9 @@ import time
 import uuid
 
 MAX_CALLS = 32
+MAX_CUMULATIVE_CALLS = 1_000_000
+MAX_CONTEXT_MESSAGES = 100
+MAX_SAFE_INTEGER = 2**53 - 1
 INPUT_TOKENS = 32768
 OUTPUT_TOKENS = 2048
 TURN_TOKENS = INPUT_TOKENS + OUTPUT_TOKENS
@@ -20,6 +23,12 @@ CREATE TABLE IF NOT EXISTS owner_chat_threads (
  id TEXT PRIMARY KEY, identity_id TEXT NOT NULL UNIQUE REFERENCES agent_identity(identity_id),
  agent_id TEXT NOT NULL REFERENCES agents(id), public_identity TEXT NOT NULL,
  created REAL NOT NULL, max_calls INTEGER NOT NULL, max_tokens INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS owner_chat_renewals (
+ id TEXT PRIMARY KEY, thread_id TEXT NOT NULL REFERENCES owner_chat_threads(id),
+ idempotency_key TEXT NOT NULL UNIQUE, input_hash TEXT NOT NULL,
+ additional_calls INTEGER NOT NULL, budget_version INTEGER NOT NULL,
+ policy_generation INTEGER NOT NULL, created REAL NOT NULL,
+ UNIQUE(thread_id,budget_version));
 CREATE TABLE IF NOT EXISTS owner_chat_turns (
  id TEXT PRIMARY KEY, thread_id TEXT NOT NULL REFERENCES owner_chat_threads(id),
  idempotency_key TEXT NOT NULL UNIQUE, input_hash TEXT NOT NULL,
@@ -62,6 +71,9 @@ class OrganizationOwnerChatStore:
         columns = {row['name'] for row in conn.execute('PRAGMA table_info(owner_chat_turns)')}
         if 'selected_provider' not in columns:
             conn.execute('ALTER TABLE owner_chat_turns ADD COLUMN selected_provider TEXT')
+        for name, kind in [('context_message_ids', 'TEXT'), ('context_omitted_count', 'INTEGER')]:
+            if name not in columns:
+                conn.execute(f'ALTER TABLE owner_chat_turns ADD COLUMN {name} {kind}')
 
     def _owner_chat_recipient(self, conn, agent_id, identity_id):
         from eidolon_cli.organization_identity import agent_identity_view
@@ -110,20 +122,48 @@ class OrganizationOwnerChatStore:
                           time.time(), MAX_CALLS, MAX_TOKENS))
             return conn.execute('SELECT id FROM owner_chat_threads WHERE identity_id=?', (identity_id,)).fetchone()[0]
 
-    def owner_chat_read(self, thread_id, identity_id):
+    @staticmethod
+    def _owner_chat_budget(conn, thread):
+        calls, tokens = conn.execute('SELECT coalesce(sum(calls_reserved),0),coalesce(sum(tokens_reserved),0) FROM owner_chat_turns WHERE thread_id=?', (thread['id'],)).fetchone()
+        added, version = conn.execute('SELECT coalesce(sum(additional_calls),0),count(*) FROM owner_chat_renewals WHERE thread_id=?', (thread['id'],)).fetchone()
+        max_calls, max_tokens = thread['max_calls'] + added, thread['max_tokens'] + added * TURN_TOKENS
+        return {'maxCalls': max_calls, 'maxTokens': max_tokens, 'callsReserved': calls,
+                'tokensReserved': tokens, 'remainingCalls': max(0, max_calls - calls),
+                'remainingTokens': max(0, max_tokens - tokens), 'version': version}
+
+    def owner_chat_read(self, thread_id, identity_id, before_message_id=None, limit=50):
         from eidolon_cli.organization_store import _iso
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise ValueError('limit must be an integer from 1 to 100')
+        if before_message_id is not None:
+            exact_id(before_message_id, 'beforeMessageId')
         with self._connect() as conn:
             conn.execute('BEGIN')
             thread = self._owner_chat_thread(conn, thread_id, identity_id)
             recipient, _, reason = self._owner_chat_recipient(conn, thread['agent_id'], identity_id)
-            turns = conn.execute('SELECT * FROM owner_chat_turns WHERE thread_id=? ORDER BY rowid', (thread_id,)).fetchall()
-            messages = conn.execute('SELECT * FROM owner_chat_messages WHERE thread_id=? ORDER BY rowid', (thread_id,)).fetchall()
-            calls, tokens = sum(t['calls_reserved'] for t in turns), sum(t['tokens_reserved'] for t in turns)
-            active = next((t['id'] for t in turns if t['status'] in LIVE), None)
             if self._policy_paused(conn) or not self._policy_current(conn):
                 reason = 'Organization configuration must be current before sending owner chat.'
-            if not reason and (calls >= thread['max_calls'] or tokens + TURN_TOKENS > thread['max_tokens']):
-                reason = 'This identity’s finite owner-chat budget is exhausted; reservations are never reset or refunded.'
+            budget = self._owner_chat_budget(conn, thread)
+            max_add = max(0, min(MAX_CALLS - budget['remainingCalls'],
+                                 MAX_CUMULATIVE_CALLS - budget['maxCalls']))
+            renewal_reason = reason or (None if max_add else 'The outstanding allowance is full or the cumulative ceiling was reached.')
+            renewal_receipt = conn.execute('SELECT * FROM owner_chat_renewals WHERE thread_id=? ORDER BY budget_version DESC LIMIT 1', (thread_id,)).fetchone()
+            latest = conn.execute('SELECT id FROM owner_chat_messages WHERE thread_id=? ORDER BY rowid DESC LIMIT 1', (thread_id,)).fetchone()
+            cursor = None
+            if before_message_id is not None:
+                cursor = conn.execute('SELECT rowid FROM owner_chat_messages WHERE id=? AND thread_id=?', (before_message_id, thread_id)).fetchone()
+                if cursor is None:
+                    raise ValueError('History cursor does not belong to this exact owner conversation')
+            rows = conn.execute('SELECT * FROM owner_chat_messages WHERE thread_id=?' + (' AND rowid<?' if cursor else '') + ' ORDER BY rowid DESC LIMIT ?',
+                                (thread_id, *([cursor[0]] if cursor else []), limit + 1)).fetchall()
+            has_more = len(rows) > limit
+            messages = list(reversed(rows[:limit]))
+            active_row = conn.execute("SELECT id FROM owner_chat_turns WHERE thread_id=? AND status IN ('pending','running')", (thread_id,)).fetchone()
+            active = active_row['id'] if active_row else None
+            turn_ids = list(dict.fromkeys([m['turn_id'] for m in messages] + ([active] if active else [])))
+            turns = conn.execute('SELECT * FROM owner_chat_turns WHERE thread_id=? AND id IN (' + ','.join('?' for _ in turn_ids) + ') ORDER BY rowid', (thread_id, *turn_ids)).fetchall() if turn_ids else []
+            if not reason and (budget['remainingCalls'] < 1 or budget['remainingTokens'] < TURN_TOKENS):
+                reason = 'This identity’s owner-chat allowance is exhausted; explicitly renew to continue. Reservations are never refunded.'
             if not reason and active:
                 reason = 'A reply is already pending for this member.'
             return {'id': thread_id, 'identityId': identity_id, 'agentId': thread['agent_id'],
@@ -134,14 +174,60 @@ class OrganizationOwnerChatStore:
                                'replyMessageId': t['reply_message_id'], 'status': t['status'], 'reason': t['reason'],
                                'createdAt': _iso(t['created']), 'finishedAt': _iso(t['finished']),
                                'provider': t['provider'], 'model': t['model'], 'selectedProvider': t['selected_provider'],
+                               'context': {'includedMessageIds': json.loads(t['context_message_ids']) if t['context_message_ids'] else None,
+                                           'omittedMessageCount': t['context_omitted_count'],
+                                           'oldestIncludedMessageId': json.loads(t['context_message_ids'])[0] if t['context_message_ids'] else None},
                                'usage': {'inputTokens': t['input_tokens'], 'outputTokens': t['output_tokens']}} for t in turns],
                     'activeTurnId': active, 'canSend': reason is None, 'unavailableReason': reason,
-                    'budget': {'maxCalls': thread['max_calls'], 'callsReserved': calls,
-                               'maxTokens': thread['max_tokens'], 'tokensReserved': tokens,
-                               'remainingCalls': max(0, thread['max_calls'] - calls),
-                               'remainingTokens': max(0, thread['max_tokens'] - tokens)},
+                    'budget': budget, 'policyGeneration': self._policy_generation,
+                    'renewal': {'canRenew': renewal_reason is None, 'maxAdditionalCalls': max_add,
+                                'maxOutstandingCalls': MAX_CALLS, 'maxCumulativeCalls': MAX_CUMULATIVE_CALLS, 'tokensPerCall': TURN_TOKENS,
+                                'unavailableReason': renewal_reason},
+                    'renewalReceipt': self._owner_chat_renewal_receipt(renewal_receipt) if renewal_receipt else None,
+                    'latestMessageId': latest['id'] if latest else None,
+                    'history': {'hasMore': has_more, 'oldestMessageId': messages[0]['id'] if messages else None},
                     'limits': {'maxMessageChars': MAX_TEXT, 'maxOutputTokens': OUTPUT_TOKENS,
+                               'maxContextMessages': MAX_CONTEXT_MESSAGES,
                                'timeoutSeconds': TIMEOUT_SECONDS}}
+
+    def owner_chat_renew(self, thread_id, identity_id, key, expected_version, expected_generation, additional_calls):
+        exact_id(key, 'idempotencyKey')
+        if (type(expected_version) is not int or not 0 <= expected_version <= MAX_SAFE_INTEGER
+                or type(expected_generation) is not int or not 0 <= expected_generation <= MAX_SAFE_INTEGER
+                or type(additional_calls) is not int or not 1 <= additional_calls <= MAX_CALLS):
+            raise ValueError('Renewal requires exact nonnegative versions and additionalCalls from 1 to 32')
+        digest = hashlib.sha256(json.dumps([thread_id, identity_id, expected_version, expected_generation, additional_calls]).encode()).hexdigest()
+        with self._write() as conn:
+            thread = self._owner_chat_thread(conn, thread_id, identity_id)
+            if conn.execute('SELECT 1 FROM owner_chat_turns WHERE idempotency_key=?', (key,)).fetchone():
+                raise ValueError('Idempotency key already belongs to a different owner-chat action')
+            receipt = conn.execute('SELECT * FROM owner_chat_renewals WHERE idempotency_key=?', (key,)).fetchone()
+            if receipt:
+                if receipt['input_hash'] != digest:
+                    raise ValueError('Idempotency key already belongs to a different owner-chat renewal')
+            else:
+                self._require_current_policy(conn)
+                _, _, reason = self._owner_chat_recipient(conn, thread['agent_id'], identity_id)
+                if reason:
+                    raise ValueError(reason)
+                budget = self._owner_chat_budget(conn, thread)
+                if expected_version != budget['version'] or expected_generation != self._policy_generation:
+                    raise ValueError('Owner-chat allowance or configuration changed; read before renewing')
+                if (budget['remainingCalls'] + additional_calls > MAX_CALLS
+                        or budget['maxCalls'] + additional_calls > MAX_CUMULATIVE_CALLS):
+                    raise ValueError('Renewal exceeds the finite outstanding or cumulative allowance ceiling')
+                receipt_id = _id('renewal')
+                conn.execute('INSERT INTO owner_chat_renewals VALUES (?,?,?,?,?,?,?,?)',
+                             (receipt_id, thread_id, key, digest, additional_calls, expected_version + 1, expected_generation, time.time()))
+                receipt = conn.execute('SELECT * FROM owner_chat_renewals WHERE id=?', (receipt_id,)).fetchone()
+            return self._owner_chat_renewal_receipt(receipt)
+
+    @staticmethod
+    def _owner_chat_renewal_receipt(receipt):
+        from eidolon_cli.organization_store import _iso
+        return {'id': receipt['id'], 'idempotencyKey': receipt['idempotency_key'],
+                'additionalCalls': receipt['additional_calls'], 'budgetVersion': receipt['budget_version'],
+                'policyGeneration': receipt['policy_generation'], 'createdAt': _iso(receipt['created'])}
 
     @staticmethod
     def _owner_chat_digest(thread_id, identity_id, text, reply_to):
@@ -153,6 +239,8 @@ class OrganizationOwnerChatStore:
             exact_id(reply_to, 'replyToMessageId')
         with self._connect() as conn:
             self._owner_chat_thread(conn, thread_id, identity_id)
+            if conn.execute('SELECT 1 FROM owner_chat_renewals WHERE idempotency_key=?', (key,)).fetchone():
+                raise ValueError('Idempotency key already belongs to a different owner-chat action')
             old = conn.execute('SELECT * FROM owner_chat_turns WHERE idempotency_key=?', (key,)).fetchone()
             if old and old['input_hash'] != self._owner_chat_digest(thread_id, identity_id, text, reply_to):
                 raise ValueError('Idempotency key already belongs to a different owner-chat send')
@@ -165,6 +253,8 @@ class OrganizationOwnerChatStore:
         digest = self._owner_chat_digest(thread_id, identity_id, text, reply_to)
         with self._write() as conn:
             thread = self._owner_chat_thread(conn, thread_id, identity_id)
+            if conn.execute('SELECT 1 FROM owner_chat_renewals WHERE idempotency_key=?', (key,)).fetchone():
+                raise ValueError('Idempotency key already belongs to a different owner-chat action')
             old = conn.execute('SELECT * FROM owner_chat_turns WHERE idempotency_key=?', (key,)).fetchone()
             if old:
                 if old['input_hash'] != digest:
@@ -179,22 +269,45 @@ class OrganizationOwnerChatStore:
             last = conn.execute('SELECT id FROM owner_chat_messages WHERE thread_id=? ORDER BY rowid DESC LIMIT 1', (thread_id,)).fetchone()
             if reply_to != (last['id'] if last else None):
                 raise ValueError('Conversation changed; read the latest message before sending')
-            calls, tokens = conn.execute('SELECT coalesce(sum(calls_reserved),0),coalesce(sum(tokens_reserved),0) FROM owner_chat_turns WHERE thread_id=?', (thread_id,)).fetchone()
-            if calls >= thread['max_calls'] or tokens + TURN_TOKENS > thread['max_tokens']:
+            budget = self._owner_chat_budget(conn, thread)
+            if budget['remainingCalls'] < 1 or budget['remainingTokens'] < TURN_TOKENS:
                 raise ValueError('This identity’s finite owner-chat budget is exhausted')
             turn_id, message_id, now = _id('turn'), _id('message'), time.time()
             from eidolon_cli.organization_owner_chat_executor import SYSTEM, prompt
             from eidolon_cli.organization_evidence import prompt_input_bound, CONTEXT_RESERVE_TOKENS
+            recent = conn.execute('SELECT * FROM owner_chat_messages WHERE thread_id=? ORDER BY rowid DESC LIMIT ?',
+                                  (thread_id, MAX_CONTEXT_MESSAGES - 1)).fetchall()
             history = [{'id': m['id'], 'role': m['role'], 'text': m['text'], 'replyToMessageId': m['reply_to_message_id']}
-                       for m in conn.execute('SELECT * FROM owner_chat_messages WHERE thread_id=? ORDER BY rowid', (thread_id,))]
+                       for m in reversed(recent)]
+            if history and history[0]['role'] == 'agent':
+                history.pop(0)
+            prior_count = conn.execute('SELECT count(*) FROM owner_chat_messages WHERE thread_id=?', (thread_id,)).fetchone()[0]
+            prior_omitted = prior_count - len(history)
             history.append({'id': message_id, 'role': 'owner', 'text': text, 'replyToMessageId': reply_to})
-            submitted = prompt({'identity': json.loads(thread['public_identity']), 'conversation': {
-                'id': thread_id, 'identityId': identity_id, 'replyToMessageId': message_id, 'messages': history}})
-            if prompt_input_bound(submitted, SYSTEM) + CONTEXT_RESERVE_TOKENS > INPUT_TOKENS:
-                raise ValueError('This exact owner conversation exceeds its bounded input window; no history was omitted and no send was reserved')
-            conn.execute('INSERT INTO owner_chat_turns (id,thread_id,idempotency_key,input_hash,owner_message_id,status,created,policy_generation,calls_reserved,tokens_reserved) '
-                         "VALUES (?,?,?,?,?,'pending',?,?,1,?)",
-                         (turn_id, thread_id, key, digest, message_id, now, self._policy_generation, TURN_TOKENS))
+            # Remove whole oldest turns only. The exact latest target and its
+            # owner/agent pair are mandatory, even when they cannot fit.
+            minimum = len(history) - 2
+            if minimum >= 0 and history[minimum]['role'] == 'agent':
+                minimum -= 1
+            minimum = max(0, minimum)
+            omitted = 0
+            while True:
+                submitted = prompt({'identity': json.loads(thread['public_identity']), 'conversation': {
+                    'id': thread_id, 'identityId': identity_id, 'replyToMessageId': message_id, 'messages': history[omitted:],
+                    'context': {'omittedMessageCount': prior_omitted + omitted, 'oldestIncludedMessageId': history[omitted]['id']}}})
+                if prompt_input_bound(submitted, SYSTEM) + CONTEXT_RESERVE_TOKENS <= INPUT_TOKENS:
+                    break
+                next_start = omitted + 1
+                if next_start < len(history) and history[next_start]['role'] == 'agent':
+                    next_start += 1
+                if next_start > minimum:
+                    raise ValueError('The exact latest reply target and new message exceed the bounded input window; no send was reserved')
+                omitted = next_start
+            included_ids = [m['id'] for m in history[omitted:]]
+            conn.execute('INSERT INTO owner_chat_turns (id,thread_id,idempotency_key,input_hash,owner_message_id,status,created,policy_generation,calls_reserved,tokens_reserved,context_message_ids,context_omitted_count) '
+                         "VALUES (?,?,?,?,?,'pending',?,?,1,?,?,?)",
+                         (turn_id, thread_id, key, digest, message_id, now, self._policy_generation, TURN_TOKENS,
+                          json.dumps(included_ids), prior_omitted + omitted))
             conn.execute('INSERT INTO owner_chat_messages VALUES (?,?,?,?,?,?,?)',
                          (message_id, thread_id, turn_id, 'owner', text, reply_to, now))
             return turn_id, True
@@ -216,13 +329,23 @@ class OrganizationOwnerChatStore:
                 raise ValueError('Owner-chat turn is no longer active')
             thread = self._owner_chat_authorized(conn, turn)
             recipient, _, _ = self._owner_chat_recipient(conn, thread['agent_id'], thread['identity_id'])
+            if turn['context_message_ids']:
+                ids = json.loads(turn['context_message_ids'])
+                rows = conn.execute('SELECT * FROM owner_chat_messages WHERE thread_id=? AND id IN (' + ','.join('?' for _ in ids) + ')', (thread['id'], *ids)).fetchall()
+                by_id = {row['id']: row for row in rows}
+                if any(message_id not in by_id for message_id in ids):
+                    raise ValueError('Reserved owner-chat context is no longer intact')
+                rows = [by_id[message_id] for message_id in ids]
+            else:
+                rows = conn.execute('SELECT * FROM owner_chat_messages WHERE thread_id=? ORDER BY rowid', (thread['id'],)).fetchall()
             conn.execute("UPDATE owner_chat_turns SET status='running' WHERE id=?", (turn_id,))
             return {'agent': recipient, 'identity': json.loads(thread['public_identity']),
                     'conversation': {'id': thread['id'], 'identityId': thread['identity_id'],
                                      'replyToMessageId': turn['owner_message_id'],
+                                     'context': {'omittedMessageCount': turn['context_omitted_count'],
+                                                 'oldestIncludedMessageId': rows[0]['id'] if rows else None},
                                      'messages': [{'id': row['id'], 'role': row['role'], 'text': row['text'],
-                                                   'replyToMessageId': row['reply_to_message_id']} for row in
-                                                  conn.execute('SELECT * FROM owner_chat_messages WHERE thread_id=? ORDER BY rowid', (thread['id'],))]}}
+                                                   'replyToMessageId': row['reply_to_message_id']} for row in rows]}}
 
     def owner_chat_dispatch(self, turn_id, *, provider, model, input_limit, output_limit, selected_provider=None):
         if (type(input_limit) is not int or type(output_limit) is not int
@@ -267,6 +390,14 @@ class OrganizationOwnerChatStore:
             conn.execute('UPDATE owner_chat_turns SET status=?,reason=?,reply_message_id=?,finished=?,input_tokens=?,output_tokens=? WHERE id=?',
                          (status, reason[:2000] if reason else None, reply_id, time.time(), *measured, turn_id))
             return True
+
+    def owner_chat_validate_turn(self, thread_id, identity_id, turn_id):
+        """Cancellation verifies ownership even when the turn's authority expired."""
+        exact_id(turn_id, 'turnId')
+        with self._connect() as conn:
+            self._owner_chat_thread(conn, thread_id, identity_id)
+            if not conn.execute('SELECT 1 FROM owner_chat_turns WHERE id=? AND thread_id=?', (turn_id, thread_id)).fetchone():
+                raise ValueError('Turn does not belong to this exact owner conversation')
 
     def owner_chat_turn_state(self, turn_id):
         with self._connect() as conn:

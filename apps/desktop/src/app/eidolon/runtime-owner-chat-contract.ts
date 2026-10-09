@@ -3,7 +3,9 @@ import type { OwnerChatThread } from './runtime-owner-chat-types'
 const text = (value: unknown, max: number, empty = false): value is string =>
   typeof value === 'string' && value.length <= max * 2 && [...value].length <= max && (empty || !!value.trim())
 
-const id = (value: unknown): value is string => text(value, 128)
+const id = (value: unknown): value is string =>
+  text(value, 128) && value === value.trim() && [...value].every(character => character.charCodeAt(0) >= 32 && character.charCodeAt(0) !== 127)
+
 const nullableId = (value: unknown): value is string | null => value === null || id(value)
 
 const count = (value: unknown): value is number =>
@@ -49,14 +51,17 @@ export function validOwnerChatThread(value: unknown): value is OwnerChatThread {
       key => count(item.limits[key as keyof typeof item.limits]) && item.limits[key as keyof typeof item.limits] > 0
     ) ||
     !Array.isArray(item.messages) ||
-    item.messages.length > 64 ||
+    item.messages.length > 100 ||
     !Array.isArray(item.turns) ||
-    item.turns.length > 32
+    item.turns.length > 101
   ) {
     return false
   }
 
   if (
+    (item.latestMessageId !== undefined && !nullableId(item.latestMessageId)) ||
+    (item.policyGeneration !== undefined && !count(item.policyGeneration)) ||
+    (item.budget.version !== undefined && !count(item.budget.version)) ||
     item.budget.callsReserved > item.budget.maxCalls ||
     item.budget.tokensReserved > item.budget.maxTokens ||
     item.budget.remainingCalls !== item.budget.maxCalls - item.budget.callsReserved ||
@@ -66,6 +71,53 @@ export function validOwnerChatThread(value: unknown): value is OwnerChatThread {
     return false
   }
 
+  const paged = item.history !== undefined
+
+  if (
+    paged &&
+    (!item.history ||
+      typeof item.history.hasMore !== 'boolean' ||
+      !nullableId(item.history.oldestMessageId) ||
+      !nullableId(item.latestMessageId) ||
+      item.history.oldestMessageId !== (item.messages[0]?.id ?? null) ||
+      (item.history.hasMore && !item.history.oldestMessageId))
+  ) {
+    return false
+  }
+
+  if (
+    item.renewal !== undefined &&
+    (!item.renewal ||
+      !count(item.policyGeneration) ||
+      !count(item.budget.version) ||
+      typeof item.renewal.canRenew !== 'boolean' ||
+      !['maxAdditionalCalls', 'maxOutstandingCalls', 'maxCumulativeCalls', 'tokensPerCall'].every(key =>
+        count(item.renewal![key as 'maxAdditionalCalls'])
+      ) ||
+      item.renewal.maxAdditionalCalls > 32 ||
+      item.renewal.tokensPerCall <= 0 ||
+      !Number.isSafeInteger(item.renewal.maxAdditionalCalls * item.renewal.tokensPerCall) ||
+      !(item.renewal.unavailableReason === null || text(item.renewal.unavailableReason, 2000)) ||
+      (item.renewal.canRenew && (recipient.lifecycle !== 'active' || item.renewal.maxAdditionalCalls < 1)))
+  ) {
+    return false
+  }
+
+  if (
+    item.renewalReceipt != null &&
+    (!id(item.renewalReceipt.id) ||
+      !id(item.renewalReceipt.idempotencyKey) ||
+      !count(item.renewalReceipt.additionalCalls) ||
+      item.renewalReceipt.additionalCalls < 1 ||
+      item.renewalReceipt.additionalCalls > 32 ||
+      !count(item.renewalReceipt.budgetVersion) ||
+      !count(item.renewalReceipt.policyGeneration) ||
+      !date(item.renewalReceipt.createdAt))
+  ) {
+    return false
+  }
+
+  const allMessageIds = new Set(item.messages.map(message => message?.id))
   const messages = new Map<string, OwnerChatThread['messages'][number]>()
 
   for (const message of item.messages) {
@@ -77,7 +129,11 @@ export function validOwnerChatThread(value: unknown): value is OwnerChatThread {
       !text(message.text, 6000) ||
       !id(message.turnId) ||
       !date(message.createdAt) ||
-      !(message.replyToMessageId === null || messages.has(message.replyToMessageId))
+      !(
+        message.replyToMessageId === null ||
+        messages.has(message.replyToMessageId) ||
+        (paged && id(message.replyToMessageId) && !allMessageIds.has(message.replyToMessageId))
+      )
     ) {
       return false
     }
@@ -97,20 +153,54 @@ export function validOwnerChatThread(value: unknown): value is OwnerChatThread {
       !turn ||
       !id(turn.id) ||
       !id(turn.idempotencyKey) ||
+      !id(turn.ownerMessageId) ||
+      !nullableId(turn.replyMessageId) ||
       turns.has(turn.id) ||
       receipts.has(turn.idempotencyKey) ||
       !statuses.has(turn.status) ||
-      !owner ||
-      owner.role !== 'owner' ||
-      owner.turnId !== turn.id ||
+      (!owner && (!paged || (!reply && turn.id !== item.activeTurnId))) ||
+      (owner && (owner.role !== 'owner' || owner.turnId !== turn.id)) ||
       (turn.replyMessageId !== null &&
-        (!reply || reply.role !== 'agent' || reply.turnId !== turn.id || reply.replyToMessageId !== owner.id)) ||
-      (turn.status === 'completed' && !reply) ||
+        ((!reply && !paged) ||
+          (reply &&
+            (reply.role !== 'agent' || reply.turnId !== turn.id || reply.replyToMessageId !== turn.ownerMessageId)))) ||
+      (turn.status === 'completed' && !reply && !paged) ||
       !(turn.reason === null || text(turn.reason, 2000)) ||
       !date(turn.createdAt) ||
       !(turn.finishedAt === null || date(turn.finishedAt))
     ) {
       return false
+    }
+
+    if (
+      turn.context !== undefined &&
+      (!turn.context ||
+        !(turn.context.omittedMessageCount === null || count(turn.context.omittedMessageCount)) ||
+        !nullableId(turn.context.oldestIncludedMessageId) ||
+        !(
+          turn.context.includedMessageIds === null ||
+          (Array.isArray(turn.context.includedMessageIds) &&
+            turn.context.includedMessageIds.length > 0 &&
+            turn.context.includedMessageIds.length <= 100 &&
+            turn.context.includedMessageIds.every(id))
+        ))
+    ) {
+      return false
+    }
+
+    if (turn.context) {
+      const context = turn.context
+
+      if (
+        context.includedMessageIds === null
+          ? context.omittedMessageCount !== null || context.oldestIncludedMessageId !== null
+          : context.includedMessageIds.at(-1) !== turn.ownerMessageId ||
+            context.omittedMessageCount === null ||
+            new Set(context.includedMessageIds).size !== context.includedMessageIds.length ||
+            context.oldestIncludedMessageId !== (context.includedMessageIds[0] ?? null)
+      ) {
+        return false
+      }
     }
 
     turns.add(turn.id)
@@ -127,7 +217,7 @@ export function validOwnerChatThread(value: unknown): value is OwnerChatThread {
   return (
     active.length <= 1 &&
     item.activeTurnId === (active[0]?.id ?? null) &&
-    referenced.size === item.messages.length &&
+    item.messages.every(message => referenced.has(message.id)) &&
     item.messages.every(message => turns.has(message.turnId)) &&
     (item.activeTurnId === null ||
       item.turns.some(turn => turn.id === item.activeTurnId && ['pending', 'running'].includes(turn.status))) &&
@@ -138,3 +228,5 @@ export function validOwnerChatThread(value: unknown): value is OwnerChatThread {
         item.budget.remainingTokens > 0))
   )
 }
+
+export class OwnerChatRenewalRejected extends Error {}
