@@ -53,6 +53,9 @@ export function useRequestNavigation(requests: OrganizationRequest[], scope: str
     parent,
     open,
     close: () => setSelection(null),
+    // Async response completion may close only the navigation that submitted it.
+    // Every user navigation creates a new selection, including Back to the same request.
+    closeOnResponse: () => setSelection(current => (current === selection ? null : current)),
     back: () => setSelection(selection && valid ? { ...selection, ids: selection.ids.slice(0, -1) } : null),
     openParent: () => {
       if (selection && valid && parent) {

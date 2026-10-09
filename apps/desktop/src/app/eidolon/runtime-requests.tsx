@@ -655,7 +655,7 @@ export function RuntimeRequests({
               <ResolutionForm
                 adapter={adapter}
                 key={`${snapshot.connection?.ownerScope ?? snapshot.connection?.scope}:${request.id}`}
-                onClose={navigation.close}
+                onClose={navigation.closeOnResponse}
                 request={request}
                 snapshot={snapshot}
               />

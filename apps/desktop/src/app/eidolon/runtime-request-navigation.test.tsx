@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { expect, it, vi } from 'vitest'
 
@@ -107,7 +107,9 @@ it('opens the parent assignment outside queue filters, preserves the response on
   expect(details().queryByRole('textbox', { name: 'Response' })).toBeNull()
   fireEvent.click(details().getByRole('button', { name: 'Back' }))
   expect(details().getByRole('textbox', { name: 'Response' })).toHaveProperty('value', 'Board and technical leads.')
-  expect(fixture.view.container.ownerDocument.activeElement).toBe(details().getByRole('button', { name: 'Open parent request' }))
+  expect(fixture.view.container.ownerDocument.activeElement).toBe(
+    details().getByRole('button', { name: 'Open parent request' })
+  )
   fireEvent.click(details().getByRole('button', { name: 'Open parent request' }))
   fireEvent.click(details().getByRole('button', { name: 'Close request details' }))
   expect(screen.queryByRole('complementary', { name: 'Request details' })).toBeNull()
@@ -160,5 +162,96 @@ it.each(['removed', 'cross-objective', 'changed-parent', 'profile', 'cycle'])(
     }
 
     expect(fixture.mutation).not.toHaveBeenCalled()
+  }
+)
+
+it.each(['unchanged', 'ancestor', 'back', 'unrelated', 'reopened'])(
+  'records a delayed response without dismissing newer %s navigation',
+  async mode => {
+    const fixture = setup()
+    const initial = fixture.snapshot()
+    fixture.update({
+      ...initial,
+      requests: [
+        ...initial.requests!,
+        { ...initial.requests![0], id: 'other', type: 'request.decision', requestedOutcome: 'Another decision' }
+      ]
+    })
+    let finish!: () => void
+    fixture.mutation.mockImplementation(
+      () =>
+        new Promise<void>(resolve => {
+          finish = resolve
+        })
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Inspect request: request.question' }))
+    fireEvent.change(details().getByRole('textbox', { name: 'Response' }), { target: { value: 'Board audience.' } })
+    fireEvent.click(details().getByRole('button', { name: 'Submit response' }))
+    expect(fixture.mutation).toHaveBeenCalledTimes(1)
+    expect(fixture.mutation).toHaveBeenCalledWith({ id: 'question', text: 'Board audience.', decision: 'answered' })
+
+    if (mode !== 'unchanged') {
+      fireEvent.click(details().getByRole('button', { name: 'Open parent request' }))
+
+      if (mode === 'back') {
+        fireEvent.click(details().getByRole('button', { name: 'Back' }))
+      } else if (mode === 'unrelated') {
+        fireEvent.click(screen.getByRole('button', { name: 'Inspect request: request.decision' }))
+        fireEvent.change(details().getByRole('textbox', { name: 'Response' }), {
+          target: { value: 'New decision draft.' }
+        })
+      } else if (mode === 'reopened') {
+        fireEvent.click(details().getByRole('button', { name: 'Close request details' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Inspect request: request.question' }))
+        fireEvent.change(details().getByRole('textbox', { name: 'Response' }), {
+          target: { value: 'New question draft.' }
+        })
+      }
+    }
+
+    await act(async () => {
+      finish()
+    })
+
+    if (mode === 'unchanged') {
+      expect(screen.queryByRole('complementary', { name: 'Request details' })).toBeNull()
+    } else if (mode === 'ancestor') {
+      expect(details().getByText('Preserve the exact technical appendix.')).toBeTruthy()
+    } else {
+      const expected =
+        mode === 'back' ? 'Board audience.' : mode === 'unrelated' ? 'New decision draft.' : 'New question draft.'
+
+      expect(details().getByRole('textbox', { name: 'Response' })).toHaveProperty('value', expected)
+    }
+
+    // The original operation still completes authoritatively after navigation.
+    fixture.update({
+      ...fixture.snapshot(),
+      requests: fixture
+        .snapshot()
+        .requests!.map(row =>
+          row.id === 'question'
+            ? {
+                ...row,
+                status: 'completed',
+                allowedResolutions: [],
+                response: {
+                  text: 'Board audience.',
+                  decision: 'answered',
+                  responderId: 'owner',
+                  createdAt: '2026-10-09T01:00:00Z'
+                }
+              }
+            : row
+        )
+    })
+
+    if (mode === 'ancestor') {
+      fireEvent.click(details().getByRole('button', { name: 'Back' }))
+      expect(details().getByText('Board audience.')).toBeTruthy()
+      expect(details().queryByRole('button', { name: 'Submit response' })).toBeNull()
+    }
+
+    expect(fixture.mutation).toHaveBeenCalledTimes(1)
   }
 )
