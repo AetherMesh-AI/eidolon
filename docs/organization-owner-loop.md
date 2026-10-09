@@ -63,7 +63,11 @@ requires `staff.manage` and a matching team scope. Permission always reaches the
 human owner and records a scoped decision without changing credentials or grants.
 
 Needs You shows unhandled requests with the backend's permitted answer, approve or
-deny actions. Hiring displays the exact proposed member configurations and selected
+deny actions. The request inspector links to its parent assignment, including the
+recorded task scope, even when the parent is outside the current queue filter.
+Back preserves an unsubmitted response; Close or Escape closes the complete
+inspector trail. Navigation alone does not answer a request or resume work.
+Hiring displays the exact proposed member configurations and selected
 assignment/memory transfers before approval. Approval applies that recorded proposal;
 it does not accept arbitrary new tool access. Answers and decisions are retained
 with responder identity and time. Once all linked requests are answered, the exact

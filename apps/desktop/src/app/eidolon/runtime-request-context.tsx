@@ -43,7 +43,8 @@ export function hasCompleteManagementProposal(
             transfer.objectiveIds.every(id => typeof id === 'string' && Boolean(id.trim())) &&
             new Set(transfer.objectiveIds).size === transfer.objectiveIds.length)) &&
         (transfer.workPackageIds === undefined ||
-          (Array.isArray(transfer.workPackageIds) && transfer.workPackageIds.length <= 100 &&
+          (Array.isArray(transfer.workPackageIds) &&
+            transfer.workPackageIds.length <= 100 &&
             transfer.workPackageIds.every(id => typeof id === 'string' && Boolean(id.trim())) &&
             new Set(transfer.workPackageIds).size === transfer.workPackageIds.length)) &&
         typeof transfer.includeMemory === 'boolean'
@@ -54,15 +55,21 @@ export function hasCompleteManagementProposal(
 export function RuntimeRequestContext({
   request,
   snapshot,
-  onEvidence
+  onEvidence,
+  parent,
+  onParent
 }: {
   request: OrganizationRequest
   snapshot: OrganizationSnapshot
   onEvidence(id: string): void
+  parent?: OrganizationRequest
+  onParent?(): void
 }) {
   const { t } = useI18n()
   const copy = t.organizationWork
   const person = (id?: string) => snapshot.agents.find(agent => agent.id === id)?.name || id || copy.notRecorded
+  const task = snapshot.tasks.find(item => item.id === request.taskId && item.objectiveId === request.objectiveId)
+  const parentTask = snapshot.tasks.find(item => item.id === parent?.taskId && item.objectiveId === request.objectiveId)
 
   return (
     <>
@@ -74,10 +81,28 @@ export function RuntimeRequestContext({
         <dt>{copy.requiredAuthority}</dt>
         <dd>{request.requiredAuthority || copy.notRecorded}</dd>
         <dt>{copy.parentRequest}</dt>
-        <dd>{request.parentRequestId || copy.notRecorded}</dd>
+        <dd>
+          {parent && onParent ? (
+            <Button aria-label={copy.openParentRequest} onClick={onParent} size="inline" variant="textStrong">
+              {parentTask?.title || parent.requestedOutcome || parent.type}
+            </Button>
+          ) : (
+            request.parentRequestId || copy.notRecorded
+          )}
+        </dd>
         <dt>{copy.dependencies}</dt>
         <dd>{request.dependencyIds?.join(', ') || copy.notRecorded}</dd>
       </dl>
+      {task && (
+        <section aria-label={copy.taskScope}>
+          <h3>{task.title}</h3>
+          {task.inputs?.map((input, index) => (
+            <p className="eid-result-text" key={index}>
+              {input}
+            </p>
+          ))}
+        </section>
+      )}
       {request.evidenceIds?.length ? (
         <section aria-label={copy.evidence}>
           <h3>{copy.evidence}</h3>
@@ -96,7 +121,9 @@ export function RuntimeRequestContext({
           <p>{request.questionRouting.leaderIds.map(id => person(id)).join(' → ') || copy.notRecorded}</p>
           {request.questionRouting.receipts.map((receipt, index) => (
             <div key={`${receipt.agentId}-${index}`}>
-              <p>{person(receipt.agentId)}: {copy[receipt.outcome]}</p>
+              <p>
+                {person(receipt.agentId)}: {copy[receipt.outcome]}
+              </p>
               <p className="eid-result-text">{receipt.text}</p>
               <time dateTime={receipt.createdAt}>{new Date(receipt.createdAt).toLocaleString()}</time>
             </div>
