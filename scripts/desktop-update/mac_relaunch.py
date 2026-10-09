@@ -8,7 +8,7 @@ import subprocess
 import sys
 import time
 
-from mac_transaction import ReplacementError, bundle_identity
+from mac_transaction import ReplacementError, bundle_identity, verify_source_commit
 
 
 def running_app(target: Path) -> dict | None:
@@ -32,8 +32,10 @@ def running_app(target: Path) -> dict | None:
     return json.loads(result.stdout) if result.stdout.strip() else None
 
 
-def relaunch(target: Path) -> bool:
+def relaunch(target: Path, expected_commit: str | None = None) -> bool:
     target = target.resolve(strict=True)
+    if expected_commit is not None:
+        verify_source_commit(target, expected_commit)
     expected = bundle_identity(target)
     if running_app(target) is not None:
         raise ReplacementError('The selected app is already running; a fresh relaunch could not be verified.')
@@ -54,6 +56,8 @@ def relaunch(target: Path) -> bool:
         if observed != stable:
             stable, stable_since = observed, time.monotonic()
         if observed is not None and time.monotonic() - stable_since >= 2:
+            if expected_commit is not None:
+                verify_source_commit(target, expected_commit)
             if bundle_identity(target) != expected:
                 raise ReplacementError('The app changed while its relaunch was being verified.')
             if running_app(target) != observed:
@@ -65,10 +69,10 @@ def relaunch(target: Path) -> bool:
 
 
 def main() -> int:
-    if sys.platform != 'darwin' or len(sys.argv) != 2:
+    if sys.platform != 'darwin' or len(sys.argv) not in (2, 3):
         return 64
     try:
-        return 0 if relaunch(Path(sys.argv[1])) else 1
+        return 0 if relaunch(Path(sys.argv[1]), sys.argv[2] if len(sys.argv) == 3 else None) else 1
     except (OSError, ValueError, ReplacementError, subprocess.SubprocessError) as error:
         print(f'Could not verify app relaunch: {error}', file=sys.stderr)
         return 1

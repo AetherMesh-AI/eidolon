@@ -11,6 +11,13 @@ import uuid
 
 import pytest
 
+from eidolon_cli import eidolon_version as version
+
+
+def build_stamp(commit, dirty=False):
+    return {**version.fallback(commit, dirty), 'versionSource': 'git-derived',
+            'baseTag': 'alpha-v0.1.0', 'baseCommit': version.ANCHOR_COMMIT, 'distance': 1}
+
 
 @pytest.mark.macos_only
 @pytest.mark.parametrize("deny_replacement,lifetime", [(False, 5), (True, 5), (False, 0)])
@@ -22,6 +29,10 @@ def test_macos_replacement_keeps_denied_app_and_reports_manual_install(tmp_path,
     bin_dir = install / "venv/bin"
     bin_dir.mkdir(parents=True)
     home.mkdir()
+    subprocess.run(['git', 'init', str(install)], check=True, capture_output=True)
+    subprocess.run(['git', '-C', str(install), '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+                    'commit', '--allow-empty', '-m', 'Update target'], check=True, capture_output=True)
+    expected_commit = subprocess.check_output(['git', '-C', str(install), 'rev-parse', 'HEAD'], text=True).strip()
     state = home / "profile-data"
     state.write_bytes(b"existing user state")
     (bin_dir / "python3").symlink_to(sys.executable)
@@ -54,6 +65,9 @@ def test_macos_replacement_keeps_denied_app_and_reports_manual_install(tmp_path,
             plistlib.dump({"CFBundleExecutable": "Eidolon", "CFBundleIdentifier": application_id,
                           "CFBundleName": "Eidolon", "CFBundlePackageType": "APPL",
                           "CFBundleVersion": generation}, stream)
+        resources = path / 'Contents/Resources'
+        resources.mkdir()
+        (resources / 'install-stamp.json').write_text(json.dumps(build_stamp(expected_commit if generation == 'new' else 'a' * 40)))
         subprocess.run(["/usr/bin/codesign", "--force", "--sign", "-", str(path)], check=True, capture_output=True)
         return executable
 
@@ -89,6 +103,7 @@ def test_macos_replacement_keeps_denied_app_and_reports_manual_install(tmp_path,
         )
         receipt = json.loads((home / ".eidolon-update-result.json").read_text())
         log = (home / "logs/desktop-update-handoff.log").read_text()
+        assert receipt["expected_source_commit"] == expected_commit
         assert receipt["ok"] is (not deny_replacement), log + result.stderr
         assert result.returncode == receipt["exit_code"] == (7 if deny_replacement else 0)
         assert receipt["manual"] is (deny_replacement or lifetime == 0)
@@ -101,6 +116,7 @@ def test_macos_replacement_keeps_denied_app_and_reports_manual_install(tmp_path,
         assert len(transactions) == 1
         transaction = transactions[0]
         journal = json.loads((transaction / 'transaction.json').read_text())
+        assert journal['expected_source_commit'] == expected_commit
         assert journal['phase'] == ('unchanged' if deny_replacement else 'installed')
         assert not Path(f'{target}.eidolon-update').exists()
         if deny_replacement:
@@ -135,7 +151,7 @@ def test_macos_replacement_keeps_denied_app_and_reports_manual_install(tmp_path,
 
 
 @pytest.mark.macos_only
-@pytest.mark.parametrize('fault', ['install', 'interrupted', 'rollback', 'identity', 'external', 'external-empty'])
+@pytest.mark.parametrize('fault', ['install', 'interrupted', 'rollback', 'identity', 'provenance', 'external', 'external-empty'])
 def test_macos_transaction_preserves_recovery_and_fences_retries(tmp_path, monkeypatch, fault):
     import importlib.util
     module_path = Path(__file__).resolve().parents[1] / 'scripts/desktop-update/mac_transaction.py'
@@ -151,6 +167,9 @@ def test_macos_transaction_preserves_recovery_and_fences_retries(tmp_path, monke
         (path / 'Contents/Info.plist').write_bytes(plistlib.dumps({
             'CFBundleExecutable': 'Eidolon', 'CFBundleVersion': version,
             'CFBundleIdentifier': 'com.aethermesh.test.transaction'}))
+        resources = path / 'Contents/Resources'
+        resources.mkdir()
+        (resources / 'install-stamp.json').write_text(json.dumps(build_stamp('b' * 40)))
         return module.bundle_identity(path)
 
     target = tmp_path / 'Eidolon.app'
@@ -172,7 +191,7 @@ def test_macos_transaction_preserves_recovery_and_fences_retries(tmp_path, monke
         return value
 
     def injected_rename(path, destination):
-        if path == workspace / 'new.app' and fault != 'identity':
+        if path == workspace / 'new.app' and fault not in ('identity', 'provenance'):
             if fault == 'external-empty':
                 target.mkdir()
                 return rename(path, destination)
@@ -183,20 +202,24 @@ def test_macos_transaction_preserves_recovery_and_fences_retries(tmp_path, monke
             raise OSError('injected final rename failure')
         if fault == 'rollback' and path == workspace / 'previous.app':
             raise OSError('injected rollback failure')
-        return rename(path, destination)
+        result = rename(path, destination)
+        if fault == 'provenance' and path == workspace / 'new.app':
+            (target / 'Contents/Resources/install-stamp.json').write_text(json.dumps(build_stamp('a' * 40)))
+        return result
 
     with monkeypatch.context() as patch:
         patch.setattr(module, 'rename_noreplace', injected_rename)
         patch.setattr(module, 'bundle_identity', injected_identity)
         with pytest.raises(KeyboardInterrupt if fault == 'interrupted' else module.ReplacementError):
-            module.replace_bundle(source, target)
+            module.replace_bundle(source, target, 'b' * 40)
     assert module.bundle_identity(source) == expected
-    if fault in ('install', 'identity'):
+    if fault in ('install', 'identity', 'provenance'):
         assert module.bundle_identity(target) == previous
         archived = next(tmp_path.glob('Eidolon.app.eidolon-update-*'))
         assert json.loads((archived / 'transaction.json').read_text())['phase'] == 'restored'
-        assert module.bundle_identity(archived / ('failed.app' if fault == 'identity' else 'new.app')) == expected
-        receipt = module.replace_bundle(source, target)
+        if fault != 'provenance':
+            assert module.bundle_identity(archived / ('failed.app' if fault == 'identity' else 'new.app')) == expected
+        receipt = module.replace_bundle(source, target, 'b' * 40)
         assert module.bundle_identity(target) == expected
         assert module.bundle_identity(receipt / 'previous.app') == previous
     else:
@@ -212,6 +235,35 @@ def test_macos_transaction_preserves_recovery_and_fences_retries(tmp_path, monke
         # A second attempt must not delete/overwrite recoverable bundles even
         # when the destination is missing after an interrupted rename.
         with pytest.raises(module.ReplacementError, match="active or interrupted"):
-            module.replace_bundle(source, target)
+            module.replace_bundle(source, target, 'b' * 40)
         assert (workspace / 'transaction.json').read_bytes() == before
         assert module.bundle_identity(workspace / 'previous.app') == previous
+
+
+@pytest.mark.parametrize('stamp', [None, {}, build_stamp('a' * 40),
+    build_stamp('b' * 12), build_stamp('b' * 40, True), build_stamp('b' * 40, None),
+    {'commit': 'b' * 40, 'dirty': False},
+    {**build_stamp('b' * 40), 'versionSource': 'fallback'}])
+def test_transaction_rejects_unproven_source_before_touching_previous_app(tmp_path, stamp):
+    """Equal app code is insufficient: full, clean source identity is required."""
+    import importlib.util
+    module_path = Path(__file__).resolve().parents[1] / 'scripts/desktop-update/mac_transaction.py'
+    spec = importlib.util.spec_from_file_location('transaction_provenance', module_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    source = tmp_path / 'source.app'
+    target = tmp_path / 'installed.app'
+    for bundle in (source, target):
+        resources = bundle / 'Contents/Resources'
+        resources.mkdir(parents=True)
+        (resources / 'app.asar').write_bytes(b'identical application code across source commits')
+    if stamp is not None:
+        (source / 'Contents/Resources/install-stamp.json').write_text(json.dumps(stamp))
+    previous = (target / 'Contents/Resources/app.asar').read_bytes()
+    with pytest.raises(module.ReplacementError, match='previous app was kept'):
+        module.replace_bundle(source, target, 'b' * 40)
+    assert (target / 'Contents/Resources/app.asar').read_bytes() == previous
+    assert not Path(str(target) + '.eidolon-update').exists()
+    # This function is host-independent; actual copy/rename coverage runs on macOS.
+    (source / 'Contents/Resources/install-stamp.json').write_text(json.dumps(build_stamp('b' * 40)))
+    assert module.verify_source_commit(source, 'b' * 40) == 'b' * 40

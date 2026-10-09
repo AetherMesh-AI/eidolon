@@ -9,6 +9,7 @@ on:
       - 'tests/test_desktop_update_macos_replacement.py'
       - 'eidolon_cli/main_desktop.py'
       - 'tests/eidolon_cli/test_desktop_quarantine.py'
+      - 'tests/eidolon_cli/test_desktop_commit_freshness.py'
       - 'tests/eidolon_cli/test_gui_command.py'
       - '.github/workflows/desktop-update-recovery.yml'
       - '.github/scripts/test-desktop-update-recovery-ui.mjs'
@@ -21,6 +22,7 @@ on:
       - 'tests/test_desktop_update_macos_replacement.py'
       - 'eidolon_cli/main_desktop.py'
       - 'tests/eidolon_cli/test_desktop_quarantine.py'
+      - 'tests/eidolon_cli/test_desktop_commit_freshness.py'
       - 'tests/eidolon_cli/test_gui_command.py'
       - '.github/workflows/desktop-update-recovery.yml'
       - '.github/scripts/test-desktop-update-recovery-ui.mjs'
@@ -64,7 +66,7 @@ jobs:
           test "$status" -eq 1
           grep -q 'assert True is not True' "$RUNNER_TEMP/updater-baseline.log"
       - name: Verify signing preserves quarantine and provenance
-        run: scripts/run_tests.sh tests/eidolon_cli/test_gui_command.py tests/eidolon_cli/test_desktop_quarantine.py
+        run: scripts/run_tests.sh tests/eidolon_cli/test_gui_command.py tests/eidolon_cli/test_desktop_quarantine.py tests/eidolon_cli/test_desktop_commit_freshness.py
       - name: Verify native bundle replacement, denial, interruption and rollback
         run: |
           scripts/run_tests.sh tests/test_desktop_update_macos_replacement.py tests/test_desktop_update_shim_progress.py tests/test_desktop_update_shim_profile_cleanup.py -j 2
