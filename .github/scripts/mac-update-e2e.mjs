@@ -119,14 +119,17 @@ try {
   // Only this freshly copied CI fixture is permission-restricted, never /Applications.
   assert.equal(fs.realpathSync(appPath), appPath)
   assert.equal(fs.statSync(appPath).uid, process.getuid())
+  stage('applying-fixture-only-deny-acl', { pid: oldPid })
   run('/bin/chmod', ['+a#', '0', 'everyone deny delete', appPath])
+  stage('invoking-real-ipc-under-deny-acl', { pid: oldPid })
   try {
     const denied = await page.evaluate(() => window.hermesDesktop.updates.apply({}))
+    stage('deny-acl-ipc-returned', { result: denied })
     assert.equal(denied.error, 'mac-update-permission-denied')
     await sleep(3000)
     assert(alive(oldPid)); assert.equal(fs.statSync(appPath).ino, oldInode)
     assert(!fs.existsSync(oldQuitPath)); assert(!fs.existsSync(path.join(hermesHome, '.eidolon-update-in-progress')))
-    assert.equal(git('rev-parse', 'HEAD'), args['old-sha']); verifyData()
+    assert.equal(git('rev-parse', 'HEAD'), args['old-sha']); stage('checking-denied-update-profile-data'); verifyData()
     stage('real-ipc-preflight-denial-before-quit', { pid: oldPid, result: denied })
   } finally {
     assert.equal(fs.realpathSync(appPath), appPath); assert.equal(fs.statSync(appPath).ino, oldInode)

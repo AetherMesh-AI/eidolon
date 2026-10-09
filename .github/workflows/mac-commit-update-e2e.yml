@@ -84,6 +84,16 @@ jobs:
             --source "$GITHUB_WORKSPACE" --old-sha "$OLD_SHA" --new-sha "$NEW_SHA" \
             --home "$RUNNER_TEMP/mac-update-isolated-home" \
             --evidence "$RUNNER_TEMP/mac-update-evidence"
+      - name: Collect fixture diagnostics even after observer termination
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/mac-update-evidence"
+          LOGS="$RUNNER_TEMP/mac-update-isolated-home/.eidolon/logs"
+          if [ -d "$LOGS" ]; then cp -R "$LOGS" "$RUNNER_TEMP/mac-update-evidence/postmortem-logs"; fi
+          ps -axo pid,ppid,rss,comm > "$RUNNER_TEMP/mac-update-evidence/process-state.txt"
+          vm_stat > "$RUNNER_TEMP/mac-update-evidence/vm-state.txt"
+          /usr/bin/log show --last 5m --style compact --predicate 'eventMessage CONTAINS "memorystatus" OR eventMessage CONTAINS "mac-update-e2e"' > "$RUNNER_TEMP/mac-update-evidence/process-termination.log" 2>&1 || true
       - name: Upload proof and failure diagnostics
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
