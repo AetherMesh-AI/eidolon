@@ -2,7 +2,7 @@ name: Mac real source update proof
 on:
   push:
     branches: ['test/mac-commit-update-20261008']
-    paths: ['.github/workflows/mac-commit-update-e2e.yml', '.github/scripts/mac-update-e2e.mjs', 'eidolon_cli/main_desktop.py', 'tests/eidolon_cli/test_desktop_quarantine.py']
+    paths: ['.github/workflows/mac-commit-update-e2e.yml', '.github/scripts/mac-update-e2e.mjs', 'eidolon_cli/main_desktop.py', 'scripts/desktop-update/**', 'tests/eidolon_cli/test_desktop_quarantine.py']
 permissions:
   contents: read
 jobs:
