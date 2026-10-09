@@ -51,7 +51,7 @@ jobs:
       - name: Install pinned test dependencies
         run: |
           python3 -m venv .venv
-          .venv/bin/python -m pip install pytest==9.1.1 pytest-asyncio==1.3.0 psutil==7.2.2 PyYAML==6.0.3 python-dotenv==1.2.2
+          .venv/bin/python -m pip install pytest==9.1.1 pytest-asyncio==1.3.0 psutil==7.2.2 PyYAML==6.0.3 python-dotenv==1.2.2 pathspec==1.1.1
           npm ci --include=dev --include=optional
       - name: Prove denied replacement fails on the original updater
         if: github.ref == 'refs/heads/fix/desktop-update-recovery-20261008'

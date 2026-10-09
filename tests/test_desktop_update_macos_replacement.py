@@ -267,3 +267,65 @@ def test_transaction_rejects_unproven_source_before_touching_previous_app(tmp_pa
     # This function is host-independent; actual copy/rename coverage runs on macOS.
     (source / 'Contents/Resources/install-stamp.json').write_text(json.dumps(build_stamp('b' * 40)))
     assert module.verify_source_commit(source, 'b' * 40) == 'b' * 40
+
+
+@pytest.mark.parametrize('have_git', [True, False])
+def test_legacy_transaction_commit_comes_only_from_own_checkout(tmp_path, monkeypatch, have_git):
+    import importlib.util
+    module_path = Path(__file__).resolve().parents[1] / 'scripts/desktop-update/mac_transaction.py'
+    spec = importlib.util.spec_from_file_location('legacy_transaction', module_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    root = tmp_path / 'checkout'
+    root.mkdir()
+    if have_git:
+        subprocess.run(['git', 'init', str(root)], check=True, capture_output=True)
+        subprocess.run(['git', '-C', str(root), '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+                        'commit', '--allow-empty', '-m', 'Intended source'], check=True, capture_output=True)
+        expected = subprocess.check_output(['git', '-C', str(root), 'rev-parse', 'HEAD'], text=True).strip()
+    # Even a valid fallback source stamp must not authorize the legacy path.
+    (root / 'eidolon_cli').mkdir()
+    (root / version.STAMP_PATH).write_text(json.dumps(build_stamp('a' * 40)))
+    monkeypatch.setattr(module, '__file__', str(root / 'scripts/desktop-update/mac_transaction.py'))
+    if have_git:
+        assert module.legacy_source_commit() == expected
+    else:
+        with pytest.raises(module.ReplacementError, match='source commit could not be verified'):
+            module.legacy_source_commit()
+
+
+@pytest.mark.macos_only
+@pytest.mark.parametrize('candidate', ['matching', 'wrong', 'missing', 'no-git'])
+def test_legacy_transaction_cli_verifies_authoritative_source(tmp_path, candidate):
+    import shutil
+    root = tmp_path / 'checkout'
+    scripts = root / 'scripts/desktop-update'
+    scripts.mkdir(parents=True)
+    repository = Path(__file__).resolve().parents[1]
+    helper = scripts / 'mac_transaction.py'
+    shutil.copy2(repository / 'scripts/desktop-update/mac_transaction.py', helper)
+    (root / 'eidolon_cli').mkdir()
+    (root / 'eidolon_cli/__init__.py').write_text('')
+    shutil.copy2(repository / 'eidolon_cli/eidolon_version.py', root / 'eidolon_cli/eidolon_version.py')
+    expected = 'b' * 40
+    if candidate != 'no-git':
+        subprocess.run(['git', 'init', str(root)], check=True, capture_output=True)
+        subprocess.run(['git', '-C', str(root), '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+                        'commit', '--allow-empty', '-m', 'Intended source'], check=True, capture_output=True)
+        expected = subprocess.check_output(['git', '-C', str(root), 'rev-parse', 'HEAD'], text=True).strip()
+    bundle = tmp_path / 'Eidolon.app'
+    resources = bundle / 'Contents/Resources'
+    resources.mkdir(parents=True)
+    (resources / 'app.asar').write_bytes(b'identical source content')
+    if candidate != 'missing':
+        (resources / 'install-stamp.json').write_text(json.dumps(build_stamp('a' * 40 if candidate == 'wrong' else expected)))
+    # Same-target path exercises real CLI validation without replacing a live app.
+    result = subprocess.run([sys.executable, str(helper), str(bundle), str(bundle)],
+                            capture_output=True, text=True, timeout=10)
+    assert result.returncode == (0 if candidate == 'matching' else 7), result.stdout + result.stderr
+    assert (resources / 'app.asar').read_bytes() == b'identical source content'
+    assert not Path(str(bundle) + '.eidolon-update').exists()
+    if candidate == 'matching':
+        assert f'source commit={expected}' in result.stdout
+    else:
+        assert 'previous app was kept' in result.stdout
