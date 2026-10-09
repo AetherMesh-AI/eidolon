@@ -1,11 +1,14 @@
 import './eidolon.css'
 
-import type { ReactNode } from 'react'
-import { NavLink } from 'react-router'
+import { type ReactNode, useEffect, useRef } from 'react'
+import { NavLink, useLocation } from 'react-router'
 
+import { BrandMark } from '@/components/brand-mark'
 import { Badge } from '@/components/ui/badge'
 import { useI18n } from '@/i18n/context'
 import { Activity, Bell, Command, FolderOpen, Network, Settings, Users } from '@/lib/icons'
+
+import { appViewForPath } from '../routes'
 
 /** Session history and optional plugin destinations keep their original owners. */
 export function OrganizationRail({
@@ -25,6 +28,12 @@ export function OrganizationRail({
 }) {
   const { t } = useI18n()
   const copy = t.organizationWork
+  const { pathname } = useLocation()
+  const history = useRef<HTMLDetailsElement>(null)
+  const chat = appViewForPath(pathname) === 'chat'
+  useEffect(() => {
+    if (chat && history.current) { history.current.open = true }
+  }, [chat, pathname])
 
   const destinations = [
     { to: '/home', label: copy.command, icon: Command },
@@ -32,8 +41,7 @@ export function OrganizationRail({
     { to: '/objectives', label: copy.objectives, icon: Network },
     { to: '/organization', label: copy.organization, icon: Users },
     { to: '/artifacts', label: copy.artifacts, icon: FolderOpen },
-    { to: '/activity', label: copy.activity, icon: Activity },
-    { to: '/settings', label: copy.settings, icon: Settings }
+    { to: '/activity', label: copy.activity, icon: Activity }
   ]
 
   const advanced = [
@@ -54,11 +62,17 @@ export function OrganizationRail({
   return (
     <aside aria-label="Eidolon navigation" className="eidolon eid-rail" tabIndex={0}>
       <div className="eid-brand">
-        <span aria-hidden="true">◈</span>EIDOLON
+        <BrandMark aria-hidden="true" className="size-7" />
+        Eidolon
       </div>
       <nav aria-label="Primary">
         {destinations.map(({ to, label, icon: Icon }) => (
-          <NavLink aria-label={to === '/objectives' ? label : undefined} key={to} onClick={event => linkAction(event, to)} to={to}>
+          <NavLink
+            aria-label={to === '/objectives' ? label : undefined}
+            key={to}
+            onClick={event => linkAction(event, to)}
+            to={to}
+          >
             <Icon aria-hidden="true" size={16} />
             <span>{label}</span>
             {to === '/objectives' && unreadOutcomes > 0 && (
@@ -85,12 +99,15 @@ export function OrganizationRail({
         </nav>
         {pluginNav}
       </details>
-      <section aria-label={copy.navigationHistory} className="eid-rail-history">
-        <h2>{copy.navigationHistory}</h2>
+      <details className="eid-rail-history" ref={history}>
+        <summary>{copy.navigationHistory}</summary>
         <p>{copy.historyNote}</p>
         <div className="eid-session-tree">{sessions}</div>
-      </section>
-      <div className="eid-rail-footer">{mode === 'prototype' ? copy.legacyTitle : copy.evidenceSource}</div>
+      </details>
+      <div className="eid-rail-footer">
+        <nav aria-label={copy.settings}><NavLink onClick={event => linkAction(event, '/settings')} to="/settings"><Settings aria-hidden="true" size={16} /><span>{copy.settings}</span></NavLink></nav>
+        <small>{mode === 'prototype' ? copy.legacyTitle : copy.evidenceSource}</small>
+      </div>
     </aside>
   )
 }

@@ -23,6 +23,7 @@ export function Command({
   const [metadata, setMetadata] = useState<ObjectiveMetadata>({})
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const completionDetails = useRef<HTMLDetailsElement>(null)
   const active = useRef(true)
   const sending = useRef(false)
   const navigate = useNavigate()
@@ -30,13 +31,27 @@ export function Command({
   // Ownership selection is a capability of persistent-identity runtimes. Older
   // snapshots continue using their established default owner contract.
   const hasOwnership = snapshot.agents.some(agent => agent.persistent)
-  const executives = snapshot.agents.filter(agent => agent.role === 'Executive' && agent.lifecycle === 'active' && agent.capabilities.includes('request.accept'))
+
+  const executives = snapshot.agents.filter(
+    agent => agent.role === 'Executive' && agent.lifecycle === 'active' && agent.capabilities.includes('request.accept')
+  )
+
   const executiveId = metadata.executiveId ?? (executives.some(agent => agent.id === 'executive') ? 'executive' : '')
   const selectedExecutive = executives.find(agent => agent.id === executiveId)
-  const managers = snapshot.agents.filter(agent => agent.role === 'Manager' && agent.lifecycle === 'active' && agent.managerId === executiveId && ['request.plan', 'request.integrate'].every(capability => agent.capabilities.includes(capability)))
+
+  const managers = snapshot.agents.filter(
+    agent =>
+      agent.role === 'Manager' &&
+      agent.lifecycle === 'active' &&
+      agent.managerId === executiveId &&
+      ['request.plan', 'request.integrate'].every(capability => agent.capabilities.includes(capability))
+  )
+
   const managerId = metadata.managerId ?? (managers.some(agent => agent.id === 'manager') ? 'manager' : '')
   const availableProjects = snapshot.runtime?.availableProjects ?? []
-  const validOwnership = executives.some(agent => agent.id === executiveId) && managers.some(agent => agent.id === managerId)
+
+  const validOwnership =
+    executives.some(agent => agent.id === executiveId) && managers.some(agent => agent.id === managerId)
 
   // eslint-disable-next-line no-restricted-syntax -- component lifetime guard, not a mirrored atom
   useEffect(() => {
@@ -60,7 +75,11 @@ export function Command({
       return
     }
 
-    if (availableProjects.length && (metadata.deliveryMode ?? 'source_project') === 'source_project' && !metadata.projectIds?.length) {
+    if (
+      availableProjects.length &&
+      (metadata.deliveryMode ?? 'source_project') === 'source_project' &&
+      !metadata.projectIds?.length
+    ) {
       setError(copy.projectSelectionRequired)
 
       return
@@ -78,6 +97,10 @@ export function Command({
       .filter(Boolean)
 
     if (acceptanceCriteria.length > 12 || acceptanceCriteria.some(value => value.length > 2000)) {
+      if (completionDetails.current) {
+        completionDetails.current.open = true
+      }
+
       setError(copy.criteriaInvalid)
 
       return
@@ -119,10 +142,6 @@ export function Command({
 
   return (
     <div className="eid-command">
-      <div aria-hidden="true" className="eid-mark">
-        ◈
-      </div>
-      <p className="eid-eyebrow">Eidolon</p>
       <h1>{copy.mainQuestion}</h1>
       <p className="eid-subtitle">{copy.composerSubtitle}</p>
       <form
@@ -148,55 +167,123 @@ export function Command({
           rows={3}
           value={goal}
         />
-        {hasOwnership && <>
-          <label htmlFor="eid-executive">{roster.objectiveExecutive}</label>
-          <select className={controlVariants()} disabled={submitting} id="eid-executive" onChange={event => setMetadata({ ...metadata, executiveId: event.target.value, managerId: '' })} value={executives.some(agent => agent.id === executiveId) ? executiveId : ''}>
-            <option value="">{roster.chooseExecutive}</option>
-            {executives.map(agent => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
-          </select>
-          <label htmlFor="eid-manager">{roster.objectiveManager}</label>
-          <select className={controlVariants()} disabled={submitting || !executiveId} id="eid-manager" onChange={event => setMetadata({ ...metadata, managerId: event.target.value })} value={managers.some(agent => agent.id === managerId) ? managerId : ''}>
-            <option value="">{roster.chooseManager}</option>
-            {managers.map(agent => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
-          </select>
-          <p className="eid-note">{roster.ownershipNote}</p>
-          {selectedExecutive && <p className="eid-note">{selectedExecutive.capabilities.includes('request.decompose') ? copy.packageExecutiveAdmission : copy.packageLegacyAdmission}</p>}
-        </>}
-        {availableProjects.length > 0 && <fieldset disabled={submitting}>
-          <legend>{copy.objectiveProjects}</legend>
-          <p className="eid-note">{copy.projectSelectionNote}</p>
-          {availableProjects.map(project => <label className="eid-inline" key={project.id}>
-            <input checked={metadata.projectIds?.includes(project.id) ?? false} onChange={event => setMetadata({ ...metadata, projectIds: event.target.checked
-                ? [...(metadata.projectIds ?? []), project.id]
-                : metadata.projectIds?.filter(id => id !== project.id) })}
-              type="checkbox" />
-            <span>{project.id} · {project.root} · {project.team}</span>
-          </label>)}
-        </fieldset>}
-        <label htmlFor="eid-context">{copy.submittedContext}</label>
-        <Textarea
-          disabled={submitting}
-          id="eid-context"
-          maxLength={12000}
-          onChange={event => setMetadata({ ...metadata, description: event.target.value })}
-          placeholder={copy.contextPlaceholder}
-          rows={3}
-          value={metadata.description ?? ''}
-        />
-        <label htmlFor="eid-criteria">{copy.acceptanceCriteria}</label>
-        <Textarea
-          aria-describedby="eid-criteria-note"
-          disabled={submitting}
-          id="eid-criteria"
-          maxLength={24012}
-          onChange={event => setCriteria(event.target.value)}
-          rows={3}
-          value={criteria}
-        />
-        <p className="eid-note" id="eid-criteria-note">
-          {copy.criteriaHint}
-        </p>
-        <label>
+        {hasOwnership && (
+          <div className="eid-command-ownership">
+            <label htmlFor="eid-executive">{roster.objectiveExecutive}</label>
+            <select
+              className={controlVariants()}
+              disabled={submitting}
+              id="eid-executive"
+              onChange={event => setMetadata({ ...metadata, executiveId: event.target.value, managerId: '' })}
+              value={executives.some(agent => agent.id === executiveId) ? executiveId : ''}
+            >
+              <option value="">{roster.chooseExecutive}</option>
+              {executives.map(agent => (
+                <option key={agent.id} value={agent.id}>
+                  {agent.name}
+                </option>
+              ))}
+            </select>
+            <label htmlFor="eid-manager">{roster.objectiveManager}</label>
+            <select
+              className={controlVariants()}
+              disabled={submitting || !executiveId}
+              id="eid-manager"
+              onChange={event => setMetadata({ ...metadata, managerId: event.target.value })}
+              value={managers.some(agent => agent.id === managerId) ? managerId : ''}
+            >
+              <option value="">{roster.chooseManager}</option>
+              {managers.map(agent => (
+                <option key={agent.id} value={agent.id}>
+                  {agent.name}
+                </option>
+              ))}
+            </select>
+            <details className="eid-command-planning">
+              <summary>
+                {copy.packagePlanningMode}
+                {selectedExecutive && (
+                  <>
+                    {' '}
+                    ·{' '}
+                    {selectedExecutive.capabilities.includes('request.decompose')
+                      ? copy.packageExecutiveMode
+                      : copy.packageLegacyMode}
+                  </>
+                )}
+              </summary>
+              <p className="eid-note">{roster.ownershipNote}</p>
+              {selectedExecutive && (
+                <p className="eid-note">
+                  {selectedExecutive.capabilities.includes('request.decompose')
+                    ? copy.packageExecutiveAdmission
+                    : copy.packageLegacyAdmission}
+                </p>
+              )}
+            </details>
+          </div>
+        )}
+        {availableProjects.length > 0 && (
+          <fieldset disabled={submitting}>
+            <legend>{copy.objectiveProjects}</legend>
+            <p className="eid-note">{copy.projectSelectionNote}</p>
+            {availableProjects.map(project => (
+              <label className="eid-inline" key={project.id}>
+                <input
+                  checked={metadata.projectIds?.includes(project.id) ?? false}
+                  onChange={event =>
+                    setMetadata({
+                      ...metadata,
+                      projectIds: event.target.checked
+                        ? [...(metadata.projectIds ?? []), project.id]
+                        : metadata.projectIds?.filter(id => id !== project.id)
+                    })
+                  }
+                  type="checkbox"
+                />
+                <span>
+                  {project.id} · {project.root} · {project.team}
+                </span>
+              </label>
+            ))}
+          </fieldset>
+        )}
+        <details className="eid-form-disclosure">
+          <summary>
+            {copy.addContext}
+            {metadata.description?.trim() && <span className="eid-disclosure-value">{copy.detailsAdded}</span>}
+          </summary>
+          <label htmlFor="eid-context">{copy.submittedContext}</label>
+          <Textarea
+            disabled={submitting}
+            id="eid-context"
+            maxLength={12000}
+            onChange={event => setMetadata({ ...metadata, description: event.target.value })}
+            placeholder={copy.contextPlaceholder}
+            rows={3}
+            value={metadata.description ?? ''}
+          />
+        </details>
+        <details className="eid-form-disclosure" ref={completionDetails}>
+          <summary>
+            {copy.completionOptions}
+            {criteria.trim() && <span className="eid-disclosure-value">{copy.detailsAdded}</span>}
+          </summary>
+          <label htmlFor="eid-criteria">{copy.acceptanceCriteria}</label>
+          <Textarea
+            aria-describedby="eid-criteria-note"
+            disabled={submitting}
+            id="eid-criteria"
+            maxLength={24012}
+            onChange={event => setCriteria(event.target.value)}
+            rows={3}
+            value={criteria}
+          />
+          <p className="eid-note" id="eid-criteria-note">
+            {copy.criteriaHint}
+          </p>
+        </details>
+        <label className="eid-delivery-scope">
           {copy.deliveryMode}
           <select
             className={controlVariants()}
@@ -211,57 +298,65 @@ export function Command({
           </select>
         </label>
         <p className="eid-note">{copy.deliveryNote}</p>
-        <fieldset disabled={submitting}>
-          <legend>{copy.requiredChecks}</legend>
-          {(['project_tests', 'managed_validation', 'source_integration'] as const).map(check => (
-            <label className="eid-inline" key={check}>
+        <details className="eid-form-disclosure">
+          <summary>
+            {copy.verificationOptions}
+            {Boolean(metadata.requiredChecks?.length || metadata.priority) && (
+              <span className="eid-disclosure-value">{copy.detailsAdded}</span>
+            )}
+          </summary>
+          <fieldset disabled={submitting}>
+            <legend>{copy.requiredChecks}</legend>
+            {(['project_tests', 'managed_validation', 'source_integration'] as const).map(check => (
+              <label className="eid-inline" key={check}>
+                <input
+                  checked={metadata.requiredChecks?.includes(check) ?? false}
+                  onChange={event =>
+                    setMetadata({
+                      ...metadata,
+                      requiredChecks: event.target.checked
+                        ? [...(metadata.requiredChecks ?? []), check]
+                        : metadata.requiredChecks?.filter(value => value !== check)
+                    })
+                  }
+                  type="checkbox"
+                />
+                {copy[check]}
+              </label>
+            ))}
+          </fieldset>
+          <div className="eid-composer-tools">
+            <label>
               <input
-                checked={metadata.requiredChecks?.includes(check) ?? false}
-                onChange={event =>
-                  setMetadata({
-                    ...metadata,
-                    requiredChecks: event.target.checked
-                      ? [...(metadata.requiredChecks ?? []), check]
-                      : metadata.requiredChecks?.filter(value => value !== check)
-                  })
-                }
+                checked={metadata.priority !== undefined}
+                disabled={submitting}
+                onChange={event => setMetadata({ ...metadata, priority: event.target.checked ? 'P3' : undefined })}
                 type="checkbox"
-              />
-              {copy[check]}
+              />{' '}
+              {copy.priority}
             </label>
-          ))}
-        </fieldset>
-        <div className="eid-composer-tools">
-          <label>
-            <input
-              checked={metadata.priority !== undefined}
-              disabled={submitting}
-              onChange={event => setMetadata({ ...metadata, priority: event.target.checked ? 'P3' : undefined })}
-              type="checkbox"
-            />{' '}
-            {copy.priority}
-          </label>
-        </div>
-        {metadata.priority !== undefined && (
-          <label className="eid-priority">
-            {copy.priorityLevel}
-            <input
-              aria-label={copy.priorityLevel}
-              aria-valuetext={priorities[priorityKeys.indexOf(metadata.priority as (typeof priorityKeys)[number])]}
-              disabled={submitting}
-              max={4}
-              min={0}
-              onChange={event => setMetadata({ ...metadata, priority: priorityKeys[Number(event.target.value)] })}
-              step={1}
-              type="range"
-              value={priorityKeys.indexOf(metadata.priority as (typeof priorityKeys)[number])}
-            />
-            <span aria-hidden="true" className="eid-priority-endpoints">
-              <span>{copy.lowest}</span>
-              <span>{copy.highest}</span>
-            </span>
-          </label>
-        )}
+          </div>
+          {metadata.priority !== undefined && (
+            <label className="eid-priority">
+              {copy.priorityLevel}
+              <input
+                aria-label={copy.priorityLevel}
+                aria-valuetext={priorities[priorityKeys.indexOf(metadata.priority as (typeof priorityKeys)[number])]}
+                disabled={submitting}
+                max={4}
+                min={0}
+                onChange={event => setMetadata({ ...metadata, priority: priorityKeys[Number(event.target.value)] })}
+                step={1}
+                type="range"
+                value={priorityKeys.indexOf(metadata.priority as (typeof priorityKeys)[number])}
+              />
+              <span aria-hidden="true" className="eid-priority-endpoints">
+                <span>{copy.lowest}</span>
+                <span>{copy.highest}</span>
+              </span>
+            </label>
+          )}
+        </details>
         <div className="eid-composer-tools">
           <span>{copy.providerScope}</span>
           <Button disabled={!goal.trim() || submitting || Boolean(unavailable)} type="submit">

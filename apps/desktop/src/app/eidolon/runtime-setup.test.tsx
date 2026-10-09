@@ -151,19 +151,23 @@ it('keeps unchecked, stale, legacy and retired configuration distinct and locali
   const view = render(draw(initial))
   expect(screen.getByText('Provider execution not checked')).toBeTruthy()
   expect(screen.getByText('new-executive: Executive delegation')).toBeTruthy()
-  expect(within(screen.getByRole('button', { name: 'Inspect decomposer' })).getByText('Provider: Uses profile default · Model: Uses profile default')).toBeTruthy()
-  expect(
-    within(screen.getByRole('button', { name: 'Inspect writer' })).getByText(
-      'Provider: Uses profile default · Model: Uses profile default'
-    )
-  ).toBeTruthy()
+
+  const inspectModel = (id: string, expected: string) => {
+    fireEvent.click(screen.getByRole('button', { name: `Inspect ${id}` }))
+    const inspector = within(screen.getByRole('complementary', { name: 'Agent details' }))
+    const provider = inspector.getByText('Provider', { selector: 'dt' })
+    const model = inspector.getByText('Model', { selector: 'dt' })
+    expect(provider.nextElementSibling?.textContent).toBe(expected)
+    expect(model.nextElementSibling?.textContent).toBe(expected)
+    fireEvent.keyDown(globalThis.document, { key: 'Escape' })
+  }
+
+  for (const id of ['decomposer', 'writer']) {
+    inspectModel(id, 'Uses profile default')
+  }
 
   for (const id of ['retired', 'legacy', 'apply', 'director']) {
-    expect(
-      within(screen.getByRole('button', { name: `Inspect ${id}` })).getByText(
-        'Provider: Not reported by runtime · Model: Not reported by runtime'
-      )
-    ).toBeTruthy()
+    inspectModel(id, 'Not reported by runtime')
   }
 
   for (const state of ['error', 'disconnected', 'connecting'] as const) {
@@ -176,11 +180,7 @@ it('keeps unchecked, stale, legacy and retired configuration distinct and locali
   view.rerender(draw({ ...initial, runtime: { ...initial.runtime!, setup: undefined } }))
   expect(screen.getByText(/Setup guidance is not reported by this runtime/)).toBeTruthy()
   expect(screen.queryByText('Provider execution not checked')).toBeNull()
-  expect(
-    within(screen.getByRole('button', { name: 'Inspect writer' })).getByText(
-      'Provider: Not reported by runtime · Model: Not reported by runtime'
-    )
-  ).toBeTruthy()
+  inspectModel('writer', 'Not reported by runtime')
   view.rerender(draw({ ...initial, runtime: undefined, connection: { ...initial.connection!, state: 'connecting' } }))
   expect(screen.getByText('Connect to the organization runtime to load setup guidance.')).toBeTruthy()
   expect(screen.queryByText(/Last received configuration/)).toBeNull()

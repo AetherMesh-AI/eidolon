@@ -17,20 +17,56 @@ import type { Objective, OrganizationSnapshot, RuntimeOrganizationAdapter } from
 import { WorkGraph } from './work-graph'
 import { Knowledge, Status } from './workspace'
 
-export function RuntimeStatus({ adapter, snapshot }: { adapter: RuntimeOrganizationAdapter; snapshot: OrganizationSnapshot }) {
+export function RuntimeStatus({
+  adapter,
+  snapshot
+}: {
+  adapter: RuntimeOrganizationAdapter
+  snapshot: OrganizationSnapshot
+}) {
+  const { t } = useI18n()
   const connection = snapshot.connection
 
-  return <section aria-label="Organization runtime" className="eid-runtime-status">
-    <div className="eid-toolbar"><strong>{connection?.state === 'disconnected' ? 'Organization disconnected' : connection?.state === 'error' ? 'Organization updates interrupted' : 'Organization runtime'}</strong>
-      {connection?.state === 'connecting' && <Loader label="Connecting to organization" />}
-      {connection?.state === 'error' && <Button onClick={() => void adapter.refresh()} size="sm" variant="secondary">Retry connection</Button>}
-    </div>
-    {connection?.error && <p role="alert">{connection.error}</p>}
-    {connection?.state === 'disconnected' && <p>Reconnect the current profile’s gateway to view and submit work. Running work may continue on the backend.</p>}
-    {connection?.state === 'error' && <p>Showing the last received state. Automatic recovery is limited; use Retry connection if updates do not resume.</p>}
-    {snapshot.runtime && <RuntimeCapabilities runtime={snapshot.runtime} />}
-    {snapshot.runtime && <p className="eid-note">{snapshot.runtime.profile && `Profile: ${snapshot.runtime.profile} · `}{snapshot.runtime.scope}</p>}
-  </section>
+  return (
+    <section aria-label="Organization runtime" className="eid-runtime-status">
+      <div className="eid-toolbar">
+        <strong>
+          {connection?.state === 'disconnected'
+            ? 'Organization disconnected'
+            : connection?.state === 'error'
+              ? 'Organization updates interrupted'
+              : 'Organization runtime'}
+        </strong>
+        {connection?.state === 'connecting' && <Loader label="Connecting to organization" />}
+        {connection?.state === 'error' && (
+          <Button onClick={() => void adapter.refresh()} size="sm" variant="secondary">
+            Retry connection
+          </Button>
+        )}
+      </div>
+      {connection?.error && <p role="alert">{connection.error}</p>}
+      {connection?.state === 'disconnected' && (
+        <p>
+          Reconnect the current profile’s gateway to view and submit work. Running work may continue on the backend.
+        </p>
+      )}
+      {connection?.state === 'error' && (
+        <p>
+          Showing the last received state. Automatic recovery is limited; use Retry connection if updates do not resume.
+        </p>
+      )}
+      {snapshot.runtime && (
+        <details className="eid-runtime-disclosure">
+          <summary>
+            {t.organizationRuntime.configuration}
+            {snapshot.runtime.profile && <span> · {snapshot.runtime.profile}</span>}
+          </summary>
+          <RuntimeCapabilities runtime={snapshot.runtime} />
+          <p className="eid-note">{snapshot.runtime.scope}</p>
+        </details>
+      )}
+    </section>
+  )
 }
 
 export function RuntimeObjectiveDetail({ objective, adapter, snapshot, historyControls }: { objective: Objective; adapter: RuntimeOrganizationAdapter; snapshot: OrganizationSnapshot; historyControls?: ReactNode }) {

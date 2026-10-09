@@ -89,8 +89,13 @@ describe('configured organization capabilities', () => {
     const active = within(screen.getByRole('button', { name: 'Inspect File Analyst' }))
     expect(active.getByText('Lifecycle: Active')).toBeTruthy()
     expect(active.getByText('● idle')).toBeTruthy()
-    expect(active.getByText('Tools: read_file')).toBeTruthy()
-    expect(active.getByText('Provider: configured-provider · Model: configured-model')).toBeTruthy()
+    expect(active.queryByText('configured-model')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Inspect File Analyst' }))
+    const configured = within(screen.getByRole('complementary', { name: 'Agent details' }))
+    expect(configured.getByText('read_file')).toBeTruthy()
+    expect(configured.getByText('configured-provider')).toBeTruthy()
+    expect(configured.getByText('configured-model')).toBeTruthy()
+    fireEvent.keyDown(globalThis.document, { key: 'Escape' })
     expect(
       within(screen.getByRole('button', { name: 'Inspect Available Writer' })).getByText(
         'Lifecycle: Available · inactive'

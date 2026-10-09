@@ -161,6 +161,6 @@ describe('runtime organization rendering', () => {
     expect(screen.getByText(/Organization evidence · current connection and profile/)).toBeTruthy()
     expect(screen.queryByText(/Organization · Local prototype/)).toBeNull()
     rerender(<MemoryRouter><OrganizationRail mode="prototype" sessions={null} /></MemoryRouter>)
-    expect(screen.getAllByText('Legacy prototype history').some(element => element.className === 'eid-rail-footer')).toBe(true)
+    expect(screen.getAllByText('Legacy prototype history').some(element => element.closest('.eid-rail-footer') !== null)).toBe(true)
   })
 })

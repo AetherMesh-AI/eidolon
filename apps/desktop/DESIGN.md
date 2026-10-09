@@ -45,8 +45,21 @@ one-off at the call site.
 
 ## Information architecture
 
-- **Chat is the home surface.** The transcript and composer stay primary; tools,
-  previews, files, review, and terminal complement the conversation.
+- **Organization is the home surface.** Command, objectives, owner requests,
+  the roster and evidence form the primary workspace. Home starts with the goal;
+  runtime configuration is inspectable, not the lead story. Chat remains a full
+  native surface with its canonical transcript, composer and session ownership.
+- **Progressive disclosure preserves authority.** Optional intake context,
+  acceptance and verification controls stay mounted behind named disclosures.
+  Delivery scope and required ownership/repository choices stay visible. Runtime
+  errors and recovery remain visible even when capability details are collapsed.
+- **History complements the organization.** The existing Sessions tree stays
+  mounted in a History disclosure, which opens on explicit chat navigation.
+  Settings lives in the rail's utility footer; tools/configuration are secondary.
+- **Organization uses the desktop foundation.** Organization surfaces alias
+  shared `--ui-*` background, text and stroke tokens so light/dark mode remains
+  coherent. `--aether-500` and `--aether-600` retain the purple brand accent;
+  secondary accent text adapts to the current foreground.
 - **Pages are durable destinations.** Chat, Skills, Messaging, and Artifacts
   remain in shell chrome. Do not hide a distinct product noun inside an
   unrelated page.

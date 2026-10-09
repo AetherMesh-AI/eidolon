@@ -45,7 +45,7 @@ it('preserves the canonical history and its input while expanding navigation and
   )
   const rail = screen.getByRole('complementary', { name: 'Eidolon navigation' })
   const input = screen.getByRole('textbox', { name: 'History filter' })
-  const summary = screen.getByText('Advanced and history')
+  const summary = screen.getByText('Tools and configuration')
   const details = summary.closest('details')!
   fireEvent.change(input, { target: { value: 'Unfinished side chat' } })
 
