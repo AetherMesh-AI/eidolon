@@ -840,7 +840,7 @@ trap 'on_signal TERM' TERM
 if [ "$CODE" -eq 0 ]; then
   # Pin the intended source before building, never infer it from the candidate
   # app (a cached release can have identical code but stale commit provenance).
-  if [ "$(uname)" = "Darwin" ]; then
+  if [ "$(uname)" = "Darwin" ] && [ -n "$RELAUNCH_TARGET" ]; then
     EXPECTED_SOURCE_COMMIT="$(git -C "$INSTALL_ROOT" rev-parse --verify HEAD 2>/dev/null)" || {
       FINAL_CODE=6 FINAL_MSG="The updated source commit could not be verified. The previous app was kept. Retry the update from a Git checkout."
       exit 6
@@ -858,7 +858,7 @@ if [ "$CODE" -eq 0 ]; then
     FINAL_CODE=6 FINAL_MSG="Code and dependencies updated, but the Desktop app rebuild failed - you are running the previous build. Run eidolon desktop --force-build from a terminal to retry."
     exit 6
   }
-  if [ "$(uname)" = "Darwin" ] && [ "$(git -C "$INSTALL_ROOT" rev-parse --verify HEAD 2>/dev/null)" != "$EXPECTED_SOURCE_COMMIT" ]; then
+  if [ "$(uname)" = "Darwin" ] && [ -n "$RELAUNCH_TARGET" ] && [ "$(git -C "$INSTALL_ROOT" rev-parse --verify HEAD 2>/dev/null)" != "$EXPECTED_SOURCE_COMMIT" ]; then
     FINAL_CODE=6 FINAL_MSG="The source checkout changed while the Desktop app was building. The previous app was kept. Stop other source updates and retry."
     exit 6
   fi
