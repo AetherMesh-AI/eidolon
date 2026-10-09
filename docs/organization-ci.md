@@ -60,7 +60,12 @@ No branch protection, repository setting, secret, or permission grant is changed
   handoff selections and legacy admission guidance. The completion, request,
   owner and project fixtures include executive decomposition; native completion
   asserts that completed packages alone cannot produce an accepted objective.
-  See [work-package design and rollout](organization-work-packages.md).
+  Owner/member chat adds exact identity and reply routing, duplicate admission,
+  cancellation/late-response fencing, reload history, and a disabled future Call
+  control through the real Electron gateway and a loopback scripted provider.
+  The separate chat admission/privacy contracts run on Linux, macOS, and Windows.
+  See [owner chat boundaries](organization-owner-chat.md) and
+  [work-package design and rollout](organization-work-packages.md).
 
 Fast component/type failures stop the desktop job before native installation,
 production build and Electron. The backend and OS guard jobs run independently

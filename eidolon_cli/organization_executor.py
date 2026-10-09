@@ -703,7 +703,7 @@ def _guard_plugin_integrations(*, tool_mode: bool = False) -> None:
 
 
 
-def _runtime_kwargs(context: dict, timeout: float) -> dict:
+def _runtime_kwargs(context: dict, timeout: float, *, require_exact_provider: bool = False) -> dict:
     from eidolon_cli.config import load_config_readonly
     from eidolon_cli.runtime_provider import resolve_runtime_provider
     from eidolon_constants import resolve_reasoning_config
@@ -720,10 +720,12 @@ def _runtime_kwargs(context: dict, timeout: float) -> dict:
     provider = selected.get("provider") or (configured.get("provider") if isinstance(configured, dict) else None)
     _guard_scoped_credentials(provider, configured)
     runtime = resolve_runtime_provider(requested=provider, target_model=model or None)
-    if selected.get("provider"):
-        from eidolon_cli.providers import normalize_provider
-        if normalize_provider(str(selected["provider"])) != normalize_provider(str(runtime.get("provider") or "")):
-            raise OrganizationExecutionError("The configured staff provider is unavailable; a different provider was not authorized.")
+    if selected.get("provider") or require_exact_provider:
+        from eidolon_cli.organization_provider_route import require_provider_route
+        try:
+            require_provider_route(provider, runtime, cfg)
+        except ValueError as exc:
+            raise OrganizationExecutionError(str(exc)) from exc
     _guard_scoped_credentials(runtime.get("provider"), configured, runtime)
     if not model:
         from eidolon_cli.models import get_default_model_for_provider
@@ -975,10 +977,10 @@ class _ToolFreeBoundary:
         return min(float(configured), remaining) if isinstance(configured, (int, float)) else remaining
 
 
-def _create_agent(kwargs: dict, cancel: threading.Event, deadline: float, tool_execution=None):
+def _create_agent(kwargs: dict, cancel: threading.Event, deadline: float, tool_execution=None, *, boundary=_ToolFreeBoundary):
     from run_agent import AIAgent
 
-    class OrganizationAgent(_ToolFreeBoundary, AIAgent):
+    class OrganizationAgent(boundary, AIAgent):
         def __init__(self, **options):
             self._organization_cancel = cancel
             self._organization_deadline = deadline

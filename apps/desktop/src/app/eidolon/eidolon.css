@@ -222,3 +222,24 @@
   .eid-command-planning { grid-column: auto; }
   .eid-delivery-scope { align-items: stretch; flex-direction: column; gap: 8px; }
 }
+
+/* Owner/member discussion uses the existing theme with compact text bubbles.
+   It deliberately has no session tool/directive surface. */
+.eid-owner-chat { margin-block: 20px; }
+.eid-owner-chat-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.eid-owner-chat-panel { display: grid; gap: 14px; margin-top: 16px; }
+.eid-owner-chat-panel .eid-note { margin: 0; }
+.eid-owner-chat-identity { display: flex; align-items: center; gap: 10px; }
+.eid-owner-chat-identity p { margin: 0; color: var(--ui-text-secondary); font-size: 12px; }
+.eid-owner-chat-transcript { list-style: none; display: flex; flex-direction: column; gap: 18px; padding: 8px 0; margin: 0; }
+.eid-owner-chat-scroll { max-height: 55vh; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.eid-owner-chat-message { display: flex; flex-direction: column; align-items: flex-start; max-width: min(85%, 680px); min-width: 0; gap: 5px; }
+.eid-owner-chat-owner { align-self: flex-end; align-items: flex-end; }
+.eid-owner-chat-agent { align-self: flex-start; }
+.eid-owner-chat-message-meta { display: flex; flex-wrap: wrap; gap: 8px; font-size: 11px; color: var(--ui-text-tertiary); }
+.eid-owner-chat-bubble { margin: 0; padding: 10px 14px; border-radius: 18px 18px 18px 4px; background: var(--ui-bg-quaternary); color: var(--ui-text-primary); white-space: pre-wrap; overflow-wrap: anywhere; }
+.eid-owner-chat-owner .eid-owner-chat-bubble { border-radius: 18px 18px 4px 18px; background: color-mix(in srgb, var(--theme-primary) 24%, var(--ui-bg-quaternary)); }
+.eid-owner-chat-turn { font-size: 11px; color: var(--ui-text-secondary); }
+.eid-owner-chat-turn p { margin: 0; }
+.eid-owner-chat-composer { display: grid; gap: 8px; }
+.eid-owner-chat-composer .eid-owner-chat-actions { justify-content: space-between; }

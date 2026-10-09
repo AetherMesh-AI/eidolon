@@ -1,12 +1,13 @@
 import type { TipId } from '@/lib/tips/catalog'
+
+import type { OrganizationConversationsCopy } from './organization-conversations'
 // Desktop i18n type contract.
 //
 // `Translations` is the single source of truth for every translatable string
 // surface. Fully translated locale files may satisfy this interface directly;
 // partial locales should use `defineLocale()` so missing desktop-only strings
 // fall back to English while new keys remain type-checked.
-
-import type { OrganizationConversationsCopy } from './organization-conversations'
+import type { OrganizationOwnerChatCopy } from './organization-owner-chat'
 import type { OrganizationRosterCopy } from './organization-roster'
 import type { OrganizationWorkCopy } from './organization-work'
 
@@ -54,6 +55,7 @@ interface AuxTaskCopy {
 }
 
 export interface Translations {
+  organizationOwnerChat: OrganizationOwnerChatCopy
   organizationConversations: OrganizationConversationsCopy
   organizationWork: OrganizationWorkCopy
   organizationRoster: OrganizationRosterCopy

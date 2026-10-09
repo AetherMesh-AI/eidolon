@@ -12,6 +12,7 @@ import { Inspector } from './inspector'
 import { OrganizationConversations } from './runtime-conversations'
 import { OrganizationManagementForm } from './runtime-management-form'
 import { OrganizationManagementHistory } from './runtime-management-history'
+import { OrganizationOwnerChat } from './runtime-owner-chat'
 import { OrganizationProjectSetupForm } from './runtime-project-setup'
 import { inheritsProfileModel } from './runtime-setup'
 import { TaskCoordination, taskCoordinationLabel } from './task-coordination'
@@ -69,6 +70,7 @@ export function Organization({
   }
 
   const [selected, setSelected] = useState<{ id: string; scope: string | undefined } | null>(null)
+  const [chatting, setChatting] = useState(false)
   const [managing, setManaging] = useState(false)
   const [projectScope, setProjectScope] = useState<string | null>(null)
 
@@ -85,6 +87,7 @@ export function Organization({
   useEffect(() => {
     if (!agent) {
       setSelected(null)
+      setChatting(false)
     }
   }, [agent])
 
@@ -195,13 +198,17 @@ export function Organization({
             aria-label={`Inspect ${item.name}`}
             className={`eid-agent eid-agent-${item.status}`}
             key={item.id}
-            onClick={() => setSelected({ id: item.id, scope: snapshot.connection?.scope })}
+            onClick={() => {
+              setChatting(false)
+              setSelected({ id: item.id, scope: snapshot.connection?.scope })
+            }}
           >
             <AgentAvatar name={item.name} />
             <span className="eid-agent-identity">
               <strong>{item.name}</strong>
               <span className="eid-agent-meta">
-                <span>{roles[item.role] || item.role}</span><small>Team: {item.team?.trim() || 'Unknown · team not recorded'}</small>
+                <span>{roles[item.role] || item.role}</span>
+                <small>Team: {item.team?.trim() || 'Unknown · team not recorded'}</small>
               </span>
               <small>
                 {item.managerId ? `Reports to ${managerName(item)}` : runtime ? managerName(item) : 'Reports to you'}
@@ -212,7 +219,11 @@ export function Organization({
             </span>
             <span className="eid-agent-state">
               <span className={`eid-status eid-status-${item.status}`}>● {item.status}</span>
-              {runtime && <small>{copy.lifecycle}: {item.lifecycle ? copy.lifecycleLabels[item.lifecycle] : copy.notReported}</small>}
+              {runtime && (
+                <small>
+                  {copy.lifecycle}: {item.lifecycle ? copy.lifecycleLabels[item.lifecycle] : copy.notReported}
+                </small>
+              )}
             </span>
           </button>
         ))}
@@ -253,126 +264,133 @@ export function Organization({
           onClose={() => setSelected(null)}
           title={agent.name}
         >
-          <p className="eid-eyebrow">{runtime ? 'Runtime agent · Gateway record' : 'Prototype agent · Not live'}</p>
-          <AgentAvatar name={agent.name} />
-          <p>{roles[agent.role] || agent.role}</p>
-          <dl>
-            {runtime && (
-              <>
-                <dt>{copy.lifecycle}</dt>
-                <dd>{agent.lifecycle ? copy.lifecycleLabels[agent.lifecycle] : copy.notReported}</dd>
-                <dt>{copy.provider}</dt>
-                <dd>{agent.provider || modelFallback(agent)}</dd>
-              </>
-            )}
-            <dt>Status</dt>
-            <dd>● {agent.status}</dd>
-            <dt>Team</dt>
-            <dd>{agent.team?.trim() || 'Unknown · team not recorded'}</dd>
-            <dt>Reports to</dt>
-            <dd>{managerName(agent)}</dd>
-            <dt>Direct reports</dt>
-            <dd>
-              {snapshot.agents
-                .filter(item => item.managerId === agent.id)
-                .map(item => item.name)
-                .join(', ') || 'None'}
-            </dd>
-            <dt>Model</dt>
-            <dd>{agent.model || (runtime ? modelFallback(agent) : unavailable)}</dd>
-            <dt>Context usage / capacity</dt>
-            <dd>
-              {agent.context?.used !== undefined || agent.context?.capacity !== undefined
-                ? `${agent.context.used ?? 'Unknown'} / ${agent.context.capacity ?? 'Unknown'} tokens`
-                : unavailable}
-            </dd>
-            <dt>Tools</dt>
-            <dd>{agent.tools?.join(', ') || (runtime && agent.tools ? copy.noTools : unavailable)}</dd>
-            {runtime && (
-              <>
-                <dt>Request types</dt>
-                <dd>{agent.requestTypes?.join(', ') || 'Not reported by runtime'}</dd>
-              </>
-            )}
-          </dl>
-          <p>{agent.summary}</p>
-          {runtime && <AgentContext agent={agent} snapshot={snapshot} />}
-          <h3>Responsibilities</h3>
-          <ul>
-            {agent.responsibilities.map(item => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-          <h3>Capabilities</h3>
-          <ul>
-            {agent.capabilities.map(item => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-          <h3>Current assignment</h3>
-          {runtime ? (
-            <p>{currentAssignment(snapshot, agent, roster, t.organizationWork)}</p>
-          ) : agent.objectiveId ? (
-            <Link to={`/objectives/${agent.objectiveId}`}>
-              {snapshot.objectives.find(item => item.id === agent.objectiveId)?.title || 'Open objective'}
-            </Link>
-          ) : (
-            <p>No assignment</p>
-          )}
           {runtime && (
+            <OrganizationOwnerChat adapter={adapter} agent={agent} onOpenChange={setChatting} snapshot={snapshot} />
+          )}
+          {!chatting && (
             <>
-              <h3>Assigned work and review</h3>
-              {assignedTasks.length ? (
-                <ul>
-                  {assignedTasks.map(item => (
-                    <li key={item.id}>
-                      <Link to={`/objectives/${item.objectiveId}`}>{item.title}</Link> ·{' '}
-                      {item.reviewerId === agent.id
-                        ? 'Review assignment'
-                        : item.managingAgentId === agent.id
-                          ? roster.managementAssignment
-                          : item.assignedById === agent.id && item.ownerId !== agent.id
-                            ? roster.plannedAssignment
-                            : item.requestType || 'Request type not recorded'}{' '}
-                      · {item.status}
-                      {item.requestType === 'review' && (
-                        <>
-                          {' '}
-                          · Reviews:{' '}
-                          {item.dependsOn
-                            .map(id => snapshot.tasks.find(dependency => dependency.id === id)?.title || id)
-                            .join(', ') || 'No task dependency recorded'}
-                        </>
-                      )}
-                      <TaskCoordination task={item} tasks={snapshot.tasks} />
-                    </li>
-                  ))}
-                </ul>
+              <p className="eid-eyebrow">{runtime ? 'Runtime agent · Gateway record' : 'Prototype agent · Not live'}</p>
+              <AgentAvatar name={agent.name} />
+              <p>{roles[agent.role] || agent.role}</p>
+              <dl>
+                {runtime && (
+                  <>
+                    <dt>{copy.lifecycle}</dt>
+                    <dd>{agent.lifecycle ? copy.lifecycleLabels[agent.lifecycle] : copy.notReported}</dd>
+                    <dt>{copy.provider}</dt>
+                    <dd>{agent.provider || modelFallback(agent)}</dd>
+                  </>
+                )}
+                <dt>Status</dt>
+                <dd>● {agent.status}</dd>
+                <dt>Team</dt>
+                <dd>{agent.team?.trim() || 'Unknown · team not recorded'}</dd>
+                <dt>Reports to</dt>
+                <dd>{managerName(agent)}</dd>
+                <dt>Direct reports</dt>
+                <dd>
+                  {snapshot.agents
+                    .filter(item => item.managerId === agent.id)
+                    .map(item => item.name)
+                    .join(', ') || 'None'}
+                </dd>
+                <dt>Model</dt>
+                <dd>{agent.model || (runtime ? modelFallback(agent) : unavailable)}</dd>
+                <dt>Context usage / capacity</dt>
+                <dd>
+                  {agent.context?.used !== undefined || agent.context?.capacity !== undefined
+                    ? `${agent.context.used ?? 'Unknown'} / ${agent.context.capacity ?? 'Unknown'} tokens`
+                    : unavailable}
+                </dd>
+                <dt>Tools</dt>
+                <dd>{agent.tools?.join(', ') || (runtime && agent.tools ? copy.noTools : unavailable)}</dd>
+                {runtime && (
+                  <>
+                    <dt>Request types</dt>
+                    <dd>{agent.requestTypes?.join(', ') || 'Not reported by runtime'}</dd>
+                  </>
+                )}
+              </dl>
+              <p>{agent.summary}</p>
+              {runtime && <AgentContext agent={agent} snapshot={snapshot} />}
+              <h3>Responsibilities</h3>
+              <ul>
+                {agent.responsibilities.map(item => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+              <h3>Capabilities</h3>
+              <ul>
+                {agent.capabilities.map(item => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+              <h3>Current assignment</h3>
+              {runtime ? (
+                <p>{currentAssignment(snapshot, agent, roster, t.organizationWork)}</p>
+              ) : agent.objectiveId ? (
+                <Link to={`/objectives/${agent.objectiveId}`}>
+                  {snapshot.objectives.find(item => item.id === agent.objectiveId)?.title || 'Open objective'}
+                </Link>
               ) : (
-                <p>No task assignments recorded.</p>
+                <p>No assignment</p>
               )}
+              {runtime && (
+                <>
+                  <h3>Assigned work and review</h3>
+                  {assignedTasks.length ? (
+                    <ul>
+                      {assignedTasks.map(item => (
+                        <li key={item.id}>
+                          <Link to={`/objectives/${item.objectiveId}`}>{item.title}</Link> ·{' '}
+                          {item.reviewerId === agent.id
+                            ? 'Review assignment'
+                            : item.managingAgentId === agent.id
+                              ? roster.managementAssignment
+                              : item.assignedById === agent.id && item.ownerId !== agent.id
+                                ? roster.plannedAssignment
+                                : item.requestType || 'Request type not recorded'}{' '}
+                          · {item.status}
+                          {item.requestType === 'review' && (
+                            <>
+                              {' '}
+                              · Reviews:{' '}
+                              {item.dependsOn
+                                .map(id => snapshot.tasks.find(dependency => dependency.id === id)?.title || id)
+                                .join(', ') || 'No task dependency recorded'}
+                            </>
+                          )}
+                          <TaskCoordination task={item} tasks={snapshot.tasks} />
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p>No task assignments recorded.</p>
+                  )}
+                </>
+              )}
+              <h3>{t.organizationWork.executionConfig}</h3>
+              {runtime && <p>Agent ID: {agent.id}</p>}
+              <p>{agent.profileName || 'No runtime profile linked'}</p>
+              <Link to="/profiles">{t.organizationWork.executionConfig} →</Link>
+              <p>
+                <Link to="/activity">{t.organizationWork.executionHistory} →</Link>
+              </p>
+              {runtime && (
+                <>
+                  <h3>Execution scope</h3>
+                  <p>{snapshot.runtime?.scope || 'Execution scope not reported by runtime.'}</p>
+                </>
+              )}
+              {runtime && <OrganizationConversations agentId={agent.id} snapshot={snapshot} />}
+              <h3>Recent activity</h3>
+              {snapshot.activity
+                .filter(item => item.agentId === agent.id)
+                .map(item => (
+                  <p key={item.id}>{item.text}</p>
+                ))}
             </>
           )}
-          <h3>{t.organizationWork.executionConfig}</h3>
-          {runtime && <p>Agent ID: {agent.id}</p>}
-          <p>{agent.profileName || 'No runtime profile linked'}</p>
-          <Link to="/profiles">{t.organizationWork.executionConfig} →</Link>
-          <p>
-            <Link to="/activity">{t.organizationWork.executionHistory} →</Link>
-          </p>
-          {runtime && (
-            <>
-              <h3>Execution scope</h3>
-              <p>{snapshot.runtime?.scope || 'Execution scope not reported by runtime.'}</p>
-            </>
-          )}
-          {runtime && <OrganizationConversations agentId={agent.id} snapshot={snapshot} />}
-          <h3>Recent activity</h3>
-          {snapshot.activity
-            .filter(item => item.agentId === agent.id)
-            .map(item => (
-              <p key={item.id}>{item.text}</p>
-            ))}
         </Inspector>
       )}
     </>

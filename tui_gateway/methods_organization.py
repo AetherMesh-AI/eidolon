@@ -32,9 +32,9 @@ def _organization_snapshot(organization):
     return result
 
 
-def _organization_method(name: str):
+def _organization_method(name: str, *, registry=None):
     def decorate(fn):
-        @method(name)
+        @(registry.method(name) if registry is not None else method(name))
         def handler(rid, params):
             # WS auth happens at upgrade; local stdio is its existing authority.
             # Neither an unbound direct call nor a dead socket grants access.

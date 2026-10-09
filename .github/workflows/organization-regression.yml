@@ -71,7 +71,7 @@ jobs:
         run: |
           git rev-parse HEAD HEAD^{tree}
           scripts/run_tests.sh tests/eidolon_cli/test_organization*.py tests/tui_gateway/test_organization*.py tests/gateway/test_organization*.py tests/tools/test_organization*.py tests/scripts/test_organization*.py tests/agent/test_org_skill_namespace.py -j 4
-          .venv/bin/ruff check eidolon_cli/organization*.py tui_gateway/methods_organization.py
+          .venv/bin/ruff check eidolon_cli/organization*.py tui_gateway/methods_organization*.py
           .venv/bin/python scripts/check_compat_pointers.py
       - name: Verify profile export and consistent recovery backups
         run: |
@@ -162,6 +162,8 @@ jobs:
             tests/tui_gateway/test_organization_project_setup.py
           )
           leadership_staffing_tests=(
+            tests/eidolon_cli/test_organization_owner_chat*.py
+            tests/tui_gateway/test_organization_owner_chat*.py
             tests/eidolon_cli/test_organization_conversations.py
             tests/eidolon_cli/test_organization_conversation_security.py
             tests/eidolon_cli/test_organization_conversation_runtime.py
