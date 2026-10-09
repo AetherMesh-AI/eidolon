@@ -5,6 +5,7 @@ are imported lazily inside the functions that use them (avoids an import cycle).
 """
 
 import logging
+import json
 import contextlib
 import argparse
 import os
@@ -94,12 +95,49 @@ def _renderer_bundle_torn(dist_dir: Path) -> bool:
     return False
 
 
+def _desktop_build_identity_current(desktop_dir: Path, project_root: Path, *, source_mode: bool) -> bool:
+    """Check the artifact itself, not a profile's content-hash cache.
+
+    A backend-only commit leaves renderer content unchanged but still changes
+    the packaged build identity. Reusing the old app can replace a newer
+    installed app with an older stamped copy during source update.
+    """
+    from eidolon_cli.eidolon_version import runtime_identity, valid_sha, validate_identity
+
+    expected = runtime_identity(project_root)
+    if not valid_sha(expected.get("commit")):
+        # Unversioned source archives retain their existing content-cache path;
+        # a Git checkout whose HEAD cannot be read must not reuse an old app.
+        return not (project_root / ".git").exists()
+    if source_mode:
+        stamp_path = desktop_dir / "build" / "install-stamp.json"
+    else:
+        executable = _desktop_packaged_executable(desktop_dir)
+        if executable is None:
+            return False
+        resources = (executable.parent.parent / "Resources" if sys.platform == "darwin"
+                     else executable.parent / "resources")
+        stamp_path = resources / "install-stamp.json"
+    try:
+        built = validate_identity(json.loads(stamp_path.read_text(encoding="utf-8")))
+    except (OSError, ValueError, TypeError):
+        return False
+    if not built or (not source_mode and built.get("dirty") is not False):
+        return False
+    return all(built[key] == expected[key] for key in (
+        "schemaVersion", "version", "channel", "repository", "updateBranch", "commit", "shortCommit"))
+
+
 def _desktop_build_needed(desktop_dir: Path, project_root: Path, *, source_mode: bool) -> bool:
     """True when the desktop build output is stale, missing, torn, or built in the other mode."""
     if source_mode:
         if not _desktop_dist_exists(desktop_dir):
             return True
     elif _desktop_packaged_executable(desktop_dir) is None:
+        return True
+
+    if not _desktop_build_identity_current(desktop_dir, project_root, source_mode=source_mode):
+        print("  → Desktop build identity differs from the source checkout; rebuilding it")
         return True
 
     # A torn bundle is stale no matter what the stamp says: the hash describes
@@ -1556,7 +1594,7 @@ def cmd_gui(args: argparse.Namespace):
             packaged_executable = built
     else:
         build_label = "source build" if source_mode else "packaged app"
-        print(f"✓ Desktop {build_label} is up to date (content stamp matches)")
+        print(f"✓ Desktop {build_label} is up to date (content and build identity match)")
 
     # Best-effort and idempotent; a failure must never stop the app from launching.
     _register_linux_desktop_entry()

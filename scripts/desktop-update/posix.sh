@@ -78,6 +78,7 @@ STARTED_AT="$(date +%s)"  # the shim's elapsed clock; see serve-ui.py
 
 UI_SERVER_PID="" UI_BROWSER_PID="" UI_PROFILE_DIR="" FINAL_CODE=1
 FINAL_MSG="update did not complete"
+EXPECTED_SOURCE_COMMIT=""
 DONE_NOTE=""  # set when the update succeeded but the app will NOT reopen itself
 
 log() { echo "$(date +%Y-%m-%dT%H:%M:%S%z) $1" | tee -a "$LOG" 2>/dev/null; }
@@ -383,7 +384,7 @@ mac_swap() {
     return 1
   }
   publish_stage "Installing the new app"
-  if message="$("$py" "$SCRIPT_DIR/mac_transaction.py" "$rebuilt" "$RELAUNCH_TARGET" 2>&1)"; then
+  if message="$("$py" "$SCRIPT_DIR/mac_transaction.py" "$rebuilt" "$RELAUNCH_TARGET" "$EXPECTED_SOURCE_COMMIT" 2>&1)"; then
     log "$message"
   else
     FINAL_CODE=7 MANUAL=1 FINAL_MSG="$message"
@@ -415,7 +416,11 @@ launch_app() { # attempted BEFORE the terminal event (launch acceptance is
     [ -d "$RELAUNCH_TARGET" ] || { log "WARNING: relaunch target missing: $RELAUNCH_TARGET"; return 1; }
     local py
     py="$(mac_update_python)" || { log "WARNING: no working interpreter for relaunch verification"; return 1; }
-    "$py" "$SCRIPT_DIR/mac_relaunch.py" "$RELAUNCH_TARGET" >> "$LOG" 2>&1 \
+    local verify_args=()
+    # Recovery launches the preserved old app; only successful installs must
+    # prove the intended new source identity again before opening.
+    [ "$FINAL_CODE" -ne 0 ] || verify_args=("$EXPECTED_SOURCE_COMMIT")
+    "$py" "$SCRIPT_DIR/mac_relaunch.py" "$RELAUNCH_TARGET" ${verify_args[@]+"${verify_args[@]}"} >> "$LOG" 2>&1 \
       || { log "WARNING: app relaunch did not become ready"; return 1; }
   elif [ "$GATE" = "relaunch" ]; then
     # setsid only proves the wrapper shell started, so verify acceptance:
@@ -436,10 +441,10 @@ launch_app() { # attempted BEFORE the terminal event (launch acceptance is
 MANUAL=0  # 1 = update landed but the user must act (result protocol field)
 
 write_result() {
-  printf '{"ok":%s,"exit_code":%s,"manual":%s,"message":"%s","branch":"%s","finished_at":%s}' \
+  printf '{"ok":%s,"exit_code":%s,"manual":%s,"message":"%s","branch":"%s","expected_source_commit":"%s","finished_at":%s}' \
     "$([ "$FINAL_CODE" -eq 0 ] && echo true || echo false)" "$FINAL_CODE" \
     "$([ "$MANUAL" -eq 1 ] && echo true || echo false)" \
-    "$(json_escape "$FINAL_MSG")" "$(json_escape "$BRANCH")" "$(date +%s)" \
+    "$(json_escape "$FINAL_MSG")" "$(json_escape "$BRANCH")" "$(json_escape "$EXPECTED_SOURCE_COMMIT")" "$(date +%s)" \
     > "$RESULT.tmp" 2>/dev/null && mv -f "$RESULT.tmp" "$RESULT" 2>/dev/null || true
 }
 
@@ -833,6 +838,14 @@ trap 'on_signal TERM' TERM
 # Desktop command's artifact check here; its content stamp avoids rebuilding
 # an app the update already produced. CLI-only updates keep their opt-out.
 if [ "$CODE" -eq 0 ]; then
+  # Pin the intended source before building, never infer it from the candidate
+  # app (a cached release can have identical code but stale commit provenance).
+  if [ "$(uname)" = "Darwin" ] && [ -n "$RELAUNCH_TARGET" ]; then
+    EXPECTED_SOURCE_COMMIT="$(git -C "$INSTALL_ROOT" rev-parse --verify HEAD 2>/dev/null)" || {
+      FINAL_CODE=6 FINAL_MSG="The updated source commit could not be verified. The previous app was kept. Retry the update from a Git checkout."
+      exit 6
+    }
+  fi
   BUILD_ARGS=(desktop --build-only)
   if printf '%s' "$OUT" | grep -q "Desktop build failed"; then
     log "desktop build failed inside eidolon update; retrying build"
@@ -845,6 +858,10 @@ if [ "$CODE" -eq 0 ]; then
     FINAL_CODE=6 FINAL_MSG="Code and dependencies updated, but the Desktop app rebuild failed - you are running the previous build. Run eidolon desktop --force-build from a terminal to retry."
     exit 6
   }
+  if [ "$(uname)" = "Darwin" ] && [ -n "$RELAUNCH_TARGET" ] && [ "$(git -C "$INSTALL_ROOT" rev-parse --verify HEAD 2>/dev/null)" != "$EXPECTED_SOURCE_COMMIT" ]; then
+    FINAL_CODE=6 FINAL_MSG="The source checkout changed while the Desktop app was building. The previous app was kept. Stop other source updates and retry."
+    exit 6
+  fi
 fi
 
 if [ "$CODE" -eq 0 ]; then FINAL_CODE=0 FINAL_MSG="Update complete."
