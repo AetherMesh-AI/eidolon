@@ -225,6 +225,29 @@ Worker roles without discarding identity or work history. Staffing and backend
 application/validation remain deterministic. Planning, working, reviewing,
 integration and executive acceptance run as separate bounded AIAgent turns.
 
+New routine `request.question` contracts follow the assigned management chain.
+A Worker's authoritative task assignment selects its Manager (which may differ
+from the package planner), followed by the objective's owning Executive. A
+Manager's question uses package or objective ownership to select the Executive.
+Each leader still needs explicit `answer.question` authority, the question
+capability, and existing team and policy eligibility. A busy Manager waits; an
+ineligible leader is skipped with a retained reason. Missing or changed ownership
+goes to the owner rather than an unrelated same-team advisor.
+
+A handler may return `{"cannot_answer":"reason"}` to pass the original question
+forward once. Denial, uncertainty, transport failure, expired execution, exhausted
+limits, or no authorized next leader remains **Pending intervention**. The request
+inspector displays the exact leader, outcome, reason, and time for each routing
+receipt. Staff refresh cannot reopen these owner-gated questions. An owner answer
+resumes the original assignment with its exact question and answer provenance.
+Escalation shares the original request's attempts, model-call reservations,
+objective stage limit, and deadline; it creates no replacement request.
+
+Existing question contracts retain legacy routing on upgrade and restart. New
+questions receive a versioned route; decision, staffing and permission requests
+retain their existing semantics. Direct owner chat with persistent agents is
+unchanged and does not grant authority to answer objective questions.
+
 Browsing, source working-tree writes, sending, purchasing and arbitrary command
 execution remain unavailable. The optional controlled runner supports only the
 fixed Python unittest recipe below, and optional source integration writes a new

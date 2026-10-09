@@ -9,6 +9,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
+from tests.organization_question_helpers import legacy_question_creation  # noqa: F401
+
+pytestmark = pytest.mark.usefixtures('legacy_question_creation')
 
 from eidolon_cli.organization_config import OrganizationSettings
 from eidolon_cli.organization_service import OrganizationService

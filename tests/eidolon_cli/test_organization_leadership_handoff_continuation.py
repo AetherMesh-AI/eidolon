@@ -2,9 +2,10 @@
 from eidolon_cli.organization_store import OrganizationStore
 from tests.organization_package_helpers import claim_after_decomposition
 from tests.organization_management_helpers import configure, member, settings
+from tests.organization_question_helpers import legacy_question_creation  # noqa: F401
 
 
-def test_objective_handoff_preserves_unselected_peer_question_continuation(tmp_path):
+def test_objective_handoff_preserves_unselected_peer_question_continuation(tmp_path, legacy_question_creation):
     roster = [member('team-lead', role='Manager',
                      capabilities=['request.plan', 'request.integrate', 'request.question'],
                      authority=['answer.question']),

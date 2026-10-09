@@ -334,6 +334,31 @@ it('does not claim all clear when filters hide another team’s pending interven
   view.unmount()
 })
 
+it('shows exact leadership receipts without disguising a denied question as answered', async () => {
+  const initial = snapshot({
+    response: null,
+    questionRouting: {
+      version: 1, leaderIds: ['manager-a', 'chief'], cursor: 2,
+      receipts: [
+        { agentId: 'manager-a', outcome: 'cannot_answer', text: 'The Executive owns the audience decision.', createdAt: '2026-10-09T10:00:00Z' },
+        { agentId: 'chief', outcome: 'denied', text: 'I refuse to disclose the confidential audience.', createdAt: '2026-10-09T10:01:00Z' }
+      ]
+    }
+  })
+
+  const view = open(async () => initial)
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Inspect request: request.question' }))
+  const history = within(screen.getByRole('region', { name: 'Question routing history' }))
+  expect(history.getByText('manager-a: Cannot answer')).toBeTruthy()
+  expect(history.getByText('chief: Denied')).toBeTruthy()
+  expect(history.getByText('The Executive owns the audience decision.')).toBeTruthy()
+  expect(history.getByText('I refuse to disclose the confidential audience.')).toBeTruthy()
+  expect(screen.queryByRole('region', { name: 'Recorded response' })).toBeNull()
+  expect(screen.getByRole('textbox', { name: 'Response' })).toBeTruthy()
+  view.unmount()
+})
+
 it('waits for authoritative request state before asserting nothing needs input', async () => {
   let resolve!: (value: OrganizationSnapshot) => void
   const view = open(() => new Promise<OrganizationSnapshot>(yes => { resolve = yes }))

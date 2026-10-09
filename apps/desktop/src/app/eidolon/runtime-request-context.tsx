@@ -90,6 +90,19 @@ export function RuntimeRequestContext({
       ) : null}
       {request.type === 'request.permission' && <p className="eid-note">{copy.permissionNote}</p>}
       {request.managementProposal && <ManagementProposal proposal={request.managementProposal} />}
+      {request.questionRouting && (
+        <section aria-label={copy.questionRouting}>
+          <h3>{copy.questionRouting}</h3>
+          <p>{request.questionRouting.leaderIds.map(id => person(id)).join(' → ') || copy.notRecorded}</p>
+          {request.questionRouting.receipts.map((receipt, index) => (
+            <div key={`${receipt.agentId}-${index}`}>
+              <p>{person(receipt.agentId)}: {copy[receipt.outcome]}</p>
+              <p className="eid-result-text">{receipt.text}</p>
+              <time dateTime={receipt.createdAt}>{new Date(receipt.createdAt).toLocaleString()}</time>
+            </div>
+          ))}
+        </section>
+      )}
       {request.response && (
         <section aria-label={copy.responseRecorded}>
           <h3>{copy.responseRecorded}</h3>

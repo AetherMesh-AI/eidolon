@@ -1,6 +1,9 @@
 """No-progress loops stop visibly without losing retained responses or identities."""
 from tests.organization_package_helpers import claim_after_decomposition
 import pytest
+from tests.organization_question_helpers import legacy_question_creation  # noqa: F401
+
+pytestmark = pytest.mark.usefixtures('legacy_question_creation')
 
 from eidolon_cli.organization_config import OrganizationSettings
 from eidolon_cli.organization_store import OrganizationStore

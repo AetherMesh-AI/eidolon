@@ -4,6 +4,7 @@ import pytest
 from eidolon_cli import organization_service as services
 from eidolon_cli.organization_store import OrganizationStore
 import tui_gateway.server as server
+from tests.organization_question_helpers import legacy_question_creation  # noqa: F401
 
 
 def rpc(method, **params):
@@ -84,7 +85,7 @@ def test_config_rpc_live_refresh_preserves_saved_roster_and_exact_duplicate_with
     assert {row['id'] for row in refreshed['runtime']['management']['configuration']['roster']} == {row['id'] for row in config['roster']}
 
 
-def test_new_handler_configuration_refreshes_unhandled_question_without_retrying_failed_calls(service):
+def test_new_handler_configuration_refreshes_legacy_question_without_retrying_failed_calls(service, legacy_question_creation):
     _, question = pending_question(service.store)
     initial = rpc('organization.snapshot')['runtime']['management']
     config = initial['configuration']
