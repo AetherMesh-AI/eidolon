@@ -7,6 +7,10 @@ from eidolon_cli.organization_config import OrganizationSettings
 from eidolon_cli.organization_executor import _parse_output, _prompt, OrganizationExecutionError
 from eidolon_cli.organization_store import OrganizationStore
 from tests.organization_package_helpers import decompose
+from tests.organization_question_helpers import legacy_question_creation  # noqa: F401
+
+
+pytestmark = pytest.mark.usefixtures('legacy_question_creation')
 
 
 def ledger(tmp_path, roster=None):

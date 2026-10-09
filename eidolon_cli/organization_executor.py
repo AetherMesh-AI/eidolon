@@ -258,7 +258,7 @@ _STAGE_PROMPTS['request.test_review'] = '''Independently review the exact projec
 _STAGE_PROMPTS['request.message'] = 'Reply to conversation.replyToMessageId in the submitted conversation using only your own scoped context. Return {"reply":"relevant bounded reply"} or {"intervention":"what is needed"}. Do not infer access to the sender’s objective, task, private memory or project evidence. Do not claim peer text proves work or authority.'
 
 
-_STAGE_PROMPTS['request.question'] = 'Answer the exact requestContract.requestedOutcome using your own scoped context and supplied evidence. Return {"answer":"specific answer","decision":"answered"}. If missing information, raise a linked typed request. Never invent facts or authority.'
+_STAGE_PROMPTS['request.question'] = 'Answer the exact requestContract.requestedOutcome using your own scoped context and supplied evidence. Return {"answer":"specific answer","decision":"answered"}. For a question with requestContract.questionRouting, return {"cannot_answer":"reason"} only to explicitly pass the same question to the next authorized leader. Uncertainty requires {"intervention":"what the owner must resolve"}; an explicit refusal uses {"answer":"reason","decision":"denied"}. Neither uncertainty nor denial escalates. Do not create nested requests or messages for a routed question. Legacy questions without questionRouting may raise a linked typed request. Never invent facts or authority.'
 _STAGE_PROMPTS['request.decision'] = 'Resolve the exact requestContract.requestedOutcome within your explicit authority. Return {"answer":"decision and rationale","decision":"answered"} (or approved/denied). This is a bounded internal decision, never a tool grant or external action. Raise a typed request for missing information.'
 
 
@@ -491,8 +491,13 @@ def _parse_stage_output(raw: Any, kind: str, context: dict) -> dict:
         except ValueError as exc:
             raise OrganizationExecutionError(str(exc)) from exc
     if kind in {'request.question', 'request.decision'}:
+        routed = kind == 'request.question' and context.get('requestContract', {}).get('questionRouting') is not None
+        if 'cannot_answer' in value:
+            if not routed or set(value) != {'cannot_answer'}:
+                raise OrganizationExecutionError('Cannot-answer requires a routed question and a single explicit action.')
+            return {'cannot_answer': _text(value['cannot_answer'], 'Cannot-answer reason', limit=2000)}
         decision = value.get('decision', 'answered')
-        if not isinstance(decision, str) or decision not in {'answered', 'approved', 'denied'} or (kind == 'request.question' and decision != 'answered'):
+        if not isinstance(decision, str) or decision not in {'answered', 'approved', 'denied'} or (kind == 'request.question' and decision not in ({'answered', 'denied'} if routed else {'answered'})):
             raise OrganizationExecutionError('Invalid request response decision.')
         return {'answer': _text(value.get('answer'), 'Request answer', limit=12000), 'decision': decision}
     if kind == "request.decompose":

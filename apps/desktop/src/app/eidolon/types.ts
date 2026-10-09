@@ -424,6 +424,17 @@ export interface OrganizationRequest {
   requestedRoutes?: { team: string; type: string }[]
   requestedWorkers?: number
   requesterId?: string
+  questionRouting?: {
+    version: number
+    leaderIds: string[]
+    cursor: number
+    receipts: {
+      agentId: string
+      outcome: 'ineligible' | 'cannot_answer' | 'denied'
+      text: string
+      createdAt: string
+    }[]
+  } | null
   requestedOutcome?: string
   requiredAuthority?: string
   parentRequestId?: string | null

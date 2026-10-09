@@ -66,6 +66,8 @@ No branch protection, repository setting, secret, or permission grant is changed
   reload history, and a disabled future Call
   control through the real Electron gateway and a loopback scripted provider.
   The separate chat admission/privacy contracts run on Linux, macOS, and Windows.
+  Management question routing and synthetic provider escalation/accounting also
+  run on all three hosts, including assignment fencing and owner-gated fallback.
   See [owner chat boundaries](organization-owner-chat.md) and
   [work-package design and rollout](organization-work-packages.md).
 

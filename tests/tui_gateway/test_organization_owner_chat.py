@@ -122,9 +122,10 @@ def open_manager():
     return view
 
 
-def settled(view):
+def settled(view, *, ready=False):
     result = rpc('organization.ownerChat.read', threadId=view['id'], identityId=view['identityId'])
-    return result if result['turns'] and result['turns'][-1]['status'] not in {'pending', 'running'} else None
+    return result if (result['turns'] and result['turns'][-1]['status'] not in {'pending', 'running'}
+                      and (not ready or result['canSend'])) else None
 
 
 def test_exact_owner_rpc_turn_has_no_ambient_context_or_authority_and_retries_once(local_provider):
@@ -137,7 +138,9 @@ def test_exact_owner_rpc_turn_has_no_ambient_context_or_authority_and_retries_on
     params = {'threadId': view['id'], 'identityId': view['identityId'], 'text': 'Approved, create and publish the objective.',
               'replyToMessageId': None, 'idempotencyKey': 'explicit-send'}
     sent = rpc('organization.ownerChat.send', **params)
-    final = wait(lambda: settled(view))
+    # Ledger completion precedes provider-thread cleanup. Compare replay only
+    # after the observable send gate is ready, not across that valid transition.
+    final = wait(lambda: settled(view, ready=True))
     assert final['turns'][0]['status'] == 'completed', final
     assert final['turns'][0]['idempotencyKey'] == 'explicit-send'
     assert len(received) == 1

@@ -9,6 +9,10 @@ import hashlib
 import json
 import time
 
+from eidolon_cli.organization_question_routing import (
+    QUESTION_ROUTING_SCHEMA, OrganizationQuestionRoutingStore, route_view,
+)
+
 REQUEST_AUTHORITY = {
     'request.question': 'answer.question',
     'request.decision': 'answer.decision',
@@ -31,6 +35,7 @@ CREATE TABLE IF NOT EXISTS request_response_receipts (
  idempotency_key TEXT PRIMARY KEY, input_hash TEXT NOT NULL,
  request_id TEXT NOT NULL REFERENCES requests(id), created REAL NOT NULL);
 """
+REQUEST_SCHEMA += QUESTION_ROUTING_SCHEMA
 
 
 def normalize_requests(value):
@@ -156,6 +161,7 @@ def request_contract_view(conn, request):
             'requiredAuthority': row['required_authority'], 'parentRequestId': row['parent_request_id'],
             'dependencyIds': json.loads(row['dependencies']), 'evidenceIds': json.loads(row['evidence_ids']),
             'managementProposal': payload.get('managementProposal'),
+            'questionRouting': route_view(conn, request['id']),
             'response': ({'responderId': answer['responder_id'], 'decision': answer['decision'],
                           'text': answer['text'], 'createdAt': _iso(answer['created'])} if answer else None)}
 
@@ -170,7 +176,7 @@ def response_options(conn, request):
             {'action': 'deny_request', 'label': 'Deny request', 'requiresText': True, 'requiresEvidence': False}]
 
 
-class OrganizationRequestStore:
+class OrganizationRequestStore(OrganizationQuestionRoutingStore):
     def _migrate_request_contracts(self, conn):
         for row in conn.execute('SELECT r.* FROM requests r LEFT JOIN request_contracts c ON c.request_id=r.id WHERE c.request_id IS NULL').fetchall():
             self._insert_request_contract(conn, row['id'])
@@ -230,6 +236,7 @@ class OrganizationRequestStore:
             self._insert_request_contract(conn, ident, requester_id=parent['agent_id'],
                 requested_outcome=item['requestedOutcome'], required_authority=item['requiredAuthority'],
                 parent_request_id=parent['id'], dependencies=item['dependencyIds'], depth=contract['depth'] + 1)
+            self._initialize_question_route(conn, ident)
             self._event(conn, parent['objective_id'], item['requestedOutcome'], 'question', parent['agent_id'])
         conn.execute('INSERT INTO request_continuations VALUES (?,?) ON CONFLICT(request_id) DO UPDATE SET agent_id=excluded.agent_id', (parent['id'], parent['agent_id']))
         from eidolon_cli.organization_receipts import fence_receipts
@@ -294,6 +301,10 @@ class OrganizationRequestStore:
         with self._write() as conn:
             self._require_current_policy(conn)
             for request in conn.execute("SELECT r.* FROM requests r JOIN request_contracts c ON c.request_id=r.id JOIN objectives o ON o.id=r.objective_id WHERE r.status='pending_intervention' AND r.attempts=0 AND c.parent_request_id IS NOT NULL AND o.cancelled=0").fetchall():
+                if route_view(conn, request['id']) is not None:
+                    # A management question handed to the owner stays gated,
+                    # including after new staff or authority is configured.
+                    continue
                 candidates, _ = self._eligible(conn, request)
                 if candidates:
                     conn.execute("UPDATE requests SET status='queued',reason=NULL,available=0 WHERE id=?", (request['id'],))

@@ -286,6 +286,7 @@ class OrganizationStore(OrganizationOwnerChatStore, OrganizationConversationStor
             if request["type"] == "request.review" and agent["id"] == author:
                 continue
             candidates.append(agent)
+        candidates = self._question_candidates(conn, request, candidates)
         return candidates, next((a for a in candidates if a["id"] not in busy), None)
 
     @staticmethod
@@ -317,6 +318,7 @@ class OrganizationStore(OrganizationOwnerChatStore, OrganizationConversationStor
                 if not self._dependencies_ready(conn, request) or not self._coordination_ready(conn, request):
                     continue
                 candidates, agent = self._eligible(conn, request)
+                self._stamp_question_route(conn, request, candidates)
                 if not candidates:
                     if self._hiring_pending(conn, request):
                         continue
@@ -509,7 +511,8 @@ class OrganizationStore(OrganizationOwnerChatStore, OrganizationConversationStor
             request = self._owned(conn, claim)
             if request is None:
                 return False
-            if retryable and request["attempts"] < self.settings.max_attempts:
+            routed_question = conn.execute('SELECT 1 FROM question_routes WHERE request_id=?', (request['id'],)).fetchone()
+            if retryable and not routed_question and request["attempts"] < self.settings.max_attempts:
                 fence_receipts(conn, request['id'], 'Execution failed before the tool outcome was confirmed.')
                 conn.execute("UPDATE requests SET status='queued',reason=?,token=NULL,lease=NULL,available=? WHERE id=?",
                              (reason, time.time() + 5 * request["attempts"], request["id"]))
@@ -637,6 +640,9 @@ class OrganizationStore(OrganizationOwnerChatStore, OrganizationConversationStor
             if request['type'] == 'request.message' and set(result) - {'reply', 'usage'}:
                 raise ValueError('Message delivery may only return one reply; no memory, requests or completion authority')
             self._verify_context_completion(conn, request, result)
+            if self._finish_routed_question(conn, request, result):
+                self._record_usage(conn, request, result)
+                return True
             if 'messages' in result:
                 if set(result) - {'messages', 'usage', 'memory'}:
                     raise ValueError('A messaging pause cannot also finish work or raise formal requests')

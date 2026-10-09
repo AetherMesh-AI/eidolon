@@ -162,6 +162,8 @@ jobs:
             tests/tui_gateway/test_organization_project_setup.py
           )
           leadership_staffing_tests=(
+            tests/eidolon_cli/test_organization_question_routing.py
+            tests/eidolon_cli/test_organization_question_wire.py
             tests/eidolon_cli/test_organization_owner_chat*.py
             tests/tui_gateway/test_organization_owner_chat*.py
             tests/eidolon_cli/test_organization_conversations.py
