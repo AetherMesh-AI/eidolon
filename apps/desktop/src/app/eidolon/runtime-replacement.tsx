@@ -138,6 +138,44 @@ function ReplacementReview({
               {copy.replacementCriteria}
               <Textarea onChange={event => setCriteria(event.target.value)} required value={criteria} />
             </label>
+            <h3>{copy.replacementStopped}</h3>
+            <ul>
+              {draft.reasonCodes.map(code => (
+                <li key={code}>
+                  {
+                    {
+                      deadline: copy.replacementExpired,
+                      model_calls: copy.replacementCalls,
+                      tokens: copy.replacementTokens,
+                      cost: copy.replacementCost,
+                      stages: copy.replacementStages
+                    }[code]
+                  }
+                </li>
+              ))}
+            </ul>
+            <p>{copy.replacementRetained}</p>
+            <dl aria-label={copy.replacementOldUsage}>
+              <dt>Model calls</dt>
+              <dd>
+                {draft.sourceUsage.modelCalls} / {draft.sourceUsage.modelCallLimit}
+              </dd>
+              <dt>Reserved tokens</dt>
+              <dd>
+                {draft.sourceUsage.reservedTokens} / {draft.sourceUsage.tokenLimit}
+              </dd>
+              <dt>Configured reserved cost / ceiling (USD)</dt>
+              <dd>
+                {draft.sourceUsage.configuredCostReservedUsd ?? 'Unknown'} /{' '}
+                {draft.sourceUsage.configuredCostLimitUsd ?? 'Not configured'}
+              </dd>
+              <dt>Stages</dt>
+              <dd>
+                {draft.sourceUsage.stages} / {draft.sourceUsage.stageLimit}
+              </dd>
+              <dt>Original deadline</dt>
+              <dd>{draft.sourceUsage.deadlineAt}</dd>
+            </dl>
             <h3>{copy.replacementAllowance}</h3>
             <dl>
               <dt>Model calls</dt>

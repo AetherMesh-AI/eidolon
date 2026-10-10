@@ -17,6 +17,22 @@ const original: Objective = {
 }
 
 const draft: ObjectiveReplacementDraft = {
+  reasonCodes: ['model_calls'],
+  sourceUsage: {
+    modelCalls: 8,
+    modelCallLimit: 8,
+    reservedTokens: 4096,
+    tokenLimit: 8192,
+    stages: 5,
+    stageLimit: 10,
+    inputTokens: 0,
+    outputTokens: 0,
+    usageComplete: false,
+    perCallOutputLimit: 512,
+    configuredCostReservedUsd: null,
+    configuredCostLimitUsd: '1.00',
+    deadlineAt: '2026-10-11T00:00:00Z'
+  },
   sourceId: original.id,
   sourceVersion: 'a'.repeat(64),
   title: original.title,
@@ -87,6 +103,8 @@ it('requires fresh consent, preserves editable draft, and submits once across ra
   fireEvent.change(screen.getByRole('textbox', { name: 'Revised scope' }), {
     target: { value: 'Revised scope from owner' }
   })
+  expect(screen.getByText('Model-call allowance exhausted')).toBeTruthy()
+  expect(screen.getByLabelText('Original retained usage').textContent).toContain('8 / 8')
   fireEvent.click(screen.getByRole('checkbox'))
   const confirm = screen.getByRole('button', { name: 'Cancel original and create replacement' })
   fireEvent.click(confirm)
@@ -110,6 +128,8 @@ it('does not navigate a closed review on late success and exposes durable replac
   const test = setup()
   fireEvent.click(screen.getByRole('button', { name: 'Review replacement' }))
   await screen.findByRole('textbox', { name: 'Revised scope' })
+  expect(screen.getByText('Model-call allowance exhausted')).toBeTruthy()
+  expect(screen.getByLabelText('Original retained usage').textContent).toContain('8 / 8')
   fireEvent.click(screen.getByRole('checkbox'))
   fireEvent.click(screen.getByRole('button', { name: 'Cancel original and create replacement' }))
   fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))

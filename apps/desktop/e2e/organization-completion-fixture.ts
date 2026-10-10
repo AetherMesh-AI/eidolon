@@ -60,7 +60,7 @@ export interface CompletionStage {
   outputLimit: number | undefined
 }
 
-function resultFor(kind: string, context: StageContext) {
+function resultFor(kind: string, context: StageContext, taskCount = 1) {
   const evidence = exactOrganizationEvidence(context)
 
   if (
@@ -73,19 +73,17 @@ function resultFor(kind: string, context: StageContext) {
   const evidenceIds = evidence.map(item => item.id)
 
   const handlers: Record<string, () => unknown> = {
-    'request.decompose': () => organizationPackageProposal(context, 1),
+    'request.decompose': () => organizationPackageProposal(context, taskCount),
     'request.plan': () => ({
-      tasks: [
-        {
-          title: 'Draft the release recommendation',
-          description: 'Recommend retaining the release safety gate using only the submitted regression-risk fact.',
-          type: 'work.draft',
-          team: 'general',
-          agentId: 'worker-1',
-          managerId: 'manager',
-          dependsOn: []
-        }
-      ],
+      tasks: Array.from({ length: taskCount }, (_, index) => ({
+        title: taskCount === 1 ? 'Draft the release recommendation' : `Draft the release recommendation ${index + 1}`,
+        description: 'Recommend retaining the release safety gate using only the submitted regression-risk fact.',
+        type: 'work.draft',
+        team: 'general',
+        agentId: 'worker-1',
+        managerId: 'manager',
+        dependsOn: []
+      })),
       workers: 1,
       // A model's empty list must not erase the owner's project_tests check.
       requiredChecks: []
@@ -121,6 +119,7 @@ interface CompletionFixtureOptions {
   projectSelection?: boolean
   linkedQuestion?: boolean
   expiredReplacement?: boolean
+  exhaustedReplacement?: boolean
 }
 
 export async function setupCompletionFixture(budgetLimited: boolean, options: CompletionFixtureOptions = {}) {
@@ -186,7 +185,7 @@ export async function setupCompletionFixture(budgetLimited: boolean, options: Co
 
           if (
             context.objective.title !==
-              (options.expiredReplacement && context.objective.description === amendedScope
+              ((options.expiredReplacement || options.exhaustedReplacement) && context.objective.description === amendedScope
                 ? replacementTitle
                 : options.projectSelection ? projectSelectionTitle : budgetLimited ? budgetTitle : completionTitle) ||
             payload?.tools?.length
@@ -223,7 +222,7 @@ export async function setupCompletionFixture(budgetLimited: boolean, options: Co
                       }
                     ]
                   }
-                : resultFor(kind, context)
+                : resultFor(kind, context, options.exhaustedReplacement && context.objective.description === originalScope ? 3 : 1)
           )
 
           const identity = { id: `completion-fixture-${stages.length}`, created: 1, model: 'mock-model' }
@@ -319,7 +318,7 @@ export async function setupCompletionFixture(budgetLimited: boolean, options: Co
       sandbox.hermesHome,
       providerUrl,
       undefined,
-      `approvals:\n  mode: manual\norganization:\n  max_inflight: 1\n  max_stages: 40\n  max_context_tokens: 32768\n  max_output_tokens: 2048\n  max_model_calls: ${budgetLimited ? 1 : 40}${options.expiredReplacement ? "\n  max_open_objectives: 1\n  objective_timeout_seconds: 60" : ""}${projectYaml}`,
+      `approvals:\n  mode: manual\norganization:\n  max_inflight: 1\n  max_stages: 40\n  max_context_tokens: 32768\n  max_output_tokens: 2048\n  max_model_calls: ${budgetLimited ? 1 : options.exhaustedReplacement ? 8 : 40}${options.expiredReplacement ? "\n  max_open_objectives: 1\n  objective_timeout_seconds: 60" : options.exhaustedReplacement ? "\n  max_open_objectives: 1" : ""}${projectYaml}`,
       // The agent requires a >=64K model window. The independent organization
       // policy above still admits at most 32K for this scripted scenario.
       128000,

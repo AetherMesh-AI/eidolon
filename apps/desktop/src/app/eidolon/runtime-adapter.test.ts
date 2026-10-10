@@ -42,6 +42,12 @@ const settle = async () => {for (let index = 0; index < 12; index++) {await Prom
 afterEach(() => vi.useRealTimers())
 
 describe('runtime organization ownership and recovery', () => {
+  it('rejects an older replacement preview without disclosure fields', async () => {
+    const h = harness(vi.fn().mockResolvedValue({ sourceId: 'original', sourceVersion: 'a'.repeat(64) }))
+    await expect(h.adapter.previewReplacement!('original')).rejects.toThrow('updated organization runtime')
+    expect(h.request).toHaveBeenCalledTimes(1)
+  })
+
   it.each(['preview', 'confirm'])('fences an expired-objective %s when its profile changes', async action => {
     const reply = deferred<unknown>()
     const h = harness(vi.fn().mockReturnValue(reply.promise))

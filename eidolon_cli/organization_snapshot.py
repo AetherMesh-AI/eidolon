@@ -1,6 +1,5 @@
 """Bounded UI projections of the authoritative organization ledger."""
 import json
-import time
 from eidolon_cli.organization_conversations import conversations_view
 from eidolon_cli.organization_packages import planning_mode, packages_view, task_package_id
 from eidolon_cli.organization_projects import objective_projects, task_project, public_project
@@ -39,7 +38,7 @@ def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
     controls = {row['objective_id']: row for row in conn.execute(f'SELECT * FROM objective_control WHERE objective_id IN ({selection})', arguments)}
     rounds = {row['task_id']: row['round'] for row in conn.execute(
         f'SELECT * FROM objective_task_rounds WHERE task_id IN (SELECT id FROM tasks WHERE objective_id IN ({selection}))', arguments)}
-    from eidolon_cli.organization_replacement import replacement_links
+    from eidolon_cli.organization_replacement import replacement_links, replacement_reasons
     objectives = []
     history_count = 0
     live_references = live_history_references(conn)
@@ -69,9 +68,12 @@ def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
         acceptance_review = conn.execute('SELECT * FROM objective_acceptances WHERE objective_id=? AND round=? ORDER BY created DESC LIMIT 1', (row['id'], control['round'])).fetchone()
         done = sum(t['status'] == 'completed' for t in work)
         usage = usage_view(conn, control, settings)
+        replacement = replacement_reasons(usage)
+        if replacement and replacement != ['deadline'] and any((resolution_options(conn, r) if resolution_options else allowed_resolutions(conn, r, settings)) for r in queue):
+            replacement = []
         objectives.append({'planningMode': planning_mode(conn, row['id']), 'workPackages': packages_view(conn, row['id']), 'history': history, 'id': row['id'], 'title': row['title'], 'description': control['amended_scope'] or row['description'],
                            **replacement_links(conn, row['id']),
-                           'replacementEligible': not row['cancelled'] and control['status'] not in {'accepted', 'legacy_completed'} and time.time() >= usage['deadlineTimestamp'],
+                           'replacementEligible': not row['cancelled'] and control['status'] not in {'accepted', 'legacy_completed'} and not any(r['status'] == 'running' for r in queue) and bool(replacement),
                            'projects': [public_project(project) for project in objective_projects(conn, row['id'])], 'originalDescription': row['description'], 'deliveryMode': control['delivery_mode'],
                            'requiredChecks': json.loads(control['required_checks']),
                            'projectValidation': project_validation_view(conn, row['id'], full=False),
