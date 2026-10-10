@@ -131,6 +131,20 @@ class OrganizationService:
             self.start()
             return objective
 
+    def replace_objective(self, source_id, *args, **kwargs):
+        with self._lock:
+            if self._stop.is_set():
+                raise RuntimeError('Organization service is stopping; reconnect before replacing work')
+            if any(record.claim.get('objective_id') == source_id for record in self._running.values()):
+                raise ValueError('Execution is still stopping; review replacement after it exits')
+            with ExitStack() as locks:
+                for ident in self.store.objective_request_ids(source_id):
+                    if not locks.enter_context(_ExecutionLock(self.home / 'organization' / 'execution-locks', ident)):
+                        raise ValueError('Execution is still active in another runtime; wait before replacing work')
+                objective = self.store.replace_objective(source_id, *args, **kwargs)
+            self.start()
+            return objective
+
     def cancel(self, objective_id: str) -> bool:
         with self._lock:
             for record in self._running.values():

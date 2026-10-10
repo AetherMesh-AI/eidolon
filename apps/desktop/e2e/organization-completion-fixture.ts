@@ -19,6 +19,7 @@ import { projectSelectionConfiguration } from './organization-project-selection-
 import { organizationProviderTarget } from './organization-provider-target'
 
 export const completionTitle = 'Prepare the evidence-backed release recommendation'
+export const replacementTitle = 'Revised release recommendation'
 export const projectSelectionTitle = 'Coordinate the selected repository release'
 export const projectSelectionIntervention =
   'Repository selection retained; execution is outside this selection fixture.'
@@ -119,6 +120,7 @@ function resultFor(kind: string, context: StageContext) {
 interface CompletionFixtureOptions {
   projectSelection?: boolean
   linkedQuestion?: boolean
+  expiredReplacement?: boolean
 }
 
 export async function setupCompletionFixture(budgetLimited: boolean, options: CompletionFixtureOptions = {}) {
@@ -184,7 +186,9 @@ export async function setupCompletionFixture(budgetLimited: boolean, options: Co
 
           if (
             context.objective.title !==
-              (options.projectSelection ? projectSelectionTitle : budgetLimited ? budgetTitle : completionTitle) ||
+              (options.expiredReplacement && context.objective.description === amendedScope
+                ? replacementTitle
+                : options.projectSelection ? projectSelectionTitle : budgetLimited ? budgetTitle : completionTitle) ||
             payload?.tools?.length
           ) {
             throw new Error('Unexpected objective or expanded tool grants')
@@ -315,7 +319,7 @@ export async function setupCompletionFixture(budgetLimited: boolean, options: Co
       sandbox.hermesHome,
       providerUrl,
       undefined,
-      `approvals:\n  mode: manual\norganization:\n  max_inflight: 1\n  max_stages: 40\n  max_context_tokens: 32768\n  max_output_tokens: 2048\n  max_model_calls: ${budgetLimited ? 1 : 40}${projectYaml}`,
+      `approvals:\n  mode: manual\norganization:\n  max_inflight: 1\n  max_stages: 40\n  max_context_tokens: 32768\n  max_output_tokens: 2048\n  max_model_calls: ${budgetLimited ? 1 : 40}${options.expiredReplacement ? "\n  max_open_objectives: 1\n  objective_timeout_seconds: 60" : ""}${projectYaml}`,
       // The agent requires a >=64K model window. The independent organization
       // policy above still admits at most 32K for this scripted scenario.
       128000,

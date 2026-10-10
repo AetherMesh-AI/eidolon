@@ -51,7 +51,31 @@ export interface OrganizationWorkPackage {
   status: 'planning' | 'planned' | 'working' | 'completed' | 'blocked' | 'cancelled'
   taskIds: string[]
 }
+export interface ObjectiveReplacementDraft {
+  sourceId: string
+  sourceVersion: string
+  title: string
+  description: string
+  acceptanceCriteria: string[]
+  executiveId: string
+  managerId: string
+  projectIds: string[]
+  requiredChecks: OrganizationRequiredCheck[]
+  deliveryMode: 'source_project' | 'managed_artifact'
+  allowance: { modelCalls: number; tokens: number; costUsd: string | null; durationSeconds: number; maxReplans: number; maxStages: number; projectRuns: number }
+}
+export interface ObjectiveReplacementInput {
+  sourceId: string
+  sourceVersion: string
+  title: string
+  description: string
+  acceptanceCriteria: string[]
+  confirmed: true
+}
 export interface Objective extends ObjectiveMetadata {
+  replacementEligible?: boolean
+  replacesObjectiveId?: string | null
+  replacementObjectiveId?: string | null
   /** Absent on older runtimes. Never infer package delegation from task ownership. */
   planningMode?: 'executive_packages' | 'legacy'
   workPackages?: OrganizationWorkPackage[]
@@ -650,6 +674,8 @@ export interface RuntimeOrganizationAdapter extends OrganizationReader {
   getHistory?(input?: HistoryQuery): Promise<HistoryPage>
   getHistoryObjective?(id: string): Promise<OrganizationSnapshot>
   setObjectiveArchived?(input: HistoryMutation): Promise<void>
+  previewReplacement?(id: string): Promise<ObjectiveReplacementDraft>
+  replaceObjective?(input: ObjectiveReplacementInput): Promise<Objective>
   createObjective(title: string, metadata?: ObjectiveMetadata, idempotencyKey?: string): Promise<Objective>
   cancelObjective(id: string): Promise<void>
   retryRequest(id: string): Promise<void>

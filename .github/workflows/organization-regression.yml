@@ -139,6 +139,7 @@ jobs:
             tests/eidolon_cli/test_organization_history.py
             tests/eidolon_cli/test_organization_cross_feature_recovery.py
             tests/eidolon_cli/test_organization_request_recovery.py
+            tests/eidolon_cli/test_organization_replacement.py
             tests/eidolon_cli/test_organization_tool_receipts.py
           )
           outcomes_attention_tests=(

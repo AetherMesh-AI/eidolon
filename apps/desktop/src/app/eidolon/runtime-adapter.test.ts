@@ -42,6 +42,22 @@ const settle = async () => {for (let index = 0; index < 12; index++) {await Prom
 afterEach(() => vi.useRealTimers())
 
 describe('runtime organization ownership and recovery', () => {
+  it.each(['preview', 'confirm'])('fences an expired-objective %s when its profile changes', async action => {
+    const reply = deferred<unknown>()
+    const h = harness(vi.fn().mockReturnValue(reply.promise))
+    const input = { sourceId: 'original', sourceVersion: 'a'.repeat(64), title: 'Revised', description: 'Scope', acceptanceCriteria: ['Evidence'], confirmed: true as const }
+    const request = action === 'preview' ? h.adapter.previewReplacement!('original') : h.adapter.replaceObjective!(input)
+    const rejected = expect(request).rejects.toThrow(/connection or profile changed/)
+    await settle()
+    const signal = h.request.mock.calls[0][3] as AbortSignal
+    h.change({ key: 'connection-b:default:socket-2', connected: true })
+    expect(signal.aborted).toBe(true)
+    const old = runtimeSnapshot('Old profile replacement')
+    reply.resolve(action === 'preview' ? { sourceId: 'original' } : { objective: old.objectives[0], snapshot: old })
+    await rejected
+    expect(h.adapter.getSnapshot().objectives).toEqual([])
+  })
+
   it('polls only while subscribed, shares a single read and stops bounded failure recovery visibly', async () => {
     vi.useFakeTimers()
     const h = harness(vi.fn().mockRejectedValue(new Error('Method not found')))
