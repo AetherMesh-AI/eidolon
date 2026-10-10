@@ -143,6 +143,18 @@ def _(params, service):
     return _organization_snapshot(organization)
 
 
+@_organization_method("organization.checkSubmission")
+def _(params, service):
+    from eidolon_constants import get_eidolon_home
+    from eidolon_cli.profiles import get_active_profile_name
+    from eidolon_cli.organization_admission import check_submission
+    _organization_params(params, {"idempotencyKey"})
+    # Keep the same authenticated profile routing, but never call service():
+    # cold initialization and policy refresh may mutate a ledger or fence work.
+    result = check_submission(get_eidolon_home(), _organization_text(params, "idempotencyKey", 128))
+    return {**result, "profile": get_active_profile_name()}
+
+
 @_organization_method("organization.create")
 def _(params, service):
     _organization_params(params, {"title", "description", "priority", "idempotencyKey", "acceptanceCriteria", "deliveryMode", "requiredChecks", "executiveId", "managerId", "projectIds"})
