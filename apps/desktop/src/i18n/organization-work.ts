@@ -1,5 +1,17 @@
 /** Copy for the canonical organization ledger surfaces, kept together across locales. */
 const copy = {
+  handoff: ["Deliverable handoff", "成果物の取り出し", "交付成果导出", "交付成果匯出"],
+  handoffProfile: ["Profile", "プロファイル", "配置", "設定檔"],
+  handoffObjective: ["Objective ID", "目標 ID", "目标 ID", "目標 ID"],
+  handoffRevision: ["Retained revision", "保持された版", "保留版本", "保留版本"],
+  handoffCopy: ["Copy deliverable", "成果物をコピー", "复制交付成果", "複製交付成果"],
+  handoffDownload: ["Download deliverable (.txt)", "成果物をダウンロード (.txt)", "下载交付成果 (.txt)", "下載交付成果 (.txt)"],
+  handoffCopied: ["Deliverable copied.", "成果物をコピーしました。", "已复制交付成果。", "已複製交付成果。"],
+  handoffRequested: ["Download requested. Complete or cancel it in the download dialog.", "ダウンロードを要求しました。ダイアログで完了またはキャンセルしてください。", "已请求下载。请在下载对话框中完成或取消。", "已要求下載。請在下載對話框中完成或取消。"],
+  handoffFailed: ["Could not export the deliverable. Try again.", "成果物を取り出せませんでした。再試行してください。", "无法导出交付成果。请重试。", "無法匯出交付成果。請重試。"],
+  handoffInvalid: ["The retained deliverable or its digest is invalid. Refresh before exporting.", "保持された成果物またはダイジェストが無効です。取り出す前に更新してください。", "保留的交付成果或摘要无效。请刷新后再导出。", "保留的交付成果或摘要無效。請重新整理後再匯出。"],
+  handoffNote: ["Download preserves the exact retained UTF-8 text. Copy uses the system clipboard. Export does not accept, acknowledge, or resume work.", "ダウンロードは保持された UTF-8 テキストをそのまま保存します。コピーにはシステムのクリップボードを使用します。取り出しは作業の承認、確認、再開を行いません。", "下载保留原始 UTF-8 文本。复制使用系统剪贴板。导出不会验收、确认或恢复工作。", "下載保留原始 UTF-8 文字。複製使用系統剪貼簿。匯出不會驗收、確認或恢復工作。"],
+
   replacementStopped: ['Why work stopped', '作業が停止した理由', '工作停止原因', '工作停止原因'],
   replacementExpired: ['Objective deadline reached', '目標の期限に到達', '目标已到期', '目標已到期'],
   replacementCalls: ['Model-call allowance exhausted', 'モデル呼び出し枠を消費', '模型调用额度已耗尽', '模型呼叫額度已耗盡'],

@@ -1,5 +1,6 @@
 /** Actual Electron → gateway → durable ledger → loopback HTTP provider. */
 import { createHash } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
 
 import type { Page } from '@playwright/test'
 
@@ -416,6 +417,35 @@ test('requires explicit check replacement, retains its audit, and completes only
     await expect(artifact.locator('dd.eid-result-text')).toHaveText(
       createHash('sha256').update(recommendation).digest('hex')
     )
+    await expect(artifact.getByText('Profile: default', { exact: true })).toBeVisible()
+    await artifact.getByRole('button', { name: 'Copy deliverable', exact: true }).click()
+    expect(await running!.fixture.app.evaluate(({ clipboard }) => clipboard.readText())).toBe(recommendation)
+    // Native download transport, with only destination selection scripted inside the temporary test output directory.
+    for (const cancel of [true, false, false]) {
+      const destination = testInfo.outputPath(cancel ? 'cancelled-deliverable.txt' : 'retained-deliverable.txt')
+      await running!.fixture.app.evaluate(({ session }, { destination, cancel }) => {
+        const state = globalThis as typeof globalThis & { handoffDownload?: { state: string; filename: string } }
+        state.handoffDownload = undefined
+        session.defaultSession.once('will-download', (_event, item) => {
+          const filename = item.getFilename()
+          item.once('done', (_event, status) => { state.handoffDownload = { state: status, filename } })
+          item.setSavePath(destination)
+          if (cancel) {item.cancel()}
+        })
+      }, { destination, cancel })
+      await artifact.getByRole('button', { name: 'Download deliverable (.txt)', exact: true }).click()
+      // Electron's native DownloadItem is authoritative, including cancellation before Chromium emits a page download.
+      await expect.poll(() => running!.fixture.app.evaluate(() =>
+        (globalThis as typeof globalThis & { handoffDownload?: { state: string } }).handoffDownload?.state
+      )).toBe(cancel ? 'cancelled' : 'completed')
+      const filename = await running!.fixture.app.evaluate(() =>
+        (globalThis as typeof globalThis & { handoffDownload?: { filename: string } }).handoffDownload?.filename)
+      expect(filename).toMatch(/^eidolon-outcome_[a-f0-9]{32}\.txt$/)
+      if (cancel) {await expect(readFile(destination)).rejects.toMatchObject({ code: 'ENOENT' })} else {
+        expect(await readFile(destination)).toEqual(Buffer.from(recommendation, 'utf8'))
+      }
+    }
+    await artifact.screenshot({ path: testInfo.outputPath('deliverable-handoff.png') })
     await artifact.getByRole('button', { name: 'Close artifact details', exact: true }).click()
   }
 

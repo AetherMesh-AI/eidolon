@@ -85,6 +85,10 @@ def test_clarification_resume_acceptance_is_durable_exact_and_not_task_completio
     outcome = reopened.snapshot()['objectives'][0]
     assert outcome['id'] == objective['id'] and outcome['status'] == 'completed'
     assert outcome['result'] == reopened.evidence(outcome['acceptance']['deliverableId'])['content']
+    retained = reopened.evidence(outcome['acceptance']['deliverableId'])
+    assert retained['objectiveId'] == outcome['id']
+    assert retained['round'] == outcome['acceptance']['round']
+    assert retained['sha256'] == hashlib.sha256(retained['content'].encode('utf-8')).hexdigest()
     assert outcome['result'] != 'Compared options'
     assert reopened.claim_next() is None
     assert not reopened.finish(accept, value)
@@ -106,6 +110,7 @@ def test_conflicting_accepted_tasks_trigger_bounded_replan_and_preserve_exact_hi
     assert snap['objectives'][0]['acceptance']['round'] == 1
     assert snap['tasks'][0]['historical'] and not snap['tasks'][0]['currentRound']
     assert store.evidence(old_final)['content'] and store.evidence(original_ids[0])['content']
+    assert store.evidence(old_final)['round'] == snap['objectives'][0]['acceptance']['round'] - 1
     _plan(store)
     _work_and_review(store)
     second = _integrate(store)
