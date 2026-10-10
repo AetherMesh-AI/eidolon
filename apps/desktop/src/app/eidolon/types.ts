@@ -217,6 +217,7 @@ export interface OrganizationEvidence {
   createdAt?: string
 }
 export interface OrganizationArtifact {
+  round?: number
   id: string
   content: string
   sha256: string

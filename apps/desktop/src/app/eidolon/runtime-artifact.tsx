@@ -5,6 +5,7 @@ import { Loader } from '@/components/ui/loader'
 import { useI18n } from '@/i18n/context'
 
 import { Inspector } from './inspector'
+import { RuntimeDeliverableHandoff, verifyDeliverable } from './runtime-deliverable-handoff'
 import { RuntimeEditProposal } from './runtime-edit-proposal'
 import { RuntimeToolReceipts } from './runtime-tool-receipts'
 import type { OrganizationArtifact, OrganizationSnapshot, RuntimeOrganizationAdapter } from './types'
@@ -21,6 +22,7 @@ export function RuntimeArtifact({ adapter, snapshot, evidenceId, title, onClose 
   const { t } = useI18n()
   const copy = t.organizationRuntime
   const [artifact, setArtifact] = useState<OrganizationArtifact | null>(null)
+  const [loadedVersion, setLoadedVersion] = useState('')
   const [error, setError] = useState('')
   const [attempt, setAttempt] = useState(0)
 
@@ -29,6 +31,9 @@ export function RuntimeArtifact({ adapter, snapshot, evidenceId, title, onClose 
   // from an old proposal. Quiet polls preserve this value and do not reread it.
   const evidenceVersion = JSON.stringify([
     snapshot.connection?.scope,
+    snapshot.connection?.ownerScope,
+    snapshot.runtime?.profile,
+    evidenceId,
     snapshot.connection?.state,
     snapshot.runtime?.workspaceApplyEnabled,
     snapshot.requests?.map(request => [request.id, request.status, request.attempts, request.reason]),
@@ -41,9 +46,12 @@ export function RuntimeArtifact({ adapter, snapshot, evidenceId, title, onClose 
     setError('')
     void adapter
       .getEvidence(evidenceId)
-      .then(value => {
+      .then(async value => {
+        if (value.kind === 'integrated_deliverable') {await verifyDeliverable(value)}
+
         if (current) {
           setArtifact(value)
+          setLoadedVersion(evidenceVersion)
         }
       })
       .catch(reason => {
@@ -68,7 +76,7 @@ export function RuntimeArtifact({ adapter, snapshot, evidenceId, title, onClose 
           </Button>
         </>
       )}
-      {artifact && (
+      {artifact && loadedVersion === evidenceVersion && (
         <>
           <Button onClick={() => setAttempt(value => value + 1)} size="sm" variant="secondary">
             {copy.artifactRefresh}
@@ -77,6 +85,9 @@ export function RuntimeArtifact({ adapter, snapshot, evidenceId, title, onClose 
           {artifact.kind === 'source_integration' && <h3>{t.organizationWork.sourceIntegrationEvidence}</h3>}
           {artifact.editProposal && (
             <RuntimeEditProposal key={artifact.editProposal.id} proposal={artifact.editProposal} />
+          )}
+          {artifact.kind === 'integrated_deliverable' && (
+            <RuntimeDeliverableHandoff adapter={adapter} artifact={artifact} key={`${evidenceVersion}:${artifact.id}:${artifact.sha256}`} snapshot={snapshot} />
           )}
           <p className="eid-result-text">{artifact.content}</p>
           <dl>

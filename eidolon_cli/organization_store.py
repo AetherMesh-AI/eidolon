@@ -816,7 +816,8 @@ class OrganizationStore(OrganizationReplacementStore, OrganizationOwnerChatStore
                     raise ValueError("Evidence not found in this organization")
                 return {'id': final['id'], 'objectiveId': final['objective_id'], 'taskId': None,
                         'content': final['content'], 'summary': final['summary'], 'sha256': final['sha256'],
-                        'toolReceipts': [], 'createdAt': _iso(final['created']), 'kind': 'integrated_deliverable'}
+                        'toolReceipts': [], 'createdAt': _iso(final['created']), 'kind': 'integrated_deliverable',
+                        'round': final['round']}
             proposal = evidence_proposal(conn, row['id'])
             return {"id": row["id"], "objectiveId": row["objective_id"], "taskId": row["task_id"],
                     "content": row["content"], "summary": row["summary"], "sha256": row["sha256"],

@@ -1,5 +1,6 @@
 /** Actual Electron → gateway → durable ledger → loopback HTTP provider. */
 import { createHash } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
 
 import type { Page } from '@playwright/test'
 
@@ -416,6 +417,27 @@ test('requires explicit check replacement, retains its audit, and completes only
     await expect(artifact.locator('dd.eid-result-text')).toHaveText(
       createHash('sha256').update(recommendation).digest('hex')
     )
+    await expect(artifact.getByText('Profile: default', { exact: true })).toBeVisible()
+    await artifact.getByRole('button', { name: 'Copy deliverable', exact: true }).click()
+    expect(await running!.fixture.app.evaluate(({ clipboard }) => clipboard.readText())).toBe(recommendation)
+    // Native download transport, with only destination selection scripted inside the temporary test output directory.
+    for (const cancel of [true, false, false]) {
+      const destination = testInfo.outputPath('retained-deliverable.txt')
+      await running!.fixture.app.evaluate(({ session }, { destination, cancel }) => {
+        session.defaultSession.once('will-download', (_event, item) => {
+          if (cancel) {item.cancel()} else {item.setSavePath(destination)}
+        })
+      }, { destination, cancel })
+      const pendingDownload = page.waitForEvent('download')
+      await artifact.getByRole('button', { name: 'Download deliverable (.txt)', exact: true }).click()
+      const download = await pendingDownload
+      expect(download.suggestedFilename()).toMatch(/^eidolon-outcome_[a-f0-9]{32}\.txt$/)
+      if (cancel) {expect(await download.failure()).toBeTruthy()} else {
+        expect(await download.failure()).toBeNull()
+        expect(await readFile(destination)).toEqual(Buffer.from(recommendation, 'utf8'))
+      }
+    }
+    await artifact.screenshot({ path: testInfo.outputPath('deliverable-handoff.png') })
     await artifact.getByRole('button', { name: 'Close artifact details', exact: true }).click()
   }
 
