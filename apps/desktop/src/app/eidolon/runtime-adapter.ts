@@ -2,6 +2,7 @@ import { translateNow } from '@/i18n/runtime'
 
 import { type OrganizationAttentionPage, validAttentionPage } from './runtime-attention-types'
 import { normalizeConversations } from './runtime-conversation-contract'
+import { type DispatchReceipt, validDispatch } from './runtime-dispatch-types'
 import type { HistoryPage } from './runtime-history-types'
 import { type OrganizationOutcomePage, validOutcomePage } from './runtime-outcome-types'
 import { OwnerChatRenewalRejected, validOwnerChatThread } from './runtime-owner-chat-contract'
@@ -426,6 +427,32 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
       if (result.objectives.length !== 1 || result.objectives[0].id !== id) {throw new Error('The runtime returned a different history objective.')}
 
       return { ...result, connection: snapshot.connection }
+    },
+    setObjectivePaused(input) {
+      resetScope()
+      const profile = snapshot.runtime?.profile
+
+      if (!profile) {return Promise.reject(new Error(translateNow('organizationWork.dispatchUnavailable')))}
+
+      return mutate<{ receipt: DispatchReceipt; profile: string; objective: Objective; snapshot: OrganizationSnapshot }>(
+        `dispatch:${input.idempotencyKey}`, 'organization.setPaused', { ...input }, value => {
+          const receipt = value?.receipt
+          const objective = value?.objective
+          const state = objective?.dispatchControl
+          const visibleObjective = value?.snapshot?.objectives?.find(item => item.id === input.id)
+          const visible = visibleObjective?.dispatchControl
+
+          if (!receipt || receipt.objectiveId !== input.id || receipt.idempotencyKey !== input.idempotencyKey
+            || receipt.paused !== input.paused || receipt.revision !== input.expectedRevision + 1
+            || value.profile !== profile || value.snapshot?.runtime?.profile !== profile || objective?.id !== input.id
+            || !validDispatch(state) || state.revision < receipt.revision || (state.revision === receipt.revision && state.paused !== receipt.paused)
+            || (visibleObjective && (!validDispatch(visible) || visible.revision < state.revision || (visible.revision === state.revision && visible.paused !== state.paused)))) {
+            throw new Error(translateNow('organizationWork.dispatchInvalid'))
+          }
+
+          return value.snapshot
+        }
+      ).then(value => value.receipt)
     },
     changePriority(input) {
       resetScope()

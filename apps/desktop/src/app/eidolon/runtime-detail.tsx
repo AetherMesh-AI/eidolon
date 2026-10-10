@@ -11,6 +11,7 @@ import { MetadataSummary } from './objective-metadata'
 import { RuntimeAcceptance } from './runtime-acceptance'
 import { RuntimeArtifact } from './runtime-artifact'
 import { RuntimeCapabilities } from './runtime-capabilities'
+import { RuntimeDispatch } from './runtime-dispatch'
 import { RuntimePriority } from './runtime-priority'
 import { RuntimeReplacement } from './runtime-replacement'
 import { RuntimeRequests } from './runtime-requests'
@@ -92,6 +93,7 @@ export function RuntimeObjectiveDetail({ objective, adapter, snapshot, historyCo
       <ul>{objective.projects.map(project => <li className="eid-result-text" key={project.id}>{project.id} · {project.root} · {project.team}</li>)}</ul>
     </section> : null}
     <RuntimeReplacement adapter={adapter} key={`${snapshot.connection?.ownerScope ?? snapshot.connection?.scope}:${objective.id}`} objective={objective} snapshot={snapshot} />
+    <RuntimeDispatch adapter={adapter} key={`dispatch:${snapshot.connection?.scope}:${snapshot.connection?.ownerScope}:${objective.id}`} objective={objective} snapshot={snapshot} />
     <RuntimePriority adapter={adapter} key={`${snapshot.connection?.scope}:${snapshot.connection?.ownerScope}:${objective.id}`} objective={objective} snapshot={snapshot} />
     {historyControls}
     <RuntimeRequests adapter={adapter} objective={objective} snapshot={snapshot} />

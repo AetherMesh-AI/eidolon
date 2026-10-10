@@ -1,4 +1,5 @@
 import type { OrganizationAttentionPage, OrganizationAttentionQuery, OrganizationAttentionSeen } from './runtime-attention-types'
+import type { DispatchChange, DispatchReceipt, DispatchState } from './runtime-dispatch-types'
 import type { HistoryCounts, HistoryMutation, HistoryPage, HistoryQuery, HistoryState } from './runtime-history-types'
 import type { OrganizationOutcomePage, OrganizationOutcomeQuery, OrganizationOutcomeSeen } from './runtime-outcome-types'
 import type { OwnerChatCancel, OwnerChatRead, OwnerChatRenew, OwnerChatSend, OwnerChatThread } from './runtime-owner-chat-types'
@@ -76,6 +77,7 @@ export interface ObjectiveReplacementInput {
   confirmed: true
 }
 export interface Objective extends ObjectiveMetadata {
+  dispatchControl?: DispatchState
   priorityRevision?: number
   replacementEligible?: boolean
   replacesObjectiveId?: string | null
@@ -670,6 +672,7 @@ export interface SubmissionReceipt {
 }
 
 export interface RuntimeOrganizationAdapter extends OrganizationReader {
+  setObjectivePaused?(input: DispatchChange): Promise<DispatchReceipt>
   changePriority?(input: PriorityChange): Promise<PriorityReceipt>
   openOwnerChat?(input: { agentId: string; identityId: string }): Promise<OwnerChatThread>
   readOwnerChat?(input: OwnerChatRead): Promise<OwnerChatThread>

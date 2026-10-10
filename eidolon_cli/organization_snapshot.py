@@ -1,5 +1,6 @@
 """Bounded UI projections of the authoritative organization ledger."""
 import json
+from eidolon_cli.organization_dispatch import dispatch_view
 from eidolon_cli.organization_priority import priority_revision
 from eidolon_cli.organization_conversations import conversations_view
 from eidolon_cli.organization_packages import planning_mode, packages_view, task_package_id
@@ -87,7 +88,7 @@ def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
                            'usage': usage, 'ownerResolutions': resolutions,
                            'status': status, 'source': 'runtime', 'createdAt': _iso(row['created']),
                            **objective_assignment_view(conn, row['id']),
-                           'ownerId': 'manager' if control['status'] == 'legacy_completed' else objective_assignment_view(conn, row['id'])['executiveId'], 'priority': f"P{6-row['priority']}", 'priorityRevision': priority_revision(conn, row['id']),
+                           'ownerId': 'manager' if control['status'] == 'legacy_completed' else objective_assignment_view(conn, row['id'])['executiveId'], 'priority': f"P{6-row['priority']}", 'priorityRevision': priority_revision(conn, row['id']), 'dispatchControl': dispatch_view(conn, row['id']),
                            'progress': round(100 * done / len(work)) if work else 0,
                            'result': (final['content'] if final else '\n\n'.join(t['result'] or '' for t in work)) if status == 'completed' else None,
                            'phase': 'Legacy reviewed outcome' if control['status'] == 'legacy_completed' else 'Accepted integrated outcome' if status == 'completed' else 'Integrated outcome acceptance' if control['status'] in {'integrating', 'reviewing'} else 'Pending intervention' if status == 'needs_input' else ('Executive decomposition and manager planning' if planning_mode(conn, row['id']) == 'executive_packages' else 'Legacy manager planning') if not work else 'Execution and review'})
