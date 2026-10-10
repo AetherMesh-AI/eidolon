@@ -49,7 +49,7 @@ it('keeps optional draft values through repeated disclosure and submits their ex
   fireEvent.change(screen.getByRole('textbox', { name: 'Objective' }), { target: { value: 'Polish the interface' } })
   fireEvent.click(screen.getByRole('button', { name: 'Create objective' }))
   await screen.findByRole('alert')
-  expect(createObjective).toHaveBeenCalledWith('Polish the interface', expect.objectContaining({ description: 'Keep this context', acceptanceCriteria: ['Preserve the workflow'], deliveryMode: 'source_project' }))
+  expect(createObjective).toHaveBeenCalledWith('Polish the interface', expect.objectContaining({ description: 'Keep this context', acceptanceCriteria: ['Preserve the workflow'], deliveryMode: 'source_project' }), expect.stringMatching(/^[a-f0-9-]{36}$/))
 })
 
 it('reveals invalid optional criteria without dispatching the objective', () => {

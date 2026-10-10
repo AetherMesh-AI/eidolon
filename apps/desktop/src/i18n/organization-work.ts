@@ -93,6 +93,12 @@ const copy = {
   objectiveProjects: ['Objective repositories', '目標のリポジトリ', '目标仓库', '目標儲存庫'],
   projectSelectionNote: ['Select configured repositories for source-project delivery. Unselected managed-artifact objectives are limited to writing without repository access.', 'ソースプロジェクトへの納品には設定済みリポジトリを選択してください。未選択の管理対象成果物はリポジトリにアクセスしない文章作成に限られます。', '源项目交付需选择已配置仓库。未选择仓库的托管成果目标仅限不访问仓库的写作。', '原始碼專案交付需選擇已設定儲存庫。未選擇儲存庫的受管理成果目標僅限不存取儲存庫的寫作。'],
   projectSelectionRequired: ['Select at least one repository for source-project delivery.', 'ソースプロジェクトへの納品にはリポジトリを1つ以上選択してください。', '请至少选择一个仓库用于源项目交付。', '請至少選擇一個儲存庫用於原始碼專案交付。'],
+  intakeMemory: ['Draft stays in this window for this connection and profile. Closing or reloading the window clears it.', '下書きはこのウィンドウ内で接続とプロファイルごとに保持されます。閉じるか再読み込みすると消去されます。', '草稿仅在此窗口内按连接和配置保留。关闭或重新加载窗口将清除草稿。', '草稿僅在此視窗內依連線與設定檔保留。關閉或重新載入視窗將清除草稿。'],
+  intakeDiscard: ['Discard draft', '下書きを破棄', '丢弃草稿', '捨棄草稿'],
+  intakeDiscardNote: ['Discard this objective draft and its supplied context?', 'この目標の下書きと入力した情報を破棄しますか？', '丢弃此目标草稿及其提供的上下文？', '捨棄此目標草稿及其提供的內容？'],
+  intakeUnconfirmed: ['Submission is unconfirmed. Retry keeps the same request key. If it already created an objective, changed details will be rejected; restore the submitted draft to retry the original request.', '送信結果は未確認です。再試行では同じリクエストキーを使用します。目標が作成済みの場合、変更内容は拒否されます。送信した下書きを復元して元のリクエストを再試行してください。', '提交结果尚未确认。重试会保留相同请求标识。如果目标已创建，更改后的内容将被拒绝；请恢复已提交的草稿以重试原始请求。', '提交結果尚未確認。重試會保留相同請求識別碼。如果目標已建立，變更後的內容將被拒絕；請還原已提交的草稿以重試原始請求。'],
+  intakeRestore: ['Restore submitted draft', '送信した下書きを復元', '恢复已提交的草稿', '還原已提交的草稿'],
+  intakeDiscardUnconfirmed: ['An objective may already have been created. Check Objectives before discarding. Discarding does not cancel work and a later submission may create a duplicate.', '目標がすでに作成されている可能性があります。破棄する前に目標一覧を確認してください。破棄しても作業はキャンセルされず、後で送信すると重複する可能性があります。', '目标可能已创建。丢弃前请检查目标列表。丢弃不会取消工作，之后提交可能创建重复目标。', '目標可能已建立。捨棄前請檢查目標清單。捨棄不會取消工作，之後提交可能建立重複目標。'],
   projectSelectionChanged: ['A selected repository is no longer configured. Refresh and select again.', '選択されたリポジトリは設定から削除されました。更新して再選択してください。', '所选仓库已不在配置中。请刷新后重新选择。', '所選儲存庫已不在設定中。請重新整理後重新選擇。'],
   projectBinding: ['Repository', 'リポジトリ', '仓库', '儲存庫'],
 
