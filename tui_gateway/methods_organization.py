@@ -233,6 +233,18 @@ def _(params, service):
     return _organization_snapshot(organization)
 
 
+@_organization_method("organization.changePriority")
+def _(params, service):
+    _organization_params(params, {"id", "priority", "expectedRevision", "idempotencyKey"})
+    organization = service()
+    receipt = organization.store.change_objective_priority(
+        _organization_text(params, "id", 128), params.get("priority"),
+        expected_revision=params.get("expectedRevision"),
+        idempotency_key=_organization_text(params, "idempotencyKey", 128))
+    # Scheduling preference only: do not start, cancel or wake provider work.
+    return {"receipt": receipt, "snapshot": _organization_snapshot(organization)}
+
+
 @_organization_method("organization.resolve")
 def _(params, service):
     _organization_params(params, {"id", "action", "text", "evidenceIds", "requiredChecks", "acceptanceCriteria", "idempotencyKey"})

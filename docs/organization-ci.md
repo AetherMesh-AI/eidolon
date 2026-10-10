@@ -153,3 +153,23 @@ completed in about 5 minutes 16 seconds of wall time across parallel jobs. It us
 a different dependency install and a narrower desktop selection; it is provenance
 for the supported sandbox setup, not a timing claim for this permanent workflow.
 Use this workflow's Actions job durations to measure actual cost after changes.
+
+## Retained updater-notification interference (PR57)
+
+Historical main `c94f15a719dd8a804acc20d62d1f434ae0ae73b5` had one native owner-loop
+failure in [postmerge run 38082875165](https://github.com/AetherMesh-AI/eidolon/actions/runs/38082875165),
+on both attempts. At `organization-owner-loop.spec.ts`'s Organization evidence
+navigation, an actual “Update ready — 3 new changes available” notification
+intercepted pointer events until the normal 30-second click timeout. The native
+result was 17 passed / 1 failed; the other eight jobs passed. Screenshots,
+accessibility context, and trace were retained. The single rerun did not fix it.
+This historical postmerge run must not be described as green or as an unverified
+transient flake.
+
+Combined main `618aec0c3e3a15fd63f6034c39442f1304910cff` separately passed all nine
+jobs in [run 38083007996](https://github.com/AetherMesh-AI/eidolon/actions/runs/38083007996),
+including that unchanged owner-loop test and all 18 native tests on the first
+attempt. That success does not erase the earlier failure. The observations show
+notification interference; they do not establish why the update notice appeared
+at that time. No assertion, click action, timeout, retry setting, updater behavior,
+or security setting was changed or suppressed to obtain the passing run.

@@ -11,6 +11,7 @@ import { MetadataSummary } from './objective-metadata'
 import { RuntimeAcceptance } from './runtime-acceptance'
 import { RuntimeArtifact } from './runtime-artifact'
 import { RuntimeCapabilities } from './runtime-capabilities'
+import { RuntimePriority } from './runtime-priority'
 import { RuntimeReplacement } from './runtime-replacement'
 import { RuntimeRequests } from './runtime-requests'
 import { RuntimeWorkPackages } from './runtime-work-packages'
@@ -91,6 +92,7 @@ export function RuntimeObjectiveDetail({ objective, adapter, snapshot, historyCo
       <ul>{objective.projects.map(project => <li className="eid-result-text" key={project.id}>{project.id} · {project.root} · {project.team}</li>)}</ul>
     </section> : null}
     <RuntimeReplacement adapter={adapter} key={`${snapshot.connection?.ownerScope ?? snapshot.connection?.scope}:${objective.id}`} objective={objective} snapshot={snapshot} />
+    <RuntimePriority adapter={adapter} key={`${snapshot.connection?.scope}:${snapshot.connection?.ownerScope}:${objective.id}`} objective={objective} snapshot={snapshot} />
     {historyControls}
     <RuntimeRequests adapter={adapter} objective={objective} snapshot={snapshot} />
     <div aria-label="Objective views" className="eid-tabs" role="tablist">{(['work', 'activity', 'artifacts', 'decisions'] as const).map(name => <button aria-selected={tab === name} key={name} onClick={() => setTab(name)} role="tab">{copy[name]}</button>)}</div>

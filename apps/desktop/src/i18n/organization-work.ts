@@ -1,5 +1,20 @@
 /** Copy for the canonical organization ledger surfaces, kept together across locales. */
 const copy = {
+  priorityHeading: ["Objective priority", "目標の優先度", "目标优先级", "目標優先順序"],
+  priorityCurrent: ["Current priority", "現在の優先度", "当前优先级", "目前優先順序"],
+  priorityNew: ["New priority", "新しい優先度", "新优先级", "新優先順序"],
+  priorityVersion: ["Priority revision", "優先度の版", "优先级版本", "優先順序版本"],
+  prioritySave: ["Save priority", "優先度を保存", "保存优先级", "儲存優先順序"],
+  prioritySaving: ["Saving priority…", "優先度を保存中…", "正在保存优先级…", "正在儲存優先順序…"],
+  priorityRetry: ["Retry priority save", "優先度の保存を再試行", "重试保存优先级", "重試儲存優先順序"],
+  priorityReview: ["Review current priority", "現在の優先度を再確認", "检查当前优先级", "檢查目前優先順序"],
+  prioritySaved: ["Saved {previous} → {priority} (revision {revision}).", "{previous} → {priority} を保存しました（版 {revision}）。", "已保存 {previous} → {priority}（版本 {revision}）。", "已儲存 {previous} → {priority}（版本 {revision}）。"],
+  prioritySemantics: ["P1 is highest. Pending and future work use the saved priority; running work continues. Queue aging, dependencies, permissions and allowances are unchanged. Up to 100 changes per objective.", "P1 が最優先です。待機中と今後の作業に適用し、実行中の作業は継続します。待機時間、依存関係、権限、利用枠は変わりません。各目標で最大100回変更できます。", "P1 最高。待处理及后续工作使用保存的优先级，正在运行的工作继续。队列等待时间、依赖、权限和额度不变。每个目标最多更改100次。", "P1 最高。待處理及後續工作使用儲存的優先順序，執行中的工作繼續。佇列等待時間、相依性、權限和額度不變。每個目標最多變更100次。"],
+  priorityTerminal: ["Completed, cancelled and archived objectives retain their priority.", "完了、取り消し、アーカイブ済みの目標の優先度は保持されます。", "已完成、已取消及已归档目标保留其优先级。", "已完成、已取消及已封存目標保留其優先順序。"],
+  priorityUnavailable: ["Priority editing is unavailable for this runtime or the change limit has been reached.", "このランタイムでは優先度を編集できないか、変更上限に達しています。", "此运行时不支持编辑优先级，或已达到更改上限。", "此執行環境不支援編輯優先順序，或已達變更上限。"],
+  priorityInvalid: ["The runtime returned an invalid priority-change receipt.", "ランタイムから無効な優先度変更の記録が返されました。", "运行时返回了无效的优先级更改凭据。", "執行環境傳回無效的優先順序變更憑據。"],
+  priorityUncertain: ["Retry sends the same change once more. Review the current value before starting a different change.", "再試行では同じ変更を再送します。別の変更を始める前に現在の値を確認してください。", "重试会再次发送相同更改。开始其他更改前请检查当前值。", "重試會再次傳送相同變更。開始其他變更前請檢查目前值。"],
+
   handoff: ["Deliverable handoff", "成果物の取り出し", "交付成果导出", "交付成果匯出"],
   handoffProfile: ["Profile", "プロファイル", "配置", "設定檔"],
   handoffObjective: ["Objective ID", "目標 ID", "目标 ID", "目標 ID"],
