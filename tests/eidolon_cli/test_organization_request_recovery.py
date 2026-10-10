@@ -76,3 +76,136 @@ def test_linked_recovery_preserves_existing_limits_and_never_offers_replay(tmp_p
         reopened.resolve(request['id'], 'request_replan', 'Do not bypass limits', idempotency_key='bypass')
     assert reopened.snapshot()['objectives'][0]['acceptance']['round'] == 0
     assert reopened.snapshot()['objectives'][0]['ownerResolutions'] == []
+
+
+@pytest.mark.parametrize('winner', ['answer', 'replan'])
+def test_answer_and_replan_serialize_and_share_owner_capacity(tmp_path, monkeypatch, winner):
+    from concurrent.futures import ThreadPoolExecutor
+    from contextlib import contextmanager
+    from threading import Event
+    import sqlite3
+
+    store, _, work, request = pending_question(tmp_path, max_owner_resolutions=1)
+    peer = OrganizationStore(store.path)
+    locked, competing = Event(), Event()
+    write = store._write
+
+    @contextmanager
+    def hold_first_transaction():
+        with write() as conn:
+            locked.set()
+            assert competing.wait(5)
+            yield conn
+
+    monkeypatch.setattr(store, '_write', hold_first_transaction)
+    connect = peer._connect
+
+    @contextmanager
+    def prove_peer_contention():
+        with connect() as conn:
+            # The winner cannot commit until this connection actually attempts
+            # its write and SQLite reports the occupied transaction lock.
+            conn.execute('PRAGMA busy_timeout=0')
+            with pytest.raises(sqlite3.OperationalError, match='database is locked'):
+                conn.execute('BEGIN IMMEDIATE')
+            conn.execute('PRAGMA busy_timeout=10000')
+            competing.set()
+            yield conn
+
+    monkeypatch.setattr(peer, '_connect', prove_peer_contention)
+
+    def act(target, action):
+        if action == 'answer':
+            return target.respond(request['id'], 'Use supplied facts', idempotency_key='answer')
+        return target.resolve(request['id'], 'request_replan', 'Use supplied facts', idempotency_key='replan')
+
+    def compete():
+        assert locked.wait(5)
+        with pytest.raises(ValueError, match='unavailable|not awaiting'):
+            act(peer, 'replan' if winner == 'answer' else 'answer')
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(act, store, winner)
+        second = pool.submit(compete)
+        assert first.result(timeout=15)
+        second.result(timeout=15)
+    monkeypatch.setattr(store, '_write', write)
+    reopened = OrganizationStore(store.path)
+    assert not act(reopened, winner)
+    snapshot = reopened.snapshot()
+    rows = {row['id']: row for row in snapshot['requests']}
+    assert snapshot['objectives'][0]['acceptance']['round'] == (winner == 'replan')
+    assert rows[work['id']]['status'] == ('queued' if winner == 'answer' else 'cancelled')
+    assert rows[request['id']]['status'] == ('completed' if winner == 'answer' else 'cancelled')
+    assert (rows[request['id']]['response'] is not None) == (winner == 'answer')
+    assert len(snapshot['objectives'][0]['ownerResolutions']) == (winner == 'replan')
+
+    # Either kind of owner action consumes the same allowance for the next question.
+    fresh = reopened.claim_next()
+    assert fresh
+    assert reopened.finish(fresh, {'requests': [{'type': 'request.question', 'requestedOutcome': 'A second missing fact is needed.'}]})
+    handler = reopened.claim_next()
+    if handler:
+        reopened.fail(handler, 'The owner must resolve the second missing fact')
+    question = next(row for row in reopened.snapshot()['requests'] if row['parentRequestId'] == fresh['id'] and row['id'] != request['id'])
+    assert question['status'] == 'pending_intervention'
+    assert question['allowedResolutions'] == []
+    with pytest.raises(ValueError, match='capacity reached'):
+        reopened.respond(question['id'], 'Second answer', idempotency_key='second-answer')
+    with pytest.raises(ValueError, match='unavailable'):
+        reopened.resolve(question['id'], 'request_replan', 'Second replan', idempotency_key='second-replan')
+    assert reopened.snapshot()['objectives'][0]['acceptance']['round'] == (winner == 'replan')
+
+
+def _hold_peer_recovery_lock(directory, request_id, ready, release):
+    from pathlib import Path
+    from eidolon_cli.organization_service import _ExecutionLock
+
+    with _ExecutionLock(Path(directory), request_id) as acquired:
+        ready.put(acquired)
+        if acquired and not release.wait(30):
+            raise TimeoutError('Parent did not release the execution lock')
+
+
+@pytest.mark.parametrize('held_request', ['question', 'parent'])
+def test_linked_recovery_waits_for_independent_runtime_lock(tmp_path, monkeypatch, held_request):
+    import multiprocessing
+    from eidolon_cli.organization_service import OrganizationService
+
+    store, _, work, request = pending_question(tmp_path)
+    service = OrganizationService(store, home=tmp_path)
+    starts = []
+    monkeypatch.setattr(service, 'start', lambda: starts.append(True))
+    context = multiprocessing.get_context('spawn')
+    ready, release = context.Queue(), context.Event()
+    process = context.Process(target=_hold_peer_recovery_lock, args=(
+        str(tmp_path / 'organization' / 'execution-locks'),
+        request['id'] if held_request == 'question' else work['id'], ready, release,
+    ))
+    payload = dict(action='request_replan', text='Use supplied facts', idempotency_key='replan')
+    process.start()
+    try:
+        assert ready.get(timeout=20)
+        before = store.snapshot()
+        with pytest.raises(ValueError, match='another runtime'):
+            service.resolve(request['id'], **payload)
+        assert starts == []
+        assert not store.resolution_recorded(request['id'], **payload)
+        after = store.snapshot()
+        assert after['requests'] == before['requests']
+        assert after['objectives'] == before['objectives']
+    finally:
+        release.set()
+        process.join(timeout=10)
+        if process.is_alive():
+            process.terminate()
+            process.join(timeout=5)
+        ready.close()
+    assert process.exitcode == 0
+    assert service.resolve(request['id'], **payload)
+    assert not service.resolve(request['id'], **payload)
+    assert starts == [True]
+    snapshot = OrganizationStore(store.path).snapshot()
+    assert snapshot['objectives'][0]['acceptance']['round'] == 1
+    rows = {row['id']: row for row in snapshot['requests']}
+    assert rows[request['id']]['status'] == rows[work['id']]['status'] == 'cancelled'
