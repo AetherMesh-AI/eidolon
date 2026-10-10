@@ -659,6 +659,13 @@ export interface OrganizationProjectSetup {
   blocked: boolean
   blockers: string[]
 }
+export interface SubmissionReceipt {
+  version: 1
+  profile: string
+  idempotencyKey: string
+  objective: { id: string; title: string; createdAt: string; archived: boolean } | null
+}
+
 export interface RuntimeOrganizationAdapter extends OrganizationReader {
   openOwnerChat?(input: { agentId: string; identityId: string }): Promise<OwnerChatThread>
   readOwnerChat?(input: OwnerChatRead): Promise<OwnerChatThread>
@@ -678,6 +685,7 @@ export interface RuntimeOrganizationAdapter extends OrganizationReader {
   setObjectiveArchived?(input: HistoryMutation): Promise<void>
   previewReplacement?(id: string): Promise<ObjectiveReplacementDraft>
   replaceObjective?(input: ObjectiveReplacementInput): Promise<Objective>
+  checkSubmission?(idempotencyKey: string): Promise<SubmissionReceipt>
   createObjective(title: string, metadata?: ObjectiveMetadata, idempotencyKey?: string): Promise<Objective>
   cancelObjective(id: string): Promise<void>
   retryRequest(id: string): Promise<void>

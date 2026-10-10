@@ -1,6 +1,6 @@
 import { atom } from 'nanostores'
 
-import type { ObjectiveMetadata } from './types'
+import type { ObjectiveMetadata, SubmissionReceipt } from './types'
 
 export interface IntakeFields {
   goal: string
@@ -12,6 +12,9 @@ export interface IntakeDraft extends IntakeFields {
   idempotencyKey?: string
   submitted?: IntakeFields
   busy?: boolean
+  checking?: boolean
+  receipt?: SubmissionReceipt
+  submissionMissing?: boolean
   error?: string
 }
 

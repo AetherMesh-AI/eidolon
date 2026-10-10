@@ -15,6 +15,7 @@ import {
   emptyIntake,
   setIntakeDraft
 } from './runtime-intake-drafts'
+import { SubmissionCheck } from './runtime-submission-check'
 import type { ObjectiveMetadata, OrganizationSnapshot, RuntimeOrganizationAdapter } from './types'
 
 export function Command({
@@ -38,7 +39,7 @@ export function Command({
   const stored = hidden ? undefined : drafts[draftKey]
   const error = stored?.error ?? ''
   const submitting = stored?.busy ?? false
-  const disabled = submitting || Boolean(unavailable)
+  const disabled = submitting || !!stored?.checking || Boolean(unavailable)
   const [discarding, setDiscarding] = useState(false)
   const completionDetails = useRef<HTMLDetailsElement>(null)
   const active = useRef(true)
@@ -54,6 +55,7 @@ export function Command({
   const setGoal = (value: string) => update({ goal: value })
   const setMetadata = (value: ObjectiveMetadata) => update({ metadata: value })
   const setError = (value: string) => update({ error: value })
+
   // Ownership selection is a capability of persistent-identity runtimes. Older
   // snapshots continue using their established default owner contract.
   const hasOwnership =
@@ -94,7 +96,12 @@ export function Command({
   }, [])
 
   const submit = () => {
-    if (unavailable || $intakeDrafts.get()[draftKey]?.busy) {
+    if (
+      unavailable ||
+      $intakeDrafts.get()[draftKey]?.busy ||
+      $intakeDrafts.get()[draftKey]?.checking ||
+      $intakeDrafts.get()[draftKey]?.receipt
+    ) {
       return
     }
 
@@ -417,19 +424,30 @@ export function Command({
         </details>
         <div className="eid-composer-tools">
           <span>{copy.providerScope}</span>
-          <Button disabled={!goal.trim() || submitting || Boolean(unavailable)} type="submit">
+          <Button disabled={!goal.trim() || disabled || !!stored?.receipt} type="submit">
             {submitting ? copy.submittingObjective : copy.createObjective} <span aria-hidden="true">↑</span>
           </Button>
         </div>
       </form>
       <p className="eid-note">{copy.intakeMemory}</p>
-      {stored?.idempotencyKey && !submitting && <p role="status">{copy.intakeUnconfirmed}</p>}
+      {stored?.idempotencyKey && !submitting && !stored.receipt && <p role="status">{copy.intakeUnconfirmed}</p>}
+      {stored?.idempotencyKey && adapter.checkSubmission && (
+        <SubmissionCheck
+          adapter={adapter}
+          draftKey={draftKey}
+          key={`${draftKey}:${stored.idempotencyKey}`}
+          snapshot={snapshot}
+        />
+      )}
+      <p className="eid-note">
+        {copy.intakeRecovery} <Link to="/objectives">{copy.intakeFindExisting}</Link>
+      </p>
       {error && <p role="alert">{error}</p>}
       <div className="eid-inline">
         <Button disabled={disabled || !stored} onClick={() => setDiscarding(true)} variant="text">
           {copy.intakeDiscard}
         </Button>
-        {stored?.submitted && !submitting && (
+        {stored?.submitted && !submitting && !stored.receipt && (
           <Button disabled={disabled} onClick={() => update(stored.submitted!)} variant="text">
             {copy.intakeRestore}
           </Button>
@@ -442,7 +460,7 @@ export function Command({
         dismissOnConfirm
         onClose={() => setDiscarding(false)}
         onConfirm={() => {
-          if (!$intakeDrafts.get()[draftKey]?.busy) {
+          if (!$intakeDrafts.get()[draftKey]?.busy && !$intakeDrafts.get()[draftKey]?.checking) {
             discardIntakeDraft(draftKey)
           }
         }}

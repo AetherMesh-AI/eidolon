@@ -10,7 +10,7 @@ import { validProjectSave, validProjectSetup } from './runtime-project-setup-con
 import { validEditProposal } from './runtime-proposal-validation'
 import { validOrganizationSetup } from './runtime-setup-contract'
 import { validWorkPackages } from './runtime-work-package-contract'
-import type { Objective, ObjectiveReplacementDraft, OrganizationArtifact, OrganizationExecutionAudit, OrganizationProjectDraft, OrganizationProjectSave, OrganizationProjectSetup, OrganizationSnapshot, OrganizationToolEvidence, RuntimeOrganizationAdapter } from './types'
+import type { Objective, ObjectiveReplacementDraft, OrganizationArtifact, OrganizationExecutionAudit, OrganizationProjectDraft, OrganizationProjectSave, OrganizationProjectSetup, OrganizationSnapshot, OrganizationToolEvidence, RuntimeOrganizationAdapter, SubmissionReceipt } from './types'
 
 export interface OrganizationScope {
   /** Exact socket + registry connection + profile. Never use the profile alone. */
@@ -541,6 +541,22 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
       return mutate<{ objective: Objective; snapshot: OrganizationSnapshot }>(
         `replace:${JSON.stringify(input)}`, 'organization.replaceObjective', { ...input }, result => result.snapshot
       ).then(result => result.objective)
+    },
+    async checkSubmission(idempotencyKey) {
+      resetScope()
+      const profile = snapshot.runtime?.profile
+      if (!profile) {throw new Error(translateNow('organizationWork.intakeCheckInvalid'))}
+      const result = await readHistory<SubmissionReceipt>('organization.checkSubmission', { idempotencyKey })
+      const objective = result?.objective
+      if (!result || result.version !== 1 || result.idempotencyKey !== idempotencyKey ||
+          typeof result.profile !== 'string' || result.profile !== profile || result.profile !== snapshot.runtime?.profile ||
+          (objective !== null && (!objective || typeof objective.id !== 'string' || !/^obj_[a-f0-9]{32}$/.test(objective.id) ||
+            typeof objective.title !== 'string' || !objective.title || objective.title.length > 500 ||
+            typeof objective.createdAt !== 'string' || !Number.isFinite(Date.parse(objective.createdAt)) ||
+            typeof objective.archived !== 'boolean'))) {
+        throw new Error(translateNow('organizationWork.intakeCheckInvalid'))
+      }
+      return result
     },
     createObjective(input, metadata = {}, idempotencyKey) {
       resetScope()
