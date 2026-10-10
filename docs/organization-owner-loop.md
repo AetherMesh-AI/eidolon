@@ -454,3 +454,26 @@ retained execution receipts and archive blockers remain inspectable.
 This is an in-app inbox only. It sends no external messages, desktop notifications
 or new OS permission requests. Deterministic loopback-model tests exercise the
 persistence and delivery mechanics, not live-model judgment quality.
+
+### Expired objectives: reviewed replacement
+
+An expired, unfinished objective offers **Review replacement**. The owner reviews
+its current scope and acceptance criteria, retained executive/manager, selected
+projects and required checks, and a fresh finite allowance and deadline duration.
+The confirmation checkbox is initially clear. Closing the review creates nothing.
+Only **Cancel original and create replacement** authorizes new execution.
+
+Confirmation atomically cancels the original's unfinished work and admits one new
+linked objective, freeing the old open-work slot even at the open-objective limit.
+Original evidence, requests, reserved usage, identities, and history remain intact;
+both detail pages link to each other. Existing storage-history ceilings still
+apply and admission failure rolls back cancellation. A source has at most one
+replacement. Exact replay after a lost response or restart returns it; a different
+draft cannot create another. Stale source or authority changes require a new review.
+Active execution in either this process or a peer runtime must exit first.
+
+Replacement does not copy completed-task claims or grant approvals, change
+configuration, broaden selected project bindings, remove required checks, refund
+old reservations, or silently renew an objective. New model/token/cost, replan,
+stage and project-run limits remain bounded by the original and current policy;
+the owner explicitly authorizes the displayed current-policy deadline duration.

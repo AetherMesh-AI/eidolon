@@ -10,7 +10,7 @@ import { validProjectSave, validProjectSetup } from './runtime-project-setup-con
 import { validEditProposal } from './runtime-proposal-validation'
 import { validOrganizationSetup } from './runtime-setup-contract'
 import { validWorkPackages } from './runtime-work-package-contract'
-import type { Objective, OrganizationArtifact, OrganizationExecutionAudit, OrganizationProjectDraft, OrganizationProjectSave, OrganizationProjectSetup, OrganizationSnapshot, OrganizationToolEvidence, RuntimeOrganizationAdapter } from './types'
+import type { Objective, ObjectiveReplacementDraft, OrganizationArtifact, OrganizationExecutionAudit, OrganizationProjectDraft, OrganizationProjectSave, OrganizationProjectSetup, OrganizationSnapshot, OrganizationToolEvidence, RuntimeOrganizationAdapter } from './types'
 
 export interface OrganizationScope {
   /** Exact socket + registry connection + profile. Never use the profile alone. */
@@ -525,6 +525,16 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
     refresh: () => { failures = 0;
 
  return refresh() },
+    previewReplacement(id) {
+      return readHistory<ObjectiveReplacementDraft>('organization.previewReplacement', { id })
+    },
+    replaceObjective(input) {
+      resetScope()
+
+      return mutate<{ objective: Objective; snapshot: OrganizationSnapshot }>(
+        `replace:${JSON.stringify(input)}`, 'organization.replaceObjective', { ...input }, result => result.snapshot
+      ).then(result => result.objective)
+    },
     createObjective(input, metadata = {}, idempotencyKey) {
       resetScope()
       const title = input.trim()

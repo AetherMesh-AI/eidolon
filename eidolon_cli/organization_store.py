@@ -17,6 +17,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 
+from eidolon_cli.organization_replacement import REPLACEMENT_SCHEMA, OrganizationReplacementStore
 from eidolon_cli.organization_owner_chat import OWNER_CHAT_SCHEMA, OrganizationOwnerChatStore
 from eidolon_cli.organization_conversations import CONVERSATION_SCHEMA, OrganizationConversationStore
 from eidolon_cli.organization_packages import (PACKAGE_SCHEMA, OrganizationPackageStore, package_dependencies_ready, task_package_id)
@@ -103,12 +104,12 @@ def _text(value, field, limit=10000):
     return value.strip()
 
 
-class OrganizationStore(OrganizationOwnerChatStore, OrganizationConversationStore, OrganizationPackageStore, OrganizationOutcomeStore, OrganizationAttentionStore, OrganizationHistoryStore, OrganizationCoordinationStore, OrganizationProjectExecutionStore, OrganizationBudgetStore, OrganizationRequestStore, OrganizationManagementStore, OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
+class OrganizationStore(OrganizationReplacementStore, OrganizationOwnerChatStore, OrganizationConversationStore, OrganizationPackageStore, OrganizationOutcomeStore, OrganizationAttentionStore, OrganizationHistoryStore, OrganizationCoordinationStore, OrganizationProjectExecutionStore, OrganizationBudgetStore, OrganizationRequestStore, OrganizationManagementStore, OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
     def __init__(self, path: Path | str, settings: OrganizationSettings | None = None):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
-            conn.executescript(_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA + COORDINATION_SCHEMA + HISTORY_SCHEMA + ATTENTION_SCHEMA + PROJECTS_SCHEMA + OUTCOME_SCHEMA + REGISTRY_SCHEMA + PACKAGE_SCHEMA + CONVERSATION_SCHEMA + OWNER_CHAT_SCHEMA)
+            conn.executescript(_SCHEMA + REPLACEMENT_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA + COORDINATION_SCHEMA + HISTORY_SCHEMA + ATTENTION_SCHEMA + PROJECTS_SCHEMA + OUTCOME_SCHEMA + REGISTRY_SCHEMA + PACKAGE_SCHEMA + CONVERSATION_SCHEMA + OWNER_CHAT_SCHEMA)
         self.settings = settings or OrganizationSettings()
         with self._write() as conn:
             self.settings = resolve_settings(conn, settings)
@@ -201,6 +202,17 @@ class OrganizationStore(OrganizationOwnerChatStore, OrganizationConversationStor
         return ident
 
     def create_objective(self, title, description=None, priority="normal", *, idempotency_key, acceptance_criteria=None, delivery_mode="source_project", required_checks=None, executive_id=None, manager_id=None, project_ids=None):
+        with self._write() as conn:
+            ident = self._create_objective(conn, title, description, priority, idempotency_key=idempotency_key, acceptance_criteria=acceptance_criteria, delivery_mode=delivery_mode, required_checks=required_checks, executive_id=executive_id, manager_id=manager_id, project_ids=project_ids)
+        return self._objective_view(ident)
+
+    def _objective_view(self, ident):
+        # A duplicate may be older than the UI's settled-history window.
+        from eidolon_cli.organization_snapshot import build_snapshot
+        with self._connect() as conn:
+            return build_snapshot(conn, self.settings, objective_id=ident, resolution_options=self.allowed_owner_resolutions)["objectives"][0]
+
+    def _create_objective(self, conn, title, description=None, priority="normal", *, idempotency_key, acceptance_criteria=None, delivery_mode="source_project", required_checks=None, executive_id=None, manager_id=None, project_ids=None, project_run_limit=None):
         title = _text(title, "Title", 500)
         description = _text(description or title, "Description", 30000)
         from eidolon_cli.organization_acceptance import acceptance_criteria as normalize_criteria
@@ -224,37 +236,33 @@ class OrganizationStore(OrganizationOwnerChatStore, OrganizationConversationStor
         if projects:
             identity = {'objective': identity, 'projects': projects}
         digest = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
-        with self._write() as conn:
-            self._require_current_policy(conn)
-            old = conn.execute("SELECT * FROM objectives WHERE idempotency_key=?", (key,)).fetchone()
-            if old:
-                if old["input_hash"] != digest:
-                    raise ValueError("Idempotency key already belongs to a different objective")
-                ident = old["id"]
-            else:
-                count = conn.execute("SELECT count(DISTINCT objective_id) FROM requests WHERE status NOT IN ('completed','cancelled')").fetchone()[0]
-                if count >= self.settings.max_open_objectives:
-                    raise ValueError("Organization is at its open-objective limit; finish or cancel existing work first")
-                history = history_counts(conn)
-                if history["current"] >= history["currentLimit"]:
-                    raise ValueError("Current-objective capacity reached; archive completed or cancelled history before admitting new work")
-                ident = _id("obj")
-                conn.execute("INSERT INTO objectives VALUES (?,?,?,?,?,?,?,0)",
-                             (ident, key, digest, title, description, level, time.time()))
-                for project in projects:
-                    conn.execute('INSERT INTO objective_projects VALUES (?,?,?)', (ident, project['id'], json.dumps(project, sort_keys=True)))
-                conn.execute('INSERT INTO project_execution_budgets VALUES (?,?)', (ident, self.settings.max_project_runs))
-                self._assign_objective(conn, ident, executive_id, manager_id)
-                mode = self._initialize_planning(conn, ident)
-                conn.execute("INSERT INTO objective_control(objective_id,criteria,status,round,max_replans,max_stages,delivery_mode,required_checks) VALUES (?,?,'pending',0,?,?,?,?)",
-                             (ident, json.dumps(criteria), self.settings.max_replans, self.settings.max_stages, delivery_mode, json.dumps(checks)))
-                self._initialize_budget(conn, ident)
-                self._queue_objective_planning(conn, ident, level)
-                self._event(conn, ident, "Objective accepted. " + ("Executive decomposition" if mode == "executive_packages" else "Legacy manager planning") + " is queued.", "planning")
-        # A duplicate may be older than the UI's settled-history window.
-        from eidolon_cli.organization_snapshot import build_snapshot
-        with self._connect() as conn:
-            return build_snapshot(conn, self.settings, objective_id=ident, resolution_options=self.allowed_owner_resolutions)["objectives"][0]
+        self._require_current_policy(conn)
+        old = conn.execute("SELECT * FROM objectives WHERE idempotency_key=?", (key,)).fetchone()
+        if old:
+            if old["input_hash"] != digest:
+                raise ValueError("Idempotency key already belongs to a different objective")
+            ident = old["id"]
+        else:
+            count = conn.execute("SELECT count(DISTINCT objective_id) FROM requests WHERE status NOT IN ('completed','cancelled')").fetchone()[0]
+            if count >= self.settings.max_open_objectives:
+                raise ValueError("Organization is at its open-objective limit; finish or cancel existing work first")
+            history = history_counts(conn)
+            if history["current"] >= history["currentLimit"]:
+                raise ValueError("Current-objective capacity reached; archive completed or cancelled history before admitting new work")
+            ident = _id("obj")
+            conn.execute("INSERT INTO objectives VALUES (?,?,?,?,?,?,?,0)",
+                         (ident, key, digest, title, description, level, time.time()))
+            for project in projects:
+                conn.execute('INSERT INTO objective_projects VALUES (?,?,?)', (ident, project['id'], json.dumps(project, sort_keys=True)))
+            conn.execute('INSERT INTO project_execution_budgets VALUES (?,?)', (ident, min(self.settings.max_project_runs, project_run_limit) if project_run_limit is not None else self.settings.max_project_runs))
+            self._assign_objective(conn, ident, executive_id, manager_id)
+            mode = self._initialize_planning(conn, ident)
+            conn.execute("INSERT INTO objective_control(objective_id,criteria,status,round,max_replans,max_stages,delivery_mode,required_checks) VALUES (?,?,'pending',0,?,?,?,?)",
+                         (ident, json.dumps(criteria), self.settings.max_replans, self.settings.max_stages, delivery_mode, json.dumps(checks)))
+            self._initialize_budget(conn, ident)
+            self._queue_objective_planning(conn, ident, level)
+            self._event(conn, ident, "Objective accepted. " + ("Executive decomposition" if mode == "executive_packages" else "Legacy manager planning") + " is queued.", "planning")
+        return ident
 
     def _eligible(self, conn, request):
         if request["type"] == "request.message":
@@ -550,20 +558,23 @@ class OrganizationStore(OrganizationOwnerChatStore, OrganizationConversationStor
 
     def cancel(self, objective_id):
         with self._write() as conn:
-            row = conn.execute("SELECT * FROM objectives WHERE id=?", (objective_id,)).fetchone()
-            if row is None:
-                raise ValueError("Objective not found")
-            if row["cancelled"]:
-                return False
-            if conn.execute("SELECT 1 FROM objective_history WHERE objective_id=? AND archived=1", (objective_id,)).fetchone():
-                raise ValueError("Archived history cannot be cancelled; restore its history visibility first")
-            for request in conn.execute("SELECT id FROM requests WHERE objective_id=?", (objective_id,)):
-                fence_receipts(conn, request['id'], 'Objective cancelled before the tool outcome was confirmed.')
-            conn.execute("UPDATE objectives SET cancelled=1 WHERE id=?", (objective_id,))
-            conn.execute("UPDATE requests SET status='cancelled',token=NULL,lease=NULL,reason='Cancelled by owner' WHERE objective_id=? AND status NOT IN ('completed','cancelled')", (objective_id,))
-            conn.execute("UPDATE tasks SET status='cancelled' WHERE objective_id=? AND status!='completed'", (objective_id,))
-            self._event(conn, objective_id, "Owner cancelled this objective. In-flight model calls are being interrupted; no further results will be accepted.")
-            return True
+            return self._cancel_objective(conn, objective_id)
+
+    def _cancel_objective(self, conn, objective_id):
+        row = conn.execute("SELECT * FROM objectives WHERE id=?", (objective_id,)).fetchone()
+        if row is None:
+            raise ValueError("Objective not found")
+        if row["cancelled"]:
+            return False
+        if conn.execute("SELECT 1 FROM objective_history WHERE objective_id=? AND archived=1", (objective_id,)).fetchone():
+            raise ValueError("Archived history cannot be cancelled; restore its history visibility first")
+        for request in conn.execute("SELECT id FROM requests WHERE objective_id=?", (objective_id,)):
+            fence_receipts(conn, request['id'], 'Objective cancelled before the tool outcome was confirmed.')
+        conn.execute("UPDATE objectives SET cancelled=1 WHERE id=?", (objective_id,))
+        conn.execute("UPDATE requests SET status='cancelled',token=NULL,lease=NULL,reason='Cancelled by owner' WHERE objective_id=? AND status NOT IN ('completed','cancelled')", (objective_id,))
+        conn.execute("UPDATE tasks SET status='cancelled' WHERE objective_id=? AND status!='completed'", (objective_id,))
+        self._event(conn, objective_id, "Owner cancelled this objective. In-flight model calls are being interrupted; no further results will be accepted.")
+        return True
 
     def retry(self, request_id, *, idempotency_key=None):
         key = _text(idempotency_key or uuid.uuid4().hex, "Retry idempotency key", 128)

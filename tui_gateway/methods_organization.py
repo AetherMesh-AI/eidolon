@@ -162,6 +162,23 @@ def _(params, service):
     return {"objective": objective, "snapshot": _organization_snapshot(organization)}
 
 
+@_organization_method("organization.previewReplacement")
+def _(params, service):
+    _organization_params(params, {"id"})
+    return service().store.preview_replacement(_organization_text(params, "id", 128))
+
+
+@_organization_method("organization.replaceObjective")
+def _(params, service):
+    _organization_params(params, {"sourceId", "sourceVersion", "title", "description", "acceptanceCriteria", "confirmed"})
+    organization = service()
+    objective = organization.replace_objective(
+        _organization_text(params, "sourceId", 128), _organization_text(params, "sourceVersion", 64),
+        _organization_text(params, "title", 500), _organization_text(params, "description", 30000),
+        params.get("acceptanceCriteria"), confirmed=params.get("confirmed"))
+    return {"objective": objective, "snapshot": _organization_snapshot(organization)}
+
+
 @_organization_method("organization.cancel")
 def _(params, service):
     _organization_params(params, {"id"})
