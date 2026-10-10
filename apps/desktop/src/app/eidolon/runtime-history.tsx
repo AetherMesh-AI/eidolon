@@ -327,6 +327,18 @@ export function RuntimeHistoryObjectiveDetail({ adapter, snapshot, objectiveId }
   const supported = !!snapshot.runtime?.history && !!adapter.getHistoryObjective
   const revision = visible?.history?.revision
 
+  // Keep the mounted detail (and uncertain owner intent) while an omitted row
+  // is resolved through the exact-history endpoint. Never republish it as active.
+  useEffect(() => {
+    if (visible) {
+      setRetained(previous => {
+        const prior = previous?.objectives.find(item => item.id === objectiveId)
+
+        return (prior?.history?.revision ?? -1) > (visible.history?.revision ?? -1) ? previous : snapshot
+      })
+    }
+  }, [snapshot, visible, objectiveId])
+
   useEffect(() => {
     if (!ready || !supported || !adapter.getHistoryObjective || (hasVisible && !attempt)) {
       return

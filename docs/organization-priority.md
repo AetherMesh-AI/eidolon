@@ -33,3 +33,10 @@ recovers the original receipt without enabling a new change. Review current
 priority discards that local intent and adopts the latest observed revision;
 a later stale save still fails at the server. Profile/connection changes fence
 callbacks. Older runtimes without priority revisions expose no writable fallback.
+
+Priority replies include the authenticated profile and an exact objective projection
+alongside the active snapshot. The adapter validates that projection's objective ID,
+priority and revision against the receipt, and validates both response profiles.
+An archived row can remain absent from the active snapshot while its exact receipt
+is recovered. The keyed detail view retains its mounted state during the exact
+history fetch, preserving an uncertain retry without republishing archived rows.

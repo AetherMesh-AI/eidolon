@@ -433,17 +433,21 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
 
       if (!profile) {return Promise.reject(new Error(translateNow('organizationWork.priorityUnavailable')))}
 
-      return mutate<{ receipt: PriorityReceipt; snapshot: OrganizationSnapshot }>(
+      return mutate<{ receipt: PriorityReceipt; profile: string; objective: Objective; snapshot: OrganizationSnapshot }>(
         `priority:${input.idempotencyKey}`, 'organization.changePriority', { ...input }, value => {
           const receipt = value?.receipt
-          const objective = value?.snapshot?.objectives?.find(item => item.id === input.id)
+          const objective = value?.objective
+          const visible = value?.snapshot?.objectives?.find(item => item.id === input.id)
 
           if (!receipt || receipt.objectiveId !== input.id || receipt.idempotencyKey !== input.idempotencyKey
             || receipt.priority !== input.priority || receipt.revision !== input.expectedRevision + 1
             || !['P1', 'P2', 'P3', 'P4', 'P5'].includes(receipt.previousPriority)
-            || value.snapshot.runtime?.profile !== profile || !objective
+            || value.profile !== profile || value.snapshot?.runtime?.profile !== profile || !objective || objective.id !== input.id
+            || !['P1', 'P2', 'P3', 'P4', 'P5'].includes(objective.priority ?? '')
             || !Number.isSafeInteger(objective.priorityRevision) || objective.priorityRevision! < receipt.revision
-            || (objective.priorityRevision === receipt.revision && objective.priority !== receipt.priority)) {
+            || (objective.priorityRevision === receipt.revision && objective.priority !== receipt.priority)
+            || (visible && (!Number.isSafeInteger(visible.priorityRevision) || visible.priorityRevision! < objective.priorityRevision!
+              || (visible.priorityRevision === objective.priorityRevision && visible.priority !== objective.priority)))) {
             throw new Error(translateNow('organizationWork.priorityInvalid'))
           }
 

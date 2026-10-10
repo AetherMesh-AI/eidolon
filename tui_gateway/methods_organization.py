@@ -242,7 +242,10 @@ def _(params, service):
         expected_revision=params.get("expectedRevision"),
         idempotency_key=_organization_text(params, "idempotencyKey", 128))
     # Scheduling preference only: do not start, cancel or wake provider work.
-    return {"receipt": receipt, "snapshot": _organization_snapshot(organization)}
+    from eidolon_cli.profiles import get_active_profile_name
+    return {"receipt": receipt, "profile": get_active_profile_name(),
+            "objective": organization.store._objective_view(receipt["objectiveId"]),
+            "snapshot": _organization_snapshot(organization)}
 
 
 @_organization_method("organization.resolve")

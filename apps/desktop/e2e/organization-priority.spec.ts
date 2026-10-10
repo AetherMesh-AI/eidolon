@@ -42,13 +42,39 @@ with sqlite3.connect((Path(os.environ['HERMES_HOME'])/'organization'/'state.db')
 
   const before = retained()
   const changes: Record<string, unknown>[] = []
+  let loseNext = false
+  const lostReplies = new Set<number>()
   await page.routeWebSocket(/.*/, socket => {
     const server = socket.connectToServer()
     socket.onMessage(message => {
-      const request = JSON.parse(message.toString()) as { method?: string; params?: Record<string, unknown> }
+      const request = JSON.parse(message.toString()) as { id: number; method?: string; params?: Record<string, unknown> }
 
-      if (request.method === 'organization.changePriority') {changes.push(request.params ?? {})}
+      if (request.method === 'organization.changePriority') {
+        changes.push(request.params ?? {})
+
+        if (loseNext) {lostReplies.add(request.id); loseNext = false}
+      }
+
       server.send(message)
+    })
+    server.onMessage(message => {
+      const response = JSON.parse(message.toString()) as { id?: number }
+
+      if (response.id !== undefined && lostReplies.delete(response.id)) {
+        // Archive after the real authenticated write commits, before the lost
+        // reply triggers the adapter's immediate reconciliation read.
+        expect(response).toHaveProperty('result.receipt.priority', 'P3')
+        run(`
+import os
+from pathlib import Path
+from eidolon_cli.organization_store import OrganizationStore
+s=OrganizationStore(Path(os.environ['HERMES_HOME'])/'organization'/'state.db')
+s.cancel('${id}')
+s.set_objective_archived('${id}',True,expected_revision=0,idempotency_key='native-priority-archive')
+assert s.snapshot()['objectives']==[]
+`)
+        socket.send(JSON.stringify({ jsonrpc: '2.0', id: response.id, error: { code: -32000, message: 'Scripted lost reply after commit' } }))
+      } else {socket.send(message)}
     })
   })
   await page.reload()
@@ -72,5 +98,20 @@ with sqlite3.connect((Path(os.environ['HERMES_HOME'])/'organization'/'state.db')
   expect(retained()).toEqual(before)
   expect(mock.receivedPrompts).toHaveLength(0)
   await page.screenshot({ path: testInfo.outputPath('priority-owner-saved.png') })
-  await testInfo.attach('priority-save-evidence', { body: JSON.stringify({ id, changes, retainedStateUnchanged: true, providerCalls: 0 }), contentType: 'application/json' })
+  const initialChanges = structuredClone(changes)
+  loseNext = true
+  await form.getByRole('combobox', { name: 'New priority' }).selectOption('P3')
+  await form.getByRole('button', { name: 'Save priority', exact: true }).click()
+  await expect(form.getByRole('alert')).toContainText('Scripted lost reply after commit')
+  await expect(page.getByText('Archived history', { exact: true })).toBeVisible()
+  await expect(form.getByRole('combobox', { name: 'New priority' })).toHaveCount(0)
+  await form.getByRole('button', { name: 'Retry priority save', exact: true }).click()
+  await expect(form.getByText('Saved P4 → P3 (revision 3).', { exact: true })).toBeVisible()
+  expect(changes).toHaveLength(4)
+  expect(changes[2]).toEqual(changes[3])
+  await expect(form.getByRole('button', { name: 'Retry priority save', exact: true })).toHaveCount(0)
+  await expect(form.getByRole('button', { name: 'Save priority', exact: true })).toHaveCount(0)
+  expect(mock.receivedPrompts).toHaveLength(0)
+  await page.screenshot({ path: testInfo.outputPath('priority-archived-recovery.png') })
+  await testInfo.attach('priority-save-evidence', { body: JSON.stringify({ id, changes: initialChanges, retainedStateUnchanged: true, providerCalls: 0, archivedRecovery: { changes: changes.slice(2), activeObjectiveAbsent: true } }), contentType: 'application/json' })
 })

@@ -38,3 +38,19 @@ def test_priority_rpc_uses_authenticated_profile_and_rejects_cross_profile_or_ex
         assert rpc(params)['error']['code'] == 4001
     assert alpha._objective_view(objective['id'])['priorityRevision'] == 1
     assert stores[(root/'profiles'/'beta').resolve()].snapshot()['objectives'] == []
+
+    # Actual archive projection excludes the row; exact provenance and receipt survive.
+    alpha.cancel(objective['id'])
+    alpha.set_objective_archived(objective['id'], True, expected_revision=0, idempotency_key='archive')
+    assert alpha.snapshot()['objectives'] == []
+    replay = rpc(params)['result']
+    assert replay['receipt'] == response['result']['receipt']
+    assert replay['profile'] == 'alpha' and replay['snapshot']['runtime']['profile'] == 'alpha'
+    assert replay['snapshot']['objectives'] == []
+    assert replay['objective']['id'] == objective['id']
+    assert replay['objective']['history']['archived'] is True
+    assert replay['objective']['priority'] == 'P1' and replay['objective']['priorityRevision'] == 1
+    assert 'error' in rpc({**params, 'idempotencyKey':'new', 'priority':'P2', 'expectedRevision':1})
+    assert 'error' in rpc({**params, 'profile':'beta'})
+    with alpha._connect() as conn:
+        assert conn.execute('SELECT count(*) FROM priority_changes').fetchone()[0] == 1
