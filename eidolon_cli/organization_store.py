@@ -21,6 +21,7 @@ from eidolon_cli.organization_replacement import REPLACEMENT_SCHEMA, Organizatio
 from eidolon_cli.organization_owner_chat import OWNER_CHAT_SCHEMA, OrganizationOwnerChatStore
 from eidolon_cli.organization_conversations import CONVERSATION_SCHEMA, OrganizationConversationStore
 from eidolon_cli.organization_packages import (PACKAGE_SCHEMA, OrganizationPackageStore, package_dependencies_ready, task_package_id)
+from eidolon_cli.organization_priority import PRIORITY_SCHEMA, OrganizationPriorityStore
 from eidolon_cli.organization_config import OrganizationSettings
 from eidolon_cli.organization_project_registry import REGISTRY_SCHEMA
 from eidolon_cli.organization_projects import (PROJECTS_SCHEMA, selected_projects, objective_projects, task_project, bind_task_project, validate_objective_projects, public_project)
@@ -104,12 +105,12 @@ def _text(value, field, limit=10000):
     return value.strip()
 
 
-class OrganizationStore(OrganizationReplacementStore, OrganizationOwnerChatStore, OrganizationConversationStore, OrganizationPackageStore, OrganizationOutcomeStore, OrganizationAttentionStore, OrganizationHistoryStore, OrganizationCoordinationStore, OrganizationProjectExecutionStore, OrganizationBudgetStore, OrganizationRequestStore, OrganizationManagementStore, OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
+class OrganizationStore(OrganizationPriorityStore, OrganizationReplacementStore, OrganizationOwnerChatStore, OrganizationConversationStore, OrganizationPackageStore, OrganizationOutcomeStore, OrganizationAttentionStore, OrganizationHistoryStore, OrganizationCoordinationStore, OrganizationProjectExecutionStore, OrganizationBudgetStore, OrganizationRequestStore, OrganizationManagementStore, OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
     def __init__(self, path: Path | str, settings: OrganizationSettings | None = None):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
-            conn.executescript(_SCHEMA + REPLACEMENT_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA + COORDINATION_SCHEMA + HISTORY_SCHEMA + ATTENTION_SCHEMA + PROJECTS_SCHEMA + OUTCOME_SCHEMA + REGISTRY_SCHEMA + PACKAGE_SCHEMA + CONVERSATION_SCHEMA + OWNER_CHAT_SCHEMA)
+            conn.executescript(_SCHEMA + REPLACEMENT_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA + COORDINATION_SCHEMA + HISTORY_SCHEMA + ATTENTION_SCHEMA + PROJECTS_SCHEMA + OUTCOME_SCHEMA + REGISTRY_SCHEMA + PACKAGE_SCHEMA + CONVERSATION_SCHEMA + OWNER_CHAT_SCHEMA + PRIORITY_SCHEMA)
         self.settings = settings or OrganizationSettings()
         with self._write() as conn:
             self.settings = resolve_settings(conn, settings)

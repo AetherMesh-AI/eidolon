@@ -2,6 +2,7 @@ import type { OrganizationAttentionPage, OrganizationAttentionQuery, Organizatio
 import type { HistoryCounts, HistoryMutation, HistoryPage, HistoryQuery, HistoryState } from './runtime-history-types'
 import type { OrganizationOutcomePage, OrganizationOutcomeQuery, OrganizationOutcomeSeen } from './runtime-outcome-types'
 import type { OwnerChatCancel, OwnerChatRead, OwnerChatRenew, OwnerChatSend, OwnerChatThread } from './runtime-owner-chat-types'
+import type { PriorityChange, PriorityReceipt } from './runtime-priority-types'
 
 export const objectiveStatusLabels = {
   planning: 'Planning', active: 'Active', waiting: 'Waiting', needs_input: 'Needs Input',
@@ -75,6 +76,7 @@ export interface ObjectiveReplacementInput {
   confirmed: true
 }
 export interface Objective extends ObjectiveMetadata {
+  priorityRevision?: number
   replacementEligible?: boolean
   replacesObjectiveId?: string | null
   replacementObjectiveId?: string | null
@@ -668,6 +670,7 @@ export interface SubmissionReceipt {
 }
 
 export interface RuntimeOrganizationAdapter extends OrganizationReader {
+  changePriority?(input: PriorityChange): Promise<PriorityReceipt>
   openOwnerChat?(input: { agentId: string; identityId: string }): Promise<OwnerChatThread>
   readOwnerChat?(input: OwnerChatRead): Promise<OwnerChatThread>
   sendOwnerChat?(input: OwnerChatSend): Promise<OwnerChatThread>

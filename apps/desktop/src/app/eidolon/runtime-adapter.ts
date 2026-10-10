@@ -6,6 +6,7 @@ import type { HistoryPage } from './runtime-history-types'
 import { type OrganizationOutcomePage, validOutcomePage } from './runtime-outcome-types'
 import { OwnerChatRenewalRejected, validOwnerChatThread } from './runtime-owner-chat-contract'
 import type { OwnerChatThread } from './runtime-owner-chat-types'
+import type { PriorityReceipt } from './runtime-priority-types'
 import { validProjectSave, validProjectSetup } from './runtime-project-setup-contract'
 import { validEditProposal } from './runtime-proposal-validation'
 import { validOrganizationSetup } from './runtime-setup-contract'
@@ -426,6 +427,34 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
 
       return { ...result, connection: snapshot.connection }
     },
+    changePriority(input) {
+      resetScope()
+      const profile = snapshot.runtime?.profile
+
+      if (!profile) {return Promise.reject(new Error(translateNow('organizationWork.priorityUnavailable')))}
+
+      return mutate<{ receipt: PriorityReceipt; profile: string; objective: Objective; snapshot: OrganizationSnapshot }>(
+        `priority:${input.idempotencyKey}`, 'organization.changePriority', { ...input }, value => {
+          const receipt = value?.receipt
+          const objective = value?.objective
+          const visible = value?.snapshot?.objectives?.find(item => item.id === input.id)
+
+          if (!receipt || receipt.objectiveId !== input.id || receipt.idempotencyKey !== input.idempotencyKey
+            || receipt.priority !== input.priority || receipt.revision !== input.expectedRevision + 1
+            || !['P1', 'P2', 'P3', 'P4', 'P5'].includes(receipt.previousPriority)
+            || value.profile !== profile || value.snapshot?.runtime?.profile !== profile || !objective || objective.id !== input.id
+            || !['P1', 'P2', 'P3', 'P4', 'P5'].includes(objective.priority ?? '')
+            || !Number.isSafeInteger(objective.priorityRevision) || objective.priorityRevision! < receipt.revision
+            || (objective.priorityRevision === receipt.revision && objective.priority !== receipt.priority)
+            || (visible && (!Number.isSafeInteger(visible.priorityRevision) || visible.priorityRevision! < objective.priorityRevision!
+              || (visible.priorityRevision === objective.priorityRevision && visible.priority !== objective.priority)))) {
+            throw new Error(translateNow('organizationWork.priorityInvalid'))
+          }
+
+          return value.snapshot
+        }
+      ).then(value => value.receipt)
+    },
     setObjectiveArchived(input) {
       resetScope()
       const params = { id: input.id, archived: input.archived, expectedRevision: input.expectedRevision }
@@ -545,9 +574,11 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
     async checkSubmission(idempotencyKey) {
       resetScope()
       const profile = snapshot.runtime?.profile
+
       if (!profile) {throw new Error(translateNow('organizationWork.intakeCheckInvalid'))}
       const result = await readHistory<SubmissionReceipt>('organization.checkSubmission', { idempotencyKey })
       const objective = result?.objective
+
       if (!result || result.version !== 1 || result.idempotencyKey !== idempotencyKey ||
           typeof result.profile !== 'string' || result.profile !== profile || result.profile !== snapshot.runtime?.profile ||
           (objective !== null && (!objective || typeof objective.id !== 'string' || !/^obj_[a-f0-9]{32}$/.test(objective.id) ||
@@ -556,6 +587,7 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
             typeof objective.archived !== 'boolean'))) {
         throw new Error(translateNow('organizationWork.intakeCheckInvalid'))
       }
+
       return result
     },
     createObjective(input, metadata = {}, idempotencyKey) {
