@@ -1,11 +1,20 @@
+import { useStore } from '@nanostores/react'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { controlVariants } from '@/components/ui/control'
 import { Textarea } from '@/components/ui/textarea'
 import { useI18n } from '@/i18n/context'
 
+import {
+  $intakeDrafts,
+  acknowledgeIntake,
+  discardIntakeDraft,
+  emptyIntake,
+  setIntakeDraft
+} from './runtime-intake-drafts'
 import type { ObjectiveMetadata, OrganizationSnapshot, RuntimeOrganizationAdapter } from './types'
 
 export function Command({
@@ -18,19 +27,39 @@ export function Command({
   const { t } = useI18n()
   const copy = t.organizationWork
   const roster = t.organizationRoster
-  const [criteria, setCriteria] = useState('')
-  const [goal, setGoal] = useState('')
-  const [metadata, setMetadata] = useState<ObjectiveMetadata>({})
-  const [error, setError] = useState('')
-  const [submitting, setSubmitting] = useState(false)
+  const drafts = useStore($intakeDrafts)
+  const localKey = useRef(crypto.randomUUID())
+  const owner = snapshot.connection?.ownerScope ?? snapshot.connection?.scope
+  const unavailable = snapshot.connection && snapshot.connection.state !== 'ready'
+  const draftKey = owner ? JSON.stringify(['intake', owner]) : localKey.current
+  const hidden = snapshot.connection?.state === 'connecting'
+  const draft = hidden ? emptyIntake : (drafts[draftKey] ?? emptyIntake)
+  const { criteria, goal, metadata } = draft
+  const stored = hidden ? undefined : drafts[draftKey]
+  const error = stored?.error ?? ''
+  const submitting = stored?.busy ?? false
+  const disabled = submitting || Boolean(unavailable)
+  const [discarding, setDiscarding] = useState(false)
   const completionDetails = useRef<HTMLDetailsElement>(null)
   const active = useRef(true)
-  const sending = useRef(false)
   const navigate = useNavigate()
-  const unavailable = snapshot.connection && snapshot.connection.state !== 'ready'
+
+  const update = (fields: Partial<typeof draft> & { error?: string }) => {
+    if (!unavailable) {
+      setIntakeDraft(draftKey, { ...($intakeDrafts.get()[draftKey] ?? emptyIntake), ...fields })
+    }
+  }
+
+  const setCriteria = (value: string) => update({ criteria: value })
+  const setGoal = (value: string) => update({ goal: value })
+  const setMetadata = (value: ObjectiveMetadata) => update({ metadata: value })
+  const setError = (value: string) => update({ error: value })
   // Ownership selection is a capability of persistent-identity runtimes. Older
   // snapshots continue using their established default owner contract.
-  const hasOwnership = snapshot.agents.some(agent => agent.persistent)
+  const hasOwnership =
+    snapshot.agents.some(agent => agent.persistent) ||
+    metadata.executiveId !== undefined ||
+    metadata.managerId !== undefined
 
   const executives = snapshot.agents.filter(
     agent => agent.role === 'Executive' && agent.lifecycle === 'active' && agent.capabilities.includes('request.accept')
@@ -50,6 +79,8 @@ export function Command({
   const managerId = metadata.managerId ?? (managers.some(agent => agent.id === 'manager') ? 'manager' : '')
   const availableProjects = snapshot.runtime?.availableProjects ?? []
 
+  const missingProjects = metadata.projectIds?.filter(id => !availableProjects.some(project => project.id === id)) ?? []
+
   const validOwnership =
     executives.some(agent => agent.id === executiveId) && managers.some(agent => agent.id === managerId)
 
@@ -63,7 +94,7 @@ export function Command({
   }, [])
 
   const submit = () => {
-    if (sending.current) {
+    if (unavailable || $intakeDrafts.get()[draftKey]?.busy) {
       return
     }
 
@@ -114,25 +145,34 @@ export function Command({
       deliveryMode: metadata.deliveryMode ?? ('source_project' as const)
     }
 
-    sending.current = true
-    setSubmitting(true)
+    // Keep this key even after errors and edits. A response can be lost after
+    // admission; a changed payload must conflict with that receipt, not mint a
+    // second objective. Only confirmed success or explicit discard releases it.
+    const idempotencyKey = stored?.idempotencyKey ?? crypto.randomUUID()
+    const sent = { goal, criteria, metadata: submitted }
+    setIntakeDraft(draftKey, { ...sent, idempotencyKey, submitted: stored?.submitted ?? sent, busy: true })
     void adapter
-      .createObjective(goal, submitted)
+      .createObjective(goal, submitted, idempotencyKey)
       .then(objective => {
+        if (!objective || typeof objective.id !== 'string' || !objective.id || objective.title !== goal.trim()) {
+          throw new Error(copy.createError)
+        }
+
+        acknowledgeIntake(draftKey, idempotencyKey, sent)
+
         if (active.current) {
           navigate(`/objectives/${objective.id}`)
         }
       })
       .catch(reason => {
-        if (active.current) {
-          setError(reason instanceof Error ? reason.message : copy.createError)
-        }
-      })
-      .finally(() => {
-        sending.current = false
+        const current = $intakeDrafts.get()[draftKey]
 
-        if (active.current) {
-          setSubmitting(false)
+        if (current?.idempotencyKey === idempotencyKey) {
+          setIntakeDraft(draftKey, {
+            ...current,
+            busy: false,
+            error: reason instanceof Error ? reason.message : copy.createError
+          })
         }
       })
   }
@@ -156,7 +196,7 @@ export function Command({
           {copy.objective}
         </label>
         <Textarea
-          disabled={submitting}
+          disabled={disabled}
           id="eid-objective"
           maxLength={500}
           onChange={event => {
@@ -172,7 +212,7 @@ export function Command({
             <label htmlFor="eid-executive">{roster.objectiveExecutive}</label>
             <select
               className={controlVariants()}
-              disabled={submitting}
+              disabled={disabled}
               id="eid-executive"
               onChange={event => setMetadata({ ...metadata, executiveId: event.target.value, managerId: '' })}
               value={executives.some(agent => agent.id === executiveId) ? executiveId : ''}
@@ -187,7 +227,7 @@ export function Command({
             <label htmlFor="eid-manager">{roster.objectiveManager}</label>
             <select
               className={controlVariants()}
-              disabled={submitting || !executiveId}
+              disabled={disabled || !executiveId}
               id="eid-manager"
               onChange={event => setMetadata({ ...metadata, managerId: event.target.value })}
               value={managers.some(agent => agent.id === managerId) ? managerId : ''}
@@ -223,8 +263,26 @@ export function Command({
             </details>
           </div>
         )}
+        {missingProjects.length > 0 && (
+          <div role="alert">
+            <p>{copy.projectSelectionChanged}</p>
+            {missingProjects.map(id => (
+              <label className="eid-inline" key={id}>
+                <input
+                  checked
+                  disabled={disabled}
+                  onChange={() =>
+                    setMetadata({ ...metadata, projectIds: metadata.projectIds?.filter(value => value !== id) })
+                  }
+                  type="checkbox"
+                />
+                {id}
+              </label>
+            ))}
+          </div>
+        )}
         {availableProjects.length > 0 && (
-          <fieldset disabled={submitting}>
+          <fieldset disabled={disabled}>
             <legend>{copy.objectiveProjects}</legend>
             <p className="eid-note">{copy.projectSelectionNote}</p>
             {availableProjects.map(project => (
@@ -255,7 +313,7 @@ export function Command({
           </summary>
           <label htmlFor="eid-context">{copy.submittedContext}</label>
           <Textarea
-            disabled={submitting}
+            disabled={disabled}
             id="eid-context"
             maxLength={12000}
             onChange={event => setMetadata({ ...metadata, description: event.target.value })}
@@ -272,7 +330,7 @@ export function Command({
           <label htmlFor="eid-criteria">{copy.acceptanceCriteria}</label>
           <Textarea
             aria-describedby="eid-criteria-note"
-            disabled={submitting}
+            disabled={disabled}
             id="eid-criteria"
             maxLength={24012}
             onChange={event => setCriteria(event.target.value)}
@@ -287,7 +345,7 @@ export function Command({
           {copy.deliveryMode}
           <select
             className={controlVariants()}
-            disabled={submitting}
+            disabled={disabled}
             onChange={event =>
               setMetadata({ ...metadata, deliveryMode: event.target.value as ObjectiveMetadata['deliveryMode'] })
             }
@@ -305,7 +363,7 @@ export function Command({
               <span className="eid-disclosure-value">{copy.detailsAdded}</span>
             )}
           </summary>
-          <fieldset disabled={submitting}>
+          <fieldset disabled={disabled}>
             <legend>{copy.requiredChecks}</legend>
             {(['project_tests', 'managed_validation', 'source_integration'] as const).map(check => (
               <label className="eid-inline" key={check}>
@@ -329,7 +387,7 @@ export function Command({
             <label>
               <input
                 checked={metadata.priority !== undefined}
-                disabled={submitting}
+                disabled={disabled}
                 onChange={event => setMetadata({ ...metadata, priority: event.target.checked ? 'P3' : undefined })}
                 type="checkbox"
               />{' '}
@@ -342,7 +400,7 @@ export function Command({
               <input
                 aria-label={copy.priorityLevel}
                 aria-valuetext={priorities[priorityKeys.indexOf(metadata.priority as (typeof priorityKeys)[number])]}
-                disabled={submitting}
+                disabled={disabled}
                 max={4}
                 min={0}
                 onChange={event => setMetadata({ ...metadata, priority: priorityKeys[Number(event.target.value)] })}
@@ -364,7 +422,33 @@ export function Command({
           </Button>
         </div>
       </form>
+      <p className="eid-note">{copy.intakeMemory}</p>
+      {stored?.idempotencyKey && !submitting && <p role="status">{copy.intakeUnconfirmed}</p>}
       {error && <p role="alert">{error}</p>}
+      <div className="eid-inline">
+        <Button disabled={disabled || !stored} onClick={() => setDiscarding(true)} variant="text">
+          {copy.intakeDiscard}
+        </Button>
+        {stored?.submitted && !submitting && (
+          <Button disabled={disabled} onClick={() => update(stored.submitted!)} variant="text">
+            {copy.intakeRestore}
+          </Button>
+        )}
+      </div>
+      <ConfirmDialog
+        confirmLabel={copy.intakeDiscard}
+        description={stored?.idempotencyKey ? copy.intakeDiscardUnconfirmed : copy.intakeDiscardNote}
+        destructive
+        dismissOnConfirm
+        onClose={() => setDiscarding(false)}
+        onConfirm={() => {
+          if (!$intakeDrafts.get()[draftKey]?.busy) {
+            discardIntakeDraft(draftKey)
+          }
+        }}
+        open={discarding && !unavailable}
+        title={copy.intakeDiscard}
+      />
       <div className="eid-inline">
         <Link to="/">{copy.askQuestion}</Link>
         <span>{copy.connectedSession}</span>

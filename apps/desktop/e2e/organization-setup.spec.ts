@@ -35,6 +35,20 @@ test('fresh setup guides existing settings and refreshes known blockers without 
   const initialConfig = fs.readFileSync(configPath, 'utf8')
   const initialCalls = mock.receivedPrompts.length
 
+  const goal = page.getByRole('textbox', { name: 'Objective', exact: true })
+  await goal.fill('Draft retained for owner review')
+  await page
+    .locator('summary')
+    .filter({ hasText: /^Context$/ })
+    .click()
+  await page.getByRole('textbox', { name: 'Submitted context (optional)', exact: true }).fill('Private supplied facts')
+  await page
+    .locator('summary')
+    .filter({ hasText: /^Acceptance criteria$/ })
+    .click()
+  await page.getByRole('textbox', { name: 'Acceptance criteria', exact: true }).fill('Cite the supplied facts')
+  await page.getByRole('combobox', { name: 'Delivery scope', exact: true }).selectOption('managed_artifact')
+
   await panel.getByRole('link', { name: 'Review profile model', exact: true }).click()
   await expect(page).toHaveURL(/\/settings\?tab=config:model/)
   await page.getByRole('button', { name: 'Close settings', exact: true }).click()
@@ -55,7 +69,10 @@ test('fresh setup guides existing settings and refreshes known blockers without 
   fs.writeFileSync(configPath, blockedConfig)
   await expect(panel.getByText('Configured transport needs review', { exact: true })).toBeVisible({ timeout: 30_000 })
   await expect(panel.getByText(/This profile selects Codex app-server/)).toBeVisible()
-  await page.getByRole('textbox', { name: 'Objective', exact: true }).fill('Draft retained for owner review')
+  await expect(goal).toHaveValue('Draft retained for owner review')
+  await expect(page.locator('#eid-context')).toHaveValue('Private supplied facts')
+  await expect(page.locator('#eid-criteria')).toHaveValue('Cite the supplied facts')
+  await expect(page.getByRole('combobox', { name: 'Delivery scope', exact: true })).toHaveValue('managed_artifact')
   await expect(page.getByRole('button', { name: 'Create objective', exact: true })).toBeEnabled()
   await panel.getByRole('link', { name: 'Review organization roster', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Organization', exact: true })).toBeVisible()
@@ -67,6 +84,30 @@ test('fresh setup guides existing settings and refreshes known blockers without 
   await page.getByRole('region', { name: 'Organization setup', exact: true }).screenshot({
     path: test.info().outputPath('organization-setup-known-blocker.png')
   })
+  await navigation.getByRole('link', { name: 'Command', exact: true }).click()
+  await expect(goal).toHaveValue('Draft retained for owner review')
+  await page
+    .locator('summary')
+    .filter({ hasText: /^Context/ })
+    .click()
+  await page
+    .locator('summary')
+    .filter({ hasText: /^Acceptance criteria/ })
+    .click()
+  await expect(page.getByRole('textbox', { name: 'Submitted context (optional)', exact: true })).toHaveValue(
+    'Private supplied facts'
+  )
+  await expect(page.getByRole('textbox', { name: 'Acceptance criteria', exact: true })).toHaveValue(
+    'Cite the supplied facts'
+  )
+  await expect(page.getByRole('combobox', { name: 'Delivery scope', exact: true })).toHaveValue('managed_artifact')
+  await page.locator('.eid-command').screenshot({ path: test.info().outputPath('organization-intake-restored.png') })
+  await page.getByRole('button', { name: 'Discard draft', exact: true }).click()
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await expect(goal).toHaveValue('Draft retained for owner review')
+  await page.getByRole('button', { name: 'Discard draft', exact: true }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Discard draft', exact: true }).click()
+  await expect(goal).toHaveValue('')
   expect(fs.readFileSync(configPath, 'utf8')).toBe(blockedConfig)
   expect(mock.receivedPrompts.length).toBe(initialCalls)
 })
