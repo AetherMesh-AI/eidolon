@@ -3,6 +3,7 @@ import { Fragment } from 'react'
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n/context'
 
+import { LocalizedTime } from './localized-time'
 import type { OrganizationManagementProposal, OrganizationRequest, OrganizationSnapshot } from './types'
 
 export const responseDecisions = {
@@ -125,7 +126,7 @@ export function RuntimeRequestContext({
                 {person(receipt.agentId)}: {copy[receipt.outcome]}
               </p>
               <p className="eid-result-text">{receipt.text}</p>
-              <time dateTime={receipt.createdAt}>{new Date(receipt.createdAt).toLocaleString()}</time>
+              <LocalizedTime value={receipt.createdAt} />
             </div>
           ))}
         </section>
@@ -138,7 +139,7 @@ export function RuntimeRequestContext({
             {copy.responder}: {person(request.response.responderId)}
           </p>
           {request.response.decision && <p>{copy[request.response.decision]}</p>}
-          <time dateTime={request.response.createdAt}>{new Date(request.response.createdAt).toLocaleString()}</time>
+          <LocalizedTime value={request.response.createdAt} />
         </section>
       )}
     </>

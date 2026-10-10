@@ -15,6 +15,7 @@ import type { OrganizationOwnerChatCopy } from '@/i18n/organization-owner-chat'
 import { ArrowUp, MessageCircle } from '@/lib/icons'
 
 import { AgentAvatar } from './avatar'
+import { LocalizedTime } from './localized-time'
 import { OwnerChatRenewalRejected } from './runtime-owner-chat-contract'
 import { $ownerChatDrafts, $ownerChatRenewals, setOwnerChatDraft } from './runtime-owner-chat-drafts'
 import type { OwnerChatRenew, OwnerChatThread, OwnerChatTurn } from './runtime-owner-chat-types'
@@ -25,7 +26,7 @@ const turnLabel = (turn: OwnerChatTurn, copy: OrganizationOwnerChatCopy) =>
   turn.status === 'uncertain' ? copy.turnUncertain : copy[turn.status]
 
 function OwnerChatTranscript({ thread, sendRevision }: { thread: OwnerChatThread; sendRevision: number }) {
-  const { t, locale } = useI18n()
+  const { t } = useI18n()
   const copy = t.organizationOwnerChat
 
   const { scrollRef, contentRef, scrollToBottom, stopScroll } = useStickToBottom({
@@ -66,7 +67,7 @@ function OwnerChatTranscript({ thread, sendRevision }: { thread: OwnerChatThread
             >
               <div className="eid-owner-chat-message-meta">
                 <span>{message.role === 'owner' ? copy.you : thread.recipient.name}</span>
-                <time dateTime={message.createdAt}>{new Date(message.createdAt).toLocaleString(locale)}</time>
+                <LocalizedTime value={message.createdAt} />
               </div>
               {target && (
                 <Button

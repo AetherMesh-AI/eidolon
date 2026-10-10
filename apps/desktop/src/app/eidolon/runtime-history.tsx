@@ -10,6 +10,7 @@ import { SegmentedControl } from '@/components/ui/segmented-control'
 import { useI18n } from '@/i18n/context'
 import { ChevronDown } from '@/lib/icons'
 
+import { LocalizedTime } from './localized-time'
 import { RuntimeObjectiveDetail } from './runtime-detail'
 import type { HistoryPage, HistoryQuery, HistoryState } from './runtime-history-types'
 import type { OrganizationSnapshot, RuntimeOrganizationAdapter } from './types'
@@ -261,7 +262,7 @@ export function RuntimeHistoryBrowser({ adapter, snapshot }: HistoryProps) {
                         {item.status === 'open' ? copy.historyOpen : copy[item.status]} ·{' '}
                         {item.history.archived ? copy.historyArchived : copy.historyCurrent}
                       </p>
-                      <time dateTime={item.createdAt}>{new Date(item.createdAt).toLocaleString()}</time>
+                      <LocalizedTime value={item.createdAt} />
                     </div>
                     {adapter.setObjectiveArchived && (
                       <HistoryControl

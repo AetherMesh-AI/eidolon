@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n/context'
 
+import { LocalizedTime } from './localized-time'
 import { RuntimeProjectExecution } from './runtime-project-execution'
 import type { Objective } from './types'
 
@@ -106,7 +107,7 @@ export function RuntimeAcceptance({
               <>
                 <dt>{copy.objectiveDeadline}</dt>
                 <dd>
-                  <time dateTime={usage.deadlineAt}>{new Date(usage.deadlineAt).toLocaleString()}</time>
+                  <LocalizedTime value={usage.deadlineAt} />
                 </dd>
               </>
             )}

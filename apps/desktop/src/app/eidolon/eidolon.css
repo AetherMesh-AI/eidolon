@@ -1,6 +1,6 @@
 .eidolon {
-  /* Organization surfaces share the desktop's light/dark foundation. Aether
-   * remains the accent; the user-selected theme owns contrast and elevation. */
+  /* Every organization surface follows the selected desktop theme.
+   * Accent text blends toward foreground for contrast on quiet surfaces. */
   --eidolon-bg: var(--ui-bg-editor);
   --eidolon-bg-deep: var(--ui-bg-sidebar);
   --eidolon-surface-1: var(--ui-bg-card);
@@ -10,10 +10,10 @@
   --eidolon-border-subtle: var(--ui-stroke-tertiary);
   --eidolon-border: var(--ui-stroke-secondary);
   --eidolon-border-strong: var(--ui-stroke-primary);
-  --aether-600: #623484;
-  --aether-500: #8051a6;
-  --aether-400: color-mix(in srgb, var(--aether-500) 75%, var(--ui-text-primary));
-  --aether-300: color-mix(in srgb, var(--aether-500) 65%, var(--ui-text-primary));
+  --aether-600: var(--dt-primary-solid);
+  --aether-500: var(--ui-accent);
+  --aether-400: color-mix(in srgb, var(--aether-500) 40%, var(--ui-text-primary));
+  --aether-300: color-mix(in srgb, var(--aether-500) 35%, var(--ui-text-primary));
   --text-primary: var(--ui-text-primary);
   --text-secondary: var(--ui-text-secondary);
   --text-muted: var(--ui-text-secondary);

@@ -5,6 +5,7 @@ import { Loader } from '@/components/ui/loader'
 import { useI18n } from '@/i18n/context'
 
 import { Inspector } from './inspector'
+import { LocalizedTime } from './localized-time'
 import { RuntimeDeliverableHandoff, verifyDeliverable } from './runtime-deliverable-handoff'
 import { RuntimeEditProposal } from './runtime-edit-proposal'
 import { RuntimeToolReceipts } from './runtime-tool-receipts'
@@ -94,7 +95,7 @@ export function RuntimeArtifact({ adapter, snapshot, evidenceId, title, onClose 
             <dt>{copy.artifactDigest}</dt>
             <dd className="eid-result-text">{artifact.sha256}</dd>
             <dt>{copy.artifactRecorded}</dt>
-            <dd>{new Date(artifact.createdAt).toLocaleString()}</dd>
+            <dd><LocalizedTime value={artifact.createdAt} /></dd>
             <dt>{copy.artifactTask}</dt>
             <dd>{artifact.taskId ?? t.organizationWork.notRecorded}</dd>
           </dl>

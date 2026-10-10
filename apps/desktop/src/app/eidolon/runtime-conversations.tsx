@@ -6,6 +6,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { useI18n } from '@/i18n/context'
 import type { OrganizationConversationsCopy } from '@/i18n/organization-conversations'
 
+import { LocalizedTime } from './localized-time'
 import type { OrganizationConversation, OrganizationSnapshot } from './types'
 
 interface OrganizationConversationsProps {
@@ -26,7 +27,7 @@ function ConversationThread({
   conversation: OrganizationConversation
   snapshot: OrganizationSnapshot
 }) {
-  const { t, locale } = useI18n()
+  const { t } = useI18n()
   const copy = t.organizationConversations
   const messageElements = useRef(new Map<string, HTMLLIElement>())
   const objective = snapshot.objectives.find(item => item.id === conversation.objectiveId)
@@ -39,7 +40,7 @@ function ConversationThread({
   )
 
   const objectivePath = `/objectives/${encodeURIComponent(conversation.objectiveId)}`
-  const timestamp = (value: string) => <time dateTime={value}>{new Date(value).toLocaleString(locale)}</time>
+  const timestamp = (value: string) => <LocalizedTime value={value} />
 
   return (
     <article aria-label={conversation.subject} className="space-y-4">

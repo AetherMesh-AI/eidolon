@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { LogView } from '@/components/ui/log-view'
 import { useI18n } from '@/i18n/context'
 
+import { LocalizedTime } from './localized-time'
 import { RuntimeProjectReceipts } from './runtime-project-receipts'
 import type { OrganizationEditProposal } from './types'
 
@@ -113,7 +114,7 @@ export function RuntimeEditProposal({ proposal }: { proposal: OrganizationEditPr
           <>
             <dt>{copy.appliedAt}</dt>
             <dd>
-              <time dateTime={proposal.appliedAt}>{new Date(proposal.appliedAt).toLocaleString()}</time>
+              <LocalizedTime value={proposal.appliedAt} />
             </dd>
           </>
         )}

@@ -9,6 +9,7 @@ import { Loader } from '@/components/ui/loader'
 import { SegmentedControl } from '@/components/ui/segmented-control'
 import { useI18n } from '@/i18n/context'
 
+import { LocalizedTime } from './localized-time'
 import { RevisionSeenControl, sameConnection } from './runtime-inbox-seen'
 import type { OrganizationOutcomePage } from './runtime-outcome-types'
 import type { OrganizationSnapshot, RuntimeOrganizationAdapter } from './types'
@@ -128,7 +129,7 @@ export function RuntimeOutcomeInbox({ adapter, snapshot }: OutcomeProps) {
                       {item.summary && <small>{item.summary}</small>}
                       {item.status === 'cancelled' && <small>{copy.outcomeCancelledNote}</small>}
                       {item.archived && <small>{copy.historyArchived}</small>}
-                      <small>{copy.attentionUpdated}: <time dateTime={item.updatedAt}>{new Date(item.updatedAt).toLocaleString()}</time></small>
+                      <small>{copy.attentionUpdated}: <LocalizedTime value={item.updatedAt} /></small>
                     </span>
                     <Badge variant={item.seen ? 'muted' : 'warn'}>{item.seen ? copy.attentionSeen : copy.attentionUnread}</Badge>
                   </div>

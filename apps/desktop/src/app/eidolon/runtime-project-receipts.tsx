@@ -1,5 +1,6 @@
 import { useI18n } from '@/i18n/context'
 
+import { LocalizedTime } from './localized-time'
 import type { OrganizationEditProposal, OrganizationValidationResult } from './types'
 
 function ValidationChecks({ result }: { result: OrganizationValidationResult }) {
@@ -46,7 +47,7 @@ export function RuntimeProjectReceipts({ proposal }: { proposal: OrganizationEdi
               {copy.receiptDigest}: {validation.resultSha256}
             </p>
             <time dateTime={new Date(validation.created * 1000).toISOString()}>
-              {new Date(validation.created * 1000).toLocaleString()}
+              <LocalizedTime value={validation.created * 1000} />
             </time>
           </>
         ) : (
@@ -67,7 +68,7 @@ export function RuntimeProjectReceipts({ proposal }: { proposal: OrganizationEdi
               {copy.receiptDigest}: {source.resultSha256}
             </p>
             <time dateTime={new Date(source.created * 1000).toISOString()}>
-              {new Date(source.created * 1000).toLocaleString()}
+              <LocalizedTime value={source.created * 1000} />
             </time>
             <h5>{copy.observedFiles}</h5>
             <ul>

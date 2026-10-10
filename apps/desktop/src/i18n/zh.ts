@@ -1,6 +1,7 @@
 import { defineFieldCopy } from '@/app/settings/field-copy'
 
 import { organizationConversationsZh } from './organization-conversations'
+import { organizationFoundationEn } from './organization-foundation'
 import { organizationOwnerChatZh } from './organization-owner-chat'
 import { organizationRosterZh } from './organization-roster'
 import { organizationWorkZh } from './organization-work'
@@ -9,6 +10,7 @@ import type { Translations } from './types'
 export const zh: Translations = {
   organizationOwnerChat: organizationOwnerChatZh,
   organizationConversations: organizationConversationsZh,
+  organizationFoundation: organizationFoundationEn,
   organizationWork: organizationWorkZh,
   organizationRoster: organizationRosterZh,
   organizationRuntime: {
