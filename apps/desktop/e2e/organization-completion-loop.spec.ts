@@ -422,18 +422,26 @@ test('requires explicit check replacement, retains its audit, and completes only
     expect(await running!.fixture.app.evaluate(({ clipboard }) => clipboard.readText())).toBe(recommendation)
     // Native download transport, with only destination selection scripted inside the temporary test output directory.
     for (const cancel of [true, false, false]) {
-      const destination = testInfo.outputPath('retained-deliverable.txt')
+      const destination = testInfo.outputPath(cancel ? 'cancelled-deliverable.txt' : 'retained-deliverable.txt')
       await running!.fixture.app.evaluate(({ session }, { destination, cancel }) => {
+        const state = globalThis as typeof globalThis & { handoffDownload?: { state: string; filename: string } }
+        state.handoffDownload = undefined
         session.defaultSession.once('will-download', (_event, item) => {
-          if (cancel) {item.cancel()} else {item.setSavePath(destination)}
+          const filename = item.getFilename()
+          item.once('done', (_event, status) => { state.handoffDownload = { state: status, filename } })
+          item.setSavePath(destination)
+          if (cancel) {item.cancel()}
         })
       }, { destination, cancel })
-      const pendingDownload = page.waitForEvent('download')
       await artifact.getByRole('button', { name: 'Download deliverable (.txt)', exact: true }).click()
-      const download = await pendingDownload
-      expect(download.suggestedFilename()).toMatch(/^eidolon-outcome_[a-f0-9]{32}\.txt$/)
-      if (cancel) {expect(await download.failure()).toBeTruthy()} else {
-        expect(await download.failure()).toBeNull()
+      // Electron's native DownloadItem is authoritative, including cancellation before Chromium emits a page download.
+      await expect.poll(() => running!.fixture.app.evaluate(() =>
+        (globalThis as typeof globalThis & { handoffDownload?: { state: string } }).handoffDownload?.state
+      )).toBe(cancel ? 'cancelled' : 'completed')
+      const filename = await running!.fixture.app.evaluate(() =>
+        (globalThis as typeof globalThis & { handoffDownload?: { filename: string } }).handoffDownload?.filename)
+      expect(filename).toMatch(/^eidolon-outcome_[a-f0-9]{32}\.txt$/)
+      if (cancel) {await expect(readFile(destination)).rejects.toMatchObject({ code: 'ENOENT' })} else {
         expect(await readFile(destination)).toEqual(Buffer.from(recommendation, 'utf8'))
       }
     }
