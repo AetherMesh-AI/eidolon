@@ -6,7 +6,7 @@ import { NavLink, useLocation } from 'react-router'
 import { BrandMark } from '@/components/brand-mark'
 import { Badge } from '@/components/ui/badge'
 import { useI18n } from '@/i18n/context'
-import { Activity, Bell, Command, FolderOpen, Network, Settings, Users } from '@/lib/icons'
+import { Command, FolderOpen, LayoutDashboard, MessageCircle, Network, Settings, Users } from '@/lib/icons'
 
 import { appViewForPath } from '../routes'
 
@@ -28,6 +28,7 @@ export function OrganizationRail({
 }) {
   const { t } = useI18n()
   const copy = t.organizationWork
+  const home = t.organizationHome
   const { pathname } = useLocation()
   const history = useRef<HTMLDetailsElement>(null)
   const chat = appViewForPath(pathname) === 'chat'
@@ -36,15 +37,17 @@ export function OrganizationRail({
   }, [chat, pathname])
 
   const destinations = [
-    { to: '/home', label: copy.command, icon: Command },
-    { to: '/requests', label: copy.needsYou, icon: Bell },
+    { to: '/home', label: home.home, icon: Command },
+    { to: '/messages', label: home.messages, icon: MessageCircle },
+    { to: '/work', label: home.work, icon: LayoutDashboard },
     { to: '/objectives', label: copy.objectives, icon: Network },
     { to: '/organization', label: copy.organization, icon: Users },
-    { to: '/artifacts', label: copy.artifacts, icon: FolderOpen },
-    { to: '/activity', label: copy.activity, icon: Activity }
+    { to: '/artifacts', label: home.deliverables, icon: FolderOpen }
   ]
 
   const advanced = [
+    { to: '/requests', label: copy.needsYou },
+    { to: '/activity', label: copy.activity },
     { to: '/skills', label: copy.skills },
     { to: '/messaging', label: copy.messaging },
     { to: '/profiles', label: copy.executionConfig },
@@ -68,7 +71,7 @@ export function OrganizationRail({
       <nav aria-label="Primary">
         {destinations.map(({ to, label, icon: Icon }) => (
           <NavLink
-            aria-label={to === '/objectives' ? label : undefined}
+            aria-label={label}
             key={to}
             onClick={event => linkAction(event, to)}
             to={to}
@@ -80,7 +83,7 @@ export function OrganizationRail({
                 {unreadOutcomes}
               </Badge>
             )}
-            {to === '/requests' && needsYouCount > 0 && (
+            {to === '/home' && needsYouCount > 0 && (
               <Badge size="xs" variant="warn">
                 {needsYouCount}
               </Badge>

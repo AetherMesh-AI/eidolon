@@ -85,6 +85,7 @@ const snapshot = {
       backgroundOptIn: false
     }
   },
+  outcomes: { generation: 'fixture-1', total: 1, unread: 1, hasMore: false, nextCursor: null, items: [{ objectiveId: 'research', revision: 1, seen: false, status: 'accepted', title: 'Document provider boundaries', summary: 'Synthetic reviewed scope and provider boundary summary.', round: 1, deliverableId: 'fixture-deliverable', acceptanceRequestId: 'fixture-accept', evidenceIds: ['fixture-deliverable'], createdAt, updatedAt: createdAt, archived: false }] },
   objectives: [
     {
       id: 'release',
@@ -136,7 +137,7 @@ const snapshot = {
       dependsOn: ['draft']
     }
   ],
-  requests: [],
+  requests: [{ id: 'fixture-question', objectiveId: 'navigation', type: 'request.question', team: 'Product', priority: 2, status: 'pending_intervention', reason: 'Review the proposed owner journey before the next iteration.', attempts: 0, createdAt }],
   activity: [],
   knowledge: [],
   conversations: []
@@ -321,13 +322,17 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await resize(1220)
   await expect(page.locator('html')).toHaveClass(/\bdark\b/)
   await expect(page.locator('html')).toHaveAttribute('data-hermes-theme', 'eidolon')
-  await navigation.getByRole('link', { name: 'Command', exact: true }).click()
+  await navigation.getByRole('link', { name: 'Home', exact: true }).click()
   await expect(page.getByRole('textbox', { name: 'Objective', exact: true })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'What’s happening?', exact: true })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'What needs me?', exact: true })).toContainText('Review the proposed owner journey')
+  await expect(page.getByRole('region', { name: 'What’s ready?', exact: true })).toContainText('Synthetic reviewed scope')
   await capture('01-home-wide-dark')
 
-  // The compact form's primary action must be usable without the first scroll.
-  // The paired legacy build predates the runtime disclosure and remains evidence-only.
+  // Home puts the overview first; explicit New objective reaches the retained form.
   if (await page.locator('.eid-runtime-disclosure').count()) {
+    await page.getByRole('button', { name: 'New objective', exact: true }).click()
+    await expect(page.getByRole('textbox', { name: 'Objective', exact: true })).toBeFocused()
     await expect(page.getByRole('textbox', { name: 'Objective', exact: true })).toBeInViewport({ ratio: 1 })
     await expect(page.getByRole('button', { name: 'Create objective', exact: true })).toBeInViewport({ ratio: 1 })
   }
@@ -373,7 +378,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await resize(760)
   await capture('06-roster-narrow-dark')
   await resize(1220)
-  await navigation.getByRole('link', { name: 'Command', exact: true }).click()
+  await navigation.getByRole('link', { name: 'Home', exact: true }).click()
   await expect(page.getByRole('textbox', { name: 'Objective', exact: true })).toBeVisible()
   await resize(760)
   await capture('07-home-narrow-dark')
@@ -420,7 +425,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await resize(760)
   await capture('13-roster-narrow-light')
   await resize(1220)
-  await navigation.getByRole('link', { name: 'Command', exact: true }).click()
+  await navigation.getByRole('link', { name: 'Home', exact: true }).click()
   await expect(page.getByRole('textbox', { name: 'Objective', exact: true })).toBeVisible()
   await resize(760)
   await capture('14-home-narrow-light')
@@ -429,6 +434,18 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await expect(page.locator('html')).toHaveAttribute('data-hermes-theme', 'nous')
   await expect(page.locator('html')).not.toHaveClass(/\bdark\b/)
   await capture('15-theme-choice-survives-reload')
+  const goal = page.getByRole('textbox', { name: 'Objective', exact: true })
+  await goal.fill('Retain this unsubmitted objective across navigation')
+  for (const destination of ['Messages', 'Work Overview', 'Home', 'Messages', 'Home']) {
+    const link = navigation.getByRole('link', { name: destination, exact: true })
+    await link.focus()
+    await page.keyboard.press('Enter')
+    await expect(link).toHaveAttribute('aria-current', 'page')
+  }
+  await expect(goal).toHaveValue('Retain this unsubmitted objective across navigation')
+  await page.getByRole('button', { name: 'New objective', exact: true }).click()
+  await expect(goal).toBeFocused()
+  await capture('16-home-retained-intake')
   expect(contrastChecks.length).toBeGreaterThan(0)
 
   for (const sample of contrastChecks.filter(item => item.opacity === 1)) {

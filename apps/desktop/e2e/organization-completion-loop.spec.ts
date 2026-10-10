@@ -45,7 +45,7 @@ async function openObjective(page: Page, title: string) {
 }
 
 async function createObjective(page: Page, title: string, requireTests: boolean) {
-  await primary(page).getByRole('link', { name: 'Command', exact: true }).click()
+  await primary(page).getByRole('link', { name: 'Home', exact: true }).click()
   await page.getByRole('textbox', { name: 'Objective', exact: true }).fill(title)
   await openOrganizationDisclosure(page, 'Context')
   await page.getByRole('textbox', { name: 'Submitted context (optional)', exact: true }).fill(originalScope)
@@ -320,7 +320,7 @@ test('requires explicit check replacement, retains its audit, and completes only
   expect(stages).toHaveLength(6)
   // Finish via the real provider while the owner is composing elsewhere.
   // Poll the real gateway receipt, never seed terminal state or intercept RPC.
-  await primary(page).getByRole('link', { name: 'Command', exact: true }).click()
+  await primary(page).getByRole('link', { name: 'Home', exact: true }).click()
   const nextObjective = page.getByRole('textbox', { name: 'Objective', exact: true })
   await nextObjective.fill('Keep my foreground draft')
   await nextObjective.focus()

@@ -382,3 +382,23 @@ The detailed state contract lives in the scoped
 - [ ] `cursor-pointer`, focus ring, and `Esc`-to-close behave?
 - [ ] Touched a primitive, token, or variant? Its named-contract entry in this
       file is updated in the same change.
+
+## Organization shell and Home
+
+The approved organization reference uses seven primary destinations: Home,
+Messages, Work Overview, Objectives, Organization, Deliverables, and Settings.
+The persistent session tree and operational Needs You/Activity routes remain
+reachable under their existing owners. Home uses roomy, single-level cards and
+serif display headings; record rows inside cards remain unboxed. Colors continue
+to come from the selected application theme, with Eidolon as the default.
+
+Home is a read-only projection of the current bounded snapshot. Open objectives,
+pending owner intervention requests, and accepted outcomes with deliverable IDs
+are separate groups. Task completion percentages do not imply final acceptance.
+Missing queues and disconnected snapshots are labeled. Full history stays in the
+existing dedicated views. The intake retains its existing scope-keyed draft and
+submission identity; only an explicit New objective click scrolls/focuses it.
+Messages reuses durable owner/member chat and its explicit opening and allowance
+renewal controls. Browsing these routes does not dispatch work or claim presence.
+New shell copy lives in organization-home.ts and follows catalog English fallback;
+user and agent content is never translated automatically.

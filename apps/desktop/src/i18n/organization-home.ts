@@ -1,0 +1,25 @@
+/** Source messages; untranslated locales inherit English through the existing catalog. */
+export const organizationHomeEn = {
+  home: 'Home', messages: 'Messages', work: 'Work Overview', objectives: 'Objectives', organization: 'Organization', deliverables: 'Deliverables', settings: 'Settings',
+  heading: 'Your organization', introduction: 'A clear view of the work, decisions, and results in this profile.',
+  happening: 'What’s happening?', happeningNote: 'Current objectives and their recorded progress.',
+  needsYou: 'What needs me?', needsNote: 'Questions and decisions waiting for your input.',
+  ready: 'What’s ready?', readyNote: 'Deliverables with recorded final acceptance.',
+  noWork: 'No open objectives in this view.', noNeeds: 'No pending owner requests in this view.', noReady: 'No accepted deliverables in this view yet.',
+  outcomesUnavailable: 'This runtime has not supplied its outcome inbox. Open Objectives to inspect retained results.',
+  requestsUnavailable: 'This runtime has not supplied its request queue.',
+  activity: 'Organization activity', activityNote: 'Recent events recorded by the organization.', noActivity: 'No activity recorded in this view yet.',
+  viewActivity: 'View activity', viewObjectives: 'View objectives', viewRequests: 'View all requests', viewDeliverables: 'View deliverables', viewObjective: 'View objective',
+  reviewRequest: 'Review request', accepted: 'Accepted deliverable', owner: 'Executive owner', unassigned: 'Not assigned', progressUnknown: 'Progress not reported',
+  completedTasks: (value: string) => `${value} of tasks completed`,
+  paused: 'New dispatch paused', running: (value: string) => `${value} already-claimed stages`,
+  snapshotNote: 'This overview shows retained records in the current snapshot. Open the full views for complete history.',
+  newObjective: 'New objective', newObjectiveNote: 'Describe the result you want. Review ownership, scope, and acceptance before submitting.',
+  workNote: 'Follow current objectives, then open their work, review, and evidence.',
+  messagesNote: 'Choose a persistent member to open the existing conversation. Messages do not grant new permissions or renew allowances.',
+  noAgents: 'No persistent members are available in this view.', chooseAgent: 'Choose an agent',
+  unknownStatus: 'Status not reported',
+  statuses: { needs_input: 'Needs input', paused: 'Paused', draft: 'Draft', planning: 'Planning', active: 'In progress', review: 'In review', blocked: 'Blocked', waiting: 'Needs input', completed: 'Completed', cancelled: 'Cancelled', archived: 'Archived' },
+  lastKnown: 'Last known records · reconnect to refresh', details: 'Details',
+}
+export type OrganizationHomeCopy = typeof organizationHomeEn

@@ -204,7 +204,7 @@ export const ChatRoutesSurface = memo(function ChatRoutesSurface({
 
   return (
     <Routes>
-      {['home', 'objectives', 'objectives/:objectiveId', 'organization', 'activity', 'requests'].map(path => (
+      {['home', 'messages', 'work', 'objectives', 'objectives/:objectiveId', 'organization', 'activity', 'requests'].map(path => (
         <Route element={page(<OrganizationWorkspace />)} key={path} path={path} />
       ))}
       <Route element={<LegacyKnowledgeRedirect />} path="knowledge" />

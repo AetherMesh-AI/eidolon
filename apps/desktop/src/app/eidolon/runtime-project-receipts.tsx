@@ -46,9 +46,7 @@ export function RuntimeProjectReceipts({ proposal }: { proposal: OrganizationEdi
             <p className="eid-result-text">
               {copy.receiptDigest}: {validation.resultSha256}
             </p>
-            <time dateTime={new Date(validation.created * 1000).toISOString()}>
-              <LocalizedTime value={validation.created * 1000} />
-            </time>
+            <LocalizedTime value={validation.created * 1000} />
           </>
         ) : (
           <p>{copy.notRecorded}</p>
@@ -67,9 +65,7 @@ export function RuntimeProjectReceipts({ proposal }: { proposal: OrganizationEdi
             <p className="eid-result-text">
               {copy.receiptDigest}: {source.resultSha256}
             </p>
-            <time dateTime={new Date(source.created * 1000).toISOString()}>
-              <LocalizedTime value={source.created * 1000} />
-            </time>
+            <LocalizedTime value={source.created * 1000} />
             <h5>{copy.observedFiles}</h5>
             <ul>
               {source.files.map(file => (

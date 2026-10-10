@@ -353,7 +353,7 @@ test('retains owner attention across reloads, answers the requesting worker, and
   await expect(form.getByRole('spinbutton', { name: 'Concurrent execution limit', exact: true })).toHaveValue('2')
   await page.keyboard.press('Escape')
 
-  await primary.getByRole('link', { name: 'Command', exact: true }).click()
+  await primary.getByRole('link', { name: 'Home', exact: true }).click()
   await page.getByRole('textbox', { name: 'Objective', exact: true }).fill(objectiveTitle)
   await openOrganizationDisclosure(page, 'Context')
   await page

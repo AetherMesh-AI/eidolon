@@ -242,7 +242,7 @@ test('preserves unsupported work and grants across navigation, dismissal, reload
     await expect.poll(() => navigation.evaluate(rail => rail.scrollTop)).toBe(0)
   }
 
-  await primary.getByRole('link', { name: 'Command', exact: true }).click()
+  await primary.getByRole('link', { name: 'Home', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'What should the organization do?', exact: true })).toBeVisible()
   await assertNoToolGrants()
   await capture('01-command')
@@ -254,10 +254,10 @@ test('preserves unsupported work and grants across navigation, dismissal, reload
   expect(await mountedSidebar!.evaluate(node => node.isConnected)).toBe(true)
   await navigation.locator('.eid-rail-history > summary').click()
   await assertRailLayout('01b-collapsed-rail-controls')
-  await primary.getByRole('link', { name: 'Needs You', exact: true }).click()
+  await page.getByRole('link', { name: 'View all requests', exact: true }).click()
   await expect(page.getByText('Nothing needs your input', { exact: true })).toBeVisible()
 
-  await primary.getByRole('link', { name: 'Artifacts', exact: true }).click()
+  await primary.getByRole('link', { name: 'Deliverables', exact: true }).click()
   const sources = page.getByRole('navigation', { name: 'Artifact sources' })
   await expect(sources.getByRole('link', { name: 'Session files' })).toHaveAttribute('aria-current', 'page')
   await sources.getByRole('link', { name: 'Organization evidence' }).click()
@@ -283,7 +283,7 @@ test('preserves unsupported work and grants across navigation, dismissal, reload
   await navigation.getByText('Tools and configuration', { exact: true }).click()
   await assertRailLayout('03c-reexpanded-history-controls')
 
-  await primary.getByRole('link', { name: 'Command', exact: true }).click()
+  await primary.getByRole('link', { name: 'Home', exact: true }).click()
   const deliveryScope = page.getByRole('combobox', { name: 'Delivery scope', exact: true })
   await deliveryScope.selectOption('managed_artifact')
   await assertNoToolGrants()

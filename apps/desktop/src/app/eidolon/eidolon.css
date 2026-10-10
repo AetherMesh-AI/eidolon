@@ -243,3 +243,42 @@
 .eid-owner-chat-turn p { margin: 0; }
 .eid-owner-chat-composer { display: grid; gap: 8px; }
 .eid-owner-chat-composer .eid-owner-chat-actions { justify-content: space-between; }
+
+/* Approved owner-facing shell: one display hierarchy, with theme-owned surfaces. */
+.eid-home { --eid-display-font: Georgia, 'Times New Roman', serif; }
+.eid-home-hero { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 32px 0; }
+.eid-home-hero h1, .eid-home-panel h2 { font-family: Georgia, 'Times New Roman', serif; font-weight: 500; letter-spacing: -.025em; }
+.eid-home-hero h1 { font-size: clamp(30px, 3.2vw, 44px); }
+.eid-home-hero p { margin-bottom: 0; max-width: 70ch; }
+.eid-home-grid { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 20px; align-items: stretch; }
+.eid-home-panel { background: var(--eidolon-surface-1); border: 1px solid var(--eidolon-border-subtle); border-radius: 16px; padding: 22px; min-width: 0; }
+.eid-home-panel > header { margin-bottom: 24px; }
+.eid-home-panel h2 { margin: 0 0 8px; font-size: 24px; line-height: 1.25; }
+.eid-home-panel header p { margin: 0; }
+.eid-home-record { padding: 18px 0; min-width: 0; overflow-wrap: anywhere; }
+.eid-home-record + .eid-home-record { border-top: 1px solid var(--eidolon-border-subtle); }
+.eid-home-record h3 { font-family: Georgia, 'Times New Roman', serif; font-size: 19px; line-height: 1.3; margin: 0 0 12px; color: var(--text-primary); }
+.eid-home-record h3 a { color: inherit; }
+.eid-home-record p { white-space: pre-wrap; }
+.eid-home-record-heading { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.eid-home-progress { margin: 16px 0; }
+.eid-home-progress progress { display: block; width: 100%; height: 7px; accent-color: var(--ui-accent); border-radius: 8px; overflow: hidden; margin-bottom: 8px; }
+.eid-home-action { display: inline-block; margin-top: 14px; font-weight: 500; }
+.eid-home-empty { padding: 18px 0; }
+.eid-home-paused { color: var(--status-warning); }
+.eid-home-activity { margin-top: 24px; }
+.eid-home-activity > header { display: flex; justify-content: space-between; gap: 20px; align-items: baseline; }
+.eid-home-activity ol { padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 24px; list-style: none; }
+.eid-home-activity li { display: flex; gap: 12px; min-width: 0; overflow-wrap: anywhere; }
+.eid-home-activity time { color: var(--text-secondary); font-size: 11px; }
+.eid-home-intake { margin: 48px 0; padding-top: 28px; border-top: 1px solid var(--eidolon-border-subtle); }
+.eid-home-intake .eid-command { max-width: 800px; margin: 0 auto; }
+.eid-home-intake .eid-command h2 { font-family: Georgia, 'Times New Roman', serif; font-size: 26px; }
+.eid-work-overview { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.eid-messages-layout { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(0, 3fr); gap: 28px; }
+.eid-messages-layout nav { display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
+.eid-messages-layout nav button { justify-content: flex-start; text-align: start; }
+.eid-messages-layout nav button[aria-pressed=true] { background: var(--eidolon-surface-3); }
+.eid-brand { font-family: Georgia, 'Times New Roman', serif; font-size: 25px; font-weight: 500; }
+@media (max-width: 1100px) { .eid-home-grid { grid-template-columns: 1fr; } .eid-home-activity ol { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 800px) { .eid-home-hero, .eid-home-activity > header { align-items: flex-start; flex-direction: column; } .eid-home-panel { padding: 18px; } .eid-home-activity ol, .eid-work-overview, .eid-messages-layout { grid-template-columns: 1fr; } .eid-messages-layout nav { flex-direction: row; overflow-x: auto; } }

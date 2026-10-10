@@ -14,7 +14,7 @@ it('fronts the workspace when re-clicking the current organization page', () => 
       <OrganizationRail onNavigate={onNavigate} sessions={<span>Canonical session tree</span>} />
     </MemoryRouter>
   )
-  fireEvent.click(screen.getByRole('link', { name: 'Command' }))
+  fireEvent.click(screen.getByRole('link', { name: 'Home' }))
   expect(onNavigate).toHaveBeenCalledWith('/home')
 })
 
@@ -56,7 +56,7 @@ it('preserves the canonical history and its input while expanding navigation and
     fireEvent.click(screen.getByRole('link', { name: 'Legacy prototype history' }))
     fireEvent.click(summary)
     expect(details.open).toBe(false)
-    fireEvent.click(screen.getByRole('link', { name: 'Command' }))
+    fireEvent.click(screen.getByRole('link', { name: 'Home' }))
     expect(screen.getByRole('textbox', { name: 'History filter' })).toBe(input)
     expect((input as HTMLInputElement).value).toBe('Unfinished side chat')
   }
@@ -67,4 +67,14 @@ it('preserves the canonical history and its input while expanding navigation and
   // informational content has a focusable control of its own.
   rail.focus()
   expect(rail.ownerDocument.activeElement).toBe(rail)
+})
+
+it('keeps the approved primary destinations in order and retains secondary operational routes', () => {
+  const { container } = render(<MemoryRouter><OrganizationRail needsYouCount={3} sessions={<span>History</span>} /></MemoryRouter>)
+  const primary = container.querySelector('nav[aria-label="Primary"]')!
+  expect(Array.from(primary.querySelectorAll('a'), item => item.getAttribute('aria-label'))).toEqual(['Home', 'Messages', 'Work Overview', 'Objectives', 'Organization', 'Deliverables'])
+  expect(screen.getByRole('link', { name: 'Settings' }).getAttribute('href')).toBe('/settings')
+  fireEvent.click(screen.getByText('Tools and configuration'))
+  expect(screen.getByRole('link', { name: 'Needs You' }).getAttribute('href')).toBe('/requests')
+  expect(screen.getByRole('link', { name: 'Activity' }).getAttribute('href')).toBe('/activity')
 })

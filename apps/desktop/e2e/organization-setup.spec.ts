@@ -25,7 +25,7 @@ test('fresh setup guides existing settings and refreshes known blockers without 
     .getByRole('complementary', { name: 'Eidolon navigation' })
     .getByRole('navigation', { name: 'Primary', exact: true })
 
-  await navigation.getByRole('link', { name: 'Command', exact: true }).click()
+  await navigation.getByRole('link', { name: 'Home', exact: true }).click()
   const panel = page.getByRole('region', { name: 'Organization setup', exact: true })
   await expect(panel.getByText('Provider execution not checked', { exact: true })).toBeVisible()
   await panel.getByText('Review roster, repository and background configuration', { exact: true }).click()
@@ -84,7 +84,7 @@ test('fresh setup guides existing settings and refreshes known blockers without 
   await page.getByRole('region', { name: 'Organization setup', exact: true }).screenshot({
     path: test.info().outputPath('organization-setup-known-blocker.png')
   })
-  await navigation.getByRole('link', { name: 'Command', exact: true }).click()
+  await navigation.getByRole('link', { name: 'Home', exact: true }).click()
   await expect(goal).toHaveValue('Draft retained for owner review')
   await page
     .locator('summary')

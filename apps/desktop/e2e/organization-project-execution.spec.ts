@@ -45,7 +45,7 @@ async function openObjective(page: Page) {
   await expect(header(page)).toBeVisible()
 }
 async function createObjective(page: Page) {
-  await primary(page).getByRole('link', { name: 'Command', exact: true }).click()
+  await primary(page).getByRole('link', { name: 'Home', exact: true }).click()
   await openOrganizationDisclosure(page, 'Configured capabilities')
   const capabilities = page.getByRole('region', { name: 'Configured capabilities', exact: true })
   await expect(capabilities).toContainText('Project test grant')

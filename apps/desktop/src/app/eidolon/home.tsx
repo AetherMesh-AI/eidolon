@@ -1,0 +1,52 @@
+import { Link } from 'react-router'
+
+import { Button } from '@/components/ui/button'
+import { useI18n } from '@/i18n/context'
+
+import { AgentAvatar } from './avatar'
+import { Command } from './command'
+import { homeData } from './home-data'
+import { LocalizedTime } from './localized-time'
+import { RuntimeSetup } from './runtime-setup'
+import type { Objective, OrganizationAdapter, OrganizationSnapshot } from './types'
+
+export function HomeObjective({ objective, snapshot }: { objective: Objective; snapshot: OrganizationSnapshot }) {
+  const { t, locale } = useI18n()
+  const copy = t.organizationHome
+  const owner = snapshot.agents.find(agent => agent.id === objective.ownerId)
+  const progress = new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 1 }).format((objective.progress ?? 0) / 100)
+  const progressLabel = objective.source === 'prototype' ? t.organizationFoundation.estimatedProgress(progress) : copy.completedTasks(progress)
+  const status = copy.statuses[objective.status as keyof typeof copy.statuses] ?? copy.unknownStatus
+
+  return <article className="eid-home-record">
+    <div className="eid-home-record-heading"><h3><Link to={`/objectives/${encodeURIComponent(objective.id)}`}>{objective.title}</Link></h3><span className={`eid-status eid-status-${objective.status}`}>{status}</span></div>
+    <p className="eid-home-description">{objective.description}</p>
+    <p><small>{copy.owner}: {owner?.name || objective.ownerId || copy.unassigned}</small></p>
+    {objective.progress !== undefined && Number.isFinite(objective.progress) ? <div className="eid-home-progress"><progress aria-label={progressLabel} max={100} value={objective.progress} /><small>{progressLabel}</small></div> : <small>{copy.progressUnknown}</small>}
+    {objective.dispatchControl?.paused && <p className="eid-home-paused">{copy.paused} · {copy.running(new Intl.NumberFormat(locale).format(objective.dispatchControl.runningCount))}</p>}
+    <Link className="eid-home-action" to={`/objectives/${encodeURIComponent(objective.id)}`}>{copy.viewObjective} →</Link>
+  </article>
+}
+
+export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snapshot: OrganizationSnapshot }) {
+  const { t } = useI18n()
+  const copy = t.organizationHome
+  const data = homeData(snapshot)
+  const intake = <section className="eid-home-intake" id="eid-home-intake">{adapter.mode === 'runtime' && <Command adapter={adapter} headingLevel={2} key={snapshot.connection?.ownerScope ?? snapshot.connection?.scope} snapshot={snapshot} />}</section>
+
+  return <div className="eid-home">
+    <header className="eid-home-hero"><div><p className="eid-eyebrow">Eidolon</p><h1>{copy.heading}</h1><p>{copy.introduction}</p></div>{adapter.mode === 'runtime' && <Button onClick={() => { const field = document.getElementById('eid-objective'); document.getElementById('eid-home-intake')?.scrollIntoView({ block: 'start' }); field?.focus({ preventScroll: true }) }} variant="default">{copy.newObjective}</Button>}</header>
+    {snapshot.connection && snapshot.connection.state !== 'ready' && <p role="status">{copy.lastKnown}</p>}
+    <div className="eid-home-grid">
+      <section aria-label={copy.happening} className="eid-home-panel"><header><h2>{copy.happening}</h2><p>{copy.happeningNote}</p></header>{data.objectives.length ? data.objectives.slice(0, 2).map(objective => <HomeObjective key={objective.id} objective={objective} snapshot={snapshot} />) : <p className="eid-home-empty">{copy.noWork}</p>}<Link className="eid-home-action" to="/objectives">{copy.viewObjectives} →</Link></section>
+      <section aria-label={copy.needsYou} className="eid-home-panel"><header><h2>{copy.needsYou}</h2><p>{copy.needsNote}</p></header>{data.requests.slice(0, 3).map(request => <article className="eid-home-record" key={request.id}><h3>{snapshot.objectives.find(item => item.id === request.objectiveId)?.title ?? request.objectiveId}</h3><p>{request.reason || request.requestedOutcome || t.organizationWork.needsYou}</p><Link className="eid-home-action" to={`/objectives/${encodeURIComponent(request.objectiveId)}`}>{copy.reviewRequest} →</Link></article>)}{!data.requests.length && <p className="eid-home-empty">{snapshot.requests ? copy.noNeeds : copy.requestsUnavailable}</p>}<Link className="eid-home-action" to="/requests">{copy.viewRequests} →</Link></section>
+      <section aria-label={copy.ready} className="eid-home-panel"><header><h2>{copy.ready}</h2><p>{copy.readyNote}</p></header>{data.deliverables.slice(0, 3).map(item => <article className="eid-home-record" key={item.objectiveId}><small className="eid-status-completed">{copy.accepted}</small><h3>{item.title}</h3><p>{item.summary}</p><LocalizedTime value={item.updatedAt} /><Link className="eid-home-action" to={`/objectives/${encodeURIComponent(item.objectiveId)}`}>{copy.viewObjective} →</Link></article>)}{!data.deliverables.length && <p className="eid-home-empty">{snapshot.outcomes ? copy.noReady : copy.outcomesUnavailable}</p>}<Link className="eid-home-action" to="/artifacts">{copy.viewDeliverables} →</Link></section>
+    </div>
+    <section aria-label={copy.activity} className="eid-home-panel eid-home-activity"><header><div><h2>{copy.activity}</h2><p>{copy.activityNote}</p></div><Link to="/activity">{copy.viewActivity} →</Link></header><ol>{data.activity.map(event => { const agent = snapshot.agents.find(item => item.id === event.agentId);
+
+ return <li key={event.id}><AgentAvatar name={agent?.name ?? copy.organization} /><div><strong>{agent?.name ?? copy.organization}</strong><p>{event.text}</p><LocalizedTime value={event.timestamp} /></div></li> })}</ol>{!data.activity.length && <p>{copy.noActivity}</p>}</section>
+    <p className="eid-note">{copy.snapshotNote}</p>
+    {intake}
+    {adapter.mode === 'runtime' && <RuntimeSetup snapshot={snapshot} />}
+  </div>
+}
