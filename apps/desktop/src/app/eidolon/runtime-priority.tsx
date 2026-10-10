@@ -41,7 +41,8 @@ export function RuntimePriority({ objective, adapter, snapshot }: {
   }, [])
 
   const save = async () => {
-    if (!current() || !editable || !supported || lock.current) {return}
+    // A retained exact retry can recover a receipt after editing becomes ineligible.
+    if (!current() || !adapter.changePriority || lock.current || (!intent && (!editable || !supported))) {return}
     const request = intent ?? { id: objective.id, priority, expectedRevision: revision!, idempotencyKey: crypto.randomUUID() }
     lock.current = true
     setBusy(true)
@@ -79,11 +80,12 @@ export function RuntimePriority({ objective, adapter, snapshot }: {
   return <section aria-label={copy.priorityHeading}>
     <h2>{copy.priorityHeading}</h2>
     <p>{copy.priorityCurrent}: {objective.priority} · {copy.priorityVersion}: {objective.priorityRevision ?? copy.notRecorded}</p>
-    {!editable ? <p>{copy.priorityTerminal}</p> : !supported ? <p>{copy.priorityUnavailable}</p> : <>
-      <label>{copy.priorityNew}<select aria-label={copy.priorityNew} disabled={busy || !!intent || !current()} onChange={event => setPriority(event.target.value as ObjectivePriority)} value={priority}>
+    {!editable ? <p>{copy.priorityTerminal}</p> : !supported ? <p>{copy.priorityUnavailable}</p> : null}
+    {((editable && supported) || (intent && adapter.changePriority)) && <>
+      {editable && supported && <><label>{copy.priorityNew}<select aria-label={copy.priorityNew} disabled={busy || !!intent || !current()} onChange={event => setPriority(event.target.value as ObjectivePriority)} value={priority}>
         {(['P1', 'P2', 'P3', 'P4', 'P5'] as const).map(value => <option key={value} value={value}>{value}</option>)}
       </select></label>
-      <p>{copy.priorityVersion}: {revision}</p>
+      <p>{copy.priorityVersion}: {revision}</p></>}
       <div className="eid-inline">
         <Button disabled={busy || !current() || (!intent && priority === objective.priority)} onClick={() => void save()} size="sm" variant="secondary">{busy ? copy.prioritySaving : intent ? copy.priorityRetry : copy.prioritySave}</Button>
         <Button disabled={busy || !current()} onClick={review} size="sm" variant="secondary">{copy.priorityReview}</Button>

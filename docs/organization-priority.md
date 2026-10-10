@@ -27,7 +27,9 @@ rejected. Creation replay still compares the original admission input, including
 its original priority, and returns the retained objective's current state.
 
 The UI shows current and proposed values and the saved transition/revision.
-After an uncertain reply, Retry uses the same key and arguments. Review current
+After an uncertain reply, Retry uses the same key and arguments, even if the
+objective subsequently completes, is archived, or reaches revision 100. This
+recovers the original receipt without enabling a new change. Review current
 priority discards that local intent and adopts the latest observed revision;
 a later stale save still fails at the server. Profile/connection changes fence
 callbacks. Older runtimes without priority revisions expose no writable fallback.

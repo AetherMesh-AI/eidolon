@@ -7,11 +7,11 @@ import { RuntimePriority } from './runtime-priority'
 import type { PriorityReceipt } from './runtime-priority-types'
 import type { Objective, OrganizationSnapshot } from './types'
 
-async function fixture() {
+async function fixture(initialRevision = 0) {
   let profile = 'alpha'
 
   let notify = () => {}
-  const objective = { id: 'obj-a', title: 'Goal', status: 'planning', source: 'runtime', priority: 'P5', priorityRevision: 0, createdAt: '2026-10-10T00:00:00Z' } as Objective
+  const objective = { id: 'obj-a', title: 'Goal', status: 'planning', source: 'runtime', priority: 'P5', priorityRevision: initialRevision, createdAt: '2026-10-10T00:00:00Z' } as Objective
 
   let snapshot: OrganizationSnapshot = { source: 'runtime', objectives: [objective], agents: [], tasks: [], knowledge: [], activity: [], requests: [],
     runtime: { profile, state: 'ready', capabilities: [], maxWorkers: 1, scope: 'Text' } }
@@ -58,8 +58,8 @@ async function fixture() {
   await screen.findByRole('combobox', { name: 'New priority' })
 
   return { adapter, request, rendered, lose: () => { lose = true }, intercept: (fn: () => Promise<unknown>) => { intercept = fn },
-    async terminal() {
-      snapshot = { ...snapshot, objectives: [{ ...snapshot.objectives[0], status: 'completed' }] }
+    async terminal(status: Objective['status'] = 'completed') {
+      snapshot = { ...snapshot, objectives: [{ ...snapshot.objectives[0], status }] }
       await act(async () => adapter.refresh())
     },
     async external(priority: Objective['priority'], revision: number) {
@@ -115,4 +115,37 @@ it('fences an in-flight save on profile navigation and rejects receipt provenanc
   f.intercept(async () => ({ receipt: { objectiveId: 'obj-b', idempotencyKey: 'key', priority: 'P1', previousPriority: 'P5', revision: 1 }, snapshot: { ...f.adapter.getSnapshot(), runtime: { profile: 'alpha' } } }))
   await expect(f.adapter.changePriority!({ id: 'obj-b', priority: 'P1', expectedRevision: 0, idempotencyKey: 'key' })).rejects.toThrow('invalid priority-change receipt')
   expect(f.adapter.getSnapshot().objectives[0].priority).toBe('P5')
+})
+
+
+it.each(['completed', 'archived', 'cap'] as const)('recovers a committed lost reply after %s without enabling a new change', async outcome => {
+  const revision = outcome === 'cap' ? 99 : 0
+  const f = await fixture(revision)
+  f.lose(); select('P1')
+  fireEvent.click(screen.getByRole('button', { name: 'Save priority' }))
+  await screen.findByRole('alert')
+  const original = structuredClone(calls(f.request)[0][1])
+  expect(original).toMatchObject({ id: 'obj-a', priority: 'P1', expectedRevision: revision })
+  expect(original.idempotencyKey).toEqual(expect.any(String))
+
+  if (outcome === 'cap') {
+    await act(async () => f.adapter.refresh())
+  } else {
+    await f.terminal(outcome)
+  }
+
+  expect(screen.queryByRole('combobox', { name: 'New priority' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Save priority' })).toBeNull()
+  expect(screen.getByRole('alert')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Retry priority save' }))
+  await screen.findByText(`Saved P5 → P1 (revision ${revision + 1}).`)
+  expect(calls(f.request).map(call => call[1])).toEqual([original, original])
+  expect(f.adapter.getSnapshot().objectives[0]).toMatchObject({
+    priority: 'P1', priorityRevision: revision + 1, status: outcome === 'cap' ? 'planning' : outcome
+  })
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(screen.queryByRole('combobox', { name: 'New priority' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Save priority' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Retry priority save' })).toBeNull()
+  expect(calls(f.request)).toHaveLength(2)
 })
