@@ -62,7 +62,7 @@ with sqlite3.connect((Path(os.environ['HERMES_HOME'])/'organization'/'state.db')
   await expect(form.getByText('Saved P5 → P1 (revision 1).', { exact: true })).toBeVisible()
   await expect(form.getByText('Current priority: P1 · Priority revision: 1', { exact: true })).toBeVisible()
   await page.reload()
-  await waitForAppReady(fixture)
+  // Reload retains the objective route, whose ready state has no chat composer.
   await expect(form.getByText('Current priority: P1 · Priority revision: 1', { exact: true })).toBeVisible()
   await form.getByRole('combobox', { name: 'New priority' }).selectOption('P4')
   await form.getByRole('button', { name: 'Save priority', exact: true }).click()
