@@ -141,3 +141,26 @@ def test_transition_bound_finishes_open_and_old_receipts_never_reapply(tmp_path)
     assert store._objective_view(obj['id'])['dispatchControl']['paused'] is False
     with pytest.raises(ValueError, match='boolean'):
         toggle(store, obj, 1, 0, 'wrong-type')
+
+
+def test_resume_preserves_pending_staff_activation_before_worker_dispatch(tmp_path):
+    from eidolon_cli.organization_config import OrganizationSettings
+    from tests.eidolon_cli.test_organization_store import plan
+    settings = OrganizationSettings.from_config({'organization': {'roster': [
+        {'id': 'specialist', 'name': 'Specialist', 'team': 'general', 'capabilities': ['work.draft']},
+    ]}})
+    store = OrganizationStore(tmp_path/'state.db', settings)
+    obj = create(store, 'one')
+    plan(store, tasks=[{'title':'Draft','description':'Scoped brief','type':'work.draft'}])
+    toggle(store, obj)
+    with store._connect() as conn:
+        before = list(map(tuple, conn.execute('SELECT * FROM agents')))
+        assert conn.execute("SELECT count(*) FROM requests WHERE type='request.hire' AND status='queued'").fetchone()[0] == 1
+    toggle(store, obj, False, 1, 'resume')
+    with store._connect() as conn:
+        assert list(map(tuple, conn.execute('SELECT * FROM agents'))) == before
+    hire = store.claim_next()
+    assert hire['type'] == 'request.hire'
+    assert store.finish(hire, {})
+    work = store.claim_next()
+    assert work['type'] == 'work.draft' and work['agent_id'] == 'specialist'

@@ -69,7 +69,7 @@ class OrganizationDispatchStore:
                 for request in conn.execute("SELECT * FROM requests WHERE objective_id=? AND status='queued'", (objective_id,)):
                     # Unmet dependencies stay queued; no assignment or permission is created here.
                     if self._dependencies_ready(conn, request) and self._coordination_ready(conn, request):
-                        if not self._eligible(conn, request)[0]:
+                        if not self._eligible(conn, request)[0] and not self._hiring_pending(conn, request):
                             raise ValueError('Current authority cannot dispatch a ready request; review permissions and staffing')
                         if request['attempts'] >= self.settings.max_attempts:
                             raise ValueError('Attempt limit reached; resume cannot renew it')
