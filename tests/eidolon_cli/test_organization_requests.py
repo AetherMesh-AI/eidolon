@@ -76,7 +76,7 @@ def test_unhandled_permission_requires_exact_owner_answer_without_grant_expansio
     assert store.claim_next() is None
     pending = next(row for row in store.snapshot()['requests'] if row['id'] == permission['id'])
     assert pending['status'] == 'pending_intervention'
-    assert {item['action'] for item in pending['allowedResolutions']} == {'approve_request', 'deny_request'}
+    assert {item['action'] for item in pending['allowedResolutions']} == {'approve_request', 'deny_request', 'amend_scope', 'request_replan'}
     with pytest.raises(ValueError, match='response'):
         store.retry(permission['id'], idempotency_key='bypass')
     with pytest.raises(ValueError, match='explicit'):

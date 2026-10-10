@@ -118,6 +118,7 @@ function resultFor(kind: string, context: StageContext) {
 
 interface CompletionFixtureOptions {
   projectSelection?: boolean
+  linkedQuestion?: boolean
 }
 
 export async function setupCompletionFixture(budgetLimited: boolean, options: CompletionFixtureOptions = {}) {
@@ -207,7 +208,18 @@ export async function setupCompletionFixture(budgetLimited: boolean, options: Co
           }
 
           const content = JSON.stringify(
-            options.projectSelection && kind === 'request.plan' ? { intervention: projectSelectionIntervention } : resultFor(kind, context)
+            options.projectSelection && kind === 'request.plan'
+              ? { intervention: projectSelectionIntervention }
+              : options.linkedQuestion && kind === 'work.draft' && context.objective.description === originalScope
+                ? {
+                    requests: [
+                      {
+                        type: 'request.question',
+                        requestedOutcome: 'The external fact is unavailable. How should the brief proceed?'
+                      }
+                    ]
+                  }
+                : resultFor(kind, context)
           )
 
           const identity = { id: `completion-fixture-${stages.length}`, created: 1, model: 'mock-model' }
