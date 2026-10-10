@@ -19,7 +19,10 @@ No branch protection, repository setting, secret, or permission grant is changed
   portability and SQLite WAL snapshots. Uses the canonical per-file runner.
 - macOS and Windows: a deliberately smaller native ledger, migration, recovery,
   receipt, policy and project-execution guard suite, including the durable
-  work-package and scripted executor lifecycle contracts. Spawned-process config
+  work-package and scripted executor lifecycle contracts. Linked owner recovery
+  runs in the ledger/identity shard, covering real SQLite answer/replan contention,
+  shared owner allowance exhaustion, and an independent process holding either
+  the linked request or parent execution lock. Spawned-process config
   tests cover delayed reopen/startup/watchers, invalid-file pauses and idempotent repair
   without replaying claims or resetting model-call reservations. The unchanged
   large artifact-retention lifecycle has its own file so short ledger contracts
