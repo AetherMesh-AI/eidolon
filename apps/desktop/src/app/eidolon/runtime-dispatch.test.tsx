@@ -66,7 +66,7 @@ async function fixture() {
       objective = { ...objective, status: 'cancelled', history: { archived: true, revision: 1, updatedAt: null, canArchive: false, canRestore: true, blocker: null } }
       await act(async () => adapter.refresh())
     },
-    async external() { objective = { ...objective, dispatchControl: { ...objective.dispatchControl!, paused: true, revision: 3 } }; await act(async () => adapter.refresh()) },
+    async external(paused = true, revision = 3) { objective = { ...objective, dispatchControl: { ...objective.dispatchControl!, paused, revision } }; await act(async () => adapter.refresh()) },
     async switchProfile() { profile = 'beta'; objective = { ...objective, id: 'obj-b', dispatchControl: { paused: false, revision: 0, runningCount: 0 } }; await act(async () => { notify(); await adapter.refresh() }) }
   }
 }
@@ -90,7 +90,7 @@ it('retains the exact uncertain pause across archive omission and rejects wrong 
   await screen.findByText(/invalid dispatch receipt/)
   f.intercept(undefined)
   fireEvent.click(screen.getByRole('button', { name: 'Retry same dispatch change' }))
-  await screen.findByText('New dispatch paused · Dispatch revision: 1', { selector: '[role="status"]' })
+  await screen.findByText('Dispatch change confirmed · Receipt revision: 1', { selector: '[role="status"]' })
   expect(calls(f.request).map(call => call[1])).toEqual([original, original, original])
   expect(screen.queryByRole('button', { name: 'Resume dispatch' })).toBeNull()
   expect(f.adapter.getSnapshot().objectives).toEqual([])
@@ -110,11 +110,11 @@ it('shows in-flight stages, retains denied resume, and requires review after a c
   await screen.findByRole('button', { name: 'Pause new dispatch' })
   expect(calls(f.request)[1][1]).toEqual(calls(f.request)[2][1])
   await f.external()
-  fireEvent.click(screen.getByRole('button', { name: 'Pause new dispatch' }))
-  await screen.findByText(/Dispatch changed/)
+  expect(screen.getByRole('button', { name: 'Resume dispatch' }).hasAttribute('disabled')).toBe(true)
+  expect(screen.getByText(/Review the current dispatch state before another change/)).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Review current dispatch' }))
   fireEvent.click(screen.getByRole('button', { name: 'Resume dispatch' }))
-  await screen.findByText('New dispatch enabled · Dispatch revision: 4', { selector: '[role="status"]' })
+  await screen.findByText('Dispatch change confirmed · Receipt revision: 4', { selector: '[role="status"]' })
   expect(calls(f.request).at(-1)![1].expectedRevision).toBe(3)
 })
 
@@ -129,4 +129,33 @@ it('fences an in-flight dispatch receipt after a profile switch', async () => {
   expect(screen.queryByRole('alert')).toBeNull()
   expect(f.adapter.getSnapshot().runtime?.profile).toBe('beta')
   expect(f.adapter.getSnapshot().objectives[0].dispatchControl?.paused).toBe(false)
+})
+
+
+it('acknowledges a historical retry without replacing current state or offering stale actions', async () => {
+  const f = await fixture()
+  f.lose()
+  fireEvent.click(screen.getByRole('button', { name: 'Pause new dispatch' }))
+  await screen.findByRole('alert')
+  const original = calls(f.request)[0][1]
+  await f.external(false, 2)
+  fireEvent.click(screen.getByRole('button', { name: 'Retry same dispatch change' }))
+  await screen.findByText('Dispatch change confirmed · Receipt revision: 1', { selector: '[role="status"]' })
+  expect(screen.getByText('New dispatch enabled · Dispatch revision: 2')).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Resume dispatch' })).toBeNull()
+  expect(screen.getByRole('button', { name: 'Pause new dispatch' }).hasAttribute('disabled')).toBe(true)
+  expect(calls(f.request).map(call => call[1])).toEqual([original, original])
+  fireEvent.click(screen.getByRole('button', { name: 'Review current dispatch' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Pause new dispatch' }))
+  await screen.findByText('Dispatch change confirmed · Receipt revision: 3', { selector: '[role="status"]' })
+  expect(calls(f.request).at(-1)![1].expectedRevision).toBe(2)
+  await f.external(false, 4)
+  expect(screen.getByText('New dispatch enabled · Dispatch revision: 4')).toBeTruthy()
+  expect(screen.queryByText('New dispatch paused · Dispatch revision: 3')).toBeNull()
+  expect(screen.getByRole('status').textContent).toBe('Dispatch change confirmed · Receipt revision: 3')
+  expect(screen.getByRole('button', { name: 'Pause new dispatch' }).hasAttribute('disabled')).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: 'Review current dispatch' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Pause new dispatch' }))
+  await screen.findByText('Dispatch change confirmed · Receipt revision: 5', { selector: '[role="status"]' })
+  expect(calls(f.request).at(-1)![1].expectedRevision).toBe(4)
 })

@@ -10,8 +10,7 @@ export function RuntimeDispatch({ objective, adapter, snapshot }: { objective: O
   const { t } = useI18n()
   const copy = t.organizationWork
   const state = objective.dispatchControl
-  const [revision, setRevision] = useState(state?.revision)
-  const [paused, setPaused] = useState(!state?.paused)
+  const [reviewedRevision, setReviewedRevision] = useState(state?.revision)
   const [intent, setIntent] = useState<DispatchChange | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -21,6 +20,8 @@ export function RuntimeDispatch({ objective, adapter, snapshot }: { objective: O
 
   const editable = !objective.history?.archived && !['completed', 'cancelled', 'archived'].includes(objective.status)
     && validDispatch(state) && state.revision < 100
+
+  const needsReview = validDispatch(state) && reviewedRevision !== state.revision
 
   const current = () => {
     const latest = adapter.getSnapshot()
@@ -38,16 +39,17 @@ export function RuntimeDispatch({ objective, adapter, snapshot }: { objective: O
   }, [])
 
   const save = async () => {
-    if (!current() || !adapter.setObjectivePaused || lock.current || (!intent && !editable)) {return}
-    const request = intent ?? { id: objective.id, paused, expectedRevision: revision!, idempotencyKey: crypto.randomUUID() }
+    if (!current() || !adapter.setObjectivePaused || lock.current || (!intent && (!editable || needsReview))) {return}
+    const request = intent ?? { id: objective.id, paused: !state!.paused, expectedRevision: state!.revision, idempotencyKey: crypto.randomUUID() }
     lock.current = true; setBusy(true); setIntent(request); setError(''); setMessage('')
 
     try {
       const receipt = await adapter.setObjectivePaused(request)
 
       if (current()) {
-        setMessage(`${receipt.paused ? copy.dispatchPaused : copy.dispatchOpen} · ${copy.dispatchRevision}: ${receipt.revision}`)
-        setRevision(receipt.revision); setPaused(!receipt.paused); setIntent(null)
+        setMessage(`${copy.dispatchConfirmed} · ${copy.dispatchReceiptRevision}: ${receipt.revision}`)
+        // An older receipt confirms history; a newer snapshot still requires review.
+        setReviewedRevision(receipt.revision); setIntent(null)
       }
     } catch (reason) {
       if (current()) {setError(reason instanceof Error ? reason.message : copy.dispatchInvalid)}
@@ -65,9 +67,10 @@ export function RuntimeDispatch({ objective, adapter, snapshot }: { objective: O
     <p className="eid-note">{copy.dispatchBoundary}</p>
     {!editable && <p>{copy.dispatchRestricted}</p>}
     {(editable || intent) && adapter.setObjectivePaused && <div className="eid-inline">
-      <Button disabled={busy || !current()} onClick={() => void save()} size="sm" variant="secondary">{busy ? copy.dispatchSaving : intent ? copy.dispatchRetry : paused ? copy.dispatchPause : copy.dispatchResume}</Button>
-      <Button disabled={busy || !current()} onClick={() => { setIntent(null); setRevision(state?.revision); setPaused(!state?.paused); setError(''); setMessage('') }} size="sm" variant="secondary">{copy.dispatchReview}</Button>
+      <Button disabled={busy || !current() || (!intent && needsReview)} onClick={() => void save()} size="sm" variant="secondary">{busy ? copy.dispatchSaving : intent ? copy.dispatchRetry : state?.paused ? copy.dispatchResume : copy.dispatchPause}</Button>
+      <Button disabled={busy || !current()} onClick={() => { setIntent(null); setReviewedRevision(state?.revision); setError(''); setMessage('') }} size="sm" variant="secondary">{copy.dispatchReview}</Button>
     </div>}
+    {needsReview && !intent && editable && <p>{copy.dispatchReviewRequired}</p>}
     {error && <p role="alert">{error} {copy.priorityUncertain}</p>}
     {message && <p role="status">{message}</p>}
   </section>

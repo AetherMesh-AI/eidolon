@@ -59,15 +59,15 @@ with s._connect() as c:
   const form = page.getByRole('region', { name: 'Objective dispatch', exact: true })
   await expect(form.getByText('New dispatch enabled · Dispatch revision: 0', { exact: true })).toBeVisible()
   await form.getByRole('button', { name: 'Pause new dispatch', exact: true }).click()
-  await expect(form.getByRole('status')).toHaveText('New dispatch paused · Dispatch revision: 1')
+  await expect(form.getByRole('status')).toHaveText('Dispatch change confirmed · Receipt revision: 1')
   await page.reload()
   await expect(form.getByText('New dispatch paused · Dispatch revision: 1', { exact: true })).toBeVisible()
   await expect(form.getByText('Already claimed stages: 0', { exact: true })).toBeVisible()
   await form.getByRole('button', { name: 'Resume dispatch', exact: true }).click()
-  await expect(form.getByRole('status')).toHaveText('New dispatch enabled · Dispatch revision: 2')
+  await expect(form.getByRole('status')).toHaveText('Dispatch change confirmed · Receipt revision: 2')
   expect(retained()).toEqual(before)
   await form.getByRole('button', { name: 'Pause new dispatch', exact: true }).click()
-  await expect(form.getByRole('status')).toHaveText('New dispatch paused · Dispatch revision: 3')
+  await expect(form.getByRole('status')).toHaveText('Dispatch change confirmed · Receipt revision: 3')
   run(prelude + `
 with s._write() as c:
  c.execute('UPDATE objective_budgets SET deadline=0 WHERE objective_id=?',('${ids[0]}',))
