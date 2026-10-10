@@ -295,6 +295,11 @@ it('revalidates persistent leader permissions after a roster detour and preserve
   expect(screen.getByRole('alert').textContent).toBe('Choose an active executive and one of their active managers.')
   expect(creates(f.request)).toHaveLength(0)
   expect(Object.values($intakeDrafts.get())[0].metadata.managerId).toBe(manager.id)
+  await f.update({ ...f.snapshot, agents: [] })
+  fireEvent.click(create())
+  expect(screen.getByRole('alert').textContent).toBe('Choose an active executive and one of their active managers.')
+  expect(creates(f.request)).toHaveLength(0)
+  expect(Object.values($intakeDrafts.get())[0].metadata.managerId).toBe(manager.id)
 })
 
 it('warns that discarding an unconfirmed submission cannot cancel work, and cancel preserves its retry key', async () => {

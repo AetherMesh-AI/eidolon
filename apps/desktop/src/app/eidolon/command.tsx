@@ -56,7 +56,10 @@ export function Command({
   const setError = (value: string) => update({ error: value })
   // Ownership selection is a capability of persistent-identity runtimes. Older
   // snapshots continue using their established default owner contract.
-  const hasOwnership = snapshot.agents.some(agent => agent.persistent)
+  const hasOwnership =
+    snapshot.agents.some(agent => agent.persistent) ||
+    metadata.executiveId !== undefined ||
+    metadata.managerId !== undefined
 
   const executives = snapshot.agents.filter(
     agent => agent.role === 'Executive' && agent.lifecycle === 'active' && agent.capabilities.includes('request.accept')
