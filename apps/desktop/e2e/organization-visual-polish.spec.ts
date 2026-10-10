@@ -166,6 +166,8 @@ test('keeps native organization navigation, roster and objective layouts usable 
 
       if (request.method === 'organization.snapshot') {
         socket.send(JSON.stringify({ jsonrpc: '2.0', id: request.id, result: snapshot }))
+      } else if (request.method === 'organization.outcomes') {
+        socket.send(JSON.stringify({ jsonrpc: '2.0', id: request.id, result: snapshot.outcomes }))
       } else {
         server.send(message)
       }
@@ -455,5 +457,5 @@ test('keeps native organization navigation, roster and objective layouts usable 
   writeEvidence()
   expect(mock.receivedPrompts).toHaveLength(0)
   expect(organizationMethods.length).toBeGreaterThan(0)
-  expect(organizationMethods.filter(method => method !== 'organization.snapshot')).toEqual([])
+  expect([...new Set(organizationMethods)].sort()).toEqual(['organization.outcomes', 'organization.snapshot'])
 })
