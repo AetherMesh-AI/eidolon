@@ -1,4 +1,5 @@
-import { Link } from 'react-router'
+import { useEffect, useRef } from 'react'
+import { Link, useLocation } from 'react-router'
 
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n/context'
@@ -28,14 +29,34 @@ export function HomeObjective({ objective, snapshot }: { objective: Objective; s
   </article>
 }
 
+function focusIntake() {
+  document.getElementById('eid-home-intake')?.scrollIntoView({ block: 'start' })
+  document.getElementById('eid-objective')?.focus({ preventScroll: true })
+}
+
 export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snapshot: OrganizationSnapshot }) {
   const { t } = useI18n()
   const copy = t.organizationHome
   const data = homeData(snapshot)
+  const { hash } = useLocation()
+  const intakeFocused = useRef(false)
+  // eslint-disable-next-line no-restricted-syntax -- one-shot focus guard for explicit navigation, not mirrored reactive data
+  useEffect(() => {
+    if (hash !== '#eid-home-intake') {
+      intakeFocused.current = false
+
+      return
+    }
+
+    if (!intakeFocused.current && snapshot.connection?.state === 'ready') {
+      focusIntake()
+      intakeFocused.current = true
+    }
+  }, [hash, snapshot.connection?.state])
   const intake = <section className="eid-home-intake" id="eid-home-intake">{adapter.mode === 'runtime' && <Command adapter={adapter} headingLevel={2} key={snapshot.connection?.ownerScope ?? snapshot.connection?.scope} snapshot={snapshot} />}</section>
 
   return <div className="eid-home">
-    <header className="eid-home-hero"><div><p className="eid-eyebrow">Eidolon</p><h1>{copy.heading}</h1><p>{copy.introduction}</p></div>{adapter.mode === 'runtime' && <Button onClick={() => { const field = document.getElementById('eid-objective'); document.getElementById('eid-home-intake')?.scrollIntoView({ block: 'start' }); field?.focus({ preventScroll: true }) }} variant="default">{copy.newObjective}</Button>}</header>
+    <header className="eid-home-hero"><div><p className="eid-eyebrow">Eidolon</p><h1>{copy.heading}</h1><p>{copy.introduction}</p></div>{adapter.mode === 'runtime' && <Button onClick={focusIntake} variant="default">{copy.newObjective}</Button>}</header>
     {snapshot.connection && snapshot.connection.state !== 'ready' && <p role="status">{copy.lastKnown}</p>}
     <div className="eid-home-grid">
       <section aria-label={copy.happening} className="eid-home-panel"><header><h2>{copy.happening}</h2><p>{copy.happeningNote}</p></header>{data.objectives.length ? data.objectives.slice(0, 2).map(objective => <HomeObjective key={objective.id} objective={objective} snapshot={snapshot} />) : <p className="eid-home-empty">{copy.noWork}</p>}<Link className="eid-home-action" to="/objectives">{copy.viewObjectives} →</Link></section>

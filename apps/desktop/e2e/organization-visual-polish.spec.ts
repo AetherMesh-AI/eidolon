@@ -448,6 +448,10 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await page.getByRole('button', { name: 'New objective', exact: true }).click()
   await expect(goal).toBeFocused()
   await capture('16-home-retained-intake')
+  await navigation.getByRole('link', { name: 'Objectives', exact: true }).click()
+  await workspace.getByRole('link', { name: 'New objective', exact: true }).click()
+  await expect(page.getByRole('textbox', { name: 'Objective', exact: true })).toBeFocused()
+  await expect(page.getByRole('textbox', { name: 'Objective', exact: true })).toHaveValue('Retain this unsubmitted objective across navigation')
   expect(contrastChecks.length).toBeGreaterThan(0)
 
   for (const sample of contrastChecks.filter(item => item.opacity === 1)) {

@@ -10,7 +10,7 @@ export const organizationHomeEn = {
   requestsUnavailable: 'This runtime has not supplied its request queue.',
   activity: 'Organization activity', activityNote: 'Recent events recorded by the organization.', noActivity: 'No activity recorded in this view yet.',
   viewActivity: 'View activity', viewObjectives: 'View objectives', viewRequests: 'View all requests', viewDeliverables: 'View deliverables', viewObjective: 'View objective',
-  reviewRequest: 'Review request', accepted: 'Accepted deliverable', owner: 'Executive owner', unassigned: 'Not assigned', progressUnknown: 'Progress not reported',
+  reviewRequest: 'Review request', accepted: 'Accepted deliverable', owner: 'Owner', unassigned: 'Not assigned', progressUnknown: 'Progress not reported',
   completedTasks: (value: string) => `${value} of tasks completed`,
   paused: 'New dispatch paused', running: (value: string) => `${value} already-claimed stages`,
   snapshotNote: 'This overview shows retained records in the current snapshot. Open the full views for complete history.',

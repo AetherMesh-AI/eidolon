@@ -1,11 +1,11 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 
-import { HomeObjective } from './home'
+import { Home, HomeObjective } from './home'
 import { homeData } from './home-data'
 import type { OrganizationOutcome } from './runtime-outcome-types'
-import type { Objective, OrganizationSnapshot } from './types'
+import type { Objective, OrganizationSnapshot, RuntimeOrganizationAdapter } from './types'
 
 afterEach(cleanup)
 const objective: Objective = { id: 'open', title: 'Owner content 日本語', description: 'Actual scope', ownerId: 'executive', source: 'runtime', status: 'active', createdAt: '2026-10-10T00:00:00Z', progress: 100 }
@@ -38,4 +38,33 @@ it('labels task completion independently of acceptance and preserves owner-autho
   view.rerender(<MemoryRouter><HomeObjective objective={{ ...objective, progress: undefined }} snapshot={snapshot} /></MemoryRouter>)
   expect(screen.queryByRole('progressbar')).toBeNull()
   expect(screen.getByText('Progress not reported')).toBeTruthy()
+})
+
+
+it('focuses explicit intake navigation once after connection readiness without stealing focus on reconnect', () => {
+  const scroll = vi.fn()
+  const original = HTMLElement.prototype.scrollIntoView
+  HTMLElement.prototype.scrollIntoView = scroll
+  const connection = { scope: 'socket', ownerScope: 'home-focus-test', state: 'connecting' as const }
+  const ready = { ...snapshot, connection: { ...connection, state: 'ready' as const } }
+  const adapter = { mode: 'runtime', getSnapshot: () => ready } as RuntimeOrganizationAdapter
+  const tree = (value: OrganizationSnapshot) => <MemoryRouter initialEntries={['/home#eid-home-intake']}><Home adapter={adapter} snapshot={value} /></MemoryRouter>
+
+  try {
+    const view = render(tree({ ...snapshot, connection }))
+    const field = screen.getByRole('textbox', { name: 'Objective' })
+    expect(scroll).not.toHaveBeenCalled()
+    view.rerender(tree(ready))
+    expect(globalThis.document.activeElement).toBe(field)
+    expect(scroll).toHaveBeenCalledTimes(1)
+    field.blur()
+    view.rerender(tree({ ...snapshot, connection }))
+    view.rerender(tree(ready))
+    expect(globalThis.document.activeElement).not.toBe(field)
+    expect(scroll).toHaveBeenCalledTimes(1)
+    expect(screen.getByText('This runtime has not supplied its request queue.')).toBeTruthy()
+    expect(screen.getByText(/has not supplied its outcome inbox/)).toBeTruthy()
+  } finally {
+    HTMLElement.prototype.scrollIntoView = original
+  }
 })
