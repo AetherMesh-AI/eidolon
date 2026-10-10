@@ -19,6 +19,7 @@ import { projectSelectionConfiguration } from './organization-project-selection-
 import { organizationProviderTarget } from './organization-provider-target'
 
 export const completionTitle = 'Prepare the evidence-backed release recommendation'
+export const replacementTitle = 'Revised release recommendation'
 export const projectSelectionTitle = 'Coordinate the selected repository release'
 export const projectSelectionIntervention =
   'Repository selection retained; execution is outside this selection fixture.'
@@ -185,7 +186,9 @@ export async function setupCompletionFixture(budgetLimited: boolean, options: Co
 
           if (
             context.objective.title !==
-              (options.projectSelection ? projectSelectionTitle : budgetLimited ? budgetTitle : completionTitle) ||
+              (options.expiredReplacement && context.objective.description === amendedScope
+                ? replacementTitle
+                : options.projectSelection ? projectSelectionTitle : budgetLimited ? budgetTitle : completionTitle) ||
             payload?.tools?.length
           ) {
             throw new Error('Unexpected objective or expanded tool grants')

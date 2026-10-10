@@ -10,6 +10,7 @@ import {
   completionTitle,
   originalScope,
   recommendation,
+  replacementTitle,
   setupCompletionFixture
 } from './organization-completion-fixture'
 import { openOrganizationDisclosure } from './organization-disclosures'
@@ -638,15 +639,15 @@ test('replaces an expired objective at capacity only after owner confirmation an
   expect(writes).toHaveLength(0)
   await expect(objectiveHeader(page, completionTitle)).not.toContainText('Cancelled')
   await review.click()
-  await form.getByRole('textbox', { name: 'Objective', exact: true }).fill('Revised release recommendation')
+  await form.getByRole('textbox', { name: 'Objective', exact: true }).fill(replacementTitle)
   await form.getByRole('textbox', { name: 'Revised scope', exact: true }).fill(amendedScope)
   await form.getByRole('checkbox').check()
   await page.screenshot({ path: testInfo.outputPath('expired-replacement-review.png') })
   await confirm.click()
-  await expect(page.getByRole('heading', { name: 'Revised release recommendation', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: replacementTitle, exact: true })).toBeVisible()
   await expect.poll(() => running!.stages.filter(stage => stage.kind === 'request.plan' && stage.scope === amendedScope).length, { timeout: 45_000 }).toBe(1)
   running.releasePlan()
-  await expect(objectiveHeader(page, 'Revised release recommendation')).toContainText('Completed', { timeout: 90_000 })
+  await expect(objectiveHeader(page, replacementTitle)).toContainText('Completed', { timeout: 90_000 })
   expect(writes).toHaveLength(1)
   const replay = await organizationRequest<{ objective: { id: string }; snapshot: { objectives: Array<{ id: string; status: string; replacesObjectiveId?: string; replacementObjectiveId?: string }> } }>(page, writes[0], 'organization.replaceObjective')
   expect(replay.error).toBeUndefined()
@@ -656,13 +657,13 @@ test('replaces an expired objective at capacity only after owner confirmation an
   expect(old.status).toBe('cancelled')
   expect(old.replacementObjectiveId).toBe(receipt.objective.id)
   await page.reload()
-  await openObjective(page, 'Revised release recommendation')
-  await expect(objectiveHeader(page, 'Revised release recommendation')).toContainText('Completed')
+  await openObjective(page, replacementTitle)
+  await expect(objectiveHeader(page, replacementTitle)).toContainText('Completed')
   await page.getByRole('link', { name: 'Original objective', exact: true }).click()
   await expect(objectiveHeader(page, completionTitle)).toContainText('Cancelled')
   await page.getByRole('link', { name: 'Replacement objective', exact: true }).click()
-  await expect(objectiveHeader(page, 'Revised release recommendation')).toContainText('Completed')
-  await objectiveHeader(page, 'Revised release recommendation').scrollIntoViewIfNeeded()
+  await expect(objectiveHeader(page, replacementTitle)).toContainText('Completed')
+  await objectiveHeader(page, replacementTitle).scrollIntoViewIfNeeded()
   await page.screenshot({ path: testInfo.outputPath('expired-replacement-completed.png') })
   expect(running.providerErrors).toEqual([])
 })
