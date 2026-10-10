@@ -615,55 +615,86 @@ test('recovers an unanswerable linked question through a bounded scope amendment
   await page.screenshot({ path: testInfo.outputPath('linked-question-recovered-outcome.png') })
 })
 
-// eslint-disable-next-line no-empty-pattern -- actual Electron lifecycle belongs to this spec
-test('replaces an expired objective at capacity only after owner confirmation and retains both linked records', async ({}, testInfo) => {
-  running = await setupCompletionFixture(false, { linkedQuestion: true, expiredReplacement: true })
-  const { page } = running.fixture
-  const writes: RecordedResolution[] = []
-  page.on('websocket', socket => socket.on('framesent', frame => {
-    const request = JSON.parse(String(frame.payload)) as { method?: string; params: Record<string, unknown> }
-    if (request.method === 'organization.replaceObjective') {writes.push({ url: socket.url(), params: request.params })}
-  }))
-  await page.reload()
-  await expect(primary(page)).toBeVisible({ timeout: 60_000 })
-  await createObjective(page, completionTitle, false)
-  // Real finite deadline; no mutation of the ledger or renderer clock.
-  const review = page.getByRole('button', { name: 'Review replacement', exact: true })
-  await expect(review).toBeVisible({ timeout: 90_000 })
-  await review.click()
-  const form = page.getByRole('form', { name: 'Review replacement', exact: true })
-  await expect(form.getByRole('textbox', { name: 'Revised scope', exact: true })).toHaveValue(originalScope)
-  const confirm = form.getByRole('button', { name: 'Cancel original and create replacement', exact: true })
-  await expect(confirm).toBeDisabled()
-  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
-  expect(writes).toHaveLength(0)
-  await expect(objectiveHeader(page, completionTitle)).not.toContainText('Cancelled')
-  await review.click()
-  await form.getByRole('textbox', { name: 'Objective', exact: true }).fill(replacementTitle)
-  await form.getByRole('textbox', { name: 'Revised scope', exact: true }).fill(amendedScope)
-  await form.getByRole('checkbox').check()
-  await page.screenshot({ path: testInfo.outputPath('expired-replacement-review.png') })
-  await confirm.click()
-  await expect(page.getByRole('heading', { name: replacementTitle, exact: true })).toBeVisible()
-  await expect.poll(() => running!.stages.filter(stage => stage.kind === 'request.plan' && stage.scope === amendedScope).length, { timeout: 45_000 }).toBe(1)
-  running.releasePlan()
-  await expect(objectiveHeader(page, replacementTitle)).toContainText('Completed', { timeout: 90_000 })
-  expect(writes).toHaveLength(1)
-  const replay = await organizationRequest<{ objective: { id: string }; snapshot: { objectives: Array<{ id: string; status: string; replacesObjectiveId?: string; replacementObjectiveId?: string }> } }>(page, writes[0], 'organization.replaceObjective')
-  expect(replay.error).toBeUndefined()
-  const receipt = replay.result!
-  expect(receipt.snapshot.objectives).toHaveLength(2)
-  const old = receipt.snapshot.objectives.find(item => item.id === writes[0].params.sourceId)!
-  expect(old.status).toBe('cancelled')
-  expect(old.replacementObjectiveId).toBe(receipt.objective.id)
-  await page.reload()
-  await openObjective(page, replacementTitle)
-  await expect(objectiveHeader(page, replacementTitle)).toContainText('Completed')
-  await page.getByRole('link', { name: 'Original objective', exact: true }).click()
-  await expect(objectiveHeader(page, completionTitle)).toContainText('Cancelled')
-  await page.getByRole('link', { name: 'Replacement objective', exact: true }).click()
-  await expect(objectiveHeader(page, replacementTitle)).toContainText('Completed')
-  await objectiveHeader(page, replacementTitle).scrollIntoViewIfNeeded()
-  await page.screenshot({ path: testInfo.outputPath('expired-replacement-completed.png') })
-  expect(running.providerErrors).toEqual([])
-})
+for (const cause of ['expired', 'exhausted'] as const) {
+  // eslint-disable-next-line no-empty-pattern -- actual Electron lifecycle belongs to this spec
+  test(`replaces an ${cause} objective at capacity only after owner confirmation and retains both linked records`, async ({}, testInfo) => {
+    running = await setupCompletionFixture(
+      false,
+      cause === 'expired' ? { linkedQuestion: true, expiredReplacement: true } : { exhaustedReplacement: true }
+    )
+    const { page } = running.fixture
+    const writes: RecordedResolution[] = []
+    page.on('websocket', socket =>
+      socket.on('framesent', frame => {
+        const request = JSON.parse(String(frame.payload)) as { method?: string; params: Record<string, unknown> }
+        if (request.method === 'organization.replaceObjective') {
+          writes.push({ url: socket.url(), params: request.params })
+        }
+      })
+    )
+    await page.reload()
+    await expect(primary(page)).toBeVisible({ timeout: 60_000 })
+    await createObjective(page, completionTitle, false)
+    // Real deadline or eight reserved model calls; no ledger/clock mutation.
+    const review = page.getByRole('button', { name: 'Review replacement', exact: true })
+    await expect(review).toBeVisible({ timeout: 90_000 })
+    await review.click()
+    const form = page.getByRole('form', { name: 'Review replacement', exact: true })
+    await expect(form.getByRole('textbox', { name: 'Revised scope', exact: true })).toHaveValue(originalScope)
+    const confirm = form.getByRole('button', { name: 'Cancel original and create replacement', exact: true })
+    await expect(confirm).toBeDisabled()
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+    expect(writes).toHaveLength(0)
+    await expect(objectiveHeader(page, completionTitle)).not.toContainText('Cancelled')
+    await review.click()
+    await form.getByRole('textbox', { name: 'Objective', exact: true }).fill(replacementTitle)
+    await form.getByRole('textbox', { name: 'Revised scope', exact: true }).fill(amendedScope)
+    await expect(form.getByRole('heading', { name: 'Why work stopped', exact: true })).toBeVisible()
+    await expect(
+      form.getByText(cause === 'expired' ? 'Objective deadline reached' : 'Model-call allowance exhausted', {
+        exact: true
+      })
+    ).toBeVisible()
+    if (cause === 'exhausted') {
+      await expect(form.getByLabel('Original retained usage')).toContainText('8 / 8')
+      expect(running.stages).toHaveLength(8)
+    }
+    await form.getByLabel('Original retained usage').scrollIntoViewIfNeeded()
+    await page.screenshot({ path: testInfo.outputPath(`${cause}-replacement-usage.png`) })
+    await form.getByRole('checkbox').check()
+    await page.screenshot({ path: testInfo.outputPath(`${cause}-replacement-review.png`) })
+    await confirm.click()
+    await expect(page.getByRole('heading', { name: replacementTitle, exact: true })).toBeVisible()
+    await expect
+      .poll(
+        () => running!.stages.filter(stage => stage.kind === 'request.plan' && stage.scope === amendedScope).length,
+        { timeout: 45_000 }
+      )
+      .toBe(1)
+    running.releasePlan()
+    await expect(objectiveHeader(page, replacementTitle)).toContainText('Completed', { timeout: 90_000 })
+    expect(writes).toHaveLength(1)
+    const replay = await organizationRequest<{
+      objective: { id: string }
+      snapshot: {
+        objectives: Array<{ id: string; status: string; replacesObjectiveId?: string; replacementObjectiveId?: string }>
+      }
+    }>(page, writes[0], 'organization.replaceObjective')
+    expect(replay.error).toBeUndefined()
+    const receipt = replay.result!
+    expect(receipt.snapshot.objectives).toHaveLength(2)
+    const old = receipt.snapshot.objectives.find(item => item.id === writes[0].params.sourceId)!
+    expect(old.status).toBe('cancelled')
+    expect(old.replacementObjectiveId).toBe(receipt.objective.id)
+    await page.reload()
+    await openObjective(page, replacementTitle)
+    await expect(objectiveHeader(page, replacementTitle)).toContainText('Completed')
+    await page.getByRole('link', { name: 'Original objective', exact: true }).click()
+    await expect(objectiveHeader(page, completionTitle)).toContainText('Cancelled')
+    await page.getByRole('link', { name: 'Replacement objective', exact: true }).click()
+    await expect(objectiveHeader(page, replacementTitle)).toContainText('Completed')
+    await objectiveHeader(page, replacementTitle).scrollIntoViewIfNeeded()
+    await page.screenshot({ path: testInfo.outputPath(`${cause}-replacement-completed.png`) })
+    expect(running.providerErrors).toEqual([])
+  })
+}

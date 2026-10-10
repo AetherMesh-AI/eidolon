@@ -1,11 +1,11 @@
 """Owner-confirmed, single-successor recovery; original evidence and grants stay intact."""
 from __future__ import annotations
 
+from decimal import Decimal
 import hashlib
 import json
 import time
 
-from eidolon_cli.organization_budget import budget_view
 from eidolon_cli.organization_identity import objective_assignment_view
 from eidolon_cli.organization_projects import objective_projects, selected_projects
 
@@ -28,19 +28,47 @@ def replacement_links(conn, objective_id):
             'replacementObjectiveId': successor[0] if successor else None}
 
 
-def replacement_preview(conn, settings, objective_id):
+def replacement_reasons(usage):
+    """Only objective-wide, irrevocable admission ceilings qualify.
+
+    A rejected *next* reservation can still fit after configuration correction;
+    replan/project-run limits can still permit review/acceptance. Neither proves
+    objective-wide exhaustion. Unknown historical/cost usage is not a number.
+    Execution quiescence is checked separately, including peer process locks.
+    """
+    if time.time() >= usage['deadlineTimestamp']:
+        return ['deadline']
+    if usage['legacyUsageUnknown']:
+        return []
+    reasons = []
+    for key, used, limit in [('model_calls', 'modelCalls', 'modelCallLimit'),
+                             ('tokens', 'reservedTokens', 'tokenLimit'),
+                             ('stages', 'stages', 'stageLimit')]:
+        if usage[used] >= usage[limit]:
+            reasons.append(key)
+    cost, ceiling = usage['configuredCostReservedUsd'], usage['configuredCostLimitUsd']
+    if cost is not None and ceiling is not None and Decimal(cost) >= Decimal(ceiling):
+        reasons.append('cost')
+    return reasons
+
+
+def replacement_preview(conn, settings, objective_id, resolution_options):
     row = conn.execute('SELECT * FROM objectives WHERE id=?', (objective_id,)).fetchone()
     if row is None:
         raise ValueError('Objective not found in this profile')
     control = conn.execute('SELECT * FROM objective_control WHERE objective_id=?', (objective_id,)).fetchone()
-    budget = budget_view(conn, objective_id, settings)
-    if row['cancelled'] or control['status'] in {'accepted', 'legacy_completed'} or not budget or time.time() < budget['deadlineTimestamp']:
-        raise ValueError('Only an expired, unfinished objective can be replaced')
+    from eidolon_cli.organization_acceptance import usage_view
+    budget = usage_view(conn, control, settings)
+    reasons = replacement_reasons(budget)
+    if row['cancelled'] or control['status'] in {'accepted', 'legacy_completed'} or not reasons:
+        raise ValueError('Only an expired or exhausted, unfinished objective can be replaced')
     if replacement_links(conn, objective_id)['replacementObjectiveId']:
         raise ValueError('This objective already has a replacement')
     requests = [dict(item) for item in conn.execute('SELECT * FROM requests WHERE objective_id=? ORDER BY id', (objective_id,))]
     if any(item['status'] == 'running' for item in requests):
         raise ValueError('Execution is still stopping; review replacement after it exits')
+    if reasons != ['deadline'] and any(resolution_options(conn, item) for item in requests):
+        raise ValueError('Existing owner recovery is available; resolve retained work before replacement')
     projects = objective_projects(conn, objective_id)
     if projects != selected_projects([project['id'] for project in projects], settings):
         raise ValueError('Project authority changed; review configuration before replacing this objective')
@@ -51,7 +79,7 @@ def replacement_preview(conn, settings, objective_id):
     staff = [dict(item) for item in conn.execute('SELECT * FROM staff_state WHERE agent_id IN (?,?) ORDER BY agent_id', tuple(assignment.values()))]
     history = [dict(item) for item in conn.execute('SELECT * FROM objective_history WHERE objective_id=?', (objective_id,))]
     version = hashlib.sha256(json.dumps([dict(row), dict(control), budget, assignment, projects, policy, identities, leaders, staff, requests, history], sort_keys=True).encode()).hexdigest()
-    return {'sourceId': objective_id, 'sourceVersion': version,
+    return {'sourceId': objective_id, 'sourceVersion': version, 'reasonCodes': reasons, 'sourceUsage': budget,
             'title': row['title'], 'description': control['amended_scope'] or row['description'],
             'acceptanceCriteria': json.loads(control['criteria']), 'priority': f"P{6-row['priority']}",
             'deliveryMode': control['delivery_mode'], 'requiredChecks': json.loads(control['required_checks']),
@@ -69,7 +97,7 @@ class OrganizationReplacementStore:
         ident = _text(objective_id, 'Objective ID', 128)
         with self._connect() as conn:
             self._require_current_policy(conn)
-            return replacement_preview(conn, self.settings, ident)
+            return replacement_preview(conn, self.settings, ident, self.allowed_owner_resolutions)
 
     def replace_objective(self, source_id, source_version, title, description, acceptance_criteria, *, confirmed):
         from eidolon_cli.organization_store import _id, _text
@@ -90,7 +118,7 @@ class OrganizationReplacementStore:
                     raise ValueError('This objective already has a replacement with different input; open its linked replacement')
                 ident = previous['replacement_id']
             else:
-                draft = replacement_preview(conn, self.settings, source_id)
+                draft = replacement_preview(conn, self.settings, source_id, self.allowed_owner_resolutions)
                 if draft['sourceVersion'] != source_version:
                     raise ValueError('Source or authority changed; review a fresh replacement draft')
                 self._cancel_objective(conn, source_id)

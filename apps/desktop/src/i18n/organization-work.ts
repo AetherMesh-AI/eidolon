@@ -1,9 +1,17 @@
 /** Copy for the canonical organization ledger surfaces, kept together across locales. */
 const copy = {
+  replacementStopped: ['Why work stopped', '作業が停止した理由', '工作停止原因', '工作停止原因'],
+  replacementExpired: ['Objective deadline reached', '目標の期限に到達', '目标已到期', '目標已到期'],
+  replacementCalls: ['Model-call allowance exhausted', 'モデル呼び出し枠を消費', '模型调用额度已耗尽', '模型呼叫額度已耗盡'],
+  replacementTokens: ['Reserved-token allowance exhausted', '予約トークン枠を消費', '预留令牌额度已耗尽', '預留權杖額度已耗盡'],
+  replacementCost: ['Configured cost allowance exhausted', '設定費用枠を消費', '配置的费用额度已耗尽', '設定的費用額度已耗盡'],
+  replacementStages: ['Objective stage allowance exhausted', '目標の段階枠を消費', '目标阶段额度已耗尽', '目標階段額度已耗盡'],
+  replacementOldUsage: ['Original retained usage', '元の保持された使用量', '保留的原始用量', '保留的原始用量'],
+  replacementRetained: ['These reservations remain charged to the original objective, including interrupted or unreported calls. Confirmation does not refund or reset them.', '中断または未報告の呼び出しを含む予約は元の目標に保持されます。確認しても払い戻しやリセットは行われません。', '这些预留用量仍计入原目标，包括中断或未报告的调用。确认不会退还或重置用量。', '這些預留用量仍計入原目標，包括中斷或未報告的呼叫。確認不會退還或重設用量。'],
   replacementReview: ['Review replacement', '置換を確認', '审阅替代目标', '檢閱替代目標'],
   replacementOriginal: ['Original objective', '元の目標', '原始目标', '原始目標'],
   replacementSuccessor: ['Replacement objective', '置換先の目標', '替代目标', '替代目標'],
-  replacementNote: ['Review the scope and criteria. Confirmation cancels the expired original and starts one linked objective with a fresh finite allowance and deadline. Original evidence and usage remain available; permissions are unchanged.', '範囲と基準を確認してください。確認すると期限切れの元の目標を取り消し、新しい有限の利用枠と期限でリンクされた目標を開始します。元の証拠と使用量は保持され、権限は変わりません。', '审阅范围和标准。确认后会取消过期目标，并以新的有限额度和期限启动一个关联目标。原始证据和用量会保留，权限不变。', '檢閱範圍和標準。確認後會取消過期目標，並以新的有限額度和期限啟動一個關聯目標。原始證據和用量會保留，權限不變。'],
+  replacementNote: ['Review the scope and criteria. Confirmation cancels the stopped original and starts one linked objective with a fresh finite allowance and deadline. Original evidence and usage remain available; permissions are unchanged.', '範囲と基準を確認してください。確認すると停止した元の目標を取り消し、新しい有限の利用枠と期限でリンクされた目標を開始します。元の証拠と使用量は保持され、権限は変わりません。', '审阅范围和标准。确认后会取消已停止的目标，并以新的有限额度和期限启动一个关联目标。原始证据和用量会保留，权限不变。', '檢閱範圍和標準。確認後會取消已停止的目標，並以新的有限額度和期限啟動一個關聯目標。原始證據和用量會保留，權限不變。'],
   replacementConfirm: ['Cancel original and create replacement', '元の目標を取り消して置換先を作成', '取消原目标并创建替代目标', '取消原目標並建立替代目標'],
   replacementConsent: ['I authorize this fresh allowance and a new deadline from confirmation.', 'この新しい利用枠と確認時点からの期限を承認します。', '我授权此新额度及从确认时起的新期限。', '我授權此新額度及從確認時起的新期限。'],
   replacementScope: ['Revised scope', '改訂した範囲', '修订范围', '修訂範圍'],

@@ -52,6 +52,8 @@ export interface OrganizationWorkPackage {
   taskIds: string[]
 }
 export interface ObjectiveReplacementDraft {
+  reasonCodes: Array<'deadline' | 'model_calls' | 'tokens' | 'cost' | 'stages'>
+  sourceUsage: OrganizationUsage
   sourceId: string
   sourceVersion: string
   title: string

@@ -455,7 +455,7 @@ This is an in-app inbox only. It sends no external messages, desktop notificatio
 or new OS permission requests. Deterministic loopback-model tests exercise the
 persistence and delivery mechanics, not live-model judgment quality.
 
-### Expired objectives: reviewed replacement
+### Stopped objectives: reviewed replacement
 
 An expired, unfinished objective offers **Review replacement**. The owner reviews
 its current scope and acceptance criteria, retained executive/manager, selected
@@ -477,3 +477,18 @@ configuration, broaden selected project bindings, remove required checks, refund
 old reservations, or silently renew an objective. New model/token/cost, replan,
 stage and project-run limits remain bounded by the original and current policy;
 the owner explicitly authorizes the displayed current-policy deadline duration.
+
+Replacement also covers exhausted objective-wide model-call, reserved-token,
+configured-cost, and stage ceilings before the deadline. The review shows the
+specific ceiling and the original usage alongside the fresh allowance. Retained
+reservations include interrupted or unreported calls; replacement never refunds
+or resets them. Active ledger execution and peer execution locks must both be
+clear. Existing owner recovery, such as answering a pending question, takes
+precedence over replacement before expiry.
+
+A next-call reservation that does not fit the remaining headroom is not itself
+proof that the entire allowance is exhausted: a corrected context/output setting
+or exact price configuration may still permit recovery. Unknown cost accounting,
+project-run limits, and replan limits alone do not enable this path. Accepted and
+cancelled objectives remain ineligible. Confirmation still uses the same atomic
+capacity exchange, stale-draft check, one-successor receipt, and preserved grants.

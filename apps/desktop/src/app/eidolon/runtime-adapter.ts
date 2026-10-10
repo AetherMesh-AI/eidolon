@@ -525,8 +525,15 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
     refresh: () => { failures = 0;
 
  return refresh() },
-    previewReplacement(id) {
-      return readHistory<ObjectiveReplacementDraft>('organization.previewReplacement', { id })
+    async previewReplacement(id) {
+      const result = await readHistory<ObjectiveReplacementDraft>('organization.previewReplacement', { id })
+      const codes = ['deadline', 'model_calls', 'tokens', 'cost', 'stages']
+
+      if (!result || result.sourceId !== id || !Array.isArray(result.reasonCodes) || !result.reasonCodes.length || result.reasonCodes.some(code => !codes.includes(code)) || !result.sourceUsage) {
+        throw new Error('Replacement review details are unavailable. Reconnect to an updated organization runtime.')
+      }
+
+      return result
     },
     replaceObjective(input) {
       resetScope()
