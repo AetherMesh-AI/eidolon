@@ -1,5 +1,23 @@
 /** Copy for the canonical organization ledger surfaces, kept together across locales. */
 const copy = {
+  dispatchConfirmed: ["Dispatch change confirmed", "実行制御の変更を確認しました", "调度变更已确认", "排程變更已確認"],
+  dispatchReceiptRevision: ["Receipt revision", "確認済みの版", "回执版本", "回執版本"],
+  dispatchReviewRequired: ["Review the current dispatch state before another change.", "次の変更前に現在の実行制御を確認してください。", "再次更改前请检查当前调度状态。", "再次變更前請檢查目前排程狀態。"],
+  dispatchRevision: ["Dispatch revision", "実行制御の版", "调度版本", "排程版本"],
+  dispatchHeading: ["Objective dispatch", "目標の実行制御", "目标调度", "目標排程"],
+  dispatchPaused: ["New dispatch paused", "新規実行を一時停止中", "新任务调度已暂停", "新工作排程已暫停"],
+  dispatchOpen: ["New dispatch enabled", "新規実行が有効", "新任务调度已启用", "新工作排程已啟用"],
+  dispatchRunning: ["Already claimed stages", "実行権取得済みの段階", "已领取的阶段", "已領取的階段"],
+  dispatchPause: ["Pause new dispatch", "新規実行を一時停止", "暂停新任务调度", "暫停新工作排程"],
+  dispatchResume: ["Resume dispatch", "実行を再開", "恢复调度", "恢復排程"],
+  dispatchRetry: ["Retry same dispatch change", "同じ実行変更を再試行", "重试相同调度更改", "重試相同排程變更"],
+  dispatchReview: ["Review current dispatch", "現在の実行状態を確認", "检查当前调度状态", "檢查目前排程狀態"],
+  dispatchSaving: ["Saving dispatch…", "実行状態を保存中…", "正在保存调度…", "正在儲存排程…"],
+  dispatchUnavailable: ["Dispatch controls are unavailable for this runtime.", "このランタイムでは実行制御を利用できません。", "此运行时不支持调度控制。", "此執行環境不支援排程控制。"],
+  dispatchInvalid: ["The runtime returned an invalid dispatch receipt.", "無効な実行制御の記録が返されました。", "运行时返回了无效的调度凭据。", "執行環境傳回無效的排程憑據。"],
+  dispatchRestricted: ["Terminal or archived objectives cannot change dispatch. Up to 100 changes are retained.", "完了・取消・アーカイブ済みの目標は変更できません。変更は最大100回です。", "终止或归档目标不能更改调度。最多保留100次更改。", "已終止或封存的目標不能變更排程。最多保留100次變更。"],
+  dispatchBoundary: ["Pause stops new claims only. Already claimed stages may continue provider calls and tools until they finish or fail; completed writes are not undone. Deadlines and allowances keep their original limits. Resume rechecks authority and budget; dependencies and permissions still gate every dispatch.", "一時停止は新規実行のみを止めます。実行権取得済みの段階は完了または失敗までモデル呼び出しやツールを継続できます。完了済みの書き込みは戻しません。期限と利用枠は維持され、再開時と実行時に権限・依存関係・予算を確認します。", "暂停仅阻止新任务领取。已领取阶段可继续调用模型和工具，直到完成或失败；不会撤销已完成的写入。期限和额度不变。恢复会检查权限和预算，每次调度仍受依赖与权限限制。", "暫停僅阻止新工作領取。已領取階段可繼續呼叫模型與工具，直到完成或失敗；不會撤銷已完成的寫入。期限和額度不變。恢復會檢查權限和預算，每次排程仍受相依性與權限限制。"],
+
   priorityHeading: ["Objective priority", "目標の優先度", "目标优先级", "目標優先順序"],
   priorityCurrent: ["Current priority", "現在の優先度", "当前优先级", "目前優先順序"],
   priorityNew: ["New priority", "新しい優先度", "新优先级", "新優先順序"],

@@ -233,6 +233,20 @@ def _(params, service):
     return _organization_snapshot(organization)
 
 
+@_organization_method("organization.setPaused")
+def _(params, service):
+    from eidolon_cli.profiles import get_active_profile_name
+    _organization_params(params, {"id", "paused", "expectedRevision", "idempotencyKey"})
+    organization = service()
+    receipt = organization.store.set_objective_paused(
+        _organization_text(params, "id", 128), params.get("paused"),
+        expected_revision=params.get("expectedRevision"),
+        idempotency_key=_organization_text(params, "idempotencyKey", 128))
+    return {"receipt": receipt, "profile": get_active_profile_name(),
+            "objective": organization.store._objective_view(receipt["objectiveId"]),
+            "snapshot": _organization_snapshot(organization)}
+
+
 @_organization_method("organization.changePriority")
 def _(params, service):
     _organization_params(params, {"id", "priority", "expectedRevision", "idempotencyKey"})

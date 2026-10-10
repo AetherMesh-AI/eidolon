@@ -21,6 +21,7 @@ from eidolon_cli.organization_replacement import REPLACEMENT_SCHEMA, Organizatio
 from eidolon_cli.organization_owner_chat import OWNER_CHAT_SCHEMA, OrganizationOwnerChatStore
 from eidolon_cli.organization_conversations import CONVERSATION_SCHEMA, OrganizationConversationStore
 from eidolon_cli.organization_packages import (PACKAGE_SCHEMA, OrganizationPackageStore, package_dependencies_ready, task_package_id)
+from eidolon_cli.organization_dispatch import DISPATCH_SCHEMA, OrganizationDispatchStore
 from eidolon_cli.organization_priority import PRIORITY_SCHEMA, OrganizationPriorityStore
 from eidolon_cli.organization_config import OrganizationSettings
 from eidolon_cli.organization_project_registry import REGISTRY_SCHEMA
@@ -105,12 +106,12 @@ def _text(value, field, limit=10000):
     return value.strip()
 
 
-class OrganizationStore(OrganizationPriorityStore, OrganizationReplacementStore, OrganizationOwnerChatStore, OrganizationConversationStore, OrganizationPackageStore, OrganizationOutcomeStore, OrganizationAttentionStore, OrganizationHistoryStore, OrganizationCoordinationStore, OrganizationProjectExecutionStore, OrganizationBudgetStore, OrganizationRequestStore, OrganizationManagementStore, OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
+class OrganizationStore(OrganizationDispatchStore, OrganizationPriorityStore, OrganizationReplacementStore, OrganizationOwnerChatStore, OrganizationConversationStore, OrganizationPackageStore, OrganizationOutcomeStore, OrganizationAttentionStore, OrganizationHistoryStore, OrganizationCoordinationStore, OrganizationProjectExecutionStore, OrganizationBudgetStore, OrganizationRequestStore, OrganizationManagementStore, OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
     def __init__(self, path: Path | str, settings: OrganizationSettings | None = None):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
-            conn.executescript(_SCHEMA + REPLACEMENT_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA + COORDINATION_SCHEMA + HISTORY_SCHEMA + ATTENTION_SCHEMA + PROJECTS_SCHEMA + OUTCOME_SCHEMA + REGISTRY_SCHEMA + PACKAGE_SCHEMA + CONVERSATION_SCHEMA + OWNER_CHAT_SCHEMA + PRIORITY_SCHEMA)
+            conn.executescript(_SCHEMA + REPLACEMENT_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA + COORDINATION_SCHEMA + HISTORY_SCHEMA + ATTENTION_SCHEMA + PROJECTS_SCHEMA + OUTCOME_SCHEMA + REGISTRY_SCHEMA + PACKAGE_SCHEMA + CONVERSATION_SCHEMA + OWNER_CHAT_SCHEMA + PRIORITY_SCHEMA + DISPATCH_SCHEMA)
         self.settings = settings or OrganizationSettings()
         with self._write() as conn:
             self.settings = resolve_settings(conn, settings)
@@ -320,7 +321,7 @@ class OrganizationStore(OrganizationPriorityStore, OrganizationReplacementStore,
                     row['type'] == 'request.hire' and 'managementProposal' in json.loads(row['payload'])
                     for row in running):
                 return None
-            rows = conn.execute("SELECT r.* FROM requests r JOIN objectives o ON o.id=r.objective_id WHERE r.status='queued' AND o.cancelled=0 AND r.available<=? ORDER BY r.priority + CAST(MAX(0, ? - r.created)/60 AS INTEGER) DESC,r.created,r.id", (time.time(), time.time())).fetchall()
+            rows = conn.execute("SELECT r.* FROM requests r JOIN objectives o ON o.id=r.objective_id LEFT JOIN objective_dispatch d ON d.objective_id=o.id WHERE r.status='queued' AND o.cancelled=0 AND coalesce(d.paused,0)=0 AND r.available<=? ORDER BY r.priority + CAST(MAX(0, ? - r.created)/60 AS INTEGER) DESC,r.created,r.id", (time.time(), time.time())).fetchall()
             for request in rows:
                 if running and request['type'] == 'request.hire' and 'managementProposal' in json.loads(request['payload']):
                     continue
