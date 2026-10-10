@@ -5,6 +5,7 @@ import { Loader } from '@/components/ui/loader'
 import { LogView } from '@/components/ui/log-view'
 import { useI18n } from '@/i18n/context'
 
+import { LocalizedTime } from './localized-time'
 import type { OrganizationExecutionAudit, OrganizationRequest, RuntimeOrganizationAdapter } from './types'
 
 interface RuntimeExecutionAuditProps {
@@ -81,7 +82,7 @@ export function RuntimeExecutionAudit({ adapter, request }: RuntimeExecutionAudi
                     <p>
                       {copy.status}: {typeof row.report.status === 'string' ? row.report.status : copy.unknownUsage}
                     </p>
-                    <time dateTime={row.createdAt}>{new Date(row.createdAt).toLocaleString()}</time>
+                    <LocalizedTime value={row.createdAt} />
                     <LogView className="max-h-96">{JSON.stringify(row.report, null, 2)}</LogView>
                   </li>
                 ))}
@@ -94,7 +95,7 @@ export function RuntimeExecutionAudit({ adapter, request }: RuntimeExecutionAudi
               <ol className="eid-list">
                 {audit.evidencePasses.map((row, index) => (
                   <li key={`${row.attemptToken}:${index}`}>
-                    <time dateTime={row.createdAt}>{new Date(row.createdAt).toLocaleString()}</time>
+                    <LocalizedTime value={row.createdAt} />
                     <LogView className="max-h-96">{JSON.stringify(row.report, null, 2)}</LogView>
                   </li>
                 ))}
@@ -111,7 +112,7 @@ export function RuntimeExecutionAudit({ adapter, request }: RuntimeExecutionAudi
                       {call.provider} / {call.model}
                     </p>
                     <p>{call.id}</p>
-                    <time dateTime={call.createdAt}>{new Date(call.createdAt).toLocaleString()}</time>
+                    <LocalizedTime value={call.createdAt} />
                     <p>
                       {copy.reservedInputOutput}: {call.input_limit} / {call.output_limit}
                     </p>

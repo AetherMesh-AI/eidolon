@@ -1,5 +1,6 @@
 import { useI18n } from '@/i18n/context'
 
+import { LocalizedTime } from './localized-time'
 import type { OrganizationSnapshot } from './types'
 
 export function OrganizationManagementHistory({ snapshot }: { snapshot: OrganizationSnapshot }) {
@@ -24,7 +25,7 @@ export function OrganizationManagementHistory({ snapshot }: { snapshot: Organiza
               <p>
                 {copy.actor}: {snapshot.agents.find(agent => agent.id === change.actorId)?.name || change.actorId}
               </p>
-              <time dateTime={change.createdAt}>{new Date(change.createdAt).toLocaleString()}</time>
+              <LocalizedTime value={change.createdAt} />
               {change.requestId && (
                 <p>
                   {t.organizationWork.requests}: {change.requestId}

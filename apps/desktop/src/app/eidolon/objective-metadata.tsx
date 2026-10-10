@@ -1,8 +1,20 @@
+import { useI18n } from '@/i18n/context'
+
+import { LocalizedTime } from './localized-time'
 import type { Objective } from './types'
 
-const priorities = { low: 'Low', normal: 'Normal', high: 'High', P5: 'Lowest', P4: 'Low', P3: 'Normal', P2: 'High', P1: 'Highest' }
-const autonomyNote = 'Historical local planning intent only. This read-only record does not enforce permissions, grant approval, or dispatch work.'
-
 export function MetadataSummary({ objective }: { objective: Objective }) {
-  return <><dl><dt>Priority</dt><dd>{objective.priority ? priorities[objective.priority] : 'Not set'}</dd><dt>Progress</dt><dd>{objective.progress === undefined ? 'Unknown' : `${objective.progress}%${objective.source === 'runtime' ? ' · completed tasks' : ' · local estimate'}`}</dd><dt>Current phase</dt><dd>{objective.phase || 'Not recorded'}</dd><dt>Recent milestone</dt><dd>{objective.milestone || 'Not recorded'}</dd>{objective.source === 'prototype' && <><dt>Autonomy intent</dt><dd>{objective.autonomyIntent || 'Not specified'}</dd></>}<dt>{objective.source === 'runtime' ? 'Created' : 'Created locally'}</dt><dd><time dateTime={objective.createdAt}>{new Date(objective.createdAt).toLocaleString()}</time></dd></dl><p className="eid-note">{objective.source === 'runtime' ? 'Progress counts runtime-completed tasks. Completion requires the recorded review.' : autonomyNote}</p></>
+  const { locale, t } = useI18n()
+  const copy = t.organizationFoundation
+  const runtime = objective.source === 'runtime'
+  const progress = objective.progress === undefined ? copy.unknown : new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 2 }).format(objective.progress / 100)
+
+  return <><dl>
+    <dt>{copy.priority}</dt><dd>{objective.priority ? copy.priorities[objective.priority] : copy.notSet}</dd>
+    <dt>{copy.progress}</dt><dd>{objective.progress === undefined ? progress : runtime ? copy.completedProgress(progress) : copy.estimatedProgress(progress)}</dd>
+    <dt>{copy.currentPhase}</dt><dd>{objective.phase || copy.notRecorded}</dd>
+    <dt>{copy.milestone}</dt><dd>{objective.milestone || copy.notRecorded}</dd>
+    {objective.source === 'prototype' && <><dt>{copy.autonomyIntent}</dt><dd>{objective.autonomyIntent || copy.notSpecified}</dd></>}
+    <dt>{runtime ? copy.created : copy.createdLocally}</dt><dd><LocalizedTime value={objective.createdAt} /></dd>
+  </dl><p className="eid-note">{runtime ? copy.runtimeProgressNote : copy.localProgressNote}</p></>
 }

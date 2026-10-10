@@ -1,6 +1,7 @@
 import type { TipId } from '@/lib/tips/catalog'
 
 import type { OrganizationConversationsCopy } from './organization-conversations'
+import type { OrganizationFoundationCopy } from './organization-foundation'
 // Desktop i18n type contract.
 //
 // `Translations` is the single source of truth for every translatable string
@@ -55,6 +56,7 @@ interface AuxTaskCopy {
 }
 
 export interface Translations {
+  organizationFoundation: OrganizationFoundationCopy
   organizationOwnerChat: OrganizationOwnerChatCopy
   organizationConversations: OrganizationConversationsCopy
   organizationWork: OrganizationWorkCopy

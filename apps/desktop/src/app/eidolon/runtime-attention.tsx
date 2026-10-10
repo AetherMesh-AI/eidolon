@@ -8,6 +8,7 @@ import { Loader } from '@/components/ui/loader'
 import { SegmentedControl } from '@/components/ui/segmented-control'
 import { useI18n } from '@/i18n/context'
 
+import { LocalizedTime } from './localized-time'
 import type { OrganizationAttentionPage } from './runtime-attention-types'
 import { RevisionSeenControl, sameConnection } from './runtime-inbox-seen'
 import type { OrganizationSnapshot, RuntimeOrganizationAdapter } from './types'
@@ -153,7 +154,7 @@ export function RuntimeAttentionInbox({ adapter, snapshot, onInspect }: Attentio
                         {request.reason && <small>{request.reason}</small>}
                         <small>
                           {copy.attentionUpdated}:{' '}
-                          <time dateTime={item.updatedAt}>{new Date(item.updatedAt).toLocaleString()}</time>
+                          <LocalizedTime value={item.updatedAt} />
                         </small>
                       </span>
                       <Badge variant={item.seen ? 'muted' : 'warn'}>

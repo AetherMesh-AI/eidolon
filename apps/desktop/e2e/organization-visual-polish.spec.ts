@@ -7,6 +7,7 @@ import { type MockBackendFixture, setupMockBackend, waitForAppReady } from './fi
 import { expect, test } from './test'
 
 const createdAt = '2026-10-08T09:00:00Z'
+
 const agents = [
   {
     id: 'executive',
@@ -173,16 +174,21 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' })
   await page.reload()
   await waitForAppReady(fixture)
+
   const navigation = page
     .getByRole('complementary', { name: 'Eidolon navigation' })
     .getByRole('navigation', { name: 'Primary', exact: true })
+
   const workspace = page.getByRole('main', { name: 'Organization workspace', exact: true })
   const captures: object[] = []
+  const contrastChecks: Array<{ text: string | null; contrastRatio: number; opacity: number }> = []
+
   const runtime = await app.evaluate(() => ({
     electron: process.versions.electron,
     chrome: process.versions.chrome,
     platform: process.platform
   }))
+
   function writeEvidence() {
     writeFileSync(
       test.info().outputPath('native-visual-evidence.json'),
@@ -220,51 +226,58 @@ test('keeps native organization navigation, roster and objective layouts usable 
       await document.fonts.ready
       await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
     })
+
     const bytes = await page.screenshot({
       path: test.info().outputPath(`${name}.png`),
       animations: 'disabled',
       caret: 'hide'
     })
+
     await test.info().attach(name, { body: bytes, contentType: 'image/png' })
-    captures.push({
-      name,
-      colorScheme: await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme),
-      theme: await page.locator('html').getAttribute('data-hermes-theme'),
-      sha256: createHash('sha256').update(bytes).digest('hex'),
-      statusColors: await workspace.locator('.eid-status').evaluateAll(elements =>
+
+    const colors = await workspace.locator('.eid-status, a, button:not(:disabled), input, textarea, select, .eid-owner-chat-bubble').evaluateAll(elements =>
         elements.map(element => {
           const backgrounds: string[] = []
           let opacity = 1
           let ancestor: Element | null = element
+
           while (ancestor) {
             const style = getComputedStyle(ancestor)
             backgrounds.push(style.backgroundColor)
             opacity *= Number(style.opacity)
             ancestor = ancestor.parentElement
           }
+
           const canvas = document.createElement('canvas')
           canvas.width = canvas.height = 1
           const context = canvas.getContext('2d')!
           // Resolve CSS color-mix and alpha in Chromium, without sampling glyph antialiasing.
           context.fillStyle = '#fff'
           context.fillRect(0, 0, 1, 1)
+
           for (const background of [...backgrounds].reverse()) {
             context.fillStyle = background
             context.fillRect(0, 0, 1, 1)
           }
+
           const backgroundRgba = [...context.getImageData(0, 0, 1, 1).data]
           context.fillStyle = getComputedStyle(element).color
           context.fillRect(0, 0, 1, 1)
           const foregroundRgba = [...context.getImageData(0, 0, 1, 1).data]
+
           const luminance = (rgba: number[]) => {
             const linear = rgba.slice(0, 3).map(channel => {
               const value = channel / 255
+
               return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
             })
+
             return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
           }
+
           const [low, high] = [luminance(backgroundRgba), luminance(foregroundRgba)].sort((left, right) => left - right)
           const rect = element.getBoundingClientRect()
+
           return {
             text: element.textContent,
             color: getComputedStyle(element).color,
@@ -276,7 +289,20 @@ test('keeps native organization navigation, roster and objective layouts usable 
             bounds: { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
           }
         })
-      ),
+      )
+
+    contrastChecks.push(...colors)
+    expect(await workspace.evaluate(element => {
+      const style = getComputedStyle(element)
+
+      return style.getPropertyValue('--aether-500').trim() === style.getPropertyValue('--ui-accent').trim()
+    })).toBe(true)
+    captures.push({
+      name,
+      colorScheme: await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme),
+      theme: await page.locator('html').getAttribute('data-hermes-theme'),
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+      statusColors: colors,
       viewport: await page.evaluate(() => ({
         width: window.innerWidth,
         height: window.innerHeight,
@@ -294,9 +320,11 @@ test('keeps native organization navigation, roster and objective layouts usable 
 
   await resize(1220)
   await expect(page.locator('html')).toHaveClass(/\bdark\b/)
+  await expect(page.locator('html')).toHaveAttribute('data-hermes-theme', 'eidolon')
   await navigation.getByRole('link', { name: 'Command', exact: true }).click()
   await expect(page.getByRole('textbox', { name: 'Objective', exact: true })).toBeVisible()
   await capture('01-home-wide-dark')
+
   // The compact form's primary action must be usable without the first scroll.
   // The paired legacy build predates the runtime disclosure and remains evidence-only.
   if (await page.locator('.eid-runtime-disclosure').count()) {
@@ -396,6 +424,16 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await expect(page.getByRole('textbox', { name: 'Objective', exact: true })).toBeVisible()
   await resize(760)
   await capture('14-home-narrow-light')
+  await page.reload()
+  await waitForAppReady(fixture)
+  await expect(page.locator('html')).toHaveAttribute('data-hermes-theme', 'nous')
+  await expect(page.locator('html')).not.toHaveClass(/\bdark\b/)
+  await capture('15-theme-choice-survives-reload')
+  expect(contrastChecks.length).toBeGreaterThan(0)
+
+  for (const sample of contrastChecks.filter(item => item.opacity === 1)) {
+    expect(sample.contrastRatio, sample.text ?? 'control text').toBeGreaterThanOrEqual(4.5)
+  }
 
   writeEvidence()
   expect(mock.receivedPrompts).toHaveLength(0)

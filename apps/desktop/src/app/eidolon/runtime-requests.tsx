@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { useI18n } from '@/i18n/context'
 
 import { Inspector } from './inspector'
+import { LocalizedTime } from './localized-time'
 import { RuntimeArtifact } from './runtime-artifact'
 import { RuntimeAttentionInbox } from './runtime-attention'
 import { RuntimeExecutionAudit } from './runtime-execution-audit'
@@ -83,7 +84,7 @@ export function OwnerResolutionHistory({
             <li key={entry.id}>
               <strong>{copy[entry.action]}</strong>
               <p className="eid-result-text">{entry.text}</p>
-              <time dateTime={entry.createdAt}>{new Date(entry.createdAt).toLocaleString()}</time>
+              <LocalizedTime value={entry.createdAt} />
               <p>
                 {copy.requests}: {entry.requestId}
               </p>

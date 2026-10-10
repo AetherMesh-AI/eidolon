@@ -5,6 +5,7 @@ import { Loader } from '@/components/ui/loader'
 import { LogView } from '@/components/ui/log-view'
 import { useI18n } from '@/i18n/context'
 
+import { LocalizedTime } from './localized-time'
 import type {
   OrganizationRequest,
   OrganizationToolEvidence,
@@ -125,13 +126,13 @@ export function RuntimeToolReceipts({ receipts, full = false, artifact = false }
                     )}
                     <dt>{copy.created}</dt>
                     <dd>
-                      <time dateTime={receipt.createdAt}>{new Date(receipt.createdAt).toLocaleString()}</time>
+                      <LocalizedTime value={receipt.createdAt} />
                     </dd>
                     {receipt.completedAt && (
                       <>
                         <dt>{copy.completed}</dt>
                         <dd>
-                          <time dateTime={receipt.completedAt}>{new Date(receipt.completedAt).toLocaleString()}</time>
+                          <LocalizedTime value={receipt.completedAt} />
                         </dd>
                       </>
                     )}

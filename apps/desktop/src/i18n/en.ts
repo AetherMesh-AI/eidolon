@@ -1,6 +1,7 @@
 import { FIELD_DESCRIPTIONS, FIELD_LABELS } from '@/app/settings/constants'
 
 import { organizationConversationsEn } from './organization-conversations'
+import { organizationFoundationEn } from './organization-foundation'
 import { organizationOwnerChatEn } from './organization-owner-chat'
 import { organizationRosterEn } from './organization-roster'
 import { organizationWorkEn } from './organization-work'
@@ -9,6 +10,7 @@ import type { Translations } from './types'
 export const en: Translations = {
   organizationOwnerChat: organizationOwnerChatEn,
   organizationConversations: organizationConversationsEn,
+  organizationFoundation: organizationFoundationEn,
   organizationWork: organizationWorkEn,
   organizationRoster: organizationRosterEn,
   organizationRuntime: {

@@ -2,6 +2,7 @@ import { Link } from 'react-router'
 
 import { useI18n } from '@/i18n/context'
 
+import { LocalizedTime } from './localized-time'
 import type { OrganizationAgent, OrganizationSnapshot } from './types'
 
 interface AgentContextProps {
@@ -21,7 +22,7 @@ export function AgentContext({ agent, snapshot }: AgentContextProps) {
       <h3>{copy.persistentIdentity}</h3>
       <dl>
         <dt>{copy.identityId}</dt><dd>{agent.identityId || agent.id}</dd>
-        <dt>{copy.createdAt}</dt><dd>{agent.createdAt ? <time dateTime={agent.createdAt}>{new Date(agent.createdAt).toLocaleString()}</time> : runtimeCopy.notReported}</dd>
+        <dt>{copy.createdAt}</dt><dd>{agent.createdAt ? <LocalizedTime value={agent.createdAt} /> : runtimeCopy.notReported}</dd>
       </dl>
     </>}
     {agent.purpose && <><h3>{copy.purpose}</h3><p>{agent.purpose}</p></>}
@@ -33,7 +34,7 @@ export function AgentContext({ agent, snapshot }: AgentContextProps) {
       {context?.memory ? <>
         <dl>
           {context.revision !== undefined && <><dt>{copy.revision}</dt><dd>{context.revision}</dd></>}
-          {context.updatedAt && <><dt>{copy.updatedAt}</dt><dd><time dateTime={context.updatedAt}>{new Date(context.updatedAt).toLocaleString()}</time></dd></>}
+          {context.updatedAt && <><dt>{copy.updatedAt}</dt><dd><LocalizedTime value={context.updatedAt} /></dd></>}
         </dl>
         {(['facts', 'decisions', 'lessons', 'openQuestions'] as const).map(category => <section aria-label={copy[category]} key={category}>
           <h4>{copy[category]}</h4>
@@ -57,7 +58,7 @@ export function AgentContext({ agent, snapshot }: AgentContextProps) {
             {!!entry.evidenceIds.length && <><dt>{copy.evidenceIds}</dt><dd>{entry.evidenceIds.join(', ')}</dd></>}
           </dl>
         </details>
-        <time dateTime={entry.createdAt}>{new Date(entry.createdAt).toLocaleString()}</time>
+        <LocalizedTime value={entry.createdAt} />
       </li>)}</ol> : <p>{copy.noHistory}</p> : <p>{copy.contextUnavailable}</p>}
     </section>
   </>

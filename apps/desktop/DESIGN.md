@@ -58,8 +58,11 @@ one-off at the call site.
   Settings lives in the rail's utility footer; tools/configuration are secondary.
 - **Organization uses the desktop foundation.** Organization surfaces alias
   shared `--ui-*` background, text and stroke tokens so light/dark mode remains
-  coherent. `--aether-500` and `--aether-600` retain the purple brand accent;
-  secondary accent text adapts to the current foreground.
+  coherent. `--aether-*` compatibility aliases follow the selected desktop accent; accent text
+  blends toward foreground for contrast. Eidolon remains the default palette;
+  saved skin and mode choices are never reset. Retained organization timestamps
+  use `LocalizedTime` and the selected app locale. New foundation messages use
+  the English catalog fallback until their translations are reviewed.
 - **Pages are durable destinations.** Chat, Skills, Messaging, and Artifacts
   remain in shell chrome. Do not hide a distinct product noun inside an
   unrelated page.

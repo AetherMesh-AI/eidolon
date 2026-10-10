@@ -4,6 +4,7 @@ import { useI18n } from '@/i18n/context'
 
 import { AgentAvatar } from './avatar'
 import { Inspector } from './inspector'
+import { LocalizedTime } from './localized-time'
 import { TaskCoordination } from './task-coordination'
 import type { OrganizationSnapshot } from './types'
 
@@ -112,7 +113,7 @@ export function WorkGraph({ snapshot, objectiveId, onOpenEvidence }: WorkGraphPr
           <h4>{item.kind}</h4><p style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{item.content}</p>
           {item.truncated && <p>Evidence preview truncated. The complete artifact contains additional content.</p>}
           {item.id && onOpenEvidence && <button onClick={() => { setSelected(null); onOpenEvidence(item.id!) }}>Read full evidence</button>}
-          {item.id && <p>Evidence ID: {item.id}</p>}{item.sessionId && <p>Session: {item.sessionId}</p>}{item.createdAt && <time dateTime={item.createdAt}>{new Date(item.createdAt).toLocaleString()}</time>}
+          {item.id && <p>Evidence ID: {item.id}</p>}{item.sessionId && <p>Session: {item.sessionId}</p>}{item.createdAt && <LocalizedTime value={item.createdAt} />}
           {item.sha256 && <p style={{ overflowWrap: 'anywhere' }}>SHA-256: {item.sha256}</p>}
         </li>)}</ol> : <p>No evidence recorded yet. Task status alone is not proof of an output.</p>}
         <h3>Execution scope</h3><p>{snapshot.runtime?.scope || 'Execution scope not reported by runtime.'}</p><p>Task completion and recorded evidence do not by themselves verify external tool execution.</p>
