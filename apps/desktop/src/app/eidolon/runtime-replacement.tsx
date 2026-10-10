@@ -106,13 +106,15 @@ function ReplacementReview({
       {error && <p role="alert">{error}</p>}
       {draft && (
         <form
+          aria-busy={pending}
           aria-label={copy.replacementReview}
+          className="eid-resolution-form"
           onSubmit={event => {
             event.preventDefault()
             submit()
           }}
         >
-          <fieldset disabled={pending || unavailable}>
+          <fieldset className="eid-management-fields" disabled={pending || unavailable}>
             <label>
               Objective
               <input
