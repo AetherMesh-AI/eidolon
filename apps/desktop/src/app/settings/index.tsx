@@ -401,6 +401,7 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
     (activeView === 'overview' || (activeView.startsWith('config:') && activeView !== 'config:appearance')) ? (
       <SettingsOverview
         editor={<ConfigSettings activeSectionId={activeView === 'overview' ? 'model' : activeView.slice('config:'.length)} importInputRef={importInputRef} onConfigSaved={onConfigSaved} onMainModelChanged={onMainModelChanged} />}
+        editorLabel={activeView === 'overview' ? undefined : t.settings.sections[activeView.slice('config:'.length)]}
         editorOnly={activeView !== 'overview'}
         notifications={<NotificationsSettings />}
         onSelect={setActiveView}

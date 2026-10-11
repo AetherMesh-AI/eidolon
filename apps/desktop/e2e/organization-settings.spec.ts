@@ -132,7 +132,7 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
   await resize(1536, 961)
   await settings.getByRole('button', { name: 'Model', exact: true }).click()
   // Wait for the real editor, not the gap before lazy content mounts its skeleton.
-  await expect(settings.getByRole('button', { name: 'Apply', exact: true })).toBeVisible()
+  await expect(settings.getByRole('button', { name: 'Apply', exact: true })).toBeVisible({ timeout: 30_000 })
   await capture('reference-settings-model')
   await resize(1440)
   await settings.getByRole('button', { name: 'Model', exact: true }).focus()

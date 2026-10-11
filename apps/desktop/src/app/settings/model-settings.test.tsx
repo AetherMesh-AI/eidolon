@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useState } from 'react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -640,6 +640,7 @@ describe('ModelSettings code-skew 503', () => {
 it('retains real provider, model and auxiliary drafts through overview/detail and keeps Apply explicit', async () => {
   const { ModelSettings } = await import('./model-settings')
   const { SettingsOverview } = await import('./settings-overview')
+  const { NotificationsSettings } = await import('./notifications-settings')
   getGlobalModelOptions.mockResolvedValue({ providers: [
     { name: 'Nous', slug: 'nous', models: ['hermes-4', 'hermes-4-mini'], authenticated: true },
     { name: 'Lab', slug: 'lab', models: ['lab-model'], authenticated: true }
@@ -650,14 +651,15 @@ it('retains real provider, model and auxiliary drafts through overview/detail an
   function Workspace() {
     const [editorOnly, setModelOnly] = useState(false)
 
-    return <><button onClick={() => setModelOnly(false)}>Return overview</button><SettingsOverview editor={<ModelSettings />} editorOnly={editorOnly} notifications={<span>Device preferences</span>} onSelect={() => setModelOnly(true)} /></>
+    return <><button onClick={() => setModelOnly(false)}>Return overview</button><SettingsOverview editor={<ModelSettings />} editorOnly={editorOnly} notifications={<NotificationsSettings />} onSelect={() => setModelOnly(true)} /></>
   }
 
   const view = render(<MemoryRouter><QueryClientProvider client={client}><Workspace /></QueryClientProvider></MemoryRouter>)
-  const mainProvider = (await screen.findAllByRole('combobox'))[0]
+  const modelRegion = within(screen.getByRole('region', { name: 'Model' }))
+  const mainProvider = (await modelRegion.findAllByRole('combobox'))[0]
   fireEvent.click(mainProvider)
   fireEvent.click(await screen.findByRole('option', { name: 'Lab' }))
-  const mainModel = screen.getAllByRole('combobox')[1]
+  const mainModel = modelRegion.getAllByRole('combobox')[1]
   fireEvent.click(mainModel)
   fireEvent.click(await screen.findByRole('option', { name: 'lab-model' }))
   fireEvent.click(screen.getAllByRole('button', { name: 'Change' })[0])
@@ -668,15 +670,21 @@ it('retains real provider, model and auxiliary drafts through overview/detail an
   fireEvent.click(auxSelects[1])
   fireEvent.click(await screen.findByRole('option', { name: 'hermes-4-mini' }))
   fireEvent.click(screen.getByRole('button', { name: 'Open Model' }))
-  expect(screen.getAllByRole('combobox')[0]).toBe(mainProvider)
+  expect(modelRegion.getAllByRole('combobox')[0]).toBe(mainProvider)
   expect(mainProvider.textContent).toContain('Lab')
   expect(mainModel.textContent).toContain('lab-model')
   expect(auxSelects[1].textContent).toContain('hermes-4-mini')
   fireEvent.click(screen.getByRole('button', { name: 'Return overview' }))
-  expect(screen.getAllByRole('combobox')[0]).toBe(mainProvider)
+  expect(modelRegion.getAllByRole('combobox')[0]).toBe(mainProvider)
+  expect(auxSelects[1].textContent).toContain('hermes-4-mini')
+  const notificationSwitch = screen.getByRole('region', { name: 'Notifications' }).querySelector('[role=switch]')!
+  fireEvent.click(notificationSwitch)
+  expect(mainProvider.textContent).toContain('Lab')
+  expect(mainModel.textContent).toContain('lab-model')
   expect(auxSelects[1].textContent).toContain('hermes-4-mini')
   expect(setModelAssignment).not.toHaveBeenCalled()
   expect(saveHermesConfig).not.toHaveBeenCalled()
+  fireEvent.click(notificationSwitch)
   fireEvent.click(screen.getAllByRole('button', { name: 'Apply' })[1])
   await waitFor(() => expect(setModelAssignment).toHaveBeenCalledWith(expect.objectContaining({ provider: 'nous', model: 'hermes-4-mini' })))
 })

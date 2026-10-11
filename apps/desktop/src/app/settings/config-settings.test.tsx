@@ -66,7 +66,7 @@ async function renderConfigSettings() {
     </MemoryRouter>
   )
 
-  return { importInputRef, navigateSection: (activeSectionId: string) => view.rerender(<MemoryRouter><QueryClientProvider client={client}><SettingsOverview editor={<ConfigSettings activeSectionId={activeSectionId} importInputRef={importInputRef} />} editorOnly notifications={null} onSelect={() => {}} /></QueryClientProvider></MemoryRouter>) }
+  return { importInputRef, navigateSection: (activeSectionId: string) => view.rerender(<MemoryRouter><QueryClientProvider client={client}><SettingsOverview editor={<ConfigSettings activeSectionId={activeSectionId === 'overview' ? 'model' : activeSectionId} importInputRef={importInputRef} />} editorOnly={activeSectionId !== 'overview'} notifications={null} onSelect={() => {}} /></QueryClientProvider></MemoryRouter>) }
 }
 
 describe('ConfigSettings autosave', () => {
@@ -180,6 +180,26 @@ it('fences a pending configuration edit when the explicit profile scope changes'
     await waitFor(() => expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('false'))
   } finally {
     await act(async () => { fixtureScope.set(undefined) })
+    vi.useRealTimers()
+  }
+})
+
+
+it('retains pending configuration autosave when returning to Overview before debounce', async () => {
+  getHermesConfigRecord.mockResolvedValue({ checkpoints: { enabled: false } })
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+
+  try {
+    const view = await renderConfigSettings()
+    view.navigateSection('model')
+    view.navigateSection('safety')
+    fireEvent.click(await screen.findByRole('switch'))
+    view.navigateSection('overview')
+    expect(saveHermesConfig).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(700)
+    await waitFor(() => expect(saveHermesConfig).toHaveBeenCalledTimes(1))
+    expect(saveHermesConfig.mock.calls[0][0]).toEqual({ checkpoints: { enabled: true } })
+  } finally {
     vi.useRealTimers()
   }
 })
