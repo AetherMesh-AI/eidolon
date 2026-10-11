@@ -142,14 +142,14 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
     }
   }
 
-  // Tailwind's shared max-[47.5rem] navigation switches strictly below 760px.
-  // Check the boundary itself, not just the absence of workspace overflow.
+  // Settings includes the persistent primary rail, so it collapses earlier
+  // than standalone overlays. Check both old and new exact boundaries.
   await settings.getByRole('button', { name: 'Appearance', exact: true }).click()
-  for (const width of [759, 760, 761]) {
+  for (const width of [759, 760, 761, 999, 1000, 1001]) {
     await resize(width)
     const rail = settings.locator('.eid-settings-layout > aside')
     const dropdown = settings.locator('.eid-settings-layout > div')
-    if (width < 760) {
+    if (width < 1000) {
       await expect(rail).toBeHidden()
       await expect(dropdown).toBeVisible()
     } else {
@@ -157,7 +157,7 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
       await expect(dropdown).toBeHidden()
     }
     const controls = await settings.locator('.eid-settings-controls').boundingBox()
-    expect(controls!.width).toBeGreaterThan(180)
+    expect(controls!.width).toBeGreaterThan(300)
     expect(controls!.height).toBeGreaterThan(240)
     await capture(`settings-breakpoint-${width}`)
   }
