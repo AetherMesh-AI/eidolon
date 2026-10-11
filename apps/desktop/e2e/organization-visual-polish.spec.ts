@@ -243,7 +243,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
     await expect.poll(() => page.evaluate(() => window.innerWidth)).toBe(width)
   }
 
-  async function capture(name: string, target = workspace) {
+  async function capture(name: string, target = workspace, nativeWindow = false) {
     await target.evaluate(element => {
       element.scrollTop = 0
     })
@@ -252,11 +252,16 @@ test('keeps native organization navigation, roster and objective layouts usable 
       await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
     })
 
-    const bytes = await page.screenshot({
-      path: test.info().outputPath(`${name}.png`),
-      animations: 'disabled',
-      caret: 'hide'
-    })
+    // Chromium's page screenshot clips Electron content at non-default zoom.
+    // capturePage retains the full native content surface for reflow evidence.
+    const bytes = nativeWindow
+      ? Buffer.from(await app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
+      : await page.screenshot({
+          path: test.info().outputPath(`${name}.png`),
+          animations: 'disabled',
+          caret: 'hide'
+        })
+    if (nativeWindow) writeFileSync(test.info().outputPath(`${name}.png`), bytes)
 
     await test.info().attach(name, { body: bytes, contentType: 'image/png' })
 
@@ -474,7 +479,8 @@ test('keeps native organization navigation, roster and objective layouts usable 
   for (const zoom of [1.25, 2]) {
     await app.evaluate(({ BrowserWindow }, value) => BrowserWindow.getAllWindows()[0].webContents.setZoomFactor(value), zoom)
     await expect(page.getByRole('button', { name: 'Message organization', exact: true })).toBeVisible()
-    await capture(`home-reflow-${zoom}`)
+    await expect(page.getByRole('contentinfo', { name: 'System health', exact: true })).toBeInViewport({ ratio: 1 })
+    await capture(`home-reflow-${zoom}`, workspace, true)
   }
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.setZoomFactor(1))
   await resize(1220)
