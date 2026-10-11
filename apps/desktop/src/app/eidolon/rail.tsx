@@ -42,7 +42,8 @@ export function OrganizationRail({
     { to: '/work', label: home.work, icon: LayoutDashboard },
     { to: '/objectives', label: copy.objectives, icon: Network },
     { to: '/organization', label: copy.organization, icon: Users },
-    { to: '/artifacts', label: home.deliverables, icon: FolderOpen }
+    { to: '/artifacts', label: home.deliverables, icon: FolderOpen },
+    { to: '/settings', label: copy.settings, icon: Settings }
   ]
 
   const advanced = [
@@ -108,7 +109,6 @@ export function OrganizationRail({
         <div className="eid-session-tree">{sessions}</div>
       </details>
       <div className="eid-rail-footer">
-        <nav aria-label={copy.settings}><NavLink onClick={event => linkAction(event, '/settings')} to="/settings"><Settings aria-hidden="true" size={16} /><span>{copy.settings}</span></NavLink></nav>
         <small>{mode === 'prototype' ? copy.legacyTitle : copy.evidenceSource}</small>
       </div>
     </aside>

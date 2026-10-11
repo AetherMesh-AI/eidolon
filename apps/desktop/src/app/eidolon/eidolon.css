@@ -399,3 +399,28 @@
 }
 
 .eid-home-intake:not([open]) { display: none; }
+
+/* Reference composition: a compact primary rail and a readable overview hierarchy.
+   Saved pane sizes remain user-owned; these rules do not reset layout state. */
+.eid-rail { padding-inline: 8px; }
+.eid-rail .eid-brand { padding: 14px 12px 22px; }
+.eid-rail nav { gap: 5px; }
+.eid-rail nav a { min-height: 42px; padding: 10px 12px; }
+.eid-page:has(> .eid-home) { padding-inline: 22px; }
+.eid-home > .eid-home-hero { min-height: 134px; padding: 24px 12px; }
+.eid-home-hero h1 { font-size: clamp(30px, 2.8vw, 42px); }
+.eid-home-grid { grid-template-columns: 1.13fr .84fr 1fr; }
+.eid-home-grid > .eid-home-panel { border-radius: 10px; padding: 16px; }
+.eid-home-grid .eid-home-record { padding: 16px 0; }
+.eid-home-grid .eid-home-record:first-child { padding-top: 8px; }
+.eid-home-grid .eid-home-record-heading { gap: 8px; }
+.eid-home-grid .eid-home-record-heading h3 { margin-bottom: 0; }
+.eid-home-grid .eid-home-record .eid-home-description { margin-block: 10px; }
+.eid-home-record-time { margin-top: 12px; font-size: 11px; color: var(--text-secondary); }
+.eid-home-activity { border-radius: 10px; }
+.eid-home-activity ol { gap: 12px; }
+.eid-home-activity li { padding: 12px; background: var(--eidolon-bg); border-radius: 6px; }
+.eid-home-activity li > div { min-width: 0; }
+.eid-home-activity li p { margin-block: 10px; }
+@media (max-width: 1100px) { .eid-home-grid { grid-template-columns: 1fr; } }
+@media (max-height: 800px) { .eid-home > .eid-home-hero { min-height: 100px; padding-block: 12px; } }
