@@ -278,14 +278,14 @@ it('keeps archived members readable and usage-exhausted conversations explicit w
   expect((screen.getByRole('button', { name: 'Send message' }) as HTMLButtonElement).disabled).toBe(true)
 })
 
-it('keeps a focused editable draft through background checks and recovers visibly from failed reads', async () => {
+it.each(['inline', 'workspace'] as const)('keeps a focused editable draft and recovers from failed reads in %s layout', async layout => {
   const { h } = harness()
   const read = deferred<OwnerChatThread>()
   vi.mocked(h.adapter.readOwnerChat!).mockReturnValueOnce(read.promise)
 
   const panel = () => (
     <MemoryRouter>
-      <OrganizationOwnerChat adapter={h.adapter} agent={h.snapshot.agents[0]} snapshot={h.snapshot} />
+      <OrganizationOwnerChat adapter={h.adapter} agent={h.snapshot.agents[0]} layout={layout} snapshot={h.snapshot} />
     </MemoryRouter>
   )
 
@@ -298,7 +298,15 @@ it('keeps a focused editable draft through background checks and recovers visibl
   const input = screen.getByRole('textbox', { name: 'Message' }) as HTMLTextAreaElement
   expect(input.disabled).toBe(false)
   fireEvent.change(input, { target: { value: 'Keep this draft' } })
+  // jsdom has no scrolling implementation; geometry is verified in Electron.
+  const scrollIntoView = vi.fn()
+  Object.defineProperty(input.closest('.eid-owner-chat-compose-area'), 'scrollIntoView', { value: scrollIntoView })
   input.focus()
+  if (layout === 'workspace') {
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center', inline: 'nearest' })
+  } else {
+    expect(scrollIntoView).not.toHaveBeenCalled()
+  }
   await act(async () => {
     await vi.advanceTimersByTimeAsync(15000)
   })
@@ -307,7 +315,9 @@ it('keeps a focused editable draft through background checks and recovers visibl
   expect(globalThis.document.activeElement).toBe(input)
   expect(input.value).toBe('Keep this draft')
   await act(async () => read.reject(new Error('Temporary disconnect')))
+  expect(screen.getByRole('alert').textContent).toContain('Could not verify the conversation')
   expect(screen.getByRole('alert').textContent).toContain('Temporary disconnect')
+  expect((screen.getByRole('button', { name: 'Check conversation' }) as HTMLButtonElement).disabled).toBe(false)
   expect((screen.getByRole('button', { name: 'Send message' }) as HTMLButtonElement).disabled).toBe(true)
   fireEvent.click(screen.getByRole('button', { name: 'Check conversation' }))
   await act(async () => {
