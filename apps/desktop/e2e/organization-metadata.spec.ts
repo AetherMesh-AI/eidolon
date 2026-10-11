@@ -1,5 +1,6 @@
 /** Real native editor and profile ledger; loopback fixture, no model calls. */
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 
 import { setupMockBackend, waitForAppReady } from './fixtures'
@@ -233,19 +234,29 @@ with sqlite3.connect(sys.argv[1]) as conn:
       await expect(dialog).toHaveCount(0)
       await trigger.click()
       await expect(dialog.getByLabel('Organization name', { exact: true })).toHaveValue('')
+      // Removing the identity while its durable receipts remain is deliberately
+      // inconsistent storage. The backend must reject it, never reinitialize it.
+      const missingIdentityError = 'The saved names could not be read. Refresh to try again.'
+      await expect(dialog.getByRole('alert')).toHaveText(missingIdentityError)
+      await expect(dialog.getByRole('button', { name: 'Save names', exact: true })).toBeDisabled()
       await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
       restoreMetadata(originalRecord)
       await trigger.click()
       await dialog.getByRole('button', { name: 'Refresh saved names', exact: true }).click()
       await expect(dialog).toHaveCount(0)
       expect(savedRequests).toHaveLength(5)
+      await acknowledgeExpectedErrorBanner(page, missingIdentityError)
 
       const captures: object[] = []
 
       for (const mode of ['dark', 'light'] as const) {
+        await page.evaluate(() =>
+          (
+            window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }
+          ).hermesDesktop.zoom.setPercent(100)
+        )
         await app.evaluate(({ BrowserWindow }) => {
           const window = BrowserWindow.getAllWindows()[0]
-          window.webContents.setZoomFactor(1)
           window.setContentSize(1536, 961)
         })
         await page.evaluate(() => {
@@ -270,16 +281,30 @@ with sqlite3.connect(sys.argv[1]) as conn:
           [1280, 720, 2],
           [760, 900, 1]
         ]) {
+          await page.evaluate(() =>
+            (
+              window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }
+            ).hermesDesktop.zoom.setPercent(100)
+          )
           await app.evaluate(
             ({ BrowserWindow }, size) => {
               const window = BrowserWindow.getAllWindows()[0]
               window.unmaximize()
               window.setMinimumSize(600, 600)
               window.setContentSize(size.width, size.height)
-              window.webContents.setZoomFactor(size.zoom)
             },
-            { width, height, zoom }
+            { width, height }
           )
+          await expect.poll(() => page.evaluate(() => innerWidth)).toBe(width)
+          await page.evaluate(
+            value =>
+              (
+                window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }
+              ).hermesDesktop.zoom.setPercent(value * 100),
+            zoom
+          )
+          await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(zoom)
+          await expect.poll(() => page.evaluate(() => innerWidth)).toBe(width / zoom)
           await expect(trigger).toBeVisible()
           await trigger.click()
           await expect(dialog).toBeVisible()
@@ -291,6 +316,12 @@ with sqlite3.connect(sys.argv[1]) as conn:
           const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
           expect(overflow).toBeLessThanOrEqual(1)
 
+          const viewport = await page.evaluate(() => ({
+            width: innerWidth,
+            height: innerHeight,
+            scale: devicePixelRatio
+          }))
+          expect(viewport).toEqual({ width: width / zoom, height: height / zoom, scale: zoom })
           const png = Buffer.from(
             await app.evaluate(async ({ BrowserWindow }) =>
               (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')
@@ -302,7 +333,17 @@ with sqlite3.connect(sys.argv[1]) as conn:
             body: png,
             contentType: 'image/png'
           })
-          captures.push({ locale, mode, width, height, zoom, overflow, captureMethod: 'electron.capturePage' })
+          captures.push({
+            locale,
+            mode,
+            width,
+            height,
+            zoom,
+            viewport,
+            overflow,
+            sha256: createHash('sha256').update(png).digest('hex'),
+            captureMethod: 'electron.capturePage'
+          })
           await page.keyboard.press('Escape')
           await expect(dialog).toHaveCount(0)
           await expect(trigger).toBeFocused()
