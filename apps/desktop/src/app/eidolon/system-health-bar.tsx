@@ -55,13 +55,18 @@ export function SystemHealthBar({
   const left = useTitlebarToolContributions('left')
   const right = useTitlebarToolContributions('right')
 
+  const queueAvailable =
+    work.queueAvailable &&
+    organization?.snapshot.requests !== undefined &&
+    organization?.snapshot.connection?.state === 'ready'
+
   const state = systemHealth(
     gateway,
     organization?.snapshot,
     readiness,
     fresh,
     work.needsYou + Number(Boolean(approval)),
-    { staleWork: work.stale, failedAgents: otherFailed }
+    { staleWork: work.stale, failedAgents: otherFailed, queueAvailable }
   )
 
   const number = new Intl.NumberFormat(locale)
@@ -93,7 +98,9 @@ export function SystemHealthBar({
             <dd>{organization?.snapshot.runtime?.state || copy.unverified}</dd>
           </dl>
           <p>
-            {copy.activity(number.format(work.running), number.format(work.queued))}
+            {queueAvailable
+              ? copy.activity(number.format(work.running), number.format(work.queued))
+              : copy.activityUnavailable}
             {work.stale ? ` · ${copy.lastKnown}` : ''}
           </p>
           <p>{copy.otherAgents(number.format(otherRunning), number.format(otherFailed))}</p>
@@ -130,7 +137,9 @@ export function SystemHealthBar({
         </PopoverContent>
       </Popover>
       <span className="eid-health-activity">
-        {copy.activity(number.format(work.running), number.format(work.queued))}
+        {queueAvailable
+          ? copy.activity(number.format(work.running), number.format(work.queued))
+          : copy.activityUnavailable}
         {work.stale ? ` · ${copy.lastKnown}` : ''}
       </span>
       {chatBusy && <span>{copy.chatWorking}</span>}

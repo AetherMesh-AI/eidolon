@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
+import { clearOrganizationWork, publishOrganizationWork } from '@/store/organization-work'
 import { stubResizeObserver } from '@/test/jsdom'
 
 import { SystemHealthBar } from './system-health-bar'
@@ -20,7 +21,10 @@ vi.mock('../shell/titlebar-controls', () => ({
   )
 }))
 
-beforeEach(stubResizeObserver)
+beforeEach(() => {
+  stubResizeObserver()
+  clearOrganizationWork()
+})
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
@@ -76,4 +80,44 @@ it('opens keyboard-accessible details with grants, settings and retained control
   expect(screen.queryByRole('dialog')).toBeNull()
   await waitFor(() => expect(globalThis.document.activeElement).toBe(trigger))
   expect(state.organization.adapter.refresh).not.toHaveBeenCalled()
+})
+
+it.each(['connecting', 'ready'] as const)('labels absent activity instead of zero work while %s', connectionState => {
+  const snapshot: OrganizationSnapshot = {
+    source: 'runtime',
+    objectives: [],
+    tasks: [],
+    agents: [],
+    knowledge: [],
+    activity: [],
+    connection: { scope: 'new-owner', state: connectionState },
+    runtime: {
+      state: 'ready',
+      maxWorkers: 2,
+      capabilities: [],
+      scope: 'Synthetic',
+      setup: {
+        version: 1,
+        backgroundOptIn: true,
+        provider: { status: 'unchecked', blockers: [], inheritedMembers: 0, overriddenMembers: 0 }
+      }
+    }
+  }
+
+  state.organization = { snapshot, adapter: {} as RuntimeOrganizationAdapter }
+  publishOrganizationWork(snapshot)
+  render(
+    <MemoryRouter>
+      <SystemHealthBar
+        controls={null}
+        fresh
+        gateway="open"
+        readiness={{ ready: true, source: 'runtime_check', checksDisagree: false, reason: null }}
+      />
+    </MemoryRouter>
+  )
+  const bar = screen.getByRole('contentinfo', { name: 'System health' })
+  expect(within(bar).getByText('Organization activity unavailable')).toBeTruthy()
+  expect(within(bar).queryByText('Organization: 0 running · 0 queued')).toBeNull()
+  expect(within(bar).queryByRole('button', { name: 'System health: Ready' })).toBeNull()
 })

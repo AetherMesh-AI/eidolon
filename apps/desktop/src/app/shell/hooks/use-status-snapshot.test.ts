@@ -226,3 +226,76 @@ describe('useStatusSnapshot', () => {
     expect(requestGatewayMock).toHaveBeenCalledTimes(4)
   })
 })
+
+it('expires successful evidence while visible but unfocused without making background RPCs', async () => {
+  const requestGateway = vi.fn(async (method: string) =>
+    method === 'setup.runtime_check' ? { ok: true } : { provider_configured: true }
+  ) as unknown as GatewayRequester
+
+  const { result } = renderHook(() => useStatusSnapshot('open', requestGateway))
+  await flushAsync()
+  expect(result.current.inferenceFresh).toBe(true)
+  vi.mocked(document.hasFocus).mockReturnValue(false)
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(60_000)
+  })
+  expect(result.current.inferenceFresh).toBe(false)
+  expect(result.current.inferenceStatus?.ready).toBe(true)
+  expect(requestGateway).toHaveBeenCalledTimes(2)
+  vi.mocked(document.hasFocus).mockReturnValue(true)
+  window.dispatchEvent(new Event('focus'))
+  await flushAsync()
+  expect(result.current.inferenceFresh).toBe(true)
+  expect(requestGateway).toHaveBeenCalledTimes(4)
+})
+
+it.each([true, false])(
+  'serializes focus/visibility refreshes and discards superseded readiness (old success: %s)',
+  async oldSuccess => {
+    const oldSetup = deferred<unknown>()
+    const oldRuntime = deferred<unknown>()
+    const newSetup = deferred<unknown>()
+    const newRuntime = deferred<unknown>()
+    let calls = 0
+
+    const requester = vi.fn((method: string) => {
+      const old = calls++ < 2
+
+      return method === 'setup.runtime_check'
+        ? old
+          ? oldRuntime.promise
+          : newRuntime.promise
+        : old
+          ? oldSetup.promise
+          : newSetup.promise
+    }) as unknown as GatewayRequester
+
+    const { result } = renderHook(() => useStatusSnapshot('open', requester))
+    await flushAsync()
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'))
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    // No overlapping probe can race an older success against a newer failure.
+    expect(requester).toHaveBeenCalledTimes(2)
+    await act(async () => {
+      oldSetup.resolve({ provider_configured: oldSuccess })
+      oldRuntime.resolve({ ok: oldSuccess })
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(requester).toHaveBeenCalledTimes(4)
+    expect(result.current.inferenceFresh).toBe(false)
+    expect(result.current.inferenceStatus).toBeNull()
+    await act(async () => {
+      newSetup.resolve({ provider_configured: !oldSuccess })
+      newRuntime.resolve({ ok: !oldSuccess })
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(result.current.inferenceFresh).toBe(true)
+    expect(result.current.inferenceStatus?.ready).toBe(!oldSuccess)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(59_999)
+    })
+    expect(requester).toHaveBeenCalledTimes(4)
+  }
+)

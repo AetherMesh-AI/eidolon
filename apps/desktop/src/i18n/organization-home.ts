@@ -15,6 +15,7 @@ export const organizationHomeEn = {
     chatWorking: 'Chat working',
     inspectAgents: 'Review agent activity',
     otherAgents: (running: string, failed: string) => `Other agents: ${running} running · ${failed} failed`,
+    activityUnavailable: 'Organization activity unavailable',
     activity: (running: string, queued: string) => `Organization: ${running} running · ${queued} queued`,
     states: {
       disconnected: 'Disconnected',

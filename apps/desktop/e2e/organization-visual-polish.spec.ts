@@ -157,7 +157,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
   fixture = await setupMockBackend()
   const { app, page, mock } = fixture
   const organizationMethods: string[] = []
-  let displayedSnapshot = snapshot
+  let displayedSnapshot: Omit<typeof snapshot, 'requests'> & { requests?: typeof snapshot.requests } = snapshot
   let readinessUnknown = false
   await page.routeWebSocket(/.*/, socket => {
     const server = socket.connectToServer()
@@ -472,6 +472,16 @@ test('keeps native organization navigation, roster and objective layouts usable 
     await waitForAppReady(fixture)
     await expect(health.getByRole('button', { name: `System health: ${expected}`, exact: true })).toBeVisible()
   }
+  displayedSnapshot = { ...displayedSnapshot, requests: [] }
+  await page.reload()
+  await waitForAppReady(fixture)
+  await expect(health.getByRole('button', { name: 'System health: Ready', exact: true })).toBeVisible()
+  displayedSnapshot = { ...displayedSnapshot, requests: undefined }
+  await page.reload()
+  await waitForAppReady(fixture)
+  await expect(health.getByRole('button', { name: 'System health: Unknown', exact: true })).toBeVisible()
+  await expect(health).toContainText('Organization activity unavailable')
+  await expect(health).not.toContainText('Organization: 0 running')
   displayedSnapshot = { ...displayedSnapshot, requests: [] }
   await page.reload()
   await waitForAppReady(fixture)

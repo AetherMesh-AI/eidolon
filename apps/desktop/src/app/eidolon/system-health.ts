@@ -11,7 +11,7 @@ export function systemHealth(
   readiness: RuntimeReadinessResult | null,
   fresh: boolean,
   attention: number,
-  signals: { staleWork?: boolean; failedAgents?: number } = {}
+  signals: { staleWork?: boolean; failedAgents?: number; queueAvailable?: boolean } = {}
 ): SystemHealthState {
   if (!['open', 'connecting'].includes(gateway) || snapshot?.connection?.state === 'disconnected') {
     return 'disconnected'
@@ -53,6 +53,10 @@ export function systemHealth(
   }
 
   if (!['ready', 'running', 'idle'].includes(snapshot.runtime.state)) {
+    return 'unknown'
+  }
+
+  if (snapshot.requests === undefined || signals.queueAvailable === false) {
     return 'unknown'
   }
 

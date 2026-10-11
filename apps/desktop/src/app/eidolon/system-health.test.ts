@@ -62,3 +62,8 @@ it('keeps disabled, degraded and stale runtime states distinct from provider rea
   expect(systemHealth('open', snapshot, { ...readiness, ready: false }, true, 0)).toBe('degraded')
   expect(systemHealth('open', snapshot, { ...readiness, checksDisagree: true }, true, 0)).toBe('degraded')
 })
+
+it('never reports ready from absent or not-yet-published scoped queue evidence', () => {
+  expect(systemHealth('open', { ...snapshot, requests: undefined }, readiness, true, 0)).toBe('unknown')
+  expect(systemHealth('open', snapshot, readiness, true, 0, { queueAvailable: false })).toBe('unknown')
+})
