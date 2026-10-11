@@ -434,12 +434,13 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await expect(page.locator('html')).toHaveClass(/\bdark\b/)
   await expect(page.locator('html')).toHaveAttribute('data-hermes-theme', 'eidolon')
   await navigation.getByRole('link', { name: 'Home', exact: true }).click()
-  await expect(page.getByRole('textbox', { name: 'Objective', exact: true })).toBeAttached()
+  await expect(page.locator('#eid-objective')).toBeAttached()
   await expect(page.getByRole('region', { name: 'What’s happening?', exact: true })).toBeVisible()
   await expect(page.getByRole('region', { name: 'What needs me?', exact: true })).toContainText('Review the proposed owner journey')
   await expect(page.getByRole('region', { name: 'What’s ready?', exact: true })).toContainText('Synthetic reviewed scope')
   await expect(workspace.locator('.eid-runtime-status')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Open settings', exact: true })).toHaveCount(0)
+  await expect(page.locator('#eid-objective')).toBeHidden()
   await capture('01-home-wide-dark')
   for (const [width, height] of [[1536, 961], [1440, 900], [1280, 720]]) {
     await resize(width, height)
@@ -525,7 +526,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await capture('06-roster-narrow-dark')
   await resize(1220)
   await navigation.getByRole('link', { name: 'Home', exact: true }).click()
-  await expect(page.getByRole('textbox', { name: 'Objective', exact: true })).toBeAttached()
+  await expect(page.locator('#eid-objective')).toBeAttached()
   await resize(760)
   await capture('07-home-narrow-dark')
 
@@ -534,7 +535,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await expect(page.getByRole('heading', { name: 'Organization', exact: true })).toBeVisible()
   await expect(inspector).toHaveCount(0)
   await page.goForward()
-  await expect(page.getByRole('textbox', { name: 'Objective', exact: true })).toBeAttached()
+  await expect(page.locator('#eid-objective')).toBeAttached()
 
   // Eidolon's built-in palette deliberately stays dark in both mode settings.
   // Exercise a genuine shared light palette through the same Appearance UI on both builds.
@@ -552,7 +553,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await expect(page.locator('html')).toHaveAttribute('data-hermes-theme', 'nous')
   await expect(page.locator('html')).not.toHaveClass(/\bdark\b/)
   await page.getByRole('button', { name: 'Close settings', exact: true }).click()
-  await expect(page.getByRole('textbox', { name: 'Objective', exact: true })).toBeAttached()
+  await expect(page.locator('#eid-objective')).toBeAttached()
   await capture('08-home-wide-light')
   await navigation.getByRole('link', { name: 'Organization', exact: true }).click()
   await expect(agentButton).toBeVisible()
@@ -574,7 +575,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await capture('13-roster-narrow-light')
   await resize(1220)
   await navigation.getByRole('link', { name: 'Home', exact: true }).click()
-  await expect(page.getByRole('textbox', { name: 'Objective', exact: true })).toBeAttached()
+  await expect(page.locator('#eid-objective')).toBeAttached()
   await resize(760)
   await capture('14-home-narrow-light')
   await page.reload()
@@ -593,8 +594,9 @@ test('keeps native organization navigation, roster and objective layouts usable 
     await expect(link).toHaveAttribute('aria-current', 'page')
   }
 
-  await expect(goal).toHaveValue('Retain this unsubmitted objective across navigation')
+  await expect(page.locator('#eid-objective')).toBeHidden()
   await page.getByRole('button', { name: 'New objective', exact: true }).click()
+  await expect(goal).toHaveValue('Retain this unsubmitted objective across navigation')
   await expect(goal).toBeFocused()
   await capture('16-home-retained-intake')
   await navigation.getByRole('link', { name: 'Objectives', exact: true }).click()
