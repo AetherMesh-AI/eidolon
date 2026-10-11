@@ -491,6 +491,10 @@ it('keeps workspace limits and drafting available when conversation details are 
   fireEvent.change(message, { target: { value: 'Retained workspace draft' } })
   fireEvent.click(screen.getByText('Conversation details'))
   expect((message as HTMLTextAreaElement).value).toBe('Retained workspace draft')
+  const form = message.closest('form')!
+  expect(form.textContent).toContain('Replies remaining')
+  expect(form.textContent).toContain('may incur usage charges')
+  expect(form.querySelector('.eid-owner-chat-charge')).not.toBeNull()
   expect(screen.getByRole('region', { name: 'Conversation messages' }).getAttribute('tabindex')).toBe('0')
   expect(h.adapter.sendOwnerChat).not.toHaveBeenCalled()
   expect(h.adapter.renewOwnerChat).not.toHaveBeenCalled()

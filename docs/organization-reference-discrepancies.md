@@ -186,3 +186,15 @@ Native checks cover reference/short/narrow sizes, real zoom, long history, a
 pending reply and a retained read-error state. This iteration is not accepted
 until current-head native checks and actual pixels pass. Final reference parity
 and the complete gallery remain outstanding.
+
+### PR71 native follow-up
+
+The first exact-head native run failed transcript focus clipping at 760px; it did
+not reach the new zoom, cancellation, long-history or read-error checks. The
+follow-up centers keyboard-focused workspace transcripts inside their ancestors,
+provides wider focus clearance and preserves a three-pixel outline at fractional
+zoom. Workspace allowance and provider-charge text now accompany the composer;
+inline chat retains its prior ordering. Native checks measure the actual inner
+panel overflow and require charge text, allowance and explicit action in view
+with the focused composer. Corrected native evidence is still required before
+acceptance; the earlier outer-panel assertion alone was insufficient.

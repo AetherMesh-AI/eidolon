@@ -458,7 +458,7 @@
 .eid-messages-view .eid-message-conversation { display: flex; flex-direction: column; overflow: hidden; }
 .eid-messages-view .eid-message-recipient { flex: none; padding-bottom: 12px; margin-bottom: 12px; }
 .eid-messages-view .eid-owner-chat { flex: 1; min-height: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
-.eid-messages-view .eid-owner-chat-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; margin: 0; overflow-y: auto; padding: 5px; margin-inline: -5px; }
+.eid-messages-view .eid-owner-chat-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; margin: 0; overflow-y: auto; padding: 7px; margin-inline: -7px; }
 .eid-messages-view .eid-owner-chat-panel > :not(.eid-owner-chat-scroll) { flex: none; }
 .eid-messages-view .eid-owner-chat-scroll { flex: 1; min-height: 80px; max-height: none; padding: 6px; scroll-padding: 6px; }
 .eid-messages-view .eid-owner-chat-information { max-height: 25vh; overflow: auto; padding: 5px; margin: -5px; }
@@ -471,3 +471,7 @@
 @media (max-width: 1200px), (max-height: 540px) {
   .eid-messages-view .eid-message-conversation { height: max(560px, calc(100dvh - 62px)); }
 }
+
+.eid-messages-view :is(button, a, input, textarea, summary, .eid-owner-chat-scroll):focus-visible { outline-width: 3px; }
+.eid-messages-view .eid-owner-chat-scroll { max-height: calc(100dvh - 90px); scroll-margin: 8px; }
+.eid-messages-view .eid-owner-chat-composer { scroll-margin: 8px; }

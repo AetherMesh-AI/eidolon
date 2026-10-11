@@ -171,18 +171,19 @@ test('retains exact worker chat, deduplicates owner send and fences a cancelled 
     await expect(conversation.locator('.eid-owner-chat-allowance')).toBeInViewport({ ratio: 1 })
     const action = conversation.getByRole('button', { name: /^(Send message|Cancel reply)$/, exact: true })
     await expect(action).toBeInViewport({ ratio: 1 })
+    await expect(conversation.locator('.eid-owner-chat-charge')).toBeInViewport({ ratio: 1 })
 
     if (width >= 1280 && zoom === 1) {
-      // At normal desktop sizes neither the conversation nor its parent needs
-      // page scrolling to reach the composer; only history scrolls internally.
-      const panel = page.getByRole('region', { name: 'Member conversation', exact: true })
+      // At normal desktop sizes the actual inner panel must not scroll to
+      // reach charges, limits and composing; only history scrolls internally.
+      const panel = conversation.locator('.eid-owner-chat-panel')
       expect(await panel.evaluate(element => element.scrollHeight - element.clientHeight)).toBeLessThanOrEqual(1)
       await expect(scroll.locator('.eid-owner-chat-bubble').last()).toBeInViewport({ ratio: 1 })
     }
 
     const bytes = Buffer.from(await running!.fixture.app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
     writeFileSync(test.info().outputPath(`composer-${label}.png`), bytes)
-    await test.info().attach(`composer-${label}-evidence`, { contentType: 'application/json', body: JSON.stringify({ sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(), sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(), viewport: await page.evaluate(() => ({ width: innerWidth, height: innerHeight, devicePixelRatio })), sha256: createHash('sha256').update(bytes).digest('hex'), transcriptFocus, composerFocus }) })
+    await test.info().attach(`composer-${label}-evidence`, { contentType: 'application/json', body: JSON.stringify({ sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(), sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(), viewport: await page.evaluate(() => ({ width: innerWidth, height: innerHeight, devicePixelRatio })), sha256: createHash('sha256').update(bytes).digest('hex'), panelGeometry: await conversation.locator('.eid-owner-chat-panel').evaluate(element => ({ scrollHeight: element.scrollHeight, clientHeight: element.clientHeight, scrollTop: element.scrollTop })), transcriptFocus, composerFocus }) })
     await page.evaluate(() => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(100))
     await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(1)
   }
