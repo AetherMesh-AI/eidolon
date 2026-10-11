@@ -164,3 +164,26 @@
 @media (min-width: 1000px) {
   .eid-settings-main:has(> .eid-settings-overview-content) { padding-top: 12px; }
 }
+
+/* The overview scrolls as one page. Secondary editors remain mounted behind
+   native disclosures, preserving drafts and each setting's existing save owner. */
+.eid-settings-cards:not(.eid-settings-model-only) .eid-settings-card-editor { height: auto; }
+.eid-settings-cards:not(.eid-settings-model-only) .eid-settings-card-body { flex: none; }
+.eid-settings-cards:not(.eid-settings-model-only) .settings-content,
+.eid-settings-cards:not(.eid-settings-model-only) .settings-content > div { height: auto; overflow: visible; }
+.eid-settings-cards:not(.eid-settings-model-only) .settings-row:has([role="switch"]) > div { grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; padding-block: 4px; }
+.eid-settings-cards:not(.eid-settings-model-only) .settings-row:has([role="switch"]) > div > div:last-child { justify-self: end; }
+:is(.eid-settings-model-advanced, .eid-settings-notification-sound) > summary:not([hidden]) { cursor: pointer; padding-block: 8px; font-size: 12px; color: var(--ui-text-primary); }
+:is(.eid-settings-model-advanced, .eid-settings-notification-sound)[open] > summary:not([hidden]) { margin-bottom: 12px; }
+.eid-settings-model-advanced > section + section { margin-top: 24px; }
+
+/* Keep all six overview destinations in the reference viewport. Primary model
+   selection shares one row; descriptions remain readable beside compact toggles. */
+.eid-settings-cards:not(.eid-settings-model-only) .eid-settings-card { padding: 12px; }
+.eid-settings-cards:not(.eid-settings-model-only) .eid-settings-card-body { margin-top: 10px; }
+.eid-settings-cards:not(.eid-settings-model-only) .eid-settings-model-picker { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr) auto; gap: 8px; }
+.eid-settings-cards:not(.eid-settings-model-only) .eid-settings-model-picker > :is([role="combobox"], input) { min-width: 0; width: 100%; }
+.eid-settings-cards:not(.eid-settings-model-only) .settings-row > div { padding-block: 4px; }
+.eid-settings-cards:not(.eid-settings-model-only) .settings-row > div > div:first-child > div:first-child { font-size: 13px; line-height: 1.3; }
+.eid-settings-cards:not(.eid-settings-model-only) .settings-row > div > div:first-child > div + div { margin-top: 3px; font-size: 12px; line-height: 1.25; }
+@media (max-width: 650px) { .eid-settings-cards:not(.eid-settings-model-only) .eid-settings-model-picker { grid-template-columns: minmax(0, 1fr); } }

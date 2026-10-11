@@ -88,7 +88,7 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
     await expect.poll(() => page.evaluate(() => window.innerWidth)).toBe(width)
   }
 
-  async function capture(name: string) {
+  async function capture(name: string, nativeWindow = false) {
     await expect(settings.locator('[data-slot="skeleton"]')).toHaveCount(0)
     await page.evaluate(async () => {
       await document.fonts.ready
@@ -119,17 +119,25 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
     expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(bar!.y + 1)
     expect(await settings.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
 
-    const bytes = await page.screenshot({
-      path: test.info().outputPath(`${name}.png`),
-      animations: 'disabled',
-      caret: 'hide'
-    })
+    // Page screenshots crop Electron content at non-default zoom. Retain the
+    // full native surface, and verify pixel dimensions rather than trusting DPR.
+    const viewport = await page.evaluate(() => ({ width: innerWidth, height: innerHeight, devicePixelRatio }))
+    const bytes = nativeWindow
+      ? Buffer.from(await app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
+      : await page.screenshot({ path: test.info().outputPath(`${name}.png`), animations: 'disabled', caret: 'hide' })
+    const pixelSize = { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) }
+    if (nativeWindow) {
+      expect(pixelSize).toEqual({ width: viewport.width * viewport.devicePixelRatio, height: viewport.height * viewport.devicePixelRatio })
+      writeFileSync(test.info().outputPath(`${name}.png`), bytes)
+    }
 
     captures.push({
       name,
       sha256: createHash('sha256').update(bytes).digest('hex'),
       route: page.url(),
-      viewport: await page.evaluate(() => ({ width: innerWidth, height: innerHeight })),
+      viewport,
+      pixelSize,
+      captureMethod: nativeWindow ? 'electron.capturePage' : 'playwright.screenshot',
       theme: await page.locator('html').getAttribute('data-hermes-theme'),
       mode: await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme)
     })
@@ -158,8 +166,26 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
   const cards = await settings.locator('.eid-settings-card-editor').evaluateAll(elements => elements.map(element => element.getBoundingClientRect().toJSON()))
   expect(Math.abs(cards[0].top - cards[1].top)).toBeLessThanOrEqual(1)
   expect(cards[1].left).toBeGreaterThan(cards[0].right)
+  // Overview content uses the page scroller, with secondary controls disclosed
+  // explicitly. All notification kinds remain directly reachable.
+  const advancedModel = settings.locator('.eid-settings-model-advanced')
+  await expect(advancedModel).not.toHaveAttribute('open', '')
+  const advancedSummary = advancedModel.locator('summary')
+  focusChecks.push(await verifyKeyboardFocus(page, advancedSummary, 'overview advanced model disclosure'))
+  await page.keyboard.press('Enter')
+  await expect(advancedModel).toHaveAttribute('open', '')
+  await expect(advancedModel.getByRole('button', { name: 'Reset all to main' })).toBeVisible()
+  await advancedSummary.focus()
+  await page.keyboard.press('Enter')
+  await expect(advancedModel).not.toHaveAttribute('open', '')
+  const nestedScrollers = await settings.locator('.eid-settings-card-body .settings-content > div').evaluateAll(elements =>
+    elements.filter(element => element.scrollHeight > element.clientHeight + 1).length)
+  expect(nestedScrollers).toBe(0)
+  await expect(settings.getByRole('button', { name: 'Open Appearance', exact: true })).toBeInViewport({ ratio: 1 })
   await capture('reference-settings-overview')
   const notifications = settings.locator('.eid-settings-cards').getByRole('region', { name: 'Notifications', exact: true })
+  await expect(notifications.getByRole('switch')).toHaveCount(8)
+  await expect(notifications.getByRole('switch').last()).toBeInViewport()
   const enabled = notifications.getByRole('switch').first()
   const beforeConfig = readFileSync(configPath, 'utf8')
   const beforeEnabled = await enabled.getAttribute('aria-checked')
@@ -168,6 +194,28 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
   expect(readFileSync(configPath, 'utf8')).toBe(beforeConfig)
   await enabled.click()
   await expect(enabled).toHaveAttribute('aria-checked', beforeEnabled!)
+  await settings.getByRole('button', { name: 'Appearance', exact: true }).click()
+  await settings.getByRole('button').filter({ has: page.getByText('AetherMesh', { exact: true }) }).click()
+  await settings.getByRole('button', { name: 'Light', exact: true }).click()
+  await settings.getByRole('button', { name: 'Overview', exact: true }).click()
+  await expect(settings.getByRole('button', { name: 'Apply', exact: true })).toBeVisible()
+  await expect(settings.getByRole('button', { name: 'Open Appearance', exact: true })).toBeInViewport({ ratio: 1 })
+  await capture('reference-settings-overview-light')
+  await resize(1280, 720)
+  await page.evaluate(() => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(200))
+  await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(2)
+  const zoomProviders = settings.getByRole('button', { name: 'Open Providers', exact: true })
+  await zoomProviders.scrollIntoViewIfNeeded()
+  focusChecks.push(await verifyKeyboardFocus(page, zoomProviders, 'overview providers light 200 percent'))
+  await expect(zoomProviders).toBeInViewport({ ratio: 1 })
+  await capture('settings-overview-light-200-percent', true)
+  await page.evaluate(() => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(100))
+  await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(1)
+  await resize(1536, 961)
+  await settings.getByRole('button', { name: 'Appearance', exact: true }).click()
+  await settings.getByRole('button').filter({ has: page.getByText('Eidolon', { exact: true }) }).click()
+  await settings.getByRole('button', { name: 'Dark', exact: true }).click()
+  await settings.getByRole('button', { name: 'Overview', exact: true }).click()
   await resize(760)
   const openProviders = settings.getByRole('button', { name: 'Open Providers', exact: true })
   await openProviders.scrollIntoViewIfNeeded()

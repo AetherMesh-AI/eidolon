@@ -369,10 +369,10 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
   const activeSettingsContent =
     (activeView === 'overview' || (activeView.startsWith('config:') && activeView !== 'config:appearance')) ? (
       <SettingsOverview
-        editor={<ConfigSettings activeSectionId={activeView === 'overview' ? 'model' : activeView.slice('config:'.length)} importInputRef={importInputRef} onConfigSaved={onConfigSaved} onMainModelChanged={onMainModelChanged} />}
+        editor={<ConfigSettings compactOverview={activeView === 'overview'} activeSectionId={activeView === 'overview' ? 'model' : activeView.slice('config:'.length)} importInputRef={importInputRef} onConfigSaved={onConfigSaved} onMainModelChanged={onMainModelChanged} />}
         editorLabel={activeView === 'overview' ? undefined : t.settings.sections[activeView.slice('config:'.length)]}
         editorOnly={activeView !== 'overview'}
-        notifications={<NotificationsSettings />}
+        notifications={<NotificationsSettings compactOverview />}
         onSelect={setActiveView}
       />
     ) : activeView === 'config:appearance' ? (

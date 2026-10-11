@@ -79,6 +79,10 @@ one-off at the call site.
 - **Settings stays in the workspace.** Its descriptive navigation and rounded
   control groups keep the primary rail and single bottom health bar visible.
   Existing page owners retain saves, scope, providers and appearance preferences.
+  The overview has one page scroller: primary model controls and notification
+  switches are directly available; secondary model and sound controls use native
+  disclosures. Disclosures keep editors mounted and preserve unapplied drafts.
+  Invalid auxiliary-assignment warnings remain visible while collapsed.
   Close/Escape returns to the prior route; nested dialogs dismiss first.
 - **Route overlays are short tasks.** Command Center, Cron, Profiles,
   Agents, and Starmap render as `OverlayView` cards and return to the previous
