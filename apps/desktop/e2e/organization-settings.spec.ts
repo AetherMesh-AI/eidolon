@@ -301,23 +301,7 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
       await resize(1440)
       await settings.getByRole('button', { name: 'Close settings', exact: true }).click()
       await page.reload()
-      await app.evaluate(() => {
-    const rows: any[] = []
-    ;(globalThis as any).__settingsConfigRequests = rows
-    // Observe real Node HTTP requests without replacing IPC, responses or routing.
-    require('node:diagnostics_channel').channel('http.client.request.start').subscribe(({ request }: any) => {
-      const url = new URL(request.path, 'http://127.0.0.1')
-      if (!['/api/config', '/api/config/schema'].includes(url.pathname)) return
-      const row: any = { path: url.pathname, profile: url.searchParams.get('profile'), method: request.method, startedAt: Date.now() }
-      rows.push(row)
-      request.once('response', (response: any) => {
-        row.status = response.statusCode
-        response.once('end', () => { row.finishedAt = Date.now(); row.durationMs = row.finishedAt - row.startedAt })
-      })
-      request.once('error', (error: Error) => { row.finishedAt = Date.now(); row.error = error.message })
-    })
-  })
-  await waitForAppReady(fixture)
+      await waitForAppReady(fixture)
       await expect(page.locator('html')).toHaveAttribute('data-hermes-theme', key)
       await navigation.getByRole('link', { name: 'Settings', exact: true }).click()
       await settings.getByRole('button', { name: 'Appearance', exact: true }).click()
