@@ -1052,3 +1052,95 @@ test('retains translated Objective labels and opened explanations with contained
     locale: 'ja', providerCalls: mock.receivedPrompts.length, captures, focusChecks
   }) })
 })
+
+
+// Read-only header search is exercised in native Electron, with the same record scope.
+test('keeps workspace controls and loaded-record inspection usable without executing work', async () => {
+  fixture = await setupMockBackend()
+  const { app, page, mock } = fixture
+  const methods: string[] = []
+  const searchSnapshot = { ...snapshot, conversations: [{
+    id: 'header-conversation', subject: 'Release evidence discussion', objectiveId: 'release', taskId: null, projectId: null,
+    participants: [{ id: 'writer', name: 'Robin', team: 'Product' }], status: 'answered', waitingAgentId: null,
+    messages: [{ id: 'header-message', senderId: 'writer', recipientId: 'manager', body: 'Retained internal message; inspection leaves it unread.', createdAt, readAt: null, replyToId: null }]
+  }] }
+  await page.routeWebSocket(/.*/, socket => {
+    const server = socket.connectToServer()
+    socket.onMessage(message => {
+      const request = JSON.parse(message.toString()) as { id?: number; method?: string }
+      if (request.method?.startsWith('organization.')) methods.push(request.method)
+      if (request.method === 'organization.snapshot' || request.method === 'organization.outcomes') {
+        socket.send(JSON.stringify({ jsonrpc: '2.0', id: request.id, result: request.method === 'organization.snapshot' ? searchSnapshot : snapshot.outcomes }))
+      } else server.send(message)
+    })
+  })
+  await page.reload()
+  await waitForAppReady(fixture)
+  const captures: object[] = []
+  const focusChecks: object[] = []
+  const header = page.getByRole('banner', { name: 'Workspace controls', exact: true })
+  const search = page.getByRole('dialog', { name: 'Search loaded records', exact: true })
+  const resize = async (width: number, height: number, zoom: number) => {
+    await page.evaluate(() => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(100))
+    await app.evaluate(({ BrowserWindow }, size) => {
+      const window = BrowserWindow.getAllWindows()[0]
+      window.unmaximize(); window.setMinimumSize(600, 600); window.setContentSize(size.width, size.height)
+    }, { width, height })
+    await expect.poll(() => page.evaluate(() => innerWidth)).toBe(width)
+    await page.evaluate(value => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(value * 100), zoom)
+    await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(zoom)
+  }
+  for (const mode of ['Dark', 'Light'] as const) {
+    await resize(1536, 961, 1)
+    await page.evaluate(() => { location.hash = '/settings?tab=appearance' })
+    await page.getByRole('button', { name: mode, exact: true }).click()
+    await expect(header.getByRole('button', { name: 'Search settings', exact: true })).toBeVisible()
+    await header.getByRole('button', { name: 'Search settings', exact: true }).click()
+    await expect(page.getByRole('dialog').last()).toBeVisible()
+    await page.keyboard.press('Escape')
+    await page.evaluate(() => { location.hash = '/home' })
+    for (const [width, height, zoom] of [[1536, 961, 1], [1280, 720, 1], [760, 900, 1], [1280, 720, 2]]) {
+      await resize(width, height, zoom)
+      await expect(header).toHaveCount(1)
+      await expect(page.getByRole('contentinfo', { name: 'System health', exact: true })).toHaveCount(1)
+      await expect(header).toBeInViewport({ ratio: 1 })
+      expect(await header.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
+      for (const button of await header.getByRole('button').all()) {
+        focusChecks.push(await verifyKeyboardFocus(page, button, `Header ${mode} ${width} ${zoom} ${await button.getAttribute('aria-label')}`))
+      }
+      await header.getByRole('button', { name: 'Search loaded records', exact: true }).click()
+      const input = search.getByRole('textbox', { name: 'Search loaded records', exact: true })
+      await input.fill('Avery')
+      await search.getByRole('button', { name: /Avery.*Member/ }).click()
+      await expect(search.getByText('fixture-executive', { exact: true })).toBeVisible()
+      await search.getByRole('button', { name: 'Back to results', exact: true }).click()
+      await input.fill('Release evidence discussion')
+      await search.getByRole('button', { name: /Release evidence discussion.*Internal conversation/ }).click()
+      await expect(search.getByText('Retained internal message; inspection leaves it unread.', { exact: true })).toBeVisible()
+      await search.getByText('Retained internal message; inspection leaves it unread.', { exact: true }).scrollIntoViewIfNeeded()
+      expect(await search.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
+      const name = `workspace-search-${mode.toLowerCase()}-${width}-${height}-${zoom}.png`
+      await page.evaluate(async () => { await document.fonts.ready; await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))) })
+      const bytes = Buffer.from(await app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
+      writeFileSync(test.info().outputPath(name), bytes)
+      captures.push({ name, width, height, zoom, sha256: createHash('sha256').update(bytes).digest('hex') })
+      await test.info().attach(name, { body: bytes, contentType: 'image/png' })
+      await page.keyboard.press('Escape')
+      await expect(search).toBeHidden()
+      await expect(header.getByRole('button', { name: 'Search loaded records', exact: true })).toBeFocused()
+    }
+  }
+  await resize(1536, 961, 1)
+  await header.getByRole('button', { name: 'Search loaded records', exact: true }).click()
+  await search.getByRole('textbox', { name: 'Search loaded records', exact: true }).fill('autumn release')
+  await search.getByRole('link', { name: /Prepare the autumn release brief.*Objective/ }).click()
+  await expect(search).toBeHidden()
+  await expect(page.locator('.eid-objective-hero')).toContainText('Prepare the autumn release brief')
+  expect(mock.receivedPrompts).toHaveLength(0)
+  expect([...new Set(methods)].sort()).toEqual(['organization.outcomes', 'organization.snapshot'])
+  await test.info().attach('workspace-header-evidence', { contentType: 'application/json', body: JSON.stringify({
+    sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+    sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
+    providerCalls: mock.receivedPrompts.length, methods, captures, focusChecks
+  }) })
+})

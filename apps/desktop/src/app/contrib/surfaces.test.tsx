@@ -36,6 +36,7 @@ vi.mock('@/plugins/eidolon-bots/roster-pane', () => ({
   }
 }))
 vi.mock('../eidolon/rail', () => ({ OrganizationRail: ({ sessions }: { sessions: ReactNode }) => <>{sessions}</> }))
+vi.mock('../eidolon/workspace-header', () => ({ WorkspaceHeader: () => <header>Workspace controls</header> }))
 vi.mock('../eidolon/workspace', () => ({ OrganizationWorkspace: () => <div>Organization workspace</div> }))
 vi.mock('../eidolon/runtime-provider', () => ({ useRuntimeOrganization: () => null }))
 vi.mock('../eidolon/legacy-history', () => ({ LegacyOrganizationHistory: () => <div>Read-only legacy history</div> }))

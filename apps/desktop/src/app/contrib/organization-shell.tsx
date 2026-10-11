@@ -32,7 +32,7 @@ export function OrganizationActiveWorkBridge() {
   return null
 }
 
-export function OrganizationWorkIndicator() {
+export function OrganizationWorkIndicator({ compact = false }: { compact?: boolean }) {
   const work = useStore($organizationWork)
   const owners = useStore($organizationWorkOwners)
   const [open, setOpen] = useState(false)
@@ -63,7 +63,7 @@ export function OrganizationWorkIndicator() {
       >
         <Codicon name={work.needsYou ? 'bell' : 'sync'} />
         <span>
-          {work.needsYou
+          {compact ? (work.needsYou || work.count) : work.needsYou
             ? `${copy.needsYou} ${work.needsYou}`
             : `${work.running} ${copy.running} · ${work.queued} ${copy.queued}`}
           {work.stale ? ` · ${copy.lastKnown}` : ''}

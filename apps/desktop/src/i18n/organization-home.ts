@@ -1,5 +1,18 @@
 /** Source messages; untranslated locales inherit English through the existing catalog. */
 export const organizationHomeEn = {
+  workspace: {
+    heading: 'Workspace controls',
+    profile: (name: string) => `Manage profiles · current profile: ${name}`,
+    search: 'Search loaded records',
+    searchSettings: 'Search settings',
+    searchPlaceholder: 'Find an objective, member, or conversation…',
+    searchNote: (profile: string) => `Current profile: ${profile}. Searches loaded objective titles and descriptions, member identities, and internal conversation subjects and participants. Older history and message contents are not searched. Inspection does not open owner chats or acknowledge messages.`,
+    resultCount: (count: number) => `${count} matching loaded records`,
+    backToResults: 'Back to results',
+    noLongerLoaded: 'This record is no longer loaded in the current scope.',
+    refine: 'Showing the first 30 matches. Refine your search to see a smaller set.',
+    kinds: { agent: 'Member', objective: 'Objective', conversation: 'Internal conversation' }
+  },
   messageOrganization: 'Message organization',
   messageOrganizationUnavailable: 'Connect to the current organization before choosing a recipient.',
   executiveMessageNote: 'Choose an executive in the current organization. Your message belongs to that member’s conversation and is sent only when you submit it.',
