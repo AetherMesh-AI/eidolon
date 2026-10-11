@@ -2,7 +2,7 @@ import { defineFieldCopy } from '@/app/settings/field-copy'
 
 import { organizationConversationsZh } from './organization-conversations'
 import { organizationFoundationEn } from './organization-foundation'
-import { organizationHomeEn } from './organization-home'
+import { organizationHomeEn, organizationWorkspaceZh } from './organization-home'
 import { organizationOwnerChatZh } from './organization-owner-chat'
 import { organizationRosterZh } from './organization-roster'
 import { organizationSurfacesEn } from './organization-surfaces'
@@ -14,7 +14,7 @@ export const zh: Translations = {
   organizationOwnerChat: organizationOwnerChatZh,
   organizationConversations: organizationConversationsZh,
   organizationSurfaces: organizationSurfacesEn,
-  organizationHome: organizationHomeEn,
+  organizationHome: { ...organizationHomeEn, workspace: organizationWorkspaceZh },
   settingsWorkspace: settingsWorkspaceEn,
   organizationFoundation: organizationFoundationEn,
   organizationWork: organizationWorkZh,

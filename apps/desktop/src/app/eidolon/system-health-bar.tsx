@@ -14,7 +14,6 @@ import { $approvalRequest } from '@/store/prompts'
 import { $busy } from '@/store/session'
 import { $subagentsBySession, activeSubagentCount, failedSubagentCount } from '@/store/subagents'
 
-import { OrganizationWorkIndicator } from '../contrib/organization-shell'
 import { useTitlebarToolContributions } from '../contrib/panes'
 import { TitlebarControls } from '../shell/titlebar-controls'
 
@@ -143,7 +142,6 @@ export function SystemHealthBar({
         {work.stale ? ` · ${copy.lastKnown}` : ''}
       </span>
       {chatBusy && <span>{copy.chatWorking}</span>}
-      <OrganizationWorkIndicator />
       {approval && <span role="status">{copy.approval}</span>}
     </footer>
   )

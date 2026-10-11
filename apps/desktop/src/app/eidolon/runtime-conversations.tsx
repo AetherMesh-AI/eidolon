@@ -20,7 +20,7 @@ function participantLabel(conversation: OrganizationConversation, id: string, co
   return participant ? `${participant.name} (${participant.id}) · ${participant.team || copy.unknownTeam}` : id
 }
 
-function ConversationThread({
+export function ConversationThread({
   conversation,
   snapshot
 }: {

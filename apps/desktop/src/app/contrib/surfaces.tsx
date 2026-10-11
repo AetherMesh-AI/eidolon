@@ -25,6 +25,7 @@ import { OrganizationRail } from '../eidolon/rail'
 import { useRuntimeOrganization } from '../eidolon/runtime-provider'
 import { SystemHealthBar } from '../eidolon/system-health-bar'
 import { OrganizationWorkspace } from '../eidolon/workspace'
+import { WorkspaceHeader } from '../eidolon/workspace-header'
 import { TerminalPaneChrome } from '../right-sidebar/terminal/chrome'
 import {
   contributedRoutes,
@@ -203,55 +204,60 @@ export const ChatRoutesSurface = memo(function ChatRoutesSurface({
   )
 
   return (
-    <Routes>
-      {['home', 'messages', 'work', 'objectives', 'objectives/:objectiveId', 'organization', 'activity', 'requests'].map(path => (
-        <Route element={page(<OrganizationWorkspace />)} key={path} path={path} />
-      ))}
-      <Route element={<LegacyKnowledgeRedirect />} path="knowledge" />
-      <Route element={page(<LegacyOrganizationHistory />)} path="legacy-organization" />
-      <Route element={<Navigate replace to="/legacy-organization" />} path="organization-preview" />
-      {!routeContributions.some(route => route.path === LEGACY_KANBAN_ROUTE) && (
-        <Route element={page(<LegacyKanbanUnavailable />)} path="kanban" />
-      )}
-      <Route element={chatView} index />
-      <Route element={chatView} path=":sessionId" />
-      <Route element={page(<SkillsView setStatusbarItemGroup={setStatusbarItemGroup} />)} path="skills" />
-      <Route element={page(<MessagingView setStatusbarItemGroup={setStatusbarItemGroup} />)} path="messaging" />
-      <Route element={page(<ArtifactsView setStatusbarItemGroup={setStatusbarItemGroup} />)} path="artifacts" />
-      <Route element={null} path="agents" />
-      <Route element={null} path="command-center" />
-      <Route element={null} path="cron" />
-      <Route element={null} path="profiles" />
-      <Route
-        element={page(
-          <SettingsView
-            gateway={gateway}
-            onClose={() => actions.closeSettings()}
-            onConfigSaved={() => actions.settingsSaved()}
-            onMainModelChanged={(provider, model) => actions.settingsModelChanged(provider, model)}
-          />
-        )}
-        path="settings"
-      />
-      <Route element={null} path="starmap" />
-      <Route element={null} path="webhooks" />
-      {/* Registry-contributed pages (core features + plugins) render in the
-          workspace pane like any built-in view — behind the same blast wall
-          as every other contribution mount. */}
-      {routeContributions.map(route => (
-        <Route
-          element={page(
-            <ContribBoundary id={route.key}>
-              <ContribRender render={route.render} />
-            </ContribBoundary>
+    <div className="eid-workspace-shell">
+      <WorkspaceHeader />
+      <div className="eid-workspace-body">
+        <Routes>
+          {['home', 'messages', 'work', 'objectives', 'objectives/:objectiveId', 'organization', 'activity', 'requests'].map(path => (
+            <Route element={page(<OrganizationWorkspace />)} key={path} path={path} />
+          ))}
+          <Route element={<LegacyKnowledgeRedirect />} path="knowledge" />
+          <Route element={page(<LegacyOrganizationHistory />)} path="legacy-organization" />
+          <Route element={<Navigate replace to="/legacy-organization" />} path="organization-preview" />
+          {!routeContributions.some(route => route.path === LEGACY_KANBAN_ROUTE) && (
+            <Route element={page(<LegacyKanbanUnavailable />)} path="kanban" />
           )}
-          key={route.key}
-          path={route.path.slice(1)}
-        />
-      ))}
-      <Route element={<Navigate replace to={NEW_CHAT_ROUTE} />} path="new" />
-      <Route element={<LegacySessionRedirect />} path="sessions/:sessionId" />
-      <Route element={<Navigate replace to={NEW_CHAT_ROUTE} />} path="*" />
-    </Routes>
+          <Route element={chatView} index />
+          <Route element={chatView} path=":sessionId" />
+          <Route element={page(<SkillsView setStatusbarItemGroup={setStatusbarItemGroup} />)} path="skills" />
+          <Route element={page(<MessagingView setStatusbarItemGroup={setStatusbarItemGroup} />)} path="messaging" />
+          <Route element={page(<ArtifactsView setStatusbarItemGroup={setStatusbarItemGroup} />)} path="artifacts" />
+          <Route element={null} path="agents" />
+          <Route element={null} path="command-center" />
+          <Route element={null} path="cron" />
+          <Route element={null} path="profiles" />
+          <Route
+            element={page(
+              <SettingsView
+                gateway={gateway}
+                onClose={() => actions.closeSettings()}
+                onConfigSaved={() => actions.settingsSaved()}
+                onMainModelChanged={(provider, model) => actions.settingsModelChanged(provider, model)}
+              />
+            )}
+            path="settings"
+          />
+          <Route element={null} path="starmap" />
+          <Route element={null} path="webhooks" />
+          {/* Registry-contributed pages (core features + plugins) render in the
+              workspace pane like any built-in view — behind the same blast wall
+              as every other contribution mount. */}
+          {routeContributions.map(route => (
+            <Route
+              element={page(
+                <ContribBoundary id={route.key}>
+                  <ContribRender render={route.render} />
+                </ContribBoundary>
+              )}
+              key={route.key}
+              path={route.path.slice(1)}
+            />
+          ))}
+          <Route element={<Navigate replace to={NEW_CHAT_ROUTE} />} path="new" />
+          <Route element={<LegacySessionRedirect />} path="sessions/:sessionId" />
+          <Route element={<Navigate replace to={NEW_CHAT_ROUTE} />} path="*" />
+        </Routes>
+      </div>
+    </div>
   )
 })

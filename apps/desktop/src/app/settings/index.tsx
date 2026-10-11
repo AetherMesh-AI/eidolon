@@ -5,7 +5,6 @@ import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 
 import { codiconIcon } from '@/components/ui/codicon'
-import { KbdCombo } from '@/components/ui/kbd'
 import { Tip } from '@/components/ui/tooltip'
 import { getHermesConfigDefaults, getHermesConfigRecord, saveHermesConfig } from '@/eidolon'
 import { useI18n } from '@/i18n'
@@ -22,7 +21,6 @@ import {
   KeyRound,
   Package,
   RefreshCw,
-  Search,
   Settings2,
   Upload,
   Wrench,
@@ -30,10 +28,8 @@ import {
 } from '@/lib/icons'
 import { isEditableTarget } from '@/lib/keybinds/combo'
 import { typeToFocusChar } from '@/lib/keybinds/composer-focus-keys'
-import { cn } from '@/lib/utils'
 import { $commandPaletteOpen, openCommandPalettePage } from '@/store/command-palette'
 import { confirm } from '@/store/confirm'
-import { bindingsFor } from '@/store/keybinds'
 import { $localModelsEnabled } from '@/store/local-models-flag'
 import { notifyError } from '@/store/notifications'
 import { $settingsScopeProfile } from '@/store/settings-scope'
@@ -337,33 +333,6 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
 
-  // Fake search pill riding the card's top edge, dead-center and half off it.
-  // Clicking (or just typing) opens the ⌘K palette scoped to settings; while
-  // the palette is up the pill hands over to it — grows slightly and fades,
-  // then fades back when the palette closes. It renders as chrome, not an
-  // input — no border, recessed fill, live ⌘K hint.
-  const searchCombo = bindingsFor('nav.commandPalette')[0]
-  const paletteOpen = useStore($commandPaletteOpen)
-
-  const searchPill = (
-    <button
-      className={cn(
-        'flex h-(--titlebar-control-height) items-center gap-1.5 rounded-full border border-(--ui-stroke-secondary) bg-(--ui-chat-surface-background) px-2.5 text-(--ui-text-tertiary) shadow-sm transition-all duration-200 ease-out hover:text-foreground motion-reduce:transition-none',
-        paletteOpen && 'pointer-events-none scale-110 opacity-0'
-      )}
-      onClick={() => {
-        triggerHaptic('open')
-        openCommandPalettePage('settings')
-      }}
-      tabIndex={paletteOpen ? -1 : undefined}
-      type="button"
-    >
-      <Search className="size-3" />
-      <span className="text-xs">{t.settings.search.pill}</span>
-      {searchCombo && <KbdCombo combo={searchCombo} size="sm" variant="ghost" />}
-    </button>
-  )
-
   const navFooter = (
     <>
       <Tip label={t.settings.exportConfig}>
@@ -455,7 +424,6 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
           <h1>{copy.heading}</h1>
           <p>{copy.introduction}</p>
         </div>
-        {searchPill}
       </header>
       <OverlaySplitLayout className="eid-settings-layout">
         <OverlayNav
