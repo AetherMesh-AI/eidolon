@@ -132,6 +132,8 @@
 .eid-settings-page :is(button, a, input, textarea, select, summary):focus-visible {
   outline: 2px solid var(--ui-accent);
   outline-offset: 3px;
+  /* Button transition-all must not animate the keyboard outline through 1px. */
+  transition-property: color, background-color, border-color, box-shadow;
 }
 
 /* Overview cards retain the real Model and Notifications save owners. */
