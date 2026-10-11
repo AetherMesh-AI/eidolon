@@ -242,7 +242,7 @@ describe('SessionActionsMenu', () => {
       fireEvent.click(trigger)
       fireEvent.click(await screen.findByRole('menuitem', { name: /delete/i }))
       const dialog = await screen.findByRole('dialog')
-      const button = within(dialog).getByRole('button', { name: 'Delete', exact: true })
+      const button = within(dialog).getByRole('button', { name: 'Delete' })
       await waitFor(() => expect(window.document.activeElement).toBe(button))
       expect((button as HTMLButtonElement).disabled).toBe(false)
     }
@@ -255,7 +255,7 @@ describe('SessionActionsMenu', () => {
     for (const key of ['{Enter}', ' ']) {
       await openDelete()
       await user.tab({ shift: true })
-      const cancel = screen.getByRole('button', { name: 'Cancel', exact: true })
+      const cancel = screen.getByRole('button', { name: 'Cancel' })
       expect(window.document.activeElement).toBe(cancel)
       expect((cancel as HTMLButtonElement).disabled).toBe(false)
       await user.keyboard(key)

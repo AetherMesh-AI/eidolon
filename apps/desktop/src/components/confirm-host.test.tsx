@@ -46,7 +46,7 @@ describe('confirm()', () => {
     render(<ConfirmHost />)
 
     const { pending, read } = await ask()
-    const button = screen.getByRole('button', { name: 'Confirm', exact: true })
+    const button = screen.getByRole('button', { name: 'Confirm' })
     await waitFor(() => expect(window.document.activeElement).toBe(button))
     expect((button as HTMLButtonElement).disabled).toBe(false)
     await user.keyboard('{Enter}')
@@ -61,9 +61,9 @@ describe('confirm()', () => {
     render(<ConfirmHost />)
 
     const { pending, read } = await ask()
-    await waitFor(() => expect(window.document.activeElement).toBe(screen.getByRole('button', { name: 'Confirm', exact: true })))
+    await waitFor(() => expect(window.document.activeElement).toBe(screen.getByRole('button', { name: 'Confirm' })))
     await user.tab({ shift: true })
-    const cancel = screen.getByRole('button', { name: 'Cancel', exact: true })
+    const cancel = screen.getByRole('button', { name: 'Cancel' })
     expect(window.document.activeElement).toBe(cancel)
     expect((cancel as HTMLButtonElement).disabled).toBe(false)
     await user.keyboard(key)
