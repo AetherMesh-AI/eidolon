@@ -30,3 +30,5 @@
   .eid-workspace-action-label, .eid-workspace-connection { display: none; }
   .eid-workspace-identity > button > span { max-width: 80px; }
 }
+/* The existing switcher's inner label clips text; its outer wrapper must not clip keyboard outlines. */
+.eid-workspace-header [data-slot=connection-switcher] { overflow: visible; }

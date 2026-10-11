@@ -1,8 +1,10 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { atom } from 'nanostores'
 import { MemoryRouter, useLocation } from 'react-router'
 import { beforeEach, expect, it, vi } from 'vitest'
 
+import { TRANSLATIONS } from '@/i18n/catalog'
+import { $pendingConnectionId } from '@/store/connections'
 import { $activeGatewayProfile } from '@/store/profile'
 
 import { Inspector } from './inspector'
@@ -24,15 +26,18 @@ beforeEach(() => {
   state.scope = state.snapshot.connection!.scope
   state.commands.mockReset()
   $activeGatewayProfile.set('default')
+  $pendingConnectionId.set(null)
 })
 
 function Location() { return <output>{useLocation().pathname}</output> }
 
-it('inspects loaded identities without replacing the current draft or navigating', () => {
+it('inspects loaded identities without replacing the current draft or navigating', async () => {
   const closeInspector = vi.fn()
   render(<MemoryRouter initialEntries={['/messages']}><WorkspaceHeader /><Inspector kind="agent" title="Current conversation" onClose={closeInspector}><textarea aria-label="Existing page draft" defaultValue="Unsubmitted intent" /></Inspector><Location /></MemoryRouter>)
   const draft = screen.getByRole('textbox', { name: 'Existing page draft' })
-  fireEvent.click(screen.getByRole('button', { name: 'Search loaded records' }))
+  const trigger = screen.getByRole('button', { name: 'Search loaded records' })
+  trigger.focus()
+  fireEvent.click(trigger)
   fireEvent.change(screen.getByRole('textbox', { name: 'Search loaded records' }), { target: { value: 'Worker 1' } })
   fireEvent.click(screen.getByRole('button', { name: /Worker 1.*Member/ }))
   expect(screen.getByText('identity-worker')).toBeTruthy()
@@ -42,9 +47,10 @@ it('inspects loaded identities without replacing the current draft or navigating
   expect((draft as HTMLTextAreaElement).value).toBe('Unsubmitted intent')
   expect(screen.getByText('/messages')).toBeTruthy()
   expect(closeInspector).not.toHaveBeenCalled()
+  await waitFor(() => expect(document.activeElement).toBe(trigger))
 })
 
-it('immediately hides old search records when the real scope changes before the snapshot', () => {
+it('immediately hides old search records when the real scope changes before the snapshot', async () => {
   render(<MemoryRouter><WorkspaceHeader /></MemoryRouter>)
   fireEvent.click(screen.getByRole('button', { name: 'Search loaded records' }))
   fireEvent.change(screen.getByRole('textbox', { name: 'Search loaded records' }), { target: { value: 'Worker' } })
@@ -52,6 +58,7 @@ it('immediately hides old search records when the real scope changes before the 
   act(() => { state.scope = 'socket-b:other'; $activeGatewayProfile.set('other') })
   expect(screen.queryByRole('dialog')).toBeNull()
   expect(screen.getByRole('button', { name: 'Search loaded records' }).hasAttribute('disabled')).toBe(true)
+  await waitFor(() => expect(document.activeElement).not.toBe(screen.getByRole('button', { name: 'Search loaded records' })))
 })
 
 it('checks current scope again at activation and retains real Settings search', () => {
@@ -62,7 +69,7 @@ it('checks current scope again at activation and retains real Settings search', 
   fireEvent.click(screen.getByRole('button', { name: /Worker 1.*Member/ }))
   expect(screen.queryByText('identity-worker')).toBeNull()
   expect(screen.queryByRole('dialog')).toBeNull()
-  fireEvent.click(screen.getByRole('button', { name: 'Search settings' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Search', exact: true }))
   expect(state.commands).toHaveBeenCalledExactlyOnceWith('settings')
 })
 
@@ -73,4 +80,33 @@ it('searches all query words in loaded metadata, never retained message contents
   expect(searchWorkspace(snapshot, 'Hidden message')).toEqual([])
   expect(searchWorkspace(snapshot, '   ')).toEqual([])
   expect(snapshot.conversations[0].messages[0].readAt).toBeNull()
+})
+
+
+it('closes search while a connection selection is pending without reusing its results', () => {
+  render(<MemoryRouter><WorkspaceHeader /></MemoryRouter>)
+  fireEvent.click(screen.getByRole('button', { name: 'Search loaded records' }))
+  fireEvent.change(screen.getByRole('textbox', { name: 'Search loaded records' }), { target: { value: 'Worker' } })
+  act(() => $pendingConnectionId.set('other-connection'))
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(screen.getByRole('button', { name: 'Search loaded records' }).hasAttribute('disabled')).toBe(true)
+  act(() => $pendingConnectionId.set(null))
+  expect(screen.queryByRole('dialog')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Search loaded records' }))
+  expect((screen.getByRole('textbox', { name: 'Search loaded records' }) as HTMLInputElement).value).toBe('')
+})
+
+
+it.each(['ja', 'zh', 'zh-hant', 'ar', 'ru'] as const)('provides the complete new workspace vocabulary in %s', locale => {
+  const copy = TRANSLATIONS[locale].organizationHome.workspace
+  const english = TRANSLATIONS.en.organizationHome.workspace
+  for (const key of ['heading', 'settings', 'search', 'searchPlaceholder', 'backToResults', 'noLongerLoaded', 'refine'] as const) {
+    expect(copy[key]).not.toBe(english[key])
+    expect(copy[key].trim()).not.toBe('')
+  }
+  expect(copy.profile('scope-token')).toContain('scope-token')
+  expect(copy.searchNote('scope-token')).toContain('scope-token')
+  expect(copy.searchNote('scope-token')).not.toBe(english.searchNote('scope-token'))
+  expect(copy.resultCount(7)).toContain('7')
+  for (const kind of ['agent', 'objective', 'conversation'] as const) expect(copy.kinds[kind]).not.toBe(english.kinds[kind])
 })

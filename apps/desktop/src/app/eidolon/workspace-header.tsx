@@ -1,7 +1,7 @@
 import './workspace-header.css'
 
 import { useStore } from '@nanostores/react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 
 import { Button } from '@/components/ui/button'
@@ -31,6 +31,7 @@ export function WorkspaceHeader() {
   const navigate = useNavigate()
   const location = useLocation()
   const readScope = useMemo(createOrganizationScopeReader, [])
+  const searchTrigger = useRef<HTMLButtonElement>(null)
   const [searchScope, setSearchScope] = useState<string | null>(null)
   const snapshot = organization?.snapshot
   const current = () => Boolean(snapshot?.connection?.state === 'ready' && readScope().connected &&
@@ -47,11 +48,13 @@ export function WorkspaceHeader() {
       <Button aria-label={copy.profile(profile)} onClick={() => navigateToWorkspacePage(navigate, '/profiles')} size="micro" variant="ghost"><Codicon name="organization" /><span>{profile}</span></Button>
       {(registry?.connections.length ?? 0) > 1 ? <ConnectionSwitcher compact onConnect={() => navigateToWorkspacePage(navigate, '/settings?tab=connections')} /> : connection && <span className="eid-workspace-connection">{connection.label}</span>}
     </div>
-    <Button aria-label={copy.search} disabled={!available} onClick={() => { if (current()) setSearchScope(snapshot!.connection!.scope) }} size="micro" variant="ghost"><Codicon name="search" /><span className="eid-workspace-action-label">{copy.search}</span></Button>
+    <Button aria-label={copy.search} ref={searchTrigger} disabled={!available} onClick={() => { if (current()) setSearchScope(snapshot!.connection!.scope) }} size="micro" variant="ghost"><Codicon name="search" /><span className="eid-workspace-action-label">{copy.search}</span></Button>
     <div className="eid-workspace-actions">
       <OrganizationWorkIndicator compact />
-      <Button aria-label={settings ? copy.searchSettings : t.organizationHome.settings} onClick={() => settings ? openCommandPalettePage('settings') : navigateToWorkspacePage(navigate, '/settings')} size="micro" variant="ghost"><Codicon name={settings ? 'search' : 'settings-gear'} /><span className="eid-workspace-action-label">{settings ? copy.searchSettings : t.organizationHome.settings}</span></Button>
+      <Button aria-label={settings ? t.settings.search.pill : copy.settings} onClick={() => settings ? openCommandPalettePage('settings') : navigateToWorkspacePage(navigate, '/settings')} size="micro" variant="ghost"><Codicon name={settings ? 'search' : 'settings-gear'} /><span className="eid-workspace-action-label">{settings ? t.settings.search.pill : copy.settings}</span></Button>
     </div>
-    {snapshot && searchScope === snapshot.connection?.scope && available && <WorkspaceSearch isCurrent={current} key={searchScope} onClose={() => setSearchScope(null)} profile={profile} snapshot={snapshot} />}
+    {snapshot && searchScope === snapshot.connection?.scope && available && <WorkspaceSearch onReturnFocus={() => {
+      if (current() && searchTrigger.current?.isConnected && !searchTrigger.current.disabled) searchTrigger.current.focus()
+    }} isCurrent={current} key={searchScope} onClose={() => setSearchScope(null)} profile={profile} snapshot={snapshot} />}
   </header>
 }

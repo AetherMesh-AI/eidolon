@@ -30,10 +30,11 @@ export function searchWorkspace(snapshot: OrganizationSnapshot, query: string): 
   ]
 }
 
-export function WorkspaceSearch({ snapshot, profile, onClose, isCurrent }: {
+export function WorkspaceSearch({ snapshot, profile, onClose, onReturnFocus, isCurrent }: {
   snapshot: OrganizationSnapshot
   profile: string
   onClose: () => void
+  onReturnFocus: () => void
   isCurrent: () => boolean
 }) {
   const { t } = useI18n()
@@ -45,7 +46,7 @@ export function WorkspaceSearch({ snapshot, profile, onClose, isCurrent }: {
   const conversation = selected?.kind === 'conversation' ? snapshot.conversations?.find(item => item.id === selected.id) : undefined
 
   return <Dialog onOpenChange={open => { if (!open) onClose() }} open>
-    <DialogContent className="eidolon eid-workspace-search" onEscapeKeyDown={event => { event.preventDefault(); event.stopPropagation(); onClose() }}>
+    <DialogContent className="eidolon eid-workspace-search" onCloseAutoFocus={event => { event.preventDefault(); onReturnFocus() }} onEscapeKeyDown={event => { event.preventDefault(); event.stopPropagation(); onClose() }}>
       <DialogTitle>{copy.search}</DialogTitle>
       <DialogDescription>{copy.searchNote(profile)}</DialogDescription>
       <SearchField aria-label={copy.search} onChange={value => { setQuery(value); setSelected(null) }} placeholder={copy.searchPlaceholder} value={query} />

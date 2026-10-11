@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { writeFileSync } from 'node:fs'
 
+import { TRANSLATIONS } from '../src/i18n/catalog'
 import { BUILTIN_THEME_LIST } from '../src/themes/presets'
 
 import { type MockBackendFixture, setupMockBackend, waitForAppReady } from './fixtures'
@@ -1092,10 +1093,10 @@ test('keeps workspace controls and loaded-record inspection usable without execu
   }
   for (const mode of ['Dark', 'Light'] as const) {
     await resize(1536, 961, 1)
-    await page.evaluate(() => { location.hash = '/settings?tab=appearance' })
+    await page.evaluate(() => { location.hash = '/settings?tab=config:appearance' })
     await page.getByRole('button', { name: mode, exact: true }).click()
-    await expect(header.getByRole('button', { name: 'Search settings', exact: true })).toBeVisible()
-    await header.getByRole('button', { name: 'Search settings', exact: true }).click()
+    await expect(header.getByRole('button', { name: 'Search', exact: true })).toBeVisible()
+    await header.getByRole('button', { name: 'Search', exact: true }).click()
     await expect(page.getByRole('dialog').last()).toBeVisible()
     await page.keyboard.press('Escape')
     await page.evaluate(() => { location.hash = '/home' })
@@ -1144,3 +1145,83 @@ test('keeps workspace controls and loaded-record inspection usable without execu
     providerCalls: mock.receivedPrompts.length, methods, captures, focusChecks
   }) })
 })
+
+
+for (const locale of ['ja', 'ar', 'ru'] as const) {
+  test(`keeps translated workspace controls usable in ${locale} with multiple connections`, async () => {
+    fixture = await setupMockBackend({ extraDisplayConfig: `  language: ${locale}` })
+    const { app, page, mock } = fixture
+    const copy = TRANSLATIONS[locale].organizationHome.workspace
+    const methods: string[] = []
+    await page.routeWebSocket(/.*/, socket => {
+      const server = socket.connectToServer()
+      socket.onMessage(message => {
+        const request = JSON.parse(message.toString()) as { id?: number; method?: string }
+        if (request.method?.startsWith('organization.')) methods.push(request.method)
+        if (request.method === 'organization.snapshot' || request.method === 'organization.outcomes') {
+          socket.send(JSON.stringify({ jsonrpc: '2.0', id: request.id, result: request.method === 'organization.snapshot' ? snapshot : snapshot.outcomes }))
+        } else server.send(message)
+      })
+    })
+    await page.reload()
+    await waitForAppReady(fixture)
+    await expect(page.locator('html')).toHaveAttribute('lang', locale)
+    await expect(page.locator('html')).toHaveAttribute('dir', locale === 'ar' ? 'rtl' : 'ltr')
+    // Only a second alias of this temporary loopback backend; no live host or credentials.
+    expect(await page.evaluate(async () => {
+      const current = await window.hermesDesktop.getConnection()
+      if (!/^http:\/\/(127\.0\.0\.1|localhost):/.test(current.baseUrl)) throw new Error('Expected temporary loopback backend')
+      const result = await window.hermesDesktop.connections.save({ kind: 'remote', label: 'Temporary organization connection with a long descriptive name', url: current.baseUrl, token: current.token })
+      return result.ok
+    })).toBe(true)
+    const header = page.getByRole('banner', { name: copy.heading, exact: true })
+    await expect(header.locator('[data-slot="connection-switcher"]')).toBeVisible()
+    const captures: object[] = []
+    const focusChecks: object[] = []
+    for (const mode of ['dark', 'light'] as const) {
+      await page.evaluate(() => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(100))
+      await app.evaluate(({ BrowserWindow }) => { const window = BrowserWindow.getAllWindows()[0]; window.unmaximize(); window.setMinimumSize(600, 600); window.setContentSize(1536, 961) })
+      await page.evaluate(() => { location.hash = '/settings?tab=config:appearance' })
+      await page.getByRole('button', { name: TRANSLATIONS[locale].settings.modeOptions[mode].label, exact: true }).click()
+      await expect(header.getByRole('button', { name: TRANSLATIONS[locale].settings.search.pill, exact: true })).toBeVisible()
+      await page.evaluate(() => { location.hash = '/home' })
+      for (const [width, height, zoom] of [[1280, 720, 1], [760, 900, 1], [1280, 720, 2]]) {
+        await page.evaluate(() => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(100))
+        await app.evaluate(({ BrowserWindow }, size) => { BrowserWindow.getAllWindows()[0].setContentSize(size.width, size.height) }, { width, height })
+        await expect.poll(() => page.evaluate(() => innerWidth)).toBe(width)
+        await page.evaluate(value => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(value * 100), zoom)
+        await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(zoom)
+        await expect(header).toBeInViewport({ ratio: 1 })
+        expect(await header.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
+        for (const button of await header.getByRole('button').all()) {
+          focusChecks.push(await verifyKeyboardFocus(page, button, `${locale} ${mode} ${width} ${zoom} ${await button.getAttribute('aria-label')}`))
+        }
+        await header.locator('[data-slot="connection-switcher"]').getByRole('button').click()
+        await expect(page.getByRole('menuitemradio', { name: /Temporary organization connection/ })).toBeVisible()
+        await page.keyboard.press('Escape')
+        await header.getByRole('button', { name: copy.search, exact: true }).click()
+        const dialog = page.getByRole('dialog', { name: copy.search, exact: true })
+        await dialog.getByRole('textbox', { name: copy.search, exact: true }).fill('Avery')
+        await dialog.getByRole('button', { name: `Avery · ${copy.kinds.agent} · executive`, exact: true }).click()
+        await expect(dialog.getByText('fixture-executive', { exact: true })).toBeVisible()
+        expect(await dialog.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
+        const name = `workspace-${locale}-${mode}-${width}-${height}-${zoom}.png`
+        await page.evaluate(async () => { await document.fonts.ready; await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))) })
+        const bytes = Buffer.from(await app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
+        writeFileSync(test.info().outputPath(name), bytes)
+        captures.push({ name, width, height, zoom, sha256: createHash('sha256').update(bytes).digest('hex') })
+        await test.info().attach(name, { body: bytes, contentType: 'image/png' })
+        await page.keyboard.press('Escape')
+        await expect(dialog).toBeHidden()
+        await expect(header.getByRole('button', { name: copy.search, exact: true })).toBeFocused()
+      }
+    }
+    expect(mock.receivedPrompts).toHaveLength(0)
+    expect([...new Set(methods)].sort()).toEqual(['organization.outcomes', 'organization.snapshot'])
+    await test.info().attach('workspace-translated-evidence', { contentType: 'application/json', body: JSON.stringify({
+      sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+      sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
+      locale, providerCalls: mock.receivedPrompts.length, methods, captures, focusChecks
+    }) })
+  })
+}

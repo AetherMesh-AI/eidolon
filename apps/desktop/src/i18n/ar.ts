@@ -1,8 +1,10 @@
+import { organizationWorkspaceAr } from './organization-home'
 import { defineLocale } from './define-locale'
 import { organizationConversationsAr } from './organization-conversations'
 import { organizationOwnerChatAr } from './organization-owner-chat'
 
 export const ar = defineLocale({
+  organizationHome: { workspace: organizationWorkspaceAr },
   organizationOwnerChat: organizationOwnerChatAr,
   organizationConversations: organizationConversationsAr,
   sessionImport: {

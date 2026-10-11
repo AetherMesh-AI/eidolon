@@ -4,7 +4,7 @@ export const organizationHomeEn = {
     heading: 'Workspace controls',
     profile: (name: string) => `Manage profiles · current profile: ${name}`,
     search: 'Search loaded records',
-    searchSettings: 'Search settings',
+    settings: 'Settings',
     searchPlaceholder: 'Find an objective, member, or conversation…',
     searchNote: (profile: string) => `Current profile: ${profile}. Searches loaded objective titles and descriptions, member identities, and internal conversation subjects and participants. Older history and message contents are not searched. Inspection does not open owner chats or acknowledge messages.`,
     resultCount: (count: number) => `${count} matching loaded records`,
@@ -156,3 +156,55 @@ export const organizationHomeEn = {
   details: 'Details'
 }
 export type OrganizationHomeCopy = typeof organizationHomeEn
+
+type WorkspaceCopy = OrganizationHomeCopy['workspace']
+
+export const organizationWorkspaceJa: WorkspaceCopy = {
+  heading: 'ワークスペースの操作', settings: '設定',
+  profile: name => `プロファイルを管理 · 現在のプロファイル: ${name}`,
+  search: '読み込み済みの記録を検索', searchPlaceholder: '目標、メンバー、会話を検索…',
+  searchNote: profile => `現在のプロファイル: ${profile}。読み込み済みの目標のタイトルと説明、メンバーの識別情報、内部会話の件名と参加者を検索します。過去の履歴やメッセージ本文は検索しません。閲覧しても所有者とのチャットは開かず、メッセージを既読にしません。`,
+  resultCount: count => `一致する読み込み済みの記録: ${count} 件`, backToResults: '検索結果に戻る',
+  noLongerLoaded: 'この記録は現在の範囲では読み込まれていません。', refine: '最初の30件を表示しています。検索条件を絞り込んでください。',
+  kinds: { agent: 'メンバー', objective: '目標', conversation: '内部会話' }
+}
+
+export const organizationWorkspaceZh: WorkspaceCopy = {
+  heading: '工作区操作', settings: '设置',
+  profile: name => `管理配置文件 · 当前配置文件：${name}`,
+  search: '搜索已加载记录', searchPlaceholder: '查找目标、成员或对话…',
+  searchNote: profile => `当前配置文件：${profile}。搜索已加载的目标标题和说明、成员身份，以及内部对话的主题和参与者。不会搜索更早的历史记录或消息正文。查看记录不会打开与所有者的聊天，也不会将消息标记为已读。`,
+  resultCount: count => `匹配的已加载记录：${count}`, backToResults: '返回搜索结果',
+  noLongerLoaded: '当前范围内已不再加载此记录。', refine: '仅显示前30条匹配记录。请缩小搜索范围。',
+  kinds: { agent: '成员', objective: '目标', conversation: '内部对话' }
+}
+
+export const organizationWorkspaceZhHant: WorkspaceCopy = {
+  heading: '工作區操作', settings: '設定',
+  profile: name => `管理設定檔 · 目前設定檔：${name}`,
+  search: '搜尋已載入記錄', searchPlaceholder: '尋找目標、成員或對話…',
+  searchNote: profile => `目前設定檔：${profile}。搜尋已載入的目標標題與說明、成員身分，以及內部對話的主旨與參與者。不會搜尋更早的歷史記錄或訊息內文。檢視記錄不會開啟與擁有者的聊天，也不會將訊息標記為已讀。`,
+  resultCount: count => `符合的已載入記錄：${count}`, backToResults: '返回搜尋結果',
+  noLongerLoaded: '目前範圍內已不再載入此記錄。', refine: '僅顯示前30筆符合的記錄。請縮小搜尋範圍。',
+  kinds: { agent: '成員', objective: '目標', conversation: '內部對話' }
+}
+
+export const organizationWorkspaceRu: WorkspaceCopy = {
+  heading: 'Управление рабочей областью', settings: 'Настройки',
+  profile: name => `Управление профилями · Текущий профиль: ${name}`,
+  search: 'Поиск загруженных записей', searchPlaceholder: 'Найти цель, участника или беседу…',
+  searchNote: profile => `Текущий профиль: ${profile}. Поиск по названиям и описаниям загруженных целей, данным участников, темам и участникам внутренних бесед. Более ранняя история и текст сообщений не включены. Просмотр не открывает чаты с владельцем и не отмечает сообщения прочитанными.`,
+  resultCount: count => `Совпадения среди загруженных записей: ${count}`, backToResults: 'Вернуться к результатам',
+  noLongerLoaded: 'Эта запись больше не загружена в текущем контексте.', refine: 'Показаны первые 30 совпадений. Уточните запрос, чтобы сократить список.',
+  kinds: { agent: 'Участник', objective: 'Цель', conversation: 'Внутренняя беседа' }
+}
+
+export const organizationWorkspaceAr: WorkspaceCopy = {
+  heading: 'عناصر تحكم مساحة العمل', settings: 'الإعدادات',
+  profile: name => `إدارة الملفات الشخصية · الملف الشخصي الحالي: ${name}`,
+  search: 'البحث في السجلات المحمّلة', searchPlaceholder: 'ابحث عن هدف أو عضو أو محادثة…',
+  searchNote: profile => `الملف الشخصي الحالي: ${profile}. يشمل البحث عناوين الأهداف المحمّلة وأوصافها، وهويات الأعضاء، ومواضيع المحادثات الداخلية والمشاركين فيها. لا يشمل السجل الأقدم أو نصوص الرسائل. لا يفتح الاستعراض محادثات المالك ولا يضع علامة مقروء على الرسائل.`,
+  resultCount: count => `السجلات المحمّلة المطابقة: ${count}`, backToResults: 'العودة إلى النتائج',
+  noLongerLoaded: 'لم يعد هذا السجل محمّلًا ضمن النطاق الحالي.', refine: 'تُعرض أول 30 نتيجة مطابقة. حدّد البحث لتقليل عدد النتائج.',
+  kinds: { agent: 'عضو', objective: 'هدف', conversation: 'محادثة داخلية' }
+}
