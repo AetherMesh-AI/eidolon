@@ -1064,7 +1064,7 @@ test('keeps workspace controls and loaded-record inspection usable without execu
   const methods: string[] = []
   const searchSnapshot = { ...snapshot, conversations: [{
     id: 'header-conversation', subject: 'Release evidence discussion', objectiveId: 'release', taskId: null, projectId: null,
-    participants: [{ id: 'writer', name: 'Robin', team: 'Product' }], status: 'answered', waitingAgentId: null,
+    participants: [{ id: 'writer', name: 'Robin', team: 'Product' }, { id: 'manager', name: 'Morgan', team: 'Product' }], status: 'answered', waitingAgentId: null,
     messages: [{ id: 'header-message', senderId: 'writer', recipientId: 'manager', body: 'Retained internal message; inspection leaves it unread.', createdAt, readAt: null, replyToId: null }]
   }] }
   await page.routeWebSocket(/.*/, socket => {

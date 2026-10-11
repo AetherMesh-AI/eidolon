@@ -16,7 +16,7 @@ const state = vi.hoisted(() => ({ snapshot: null as ReturnType<typeof ownerChatS
 vi.mock('@/store/profile', () => ({ $activeGatewayProfile: atom('default'), $gatewaySwapTarget: atom(null) }))
 vi.mock('@/store/connections', () => ({ $activeConnectionId: atom('local'), $pendingConnectionId: atom(null), $connectionsRegistry: atom({ connections: [{ id: 'local', label: 'This Mac' }] }) }))
 vi.mock('@/store/command-palette', () => ({ openCommandPalettePage: (...args: unknown[]) => state.commands(...args) }))
-vi.mock('../chat/sidebar/connection-switcher', () => ({ ConnectionSwitcher: () => null }))
+vi.mock('../chat/sidebar/connection-switcher', () => ({ ConnectionSwitcher: () => <div role="group" aria-label="Connection selector" /> }))
 vi.mock('../contrib/organization-shell', () => ({ OrganizationWorkIndicator: () => <button>Attention picker</button> }))
 vi.mock('../routes', () => ({ navigateToWorkspacePage: (navigate: (path: string) => void, path: string) => navigate(path) }))
 vi.mock('./runtime-provider', () => ({ useRuntimeOrganization: () => ({ snapshot: state.snapshot }), createOrganizationScopeReader: () => () => ({ key: state.scope, connected: true }) }))
@@ -30,6 +30,11 @@ beforeEach(() => {
 })
 
 function Location() { return <output>{useLocation().pathname}</output> }
+
+it('mounts the registry-owning switcher before a second connection exists', () => {
+  render(<MemoryRouter><WorkspaceHeader /></MemoryRouter>)
+  expect(screen.getByRole('group', { name: 'Connection selector' })).toBeTruthy()
+})
 
 it('inspects loaded identities without replacing the current draft or navigating', async () => {
   const closeInspector = vi.fn()
