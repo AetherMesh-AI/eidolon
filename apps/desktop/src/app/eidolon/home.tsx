@@ -224,7 +224,7 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
         <header>
           <div>
             <h2>{copy.activity}</h2>
-            <p>{copy.activityNote}</p>
+            <p>{copy.activityNote} <span className="eid-home-snapshot-note">{copy.snapshotNote}</span></p>
           </div>
           <Link to="/activity">{copy.viewActivity} →</Link>
         </header>
@@ -247,7 +247,6 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
         </ol>
         {!data.activity.length && <p>{copy.noActivity}</p>}
       </section>
-      <p className="eid-note">{copy.snapshotNote}</p>
       {adapter.mode === 'runtime' && intake}
     </div>
   )
