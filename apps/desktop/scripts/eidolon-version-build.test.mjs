@@ -1,4 +1,4 @@
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -25,6 +25,10 @@ function fixture(t) {
     baseTag: 'alpha-v0.1.0', baseCommit: '437db7394d78a178966fb2ae42792f2978133a9d',
     distance: 2, versionSource: 'stamp'
   }
+  // This archive owns its identity. An unrelated runner checkout SHA must not
+  // leak into its Python/JS/packager boundary; production consistency checks stay on.
+  vi.stubEnv('GITHUB_SHA', identity.commit)
+  t.onTestFinished(() => vi.unstubAllEnvs())
   const sourceStamp = path.join(root, 'eidolon_cli/_build_identity.json')
   fs.writeFileSync(sourceStamp, JSON.stringify(identity))
   return { root, identity, sourceStamp, stampPath: path.join(root, 'apps/desktop/build/install-stamp.json') }
@@ -71,4 +75,14 @@ test('Git-less Python stamp survives regeneration, but a CI SHA alone cannot rep
   assert.equal(payload.versionSource, 'fallback')
   assert.match(formatInstallVersion(readInstallStampFromPaths([stampPath])), /unverified/)
   assert.throws(() => buildArguments({ repoRoot: root, stampPath }))
+})
+
+test('an unrelated CI SHA cannot authorize the source archive for packaging', t => {
+  const { root, stampPath } = fixture(t)
+  assert.equal(writeBuildStamp({ repoRoot: root }).versionSource, 'stamp')
+  vi.stubEnv('GITHUB_SHA', 'b'.repeat(40))
+  const payload = writeBuildStamp({ repoRoot: root })
+  assert.equal(payload.versionSource, 'fallback')
+  assert.match(formatInstallVersion(readInstallStampFromPaths([stampPath])), /unverified/)
+  assert.throws(() => buildArguments({ repoRoot: root, stampPath }), /verified Git-derived build identity/)
 })
