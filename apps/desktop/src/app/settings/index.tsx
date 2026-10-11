@@ -464,7 +464,7 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
         />
 
         <OverlayMain className="eid-settings-main px-0 pb-0">
-          <header>
+          <header className={activeView === 'overview' ? 'sr-only' : undefined}>
             <h2>{activeLabel}</h2>
             <p>{descriptions[activeView]}</p>
           </header>

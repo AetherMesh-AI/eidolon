@@ -1,6 +1,6 @@
 /* Settings occupies the workspace. Its page owners still own every write. */
 .eid-settings-page {
-  padding: 24px clamp(18px, 3vw, 40px);
+  padding: 24px 22px;
   color: var(--ui-text-primary);
 }
 .eid-settings-heading {
@@ -24,7 +24,7 @@
 }
 .eid-settings-layout {
   grid-template-columns: minmax(190px, 235px) minmax(0, 1fr);
-  gap: 24px;
+  gap: 12px;
 }
 .eid-settings-layout > aside {
   padding: 6px 8px 12px 6px;
@@ -158,3 +158,9 @@
 .eid-settings-model-only > .eid-settings-card { height: 100%; padding: 0; border: 0; border-radius: 0; background: transparent; }
 .eid-settings-model-only > .eid-settings-card > header { display: none; }
 .eid-settings-model-only .eid-settings-card-body { margin: 0; }
+
+/* Overview has a page heading and card headings; retain its section heading for
+   assistive navigation without a second visible title band above the cards. */
+@media (min-width: 1000px) {
+  .eid-settings-main:has(> .eid-settings-overview-content) { padding-top: 12px; }
+}
