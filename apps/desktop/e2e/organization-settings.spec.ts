@@ -9,6 +9,7 @@ import { verifyKeyboardFocus } from './focus-visibility'
 import { expect, test } from './test'
 
 let fixture: MockBackendFixture | undefined
+let initialEditorReadiness: object[] = []
 
 test.setTimeout(300_000)
 test.afterEach(async () => {
@@ -19,9 +20,12 @@ test.afterEach(async () => {
     ), { timeout: 30_000 }).toBe(0).catch(() => undefined)
     const requests = await fixture.app.evaluate(() => (globalThis as any).__settingsConfigRequests ?? [])
     await test.info().attach('settings-config-transport', { body: JSON.stringify(requests, null, 2), contentType: 'application/json' })
+    const currentReadiness = await fixture.page.evaluate(() => (window as any).__settingsEditorReadiness ?? [])
+    await test.info().attach('settings-editor-readiness', { body: JSON.stringify(initialEditorReadiness.length ? initialEditorReadiness : currentReadiness, null, 2), contentType: 'application/json' })
   }
   await fixture?.cleanup()
   fixture = undefined
+  initialEditorReadiness = []
 })
 
 test('keeps all Settings destinations, scoped saves, dismissal and selected appearance in the workspace', async () => {
@@ -35,7 +39,7 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
     // Observe real Node HTTP requests without replacing IPC, responses or routing.
     process.getBuiltinModule('diagnostics_channel').channel('http.client.request.start').subscribe(({ request }: any) => {
       const url = new URL(request.path, 'http://127.0.0.1')
-      if (!['/api/config', '/api/config/schema'].includes(url.pathname)) return
+      if (!['/api/config', '/api/config/schema', '/api/model/info', '/api/model/options', '/api/model/auxiliary', '/api/model/moa'].includes(url.pathname)) return
       const row: any = { path: url.pathname, profile: url.searchParams.get('profile'), method: request.method, startedAt: Date.now() }
       rows.push(row)
       request.once('response', (response: any) => {
@@ -44,6 +48,23 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
       })
       request.once('error', (error: Error) => { row.finishedAt = Date.now(); row.error = error.message })
     })
+  })
+  await page.evaluate(() => {
+    const rows: object[] = []
+    ;(window as any).__settingsEditorReadiness = rows
+    let previous = ''
+    const record = () => {
+      const root = document.querySelector('.eid-settings-page')
+      const state = {
+        mounted: !!root,
+        skeletons: root?.querySelectorAll('[data-slot=skeleton]').length ?? 0,
+        applyPresent: [...(root?.querySelectorAll('button') ?? [])].some(button => button.textContent?.trim() === 'Apply')
+      }
+      const key = JSON.stringify(state)
+      if (key !== previous) { rows.push({ at: Date.now(), ...state }); previous = key }
+    }
+    new MutationObserver(record).observe(document.body, { childList: true, subtree: true })
+    record()
   })
   await waitForAppReady(fixture)
   const navigation = page.getByRole('complementary', { name: 'Eidolon navigation', exact: true })
@@ -132,6 +153,8 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
   await resize(1536, 961)
   await expect(settings.locator('.eid-settings-cards > section')).toHaveCount(6)
   await expect(settings.getByRole('button', { name: 'Apply', exact: true })).toBeVisible()
+  // Preserve the initial readiness timeline before appearance tests reload the renderer.
+  initialEditorReadiness = await page.evaluate(() => (window as any).__settingsEditorReadiness ?? [])
   const cards = await settings.locator('.eid-settings-card-editor').evaluateAll(elements => elements.map(element => element.getBoundingClientRect().toJSON()))
   expect(Math.abs(cards[0].top - cards[1].top)).toBeLessThanOrEqual(1)
   expect(cards[1].left).toBeGreaterThan(cards[0].right)
