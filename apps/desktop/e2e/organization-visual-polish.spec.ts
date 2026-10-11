@@ -96,7 +96,10 @@ const snapshot = {
       status: 'active',
       phase: 'Draft and review',
       milestone: 'Release context verified',
-      progress: 60
+      progress: 60,
+      planningMode: 'executive_packages',
+      acceptance: { status: 'reviewing', round: 1, maxReplans: 2, criteria: ['Brief reflects verified changes'], summary: null, deliverableId: null },
+      workPackages: [{ id: 'release-package', objectiveId: 'release', round: 1, managerId: 'manager', title: 'Release documentation', description: 'Draft the narrative and review its supporting evidence.', criterionIndexes: [0], projectIds: [], dependencyIds: [], maxTasks: 3, planRequestId: 'fixture-plan', status: 'working', taskIds: ['draft', 'review'] }]
     },
     {
       id: 'navigation',
@@ -114,7 +117,8 @@ const snapshot = {
       status: 'completed',
       phase: 'Complete',
       milestone: 'Reviewed summary retained',
-      progress: 100
+      progress: 100,
+      acceptance: { status: 'accepted', round: 1, maxReplans: 2, criteria: ['Boundaries documented'], summary: 'Synthetic reviewed scope and provider boundary summary.', deliverableId: 'fixture-deliverable' }
     }
   ].map(objective => ({ ...objective, createdAt, source: 'runtime', ownerId: 'executive', managerId: 'manager' })),
   agents,
@@ -126,6 +130,8 @@ const snapshot = {
       ownerId: 'writer',
       managingAgentId: 'manager',
       assignedById: 'manager',
+      workPackageId: 'release-package',
+      currentRound: true,
       status: 'working',
       dependsOn: []
     },
@@ -135,6 +141,8 @@ const snapshot = {
       title: 'Review the acceptance evidence',
       ownerId: 'reviewer',
       managingAgentId: 'manager',
+      workPackageId: 'release-package',
+      currentRound: true,
       status: 'review',
       dependsOn: ['draft']
     }
@@ -245,7 +253,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
 
     await test.info().attach(name, { body: bytes, contentType: 'image/png' })
 
-    const colors = await page.locator('.eidolon').locator('.eid-status, a, button:not(:disabled), input, textarea, select, .eid-owner-chat-bubble, .eid-home-panel h2, .eid-home-record h3, .eid-home-record p, .eid-home-record small').evaluateAll(elements =>
+    const colors = await page.locator('.eidolon').locator('.eid-status, a, button:not(:disabled), input, textarea, select, .eid-owner-chat-bubble, .eid-home-panel h2, .eid-home-record h3, .eid-home-record p, .eid-home-record small, .eid-objective-overview h3, .eid-objective-overview p, .eid-objective-overview small, .eid-objective-overview strong').evaluateAll(elements =>
         elements.map(element => {
           const backgrounds: string[] = []
           let opacity = 1
@@ -333,6 +341,45 @@ test('keeps native organization navigation, roster and objective layouts usable 
     writeEvidence()
   }
 
+  async function inspectObjectiveOverview(mode: string) {
+    await workspace.getByRole('link').filter({ has: page.getByText('Prepare the autumn release brief', { exact: true }) }).click()
+    const overview = page.getByRole('region', { name: 'Objective overview', exact: true })
+    await expect(overview).toBeVisible()
+    await expect(overview.getByRole('heading', { name: 'Release documentation', exact: true })).toBeVisible()
+    await expect(overview.getByRole('region', { name: 'Delivery', exact: true })).toContainText('has not been recorded')
+    await capture(`objective-detail-wide-${mode}`)
+    await resize(760)
+    await capture(`objective-detail-narrow-${mode}`)
+    await page.getByRole('button', { name: 'Review owner requests', exact: true }).click()
+    await expect(page.getByRole('region', { name: 'Objective request controls', exact: true })).toBeFocused()
+    await page.getByRole('tab', { name: 'Activity', exact: true }).click()
+    await page.getByRole('button', { name: 'Inspect acceptance and delivery', exact: true }).click()
+    await expect(page.getByRole('region', { name: 'Objective work details', exact: true })).toBeFocused()
+    await expect(page.getByRole('tab', { name: 'Work', exact: true })).toHaveAttribute('aria-selected', 'true')
+    await resize(1220)
+    await navigation.getByRole('link', { name: 'Work Overview', exact: true }).click()
+    const card = page.getByRole('region', { name: 'Prepare the autumn release brief', exact: true })
+    await expect(card).toContainText('1 current-round manager assignment')
+    await expect(card.getByRole('list', { name: 'Recorded task states', exact: true })).toContainText('Working')
+    await capture(`work-overview-wide-${mode}`)
+    await resize(760)
+    await capture(`work-overview-narrow-${mode}`)
+    await resize(1220)
+    await navigation.getByRole('link', { name: 'Objectives', exact: true }).click()
+    await workspace.getByRole('link').filter({ has: page.getByText('Review the workspace navigation', { exact: true }) }).click()
+    await expect(page.getByRole('region', { name: 'Needs your input', exact: true })).toContainText('Review the proposed owner journey')
+    await capture(`objective-owner-input-${mode}`)
+    await resize(760)
+    await expect(page.getByRole('heading', { name: 'Needs your input', exact: true })).toBeInViewport({ ratio: 1 })
+    await capture(`objective-owner-input-narrow-${mode}`)
+    await resize(1220)
+    await navigation.getByRole('link', { name: 'Objectives', exact: true }).click()
+    await workspace.getByRole('region', { name: 'Outcomes inbox', exact: true }).getByRole('link').filter({ has: page.getByText('Document provider boundaries', { exact: true }) }).click()
+    await expect(page.getByRole('region', { name: 'Delivery', exact: true })).toContainText('Accepted deliverable')
+    await capture(`objective-accepted-delivery-${mode}`)
+    await navigation.getByRole('link', { name: 'Objectives', exact: true }).click()
+  }
+
   await resize(1220)
   await expect(page.locator('html')).toHaveClass(/\bdark\b/)
   await expect(page.locator('html')).toHaveAttribute('data-hermes-theme', 'eidolon')
@@ -377,6 +424,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
     workspace.getByRole('link').filter({ has: page.getByText('Prepare the autumn release brief', { exact: true }) })
   ).toBeVisible()
   await capture('04-objectives-wide-dark')
+  await inspectObjectiveOverview('dark')
   await page.getByRole('textbox', { name: 'Search objectives', exact: true }).fill('autumn')
   await expect(
     workspace.getByRole('link').filter({ has: page.getByText('Review the workspace navigation', { exact: true }) })
@@ -433,6 +481,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await navigation.getByRole('link', { name: 'Objectives', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Objectives', exact: true })).toBeVisible()
   await capture('11-objectives-wide-light')
+  await inspectObjectiveOverview('light')
   await resize(760)
   await capture('12-objectives-narrow-light')
   await resize(1220)
@@ -452,12 +501,14 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await capture('15-theme-choice-survives-reload')
   const goal = page.getByRole('textbox', { name: 'Objective', exact: true })
   await goal.fill('Retain this unsubmitted objective across navigation')
+
   for (const destination of ['Messages', 'Work Overview', 'Home', 'Messages', 'Home']) {
     const link = navigation.getByRole('link', { name: destination, exact: true })
     await link.focus()
     await page.keyboard.press('Enter')
     await expect(link).toHaveAttribute('aria-current', 'page')
   }
+
   await expect(goal).toHaveValue('Retain this unsubmitted objective across navigation')
   await page.getByRole('button', { name: 'New objective', exact: true }).click()
   await expect(goal).toBeFocused()
@@ -470,6 +521,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await expect(health.getByRole('button', { name: 'System health: Background work disabled', exact: true })).toBeVisible()
   await resize(1220)
   await capture('health-disabled')
+
   for (const [runtimeState, expected] of [['error', 'Needs attention'], ['not_reported', 'Unknown'], ['ready', 'Input needed']] as const) {
     displayedSnapshot = { ...snapshot, runtime: { ...snapshot.runtime, state: runtimeState, setup: { ...snapshot.runtime.setup, backgroundOptIn: true } } }
     await page.reload()
@@ -477,6 +529,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
     await expect(health.getByRole('button', { name: `System health: ${expected}`, exact: true })).toBeVisible()
     await capture(`health-runtime-${runtimeState}`)
   }
+
   displayedSnapshot = { ...displayedSnapshot, requests: [] }
   await page.reload()
   await waitForAppReady(fixture)
@@ -519,6 +572,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
   // Exercise every built-in Settings palette in both explicit appearances.
   // Each choice is reloaded before capture; no redesign-only theme state exists.
   await resize(1220)
+
   for (const theme of BUILTIN_THEME_LIST) {
     for (const mode of ['Dark', 'Light'] as const) {
       await page.getByRole('complementary', { name: 'Eidolon navigation' }).getByRole('link', { name: 'Settings', exact: true }).click()
@@ -540,12 +594,14 @@ test('keeps native organization navigation, roster and objective layouts usable 
       await page.getByRole('button', { name: 'Close settings', exact: true }).click()
     }
   }
+
   // System appearance uses the same Settings preference and responds to OS changes.
   await page.getByRole('complementary', { name: 'Eidolon navigation' }).getByRole('link', { name: 'Settings', exact: true }).click()
   await page.getByRole('button', { name: 'Appearance', exact: true }).click()
   await page.getByRole('button').filter({ has: page.getByText('AetherMesh', { exact: true }) }).click()
   await page.getByRole('button', { name: 'System', exact: true }).click()
   await page.getByRole('button', { name: 'Close settings', exact: true }).click()
+
   for (const colorScheme of ['dark', 'light'] as const) {
     await page.emulateMedia({ colorScheme })
     await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).colorScheme)).toBe(colorScheme)
@@ -554,6 +610,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
     await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).colorScheme)).toBe(colorScheme)
     await capture(`theme-nous-system-${colorScheme}-persisted`)
   }
+
   expect(contrastChecks.length).toBeGreaterThan(0)
 
   for (const sample of contrastChecks.filter(item => item.opacity === 1)) {

@@ -20,9 +20,9 @@ input direction, not rendered evidence and not final gallery substitutes.
 | --- | --- | --- |
 | Home | Overview; explicit objective intake; retained draft; empty/loading/stale | Native visual spec: wide/narrow, dark/light, intake |
 | Messages | Persistent member selection; conversation; finite allowance renewal; unresolved reply | Navigation covered; finished composition/captures pending |
-| Work Overview | Running/queued/paused work and recorded activity | Navigation covered; finished capture pending |
+| Work Overview | Running/queued/paused work and recorded activity | Native wide/narrow dark/light overview captures; task-state and owner-request regressions |
 | Objectives | Current list; search; outcome inbox; archived accepted outcome | Native visual list captures; completion scenarios retain outcome evidence |
-| Objective Detail | Plan/delegation; execution evidence; review; owner intervention/resume; durable accepted outcome | Functional native loops retain evidence; finished composition/gallery pending |
+| Objective Detail | Plan/delegation; execution evidence; review; owner intervention/resume; durable accepted outcome | Native wide/narrow progress/delegation and owner-input captures; functional loops retain acceptance/evidence |
 | Organization | List/grid; persistent agent inspector; leadership/worker relationships | Native visual spec list/grid and inspector dismissal |
 | Deliverables | Accepted outcomes and exact artifact/evidence inspection | Functional native loops; final gallery pending |
 | Settings | All sections below, safely unconfigured where appropriate | Appearance interactions/theme persistence; final tab captures pending |
@@ -31,6 +31,20 @@ input direction, not rendered evidence and not final gallery substitutes.
 | History | Expanded history and a synthetic chat | Retained mounted sidebar; final capture pending |
 
 ## Settings coverage
+
+Settings itself must adopt the approved reference, not merely expose the theme
+selector: a serif page heading, descriptive secondary navigation, roomy rounded
+sections, clear label/action rows and consistent control alignment. Use the real
+Settings pages and existing theme tokens. Preserve every control and its current
+save behavior; a reference-wide Save button must not pretend that independently
+saved settings are one transaction. Do not fabricate the reference's organization,
+provider connectivity, proposed controls or future network integration. The normal
+top gateway/tool bars remain removed; overall health stays in the single bottom bar.
+
+All new interface copy is externalized through the existing catalog. English
+fallback is not a completed translation. Final delivery must list remaining
+translation gaps, retain reviewed existing translations, and leave user/model
+content unchanged.
 
 Enumerate the actual installed nav at capture time; do not invent unavailable
 plugin or feature-flag pages. Current standard sections from the Settings owners:
