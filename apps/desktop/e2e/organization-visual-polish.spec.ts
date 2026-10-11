@@ -393,6 +393,12 @@ test('keeps native organization navigation, roster and objective layouts usable 
         })
       )
 
+    for (const row of await page.locator('.eid-progress-task').all()) {
+      expect(await row.evaluate(element => element.scrollWidth - element.clientWidth), 'recorded task row fits its card').toBeLessThanOrEqual(1)
+      for (const content of await row.locator(':scope > strong, :scope > small, :scope > .eid-status').all()) {
+        expect(await content.evaluate(element => element.scrollWidth - element.clientWidth), 'task title, assignee and translated status remain readable').toBeLessThanOrEqual(1)
+      }
+    }
     contrastChecks.push(...colors)
     expect(await target.evaluate(element => {
       const style = getComputedStyle(element)
@@ -1050,6 +1056,12 @@ test('retains translated Objective labels and opened explanations with contained
       focusChecks.push(await verifyKeyboardFocus(page, control, `Japanese ${width}x${height} ${zoom} ${label}`))
       await expect(control).toBeInViewport({ ratio: 1 })
       expect(await control.evaluate(element => element.scrollWidth - element.clientWidth), label).toBeLessThanOrEqual(1)
+    }
+    for (const row of await page.locator('.eid-progress-task').all()) {
+      expect(await row.evaluate(element => element.scrollWidth - element.clientWidth), 'recorded task row fits its card').toBeLessThanOrEqual(1)
+      for (const content of await row.locator(':scope > strong, :scope > small, :scope > .eid-status').all()) {
+        expect(await content.evaluate(element => element.scrollWidth - element.clientWidth), 'task title, assignee and translated status remain readable').toBeLessThanOrEqual(1)
+      }
     }
     expect(await phase.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
     for (const [position, target] of [['start', phase.locator('summary').first()], ['end', phase.locator('details p').last()]] as const) {
