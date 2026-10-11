@@ -47,3 +47,47 @@ export const organizationMemberMessagesRu = {
   linkedWorkNote: 'Указанные владельцы и текущие назначения задач или работ менеджерам в этом представлении.',
   noLinkedWork: 'В этом представлении не зафиксировано связанных целей.', retainedContext: 'Идентичность, память и история'
 } satisfies MemberMessages
+
+type ExecutiveMessage = Pick<OrganizationHomeCopy,
+  'messageOrganization' | 'messageOrganizationUnavailable' | 'executiveMessageNote' |
+  'noMessageExecutive' | 'reviewMessageRoster'>
+
+export const organizationExecutiveMessageJa = {
+  messageOrganization: '組織にメッセージ',
+  messageOrganizationUnavailable: '宛先を選ぶには、現在の組織に接続してください。',
+  executiveMessageNote: '現在の組織のエグゼクティブを選択してください。メッセージはそのメンバーとの会話に属し、送信操作を行ったときにのみ送られます。',
+  noMessageExecutive: 'この組織には、識別情報を確認できる有効なエグゼクティブがいません。宛先を選ぶ前にメンバー一覧を確認してください。',
+  reviewMessageRoster: '組織のメンバー一覧を確認'
+} satisfies ExecutiveMessage
+
+export const organizationExecutiveMessageZh = {
+  messageOrganization: '向组织发消息',
+  messageOrganizationUnavailable: '请先连接当前组织，再选择收件人。',
+  executiveMessageNote: '选择当前组织中的一位高管。消息属于与该成员的对话，只有提交后才会发送。',
+  noMessageExecutive: '此组织中没有身份已验证的活跃高管。选择收件人前，请查看组织成员名单。',
+  reviewMessageRoster: '查看组织成员名单'
+} satisfies ExecutiveMessage
+
+export const organizationExecutiveMessageZhHant = {
+  messageOrganization: '傳訊息給組織',
+  messageOrganizationUnavailable: '請先連線至目前組織，再選擇收件者。',
+  executiveMessageNote: '選擇目前組織中的一位高階主管。訊息屬於與該成員的對話，只有提交後才會傳送。',
+  noMessageExecutive: '此組織中沒有身分已驗證的有效高階主管。選擇收件者前，請檢視組織成員名單。',
+  reviewMessageRoster: '檢視組織成員名單'
+} satisfies ExecutiveMessage
+
+export const organizationExecutiveMessageAr = {
+  messageOrganization: 'مراسلة المنظمة',
+  messageOrganizationUnavailable: 'اتصل بالمنظمة الحالية قبل اختيار المستلم.',
+  executiveMessageNote: 'اختر مسؤولاً تنفيذياً في المنظمة الحالية. تنتمي رسالتك إلى محادثة ذلك العضو، ولا تُرسل إلا عند تأكيد إرسالها.',
+  noMessageExecutive: 'لا يوجد مسؤول تنفيذي نشط ذو هوية موثّقة في هذه المنظمة. راجع قائمة أعضائها قبل اختيار المستلم.',
+  reviewMessageRoster: 'مراجعة قائمة أعضاء المنظمة'
+} satisfies ExecutiveMessage
+
+export const organizationExecutiveMessageRu = {
+  messageOrganization: 'Написать организации',
+  messageOrganizationUnavailable: 'Подключитесь к текущей организации, прежде чем выбирать получателя.',
+  executiveMessageNote: 'Выберите руководителя текущей организации. Сообщение относится к диалогу с этим участником и отправляется только после нажатия кнопки отправки.',
+  noMessageExecutive: 'В этой организации нет активного руководителя с подтверждённой идентичностью. Проверьте список участников перед выбором получателя.',
+  reviewMessageRoster: 'Просмотреть участников организации'
+} satisfies ExecutiveMessage

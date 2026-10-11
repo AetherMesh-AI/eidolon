@@ -1,4 +1,4 @@
-import { organizationMemberMessagesZhHant } from './organization-member-messages'
+import { organizationExecutiveMessageZhHant, organizationMemberMessagesZhHant } from './organization-member-messages'
 import { organizationHomeCountsZhHant } from './organization-home-counts'
 import { organizationSurfacesZhHant } from './organization-surfaces'
 import { organizationWorkspaceZhHant } from './organization-home'
@@ -12,7 +12,7 @@ import { organizationWorkZhHant } from './organization-work'
 
 export const zhHant = defineLocale({
   organizationSurfaces: organizationSurfacesZhHant,
-  organizationHome: { memberMessages: organizationMemberMessagesZhHant, workspace: organizationWorkspaceZhHant, detail: organizationHomeCountsZhHant },
+  organizationHome: { ...organizationExecutiveMessageZhHant, memberMessages: organizationMemberMessagesZhHant, workspace: organizationWorkspaceZhHant, detail: organizationHomeCountsZhHant },
   organizationOwnerChat: organizationOwnerChatZhHant,
   organizationConversations: organizationConversationsZhHant,
   organizationWork: organizationWorkZhHant,

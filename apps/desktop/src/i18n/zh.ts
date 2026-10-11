@@ -1,4 +1,4 @@
-import { organizationMemberMessagesZh } from './organization-member-messages'
+import { organizationExecutiveMessageZh, organizationMemberMessagesZh } from './organization-member-messages'
 import { organizationHomeCountsZh } from './organization-home-counts'
 import { defineFieldCopy } from '@/app/settings/field-copy'
 
@@ -16,7 +16,7 @@ export const zh: Translations = {
   organizationOwnerChat: organizationOwnerChatZh,
   organizationConversations: organizationConversationsZh,
   organizationSurfaces: organizationSurfacesZh,
-  organizationHome: { ...organizationHomeEn, memberMessages: organizationMemberMessagesZh, workspace: organizationWorkspaceZh, detail: { ...organizationHomeEn.detail, ...organizationHomeCountsZh } },
+  organizationHome: { ...organizationHomeEn, ...organizationExecutiveMessageZh, memberMessages: organizationMemberMessagesZh, workspace: organizationWorkspaceZh, detail: { ...organizationHomeEn.detail, ...organizationHomeCountsZh } },
   settingsWorkspace: settingsWorkspaceEn,
   organizationFoundation: organizationFoundationEn,
   organizationWork: organizationWorkZh,
