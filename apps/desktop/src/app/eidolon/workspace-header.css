@@ -32,3 +32,9 @@
 }
 /* The existing switcher's inner label clips text; its outer wrapper must not clip keyboard outlines. */
 .eid-workspace-header [data-slot=connection-switcher] { overflow: visible; }
+/* The header consumes 30px. Reclaim that spacing in short desktop conversations,
+   keeping the directory heading aligned and the complete error/allowance composer visible. */
+@media (min-width: 1201px) and (max-height: 800px) {
+  .eid-workspace-body .eid-messages-view .eid-message-conversation { padding-bottom: 10px; }
+  .eid-workspace-body .eid-messages-view .eid-message-recipient { padding-bottom: 4px; margin-bottom: 4px; }
+}
