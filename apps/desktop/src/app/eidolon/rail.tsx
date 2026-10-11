@@ -5,13 +5,12 @@ import { NavLink, useLocation } from 'react-router'
 
 import { Codicon } from '@/components/ui/codicon'
 import { Button } from '@/components/ui/button'
-
-import { BrandMark } from '@/components/brand-mark'
 import { Badge } from '@/components/ui/badge'
 import { useI18n } from '@/i18n/context'
 import { Command, FolderOpen, LayoutDashboard, MessageCircle, Network, Settings, Users } from '@/lib/icons'
 
 import { appViewForPath } from '../routes'
+import { OrganizationMark, OrganizationScenery } from './scenery'
 
 /** Session history and optional plugin destinations keep their original owners. */
 export function OrganizationRail({
@@ -71,7 +70,7 @@ export function OrganizationRail({
   return (
     <aside aria-label="Eidolon navigation" className="eidolon eid-rail" tabIndex={0}>
       <div className="eid-brand">
-        <BrandMark aria-hidden="true" className="size-7" />
+        <OrganizationMark />
         Eidolon
       </div>
       <nav aria-label="Primary">
@@ -97,6 +96,7 @@ export function OrganizationRail({
           </NavLink>
         ))}
       </nav>
+      <div aria-hidden="true" className="eid-rail-decoration"><OrganizationScenery /></div>
       <details className="eid-rail-more" ref={more} onKeyDown={event => {
         // React portal events still bubble through the session tree. Their
         // dialogs, and controls that consumed Escape, own that key press.

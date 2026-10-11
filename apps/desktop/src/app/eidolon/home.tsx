@@ -8,6 +8,7 @@ import { AgentAvatar } from './avatar'
 import { Command } from './command'
 import { homeData } from './home-data'
 import { LocalizedTime } from './localized-time'
+import { OrganizationScenery } from './scenery'
 import { RuntimeSetup } from './runtime-setup'
 import type { Objective, OrganizationAdapter, OrganizationSnapshot } from './types'
 
@@ -132,6 +133,7 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
   return (
     <div className="eid-home">
       <header className="eid-home-hero">
+        <OrganizationScenery className="eid-home-scenery" />
         <div>
           <p className="eid-eyebrow">Eidolon</p>
           <h1>{copy.heading}</h1>
