@@ -1,5 +1,6 @@
 /** Paired native screenshots use the same synthetic records on both revisions.
  * The real Electron shell and temporary gateway boot normally; no work is run. */
+import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { writeFileSync } from 'node:fs'
 
@@ -211,7 +212,8 @@ test('keeps native organization navigation, roster and objective layouts usable 
       test.info().outputPath('native-visual-evidence.json'),
       JSON.stringify(
         {
-          sourceCommit: process.env.EIDOLON_VISUAL_SOURCE_SHA ?? null,
+          sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+          sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
           scenario: 'synthetic-read-only-organization',
           runtime,
           providerCalls: mock.receivedPrompts.length,
@@ -236,8 +238,8 @@ test('keeps native organization navigation, roster and objective layouts usable 
     await expect.poll(() => page.evaluate(() => window.innerWidth)).toBe(width)
   }
 
-  async function capture(name: string) {
-    await workspace.evaluate(element => {
+  async function capture(name: string, target = workspace) {
+    await target.evaluate(element => {
       element.scrollTop = 0
     })
     await page.evaluate(async () => {
@@ -312,7 +314,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
       )
 
     contrastChecks.push(...colors)
-    expect(await workspace.evaluate(element => {
+    expect(await target.evaluate(element => {
       const style = getComputedStyle(element)
 
       return style.getPropertyValue('--aether-500').trim() === style.getPropertyValue('--ui-accent').trim()
@@ -322,6 +324,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
     expect(barBounds!.y + barBounds!.height).toBeLessThanOrEqual(await page.evaluate(() => window.innerHeight) + 1)
     captures.push({
       name,
+      route: page.url(),
       colorScheme: await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme),
       theme: await page.locator('html').getAttribute('data-hermes-theme'),
       sha256: createHash('sha256').update(bytes).digest('hex'),
@@ -331,7 +334,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
         height: window.innerHeight,
         devicePixelRatio: window.devicePixelRatio
       })),
-      workspace: await workspace.evaluate(element => ({
+      workspace: await target.evaluate(element => ({
         width: element.clientWidth,
         scrollWidth: element.scrollWidth,
         height: element.clientHeight,
@@ -349,7 +352,13 @@ test('keeps native organization navigation, roster and objective layouts usable 
     await capture(`messages-directory-wide-${mode}`)
     await search.fill('Robin')
     await expect(members.getByRole('button')).toHaveCount(1)
-    await members.getByRole('button', { name: /Robin/ }).click()
+    await search.focus()
+    await page.keyboard.press('Tab')
+    await expect(page.getByRole('button', { name: 'Clear search', exact: true })).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(members.getByRole('button', { name: /Robin/ })).toBeFocused()
+    await page.keyboard.press('Enter')
+    await expect(members.getByRole('button', { name: /Robin/ })).toHaveAttribute('aria-pressed', 'true')
     const context = page.getByRole('region', { name: 'Member context', exact: true })
     await expect(context.getByRole('link', { name: 'Prepare the autumn release brief', exact: true })).toBeVisible()
     await expect(context.getByRole('link', { name: 'Document provider boundaries', exact: true })).toHaveCount(0)
@@ -361,7 +370,18 @@ test('keeps native organization navigation, roster and objective layouts usable 
     await capture(`messages-selected-medium-${mode}`)
     await resize(760)
     await capture(`messages-selected-narrow-${mode}`)
-    await context.getByRole('link', { name: 'Prepare the autumn release brief', exact: true }).click()
+    // Traverse the context with Tab, then follow the recorded link using Enter.
+    await search.fill('Robin')
+    await search.focus()
+    await page.keyboard.press('Tab')
+    await expect(page.getByRole('button', { name: 'Clear search', exact: true })).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(members.getByRole('button', { name: /Robin/ })).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(page.locator('.eid-message-conversation .eid-owner-chat-actions span[tabindex="0"]')).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(context.getByRole('link', { name: 'Prepare the autumn release brief', exact: true })).toBeFocused()
+    await page.keyboard.press('Enter')
     await expect(page.getByRole('region', { name: 'Objective overview', exact: true })).toBeVisible()
     await resize(1220)
     await navigation.getByRole('link', { name: 'Objectives', exact: true }).click()
@@ -596,6 +616,26 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await page.keyboard.press('Escape')
   await expect(details).toHaveCount(0)
   await expect(health.getByRole('button', { name: /^System health:/ })).toBeFocused()
+
+  for (const [label, mode, key] of [['Eidolon', 'Dark', 'eidolon-dark'], ['AetherMesh', 'Light', 'nous-light']]) {
+    await resize(1220)
+    await page.getByRole('complementary', { name: 'Eidolon navigation' }).getByRole('link', { name: 'Settings', exact: true }).click()
+    await page.getByRole('button', { name: 'Appearance', exact: true }).click()
+    await page.getByRole('button').filter({ has: page.getByText(label, { exact: true }) }).click()
+    await page.getByRole('button', { name: mode, exact: true }).click()
+    await page.getByRole('button', { name: 'Close settings', exact: true }).click()
+    await navigation.getByRole('link', { name: 'Deliverables', exact: true }).click()
+    const deliverables = page.locator('.eid-deliverables')
+    await expect(deliverables.getByRole('heading', { name: 'Deliverables', exact: true })).toBeVisible()
+    await capture(`deliverables-session-files-${key}`, deliverables)
+    await deliverables.getByRole('link', { name: 'Organization evidence', exact: true }).click()
+    await expect(deliverables.getByRole('region', { name: 'Accepted outcomes', exact: true })).toBeVisible()
+    await expect(deliverables.getByRole('heading', { name: 'Document provider boundaries', exact: true })).toBeVisible()
+    await capture(`deliverables-accepted-evidence-${key}`, deliverables)
+    await resize(760)
+    await capture(`deliverables-accepted-evidence-narrow-${key}`, deliverables)
+    await navigation.getByRole('link', { name: 'Home', exact: true }).click()
+  }
 
   // Exercise every built-in Settings palette in both explicit appearances.
   // Each choice is reloaded before capture; no redesign-only theme state exists.

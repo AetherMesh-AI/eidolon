@@ -30,6 +30,7 @@ function currentAssignment(
         task.reviewerId === agent.id ||
         task.managingAgentId === agent.id ||
         task.assignedById === agent.id) &&
+      !task.historical && task.currentRound !== false &&
       task.status !== 'completed' &&
       task.status !== 'cancelled'
   )
@@ -59,6 +60,7 @@ export function Organization({
   const { t } = useI18n()
   const copy = t.organizationRuntime
   const roster = t.organizationRoster
+  const surface = t.organizationSurfaces
 
   const roles: Record<string, string> = {
     Owner: roster.owner,
@@ -120,7 +122,12 @@ export function Organization({
   const unavailable = runtime ? 'Not reported by runtime' : 'Unavailable · No runtime connection'
 
   return (
-    <>
+    <div className="eid-roster-surface">
+      <header className="eid-home-hero">
+        <div>
+          <h1>{surface.organization}</h1>
+        </div>
+      </header>
       <p>
         {runtime
           ? roster.introduction
@@ -181,13 +188,17 @@ export function Organization({
       )}
       <div className="eid-toolbar">
         <label className="eid-filter">
-          Find an agent
-          <input onChange={event => setQuery(event.target.value)} placeholder="Name or responsibility…" value={query} />
+          {surface.findAgent}
+          <input
+            onChange={event => setQuery(event.target.value)}
+            placeholder={surface.findAgentPlaceholder}
+            value={query}
+          />
         </label>
-        <div aria-label="Organization layout" className="eid-tabs">
+        <div aria-label={surface.layout} className="eid-tabs">
           {['Grid', 'List'].map(item => (
             <button aria-pressed={mode === item} key={item} onClick={() => setMode(item)}>
-              {item}
+              {item === 'Grid' ? surface.grid : surface.list}
             </button>
           ))}
         </div>
@@ -208,14 +219,16 @@ export function Organization({
               <strong>{item.name}</strong>
               <span className="eid-agent-meta">
                 <span>{roles[item.role] || item.role}</span>
-                <small>Team: {item.team?.trim() || 'Unknown · team not recorded'}</small>
+                <small>
+                  {surface.team}: {item.team?.trim() || 'Unknown · team not recorded'}
+                </small>
               </span>
               <small>
                 {item.managerId ? `Reports to ${managerName(item)}` : runtime ? managerName(item) : 'Reports to you'}
               </small>
             </span>
             <span className="eid-agent-assignment">
-              Current assignment: {currentAssignment(snapshot, item, roster, t.organizationWork)}
+              {surface.currentAssignment}: {currentAssignment(snapshot, item, roster, t.organizationWork)}
             </span>
             <span className="eid-agent-state">
               <span className={`eid-status eid-status-${item.status}`}>● {item.status}</span>
@@ -230,21 +243,21 @@ export function Organization({
       </div>
       {!agents.length && (
         <div className="eid-empty">
-          <h2>{query ? 'No matching agents' : 'No connected organization agents'}</h2>
+          <h2>{query ? surface.noMatches : surface.noAgents}</h2>
           <p>
             {query
-              ? 'Try another name, team, or responsibility.'
+              ? surface.trySearch
               : runtime
-                ? 'The connected gateway has not reported any organization agents.'
+                ? surface.noAgentsRuntime
                 : 'Load the explicitly fictional example to explore the map, or inspect existing runtime configuration.'}
           </p>
         </div>
       )}
       <div className="eid-inline">
         <Link className="eid-button" to="/profiles">
-          Manage runtime profiles
+          {surface.manageProfiles}
         </Link>
-        <Link to="/agents">Inspect live agents →</Link>
+        <Link to="/agents">{surface.inspectLive} →</Link>
       </div>
       {runtime && <OrganizationConversations key={`conversations:${snapshot.connection?.scope}`} snapshot={snapshot} />}
       {runtime && <OrganizationManagementHistory snapshot={snapshot} />}
@@ -393,6 +406,6 @@ export function Organization({
           )}
         </Inspector>
       )}
-    </>
+    </div>
   )
 }
