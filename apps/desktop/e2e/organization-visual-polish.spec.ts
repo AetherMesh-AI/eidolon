@@ -1270,6 +1270,16 @@ for (const locale of ['ja', 'ar', 'ru'] as const) {
         for (const button of await header.getByRole('button').all()) {
           focusChecks.push(await verifyKeyboardFocus(page, button, `${locale} ${mode} ${width} ${zoom} ${await button.getAttribute('aria-label')}`))
         }
+        // Scroll bounds alone miss a flex child painted over its sibling. Every
+        // header control must keep a separate click target at each locale/zoom.
+        const controlRects = await header.getByRole('button').evaluateAll(buttons => buttons.map(button => {
+          const rect = button.getBoundingClientRect()
+          return { label: button.getAttribute('aria-label'), left: rect.left, right: rect.right }
+        }))
+        const sortedRects = controlRects.sort((a, b) => a.left - b.left)
+        for (let index = 1; index < sortedRects.length; index++) {
+          expect(sortedRects[index].left, `${sortedRects[index - 1].label} overlaps ${sortedRects[index].label}`).toBeGreaterThanOrEqual(sortedRects[index - 1].right)
+        }
         await header.locator('[data-slot="connection-switcher"]').getByRole('button').click()
         await expect(page.getByRole('menuitemradio', { name: /Temporary organization connection/ })).toBeVisible()
         await page.keyboard.press('Escape')
