@@ -88,7 +88,7 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
     await expect.poll(() => page.evaluate(() => window.innerWidth)).toBe(width)
   }
 
-  async function capture(name: string) {
+  async function capture(name: string, nativeWindow = false) {
     await expect(settings.locator('[data-slot="skeleton"]')).toHaveCount(0)
     await page.evaluate(async () => {
       await document.fonts.ready
@@ -119,17 +119,25 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
     expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(bar!.y + 1)
     expect(await settings.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
 
-    const bytes = await page.screenshot({
-      path: test.info().outputPath(`${name}.png`),
-      animations: 'disabled',
-      caret: 'hide'
-    })
+    // Page screenshots crop Electron content at non-default zoom. Retain the
+    // full native surface, and verify pixel dimensions rather than trusting DPR.
+    const viewport = await page.evaluate(() => ({ width: innerWidth, height: innerHeight, devicePixelRatio }))
+    const bytes = nativeWindow
+      ? Buffer.from(await app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
+      : await page.screenshot({ path: test.info().outputPath(`${name}.png`), animations: 'disabled', caret: 'hide' })
+    const pixelSize = { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) }
+    if (nativeWindow) {
+      expect(pixelSize).toEqual({ width: viewport.width * viewport.devicePixelRatio, height: viewport.height * viewport.devicePixelRatio })
+      writeFileSync(test.info().outputPath(`${name}.png`), bytes)
+    }
 
     captures.push({
       name,
       sha256: createHash('sha256').update(bytes).digest('hex'),
       route: page.url(),
-      viewport: await page.evaluate(() => ({ width: innerWidth, height: innerHeight })),
+      viewport,
+      pixelSize,
+      captureMethod: nativeWindow ? 'electron.capturePage' : 'playwright.screenshot',
       theme: await page.locator('html').getAttribute('data-hermes-theme'),
       mode: await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme)
     })
@@ -199,7 +207,8 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
   const zoomProviders = settings.getByRole('button', { name: 'Open Providers', exact: true })
   await zoomProviders.scrollIntoViewIfNeeded()
   focusChecks.push(await verifyKeyboardFocus(page, zoomProviders, 'overview providers light 200 percent'))
-  await capture('settings-overview-light-200-percent')
+  await expect(zoomProviders).toBeInViewport({ ratio: 1 })
+  await capture('settings-overview-light-200-percent', true)
   await page.evaluate(() => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(100))
   await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(1)
   await resize(1536, 961)
