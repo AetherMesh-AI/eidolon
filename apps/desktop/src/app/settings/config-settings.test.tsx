@@ -167,18 +167,19 @@ it('reports a failed pending save after navigation without writing an explicit M
 
 it('fences a pending configuration edit when the explicit profile scope changes', async () => {
   const { $settingsRequestProfile } = await import('@/store/settings-scope')
+  const fixtureScope = $settingsRequestProfile as ReturnType<typeof atom<string | undefined>>
   getHermesConfigRecord.mockResolvedValue({ checkpoints: { enabled: false } })
   vi.useFakeTimers({ shouldAdvanceTime: true })
 
   try {
     await renderConfigSettings()
     fireEvent.click(await screen.findByRole('switch'))
-    await act(async () => { $settingsRequestProfile.set('research') })
+    await act(async () => { fixtureScope.set('research') })
     await vi.advanceTimersByTimeAsync(700)
     expect(saveHermesConfig).not.toHaveBeenCalled()
     await waitFor(() => expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('false'))
   } finally {
-    await act(async () => { $settingsRequestProfile.set(undefined) })
+    await act(async () => { fixtureScope.set(undefined) })
     vi.useRealTimers()
   }
 })
