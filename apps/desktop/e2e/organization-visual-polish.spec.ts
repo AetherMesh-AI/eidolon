@@ -521,6 +521,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
       tasks: snapshot.tasks.flatMap(task => [task, ...[1, 2].map(index => ({ ...task, id: `${task.id}-followup-${index}`, title: `${task.title} · follow-up ${index}` }))])
     }
     await page.reload()
+    await expect(assignmentCards).toHaveCount(3)
     for (const card of await assignmentCards.all()) {
       await expect(card.locator('.eid-progress-tasks > li')).toHaveCount(3)
     }
@@ -1011,7 +1012,15 @@ test('retains translated Objective labels and opened explanations with contained
       await target.scrollIntoViewIfNeeded()
       await expect(target).toBeInViewport({ ratio: 1 })
       const name = `objective-japanese-${width}-${height}-${zoom}-${position}.png`
-      const bytes = await page.screenshot({ path: test.info().outputPath(name) })
+      await page.evaluate(async () => {
+        await document.fonts.ready
+        await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+      })
+      const bytes = zoom !== 1
+        ? Buffer.from(await app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
+        : await page.screenshot({ path: test.info().outputPath(name), animations: 'disabled', caret: 'hide' })
+      if (zoom !== 1) { writeFileSync(test.info().outputPath(name), bytes) }
+      await test.info().attach(name, { body: bytes, contentType: 'image/png' })
       captures.push({ name, width, height, zoom, sha256: createHash('sha256').update(bytes).digest('hex') })
     }
   }
