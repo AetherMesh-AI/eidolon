@@ -102,6 +102,22 @@ async function renderModelSettings(scopeProfile?: string) {
   )
 }
 
+it('announces catalog loading and exposes a rejected load without showing Apply as ready', async () => {
+  let rejectCatalog!: (reason: Error) => void
+  getGlobalModelOptions.mockReturnValueOnce(new Promise((_, reject) => { rejectCatalog = reject }))
+  await renderModelSettings()
+
+  const pending = screen.getByRole('status', { name: /loading/i })
+  expect(pending.getAttribute('aria-busy')).toBe('true')
+  expect(screen.queryByRole('button', { name: 'Apply' })).toBeNull()
+
+  await act(async () => rejectCatalog(new Error('Catalog temporarily unavailable')))
+  const failure = await screen.findByRole('alert')
+  expect(failure.textContent).toContain('Catalog temporarily unavailable')
+  expect(screen.queryByRole('status', { name: /loading/i })).toBeNull()
+  expect((screen.getByRole('button', { name: 'Apply' }) as HTMLButtonElement).disabled).toBe(true)
+})
+
 describe('ModelSettings profile scope', () => {
   // #90549: the API helpers treat `null` as "deliberately target the
   // primary/default profile". A page following the active profile must pass
