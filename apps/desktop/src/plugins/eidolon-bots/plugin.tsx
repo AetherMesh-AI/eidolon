@@ -399,7 +399,9 @@ export default {
       // zone's tab strip, so the pane stays reachable while collapsed.
       data: {
         placement: 'left',
-        width: '260px',
+        // This tab shares the organization rail; a wider declaration expands
+        // the whole stack even while Profile chats is inactive.
+        width: '203px',
         collapsible: true,
         hideOnly: true,
         dock: {

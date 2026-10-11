@@ -55,7 +55,7 @@ one-off at the call site.
   errors and recovery remain visible even when capability details are collapsed.
 - **History complements the organization.** The existing Sessions tree stays
   mounted in a History disclosure, which opens on explicit chat navigation.
-  Settings lives in the rail's utility footer; tools/configuration are secondary.
+  Settings follows Deliverables in the primary rail; tools/configuration are secondary.
 - **Organization uses the desktop foundation.** Organization surfaces alias
   shared `--ui-*` background, text and stroke tokens so light/dark mode remains
   coherent. `--aether-*` compatibility aliases follow the selected desktop accent; accent text

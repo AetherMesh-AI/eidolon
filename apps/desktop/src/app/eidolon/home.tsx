@@ -162,7 +162,7 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
           {data.objectives.length ? (
             data.objectives
               .slice(0, 2)
-              .map(objective => <HomeObjective compact key={objective.id} objective={objective} snapshot={snapshot} />)
+              .map((objective, index) => <HomeObjective compact={index > 0} key={objective.id} objective={objective} snapshot={snapshot} />)
           ) : (
             <p className="eid-home-empty">{copy.noWork}</p>
           )}
@@ -205,7 +205,7 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
               <small className="eid-status-completed">{copy.accepted}</small>
               <h3>{item.title}</h3>
               <p>{item.summary}</p>
-              <LocalizedTime value={item.updatedAt} />
+              <div className="eid-home-record-time"><LocalizedTime value={item.updatedAt} /></div>
               <Link className="eid-home-action" to={`/objectives/${encodeURIComponent(item.objectiveId)}`}>
                 {copy.viewObjective} →
               </Link>
@@ -237,6 +237,7 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
                 <AgentAvatar name={agent?.name ?? copy.organization} />
                 <div>
                   <strong>{agent?.name ?? copy.organization}</strong>
+                  {agent && <small>{({ Owner: t.organizationRoster.owner, Executive: t.organizationRoster.executive, Manager: t.organizationRoster.manager, Worker: t.organizationRoster.worker, Director: t.organizationRoster.manager, Employee: t.organizationRoster.worker } as Record<string, string>)[agent.role] ?? agent.role}</small>}
                   <p>{event.text}</p>
                   <LocalizedTime value={event.timestamp} />
                 </div>

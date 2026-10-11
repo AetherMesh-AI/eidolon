@@ -141,3 +141,12 @@ These establish actual remaining discrepancies, not final visual acceptance.
 The hero illustration, shared navigation proportions, activity presentation,
 Messages header/columns and Objective Detail card hierarchy still need correction.
 Settings remains a single editor rather than the supplied multi-card overview.
+
+## Deferred organization/profile hierarchy
+
+After the current visual rework, assess the requested `Organization name → Agent
+name` hierarchy in place of default-centric profile organization. First separate
+presentation grouping from storage and ownership migration. Preserve persistent
+agent IDs, memory, canonical conversations, credentials, retained history and
+request authority across any later move. This is follow-on planning only: no real
+profile migration or ownership change is part of the current visual slices.
