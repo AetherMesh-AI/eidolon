@@ -125,7 +125,7 @@ test('native confirmation keyboard respects focused actions in shared host and s
   await expect(hostRow).toHaveCount(0)
   await page.getByRole('complementary', { name: 'Eidolon navigation', exact: true }).getByRole('link', { name: 'Settings', exact: true }).click()
   const settings = page.locator('.eid-settings-page')
-  await settings.getByRole('button', { name: 'Archived chats', exact: true }).click()
+  await settings.getByRole('button', { name: 'Archived Chats', exact: true }).click()
   const archived = page.locator(`#archived-session-${hostId}`)
   await expect(archived).toBeVisible()
   await exercise('shared-confirm-host', hostId, 'Delete permanently', async () => {
