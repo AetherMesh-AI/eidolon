@@ -203,6 +203,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
   const workspace = page.getByRole('main', { name: 'Organization workspace', exact: true })
   const captures: object[] = []
   const focusChecks: object[] = []
+  const columnChecks: object[] = []
   const contrastChecks: Array<{ text: string | null; contrastRatio: number; opacity: number }> = []
 
   const runtime = await app.evaluate(() => ({
@@ -223,7 +224,8 @@ test('keeps native organization navigation, roster and objective layouts usable 
           providerCalls: mock.receivedPrompts.length,
           organizationMethods: [...new Set(organizationMethods)],
           captures,
-          focusChecks
+          focusChecks,
+          columnChecks
         },
         null,
         2
@@ -376,20 +378,27 @@ test('keeps native organization navigation, roster and objective layouts usable 
     await expect(page.getByRole('region', { name: 'Member conversation', exact: true }).getByRole('heading', { name: 'Robin', exact: true })).toBeVisible()
     await search.fill('')
     await capture(`messages-selected-wide-${mode}`)
-    await resize(1536, 961)
-    const columns = await page.locator('.eid-messages-layout > section').evaluateAll(elements => elements.map(element => {
-      const rect = element.getBoundingClientRect()
-      return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
-    }))
-    expect(columns).toHaveLength(3)
-    expect(Math.abs(columns[0].y - columns[1].y)).toBeLessThanOrEqual(1)
-    expect(Math.abs(columns[1].y - columns[2].y)).toBeLessThanOrEqual(1)
-    const total = columns.reduce((sum, column) => sum + column.width, 0)
-    expect(columns[0].width / total).toBeCloseTo(.254, 1)
-    expect(columns[1].width / total).toBeCloseTo(.507, 1)
-    expect(columns[2].width / total).toBeCloseTo(.239, 1)
-    await expect(page.locator('.eid-message-members').getByRole('heading', { name: 'Messages', exact: true })).toBeVisible()
-    await capture(`reference-messages-${mode}`)
+    for (const [width, height] of [[1536, 961], [1280, 720]]) {
+      await resize(width, height)
+      const columns = await page.locator('.eid-messages-layout > section').evaluateAll(elements => elements.map(element => {
+        const rect = element.getBoundingClientRect()
+        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+      }))
+      const bounds = await workspace.boundingBox()
+      expect(columns).toHaveLength(3)
+      for (const column of columns) {
+        expect(Math.abs(column.y - bounds!.y), 'columns start at the workspace top').toBeLessThanOrEqual(1)
+        expect(Math.abs(column.height - bounds!.height), 'columns fill the workspace height').toBeLessThanOrEqual(1)
+      }
+      const total = columns.reduce((sum, column) => sum + column.width, 0)
+      const targetWidths = width === 1536 ? [338, 677, 318] : [.254, .507, .239].map(ratio => ratio * total)
+      columns.forEach((column, index) => expect(Math.abs(column.width - targetWidths[index]), 'column width within ten pixels of reference proportion').toBeLessThanOrEqual(10))
+      columnChecks.push({ mode, width, height, columns, workspace: bounds, targetWidths })
+      await expect(page.locator('.eid-message-members').getByRole('heading', { name: 'Messages', exact: true })).toBeVisible()
+      focusChecks.push(await verifyKeyboardFocus(page, search, `Messages search ${mode} ${width}x${height}`))
+      await expect(page.getByRole('contentinfo', { name: 'System health', exact: true })).toBeInViewport({ ratio: 1 })
+      await capture(width === 1536 ? `reference-messages-${mode}` : `messages-selected-short-${mode}`)
+    }
     await resize(1220)
     await capture(`messages-selected-medium-${mode}`)
     await resize(760)
