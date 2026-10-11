@@ -278,14 +278,14 @@ it('keeps archived members readable and usage-exhausted conversations explicit w
   expect((screen.getByRole('button', { name: 'Send message' }) as HTMLButtonElement).disabled).toBe(true)
 })
 
-it('keeps a focused editable draft through background checks and recovers visibly from failed reads', async () => {
+it.each(['inline', 'workspace'] as const)('keeps a focused editable draft and recovers from failed reads in %s layout', async layout => {
   const { h } = harness()
   const read = deferred<OwnerChatThread>()
   vi.mocked(h.adapter.readOwnerChat!).mockReturnValueOnce(read.promise)
 
   const panel = () => (
     <MemoryRouter>
-      <OrganizationOwnerChat adapter={h.adapter} agent={h.snapshot.agents[0]} snapshot={h.snapshot} />
+      <OrganizationOwnerChat adapter={h.adapter} agent={h.snapshot.agents[0]} layout={layout} snapshot={h.snapshot} />
     </MemoryRouter>
   )
 
@@ -298,7 +298,15 @@ it('keeps a focused editable draft through background checks and recovers visibl
   const input = screen.getByRole('textbox', { name: 'Message' }) as HTMLTextAreaElement
   expect(input.disabled).toBe(false)
   fireEvent.change(input, { target: { value: 'Keep this draft' } })
+  // jsdom has no scrolling implementation; geometry is verified in Electron.
+  const scrollIntoView = vi.fn()
+  Object.defineProperty(input.closest('.eid-owner-chat-compose-area'), 'scrollIntoView', { value: scrollIntoView })
   input.focus()
+  if (layout === 'workspace') {
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center', inline: 'nearest' })
+  } else {
+    expect(scrollIntoView).not.toHaveBeenCalled()
+  }
   await act(async () => {
     await vi.advanceTimersByTimeAsync(15000)
   })
@@ -307,7 +315,9 @@ it('keeps a focused editable draft through background checks and recovers visibl
   expect(globalThis.document.activeElement).toBe(input)
   expect(input.value).toBe('Keep this draft')
   await act(async () => read.reject(new Error('Temporary disconnect')))
+  expect(screen.getByRole('alert').textContent).toContain('Could not verify the conversation')
   expect(screen.getByRole('alert').textContent).toContain('Temporary disconnect')
+  expect((screen.getByRole('button', { name: 'Check conversation' }) as HTMLButtonElement).disabled).toBe(false)
   expect((screen.getByRole('button', { name: 'Send message' }) as HTMLButtonElement).disabled).toBe(true)
   fireEvent.click(screen.getByRole('button', { name: 'Check conversation' }))
   await act(async () => {
@@ -475,4 +485,27 @@ it('loads exact earlier pages while preserving the latest reply target and fence
   await screen.findByText('Recent question')
   expect(screen.queryByText('Late historical page')).toBeNull()
   rendered.unmount()
+})
+
+it('keeps workspace limits and drafting available when conversation details are collapsed', async () => {
+  const { h } = harness()
+  h.adapter.renewOwnerChat = vi.fn()
+  render(<MemoryRouter><OrganizationOwnerChat adapter={h.adapter} agent={h.snapshot.agents[0]} layout="workspace" snapshot={h.snapshot} /></MemoryRouter>)
+  fireEvent.click(screen.getByRole('button', { name: 'Chat' }))
+  const message = await screen.findByRole('textbox', { name: 'Message' })
+  await waitFor(() => expect((message as HTMLTextAreaElement).disabled).toBe(false))
+  const details = screen.getByText('Conversation details').closest('details')!
+  expect(details.open).toBe(false)
+  expect(screen.getByText(/Replies remaining: 32/).closest('details')).toBeNull()
+  expect(screen.getByText(/may incur usage charges/).closest('details')).toBeNull()
+  fireEvent.change(message, { target: { value: 'Retained workspace draft' } })
+  fireEvent.click(screen.getByText('Conversation details'))
+  expect((message as HTMLTextAreaElement).value).toBe('Retained workspace draft')
+  const form = message.closest('form')!
+  expect(form.parentElement?.querySelector('.eid-owner-chat-allowance')?.nextElementSibling).toBe(form)
+  expect(form.textContent).toContain('may incur usage charges')
+  expect(form.querySelector('.eid-owner-chat-charge')).not.toBeNull()
+  expect(screen.getByRole('region', { name: 'Conversation messages' }).getAttribute('tabindex')).toBe('0')
+  expect(h.adapter.sendOwnerChat).not.toHaveBeenCalled()
+  expect(h.adapter.renewOwnerChat).not.toHaveBeenCalled()
 })

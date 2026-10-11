@@ -6,7 +6,7 @@ import { useStickToBottom } from 'use-stick-to-bottom'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { EmptyState } from '@/components/ui/empty-state'
-import { ErrorState } from '@/components/ui/error-state'
+import { ErrorBanner, ErrorState } from '@/components/ui/error-state'
 import { Loader } from '@/components/ui/loader'
 import { Textarea } from '@/components/ui/textarea'
 import { Tip } from '@/components/ui/tooltip'
@@ -25,7 +25,7 @@ import { useOwnerChat } from './use-owner-chat'
 const turnLabel = (turn: OwnerChatTurn, copy: OrganizationOwnerChatCopy) =>
   turn.status === 'uncertain' ? copy.turnUncertain : copy[turn.status]
 
-function OwnerChatTranscript({ thread, sendRevision }: { thread: OwnerChatThread; sendRevision: number }) {
+function OwnerChatTranscript({ thread, sendRevision, workspace }: { thread: OwnerChatThread; sendRevision: number; workspace: boolean }) {
   const { t } = useI18n()
   const copy = t.organizationOwnerChat
 
@@ -43,11 +43,13 @@ function OwnerChatTranscript({ thread, sendRevision }: { thread: OwnerChatThread
 
   // Plain text intentionally bypasses ordinary session directives, tool widgets,
   // and media fetching. A discussion must never turn message content into actions.
-  return !thread.messages.length ? (
-    <EmptyState title={copy.empty} />
-  ) : (
-    <div className="eid-owner-chat-scroll" ref={scrollRef}>
-      <ol aria-label={copy.messages} className="eid-owner-chat-transcript" ref={contentRef} role="log">
+  return (
+    <div aria-label={copy.messages} className="eid-owner-chat-scroll" onFocus={event => {
+      if (workspace && event.target === event.currentTarget && event.currentTarget.matches(':focus-visible')) {
+        event.currentTarget.scrollIntoView({ block: 'center', inline: 'nearest' })
+      }
+    }} ref={scrollRef} role="region" tabIndex={0}>
+      {!thread.messages.length ? <EmptyState title={copy.empty} /> : <ol aria-label={copy.messages} className="eid-owner-chat-transcript" ref={contentRef} role="log">
         {thread.messages.map(message => {
           const turn = turns.get(message.id)
           const target = thread.messages.find(item => item.id === message.replyToMessageId)
@@ -103,7 +105,7 @@ function OwnerChatTranscript({ thread, sendRevision }: { thread: OwnerChatThread
             </li>
           )
         })}
-      </ol>
+      </ol>}
     </div>
   )
 }
@@ -111,8 +113,10 @@ function OwnerChatTranscript({ thread, sendRevision }: { thread: OwnerChatThread
 function OwnerChatPanel({
   adapter,
   snapshot,
-  agent
+  agent,
+  workspace = false
 }: {
+  workspace?: boolean
   adapter: RuntimeOrganizationAdapter
   snapshot: OrganizationSnapshot
   agent: OrganizationAgent
@@ -186,9 +190,99 @@ function OwnerChatPanel({
     setReview({ intent, tokens: intent.additionalCalls * thread.renewal.tokensPerCall })
   }
 
+  const allowance = thread && (
+          <div className="eid-owner-chat-allowance">
+            <p className="eid-note">
+              {copy.calls}: {thread.budget.remainingCalls} / {thread.budget.maxCalls} · {copy.tokens}:{' '}
+              {thread.budget.tokensReserved} / {thread.budget.maxTokens}
+            </p>
+            {!workspace && <p className="eid-note">{copy.budgetNote}</p>}
+            {renewalIntent && busy !== 'renew' && <p role="status">{copy.renewUncertain}</p>}
+            {thread.renewal && adapter.renewOwnerChat && (
+              <Button
+                disabled={!ready || !!busy || inactive || (!renewalIntent && (!verified || !thread.renewal.canRenew))}
+                onClick={reviewRenewal}
+                size="sm"
+                variant="secondary"
+              >
+                {renewalIntent ? copy.renewRetry : copy.renew}
+              </Button>
+            )}
+            <ConfirmDialog
+              confirmLabel={copy.renewConfirm}
+              description={
+                review
+                  ? copy.renewReview
+                      .replace('{calls}', String(review.intent.additionalCalls))
+                      .replace('{tokens}', String(review.tokens))
+                  : ''
+              }
+              onClose={() => setReview(null)}
+              onConfirm={async () => {
+                if (!review) {
+                  return
+                }
+
+                try {
+                  await renew(review.intent)
+                } catch (reason) {
+                  if (reason instanceof OwnerChatRenewalRejected) {
+                    setReview(null)
+                  }
+
+                  throw reason
+                }
+              }}
+              open={!!review}
+              title={copy.renew}
+            />
+          </div>
+        )
+
+  const recoveryActions = (error || !thread || draft?.intent || cancelUncertain) && (
+    <div className="eid-owner-chat-actions">
+      <Button disabled={!ready || !!busy} onClick={() => void refresh()} size="sm" variant="secondary">
+        {copy.refresh}
+      </Button>
+      {draft?.intent && (
+        <Button
+          disabled={!ready || !!busy || inactive || !thread}
+          onClick={() => void send(draft.intent)}
+          size="sm"
+          variant="secondary"
+        >
+          {copy.retry}
+        </Button>
+      )}
+    </div>
+  )
+
+  const information = <>
+    <p className="eid-note">{copy.note}</p>
+    {thread && <>
+      <header className="eid-owner-chat-identity">
+        <AgentAvatar name={thread.recipient.name} />
+        <div>
+          <strong>{thread.recipient.name}</strong>
+          <p>
+            {thread.recipient.role}
+            {thread.recipient.team ? ` · ${thread.recipient.team}` : ''}
+          </p>
+        </div>
+      </header>
+      <p className="eid-note">
+        {t.organizationRuntime.provider}: {thread.recipient.provider || copy.profileRoute} ·{' '}
+        {t.organizationRuntime.model}: {thread.recipient.model || copy.profileRoute}
+      </p>
+      {!workspace && <p className="eid-note">{copy.providerUsage}</p>}
+      <p className="eid-note">{copy.contextWindow}</p>
+      {workspace && <p className="eid-note">{copy.budgetNote}</p>}
+    </>}
+  </>
+
   return (
     <div className="eid-owner-chat-panel">
-      <p className="eid-note">{copy.note}</p>
+      {workspace ? <details className="eid-owner-chat-information"><summary>{copy.details}</summary>{information}</details> : information}
       <nav aria-label={copy.needsYou} className="eid-owner-chat-actions">
         <Button asChild size="sm" variant="secondary">
           <Link to="/home">{copy.createObjective}</Link>
@@ -203,22 +297,6 @@ function OwnerChatPanel({
       {!ready && <p role="status">{copy.offline}</p>}
       {thread && (
         <>
-          <header className="eid-owner-chat-identity">
-            <AgentAvatar name={thread.recipient.name} />
-            <div>
-              <strong>{thread.recipient.name}</strong>
-              <p>
-                {thread.recipient.role}
-                {thread.recipient.team ? ` · ${thread.recipient.team}` : ''}
-              </p>
-            </div>
-          </header>
-          <p className="eid-note">
-            {t.organizationRuntime.provider}: {thread.recipient.provider || copy.profileRoute} ·{' '}
-            {t.organizationRuntime.model}: {thread.recipient.model || copy.profileRoute}
-          </p>
-          <p className="eid-note">{copy.providerUsage}</p>
-          <p className="eid-note">{copy.contextWindow}</p>
           {historyPage && <p className="eid-note">{copy.historyPage}</p>}
           <div className="eid-owner-chat-actions">
             {page?.history?.hasMore && (
@@ -232,79 +310,24 @@ function OwnerChatPanel({
               </Button>
             )}
           </div>
-          <OwnerChatTranscript sendRevision={sendRevision} thread={page!} />
-          <p className="eid-note">
-            {copy.calls}: {thread.budget.remainingCalls} / {thread.budget.maxCalls} · {copy.tokens}:{' '}
-            {thread.budget.tokensReserved} / {thread.budget.maxTokens}
-          </p>
-          <p className="eid-note">{copy.budgetNote}</p>
-          {renewalIntent && busy !== 'renew' && <p role="status">{copy.renewUncertain}</p>}
-          {thread.renewal && adapter.renewOwnerChat && (
-            <Button
-              disabled={!ready || !!busy || inactive || (!renewalIntent && (!verified || !thread.renewal.canRenew))}
-              onClick={reviewRenewal}
-              size="sm"
-              variant="secondary"
-            >
-              {renewalIntent ? copy.renewRetry : copy.renew}
-            </Button>
-          )}
-          <ConfirmDialog
-            confirmLabel={copy.renewConfirm}
-            description={
-              review
-                ? copy.renewReview
-                    .replace('{calls}', String(review.intent.additionalCalls))
-                    .replace('{tokens}', String(review.tokens))
-                : ''
-            }
-            onClose={() => setReview(null)}
-            onConfirm={async () => {
-              if (!review) {
-                return
-              }
+          <OwnerChatTranscript sendRevision={sendRevision} thread={page!} workspace={workspace} />
+          {!workspace && allowance}
 
-              try {
-                await renew(review.intent)
-              } catch (reason) {
-                if (reason instanceof OwnerChatRenewalRejected) {
-                  setReview(null)
-                }
-
-                throw reason
-              }
-            }}
-            open={!!review}
-            title={copy.renew}
-          />
         </>
       )}
       {busy === 'read' && !thread && <Loader label={copy.loading} />}
       {error && (
-        <div role="alert">
-          <ErrorState description={error} title={copy.error} />
+        <div className={workspace ? 'eid-owner-chat-recovery' : undefined}>
+          <div role="alert">
+            {workspace ? <ErrorBanner className="rounded-md px-2 py-1 text-xs leading-4"><strong>{copy.error}</strong>{' '}{error}</ErrorBanner> : <ErrorState description={error} title={copy.error} />}
+          </div>
+          {workspace && recoveryActions}
         </div>
       )}
       {draft?.intent && busy !== 'send' && <p role="status">{copy.uncertain}</p>}
       {changed && <p role="status">{copy.changed}</p>}
       {cancelUncertain && <p role="status">{copy.cancelUncertain}</p>}
-      {(error || !thread || draft?.intent || cancelUncertain) && (
-        <div className="eid-owner-chat-actions">
-          <Button disabled={!ready || !!busy} onClick={() => void refresh()} size="sm" variant="secondary">
-            {copy.refresh}
-          </Button>
-          {draft?.intent && (
-            <Button
-              disabled={!ready || !!busy || inactive || !thread}
-              onClick={() => void send(draft.intent)}
-              size="sm"
-              variant="secondary"
-            >
-              {copy.retry}
-            </Button>
-          )}
-        </div>
-      )}
+      {(!workspace || !error) && recoveryActions}
       {inactive ? (
         <p role="status">{copy.readOnly}</p>
       ) : exhausted ? (
@@ -312,6 +335,12 @@ function OwnerChatPanel({
       ) : thread && !thread.canSend && !thread.activeTurnId && thread.unavailableReason ? (
         <p role="status">{thread.unavailableReason}</p>
       ) : null}
+      <div className="eid-owner-chat-compose-area" onFocus={event => {
+        if (workspace && event.currentTarget.contains(event.target) && event.target.matches(':focus-visible')) {
+          event.currentTarget.scrollIntoView({ block: 'center', inline: 'nearest' })
+        }
+      }}>
+      {workspace && allowance}
       <form
         aria-label={copy.message}
         className="eid-owner-chat-composer"
@@ -325,7 +354,7 @@ function OwnerChatPanel({
       >
         <label htmlFor={`owner-message-${agent.identityId}`}>{copy.message}</label>
         {latest && (
-          <p className="eid-note">
+          workspace ? <details className="eid-owner-chat-reply-context"><summary>{copy.replyingTo}</summary><p className="eid-note">{latest.text.slice(0, 100)}</p></details> : <p className="eid-note">
             {copy.replyingTo}: {latest.text.slice(0, 100)}
           </p>
         )}
@@ -353,9 +382,10 @@ function OwnerChatPanel({
           }}
           placeholder={copy.placeholder}
           readOnly={busy === 'send' || !!draft?.intent}
-          rows={3}
+          rows={workspace ? 2 : 3}
           value={text}
         />
+        {workspace && thread && <p className="eid-note eid-owner-chat-charge">{copy.providerUsage}</p>}
         <div className="eid-owner-chat-actions">
           <span className="eid-note" id={`owner-limit-${agent.identityId}`}>
             {copy.limits}: {length} / {limit}
@@ -377,6 +407,7 @@ function OwnerChatPanel({
           )}
         </div>
       </form>
+      </div>
     </div>
   )
 }
@@ -387,8 +418,10 @@ export function OrganizationOwnerChat({
   adapter,
   snapshot,
   agent,
-  onOpenChange
+  onOpenChange,
+  layout = 'inline'
 }: {
+  layout?: 'inline' | 'workspace'
   adapter?: RuntimeOrganizationAdapter
   snapshot: OrganizationSnapshot
   agent: OrganizationAgent
@@ -444,6 +477,7 @@ export function OrganizationOwnerChat({
           agent={agent}
           key={`${snapshot.connection?.scope}:${agent.identityId}`}
           snapshot={snapshot}
+          workspace={layout === 'workspace'}
         />
       )}
     </section>

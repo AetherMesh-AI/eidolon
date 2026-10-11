@@ -174,6 +174,30 @@ pixels. ac6908b2's first Settings reference capture was a loading skeleton, and
 its zoom metadata did not establish intended reflow. These images cannot close
 the corresponding acceptance items despite a green run.
 
+## Messages composer iteration
+
+Retained-chat capture at the reference size exposed a separate gap after column
+geometry was corrected: explanatory text and allowance details pushed composing
+below the initial view. The isolated follow-up bounds the conversation column
+and gives its transcript keyboard scrolling. Conversation policy and reply-anchor
+details remain in accessible disclosures; provider usage notice, remaining calls,
+reserved-token ceiling, explicit renewal, send/cancel and recovery stay available.
+Native checks cover reference/short/narrow sizes, real zoom, long history, a
+pending reply and a retained read-error state. This iteration is not accepted
+until current-head native checks and actual pixels pass. Final reference parity
+and the complete gallery remain outstanding.
+
+### PR71 native follow-up
+
+The first exact-head native run failed transcript focus clipping at 760px; it did
+not reach the new zoom, cancellation, long-history or read-error checks. The
+follow-up centers keyboard-focused workspace transcripts inside their ancestors,
+provides wider focus clearance and preserves a three-pixel outline at fractional
+zoom. Workspace allowance and provider-charge text now accompany the composer;
+inline chat retains its prior ordering. Native checks measure the actual inner
+panel overflow and require charge text, allowance and explicit action in view
+with the focused composer. Corrected native evidence is still required before
+acceptance; the earlier outer-panel assertion alone was insufficient.
 ## Objective composition iteration
 
 The next isolated Objective slice removes the centered 1120px page cap, uses
