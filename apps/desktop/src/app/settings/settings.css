@@ -126,3 +126,9 @@
     border-radius: 16px;
   }
 }
+
+/* Settings now belongs to the keyboard-navigable organization workspace. */
+.eid-settings-page :is(button, a, input, textarea, select, summary):focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 3px;
+}
