@@ -40,7 +40,7 @@ export function ObjectiveProgress({ objective, snapshot, controls, onReviewReque
       <small>{agentName(task.assignedAgentId ?? task.ownerId)}</small>
       {task.coordination?.state === 'waiting' && <small>{task.coordination.reason || copy.dependenciesWaiting}</small>}
     </li>)}
-    {tasks.length > 3 && <li>{copy.moreTasks(number.format(tasks.length - 3))}</li>}
+    {tasks.length > 3 && <li>{copy.moreTasks(tasks.length - 3, number.format(tasks.length - 3))}</li>}
     {!tasks.length && <li>{copy.noTasks}</li>}
   </ul>
 
@@ -90,7 +90,7 @@ export function ObjectiveProgress({ objective, snapshot, controls, onReviewReque
         <header><h2>{copy.needsInput}</h2></header>
         {data.requests.slice(0, 2).map(request => <article className="eid-home-record" key={request.id}><p>{request.reason || request.requestedOutcome || t.organizationWork.needsYou}</p><small>{request.team}</small></article>)}
         {!data.requests.length && <p>{snapshot.requests ? t.organizationHome.noNeeds : t.organizationHome.requestsUnavailable}</p>}
-        {data.requests.length > 2 && <p>{copy.moreRequests(number.format(data.requests.length - 2))}</p>}
+        {data.requests.length > 2 && <p>{copy.moreRequests(data.requests.length - 2, number.format(data.requests.length - 2))}</p>}
         <Button onClick={onReviewRequests} size="sm" variant="secondary">{copy.inspectRequests}</Button>
       </section>
       <section aria-label={copy.delivery} className="eid-home-panel">
