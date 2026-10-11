@@ -464,3 +464,13 @@
   .eid-messages-view .eid-message-members nav { max-height: 180px; flex: none; }
   .eid-messages-view .eid-message-context { grid-column: 1; border-left: 0; }
 }
+
+@media (min-width: 1101px) and (max-height: 800px) {
+  .eid-page:has(> .eid-objective-hero) { padding-top: 12px; }
+  .eid-objective-hero { margin-top: 8px; margin-bottom: 8px; }
+  .eid-objective-overview { margin-top: 12px; }
+  .eid-objective-progress-main, .eid-objective-progress-aside { gap: 12px; }
+  .eid-objective-overview .eid-home-panel { padding: 14px; }
+  .eid-team-work-grid .eid-home-panel > header { margin-bottom: 10px; }
+  .eid-team-work-grid .eid-progress-tasks { margin-top: 12px; }
+}

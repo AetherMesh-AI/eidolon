@@ -476,6 +476,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
     await resize(1280, 720)
     await workspace.evaluate(element => { element.scrollTop = 0 })
     await expect(assignmentCards.first().getByText('Draft the release brief', { exact: true })).toBeInViewport({ ratio: 1 })
+    await expect(assignmentCards.first().getByText('Robin', { exact: true })).toBeInViewport({ ratio: 1 })
     await capture(`objective-short-${mode}`)
 
     for (const zoom of [1, 1.25, 2]) {
