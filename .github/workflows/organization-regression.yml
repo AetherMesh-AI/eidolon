@@ -31,6 +31,11 @@ on:
       - '.github/workflows/organization-regression.yml'
       - 'docs/organization-ci.md'
   workflow_dispatch:
+    inputs:
+      full_desktop_suite:
+        description: Also run the complete desktop unit suite after native verification
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -262,6 +267,10 @@ jobs:
         env:
           EIDOLON_REQUIRE_PROJECT_SANDBOX: '1'
         run: xvfb-run -a npx playwright test e2e/organization-*.spec.ts --workers=1 --retries=0
+      - name: Verify complete desktop suite when requested
+        if: github.event_name == 'workflow_dispatch' && inputs.full_desktop_suite
+        working-directory: apps/desktop
+        run: npx vitest run
       - name: Retain native evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
