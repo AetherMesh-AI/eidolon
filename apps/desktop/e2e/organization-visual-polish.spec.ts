@@ -651,10 +651,27 @@ test('keeps native organization navigation, roster and objective layouts usable 
     const snapshotNote = workspace.locator('.eid-home-snapshot-note')
     await expect(snapshotNote).toHaveText('This overview shows retained records in the current snapshot. Open the full views for complete history.')
     await expect(snapshotNote).toBeInViewport({ ratio: 1 })
+    const events = workspace.locator('.eid-home-activity ol > li')
+    await expect(events).toHaveCount(4)
+    await expect(workspace.locator('.eid-home-activity').getByRole('link', { name: 'View activity', exact: false })).toBeInViewport({ ratio: 1 })
+    if (height >= 900) {
+      for (const event of await events.all()) {
+        await expect(event).toBeInViewport({ ratio: 1 })
+        await expect(event.locator('time')).toBeInViewport({ ratio: 1 })
+      }
+    }
     const geometry = await workspace.evaluate(element => {
       const rect = (selector: string) => element.querySelector(selector)!.getBoundingClientRect().toJSON()
-      return { hero: rect('.eid-home-hero'), cards: rect('.eid-home-grid'), activity: rect('.eid-home-activity'), note: rect('.eid-home-snapshot-note') }
+      return {
+        hero: rect('.eid-home-hero'), cards: rect('.eid-home-grid'), activity: rect('.eid-home-activity'), note: rect('.eid-home-snapshot-note'),
+        activityRows: [...element.querySelectorAll('.eid-home-activity ol > li')].map(row => ({
+          bounds: row.getBoundingClientRect().toJSON(), timestamp: row.querySelector('time')!.getBoundingClientRect().toJSON()
+        }))
+      }
     })
+    if (width === 1536) {
+      expect(Math.abs(geometry.cards.bottom - 695), 'Home card bottom approaches the matched reference').toBeLessThanOrEqual(5)
+    }
     const health = await page.getByRole('contentinfo', { name: 'System health', exact: true }).boundingBox()
     expect(geometry.activity.bottom).toBeLessThanOrEqual(health!.y)
     expect(geometry.cards.bottom).toBeLessThan(geometry.activity.top)
