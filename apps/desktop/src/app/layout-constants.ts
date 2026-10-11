@@ -22,7 +22,7 @@ export const PAGE_MAX_W = 'max-w-[75rem]'
 // leave the grid and become the hover-reveal overlay. Single source of truth for
 // the responsive collapse point.
 //
-// A rail costs 237px (SIDEBAR_DEFAULT_WIDTH) and the chat beside it wants roughly
+// A rail costs 203px (SIDEBAR_DEFAULT_WIDTH) and the chat beside it wants roughly
 // what a popped-out session window enforces on itself (420px), so docking stops
 // paying for itself around here — while still leaving an overlay band down to the
 // window's own 400px minimum. Expressed as a dock floor rather than a collapse

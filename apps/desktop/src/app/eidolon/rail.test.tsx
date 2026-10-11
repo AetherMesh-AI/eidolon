@@ -72,9 +72,21 @@ it('preserves the canonical history and its input while expanding navigation and
 it('keeps the approved primary destinations in order and retains secondary operational routes', () => {
   const { container } = render(<MemoryRouter><OrganizationRail needsYouCount={3} sessions={<span>History</span>} /></MemoryRouter>)
   const primary = container.querySelector('nav[aria-label="Primary"]')!
-  expect(Array.from(primary.querySelectorAll('a'), item => item.getAttribute('aria-label'))).toEqual(['Home', 'Messages', 'Work Overview', 'Objectives', 'Organization', 'Deliverables'])
+  expect(Array.from(primary.querySelectorAll('a'), item => item.getAttribute('aria-label'))).toEqual(['Home', 'Messages', 'Work Overview', 'Objectives', 'Organization', 'Deliverables', 'Settings'])
   expect(screen.getByRole('link', { name: 'Settings' }).getAttribute('href')).toBe('/settings')
   fireEvent.click(screen.getByText('Tools and configuration'))
   expect(screen.getByRole('link', { name: 'Needs You' }).getAttribute('href')).toBe('/requests')
   expect(screen.getByRole('link', { name: 'Activity' }).getAttribute('href')).toBe('/activity')
+})
+
+it('keeps Settings in the primary destination order with one route owner', () => {
+  const onNavigate = vi.fn()
+  render(<MemoryRouter><OrganizationRail onNavigate={onNavigate} sessions={<span>History</span>} /></MemoryRouter>)
+  const primary = screen.getByRole('navigation', { name: 'Primary' })
+  expect([...primary.querySelectorAll('a')].map(link => link.getAttribute('href'))).toEqual([
+    '/home', '/messages', '/work', '/objectives', '/organization', '/artifacts', '/settings'
+  ])
+  expect(screen.getAllByRole('link', { name: 'Settings' })).toHaveLength(1)
+  fireEvent.click(screen.getByRole('link', { name: 'Settings' }))
+  expect(onNavigate).toHaveBeenCalledWith('/settings')
 })

@@ -458,6 +458,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
     expect(fit.content, `Home overview fits ${width} × ${height}`).toBeLessThanOrEqual(fit.height + 1)
     await expect(page.getByRole('button', { name: 'Message organization', exact: true })).toBeInViewport({ ratio: 1 })
     await expect(page.getByRole('contentinfo', { name: 'System health', exact: true })).toBeInViewport({ ratio: 1 })
+    await expect(page.getByRole('navigation', { name: 'Primary', exact: true }).getByRole('link', { name: 'Settings', exact: true })).toBeInViewport({ ratio: 1 })
     await capture(`home-fit-${width}-${height}`)
     if (width === 1280) {
       const body = workspace.locator('.eid-home-panel-body').first()
