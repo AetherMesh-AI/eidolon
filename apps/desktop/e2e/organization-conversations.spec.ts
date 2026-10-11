@@ -212,6 +212,7 @@ test('inspects waiting and answered internal threads without acknowledging recip
     organizationMethods.filter(
       method =>
         ![
+          'organization.descriptor',
           'organization.snapshot',
           'organization.outcomes',
           'organization.attention',

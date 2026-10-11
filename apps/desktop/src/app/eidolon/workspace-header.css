@@ -42,3 +42,9 @@
   .eid-workspace-body .eid-messages-view .eid-message-conversation { padding-bottom: 10px; }
   .eid-workspace-body .eid-messages-view .eid-message-recipient { padding-bottom: 4px; margin-bottom: 4px; }
 }
+.eid-owner-editor form { display: grid; gap: 16px; }
+.eid-owner-editor label { display: grid; gap: 6px; min-width: 0; }
+.eid-owner-editor p { overflow-wrap: anywhere; }
+.eid-owner-editor .eid-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.eid-workspace-organization-name { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 900px) { .eid-workspace-organization-name { max-width: 90px; } }

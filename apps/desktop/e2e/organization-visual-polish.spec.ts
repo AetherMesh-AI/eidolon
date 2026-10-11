@@ -773,7 +773,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await expect(page.getByRole('region', { name: 'Member conversation', exact: true }).getByRole('heading', { name: 'Avery', exact: true })).toBeVisible()
   await capture('home-message-explicit-recipient')
   expect(organizationMethods.length).toBeGreaterThan(0)
-  expect(organizationMethods.every(method => ['organization.outcomes', 'organization.snapshot'].includes(method))).toBe(true)
+  expect(organizationMethods.every(method => ['organization.descriptor', 'organization.outcomes', 'organization.snapshot'].includes(method))).toBe(true)
   expect(mock.receivedPrompts).toHaveLength(0)
   await navigation.getByRole('link', { name: 'Home', exact: true }).click()
 
@@ -1030,7 +1030,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
   writeEvidence()
   expect(mock.receivedPrompts).toHaveLength(0)
   expect(organizationMethods.length).toBeGreaterThan(0)
-  expect([...new Set(organizationMethods)].sort()).toEqual(['organization.outcomes', 'organization.snapshot'])
+  expect([...new Set(organizationMethods)].sort()).toEqual(['organization.descriptor', 'organization.outcomes', 'organization.snapshot'])
 })
 
 // A real configured locale exercises translated controls, not substituted DOM text.
@@ -1103,7 +1103,7 @@ test('retains translated Objective labels and opened explanations with contained
     }
   }
   expect(mock.receivedPrompts).toHaveLength(0)
-  expect([...new Set(methods)].every(method => ['organization.snapshot', 'organization.outcomes'].includes(method))).toBe(true)
+  expect([...new Set(methods)].every(method => ['organization.descriptor', 'organization.snapshot', 'organization.outcomes'].includes(method))).toBe(true)
   await test.info().attach('objective-translated-evidence', { contentType: 'application/json', body: JSON.stringify({
     sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
     sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
@@ -1201,7 +1201,7 @@ test('keeps workspace controls and loaded-record inspection usable without execu
   await expect(page.locator('.eid-objective-hero')).toContainText('Prepare the autumn release brief')
   expect(mock.receivedPrompts).toHaveLength(0)
   // Outcomes are already in the snapshot: inspection must not fetch their history.
-  expect([...new Set(methods)]).toEqual(['organization.snapshot'])
+  expect([...new Set(methods)].sort()).toEqual(['organization.descriptor', 'organization.snapshot'])
   await test.info().attach('workspace-header-evidence', { contentType: 'application/json', body: JSON.stringify({
     sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
     sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
@@ -1293,7 +1293,7 @@ for (const locale of ['ja', 'ar', 'ru'] as const) {
       }
     }
     expect(mock.receivedPrompts).toHaveLength(0)
-    expect([...new Set(methods)]).toEqual(['organization.snapshot'])
+    expect([...new Set(methods)].sort()).toEqual(['organization.descriptor', 'organization.snapshot'])
     await test.info().attach('workspace-translated-evidence', { contentType: 'application/json', body: JSON.stringify({
       sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
       sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
@@ -1449,7 +1449,7 @@ for (const [locale, suffix, dark, light] of [
     }
     expect(mock.receivedPrompts).toHaveLength(0)
     expect(methods.length).toBeGreaterThan(0)
-    expect([...new Set(methods)].every(method => ['organization.snapshot', 'organization.outcomes'].includes(method))).toBe(true)
+    expect([...new Set(methods)].every(method => ['organization.descriptor', 'organization.snapshot', 'organization.outcomes'].includes(method))).toBe(true)
     writeFileSync(test.info().outputPath('translated-surfaces-evidence.json'), JSON.stringify({
       sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
       sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),

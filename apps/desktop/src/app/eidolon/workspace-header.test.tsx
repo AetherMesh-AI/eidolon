@@ -19,6 +19,7 @@ vi.mock('@/store/command-palette', () => ({ openCommandPalettePage: (...args: un
 vi.mock('../chat/sidebar/connection-switcher', () => ({ ConnectionSwitcher: () => <div role="group" aria-label="Connection selector" /> }))
 vi.mock('../contrib/organization-shell', () => ({ OrganizationWorkIndicator: () => <button>Attention picker</button> }))
 vi.mock('../routes', () => ({ navigateToWorkspacePage: (navigate: (path: string) => void, path: string) => navigate(path) }))
+vi.mock('./use-organization-metadata', () => ({ useOrganizationMetadata: () => ({ client: {}, view: { descriptor: null, busy: false }, scope: { key: 'metadata-scope', eligible: false } }) }))
 vi.mock('./runtime-provider', () => ({ useRuntimeOrganization: () => ({ snapshot: state.snapshot }), createOrganizationScopeReader: () => () => ({ key: state.scope, connected: true }) }))
 
 beforeEach(() => {
