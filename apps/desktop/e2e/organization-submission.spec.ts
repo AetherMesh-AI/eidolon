@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import path from 'node:path'
 
 import { buildAppEnv, type MockBackendFixture, setupMockBackend, waitForAppReady } from './fixtures'
-import { expect, test } from './test'
+import { acknowledgeExpectedErrorBanner, expect, test } from './test'
 
 let fixture: MockBackendFixture | undefined
 const root = path.resolve(import.meta.dirname, '../../..')
@@ -104,6 +104,7 @@ print(ident)
     .getByRole('navigation', { name: 'Primary', exact: true })
 
   await navigation.getByRole('link', { name: 'Home', exact: true }).click()
+  await page.getByRole('button', { name: 'New objective', exact: true }).click()
   await page.getByRole('textbox', { name: 'Objective', exact: true }).fill(title)
   await page.getByRole('combobox', { name: 'Delivery scope', exact: true }).selectOption('managed_artifact')
   await page.getByRole('button', { name: 'Create objective', exact: true }).click()
@@ -141,4 +142,5 @@ print(ident)
   await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
   expect(methods.filter(method => method === 'organization.create')).toHaveLength(1)
   expect(mock.receivedPrompts.length).toBe(0)
+  await acknowledgeExpectedErrorBanner(page, 'Scripted creation response lost')
 })

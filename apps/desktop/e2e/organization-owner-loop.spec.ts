@@ -246,6 +246,7 @@ test('preserves unsupported work and grants across navigation, dismissal, reload
   }
 
   await primary.getByRole('link', { name: 'Home', exact: true }).click()
+  await page.getByRole('button', { name: 'New objective', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'What should the organization do?', exact: true })).toBeVisible()
   await assertNoToolGrants('01-system-health-capabilities')
   await capture('01-command')
@@ -289,6 +290,7 @@ test('preserves unsupported work and grants across navigation, dismissal, reload
   await assertRailLayout('03c-reexpanded-history-controls')
 
   await primary.getByRole('link', { name: 'Home', exact: true }).click()
+  await page.getByRole('button', { name: 'New objective', exact: true }).click()
   const deliveryScope = page.getByRole('combobox', { name: 'Delivery scope', exact: true })
   await deliveryScope.selectOption('managed_artifact')
   await assertNoToolGrants()

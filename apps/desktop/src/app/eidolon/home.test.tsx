@@ -1,10 +1,13 @@
-import { cleanup, render, screen } from '@testing-library/react'
-import { MemoryRouter } from 'react-router'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { MemoryRouter, useLocation } from 'react-router'
 import { afterEach, expect, it, vi } from 'vitest'
+
+import { useOverlayRouting } from '../shell/hooks/use-overlay-routing'
 
 import { Home, HomeObjective } from './home'
 import { homeData } from './home-data'
 import type { OrganizationOutcome } from './runtime-outcome-types'
+import { ownerChatSnapshot } from './runtime-owner-chat.test-support'
 import type { Objective, OrganizationSnapshot, RuntimeOrganizationAdapter } from './types'
 
 afterEach(cleanup)
@@ -145,6 +148,82 @@ it('focuses explicit intake navigation once after connection readiness without s
     expect(scroll).toHaveBeenCalledTimes(1)
     expect(screen.getByText('This runtime has not supplied its request queue.')).toBeTruthy()
     expect(screen.getByText(/has not supplied its outcome inbox/)).toBeTruthy()
+  } finally {
+    HTMLElement.prototype.scrollIntoView = original
+  }
+})
+
+
+it('opens a scoped executive chooser only after explicit Home action and never submits work', () => {
+  const current = { ...snapshot, connection: { scope: 'socket', ownerScope: 'current-organization', state: 'ready' as const } }
+  const adapter = { mode: 'runtime', getSnapshot: () => current, createObjective: vi.fn(), openOwnerChat: vi.fn(), sendOwnerChat: vi.fn() } as unknown as RuntimeOrganizationAdapter
+
+  function Location() {
+    const value = useLocation()
+
+    return <output>{value.pathname + value.search}</output>
+  }
+
+  const tree = (value: OrganizationSnapshot) => <MemoryRouter initialEntries={['/home']}><Home adapter={adapter} snapshot={value} /><Location /></MemoryRouter>
+  const view = render(tree(snapshot))
+  expect(screen.getByRole('button', { name: 'Message organization' })).toHaveProperty('disabled', true)
+  expect(screen.getByText(/Connect to the current organization before choosing/)).toBeTruthy()
+  view.rerender(tree(current))
+  fireEvent.click(screen.getByRole('button', { name: 'Message organization' }))
+  expect(screen.getByText('/messages?recipient=executive')).toBeTruthy()
+  expect(adapter.createObjective).not.toHaveBeenCalled()
+  expect(adapter.openOwnerChat).not.toHaveBeenCalled()
+  expect(adapter.sendOwnerChat).not.toHaveBeenCalled()
+})
+
+it('keeps intake mounted and its draft intact when explicitly opened and collapsed', () => {
+  const original = HTMLElement.prototype.scrollIntoView
+  HTMLElement.prototype.scrollIntoView = vi.fn()
+  const current = { ...snapshot, connection: { scope: 'fit-test', ownerScope: 'fit-test', state: 'ready' as const } }
+  const adapter = { mode: 'runtime', getSnapshot: () => current, createObjective: vi.fn() } as unknown as RuntimeOrganizationAdapter
+
+  try {
+    const view = render(<MemoryRouter><Home adapter={adapter} snapshot={current} /></MemoryRouter>)
+    const disclosure = view.container.querySelector('details.eid-home-intake') as HTMLDetailsElement
+    expect(disclosure.open).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'New objective' }))
+    expect(disclosure.open).toBe(true)
+    const input = screen.getByRole('textbox', { name: 'Objective' })
+    fireEvent.change(input, { target: { value: 'Keep my unsent objective' } })
+    fireEvent.click(disclosure.querySelector('summary')!)
+    expect(disclosure.open).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'New objective' }))
+    expect(screen.getByRole('textbox', { name: 'Objective' })).toBe(input)
+    expect(input).toHaveProperty('value', 'Keep my unsent objective')
+    expect(globalThis.document.activeElement).toBe(input)
+    expect(adapter.createObjective).not.toHaveBeenCalled()
+  } finally {
+    HTMLElement.prototype.scrollIntoView = original
+  }
+})
+
+it('returns from Settings to the open originating setup with its unsent draft', () => {
+  const original = HTMLElement.prototype.scrollIntoView
+  HTMLElement.prototype.scrollIntoView = vi.fn()
+  const current = ownerChatSnapshot()
+  current.connection!.ownerScope = 'home-settings-return'
+  const adapter = { mode: 'runtime', getSnapshot: () => current, createObjective: vi.fn() } as unknown as RuntimeOrganizationAdapter
+
+  function Surface() {
+    const routing = useOverlayRouting()
+
+    return routing.settingsOpen ? <button onClick={routing.closeOverlayToPreviousRoute}>Return from settings</button> : <Home adapter={adapter} snapshot={current} />
+  }
+
+  try {
+    render(<MemoryRouter initialEntries={['/home']}><Surface /></MemoryRouter>)
+    fireEvent.click(screen.getByRole('button', { name: 'New objective' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Objective' }), { target: { value: 'Preserve setup context' } })
+    fireEvent.click(screen.getByRole('link', { name: 'Review profile model' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Return from settings' }))
+    expect(screen.getByRole('region', { name: 'Organization setup' })).toBeTruthy()
+    expect(screen.getByRole('textbox', { name: 'Objective' })).toHaveProperty('value', 'Preserve setup context')
+    expect(adapter.createObjective).not.toHaveBeenCalled()
   } finally {
     HTMLElement.prototype.scrollIntoView = original
   }

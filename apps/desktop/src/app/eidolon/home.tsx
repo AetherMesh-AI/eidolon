@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { Link, useLocation } from 'react-router'
+import { Link, useLocation, useNavigate } from 'react-router'
 
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n/context'
@@ -72,7 +72,13 @@ export function HomeObjective({
 }
 
 function focusIntake() {
-  document.getElementById('eid-home-intake')?.scrollIntoView({ block: 'start' })
+  const intake = document.getElementById('eid-home-intake') as HTMLDetailsElement | null
+
+  if (intake) {
+    intake.open = true
+  }
+
+  intake?.scrollIntoView({ block: 'start' })
   document.getElementById('eid-objective')?.focus({ preventScroll: true })
 }
 
@@ -81,6 +87,8 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
   const copy = t.organizationHome
   const data = homeData(snapshot)
   const { hash } = useLocation()
+  const navigate = useNavigate()
+  const canChooseRecipient = snapshot.connection?.state === 'ready' && Boolean(snapshot.connection.ownerScope ?? snapshot.connection.scope)
   const intakeFocused = useRef(false)
   // eslint-disable-next-line no-restricted-syntax -- one-shot focus guard for explicit navigation, not mirrored reactive data
   useEffect(() => {
@@ -97,7 +105,18 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
   }, [hash, snapshot.connection?.state])
 
   const intake = (
-    <section className="eid-home-intake" id="eid-home-intake">
+    <details className="eid-home-intake" id="eid-home-intake" onToggle={event => {
+      const nextHash = event.currentTarget.open ? '#eid-home-intake' : ''
+
+      if (hash !== nextHash) {
+        navigate({ hash: nextHash }, { replace: true })
+      }
+
+      if (!event.currentTarget.open) {
+        document.getElementById('eid-home-new-objective')?.focus({ preventScroll: true })
+      }
+    }} open={hash === '#eid-home-intake' || undefined}>
+      <summary>{copy.newObjective}</summary>
       {adapter.mode === 'runtime' && (
         <Command
           adapter={adapter}
@@ -106,7 +125,8 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
           snapshot={snapshot}
         />
       )}
-    </section>
+      {adapter.mode === 'runtime' && <RuntimeSetup snapshot={snapshot} />}
+    </details>
   )
 
   return (
@@ -118,9 +138,15 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
           <p>{copy.introduction}</p>
         </div>
         {adapter.mode === 'runtime' && (
-          <Button onClick={focusIntake} variant="default">
-            {copy.newObjective}
-          </Button>
+          <div className="eid-home-actions">
+            <Button disabled={!canChooseRecipient} onClick={() => navigate('/messages?recipient=executive')} variant="default">{copy.messageOrganization}</Button>
+            <Button id="eid-home-new-objective" onClick={() => {
+              focusIntake()
+              intakeFocused.current = true
+              navigate({ hash: '#eid-home-intake' }, { replace: true })
+            }} variant="secondary">{copy.newObjective}</Button>
+            {!canChooseRecipient && <p role="status">{copy.messageOrganizationUnavailable}</p>}
+          </div>
         )}
       </header>
       {snapshot.connection && snapshot.connection.state !== 'ready' && (
@@ -132,6 +158,7 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
             <h2>{copy.happening}</h2>
             <p>{copy.happeningNote}</p>
           </header>
+          <div aria-label={copy.happening} className="eid-home-panel-body" role="group" tabIndex={0}>
           {data.objectives.length ? (
             data.objectives
               .slice(0, 2)
@@ -139,6 +166,7 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
           ) : (
             <p className="eid-home-empty">{copy.noWork}</p>
           )}
+          </div>
           <Link className="eid-home-action" to="/objectives">
             {copy.viewObjectives} →
           </Link>
@@ -148,6 +176,7 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
             <h2>{copy.needsYou}</h2>
             <p>{copy.needsNote}</p>
           </header>
+          <div aria-label={copy.needsYou} className="eid-home-panel-body" role="group" tabIndex={0}>
           {data.requests.slice(0, 3).map(request => (
             <article className="eid-home-record" key={request.id}>
               <h3>{snapshot.objectives.find(item => item.id === request.objectiveId)?.title ?? request.objectiveId}</h3>
@@ -160,6 +189,7 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
           {!data.requests.length && (
             <p className="eid-home-empty">{snapshot.requests ? copy.noNeeds : copy.requestsUnavailable}</p>
           )}
+          </div>
           <Link className="eid-home-action" to="/requests">
             {copy.viewRequests} →
           </Link>
@@ -169,6 +199,7 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
             <h2>{copy.ready}</h2>
             <p>{copy.readyNote}</p>
           </header>
+          <div aria-label={copy.ready} className="eid-home-panel-body" role="group" tabIndex={0}>
           {data.deliverables.slice(0, 3).map(item => (
             <article className="eid-home-record" key={item.objectiveId}>
               <small className="eid-status-completed">{copy.accepted}</small>
@@ -183,6 +214,7 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
           {!data.deliverables.length && (
             <p className="eid-home-empty">{snapshot.outcomes ? copy.noReady : copy.outcomesUnavailable}</p>
           )}
+          </div>
           <Link className="eid-home-action" to="/artifacts">
             {copy.viewDeliverables} →
           </Link>
@@ -215,8 +247,7 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
         {!data.activity.length && <p>{copy.noActivity}</p>}
       </section>
       <p className="eid-note">{copy.snapshotNote}</p>
-      {intake}
-      {adapter.mode === 'runtime' && <RuntimeSetup snapshot={snapshot} />}
+      {adapter.mode === 'runtime' && intake}
     </div>
   )
 }

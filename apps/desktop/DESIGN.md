@@ -406,7 +406,12 @@ pending owner intervention requests, and accepted outcomes with deliverable IDs
 are separate groups. Task completion percentages do not imply final acceptance.
 Missing queues and disconnected snapshots are labeled. Full history stays in the
 existing dedicated views. The intake retains its existing scope-keyed draft and
-submission identity; only an explicit New objective click scrolls/focuses it.
+submission identity inside a mounted disclosure; explicit New objective opens and
+focuses it. Closing the disclosure preserves its draft. Home overview cards keep
+long lists internally scrollable at normal desktop sizes; smaller or zoomed
+windows retain accessible page scrolling. Message organization offers an explicit
+choice among the current organization’s active persistent Executives. It does not
+claim a shared organization conversation, select a recipient, or send automatically.
 Messages reuses durable owner/member chat and its explicit opening and allowance
 renewal controls. Browsing these routes does not dispatch work or claim presence.
 New shell copy lives in organization-home.ts and follows catalog English fallback;

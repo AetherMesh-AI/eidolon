@@ -28,7 +28,7 @@
   line-height: 1.55;
 }
 .eidolon *, .eidolon *::before, .eidolon *::after { box-sizing: border-box; }
-.eidolon :is(button, a, input, textarea, select, summary):focus-visible, .eid-rail:focus-visible { outline: 2px solid var(--aether-400); outline-offset: 3px; }
+.eidolon :is(button, a, input, textarea, select, summary, .eid-home-panel-body):focus-visible, .eid-rail:focus-visible { outline: 2px solid var(--aether-400); outline-offset: 3px; }
 .eidolon a { color: var(--aether-300); text-decoration: none; }
 .eidolon button, .eidolon input, .eidolon textarea, .eidolon select { font: inherit; }
 .eidolon button { cursor: pointer; }
@@ -362,3 +362,40 @@
 .eid-delivery-outcomes { margin-bottom: 28px; }
 .eid-delivery-outcomes .eid-home-record > a { display: block; margin-top: 10px; }
 @media (width < 800px) { .eid-deliverables-heading { padding-top: 24px; } .eid-deliverables-heading h1 { font-size: 29px; } .eid-roster-surface .eid-organization-list { padding-inline: 10px; } }
+
+.eid-home-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; max-width: 360px; }
+.eid-home-actions > p { flex-basis: 100%; font-size: 12px; }
+
+/* Home keeps the overview in the window; full intake is an explicit drilldown.
+   Its Command remains mounted so closing the disclosure does not discard drafts. */
+.eid-page:has(> .eid-home) { max-width: none; padding: 18px 28px; }
+.eid-home > .eid-home-hero { padding: 18px 0; }
+.eid-home-grid { grid-template-columns: 1.13fr .84fr 1fr; gap: 12px; }
+.eid-home-grid > .eid-home-panel { display: flex; flex-direction: column; padding: 20px; }
+.eid-home-grid > .eid-home-panel > header { flex: 0 0 auto; margin-bottom: 12px; }
+.eid-home-panel-body { min-height: 0; overflow: auto; }
+.eid-home-grid > .eid-home-panel > .eid-home-action { margin-top: auto; padding-top: 12px; }
+.eid-home-intake { margin: 0; padding: 0; border: 0; }
+.eid-home-intake > summary { cursor: pointer; padding: 8px 0; }
+.eid-home-intake[open] { margin-top: 20px; }
+.eid-home-activity { margin-top: 12px; }
+.eid-home-activity > header { margin-bottom: 10px; }
+.eid-home-activity ol { margin: 0; }
+@media (min-width: 1101px) and (min-height: 650px) {
+  .eid-page:has(> .eid-home) { height: 100%; }
+  .eid-home { height: 100%; display: flex; flex-direction: column; gap: 12px; }
+  .eid-home > * { flex-shrink: 0; }
+  .eid-home > .eid-home-grid { flex: 1 1 240px; min-height: 200px; overflow: hidden; }
+  .eid-home-panel-body { flex: 1 1 auto; }
+  .eid-home-grid > .eid-home-panel { min-height: 0; }
+  .eid-home-activity { max-height: clamp(155px, calc(100vh - 650px), 240px); overflow: auto; margin: 0; padding: 16px 20px; }
+  .eid-home > .eid-note { margin: 0; }
+  .eid-home:has(.eid-home-intake[open]) { height: auto; }
+  .eid-home:has(.eid-home-intake[open]) > .eid-home-grid { flex: none; }
+}
+@media (max-width: 1100px) {
+  .eid-home-grid { grid-template-columns: 1fr; }
+  .eid-home-panel-body { max-height: 380px; }
+}
+
+.eid-home-intake:not([open]) { display: none; }
