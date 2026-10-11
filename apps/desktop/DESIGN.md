@@ -445,7 +445,9 @@ label is backend data, not an invented completed-stage timeline. Exclude tasks
 explicitly marked historical or outside the current round; preserve their full
 history in the existing Work view. Link packages through their recorded IDs,
 never infer delegation from reporting relationships. Completed tasks and packages
-do not establish final acceptance. Recorded task rows pair a leading title and
+do not establish final acceptance. Recorded task rows keep the parent surface background
+so existing status contrast is preserved; badges wrap within their bounded column.
+Recorded task rows pair a leading title and
 assignee with a readable status badge; empty and truncated-list notices stay
 plain. These rows do not add inferred timestamps, artifacts or review decisions.
 Overview actions focus the existing request

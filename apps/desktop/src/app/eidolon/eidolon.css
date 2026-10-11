@@ -541,9 +541,9 @@
 
 /* Recorded task rows keep title, state and assignee together. Empty/truncated
    list notices remain plain text; grouping and acceptance stay ledger-owned. */
-.eid-progress-tasks > .eid-progress-task { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px 10px; padding: 12px; border: 1px solid var(--ui-stroke-tertiary); border-radius: 8px; background: var(--ui-bg-primary); }
+.eid-progress-tasks > .eid-progress-task { display: grid; grid-template-columns: minmax(0, 1fr) fit-content(45%); gap: 5px 10px; padding: 12px; border: 1px solid var(--ui-stroke-tertiary); border-radius: 8px; background: transparent; }
 .eid-progress-task > strong { grid-column: 1; font-size: 13px; line-height: 1.45; }
-.eid-progress-task > .eid-status { grid-column: 2; grid-row: 1 / span 2; align-self: start; max-width: 9rem; padding: 3px 7px; border: 1px solid currentColor; border-radius: 999px; font-size: 10px; line-height: 1.4; }
+.eid-progress-task > .eid-status { grid-column: 2; grid-row: 1 / span 2; align-self: start; min-width: 0; max-width: 9rem; white-space: normal; overflow-wrap: anywhere; padding: 3px 7px; border: 1px solid currentColor; border-radius: 999px; font-size: 10px; line-height: 1.4; }
 .eid-progress-task > small { grid-column: 1; }
 .eid-progress-task > small + small { grid-column: 1 / -1; margin-top: 3px; }
 .eid-team-work-grid .eid-progress-tasks { gap: 8px; }
