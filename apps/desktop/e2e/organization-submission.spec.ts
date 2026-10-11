@@ -104,6 +104,7 @@ print(ident)
     .getByRole('navigation', { name: 'Primary', exact: true })
 
   await navigation.getByRole('link', { name: 'Home', exact: true }).click()
+  await page.getByRole('button', { name: 'New objective', exact: true }).click()
   await page.getByRole('textbox', { name: 'Objective', exact: true }).fill(title)
   await page.getByRole('combobox', { name: 'Delivery scope', exact: true }).selectOption('managed_artifact')
   await page.getByRole('button', { name: 'Create objective', exact: true }).click()

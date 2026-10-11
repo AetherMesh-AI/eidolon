@@ -72,7 +72,9 @@ export function HomeObjective({
 }
 
 function focusIntake() {
-  document.getElementById('eid-home-intake')?.scrollIntoView({ block: 'start' })
+  const intake = document.getElementById('eid-home-intake') as HTMLDetailsElement | null
+  if (intake) intake.open = true
+  intake?.scrollIntoView({ block: 'start' })
   document.getElementById('eid-objective')?.focus({ preventScroll: true })
 }
 
@@ -99,7 +101,8 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
   }, [hash, snapshot.connection?.state])
 
   const intake = (
-    <section className="eid-home-intake" id="eid-home-intake">
+    <details className="eid-home-intake" id="eid-home-intake" open={hash === '#eid-home-intake' || undefined}>
+      <summary>{copy.newObjective}</summary>
       {adapter.mode === 'runtime' && (
         <Command
           adapter={adapter}
@@ -108,7 +111,8 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
           snapshot={snapshot}
         />
       )}
-    </section>
+      {adapter.mode === 'runtime' && <RuntimeSetup snapshot={snapshot} />}
+    </details>
   )
 
   return (
@@ -136,6 +140,7 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
             <h2>{copy.happening}</h2>
             <p>{copy.happeningNote}</p>
           </header>
+          <div className="eid-home-panel-body" tabIndex={0} aria-label={copy.happening}>
           {data.objectives.length ? (
             data.objectives
               .slice(0, 2)
@@ -143,6 +148,7 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
           ) : (
             <p className="eid-home-empty">{copy.noWork}</p>
           )}
+          </div>
           <Link className="eid-home-action" to="/objectives">
             {copy.viewObjectives} →
           </Link>
@@ -152,6 +158,7 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
             <h2>{copy.needsYou}</h2>
             <p>{copy.needsNote}</p>
           </header>
+          <div className="eid-home-panel-body" tabIndex={0} aria-label={copy.needsYou}>
           {data.requests.slice(0, 3).map(request => (
             <article className="eid-home-record" key={request.id}>
               <h3>{snapshot.objectives.find(item => item.id === request.objectiveId)?.title ?? request.objectiveId}</h3>
@@ -164,6 +171,7 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
           {!data.requests.length && (
             <p className="eid-home-empty">{snapshot.requests ? copy.noNeeds : copy.requestsUnavailable}</p>
           )}
+          </div>
           <Link className="eid-home-action" to="/requests">
             {copy.viewRequests} →
           </Link>
@@ -173,6 +181,7 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
             <h2>{copy.ready}</h2>
             <p>{copy.readyNote}</p>
           </header>
+          <div className="eid-home-panel-body" tabIndex={0} aria-label={copy.ready}>
           {data.deliverables.slice(0, 3).map(item => (
             <article className="eid-home-record" key={item.objectiveId}>
               <small className="eid-status-completed">{copy.accepted}</small>
@@ -187,6 +196,7 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
           {!data.deliverables.length && (
             <p className="eid-home-empty">{snapshot.outcomes ? copy.noReady : copy.outcomesUnavailable}</p>
           )}
+          </div>
           <Link className="eid-home-action" to="/artifacts">
             {copy.viewDeliverables} →
           </Link>
@@ -220,7 +230,6 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
       </section>
       <p className="eid-note">{copy.snapshotNote}</p>
       {intake}
-      {adapter.mode === 'runtime' && <RuntimeSetup snapshot={snapshot} />}
     </div>
   )
 }

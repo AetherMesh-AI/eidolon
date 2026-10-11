@@ -172,3 +172,29 @@ it('opens a scoped executive chooser only after explicit Home action and never s
   expect(adapter.openOwnerChat).not.toHaveBeenCalled()
   expect(adapter.sendOwnerChat).not.toHaveBeenCalled()
 })
+
+it('keeps intake mounted and its draft intact when explicitly opened and collapsed', () => {
+  const original = HTMLElement.prototype.scrollIntoView
+  HTMLElement.prototype.scrollIntoView = vi.fn()
+  const current = { ...snapshot, connection: { scope: 'fit-test', ownerScope: 'fit-test', state: 'ready' as const } }
+  const adapter = { mode: 'runtime', getSnapshot: () => current, createObjective: vi.fn() } as unknown as RuntimeOrganizationAdapter
+
+  try {
+    const view = render(<MemoryRouter><Home adapter={adapter} snapshot={current} /></MemoryRouter>)
+    const disclosure = view.container.querySelector('details.eid-home-intake') as HTMLDetailsElement
+    expect(disclosure.open).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'New objective' }))
+    expect(disclosure.open).toBe(true)
+    const input = screen.getByRole('textbox', { name: 'Objective' })
+    fireEvent.change(input, { target: { value: 'Keep my unsent objective' } })
+    fireEvent.click(disclosure.querySelector('summary')!)
+    expect(disclosure.open).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'New objective' }))
+    expect(screen.getByRole('textbox', { name: 'Objective' })).toBe(input)
+    expect(input).toHaveProperty('value', 'Keep my unsent objective')
+    expect(document.activeElement).toBe(input)
+    expect(adapter.createObjective).not.toHaveBeenCalled()
+  } finally {
+    HTMLElement.prototype.scrollIntoView = original
+  }
+})

@@ -354,6 +354,7 @@ test('retains owner attention across reloads, answers the requesting worker, and
   await page.keyboard.press('Escape')
 
   await primary.getByRole('link', { name: 'Home', exact: true }).click()
+  await page.getByRole('button', { name: 'New objective', exact: true }).click()
   await page.getByRole('textbox', { name: 'Objective', exact: true }).fill(objectiveTitle)
   await openOrganizationDisclosure(page, 'Context')
   await page
