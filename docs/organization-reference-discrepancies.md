@@ -225,6 +225,29 @@ checks and matched captures must pass before treating this iteration as verified
 the reference stage strip, artwork, review composition and final gallery remain
 outstanding.
 
+### Objective controls beside the reported phase
+
+Pause/resume and priority now occupy the main-column phase panel before progress
+and delegated work, retaining their existing scoped component owners. Current
+state, running stages, explicit mutations, uncertain retries and errors remain
+visible. Longer explanations use named disclosures; closing them does not reset
+drafts or retry intent. The runtime reports one current phase, not an ordered or
+dated stage history, so this panel makes no historical stage-completion claims.
+
+The pre-change native baseline at 1536×961 placed the main column at x222/y254,
+with manager cards at y520–766. The supplied reference has a stage/control panel
+near y215–380 and cards near y470–835. Card height also depends on task count:
+the matched baseline has one task per card, while a separate new dense capture
+exercises three. These are separate comparisons, not evidence for forcing a
+fixed card height.
+
+Native verification retains the short-window first-task/assignee requirement,
+measures the actual phase/control/progress order, and tests button, select and
+disclosure focus at 100%, 125% and 200% zoom. Real temporary-ledger scenarios
+activate pause and priority save with Enter, retaining their existing reload,
+denied-resume, unchanged-budget and exact uncertain-retry assertions. Updated
+geometry and native receipts are required before accepting this iteration.
+
 ### Objective fractional-zoom focus follow-up
 
 The short-height correction passed its title/assignee checks, but native 125%
@@ -269,9 +292,16 @@ translation, expanded disclosure or uncertain-send combination. At200% zoom,
 keyboard focus brings each target into view; the entire transcript and composer
 are not claimed to be simultaneously visible.
 
+The first Objective-controls native run (38137080891, head c0293401, tree 5071de4e) retained a 1536×961 dark capture with phase y228.33/h146.52, progress y390.84/h99.28 and cards y532.72/h246.64. The main column remained x222/w888.63. Twenty native scenarios passed, including real pause/resume; priority focus measured a 1px animated outline and the dense fixture did not refresh on a synthetic window-focus event. No short-window or full zoom acceptance is claimed from that failed run. The follow-up excludes outline width from Objective-button transitions, reloads the dense fixture through the existing snapshot path, and trims 12px of phase spacing. Existing focus, viewport and durable-state assertions remain unchanged; fresh native evidence is required.
+
+Run 38138081494 on a760e939/tree 98c3eedc passed 21 native scenarios, including both real keyboard mutations with 3px outlines, and delivered the dense fixture correctly. The inspected wide cards moved up exactly 12px to y520.72 (phase h134.52); the dense capture uses normal vertical workspace scrolling. The unchanged short-window first-assignee assertion then found Robin only 28.8% visible above the health bar at 1280×720. A short-window-only follow-up reduces the owner-row vertical margins from 18px to 10px, preserving text and control sizes. Additional native coverage checks all three dense cards, opened English explanations at each zoom, and a real Japanese locale at wide, short, narrow and 200% sizes. These changes require delta review and fresh passing evidence; no successful full native pass is claimed yet.
+
+Run 38139063787 on reviewed 38d983af/tree 35639150 retained 165 organization captures with verified hashes and no horizontal overflow, including both short-window assignees, all dense-card assertions, and the opened English zoom states. Twenty-two scenarios passed. The aggregate main visual scenario hit its unchanged six-minute total budget late in theme persistence; that run remains failed. The added Japanese scenario passed geometry/focus assertions, but actual PNG inspection found missing CJK glyphs in the hosted Linux image, so translated readability was not accepted. The bounded harness follow-up installs fonts-noto-cjk in CI and logs Japanese font selection, and gives only the enlarged main visual scenario an eight-minute aggregate budget. Every individual assertion deadline, no-retry policy, native job budget and product source remains unchanged. Fresh readable Japanese pixels and a complete successful native run are still required.
 
 ## Tall Home activity spacing
 
 Accepted main 1ea9bccc at 1536×961 places cards at y202.23–673 and activity at y685–925, with the health bar at y933. The private reference has card bottoms around y695 and activity beginning around y705. This bounded iteration reallocates 22px from the tall-window activity panel to cards: activity maximum height 240→218px, vertical panel padding 16→12px, heading gap 10→6px, event padding 12→9px and event paragraph margins 10→8px. Font sizes, records, list bounds, links, controls and the health bar are unchanged. These rules apply only at widths above 1100px and heights at least 900px; the 1280×720 layout retains its existing rules.
 
 Native verification must show the actual resulting geometry and every one of the four recorded event cards and timestamps visible at 1536×961 and 1440×900. The matched 1536 card-bottom check permits 5px around the approximate reference. Existing short-window contained-scroll, focus, intake retention and health-bar assertions remain. No passing result or exact final geometry is claimed before inspection. The reference's lower activity boundary extends beyond the app's persistent health bar, so this change does not claim complete vertical parity or add a blank Messages header.
+
+PR79 verification on 9763a26a/tree d92bbf52 completed in run 38139635971: all nine checks, 887 selected tests/types and 22 native scenarios passed. Actual 1536×961, 1440×900 and 1280×720 pixels were inspected; all four event cards and timestamps fit the two tall windows. Measured card bottoms are 695, 634 and 517 respectively, activity top/height are 707/218, 646/218 and 529/155, and health-bar tops remain 933, 872 and 692. Short-window contained scrolling remains necessary. The guarded merge produced main 629cebf8 with the same reviewed tree; postmerge run 38140970224 is tracked separately. This proves the measured fixtures, not arbitrary translated record lengths.

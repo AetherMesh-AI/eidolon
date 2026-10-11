@@ -100,6 +100,9 @@ const snapshot = {
       phase: 'Draft and review',
       milestone: 'Release context verified',
       progress: 60,
+      priority: 'P3',
+      priorityRevision: 0,
+      dispatchControl: { paused: false, revision: 0, runningCount: 1 },
       planningMode: 'executive_packages',
       acceptance: { status: 'reviewing', round: 1, maxReplans: 2, criteria: ['Brief reflects verified changes'], summary: null, deliverableId: null },
       workPackages: [
@@ -170,6 +173,9 @@ test.afterEach(async () => {
 })
 
 test('keeps native organization navigation, roster and objective layouts usable at both window sizes', async () => {
+  // The paired Objective focus/disclosure coverage adds 56 captures to this aggregate scenario.
+  // Keep individual assertion deadlines unchanged while retaining the full theme-persistence pass.
+  test.setTimeout(480_000)
   fixture = await setupMockBackend()
   const { app, page, mock } = fixture
   // A newer main can arrive during this long-running source-checkout test.
@@ -478,6 +484,9 @@ test('keeps native organization navigation, roster and objective layouts usable 
     await resize(1536, 961)
     await workspace.evaluate(element => { element.scrollTop = 0 })
     const summary = overview.getByRole('region', { name: 'Progress overview', exact: true })
+    const phase = overview.getByRole('region', { name: 'Current phase', exact: true })
+    await expect(phase.getByRole('button', { name: 'Pause new dispatch', exact: true })).toBeEnabled()
+    await expect(phase.getByRole('combobox', { name: 'New priority', exact: true })).toHaveValue('P3')
     const assignmentCards = overview.locator('.eid-team-work-grid > article')
     await expect(assignmentCards).toHaveCount(3)
 
@@ -488,12 +497,14 @@ test('keeps native organization navigation, roster and objective layouts usable 
         return { x, y, width, height }
       }
 
-      return { main: bounds(element.querySelector('.eid-objective-progress-main')!), aside: bounds(element.querySelector('.eid-objective-progress-aside')!), summary: bounds(element.querySelector('.eid-progress-summary')!), cards: [...element.querySelectorAll('.eid-team-work-grid > article')].map(bounds) }
+      return { main: bounds(element.querySelector('.eid-objective-progress-main')!), aside: bounds(element.querySelector('.eid-objective-progress-aside')!), phase: bounds(element.querySelector('.eid-objective-phase')!), actions: bounds(element.querySelector('.eid-objective-actions')!), summary: bounds(element.querySelector('.eid-progress-summary')!), cards: [...element.querySelectorAll('.eid-team-work-grid > article')].map(bounds) }
     })
 
     expect(Math.abs(geometry.main.x - 222), 'Objective reference left gutter').toBeLessThanOrEqual(10)
     expect(Math.abs(geometry.main.width - 898), 'Objective reference main column').toBeLessThanOrEqual(10)
-    expect(geometry.summary.height, 'compact progress retains recorded phase and actions').toBeLessThanOrEqual(190)
+    expect(geometry.summary.height, 'compact progress retains completion and acceptance context').toBeLessThanOrEqual(190)
+    expect(geometry.actions.y + geometry.actions.height, 'real controls precede the progress summary').toBeLessThan(geometry.summary.y)
+    expect(geometry.summary.y + geometry.summary.height, 'progress precedes delegated work').toBeLessThan(geometry.cards[0].y)
 
     for (const card of geometry.cards) {
       expect(Math.abs(card.y - geometry.cards[0].y), 'three recorded assignments share a row').toBeLessThanOrEqual(1)
@@ -504,11 +515,33 @@ test('keeps native organization navigation, roster and objective layouts usable 
     }
     objectiveChecks.push({ mode, viewport: '1536x961', ...geometry })
     await capture(`reference-objective-${mode}`)
+    displayedSnapshot = {
+      ...snapshot,
+      objectives: snapshot.objectives.map(objective => objective.id !== 'release' || !objective.workPackages ? objective : {
+        ...objective,
+        workPackages: objective.workPackages.map(item => ({ ...item, taskIds: item.taskIds.flatMap(id => [id, `${id}-followup-1`, `${id}-followup-2`]) }))
+      }),
+      tasks: snapshot.tasks.flatMap(task => [task, ...[1, 2].map(index => ({ ...task, id: `${task.id}-followup-${index}`, title: `${task.title} · follow-up ${index}` }))])
+    }
+    await page.reload()
+    await expect(assignmentCards).toHaveCount(3)
+    for (const card of await assignmentCards.all()) {
+      await expect(card.locator('.eid-progress-tasks > li')).toHaveCount(3)
+    }
+    await workspace.evaluate(element => { element.scrollTop = 0 })
+    await expect(phase.getByRole('button', { name: 'Pause new dispatch', exact: true })).toBeInViewport({ ratio: 1 })
+    await capture(`objective-multiple-tasks-${mode}`)
+    displayedSnapshot = snapshot
+    await page.reload()
+    await expect(assignmentCards.first().locator('.eid-progress-tasks > li')).toHaveCount(1)
     await resize(1280, 720)
     await workspace.evaluate(element => { element.scrollTop = 0 })
     await expect(assignmentCards.first().getByText('Draft the release brief', { exact: true })).toBeInViewport({ ratio: 1 })
     await expect(assignmentCards.first().getByText('Robin', { exact: true })).toBeInViewport({ ratio: 1 })
+    await expect(phase.getByRole('button', { name: 'Pause new dispatch', exact: true })).toBeInViewport({ ratio: 1 })
+    await expect(phase.getByRole('combobox', { name: 'New priority', exact: true })).toBeInViewport({ ratio: 1 })
     await capture(`objective-short-${mode}`)
+    await phase.getByRole('combobox', { name: 'New priority', exact: true }).selectOption('P2')
 
     for (const zoom of [1, 1.25, 2]) {
       await page.evaluate(value => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(value * 100), zoom)
@@ -523,7 +556,38 @@ test('keeps native organization navigation, roster and objective layouts usable 
         await capture(`objective-control-${mode}-${zoom}-${name.split(' ')[0]}-${name.split(' ')[1]}`, workspace, zoom !== 1, true)
       }
 
-      await expect(summary).toContainText('Draft and review')
+      for (const [name, control] of [
+        ['pause', phase.getByRole('button', { name: 'Pause new dispatch', exact: true })],
+        ['dispatch-review', phase.getByRole('button', { name: 'Review current dispatch', exact: true })],
+        ['priority-select', phase.getByRole('combobox', { name: 'New priority', exact: true })],
+        ['priority-save', phase.getByRole('button', { name: 'Save priority', exact: true })],
+        ['priority-review', phase.getByRole('button', { name: 'Review current priority', exact: true })],
+        ['dispatch-details', phase.locator('summary').filter({ hasText: 'Pause and resume details' })],
+        ['priority-details', phase.locator('summary').filter({ hasText: 'Priority details' })]
+      ] as const) {
+        await control.scrollIntoViewIfNeeded()
+        focusChecks.push(await verifyKeyboardFocus(page, control, `Objective action ${mode} ${zoom} ${name}`))
+        await expect(control).toBeInViewport({ ratio: 1 })
+        await capture(`objective-action-${mode}-${zoom}-${name}`, workspace, zoom !== 1, true)
+      }
+
+      for (const details of await phase.locator('details').all()) {
+        const toggle = details.locator('summary')
+        await toggle.click()
+        await expect(details).toHaveAttribute('open', '')
+      }
+      await phase.locator('summary').first().scrollIntoViewIfNeeded()
+      await capture(`objective-expanded-${mode}-${zoom}-start`, workspace, zoom !== 1, true)
+      await phase.locator('details p').last().scrollIntoViewIfNeeded()
+      await expect(phase.locator('details p').last()).toBeInViewport({ ratio: 1 })
+      await capture(`objective-expanded-${mode}-${zoom}-end`, workspace, zoom !== 1, true)
+      for (const details of await phase.locator('details').all()) {
+        await details.locator('summary').click()
+        await expect(details).not.toHaveAttribute('open', '')
+      }
+
+      await expect(phase).toContainText('Draft and review')
+      await expect(phase.getByRole('combobox', { name: 'New priority', exact: true })).toHaveValue('P2')
       await expect(overview.getByRole('region', { name: 'Delivery', exact: true })).toContainText('has not been recorded')
     }
 
@@ -916,4 +980,75 @@ test('keeps native organization navigation, roster and objective layouts usable 
   expect(mock.receivedPrompts).toHaveLength(0)
   expect(organizationMethods.length).toBeGreaterThan(0)
   expect([...new Set(organizationMethods)].sort()).toEqual(['organization.outcomes', 'organization.snapshot'])
+})
+
+// A real configured locale exercises translated controls, not substituted DOM text.
+test('retains translated Objective labels and opened explanations with contained scrolling', async () => {
+  fixture = await setupMockBackend({ extraDisplayConfig: '  language: ja' })
+  const { app, page, mock } = fixture
+  const methods: string[] = []
+  await page.routeWebSocket(/.*/, socket => {
+    const server = socket.connectToServer()
+    socket.onMessage(message => {
+      const request = JSON.parse(message.toString()) as { id?: number; method?: string }
+      if (request.method?.startsWith('organization.')) { methods.push(request.method) }
+      if (request.method === 'organization.snapshot' || request.method === 'organization.outcomes') {
+        socket.send(JSON.stringify({ jsonrpc: '2.0', id: request.id, result: request.method === 'organization.snapshot' ? snapshot : snapshot.outcomes }))
+      } else { server.send(message) }
+    })
+  })
+  await page.reload()
+  await expect(page.locator('html')).toHaveAttribute('lang', 'ja')
+  await page.evaluate(() => { location.hash = '/objectives/release' })
+  const phase = page.locator('.eid-objective-phase')
+  await expect(phase.getByRole('button', { name: '新規実行を一時停止', exact: true })).toBeEnabled()
+  const captures: object[] = []
+  const focusChecks: object[] = []
+  for (const [width, height, zoom] of [[1536, 961, 1], [1280, 720, 1], [1280, 720, 2], [760, 900, 1]]) {
+    await page.evaluate(value => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(value * 100), 1)
+    await app.evaluate(({ BrowserWindow }, size) => {
+      const window = BrowserWindow.getAllWindows()[0]
+      window.unmaximize()
+      window.setMinimumSize(600, 600)
+      window.setContentSize(size.width, size.height)
+    }, { width, height })
+    await expect.poll(() => page.evaluate(() => innerWidth)).toBe(width)
+    await page.evaluate(value => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(value * 100), zoom)
+    await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(zoom)
+    for (const details of await phase.locator('details').all()) {
+      if (await details.getAttribute('open') === null) { await details.locator('summary').click() }
+      await expect(details).toHaveAttribute('open', '')
+    }
+    const controls = phase.locator('button:not(:disabled), select, summary')
+    for (const control of await controls.all()) {
+      const label = (await control.textContent())?.trim() ?? ''
+      await control.scrollIntoViewIfNeeded()
+      focusChecks.push(await verifyKeyboardFocus(page, control, `Japanese ${width}x${height} ${zoom} ${label}`))
+      await expect(control).toBeInViewport({ ratio: 1 })
+      expect(await control.evaluate(element => element.scrollWidth - element.clientWidth), label).toBeLessThanOrEqual(1)
+    }
+    expect(await phase.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
+    for (const [position, target] of [['start', phase.locator('summary').first()], ['end', phase.locator('details p').last()]] as const) {
+      await target.scrollIntoViewIfNeeded()
+      await expect(target).toBeInViewport({ ratio: 1 })
+      const name = `objective-japanese-${width}-${height}-${zoom}-${position}.png`
+      await page.evaluate(async () => {
+        await document.fonts.ready
+        await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+      })
+      const bytes = zoom !== 1
+        ? Buffer.from(await app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
+        : await page.screenshot({ path: test.info().outputPath(name), animations: 'disabled', caret: 'hide' })
+      if (zoom !== 1) { writeFileSync(test.info().outputPath(name), bytes) }
+      await test.info().attach(name, { body: bytes, contentType: 'image/png' })
+      captures.push({ name, width, height, zoom, sha256: createHash('sha256').update(bytes).digest('hex') })
+    }
+  }
+  expect(mock.receivedPrompts).toHaveLength(0)
+  expect([...new Set(methods)].every(method => ['organization.snapshot', 'organization.outcomes'].includes(method))).toBe(true)
+  await test.info().attach('objective-translated-evidence', { contentType: 'application/json', body: JSON.stringify({
+    sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+    sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
+    locale: 'ja', providerCalls: mock.receivedPrompts.length, captures, focusChecks
+  }) })
 })

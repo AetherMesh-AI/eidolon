@@ -258,7 +258,8 @@ jobs:
         run: bash scripts/ci/organization-sandbox.sh
       - name: Install Electron system dependencies
         run: |
-          sudo apt-get install -y xvfb libgtk-3-0 libnotify4 libnss3 libxss1 libxtst6 xdg-utils libatspi2.0-0 libdrm2 libgbm1 libasound2
+          sudo apt-get install -y xvfb libgtk-3-0 libnotify4 libnss3 libxss1 libxtst6 xdg-utils libatspi2.0-0 libdrm2 libgbm1 libasound2 fonts-noto-cjk
+          fc-match --format='%{family}\n' ':lang=ja'
       - name: Build desktop
         working-directory: apps/desktop
         run: npm run build

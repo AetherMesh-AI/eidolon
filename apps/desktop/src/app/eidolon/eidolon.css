@@ -330,16 +330,26 @@
 .eid-objective-overview .eid-home-panel > header { margin-bottom: 14px; }
 .eid-progress-summary { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(200px, 1.2fr); gap: 10px 18px; align-items: start; }
 .eid-objective-overview .eid-progress-summary > header { margin: 0; }
-.eid-progress-summary > .eid-recorded-phase { grid-column: 1; grid-row: 2; }
-.eid-progress-summary > .eid-home-progress { grid-column: 2; grid-row: 1; margin: 4px 0; }
-.eid-progress-summary > .eid-task-counts { grid-column: 2; grid-row: 2; margin: 0; }
-.eid-progress-summary > button { grid-column: 2; justify-self: end; }
-.eid-progress-summary > .eid-home-paused { margin: 0; }
+.eid-progress-metrics { display: grid; gap: 6px; min-width: 0; }
+.eid-progress-metrics > :is(.eid-home-progress, .eid-task-counts) { margin: 0; }
+.eid-objective-overview :is(.eid-objective-phase, .eid-progress-summary) { padding: 12px 14px; }
+.eid-objective-overview .eid-objective-phase { padding-block: 10px; }
+.eid-objective-phase-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 12px; }
+.eid-objective-phase-heading > button { flex: none; }
+.eid-objective-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 6px; }
+.eid-objective-actions > section { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; font-size: 12px; }
+.eid-objective-actions p, .eid-objective-actions .eid-inline { margin: 0; }
+.eid-objective-actions .eid-inline { gap: 6px; }
+.eid-objective-actions summary { cursor: pointer; }
+.eid-objective-actions details[open] > p { margin-top: 8px; }
+.eid-priority-controls select { color: var(--text-primary); background: var(--eidolon-surface-2); border: 1px solid var(--eidolon-border); border-radius: 4px; min-height: 24px; }
+.eid-progress-summary h2 { font-size: 20px; }
+.eid-progress-summary .eid-task-counts { font-size: 12px; }
 .eid-recorded-phase { display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline; }
 .eid-task-counts { display: flex; flex-wrap: wrap; gap: 10px 18px; list-style: none; padding: 0; margin: 12px 0; }
 .eid-task-counts strong { font-variant-numeric: tabular-nums; }
 .eid-team-work > h2, .eid-team-work h3 { font-family: Georgia, 'Times New Roman', serif; font-weight: 500; }
-.eid-team-work > h2 { font-size: 24px; margin: 0 0 8px; }
+.eid-team-work > p { margin: 0 0 8px; font-size: 12px; }
 .eid-team-work-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 12px; }
 .eid-team-work-grid h3 { font-size: 18px; margin: 0 0 6px; }
 .eid-team-owner { display: flex; align-items: flex-start; gap: 12px; }
@@ -348,8 +358,8 @@
 .eid-progress-tasks li { display: flex; flex-direction: column; gap: 6px; overflow-wrap: anywhere; }
 .eid-objective-overview p, .eid-objective-overview h3 { overflow-wrap: anywhere; }
 .eid-objective-controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr)); gap: 24px; margin: 32px 0; }
-@media (max-width: 1100px) { .eid-objective-overview { grid-template-columns: 1fr; } .eid-objective-progress-main { display: contents; } .eid-objective-progress-main > .eid-home-panel { grid-row: 1; } .eid-team-work { grid-row: 3; } .eid-objective-progress-aside { grid-row: 2; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 800px) { .eid-objective-progress-aside { grid-template-columns: 1fr; } .eid-progress-summary { display: flex; flex-direction: column; } .eid-progress-summary > .eid-home-progress { width: 100%; } }
+@media (max-width: 1100px) { .eid-objective-overview { grid-template-columns: 1fr; } .eid-objective-progress-main { display: contents; } .eid-objective-phase { grid-row: 1; } .eid-progress-summary { grid-row: 2; } .eid-team-work { grid-row: 4; } .eid-objective-progress-aside { grid-row: 3; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 800px) { .eid-objective-actions, .eid-objective-progress-aside { grid-template-columns: 1fr; } .eid-progress-summary { display: flex; flex-direction: column; } .eid-progress-metrics { width: 100%; } }
 .eid-system-health { display: flex; flex: 0 0 auto; min-height: 28px; align-items: center; gap: 12px; padding: 2px 12px; border-top: 1px solid var(--eidolon-border); font-size: 11px; background: var(--ui-bg-sidebar); }
 .eid-health-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-secondary); }
 .eid-health-healthy { background: var(--status-success); }
@@ -493,6 +503,7 @@
 @media (min-width: 1101px) and (max-height: 800px) {
   .eid-page:has(> .eid-objective-hero) { padding-top: 12px; }
   .eid-objective-hero { margin-top: 8px; margin-bottom: 8px; }
+  .eid-page:has(> .eid-objective-hero) > .eid-inline { margin-block: 10px; }
   .eid-objective-overview { margin-top: 12px; }
   .eid-objective-progress-main, .eid-objective-progress-aside { gap: 12px; }
   .eid-objective-overview .eid-home-panel { padding: 14px; }
@@ -500,8 +511,11 @@
   .eid-team-work-grid .eid-progress-tasks { margin-top: 12px; }
 }
 
+/* Focus outlines must appear immediately, without transition-all interpolating their width. */
+.eid-page:has(> .eid-objective-hero) button { transition-property: color, background-color, border-color, box-shadow; }
+
 /* Keep the outline at least two CSS pixels after native fractional zoom rounding. */
-.eid-page:has(> .eid-objective-hero) :is(button, a, input, textarea, summary):focus-visible { outline-width: 3px; }
+.eid-page:has(> .eid-objective-hero) :is(button, a, input, textarea, select, summary):focus-visible { outline-width: 3px; }
 
 /* Keep retained-read recovery alongside its error without displacing composing. */
 .eid-messages-view .eid-owner-chat-panel:has(> .eid-owner-chat-recovery) { gap: 6px; }

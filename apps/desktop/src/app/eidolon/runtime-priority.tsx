@@ -77,20 +77,19 @@ export function RuntimePriority({ objective, adapter, snapshot }: {
     setMessage('')
   }
 
-  return <section aria-label={copy.priorityHeading}>
-    <h2>{copy.priorityHeading}</h2>
+  return <section aria-label={copy.priorityHeading} className="eid-priority-controls">
+    <h2 className="sr-only">{copy.priorityHeading}</h2>
     <p>{copy.priorityCurrent}: {objective.priority} · {copy.priorityVersion}: {objective.priorityRevision ?? copy.notRecorded}</p>
     {!editable ? <p>{copy.priorityTerminal}</p> : !supported ? <p>{copy.priorityUnavailable}</p> : null}
     {((editable && supported) || (intent && adapter.changePriority)) && <>
-      {editable && supported && <><label>{copy.priorityNew}<select aria-label={copy.priorityNew} disabled={busy || !!intent || !current()} onChange={event => setPriority(event.target.value as ObjectivePriority)} value={priority}>
-        {(['P1', 'P2', 'P3', 'P4', 'P5'] as const).map(value => <option key={value} value={value}>{value}</option>)}
-      </select></label>
-      <p>{copy.priorityVersion}: {revision}</p></>}
       <div className="eid-inline">
-        <Button disabled={busy || !current() || (!intent && priority === objective.priority)} onClick={() => void save()} size="sm" variant="secondary">{busy ? copy.prioritySaving : intent ? copy.priorityRetry : copy.prioritySave}</Button>
-        <Button disabled={busy || !current()} onClick={review} size="sm" variant="secondary">{copy.priorityReview}</Button>
+        {editable && supported && <label><span className="sr-only">{copy.priorityNew}</span><select aria-label={copy.priorityNew} disabled={busy || !!intent || !current()} onChange={event => setPriority(event.target.value as ObjectivePriority)} value={priority}>
+          {(['P1', 'P2', 'P3', 'P4', 'P5'] as const).map(value => <option key={value} value={value}>{value}</option>)}
+        </select></label>}
+        <Button disabled={busy || !current() || (!intent && priority === objective.priority)} onClick={() => void save()} size="micro" variant="secondary">{busy ? copy.prioritySaving : intent ? copy.priorityRetry : copy.prioritySave}</Button>
+        <Button disabled={busy || !current()} onClick={review} size="micro" variant="secondary">{copy.priorityReview}</Button>
       </div>
-      <p className="eid-note">{copy.prioritySemantics}</p>
+      <details><summary>{copy.priorityDetails}</summary><p>{copy.priorityVersion}: {revision}</p><p className="eid-note">{copy.prioritySemantics}</p></details>
     </>}
     {error && <p role="alert">{error} {copy.priorityUncertain}</p>}
     {message && <p role="status">{message}</p>}

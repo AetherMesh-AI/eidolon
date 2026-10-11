@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react'
+
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n/context'
 
@@ -17,9 +19,10 @@ export function TaskCounts({ objective, snapshot }: { objective: Objective; snap
   </ul>
 }
 
-export function ObjectiveProgress({ objective, snapshot, onReviewRequests, onReviewWork }: {
+export function ObjectiveProgress({ objective, snapshot, controls, onReviewRequests, onReviewWork }: {
   objective: Objective
   snapshot: OrganizationSnapshot
+  controls?: ReactNode
   onReviewRequests(): void
   onReviewWork(): void
 }) {
@@ -42,24 +45,31 @@ export function ObjectiveProgress({ objective, snapshot, onReviewRequests, onRev
   </ul>
 
   return <div aria-label={copy.overview} className="eid-objective-overview" onFocus={event => {
-    if (event.target.matches('button:focus-visible, a:focus-visible')) {
+    if (event.target.matches('button:focus-visible, a:focus-visible, select:focus-visible, summary:focus-visible')) {
       event.target.scrollIntoView({ block: 'center', inline: 'nearest' })
     }
   }} role="region">
     <div className="eid-objective-progress-main">
+      <section aria-label={copy.phase} className="eid-home-panel eid-objective-phase">
+        <div className="eid-objective-phase-heading">
+          <div className="eid-recorded-phase"><span>{copy.phase}</span><strong>{objective.phase || copy.phaseUnknown}</strong></div>
+          <Button onClick={onReviewWork} size="micro" variant="secondary">{copy.inspectWork}</Button>
+        </div>
+        {controls && <div className="eid-objective-actions">{controls}</div>}
+        {!controls && objective.dispatchControl?.paused && <p className="eid-home-paused">{t.organizationHome.paused} · {t.organizationHome.running(number.format(objective.dispatchControl.runningCount))}</p>}
+      </section>
       <section aria-label={copy.progress} className="eid-home-panel eid-progress-summary">
         <header><h2>{copy.progress}</h2><p>{copy.progressNote}</p></header>
-        <div className="eid-recorded-phase"><span>{copy.phase}</span><strong>{objective.phase || copy.phaseUnknown}</strong></div>
+        <div className="eid-progress-metrics">
         {progress !== undefined && Number.isFinite(progress) ? <div className="eid-home-progress">
           <progress aria-label={copy.progress} max={100} value={progress} />
           <small>{t.organizationHome.completedTasks(new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 1 }).format(progress / 100))}</small>
         </div> : <p>{t.organizationHome.progressUnknown}</p>}
         <TaskCounts objective={objective} snapshot={snapshot} />
-        {objective.dispatchControl?.paused && <p className="eid-home-paused">{t.organizationHome.paused} · {t.organizationHome.running(number.format(objective.dispatchControl.runningCount))}</p>}
-        <Button onClick={onReviewWork} size="sm" variant="secondary">{copy.inspectWork}</Button>
+        </div>
       </section>
       <section aria-label={copy.teamWork} className="eid-team-work">
-        <h2>{copy.teamWork}</h2>
+        <h2 className="sr-only">{copy.teamWork}</h2>
         <p>{copy.teamNote}</p>
         <div className="eid-team-work-grid">
           {data.groups.map(group => <article className="eid-home-panel" key={group.package.id}>
