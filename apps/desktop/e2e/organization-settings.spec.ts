@@ -19,6 +19,8 @@ test.afterEach(async () => {
     ), { timeout: 30_000 }).toBe(0).catch(() => undefined)
     const requests = await fixture.app.evaluate(() => (globalThis as any).__settingsConfigRequests ?? [])
     await test.info().attach('settings-config-transport', { body: JSON.stringify(requests, null, 2), contentType: 'application/json' })
+    const readiness = await fixture.page.evaluate(() => (window as any).__settingsEditorReadiness ?? [])
+    await test.info().attach('settings-editor-readiness', { body: JSON.stringify(readiness, null, 2), contentType: 'application/json' })
   }
   await fixture?.cleanup()
   fixture = undefined
@@ -35,7 +37,7 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
     // Observe real Node HTTP requests without replacing IPC, responses or routing.
     process.getBuiltinModule('diagnostics_channel').channel('http.client.request.start').subscribe(({ request }: any) => {
       const url = new URL(request.path, 'http://127.0.0.1')
-      if (!['/api/config', '/api/config/schema'].includes(url.pathname)) return
+      if (!['/api/config', '/api/config/schema', '/api/model/info', '/api/model/options', '/api/model/auxiliary', '/api/model/moa'].includes(url.pathname)) return
       const row: any = { path: url.pathname, profile: url.searchParams.get('profile'), method: request.method, startedAt: Date.now() }
       rows.push(row)
       request.once('response', (response: any) => {
@@ -44,6 +46,23 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
       })
       request.once('error', (error: Error) => { row.finishedAt = Date.now(); row.error = error.message })
     })
+  })
+  await page.evaluate(() => {
+    const rows: object[] = []
+    ;(window as any).__settingsEditorReadiness = rows
+    let previous = ''
+    const record = () => {
+      const root = document.querySelector('.eid-settings-page')
+      const state = {
+        mounted: !!root,
+        skeletons: root?.querySelectorAll('[data-slot=skeleton]').length ?? 0,
+        applyPresent: [...(root?.querySelectorAll('button') ?? [])].some(button => button.textContent?.trim() === 'Apply')
+      }
+      const key = JSON.stringify(state)
+      if (key !== previous) { rows.push({ at: Date.now(), ...state }); previous = key }
+    }
+    new MutationObserver(record).observe(document.body, { childList: true, subtree: true })
+    record()
   })
   await waitForAppReady(fixture)
   const navigation = page.getByRole('complementary', { name: 'Eidolon navigation', exact: true })
