@@ -90,6 +90,8 @@ test('native confirmation keyboard respects focused actions in shared host and s
         await expect(dialog.getByRole('button', { name: 'Cancel', exact: true })).toBeFocused()
       }
       await capture(`${surface}-${action.toLowerCase().replaceAll(' ', '-')}`)
+      // Capture finishes menu/dialog animations; focus must still belong to the action.
+      await expect(action.startsWith('Cancel') ? dialog.getByRole('button', { name: 'Cancel', exact: true }) : confirm).toBeFocused()
       // Only actual browser key activation decides the answer. No synthetic click.
       await page.keyboard.press(action === 'Escape' ? 'Escape' : action === 'Cancel Space' ? 'Space' : 'Enter')
       await expect(dialog).toHaveCount(0)

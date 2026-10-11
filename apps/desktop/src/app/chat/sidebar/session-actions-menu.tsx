@@ -200,7 +200,7 @@ function useSessionActions({
   const { t } = useI18n()
   const r = t.sidebar.row
   const [renameOpen, setRenameOpen] = useState(false)
-  // The rename item opens a Dialog. When a menu closes, Radix restores focus to
+  // Rename and Delete open dialogs. When a menu closes, Radix restores focus to
   // its trigger — for a sidebar row that trigger is the row's own <button>, so
   // focus lands there instead of the dialog's input: Space then activates the
   // row (selecting the session) and the arrow keys move the list rather than
@@ -452,6 +452,8 @@ function useSessionActions({
         // through this menu (sidebar rows, tab menus, the chat header) gets the
         // guard for free.
         if (onDelete) {
+          // The confirmation owns focus after this menu closes, just like Rename.
+          suppressCloseFocusRef.current = true
           setDeleteOpen(true)
         }
       },
@@ -529,8 +531,8 @@ function useSessionActions({
     />
   )
 
-  // Consumed once per close: when rename was the action that closed the menu,
-  // block Radix's focus-restore to the trigger so the dialog input keeps focus.
+  // Consumed once per close: when an action opened a dialog, block Radix's
+  // focus-restore to the trigger so the dialog keeps keyboard ownership.
   const onCloseAutoFocus = (event: Event) => {
     if (suppressCloseFocusRef.current) {
       suppressCloseFocusRef.current = false
