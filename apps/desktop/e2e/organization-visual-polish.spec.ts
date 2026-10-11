@@ -478,6 +478,8 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await resize(1280, 720)
   for (const zoom of [1.25, 2]) {
     await app.evaluate(({ BrowserWindow }, value) => BrowserWindow.getAllWindows()[0].webContents.setZoomFactor(value), zoom)
+    await expect.poll(() => page.evaluate(() => innerWidth), { message: 'native zoom changes the CSS viewport before reflow verification' }).toBe(Math.round(1280 / zoom))
+    await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(zoom)
     await expect(page.getByRole('button', { name: 'Message organization', exact: true })).toBeVisible()
     await expect(page.getByRole('contentinfo', { name: 'System health', exact: true })).toBeInViewport({ ratio: 1 })
     await capture(`home-reflow-${zoom}`, workspace, true)
