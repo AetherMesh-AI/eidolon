@@ -1,3 +1,5 @@
+import { organizationExecutiveMessageZh, organizationMemberMessagesZh } from './organization-member-messages'
+import { organizationHomeCountsZh } from './organization-home-counts'
 import { defineFieldCopy } from '@/app/settings/field-copy'
 
 import { organizationConversationsZh } from './organization-conversations'
@@ -5,7 +7,7 @@ import { organizationFoundationEn } from './organization-foundation'
 import { organizationHomeEn, organizationWorkspaceZh } from './organization-home'
 import { organizationOwnerChatZh } from './organization-owner-chat'
 import { organizationRosterZh } from './organization-roster'
-import { organizationSurfacesEn } from './organization-surfaces'
+import { organizationSurfacesZh } from './organization-surfaces'
 import { organizationWorkZh } from './organization-work'
 import { settingsWorkspaceEn } from './settings-workspace'
 import type { Translations } from './types'
@@ -13,8 +15,8 @@ import type { Translations } from './types'
 export const zh: Translations = {
   organizationOwnerChat: organizationOwnerChatZh,
   organizationConversations: organizationConversationsZh,
-  organizationSurfaces: organizationSurfacesEn,
-  organizationHome: { ...organizationHomeEn, workspace: organizationWorkspaceZh },
+  organizationSurfaces: organizationSurfacesZh,
+  organizationHome: { ...organizationHomeEn, ...organizationExecutiveMessageZh, memberMessages: organizationMemberMessagesZh, workspace: organizationWorkspaceZh, detail: { ...organizationHomeEn.detail, ...organizationHomeCountsZh } },
   settingsWorkspace: settingsWorkspaceEn,
   organizationFoundation: organizationFoundationEn,
   organizationWork: organizationWorkZh,

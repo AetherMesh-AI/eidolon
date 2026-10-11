@@ -1,3 +1,6 @@
+import { organizationExecutiveMessageRu, organizationMemberMessagesRu } from './organization-member-messages'
+import { organizationHomeCountsRu } from './organization-home-counts'
+import { organizationSurfacesRu } from './organization-surfaces'
 import { organizationWorkspaceRu } from './organization-home'
 import { defineFieldCopy } from '@/app/settings/field-copy'
 
@@ -27,7 +30,8 @@ const RU_NOUN = (count: number | string, one: string, few: string, many: string)
 }
 
 export const ru = defineLocale({
-  organizationHome: { workspace: organizationWorkspaceRu },
+  organizationSurfaces: organizationSurfacesRu,
+  organizationHome: { ...organizationExecutiveMessageRu, memberMessages: organizationMemberMessagesRu, workspace: organizationWorkspaceRu, detail: organizationHomeCountsRu },
   organizationOwnerChat: organizationOwnerChatRu,
   organizationConversations: organizationConversationsRu,
   sessionImport: {

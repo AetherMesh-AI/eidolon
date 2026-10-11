@@ -1280,3 +1280,159 @@ for (const locale of ['ja', 'ar', 'ru'] as const) {
     }) })
   })
 }
+
+const translatedSurfaceExpectations = {
+  "Ja": {
+    "search": "メンバーを検索",
+    "directoryNote": "このプロファイルの永続メンバーです。選択しても会話は開かず、利用枠も追加されません。",
+    "memberContext": "メンバーの背景情報",
+    "responsibilities": "担当業務",
+    "linkedWorkNote": "この表示に記録された担当者、および現在のタスクまたはマネージャーへの割り当て。",
+    "executiveMessageNote": "現在の組織のエグゼクティブを選択してください。メッセージはそのメンバーとの会話に属し、送信操作を行ったときにのみ送られます。",
+    "organization": "組織",
+    "deliverables": "成果物",
+    "deliverablesIntroduction": "承認済みの成果を確認し、元の出所を保持したファイルを調べます。",
+    "findAgent": "エージェントを検索"
+  },
+  "Zh": {
+    "search": "搜索成员",
+    "directoryNote": "此配置文件中的持久成员。选择成员不会打开对话或补充其额度。",
+    "memberContext": "成员背景",
+    "responsibilities": "职责",
+    "linkedWorkNote": "此视图中记录的负责人，以及当前的任务或经理工作分配。",
+    "executiveMessageNote": "选择当前组织中的一位执行主管。消息属于与该成员的对话，只有提交后才会发送。",
+    "organization": "组织",
+    "deliverables": "交付物",
+    "deliverablesIntroduction": "查看已验收的成果，并检查保留原始来源信息的文件。",
+    "findAgent": "查找智能体"
+  },
+  "ZhHant": {
+    "search": "搜尋成員",
+    "directoryNote": "此設定檔中的持久成員。選取成員不會開啟對話或補充其額度。",
+    "memberContext": "成員背景",
+    "responsibilities": "職責",
+    "linkedWorkNote": "此檢視中記錄的負責人，以及目前的任務或經理工作指派。",
+    "executiveMessageNote": "選擇目前組織中的一位執行主管。訊息屬於與該成員的對話，只有提交後才會傳送。",
+    "organization": "組織",
+    "deliverables": "交付項目",
+    "deliverablesIntroduction": "檢視已驗收的成果，並檢查保留原始來源資訊的檔案。",
+    "findAgent": "尋找代理"
+  },
+  "Ar": {
+    "search": "البحث عن أعضاء",
+    "directoryNote": "أعضاء دائمون في هذا الملف الشخصي. لا يؤدي اختيار عضو إلى فتح محادثته أو تجديد حصتها.",
+    "memberContext": "سياق العضو",
+    "responsibilities": "المسؤوليات",
+    "linkedWorkNote": "الملكية المسجلة وتكليفات المهام أو المديرين الحالية في هذا العرض.",
+    "executiveMessageNote": "اختر مسؤولاً تنفيذياً في المنظمة الحالية. تنتمي رسالتك إلى محادثة ذلك العضو، ولا تُرسل إلا عند تأكيد إرسالها.",
+    "organization": "المؤسسة",
+    "deliverables": "المخرجات",
+    "deliverablesIntroduction": "راجع النتائج المقبولة وافحص الملفات مع معلومات مصدرها الأصلي.",
+    "findAgent": "البحث عن وكيل"
+  },
+  "Ru": {
+    "search": "Поиск участников",
+    "directoryNote": "Постоянные участники этого профиля. Выбор участника не открывает диалог и не пополняет его лимит.",
+    "memberContext": "Контекст участника",
+    "responsibilities": "Обязанности",
+    "linkedWorkNote": "Указанные владельцы и текущие назначения задач или работ менеджерам в этом представлении.",
+    "executiveMessageNote": "Выберите руководителя текущей организации. Сообщение относится к диалогу с этим участником и отправляется только после нажатия кнопки отправки.",
+    "organization": "Организация",
+    "deliverables": "Результаты работы",
+    "deliverablesIntroduction": "Просматривайте принятые результаты и изучайте файлы с сохранёнными сведениями об их происхождении.",
+    "findAgent": "Найти агента"
+  }
+} as const
+
+// Read-only native coverage of the translated slice, separate from supported
+// owner-chat execution evidence. Selecting a fixture member never opens chat.
+for (const [locale, suffix, dark, light] of [
+  ['ja', 'Ja', 'ダーク', 'ライト'], ['zh', 'Zh', '暗色', '明亮'],
+  ['zh-hant', 'ZhHant', '深色', '明亮'], ['ar', 'Ar', 'داكن', 'فاتح'],
+  ['ru', 'Ru', 'Тёмная', 'Светлая']
+] as const) {
+  test(`renders translated organization surfaces in ${locale} without executing work`, async () => {
+    fixture = await setupMockBackend({ extraDisplayConfig: `  language: ${locale}` })
+    const { app, page, mock } = fixture
+    const copy = translatedSurfaceExpectations[suffix]
+    const methods: string[] = []
+    await page.routeWebSocket(/.*/, socket => {
+      const server = socket.connectToServer()
+      socket.onMessage(message => {
+        const request = JSON.parse(message.toString()) as { id?: number; method?: string }
+        if (request.method?.startsWith('organization.')) methods.push(request.method)
+        if (request.method === 'organization.snapshot' || request.method === 'organization.outcomes') {
+          socket.send(JSON.stringify({ jsonrpc: '2.0', id: request.id, result: request.method === 'organization.snapshot' ? snapshot : snapshot.outcomes }))
+        } else server.send(message)
+      })
+    })
+    await page.reload()
+    await waitForAppReady(fixture)
+    await expect(page.locator('html')).toHaveAttribute('lang', locale)
+    await expect(page.locator('html')).toHaveAttribute('dir', locale === 'ar' ? 'rtl' : 'ltr')
+    const captures: object[] = []
+    for (const mode of ['dark', 'light'] as const) {
+      await page.evaluate(() => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(100))
+      await app.evaluate(({ BrowserWindow }) => { const window = BrowserWindow.getAllWindows()[0]; window.unmaximize(); window.setMinimumSize(600, 600); window.setContentSize(1536, 961) })
+      await page.evaluate(() => { location.hash = '/settings?tab=config:appearance' })
+      await page.getByRole('button').filter({ has: page.getByText('AetherMesh', { exact: true }) }).click()
+      await page.getByRole('button', { name: mode === 'dark' ? dark : light, exact: true }).click()
+      for (const [width, height, zoom] of [[1536, 961, 1], [1280, 720, 2]]) {
+        await page.evaluate(() => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(100))
+        await app.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0].setContentSize(size.width, size.height), { width, height })
+        await page.evaluate(value => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(value * 100), zoom)
+        await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(zoom)
+        for (const route of ['/organization', '/artifacts?source=organization', '/messages', '/messages?recipient=executive']) {
+          await page.evaluate(value => { location.hash = value }, route)
+          if (route === '/organization') {
+            await expect(page.getByRole('heading', { name: copy.organization, exact: true })).toBeVisible()
+            await expect(page.getByRole('textbox', { name: copy.findAgent, exact: true })).toBeVisible()
+          } else if (route === '/artifacts?source=organization') {
+            await expect(page.getByRole('heading', { name: copy.deliverables, exact: true })).toBeVisible()
+            await expect(page.getByText(copy.deliverablesIntroduction, { exact: true })).toBeVisible()
+            await expect(page.locator('.eid-delivery-outcomes').getByRole('heading', { name: 'Document provider boundaries', exact: true })).toBeVisible()
+          } else {
+            await expect(page.getByRole('textbox', { name: copy.search, exact: true })).toBeVisible()
+            await expect(page.getByText(copy.directoryNote, { exact: true })).toBeVisible()
+            if (route.includes('recipient')) {
+              await expect(page.getByText(copy.executiveMessageNote, { exact: true })).toBeVisible()
+              await expect(page.locator('.eid-message-members nav button')).toHaveCount(1)
+            }
+            await page.locator('.eid-message-members nav').getByRole('button', { name: /Avery/ }).click()
+            await expect(page.getByRole('region', { name: copy.memberContext, exact: true })).toBeVisible()
+            await expect(page.getByRole('heading', { name: copy.responsibilities, exact: true })).toBeVisible()
+            await expect(page.getByText(copy.linkedWorkNote, { exact: true })).toBeVisible()
+          }
+          const focalCopy = route === '/organization' ? copy.findAgent : route === '/artifacts?source=organization' ? copy.deliverablesIntroduction : route.includes('recipient') ? copy.executiveMessageNote : copy.linkedWorkNote
+          const focal = page.getByText(focalCopy, { exact: true })
+          // Center the evidence target with space on both sides. Nearest-edge
+          // scrolling can leave a fractional CSS pixel clipped at 200% zoom.
+          await focal.evaluate(element => element.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' }))
+          await expect(focal).toBeInViewport({ ratio: 1 })
+          expect(await page.locator('.eid-workspace').evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
+          if (route.startsWith('/artifacts')) {
+            expect(await page.locator('.eid-deliverables').evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
+          }
+          await page.evaluate(async () => { await document.fonts.ready; await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))) })
+          const appearance = await page.locator('html').evaluate(element => ({ theme: element.getAttribute('data-hermes-theme'), dark: element.classList.contains('dark'), dir: element.getAttribute('dir') }))
+          expect(appearance).toEqual({ theme: 'nous', dark: mode === 'dark', dir: locale === 'ar' ? 'rtl' : 'ltr' })
+          const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)
+          expect(overflow).toBeLessThanOrEqual(1)
+          const name = `translated-${locale}-${mode}-${route.includes('recipient') ? 'executive' : route.startsWith('/artifacts') ? 'deliverables' : route.slice(1)}-${width}-${height}-${zoom}.png`
+          const bytes = Buffer.from(await app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
+          writeFileSync(test.info().outputPath(name), bytes)
+          captures.push({ name, locale, route, width, height, zoom, ...appearance, overflow, sha256: createHash('sha256').update(bytes).digest('hex') })
+          await test.info().attach(name, { body: bytes, contentType: 'image/png' })
+        }
+      }
+    }
+    expect(mock.receivedPrompts).toHaveLength(0)
+    expect(methods.length).toBeGreaterThan(0)
+    expect([...new Set(methods)].every(method => ['organization.snapshot', 'organization.outcomes'].includes(method))).toBe(true)
+    writeFileSync(test.info().outputPath('translated-surfaces-evidence.json'), JSON.stringify({
+      sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+      sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
+      locale, providerCalls: mock.receivedPrompts.length, methods, captures
+    }, null, 2))
+  })
+}

@@ -1,3 +1,6 @@
+import { organizationExecutiveMessageJa, organizationMemberMessagesJa } from './organization-member-messages'
+import { organizationHomeCountsJa } from './organization-home-counts'
+import { organizationSurfacesJa } from './organization-surfaces'
 import { organizationWorkspaceJa } from './organization-home'
 import { defineFieldCopy } from '@/app/settings/field-copy'
 
@@ -8,7 +11,8 @@ import { organizationRosterJa } from './organization-roster'
 import { organizationWorkJa } from './organization-work'
 
 export const ja = defineLocale({
-  organizationHome: { workspace: organizationWorkspaceJa },
+  organizationSurfaces: organizationSurfacesJa,
+  organizationHome: { ...organizationExecutiveMessageJa, memberMessages: organizationMemberMessagesJa, workspace: organizationWorkspaceJa, detail: organizationHomeCountsJa },
   organizationOwnerChat: organizationOwnerChatJa,
   organizationConversations: organizationConversationsJa,
   organizationWork: organizationWorkJa,
