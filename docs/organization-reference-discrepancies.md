@@ -198,3 +198,26 @@ inline chat retains its prior ordering. Native checks measure the actual inner
 panel overflow and require charge text, allowance and explicit action in view
 with the focused composer. Corrected native evidence is still required before
 acceptance; the earlier outer-panel assertion alone was insufficient.
+## Objective composition iteration
+
+The next isolated Objective slice removes the centered 1120px page cap, uses
+reference-sized main/aside proportions, and puts recorded phase and task counts
+beside the progress heading. Manager assignment cards retain their existing
+current-round data and explicit work/evidence controls. No completed stage dates,
+acceptance, delivery or operational capability are inferred from progress.
+
+Native checks measure the left edge/main width within 10px of the approximate
+reference landmarks, three recorded assignment cards on one row at 1536×961,
+and first-assignment work above the fold at 1280×720. They also exercise the
+three overview review controls with visible keyboard focus at 100%, 125% and
+200% native zoom. Natural page overflow retains all detailed controls. These
+checks and matched captures must pass before treating this iteration as verified;
+the reference stage strip, artwork, review composition and final gallery remain
+outstanding.
+
+### Objective fractional-zoom focus follow-up
+
+The short-height correction passed its title/assignee checks, but native 125%
+zoom rounds a two-pixel outline to 1.6 CSS pixels. Objective controls now use a
+three-pixel outline; all existing minimum width, contrast and clipping checks
+remain unchanged. Corrected exact-head native evidence is pending.
