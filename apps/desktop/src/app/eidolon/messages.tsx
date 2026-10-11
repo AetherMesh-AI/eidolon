@@ -6,6 +6,7 @@ import { SearchField } from '@/components/ui/search-field'
 import { useI18n } from '@/i18n/context'
 
 import { AgentContext } from './agent-context'
+import { OrganizationScenery } from './scenery'
 import { AgentAvatar } from './avatar'
 import { OrganizationOwnerChat } from './runtime-owner-chat'
 import type { OrganizationAgent, OrganizationSnapshot, RuntimeOrganizationAdapter } from './types'
@@ -107,6 +108,7 @@ export function Messages({
         </section>
         {agent && <section aria-label={messages.memberContext} className="eid-message-context">
           <header className="eid-message-profile">
+            <OrganizationScenery className="eid-message-scenery" />
             <AgentAvatar name={agent.name} />
             <h2>{agent.name}</h2>
             <p>{roles[agent.role] ?? agent.role}{agent.team ? ` · ${agent.team}` : ''}</p>

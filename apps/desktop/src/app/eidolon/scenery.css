@@ -1,0 +1,21 @@
+.eid-scenery {
+  --eid-art-sky: color-mix(in srgb, var(--ui-accent) 12%, var(--eidolon-bg));
+  --eid-art-moon: color-mix(in srgb, var(--ui-text-primary) 8%, var(--eidolon-bg));
+  --eid-art-far: color-mix(in srgb, var(--ui-accent) 18%, var(--eidolon-bg));
+  --eid-art-snow: color-mix(in srgb, var(--ui-text-primary) 5%, var(--eidolon-bg));
+  --eid-art-mid: color-mix(in srgb, var(--ui-accent) 24%, var(--eidolon-bg));
+  --eid-art-near: color-mix(in srgb, var(--ui-text-primary) 18%, var(--ui-accent));
+  display: block; width: 100%; height: 100%; pointer-events: none; user-select: none;
+}
+.eid-organization-mark { width: 28px; height: 28px; flex: none; color: var(--aether-400); }
+.eid-home > .eid-home-hero { position: relative; isolation: isolate; }
+.eid-home-hero > .eid-home-scenery { position: absolute; inset-block: 0; inset-inline: 35% 0; z-index: -1; width: 65%; mask-image: linear-gradient(to right, transparent, black 45%); opacity: .6; }
+.eid-home-hero > div { position: relative; }
+.eid-rail > .eid-rail-decoration { flex: 1 1 180px; min-height: 0; max-height: 220px; overflow: hidden; margin-top: auto; mask-image: linear-gradient(transparent, black 70%); }
+.eid-rail-decoration + .eid-rail-more { margin-top: 0; }
+.eid-rail-decoration > .eid-scenery { width: 100%; height: 100%; opacity: .55; }
+.eid-message-profile > .eid-message-scenery { width: calc(100% + 36px); height: 160px; margin: -24px -18px -22px; }
+.eid-message-profile > .eid-avatar { position: relative; }
+@media (max-width: 800px) { .eid-home-hero > .eid-home-scenery { inset-inline-start: 55%; width: 45%; opacity: .3; } }
+
+[dir="rtl"] .eid-home-hero > .eid-home-scenery { mask-image: linear-gradient(to left, transparent, black 45%); }

@@ -293,7 +293,8 @@ Sizes: `default`, `xs`, `overlay` (titlebar glyph counts).
   Eidolon app icon (`public/icon.png`) on a white tile, softly rounded,
   identical in light/dark.
   It replaced scattered Sparkles glyphs in updates / onboarding / about. Use it
-  for hero/brand moments; don't reintroduce decorative star/sparkle icons.
+  for application hero/brand moments. The organization rail has its own original
+  `OrganizationMark`; it does not replace application or provider icons.
 
 ## Motion
 
