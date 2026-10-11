@@ -330,7 +330,11 @@ function OwnerChatPanel({
       ) : thread && !thread.canSend && !thread.activeTurnId && thread.unavailableReason ? (
         <p role="status">{thread.unavailableReason}</p>
       ) : null}
-      <div className="eid-owner-chat-compose-area">
+      <div className="eid-owner-chat-compose-area" onFocus={event => {
+        if (workspace && event.currentTarget.contains(event.target) && event.target.matches(':focus-visible')) {
+          event.currentTarget.scrollIntoView({ block: 'center', inline: 'nearest' })
+        }
+      }}>
       {workspace && allowance}
       <form
         aria-label={copy.message}
