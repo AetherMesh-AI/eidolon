@@ -73,7 +73,8 @@ export function HomeObjective({
 
 function focusIntake() {
   const intake = document.getElementById('eid-home-intake') as HTMLDetailsElement | null
-  if (intake) intake.open = true
+
+  if (intake) {intake.open = true}
   intake?.scrollIntoView({ block: 'start' })
   document.getElementById('eid-objective')?.focus({ preventScroll: true })
 }
@@ -140,7 +141,7 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
             <h2>{copy.happening}</h2>
             <p>{copy.happeningNote}</p>
           </header>
-          <div className="eid-home-panel-body" tabIndex={0} aria-label={copy.happening}>
+          <div aria-label={copy.happening} className="eid-home-panel-body" tabIndex={0}>
           {data.objectives.length ? (
             data.objectives
               .slice(0, 2)
@@ -158,7 +159,7 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
             <h2>{copy.needsYou}</h2>
             <p>{copy.needsNote}</p>
           </header>
-          <div className="eid-home-panel-body" tabIndex={0} aria-label={copy.needsYou}>
+          <div aria-label={copy.needsYou} className="eid-home-panel-body" tabIndex={0}>
           {data.requests.slice(0, 3).map(request => (
             <article className="eid-home-record" key={request.id}>
               <h3>{snapshot.objectives.find(item => item.id === request.objectiveId)?.title ?? request.objectiveId}</h3>
@@ -181,7 +182,7 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
             <h2>{copy.ready}</h2>
             <p>{copy.readyNote}</p>
           </header>
-          <div className="eid-home-panel-body" tabIndex={0} aria-label={copy.ready}>
+          <div aria-label={copy.ready} className="eid-home-panel-body" tabIndex={0}>
           {data.deliverables.slice(0, 3).map(item => (
             <article className="eid-home-record" key={item.objectiveId}>
               <small className="eid-status-completed">{copy.accepted}</small>
@@ -229,7 +230,7 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
         {!data.activity.length && <p>{copy.noActivity}</p>}
       </section>
       <p className="eid-note">{copy.snapshotNote}</p>
-      {intake}
+      {adapter.mode === 'runtime' && intake}
     </div>
   )
 }

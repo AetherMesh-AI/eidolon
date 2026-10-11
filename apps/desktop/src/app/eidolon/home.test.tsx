@@ -192,7 +192,7 @@ it('keeps intake mounted and its draft intact when explicitly opened and collaps
     fireEvent.click(screen.getByRole('button', { name: 'New objective' }))
     expect(screen.getByRole('textbox', { name: 'Objective' })).toBe(input)
     expect(input).toHaveProperty('value', 'Keep my unsent objective')
-    expect(document.activeElement).toBe(input)
+    expect(globalThis.document.activeElement).toBe(input)
     expect(adapter.createObjective).not.toHaveBeenCalled()
   } finally {
     HTMLElement.prototype.scrollIntoView = original

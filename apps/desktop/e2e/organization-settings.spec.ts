@@ -31,13 +31,13 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
   const sourceCommit = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
   const sourceTree = execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim()
 
-  async function resize(width: number) {
+  async function resize(width: number, height = 900) {
     await app.evaluate(({ BrowserWindow }, value) => {
       const window = BrowserWindow.getAllWindows()[0]
       window.unmaximize()
       window.setMinimumSize(600, 600)
-      window.setContentSize(value, 900)
-    }, width)
+      window.setContentSize(value.width, value.height)
+    }, { width, height })
     await expect.poll(() => page.evaluate(() => window.innerWidth)).toBe(width)
   }
 
@@ -96,6 +96,8 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
     )
   }
 
+  await resize(1536, 961)
+  await capture('reference-settings-model')
   await resize(1440)
   await settings.getByRole('button', { name: 'Model', exact: true }).focus()
   await page.keyboard.press('Tab')

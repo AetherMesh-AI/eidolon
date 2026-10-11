@@ -451,6 +451,15 @@ test('keeps native organization navigation, roster and objective layouts usable 
   }
   await resize(1220)
 
+  await resize(1280, 720)
+  for (const zoom of [1.25, 2]) {
+    await app.evaluate(({ BrowserWindow }, value) => BrowserWindow.getAllWindows()[0].webContents.setZoomFactor(value), zoom)
+    await expect(page.getByRole('button', { name: 'Message organization', exact: true })).toBeVisible()
+    await capture(`home-reflow-${zoom}`)
+  }
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.setZoomFactor(1))
+  await resize(1220)
+
 
   // Browsing the explicit Home entry must not open chats or renew allowances.
   await page.getByRole('button', { name: 'Message organization', exact: true }).click()

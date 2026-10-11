@@ -126,3 +126,18 @@ selection by department/capacity in this path. A future typed intake router need
 explicit eligible-handler selection, one recorded accountable objective lead and
 visible no-handler intervention; it is outside this UI correction and is not
 claimed as implemented.
+
+## Home fit correction under verification
+
+Home now uses the available workspace width and unequal card proportions.
+New objective opens a mounted disclosure; closing it retains the scope-keyed draft.
+Record bodies scroll inside their overview cards, with dedicated full-history links.
+Native fit assertions cover 1536×961, 1440×900 and 1280×720. Reflow captures
+exercise 125% and 200% zoom, retaining accessible scrolling in smaller windows.
+Native submission/setup flows explicitly open the intake before interacting with it.
+
+Matched reference captures cover Home, Messages, Objective Detail and Settings.
+These establish actual remaining discrepancies, not final visual acceptance.
+The hero illustration, shared navigation proportions, activity presentation,
+Messages header/columns and Objective Detail card hierarchy still need correction.
+Settings remains a single editor rather than the supplied multi-card overview.
