@@ -173,6 +173,9 @@ test.afterEach(async () => {
 })
 
 test('keeps native organization navigation, roster and objective layouts usable at both window sizes', async () => {
+  // The paired Objective focus/disclosure coverage adds 56 captures to this aggregate scenario.
+  // Keep individual assertion deadlines unchanged while retaining the full theme-persistence pass.
+  test.setTimeout(480_000)
   fixture = await setupMockBackend()
   const { app, page, mock } = fixture
   // A newer main can arrive during this long-running source-checkout test.
