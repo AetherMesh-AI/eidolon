@@ -150,3 +150,26 @@ presentation grouping from storage and ownership migration. Preserve persistent
 agent IDs, memory, canonical conversations, credentials, retained history and
 request authority across any later move. This is follow-on planning only: no real
 profile migration or ownership change is part of the current visual slices.
+
+## Measured next corrections (2026-10-11)
+
+Measurements below are approximate pixel landmarks from the supplied1536×961
+images (allow about10px for reading image edges), compared with the inspected
+ac6908b2 native captures at the same dimensions. They are targets for the next
+rendered comparison, not assertions of final parity. The later requested bottom
+health bar replaces the reference's old operational chrome.
+
+| Screen | Reference landmark | Observed gap and next correction |
+| --- | --- | --- |
+| Shared rail | Right edge near x203 | Native rail x260 because Profile chats also sizes its shared stack. PR68 changes both defaults to203 and measures the rendered result; saved sizes are preserved. |
+| Home | Three cards span about x222–1520; top near y236; lower activity near y730 | Current cards start later horizontally and dominate the height. PR68 moves the rail/gutters, gives the first objective its recorded description/action, and groups activity roles. Hero artwork and recorded request/delivery detail remain unresolved. |
+| Messages | Directory x203–541, conversation x541–1218, context x1218–1536 | Current page cap/gutters put the heading above all three columns and leave large blank space. Next slice moves the heading/search into the directory, uses approximately25%/51%/24% columns and full-height separators, then checks actual retained-chat content separately. |
+| Objective Detail | Main/aside divide near x1120; parallel manager cards share the main column | Current progress and single manager card stack vertically, leaving tasks below the fold. Next slice uses a compact progress summary followed by parallel recorded package cards. Never infer completed stages from phase text. |
+| Settings | Secondary rail x222–458; overview spans x465–1519 in two card columns | Current selected editor is one large panel. Add a real read-only overview linked to existing save owners; do not fabricate reference profile fields, provider connectivity or a global Save transaction. |
+
+Capture gates: wait for the actual Settings Apply control before its reference
+image; prove zoom CSS viewport and device scale before reflow images; check focus
+outline geometry against clipping ancestors and inspect the complete outline in
+pixels. ac6908b2's first Settings reference capture was a loading skeleton, and
+its zoom metadata did not establish intended reflow. These images cannot close
+the corresponding acceptance items despite a green run.
