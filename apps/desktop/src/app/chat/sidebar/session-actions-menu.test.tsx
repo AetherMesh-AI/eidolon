@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { atom } from 'nanostores'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -225,46 +226,48 @@ describe('SessionActionsMenu', () => {
     expect(deleteItem.getAttribute('aria-disabled')).toBe('true')
   })
 
-  it('confirms with the Enter key and cancels with Escape', async () => {
+  it('activates focused confirmation buttons and cancels with Escape', async () => {
+    const user = userEvent.setup()
     const onDelete = vi.fn()
     render(
       <SessionActionsMenu onDelete={onDelete} sessionId="s1" title="My session">
-        <button aria-label="Session actions" type="button">
-          ⋮
-        </button>
+        <button aria-label="Session actions" type="button">⋮</button>
       </SessionActionsMenu>
     )
 
-    const trigger = screen.getByRole('button', { name: 'Session actions' })
-    fireEvent.pointerDown(trigger, { button: 0, pointerType: 'mouse' })
-    fireEvent.pointerUp(trigger, { button: 0, pointerType: 'mouse' })
-    fireEvent.click(trigger)
-    fireEvent.click(await screen.findByRole('menuitem', { name: /delete/i }))
+    async function openDelete() {
+      const trigger = screen.getByRole('button', { name: 'Session actions' })
+      fireEvent.pointerDown(trigger, { button: 0, pointerType: 'mouse' })
+      fireEvent.pointerUp(trigger, { button: 0, pointerType: 'mouse' })
+      fireEvent.click(trigger)
+      fireEvent.click(await screen.findByRole('menuitem', { name: /delete/i }))
+      const dialog = await screen.findByRole('dialog')
+      const button = within(dialog).getByRole('button', { name: 'Delete', exact: true })
+      await waitFor(() => expect(window.document.activeElement).toBe(button))
+      expect((button as HTMLButtonElement).disabled).toBe(false)
+    }
 
-    const dialog = await screen.findByRole('dialog')
-    expect(dialog).toBeTruthy()
-
-    // Escape cancels: dialog closes, nothing is deleted.
-    fireEvent.keyDown(window.document, { key: 'Escape' })
-    expect(await screen.queryByRole('dialog')).toBeNull()
+    await openDelete()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog')).toBeNull()
     expect(onDelete).not.toHaveBeenCalled()
 
-    // Re-open and confirm with Enter at wherever focus actually is. Firing on
-    // the dialog node would pass even when the menu leaves focus on the row
-    // trigger — where Enter re-activates the row instead of confirming.
-    fireEvent.pointerDown(trigger, { button: 0, pointerType: 'mouse' })
-    fireEvent.pointerUp(trigger, { button: 0, pointerType: 'mouse' })
-    fireEvent.click(trigger)
-    fireEvent.click(await screen.findByRole('menuitem', { name: /delete/i }))
+    for (const key of ['{Enter}', ' ']) {
+      await openDelete()
+      await user.tab({ shift: true })
+      const cancel = screen.getByRole('button', { name: 'Cancel', exact: true })
+      expect(window.document.activeElement).toBe(cancel)
+      expect((cancel as HTMLButtonElement).disabled).toBe(false)
+      await user.keyboard(key)
+      expect(screen.queryByRole('dialog')).toBeNull()
+      expect(onDelete).not.toHaveBeenCalled()
+    }
 
-    const reopened = await screen.findByRole('dialog')
-    // eslint-disable-next-line no-restricted-globals -- asserting real focus requires the live document
-    await waitFor(() => expect(reopened.contains(document.activeElement)).toBe(true))
-    // eslint-disable-next-line no-restricted-globals -- asserting real focus requires the live document
-    fireEvent.keyDown(document.activeElement!, { key: 'Enter' })
-
+    await openDelete()
+    await user.keyboard('{Enter}')
     expect(await screen.findByText('Session deleted')).toBeTruthy()
     expect(onDelete).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 
   it('routes the same confirm guard through the context menu', async () => {
