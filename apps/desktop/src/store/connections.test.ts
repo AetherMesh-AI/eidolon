@@ -203,6 +203,22 @@ describe('connection registry cache', () => {
     expect($activeConnectionId.get()).toBe('homelab')
   })
 
+  it('boot bookkeeping cannot replace the registry after a user selects another source', async () => {
+    const remembered = deferred<Awaited<ReturnType<typeof setLastUsed>>>()
+    list.mockResolvedValueOnce({ ...registry, launchMode: 'last-used', lastUsed: 'homelab' })
+    $connection.set({ connectionId: 'homelab', mode: 'remote', profile: 'default' })
+    setLastUsed.mockImplementationOnce(() => remembered.promise)
+    const boot = initializeConnectionsRegistry()
+    await vi.waitFor(() => expect(setLastUsed).toHaveBeenCalledWith('homelab'))
+    await selectConnection('work-vps', { profile: 'delivery', preserveRoute: true })
+    remembered.resolve({ ok: true, registry: { ...registry, lastUsed: 'homelab' } })
+    await boot
+
+    expect($connectionsRegistry.get()?.lastUsed).toBe('work-vps')
+    expect($newChatProfile.get()).toBe('delivery')
+    expect(requestFreshSession).not.toHaveBeenCalled()
+  })
+
   it('uses only the resolved descriptor identity for the active gateway', () => {
     setConnectionsRegistry({ ...registry, primary: 'homelab' })
     $connection.set({ connectionId: 'work-vps', mode: 'remote' })
@@ -479,6 +495,96 @@ describe('selectConnection', () => {
     expect(setLastUsed).toHaveBeenCalledWith('work-vps')
     expect($gatewaySwitching.get()).toBe(false)
     expect($pendingConnectionId.get()).toBeNull()
+  })
+
+  it.each([false, true])('a superseded remember reply cannot repaint the winning source (preserveRoute=%s)', async preserveRoute => {
+    const remembered = deferred<Awaited<ReturnType<typeof setLastUsed>>>()
+    setConnectionsRegistry(registry)
+    $connection.set({ connectionId: 'local', mode: 'local', profile: 'default' })
+    setLastUsed.mockImplementationOnce(() => remembered.promise)
+
+    const first = selectConnection('homelab', { profile: 'research', preserveRoute })
+    await vi.waitFor(() => expect(setLastUsed).toHaveBeenCalledWith('homelab'))
+    await selectConnection('work-vps', { profile: 'delivery', preserveRoute })
+    expect($connection.get()?.connectionId).toBe('work-vps')
+    expect($newChatProfile.get()).toBe('delivery')
+    const refreshes = refreshActiveProfile.mock.calls.length
+    const freshSessions = requestFreshSession.mock.calls.length
+    // A UI preference changed on the winner must also survive the stale reply.
+    $showAllProfiles.set(true)
+
+    remembered.resolve({ ok: true, registry: { ...registry, lastUsed: 'homelab' } })
+    await first
+
+    expect($connectionsRegistry.get()?.lastUsed).toBe('work-vps')
+    expect($newChatProfile.get()).toBe('delivery')
+    expect($showAllProfiles.get()).toBe(true)
+    expect(refreshActiveProfile).toHaveBeenCalledTimes(refreshes)
+    expect(requestFreshSession).toHaveBeenCalledTimes(freshSessions)
+    expect($connection.get()).toMatchObject({ connectionId: 'work-vps', profile: 'delivery' })
+    expect($pendingConnectionId.get()).toBeNull()
+    expect($gatewaySwitching.get()).toBe(false)
+  })
+
+  it.each([false, true])('discards an old same-source registry reply (browse mode=%s)', async browseMode => {
+    const remembered = deferred<Awaited<ReturnType<typeof setLastUsed>>>()
+    setConnectionsRegistry(registry)
+    $connection.set({ connectionId: 'local', mode: 'local', profile: 'default' })
+    $showAllProfiles.set(browseMode)
+    setLastUsed.mockImplementationOnce(() => remembered.promise)
+
+    const first = selectConnection('local', { preserveRoute: true })
+    await vi.waitFor(() => expect(setLastUsed).toHaveBeenCalledWith('local'))
+    await selectConnection('work-vps', { profile: 'delivery', preserveRoute: true })
+    remembered.resolve({ ok: true, registry: { ...registry, lastUsed: 'local' } })
+    await first
+
+    expect($connectionsRegistry.get()?.lastUsed).toBe('work-vps')
+    expect($newChatProfile.get()).toBe('delivery')
+    expect(requestFreshSession).not.toHaveBeenCalled()
+    expect(refreshActiveProfile).toHaveBeenCalledTimes(1)
+  })
+
+  it('an old remember failure cannot finalize over a newer switch still dialing', async () => {
+    const remembered = deferred<Awaited<ReturnType<typeof setLastUsed>>>()
+    const dial = deferred()
+    setConnectionsRegistry(registry)
+    $connection.set({ connectionId: 'local', mode: 'local', profile: 'default' })
+    setLastUsed.mockImplementationOnce(() => remembered.promise)
+    const first = selectConnection('homelab', { profile: 'research' })
+    await vi.waitFor(() => expect(setLastUsed).toHaveBeenCalledWith('homelab'))
+    openGatewayAgent.mockImplementationOnce(() => dial.promise)
+    const second = selectConnection('work-vps', { profile: 'delivery', preserveRoute: true })
+    remembered.reject(new Error('Read-only preference store'))
+    await first
+
+    expect($pendingConnectionId.get()).toBe('work-vps')
+    expect($newChatProfile.get()).toBeNull()
+    expect(requestFreshSession).not.toHaveBeenCalled()
+    expect(refreshActiveProfile).not.toHaveBeenCalled()
+    dial.resolve()
+    await second
+    expect($newChatProfile.get()).toBe('delivery')
+    expect($pendingConnectionId.get()).toBeNull()
+    expect(refreshActiveProfile).toHaveBeenCalledTimes(1)
+  })
+
+  it('rechecks the committed route even when another switch door changes the source', async () => {
+    const remembered = deferred<Awaited<ReturnType<typeof setLastUsed>>>()
+    setConnectionsRegistry(registry)
+    $connection.set({ connectionId: 'local', mode: 'local', profile: 'default' })
+    setLastUsed.mockImplementationOnce(() => remembered.promise)
+    const first = selectConnection('homelab', { profile: 'research' })
+    await vi.waitFor(() => expect(setLastUsed).toHaveBeenCalledWith('homelab'))
+    $connection.set({ connectionId: 'homelab', mode: 'remote', profile: 'external-profile' })
+    $newChatProfile.set('external-profile')
+    remembered.resolve({ ok: true, registry: { ...registry, lastUsed: 'homelab' } })
+    await first
+
+    expect($newChatProfile.get()).toBe('external-profile')
+    expect(requestFreshSession).not.toHaveBeenCalled()
+    expect(refreshActiveProfile).not.toHaveBeenCalled()
+    expect($connectionsRegistry.get()).toEqual(registry)
   })
 
   it('does not spend the activation timeout while waiting for the serialized commit turn', async () => {

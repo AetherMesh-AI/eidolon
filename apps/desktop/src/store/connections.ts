@@ -118,7 +118,7 @@ export async function refreshConnectionsRegistry(): Promise<DesktopConnectionsRe
   return registry
 }
 
-async function rememberConnection(connectionId: string): Promise<void> {
+async function rememberConnection(connectionId: string, isCurrent: () => boolean): Promise<void> {
   const setLastUsed = window.hermesDesktop?.connections?.setLastUsed
 
   if (!setLastUsed) {
@@ -132,7 +132,11 @@ async function rememberConnection(connectionId: string): Promise<void> {
       'Timed out remembering the last-used connection'
     )
 
-    setConnectionsRegistry(result.registry)
+    // IPC may settle after a newer source has committed. Its registry snapshot
+    // is just as source-owned as the profile/navigation bookkeeping below.
+    if (isCurrent()) {
+      setConnectionsRegistry(result.registry)
+    }
   } catch {
     // The source is already usable. A read-only/full userData directory (or
     // a stalled IPC) must not turn a successful backend switch into a false
@@ -228,7 +232,12 @@ export async function initializeConnectionsRegistry(): Promise<DesktopConnection
   }
 
   if ($activeConnectionId.get() === preferredId) {
-    await rememberConnection(preferredId)
+    const revision = switchRevision
+    const profile = normalizeProfileKey($connection.get()?.profile)
+    await rememberConnection(preferredId, () =>
+      revision === switchRevision && $activeConnectionId.get() === preferredId &&
+      normalizeProfileKey($connection.get()?.profile) === profile
+    )
   } else {
     await selectConnection(preferredId)
   }
@@ -299,6 +308,9 @@ export async function selectConnection(connectionId: string, options: SelectConn
     return active?.connectionId === connectionId && normalizeProfileKey(active.profile) === targetProfile
   }
 
+  const startingRevision = switchRevision
+  const sourceStillCurrent = () => startingRevision === switchRevision && targetIsActive()
+
   if (pendingTarget === targetKey) {
     return
   }
@@ -310,7 +322,7 @@ export async function selectConnection(connectionId: string, options: SelectConn
     currentProfile !== targetProfile
 
   if (!switching) {
-    await rememberConnection(connectionId)
+    await rememberConnection(connectionId, sourceStillCurrent)
 
     return
   }
@@ -324,7 +336,7 @@ export async function selectConnection(connectionId: string, options: SelectConn
     captureNewChatSource()
 
     if (!options.preserveRoute) { requestFreshSession() }
-    await rememberConnection(connectionId)
+    await rememberConnection(connectionId, sourceStillCurrent)
 
     return
   }
@@ -430,7 +442,14 @@ export async function selectConnection(connectionId: string, options: SelectConn
     // already makes the latest source win; this guard also prevents an older
     // request from repainting its profile list after that newer activation.
     if (revision === switchRevision) {
-      await rememberConnection(connectionId)
+      const isCurrent = () => revision === switchRevision && targetIsActive()
+      await rememberConnection(connectionId, isCurrent)
+
+      // Remembering is bounded but asynchronous. A newer click may now own
+      // the route; never repaint its profile, navigation or preferences.
+      if (!isCurrent()) {
+        return
+      }
 
       if (!restoreOnBoot) {
         $showAllProfiles.set(false)
