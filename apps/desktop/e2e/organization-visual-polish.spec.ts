@@ -454,6 +454,9 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await capture('01-home-wide-dark')
   for (const [width, height] of [[1536, 961], [1440, 900], [1280, 720]]) {
     await resize(width, height)
+    const railWidth = await navigation.evaluate(element => element.getBoundingClientRect().width)
+    expect(railWidth, 'primary rail matches reference proportion').toBeLessThanOrEqual(205)
+    expect(railWidth, 'primary rail remains readable').toBeGreaterThanOrEqual(200)
     const fit = await workspace.evaluate(element => ({ height: element.clientHeight, content: element.scrollHeight }))
     expect(fit.content, `Home overview fits ${width} × ${height}`).toBeLessThanOrEqual(fit.height + 1)
     await expect(page.getByRole('button', { name: 'Message organization', exact: true })).toBeInViewport({ ratio: 1 })
