@@ -15,7 +15,7 @@ import {
   secondMessage,
   setupOwnerChatFixture
 } from './organization-owner-chat-fixture'
-import { expect, test } from './test'
+import { acknowledgeExpectedErrorBanner, expect, test } from './test'
 
 interface RecordedSend {
   url: string
@@ -498,7 +498,8 @@ test('retains exact worker chat, deduplicates owner send and fences a cancelled 
   await page.reload()
   conversation = await openWorkerChat(page)
   await conversation.getByRole('textbox', { name: 'Message', exact: true }).fill('Retained draft during a read failure')
-  await expect(conversation.getByRole('alert')).toContainText('Scripted retained conversation read failure', { timeout: 25_000 })
+  const readError = 'Could not verify the conversation Scripted retained conversation read failure'
+  await expect(conversation.getByRole('alert')).toHaveText(readError, { timeout: 25_000 })
   await inspectComposer('read-error-short', 1280, 720)
   await expect(conversation.getByRole('alert')).toBeInViewport({ ratio: 1 })
   await expect(conversation.getByRole('button', { name: 'Check conversation', exact: true })).toBeInViewport({ ratio: 1 })
@@ -507,5 +508,6 @@ test('retains exact worker chat, deduplicates owner send and fences a cancelled 
   await conversation.getByRole('button', { name: 'Check conversation', exact: true }).click()
   await expect(conversation.getByRole('alert')).toHaveCount(0)
   await expect(conversation.getByRole('textbox', { name: 'Message', exact: true })).toHaveValue('Retained draft during a read failure')
+  await acknowledgeExpectedErrorBanner(page, readError)
   expect(running.calls).toHaveLength(27)
 })

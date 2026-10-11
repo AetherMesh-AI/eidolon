@@ -3,6 +3,7 @@ import { FIELD_DESCRIPTIONS, FIELD_LABELS } from '@/app/settings/constants'
 import { organizationConversationsEn } from './organization-conversations'
 import { organizationFoundationEn } from './organization-foundation'
 import { organizationHomeEn } from './organization-home'
+import { organizationMetadataEn } from './organization-metadata'
 import { organizationOwnerChatEn } from './organization-owner-chat'
 import { organizationRosterEn } from './organization-roster'
 import { organizationSurfacesEn } from './organization-surfaces'
@@ -11,6 +12,7 @@ import { settingsWorkspaceEn } from './settings-workspace'
 import type { Translations } from './types'
 
 export const en: Translations = {
+  organizationMetadata: organizationMetadataEn,
   organizationOwnerChat: organizationOwnerChatEn,
   organizationConversations: organizationConversationsEn,
   organizationSurfaces: organizationSurfacesEn,

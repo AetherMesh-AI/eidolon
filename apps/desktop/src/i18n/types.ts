@@ -3,6 +3,7 @@ import type { TipId } from '@/lib/tips/catalog'
 import type { OrganizationConversationsCopy } from './organization-conversations'
 import type { OrganizationFoundationCopy } from './organization-foundation'
 import type { OrganizationHomeCopy } from './organization-home'
+import type { organizationMetadataEn } from './organization-metadata'
 // Desktop i18n type contract.
 //
 // `Translations` is the single source of truth for every translatable string
@@ -59,6 +60,7 @@ interface AuxTaskCopy {
 }
 
 export interface Translations {
+  organizationMetadata: typeof organizationMetadataEn
   organizationSurfaces: typeof organizationSurfacesEn
   settingsWorkspace: typeof settingsWorkspaceEn
   organizationHome: OrganizationHomeCopy

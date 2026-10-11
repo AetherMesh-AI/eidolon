@@ -773,7 +773,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await expect(page.getByRole('region', { name: 'Member conversation', exact: true }).getByRole('heading', { name: 'Avery', exact: true })).toBeVisible()
   await capture('home-message-explicit-recipient')
   expect(organizationMethods.length).toBeGreaterThan(0)
-  expect(organizationMethods.every(method => ['organization.outcomes', 'organization.snapshot'].includes(method))).toBe(true)
+  expect(organizationMethods.every(method => ['organization.descriptor', 'organization.outcomes', 'organization.snapshot'].includes(method))).toBe(true)
   expect(mock.receivedPrompts).toHaveLength(0)
   await navigation.getByRole('link', { name: 'Home', exact: true }).click()
 
@@ -1030,7 +1030,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
   writeEvidence()
   expect(mock.receivedPrompts).toHaveLength(0)
   expect(organizationMethods.length).toBeGreaterThan(0)
-  expect([...new Set(organizationMethods)].sort()).toEqual(['organization.outcomes', 'organization.snapshot'])
+  expect([...new Set(organizationMethods)].sort()).toEqual(['organization.descriptor', 'organization.outcomes', 'organization.snapshot'])
 })
 
 // A real configured locale exercises translated controls, not substituted DOM text.
@@ -1103,7 +1103,7 @@ test('retains translated Objective labels and opened explanations with contained
     }
   }
   expect(mock.receivedPrompts).toHaveLength(0)
-  expect([...new Set(methods)].every(method => ['organization.snapshot', 'organization.outcomes'].includes(method))).toBe(true)
+  expect([...new Set(methods)].every(method => ['organization.descriptor', 'organization.snapshot', 'organization.outcomes'].includes(method))).toBe(true)
   await test.info().attach('objective-translated-evidence', { contentType: 'application/json', body: JSON.stringify({
     sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
     sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
@@ -1201,7 +1201,7 @@ test('keeps workspace controls and loaded-record inspection usable without execu
   await expect(page.locator('.eid-objective-hero')).toContainText('Prepare the autumn release brief')
   expect(mock.receivedPrompts).toHaveLength(0)
   // Outcomes are already in the snapshot: inspection must not fetch their history.
-  expect([...new Set(methods)]).toEqual(['organization.snapshot'])
+  expect([...new Set(methods)].sort()).toEqual(['organization.descriptor', 'organization.snapshot'])
   await test.info().attach('workspace-header-evidence', { contentType: 'application/json', body: JSON.stringify({
     sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
     sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
@@ -1248,6 +1248,7 @@ for (const locale of ['ja', 'ar', 'ru'] as const) {
     const header = page.getByRole('banner', { name: copy.heading, exact: true })
     await expect(header.locator('[data-slot="connection-switcher"]')).toBeVisible()
     const captures: object[] = []
+    const headerCaptures: object[] = []
     const focusChecks: object[] = []
     for (const mode of ['dark', 'light'] as const) {
       await page.evaluate(() => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(100))
@@ -1270,6 +1271,22 @@ for (const locale of ['ja', 'ar', 'ru'] as const) {
         for (const button of await header.getByRole('button').all()) {
           focusChecks.push(await verifyKeyboardFocus(page, button, `${locale} ${mode} ${width} ${zoom} ${await button.getAttribute('aria-label')}`))
         }
+        // Scroll bounds alone miss a flex child painted over its sibling. Every
+        // header control must keep a separate click target at each locale/zoom.
+        const controlRects = await header.getByRole('button').evaluateAll(buttons => buttons.map(button => {
+          const rect = button.getBoundingClientRect()
+          return { label: button.getAttribute('aria-label'), left: rect.left, right: rect.right }
+        }))
+        const sortedRects = controlRects.sort((a, b) => a.left - b.left)
+        for (let index = 1; index < sortedRects.length; index++) {
+          expect(sortedRects[index].left, `${sortedRects[index - 1].label} overlaps ${sortedRects[index].label}`).toBeGreaterThanOrEqual(sortedRects[index - 1].right)
+        }
+        // Capture the header before opening Search; the modal backdrop blurs it.
+        const headerName = `workspace-header-${locale}-${mode}-${width}-${height}-${zoom}.png`
+        const headerBytes = Buffer.from(await app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
+        writeFileSync(test.info().outputPath(headerName), headerBytes)
+        headerCaptures.push({ name: headerName, width, height, zoom, controlRects: sortedRects, captureMethod: 'electron.capturePage', sha256: createHash('sha256').update(headerBytes).digest('hex') })
+        await test.info().attach(headerName, { body: headerBytes, contentType: 'image/png' })
         await header.locator('[data-slot="connection-switcher"]').getByRole('button').click()
         await expect(page.getByRole('menuitemradio', { name: /Temporary organization connection/ })).toBeVisible()
         await page.keyboard.press('Escape')
@@ -1293,11 +1310,11 @@ for (const locale of ['ja', 'ar', 'ru'] as const) {
       }
     }
     expect(mock.receivedPrompts).toHaveLength(0)
-    expect([...new Set(methods)]).toEqual(['organization.snapshot'])
+    expect([...new Set(methods)].sort()).toEqual(['organization.descriptor', 'organization.snapshot'])
     await test.info().attach('workspace-translated-evidence', { contentType: 'application/json', body: JSON.stringify({
       sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
       sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
-      locale, providerCalls: mock.receivedPrompts.length, methods, captures, focusChecks
+      locale, providerCalls: mock.receivedPrompts.length, methods, captures, headerCaptures, focusChecks
     }) })
   })
 }
@@ -1449,7 +1466,7 @@ for (const [locale, suffix, dark, light] of [
     }
     expect(mock.receivedPrompts).toHaveLength(0)
     expect(methods.length).toBeGreaterThan(0)
-    expect([...new Set(methods)].every(method => ['organization.snapshot', 'organization.outcomes'].includes(method))).toBe(true)
+    expect([...new Set(methods)].every(method => ['organization.descriptor', 'organization.snapshot', 'organization.outcomes'].includes(method))).toBe(true)
     writeFileSync(test.info().outputPath('translated-surfaces-evidence.json'), JSON.stringify({
       sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
       sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
