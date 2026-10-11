@@ -98,6 +98,9 @@ export function OrganizationRail({
         ))}
       </nav>
       <details className="eid-rail-more" ref={more} onKeyDown={event => {
+        // React portal events still bubble through the session tree. Their
+        // dialogs, and controls that consumed Escape, own that key press.
+        if (event.defaultPrevented || !event.currentTarget.contains(event.target as Node)) return
         if (event.key === 'Escape' && more.current?.open) {
           event.preventDefault()
           event.stopPropagation()

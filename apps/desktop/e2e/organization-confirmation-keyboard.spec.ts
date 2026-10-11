@@ -95,6 +95,7 @@ test('native confirmation keyboard respects focused actions in shared host and s
       // Only actual browser key activation decides the answer. No synthetic click.
       await page.keyboard.press(action === 'Escape' ? 'Escape' : action === 'Cancel Space' ? 'Space' : 'Enter')
       await expect(dialog).toHaveCount(0)
+      if (surface === 'session-menu') await expect(page.locator('.eid-rail-more')).toHaveAttribute('open', '')
       const expected = action === 'Confirm Enter' ? 0 : 1
       await expect.poll(() => remaining(id)).toBe(expected)
       expect(mock.receivedPrompts).toHaveLength(2)

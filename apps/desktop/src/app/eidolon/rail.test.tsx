@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { MemoryRouter } from 'react-router'
 import { afterEach, expect, it, vi } from 'vitest'
 
@@ -110,4 +111,25 @@ it('keeps secondary features contextual and restores focus after Escape without 
   fireEvent.click(trigger)
   expect(screen.getByLabelText('Retained history filter')).toBe(input)
   expect((input as HTMLInputElement).value).toBe('draft filter')
+})
+
+it('leaves Escape with a portaled session dialog or a nested control that consumed it', () => {
+  render(<MemoryRouter initialEntries={['/home']}><OrganizationRail sessions={<>
+    {createPortal(<input aria-label="Session dialog input" />, document.body)}
+    <input aria-label="Nested control" onKeyDown={event => event.preventDefault()} />
+  </>} /></MemoryRouter>)
+  const trigger = screen.getByRole('button', { name: 'More workspace options' })
+  const details = trigger.closest('details')!
+  fireEvent.click(trigger)
+  expect(details.open).toBe(true)
+  const dialogInput = screen.getByLabelText('Session dialog input')
+  dialogInput.focus()
+  fireEvent.keyDown(dialogInput, { key: 'Escape' })
+  expect(details.open).toBe(true)
+  expect(document.activeElement).toBe(dialogInput)
+  const nested = screen.getByLabelText('Nested control')
+  nested.focus()
+  fireEvent.keyDown(nested, { key: 'Escape' })
+  expect(details.open).toBe(true)
+  expect(document.activeElement).toBe(nested)
 })
