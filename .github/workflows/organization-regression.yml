@@ -247,7 +247,7 @@ jobs:
       - name: Verify components, fixture helpers and types before native work
         working-directory: apps/desktop
         run: |
-          npx vitest run src/app/eidolon src/components/ui/confirm-dialog.test.tsx src/components/ui/confirm-dialog-unmount.test.tsx src/store/organization-work.test.ts src/app/contrib/organization-shell.test.tsx src/app/contrib/surfaces.test.tsx src/app/routes.test.ts src/app/routes.workspace-reveal.test.ts src/app/settings src/app/overlays/overlay-view.test.tsx src/app/shell/hooks/use-status-snapshot.test.ts src/app/shell/titlebar.test.ts src/themes e2e/organization-*.unit.test.ts
+          npx vitest run src/app/eidolon src/app/artifacts/workspace.test.tsx src/components/ui/confirm-dialog.test.tsx src/components/ui/confirm-dialog-unmount.test.tsx src/store/organization-work.test.ts src/app/contrib/organization-shell.test.tsx src/app/contrib/surfaces.test.tsx src/app/routes.test.ts src/app/routes.workspace-reveal.test.ts src/app/settings src/app/overlays/overlay-view.test.tsx src/app/shell/hooks/use-status-snapshot.test.ts src/app/shell/titlebar.test.ts src/themes e2e/organization-*.unit.test.ts
           npm run typecheck
       - name: Install required native project isolation
         run: bash scripts/ci/organization-sandbox.sh

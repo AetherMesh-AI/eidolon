@@ -5,6 +5,7 @@ import { organizationFoundationEn } from './organization-foundation'
 import { organizationHomeEn } from './organization-home'
 import { organizationOwnerChatEn } from './organization-owner-chat'
 import { organizationRosterEn } from './organization-roster'
+import { organizationSurfacesEn } from './organization-surfaces'
 import { organizationWorkEn } from './organization-work'
 import { settingsWorkspaceEn } from './settings-workspace'
 import type { Translations } from './types'
@@ -12,6 +13,7 @@ import type { Translations } from './types'
 export const en: Translations = {
   organizationOwnerChat: organizationOwnerChatEn,
   organizationConversations: organizationConversationsEn,
+  organizationSurfaces: organizationSurfacesEn,
   organizationHome: organizationHomeEn,
   settingsWorkspace: settingsWorkspaceEn,
   organizationFoundation: organizationFoundationEn,

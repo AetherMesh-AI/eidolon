@@ -348,3 +348,17 @@
 .eid-health-details [data-slot=statusbar] { height: auto; min-height: 28px; flex-wrap: wrap; }
 @media (max-width: 800px) { .eid-system-health { gap: 4px; padding-inline: 4px; } .eid-health-activity { display: none; } }
 .eid-health-details [data-slot=statusbar] > div { flex-wrap: wrap; overflow: visible; }
+
+/* Directory and deliverable framing retain their existing action owners. */
+.eid-roster-surface > .eid-home-hero { margin-bottom: 12px; }
+.eid-roster-surface > .eid-toolbar { margin-top: 24px; }
+.eid-roster-surface .eid-organization-list { padding: 8px 18px; border-radius: 20px; background: var(--eidolon-surface-2); }
+.eid-roster-surface .eid-organization-list .eid-agent:last-child { border-bottom: 0; }
+.eid-roster-surface .eid-organization-grid .eid-agent { padding: 24px; border-radius: 20px; border: 0; background: var(--eidolon-surface-2); }
+.eid-deliverables-heading { flex: 0 0 auto; padding: 32px clamp(18px, 3vw, 40px) 20px; }
+.eid-deliverables-heading h1 { margin: 0 0 8px; font: 36px/1.2 Georgia, 'Times New Roman', serif; }
+.eid-deliverables-heading > p { margin: 0 0 20px; }
+.eid-deliverables-heading nav { flex-wrap: wrap; }
+.eid-delivery-outcomes { margin-bottom: 28px; }
+.eid-delivery-outcomes .eid-home-record > a { display: block; margin-top: 10px; }
+@media (width < 800px) { .eid-deliverables-heading { padding-top: 24px; } .eid-deliverables-heading h1 { font-size: 29px; } .eid-roster-surface .eid-organization-list { padding-inline: 10px; } }
