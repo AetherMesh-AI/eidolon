@@ -477,14 +477,17 @@ test('keeps native organization navigation, roster and objective layouts usable 
 
   await resize(1280, 720)
   for (const zoom of [1.25, 2]) {
-    await app.evaluate(({ BrowserWindow }, value) => BrowserWindow.getAllWindows()[0].webContents.setZoomFactor(value), zoom)
+    // Use the product's persisted zoom owner; direct webContents zoom is
+    // intentionally reverted by its resize/focus lifecycle reassertion.
+    await page.evaluate(value => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(value * 100), zoom)
     await expect.poll(() => page.evaluate(() => innerWidth), { message: 'native zoom changes the CSS viewport before reflow verification' }).toBe(Math.round(1280 / zoom))
     await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(zoom)
     await expect(page.getByRole('button', { name: 'Message organization', exact: true })).toBeVisible()
     await expect(page.getByRole('contentinfo', { name: 'System health', exact: true })).toBeInViewport({ ratio: 1 })
     await capture(`home-reflow-${zoom}`, workspace, true)
   }
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.setZoomFactor(1))
+  await page.evaluate(() => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(100))
+  await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(1)
   await resize(1220)
 
 
