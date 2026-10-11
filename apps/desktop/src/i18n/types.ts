@@ -11,6 +11,7 @@ import type { OrganizationHomeCopy } from './organization-home'
 // fall back to English while new keys remain type-checked.
 import type { OrganizationOwnerChatCopy } from './organization-owner-chat'
 import type { OrganizationRosterCopy } from './organization-roster'
+import type { organizationSurfacesEn } from './organization-surfaces'
 import type { OrganizationWorkCopy } from './organization-work'
 
 export type Locale = 'en' | 'zh' | 'zh-hant' | 'ja' | 'ar' | 'ru'
@@ -57,6 +58,7 @@ interface AuxTaskCopy {
 }
 
 export interface Translations {
+  organizationSurfaces: typeof organizationSurfacesEn
   organizationHome: OrganizationHomeCopy
   organizationFoundation: OrganizationFoundationCopy
   organizationOwnerChat: OrganizationOwnerChatCopy

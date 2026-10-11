@@ -84,7 +84,7 @@ export function OrganizationWorkspaceView({ adapter }: { adapter: OrganizationAd
   const [filter, setFilter] = useState('all')
   const [query, setQuery] = useState('')
   const objective = snapshot.objectives.find(item => pathname === `/objectives/${item.id}`)
-  const titles: Record<string, string> = { '/objectives': 'Objectives', '/organization': 'Organization', '/activity': 'Activity', '/knowledge': 'Knowledge' }
+  const titles: Record<string, string> = { '/objectives': 'Objectives', '/activity': 'Activity', '/knowledge': 'Knowledge' }
 
   return <main aria-label="Organization workspace" className="eidolon eid-workspace">
     <div className="eid-page">

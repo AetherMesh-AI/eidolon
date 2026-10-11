@@ -5,12 +5,14 @@ import { organizationFoundationEn } from './organization-foundation'
 import { organizationHomeEn } from './organization-home'
 import { organizationOwnerChatZh } from './organization-owner-chat'
 import { organizationRosterZh } from './organization-roster'
+import { organizationSurfacesEn } from './organization-surfaces'
 import { organizationWorkZh } from './organization-work'
 import type { Translations } from './types'
 
 export const zh: Translations = {
   organizationOwnerChat: organizationOwnerChatZh,
   organizationConversations: organizationConversationsZh,
+  organizationSurfaces: organizationSurfacesEn,
   organizationHome: organizationHomeEn,
   organizationFoundation: organizationFoundationEn,
   organizationWork: organizationWorkZh,

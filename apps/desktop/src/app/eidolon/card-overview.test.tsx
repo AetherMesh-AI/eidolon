@@ -66,3 +66,21 @@ it('makes absent responsibility, assignment, decisions and artifacts explicit', 
   expect(screen.getByText('Team: Unknown · team not recorded')).toBeTruthy()
   expect(screen.getByText('Current assignment: Unknown · no current assignment recorded')).toBeTruthy()
 })
+
+
+it('does not present historical or prior-round work as a current roster assignment', () => {
+  const base = createPrototypeAdapter()
+  base.loadDemo()
+  const snapshot = structuredClone(base.getSnapshot())
+  const member = snapshot.agents.find(item => item.name === 'Engineering')!
+  snapshot.tasks = [
+    { id: 'current', objectiveId: 'demo-workspace', title: 'Current work', ownerId: member.id, status: 'working', dependsOn: [] },
+    { id: 'historical', objectiveId: 'demo-workspace', title: 'Historical open work', ownerId: member.id, status: 'working', dependsOn: [], historical: true },
+    { id: 'prior', objectiveId: 'demo-workspace', title: 'Prior-round open work', ownerId: member.id, status: 'working', dependsOn: [], currentRound: false }
+  ]
+  const adapter = { ...base, getSnapshot: () => snapshot }
+  render(<MemoryRouter initialEntries={['/organization']}><OrganizationWorkspace adapter={adapter} /></MemoryRouter>)
+  const card = within(screen.getByRole('button', { name: 'Inspect Engineering' }))
+  expect(card.getByText(/Current assignment: Current work/)).toBeTruthy()
+  expect(card.queryByText(/Historical open work|Prior-round open work/)).toBeNull()
+})
