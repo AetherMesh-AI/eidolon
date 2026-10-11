@@ -24,7 +24,7 @@ test('isolates startup, reload and new-window update checks in fresh profiles', 
       await page.reload()
       await expect.poll(async () => (await evidence()).checks).toBeGreaterThan(startup.checks)
       const reloaded = await evidence()
-      await page.evaluate(() => window.hermesDesktop!.openWindow())
+      await page.evaluate(() => (window as unknown as { hermesDesktop: { openWindow(): Promise<{ ok: boolean }> } }).hermesDesktop.openWindow())
       await expect.poll(async () => new Set((await evidence()).senders).size).toBeGreaterThan(1)
       const final = await evidence()
       expect(final.checks).toBeGreaterThan(reloaded.checks)
