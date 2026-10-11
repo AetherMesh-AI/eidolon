@@ -63,16 +63,16 @@ export const organizationExecutiveMessageJa = {
 export const organizationExecutiveMessageZh = {
   messageOrganization: '向组织发消息',
   messageOrganizationUnavailable: '请先连接当前组织，再选择收件人。',
-  executiveMessageNote: '选择当前组织中的一位高管。消息属于与该成员的对话，只有提交后才会发送。',
-  noMessageExecutive: '此组织中没有身份已验证的活跃高管。选择收件人前，请查看组织成员名单。',
+  executiveMessageNote: '选择当前组织中的一位执行主管。消息属于与该成员的对话，只有提交后才会发送。',
+  noMessageExecutive: '此组织中没有身份已验证的活跃执行主管。选择收件人前，请查看组织成员名单。',
   reviewMessageRoster: '查看组织成员名单'
 } satisfies ExecutiveMessage
 
 export const organizationExecutiveMessageZhHant = {
   messageOrganization: '傳訊息給組織',
   messageOrganizationUnavailable: '請先連線至目前組織，再選擇收件者。',
-  executiveMessageNote: '選擇目前組織中的一位高階主管。訊息屬於與該成員的對話，只有提交後才會傳送。',
-  noMessageExecutive: '此組織中沒有身分已驗證的有效高階主管。選擇收件者前，請檢視組織成員名單。',
+  executiveMessageNote: '選擇目前組織中的一位執行主管。訊息屬於與該成員的對話，只有提交後才會傳送。',
+  noMessageExecutive: '此組織中沒有身分已驗證的有效執行主管。選擇收件者前，請檢視組織成員名單。',
   reviewMessageRoster: '檢視組織成員名單'
 } satisfies ExecutiveMessage
 
