@@ -43,7 +43,7 @@ export function ObjectiveProgress({ objective, snapshot, onReviewRequests, onRev
 
   return <div aria-label={copy.overview} className="eid-objective-overview" role="region">
     <div className="eid-objective-progress-main">
-      <section aria-label={copy.progress} className="eid-home-panel">
+      <section aria-label={copy.progress} className="eid-home-panel eid-progress-summary">
         <header><h2>{copy.progress}</h2><p>{copy.progressNote}</p></header>
         <div className="eid-recorded-phase"><span>{copy.phase}</span><strong>{objective.phase || copy.phaseUnknown}</strong></div>
         {progress !== undefined && Number.isFinite(progress) ? <div className="eid-home-progress">

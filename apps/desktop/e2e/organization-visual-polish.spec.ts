@@ -6,9 +6,8 @@ import { writeFileSync } from 'node:fs'
 
 import { BUILTIN_THEME_LIST } from '../src/themes/presets'
 
-import { verifyKeyboardFocus } from './focus-visibility'
-
 import { type MockBackendFixture, setupMockBackend, waitForAppReady } from './fixtures'
+import { verifyKeyboardFocus } from './focus-visibility'
 import { acknowledgeExpectedErrorBanner, expect, test } from './test'
 
 const createdAt = '2026-10-08T09:00:00Z'
@@ -103,7 +102,11 @@ const snapshot = {
       progress: 60,
       planningMode: 'executive_packages',
       acceptance: { status: 'reviewing', round: 1, maxReplans: 2, criteria: ['Brief reflects verified changes'], summary: null, deliverableId: null },
-      workPackages: [{ id: 'release-package', objectiveId: 'release', round: 1, managerId: 'manager', title: 'Release documentation', description: 'Draft the narrative and review its supporting evidence.', criterionIndexes: [0], projectIds: [], dependencyIds: [], maxTasks: 3, planRequestId: 'fixture-plan', status: 'working', taskIds: ['draft', 'review'] }]
+      workPackages: [
+        { id: 'release-package', objectiveId: 'release', round: 1, managerId: 'manager', title: 'Release documentation', description: 'Draft the narrative from verified changes.', criterionIndexes: [0], projectIds: [], dependencyIds: [], maxTasks: 3, planRequestId: 'fixture-plan', status: 'working', taskIds: ['draft'] },
+        { id: 'evidence-package', objectiveId: 'release', round: 1, managerId: 'manager', title: 'Acceptance evidence', description: 'Review supporting evidence against the brief.', criterionIndexes: [0], projectIds: [], dependencyIds: ['release-package'], maxTasks: 3, planRequestId: 'fixture-evidence-plan', status: 'working', taskIds: ['review'] },
+        { id: 'sources-package', objectiveId: 'release', round: 1, managerId: 'manager', title: 'Source verification', description: 'Check source material and retained context.', criterionIndexes: [0], projectIds: [], dependencyIds: [], maxTasks: 3, planRequestId: 'fixture-sources-plan', status: 'completed', taskIds: ['sources'] }
+      ]
     },
     {
       id: 'navigation',
@@ -145,11 +148,12 @@ const snapshot = {
       title: 'Review the acceptance evidence',
       ownerId: 'reviewer',
       managingAgentId: 'manager',
-      workPackageId: 'release-package',
+      workPackageId: 'evidence-package',
       currentRound: true,
       status: 'review',
       dependsOn: ['draft']
-    }
+    },
+    { id: 'sources', objectiveId: 'release', title: 'Verify source material', ownerId: 'researcher', managingAgentId: 'manager', workPackageId: 'sources-package', currentRound: true, status: 'completed', dependsOn: [] }
   ],
   requests: [{ id: 'fixture-question', objectiveId: 'navigation', type: 'request.question', team: 'Product', priority: 2, status: 'pending_intervention', reason: 'Review the proposed owner journey before the next iteration.', attempts: 0, createdAt }],
   activity: ['executive', 'manager', 'writer', 'reviewer'].map((agentId, index) => ({ id: `fixture-event-${index}`, agentId, source: 'runtime', kind: 'system', text: ['Synthetic direction recorded for the release brief.', 'Synthetic manager assignment recorded.', 'Synthetic draft prepared for review.', 'Synthetic review evidence recorded.'][index], timestamp: createdAt })),
@@ -204,6 +208,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
   const captures: object[] = []
   const focusChecks: object[] = []
   const columnChecks: object[] = []
+  const objectiveChecks: object[] = []
   const contrastChecks: Array<{ text: string | null; contrastRatio: number; opacity: number }> = []
 
   const runtime = await app.evaluate(() => ({
@@ -225,7 +230,8 @@ test('keeps native organization navigation, roster and objective layouts usable 
           organizationMethods: [...new Set(organizationMethods)],
           captures,
           focusChecks,
-          columnChecks
+          columnChecks,
+          objectiveChecks
         },
         null,
         2
@@ -245,10 +251,11 @@ test('keeps native organization navigation, roster and objective layouts usable 
     await expect.poll(() => page.evaluate(() => window.innerWidth)).toBe(width)
   }
 
-  async function capture(name: string, target = workspace, nativeWindow = false) {
-    await target.evaluate(element => {
-      element.scrollTop = 0
-    })
+  async function capture(name: string, target = workspace, nativeWindow = false, preserveScroll = false) {
+    if (!preserveScroll) {
+      await target.evaluate(element => { element.scrollTop = 0 })
+    }
+
     await page.evaluate(async () => {
       await document.fonts.ready
       await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
@@ -263,7 +270,10 @@ test('keeps native organization navigation, roster and objective layouts usable 
           animations: 'disabled',
           caret: 'hide'
         })
-    if (nativeWindow) writeFileSync(test.info().outputPath(`${name}.png`), bytes)
+
+    if (nativeWindow) {
+      writeFileSync(test.info().outputPath(`${name}.png`), bytes)
+    }
 
     await test.info().attach(name, { body: bytes, contentType: 'image/png' })
 
@@ -378,18 +388,24 @@ test('keeps native organization navigation, roster and objective layouts usable 
     await expect(page.getByRole('region', { name: 'Member conversation', exact: true }).getByRole('heading', { name: 'Robin', exact: true })).toBeVisible()
     await search.fill('')
     await capture(`messages-selected-wide-${mode}`)
+
     for (const [width, height] of [[1536, 961], [1280, 720]]) {
       await resize(width, height)
+
       const columns = await page.locator('.eid-messages-layout > section').evaluateAll(elements => elements.map(element => {
         const rect = element.getBoundingClientRect()
+
         return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
       }))
+
       const bounds = await workspace.boundingBox()
       expect(columns).toHaveLength(3)
+
       for (const column of columns) {
         expect(Math.abs(column.y - bounds!.y), 'columns start at the workspace top').toBeLessThanOrEqual(1)
         expect(Math.abs(column.height - bounds!.height), 'columns fill the workspace height').toBeLessThanOrEqual(1)
       }
+
       const total = columns.reduce((sum, column) => sum + column.width, 0)
       const targetWidths = width === 1536 ? [338, 677, 318] : [.254, .507, .239].map(ratio => ratio * total)
       columns.forEach((column, index) => expect(Math.abs(column.width - targetWidths[index]), 'column width within ten pixels of reference proportion').toBeLessThanOrEqual(10))
@@ -399,6 +415,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
       await expect(page.getByRole('contentinfo', { name: 'System health', exact: true })).toBeInViewport({ ratio: 1 })
       await capture(width === 1536 ? `reference-messages-${mode}` : `messages-selected-short-${mode}`)
     }
+
     await resize(1220)
     await capture(`messages-selected-medium-${mode}`)
     await resize(760)
@@ -428,7 +445,58 @@ test('keeps native organization navigation, roster and objective layouts usable 
     await expect(overview.getByRole('region', { name: 'Delivery', exact: true })).toContainText('has not been recorded')
     await capture(`objective-detail-wide-${mode}`)
     await resize(1536, 961)
+    await workspace.evaluate(element => { element.scrollTop = 0 })
+    const summary = overview.getByRole('region', { name: 'Progress overview', exact: true })
+    const assignmentCards = overview.locator('.eid-team-work-grid > article')
+    await expect(assignmentCards).toHaveCount(3)
+
+    const geometry = await overview.evaluate(element => {
+      const bounds = (node: Element) => {
+        const { x, y, width, height } = node.getBoundingClientRect()
+
+        return { x, y, width, height }
+      }
+
+      return { main: bounds(element.querySelector('.eid-objective-progress-main')!), aside: bounds(element.querySelector('.eid-objective-progress-aside')!), summary: bounds(element.querySelector('.eid-progress-summary')!), cards: [...element.querySelectorAll('.eid-team-work-grid > article')].map(bounds) }
+    })
+
+    expect(Math.abs(geometry.main.x - 222), 'Objective reference left gutter').toBeLessThanOrEqual(10)
+    expect(Math.abs(geometry.main.width - 898), 'Objective reference main column').toBeLessThanOrEqual(10)
+    expect(geometry.summary.height, 'compact progress retains recorded phase and actions').toBeLessThanOrEqual(190)
+
+    for (const card of geometry.cards) {
+      expect(Math.abs(card.y - geometry.cards[0].y), 'three recorded assignments share a row').toBeLessThanOrEqual(1)
+    }
+
+    for (const card of await assignmentCards.all()) {
+      await expect(card).toBeInViewport({ ratio: 1 })
+    }
+    objectiveChecks.push({ mode, viewport: '1536x961', ...geometry })
     await capture(`reference-objective-${mode}`)
+    await resize(1280, 720)
+    await workspace.evaluate(element => { element.scrollTop = 0 })
+    await expect(assignmentCards.first().getByText('Draft the release brief', { exact: true })).toBeInViewport({ ratio: 1 })
+    await capture(`objective-short-${mode}`)
+
+    for (const zoom of [1, 1.25, 2]) {
+      await page.evaluate(value => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(value * 100), zoom)
+      await expect.poll(() => page.evaluate(() => innerWidth)).toBe(Math.round(1280 / zoom))
+      await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(zoom)
+
+      for (const name of ['Inspect work and evidence', 'Review owner requests', 'Inspect acceptance and delivery']) {
+        const control = overview.getByRole('button', { name, exact: true })
+        await control.scrollIntoViewIfNeeded()
+        focusChecks.push(await verifyKeyboardFocus(page, control, `Objective ${mode} ${zoom} ${name}`))
+        await expect(control).toBeInViewport({ ratio: 1 })
+        await capture(`objective-control-${mode}-${zoom}-${name.split(' ')[0]}-${name.split(' ')[1]}`, workspace, zoom !== 1, true)
+      }
+
+      await expect(summary).toContainText('Draft and review')
+      await expect(overview.getByRole('region', { name: 'Delivery', exact: true })).toContainText('has not been recorded')
+    }
+
+    await page.evaluate(() => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(100))
+    await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(1)
     await resize(760)
     await capture(`objective-detail-narrow-${mode}`)
     await page.getByRole('button', { name: 'Review owner requests', exact: true }).click()
@@ -440,7 +508,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
     await resize(1220)
     await navigation.getByRole('link', { name: 'Work Overview', exact: true }).click()
     const card = page.getByRole('region', { name: 'Prepare the autumn release brief', exact: true })
-    await expect(card).toContainText('1 current-round manager assignment')
+    await expect(card).toContainText('3 current-round manager assignments')
     await expect(card.getByRole('list', { name: 'Recorded task states', exact: true })).toContainText('Working')
     await capture(`work-overview-wide-${mode}`)
     await resize(760)
@@ -473,6 +541,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await expect(page.getByRole('button', { name: 'Open settings', exact: true })).toHaveCount(0)
   await expect(page.locator('#eid-objective')).toBeHidden()
   await capture('01-home-wide-dark')
+
   for (const [width, height] of [[1536, 961], [1440, 900], [1280, 720]]) {
     await resize(width, height)
     const railWidth = await page.getByRole('complementary', { name: 'Eidolon navigation', exact: true }).evaluate(element => element.getBoundingClientRect().width)
@@ -484,6 +553,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
     await expect(page.getByRole('contentinfo', { name: 'System health', exact: true })).toBeInViewport({ ratio: 1 })
     await expect(page.getByRole('navigation', { name: 'Primary', exact: true }).getByRole('link', { name: 'Settings', exact: true })).toBeInViewport({ ratio: 1 })
     await capture(`home-fit-${width}-${height}`)
+
     if (width === 1280) {
       const body = workspace.locator('.eid-home-panel-body').first()
       const overflow = await body.evaluate(element => element.scrollHeight - element.clientHeight)
@@ -498,9 +568,11 @@ test('keeps native organization navigation, roster and objective layouts usable 
       await expect.poll(() => body.evaluate(element => element.scrollTop)).toBe(0)
     }
   }
+
   await resize(1220)
 
   await resize(1280, 720)
+
   for (const zoom of [1.25, 2]) {
     // Use the product's persisted zoom owner; direct webContents zoom is
     // intentionally reverted by its resize/focus lifecycle reassertion.
@@ -511,6 +583,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
     await expect(page.getByRole('contentinfo', { name: 'System health', exact: true })).toBeInViewport({ ratio: 1 })
     await capture(`home-reflow-${zoom}`, workspace, true)
   }
+
   await page.evaluate(() => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(100))
   await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(1)
   await resize(1220)
