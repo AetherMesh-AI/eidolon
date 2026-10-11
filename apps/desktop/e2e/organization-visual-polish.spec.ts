@@ -1097,7 +1097,10 @@ test('keeps workspace controls and loaded-record inspection usable without execu
   for (const mode of ['Dark', 'Light'] as const) {
     await resize(1536, 961, 1)
     await page.evaluate(() => { location.hash = '/settings?tab=config:appearance' })
+    await page.getByRole('button').filter({ has: page.getByText('AetherMesh', { exact: true }) }).click()
     await page.getByRole('button', { name: mode, exact: true }).click()
+    await expect(page.locator('html')).toHaveAttribute('data-hermes-theme', 'nous')
+    await expect.poll(() => page.locator('html').evaluate(element => element.classList.contains('dark'))).toBe(mode === 'Dark')
     await expect(header.getByRole('button', { name: 'Search', exact: true })).toBeVisible()
     await header.getByRole('button', { name: 'Search', exact: true }).click()
     await expect(page.getByRole('dialog').last()).toBeVisible()
@@ -1127,7 +1130,9 @@ test('keeps workspace controls and loaded-record inspection usable without execu
       await page.evaluate(async () => { await document.fonts.ready; await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))) })
       const bytes = Buffer.from(await app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
       writeFileSync(test.info().outputPath(name), bytes)
-      captures.push({ name, width, height, zoom, sha256: createHash('sha256').update(bytes).digest('hex') })
+      const appearance = await page.locator('html').evaluate(element => ({ theme: element.getAttribute('data-hermes-theme'), dark: element.classList.contains('dark') }))
+      expect(appearance).toEqual({ theme: 'nous', dark: mode === 'Dark' })
+      captures.push({ name, width, height, zoom, ...appearance, sha256: createHash('sha256').update(bytes).digest('hex') })
       await test.info().attach(name, { body: bytes, contentType: 'image/png' })
       await page.keyboard.press('Escape')
       await expect(search).toBeHidden()
@@ -1141,7 +1146,8 @@ test('keeps workspace controls and loaded-record inspection usable without execu
   await expect(search).toBeHidden()
   await expect(page.locator('.eid-objective-hero')).toContainText('Prepare the autumn release brief')
   expect(mock.receivedPrompts).toHaveLength(0)
-  expect([...new Set(methods)].sort()).toEqual(['organization.outcomes', 'organization.snapshot'])
+  // Outcomes are already in the snapshot: inspection must not fetch their history.
+  expect([...new Set(methods)]).toEqual(['organization.snapshot'])
   await test.info().attach('workspace-header-evidence', { contentType: 'application/json', body: JSON.stringify({
     sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
     sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
@@ -1193,7 +1199,10 @@ for (const locale of ['ja', 'ar', 'ru'] as const) {
       await page.evaluate(() => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(100))
       await app.evaluate(({ BrowserWindow }) => { const window = BrowserWindow.getAllWindows()[0]; window.unmaximize(); window.setMinimumSize(600, 600); window.setContentSize(1536, 961) })
       await page.evaluate(() => { location.hash = '/settings?tab=config:appearance' })
+      await page.getByRole('button').filter({ has: page.getByText('AetherMesh', { exact: true }) }).click()
       await page.getByRole('button', { name: copy[mode], exact: true }).click()
+      await expect(page.locator('html')).toHaveAttribute('data-hermes-theme', 'nous')
+      await expect.poll(() => page.locator('html').evaluate(element => element.classList.contains('dark'))).toBe(mode === 'dark')
       await expect(header.getByRole('button', { name: copy.settingsSearch, exact: true })).toBeVisible()
       await page.evaluate(() => { location.hash = '/home' })
       for (const [width, height, zoom] of [[1280, 720, 1], [760, 900, 1], [1280, 720, 2]]) {
@@ -1220,7 +1229,9 @@ for (const locale of ['ja', 'ar', 'ru'] as const) {
         await page.evaluate(async () => { await document.fonts.ready; await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))) })
         const bytes = Buffer.from(await app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
         writeFileSync(test.info().outputPath(name), bytes)
-        captures.push({ name, width, height, zoom, sha256: createHash('sha256').update(bytes).digest('hex') })
+        const appearance = await page.locator('html').evaluate(element => ({ theme: element.getAttribute('data-hermes-theme'), dark: element.classList.contains('dark') }))
+        expect(appearance).toEqual({ theme: 'nous', dark: mode === 'dark' })
+        captures.push({ name, width, height, zoom, ...appearance, sha256: createHash('sha256').update(bytes).digest('hex') })
         await test.info().attach(name, { body: bytes, contentType: 'image/png' })
         await page.keyboard.press('Escape')
         await expect(dialog).toBeHidden()
@@ -1228,7 +1239,7 @@ for (const locale of ['ja', 'ar', 'ru'] as const) {
       }
     }
     expect(mock.receivedPrompts).toHaveLength(0)
-    expect([...new Set(methods)].sort()).toEqual(['organization.outcomes', 'organization.snapshot'])
+    expect([...new Set(methods)]).toEqual(['organization.snapshot'])
     await test.info().attach('workspace-translated-evidence', { contentType: 'application/json', body: JSON.stringify({
       sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
       sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
