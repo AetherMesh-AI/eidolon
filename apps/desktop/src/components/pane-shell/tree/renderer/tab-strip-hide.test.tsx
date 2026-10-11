@@ -1,5 +1,5 @@
 import { useStore } from '@nanostores/react'
-import { cleanup, fireEvent, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { registry } from '@/contrib/registry'
@@ -8,6 +8,7 @@ import { group, type GroupNode, split } from '../model'
 import {
   $layoutTree,
   markCollapsePane,
+  noteActiveTreeGroup,
   registerPaneCloser,
   setTreeGroupTabStrip,
   tabStripVisibleForGroup,
@@ -18,9 +19,10 @@ import { TreeGroup } from './tree-group'
 
 /** TreeGroup reads its node from props; subscribe so store writes re-render. */
 function LiveTreeGroup() {
-  useStore($layoutTree)
+  const tree = useStore($layoutTree)!
+  const node = (tree.type === 'split' ? tree.children[0] : tree) as GroupNode
 
-  return <TreeGroup node={zoneAt(0)} parentAxis="column" />
+  return <TreeGroup node={node} parentAxis="column" />
 }
 
 // Pins the tab-strip hide grammar. Hiding is a COMMAND now, not a gesture: the
@@ -70,11 +72,6 @@ afterEach(() => {
   disposers.splice(0).forEach(dispose => dispose())
 })
 
-const zoneAt = (index: number) => {
-  const node = $layoutTree.get()!
-
-  return (node.type === 'split' ? node.children[index] : node) as never
-}
 
 const groupNode = () => {
   const node = $layoutTree.get()!
@@ -122,5 +119,42 @@ describe('tab strip hide grammar', () => {
 
     expect(toggleTargetZoneTabStrip()).toBe('always')
     expect(tabStripVisibleForGroup(groupNode())).toBe(true)
+  })
+})
+
+
+describe('organization contextual strip', () => {
+  function organizationGroup(siblings: string[]) {
+    disposers.push(registry.register({ area: 'panes', id: 'sessions', title: 'Eidolon', render: () => null,
+      data: { placement: 'left', hideOnly: true, contextualTabPeers: ['hermes-bots:pane'] } }))
+    disposers.push(registry.register({ area: 'panes', id: 'hermes-bots:pane', title: 'Profile chats', render: () => null,
+      data: { placement: 'left', hideOnly: true } }))
+    $layoutTree.set(split('column', [group(['sessions', ...siblings], { active: 'sessions', id: 'grp-main' })]))
+    noteActiveTreeGroup('grp-main')
+  }
+
+  it('restores default-pair mouse tabs through the same Show tabs command and can hide them again', async () => {
+    organizationGroup(['hermes-bots:pane'])
+    render(<LiveTreeGroup />)
+    expect(tablist()).toBeNull()
+    await act(async () => { expect(toggleTargetZoneTabStrip()).toBe('always') })
+    expect(document.querySelector('[data-tree-tab="sessions"]')).toBeTruthy()
+    expect(document.querySelector('[data-tree-tab="hermes-bots:pane"]')).toBeTruthy()
+    await act(async () => { expect(toggleTargetZoneTabStrip()).toBe('never') })
+    expect(tablist()).toBeNull()
+  })
+
+  it('keeps a customized terminal sibling mouse-accessible while organization navigation is active', () => {
+    organizationGroup(['hermes-bots:pane', 'terminal'])
+    render(<LiveTreeGroup />)
+    const terminal = document.querySelector('[data-tree-tab="terminal"]')!
+    expect(terminal).toBeTruthy()
+    fireEvent.pointerDown(terminal, { button: 0, clientX: 10, clientY: 10, pointerType: 'mouse' })
+    fireEvent.pointerUp(window, { button: 0, clientX: 10, clientY: 10, pointerType: 'mouse' })
+    expect(groupNode().active).toBe('terminal')
+    fireEvent.pointerDown(document.querySelector('[data-tree-tab="sessions"]')!, { button: 0, clientX: 10, clientY: 10, pointerType: 'mouse' })
+    fireEvent.pointerUp(window, { button: 0, clientX: 10, clientY: 10, pointerType: 'mouse' })
+    expect(groupNode().active).toBe('sessions')
+    expect(document.querySelector('[data-tree-tab="terminal"]')).toBeTruthy()
   })
 })

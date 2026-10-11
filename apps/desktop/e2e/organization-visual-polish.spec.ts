@@ -239,6 +239,27 @@ test('keeps native organization navigation, roster and objective layouts usable 
     .getByRole('complementary', { name: 'Eidolon navigation' })
     .getByRole('navigation', { name: 'Primary', exact: true })
 
+  // The organization shell has no redundant mode strip or technical sidebar prose.
+  await expect(page.getByRole('tab', { name: 'Eidolon', exact: true })).toBeHidden()
+  await expect(page.getByRole('tab', { name: 'Profile chats', exact: true })).toBeHidden()
+  const shellRail = page.getByRole('complementary', { name: 'Eidolon navigation', exact: true })
+  await expect(shellRail.getByText('Tools and configuration', { exact: true })).toHaveCount(0)
+  await expect(shellRail.locator('.eid-rail-footer')).toHaveCount(0)
+  await expect(shellRail.locator('.eid-rail-history > summary')).toBeHidden()
+  await expect(shellRail.getByRole('button', { name: 'More workspace options', exact: true })).toBeVisible()
+  const moreOptions = shellRail.getByRole('button', { name: 'More workspace options', exact: true })
+  await moreOptions.click()
+  await shellRail.getByRole('button', { name: 'Profile chats', exact: true }).click()
+  await expect(page.getByRole('tab', { name: 'Profile chats', exact: true })).toHaveAttribute('aria-selected', 'true')
+  await page.getByRole('tab', { name: 'Eidolon', exact: true }).click()
+  await expect(page.getByRole('tab', { name: 'Eidolon', exact: true })).toBeHidden()
+  await expect(navigation.getByRole('link', { name: 'Home', exact: true })).toBeVisible()
+  await moreOptions.focus()
+  await page.keyboard.press('Escape')
+  await expect(moreOptions).toBeFocused()
+  await expect(shellRail.getByRole('button', { name: 'Profile chats', exact: true })).toBeHidden()
+
+
   const workspace = page.getByRole('main', { name: 'Organization workspace', exact: true })
   const captures: object[] = []
   const focusChecks: object[] = []

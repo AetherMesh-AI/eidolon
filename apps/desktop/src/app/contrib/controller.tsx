@@ -169,6 +169,9 @@ registry.registerMany([
       collapsible: true,
       dock: { pane: 'workspace', pos: 'left' },
       revealAliases: ['chat-sidebar'],
+      // Only the default peer has an alternative mouse entry in More.
+      // Custom siblings and explicit Show tabs retain their normal strip.
+      contextualTabPeers: ['hermes-bots:pane'],
       // Standing chrome: no close gestures at all — the tab is shown/hidden
       // (zone menu Show/Hide rows + the auto-registered ⌘K toggle below).
       hideOnly: true,

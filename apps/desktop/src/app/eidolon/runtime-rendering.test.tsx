@@ -156,11 +156,11 @@ describe('runtime organization rendering', () => {
     expect(screen.queryByText(/local planning event/)).toBeNull()
   })
 
-  it('labels the rail runtime by default and identifies explicitly selected prototype mode', () => {
-    const { rerender } = render(<MemoryRouter><OrganizationRail sessions={null} /></MemoryRouter>)
-    expect(screen.getByText(/Organization evidence · current connection and profile/)).toBeTruthy()
+  it('keeps legacy history reachable without technical evidence prose in the default rail', () => {
+    render(<MemoryRouter><OrganizationRail sessions={null} /></MemoryRouter>)
+    expect(screen.queryByText(/Organization evidence · current connection and profile/)).toBeNull()
     expect(screen.queryByText(/Organization · Local prototype/)).toBeNull()
-    rerender(<MemoryRouter><OrganizationRail mode="prototype" sessions={null} /></MemoryRouter>)
-    expect(screen.getAllByText('Legacy prototype history').some(element => element.closest('.eid-rail-footer') !== null)).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'More workspace options' }))
+    expect(screen.getByRole('link', { name: 'Legacy prototype history' }).getAttribute('href')).toBe('/legacy-organization')
   })
 })

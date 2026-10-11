@@ -531,3 +531,10 @@
   .eid-home-activity li { padding-block: 9px; }
   .eid-home-activity li p { margin-block: 8px; }
 }
+
+/* Secondary navigation is available on demand; the default rail is the seven destinations. */
+.eid-rail > .eid-rail-more { margin-top: auto; }
+.eid-rail-more > summary { display: flex; align-items: center; width: fit-content; list-style: none; border-radius: 6px; }
+.eid-rail-more > summary::-webkit-details-marker { display: none; }
+.eid-rail-more > summary:hover { background: var(--eidolon-surface-hover); }
+.eid-rail-more > nav { padding-block: 4px; }

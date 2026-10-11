@@ -95,6 +95,7 @@ test('native confirmation keyboard respects focused actions in shared host and s
       // Only actual browser key activation decides the answer. No synthetic click.
       await page.keyboard.press(action === 'Escape' ? 'Escape' : action === 'Cancel Space' ? 'Space' : 'Enter')
       await expect(dialog).toHaveCount(0)
+      if (surface === 'session-menu') await expect(page.locator('.eid-rail-more')).toHaveAttribute('open', '')
       const expected = action === 'Confirm Enter' ? 0 : 1
       await expect.poll(() => remaining(id)).toBe(expected)
       expect(mock.receivedPrompts).toHaveLength(2)
@@ -103,6 +104,10 @@ test('native confirmation keyboard respects focused actions in shared host and s
     }
   }
 
+  const more = page.getByRole('complementary', { name: 'Eidolon navigation', exact: true })
+    .getByRole('button', { name: 'More workspace options', exact: true })
+  if (await more.locator('..').getAttribute('open') === null) await more.click()
+  await expect(more.locator('..')).toHaveAttribute('open', '')
   const history = page.locator('.eid-rail-history')
   if (await history.getAttribute('open') === null) await history.locator('summary').click()
   function sessionRow(title: string): Locator {

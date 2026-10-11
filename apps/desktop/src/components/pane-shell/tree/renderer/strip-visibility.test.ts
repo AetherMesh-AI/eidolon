@@ -95,6 +95,9 @@ describe('a full-page view', () => {
 // screen and the toggle command can never disagree.
 describe('tabStripVisibleForZone', () => {
   const contributions: Record<string, Contribution> = {
+    sessions: { area: 'panes', data: { placement: 'left', hideOnly: true, contextualTabPeers: ['hermes-bots:pane'] }, id: 'sessions', render: () => null, title: 'Eidolon' },
+    'hermes-bots:pane': { area: 'panes', data: { placement: 'left', hideOnly: true }, id: 'hermes-bots:pane', render: () => null, title: 'Profile chats' },
+    plugin: { area: 'panes', data: { placement: 'left' }, id: 'plugin', render: () => null, title: 'Another plugin' },
     terminal: { area: 'panes', data: { placement: 'bottom' }, id: 'terminal', render: () => null, title: 'terminal' },
     'tile:a': { area: 'panes', data: { placement: 'main' }, id: 'tile:a', render: () => null, title: 'tile' },
     workspace: {
@@ -116,6 +119,22 @@ describe('tabStripVisibleForZone', () => {
     })
 
   afterEach(() => setTabStripDefault('auto'))
+
+  it('hides only contextual default chrome and honors local and global Show tabs', () => {
+    expect(visible(['sessions'])).toBe(false)
+    expect(visible(['sessions', 'hermes-bots:pane'])).toBe(false)
+    expect(visible(['sessions', 'hermes-bots:pane'], 'always')).toBe(true)
+    setTabStripDefault('always')
+    expect(visible(['sessions', 'hermes-bots:pane'])).toBe(true)
+    expect(visible(['sessions', 'hermes-bots:pane'], 'never')).toBe(false)
+  })
+
+  it.each(['terminal', 'tile:a', 'plugin'])('retains mouse tabs for a customized organization group with %s', sibling => {
+    expect(visible(['sessions', sibling])).toBe(true)
+    expect(visible(['sessions', 'hermes-bots:pane', sibling])).toBe(true)
+    expect(visible(['sessions', sibling], 'always')).toBe(true)
+    expect(visible(['sessions', sibling], 'never')).toBe(true)
+  })
 
   it('reads placement, uncloseable and collapse off the contributions', () => {
     expect(visible(['workspace'])).toBe(false)

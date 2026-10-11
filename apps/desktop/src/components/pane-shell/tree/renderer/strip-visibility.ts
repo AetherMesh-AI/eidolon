@@ -32,6 +32,8 @@ export interface StripPane {
 export interface StripZone {
   /** The ACTIVE pane declines to be tabbed (a full-page view). */
   headerVeto?: boolean
+  /** Every shown sibling has a contextual mouse entry on the active pane. */
+  contextualNavigation?: boolean
   /** The zone's standing choice; undefined = auto. */
   mode?: TabStripMode
   /** Panes currently rendered as chips — chrome-hidden and narrow-collapsed
@@ -86,6 +88,12 @@ export function resolveTabStripVisible(zone: StripZone): boolean {
     return false
   }
 
+  // Alternative mouse navigation may replace default chrome, never an
+  // explicit Show tabs preference or an uncovered custom sibling.
+  if (zone.contextualNavigation) {
+    return zone.mode === 'always'
+  }
+
   if (stranded(zone.shown)) {
     return true
   }
@@ -115,8 +123,12 @@ export function tabStripVisibleForZone(zone: {
   /** Panes currently rendered as chips. */
   shown: readonly string[]
 }): boolean {
+  const activeChrome = paneChrome(zone.paneFor(zone.active))
+  const peers = activeChrome.contextualTabPeers
+
   return resolveTabStripVisible({
-    headerVeto: paneChrome(zone.paneFor(zone.active)).headerVeto,
+    headerVeto: activeChrome.headerVeto,
+    contextualNavigation: Boolean(peers && zone.shown.every(id => id === zone.active || peers.includes(id))),
     mode: effectiveTabStripMode(zone.mode),
     shown: zone.shown.map(id => {
       const chrome = paneChrome(zone.paneFor(id))

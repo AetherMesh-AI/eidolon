@@ -54,8 +54,13 @@ one-off at the call site.
   Delivery scope and required ownership/repository choices stay visible. Runtime
   errors and recovery remain visible even when capability details are collapsed.
 - **History complements the organization.** The existing Sessions tree stays
-  mounted in a History disclosure, which opens on explicit chat navigation.
-  Settings follows Deliverables in the primary rail; tools/configuration are secondary.
+  mounted behind the rail's compact More control; its History disclosure opens
+  on explicit chat navigation. The seven primary destinations remain the default
+  rail. Optional Profile chats and secondary tools are reachable from More;
+  the organization rail suppresses only its default contextual pane strip.
+  Explicit Show tabs preferences and customized sibling panes keep mouse tabs.
+  Technical
+  evidence provenance belongs in its contextual views, not a standing rail footer.
 - **Organization uses the desktop foundation.** Organization surfaces alias
   shared `--ui-*` background, text and stroke tokens so light/dark mode remains
   coherent. `--aether-*` compatibility aliases follow the selected desktop accent; accent text

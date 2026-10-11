@@ -23,7 +23,7 @@ export async function openOrganizationDisclosure(
 /** Navigate through the retained operational route in the approved shell. */
 export async function openOrganizationRequests(page: Page) {
   const navigation = page.getByRole('complementary', { name: 'Eidolon navigation' })
-  const summary = navigation.getByText('Tools and configuration', { exact: true })
+  const summary = navigation.getByRole('button', { name: 'More workspace options', exact: true })
   if ((await summary.locator('..').getAttribute('open')) === null) { await summary.click() }
   await navigation.getByRole('link', { name: 'Needs You', exact: true }).click()
   await expect(page.getByRole('region', { name: 'Attention inbox', exact: true })).toBeVisible()

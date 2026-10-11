@@ -3,6 +3,9 @@ import './eidolon.css'
 import { type ReactNode, useEffect, useRef } from 'react'
 import { NavLink, useLocation } from 'react-router'
 
+import { Codicon } from '@/components/ui/codicon'
+import { Button } from '@/components/ui/button'
+
 import { BrandMark } from '@/components/brand-mark'
 import { Badge } from '@/components/ui/badge'
 import { useI18n } from '@/i18n/context'
@@ -17,23 +20,25 @@ export function OrganizationRail({
   needsYouCount = 0,
   unreadOutcomes = 0,
   onNavigate,
-  mode = 'runtime'
+  onOpenProfileChats
 }: {
   sessions: ReactNode
   pluginNav?: ReactNode
   needsYouCount?: number
   unreadOutcomes?: number
   onNavigate?: (to: string) => void
-  mode?: 'prototype' | 'runtime'
+  onOpenProfileChats?: () => void
 }) {
   const { t } = useI18n()
   const copy = t.organizationWork
   const home = t.organizationHome
   const { pathname } = useLocation()
   const history = useRef<HTMLDetailsElement>(null)
+  const more = useRef<HTMLDetailsElement>(null)
+  const moreTrigger = useRef<HTMLElement>(null)
   const chat = appViewForPath(pathname) === 'chat'
   useEffect(() => {
-    if (chat && history.current) { history.current.open = true }
+    if (chat && history.current && more.current) { history.current.open = true; more.current.open = true }
   }, [chat, pathname])
 
   const destinations = [
@@ -92,8 +97,19 @@ export function OrganizationRail({
           </NavLink>
         ))}
       </nav>
-      <details>
-        <summary>{copy.advanced}</summary>
+      <details className="eid-rail-more" ref={more} onKeyDown={event => {
+        // React portal events still bubble through the session tree. Their
+        // dialogs, and controls that consumed Escape, own that key press.
+        if (event.defaultPrevented || !event.currentTarget.contains(event.target as Node)) return
+        if (event.key === 'Escape' && more.current?.open) {
+          event.preventDefault()
+          event.stopPropagation()
+          more.current.open = false
+          moreTrigger.current?.focus()
+        }
+      }}>
+        <summary aria-label={home.workspace.more} ref={moreTrigger} role="button"><Codicon name="ellipsis" /></summary>
+        {onOpenProfileChats && <Button onClick={onOpenProfileChats} size="sm" variant="ghost">{home.workspace.profileChats}</Button>}
         <nav aria-label={copy.advanced}>
           {advanced.map(({ to, label }) => (
             <NavLink key={to} onClick={event => linkAction(event, to)} to={to}>
@@ -102,15 +118,11 @@ export function OrganizationRail({
           ))}
         </nav>
         {pluginNav}
+        <details className="eid-rail-history" ref={history}>
+          <summary>{copy.navigationHistory}</summary>
+          <div className="eid-session-tree">{sessions}</div>
+        </details>
       </details>
-      <details className="eid-rail-history" ref={history}>
-        <summary>{copy.navigationHistory}</summary>
-        <p>{copy.historyNote}</p>
-        <div className="eid-session-tree">{sessions}</div>
-      </details>
-      <div className="eid-rail-footer">
-        <small>{mode === 'prototype' ? copy.legacyTitle : copy.evidenceSource}</small>
-      </div>
     </aside>
   )
 }
