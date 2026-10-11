@@ -5,7 +5,7 @@ import { organizationFoundationEn } from './organization-foundation'
 import { organizationHomeEn, organizationWorkspaceZh } from './organization-home'
 import { organizationOwnerChatZh } from './organization-owner-chat'
 import { organizationRosterZh } from './organization-roster'
-import { organizationSurfacesEn } from './organization-surfaces'
+import { organizationSurfacesZh } from './organization-surfaces'
 import { organizationWorkZh } from './organization-work'
 import { settingsWorkspaceEn } from './settings-workspace'
 import type { Translations } from './types'
@@ -13,7 +13,7 @@ import type { Translations } from './types'
 export const zh: Translations = {
   organizationOwnerChat: organizationOwnerChatZh,
   organizationConversations: organizationConversationsZh,
-  organizationSurfaces: organizationSurfacesEn,
+  organizationSurfaces: organizationSurfacesZh,
   organizationHome: { ...organizationHomeEn, workspace: organizationWorkspaceZh },
   settingsWorkspace: settingsWorkspaceEn,
   organizationFoundation: organizationFoundationEn,
