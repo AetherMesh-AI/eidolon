@@ -1,5 +1,6 @@
 /** Owner discussion remains separate from work requests and permission decisions. */
 const copy = {
+  details: ['Conversation details', '会話の詳細', '对话详情', '對話詳情', 'تفاصيل المحادثة', 'Сведения о диалоге'],
   contextWindow: [
     'Replies use a bounded window of recent messages. Earlier history stays available; quote exact earlier text when it matters.',
     '返信には最近のメッセージの限定範囲を使用します。以前の履歴は保持されます。必要な過去の文章は正確に引用してください。',

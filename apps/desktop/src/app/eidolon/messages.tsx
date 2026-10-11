@@ -97,6 +97,7 @@ export function Messages({
                 adapter={adapter}
                 agent={agent}
                 key={`${scope}:${agent.identityId ?? agent.id}`}
+                layout="workspace"
                 snapshot={snapshot}
               />
             </>
