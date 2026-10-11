@@ -172,6 +172,19 @@ test.afterEach(async () => {
 test('keeps native organization navigation, roster and objective layouts usable at both window sizes', async () => {
   fixture = await setupMockBackend()
   const { app, page, mock } = fixture
+  // A newer main can arrive during this long-running source-checkout test.
+  // Dismiss only the unrelated real updater toast through its public control;
+  // error banners and all notification/updater behavior remain enabled.
+  const updateToast = page.getByRole('status').filter({ has: page.getByText('Update ready', { exact: true }) })
+  let dismissedUpdates = 0
+  await page.addLocatorHandler(updateToast, async toast => {
+    await toast.getByRole('button', { name: 'Dismiss notification', exact: true }).click()
+    await expect(toast).toBeHidden()
+    dismissedUpdates += 1
+    await test.info().attach('dismissed-source-update-toast', {
+      contentType: 'text/plain', body: 'Dismissed the real Update ready toast before continuing the organization visual scenario.'
+    })
+  })
   const organizationMethods: string[] = []
   let displayedSnapshot: Omit<typeof snapshot, 'requests'> & { requests?: typeof snapshot.requests } = snapshot
   let readinessUnknown = false
@@ -195,10 +208,26 @@ test('keeps native organization navigation, roster and objective layouts usable 
       }
     })
   })
+  // Exercise the real renderer poller, IPC bridge, toast and dismissal in this
+  // temporary app. Only the read-only update-check response is scripted; apply,
+  // progress, error banners and dedicated updater scenarios are untouched.
+  await app.evaluate(({ ipcMain }) => {
+    ipcMain.removeHandler('hermes:updates:check')
+    ipcMain.handle('hermes:updates:check', () => ({
+      supported: true, branch: 'main', targetSha: 'f'.repeat(40), behind: 1,
+      updateAvailable: true, fetchedAt: Date.now()
+    }))
+  })
+  await page.evaluate(() => localStorage.removeItem('hermes:update-toast-snooze-until'))
   await page.clock.setFixedTime(new Date('2026-10-08T12:00:00Z'))
   await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' })
   await page.reload()
   await waitForAppReady(fixture)
+  await expect.poll(async () => {
+    await page.getByRole('complementary', { name: 'Eidolon navigation', exact: true }).getByRole('link', { name: 'Home', exact: true }).click()
+    return dismissedUpdates
+  }).toBeGreaterThan(0)
+  await expect(updateToast).toBeHidden()
 
   const navigation = page
     .getByRole('complementary', { name: 'Eidolon navigation' })
