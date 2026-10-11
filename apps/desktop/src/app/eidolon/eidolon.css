@@ -296,13 +296,14 @@
 
 .eid-objective-hero { margin-top: 24px; }
 .eid-objective-hero h1 { font-family: Georgia, 'Times New Roman', serif; font-size: clamp(28px, 3vw, 40px); font-weight: 500; }
-.eid-objective-overview { display: grid; grid-template-columns: minmax(0, 2fr) minmax(240px, 1fr); gap: 20px; margin: 28px 0; }
+.eid-objective-overview { display: grid; grid-template-columns: minmax(0, 2fr) minmax(240px, 1fr); gap: 20px; margin: 20px 0; }
 .eid-objective-progress-main, .eid-objective-progress-aside { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.eid-objective-overview .eid-home-panel > header { margin-bottom: 14px; }
 .eid-recorded-phase { display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline; }
-.eid-task-counts { display: flex; flex-wrap: wrap; gap: 10px 18px; list-style: none; padding: 0; margin: 18px 0; }
+.eid-task-counts { display: flex; flex-wrap: wrap; gap: 10px 18px; list-style: none; padding: 0; margin: 12px 0; }
 .eid-task-counts strong { font-variant-numeric: tabular-nums; }
 .eid-team-work > h2, .eid-team-work h3 { font-family: Georgia, 'Times New Roman', serif; font-weight: 500; }
-.eid-team-work > h2 { font-size: 24px; }
+.eid-team-work > h2 { font-size: 24px; margin: 0 0 8px; }
 .eid-team-work-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 18px; }
 .eid-team-work-grid h3 { font-size: 20px; margin: 0 0 6px; }
 .eid-team-owner { display: flex; align-items: flex-start; gap: 12px; }
@@ -310,7 +311,7 @@
 .eid-progress-tasks li { display: flex; flex-direction: column; gap: 6px; overflow-wrap: anywhere; }
 .eid-objective-overview p, .eid-objective-overview h3 { overflow-wrap: anywhere; }
 .eid-objective-controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr)); gap: 24px; margin: 32px 0; }
-@media (max-width: 1100px) { .eid-objective-overview { grid-template-columns: 1fr; } .eid-objective-progress-aside { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 1100px) { .eid-objective-overview { grid-template-columns: 1fr; } .eid-objective-progress-main { display: contents; } .eid-objective-progress-main > .eid-home-panel { grid-row: 1; } .eid-team-work { grid-row: 3; } .eid-objective-progress-aside { grid-row: 2; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 800px) { .eid-objective-progress-aside { grid-template-columns: 1fr; } }
 .eid-system-health { display: flex; flex: 0 0 auto; min-height: 28px; align-items: center; gap: 12px; padding: 2px 12px; border-top: 1px solid var(--eidolon-border); font-size: 11px; background: var(--ui-bg-sidebar); }
 .eid-health-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-secondary); }
