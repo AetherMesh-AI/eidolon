@@ -71,7 +71,11 @@ one-off at the call site.
 - **Pages are durable destinations.** Chat, Skills, Messaging, and Artifacts
   remain in shell chrome. Do not hide a distinct product noun inside an
   unrelated page.
-- **Route overlays are short tasks.** Settings, Command Center, Cron, Profiles,
+- **Settings stays in the workspace.** Its descriptive navigation and rounded
+  control groups keep the primary rail and single bottom health bar visible.
+  Existing page owners retain saves, scope, providers and appearance preferences.
+  Close/Escape returns to the prior route; nested dialogs dismiss first.
+- **Route overlays are short tasks.** Command Center, Cron, Profiles,
   Agents, and Starmap render as `OverlayView` cards and return to the previous
   route on close. Model/session pickers and dialogs layer above the current
   surface; they are not navigation stacks.

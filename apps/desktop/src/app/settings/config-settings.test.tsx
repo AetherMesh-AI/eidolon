@@ -52,7 +52,7 @@ async function renderConfigSettings() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const importInputRef = createRef<HTMLInputElement>()
 
-  render(
+  const view = render(
     <MemoryRouter>
       <QueryClientProvider client={client}>
         <ConfigSettings activeSectionId="safety" importInputRef={importInputRef} />
@@ -60,7 +60,7 @@ async function renderConfigSettings() {
     </MemoryRouter>
   )
 
-  return { importInputRef }
+  return { importInputRef, navigateSection: (activeSectionId: string) => view.rerender(<MemoryRouter><QueryClientProvider client={client}><ConfigSettings activeSectionId={activeSectionId} importInputRef={importInputRef} /></QueryClientProvider></MemoryRouter>) }
 }
 
 describe('ConfigSettings autosave', () => {
@@ -95,4 +95,29 @@ describe('ConfigSettings autosave', () => {
       vi.useRealTimers()
     }
   })
+})
+
+
+it('serializes a reverted edit behind an in-flight save while navigating configuration sections', async () => {
+  getHermesConfigRecord.mockResolvedValue({ checkpoints: { enabled: false }, other: 'untouched' })
+  let finish!: (value: { ok: boolean }) => void
+  saveHermesConfig.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+
+  try {
+    const { navigateSection } = await renderConfigSettings()
+    const toggle = await screen.findByRole('switch')
+    toggle.click()
+    await vi.advanceTimersByTimeAsync(700)
+    await waitFor(() => expect(saveHermesConfig).toHaveBeenCalledTimes(1))
+    toggle.click()
+    await vi.advanceTimersByTimeAsync(700)
+    navigateSection('chat')
+    expect(saveHermesConfig).toHaveBeenCalledTimes(1)
+    finish({ ok: true })
+    await waitFor(() => expect(saveHermesConfig).toHaveBeenCalledTimes(2))
+    expect(saveHermesConfig.mock.calls.map(call => call[0])).toEqual([{ checkpoints: { enabled: true } }, { checkpoints: { enabled: false } }])
+  } finally {
+    vi.useRealTimers()
+  }
 })
