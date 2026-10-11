@@ -402,3 +402,19 @@ Messages reuses durable owner/member chat and its explicit opening and allowance
 renewal controls. Browsing these routes does not dispatch work or claim presence.
 New shell copy lives in organization-home.ts and follows catalog English fallback;
 user and agent content is never translated automatically.
+
+The shared shell now has one bottom System health bar. Routine organization
+configuration and app tool clusters live in its accessible details panel;
+Gateway settings links to the existing Settings page. Connection failures remain
+visible inline. OS window controls, native menus, pane contributions and original
+advanced controls retain their owners and actions. Readiness needs fresh runtime
+check evidence plus a current organization connection and known enabled background
+work; a gateway process or stored credential alone cannot establish health.
+Unknown, stale, disabled, degraded, disconnected and attention states stay distinct.
+
+All redesigned color surfaces use the existing Settings tokens. Quiet text and
+semantic warning colors blend toward the selected foreground for readable contrast;
+native progress fills use the selected accent explicitly. Verification covers all
+12 built-in palettes in Dark and Light, plus System appearance transitions and
+reload persistence. Imported third-party palettes share these tokens but cannot
+be exhaustively verified by the built-in matrix.

@@ -17,7 +17,7 @@ import {
   writeMockProviderConfig
 } from './fixtures'
 import { startMockServer } from './mock-server'
-import { openOrganizationDisclosure } from './organization-disclosures'
+import { openOrganizationDisclosure, openOrganizationRequests } from './organization-disclosures'
 import { organizationPackageProposal } from './organization-package-proposal'
 import { organizationProviderTarget } from './organization-provider-target'
 import { expect, test } from './test'
@@ -254,7 +254,7 @@ test('preserves unsupported work and grants across navigation, dismissal, reload
   expect(await mountedSidebar!.evaluate(node => node.isConnected)).toBe(true)
   await navigation.locator('.eid-rail-history > summary').click()
   await assertRailLayout('01b-collapsed-rail-controls')
-  await page.getByRole('link', { name: 'View all requests', exact: true }).click()
+  await openOrganizationRequests(page)
   await expect(page.getByText('Nothing needs your input', { exact: true })).toBeVisible()
 
   await primary.getByRole('link', { name: 'Deliverables', exact: true }).click()
@@ -301,7 +301,7 @@ test('preserves unsupported work and grants across navigation, dismissal, reload
   await expect(page.getByText('No accepted final result yet.', { exact: true })).toBeVisible()
   await capture('04-unsupported-objective')
 
-  await primary.getByRole('link', { name: /^Needs You/ }).click()
+  await openOrganizationRequests(page)
   await page.getByRole('button', { name: 'Request queue', exact: true }).click()
   await expect(page.getByRole('combobox', { name: 'Status', exact: true })).toHaveValue('pending_intervention')
   await expect(unsupported).toBeVisible()
@@ -350,7 +350,7 @@ test('preserves unsupported work and grants across navigation, dismissal, reload
   await expect(objectiveHeader).toContainText('Cancelled', { timeout: 60_000 })
   await expect(unsupported).toContainText('Cancelled')
   await assertNoToolGrants()
-  await primary.getByRole('link', { name: /^Needs You/ }).click()
+  await openOrganizationRequests(page)
   await expect(page.getByText('Nothing needs your input', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Request queue', exact: true }).click()
   await page.getByRole('combobox', { name: 'Status', exact: true }).selectOption('cancelled')

@@ -88,7 +88,7 @@ export function OrganizationWorkspaceView({ adapter }: { adapter: OrganizationAd
 
   return <main aria-label="Organization workspace" className="eidolon eid-workspace">
     <div className="eid-page">
-      {adapter.mode === 'prototype' ? <div className="eid-demo-bar"><span>{copy.legacyDemo} · {copy.legacyNote}</span></div> : <RuntimeStatus adapter={adapter} snapshot={snapshot} />}
+      {adapter.mode === 'prototype' ? <div className="eid-demo-bar"><span>{copy.legacyDemo} · {copy.legacyNote}</span></div> : <RuntimeStatus adapter={adapter} snapshot={snapshot} warningsOnly />}
       {pathname === '/home' && <Home adapter={adapter} snapshot={snapshot} />}
       {pathname === '/messages' && <Messages adapter={adapter.mode === 'runtime' ? adapter : undefined} key={snapshot.connection?.ownerScope ?? snapshot.connection?.scope} snapshot={snapshot} />}
       {pathname === '/work' && <><header className="eid-home-hero"><div><h1>{t.organizationHome.work}</h1><p>{t.organizationHome.workNote}</p></div></header><div className="eid-work-overview">{homeData(snapshot).objectives.map(item => <HomeObjective key={item.id} objective={item} snapshot={snapshot} />)}</div>{!homeData(snapshot).objectives.length && <p>{t.organizationHome.noWork}</p>}<p>{t.organizationHome.snapshotNote}</p><Link to="/objectives">{t.organizationHome.viewObjectives} →</Link><Activity key={snapshot.connection?.scope} snapshot={snapshot} /></>}

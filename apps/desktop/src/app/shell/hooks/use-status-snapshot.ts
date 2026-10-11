@@ -17,6 +17,7 @@ export function useStatusSnapshot(
   gatewayScope = ''
 ) {
   const [statusSnapshot, setStatusSnapshot] = useState<StatusResponse | null>(null)
+  const [inferenceFresh, setInferenceFresh] = useState(false)
   const [inferenceStatus, setInferenceStatus] = useState<RuntimeReadinessResult | null>(null)
 
   useEffect(() => {
@@ -28,6 +29,7 @@ export function useStatusSnapshot(
     // snapshot and start a fresh scoped request explicitly.
     setStatusSnapshot(null)
     setInferenceStatus(null)
+    setInferenceFresh(false)
 
     // A closed/connecting gateway cannot have an authoritative live-runtime
     // result. Clear readiness before starting the REST status leg so a hung
@@ -52,6 +54,8 @@ export function useStatusSnapshot(
         return
       }
 
+      setInferenceFresh(false)
+
       try {
         // Wait for both legs before scheduling the next refresh. setInterval
         // allowed a slow runtime check to overlap with later polls, which
@@ -69,6 +73,12 @@ export function useStatusSnapshot(
         if (statusResult.status === 'fulfilled') {
           setStatusSnapshot(statusResult.value)
         }
+
+        setInferenceFresh(
+          inferenceResult.status === 'fulfilled' &&
+            inferenceResult.value !== null &&
+            inferenceResult.value.source !== 'fallback'
+        )
 
         if (inferenceResult.status === 'fulfilled') {
           const inference = inferenceResult.value
@@ -114,5 +124,5 @@ export function useStatusSnapshot(
     }
   }, [gatewayScope, gatewayState, requestGateway])
 
-  return { inferenceStatus, statusSnapshot }
+  return { inferenceStatus, inferenceFresh, statusSnapshot }
 }

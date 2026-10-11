@@ -78,11 +78,13 @@ describe('useStatusSnapshot', () => {
     await flushAsync()
     expect(result.current.inferenceStatus).toMatchObject({ ready: true, source: 'runtime_check' })
 
+    expect(result.current.inferenceFresh).toBe(true)
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(15_000)
+      await vi.advanceTimersByTimeAsync(60_000)
     })
 
     expect(result.current.inferenceStatus).toMatchObject({ ready: true, source: 'runtime_check' })
+    expect(result.current.inferenceFresh).toBe(false)
   })
 
   it('does not present an initial transport failure as inference not ready', async () => {

@@ -22,13 +22,17 @@ import { Knowledge, Status } from './workspace'
 
 export function RuntimeStatus({
   adapter,
-  snapshot
+  snapshot,
+  warningsOnly = false
 }: {
   adapter: RuntimeOrganizationAdapter
   snapshot: OrganizationSnapshot
+  warningsOnly?: boolean
 }) {
   const { t } = useI18n()
   const connection = snapshot.connection
+
+  if (warningsOnly && connection?.state !== 'error' && connection?.state !== 'disconnected') { return null }
 
   return (
     <section aria-label="Organization runtime" className="eid-runtime-status">
@@ -58,7 +62,7 @@ export function RuntimeStatus({
           Showing the last received state. Automatic recovery is limited; use Retry connection if updates do not resume.
         </p>
       )}
-      {snapshot.runtime && (
+      {!warningsOnly && snapshot.runtime && (
         <details className="eid-runtime-disclosure">
           <summary>
             {t.organizationRuntime.configuration}
