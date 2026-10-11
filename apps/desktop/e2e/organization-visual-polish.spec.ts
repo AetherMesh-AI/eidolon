@@ -342,6 +342,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
   }
 
   async function inspectMessages(mode: string) {
+    await resize(1440)
     await navigation.getByRole('link', { name: 'Messages', exact: true }).click()
     const search = page.getByRole('textbox', { name: 'Search members', exact: true })
     const members = page.getByRole('navigation', { name: 'Choose an agent', exact: true })
@@ -356,6 +357,8 @@ test('keeps native organization navigation, roster and objective layouts usable 
     await expect(page.getByRole('region', { name: 'Member conversation', exact: true }).getByRole('heading', { name: 'Robin', exact: true })).toBeVisible()
     await search.fill('')
     await capture(`messages-selected-wide-${mode}`)
+    await resize(1220)
+    await capture(`messages-selected-medium-${mode}`)
     await resize(760)
     await capture(`messages-selected-narrow-${mode}`)
     await context.getByRole('link', { name: 'Prepare the autumn release brief', exact: true }).click()

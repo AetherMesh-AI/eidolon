@@ -69,7 +69,7 @@ export function Messages({
       <div className="eid-messages-layout" data-member-selected={Boolean(agent)}>
         <section aria-label={messages.members} className="eid-message-members">
           <h2>{messages.members}</h2>
-          <SearchField aria-label={messages.search} onChange={setQuery} placeholder={messages.search} value={query} />
+          <SearchField aria-label={messages.search} containerClassName="opacity-100" onChange={setQuery} placeholder={messages.search} value={query} />
           <nav aria-label={copy.chooseAgent}>
             {matches.map(item => (
               <Button

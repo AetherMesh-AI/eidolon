@@ -1,7 +1,7 @@
 /** Source messages; untranslated locales inherit English through the existing catalog. */
 export const organizationHomeEn = {
   memberMessages: {
-    members: 'Organization members',
+    members: 'Members',
     search: 'Search members',
     noMatches: 'No members match this search.',
     directoryNote: 'Persistent members in this profile. Selecting a member does not open or renew their conversation.',

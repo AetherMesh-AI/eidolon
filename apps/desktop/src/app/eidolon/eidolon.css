@@ -289,6 +289,7 @@
 .eid-message-members nav small { font-size: 11px; margin-top: 4px; }
 .eid-message-members nav button[aria-pressed=true] { background: var(--eidolon-surface-3); }
 .eid-message-conversation { padding: 24px; border-radius: 20px; background: var(--eidolon-surface-2); }
+.eid-message-conversation .eid-owner-chat-message > button { max-width: 100%; white-space: normal; overflow-wrap: anywhere; text-align: start; justify-content: flex-start; }
 .eid-message-recipient { display: flex; align-items: center; gap: 12px; }
 .eid-message-recipient h2 { margin-bottom: 4px; }
 .eid-message-recipient p { margin: 0; }
@@ -300,7 +301,7 @@
 .eid-message-context details { padding-top: 16px; border-top: 1px solid var(--eidolon-border-subtle); }
 .eid-message-context details[open] > summary { margin-bottom: 18px; }
 .eid-message-context dd { margin-inline-start: 0; overflow-wrap: anywhere; }
-@media (max-width: 1200px) { .eid-messages-layout { grid-template-columns: minmax(180px, 1fr) minmax(0, 3fr); } .eid-message-context { grid-column: 2; } }
+@media (max-width: 1400px) { .eid-messages-layout { grid-template-columns: minmax(180px, 1fr) minmax(0, 3fr); } .eid-message-context { grid-column: 2; } }
 @media (max-width: 800px) { .eid-messages-layout, .eid-messages-layout[data-member-selected=false] { grid-template-columns: 1fr; } .eid-message-members nav { max-height: 180px; } .eid-message-context { grid-column: 1; } .eid-message-conversation { padding: 18px; } }
 .eid-brand { font-family: Georgia, 'Times New Roman', serif; font-size: 25px; font-weight: 500; }
 @media (max-width: 1100px) { .eid-home-grid { grid-template-columns: 1fr; } .eid-home-activity ol { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
