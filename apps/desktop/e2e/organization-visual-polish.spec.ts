@@ -6,7 +6,7 @@ import { writeFileSync } from 'node:fs'
 import { BUILTIN_THEME_LIST } from '../src/themes/presets'
 
 import { type MockBackendFixture, setupMockBackend, waitForAppReady } from './fixtures'
-import { expect, test } from './test'
+import { acknowledgeExpectedErrorBanner, expect, test } from './test'
 
 const createdAt = '2026-10-08T09:00:00Z'
 
@@ -290,6 +290,8 @@ test('keeps native organization navigation, roster and objective layouts usable 
 
           return {
             text: element.textContent,
+            label: element.getAttribute('aria-label') || element.getAttribute('title'),
+            tag: element.tagName,
             color: getComputedStyle(element).color,
             backgrounds,
             opacity,
@@ -466,29 +468,38 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await expect(page.getByRole('textbox', { name: 'Objective', exact: true })).toHaveValue('Retain this unsubmitted objective across navigation')
   const health = page.getByRole('contentinfo', { name: 'System health', exact: true })
   await expect(health.getByRole('button', { name: 'System health: Background work disabled', exact: true })).toBeVisible()
+  await resize(1220)
+  await capture('health-disabled')
   for (const [runtimeState, expected] of [['error', 'Needs attention'], ['not_reported', 'Unknown'], ['ready', 'Input needed']] as const) {
     displayedSnapshot = { ...snapshot, runtime: { ...snapshot.runtime, state: runtimeState, setup: { ...snapshot.runtime.setup, backgroundOptIn: true } } }
     await page.reload()
     await waitForAppReady(fixture)
     await expect(health.getByRole('button', { name: `System health: ${expected}`, exact: true })).toBeVisible()
+    await capture(`health-runtime-${runtimeState}`)
   }
   displayedSnapshot = { ...displayedSnapshot, requests: [] }
   await page.reload()
   await waitForAppReady(fixture)
   await expect(health.getByRole('button', { name: 'System health: Ready', exact: true })).toBeVisible()
+  await capture('health-ready')
   displayedSnapshot = { ...displayedSnapshot, requests: undefined }
   await page.reload()
   await waitForAppReady(fixture)
-  await expect(health.getByRole('button', { name: 'System health: Unknown', exact: true })).toBeVisible()
+  // Missing requests violates the wire contract: keep the adapter fail-closed.
+  const invalidSnapshot = 'This backend did not return a supported organization snapshot. Update the runtime and reconnect.'
+  await expect(health.getByRole('button', { name: 'System health: Needs attention', exact: true })).toBeVisible()
+  await expect(page.getByRole('alert')).toHaveText(invalidSnapshot)
   await expect(health).toContainText('Organization activity unavailable')
   await expect(health).not.toContainText('Organization: 0 running')
+  await capture('health-missing-queue-rejected')
   displayedSnapshot = { ...displayedSnapshot, requests: [] }
-  await page.reload()
-  await waitForAppReady(fixture)
+  await page.getByRole('button', { name: 'Retry connection', exact: true }).click()
   await expect(health.getByRole('button', { name: 'System health: Ready', exact: true })).toBeVisible()
+  await acknowledgeExpectedErrorBanner(page, invalidSnapshot)
   readinessUnknown = true
   await page.evaluate(() => window.dispatchEvent(new Event('focus')))
   await expect(health.getByRole('button', { name: 'System health: Last known · refresh pending', exact: true })).toBeVisible()
+  await capture('health-stale')
   readinessUnknown = false
   displayedSnapshot = snapshot
   await page.reload()
@@ -498,6 +509,9 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await expect(details.getByRole('link', { name: 'Gateway settings', exact: true })).toHaveAttribute('href', /settings\?tab=gateway$/)
   await details.getByText('Advanced application controls', { exact: true }).click()
   await expect(details.getByRole('button', { name: 'Open settings', exact: true })).toBeVisible()
+  await capture('health-advanced-controls')
+  await resize(760)
+  await capture('health-advanced-controls-narrow')
   await page.keyboard.press('Escape')
   await expect(details).toHaveCount(0)
   await expect(health.getByRole('button', { name: /^System health:/ })).toBeFocused()

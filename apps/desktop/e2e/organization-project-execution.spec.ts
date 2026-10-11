@@ -58,6 +58,8 @@ async function createObjective(page: Page) {
   await expect(capabilities).toContainText('root0/app.py')
   await expect(capabilities).toContainText('root0/test_app.py')
   await expect(capabilities).toContainText('python_unittest')
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog', { name: 'System health details', exact: true })).toHaveCount(0)
   await page.getByRole('textbox', { name: 'Objective', exact: true }).fill(projectTitle)
   await openOrganizationDisclosure(page, 'Context')
   await page

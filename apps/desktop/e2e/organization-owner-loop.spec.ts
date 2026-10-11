@@ -175,12 +175,15 @@ test('preserves unsupported work and grants across navigation, dismissal, reload
   const capture = async (name: string) => {
     await page.screenshot({ path: testInfo.outputPath(`${name}.png`) })
   }
-  const assertNoToolGrants = async () => {
+  const assertNoToolGrants = async (captureName?: string) => {
     await openOrganizationDisclosure(page, 'Configured capabilities')
     const capabilities = page.getByRole('region', { name: 'Configured capabilities', exact: true })
     await expect(capabilities.getByText('Not enabled · submitted text only', { exact: true })).toBeVisible()
     await expect(capabilities.getByText('No patch grant configured', { exact: true })).toBeVisible()
     await expect(capabilities.getByText(/Granted read roots/)).toHaveCount(0)
+    if (captureName) { await capture(captureName) }
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog', { name: 'System health details', exact: true })).toHaveCount(0)
   }
 
   const mountedSidebar = await navigation.locator('[data-tour="sessions-sidebar"]').elementHandle()
@@ -244,7 +247,7 @@ test('preserves unsupported work and grants across navigation, dismissal, reload
 
   await primary.getByRole('link', { name: 'Home', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'What should the organization do?', exact: true })).toBeVisible()
-  await assertNoToolGrants()
+  await assertNoToolGrants('01-system-health-capabilities')
   await capture('01-command')
   const historyDisclosure = navigation.locator('.eid-rail-history')
   if (await historyDisclosure.getAttribute('open') !== null) {
