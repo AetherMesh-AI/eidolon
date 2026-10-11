@@ -12,6 +12,14 @@ let fixture: MockBackendFixture | undefined
 
 test.setTimeout(300_000)
 test.afterEach(async () => {
+  if (fixture) {
+    // Keep failed readiness assertions failed, but retain bounded transport evidence.
+    await expect.poll(() => fixture!.app.evaluate(() =>
+      ((globalThis as any).__settingsConfigRequests ?? []).filter((row: any) => row.finishedAt == null).length
+    ), { timeout: 30_000 }).toBe(0).catch(() => undefined)
+    const requests = await fixture.app.evaluate(() => (globalThis as any).__settingsConfigRequests ?? [])
+    await test.info().attach('settings-config-transport', { body: JSON.stringify(requests, null, 2), contentType: 'application/json' })
+  }
   await fixture?.cleanup()
   fixture = undefined
 })
@@ -21,6 +29,22 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
     extraConfig: '\ncheckpoints:\n  enabled: false\nsettings_fixture_marker: retained\n'
   })
   const { app, page, mock, sandbox } = fixture
+  await app.evaluate(() => {
+    const rows: any[] = []
+    ;(globalThis as any).__settingsConfigRequests = rows
+    // Observe real Node HTTP requests without replacing IPC, responses or routing.
+    require('node:diagnostics_channel').channel('http.client.request.start').subscribe(({ request }: any) => {
+      const url = new URL(request.path, 'http://127.0.0.1')
+      if (!['/api/config', '/api/config/schema'].includes(url.pathname)) return
+      const row: any = { path: url.pathname, profile: url.searchParams.get('profile'), method: request.method, startedAt: Date.now() }
+      rows.push(row)
+      request.once('response', (response: any) => {
+        row.status = response.statusCode
+        response.once('end', () => { row.finishedAt = Date.now(); row.durationMs = row.finishedAt - row.startedAt })
+      })
+      request.once('error', (error: Error) => { row.finishedAt = Date.now(); row.error = error.message })
+    })
+  })
   await waitForAppReady(fixture)
   const navigation = page.getByRole('complementary', { name: 'Eidolon navigation', exact: true })
   await navigation.getByRole('link', { name: 'Home', exact: true }).click()
@@ -277,7 +301,23 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
       await resize(1440)
       await settings.getByRole('button', { name: 'Close settings', exact: true }).click()
       await page.reload()
-      await waitForAppReady(fixture)
+      await app.evaluate(() => {
+    const rows: any[] = []
+    ;(globalThis as any).__settingsConfigRequests = rows
+    // Observe real Node HTTP requests without replacing IPC, responses or routing.
+    require('node:diagnostics_channel').channel('http.client.request.start').subscribe(({ request }: any) => {
+      const url = new URL(request.path, 'http://127.0.0.1')
+      if (!['/api/config', '/api/config/schema'].includes(url.pathname)) return
+      const row: any = { path: url.pathname, profile: url.searchParams.get('profile'), method: request.method, startedAt: Date.now() }
+      rows.push(row)
+      request.once('response', (response: any) => {
+        row.status = response.statusCode
+        response.once('end', () => { row.finishedAt = Date.now(); row.durationMs = row.finishedAt - row.startedAt })
+      })
+      request.once('error', (error: Error) => { row.finishedAt = Date.now(); row.error = error.message })
+    })
+  })
+  await waitForAppReady(fixture)
       await expect(page.locator('html')).toHaveAttribute('data-hermes-theme', key)
       await navigation.getByRole('link', { name: 'Settings', exact: true }).click()
       await settings.getByRole('button', { name: 'Appearance', exact: true }).click()
