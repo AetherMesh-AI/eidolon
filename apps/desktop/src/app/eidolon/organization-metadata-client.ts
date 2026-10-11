@@ -282,7 +282,7 @@ export function createOrganizationMetadataClient(
         }
       }
     },
-    async save(displayName: string, ownerDisplayName: string) {
+    async save(displayName: string, ownerDisplayName: string, onVerifiedSave?: (receipt: MetadataDescriptor) => void) {
       const scope = readScope()
       const entry = entries.get(scope.ownerKey)
 
@@ -361,6 +361,8 @@ export function createOrganizationMetadataClient(
         }
 
         intentStorage?.removeItem(storageKey(scope))
+        // Capture the verified identity before subscribers can unmount an initializing editor.
+        onVerifiedSave?.(result)
         publish(
           scope,
           { descriptor: retainNewest(viewFor(scope), result), busy: false, intent: null, error: null },

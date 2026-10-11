@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import { Input } from '@/components/ui/input'
 import { useI18n } from '@/i18n/context'
 
-import type { createOrganizationMetadataClient } from './organization-metadata-client'
+import type { createOrganizationMetadataClient, MetadataDescriptor } from './organization-metadata-client'
 
 interface IdentityDraft {
   displayName: string
@@ -17,7 +17,7 @@ interface OrganizationOwnerEditorProps {
   client: ReturnType<typeof createOrganizationMetadataClient>
   draftKey: string
   onClose: () => void
-  onReturnFocus: () => void
+  onReturnFocus: (saved: MetadataDescriptor | null) => void
 }
 
 export function OrganizationOwnerEditor(props: OrganizationOwnerEditorProps) {
@@ -45,6 +45,7 @@ function ScopedOrganizationOwnerEditor({ client, draftKey, onClose, onReturnFocu
       setDraft({ displayName: data.displayName, ownerDisplayName: data.owner.displayName })
     }
   }, [data, draftKey, original])
+  const verifiedSave = useRef<MetadataDescriptor | null>(null)
   const mounted = useRef({ active: true })
   useEffect(() => {
     const lifecycle = mounted.current
@@ -75,7 +76,9 @@ function ScopedOrganizationOwnerEditor({ client, draftKey, onClose, onReturnFocu
     view.descriptor.state === 'unsupported'
 
   const submit = async () => {
-    const saved = await client.save(draft.displayName, draft.ownerDisplayName)
+    const saved = await client.save(draft.displayName, draft.ownerDisplayName, receipt => {
+      verifiedSave.current = receipt
+    })
 
     if (saved) {
       drafts.delete(draftKey)
@@ -99,7 +102,7 @@ function ScopedOrganizationOwnerEditor({ client, draftKey, onClose, onReturnFocu
         className="eidolon eid-owner-editor"
         onCloseAutoFocus={event => {
           event.preventDefault()
-          onReturnFocus()
+          onReturnFocus(verifiedSave.current)
         }}
       >
         <DialogTitle>{copy.title}</DialogTitle>

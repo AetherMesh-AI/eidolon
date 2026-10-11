@@ -116,6 +116,7 @@ print(json.dumps(dict(row) if row else None))
       await dialog.getByLabel('Your display name', { exact: true }).fill('Alex')
       await dialog.getByRole('button', { name: 'Save names', exact: true }).click()
       await expect(dialog).toHaveCount(0)
+      await expect(trigger).toBeFocused()
       await expect(trigger).toContainText('Alex')
       await expect(page.locator('.eid-workspace-organization-name')).toHaveText('Research studio')
       const first = stored()!

@@ -71,8 +71,12 @@ export function WorkspaceHeader() {
       <OrganizationWorkIndicator compact />
       <Button aria-label={settings ? t.settings.search.pill : copy.settings} onClick={() => settings ? openCommandPalettePage('settings') : navigateToWorkspacePage(navigate, '/settings')} size="micro" variant="ghost"><Codicon name={settings ? 'search' : 'settings-gear'} /><span className="eid-workspace-action-label">{settings ? t.settings.search.pill : copy.settings}</span></Button>
     </div>
-    {editingScope === editorScope && identity.scope.eligible && <OrganizationOwnerEditor client={identity.client} draftKey={JSON.stringify([identity.scope.ownerKey, saved?.organizationId ?? 'unconfigured'])} key={editingScope} onClose={() => setEditingScope(null)} onReturnFocus={() => {
-      if (readScope().connected && ownerEditorScope(readScope().key, identity.client.getSnapshot().descriptor) === editingScope && !$pendingConnectionId.get() && ownerTrigger.current?.isConnected && !ownerTrigger.current.disabled) {ownerTrigger.current.focus()}
+    {editingScope === editorScope && identity.scope.eligible && <OrganizationOwnerEditor client={identity.client} draftKey={JSON.stringify([identity.scope.ownerKey, saved?.organizationId ?? 'unconfigured'])} key={editingScope} onClose={() => setEditingScope(null)} onReturnFocus={receipt => {
+      const scope = readScope()
+      const descriptor = identity.client.getSnapshot().descriptor
+      const expectedScope = receipt ? ownerEditorScope(identity.scope.key, receipt) : editingScope
+
+      if (scope.connected && ownerEditorScope(scope.key, descriptor) === expectedScope && !$pendingConnectionId.get() && !$gatewaySwapTarget.get() && ownerTrigger.current?.isConnected && !ownerTrigger.current.disabled) {ownerTrigger.current.focus()}
     }} />}
     {snapshot && searchScope === snapshot.connection?.scope && available && <WorkspaceSearch isCurrent={current} key={searchScope} onClose={() => setSearchScope(null)} onReturnFocus={() => {
       if (current() && searchTrigger.current?.isConnected && !searchTrigger.current.disabled) {searchTrigger.current.focus()}
