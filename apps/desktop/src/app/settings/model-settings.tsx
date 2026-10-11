@@ -830,7 +830,7 @@ export function ModelSettings({ compactOverview = false, onMainModelChanged, sco
     <div className="grid gap-6">
       <section>
         <p className="mb-3 text-xs text-muted-foreground">{m.appliesDesc}</p>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="eid-settings-model-picker flex flex-wrap items-center gap-2">
           <Select onValueChange={setSelectedProvider} value={selectedProvider}>
             <SelectTrigger className={cn('min-w-40', CONTROL_TEXT)}>
               <SelectValue placeholder={m.provider} />
