@@ -221,3 +221,40 @@ The short-height correction passed its title/assignee checks, but native 125%
 zoom rounds a two-pixel outline to 1.6 CSS pixels. Objective controls now use a
 three-pixel outline; all existing minimum width, contrast and clipping checks
 remain unchanged. Corrected exact-head native evidence is pending.
+
+
+## Current reference audit after PR71 (2026-10-11)
+
+The earlier coordinate table above describes the pre-PR68 comparison. It is
+historical, not the current layout. Reopened the original Home reference and
+inspected `home-fit-1536-961.png` from native run38124590239, tree
+`5ce1131b4c399eda3f2dfbcac10b9db4f354a680`.
+
+- Home cards now start near y202 (reference y206), end near y632 (reference
+  y695), and activity starts near y644 (reference y705). Both activity panels
+  are approximately240px tall. Reducing activity height would not match the
+  reference. The current retained-record notice, bottom status bar and outer
+  spacing consume vertical space absent from the original composition; preserve
+  their information when adjusting hierarchy. No CSS change was made from an
+  incorrect assumption that the reference activity panel is180px tall.
+- The latest Settings Overview places cards near x502/y238, versus roughly
+  x469/y180 in the reference. Its additional Overview heading and secondary-rail
+  spacing are the concrete next comparison targets. First resolve the config
+  loading failure; loading skeleton captures cannot validate this composition.
+- Objective metadata currently supplies one optional phase string, current work
+  packages and acceptance evidence, not a complete ordered phase history.
+  A completed multi-stage strip and stage timestamps cannot be inferred from
+  that current phase. Keep the unknown-state behavior in objective-progress
+  tests while choosing any additional recorded-evidence representation.
+- OrganizationSnapshot has no organization display name or owner account
+  identity. The current command palette is not unified agent/objective search.
+  Reference header fields must have real owners and actions before presentation.
+- Scenic artwork remains an original-asset task. No screenshot fragments or
+  unrelated Lunavale assets were copied into production. Branding and final
+  reference parity remain open.
+
+Current chat verification covers11 captures and22 focus checks, including long
+history and a short English retained-read error. It does not cover every long
+translation, expanded disclosure or uncertain-send combination. At200% zoom,
+keyboard focus brings each target into view; the entire transcript and composer
+are not claimed to be simultaneously visible.
