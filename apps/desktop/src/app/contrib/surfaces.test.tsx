@@ -49,6 +49,7 @@ vi.mock('../shell/hooks/use-status-snapshot', () => ({ useStatusSnapshot: () => 
 vi.mock('../shell/hooks/use-statusbar-items', () => ({
   useStatusbarItems: () => ({ leftStatusbarItems: [], statusbarItems: [] })
 }))
+vi.mock('../eidolon/system-health-bar', () => ({ SystemHealthBar: () => null }))
 vi.mock('../shell/statusbar-controls', () => ({ StatusbarControls: () => null }))
 vi.mock('../routes', () => ({
   contributedRoutes: () =>

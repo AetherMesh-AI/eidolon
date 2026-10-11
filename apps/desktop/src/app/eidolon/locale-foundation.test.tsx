@@ -8,7 +8,7 @@ import { translateFrom } from '@/i18n/runtime'
 
 import { LocalizedTime } from './localized-time'
 import { MetadataSummary } from './objective-metadata'
-import type { Objective } from './types'
+import type { Objective, OrganizationEditProposal } from './types'
 
 const objective = { id: 'goal', title: 'User title', source: 'runtime', status: 'active', description: 'User content', createdAt: '2026-01-15T10:24:00Z', progress: 42.5, phase: 'Do not translate my phase', milestone: 'User milestone' } as Objective
 
@@ -50,4 +50,15 @@ it('uses the same locale for numeric timestamps and handles unavailable dates wi
   expect(container.querySelector('time')?.textContent).toBe(new Date(objective.createdAt).toLocaleString('ja'))
   expect(container.querySelectorAll('time')).toHaveLength(1)
   expect(screen.getByText(TRANSLATIONS.en.organizationFoundation.notRecorded)).toBeTruthy()
+})
+
+it('renders receipt timestamps as one semantic time element each', async () => {
+  const { RuntimeProjectReceipts } = await import('./runtime-project-receipts')
+  const receipt = { status: 'passed', checks: [], notExecuted: [], files: [], created: 1791072000, limitations: 'Recorded scope', requestId: 'receipt', resultSha256: 'a'.repeat(64) }
+  const proposal = { validationReceipt: receipt, sourceVerificationReceipt: { ...receipt, manifestValidation: receipt, validations: [] } } as unknown as OrganizationEditProposal
+  const { container } = render(<I18nProvider configClient={null}><RuntimeProjectReceipts proposal={proposal} /></I18nProvider>)
+  expect(container.querySelectorAll('time')).toHaveLength(2)
+  expect(container.querySelector('time time')).toBeNull()
+
+  for (const time of container.querySelectorAll('time')) {expect(time.dateTime).toBe(new Date(receipt.created * 1000).toISOString())}
 })

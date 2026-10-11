@@ -21,6 +21,7 @@ import { setAppearance } from '@/store/translucency'
 import { $accentOverride } from './accent-override'
 import { $backendThemes, $pendingSkinApply } from './backend-sync'
 import { ensureContrast, harmonize, hexToRgb, mix, readableOn } from './color'
+import { organizationPalette } from './organization-palette'
 import { BUILTIN_THEME_LIST, DEFAULT_SKIN_NAME, DEFAULT_TYPOGRAPHY, nousTheme } from './presets'
 import { retintTheme } from './retint'
 import type { DesktopTheme, DesktopThemeColors } from './types'
@@ -279,7 +280,7 @@ function applyTheme(theme: DesktopTheme, mode: 'light' | 'dark') {
     '--noise-opacity-mul': isDark ? 'calc(0.04 / 0.21)' : 'calc(0.34 / 0.21)'
   }
 
-  for (const [k, v] of Object.entries({ ...seeds, ...mixesFor(isDark), ...palette })) {
+  for (const [k, v] of Object.entries({ ...seeds, ...mixesFor(isDark), ...palette, ...organizationPalette(c) })) {
     root.style.setProperty(k, v)
   }
 

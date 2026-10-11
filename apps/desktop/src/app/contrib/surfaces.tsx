@@ -23,6 +23,7 @@ import { ChatSidebar } from '../chat/sidebar'
 import { LegacyOrganizationHistory } from '../eidolon/legacy-history'
 import { OrganizationRail } from '../eidolon/rail'
 import { useRuntimeOrganization } from '../eidolon/runtime-provider'
+import { SystemHealthBar } from '../eidolon/system-health-bar'
 import { OrganizationWorkspace } from '../eidolon/workspace'
 import { TerminalPaneChrome } from '../right-sidebar/terminal/chrome'
 import {
@@ -39,7 +40,7 @@ import { ModelMenuPanel } from '../shell/model-menu-panel'
 import { StatusbarControls } from '../shell/statusbar-controls'
 
 import { latestChatActions, latestSidebarActions } from './latest-actions'
-import { LegacyKanbanUnavailable, OrganizationWorkIndicator, PluginNavigation } from './organization-shell'
+import { LegacyKanbanUnavailable, PluginNavigation } from './organization-shell'
 import { setStatusbarItemGroup, useStatusbarContributions } from './panes'
 import type { SidebarActions, WiringActions } from './types'
 
@@ -117,14 +118,11 @@ export const StatusbarSurface = memo(function StatusbarSurface({
   const gatewayState = useStore($gatewayState)
   const freshDraftReady = useStore($freshDraftReady)
   const gatewayScope = `${activeConnectionId ?? ''}\0${activeGatewayProfile}`
-  const { inferenceStatus, statusSnapshot } = useStatusSnapshot(gatewayState, actions.requestGateway, gatewayScope)
+  const { inferenceStatus, inferenceFresh, statusSnapshot } = useStatusSnapshot(gatewayState, actions.requestGateway, gatewayScope)
   const extraLeftItems = useStatusbarContributions('left')
   const contributedRightItems = useStatusbarContributions('right')
 
-  const extraRightItems = useMemo(
-    () => [{ id: 'organization-work', render: () => <OrganizationWorkIndicator /> }, ...contributedRightItems],
-    [contributedRightItems]
-  )
+  const extraRightItems = contributedRightItems
 
   const { leftStatusbarItems, statusbarItems } = useStatusbarItems({
     agentsOpen,
@@ -134,7 +132,7 @@ export const StatusbarSurface = memo(function StatusbarSurface({
     extraRightItems,
     freshDraftReady,
     gatewayState,
-    inferenceStatus,
+    inferenceStatus: inferenceFresh ? inferenceStatus : null,
     openAgents: actions.openAgents,
     openCommandCenterSection: actions.openCommandCenterSection,
     requestGateway: actions.requestGateway,
@@ -142,7 +140,7 @@ export const StatusbarSurface = memo(function StatusbarSurface({
     toggleCommandCenter: actions.toggleCommandCenter
   })
 
-  return <StatusbarControls items={statusbarItems} leftItems={leftStatusbarItems} />
+  return <SystemHealthBar controls={<StatusbarControls items={statusbarItems} leftItems={leftStatusbarItems} />} fresh={inferenceFresh} gateway={gatewayState} onOpenAgents={actions.openAgents} readiness={inferenceStatus} />
 })
 
 /** The workspace pane: the real route table (chat + full-page views + plugin
@@ -204,7 +202,7 @@ export const ChatRoutesSurface = memo(function ChatRoutesSurface({
 
   return (
     <Routes>
-      {['home', 'objectives', 'objectives/:objectiveId', 'organization', 'activity', 'requests'].map(path => (
+      {['home', 'messages', 'work', 'objectives', 'objectives/:objectiveId', 'organization', 'activity', 'requests'].map(path => (
         <Route element={page(<OrganizationWorkspace />)} key={path} path={path} />
       ))}
       <Route element={<LegacyKnowledgeRedirect />} path="knowledge" />

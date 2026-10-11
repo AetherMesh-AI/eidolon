@@ -17,17 +17,21 @@ export function useStatusSnapshot(
   gatewayScope = ''
 ) {
   const [statusSnapshot, setStatusSnapshot] = useState<StatusResponse | null>(null)
+  const [inferenceFresh, setInferenceFresh] = useState(false)
   const [inferenceStatus, setInferenceStatus] = useState<RuntimeReadinessResult | null>(null)
 
   useEffect(() => {
     let cancelled = false
     let timer: number | undefined
+    let inFlight = false
+    let refreshRequested = false
 
     // Status and inference readiness belong to one backend. A source switch
     // can keep gatewayState="open" throughout, so clear the previous source's
     // snapshot and start a fresh scoped request explicitly.
     setStatusSnapshot(null)
     setInferenceStatus(null)
+    setInferenceFresh(false)
 
     // A closed/connecting gateway cannot have an authoritative live-runtime
     // result. Clear readiness before starting the REST status leg so a hung
@@ -43,6 +47,22 @@ export function useStatusSnapshot(
     }
 
     const refresh = async () => {
+      // Expire evidence even when the window is not eligible for another RPC.
+      setInferenceFresh(false)
+
+      if (timer !== undefined) {
+        window.clearTimeout(timer)
+        timer = undefined
+      }
+
+      // Focus/visibility bursts coalesce behind one probe. Its result is no
+      // longer current once a newer refresh is requested, so discard it below.
+      if (inFlight) {
+        refreshRequested = true
+
+        return
+      }
+
       // macOS commonly leaves an occluded BrowserWindow `visible`; focus is
       // the missing signal that prevents status + readiness RPCs while the
       // user is working in another app.
@@ -51,6 +71,9 @@ export function useStatusSnapshot(
 
         return
       }
+
+      inFlight = true
+      refreshRequested = false
 
       try {
         // Wait for both legs before scheduling the next refresh. setInterval
@@ -62,13 +85,19 @@ export function useStatusSnapshot(
           gatewayState === 'open' ? evaluateRuntimeReadiness(requestGateway) : Promise.resolve(null)
         ])
 
-        if (cancelled) {
+        if (cancelled || refreshRequested) {
           return
         }
 
         if (statusResult.status === 'fulfilled') {
           setStatusSnapshot(statusResult.value)
         }
+
+        setInferenceFresh(
+          inferenceResult.status === 'fulfilled' &&
+            inferenceResult.value !== null &&
+            inferenceResult.value.source !== 'fallback'
+        )
 
         if (inferenceResult.status === 'fulfilled') {
           const inference = inferenceResult.value
@@ -85,7 +114,14 @@ export function useStatusSnapshot(
           }
         }
       } finally {
-        scheduleRefresh()
+        inFlight = false
+
+        if (!cancelled && refreshRequested) {
+          refreshRequested = false
+          void refresh()
+        } else {
+          scheduleRefresh()
+        }
       }
     }
 
@@ -114,5 +150,5 @@ export function useStatusSnapshot(
     }
   }, [gatewayScope, gatewayState, requestGateway])
 
-  return { inferenceStatus, statusSnapshot }
+  return { inferenceStatus, inferenceFresh, statusSnapshot }
 }

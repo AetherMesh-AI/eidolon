@@ -14,7 +14,7 @@ import {
   replacementTitle,
   setupCompletionFixture
 } from './organization-completion-fixture'
-import { openOrganizationDisclosure } from './organization-disclosures'
+import { openOrganizationDisclosure, openOrganizationRequests } from './organization-disclosures'
 import { expect, test } from './test'
 
 const projectTests = 'Project tests (requires external verification when unavailable)'
@@ -45,7 +45,7 @@ async function openObjective(page: Page, title: string) {
 }
 
 async function createObjective(page: Page, title: string, requireTests: boolean) {
-  await primary(page).getByRole('link', { name: 'Command', exact: true }).click()
+  await primary(page).getByRole('link', { name: 'Home', exact: true }).click()
   await page.getByRole('textbox', { name: 'Objective', exact: true }).fill(title)
   await openOrganizationDisclosure(page, 'Context')
   await page.getByRole('textbox', { name: 'Submitted context (optional)', exact: true }).fill(originalScope)
@@ -192,9 +192,7 @@ test('requires explicit check replacement, retains its audit, and completes only
     page.getByRole('region', { name: 'Outcomes inbox', exact: true }).getByText('No outcomes yet', { exact: true })
   ).toBeVisible()
   await expect(page.getByRole('region', { name: 'Outcomes inbox', exact: true }).getByRole('listitem')).toHaveCount(0)
-  await primary(page)
-    .getByRole('link', { name: /^Needs You/ })
-    .click()
+  await openOrganizationRequests(page)
   // Attention rows show the blocker reason, not the request-queue status label.
   await expect(blocked).toContainText(
     'Project execution requires an independently reviewed inspection or edit by an explicitly granted worker'
@@ -320,7 +318,7 @@ test('requires explicit check replacement, retains its audit, and completes only
   expect(stages).toHaveLength(6)
   // Finish via the real provider while the owner is composing elsewhere.
   // Poll the real gateway receipt, never seed terminal state or intercept RPC.
-  await primary(page).getByRole('link', { name: 'Command', exact: true }).click()
+  await primary(page).getByRole('link', { name: 'Home', exact: true }).click()
   const nextObjective = page.getByRole('textbox', { name: 'Objective', exact: true })
   await nextObjective.fill('Keep my foreground draft')
   await nextObjective.focus()
@@ -490,9 +488,7 @@ test('requires explicit check replacement, retains its audit, and completes only
   await expect(page.getByRole('region', { name: 'Final acceptance', exact: true })).toHaveText(acceptedBeforeSeen, {
     useInnerText: true
   })
-  await primary(page)
-    .getByRole('link', { name: /^Needs You/ })
-    .click()
+  await openOrganizationRequests(page)
   await expect(page.getByText('Nothing needs your input', { exact: true })).toBeVisible()
   expect(stages).toHaveLength(10)
   expect(providerErrors).toEqual([])
@@ -533,9 +529,7 @@ test('retains a visible model-call intervention across full process restart and 
   const deadline = await assertBlocked()
   expect(deadline).toBeTruthy()
   await page.screenshot({ path: testInfo.outputPath('01-model-call-limit-stopped-dispatch.png') })
-  await primary(page)
-    .getByRole('link', { name: /^Needs You/ })
-    .click()
+  await openOrganizationRequests(page)
   await blocked.click()
   await expect(page.getByRole('complementary', { name: 'Request details' })).toContainText(reason)
   await expect(page.getByRole('option', { name: 'Retry after fixing configuration', exact: true })).toHaveCount(0)
@@ -556,9 +550,7 @@ test('retains a visible model-call intervention across full process restart and 
   await page.reload()
   await expect(objectiveHeader(page, budgetTitle)).toContainText('Cancelled', { timeout: 60_000 })
   expect(await assertBlocked()).toBe(deadline)
-  await primary(page)
-    .getByRole('link', { name: /^Needs You/ })
-    .click()
+  await openOrganizationRequests(page)
   await expect(page.getByText('Nothing needs your input', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Request queue', exact: true }).click()
   await page.getByRole('combobox', { name: 'Status', exact: true }).selectOption('cancelled')

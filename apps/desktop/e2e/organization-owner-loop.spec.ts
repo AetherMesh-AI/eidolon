@@ -17,7 +17,7 @@ import {
   writeMockProviderConfig
 } from './fixtures'
 import { startMockServer } from './mock-server'
-import { openOrganizationDisclosure } from './organization-disclosures'
+import { openOrganizationDisclosure, openOrganizationRequests } from './organization-disclosures'
 import { organizationPackageProposal } from './organization-package-proposal'
 import { organizationProviderTarget } from './organization-provider-target'
 import { expect, test } from './test'
@@ -175,12 +175,15 @@ test('preserves unsupported work and grants across navigation, dismissal, reload
   const capture = async (name: string) => {
     await page.screenshot({ path: testInfo.outputPath(`${name}.png`) })
   }
-  const assertNoToolGrants = async () => {
+  const assertNoToolGrants = async (captureName?: string) => {
     await openOrganizationDisclosure(page, 'Configured capabilities')
     const capabilities = page.getByRole('region', { name: 'Configured capabilities', exact: true })
     await expect(capabilities.getByText('Not enabled · submitted text only', { exact: true })).toBeVisible()
     await expect(capabilities.getByText('No patch grant configured', { exact: true })).toBeVisible()
     await expect(capabilities.getByText(/Granted read roots/)).toHaveCount(0)
+    if (captureName) { await capture(captureName) }
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog', { name: 'System health details', exact: true })).toHaveCount(0)
   }
 
   const mountedSidebar = await navigation.locator('[data-tour="sessions-sidebar"]').elementHandle()
@@ -242,9 +245,9 @@ test('preserves unsupported work and grants across navigation, dismissal, reload
     await expect.poll(() => navigation.evaluate(rail => rail.scrollTop)).toBe(0)
   }
 
-  await primary.getByRole('link', { name: 'Command', exact: true }).click()
+  await primary.getByRole('link', { name: 'Home', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'What should the organization do?', exact: true })).toBeVisible()
-  await assertNoToolGrants()
+  await assertNoToolGrants('01-system-health-capabilities')
   await capture('01-command')
   const historyDisclosure = navigation.locator('.eid-rail-history')
   if (await historyDisclosure.getAttribute('open') !== null) {
@@ -254,10 +257,10 @@ test('preserves unsupported work and grants across navigation, dismissal, reload
   expect(await mountedSidebar!.evaluate(node => node.isConnected)).toBe(true)
   await navigation.locator('.eid-rail-history > summary').click()
   await assertRailLayout('01b-collapsed-rail-controls')
-  await primary.getByRole('link', { name: 'Needs You', exact: true }).click()
+  await openOrganizationRequests(page)
   await expect(page.getByText('Nothing needs your input', { exact: true })).toBeVisible()
 
-  await primary.getByRole('link', { name: 'Artifacts', exact: true }).click()
+  await primary.getByRole('link', { name: 'Deliverables', exact: true }).click()
   const sources = page.getByRole('navigation', { name: 'Artifact sources' })
   await expect(sources.getByRole('link', { name: 'Session files' })).toHaveAttribute('aria-current', 'page')
   await sources.getByRole('link', { name: 'Organization evidence' }).click()
@@ -268,7 +271,9 @@ test('preserves unsupported work and grants across navigation, dismissal, reload
   // Seed only a legacy local-storage fixture. It must remain exact and must
   // never be submitted to the runtime ledger merely by opening its history.
   await page.evaluate(({ key, bytes }) => localStorage.setItem(key, bytes), { key: legacyKey, bytes: legacyBytes })
-  await navigation.getByText('Tools and configuration', { exact: true }).click()
+  const toolsDisclosure = navigation.getByText('Tools and configuration', { exact: true })
+  if ((await toolsDisclosure.locator('..').getAttribute('open')) === null) { await toolsDisclosure.click() }
+  await expect(toolsDisclosure.locator('..')).toHaveAttribute('open', '')
   await assertRailLayout('03a-expanded-rail-controls')
   await navigation.getByRole('link', { name: 'Legacy prototype history', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Legacy prototype history', exact: true })).toBeVisible()
@@ -283,7 +288,7 @@ test('preserves unsupported work and grants across navigation, dismissal, reload
   await navigation.getByText('Tools and configuration', { exact: true }).click()
   await assertRailLayout('03c-reexpanded-history-controls')
 
-  await primary.getByRole('link', { name: 'Command', exact: true }).click()
+  await primary.getByRole('link', { name: 'Home', exact: true }).click()
   const deliveryScope = page.getByRole('combobox', { name: 'Delivery scope', exact: true })
   await deliveryScope.selectOption('managed_artifact')
   await assertNoToolGrants()
@@ -301,7 +306,7 @@ test('preserves unsupported work and grants across navigation, dismissal, reload
   await expect(page.getByText('No accepted final result yet.', { exact: true })).toBeVisible()
   await capture('04-unsupported-objective')
 
-  await primary.getByRole('link', { name: /^Needs You/ }).click()
+  await openOrganizationRequests(page)
   await page.getByRole('button', { name: 'Request queue', exact: true }).click()
   await expect(page.getByRole('combobox', { name: 'Status', exact: true })).toHaveValue('pending_intervention')
   await expect(unsupported).toBeVisible()
@@ -350,7 +355,7 @@ test('preserves unsupported work and grants across navigation, dismissal, reload
   await expect(objectiveHeader).toContainText('Cancelled', { timeout: 60_000 })
   await expect(unsupported).toContainText('Cancelled')
   await assertNoToolGrants()
-  await primary.getByRole('link', { name: /^Needs You/ }).click()
+  await openOrganizationRequests(page)
   await expect(page.getByText('Nothing needs your input', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Request queue', exact: true }).click()
   await page.getByRole('combobox', { name: 'Status', exact: true }).selectOption('cancelled')

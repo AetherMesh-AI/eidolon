@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import path from 'node:path'
 
 import { buildAppEnv, type MockBackendFixture, setupMockBackend, waitForAppReady } from './fixtures'
-import { expect, test } from './test'
+import { acknowledgeExpectedErrorBanner, expect, test } from './test'
 
 let fixture: MockBackendFixture | undefined
 const root = path.resolve(import.meta.dirname, '../../..')
@@ -107,6 +107,7 @@ assert s.snapshot()['objectives']==[]
   await expect(form.getByRole('combobox', { name: 'New priority' })).toHaveCount(0)
   await form.getByRole('button', { name: 'Retry priority save', exact: true }).click()
   await expect(form.getByText('Saved P4 → P3 (revision 3).', { exact: true })).toBeVisible()
+  await acknowledgeExpectedErrorBanner(page, 'Scripted lost reply after commit Retry sends the same change once more. Review the current value before starting a different change.')
   expect(changes).toHaveLength(4)
   expect(changes[2]).toEqual(changes[3])
   await expect(form.getByRole('button', { name: 'Retry priority save', exact: true })).toHaveCount(0)

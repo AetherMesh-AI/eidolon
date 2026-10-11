@@ -24,6 +24,8 @@ export const LEGACY_KANBAN_ROUTE = '/kanban'
 
 export const ORGANIZATION_PATHS = [
   '/home',
+  '/messages',
+  '/work',
   '/objectives',
   '/activity',
   '/knowledge',

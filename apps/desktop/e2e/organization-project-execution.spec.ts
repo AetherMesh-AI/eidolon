@@ -1,7 +1,7 @@
 /** Actual native Electron → RPC → scheduler → SQLite → OS runner → source Git branch. */
 import type { Locator, Page } from '@playwright/test'
 
-import { openOrganizationDisclosure } from './organization-disclosures'
+import { openOrganizationDisclosure, openOrganizationRequests } from './organization-disclosures'
 import {
   correctedApp,
   projectCriterion,
@@ -45,7 +45,7 @@ async function openObjective(page: Page) {
   await expect(header(page)).toBeVisible()
 }
 async function createObjective(page: Page) {
-  await primary(page).getByRole('link', { name: 'Command', exact: true }).click()
+  await primary(page).getByRole('link', { name: 'Home', exact: true }).click()
   await openOrganizationDisclosure(page, 'Configured capabilities')
   const capabilities = page.getByRole('region', { name: 'Configured capabilities', exact: true })
   await expect(capabilities).toContainText('Project test grant')
@@ -58,6 +58,8 @@ async function createObjective(page: Page) {
   await expect(capabilities).toContainText('root0/app.py')
   await expect(capabilities).toContainText('root0/test_app.py')
   await expect(capabilities).toContainText('python_unittest')
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog', { name: 'System health details', exact: true })).toHaveCount(0)
   await page.getByRole('textbox', { name: 'Objective', exact: true }).fill(projectTitle)
   await openOrganizationDisclosure(page, 'Context')
   await page
@@ -268,9 +270,7 @@ test('retains exact native test, independent review and branch receipts, or an h
       page.getByRole('region', { name: 'Outcomes inbox', exact: true }).getByText('No outcomes yet', { exact: true })
     ).toBeVisible()
     await expect(page.getByRole('region', { name: 'Outcomes inbox', exact: true }).getByRole('listitem')).toHaveCount(0)
-    await primary(page)
-      .getByRole('link', { name: /^Needs You/ })
-      .click()
+    await openOrganizationRequests(page)
     // Follow the same request identity into attention; this surface renders
     // the blocker reason rather than the queue's 'Pending intervention' label.
     await expect(

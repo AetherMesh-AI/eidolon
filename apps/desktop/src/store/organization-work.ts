@@ -11,6 +11,7 @@ export interface OrganizationWork {
   queued: number
   needsYou: number
   stale: boolean
+  queueAvailable: boolean
 }
 
 export const NO_ORGANIZATION_WORK: OrganizationWork = {
@@ -19,7 +20,8 @@ export const NO_ORGANIZATION_WORK: OrganizationWork = {
   running: 0,
   queued: 0,
   needsYou: 0,
-  stale: false
+  stale: false,
+  queueAvailable: false
 }
 export const $organizationWork = atom<OrganizationWork>(NO_ORGANIZATION_WORK)
 
@@ -38,6 +40,7 @@ export function organizationWorkSummary(snapshot: OrganizationSnapshot): Organiz
     running: active.filter(request => request.status === 'running').length,
     queued: active.filter(request => request.status === 'queued').length,
     needsYou: requests.filter(request => request.status === 'pending_intervention').length,
+    queueAvailable: snapshot.requests !== undefined && snapshot.connection?.state === 'ready',
     stale: snapshot.connection?.state !== 'ready'
   }
 }
@@ -84,15 +87,16 @@ export function publishOrganizationWork(snapshot: OrganizationSnapshot) {
 
   // Only a fresh authoritative snapshot may declare known work finished.
   // A reconnect starts empty and must not clear the quit warning.
-  if (snapshot.connection?.state === 'ready' || !previous) {
+  if ((snapshot.connection?.state === 'ready' && current.queueAvailable) || !previous) {
     workByOwner.set(owner, current)
   } else {
-    workByOwner.set(owner, { ...previous, stale: true })
+    workByOwner.set(owner, { ...previous, stale: true, queueAvailable: current.queueAvailable })
   }
 
-  const next: OrganizationWork = { ...NO_ORGANIZATION_WORK, titles: [] }
+  const next: OrganizationWork = { ...NO_ORGANIZATION_WORK, titles: [], queueAvailable: true }
 
   for (const [key, work] of workByOwner) {
+    next.queueAvailable &&= work.queueAvailable
     next.count += work.count
     next.running += work.running
     next.queued += work.queued
@@ -101,11 +105,13 @@ export function publishOrganizationWork(snapshot: OrganizationSnapshot) {
     next.stale ||= (work.count > 0 || work.needsYou > 0) && (key !== owner || work.stale)
   }
 
-  const owners = [...workByOwner].filter(([, work]) => work.count || work.needsYou).map(([key, work]) => ({
-    ownerScope: key,
-    ...ownerContexts.get(key)!,
-    work: { ...work, stale: key !== owner || work.stale }
-  }))
+  const owners = [...workByOwner]
+    .filter(([, work]) => work.count || work.needsYou)
+    .map(([key, work]) => ({
+      ownerScope: key,
+      ...ownerContexts.get(key)!,
+      work: { ...work, stale: key !== owner || work.stale }
+    }))
 
   if (JSON.stringify(owners) !== JSON.stringify($organizationWorkOwners.get())) {
     $organizationWorkOwners.set(owners)

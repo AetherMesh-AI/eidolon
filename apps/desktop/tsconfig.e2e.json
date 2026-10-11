@@ -1,9 +1,20 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "types": ["node", "@playwright/test"],
+    "types": [
+      "node",
+      "@playwright/test"
+    ],
     "composite": true
   },
-  "include": ["e2e", "playwright.config.ts"],
-  "exclude": ["src", "electron"]
+  "include": [
+    "e2e",
+    "playwright.config.ts",
+    "src/themes/presets.ts",
+    "src/themes/eidolon.ts",
+    "src/themes/types.ts"
+  ],
+  "exclude": [
+    "electron"
+  ]
 }

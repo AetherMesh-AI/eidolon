@@ -20,11 +20,14 @@ import type { ObjectiveMetadata, OrganizationSnapshot, RuntimeOrganizationAdapte
 
 export function Command({
   adapter,
+  headingLevel = 1,
   snapshot
 }: {
   adapter: RuntimeOrganizationAdapter
+  headingLevel?: 1 | 2
   snapshot: OrganizationSnapshot
 }) {
+  const Heading = headingLevel === 1 ? 'h1' : 'h2'
   const { t } = useI18n()
   const copy = t.organizationWork
   const roster = t.organizationRoster
@@ -189,7 +192,7 @@ export function Command({
 
   return (
     <div className="eid-command">
-      <h1>{copy.mainQuestion}</h1>
+      <Heading>{copy.mainQuestion}</Heading>
       <p className="eid-subtitle">{copy.composerSubtitle}</p>
       <form
         aria-busy={submitting}

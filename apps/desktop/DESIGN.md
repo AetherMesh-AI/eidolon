@@ -382,3 +382,39 @@ The detailed state contract lives in the scoped
 - [ ] `cursor-pointer`, focus ring, and `Esc`-to-close behave?
 - [ ] Touched a primitive, token, or variant? Its named-contract entry in this
       file is updated in the same change.
+
+## Organization shell and Home
+
+The approved organization reference uses seven primary destinations: Home,
+Messages, Work Overview, Objectives, Organization, Deliverables, and Settings.
+The persistent session tree and operational Needs You/Activity routes remain
+reachable under their existing owners. Home uses roomy, single-level cards and
+serif display headings; record rows inside cards remain unboxed. Colors continue
+to come from the selected application theme, with Eidolon as the default.
+
+Home is a read-only projection of the current bounded snapshot. Open objectives,
+pending owner intervention requests, and accepted outcomes with deliverable IDs
+are separate groups. Task completion percentages do not imply final acceptance.
+Missing queues and disconnected snapshots are labeled. Full history stays in the
+existing dedicated views. The intake retains its existing scope-keyed draft and
+submission identity; only an explicit New objective click scrolls/focuses it.
+Messages reuses durable owner/member chat and its explicit opening and allowance
+renewal controls. Browsing these routes does not dispatch work or claim presence.
+New shell copy lives in organization-home.ts and follows catalog English fallback;
+user and agent content is never translated automatically.
+
+The shared shell now has one bottom System health bar. Routine organization
+configuration and app tool clusters live in its accessible details panel;
+Gateway settings links to the existing Settings page. Connection failures remain
+visible inline. OS window controls, native menus, pane contributions and original
+advanced controls retain their owners and actions. Readiness needs fresh runtime
+check evidence plus a current organization connection and known enabled background
+work; a gateway process or stored credential alone cannot establish health.
+Unknown, stale, disabled, degraded, disconnected and attention states stay distinct.
+
+All redesigned color surfaces use the existing Settings tokens. Quiet text and
+semantic warning colors blend toward the selected foreground for readable contrast;
+native progress fills use the selected accent explicitly. Verification covers all
+12 built-in palettes in Dark and Light, plus System appearance transitions and
+reload persistence. Imported third-party palettes share these tokens but cannot
+be exhaustively verified by the built-in matrix.

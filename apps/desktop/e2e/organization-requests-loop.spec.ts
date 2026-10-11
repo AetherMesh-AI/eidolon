@@ -13,7 +13,7 @@ import {
   writeMockProviderConfig
 } from './fixtures'
 import { startMockServer } from './mock-server'
-import { openOrganizationDisclosure } from './organization-disclosures'
+import { openOrganizationDisclosure, openOrganizationRequests } from './organization-disclosures'
 import { exactOrganizationEvidence, type OrganizationEvidenceContext } from './organization-evidence'
 import { organizationPackageProposal } from './organization-package-proposal'
 import { organizationProviderTarget } from './organization-provider-target'
@@ -353,7 +353,7 @@ test('retains owner attention across reloads, answers the requesting worker, and
   await expect(form.getByRole('spinbutton', { name: 'Concurrent execution limit', exact: true })).toHaveValue('2')
   await page.keyboard.press('Escape')
 
-  await primary.getByRole('link', { name: 'Command', exact: true }).click()
+  await primary.getByRole('link', { name: 'Home', exact: true }).click()
   await page.getByRole('textbox', { name: 'Objective', exact: true }).fill(objectiveTitle)
   await openOrganizationDisclosure(page, 'Context')
   await page
@@ -368,7 +368,7 @@ test('retains owner attention across reloads, answers the requesting worker, and
   await expect(page.getByRole('heading', { name: objectiveTitle, exact: true })).toBeVisible()
   const questionRow = page.getByRole('button', { name: 'Inspect request: request.question', exact: true })
   await expect(questionRow).toContainText('Pending intervention', { timeout: 90_000 })
-  await primary.getByRole('link', { name: /^Needs You/ }).click()
+  await openOrganizationRequests(page)
   const inbox = page.getByRole('region', { name: 'Attention inbox', exact: true })
   await expect(inbox).toContainText('Needs You: 1 · Unread: 1')
   // A returning owner sees the durable blocker even when it arrived off-page.
@@ -441,7 +441,7 @@ test('retains owner attention across reloads, answers the requesting worker, and
     page.getByRole('complementary', { name: 'Agent details' }).getByText(answer, { exact: true })
   ).toBeVisible()
   await page.keyboard.press('Escape')
-  await primary.getByRole('link', { name: /^Needs You/ }).click()
+  await openOrganizationRequests(page)
   await expect(inbox).toContainText('Needs You: 0 · Unread: 0')
   await expect(page.getByText('Nothing needs your input', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Request queue', exact: true }).click()

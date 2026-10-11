@@ -152,7 +152,8 @@ describe('reviewed managed workspace edit evidence', () => {
       </MemoryRouter>
     )
 
-    await screen.findByText('No patch grant configured')
+    // Configuration now lives in System health details; wait on this route's own ready content.
+    await screen.findByRole('heading', { name: 'Update the approved notes' })
     fireEvent.click(screen.getByRole('tab', { name: 'Artifacts' }))
     fireEvent.click(await screen.findByRole('button', { name: /Retained edit proposal/ }))
     const panel = within(screen.getByRole('complementary', { name: 'Artifact details' }))

@@ -113,7 +113,7 @@ async function projectChoice() {
   await page
     .getByRole('complementary', { name: 'Eidolon navigation' })
     .getByRole('navigation', { name: 'Primary', exact: true })
-    .getByRole('link', { name: 'Command', exact: true })
+    .getByRole('link', { name: 'Home', exact: true })
     .click()
   await page.getByRole('combobox', { name: 'Delivery scope', exact: true }).selectOption('source_project')
 

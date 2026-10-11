@@ -118,6 +118,18 @@ export async function collectErrorBanners(page: Page | null): Promise<string[]> 
   }
 }
 
+/** Consume only an explicitly asserted, deliberately injected error. Unexpected
+ * messages remain under the normal afterEach guard. */
+export async function acknowledgeExpectedErrorBanner(page: Page, text: string): Promise<void> {
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  await page.evaluate(expected => {
+    const record = (window as unknown as { __ERROR_BANNER_GUARD__?: string[] }).__ERROR_BANNER_GUARD__
+    if (!record?.includes(expected)) { throw new Error('Expected error was not recorded by the banner guard') }
+    const remaining = record.filter(message => message !== expected)
+    record.splice(0, record.length, ...remaining)
+  }, text)
+}
+
 // Extended test fixture: wraps the default page with the error guard.
 export const test = base.extend({
   // Override the page fixture to auto-install the guard.

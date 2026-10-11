@@ -201,7 +201,7 @@ test('inspects waiting and answered internal threads without acknowledging recip
   await expect(agent.getByRole('article')).toHaveCount(0)
   await page.keyboard.press('Escape')
 
-  await navigation.getByRole('link', { name: 'Activity', exact: true }).click()
+  await navigation.getByRole('link', { name: 'Work Overview', exact: true }).click()
   await page.goBack()
   await expect(page.getByRole('heading', { name: 'Organization', exact: true })).toBeVisible()
   await expect(page.getByRole('article', { name: thread.subject, exact: true })).toHaveCount(0)

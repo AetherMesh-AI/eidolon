@@ -16,6 +16,8 @@ import {
 it('keeps organization navigation out of canonical session identity', () => {
   for (const path of [
     '/home',
+    '/messages',
+    '/work',
     '/objectives',
     '/objectives/example',
     '/activity',
