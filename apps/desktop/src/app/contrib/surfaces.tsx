@@ -11,6 +11,8 @@ import { useStore } from '@nanostores/react'
 import { type ComponentProps, lazy, memo, type ReactNode, Suspense, useMemo } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router'
 
+import { revealTreePane } from '@/components/pane-shell/tree/store'
+
 import { ContribBoundary, ContribRender } from '@/contrib/react/boundary'
 import { useContributions } from '@/contrib/react/use-contributions'
 import { $activeConnectionId } from '@/store/connections'
@@ -75,6 +77,7 @@ export const SidebarSurface = memo(function SidebarSurface({
   currentView: ComponentProps<typeof ChatSidebar>['currentView']
 }) {
   const latestActions = useMemo(() => latestSidebarActions(actions), [actions])
+  const panes = useContributions('panes')
   const navigate = useNavigate()
 
   const organization = useRuntimeOrganization()
@@ -86,6 +89,7 @@ export const SidebarSurface = memo(function SidebarSurface({
     <OrganizationRail
       needsYouCount={needsYouCount}
       onNavigate={to => navigateToWorkspacePage(navigate, to)}
+      onOpenProfileChats={panes.some(pane => pane.id === 'hermes-bots:pane') ? () => revealTreePane('hermes-bots:pane') : undefined}
       pluginNav={<PluginNavigation />}
       sessions={<ChatSidebar currentView={currentView} historyOnly {...latestActions} />}
       unreadOutcomes={organization?.snapshot.outcomes?.unread ?? 0}

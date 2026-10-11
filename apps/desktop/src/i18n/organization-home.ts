@@ -2,6 +2,8 @@
 export const organizationHomeEn = {
   workspace: {
     heading: 'Workspace controls',
+    more: 'More workspace options',
+    profileChats: 'Profile chats',
     profile: (name: string) => `Manage profiles · current profile: ${name}`,
     search: 'Search loaded records',
     settings: 'Settings',
@@ -160,6 +162,7 @@ export type OrganizationHomeCopy = typeof organizationHomeEn
 type WorkspaceCopy = OrganizationHomeCopy['workspace']
 
 export const organizationWorkspaceJa: WorkspaceCopy = {
+  more: 'その他のワークスペース操作', profileChats: 'プロファイルのチャット',
   heading: 'ワークスペースの操作', settings: '設定',
   profile: name => `プロファイルを管理 · 現在のプロファイル: ${name}`,
   search: '読み込み済みの記録を検索', searchPlaceholder: '目標、メンバー、会話を検索…',
@@ -170,6 +173,7 @@ export const organizationWorkspaceJa: WorkspaceCopy = {
 }
 
 export const organizationWorkspaceZh: WorkspaceCopy = {
+  more: '更多工作区选项', profileChats: '配置文件聊天',
   heading: '工作区操作', settings: '设置',
   profile: name => `管理配置文件 · 当前配置文件：${name}`,
   search: '搜索已加载记录', searchPlaceholder: '查找目标、成员或对话…',
@@ -180,6 +184,7 @@ export const organizationWorkspaceZh: WorkspaceCopy = {
 }
 
 export const organizationWorkspaceZhHant: WorkspaceCopy = {
+  more: '更多工作區選項', profileChats: '設定檔聊天',
   heading: '工作區操作', settings: '設定',
   profile: name => `管理設定檔 · 目前設定檔：${name}`,
   search: '搜尋已載入記錄', searchPlaceholder: '尋找目標、成員或對話…',
@@ -190,6 +195,7 @@ export const organizationWorkspaceZhHant: WorkspaceCopy = {
 }
 
 export const organizationWorkspaceRu: WorkspaceCopy = {
+  more: 'Другие возможности рабочей области', profileChats: 'Чаты профилей',
   heading: 'Управление рабочей областью', settings: 'Настройки',
   profile: name => `Управление профилями · Текущий профиль: ${name}`,
   search: 'Поиск загруженных записей', searchPlaceholder: 'Найти цель, участника или беседу…',
@@ -200,6 +206,7 @@ export const organizationWorkspaceRu: WorkspaceCopy = {
 }
 
 export const organizationWorkspaceAr: WorkspaceCopy = {
+  more: 'خيارات إضافية لمساحة العمل', profileChats: 'محادثات ملفات التعريف',
   heading: 'عناصر تحكم مساحة العمل', settings: 'الإعدادات',
   profile: name => `إدارة الملفات الشخصية · الملف الشخصي الحالي: ${name}`,
   search: 'البحث في السجلات المحمّلة', searchPlaceholder: 'ابحث عن هدف أو عضو أو محادثة…',

@@ -1,4 +1,7 @@
-import { act, cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { revealTreePane } from '@/components/pane-shell/tree/store'
+import { useContributions } from '@/contrib/react/use-contributions'
+
 import { atom } from 'nanostores'
 import type { ReactNode } from 'react'
 import { MemoryRouter, useLocation } from 'react-router'
@@ -13,7 +16,8 @@ import type { SidebarActions, WiringActions } from './types'
 
 const routeState = vi.hoisted(() => ({ kanbanEnabled: false }))
 
-vi.mock('@/contrib/react/use-contributions', () => ({ useContributions: vi.fn() }))
+vi.mock('@/contrib/react/use-contributions', () => ({ useContributions: vi.fn(() => []) }))
+vi.mock('@/components/pane-shell/tree/store', () => ({ revealTreePane: vi.fn() }))
 vi.mock('@/store/connections', () => ({ $activeConnectionId: atom('local') }))
 vi.mock('@/store/gateway', () => ({ $gateway: atom<unknown>(null) }))
 vi.mock('@/store/profile', () => ({ $activeGatewayProfile: atom('default') }))
@@ -35,7 +39,7 @@ vi.mock('@/plugins/eidolon-bots/roster-pane', () => ({
     throw new Error('The shell must never mount a second plugin roster')
   }
 }))
-vi.mock('../eidolon/rail', () => ({ OrganizationRail: ({ sessions }: { sessions: ReactNode }) => <>{sessions}</> }))
+vi.mock('../eidolon/rail', () => ({ OrganizationRail: ({ sessions, onOpenProfileChats }: { sessions: ReactNode; onOpenProfileChats?: () => void }) => <>{sessions}{onOpenProfileChats && <button onClick={onOpenProfileChats}>Profile chats</button>}</> }))
 vi.mock('../eidolon/workspace-header', () => ({ WorkspaceHeader: () => <header>Workspace controls</header> }))
 vi.mock('../eidolon/workspace', () => ({ OrganizationWorkspace: () => <div>Organization workspace</div> }))
 vi.mock('../eidolon/runtime-provider', () => ({ useRuntimeOrganization: () => null }))
@@ -181,4 +185,13 @@ it('renders Settings in the workspace while forwarding the current controller ca
   expect(latest).toHaveBeenCalledTimes(1)
   expect(actions.settingsSaved).toHaveBeenCalledTimes(1)
   expect(actions.settingsModelChanged).toHaveBeenCalledExactlyOnceWith('provider', 'model')
+})
+
+
+it('reveals the existing optional profile-chat pane without mounting another roster', () => {
+  vi.mocked(useContributions).mockReturnValue([{ id: 'hermes-bots:pane', area: 'panes', title: 'Profile chats' }])
+  render(<MemoryRouter><SidebarSurface actions={{} as never} currentView="organization" /></MemoryRouter>)
+  fireEvent.click(screen.getByRole('button', { name: 'Profile chats' }))
+  expect(revealTreePane).toHaveBeenCalledWith('hermes-bots:pane')
+  vi.mocked(useContributions).mockReturnValue([])
 })
