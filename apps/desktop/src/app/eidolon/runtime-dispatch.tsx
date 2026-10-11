@@ -60,18 +60,18 @@ export function RuntimeDispatch({ objective, adapter, snapshot }: { objective: O
     }
   }
 
-  return <section aria-label={copy.dispatchHeading}>
-    <h2>{copy.dispatchHeading}</h2>
+  return <section aria-label={copy.dispatchHeading} className="eid-dispatch-controls">
+    <h2 className="sr-only">{copy.dispatchHeading}</h2>
     <p>{validDispatch(state) ? `${state.paused ? copy.dispatchPaused : copy.dispatchOpen} · ${copy.dispatchRevision}: ${state.revision}` : copy.dispatchUnavailable}</p>
     {validDispatch(state) && <p>{copy.dispatchRunning}: {state.runningCount}</p>}
-    <p className="eid-note">{copy.dispatchBoundary}</p>
     {!editable && <p>{copy.dispatchRestricted}</p>}
     {(editable || intent) && adapter.setObjectivePaused && <div className="eid-inline">
-      <Button disabled={busy || !current() || (!intent && needsReview)} onClick={() => void save()} size="sm" variant="secondary">{busy ? copy.dispatchSaving : intent ? copy.dispatchRetry : state?.paused ? copy.dispatchResume : copy.dispatchPause}</Button>
-      <Button disabled={busy || !current()} onClick={() => { setIntent(null); setReviewedRevision(state?.revision); setError(''); setMessage('') }} size="sm" variant="secondary">{copy.dispatchReview}</Button>
+      <Button disabled={busy || !current() || (!intent && needsReview)} onClick={() => void save()} size="micro" variant="secondary">{busy ? copy.dispatchSaving : intent ? copy.dispatchRetry : state?.paused ? copy.dispatchResume : copy.dispatchPause}</Button>
+      <Button disabled={busy || !current()} onClick={() => { setIntent(null); setReviewedRevision(state?.revision); setError(''); setMessage('') }} size="micro" variant="secondary">{copy.dispatchReview}</Button>
     </div>}
     {needsReview && !intent && editable && <p>{copy.dispatchReviewRequired}</p>}
     {error && <p role="alert">{error} {copy.priorityUncertain}</p>}
     {message && <p role="status">{message}</p>}
+    <details><summary>{copy.dispatchDetails}</summary><p className="eid-note">{copy.dispatchBoundary}</p></details>
   </section>
 }

@@ -1,5 +1,7 @@
 /** Copy for the canonical organization ledger surfaces, kept together across locales. */
 const copy = {
+  dispatchDetails: ['Pause and resume details', '一時停止と再開の詳細', '暂停和恢复详情', '暫停與恢復詳情'],
+  priorityDetails: ['Priority details', '優先度の詳細', '优先级详情', '優先順序詳情'],
   dispatchConfirmed: ["Dispatch change confirmed", "実行制御の変更を確認しました", "调度变更已确认", "排程變更已確認"],
   dispatchReceiptRevision: ["Receipt revision", "確認済みの版", "回执版本", "回執版本"],
   dispatchReviewRequired: ["Review the current dispatch state before another change.", "次の変更前に現在の実行制御を確認してください。", "再次更改前请检查当前调度状态。", "再次變更前請檢查目前排程狀態。"],

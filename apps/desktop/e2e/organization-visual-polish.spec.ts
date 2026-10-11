@@ -100,6 +100,9 @@ const snapshot = {
       phase: 'Draft and review',
       milestone: 'Release context verified',
       progress: 60,
+      priority: 'P3',
+      priorityRevision: 0,
+      dispatchControl: { paused: false, revision: 0, runningCount: 1 },
       planningMode: 'executive_packages',
       acceptance: { status: 'reviewing', round: 1, maxReplans: 2, criteria: ['Brief reflects verified changes'], summary: null, deliverableId: null },
       workPackages: [
@@ -478,6 +481,9 @@ test('keeps native organization navigation, roster and objective layouts usable 
     await resize(1536, 961)
     await workspace.evaluate(element => { element.scrollTop = 0 })
     const summary = overview.getByRole('region', { name: 'Progress overview', exact: true })
+    const phase = overview.getByRole('region', { name: 'Current phase', exact: true })
+    await expect(phase.getByRole('button', { name: 'Pause new dispatch', exact: true })).toBeEnabled()
+    await expect(phase.getByRole('combobox', { name: 'New priority', exact: true })).toHaveValue('P3')
     const assignmentCards = overview.locator('.eid-team-work-grid > article')
     await expect(assignmentCards).toHaveCount(3)
 
@@ -488,12 +494,14 @@ test('keeps native organization navigation, roster and objective layouts usable 
         return { x, y, width, height }
       }
 
-      return { main: bounds(element.querySelector('.eid-objective-progress-main')!), aside: bounds(element.querySelector('.eid-objective-progress-aside')!), summary: bounds(element.querySelector('.eid-progress-summary')!), cards: [...element.querySelectorAll('.eid-team-work-grid > article')].map(bounds) }
+      return { main: bounds(element.querySelector('.eid-objective-progress-main')!), aside: bounds(element.querySelector('.eid-objective-progress-aside')!), phase: bounds(element.querySelector('.eid-objective-phase')!), actions: bounds(element.querySelector('.eid-objective-actions')!), summary: bounds(element.querySelector('.eid-progress-summary')!), cards: [...element.querySelectorAll('.eid-team-work-grid > article')].map(bounds) }
     })
 
     expect(Math.abs(geometry.main.x - 222), 'Objective reference left gutter').toBeLessThanOrEqual(10)
     expect(Math.abs(geometry.main.width - 898), 'Objective reference main column').toBeLessThanOrEqual(10)
-    expect(geometry.summary.height, 'compact progress retains recorded phase and actions').toBeLessThanOrEqual(190)
+    expect(geometry.summary.height, 'compact progress retains completion and acceptance context').toBeLessThanOrEqual(190)
+    expect(geometry.actions.y + geometry.actions.height, 'real controls precede the progress summary').toBeLessThan(geometry.summary.y)
+    expect(geometry.summary.y + geometry.summary.height, 'progress precedes delegated work').toBeLessThan(geometry.cards[0].y)
 
     for (const card of geometry.cards) {
       expect(Math.abs(card.y - geometry.cards[0].y), 'three recorded assignments share a row').toBeLessThanOrEqual(1)
@@ -504,11 +512,30 @@ test('keeps native organization navigation, roster and objective layouts usable 
     }
     objectiveChecks.push({ mode, viewport: '1536x961', ...geometry })
     await capture(`reference-objective-${mode}`)
+    displayedSnapshot = {
+      ...snapshot,
+      objectives: snapshot.objectives.map(objective => objective.id !== 'release' || !objective.workPackages ? objective : {
+        ...objective,
+        workPackages: objective.workPackages.map(item => ({ ...item, taskIds: item.taskIds.flatMap(id => [id, `${id}-followup-1`, `${id}-followup-2`]) }))
+      }),
+      tasks: snapshot.tasks.flatMap(task => [task, ...[1, 2].map(index => ({ ...task, id: `${task.id}-followup-${index}`, title: `${task.title} · follow-up ${index}` }))])
+    }
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+    await expect(assignmentCards.first().locator('.eid-progress-tasks > li')).toHaveCount(3)
+    await workspace.evaluate(element => { element.scrollTop = 0 })
+    await expect(phase.getByRole('button', { name: 'Pause new dispatch', exact: true })).toBeInViewport({ ratio: 1 })
+    await capture(`objective-multiple-tasks-${mode}`)
+    displayedSnapshot = snapshot
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+    await expect(assignmentCards.first().locator('.eid-progress-tasks > li')).toHaveCount(1)
     await resize(1280, 720)
     await workspace.evaluate(element => { element.scrollTop = 0 })
     await expect(assignmentCards.first().getByText('Draft the release brief', { exact: true })).toBeInViewport({ ratio: 1 })
     await expect(assignmentCards.first().getByText('Robin', { exact: true })).toBeInViewport({ ratio: 1 })
+    await expect(phase.getByRole('button', { name: 'Pause new dispatch', exact: true })).toBeInViewport({ ratio: 1 })
+    await expect(phase.getByRole('combobox', { name: 'New priority', exact: true })).toBeInViewport({ ratio: 1 })
     await capture(`objective-short-${mode}`)
+    await phase.getByRole('combobox', { name: 'New priority', exact: true }).selectOption('P2')
 
     for (const zoom of [1, 1.25, 2]) {
       await page.evaluate(value => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(value * 100), zoom)
@@ -523,7 +550,23 @@ test('keeps native organization navigation, roster and objective layouts usable 
         await capture(`objective-control-${mode}-${zoom}-${name.split(' ')[0]}-${name.split(' ')[1]}`, workspace, zoom !== 1, true)
       }
 
-      await expect(summary).toContainText('Draft and review')
+      for (const [name, control] of [
+        ['pause', phase.getByRole('button', { name: 'Pause new dispatch', exact: true })],
+        ['dispatch-review', phase.getByRole('button', { name: 'Review current dispatch', exact: true })],
+        ['priority-select', phase.getByRole('combobox', { name: 'New priority', exact: true })],
+        ['priority-save', phase.getByRole('button', { name: 'Save priority', exact: true })],
+        ['priority-review', phase.getByRole('button', { name: 'Review current priority', exact: true })],
+        ['dispatch-details', phase.locator('summary').filter({ hasText: 'Pause and resume details' })],
+        ['priority-details', phase.locator('summary').filter({ hasText: 'Priority details' })]
+      ] as const) {
+        await control.scrollIntoViewIfNeeded()
+        focusChecks.push(await verifyKeyboardFocus(page, control, `Objective action ${mode} ${zoom} ${name}`))
+        await expect(control).toBeInViewport({ ratio: 1 })
+        await capture(`objective-action-${mode}-${zoom}-${name}`, workspace, zoom !== 1, true)
+      }
+
+      await expect(phase).toContainText('Draft and review')
+      await expect(phase.getByRole('combobox', { name: 'New priority', exact: true })).toHaveValue('P2')
       await expect(overview.getByRole('region', { name: 'Delivery', exact: true })).toContainText('has not been recorded')
     }
 

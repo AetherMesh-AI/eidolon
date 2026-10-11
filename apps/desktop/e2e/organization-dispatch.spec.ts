@@ -1,8 +1,10 @@
 /** Native controls use the real profile ledger; blocked fixtures execute no providers. */
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import path from 'node:path'
 
 import { buildAppEnv, type MockBackendFixture, setupMockBackend, waitForAppReady } from './fixtures'
+import { verifyKeyboardFocus } from './focus-visibility'
 import { expect, test } from './test'
 
 let fixture: MockBackendFixture | undefined
@@ -58,7 +60,12 @@ with s._connect() as c:
   await page.evaluate(id => { location.hash = `/objectives/${id}` }, ids[0])
   const form = page.getByRole('region', { name: 'Objective dispatch', exact: true })
   await expect(form.getByText('New dispatch enabled · Dispatch revision: 0', { exact: true })).toBeVisible()
-  await form.getByRole('button', { name: 'Pause new dispatch', exact: true }).click()
+  const phase = page.getByRole('region', { name: 'Current phase', exact: true })
+  const pause = phase.getByRole('button', { name: 'Pause new dispatch', exact: true })
+  await expect(pause).toBeInViewport({ ratio: 1 })
+  const focus = await verifyKeyboardFocus(page, pause, 'Real objective pause before keyboard activation')
+  const capture = await page.screenshot({ path: testInfo.outputPath('objective-pause-keyboard.png') })
+  await page.keyboard.press('Enter')
   await expect(form.getByRole('status')).toHaveText('Dispatch change confirmed · Receipt revision: 1')
   await page.reload()
   await expect(form.getByText('New dispatch paused · Dispatch revision: 1', { exact: true })).toBeVisible()
@@ -83,5 +90,5 @@ with s._write() as c:
   expect(mock.receivedPrompts).toHaveLength(0)
   await form.scrollIntoViewIfNeeded()
   await page.screenshot({ path: testInfo.outputPath('objective-dispatch-expired.png') })
-  await testInfo.attach('dispatch-evidence', { body: JSON.stringify({ ids, changes, states, originalStatePreserved: true, deniedResumePreservedState: true, providerCalls: 0 }), contentType: 'application/json' })
+  await testInfo.attach('dispatch-evidence', { body: JSON.stringify({ sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(), sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { cwd: root, encoding: 'utf8' }).trim(), focus, screenshot: 'objective-pause-keyboard.png', sha256: createHash('sha256').update(capture).digest('hex'), ids, changes, states, originalStatePreserved: true, deniedResumePreservedState: true, providerCalls: 0 }), contentType: 'application/json' })
 })

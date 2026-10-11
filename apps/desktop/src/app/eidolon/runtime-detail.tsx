@@ -97,9 +97,12 @@ export function RuntimeObjectiveDetail({ objective, adapter, snapshot, historyCo
 
   return <>
     <Link className="eid-back" to="/objectives">← {copy.objectives}</Link>
-    <header className="eid-page-header eid-objective-hero"><div><p className="eid-eyebrow">{t.organizationHome.detail.objectiveRuntime}</p><h1>{objective.title}</h1><p className="eid-result-text">{objective.description}</p></div><Status status={objective.status} /></header>
+    <header className="eid-page-header eid-objective-hero"><div><p className="sr-only">{t.organizationHome.detail.objectiveRuntime}</p><h1>{objective.title}</h1><p className="eid-result-text">{objective.description}</p></div><Status status={objective.status} /></header>
     <div className="eid-inline"><span>{t.organizationRoster.objectiveExecutive} · {owner?.name || objective.ownerId || t.organizationHome.unassigned}</span>{objective.managerId && <span>{t.organizationRoster.objectiveManager} · {manager?.name || objective.managerId}</span>}<Button onClick={() => setInspecting(true)} size="sm" variant="secondary">{t.organizationHome.detail.inspectObjective}</Button></div>
-    <ObjectiveProgress objective={objective} onReviewRequests={() => reveal(requestsRef.current)} onReviewWork={() => { setTab('work'); reveal(workRef.current) }} snapshot={snapshot} />
+    <ObjectiveProgress controls={<>
+      <RuntimeDispatch adapter={adapter} key={`dispatch:${snapshot.connection?.scope}:${snapshot.connection?.ownerScope}:${objective.id}`} objective={objective} snapshot={snapshot} />
+      <RuntimePriority adapter={adapter} key={`${snapshot.connection?.scope}:${snapshot.connection?.ownerScope}:${objective.id}`} objective={objective} snapshot={snapshot} />
+    </>} objective={objective} onReviewRequests={() => reveal(requestsRef.current)} onReviewWork={() => { setTab('work'); reveal(workRef.current) }} snapshot={snapshot} />
     {inspecting && <Inspector kind="objective" onClose={() => setInspecting(false)} title={objective.title}><MetadataSummary objective={objective} /><RuntimeWorkPackages objective={objective} snapshot={snapshot} /><dl><dt>Status</dt><dd>{objective.status}</dd><dt>Owner</dt><dd>{owner?.name || objective.ownerId}</dd><dt>Tasks</dt><dd>{tasks.length}</dd><dt>Result</dt><dd className="eid-result-text">{objective.result || 'No reviewed result yet.'}</dd></dl><p>State and completion are reported by the current-profile runtime.</p></Inspector>}
     {evidenceId && <RuntimeArtifact adapter={adapter} evidenceId={evidenceId} key={evidenceId} onClose={() => setEvidenceId(null)} snapshot={snapshot} title="Full task evidence" />}
     <div aria-label={t.organizationHome.detail.objectiveControls} className="eid-objective-controls" role="region">
@@ -108,8 +111,6 @@ export function RuntimeObjectiveDetail({ objective, adapter, snapshot, historyCo
       <ul>{objective.projects.map(project => <li className="eid-result-text" key={project.id}>{project.id} · {project.root} · {project.team}</li>)}</ul>
     </section> : null}
     <RuntimeReplacement adapter={adapter} key={`${snapshot.connection?.ownerScope ?? snapshot.connection?.scope}:${objective.id}`} objective={objective} snapshot={snapshot} />
-    <RuntimeDispatch adapter={adapter} key={`dispatch:${snapshot.connection?.scope}:${snapshot.connection?.ownerScope}:${objective.id}`} objective={objective} snapshot={snapshot} />
-    <RuntimePriority adapter={adapter} key={`${snapshot.connection?.scope}:${snapshot.connection?.ownerScope}:${objective.id}`} objective={objective} snapshot={snapshot} />
     {historyControls}
     </div>
     <div aria-label={t.organizationHome.detail.requestControls} ref={requestsRef} role="region" tabIndex={-1}>

@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import { MemoryRouter } from 'react-router'
 import { expect, it, vi } from 'vitest'
@@ -89,6 +89,33 @@ async function fixture(initialRevision = 0, historyRoute = false) {
 
 const select = (priority: string) => fireEvent.change(screen.getByRole('combobox', { name: 'New priority' }), { target: { value: priority } })
 const calls = (request: ReturnType<typeof vi.fn>) => request.mock.calls.filter(call => call[0] === 'organization.changePriority')
+
+it('keeps the priority draft and exact recovery beside the reported phase when explanatory details close', async () => {
+  const f = await fixture(0, true)
+  const phase = screen.getByRole('region', { name: 'Current phase' })
+  expect(within(phase).getByText('Phase not reported')).toBeTruthy()
+  const field = within(phase).getByRole('combobox', { name: 'New priority' }) as HTMLSelectElement
+  const summary = within(phase).getByText('Priority details')
+  const details = summary.closest('details')!
+  select('P2')
+  fireEvent.click(summary)
+  expect(details.open).toBe(true)
+  fireEvent.click(summary)
+  expect(details.open).toBe(false)
+  expect(field.value).toBe('P2')
+  f.lose()
+  fireEvent.click(within(phase).getByRole('button', { name: 'Save priority' }))
+  const error = await within(phase).findByRole('alert')
+  expect(error.closest('details')).toBeNull()
+  const retry = within(phase).getByRole('button', { name: 'Retry priority save' })
+  expect(retry.closest('details')).toBeNull()
+  fireEvent.click(summary)
+  fireEvent.click(summary)
+  fireEvent.click(retry)
+  await within(phase).findByText('Saved P5 → P2 (revision 1).')
+  expect(calls(f.request)).toHaveLength(2)
+  expect(calls(f.request)[0][1]).toEqual(calls(f.request)[1][1])
+})
 
 it('saves observable versions, retains exact retry intent after lost replies, and requires review after a concurrent edit', async () => {
   const f = await fixture()

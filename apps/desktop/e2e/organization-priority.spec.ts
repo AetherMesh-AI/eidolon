@@ -1,8 +1,10 @@
 /** Actual Electron owner UI → authenticated RPC → durable priority transaction. No provider turns. */
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import path from 'node:path'
 
 import { buildAppEnv, type MockBackendFixture, setupMockBackend, waitForAppReady } from './fixtures'
+import { verifyKeyboardFocus } from './focus-visibility'
 import { acknowledgeExpectedErrorBanner, expect, test } from './test'
 
 let fixture: MockBackendFixture | undefined
@@ -84,7 +86,12 @@ assert s.snapshot()['objectives']==[]
   await expect(form.getByText('Current priority: P5 · Priority revision: 0', { exact: true })).toBeVisible()
   expect(changes).toHaveLength(0)
   await form.getByRole('combobox', { name: 'New priority' }).selectOption('P1')
-  await form.getByRole('button', { name: 'Save priority', exact: true }).click()
+  const phase = page.getByRole('region', { name: 'Current phase', exact: true })
+  const save = phase.getByRole('button', { name: 'Save priority', exact: true })
+  await expect(save).toBeInViewport({ ratio: 1 })
+  const focus = await verifyKeyboardFocus(page, save, 'Real objective priority before keyboard activation')
+  const capture = await page.screenshot({ path: testInfo.outputPath('objective-priority-keyboard.png') })
+  await page.keyboard.press('Enter')
   await expect(form.getByText('Saved P5 → P1 (revision 1).', { exact: true })).toBeVisible()
   await expect(form.getByText('Current priority: P1 · Priority revision: 1', { exact: true })).toBeVisible()
   await page.reload()
@@ -114,5 +121,5 @@ assert s.snapshot()['objectives']==[]
   await expect(form.getByRole('button', { name: 'Save priority', exact: true })).toHaveCount(0)
   expect(mock.receivedPrompts).toHaveLength(0)
   await page.screenshot({ path: testInfo.outputPath('priority-archived-recovery.png') })
-  await testInfo.attach('priority-save-evidence', { body: JSON.stringify({ id, changes: initialChanges, retainedStateUnchanged: true, providerCalls: 0, archivedRecovery: { changes: changes.slice(2), activeObjectiveAbsent: true } }), contentType: 'application/json' })
+  await testInfo.attach('priority-save-evidence', { body: JSON.stringify({ sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(), sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { cwd: root, encoding: 'utf8' }).trim(), focus, screenshot: 'objective-priority-keyboard.png', sha256: createHash('sha256').update(capture).digest('hex'), id, changes: initialChanges, retainedStateUnchanged: true, providerCalls: 0, archivedRecovery: { changes: changes.slice(2), activeObjectiveAbsent: true } }), contentType: 'application/json' })
 })

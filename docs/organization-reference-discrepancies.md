@@ -225,6 +225,29 @@ checks and matched captures must pass before treating this iteration as verified
 the reference stage strip, artwork, review composition and final gallery remain
 outstanding.
 
+### Objective controls beside the reported phase
+
+Pause/resume and priority now occupy the main-column phase panel before progress
+and delegated work, retaining their existing scoped component owners. Current
+state, running stages, explicit mutations, uncertain retries and errors remain
+visible. Longer explanations use named disclosures; closing them does not reset
+drafts or retry intent. The runtime reports one current phase, not an ordered or
+dated stage history, so this panel makes no historical stage-completion claims.
+
+The pre-change native baseline at 1536×961 placed the main column at x222/y254,
+with manager cards at y520–766. The supplied reference has a stage/control panel
+near y215–380 and cards near y470–835. Card height also depends on task count:
+the matched baseline has one task per card, while a separate new dense capture
+exercises three. These are separate comparisons, not evidence for forcing a
+fixed card height.
+
+Native verification retains the short-window first-task/assignee requirement,
+measures the actual phase/control/progress order, and tests button, select and
+disclosure focus at 100%, 125% and 200% zoom. Real temporary-ledger scenarios
+activate pause and priority save with Enter, retaining their existing reload,
+denied-resume, unchanged-budget and exact uncertain-retry assertions. Updated
+geometry and native receipts are required before accepting this iteration.
+
 ### Objective fractional-zoom focus follow-up
 
 The short-height correction passed its title/assignee checks, but native 125%
