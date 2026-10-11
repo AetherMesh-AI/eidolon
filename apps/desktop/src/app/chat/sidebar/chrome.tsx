@@ -177,6 +177,7 @@ export function SidebarDateDivider({
 export function SidebarRowShell({
   actions,
   actionsClassName,
+  onKeyDown,
   children,
   className,
   ...props
@@ -190,6 +191,11 @@ export function SidebarRowShell({
         className
       )}
       {...props}
+      onKeyDown={event => {
+        // React portal events follow component ancestry. Dialog/menu keys must
+        // never activate this row's drag sensor or cancel native button behavior.
+        if (event.currentTarget.contains(event.target as Node)) onKeyDown?.(event)
+      }}
     >
       {children}
       {actions ? (
