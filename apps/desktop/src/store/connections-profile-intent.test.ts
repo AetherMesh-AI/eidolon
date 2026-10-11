@@ -120,6 +120,26 @@ describe('connection bookkeeping versus real profile intent doors', () => {
     expect(getProfiles).not.toHaveBeenCalled()
   })
 
+  it('accepts a fresh connection pick back to A while its invalidated bookkeeping is pending', async () => {
+    const remembered = deferred<Awaited<ReturnType<typeof setLastUsed>>>()
+    setLastUsed.mockResolvedValue({ ok: true, registry })
+    setLastUsed.mockReturnValueOnce(remembered.promise)
+    const first = selectConnection('homelab', { profile: 'research' })
+    await vi.waitFor(() => expect(setLastUsed).toHaveBeenCalledOnce())
+    const dial = deferred<boolean>()
+    ensureGatewayForAgent.mockReturnValueOnce(dial.promise)
+    selectProfile('delivery')
+    const latest = selectConnection('homelab', { profile: 'research' })
+    remembered.resolve({ ok: true, registry: { ...registry, lastUsed: 'homelab' } })
+    await first
+    dial.resolve(true)
+    await latest
+    await vi.waitFor(() => expect(setLastUsed).toHaveBeenCalledTimes(2))
+    expect($connection.get()?.profile).toBe('research')
+    expect($newChatProfile.get()).toBe('research')
+    expect(getProfiles).toHaveBeenCalledOnce()
+  })
+
   it('an explicit browse-mode pick also invalidates old finalization', async () => {
     const remembered = deferred<Awaited<ReturnType<typeof setLastUsed>>>()
     setLastUsed.mockReturnValueOnce(remembered.promise)

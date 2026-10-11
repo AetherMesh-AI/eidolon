@@ -22,7 +22,7 @@ import {
   requestFreshSession
 } from '@/store/profile'
 import { $connection } from '@/store/session'
-import { beginSourceSwitchIntent, currentSourceSwitchIntent, isCurrentSourceSwitchIntent } from '@/store/source-switch-intent'
+import { beginSourceSwitchIntent, currentSourceSwitchIntent, isCurrentSourceSwitchIntent, type SourceSwitchIntent } from '@/store/source-switch-intent'
 
 const LAST_PROFILE_STORAGE_KEY = 'hermes.desktop.lastProfileByConnection'
 
@@ -54,6 +54,7 @@ export const $hasMultipleConnections = computed(
 
 const $lastProfileByConnection = atom<Record<string, string>>(storedStringRecord(LAST_PROFILE_STORAGE_KEY))
 let pendingTarget: null | string = null
+let pendingIntent: null | SourceSwitchIntent = null
 let restoreAttempted = false
 let switchRevision = 0
 
@@ -96,6 +97,7 @@ $activeConnectionProfile.subscribe(({ connectionId, descriptorProfile, profile, 
 export function _resetConnectionsForTests(): void {
   $lastProfileByConnection.set({})
   pendingTarget = null
+  pendingIntent = null
   restoreAttempted = false
   switchRevision = 0
   $pendingConnectionId.set(null)
@@ -310,7 +312,7 @@ export async function selectConnection(connectionId: string, options: SelectConn
     return active?.connectionId === connectionId && normalizeProfileKey(active.profile) === targetProfile
   }
 
-  if (pendingTarget === targetKey) {
+  if (pendingTarget === targetKey && pendingIntent !== null && isCurrentSourceSwitchIntent(pendingIntent)) {
     return
   }
 
@@ -346,6 +348,7 @@ export async function selectConnection(connectionId: string, options: SelectConn
 
   const revision = ++switchRevision
   pendingTarget = targetKey
+  pendingIntent = intent
   $pendingConnectionId.set(connectionId)
   // Set by the commit hook once THIS switch has wiped — i.e. it owns the
   // barrier and, if the commit then fails, owes the still-active source a
@@ -482,6 +485,7 @@ export async function selectConnection(connectionId: string, options: SelectConn
   } finally {
     if (revision === switchRevision) {
       pendingTarget = null
+      pendingIntent = null
       $pendingConnectionId.set(null)
     }
   }
