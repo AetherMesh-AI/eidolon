@@ -1034,6 +1034,7 @@ test('retains translated Objective labels and opened explanations with contained
     for (const [position, target] of [['start', phase.locator('summary').first()], ['end', phase.locator('details p').last()]] as const) {
       await target.scrollIntoViewIfNeeded()
       await expect(target).toBeInViewport({ ratio: 1 })
+      await expect(page.getByRole('banner', { name: 'ワークスペースの操作', exact: true })).toBeInViewport({ ratio: 1 })
       const name = `objective-japanese-${width}-${height}-${zoom}-${position}.png`
       await page.evaluate(async () => {
         await document.fonts.ready

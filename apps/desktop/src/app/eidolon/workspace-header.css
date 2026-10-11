@@ -1,5 +1,5 @@
-.eid-workspace-shell { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; }
-.eid-workspace-body { flex: 1; min-height: 0; min-width: 0; position: relative; }
+.eid-workspace-shell { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; overflow: clip; }
+.eid-workspace-body { flex: 1; min-height: 0; min-width: 0; position: relative; overflow: auto; }
 .eid-workspace-header { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 30px; padding: 2px 18px; background: var(--ui-bg-secondary); border-bottom: 1px solid var(--ui-stroke-tertiary); }
 .eid-workspace-identity, .eid-workspace-actions { display: flex; align-items: center; min-width: 0; gap: 8px; }
 .eid-workspace-identity { flex: 1; }
