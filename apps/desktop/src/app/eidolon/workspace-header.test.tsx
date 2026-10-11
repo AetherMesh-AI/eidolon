@@ -69,7 +69,7 @@ it('checks current scope again at activation and retains real Settings search', 
   fireEvent.click(screen.getByRole('button', { name: /Worker 1.*Member/ }))
   expect(screen.queryByText('identity-worker')).toBeNull()
   expect(screen.queryByRole('dialog')).toBeNull()
-  fireEvent.click(screen.getByRole('button', { name: 'Search', exact: true }))
+  fireEvent.click(screen.getByRole('button', { name: 'Search' }))
   expect(state.commands).toHaveBeenCalledExactlyOnceWith('settings')
 })
 

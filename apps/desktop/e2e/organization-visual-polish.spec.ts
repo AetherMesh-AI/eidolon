@@ -4,7 +4,6 @@ import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { writeFileSync } from 'node:fs'
 
-import { TRANSLATIONS } from '../src/i18n/catalog'
 import { BUILTIN_THEME_LIST } from '../src/themes/presets'
 
 import { type MockBackendFixture, setupMockBackend, waitForAppReady } from './fixtures'
@@ -1151,7 +1150,11 @@ for (const locale of ['ja', 'ar', 'ru'] as const) {
   test(`keeps translated workspace controls usable in ${locale} with multiple connections`, async () => {
     fixture = await setupMockBackend({ extraDisplayConfig: `  language: ${locale}` })
     const { app, page, mock } = fixture
-    const copy = TRANSLATIONS[locale].organizationHome.workspace
+    const copy = {
+      ja: { heading: 'ワークスペースの操作', search: '読み込み済みの記録を検索', kinds: { agent: 'メンバー' }, dark: 'ダーク', light: 'ライト', settingsSearch: '検索' },
+      ar: { heading: 'عناصر تحكم مساحة العمل', search: 'البحث في السجلات المحمّلة', kinds: { agent: 'عضو' }, dark: 'داكن', light: 'فاتح', settingsSearch: 'بحث' },
+      ru: { heading: 'Управление рабочей областью', search: 'Поиск загруженных записей', kinds: { agent: 'Участник' }, dark: 'Тёмная', light: 'Светлая', settingsSearch: 'Поиск' }
+    }[locale]
     const methods: string[] = []
     await page.routeWebSocket(/.*/, socket => {
       const server = socket.connectToServer()
@@ -1169,9 +1172,13 @@ for (const locale of ['ja', 'ar', 'ru'] as const) {
     await expect(page.locator('html')).toHaveAttribute('dir', locale === 'ar' ? 'rtl' : 'ltr')
     // Only a second alias of this temporary loopback backend; no live host or credentials.
     expect(await page.evaluate(async () => {
-      const current = await window.hermesDesktop.getConnection()
+      const bridge = (window as unknown as { hermesDesktop: {
+        getConnection(): Promise<{ baseUrl: string; token: string }>
+        connections: { save(input: { kind: 'remote'; label: string; url: string; token: string }): Promise<{ ok: boolean }> }
+      } }).hermesDesktop
+      const current = await bridge.getConnection()
       if (!/^http:\/\/(127\.0\.0\.1|localhost):/.test(current.baseUrl)) throw new Error('Expected temporary loopback backend')
-      const result = await window.hermesDesktop.connections.save({ kind: 'remote', label: 'Temporary organization connection with a long descriptive name', url: current.baseUrl, token: current.token })
+      const result = await bridge.connections.save({ kind: 'remote', label: 'Temporary organization connection with a long descriptive name', url: current.baseUrl, token: current.token })
       return result.ok
     })).toBe(true)
     const header = page.getByRole('banner', { name: copy.heading, exact: true })
@@ -1182,8 +1189,8 @@ for (const locale of ['ja', 'ar', 'ru'] as const) {
       await page.evaluate(() => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(100))
       await app.evaluate(({ BrowserWindow }) => { const window = BrowserWindow.getAllWindows()[0]; window.unmaximize(); window.setMinimumSize(600, 600); window.setContentSize(1536, 961) })
       await page.evaluate(() => { location.hash = '/settings?tab=config:appearance' })
-      await page.getByRole('button', { name: TRANSLATIONS[locale].settings.modeOptions[mode].label, exact: true }).click()
-      await expect(header.getByRole('button', { name: TRANSLATIONS[locale].settings.search.pill, exact: true })).toBeVisible()
+      await page.getByRole('button', { name: copy[mode], exact: true }).click()
+      await expect(header.getByRole('button', { name: copy.settingsSearch, exact: true })).toBeVisible()
       await page.evaluate(() => { location.hash = '/home' })
       for (const [width, height, zoom] of [[1280, 720, 1], [760, 900, 1], [1280, 720, 2]]) {
         await page.evaluate(() => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(100))

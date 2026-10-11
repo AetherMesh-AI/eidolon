@@ -354,6 +354,7 @@ export const ar = defineLocale({
     noResults: 'لا توجد لغة مطابقة'
   },
   settings: {
+    search: { pill: 'بحث' },
     closeSettings: 'إغلاق الإعدادات',
     exportConfig: 'تصدير الإعدادات',
     importConfig: 'استيراد الإعدادات',
