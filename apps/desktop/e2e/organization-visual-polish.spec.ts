@@ -1393,7 +1393,9 @@ for (const [locale, suffix, dark, light] of [
           }
           const focalCopy = route === '/organization' ? copy.findAgent : route === '/artifacts?source=organization' ? copy.deliverablesIntroduction : route.includes('recipient') ? copy.executiveMessageNote : copy.linkedWorkNote
           const focal = page.getByText(focalCopy, { exact: true })
-          await focal.scrollIntoViewIfNeeded()
+          // Center the evidence target with space on both sides. Nearest-edge
+          // scrolling can leave a fractional CSS pixel clipped at 200% zoom.
+          await focal.evaluate(element => element.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' }))
           await expect(focal).toBeInViewport({ ratio: 1 })
           expect(await page.locator('.eid-workspace').evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
           if (route.startsWith('/artifacts')) {
