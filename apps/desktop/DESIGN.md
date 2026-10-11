@@ -63,6 +63,11 @@ one-off at the call site.
   saved skin and mode choices are never reset. Retained organization timestamps
   use `LocalizedTime` and the selected app locale. New foundation messages use
   the English catalog fallback until their translations are reviewed.
+- **Messages keeps one conversation authority.** The member directory filters recorded
+  persistent identities without opening chats. Explicit Chat opens the existing
+  owner conversation, retaining its scoped drafts, plain-text transcript, finite
+  allowance and recovery controls. The context column links only recorded objective
+  ownership/current assignments; team membership never establishes a work link.
 - **Pages are durable destinations.** Chat, Skills, Messaging, and Artifacts
   remain in shell chrome. Do not hide a distinct product noun inside an
   unrelated page.

@@ -80,11 +80,18 @@ function navigation(page: Page) {
     .getByRole('navigation', { name: 'Primary', exact: true })
 }
 
-async function openWorkerChat(page: Page) {
-  await navigation(page).getByRole('link', { name: 'Organization', exact: true }).click()
-  await page.getByRole('button', { name: 'Inspect Worker 1', exact: true }).click()
-  const inspector = page.getByRole('complementary', { name: 'Agent details', exact: true })
-  await inspector.getByRole('button', { name: 'Chat', exact: true }).click()
+async function openWorkerChat(page: Page, entry: 'Organization' | 'Messages' = 'Messages') {
+  await navigation(page).getByRole('link', { name: entry, exact: true }).click()
+
+  if (entry === 'Organization') {
+    await page.getByRole('button', { name: 'Inspect Worker 1', exact: true }).click()
+    await page.getByRole('complementary', { name: 'Agent details', exact: true }).getByRole('button', { name: 'Chat', exact: true }).click()
+  } else {
+    await page.getByRole('textbox', { name: 'Search members', exact: true }).fill('Worker 1')
+    await page.getByRole('navigation', { name: 'Choose an agent', exact: true }).getByRole('button', { name: /Worker 1/ }).click()
+    await page.getByRole('region', { name: 'Member conversation', exact: true }).getByRole('button', { name: 'Chat', exact: true }).click()
+  }
+
   const conversation = page.getByRole('region', { name: 'Owner conversation', exact: true })
   await expect(conversation.getByRole('textbox', { name: 'Message', exact: true })).toBeVisible()
 
@@ -131,7 +138,7 @@ test('retains exact worker chat, deduplicates owner send and fences a cancelled 
     })
   )
   await page.reload()
-  let conversation = await openWorkerChat(page)
+  let conversation = await openWorkerChat(page, 'Organization')
   await expect(conversation.getByRole('button', { name: 'Call', exact: true })).toBeDisabled()
   expect(running.calls).toHaveLength(0)
   await conversation.getByRole('textbox', { name: 'Message', exact: true }).fill(firstMessage)
@@ -151,6 +158,22 @@ test('retains exact worker chat, deduplicates owner send and fences a cancelled 
   conversation = await openWorkerChat(page)
   await expect(conversation.getByText(firstMessage, { exact: true })).toBeVisible()
   await expect(conversation.getByText(firstReply, { exact: true })).toBeVisible()
+  const transcript = conversation.locator('.eid-owner-chat-scroll')
+  await expect.poll(() => transcript.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
+  await conversation.getByText(firstReply, { exact: true }).scrollIntoViewIfNeeded()
+  await page.screenshot({ path: test.info().outputPath('native-messages-conversation-wide.png') })
+  await running.fixture.app.evaluate(({ BrowserWindow }) => {
+    const window = BrowserWindow.getAllWindows()[0]
+    window.unmaximize()
+    window.setMinimumSize(600, 600)
+    window.setContentSize(760, 900)
+  })
+  await expect.poll(() => page.evaluate(() => window.innerWidth)).toBe(760)
+  await expect.poll(() => transcript.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
+  await conversation.getByText(firstReply, { exact: true }).scrollIntoViewIfNeeded()
+  await page.screenshot({ path: test.info().outputPath('native-messages-conversation-narrow.png') })
+  await running.fixture.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(1220, 900))
+  await expect.poll(() => page.evaluate(() => window.innerWidth)).toBe(1220)
   await conversation.getByRole('textbox', { name: 'Message', exact: true }).fill(secondMessage)
   await conversation.getByRole('button', { name: 'Send message', exact: true }).click()
   await expect.poll(() => running!.calls.length).toBe(2)
@@ -220,10 +243,12 @@ test('retains exact worker chat, deduplicates owner send and fences a cancelled 
   expect(replayed.error).toBeUndefined()
   expect(replayed.result?.renewalReceipt?.id).toBe(renewed.result?.renewalReceipt?.id)
   expect(replayed.result?.budget).toEqual(renewed.result?.budget)
+
   const stale = await rpc<{ renewalRejected: boolean }>(page, renewals[0], 'organization.ownerChat.renew', {
     ...renewals[0].params,
     idempotencyKey: 'native-stale-renewal'
   })
+
   expect(stale.error).toBeUndefined()
   expect(stale.result?.renewalRejected).toBe(true)
   expect(running.calls).toHaveLength(2)
@@ -254,11 +279,13 @@ test('retains exact worker chat, deduplicates owner send and fences a cancelled 
         expect(read.error).toBeUndefined()
         expect(read.result).toBeDefined()
         latest = read.result!
+
         return latest.activeTurnId === null && latest.canSend
       },
       { timeout: 30_000 }
     )
     .toBe(true)
+
   for (let index = 3; index < 27; index++) {
     const sent = await rpc<ThreadView>(page, sends[0], 'organization.ownerChat.send', {
       ...identity,
@@ -266,6 +293,7 @@ test('retains exact worker chat, deduplicates owner send and fences a cancelled 
       replyToMessageId: latest.latestMessageId,
       idempotencyKey: `native-history-${index}`
     })
+
     expect(sent.error).toBeUndefined()
     await expect
       .poll(
@@ -274,6 +302,7 @@ test('retains exact worker chat, deduplicates owner send and fences a cancelled 
           expect(read.error).toBeUndefined()
           expect(read.result).toBeDefined()
           latest = read.result!
+
           return latest.activeTurnId === null && latest.canSend
         },
         { timeout: 30_000 }
@@ -282,6 +311,7 @@ test('retains exact worker chat, deduplicates owner send and fences a cancelled 
     expect(latest.turns.at(-1)?.status).toBe('completed')
     expect(latest.budget.callsReserved).toBe(index + 1)
   }
+
   expect(running.calls).toHaveLength(27)
   expect(latest.history.hasMore).toBe(true)
   const latestAnchor = latest.latestMessageId

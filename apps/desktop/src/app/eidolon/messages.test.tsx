@@ -54,3 +54,49 @@ it('selects only persistent members and opens their exact durable identity only 
   expect(adapter.openOwnerChat).toHaveBeenCalledTimes(1)
   expect(adapter.sendOwnerChat).not.toHaveBeenCalled()
 })
+
+it('searches recorded members without closing a chat or retargeting a replaced identity', async () => {
+  const snapshot = ownerChatSnapshot()
+
+  const adapter = {
+    mode: 'runtime', getSnapshot: () => snapshot,
+    openOwnerChat: vi.fn(async () => ownerChatThread()), readOwnerChat: vi.fn(),
+    sendOwnerChat: vi.fn(), cancelOwnerChat: vi.fn()
+  } as unknown as RuntimeOrganizationAdapter
+
+  const view = render(<MemoryRouter><Messages adapter={adapter} snapshot={snapshot} /></MemoryRouter>)
+  fireEvent.change(screen.getByRole('textbox', { name: 'Search members' }), { target: { value: 'research' } })
+  fireEvent.click(screen.getByRole('button', { name: /Worker 1/ }))
+  fireEvent.click(screen.getByRole('button', { name: 'Chat' }))
+  const composer = await screen.findByRole('textbox', { name: 'Message' })
+  fireEvent.change(composer, { target: { value: 'Keep this unsent draft' } })
+  fireEvent.change(screen.getByRole('textbox', { name: 'Search members' }), { target: { value: 'unmatched member' } })
+  expect(screen.getByRole('status').textContent).toContain('No members match')
+  expect(screen.getByRole('textbox', { name: 'Message' })).toBe(composer)
+  expect(composer).toHaveProperty('value', 'Keep this unsent draft')
+  expect(adapter.openOwnerChat).toHaveBeenCalledTimes(1)
+  expect(adapter.sendOwnerChat).not.toHaveBeenCalled()
+  view.rerender(<MemoryRouter><Messages adapter={adapter} snapshot={{ ...snapshot, agents: [{ ...snapshot.agents[0], identityId: 'replacement' }] }} /></MemoryRouter>)
+  expect(screen.queryByRole('textbox', { name: 'Message' })).toBeNull()
+  expect(adapter.openOwnerChat).toHaveBeenCalledTimes(1)
+})
+
+it('links only recorded ownership and current assignments, without inferring team membership', () => {
+  const snapshot = ownerChatSnapshot()
+  snapshot.objectives = ['assigned', 'historical', 'old-round', 'same-team', 'leadership'].map(id => ({
+    id, title: `Objective ${id}`, description: '', status: 'active', source: 'runtime',
+    ownerId: id === 'leadership' ? 'worker' : 'executive', createdAt: '2026-10-08T12:00:00Z'
+  }))
+  snapshot.tasks = ['assigned', 'historical', 'old-round', 'same-team'].map(id => ({
+    id, objectiveId: id, title: id, ownerId: id === 'same-team' ? 'other-worker' : 'worker',
+    team: 'Research', status: 'working', dependsOn: [], historical: id === 'historical', currentRound: id !== 'old-round'
+  }))
+  render(<MemoryRouter><Messages snapshot={snapshot} /></MemoryRouter>)
+  fireEvent.click(screen.getByRole('button', { name: /Worker 1/ }))
+  expect(screen.getByRole('link', { name: 'Objective assigned' }).getAttribute('href')).toBe('/objectives/assigned')
+  expect(screen.getByRole('link', { name: 'Objective leadership' })).toBeTruthy()
+
+  for (const id of ['historical', 'old-round', 'same-team']) {
+    expect(screen.queryByRole('link', { name: `Objective ${id}` })).toBeNull()
+  }
+})

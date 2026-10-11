@@ -275,13 +275,37 @@
 .eid-home-intake .eid-command { max-width: 800px; margin: 0 auto; }
 .eid-home-intake .eid-command h2 { font-family: Georgia, 'Times New Roman', serif; font-size: 26px; }
 .eid-work-overview { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
-.eid-messages-layout { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(0, 3fr); gap: 28px; }
-.eid-messages-layout nav { display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
-.eid-messages-layout nav button { justify-content: flex-start; text-align: start; }
-.eid-messages-layout nav button[aria-pressed=true] { background: var(--eidolon-surface-3); }
+/* A member directory, durable conversation and read-only recorded context. */
+.eid-messages-layout { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(320px, 2.8fr) minmax(200px, 1.1fr); gap: 24px; align-items: start; }
+.eid-messages-layout[data-member-selected=false] { grid-template-columns: minmax(180px, 1fr) minmax(0, 3.9fr); }
+.eid-messages-layout > section { min-width: 0; overflow-wrap: anywhere; }
+.eid-messages-layout h2 { font-family: Georgia, 'Times New Roman', serif; font-size: 22px; margin: 0 0 16px; }
+.eid-message-members { display: grid; gap: 16px; }
+.eid-message-members h2 { margin: 0; }
+.eid-message-members nav { display: flex; flex-direction: column; align-items: stretch; gap: 8px; max-height: 60vh; overflow-y: auto; }
+.eid-message-members nav button { justify-content: flex-start; text-align: start; white-space: normal; }
+.eid-message-members nav button > span { min-width: 0; }
+.eid-message-members nav strong, .eid-message-members nav small { display: block; }
+.eid-message-members nav small { font-size: 11px; margin-top: 4px; }
+.eid-message-members nav button[aria-pressed=true] { background: var(--eidolon-surface-3); }
+.eid-message-conversation { padding: 24px; border-radius: 20px; background: var(--eidolon-surface-2); }
+.eid-message-conversation .eid-owner-chat-message > button { max-width: 100%; white-space: normal; overflow-wrap: anywhere; text-align: start; justify-content: flex-start; }
+.eid-message-recipient { display: flex; align-items: center; gap: 12px; }
+.eid-message-recipient h2 { margin-bottom: 4px; }
+.eid-message-recipient p { margin: 0; }
+.eid-message-empty { padding-block: 48px; }
+.eid-message-context { display: grid; gap: 18px; }
+.eid-message-context h2, .eid-message-context h3, .eid-message-context p { margin: 0; }
+.eid-message-context h3 { font-size: 14px; margin-bottom: 8px; }
+.eid-message-context ul { padding-inline-start: 18px; display: grid; gap: 10px; }
+.eid-message-context details { padding-top: 16px; border-top: 1px solid var(--eidolon-border-subtle); }
+.eid-message-context details[open] > summary { margin-bottom: 18px; }
+.eid-message-context dd { margin-inline-start: 0; overflow-wrap: anywhere; }
+@media (max-width: 1400px) { .eid-messages-layout { grid-template-columns: minmax(180px, 1fr) minmax(0, 3fr); } .eid-message-context { grid-column: 2; } }
+@media (max-width: 800px) { .eid-messages-layout, .eid-messages-layout[data-member-selected=false] { grid-template-columns: 1fr; } .eid-message-members nav { max-height: 180px; } .eid-message-context { grid-column: 1; } .eid-message-conversation { padding: 18px; } }
 .eid-brand { font-family: Georgia, 'Times New Roman', serif; font-size: 25px; font-weight: 500; }
 @media (max-width: 1100px) { .eid-home-grid { grid-template-columns: 1fr; } .eid-home-activity ol { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 800px) { .eid-home-hero, .eid-home-activity > header { align-items: flex-start; flex-direction: column; } .eid-home-panel { padding: 18px; } .eid-home-activity ol, .eid-work-overview, .eid-messages-layout { grid-template-columns: 1fr; } .eid-messages-layout nav { flex-direction: row; overflow-x: auto; } }
+@media (max-width: 800px) { .eid-home-hero, .eid-home-activity > header { align-items: flex-start; flex-direction: column; } .eid-home-panel { padding: 18px; } .eid-home-activity ol, .eid-work-overview, .eid-messages-layout { grid-template-columns: 1fr; } }
 
 /* Quiet controls remain readable on every organization surface; shared tokens
  * still own the colors and the selected theme owns progress fill. */

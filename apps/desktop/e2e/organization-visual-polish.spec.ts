@@ -253,7 +253,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
 
     await test.info().attach(name, { body: bytes, contentType: 'image/png' })
 
-    const colors = await page.locator('.eidolon').locator('.eid-status, a, button:not(:disabled), input, textarea, select, .eid-owner-chat-bubble, .eid-home-panel h2, .eid-home-record h3, .eid-home-record p, .eid-home-record small, .eid-objective-overview h3, .eid-objective-overview p, .eid-objective-overview small, .eid-objective-overview strong').evaluateAll(elements =>
+    const colors = await page.locator('.eidolon').locator('.eid-status, a, button:not(:disabled), input, textarea, select, .eid-owner-chat-bubble, .eid-home-panel h2, .eid-home-record h3, .eid-home-record p, .eid-home-record small, .eid-objective-overview h3, .eid-objective-overview p, .eid-objective-overview small, .eid-objective-overview strong, .eid-messages-layout h2, .eid-messages-layout h3, .eid-messages-layout p, .eid-messages-layout small, .eid-messages-layout li').evaluateAll(elements =>
         elements.map(element => {
           const backgrounds: string[] = []
           let opacity = 1
@@ -341,6 +341,32 @@ test('keeps native organization navigation, roster and objective layouts usable 
     writeEvidence()
   }
 
+  async function inspectMessages(mode: string) {
+    await resize(1440)
+    await navigation.getByRole('link', { name: 'Messages', exact: true }).click()
+    const search = page.getByRole('textbox', { name: 'Search members', exact: true })
+    const members = page.getByRole('navigation', { name: 'Choose an agent', exact: true })
+    await capture(`messages-directory-wide-${mode}`)
+    await search.fill('Robin')
+    await expect(members.getByRole('button')).toHaveCount(1)
+    await members.getByRole('button', { name: /Robin/ }).click()
+    const context = page.getByRole('region', { name: 'Member context', exact: true })
+    await expect(context.getByRole('link', { name: 'Prepare the autumn release brief', exact: true })).toBeVisible()
+    await expect(context.getByRole('link', { name: 'Document provider boundaries', exact: true })).toHaveCount(0)
+    await search.fill('no matching member')
+    await expect(page.getByRole('region', { name: 'Member conversation', exact: true }).getByRole('heading', { name: 'Robin', exact: true })).toBeVisible()
+    await search.fill('')
+    await capture(`messages-selected-wide-${mode}`)
+    await resize(1220)
+    await capture(`messages-selected-medium-${mode}`)
+    await resize(760)
+    await capture(`messages-selected-narrow-${mode}`)
+    await context.getByRole('link', { name: 'Prepare the autumn release brief', exact: true }).click()
+    await expect(page.getByRole('region', { name: 'Objective overview', exact: true })).toBeVisible()
+    await resize(1220)
+    await navigation.getByRole('link', { name: 'Objectives', exact: true }).click()
+  }
+
   async function inspectObjectiveOverview(mode: string) {
     await workspace.getByRole('link').filter({ has: page.getByText('Prepare the autumn release brief', { exact: true }) }).click()
     const overview = page.getByRole('region', { name: 'Objective overview', exact: true })
@@ -425,6 +451,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
   ).toBeVisible()
   await capture('04-objectives-wide-dark')
   await inspectObjectiveOverview('dark')
+  await inspectMessages('dark')
   await page.getByRole('textbox', { name: 'Search objectives', exact: true }).fill('autumn')
   await expect(
     workspace.getByRole('link').filter({ has: page.getByText('Review the workspace navigation', { exact: true }) })
@@ -482,6 +509,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await expect(page.getByRole('heading', { name: 'Objectives', exact: true })).toBeVisible()
   await capture('11-objectives-wide-light')
   await inspectObjectiveOverview('light')
+  await inspectMessages('light')
   await resize(760)
   await capture('12-objectives-narrow-light')
   await resize(1220)

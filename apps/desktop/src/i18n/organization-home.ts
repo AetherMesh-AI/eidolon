@@ -1,5 +1,19 @@
 /** Source messages; untranslated locales inherit English through the existing catalog. */
 export const organizationHomeEn = {
+  memberMessages: {
+    members: 'Members',
+    search: 'Search members',
+    noMatches: 'No members match this search.',
+    directoryNote: 'Persistent members in this profile. Selecting a member does not open or renew their conversation.',
+    conversation: 'Member conversation',
+    selectNote: 'Choose a member, then select Chat to read the retained conversation or send a message.',
+    memberContext: 'Member context',
+    responsibilities: 'Responsibilities',
+    linkedWork: 'Linked objectives',
+    linkedWorkNote: 'Recorded ownership and current task or manager assignments in this view.',
+    noLinkedWork: 'No linked objectives are recorded in this view.',
+    retainedContext: 'Identity, memory and history'
+  },
   detail: {
     overview: 'Objective overview',
     progress: 'Progress overview',
