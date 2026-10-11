@@ -9,6 +9,7 @@ import { verifyKeyboardFocus } from './focus-visibility'
 import { expect, test } from './test'
 
 let fixture: MockBackendFixture | undefined
+let initialEditorReadiness: object[] = []
 
 test.setTimeout(300_000)
 test.afterEach(async () => {
@@ -19,11 +20,12 @@ test.afterEach(async () => {
     ), { timeout: 30_000 }).toBe(0).catch(() => undefined)
     const requests = await fixture.app.evaluate(() => (globalThis as any).__settingsConfigRequests ?? [])
     await test.info().attach('settings-config-transport', { body: JSON.stringify(requests, null, 2), contentType: 'application/json' })
-    const readiness = await fixture.page.evaluate(() => (window as any).__settingsEditorReadiness ?? [])
-    await test.info().attach('settings-editor-readiness', { body: JSON.stringify(readiness, null, 2), contentType: 'application/json' })
+    const currentReadiness = await fixture.page.evaluate(() => (window as any).__settingsEditorReadiness ?? [])
+    await test.info().attach('settings-editor-readiness', { body: JSON.stringify(initialEditorReadiness.length ? initialEditorReadiness : currentReadiness, null, 2), contentType: 'application/json' })
   }
   await fixture?.cleanup()
   fixture = undefined
+  initialEditorReadiness = []
 })
 
 test('keeps all Settings destinations, scoped saves, dismissal and selected appearance in the workspace', async () => {
@@ -151,6 +153,8 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
   await resize(1536, 961)
   await expect(settings.locator('.eid-settings-cards > section')).toHaveCount(6)
   await expect(settings.getByRole('button', { name: 'Apply', exact: true })).toBeVisible()
+  // Preserve the initial readiness timeline before appearance tests reload the renderer.
+  initialEditorReadiness = await page.evaluate(() => (window as any).__settingsEditorReadiness ?? [])
   const cards = await settings.locator('.eid-settings-card-editor').evaluateAll(elements => elements.map(element => element.getBoundingClientRect().toJSON()))
   expect(Math.abs(cards[0].top - cards[1].top)).toBeLessThanOrEqual(1)
   expect(cards[1].left).toBeGreaterThan(cards[0].right)
