@@ -1370,14 +1370,15 @@ for (const [locale, suffix, dark, light] of [
         await app.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0].setContentSize(size.width, size.height), { width, height })
         await page.evaluate(value => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(value * 100), zoom)
         await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(zoom)
-        for (const route of ['/organization', '/deliverables', '/messages', '/messages?recipient=executive']) {
+        for (const route of ['/organization', '/artifacts?source=organization', '/messages', '/messages?recipient=executive']) {
           await page.evaluate(value => { location.hash = value }, route)
           if (route === '/organization') {
             await expect(page.getByRole('heading', { name: copy.organization, exact: true })).toBeVisible()
             await expect(page.getByRole('textbox', { name: copy.findAgent, exact: true })).toBeVisible()
-          } else if (route === '/deliverables') {
+          } else if (route === '/artifacts?source=organization') {
             await expect(page.getByRole('heading', { name: copy.deliverables, exact: true })).toBeVisible()
             await expect(page.getByText(copy.deliverablesIntroduction, { exact: true })).toBeVisible()
+            await expect(page.locator('.eid-delivery-outcomes').getByRole('heading', { name: 'Document provider boundaries', exact: true })).toBeVisible()
           } else {
             await expect(page.getByRole('textbox', { name: copy.search, exact: true })).toBeVisible()
             await expect(page.getByText(copy.directoryNote, { exact: true })).toBeVisible()
@@ -1390,17 +1391,20 @@ for (const [locale, suffix, dark, light] of [
             await expect(page.getByRole('heading', { name: copy.responsibilities, exact: true })).toBeVisible()
             await expect(page.getByText(copy.linkedWorkNote, { exact: true })).toBeVisible()
           }
-          const focalCopy = route === '/organization' ? copy.findAgent : route === '/deliverables' ? copy.deliverablesIntroduction : route.includes('recipient') ? copy.executiveMessageNote : copy.linkedWorkNote
+          const focalCopy = route === '/organization' ? copy.findAgent : route === '/artifacts?source=organization' ? copy.deliverablesIntroduction : route.includes('recipient') ? copy.executiveMessageNote : copy.linkedWorkNote
           const focal = page.getByText(focalCopy, { exact: true })
           await focal.scrollIntoViewIfNeeded()
           await expect(focal).toBeInViewport({ ratio: 1 })
           expect(await page.locator('.eid-workspace').evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
+          if (route.startsWith('/artifacts')) {
+            expect(await page.locator('.eid-deliverables').evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
+          }
           await page.evaluate(async () => { await document.fonts.ready; await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))) })
           const appearance = await page.locator('html').evaluate(element => ({ theme: element.getAttribute('data-hermes-theme'), dark: element.classList.contains('dark'), dir: element.getAttribute('dir') }))
           expect(appearance).toEqual({ theme: 'nous', dark: mode === 'dark', dir: locale === 'ar' ? 'rtl' : 'ltr' })
           const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)
           expect(overflow).toBeLessThanOrEqual(1)
-          const name = `translated-${locale}-${mode}-${route.includes('recipient') ? 'executive' : route.slice(1)}-${width}-${height}-${zoom}.png`
+          const name = `translated-${locale}-${mode}-${route.includes('recipient') ? 'executive' : route.startsWith('/artifacts') ? 'deliverables' : route.slice(1)}-${width}-${height}-${zoom}.png`
           const bytes = Buffer.from(await app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
           writeFileSync(test.info().outputPath(name), bytes)
           captures.push({ name, locale, route, width, height, zoom, ...appearance, overflow, sha256: createHash('sha256').update(bytes).digest('hex') })
