@@ -65,13 +65,13 @@ export function Messages({
   const objectives = agent ? linkedObjectives(agent, snapshot) : []
 
   return (
-    <>
-      <header className="eid-home-hero">
-        <div><h1>{executiveEntry ? copy.messageOrganization : copy.messages}</h1><p>{executiveEntry ? copy.executiveMessageNote : copy.messagesNote}</p></div>
-      </header>
+    <div className="eid-messages-view">
       <div className="eid-messages-layout" data-member-selected={Boolean(agent)}>
         <section aria-label={messages.members} className="eid-message-members">
-          <h2>{messages.members}</h2>
+          <header className="eid-message-directory-heading">
+            <h1>{executiveEntry ? copy.messageOrganization : copy.messages}</h1>
+            <p>{executiveEntry ? copy.executiveMessageNote : copy.messagesNote}</p>
+          </header>
           <SearchField aria-label={messages.search} containerClassName="opacity-100" onChange={setQuery} placeholder={messages.search} value={query} />
           <nav aria-label={copy.chooseAgent}>
             {matches.map(item => (
@@ -105,7 +105,11 @@ export function Messages({
           )}
         </section>
         {agent && <section aria-label={messages.memberContext} className="eid-message-context">
-          <h2>{messages.memberContext}</h2>
+          <header className="eid-message-profile">
+            <AgentAvatar name={agent.name} />
+            <h2>{agent.name}</h2>
+            <p>{roles[agent.role] ?? agent.role}{agent.team ? ` · ${agent.team}` : ''}</p>
+          </header>
           <p className="eid-result-text">{agent.purpose || agent.summary}</p>
           {!!agent.responsibilities.length && <section aria-label={messages.responsibilities}><h3>{messages.responsibilities}</h3><ul>{agent.responsibilities.map((item, index) => <li key={index}>{item}</li>)}</ul></section>}
           <section aria-label={messages.linkedWork}>
@@ -116,6 +120,6 @@ export function Messages({
           <details><summary>{messages.retainedContext}</summary><AgentContext agent={agent} snapshot={snapshot} /></details>
         </section>}
       </div>
-    </>
+    </div>
   )
 }

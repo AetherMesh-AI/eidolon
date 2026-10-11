@@ -377,6 +377,18 @@ test('keeps native organization navigation, roster and objective layouts usable 
     await search.fill('')
     await capture(`messages-selected-wide-${mode}`)
     await resize(1536, 961)
+    const columns = await page.locator('.eid-messages-layout > section').evaluateAll(elements => elements.map(element => {
+      const rect = element.getBoundingClientRect()
+      return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+    }))
+    expect(columns).toHaveLength(3)
+    expect(Math.abs(columns[0].y - columns[1].y)).toBeLessThanOrEqual(1)
+    expect(Math.abs(columns[1].y - columns[2].y)).toBeLessThanOrEqual(1)
+    const total = columns.reduce((sum, column) => sum + column.width, 0)
+    expect(columns[0].width / total).toBeCloseTo(.254, 1)
+    expect(columns[1].width / total).toBeCloseTo(.507, 1)
+    expect(columns[2].width / total).toBeCloseTo(.239, 1)
+    await expect(page.locator('.eid-message-members').getByRole('heading', { name: 'Messages', exact: true })).toBeVisible()
     await capture(`reference-messages-${mode}`)
     await resize(1220)
     await capture(`messages-selected-medium-${mode}`)

@@ -424,3 +424,31 @@
 .eid-home-activity li p { margin-block: 10px; }
 @media (max-width: 1100px) { .eid-home-grid { grid-template-columns: 1fr; } }
 @media (max-height: 800px) { .eid-home > .eid-home-hero { min-height: 100px; padding-block: 12px; } }
+
+/* Messages uses the reference's full-height directory/conversation/context split. */
+.eid-page:has(> .eid-messages-view) { max-width: none; height: 100%; padding: 0; }
+.eid-messages-view { height: 100%; min-height: 0; }
+.eid-messages-view .eid-messages-layout { height: 100%; grid-template-columns: minmax(220px, 1.06fr) minmax(340px, 2.12fr) minmax(220px, 1fr); gap: 0; align-items: stretch; }
+.eid-messages-view .eid-messages-layout[data-member-selected=false] { grid-template-columns: minmax(220px, 1.06fr) minmax(340px, 3.12fr); }
+.eid-messages-view .eid-messages-layout > section { padding: 24px 18px; min-height: 0; overflow-y: auto; }
+.eid-messages-view .eid-message-members { display: flex; flex-direction: column; border-right: 1px solid var(--eidolon-border-subtle); }
+.eid-message-directory-heading h1 { font: 500 25px/1.25 Georgia, 'Times New Roman', serif; }
+.eid-message-directory-heading p { margin-bottom: 0; font-size: 12px; }
+.eid-messages-view .eid-message-members nav { flex: 1 1 auto; min-height: 120px; max-height: none; padding: 6px; }
+.eid-messages-view .eid-message-conversation { border-radius: 0; background: var(--eidolon-bg); }
+.eid-messages-view .eid-message-recipient { padding-bottom: 20px; margin-bottom: 18px; border-bottom: 1px solid var(--eidolon-border-subtle); }
+.eid-messages-view .eid-message-context { grid-column: auto; display: flex; flex-direction: column; gap: 24px; border-left: 1px solid var(--eidolon-border-subtle); background: var(--eidolon-surface-1); }
+.eid-message-profile > .eid-avatar { width: 52px; height: 52px; margin-bottom: 18px; font-size: 18px; }
+.eid-message-profile p { margin-top: 8px; }
+@media (max-width: 1200px) {
+  .eid-messages-view .eid-messages-layout { grid-template-columns: minmax(200px, 1fr) minmax(0, 2fr); }
+  .eid-messages-view .eid-message-context { grid-column: 2; overflow: visible; }
+  .eid-messages-view .eid-message-members { grid-row: 1 / span 2; }
+  .eid-messages-view .eid-messages-layout { height: auto; min-height: 100%; }
+}
+@media (max-width: 800px) {
+  .eid-messages-view .eid-messages-layout, .eid-messages-view .eid-messages-layout[data-member-selected=false] { grid-template-columns: minmax(0, 1fr); }
+  .eid-messages-view .eid-message-members { grid-row: auto; border-right: 0; }
+  .eid-messages-view .eid-message-members nav { max-height: 180px; flex: none; }
+  .eid-messages-view .eid-message-context { grid-column: 1; border-left: 0; }
+}

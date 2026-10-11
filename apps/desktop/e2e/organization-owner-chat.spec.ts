@@ -161,6 +161,16 @@ test('retains exact worker chat, deduplicates owner send and fences a cancelled 
   const transcript = conversation.locator('.eid-owner-chat-scroll')
   await expect.poll(() => transcript.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
   await conversation.getByText(firstReply, { exact: true }).scrollIntoViewIfNeeded()
+  await running.fixture.app.evaluate(({ BrowserWindow }) => {
+    const window = BrowserWindow.getAllWindows()[0]
+    window.unmaximize()
+    window.setContentSize(1536, 961)
+  })
+  await expect.poll(() => page.evaluate(() => innerWidth)).toBe(1536)
+  await expect(page.locator('.eid-message-members').getByRole('heading', { name: 'Messages', exact: true })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Member context', exact: true })).toBeVisible()
+  await conversation.getByText(firstReply, { exact: true }).scrollIntoViewIfNeeded()
+  await page.screenshot({ path: test.info().outputPath('native-messages-conversation-reference.png') })
   await page.screenshot({ path: test.info().outputPath('native-messages-conversation-wide.png') })
   await running.fixture.app.evaluate(({ BrowserWindow }) => {
     const window = BrowserWindow.getAllWindows()[0]
