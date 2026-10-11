@@ -3,7 +3,7 @@ export const organizationHomeEn = {
   messageOrganization: 'Message organization',
   messageOrganizationUnavailable: 'Connect to the current organization before choosing a recipient.',
   executiveMessageNote: 'Choose an executive in the current organization. Your message belongs to that member’s conversation and is sent only when you submit it.',
-  noMessageExecutive: 'No active executive is available in this organization. Review its roster before choosing a recipient.',
+  noMessageExecutive: 'No active executive with a verified identity is available in this organization. Review its roster before choosing a recipient.',
   reviewMessageRoster: 'Review organization roster',
   memberMessages: {
     members: 'Members',

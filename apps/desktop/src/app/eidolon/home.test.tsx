@@ -2,9 +2,12 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter, useLocation } from 'react-router'
 import { afterEach, expect, it, vi } from 'vitest'
 
+import { useOverlayRouting } from '../shell/hooks/use-overlay-routing'
+
 import { Home, HomeObjective } from './home'
 import { homeData } from './home-data'
 import type { OrganizationOutcome } from './runtime-outcome-types'
+import { ownerChatSnapshot } from './runtime-owner-chat.test-support'
 import type { Objective, OrganizationSnapshot, RuntimeOrganizationAdapter } from './types'
 
 afterEach(cleanup)
@@ -193,6 +196,33 @@ it('keeps intake mounted and its draft intact when explicitly opened and collaps
     expect(screen.getByRole('textbox', { name: 'Objective' })).toBe(input)
     expect(input).toHaveProperty('value', 'Keep my unsent objective')
     expect(globalThis.document.activeElement).toBe(input)
+    expect(adapter.createObjective).not.toHaveBeenCalled()
+  } finally {
+    HTMLElement.prototype.scrollIntoView = original
+  }
+})
+
+it('returns from Settings to the open originating setup with its unsent draft', () => {
+  const original = HTMLElement.prototype.scrollIntoView
+  HTMLElement.prototype.scrollIntoView = vi.fn()
+  const current = ownerChatSnapshot()
+  current.connection!.ownerScope = 'home-settings-return'
+  const adapter = { mode: 'runtime', getSnapshot: () => current, createObjective: vi.fn() } as unknown as RuntimeOrganizationAdapter
+
+  function Surface() {
+    const routing = useOverlayRouting()
+
+    return routing.settingsOpen ? <button onClick={routing.closeOverlayToPreviousRoute}>Return from settings</button> : <Home adapter={adapter} snapshot={current} />
+  }
+
+  try {
+    render(<MemoryRouter initialEntries={['/home']}><Surface /></MemoryRouter>)
+    fireEvent.click(screen.getByRole('button', { name: 'New objective' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Objective' }), { target: { value: 'Preserve setup context' } })
+    fireEvent.click(screen.getByRole('link', { name: 'Review profile model' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Return from settings' }))
+    expect(screen.getByRole('region', { name: 'Organization setup' })).toBeTruthy()
+    expect(screen.getByRole('textbox', { name: 'Objective' })).toHaveProperty('value', 'Preserve setup context')
     expect(adapter.createObjective).not.toHaveBeenCalled()
   } finally {
     HTMLElement.prototype.scrollIntoView = original

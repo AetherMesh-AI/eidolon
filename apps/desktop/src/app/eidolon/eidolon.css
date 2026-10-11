@@ -28,7 +28,7 @@
   line-height: 1.55;
 }
 .eidolon *, .eidolon *::before, .eidolon *::after { box-sizing: border-box; }
-.eidolon :is(button, a, input, textarea, select, summary):focus-visible, .eid-rail:focus-visible { outline: 2px solid var(--aether-400); outline-offset: 3px; }
+.eidolon :is(button, a, input, textarea, select, summary, .eid-home-panel-body):focus-visible, .eid-rail:focus-visible { outline: 2px solid var(--aether-400); outline-offset: 3px; }
 .eidolon a { color: var(--aether-300); text-decoration: none; }
 .eidolon button, .eidolon input, .eidolon textarea, .eidolon select { font: inherit; }
 .eidolon button { cursor: pointer; }
@@ -388,7 +388,7 @@
   .eid-home > .eid-home-grid { flex: 1 1 240px; min-height: 200px; overflow: hidden; }
   .eid-home-panel-body { flex: 1 1 auto; }
   .eid-home-grid > .eid-home-panel { min-height: 0; }
-  .eid-home-activity { max-height: 155px; overflow: auto; margin: 0; padding: 16px 20px; }
+  .eid-home-activity { max-height: clamp(155px, calc(100vh - 650px), 240px); overflow: auto; margin: 0; padding: 16px 20px; }
   .eid-home > .eid-note { margin: 0; }
   .eid-home:has(.eid-home-intake[open]) { height: auto; }
   .eid-home:has(.eid-home-intake[open]) > .eid-home-grid { flex: none; }
@@ -397,3 +397,5 @@
   .eid-home-grid { grid-template-columns: 1fr; }
   .eid-home-panel-body { max-height: 380px; }
 }
+
+.eid-home-intake:not([open]) { display: none; }

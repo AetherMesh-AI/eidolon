@@ -51,7 +51,7 @@ export function Messages({
 
   const agents = snapshot.agents.filter(
     agent => agent.persistent && agent.role !== 'Owner' && !agent.id.startsWith('control:') &&
-      (!executiveEntry || (agent.role === 'Executive' && (agent.lifecycle === undefined || agent.lifecycle === 'active')))
+      (!executiveEntry || (agent.role === 'Executive' && agent.lifecycle === 'active' && typeof agent.identityId === 'string' && agent.identityId.trim().length > 0))
   )
 
   const matches = agents.filter(agent =>

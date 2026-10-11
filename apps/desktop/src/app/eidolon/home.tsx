@@ -74,7 +74,10 @@ export function HomeObjective({
 function focusIntake() {
   const intake = document.getElementById('eid-home-intake') as HTMLDetailsElement | null
 
-  if (intake) {intake.open = true}
+  if (intake) {
+    intake.open = true
+  }
+
   intake?.scrollIntoView({ block: 'start' })
   document.getElementById('eid-objective')?.focus({ preventScroll: true })
 }
@@ -102,7 +105,17 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
   }, [hash, snapshot.connection?.state])
 
   const intake = (
-    <details className="eid-home-intake" id="eid-home-intake" open={hash === '#eid-home-intake' || undefined}>
+    <details className="eid-home-intake" id="eid-home-intake" onToggle={event => {
+      const nextHash = event.currentTarget.open ? '#eid-home-intake' : ''
+
+      if (hash !== nextHash) {
+        navigate({ hash: nextHash }, { replace: true })
+      }
+
+      if (!event.currentTarget.open) {
+        document.getElementById('eid-home-new-objective')?.focus({ preventScroll: true })
+      }
+    }} open={hash === '#eid-home-intake' || undefined}>
       <summary>{copy.newObjective}</summary>
       {adapter.mode === 'runtime' && (
         <Command
@@ -127,7 +140,11 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
         {adapter.mode === 'runtime' && (
           <div className="eid-home-actions">
             <Button disabled={!canChooseRecipient} onClick={() => navigate('/messages?recipient=executive')} variant="default">{copy.messageOrganization}</Button>
-            <Button onClick={focusIntake} variant="secondary">{copy.newObjective}</Button>
+            <Button id="eid-home-new-objective" onClick={() => {
+              focusIntake()
+              intakeFocused.current = true
+              navigate({ hash: '#eid-home-intake' }, { replace: true })
+            }} variant="secondary">{copy.newObjective}</Button>
             {!canChooseRecipient && <p role="status">{copy.messageOrganizationUnavailable}</p>}
           </div>
         )}

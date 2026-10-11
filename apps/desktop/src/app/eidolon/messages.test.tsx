@@ -108,20 +108,23 @@ it('organization entry offers explicit executive choice without opening or sendi
   snapshot.agents.push(
     { ...member, id: 'ops', identityId: 'ops-id', name: 'Operations executive', role: 'Executive' },
     { ...member, id: 'product', identityId: 'product-id', name: 'Product executive', role: 'Executive' },
+    { ...member, id: 'unknown', identityId: 'unknown-id', name: 'Unknown lifecycle', role: 'Executive', lifecycle: undefined },
+    { ...member, id: 'blank-id', identityId: '   ', name: 'Blank identity', role: 'Executive' },
+    { ...member, id: 'no-id', identityId: undefined, name: 'Missing identity', role: 'Executive' },
     { ...member, id: 'retired', identityId: 'retired-id', name: 'Retired executive', role: 'Executive', lifecycle: 'retired' }
   )
   const adapter = { mode: 'runtime', getSnapshot: () => snapshot, openOwnerChat: vi.fn(), sendOwnerChat: vi.fn() } as unknown as RuntimeOrganizationAdapter
   const view = render(<MemoryRouter initialEntries={['/messages?recipient=executive']}><Messages adapter={adapter} snapshot={snapshot} /></MemoryRouter>)
   expect(screen.getByRole('button', { name: /Operations executive/ })).toBeTruthy()
   expect(screen.getByRole('button', { name: /Product executive/ })).toBeTruthy()
-  expect(screen.queryByRole('button', { name: /Worker 1|Retired executive/ })).toBeNull()
+  expect(screen.queryByRole('button', { name: /Worker 1|Retired executive|Unknown lifecycle|Missing identity|Blank identity/ })).toBeNull()
   expect(screen.queryByRole('button', { name: 'Chat' })).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: /Product executive/ }))
   expect(screen.getByRole('heading', { name: 'Product executive' })).toBeTruthy()
   expect(adapter.openOwnerChat).not.toHaveBeenCalled()
   expect(adapter.sendOwnerChat).not.toHaveBeenCalled()
   view.rerender(<MemoryRouter initialEntries={['/messages?recipient=executive']}><Messages adapter={adapter} snapshot={{ ...snapshot, agents: [] }} /></MemoryRouter>)
-  expect(screen.getAllByText(/No active executive is available/)).toHaveLength(2)
+  expect(screen.getAllByText(/No active executive with a verified identity is available/)).toHaveLength(2)
   expect(screen.getByRole('link', { name: 'Review organization roster' }).getAttribute('href')).toBe('/organization')
   expect(screen.queryByRole('button', { name: 'Chat' })).toBeNull()
 })

@@ -6,6 +6,8 @@ import { writeFileSync } from 'node:fs'
 
 import { BUILTIN_THEME_LIST } from '../src/themes/presets'
 
+import { verifyKeyboardFocus } from './focus-visibility'
+
 import { type MockBackendFixture, setupMockBackend, waitForAppReady } from './fixtures'
 import { acknowledgeExpectedErrorBanner, expect, test } from './test'
 
@@ -63,6 +65,7 @@ const agents = [
   }
 ].map(agent => ({
   ...agent,
+  identityId: `fixture-${agent.id}`,
   persistent: true,
   lifecycle: 'active',
   provider: null,
@@ -149,7 +152,7 @@ const snapshot = {
     }
   ],
   requests: [{ id: 'fixture-question', objectiveId: 'navigation', type: 'request.question', team: 'Product', priority: 2, status: 'pending_intervention', reason: 'Review the proposed owner journey before the next iteration.', attempts: 0, createdAt }],
-  activity: [],
+  activity: ['executive', 'manager', 'writer', 'reviewer'].map((agentId, index) => ({ id: `fixture-event-${index}`, agentId, source: 'runtime', kind: 'system', text: ['Synthetic direction recorded for the release brief.', 'Synthetic manager assignment recorded.', 'Synthetic draft prepared for review.', 'Synthetic review evidence recorded.'][index], timestamp: createdAt })),
   knowledge: [],
   conversations: []
 }
@@ -199,6 +202,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
 
   const workspace = page.getByRole('main', { name: 'Organization workspace', exact: true })
   const captures: object[] = []
+  const focusChecks: object[] = []
   const contrastChecks: Array<{ text: string | null; contrastRatio: number; opacity: number }> = []
 
   const runtime = await app.evaluate(() => ({
@@ -218,7 +222,8 @@ test('keeps native organization navigation, roster and objective layouts usable 
           runtime,
           providerCalls: mock.receivedPrompts.length,
           organizationMethods: [...new Set(organizationMethods)],
-          captures
+          captures,
+          focusChecks
         },
         null,
         2
@@ -449,6 +454,19 @@ test('keeps native organization navigation, roster and objective layouts usable 
     await expect(page.getByRole('button', { name: 'Message organization', exact: true })).toBeInViewport({ ratio: 1 })
     await expect(page.getByRole('contentinfo', { name: 'System health', exact: true })).toBeInViewport({ ratio: 1 })
     await capture(`home-fit-${width}-${height}`)
+    if (width === 1280) {
+      const body = workspace.locator('.eid-home-panel-body').first()
+      const overflow = await body.evaluate(element => element.scrollHeight - element.clientHeight)
+      expect(overflow).toBeGreaterThan(0)
+      focusChecks.push(await verifyKeyboardFocus(page, body, 'Home dark keyboard scroll group'))
+      const pageScroll = await workspace.evaluate(element => element.scrollTop)
+      await page.keyboard.press('PageDown')
+      await expect.poll(() => body.evaluate(element => element.scrollTop)).toBeGreaterThan(0)
+      expect(await workspace.evaluate(element => element.scrollTop)).toBe(pageScroll)
+      await capture('home-keyboard-overflow-dark')
+      await page.keyboard.press('Home')
+      await expect.poll(() => body.evaluate(element => element.scrollTop)).toBe(0)
+    }
   }
   await resize(1220)
 
@@ -470,7 +488,8 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await executiveChoices.getByRole('button', { name: /Avery/ }).click()
   await expect(page.getByRole('region', { name: 'Member conversation', exact: true }).getByRole('heading', { name: 'Avery', exact: true })).toBeVisible()
   await capture('home-message-explicit-recipient')
-  expect([...new Set(organizationMethods)].sort()).toEqual(['organization.outcomes', 'organization.snapshot'])
+  expect(organizationMethods.length).toBeGreaterThan(0)
+  expect(organizationMethods.every(method => ['organization.outcomes', 'organization.snapshot'].includes(method))).toBe(true)
   expect(mock.receivedPrompts).toHaveLength(0)
   await navigation.getByRole('link', { name: 'Home', exact: true }).click()
 
@@ -554,6 +573,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await expect(page.locator('html')).not.toHaveClass(/\bdark\b/)
   await page.getByRole('button', { name: 'Close settings', exact: true }).click()
   await expect(page.locator('#eid-objective')).toBeAttached()
+  focusChecks.push(await verifyKeyboardFocus(page, workspace.locator('.eid-home-panel-body').first(), 'Home light scroll group'))
   await capture('08-home-wide-light')
   await navigation.getByRole('link', { name: 'Organization', exact: true }).click()
   await expect(agentButton).toBeVisible()

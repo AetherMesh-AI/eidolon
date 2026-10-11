@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import path from 'node:path'
 
 import { buildAppEnv, type MockBackendFixture, setupMockBackend, waitForAppReady } from './fixtures'
-import { expect, test } from './test'
+import { acknowledgeExpectedErrorBanner, expect, test } from './test'
 
 let fixture: MockBackendFixture | undefined
 const root = path.resolve(import.meta.dirname, '../../..')
@@ -109,6 +109,7 @@ print(ident)
   await page.getByRole('combobox', { name: 'Delivery scope', exact: true }).selectOption('managed_artifact')
   await page.getByRole('button', { name: 'Create objective', exact: true }).click()
   await expect(page.getByText('Scripted creation response lost', { exact: true })).toBeVisible()
+  await acknowledgeExpectedErrorBanner(page, 'Scripted creation response lost')
   expect(methods.filter(method => method === 'organization.checkSubmission')).toHaveLength(0)
   const before = ledger()
   const providerCalls = mock.receivedPrompts.length
