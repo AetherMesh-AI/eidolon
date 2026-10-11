@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { useState } from 'react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -633,4 +634,49 @@ describe('ModelSettings code-skew 503', () => {
     await waitFor(() => expect(recycleBackend).toHaveBeenCalledWith(undefined))
     await waitFor(() => expect(getGlobalModelOptions.mock.calls.length).toBeGreaterThan(1))
   })
+})
+
+
+it('retains real provider, model and auxiliary drafts through overview/detail and keeps Apply explicit', async () => {
+  const { ModelSettings } = await import('./model-settings')
+  const { SettingsOverview } = await import('./settings-overview')
+  getGlobalModelOptions.mockResolvedValue({ providers: [
+    { name: 'Nous', slug: 'nous', models: ['hermes-4', 'hermes-4-mini'], authenticated: true },
+    { name: 'Lab', slug: 'lab', models: ['lab-model'], authenticated: true }
+  ] })
+  getRecommendedDefaultModel.mockResolvedValue({ provider: 'lab', model: 'lab-model', free_tier: null })
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+
+  function Workspace() {
+    const [modelOnly, setModelOnly] = useState(false)
+
+    return <><button onClick={() => setModelOnly(false)}>Return overview</button><SettingsOverview model={<ModelSettings />} modelOnly={modelOnly} notifications={<span>Device preferences</span>} onSelect={() => setModelOnly(true)} /></>
+  }
+
+  const view = render(<MemoryRouter><QueryClientProvider client={client}><Workspace /></QueryClientProvider></MemoryRouter>)
+  const mainProvider = (await screen.findAllByRole('combobox'))[0]
+  fireEvent.click(mainProvider)
+  fireEvent.click(await screen.findByRole('option', { name: 'Lab', exact: true }))
+  const mainModel = screen.getAllByRole('combobox')[1]
+  fireEvent.click(mainModel)
+  fireEvent.click(await screen.findByRole('option', { name: 'lab-model', exact: true }))
+  fireEvent.click(screen.getAllByRole('button', { name: 'Change', exact: true })[0])
+  const aux = view.container.querySelector('#aux-task-vision')!
+  const auxSelects = aux.querySelectorAll('[role=combobox]')
+  fireEvent.click(auxSelects[0])
+  fireEvent.click(await screen.findByRole('option', { name: 'Nous', exact: true }))
+  fireEvent.click(auxSelects[1])
+  fireEvent.click(await screen.findByRole('option', { name: 'hermes-4-mini', exact: true }))
+  fireEvent.click(screen.getByRole('button', { name: 'Open Model', exact: true }))
+  expect(screen.getAllByRole('combobox')[0]).toBe(mainProvider)
+  expect(mainProvider.textContent).toContain('Lab')
+  expect(mainModel.textContent).toContain('lab-model')
+  expect(auxSelects[1].textContent).toContain('hermes-4-mini')
+  fireEvent.click(screen.getByRole('button', { name: 'Return overview' }))
+  expect(screen.getAllByRole('combobox')[0]).toBe(mainProvider)
+  expect(auxSelects[1].textContent).toContain('hermes-4-mini')
+  expect(setModelAssignment).not.toHaveBeenCalled()
+  expect(saveHermesConfig).not.toHaveBeenCalled()
+  fireEvent.click(screen.getAllByRole('button', { name: 'Apply', exact: true })[1])
+  await waitFor(() => expect(setModelAssignment).toHaveBeenCalledWith(expect.objectContaining({ provider: 'nous', model: 'hermes-4-mini' })))
 })

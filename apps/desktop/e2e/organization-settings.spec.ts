@@ -127,7 +127,8 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
   focusChecks.push(await verifyKeyboardFocus(page, openProviders, 'overview providers narrow'))
   await capture('settings-overview-narrow')
   await openProviders.click()
-  await expect(title).toHaveText('Providers')
+  await expect(page).toHaveURL(/tab=providers/);
+  await expect(title).toHaveText('Accounts')
   await resize(1536, 961)
   await settings.getByRole('button', { name: 'Model', exact: true }).click()
   // Wait for the real editor, not the gap before lazy content mounts its skeleton.

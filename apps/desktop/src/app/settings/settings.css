@@ -150,3 +150,9 @@
 .eid-settings-card-body > .settings-content { height: 100%; }
 .eid-settings-card-body .settings-content > div { padding: 7px; scroll-padding: 7px; }
 @media (max-width: 1250px) { .eid-settings-cards { grid-template-columns: minmax(0, 1fr); } }
+
+/* Overview/detail keep the same keyed Model owner and its unapplied draft. */
+.eid-settings-controls > .eid-settings-model-only { display: block; flex: 1; min-height: 0; }
+.eid-settings-model-only > .eid-settings-card { height: 100%; padding: 0; border: 0; border-radius: 0; background: transparent; }
+.eid-settings-model-only > .eid-settings-card > header { display: none; }
+.eid-settings-model-only .eid-settings-card-body { margin: 0; }

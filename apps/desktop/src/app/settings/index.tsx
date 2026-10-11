@@ -398,9 +398,10 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
   )
 
   const activeSettingsContent =
-    activeView === 'overview' ? (
+    (activeView === 'overview' || activeView === 'config:model') ? (
       <SettingsOverview
         model={<ConfigSettings activeSectionId="model" importInputRef={importInputRef} onConfigSaved={onConfigSaved} onMainModelChanged={onMainModelChanged} />}
+        modelOnly={activeView === 'config:model'}
         notifications={<NotificationsSettings />}
         onSelect={setActiveView}
       />

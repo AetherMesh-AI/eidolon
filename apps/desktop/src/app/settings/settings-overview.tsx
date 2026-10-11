@@ -7,7 +7,8 @@ import { Bell, Cpu, KeyRound, Lock, Palette, Wrench } from '@/lib/icons'
 import type { SettingsView } from './types'
 
 /** Compose existing owners; never aggregate their writes into a global save. */
-export function SettingsOverview({ model, notifications, onSelect }: {
+export function SettingsOverview({ model, notifications, onSelect, modelOnly = false }: {
+  modelOnly?: boolean
   model: ReactNode
   notifications: ReactNode
   onSelect(view: SettingsView): void
@@ -24,8 +25,8 @@ export function SettingsOverview({ model, notifications, onSelect }: {
     { id: 'config:appearance', title: t.settings.sections.appearance, icon: Palette }
   ] as const
 
-  return <div className="eid-settings-cards">
-    {cards.map(card => <section aria-label={card.title} className={'content' in card ? 'eid-settings-card eid-settings-card-editor' : 'eid-settings-card'} key={card.id}>
+  return <div className={modelOnly ? 'eid-settings-cards eid-settings-model-only' : 'eid-settings-cards'}>
+    {cards.filter(card => !modelOnly || card.id === 'config:model').map(card => <section aria-label={card.title} className={'content' in card ? 'eid-settings-card eid-settings-card-editor' : 'eid-settings-card'} key={card.id}>
       <header>
         <span className="eid-settings-card-icon"><card.icon /></span>
         <div><h3>{card.title}</h3><p>{copy.sections[card.id]}</p></div>
