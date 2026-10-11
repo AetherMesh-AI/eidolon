@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { type MockBackendFixture, setupMockBackend, waitForAppReady } from './fixtures'
+import { verifyKeyboardFocus } from './focus-visibility'
 import { expect, test } from './test'
 
 let fixture: MockBackendFixture | undefined
@@ -27,6 +28,7 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
   const settings = page.locator('.eid-settings-page')
   const title = settings.locator('.eid-settings-main > header h2')
   const captures: object[] = []
+  const focusChecks: object[] = []
   const configPath = join(sandbox.hermesHome, 'config.yaml')
   const sourceCommit = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
   const sourceTree = execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim()
@@ -88,7 +90,8 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
           sourceTree,
           scenario: 'synthetic-temporary-profile-settings',
           providerCalls: mock.receivedPrompts.length,
-          captures
+          captures,
+          focusChecks
         },
         null,
         2
@@ -210,7 +213,8 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
 
   for (const [theme, key] of [
     ['Eidolon', 'eidolon'],
-    ['Catppuccin', 'catppuccin']
+    ['Catppuccin', 'catppuccin'],
+    ['AetherMesh', 'nous']
   ]) {
     for (const mode of ['Light', 'Dark']) {
       await settings.getByRole('button', { name: 'Appearance', exact: true }).click()
@@ -220,8 +224,12 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
         .click()
       await settings.getByRole('button', { name: mode, exact: true }).click()
       await expect(page.locator('html')).toHaveAttribute('data-hermes-theme', key)
+      focusChecks.push(await verifyKeyboardFocus(page, settings.locator('.eid-settings-layout > aside').getByRole('button', { name: 'Appearance', exact: true }), `${key}-${mode}-navigation`))
       await capture(`settings-appearance-${key}-${mode.toLowerCase()}`)
+      focusChecks.push(await verifyKeyboardFocus(page, settings.locator('.eid-settings-controls input:visible').first(), `${key}-${mode}-editor`))
+      await capture(`settings-focus-editor-${key}-${mode.toLowerCase()}`)
       await resize(760)
+      focusChecks.push(await verifyKeyboardFocus(page, settings.locator('.eid-settings-layout > div').getByRole('button', { name: 'Appearance', exact: true }), `${key}-${mode}-compact-selector`))
       await capture(`settings-appearance-${key}-${mode.toLowerCase()}-narrow`)
       await resize(1440)
       await settings.getByRole('button', { name: 'Close settings', exact: true }).click()
