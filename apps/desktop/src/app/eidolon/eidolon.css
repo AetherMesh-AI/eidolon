@@ -503,6 +503,7 @@
 @media (min-width: 1101px) and (max-height: 800px) {
   .eid-page:has(> .eid-objective-hero) { padding-top: 12px; }
   .eid-objective-hero { margin-top: 8px; margin-bottom: 8px; }
+  .eid-page:has(> .eid-objective-hero) > .eid-inline { margin-block: 10px; }
   .eid-objective-overview { margin-top: 12px; }
   .eid-objective-progress-main, .eid-objective-progress-aside { gap: 12px; }
   .eid-objective-overview .eid-home-panel { padding: 14px; }
