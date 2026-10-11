@@ -520,13 +520,13 @@ test('keeps native organization navigation, roster and objective layouts usable 
       }),
       tasks: snapshot.tasks.flatMap(task => [task, ...[1, 2].map(index => ({ ...task, id: `${task.id}-followup-${index}`, title: `${task.title} · follow-up ${index}` }))])
     }
-    await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+    await page.reload()
     await expect(assignmentCards.first().locator('.eid-progress-tasks > li')).toHaveCount(3)
     await workspace.evaluate(element => { element.scrollTop = 0 })
     await expect(phase.getByRole('button', { name: 'Pause new dispatch', exact: true })).toBeInViewport({ ratio: 1 })
     await capture(`objective-multiple-tasks-${mode}`)
     displayedSnapshot = snapshot
-    await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+    await page.reload()
     await expect(assignmentCards.first().locator('.eid-progress-tasks > li')).toHaveCount(1)
     await resize(1280, 720)
     await workspace.evaluate(element => { element.scrollTop = 0 })

@@ -291,3 +291,5 @@ history and a short English retained-read error. It does not cover every long
 translation, expanded disclosure or uncertain-send combination. At200% zoom,
 keyboard focus brings each target into view; the entire transcript and composer
 are not claimed to be simultaneously visible.
+
+The first Objective-controls native run (38137080891, head c0293401, tree 5071de4e) retained a 1536×961 dark capture with phase y228.33/h146.52, progress y390.84/h99.28 and cards y532.72/h246.64. The main column remained x222/w888.63. Twenty native scenarios passed, including real pause/resume; priority focus measured a 1px animated outline and the dense fixture did not refresh on a synthetic window-focus event. No short-window or full zoom acceptance is claimed from that failed run. The follow-up excludes outline width from Objective-button transitions, reloads the dense fixture through the existing snapshot path, and trims 12px of phase spacing. Existing focus, viewport and durable-state assertions remain unchanged; fresh native evidence is required.

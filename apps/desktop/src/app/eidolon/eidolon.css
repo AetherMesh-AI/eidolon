@@ -333,10 +333,11 @@
 .eid-progress-metrics { display: grid; gap: 6px; min-width: 0; }
 .eid-progress-metrics > :is(.eid-home-progress, .eid-task-counts) { margin: 0; }
 .eid-objective-overview :is(.eid-objective-phase, .eid-progress-summary) { padding: 12px 14px; }
+.eid-objective-overview .eid-objective-phase { padding-block: 10px; }
 .eid-objective-phase-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 12px; }
 .eid-objective-phase-heading > button { flex: none; }
-.eid-objective-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 8px; }
-.eid-objective-actions > section { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; font-size: 12px; }
+.eid-objective-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 6px; }
+.eid-objective-actions > section { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; font-size: 12px; }
 .eid-objective-actions p, .eid-objective-actions .eid-inline { margin: 0; }
 .eid-objective-actions .eid-inline { gap: 6px; }
 .eid-objective-actions summary { cursor: pointer; }
@@ -508,6 +509,9 @@
   .eid-team-work-grid .eid-home-panel > header { margin-bottom: 10px; }
   .eid-team-work-grid .eid-progress-tasks { margin-top: 12px; }
 }
+
+/* Focus outlines must appear immediately, without transition-all interpolating their width. */
+.eid-page:has(> .eid-objective-hero) button { transition-property: color, background-color, border-color, box-shadow; }
 
 /* Keep the outline at least two CSS pixels after native fractional zoom rounding. */
 .eid-page:has(> .eid-objective-hero) :is(button, a, input, textarea, select, summary):focus-visible { outline-width: 3px; }
