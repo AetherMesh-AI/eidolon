@@ -378,6 +378,8 @@ test('keeps native organization navigation, roster and objective layouts usable 
     await page.keyboard.press('Tab')
     await expect(members.getByRole('button', { name: /Robin/ })).toBeFocused()
     await page.keyboard.press('Tab')
+    await expect(page.locator('.eid-message-conversation .eid-owner-chat-actions span[tabindex="0"]')).toBeFocused()
+    await page.keyboard.press('Tab')
     await expect(context.getByRole('link', { name: 'Prepare the autumn release brief', exact: true })).toBeFocused()
     await page.keyboard.press('Enter')
     await expect(page.getByRole('region', { name: 'Objective overview', exact: true })).toBeVisible()
