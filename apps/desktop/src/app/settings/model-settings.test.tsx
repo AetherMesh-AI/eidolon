@@ -87,7 +87,7 @@ afterEach(() => {
   profileSwitchHandler = null
 })
 
-async function renderModelSettings(scopeProfile?: string) {
+async function renderModelSettings(scopeProfile?: string, compactOverview = false) {
   const { ModelSettings } = await import('./model-settings')
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
 
@@ -96,7 +96,7 @@ async function renderModelSettings(scopeProfile?: string) {
     // needs a router context in tests (the app provides HashRouter at root).
     <MemoryRouter>
       <QueryClientProvider client={client}>
-        <ModelSettings scopeProfile={scopeProfile} />
+        <ModelSettings compactOverview={compactOverview} scopeProfile={scopeProfile} />
       </QueryClientProvider>
     </MemoryRouter>
   )
@@ -415,16 +415,22 @@ describe('ModelSettings', () => {
     expect(screen.getByText('nous')).toBeTruthy()
   })
 
-  it('shows a persistent banner when a loaded aux slot mismatches the main provider', async () => {
+  it.each([false, true])('shows a persistent aux mismatch banner with compact overview %s', async compactOverview => {
     getAuxiliaryModels.mockResolvedValueOnce({
       main: { provider: 'nous', model: 'hermes-4' },
       tasks: [{ task: 'curator', provider: 'openrouter', model: 'anthropic/claude-opus-4.7', base_url: '' }]
     })
 
-    await renderModelSettings()
+    const view = await renderModelSettings(undefined, compactOverview)
 
     // Banner present on load, no switch required.
-    expect(await screen.findByText(/still run on/)).toBeTruthy()
+    const warning = await screen.findByText(/still run on/)
+    expect(warning).toBeTruthy()
+    if (compactOverview) {
+      const disclosure = view.container.querySelector('.eid-settings-model-advanced') as HTMLDetailsElement
+      expect(disclosure.open).toBe(false)
+      expect(disclosure.contains(warning)).toBe(false)
+    }
   })
 })
 
@@ -667,7 +673,7 @@ it('retains real provider, model and auxiliary drafts through overview/detail an
   function Workspace() {
     const [editorOnly, setModelOnly] = useState(false)
 
-    return <><button onClick={() => setModelOnly(false)}>Return overview</button><SettingsOverview editor={<ModelSettings />} editorOnly={editorOnly} notifications={<NotificationsSettings />} onSelect={() => setModelOnly(true)} /></>
+    return <><button onClick={() => setModelOnly(false)}>Return overview</button><SettingsOverview editor={<ModelSettings compactOverview={!editorOnly} />} editorOnly={editorOnly} notifications={<NotificationsSettings compactOverview />} onSelect={() => setModelOnly(true)} /></>
   }
 
   const view = render(<MemoryRouter><QueryClientProvider client={client}><Workspace /></QueryClientProvider></MemoryRouter>)
@@ -678,6 +684,10 @@ it('retains real provider, model and auxiliary drafts through overview/detail an
   const mainModel = modelRegion.getAllByRole('combobox')[1]
   fireEvent.click(mainModel)
   fireEvent.click(await screen.findByRole('option', { name: 'lab-model' }))
+  const disclosure = view.container.querySelector('.eid-settings-model-advanced') as HTMLDetailsElement
+  expect(disclosure.open).toBe(false)
+  fireEvent.click(disclosure.querySelector('summary')!)
+  expect(disclosure.open).toBe(true)
   fireEvent.click(screen.getAllByRole('button', { name: 'Change' })[0])
   const aux = view.container.querySelector('#aux-task-vision')!
   const auxSelects = aux.querySelectorAll('[role=combobox]')
@@ -701,6 +711,9 @@ it('retains real provider, model and auxiliary drafts through overview/detail an
   expect(setModelAssignment).not.toHaveBeenCalled()
   expect(saveHermesConfig).not.toHaveBeenCalled()
   fireEvent.click(notificationSwitch)
+  expect(disclosure.open).toBe(false)
+  fireEvent.click(disclosure.querySelector('summary')!)
+  expect(disclosure.open).toBe(true)
   fireEvent.click(screen.getAllByRole('button', { name: 'Apply' })[1])
   await waitFor(() => expect(setModelAssignment).toHaveBeenCalledWith(expect.objectContaining({ provider: 'nous', model: 'hermes-4-mini' })))
 })

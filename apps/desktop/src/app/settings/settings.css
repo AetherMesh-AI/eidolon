@@ -164,3 +164,15 @@
 @media (min-width: 1000px) {
   .eid-settings-main:has(> .eid-settings-overview-content) { padding-top: 12px; }
 }
+
+/* The overview scrolls as one page. Secondary editors remain mounted behind
+   native disclosures, preserving drafts and each setting's existing save owner. */
+.eid-settings-cards:not(.eid-settings-model-only) .eid-settings-card-editor { height: auto; }
+.eid-settings-cards:not(.eid-settings-model-only) .eid-settings-card-body { flex: none; }
+.eid-settings-cards:not(.eid-settings-model-only) .settings-content,
+.eid-settings-cards:not(.eid-settings-model-only) .settings-content > div { height: auto; overflow: visible; }
+.eid-settings-cards:not(.eid-settings-model-only) .settings-row:has([role="switch"]) > div { grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; padding-block: 9px; }
+.eid-settings-cards:not(.eid-settings-model-only) .settings-row:has([role="switch"]) > div > div:last-child { justify-self: end; }
+:is(.eid-settings-model-advanced, .eid-settings-notification-sound) > summary:not([hidden]) { cursor: pointer; padding-block: 8px; font-size: 12px; color: var(--ui-text-primary); }
+:is(.eid-settings-model-advanced, .eid-settings-notification-sound)[open] > summary:not([hidden]) { margin-bottom: 12px; }
+.eid-settings-model-advanced > section + section { margin-top: 24px; }

@@ -182,6 +182,7 @@ function StaleAuxWarning({ applying, onReset, slots, taskLabel }: StaleAuxWarnin
 }
 
 interface ModelSettingsProps {
+  compactOverview?: boolean
   /** Notified after the main model is applied, so live UI stores can sync. */
   onMainModelChanged?: (provider: string, model: string) => void
   /** Shared settings "Applies to" scope: a concrete profile to edit instead of
@@ -191,7 +192,7 @@ interface ModelSettingsProps {
   scopeProfile?: string
 }
 
-export function ModelSettings({ onMainModelChanged, scopeProfile }: ModelSettingsProps) {
+export function ModelSettings({ compactOverview = false, onMainModelChanged, scopeProfile }: ModelSettingsProps) {
   const { t } = useI18n()
   const m = t.settings.model
   const [loading, setLoading] = useState(true)
@@ -967,6 +968,12 @@ export function ModelSettings({ onMainModelChanged, scopeProfile }: ModelSetting
         )}
       </section>
 
+      {compactOverview && switchStaleAux.length === 0 && persistentStaleAux.length > 0 && (
+        <StaleAuxWarning applying={applying} onReset={() => void resetAuxiliaryModels()}
+          slots={persistentStaleAux} taskLabel={auxiliaryTaskLabel} />
+      )}
+      <details className="eid-settings-model-advanced" open={compactOverview ? undefined : true}>
+        <summary hidden={!compactOverview}>{t.settings.sections.advanced}</summary>
       <section>
         <div className="mb-2.5 flex items-center justify-between">
           <SectionHeading icon={Cpu} title={m.auxiliaryTitle} />
@@ -980,7 +987,7 @@ export function ModelSettings({ onMainModelChanged, scopeProfile }: ModelSetting
           </Button>
         </div>
         <p className="mb-2 text-xs text-muted-foreground">{m.auxiliaryDesc}</p>
-        {switchStaleAux.length === 0 && persistentStaleAux.length > 0 && (
+        {!compactOverview && switchStaleAux.length === 0 && persistentStaleAux.length > 0 && (
           <div className="mb-2.5">
             <StaleAuxWarning
               applying={applying}
@@ -1361,6 +1368,7 @@ export function ModelSettings({ onMainModelChanged, scopeProfile }: ModelSetting
           </div>
         </section>
       )}
+      </details>
     </div>
   )
 }

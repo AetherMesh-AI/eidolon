@@ -27,7 +27,7 @@ function Caption({ children, className }: { children: ReactNode; className?: str
   return <p className={cn(CAPTION, className)}>{children}</p>
 }
 
-export function NotificationsSettings() {
+export function NotificationsSettings({ compactOverview = false }: { compactOverview?: boolean }) {
   const { t } = useI18n()
   const prefs = useStore($nativeNotifyPrefs)
   const completionSoundVariantId = useStore($completionSoundVariantId)
@@ -62,6 +62,8 @@ export function NotificationsSettings() {
         />
       ))}
 
+      <details className="eid-settings-notification-sound" open={compactOverview ? undefined : true}>
+        <summary hidden={!compactOverview}>{copy.completionSoundTitle}</summary>
       <ListRow
         action={
           <div className="flex flex-wrap items-center justify-end gap-2">
@@ -114,6 +116,7 @@ export function NotificationsSettings() {
         </Button>
         <Caption>{copy.focusedHint}</Caption>
       </div>
+      </details>
     </SettingsContent>
   )
 }

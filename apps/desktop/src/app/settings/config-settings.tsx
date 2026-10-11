@@ -52,6 +52,7 @@ import { QuickEntrySettings } from './quick-entry-settings'
 
 export function ConfigSettings({
   activeSectionId,
+  compactOverview = false,
   onConfigSaved,
   onMainModelChanged,
   importInputRef
@@ -65,6 +66,7 @@ export function ConfigSettings({
   return (
     <ConfigSettingsInner
       activeSectionId={activeSectionId}
+      compactOverview={compactOverview}
       importInputRef={importInputRef}
       key={scopeProfile ?? '__active__'}
       onConfigSaved={onConfigSaved}
@@ -76,6 +78,7 @@ export function ConfigSettings({
 
 interface ConfigSettingsProps {
   activeSectionId: string
+  compactOverview?: boolean
   onConfigSaved?: () => void
   onMainModelChanged?: (provider: string, model: string) => void
   importInputRef: React.RefObject<HTMLInputElement | null>
@@ -83,6 +86,7 @@ interface ConfigSettingsProps {
 
 function ConfigSettingsInner({
   activeSectionId,
+  compactOverview = false,
   onConfigSaved,
   onMainModelChanged,
   importInputRef,
@@ -386,7 +390,7 @@ function ConfigSettingsInner({
       <SettingsProfileScope className="mb-5" />
       {activeSectionId === 'model' && (
         <div className="mb-6">
-          <ModelSettings onMainModelChanged={onMainModelChanged} scopeProfile={scopeProfile} />
+          <ModelSettings compactOverview={compactOverview} onMainModelChanged={onMainModelChanged} scopeProfile={scopeProfile} />
         </div>
       )}
       {/* Device-local desktop prefs (not config.yaml) — they live here since
