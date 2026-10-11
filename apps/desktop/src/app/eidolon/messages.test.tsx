@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, expect, it, vi } from 'vitest'
 
@@ -120,7 +120,7 @@ it('organization entry offers explicit executive choice without opening or sendi
   expect(screen.queryByRole('button', { name: /Worker 1|Retired executive|Unknown lifecycle|Missing identity|Blank identity/ })).toBeNull()
   expect(screen.queryByRole('button', { name: 'Chat' })).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: /Product executive/ }))
-  expect(screen.getByRole('heading', { name: 'Product executive' })).toBeTruthy()
+  expect(within(screen.getByRole('region', { name: 'Member conversation' })).getByRole('heading', { name: 'Product executive' })).toBeTruthy()
   expect(adapter.openOwnerChat).not.toHaveBeenCalled()
   expect(adapter.sendOwnerChat).not.toHaveBeenCalled()
   view.rerender(<MemoryRouter initialEntries={['/messages?recipient=executive']}><Messages adapter={adapter} snapshot={{ ...snapshot, agents: [] }} /></MemoryRouter>)
