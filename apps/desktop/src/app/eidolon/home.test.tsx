@@ -228,3 +228,18 @@ it('returns from Settings to the open originating setup with its unsent draft', 
     HTMLElement.prototype.scrollIntoView = original
   }
 })
+
+
+it('opens organization evidence from the accepted-results action without creating work', () => {
+  const current = { ...snapshot, outcomes: { generation: '1', total: 1, unread: 0, hasMore: false, nextCursor: null, items: [outcome] } }
+  const adapter = { mode: 'runtime', getSnapshot: () => current, createObjective: vi.fn() } as unknown as RuntimeOrganizationAdapter
+  function Location() {
+    const location = useLocation()
+    return <output>{location.pathname + location.search}</output>
+  }
+  render(<MemoryRouter initialEntries={['/home']}><Home adapter={adapter} snapshot={current} /><Location /></MemoryRouter>)
+  expect(screen.getByRole('heading', { name: outcome.title })).toBeTruthy()
+  fireEvent.click(screen.getByRole('link', { name: 'View deliverables →' }))
+  expect(screen.getByText('/artifacts?source=organization')).toBeTruthy()
+  expect(adapter.createObjective).not.toHaveBeenCalled()
+})
