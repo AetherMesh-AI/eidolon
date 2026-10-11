@@ -18,6 +18,7 @@ import {
   setSessionsLoading
 } from '@/store/session'
 import { $stalledSessionIds } from '@/store/session-states'
+import { beginSourceSwitchIntent, isCurrentSourceSwitchIntent } from '@/store/source-switch-intent'
 
 import {
   $gatewaySwitching,
@@ -90,6 +91,16 @@ describe('wipeSessionListsForGatewaySwitch', () => {
 })
 
 describe('beginGatewaySwitch / endGatewaySwitch — the shared switch commit point (#93937)', () => {
+  it('Settings entry invalidates pending source intent, while a pick keeps its intent through commit', () => {
+    const pick = beginSourceSwitchIntent()
+    const pickBarrier = beginGatewaySwitch(pick)
+    expect(isCurrentSourceSwitchIntent(pick)).toBe(true)
+    endGatewaySwitch(pickBarrier)
+    const settingsBarrier = beginGatewaySwitch()
+    expect(isCurrentSourceSwitchIntent(pick)).toBe(false)
+    endGatewaySwitch(settingsBarrier)
+  })
+
   beforeEach(() => {
     $gatewaySwitching.set(false)
     setSessions([{ id: 's1', title: 'old', profile: 'default' } as never])

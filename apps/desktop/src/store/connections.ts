@@ -22,6 +22,7 @@ import {
   requestFreshSession
 } from '@/store/profile'
 import { $connection } from '@/store/session'
+import { beginSourceSwitchIntent, currentSourceSwitchIntent, isCurrentSourceSwitchIntent } from '@/store/source-switch-intent'
 
 const LAST_PROFILE_STORAGE_KEY = 'hermes.desktop.lastProfileByConnection'
 
@@ -233,9 +234,10 @@ export async function initializeConnectionsRegistry(): Promise<DesktopConnection
 
   if ($activeConnectionId.get() === preferredId) {
     const revision = switchRevision
+    const intent = currentSourceSwitchIntent()
     const profile = normalizeProfileKey($connection.get()?.profile)
     await rememberConnection(preferredId, () =>
-      revision === switchRevision && $activeConnectionId.get() === preferredId &&
+      revision === switchRevision && isCurrentSourceSwitchIntent(intent) && $activeConnectionId.get() === preferredId &&
       normalizeProfileKey($connection.get()?.profile) === profile
     )
   } else {
@@ -308,12 +310,13 @@ export async function selectConnection(connectionId: string, options: SelectConn
     return active?.connectionId === connectionId && normalizeProfileKey(active.profile) === targetProfile
   }
 
-  const startingRevision = switchRevision
-  const sourceStillCurrent = () => startingRevision === switchRevision && targetIsActive()
-
   if (pendingTarget === targetKey) {
     return
   }
+
+  const intent = beginSourceSwitchIntent()
+  const startingRevision = switchRevision
+  const sourceStillCurrent = () => startingRevision === switchRevision && isCurrentSourceSwitchIntent(intent) && targetIsActive()
 
   const switching =
     pendingTarget !== null ||
@@ -362,7 +365,7 @@ export async function selectConnection(connectionId: string, options: SelectConn
     // A newer click owns the switch from here on. The superseded dial never
     // activates, so the user doesn't flip through it on the way to the source
     // they picked last; its socket stays warm for that click or idles out.
-    if (revision !== switchRevision) {
+    if (revision !== switchRevision || !isCurrentSourceSwitchIntent(intent)) {
       return
     }
 
@@ -382,12 +385,13 @@ export async function selectConnection(connectionId: string, options: SelectConn
       try {
         const activation = ensureGatewayAgent(connectionId, targetProfile, {
           signal: activationController.signal,
+          intent,
           beforeActivate: () => {
-            if (revision !== switchRevision) {
+            if (revision !== switchRevision || !isCurrentSourceSwitchIntent(intent)) {
               return false
             }
 
-            token = beginGatewaySwitch()
+            token = beginGatewaySwitch(intent)
             markActivationStarted()
 
             return true
@@ -423,7 +427,7 @@ export async function selectConnection(connectionId: string, options: SelectConn
         }
       }
 
-      if (revision !== switchRevision) {
+      if (revision !== switchRevision || !isCurrentSourceSwitchIntent(intent)) {
         return
       }
 
@@ -442,7 +446,7 @@ export async function selectConnection(connectionId: string, options: SelectConn
     // already makes the latest source win; this guard also prevents an older
     // request from repainting its profile list after that newer activation.
     if (revision === switchRevision) {
-      const isCurrent = () => revision === switchRevision && targetIsActive()
+      const isCurrent = () => revision === switchRevision && isCurrentSourceSwitchIntent(intent) && targetIsActive()
       await rememberConnection(connectionId, isCurrent)
 
       // Remembering is bounded but asynchronous. A newer click may now own
@@ -462,7 +466,7 @@ export async function selectConnection(connectionId: string, options: SelectConn
       await refreshActiveProfile()
     }
   } catch (error) {
-    if (revision === switchRevision) {
+    if (revision === switchRevision && isCurrentSourceSwitchIntent(intent)) {
       if (token !== null) {
         // This switch wiped for a commit that never landed. The previous
         // source is still the active one, and nothing reactive re-pulls its

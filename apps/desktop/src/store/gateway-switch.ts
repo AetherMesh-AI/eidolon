@@ -26,6 +26,7 @@ import {
 import { clearAllSessionControl } from '@/store/session-control'
 import { resetSessionPinMirror } from '@/store/session-pin-sync'
 import { clearAllSessionStates } from '@/store/session-states'
+import { beginSourceSwitchIntent, type SourceSwitchIntent } from '@/store/source-switch-intent'
 import { clearTranscriptTails } from '@/store/transcript-tail-cache'
 
 // True while a connection switch is mid-flight — a Settings → Gateway apply
@@ -82,7 +83,10 @@ export function registerGatewaySwitchLifecycle(lifecycle: GatewaySwitchLifecycle
  * $activeSessionId still named the previous backend's runtime and sent that id
  * to a backend that had never minted it — "session not found" (#93937).
  */
-export function beginGatewaySwitch(): GatewaySwitchToken {
+export function beginGatewaySwitch(intent?: SourceSwitchIntent): GatewaySwitchToken {
+  // A connection pick carries its existing intent through its commit barrier.
+  // Settings applies enter here directly and must invalidate older continuations.
+  if (intent === undefined) { beginSourceSwitchIntent() }
   const token = ++latestSwitchToken
   let wipeStarted = false
 
