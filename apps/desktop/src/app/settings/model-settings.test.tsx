@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { useState } from 'react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -100,6 +101,22 @@ async function renderModelSettings(scopeProfile?: string) {
     </MemoryRouter>
   )
 }
+
+it('announces catalog loading and exposes a rejected load without showing Apply as ready', async () => {
+  let rejectCatalog!: (reason: Error) => void
+  getGlobalModelOptions.mockReturnValueOnce(new Promise((_, reject) => { rejectCatalog = reject }))
+  await renderModelSettings()
+
+  const pending = screen.getByRole('status', { name: /loading/i })
+  expect(pending.getAttribute('aria-busy')).toBe('true')
+  expect(screen.queryByRole('button', { name: 'Apply' })).toBeNull()
+
+  await act(async () => rejectCatalog(new Error('Catalog temporarily unavailable')))
+  const failure = await screen.findByRole('alert')
+  expect(failure.textContent).toContain('Catalog temporarily unavailable')
+  expect(screen.queryByRole('status', { name: /loading/i })).toBeNull()
+  expect((screen.getByRole('button', { name: 'Apply' }) as HTMLButtonElement).disabled).toBe(true)
+})
 
 describe('ModelSettings profile scope', () => {
   // #90549: the API helpers treat `null` as "deliberately target the
@@ -633,4 +650,57 @@ describe('ModelSettings code-skew 503', () => {
     await waitFor(() => expect(recycleBackend).toHaveBeenCalledWith(undefined))
     await waitFor(() => expect(getGlobalModelOptions.mock.calls.length).toBeGreaterThan(1))
   })
+})
+
+
+it('retains real provider, model and auxiliary drafts through overview/detail and keeps Apply explicit', async () => {
+  const { ModelSettings } = await import('./model-settings')
+  const { SettingsOverview } = await import('./settings-overview')
+  const { NotificationsSettings } = await import('./notifications-settings')
+  getGlobalModelOptions.mockResolvedValue({ providers: [
+    { name: 'Nous', slug: 'nous', models: ['hermes-4', 'hermes-4-mini'], authenticated: true },
+    { name: 'Lab', slug: 'lab', models: ['lab-model'], authenticated: true }
+  ] })
+  getRecommendedDefaultModel.mockResolvedValue({ provider: 'lab', model: 'lab-model', free_tier: null })
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+
+  function Workspace() {
+    const [editorOnly, setModelOnly] = useState(false)
+
+    return <><button onClick={() => setModelOnly(false)}>Return overview</button><SettingsOverview editor={<ModelSettings />} editorOnly={editorOnly} notifications={<NotificationsSettings />} onSelect={() => setModelOnly(true)} /></>
+  }
+
+  const view = render(<MemoryRouter><QueryClientProvider client={client}><Workspace /></QueryClientProvider></MemoryRouter>)
+  const modelRegion = within(screen.getByRole('region', { name: 'Model' }))
+  const mainProvider = (await modelRegion.findAllByRole('combobox'))[0]
+  fireEvent.click(mainProvider)
+  fireEvent.click(await screen.findByRole('option', { name: 'Lab' }))
+  const mainModel = modelRegion.getAllByRole('combobox')[1]
+  fireEvent.click(mainModel)
+  fireEvent.click(await screen.findByRole('option', { name: 'lab-model' }))
+  fireEvent.click(screen.getAllByRole('button', { name: 'Change' })[0])
+  const aux = view.container.querySelector('#aux-task-vision')!
+  const auxSelects = aux.querySelectorAll('[role=combobox]')
+  fireEvent.click(auxSelects[0])
+  fireEvent.click(await screen.findByRole('option', { name: 'Nous' }))
+  fireEvent.click(auxSelects[1])
+  fireEvent.click(await screen.findByRole('option', { name: 'hermes-4-mini' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Open Model' }))
+  expect(modelRegion.getAllByRole('combobox')[0]).toBe(mainProvider)
+  expect(mainProvider.textContent).toContain('Lab')
+  expect(mainModel.textContent).toContain('lab-model')
+  expect(auxSelects[1].textContent).toContain('hermes-4-mini')
+  fireEvent.click(screen.getByRole('button', { name: 'Return overview' }))
+  expect(modelRegion.getAllByRole('combobox')[0]).toBe(mainProvider)
+  expect(auxSelects[1].textContent).toContain('hermes-4-mini')
+  const notificationSwitch = screen.getByRole('region', { name: 'Notifications' }).querySelector('[role=switch]')!
+  fireEvent.click(notificationSwitch)
+  expect(mainProvider.textContent).toContain('Lab')
+  expect(mainModel.textContent).toContain('lab-model')
+  expect(auxSelects[1].textContent).toContain('hermes-4-mini')
+  expect(setModelAssignment).not.toHaveBeenCalled()
+  expect(saveHermesConfig).not.toHaveBeenCalled()
+  fireEvent.click(notificationSwitch)
+  fireEvent.click(screen.getAllByRole('button', { name: 'Apply' })[1])
+  await waitFor(() => expect(setModelAssignment).toHaveBeenCalledWith(expect.objectContaining({ provider: 'nous', model: 'hermes-4-mini' })))
 })

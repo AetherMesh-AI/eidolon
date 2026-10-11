@@ -1,9 +1,12 @@
 /** Source copy; unreviewed translations use the catalog's English fallback. */
 export const settingsWorkspaceEn = {
   heading: 'Settings',
+  overview: 'Overview',
+  openSection: 'Open {section}',
   introduction: 'Configure this desktop and its connected runtime.',
   saveNote: 'Some changes save automatically. Use each page’s Save or confirmation controls where shown.',
   sections: {
+    overview: 'Model, notifications and configuration in one workspace',
     'config:model': 'Models, providers and response defaults',
     'config:chat': 'Conversation behavior and presentation',
     'config:appearance': 'Language, themes and desktop appearance',

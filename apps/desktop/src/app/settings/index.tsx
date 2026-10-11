@@ -56,9 +56,11 @@ import { NotificationsSettings } from './notifications-settings'
 import { PluginsSettings } from './plugins-settings'
 import { PROVIDER_VIEWS, ProvidersSettings, type ProviderView } from './providers-settings'
 import { SessionsSettings } from './sessions-settings'
+import { SettingsOverview } from './settings-overview'
 import type { SettingsPageProps, SettingsView as SettingsViewId } from './types'
 
 const SETTINGS_VIEWS: readonly SettingsViewId[] = [
+  'overview',
   ...SECTIONS.map(s => `config:${s.id}` as SettingsViewId),
   'providers',
   'gateway',
@@ -95,7 +97,7 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
     }
   }, [navigate, search])
 
-  const [activeView, setActiveView] = useRouteEnumParam('tab', SETTINGS_VIEWS, 'config:model' as SettingsViewId)
+  const [activeView, setActiveView] = useRouteEnumParam('tab', SETTINGS_VIEWS, 'overview' as SettingsViewId)
 
   // Connections merged into the unified Gateways page: land old
   // `?tab=connections` routes/bookmarks there instead of a dead entry.
@@ -176,6 +178,7 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
 
   const navGroups: OverlayNavGroup[] = useMemo(
     () => [
+      { active: activeView === 'overview', icon: Settings2, id: 'overview', label: copy.overview, onSelect: () => setActiveView('overview') },
       ...SECTIONS.map(s => {
         const view = `config:${s.id}` as SettingsViewId
 
@@ -307,7 +310,7 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
         onSelect: () => setActiveView('about')
       }
     ],
-    [activeView, keysView, providerView, t, setActiveView, openProviderView, openKeysView]
+    [activeView, copy.overview, keysView, providerView, t, setActiveView, openProviderView, openKeysView]
   )
 
   // Type-to-search: printable keystrokes on the Settings surface (outside any
@@ -395,7 +398,15 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
   )
 
   const activeSettingsContent =
-    activeView === 'config:appearance' ? (
+    (activeView === 'overview' || (activeView.startsWith('config:') && activeView !== 'config:appearance')) ? (
+      <SettingsOverview
+        editor={<ConfigSettings activeSectionId={activeView === 'overview' ? 'model' : activeView.slice('config:'.length)} importInputRef={importInputRef} onConfigSaved={onConfigSaved} onMainModelChanged={onMainModelChanged} />}
+        editorLabel={activeView === 'overview' ? undefined : t.settings.sections[activeView.slice('config:'.length)]}
+        editorOnly={activeView !== 'overview'}
+        notifications={<NotificationsSettings />}
+        onSelect={setActiveView}
+      />
+    ) : activeView === 'config:appearance' ? (
       <AppearanceSettings />
     ) : activeView === 'about' ? (
       <AboutSettings />
@@ -453,11 +464,11 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
         />
 
         <OverlayMain className="eid-settings-main px-0 pb-0">
-          <header>
+          <header className={activeView === 'overview' ? 'sr-only' : undefined}>
             <h2>{activeLabel}</h2>
             <p>{descriptions[activeView]}</p>
           </header>
-          <div className="eid-settings-controls">{activeSettingsContent}</div>
+          <div className={activeView === 'overview' ? 'eid-settings-overview-content' : 'eid-settings-controls'}>{activeSettingsContent}</div>
           <p className="eid-settings-save-note">{copy.saveNote}</p>
         </OverlayMain>
       </OverlaySplitLayout>

@@ -1,6 +1,6 @@
 /* Settings occupies the workspace. Its page owners still own every write. */
 .eid-settings-page {
-  padding: 24px clamp(18px, 3vw, 40px);
+  padding: 24px 22px;
   color: var(--ui-text-primary);
 }
 .eid-settings-heading {
@@ -24,7 +24,7 @@
 }
 .eid-settings-layout {
   grid-template-columns: minmax(190px, 235px) minmax(0, 1fr);
-  gap: 24px;
+  gap: 12px;
 }
 .eid-settings-layout > aside {
   padding: 6px 8px 12px 6px;
@@ -132,4 +132,35 @@
 .eid-settings-page :is(button, a, input, textarea, select, summary):focus-visible {
   outline: 2px solid var(--ui-accent);
   outline-offset: 3px;
+  /* Button transition-all must not animate the keyboard outline through 1px. */
+  transition-property: color, background-color, border-color, box-shadow;
+}
+
+/* Overview cards retain the real Model and Notifications save owners. */
+.eid-settings-overview-content { flex: 1; min-height: 0; overflow: auto; padding: 7px; margin: -7px; }
+.eid-settings-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.eid-settings-card { min-width: 0; border: 1px solid var(--ui-stroke-tertiary); border-radius: 10px; background: var(--ui-bg-secondary); padding: 16px; }
+.eid-settings-card > header { display: flex; align-items: flex-start; gap: 12px; }
+.eid-settings-card > header > div { flex: 1; min-width: 0; }
+.eid-settings-card h3 { margin: 0 0 5px; font: 500 19px/1.25 Georgia, 'Times New Roman', serif; }
+.eid-settings-card p { margin: 0; color: var(--ui-text-secondary); font-size: 12px; }
+.eid-settings-card-icon { border-radius: 50%; padding: 9px; color: var(--ui-accent); background: var(--ui-bg-tertiary); }
+.eid-settings-card-icon svg { width: 20px; height: 20px; }
+.eid-settings-card > header > button { max-width: 42%; white-space: normal; height: auto; min-height: 30px; }
+.eid-settings-card-editor { display: flex; flex-direction: column; height: 390px; }
+.eid-settings-card-body { flex: 1; min-height: 0; margin-top: 14px; }
+.eid-settings-card-body > .settings-content { height: 100%; }
+.eid-settings-card-body .settings-content > div { padding: 7px; scroll-padding: 7px; }
+@media (max-width: 1250px) { .eid-settings-cards { grid-template-columns: minmax(0, 1fr); } }
+
+/* Overview/detail keep the same keyed Model owner and its unapplied draft. */
+.eid-settings-controls > .eid-settings-model-only { display: block; flex: 1; min-height: 0; }
+.eid-settings-model-only > .eid-settings-card { height: 100%; padding: 0; border: 0; border-radius: 0; background: transparent; }
+.eid-settings-model-only > .eid-settings-card > header { display: none; }
+.eid-settings-model-only .eid-settings-card-body { margin: 0; }
+
+/* Overview has a page heading and card headings; retain its section heading for
+   assistive navigation without a second visible title band above the cards. */
+@media (min-width: 1000px) {
+  .eid-settings-main:has(> .eid-settings-overview-content) { padding-top: 12px; }
 }

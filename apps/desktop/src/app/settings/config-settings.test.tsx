@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { atom } from 'nanostores'
 import { createRef } from 'react'
 import { MemoryRouter } from 'react-router'
@@ -9,13 +9,18 @@ const getHermesConfigRecord = vi.fn()
 const getHermesConfigSchema = vi.fn()
 const saveHermesConfig = vi.fn()
 const getElevenLabsVoices = vi.fn()
+const notifyError = vi.fn()
+vi.mock('@/store/notifications', () => ({ notifyError: (...args: unknown[]) => notifyError(...args), notify: vi.fn() }))
+
+vi.mock('./model-settings', () => ({ ModelSettings: () => <div>Model editor</div>, ModelSettingsSkeleton: () => null }))
 
 vi.mock('@/eidolon', () => ({
   getHermesConfigRecord: () => getHermesConfigRecord(),
   getHermesConfigSchema: () => getHermesConfigSchema(),
   saveHermesConfig: (config: unknown, profile?: string) => saveHermesConfig(config, profile),
   getElevenLabsVoices: () => getElevenLabsVoices(),
-  setApiRequestProfile: () => {}
+  setApiRequestProfile: () => {},
+  profileScopeKey: (scope: string) => scope
 }))
 
 vi.mock('../hooks/use-on-profile-switch', () => ({
@@ -49,18 +54,19 @@ afterEach(() => {
 
 async function renderConfigSettings() {
   const { ConfigSettings } = await import('./config-settings')
+  const { SettingsOverview } = await import('./settings-overview')
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const importInputRef = createRef<HTMLInputElement>()
 
   const view = render(
     <MemoryRouter>
       <QueryClientProvider client={client}>
-        <ConfigSettings activeSectionId="safety" importInputRef={importInputRef} />
+        <SettingsOverview editor={<ConfigSettings activeSectionId="safety" importInputRef={importInputRef} />} editorOnly notifications={null} onSelect={() => {}} />
       </QueryClientProvider>
     </MemoryRouter>
   )
 
-  return { importInputRef, navigateSection: (activeSectionId: string) => view.rerender(<MemoryRouter><QueryClientProvider client={client}><ConfigSettings activeSectionId={activeSectionId} importInputRef={importInputRef} /></QueryClientProvider></MemoryRouter>) }
+  return { importInputRef, navigateSection: (activeSectionId: string) => view.rerender(<MemoryRouter><QueryClientProvider client={client}><SettingsOverview editor={<ConfigSettings activeSectionId={activeSectionId === 'overview' ? 'model' : activeSectionId} importInputRef={importInputRef} />} editorOnly={activeSectionId !== 'overview'} notifications={null} onSelect={() => {}} /></QueryClientProvider></MemoryRouter>) }
 }
 
 describe('ConfigSettings autosave', () => {
@@ -117,6 +123,82 @@ it('serializes a reverted edit behind an in-flight save while navigating configu
     finish({ ok: true })
     await waitFor(() => expect(saveHermesConfig).toHaveBeenCalledTimes(2))
     expect(saveHermesConfig.mock.calls.map(call => call[0])).toEqual([{ checkpoints: { enabled: true } }, { checkpoints: { enabled: false } }])
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+
+it('retains pending configuration autosave when entering Model before debounce', async () => {
+  getHermesConfigRecord.mockResolvedValue({ checkpoints: { enabled: false }, other: 'untouched' })
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+
+  try {
+    const view = await renderConfigSettings()
+    fireEvent.click(await screen.findByRole('switch'))
+    view.navigateSection('model')
+    expect(saveHermesConfig).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(700)
+    await waitFor(() => expect(saveHermesConfig).toHaveBeenCalledTimes(1))
+    expect(saveHermesConfig.mock.calls[0][0]).toEqual({ checkpoints: { enabled: true } })
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+
+it('reports a failed pending save after navigation without writing an explicit Model draft', async () => {
+  getHermesConfigRecord.mockResolvedValue({ checkpoints: { enabled: false } })
+  saveHermesConfig.mockRejectedValueOnce(new Error('Scripted save failure'))
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+
+  try {
+    const view = await renderConfigSettings()
+    fireEvent.click(await screen.findByRole('switch'))
+    view.navigateSection('model')
+    await vi.advanceTimersByTimeAsync(700)
+    await waitFor(() => expect(notifyError).toHaveBeenCalled())
+    expect(saveHermesConfig).toHaveBeenCalledTimes(1)
+    expect(saveHermesConfig.mock.calls[0][0]).toEqual({ checkpoints: { enabled: true } })
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it('fences a pending configuration edit when the explicit profile scope changes', async () => {
+  const { $settingsRequestProfile } = await import('@/store/settings-scope')
+  const fixtureScope = $settingsRequestProfile as ReturnType<typeof atom<string | undefined>>
+  getHermesConfigRecord.mockResolvedValue({ checkpoints: { enabled: false } })
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+
+  try {
+    await renderConfigSettings()
+    fireEvent.click(await screen.findByRole('switch'))
+    await act(async () => { fixtureScope.set('research') })
+    await vi.advanceTimersByTimeAsync(700)
+    expect(saveHermesConfig).not.toHaveBeenCalled()
+    await waitFor(() => expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('false'))
+  } finally {
+    await act(async () => { fixtureScope.set(undefined) })
+    vi.useRealTimers()
+  }
+})
+
+
+it('retains pending configuration autosave when returning to Overview before debounce', async () => {
+  getHermesConfigRecord.mockResolvedValue({ checkpoints: { enabled: false } })
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+
+  try {
+    const view = await renderConfigSettings()
+    view.navigateSection('model')
+    view.navigateSection('safety')
+    fireEvent.click(await screen.findByRole('switch'))
+    view.navigateSection('overview')
+    expect(saveHermesConfig).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(700)
+    await waitFor(() => expect(saveHermesConfig).toHaveBeenCalledTimes(1))
+    expect(saveHermesConfig.mock.calls[0][0]).toEqual({ checkpoints: { enabled: true } })
   } finally {
     vi.useRealTimers()
   }

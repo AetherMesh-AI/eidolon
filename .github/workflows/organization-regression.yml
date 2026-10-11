@@ -230,7 +230,7 @@ jobs:
   desktop:
     name: Organization desktop and native smoke (Linux)
     runs-on: ubuntu-22.04
-    timeout-minutes: 25
+    timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && inputs.full_desktop_suite && 40 || 25 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

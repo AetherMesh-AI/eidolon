@@ -5,6 +5,7 @@ import type { IconComponent } from '@/lib/icons'
 import type { EnvVarInfo } from '@/types/eidolon'
 
 export type SettingsView =
+  | 'overview'
   | 'about'
   | 'billing'
   | 'connections'

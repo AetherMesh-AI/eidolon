@@ -44,8 +44,10 @@ import { useDeepLinkHighlight } from './use-deep-link-highlight'
 // the provider/model catalog loads, instead of collapsing to a centered
 // spinner. Same containers/rhythm as the real render below.
 export function ModelSettingsSkeleton() {
+  const { t } = useI18n()
+
   return (
-    <div className="grid gap-6" data-slot="model-settings-skeleton">
+    <div aria-busy="true" aria-label={t.common.loading} className="grid gap-6" data-slot="model-settings-skeleton" role="status">
       <section>
         <Skeleton className="mb-3 h-3 w-72 max-w-full" />
         <div className="flex flex-wrap items-center gap-2">
@@ -938,7 +940,7 @@ export function ModelSettings({ onMainModelChanged, scopeProfile }: ModelSetting
           </div>
         )}
         {error && (
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-destructive">
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-destructive" role="alert">
             <span>{error}</span>
             {skewRestart && (
               <Button
