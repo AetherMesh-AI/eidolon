@@ -217,7 +217,7 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
             <p className="eid-home-empty">{snapshot.outcomes ? copy.noReady : copy.outcomesUnavailable}</p>
           )}
           </div>
-          <Link className="eid-home-action" to="/artifacts">
+          <Link className="eid-home-action" to="/artifacts?source=organization">
             {copy.viewDeliverables} →
           </Link>
         </section>

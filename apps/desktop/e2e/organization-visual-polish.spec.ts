@@ -666,6 +666,27 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await expect(workspace.locator('.eid-runtime-status')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Open settings', exact: true })).toHaveCount(0)
   await expect(page.locator('#eid-objective')).toBeHidden()
+  // Follow the owner's real accepted-results action through the registered
+  // router. Do not navigate directly to the destination under test.
+  await page.getByRole('region', { name: 'What’s ready?', exact: true }).getByRole('link', { name: 'View deliverables →', exact: true }).click()
+  await expect.poll(() => page.evaluate(() => location.hash)).toBe('#/artifacts?source=organization')
+  const deliverables = page.locator('.eid-deliverables')
+  await expect(deliverables.getByRole('link', { name: 'Organization evidence', exact: true })).toHaveAttribute('aria-current', 'page')
+  await expect(deliverables.getByRole('link', { name: 'Session files', exact: true })).not.toHaveAttribute('aria-current', 'page')
+  await expect(deliverables.locator('.eid-delivery-outcomes').getByRole('heading', { name: 'Document provider boundaries', exact: true })).toBeVisible()
+  await expect(deliverables.locator('.eid-delivery-outcomes').getByRole('link', { name: 'View objective →', exact: true })).toHaveAttribute('href', '#/objectives/research')
+  const evidenceBytes = Buffer.from(await app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
+  writeFileSync(test.info().outputPath('home-accepted-evidence.png'), evidenceBytes)
+  await test.info().attach('home-accepted-evidence', { body: evidenceBytes, contentType: 'image/png' })
+  writeFileSync(test.info().outputPath('home-accepted-evidence.json'), JSON.stringify({
+    sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+    sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
+    route: await page.evaluate(() => location.hash),
+    source: 'organization', acceptedObjectiveId: 'research', deliverableId: 'fixture-deliverable',
+    providerCalls: mock.receivedPrompts.length, methods: [...new Set(organizationMethods)],
+    sha256: createHash('sha256').update(evidenceBytes).digest('hex')
+  }, null, 2))
+  await navigation.getByRole('link', { name: 'Home', exact: true }).click()
   await capture('01-home-wide-dark')
 
   for (const [width, height] of [[1536, 961], [1440, 900], [1280, 720]]) {
