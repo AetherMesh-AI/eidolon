@@ -130,6 +130,26 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
     }
   }
 
+  // Tailwind's shared max-[47.5rem] navigation switches strictly below 760px.
+  // Check the boundary itself, not just the absence of workspace overflow.
+  await settings.getByRole('button', { name: 'Appearance', exact: true }).click()
+  for (const width of [759, 760, 761]) {
+    await resize(width)
+    const rail = settings.locator('.eid-settings-layout > aside')
+    const dropdown = settings.locator('.eid-settings-layout > div')
+    if (width < 760) {
+      await expect(rail).toBeHidden()
+      await expect(dropdown).toBeVisible()
+    } else {
+      await expect(rail).toBeVisible()
+      await expect(dropdown).toBeHidden()
+    }
+    const controls = await settings.locator('.eid-settings-controls').boundingBox()
+    expect(controls!.width).toBeGreaterThan(180)
+    expect(controls!.height).toBeGreaterThan(240)
+    await capture(`settings-breakpoint-${width}`)
+  }
+  await resize(1440)
   await settings.getByRole('button', { name: 'Safety', exact: true }).click()
   const checkpoints = settings.locator('[id="setting-field-checkpoints.enabled"]').getByRole('switch')
   await expect(checkpoints).toHaveAttribute('aria-checked', 'false')

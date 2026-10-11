@@ -89,7 +89,7 @@
     gap: 18px;
   }
 }
-@media (max-width: 760px) {
+@media (width < 760px) {
   .eid-settings-page {
     padding: 18px;
   }
