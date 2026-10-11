@@ -173,3 +173,14 @@ outline geometry against clipping ancestors and inspect the complete outline in
 pixels. ac6908b2's first Settings reference capture was a loading skeleton, and
 its zoom metadata did not establish intended reflow. These images cannot close
 the corresponding acceptance items despite a green run.
+
+### Settings overview cards (draft)
+
+The default Settings destination now composes existing Model and device
+Notifications editors in separate cards, with explicit entries to Providers,
+Safety, Workspace and Appearance. Each editor retains its own scope, save,
+confirmation and persistence behavior. Only one ConfigSettings owner mounts at
+a time; there is no aggregate Save transaction or invented organization profile,
+working hours, peer connection, role permission or executive messaging control.
+The supplied reference still differs in artwork and unavailable feature content.
+Native reference/narrow captures and independent-save checks are pending.

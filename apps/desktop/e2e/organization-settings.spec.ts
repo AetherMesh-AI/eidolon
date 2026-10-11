@@ -51,17 +51,21 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
     })
     await expect(navigation).toBeVisible()
     const rail = settings.locator('.eid-settings-layout > aside')
+
     if (await rail.isVisible()) {
       const rows = await rail.locator('button[aria-describedby]').evaluateAll(elements => elements.map(element => ({
         label: element.getAttribute('aria-label'),
         height: element.getBoundingClientRect().height,
         contentHeight: element.scrollHeight
       })))
+
       expect(rows.length).toBeGreaterThan(0)
+
       for (const row of rows) {
         expect(row.height, `${row.label} retains its full text height`).toBeGreaterThanOrEqual(row.contentHeight - 1)
       }
     }
+
     const health = page.getByRole('contentinfo', { name: 'System health', exact: true })
     await expect(health).toHaveCount(1)
     await expect(health).toBeInViewport({ ratio: 1 })
@@ -69,11 +73,13 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
     const bar = await health.boundingBox()
     expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(bar!.y + 1)
     expect(await settings.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
+
     const bytes = await page.screenshot({
       path: test.info().outputPath(`${name}.png`),
       animations: 'disabled',
       caret: 'hide'
     })
+
     captures.push({
       name,
       sha256: createHash('sha256').update(bytes).digest('hex'),
@@ -100,6 +106,30 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
   }
 
   await resize(1536, 961)
+  await expect(settings.locator('.eid-settings-cards > section')).toHaveCount(6)
+  await expect(settings.getByRole('button', { name: 'Apply', exact: true })).toBeVisible()
+  const cards = await settings.locator('.eid-settings-card-editor').evaluateAll(elements => elements.map(element => element.getBoundingClientRect().toJSON()))
+  expect(Math.abs(cards[0].top - cards[1].top)).toBeLessThanOrEqual(1)
+  expect(cards[1].left).toBeGreaterThan(cards[0].right)
+  await capture('reference-settings-overview')
+  const notifications = settings.locator('.eid-settings-cards').getByRole('region', { name: 'Notifications', exact: true })
+  const enabled = notifications.getByRole('switch').first()
+  const beforeConfig = readFileSync(configPath, 'utf8')
+  const beforeEnabled = await enabled.getAttribute('aria-checked')
+  await enabled.click()
+  await expect(enabled).toHaveAttribute('aria-checked', beforeEnabled === 'true' ? 'false' : 'true')
+  expect(readFileSync(configPath, 'utf8')).toBe(beforeConfig)
+  await enabled.click()
+  await expect(enabled).toHaveAttribute('aria-checked', beforeEnabled!)
+  await resize(760)
+  const openProviders = settings.getByRole('button', { name: 'Open Providers', exact: true })
+  await openProviders.scrollIntoViewIfNeeded()
+  focusChecks.push(await verifyKeyboardFocus(page, openProviders, 'overview providers narrow'))
+  await capture('settings-overview-narrow')
+  await openProviders.click()
+  await expect(title).toHaveText('Providers')
+  await resize(1536, 961)
+  await settings.getByRole('button', { name: 'Model', exact: true }).click()
   // Wait for the real editor, not the gap before lazy content mounts its skeleton.
   await expect(settings.getByRole('button', { name: 'Apply', exact: true })).toBeVisible()
   await capture('reference-settings-model')
@@ -109,6 +139,7 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
   await expect(settings.getByRole('button', { name: 'Chat', exact: true })).toBeFocused()
   await page.keyboard.press('Enter')
   await expect(title).toHaveText('Chat')
+
   const tabs = [
     'Model',
     'Chat',
@@ -129,10 +160,12 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
     'Archived Chats',
     'About'
   ]
+
   for (const [index, tab] of tabs.entries()) {
     await settings.getByRole('button', { name: tab, exact: true }).click()
     await expect(title).toHaveText(tab === 'Providers' ? 'Accounts' : tab === 'Tools & Keys' ? 'Tools' : tab)
     await capture(`settings-${String(index + 1).padStart(2, '0')}-${tab.toLowerCase().replaceAll(/[^a-z]+/g, '-')}`)
+
     if (tab === 'Providers') {
       for (const child of ['Accounts', 'API keys', 'Custom Endpoints']) {
         await settings.locator('[data-tour="overlay-nav"]').getByRole('button', { name: child, exact: true }).click()
@@ -140,6 +173,7 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
         await capture(`settings-providers-${child.toLowerCase().replaceAll(/[^a-z]+/g, '-')}`)
       }
     }
+
     if (tab === 'Tools & Keys') {
       for (const child of ['Tools', 'Settings']) {
         await settings.locator('[data-tour="overlay-nav"]').getByRole('button', { name: child, exact: true }).click()
@@ -152,10 +186,12 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
   // Settings includes the persistent primary rail, so it collapses earlier
   // than standalone overlays. Check both old and new exact boundaries.
   await settings.getByRole('button', { name: 'Appearance', exact: true }).click()
+
   for (const width of [759, 760, 761, 999, 1000, 1001]) {
     await resize(width)
     const rail = settings.locator('.eid-settings-layout > aside')
     const dropdown = settings.locator('.eid-settings-layout > div')
+
     if (width < 1000) {
       await expect(rail).toBeHidden()
       await expect(dropdown).toBeVisible()
@@ -163,11 +199,13 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
       await expect(rail).toBeVisible()
       await expect(dropdown).toBeHidden()
     }
+
     const controls = await settings.locator('.eid-settings-controls').boundingBox()
     expect(controls!.width).toBeGreaterThan(300)
     expect(controls!.height).toBeGreaterThan(240)
     await capture(`settings-breakpoint-${width}`)
   }
+
   await resize(999)
   const compact = settings.locator('.eid-settings-layout > div').getByRole('button', { name: 'Appearance', exact: true })
   await compact.focus()
@@ -243,5 +281,6 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
       await expect(settings.getByRole('button', { name: mode, exact: true })).toHaveAttribute('aria-pressed', 'true')
     }
   }
+
   expect(mock.receivedPrompts).toHaveLength(0)
 })
