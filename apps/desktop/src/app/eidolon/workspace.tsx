@@ -9,8 +9,7 @@ import { SearchField } from '@/components/ui/search-field'
 import { useI18n } from '@/i18n/context'
 
 import { Activity } from './activity'
-import { Home, HomeObjective } from './home'
-import { homeData } from './home-data'
+import { Home } from './home'
 import { Inspector } from './inspector'
 import { Messages } from './messages'
 import { responsibleTeams } from './objective-context'
@@ -25,6 +24,7 @@ import { RuntimeRequests } from './runtime-requests'
 import { RuntimeSetup } from './runtime-setup'
 import { type Objective, objectiveStatusLabels, type OrganizationAdapter, type OrganizationSnapshot, type RuntimeOrganizationAdapter } from './types'
 import { WorkGraph } from './work-graph'
+import { WorkOverview } from './work-overview'
 
 const labels = { ...objectiveStatusLabels, pending: 'Pending', approved: 'Approved', rejected: 'Rejected', recorded: 'Recorded' }
 
@@ -91,7 +91,7 @@ export function OrganizationWorkspaceView({ adapter }: { adapter: OrganizationAd
       {adapter.mode === 'prototype' ? <div className="eid-demo-bar"><span>{copy.legacyDemo} · {copy.legacyNote}</span></div> : <RuntimeStatus adapter={adapter} snapshot={snapshot} warningsOnly />}
       {pathname === '/home' && <Home adapter={adapter} snapshot={snapshot} />}
       {pathname === '/messages' && <Messages adapter={adapter.mode === 'runtime' ? adapter : undefined} key={snapshot.connection?.ownerScope ?? snapshot.connection?.scope} snapshot={snapshot} />}
-      {pathname === '/work' && <><header className="eid-home-hero"><div><h1>{t.organizationHome.work}</h1><p>{t.organizationHome.workNote}</p></div></header><div className="eid-work-overview">{homeData(snapshot).objectives.map(item => <HomeObjective key={item.id} objective={item} snapshot={snapshot} />)}</div>{!homeData(snapshot).objectives.length && <p>{t.organizationHome.noWork}</p>}<p>{t.organizationHome.snapshotNote}</p><Link to="/objectives">{t.organizationHome.viewObjectives} →</Link><Activity key={snapshot.connection?.scope} snapshot={snapshot} /></>}
+      {pathname === '/work' && <WorkOverview snapshot={snapshot} />}
       {titles[pathname] && <header className="eid-page-header"><div><p className="eid-eyebrow">Eidolon · Organization</p><h1>{titles[pathname]}</h1></div><span className="eid-prototype">{adapter.mode === 'runtime' ? 'Runtime' : 'Local prototype'}</span></header>}
       {pathname === '/objectives' && <>{adapter.mode === 'runtime' && snapshot.outcomes && adapter.getOutcomes && <RuntimeOutcomeInbox adapter={adapter} key={snapshot.connection?.ownerScope ?? snapshot.connection?.scope} snapshot={snapshot} />}{snapshot.runtime?.historyLimited && !snapshot.runtime.history && <p className="eid-note">All open objectives and the latest 25 completed or cancelled objectives are shown. Older history remains in the backend ledger.</p>}<div className="eid-toolbar"><label className="eid-filter">Search objectives<input onChange={event => setQuery(event.target.value)} placeholder="Find an objective…" value={query} /></label><label className="eid-filter">Status<select onChange={event => setFilter(event.target.value)} value={filter}><option value="all">All statuses</option>{Object.entries(objectiveStatusLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label><Link className="eid-primary" to="/home#eid-home-intake">New objective</Link></div><ObjectiveList objectives={snapshot.objectives.filter(item => (filter === 'all' || item.status === filter) && item.title.toLowerCase().includes(query.toLowerCase()))} onClearFilters={filter !== 'all' || query ? () => { setFilter('all'); setQuery('') } : undefined} snapshot={snapshot} />{adapter.mode === 'runtime' && <RuntimeHistoryBrowser adapter={adapter} key={snapshot.connection?.ownerScope ?? snapshot.connection?.scope} snapshot={snapshot} />}</>}
       {pathname.startsWith('/objectives/') && (adapter.mode === 'runtime' ? <RuntimeHistoryObjectiveDetail adapter={adapter} key={`${snapshot.connection?.ownerScope ?? snapshot.connection?.scope}:${pathname}`} objectiveId={objectiveRoute?.params.objectiveId ?? ''} snapshot={snapshot} /> : objective ? <StaticObjectiveDetail key={objective.id} objective={objective} snapshot={snapshot} /> : <div className="eid-empty"><h1>Objective not found</h1><p>This objective is not in the local prototype.</p><Link to="/objectives">Back to objectives</Link></div>)}

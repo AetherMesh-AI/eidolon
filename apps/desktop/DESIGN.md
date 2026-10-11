@@ -418,3 +418,12 @@ native progress fills use the selected accent explicitly. Verification covers al
 12 built-in palettes in Dark and Light, plus System appearance transitions and
 reload persistence. Imported third-party palettes share these tokens but cannot
 be exhaustively verified by the built-in matrix.
+
+Objective Detail puts recorded progress and current-round manager assignments
+before execution controls, with owner input and delivery beside them. A phase
+label is backend data, not an invented completed-stage timeline. Exclude tasks
+explicitly marked historical or outside the current round; preserve their full
+history in the existing Work view. Link packages through their recorded IDs,
+never infer delegation from reporting relationships. Completed tasks and packages
+do not establish final acceptance. Overview actions focus the existing request
+and Work sections; they do not duplicate mutation or evidence ownership.
