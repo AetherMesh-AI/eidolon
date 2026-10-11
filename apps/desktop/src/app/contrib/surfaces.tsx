@@ -46,7 +46,8 @@ import type { SidebarActions, WiringActions } from './types'
 
 // Same lazy-view split as DesktopController — pages load on demand. The
 // full-page views the workspace route table mounts live here; overlay views
-// (agents/settings/…) are the controller's and stay in wiring.tsx.
+// (agents/cron/…) are the controller's and stay in wiring.tsx.
+const SettingsView = lazy(async () => ({ default: (await import('../settings')).SettingsView }))
 const ArtifactsView = lazy(async () => ({ default: (await import('../artifacts/workspace')).ArtifactWorkspace }))
 const MessagingView = lazy(async () => ({ default: (await import('../messaging')).MessagingView }))
 const SkillsView = lazy(async () => ({ default: (await import('../skills')).SkillsView }))
@@ -118,6 +119,7 @@ export const StatusbarSurface = memo(function StatusbarSurface({
   const gatewayState = useStore($gatewayState)
   const freshDraftReady = useStore($freshDraftReady)
   const gatewayScope = `${activeConnectionId ?? ''}\0${activeGatewayProfile}`
+
   const { inferenceStatus, inferenceFresh, statusSnapshot } = useStatusSnapshot(gatewayState, actions.requestGateway, gatewayScope)
   const extraLeftItems = useStatusbarContributions('left')
   const contributedRightItems = useStatusbarContributions('right')
@@ -220,7 +222,17 @@ export const ChatRoutesSurface = memo(function ChatRoutesSurface({
       <Route element={null} path="command-center" />
       <Route element={null} path="cron" />
       <Route element={null} path="profiles" />
-      <Route element={null} path="settings" />
+      <Route
+        element={page(
+          <SettingsView
+            gateway={gateway}
+            onClose={() => actions.closeSettings()}
+            onConfigSaved={() => actions.settingsSaved()}
+            onMainModelChanged={(provider, model) => actions.settingsModelChanged(provider, model)}
+          />
+        )}
+        path="settings"
+      />
       <Route element={null} path="starmap" />
       <Route element={null} path="webhooks" />
       {/* Registry-contributed pages (core features + plugins) render in the

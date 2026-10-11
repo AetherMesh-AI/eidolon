@@ -145,7 +145,8 @@ export interface SidebarNavContribution {
   path: string
 }
 
-// Views that render as a full-screen modal card (OverlayView) over the shell.
+// Dismissible routes that retain the previous route. Settings renders inside
+// the workspace; the remaining routes use modal cards over the shell.
 // While one is open the app's titlebar control clusters must hide so they don't
 // bleed over the overlay (they sit at a higher z-index than the overlay card).
 export const OVERLAY_VIEWS: ReadonlySet<AppView> = new Set([
@@ -242,14 +243,16 @@ export function appViewForPath(pathname: string): AppView {
 function isWorkspacePageRoute(to: string): boolean {
   const view = appViewForPath(to)
 
-  return view !== 'chat' && !isOverlayView(view)
+  // Settings keeps return-to-previous-route semantics, but occupies the workspace
+  // so primary navigation and the shared health bar remain visible.
+  return view === 'settings' || (view !== 'chat' && !isOverlayView(view))
 }
 
 /** True while the workspace pane shows a FULL PAGE (skills/messaging/
  *  artifacts/plugin routes) instead of the chat. Published by the wiring
  *  (which owns the router location); the workspace pane contribution mirrors
  *  it as `headerVeto` so the zone tab bar stands down on pages. Overlays
- *  (settings/…) don't count — the chat stays beneath them. */
+ *  other than Settings don't count — the chat stays beneath them. */
 export const $workspaceIsPage = atom(false)
 
 function revealWorkspacePane(): void {

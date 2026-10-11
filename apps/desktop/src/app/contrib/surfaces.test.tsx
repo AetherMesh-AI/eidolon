@@ -21,6 +21,7 @@ vi.mock('@/store/session', () => ({
   $freshDraftReady: atom(false),
   $gatewayState: atom('open')
 }))
+vi.mock('../settings', () => ({ SettingsView: ({ onClose, onConfigSaved, onMainModelChanged }: { onClose: () => void; onConfigSaved: () => void; onMainModelChanged: (provider: string, model: string) => void }) => <section aria-label="Settings workspace"><button onClick={onClose}>Close settings</button><button onClick={onConfigSaved}>Saved</button><button onClick={() => onMainModelChanged('provider', 'model')}>Model changed</button></section> }))
 vi.mock('../chat', () => ({
   ChatView: ({ gateway }: { gateway: { id?: string } | null }) => <div data-testid="gateway">{gateway?.id}</div>
 }))
@@ -166,4 +167,17 @@ it('restores the actual legacy board when enabled and safe recovery when disable
   expect(screen.getByText('Disabled legacy Kanban')).toBeTruthy()
   expect(screen.getByTestId('location').textContent).toBe('/kanban?board=retained')
   expect(screen.queryByTestId('gateway')).toBeNull()
+})
+
+
+it('renders Settings in the workspace while forwarding the current controller callbacks', async () => {
+  const actions = { closeSettings: vi.fn(), settingsSaved: vi.fn(), settingsModelChanged: vi.fn() } as unknown as WiringActions
+  render(<MemoryRouter initialEntries={['/settings?tab=providers']}><ChatRoutesSurface actions={actions} /></MemoryRouter>)
+  const close = await screen.findByRole('button', { name: 'Close settings' })
+  const latest = vi.fn()
+  actions.closeSettings = latest
+  act(() => { close.click(); screen.getByRole('button', { name: 'Saved' }).click(); screen.getByRole('button', { name: 'Model changed' }).click() })
+  expect(latest).toHaveBeenCalledTimes(1)
+  expect(actions.settingsSaved).toHaveBeenCalledTimes(1)
+  expect(actions.settingsModelChanged).toHaveBeenCalledExactlyOnceWith('provider', 'model')
 })

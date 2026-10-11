@@ -97,6 +97,13 @@ describe('classification of targets carrying a query', () => {
 })
 
 describe('syncWorkspaceRoute', () => {
+  it.each([SETTINGS_ROUTE, `${SETTINGS_ROUTE}?tab=keys`])('fronts Settings while keeping its non-session identity: %s', to => {
+    syncWorkspaceRoute(to)
+    expect($workspaceIsPage.get()).toBe(true)
+    expect(fronted()).toBe(true)
+    expect(routeSessionId(to)).toBeNull()
+  })
+
   it('publishes and fronts on a page route', () => {
     syncWorkspaceRoute(SKILLS_ROUTE)
 
@@ -138,8 +145,6 @@ describe('syncWorkspaceRoute', () => {
   it.each([
     ['a session route', sessionRoute('sess-a')],
     ['the new-chat route', NEW_CHAT_ROUTE],
-    ['an overlay', SETTINGS_ROUTE],
-    ['an overlay with a query', `${SETTINGS_ROUTE}?tab=keys`],
     ['another overlay', CRON_ROUTE],
     ['yet another overlay', AGENTS_ROUTE]
   ])('leaves the tab alone on %s', (_label, to) => {
@@ -181,7 +186,7 @@ describe('navigateToWorkspacePage', () => {
     const navigate = vi.fn()
 
     navigateToWorkspacePage(navigate, sessionRoute('sess-a'))
-    navigateToWorkspacePage(navigate, SETTINGS_ROUTE)
+    navigateToWorkspacePage(navigate, AGENTS_ROUTE)
 
     expect(navigate).toHaveBeenCalledTimes(2)
     expect(revealTreePane).not.toHaveBeenCalled()

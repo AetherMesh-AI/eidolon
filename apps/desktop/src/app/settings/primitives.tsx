@@ -14,7 +14,7 @@ import { PAGE_INSET_X } from '../layout-constants'
 // surface (e.g. the boot-failure recovery card owns its own padding).
 export function SettingsContent({ children, bare = false }: { children: ReactNode; bare?: boolean }) {
   return (
-    <section className="min-h-0 overflow-hidden">
+    <section className="settings-content min-h-0 overflow-hidden">
       <div className={cn('h-full min-h-0 overflow-y-auto', bare ? 'px-5 pb-6' : cn('pb-20', PAGE_INSET_X))}>
         {children}
       </div>
@@ -86,7 +86,7 @@ export function SettingsSection({
   title: string
 }) {
   return (
-    <section className="mb-6">
+    <section className="settings-section mb-6">
       <SectionHeading aside={aside} icon={icon} meta={meta} title={title} />
       {children}
     </section>
@@ -149,7 +149,7 @@ export function ListRow({
     // Container-queried, not viewport-queried: the label/control split keys on
     // the row's own pane width, so a narrow detail column (messaging, split
     // views) stacks instead of squishing the label against minmax(15rem,…).
-    <div className={cn('@container', className)} data-tour={dataTour} id={id}>
+    <div className={cn('settings-row @container', className)} data-tour={dataTour} id={id}>
       <div
         className={cn(
           'grid gap-3 py-3',

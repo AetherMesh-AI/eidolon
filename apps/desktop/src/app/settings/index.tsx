@@ -1,3 +1,5 @@
+import './settings.css'
+
 import { useStore } from '@nanostores/react'
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router'
@@ -75,6 +77,7 @@ const SETTINGS_VIEWS: readonly SettingsViewId[] = [
 export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: SettingsPageProps) {
   const scopeProfile = useStore($settingsScopeProfile)
   const { t } = useI18n()
+  const copy = t.settingsWorkspace
   const navigate = useNavigate()
   const { hash, pathname, search } = useLocation()
 
@@ -361,12 +364,13 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
   const navFooter = (
     <>
       <Tip label={t.settings.exportConfig}>
-        <OverlayIconButton onClick={() => void exportConfig()}>
+        <OverlayIconButton aria-label={t.settings.exportConfig} onClick={() => void exportConfig()}>
           <Download />
         </OverlayIconButton>
       </Tip>
       <Tip label={t.settings.importConfig}>
         <OverlayIconButton
+          aria-label={t.settings.importConfig}
           onClick={() => {
             triggerHaptic('open')
             importInputRef.current?.click()
@@ -377,6 +381,7 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
       </Tip>
       <Tip label={t.settings.resetToDefaults}>
         <OverlayIconButton
+          aria-label={t.settings.resetToDefaults}
           className="hover:text-destructive"
           onClick={() => {
             triggerHaptic('warning')
@@ -428,12 +433,33 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
       <SessionsSettings />
     )
 
-  return (
-    <OverlayView closeLabel={t.settings.closeSettings} edgeBadge={searchPill} onClose={onClose}>
-      <OverlaySplitLayout>
-        <OverlayNav footer={navFooter} groups={navGroups} />
+  const descriptions = copy.sections as Record<string, string>
+  const activeGroup = navGroups.find(group => group.active)
+  const activeLabel = activeGroup?.children?.find(child => child.active)?.label ?? activeGroup?.label
 
-        <OverlayMain className="px-0 pb-0">{activeSettingsContent}</OverlayMain>
+  return (
+    <OverlayView closeLabel={t.settings.closeSettings} inline onClose={onClose} rootClassName="eid-settings-page">
+      <header className="eid-settings-heading">
+        <div>
+          <h1>{copy.heading}</h1>
+          <p>{copy.introduction}</p>
+        </div>
+        {searchPill}
+      </header>
+      <OverlaySplitLayout className="eid-settings-layout">
+        <OverlayNav
+          footer={navFooter}
+          groups={navGroups.map(group => ({ ...group, description: descriptions[group.id] }))}
+        />
+
+        <OverlayMain className="eid-settings-main px-0 pb-0">
+          <header>
+            <h2>{activeLabel}</h2>
+            <p>{descriptions[activeView]}</p>
+          </header>
+          <div className="eid-settings-controls">{activeSettingsContent}</div>
+          <p className="eid-settings-save-note">{copy.saveNote}</p>
+        </OverlayMain>
       </OverlaySplitLayout>
     </OverlayView>
   )
