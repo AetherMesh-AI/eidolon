@@ -509,3 +509,11 @@
 .eid-messages-view .eid-owner-chat-recovery > [role=alert] { flex: 1; min-width: 0; }
 .eid-messages-view .eid-owner-chat-recovery > .eid-owner-chat-actions { flex: none; }
 @media (max-width: 800px) { .eid-messages-view .eid-owner-chat-recovery { flex-wrap: wrap; } }
+
+/* Give tall Home cards more room while retaining every activity timestamp. */
+@media (min-width: 1101px) and (min-height: 900px) {
+  .eid-home-activity { max-height: 218px; padding-block: 12px; }
+  .eid-home-activity > header { margin-bottom: 6px; }
+  .eid-home-activity li { padding-block: 9px; }
+  .eid-home-activity li p { margin-block: 8px; }
+}
