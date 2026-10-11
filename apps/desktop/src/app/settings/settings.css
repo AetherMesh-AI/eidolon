@@ -1,0 +1,128 @@
+/* Settings occupies the workspace. Its page owners still own every write. */
+.eid-settings-page {
+  padding: 24px clamp(18px, 3vw, 40px);
+  color: var(--ui-text-primary);
+}
+.eid-settings-heading {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 12px 32px 24px 0;
+}
+.eid-settings-heading h1 {
+  font:
+    34px/1.2 Georgia,
+    'Times New Roman',
+    serif;
+  margin: 0 0 8px;
+}
+.eid-settings-heading p {
+  margin: 0;
+  color: var(--ui-text-secondary);
+}
+.eid-settings-layout {
+  grid-template-columns: minmax(190px, 235px) minmax(0, 1fr);
+  gap: 24px;
+}
+.eid-settings-layout > aside {
+  padding: 0 8px 12px 0;
+  background: transparent;
+}
+.eid-settings-layout > aside small {
+  font-size: 11px;
+  line-height: 1.45;
+}
+.eid-settings-main {
+  padding-top: 0;
+  max-width: none;
+}
+.eid-settings-main > header {
+  flex: 0 0 auto;
+  margin-bottom: 18px;
+}
+.eid-settings-main h2 {
+  font:
+    25px/1.3 Georgia,
+    'Times New Roman',
+    serif;
+  margin: 0 0 6px;
+}
+.eid-settings-main > header p {
+  margin: 0;
+  color: var(--ui-text-secondary);
+}
+.eid-settings-controls {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  flex-direction: column;
+  padding-block: 22px;
+  border-radius: 22px;
+  background: var(--ui-bg-secondary);
+  border: 1px solid var(--ui-stroke-tertiary);
+  overflow: hidden;
+}
+.eid-settings-controls > .settings-content {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.eid-settings-controls .settings-content > div {
+  padding-inline: clamp(18px, 2.5vw, 30px);
+  padding-bottom: 24px;
+}
+.eid-settings-controls .settings-row {
+  margin-block: 4px;
+}
+.eid-settings-save-note {
+  flex: 0 0 auto;
+  margin: 14px 0 0;
+  color: var(--ui-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+@media (max-width: 1000px) {
+  .eid-settings-layout {
+    grid-template-columns: minmax(170px, 190px) minmax(0, 1fr);
+    gap: 18px;
+  }
+}
+/* The persistent primary rail needs space too. Settings switches before its
+   editor becomes narrower than usable controls; other overlays keep 760px. */
+@media (width < 1000px) {
+  .eid-settings-page {
+    padding: 18px;
+  }
+  .eid-settings-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+    padding-bottom: 12px;
+  }
+  .eid-settings-heading h1 {
+    font-size: 29px;
+  }
+  .eid-settings-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 12px;
+  }
+  .eid-settings-layout > aside {
+    display: none;
+  }
+  .eid-settings-layout > div {
+    display: flex;
+    padding: 0;
+    height: auto;
+    min-height: 32px;
+  }
+  .eid-settings-main > header {
+    margin-bottom: 12px;
+  }
+  .eid-settings-controls {
+    padding-block: 18px;
+    border-radius: 16px;
+  }
+}

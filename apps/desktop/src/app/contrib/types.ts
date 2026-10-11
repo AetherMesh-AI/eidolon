@@ -62,6 +62,9 @@ export interface WiringActions extends SidebarActions, ChatActions {
   /** Imperative access to the live gateway for controller-owned callbacks.
    *  Rendered surfaces subscribe to the active `$gateway` atom directly. */
   getGateway: () => ComponentProps<typeof ChatView>['gateway']
+  closeSettings: () => void
+  settingsSaved: () => void
+  settingsModelChanged: (provider: string, model: string) => void
   openAgents: () => void
   openCommandCenterSection: (section: CommandCenterSection) => void
   requestGateway: GatewayRequester

@@ -161,7 +161,6 @@ const CommandCenterView = lazy(async () => ({ default: (await import('../command
 const CronView = lazy(async () => ({ default: (await import('../cron')).CronView }))
 const WebhooksView = lazy(async () => ({ default: (await import('../webhooks')).WebhooksView }))
 const ProfilesView = lazy(async () => ({ default: (await import('../profiles')).ProfilesView }))
-const SettingsView = lazy(async () => ({ default: (await import('../settings')).SettingsView }))
 const StarmapView = lazy(async () => ({ default: (await import('../starmap')).StarmapView }))
 
 // Surfaces (the four wired panes), the render context + WiredPane, and the
@@ -275,7 +274,6 @@ function ContribWiringContent({ children }: { children: ReactNode }) {
     openStarmap,
     profilesOpen,
     resetOverlayReturnRoute,
-    settingsOpen,
     starmapOpen,
     toggleCommandCenter,
     webhooksOpen
@@ -1073,6 +1071,17 @@ function ContribWiringContent({ children }: { children: ReactNode }) {
         .then(() => undefined)
         .catch(() => undefined),
     getGateway: () => gatewayRef.current,
+    closeSettings: closeOverlayToPreviousRoute,
+    settingsSaved: () => {
+      void refreshHermesConfig()
+      void refreshCurrentModel()
+      void queryClient.invalidateQueries({ queryKey: ['model-options'] })
+    },
+    settingsModelChanged: (provider, model) => {
+      applySavedMainModel(provider, model)
+      void refreshCurrentModel()
+      void queryClient.invalidateQueries({ queryKey: ['model-options'] })
+    },
     openAgents,
     openCommandCenterSection,
     requestGateway,
@@ -1208,25 +1217,6 @@ function ContribWiringContent({ children }: { children: ReactNode }) {
       <McpInstallDeepLinkDialog />
       <RemoteFolderPicker />
       <FindBar />
-
-      {settingsOpen && (
-        <Suspense fallback={null}>
-          <SettingsView
-            gateway={gateway}
-            onClose={closeOverlayToPreviousRoute}
-            onConfigSaved={() => {
-              void refreshHermesConfig()
-              void refreshCurrentModel()
-              void queryClient.invalidateQueries({ queryKey: ['model-options'] })
-            }}
-            onMainModelChanged={(provider, model) => {
-              applySavedMainModel(provider, model)
-              void refreshCurrentModel()
-              void queryClient.invalidateQueries({ queryKey: ['model-options'] })
-            }}
-          />
-        </Suspense>
-      )}
 
       {currentView === 'session-import' && (
         <SessionImportView

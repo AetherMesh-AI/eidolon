@@ -25,7 +25,7 @@ input direction, not rendered evidence and not final gallery substitutes.
 | Objective Detail | Plan/delegation; execution evidence; review; owner intervention/resume; durable accepted outcome | Native wide/narrow progress/delegation and owner-input captures; functional loops retain acceptance/evidence |
 | Organization | List/grid; persistent agent inspector; leadership/worker relationships | Native visual spec list/grid and inspector dismissal |
 | Deliverables | Accepted outcomes and exact artifact/evidence inspection | Functional native loops; final gallery pending |
-| Settings | All sections below, safely unconfigured where appropriate | Appearance interactions/theme persistence; final tab captures pending |
+| Settings | All sections below, safely unconfigured where appropriate | Workspace composition and all standard tab/subview capture scenario added; hosted verification and final gallery pending |
 | System health | Bottom bar; details/grants/controls; disconnected, unknown, stale, disabled, degraded, attention, ready | Component state coverage + native bar/details transitions; final labeled captures pending |
 | Tools and configuration | Needs You; Activity; Skills; Messaging; Execution configuration; Import history; Legacy organization | Retained routes; finish gallery and identify any legacy appearance explicitly |
 | History | Expanded history and a synthetic chat | Retained mounted sidebar; final capture pending |
@@ -49,7 +49,7 @@ content unchanged.
 Enumerate the actual installed nav at capture time; do not invent unavailable
 plugin or feature-flag pages. Current standard sections from the Settings owners:
 
-- Configuration: Model, Chat, Appearance, Workspace, Safety, Browser, Memory,
+- Configuration: Model, Chat, Appearance, Workspace, Safety, Browser, Memory & Context,
   Voice, Advanced.
 - Providers: Accounts, API keys (empty/masked), Custom endpoints. Local models
   only if enabled by the supported fixture flag; otherwise label unavailable.
