@@ -1390,6 +1390,11 @@ for (const [locale, suffix, dark, light] of [
             await expect(page.getByRole('heading', { name: copy.responsibilities, exact: true })).toBeVisible()
             await expect(page.getByText(copy.linkedWorkNote, { exact: true })).toBeVisible()
           }
+          const focalCopy = route === '/organization' ? copy.findAgent : route === '/deliverables' ? copy.deliverablesIntroduction : route.includes('recipient') ? copy.executiveMessageNote : copy.linkedWorkNote
+          const focal = page.getByText(focalCopy, { exact: true })
+          await focal.scrollIntoViewIfNeeded()
+          await expect(focal).toBeInViewport({ ratio: 1 })
+          expect(await page.locator('.eid-workspace').evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
           await page.evaluate(async () => { await document.fonts.ready; await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))) })
           const appearance = await page.locator('html').evaluate(element => ({ theme: element.getAttribute('data-hermes-theme'), dark: element.classList.contains('dark'), dir: element.getAttribute('dir') }))
           expect(appearance).toEqual({ theme: 'nous', dark: mode === 'dark', dir: locale === 'ar' ? 'rtl' : 'ltr' })
