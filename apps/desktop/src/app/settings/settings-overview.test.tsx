@@ -9,7 +9,7 @@ it('keeps independent editor owners and opens the exact configuration destinatio
   const onSelect = vi.fn()
   const saveModel = vi.fn()
   const saveNotification = vi.fn()
-  const { container } = render(<SettingsOverview model={<button onClick={saveModel}>Apply model draft</button>} notifications={<button onClick={saveNotification}>Change device notification</button>} onSelect={onSelect} />)
+  const { container } = render(<SettingsOverview editor={<button onClick={saveModel}>Apply model draft</button>} notifications={<button onClick={saveNotification}>Change device notification</button>} onSelect={onSelect} />)
   fireEvent.click(screen.getByRole('button', { name: 'Change device notification' }))
   expect(saveNotification).toHaveBeenCalledOnce()
   expect(saveModel).not.toHaveBeenCalled()

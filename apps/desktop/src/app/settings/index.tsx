@@ -398,10 +398,10 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
   )
 
   const activeSettingsContent =
-    (activeView === 'overview' || activeView === 'config:model') ? (
+    (activeView === 'overview' || (activeView.startsWith('config:') && activeView !== 'config:appearance')) ? (
       <SettingsOverview
-        model={<ConfigSettings activeSectionId="model" importInputRef={importInputRef} onConfigSaved={onConfigSaved} onMainModelChanged={onMainModelChanged} />}
-        modelOnly={activeView === 'config:model'}
+        editor={<ConfigSettings activeSectionId={activeView === 'overview' ? 'model' : activeView.slice('config:'.length)} importInputRef={importInputRef} onConfigSaved={onConfigSaved} onMainModelChanged={onMainModelChanged} />}
+        editorOnly={activeView !== 'overview'}
         notifications={<NotificationsSettings />}
         onSelect={setActiveView}
       />

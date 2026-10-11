@@ -648,26 +648,26 @@ it('retains real provider, model and auxiliary drafts through overview/detail an
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
 
   function Workspace() {
-    const [modelOnly, setModelOnly] = useState(false)
+    const [editorOnly, setModelOnly] = useState(false)
 
-    return <><button onClick={() => setModelOnly(false)}>Return overview</button><SettingsOverview model={<ModelSettings />} modelOnly={modelOnly} notifications={<span>Device preferences</span>} onSelect={() => setModelOnly(true)} /></>
+    return <><button onClick={() => setModelOnly(false)}>Return overview</button><SettingsOverview editor={<ModelSettings />} editorOnly={editorOnly} notifications={<span>Device preferences</span>} onSelect={() => setModelOnly(true)} /></>
   }
 
   const view = render(<MemoryRouter><QueryClientProvider client={client}><Workspace /></QueryClientProvider></MemoryRouter>)
   const mainProvider = (await screen.findAllByRole('combobox'))[0]
   fireEvent.click(mainProvider)
-  fireEvent.click(await screen.findByRole('option', { name: 'Lab', exact: true }))
+  fireEvent.click(await screen.findByRole('option', { name: 'Lab' }))
   const mainModel = screen.getAllByRole('combobox')[1]
   fireEvent.click(mainModel)
-  fireEvent.click(await screen.findByRole('option', { name: 'lab-model', exact: true }))
-  fireEvent.click(screen.getAllByRole('button', { name: 'Change', exact: true })[0])
+  fireEvent.click(await screen.findByRole('option', { name: 'lab-model' }))
+  fireEvent.click(screen.getAllByRole('button', { name: 'Change' })[0])
   const aux = view.container.querySelector('#aux-task-vision')!
   const auxSelects = aux.querySelectorAll('[role=combobox]')
   fireEvent.click(auxSelects[0])
-  fireEvent.click(await screen.findByRole('option', { name: 'Nous', exact: true }))
+  fireEvent.click(await screen.findByRole('option', { name: 'Nous' }))
   fireEvent.click(auxSelects[1])
-  fireEvent.click(await screen.findByRole('option', { name: 'hermes-4-mini', exact: true }))
-  fireEvent.click(screen.getByRole('button', { name: 'Open Model', exact: true }))
+  fireEvent.click(await screen.findByRole('option', { name: 'hermes-4-mini' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Open Model' }))
   expect(screen.getAllByRole('combobox')[0]).toBe(mainProvider)
   expect(mainProvider.textContent).toContain('Lab')
   expect(mainModel.textContent).toContain('lab-model')
@@ -677,6 +677,6 @@ it('retains real provider, model and auxiliary drafts through overview/detail an
   expect(auxSelects[1].textContent).toContain('hermes-4-mini')
   expect(setModelAssignment).not.toHaveBeenCalled()
   expect(saveHermesConfig).not.toHaveBeenCalled()
-  fireEvent.click(screen.getAllByRole('button', { name: 'Apply', exact: true })[1])
+  fireEvent.click(screen.getAllByRole('button', { name: 'Apply' })[1])
   await waitFor(() => expect(setModelAssignment).toHaveBeenCalledWith(expect.objectContaining({ provider: 'nous', model: 'hermes-4-mini' })))
 })
