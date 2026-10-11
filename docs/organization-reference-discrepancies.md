@@ -268,3 +268,10 @@ history and a short English retained-read error. It does not cover every long
 translation, expanded disclosure or uncertain-send combination. At200% zoom,
 keyboard focus brings each target into view; the entire transcript and composer
 are not claimed to be simultaneously visible.
+
+
+## Tall Home activity spacing
+
+Accepted main 1ea9bccc at 1536×961 places cards at y202.23–673 and activity at y685–925, with the health bar at y933. The private reference has card bottoms around y695 and activity beginning around y705. This bounded iteration reallocates 22px from the tall-window activity panel to cards: activity maximum height 240→218px, vertical panel padding 16→12px, heading gap 10→6px, event padding 12→9px and event paragraph margins 10→8px. Font sizes, records, list bounds, links, controls and the health bar are unchanged. These rules apply only at widths above 1100px and heights at least 900px; the 1280×720 layout retains its existing rules.
+
+Native verification must show the actual resulting geometry and every one of the four recorded event cards and timestamps visible at 1536×961 and 1440×900. The matched 1536 card-bottom check permits 5px around the approximate reference. Existing short-window contained-scroll, focus, intake retention and health-bar assertions remain. No passing result or exact final geometry is claimed before inspection. The reference's lower activity boundary extends beyond the app's persistent health bar, so this change does not claim complete vertical parity or add a blank Messages header.
