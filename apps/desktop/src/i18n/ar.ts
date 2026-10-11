@@ -1,3 +1,4 @@
+import { organizationMemberMessagesAr } from './organization-member-messages'
 import { organizationHomeCountsAr } from './organization-home-counts'
 import { organizationSurfacesAr } from './organization-surfaces'
 import { organizationWorkspaceAr } from './organization-home'
@@ -7,7 +8,7 @@ import { organizationOwnerChatAr } from './organization-owner-chat'
 
 export const ar = defineLocale({
   organizationSurfaces: organizationSurfacesAr,
-  organizationHome: { workspace: organizationWorkspaceAr, detail: organizationHomeCountsAr },
+  organizationHome: { memberMessages: organizationMemberMessagesAr, workspace: organizationWorkspaceAr, detail: organizationHomeCountsAr },
   organizationOwnerChat: organizationOwnerChatAr,
   organizationConversations: organizationConversationsAr,
   sessionImport: {

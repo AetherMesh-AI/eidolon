@@ -1,3 +1,4 @@
+import { organizationMemberMessagesRu } from './organization-member-messages'
 import { organizationHomeCountsRu } from './organization-home-counts'
 import { organizationSurfacesRu } from './organization-surfaces'
 import { organizationWorkspaceRu } from './organization-home'
@@ -30,7 +31,7 @@ const RU_NOUN = (count: number | string, one: string, few: string, many: string)
 
 export const ru = defineLocale({
   organizationSurfaces: organizationSurfacesRu,
-  organizationHome: { workspace: organizationWorkspaceRu, detail: organizationHomeCountsRu },
+  organizationHome: { memberMessages: organizationMemberMessagesRu, workspace: organizationWorkspaceRu, detail: organizationHomeCountsRu },
   organizationOwnerChat: organizationOwnerChatRu,
   organizationConversations: organizationConversationsRu,
   sessionImport: {

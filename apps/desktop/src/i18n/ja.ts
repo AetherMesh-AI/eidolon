@@ -1,3 +1,4 @@
+import { organizationMemberMessagesJa } from './organization-member-messages'
 import { organizationHomeCountsJa } from './organization-home-counts'
 import { organizationSurfacesJa } from './organization-surfaces'
 import { organizationWorkspaceJa } from './organization-home'
@@ -11,7 +12,7 @@ import { organizationWorkJa } from './organization-work'
 
 export const ja = defineLocale({
   organizationSurfaces: organizationSurfacesJa,
-  organizationHome: { workspace: organizationWorkspaceJa, detail: organizationHomeCountsJa },
+  organizationHome: { memberMessages: organizationMemberMessagesJa, workspace: organizationWorkspaceJa, detail: organizationHomeCountsJa },
   organizationOwnerChat: organizationOwnerChatJa,
   organizationConversations: organizationConversationsJa,
   organizationWork: organizationWorkJa,
