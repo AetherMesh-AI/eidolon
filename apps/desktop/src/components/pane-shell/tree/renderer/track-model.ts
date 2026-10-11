@@ -95,6 +95,9 @@ interface PaneChrome extends PaneSizing {
    *  (artifacts/skills/plugin pages) are not tab-able surfaces. The flag is
    *  live: the workspace contribution re-registers it on route changes. */
   headerVeto?: boolean
+  /** Peers this pane exposes through contextual mouse controls. Auto may omit
+   *  the strip only when every shown sibling is covered. Explicit Show tabs wins. */
+  contextualTabPeers?: readonly string[]
   /** A lead NODE for this pane's TAB, rendered before the label. A session
    *  pane (main workspace + tiles) passes its live `SessionStatusDot` here so
    *  the tab and the sidebar row render status/color from the ONE primitive

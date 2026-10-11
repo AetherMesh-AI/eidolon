@@ -57,7 +57,9 @@ one-off at the call site.
   mounted behind the rail's compact More control; its History disclosure opens
   on explicit chat navigation. The seven primary destinations remain the default
   rail. Optional Profile chats and secondary tools are reachable from More;
-  the organization rail suppresses its redundant pane tab strip. Technical
+  the organization rail suppresses only its default contextual pane strip.
+  Explicit Show tabs preferences and customized sibling panes keep mouse tabs.
+  Technical
   evidence provenance belongs in its contextual views, not a standing rail footer.
 - **Organization uses the desktop foundation.** Organization surfaces alias
   shared `--ui-*` background, text and stroke tokens so light/dark mode remains
