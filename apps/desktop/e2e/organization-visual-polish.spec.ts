@@ -168,6 +168,17 @@ test.afterEach(async () => {
 test('keeps native organization navigation, roster and objective layouts usable at both window sizes', async () => {
   fixture = await setupMockBackend()
   const { app, page, mock } = fixture
+  // A newer main can arrive during this long-running source-checkout test.
+  // Dismiss only the unrelated real updater toast through its public control;
+  // error banners and all notification/updater behavior remain enabled.
+  const updateToast = page.getByRole('status').filter({ has: page.getByText('Update ready', { exact: true }) })
+  await page.addLocatorHandler(updateToast, async toast => {
+    await test.info().attach('dismissed-source-update-toast', {
+      contentType: 'text/plain', body: 'Dismissed the real Update ready toast before continuing the organization visual scenario.'
+    })
+    await toast.getByRole('button', { name: 'Dismiss notification', exact: true }).click()
+    await expect(toast).toBeHidden()
+  })
   const organizationMethods: string[] = []
   let displayedSnapshot: Omit<typeof snapshot, 'requests'> & { requests?: typeof snapshot.requests } = snapshot
   let readinessUnknown = false
