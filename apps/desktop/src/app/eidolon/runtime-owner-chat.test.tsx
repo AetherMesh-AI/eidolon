@@ -476,3 +476,22 @@ it('loads exact earlier pages while preserving the latest reply target and fence
   expect(screen.queryByText('Late historical page')).toBeNull()
   rendered.unmount()
 })
+
+it('keeps workspace limits and drafting available when conversation details are collapsed', async () => {
+  const { h } = harness()
+  h.adapter.renewOwnerChat = vi.fn()
+  render(<MemoryRouter><OrganizationOwnerChat adapter={h.adapter} agent={h.snapshot.agents[0]} layout="workspace" snapshot={h.snapshot} /></MemoryRouter>)
+  fireEvent.click(screen.getByRole('button', { name: 'Chat' }))
+  const message = await screen.findByRole('textbox', { name: 'Message' })
+  await waitFor(() => expect((message as HTMLTextAreaElement).disabled).toBe(false))
+  const details = screen.getByText('Conversation details').closest('details')!
+  expect(details.open).toBe(false)
+  expect(screen.getByText(/Replies remaining: 32/).closest('details')).toBeNull()
+  expect(screen.getByText(/may incur usage charges/).closest('details')).toBeNull()
+  fireEvent.change(message, { target: { value: 'Retained workspace draft' } })
+  fireEvent.click(screen.getByText('Conversation details'))
+  expect((message as HTMLTextAreaElement).value).toBe('Retained workspace draft')
+  expect(screen.getByRole('region', { name: 'Conversation messages' }).getAttribute('tabindex')).toBe('0')
+  expect(h.adapter.sendOwnerChat).not.toHaveBeenCalled()
+  expect(h.adapter.renewOwnerChat).not.toHaveBeenCalled()
+})

@@ -173,3 +173,16 @@ outline geometry against clipping ancestors and inspect the complete outline in
 pixels. ac6908b2's first Settings reference capture was a loading skeleton, and
 its zoom metadata did not establish intended reflow. These images cannot close
 the corresponding acceptance items despite a green run.
+
+## Messages composer iteration
+
+Retained-chat capture at the reference size exposed a separate gap after column
+geometry was corrected: explanatory text and allowance details pushed composing
+below the initial view. The isolated follow-up bounds the conversation column
+and gives its transcript keyboard scrolling. Conversation policy and reply-anchor
+details remain in accessible disclosures; provider usage notice, remaining calls,
+reserved-token ceiling, explicit renewal, send/cancel and recovery stay available.
+Native checks cover reference/short/narrow sizes, real zoom, long history, a
+pending reply and a retained read-error state. This iteration is not accepted
+until current-head native checks and actual pixels pass. Final reference parity
+and the complete gallery remain outstanding.

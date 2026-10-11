@@ -1,6 +1,11 @@
+import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { writeFileSync } from 'node:fs'
+
 /** Actual Electron → authenticated gateway → identity ledger → loopback provider. */
 import type { Page } from '@playwright/test'
 
+import { verifyKeyboardFocus } from './focus-visibility'
 import {
   continuedMessage,
   continuedReply,
@@ -139,6 +144,49 @@ test('retains exact worker chat, deduplicates owner send and fences a cancelled 
   )
   await page.reload()
   let conversation = await openWorkerChat(page, 'Organization')
+
+  async function inspectComposer(label: string, width: number, height: number, zoom = 1) {
+    await page.evaluate(() => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(100))
+    await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(1)
+    await running!.fixture.app.evaluate(({ BrowserWindow }, size) => {
+      const window = BrowserWindow.getAllWindows()[0]
+      window.unmaximize()
+      window.setMinimumSize(600, 600)
+      window.setContentSize(size.width, size.height)
+    }, { width, height })
+    await expect.poll(() => page.evaluate(() => innerWidth)).toBe(width)
+    await page.evaluate(value => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(value * 100), zoom)
+    await expect.poll(() => page.evaluate(() => innerWidth)).toBe(Math.round(width / zoom))
+    await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(zoom)
+    const scroll = conversation.getByRole('region', { name: 'Conversation messages', exact: true })
+    const message = conversation.getByRole('textbox', { name: 'Message', exact: true })
+    await scroll.scrollIntoViewIfNeeded()
+    const transcriptFocus = await verifyKeyboardFocus(page, scroll, `${label} transcript`)
+    await page.keyboard.press('End')
+    await expect.poll(() => scroll.evaluate(element => element.scrollHeight - element.clientHeight - element.scrollTop)).toBeLessThanOrEqual(1)
+    await expect(scroll.locator('.eid-owner-chat-bubble').last()).toBeInViewport()
+    await message.scrollIntoViewIfNeeded()
+    const composerFocus = await verifyKeyboardFocus(page, message, `${label} composer`)
+    await expect(message).toBeInViewport({ ratio: 1 })
+    await expect(conversation.locator('.eid-owner-chat-allowance')).toBeInViewport({ ratio: 1 })
+    const action = conversation.getByRole('button', { name: /^(Send message|Cancel reply)$/, exact: true })
+    await expect(action).toBeInViewport({ ratio: 1 })
+
+    if (width >= 1280 && zoom === 1) {
+      // At normal desktop sizes neither the conversation nor its parent needs
+      // page scrolling to reach the composer; only history scrolls internally.
+      const panel = page.getByRole('region', { name: 'Member conversation', exact: true })
+      expect(await panel.evaluate(element => element.scrollHeight - element.clientHeight)).toBeLessThanOrEqual(1)
+      await expect(scroll.locator('.eid-owner-chat-bubble').last()).toBeInViewport({ ratio: 1 })
+    }
+
+    const bytes = Buffer.from(await running!.fixture.app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
+    writeFileSync(test.info().outputPath(`composer-${label}.png`), bytes)
+    await test.info().attach(`composer-${label}-evidence`, { contentType: 'application/json', body: JSON.stringify({ sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(), sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(), viewport: await page.evaluate(() => ({ width: innerWidth, height: innerHeight, devicePixelRatio })), sha256: createHash('sha256').update(bytes).digest('hex'), transcriptFocus, composerFocus }) })
+    await page.evaluate(() => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(100))
+    await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(1)
+  }
+
   await expect(conversation.getByRole('button', { name: 'Call', exact: true })).toBeDisabled()
   expect(running.calls).toHaveLength(0)
   await conversation.getByRole('textbox', { name: 'Message', exact: true }).fill(firstMessage)
@@ -172,6 +220,11 @@ test('retains exact worker chat, deduplicates owner send and fences a cancelled 
   await conversation.getByText(firstReply, { exact: true }).scrollIntoViewIfNeeded()
   await page.screenshot({ path: test.info().outputPath('native-messages-conversation-reference.png') })
   await page.screenshot({ path: test.info().outputPath('native-messages-conversation-wide.png') })
+
+  for (const [width, height, zoom] of [[1536, 961, 1], [1280, 720, 1], [760, 900, 1], [1280, 720, 1.25], [1280, 720, 2]]) {
+    await inspectComposer(`retained-${width}-${zoom}`, width, height, zoom)
+  }
+
   await running.fixture.app.evaluate(({ BrowserWindow }) => {
     const window = BrowserWindow.getAllWindows()[0]
     window.unmaximize()
@@ -187,6 +240,7 @@ test('retains exact worker chat, deduplicates owner send and fences a cancelled 
   await conversation.getByRole('textbox', { name: 'Message', exact: true }).fill(secondMessage)
   await conversation.getByRole('button', { name: 'Send message', exact: true }).click()
   await expect.poll(() => running!.calls.length).toBe(2)
+  await inspectComposer('pending-reply-short', 1280, 720)
   await conversation.getByRole('button', { name: 'Cancel reply', exact: true }).click()
 
   const identity = {
@@ -341,4 +395,35 @@ test('retains exact worker chat, deduplicates owner send and fences a cancelled 
   expect(running.calls).toHaveLength(27)
   expect(running.providerErrors).toEqual([])
   await page.screenshot({ path: test.info().outputPath('native-owner-chat-latest-history.png') })
+
+  for (const [width, height, zoom] of [[1536, 961, 1], [1280, 720, 1], [760, 900, 1], [1280, 720, 2]]) {
+    await inspectComposer(`long-history-${width}-${zoom}`, width, height, zoom)
+  }
+
+  // A read failure must preserve the retained transcript, draft and explicit
+  // recovery controls. Only this synthetic response is intercepted; no send.
+  let failReads = true
+  await page.routeWebSocket('**/*', socket => {
+    const server = socket.connectToServer()
+    socket.onMessage(message => {
+      const request = JSON.parse(String(message)) as { id: unknown; method: string }
+
+      if (failReads && request.method === 'organization.ownerChat.read') {
+        socket.send(JSON.stringify({ jsonrpc: '2.0', id: request.id, error: { code: -32000, message: 'Scripted retained conversation read failure' } }))
+      } else {
+        server.send(message)
+      }
+    })
+  })
+  await page.reload()
+  conversation = await openWorkerChat(page)
+  await conversation.getByRole('textbox', { name: 'Message', exact: true }).fill('Retained draft during a read failure')
+  await expect(conversation.getByRole('alert')).toContainText('Scripted retained conversation read failure', { timeout: 25_000 })
+  await inspectComposer('read-error-short', 1280, 720)
+  await expect(conversation.getByRole('button', { name: 'Send message', exact: true })).toBeDisabled()
+  failReads = false
+  await conversation.getByRole('button', { name: 'Check conversation', exact: true }).click()
+  await expect(conversation.getByRole('alert')).toHaveCount(0)
+  await expect(conversation.getByRole('textbox', { name: 'Message', exact: true })).toHaveValue('Retained draft during a read failure')
+  expect(running.calls).toHaveLength(27)
 })
