@@ -6,7 +6,7 @@ import { useStickToBottom } from 'use-stick-to-bottom'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { EmptyState } from '@/components/ui/empty-state'
-import { ErrorState } from '@/components/ui/error-state'
+import { ErrorBanner, ErrorState } from '@/components/ui/error-state'
 import { Loader } from '@/components/ui/loader'
 import { Textarea } from '@/components/ui/textarea'
 import { Tip } from '@/components/ui/tooltip'
@@ -239,6 +239,24 @@ function OwnerChatPanel({
           </div>
         )
 
+  const recoveryActions = (error || !thread || draft?.intent || cancelUncertain) && (
+    <div className="eid-owner-chat-actions">
+      <Button disabled={!ready || !!busy} onClick={() => void refresh()} size="sm" variant="secondary">
+        {copy.refresh}
+      </Button>
+      {draft?.intent && (
+        <Button
+          disabled={!ready || !!busy || inactive || !thread}
+          onClick={() => void send(draft.intent)}
+          size="sm"
+          variant="secondary"
+        >
+          {copy.retry}
+        </Button>
+      )}
+    </div>
+  )
+
   const information = <>
     <p className="eid-note">{copy.note}</p>
     {thread && <>
@@ -299,30 +317,17 @@ function OwnerChatPanel({
       )}
       {busy === 'read' && !thread && <Loader label={copy.loading} />}
       {error && (
-        <div role="alert">
-          <ErrorState description={error} title={copy.error} />
+        <div className={workspace ? 'eid-owner-chat-recovery' : undefined}>
+          <div role="alert">
+            {workspace ? <ErrorBanner className="rounded-md px-2 py-1 text-xs leading-4"><strong>{copy.error}</strong>{' '}{error}</ErrorBanner> : <ErrorState description={error} title={copy.error} />}
+          </div>
+          {workspace && recoveryActions}
         </div>
       )}
       {draft?.intent && busy !== 'send' && <p role="status">{copy.uncertain}</p>}
       {changed && <p role="status">{copy.changed}</p>}
       {cancelUncertain && <p role="status">{copy.cancelUncertain}</p>}
-      {(error || !thread || draft?.intent || cancelUncertain) && (
-        <div className="eid-owner-chat-actions">
-          <Button disabled={!ready || !!busy} onClick={() => void refresh()} size="sm" variant="secondary">
-            {copy.refresh}
-          </Button>
-          {draft?.intent && (
-            <Button
-              disabled={!ready || !!busy || inactive || !thread}
-              onClick={() => void send(draft.intent)}
-              size="sm"
-              variant="secondary"
-            >
-              {copy.retry}
-            </Button>
-          )}
-        </div>
-      )}
+      {(!workspace || !error) && recoveryActions}
       {inactive ? (
         <p role="status">{copy.readOnly}</p>
       ) : exhausted ? (

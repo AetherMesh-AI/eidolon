@@ -501,3 +501,9 @@
 
 /* Keep the outline at least two CSS pixels after native fractional zoom rounding. */
 .eid-page:has(> .eid-objective-hero) :is(button, a, input, textarea, summary):focus-visible { outline-width: 3px; }
+
+/* Keep retained-read recovery alongside its error without displacing composing. */
+.eid-messages-view .eid-owner-chat-recovery { display: flex; align-items: center; gap: 8px; }
+.eid-messages-view .eid-owner-chat-recovery > [role=alert] { flex: 1; min-width: 0; }
+.eid-messages-view .eid-owner-chat-recovery > .eid-owner-chat-actions { flex: none; }
+@media (max-width: 800px) { .eid-messages-view .eid-owner-chat-recovery { flex-wrap: wrap; } }
