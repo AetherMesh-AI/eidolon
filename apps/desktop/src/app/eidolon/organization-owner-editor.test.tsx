@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { expect, it, vi } from 'vitest'
 
 import { I18nProvider } from '@/i18n/context'
@@ -80,4 +80,51 @@ it('keeps an uncertain original Save across dismissal without automatic retry', 
   fireEvent.click(screen.getByRole('button', { name: 'Check original Save' }))
   await waitFor(() => expect(h.close).toHaveBeenCalledTimes(1))
   expect(h.request.mock.calls[2][1]).toEqual(h.request.mock.calls[1][1])
+})
+
+it('restores distinct A and B drafts and never carries a configured draft into missing metadata', async () => {
+  const h = await setup('replacement-route')
+  const a = stored('Organization A')
+  const b = stored('Organization B')
+  b.metadata!.organizationId = '33333333-3333-4333-8333-333333333333'
+  b.metadata!.owner.ownerId = '44444444-4444-4444-8444-444444444444'
+
+  const ui = (key: string) => (
+    <I18nProvider configClient={null} initialLocale="en">
+      <OrganizationOwnerEditor client={h.client} draftKey={key} onClose={h.close} onReturnFocus={vi.fn()} />
+    </I18nProvider>
+  )
+
+  h.request.mockResolvedValueOnce(a)
+  await h.client.read()
+  const mounted = render(ui('replacement-A'))
+  fireEvent.change(screen.getByLabelText('Organization name'), { target: { value: 'A draft' } })
+  h.request.mockResolvedValueOnce(b)
+  await act(async () => {
+    await h.client.read()
+  })
+  mounted.rerender(ui('replacement-B'))
+  expect((screen.getByLabelText('Organization name') as HTMLInputElement).value).toBe('Organization B')
+  fireEvent.change(screen.getByLabelText('Organization name'), { target: { value: 'B draft' } })
+  h.request.mockResolvedValueOnce(a)
+  await act(async () => {
+    await h.client.read()
+  })
+  mounted.rerender(ui('replacement-A'))
+  expect((screen.getByLabelText('Organization name') as HTMLInputElement).value).toBe('A draft')
+  h.request.mockResolvedValueOnce(stored('A draft', 2))
+  fireEvent.click(screen.getByRole('button', { name: 'Save names' }))
+  await waitFor(() => expect(h.close).toHaveBeenCalledTimes(1))
+  expect(h.request.mock.calls.at(-1)?.[1]).toMatchObject({
+    displayName: 'A draft',
+    expectedOrganizationId: a.metadata!.organizationId,
+    expectedRevision: 1
+  })
+  h.request.mockResolvedValueOnce({ ...a, state: 'unconfigured', metadata: null })
+  await act(async () => {
+    await h.client.read()
+  })
+  mounted.rerender(ui('replacement-missing'))
+  expect((screen.getByLabelText('Organization name') as HTMLInputElement).value).toBe('')
+  expect(h.request.mock.calls.filter(call => call[0] === 'organization.saveMetadata')).toHaveLength(1)
 })

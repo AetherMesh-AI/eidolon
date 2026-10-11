@@ -20,19 +20,24 @@ interface OrganizationOwnerEditorProps {
   onReturnFocus: () => void
 }
 
-export function OrganizationOwnerEditor({ client, draftKey, onClose, onReturnFocus }: OrganizationOwnerEditorProps) {
+export function OrganizationOwnerEditor(props: OrganizationOwnerEditorProps) {
+  return <ScopedOrganizationOwnerEditor key={props.draftKey} {...props} />
+}
+
+function ScopedOrganizationOwnerEditor({ client, draftKey, onClose, onReturnFocus }: OrganizationOwnerEditorProps) {
   const { t } = useI18n()
   const copy = t.organizationMetadata
   const view = useSyncExternalStore(client.subscribe, client.getSnapshot)
   const data = view.descriptor?.metadata
   const original = view.intent
 
-  const [draft, setDraft] = useState<IdentityDraft>(
-    () =>
-      drafts.get(draftKey) ?? {
-        displayName: original?.displayName ?? data?.displayName ?? '',
-        ownerDisplayName: original?.ownerDisplayName ?? data?.owner.displayName ?? ''
-      }
+  const [draft, setDraft] = useState<IdentityDraft>(() =>
+    original
+      ? { displayName: original.displayName, ownerDisplayName: original.ownerDisplayName }
+      : (drafts.get(draftKey) ?? {
+          displayName: data?.displayName ?? '',
+          ownerDisplayName: data?.owner.displayName ?? ''
+        })
   )
 
   useEffect(() => {
@@ -70,12 +75,14 @@ export function OrganizationOwnerEditor({ client, draftKey, onClose, onReturnFoc
     view.descriptor.state === 'unsupported'
 
   const submit = async () => {
-    await client.save(draft.displayName, draft.ownerDisplayName)
-    const result = client.getSnapshot()
+    const saved = await client.save(draft.displayName, draft.ownerDisplayName)
 
-    if (mounted.current.active && !result.error && !result.intent && result.descriptor?.state === 'ready') {
+    if (saved) {
       drafts.delete(draftKey)
-      onClose()
+
+      if (mounted.current.active) {
+        onClose()
+      }
     }
   }
 

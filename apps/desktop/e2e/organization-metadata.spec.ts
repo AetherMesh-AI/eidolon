@@ -46,6 +46,7 @@ print(json.dumps(dict(row) if row else None))
 
     const observedMethods: string[] = []
     let dropReply = false
+    let rejectRetry = false
     const savedRequests: Record<string, unknown>[] = []
 
     try {
@@ -65,6 +66,19 @@ print(json.dumps(dict(row) if row else None))
 
           if (request.method === 'organization.saveMetadata') {
             savedRequests.push(request.params!)
+
+            if (rejectRetry) {
+              rejectRetry = false
+              socket.send(
+                JSON.stringify({
+                  jsonrpc: '2.0',
+                  id: request.id,
+                  error: { code: 4001, message: 'Injected retry transport rejection' }
+                })
+              )
+
+              return
+            }
 
             if (dropReply) {
               droppedId = request.id
@@ -149,9 +163,19 @@ print(json.dumps(dict(row) if row else None))
       await expect(dialog.getByRole('alert')).toHaveText(uncertainMessage)
       await expect(dialog.getByLabel('Organization name', { exact: true })).toHaveValue('Retained original Save')
       await expect(dialog.getByLabel('Organization name', { exact: true })).toBeDisabled()
+      rejectRetry = true
       await dialog.getByRole('button', { name: 'Check original Save', exact: true }).click()
       await expect(dialog).toHaveCount(0)
       expect(savedRequests).toHaveLength(4)
+      expect(stored()?.revision).toBe(3)
+      await page.reload()
+      await waitForAppReady(fixture)
+      await trigger.click()
+      await expect(dialog.getByRole('alert')).toHaveText(uncertainMessage)
+      await dialog.getByRole('button', { name: 'Check original Save', exact: true }).click()
+      await expect(dialog).toHaveCount(0)
+      expect(savedRequests).toHaveLength(5)
+      expect(savedRequests[4]).toEqual(savedRequests[2])
       expect(savedRequests[3]).toEqual(savedRequests[2])
       expect(stored()).toMatchObject({
         organization_id: first.organization_id,
@@ -160,6 +184,60 @@ print(json.dumps(dict(row) if row else None))
         display_name: 'Retained original Save'
       })
       await acknowledgeExpectedErrorBanner(page, uncertainMessage)
+
+      // Replace only the fixture's metadata row to model restoring another ledger identity.
+      // Production changes still travel exclusively through the native editor's real RPC.
+      const restoreMetadata = (record: ReturnType<typeof stored>) => {
+        execFileSync('python3', [
+          '-c',
+          `
+import json, sqlite3, sys
+row = json.loads(sys.argv[2])
+with sqlite3.connect(sys.argv[1]) as conn:
+    conn.execute('DELETE FROM organization_metadata')
+    if row:
+        names = list(row)
+        conn.execute('INSERT INTO organization_metadata (' + ','.join(names) + ') VALUES (' + ','.join('?' for _ in names) + ')', list(row.values()))
+`,
+          ledger,
+          JSON.stringify(record)
+        ])
+      }
+
+      const originalRecord = stored()!
+
+      const replacement = {
+        ...originalRecord,
+        organization_id: '33333333-3333-4333-8333-333333333333',
+        owner_id: '44444444-4444-4444-8444-444444444444',
+        display_name: 'Replacement organization',
+        revision: 1
+      }
+
+      await trigger.click()
+      await dialog.getByLabel('Organization name', { exact: true }).fill('Original A draft')
+      restoreMetadata(replacement)
+      await dialog.getByRole('button', { name: 'Refresh saved names', exact: true }).click()
+      await expect(dialog).toHaveCount(0)
+      await trigger.click()
+      await expect(dialog.getByLabel('Organization name', { exact: true })).toHaveValue('Replacement organization')
+      await dialog.getByLabel('Organization name', { exact: true }).fill('Replacement B draft')
+      restoreMetadata(originalRecord)
+      await dialog.getByRole('button', { name: 'Refresh saved names', exact: true }).click()
+      await expect(dialog).toHaveCount(0)
+      await trigger.click()
+      await expect(dialog.getByLabel('Organization name', { exact: true })).toHaveValue('Original A draft')
+      restoreMetadata(null)
+      await dialog.getByRole('button', { name: 'Refresh saved names', exact: true }).click()
+      await expect(dialog).toHaveCount(0)
+      await trigger.click()
+      await expect(dialog.getByLabel('Organization name', { exact: true })).toHaveValue('')
+      await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+      restoreMetadata(originalRecord)
+      await trigger.click()
+      await dialog.getByRole('button', { name: 'Refresh saved names', exact: true }).click()
+      await expect(dialog).toHaveCount(0)
+      expect(savedRequests).toHaveLength(5)
 
       const captures: object[] = []
 
@@ -232,7 +310,7 @@ print(json.dumps(dict(row) if row else None))
 
       expect(await collectErrorBanners(page)).toEqual([])
       expect(mock.receivedPrompts).toHaveLength(0)
-      expect(observedMethods.filter(method => method === 'organization.saveMetadata')).toHaveLength(4)
+      expect(observedMethods.filter(method => method === 'organization.saveMetadata')).toHaveLength(5)
       expect(observedMethods).not.toContain('session.create')
       expect(observedMethods).not.toContain('chat.send')
       expect(

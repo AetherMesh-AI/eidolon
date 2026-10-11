@@ -205,11 +205,19 @@ it('keeps a corrupt retained request blocked across repeated Refresh instead of 
   const setItem = vi.fn()
   const removeItem = vi.fn()
 
-  const client = createOrganizationMetadataClient(() => ({ key: 'socket', ownerKey: 'route', profile: 'default', eligible: true, request }), () => 'new-key', {
-    getItem: () => '{damaged', setItem, removeItem
-  })
+  const client = createOrganizationMetadataClient(
+    () => ({ key: 'socket', ownerKey: 'route', profile: 'default', eligible: true, request }),
+    () => 'new-key',
+    {
+      getItem: () => '{damaged',
+      setItem,
+      removeItem
+    }
+  )
 
-  await client.read(); await client.read(); await client.save('New name', 'Alex')
+  await client.read()
+  await client.read()
+  await client.save('New name', 'Alex')
   expect(client.getSnapshot().error).toBe('storage')
   expect(request).not.toHaveBeenCalled()
   expect(setItem).not.toHaveBeenCalled()
@@ -227,4 +235,70 @@ it('accepts the authoritative lower revision after restoring the same organizati
   await h.client.save('New after restore', 'Alex')
   expect(h.request.mock.calls.at(-1)?.[1]).toMatchObject({ expectedRevision: 1 })
   expect(h.client.getSnapshot().error).toBeNull()
+})
+
+it.each([4001, -32601, -32602, 5072])(
+  'retains the persisted original after retry rejection %s, including reload',
+  async code => {
+    const records = new Map<string, string>()
+
+    const storage = {
+      getItem: (key: string) => records.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        records.set(key, value)
+      },
+      removeItem: (key: string) => {
+        records.delete(key)
+      }
+    }
+
+    const request = vi.fn().mockResolvedValue(value())
+    const scope = () => ({ key: 'socket', ownerKey: 'route', profile: 'default', eligible: true, request })
+    const newKey = vi.fn(() => 'original-key')
+    const client = createOrganizationMetadataClient(scope, newKey, storage)
+    await client.read()
+    request.mockRejectedValueOnce(new Error('Reply lost'))
+    await client.save('Committed original', 'Alex')
+    const intent = client.getSnapshot().intent
+    request.mockRejectedValueOnce({ code, data: { reason: 'unsupported_schema' } })
+    await client.save('Different', 'Other')
+    expect(client.getSnapshot().intent).toEqual(intent)
+    expect(client.getSnapshot().descriptor).toBeNull()
+    expect(records.size).toBe(1)
+    const reloaded = createOrganizationMetadataClient(scope, newKey, storage)
+    request.mockResolvedValueOnce(value(2, 'Committed original'))
+    await reloaded.read()
+    expect(reloaded.getSnapshot().intent).toEqual(intent)
+    request.mockResolvedValueOnce(value(2, 'Committed original'))
+    await reloaded.save('Different', 'Other')
+    expect(request.mock.calls.filter(call => call[0] === 'organization.saveMetadata').map(call => call[1])).toEqual([
+      intent,
+      intent,
+      intent
+    ])
+    expect(newKey).toHaveBeenCalledTimes(1)
+    expect(records.size).toBe(0)
+  }
+)
+
+it('does not republish a cached identity or permit uncertain retry before the new generation verifies it', async () => {
+  const h = setup()
+  await h.client.read()
+  h.request.mockRejectedValueOnce(new Error('Reply lost'))
+  await h.client.save('Original', 'Alex')
+  let fail!: (error: Error) => void
+  h.switch({ key: 'new-socket' })
+  h.request.mockReturnValueOnce(
+    new Promise((_resolve, reject) => {
+      fail = reject
+    })
+  )
+  const pending = h.client.read()
+  expect(h.client.getSnapshot().descriptor).toBeNull()
+  expect(h.client.getSnapshot().intent?.displayName).toBe('Original')
+  fail(new Error('Descriptor unavailable'))
+  await pending
+  expect(h.client.getSnapshot().descriptor).toBeNull()
+  await h.client.save('Original', 'Alex')
+  expect(h.request.mock.calls.filter(call => call[0] === 'organization.saveMetadata')).toHaveLength(1)
 })

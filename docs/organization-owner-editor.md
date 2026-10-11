@@ -22,9 +22,9 @@ editor automatically retries a write. A missing or different organization blocks
 replay, and an old receipt cannot replace a newer displayed revision. Corrupt
 retained intent remains blocked rather than being silently discarded.
 
-Pending connection changes close the editor and invalidate stale responses.
+Pending connection changes or a replaced/missing organization identity close the editor and invalidate stale responses. Drafts remain separate by organization identity. A new transport generation must verify its descriptor before enabling writes; failed descriptor reads clear cached identity.
 Returning to the original source restores its draft or uncertain request.
-Confirmed conflicts require explicit refresh and review before a new Save.
+An initial confirmed conflict requires explicit refresh and review before a new Save. A rejection while retrying an uncertain original cannot prove whether that original committed, so it preserves the request and requires fresh descriptor verification; only a matching successful receipt clears it.
 Cancel sends no request. Closing the editor while a Save is pending does not
 cancel the backend mutation or lose its uncertain intent.
 

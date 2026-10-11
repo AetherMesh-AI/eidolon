@@ -239,7 +239,16 @@ export function createOrganizationMetadataClient(
         }
       }
 
-      publish(scope, { ...previous, busy: true, error: previous.intent ? 'uncertain' : null }, sequence)
+      publish(
+        scope,
+        {
+          ...previous,
+          descriptor: entry?.key === scope.key ? previous.descriptor : null,
+          busy: true,
+          error: previous.intent ? 'uncertain' : null
+        },
+        sequence
+      )
 
       try {
         const next = descriptor(await scope.request<unknown>('organization.descriptor', {}), scope.profile)
@@ -262,7 +271,12 @@ export function createOrganizationMetadataClient(
         if (current(scope) && entries.get(scope.ownerKey)?.sequence === sequence) {
           publish(
             scope,
-            { ...viewFor(scope), busy: false, error: previous.intent ? 'uncertain' : (rejection(error) ?? 'storage') },
+            {
+              ...viewFor(scope),
+              descriptor: null,
+              busy: false,
+              error: previous.intent ? 'uncertain' : (rejection(error) ?? 'storage')
+            },
             sequence
           )
         }
@@ -352,8 +366,18 @@ export function createOrganizationMetadataClient(
           { descriptor: retainNewest(viewFor(scope), result), busy: false, intent: null, error: null },
           sequence
         )
+
+        return true
       } catch (error) {
         if (!current(scope) || entries.get(scope.ownerKey)?.sequence !== sequence) {
+          return
+        }
+
+        // A rejection of this retry says nothing about whether the original committed.
+        // Only a matching receipt can reconcile an already-uncertain request.
+        if (oldIntent) {
+          publish(scope, { ...viewFor(scope), descriptor: null, busy: false, intent, error: 'uncertain' }, sequence)
+
           return
         }
 
