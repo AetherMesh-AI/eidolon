@@ -6,6 +6,8 @@ import { writeFileSync } from 'node:fs'
 
 import { BUILTIN_THEME_LIST } from '../src/themes/presets'
 
+import { verifyKeyboardFocus } from './focus-visibility'
+
 import { type MockBackendFixture, setupMockBackend, waitForAppReady } from './fixtures'
 import { acknowledgeExpectedErrorBanner, expect, test } from './test'
 
@@ -63,6 +65,7 @@ const agents = [
   }
 ].map(agent => ({
   ...agent,
+  identityId: `fixture-${agent.id}`,
   persistent: true,
   lifecycle: 'active',
   provider: null,
@@ -149,7 +152,7 @@ const snapshot = {
     }
   ],
   requests: [{ id: 'fixture-question', objectiveId: 'navigation', type: 'request.question', team: 'Product', priority: 2, status: 'pending_intervention', reason: 'Review the proposed owner journey before the next iteration.', attempts: 0, createdAt }],
-  activity: [],
+  activity: ['executive', 'manager', 'writer', 'reviewer'].map((agentId, index) => ({ id: `fixture-event-${index}`, agentId, source: 'runtime', kind: 'system', text: ['Synthetic direction recorded for the release brief.', 'Synthetic manager assignment recorded.', 'Synthetic draft prepared for review.', 'Synthetic review evidence recorded.'][index], timestamp: createdAt })),
   knowledge: [],
   conversations: []
 }
@@ -199,6 +202,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
 
   const workspace = page.getByRole('main', { name: 'Organization workspace', exact: true })
   const captures: object[] = []
+  const focusChecks: object[] = []
   const contrastChecks: Array<{ text: string | null; contrastRatio: number; opacity: number }> = []
 
   const runtime = await app.evaluate(() => ({
@@ -218,7 +222,8 @@ test('keeps native organization navigation, roster and objective layouts usable 
           runtime,
           providerCalls: mock.receivedPrompts.length,
           organizationMethods: [...new Set(organizationMethods)],
-          captures
+          captures,
+          focusChecks
         },
         null,
         2
@@ -226,19 +231,19 @@ test('keeps native organization navigation, roster and objective layouts usable 
     )
   }
 
-  async function resize(width: number) {
-    await app.evaluate(({ BrowserWindow }, requestedWidth) => {
+  async function resize(width: number, height = 900) {
+    await app.evaluate(({ BrowserWindow }, size) => {
       const window = BrowserWindow.getAllWindows()[0]
       window.unmaximize()
       window.setMinimumSize(600, 600)
-      window.setContentSize(requestedWidth, 900)
+      window.setContentSize(size.width, size.height)
       window.setPosition(0, 0)
       window.focus()
-    }, width)
+    }, { width, height })
     await expect.poll(() => page.evaluate(() => window.innerWidth)).toBe(width)
   }
 
-  async function capture(name: string, target = workspace) {
+  async function capture(name: string, target = workspace, nativeWindow = false) {
     await target.evaluate(element => {
       element.scrollTop = 0
     })
@@ -247,11 +252,16 @@ test('keeps native organization navigation, roster and objective layouts usable 
       await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
     })
 
-    const bytes = await page.screenshot({
-      path: test.info().outputPath(`${name}.png`),
-      animations: 'disabled',
-      caret: 'hide'
-    })
+    // Chromium's page screenshot clips Electron content at non-default zoom.
+    // capturePage retains the full native content surface for reflow evidence.
+    const bytes = nativeWindow
+      ? Buffer.from(await app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
+      : await page.screenshot({
+          path: test.info().outputPath(`${name}.png`),
+          animations: 'disabled',
+          caret: 'hide'
+        })
+    if (nativeWindow) writeFileSync(test.info().outputPath(`${name}.png`), bytes)
 
     await test.info().attach(name, { body: bytes, contentType: 'image/png' })
 
@@ -366,6 +376,8 @@ test('keeps native organization navigation, roster and objective layouts usable 
     await expect(page.getByRole('region', { name: 'Member conversation', exact: true }).getByRole('heading', { name: 'Robin', exact: true })).toBeVisible()
     await search.fill('')
     await capture(`messages-selected-wide-${mode}`)
+    await resize(1536, 961)
+    await capture(`reference-messages-${mode}`)
     await resize(1220)
     await capture(`messages-selected-medium-${mode}`)
     await resize(760)
@@ -394,6 +406,8 @@ test('keeps native organization navigation, roster and objective layouts usable 
     await expect(overview.getByRole('heading', { name: 'Release documentation', exact: true })).toBeVisible()
     await expect(overview.getByRole('region', { name: 'Delivery', exact: true })).toContainText('has not been recorded')
     await capture(`objective-detail-wide-${mode}`)
+    await resize(1536, 961)
+    await capture(`reference-objective-${mode}`)
     await resize(760)
     await capture(`objective-detail-narrow-${mode}`)
     await page.getByRole('button', { name: 'Review owner requests', exact: true }).click()
@@ -430,13 +444,62 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await expect(page.locator('html')).toHaveClass(/\bdark\b/)
   await expect(page.locator('html')).toHaveAttribute('data-hermes-theme', 'eidolon')
   await navigation.getByRole('link', { name: 'Home', exact: true }).click()
-  await expect(page.getByRole('textbox', { name: 'Objective', exact: true })).toBeVisible()
+  await expect(page.locator('#eid-objective')).toBeAttached()
   await expect(page.getByRole('region', { name: 'What’s happening?', exact: true })).toBeVisible()
   await expect(page.getByRole('region', { name: 'What needs me?', exact: true })).toContainText('Review the proposed owner journey')
   await expect(page.getByRole('region', { name: 'What’s ready?', exact: true })).toContainText('Synthetic reviewed scope')
   await expect(workspace.locator('.eid-runtime-status')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Open settings', exact: true })).toHaveCount(0)
+  await expect(page.locator('#eid-objective')).toBeHidden()
   await capture('01-home-wide-dark')
+  for (const [width, height] of [[1536, 961], [1440, 900], [1280, 720]]) {
+    await resize(width, height)
+    const fit = await workspace.evaluate(element => ({ height: element.clientHeight, content: element.scrollHeight }))
+    expect(fit.content, `Home overview fits ${width} × ${height}`).toBeLessThanOrEqual(fit.height + 1)
+    await expect(page.getByRole('button', { name: 'Message organization', exact: true })).toBeInViewport({ ratio: 1 })
+    await expect(page.getByRole('contentinfo', { name: 'System health', exact: true })).toBeInViewport({ ratio: 1 })
+    await capture(`home-fit-${width}-${height}`)
+    if (width === 1280) {
+      const body = workspace.locator('.eid-home-panel-body').first()
+      const overflow = await body.evaluate(element => element.scrollHeight - element.clientHeight)
+      expect(overflow).toBeGreaterThan(0)
+      focusChecks.push(await verifyKeyboardFocus(page, body, 'Home dark keyboard scroll group'))
+      const pageScroll = await workspace.evaluate(element => element.scrollTop)
+      await page.keyboard.press('PageDown')
+      await expect.poll(() => body.evaluate(element => element.scrollTop)).toBeGreaterThan(0)
+      expect(await workspace.evaluate(element => element.scrollTop)).toBe(pageScroll)
+      await capture('home-keyboard-overflow-dark')
+      await page.keyboard.press('Home')
+      await expect.poll(() => body.evaluate(element => element.scrollTop)).toBe(0)
+    }
+  }
+  await resize(1220)
+
+  await resize(1280, 720)
+  for (const zoom of [1.25, 2]) {
+    await app.evaluate(({ BrowserWindow }, value) => BrowserWindow.getAllWindows()[0].webContents.setZoomFactor(value), zoom)
+    await expect.poll(() => page.evaluate(() => innerWidth), { message: 'native zoom changes the CSS viewport before reflow verification' }).toBe(Math.round(1280 / zoom))
+    await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(zoom)
+    await expect(page.getByRole('button', { name: 'Message organization', exact: true })).toBeVisible()
+    await expect(page.getByRole('contentinfo', { name: 'System health', exact: true })).toBeInViewport({ ratio: 1 })
+    await capture(`home-reflow-${zoom}`, workspace, true)
+  }
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.setZoomFactor(1))
+  await resize(1220)
+
+
+  // Browsing the explicit Home entry must not open chats or renew allowances.
+  await page.getByRole('button', { name: 'Message organization', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Message organization', exact: true })).toBeVisible()
+  const executiveChoices = page.getByRole('navigation', { name: 'Choose an agent', exact: true })
+  await expect(executiveChoices.getByRole('button')).toHaveCount(1)
+  await executiveChoices.getByRole('button', { name: /Avery/ }).click()
+  await expect(page.getByRole('region', { name: 'Member conversation', exact: true }).getByRole('heading', { name: 'Avery', exact: true })).toBeVisible()
+  await capture('home-message-explicit-recipient')
+  expect(organizationMethods.length).toBeGreaterThan(0)
+  expect(organizationMethods.every(method => ['organization.outcomes', 'organization.snapshot'].includes(method))).toBe(true)
+  expect(mock.receivedPrompts).toHaveLength(0)
+  await navigation.getByRole('link', { name: 'Home', exact: true }).click()
 
   // Home puts the overview first; explicit New objective reaches the retained form.
   {
@@ -490,7 +553,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await capture('06-roster-narrow-dark')
   await resize(1220)
   await navigation.getByRole('link', { name: 'Home', exact: true }).click()
-  await expect(page.getByRole('textbox', { name: 'Objective', exact: true })).toBeVisible()
+  await expect(page.locator('#eid-objective')).toBeAttached()
   await resize(760)
   await capture('07-home-narrow-dark')
 
@@ -499,7 +562,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await expect(page.getByRole('heading', { name: 'Organization', exact: true })).toBeVisible()
   await expect(inspector).toHaveCount(0)
   await page.goForward()
-  await expect(page.getByRole('textbox', { name: 'Objective', exact: true })).toBeVisible()
+  await expect(page.locator('#eid-objective')).toBeAttached()
 
   // Eidolon's built-in palette deliberately stays dark in both mode settings.
   // Exercise a genuine shared light palette through the same Appearance UI on both builds.
@@ -517,7 +580,8 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await expect(page.locator('html')).toHaveAttribute('data-hermes-theme', 'nous')
   await expect(page.locator('html')).not.toHaveClass(/\bdark\b/)
   await page.getByRole('button', { name: 'Close settings', exact: true }).click()
-  await expect(page.getByRole('textbox', { name: 'Objective', exact: true })).toBeVisible()
+  await expect(page.locator('#eid-objective')).toBeAttached()
+  focusChecks.push(await verifyKeyboardFocus(page, workspace.locator('.eid-home-panel-body').first(), 'Home light scroll group'))
   await capture('08-home-wide-light')
   await navigation.getByRole('link', { name: 'Organization', exact: true }).click()
   await expect(agentButton).toBeVisible()
@@ -539,7 +603,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await capture('13-roster-narrow-light')
   await resize(1220)
   await navigation.getByRole('link', { name: 'Home', exact: true }).click()
-  await expect(page.getByRole('textbox', { name: 'Objective', exact: true })).toBeVisible()
+  await expect(page.locator('#eid-objective')).toBeAttached()
   await resize(760)
   await capture('14-home-narrow-light')
   await page.reload()
@@ -548,6 +612,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await expect(page.locator('html')).not.toHaveClass(/\bdark\b/)
   await capture('15-theme-choice-survives-reload')
   const goal = page.getByRole('textbox', { name: 'Objective', exact: true })
+  await page.getByRole('button', { name: 'New objective', exact: true }).click()
   await goal.fill('Retain this unsubmitted objective across navigation')
 
   for (const destination of ['Messages', 'Work Overview', 'Home', 'Messages', 'Home']) {
@@ -557,8 +622,9 @@ test('keeps native organization navigation, roster and objective layouts usable 
     await expect(link).toHaveAttribute('aria-current', 'page')
   }
 
-  await expect(goal).toHaveValue('Retain this unsubmitted objective across navigation')
+  await expect(page.locator('#eid-objective')).toBeHidden()
   await page.getByRole('button', { name: 'New objective', exact: true }).click()
+  await expect(goal).toHaveValue('Retain this unsubmitted objective across navigation')
   await expect(goal).toBeFocused()
   await capture('16-home-retained-intake')
   await navigation.getByRole('link', { name: 'Objectives', exact: true }).click()

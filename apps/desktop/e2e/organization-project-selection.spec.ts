@@ -63,6 +63,7 @@ test('retains both owner-selected repository IDs across reconnect and full nativ
   running = await setupCompletionFixture(false, { projectSelection: true })
   let { page } = running.fixture
   await primary(page).getByRole('link', { name: 'Home', exact: true }).click()
+  await page.getByRole('button', { name: 'New objective', exact: true }).click()
   await page.getByRole('textbox', { name: 'Objective', exact: true }).fill(projectSelectionTitle)
   await page.getByRole('combobox', { name: 'Delivery scope', exact: true }).selectOption('source_project')
   await page.getByRole('button', { name: 'Create objective', exact: true }).click()

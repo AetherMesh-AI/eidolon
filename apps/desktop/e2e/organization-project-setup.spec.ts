@@ -115,6 +115,7 @@ async function projectChoice() {
     .getByRole('navigation', { name: 'Primary', exact: true })
     .getByRole('link', { name: 'Home', exact: true })
     .click()
+  await page.getByRole('button', { name: 'New objective', exact: true }).click()
   await page.getByRole('combobox', { name: 'Delivery scope', exact: true }).selectOption('source_project')
 
   return page.getByRole('checkbox', { name: 'frontend · root0 · general', exact: true })
