@@ -474,3 +474,6 @@
   .eid-team-work-grid .eid-home-panel > header { margin-bottom: 10px; }
   .eid-team-work-grid .eid-progress-tasks { margin-top: 12px; }
 }
+
+/* Keep the outline at least two CSS pixels after native fractional zoom rounding. */
+.eid-page:has(> .eid-objective-hero) :is(button, a, input, textarea, summary):focus-visible { outline-width: 3px; }

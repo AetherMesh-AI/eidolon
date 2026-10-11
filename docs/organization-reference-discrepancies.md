@@ -190,3 +190,10 @@ three overview review controls with visible keyboard focus at 100%, 125% and
 checks and matched captures must pass before treating this iteration as verified;
 the reference stage strip, artwork, review composition and final gallery remain
 outstanding.
+
+### Objective fractional-zoom focus follow-up
+
+The short-height correction passed its title/assignee checks, but native 125%
+zoom rounds a two-pixel outline to 1.6 CSS pixels. Objective controls now use a
+three-pixel outline; all existing minimum width, contrast and clipping checks
+remain unchanged. Corrected exact-head native evidence is pending.
