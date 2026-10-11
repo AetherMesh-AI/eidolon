@@ -34,9 +34,9 @@ export function ObjectiveProgress({ objective, snapshot, controls, onReviewReque
   const progress = objective.progress
 
   const taskRows = (tasks: OrganizationTask[]) => <ul className="eid-progress-tasks">
-    {tasks.slice(0, 3).map(task => <li key={task.id}>
-      <span className={`eid-status eid-status-${task.status}`}>{copy.taskStatus[task.status]}</span>
+    {tasks.slice(0, 3).map(task => <li className="eid-progress-task" key={task.id}>
       <strong>{task.title}</strong>
+      <span className={`eid-status eid-status-${task.status}`}>{copy.taskStatus[task.status]}</span>
       <small>{agentName(task.assignedAgentId ?? task.ownerId)}</small>
       {task.coordination?.state === 'waiting' && <small>{task.coordination.reason || copy.dependenciesWaiting}</small>}
     </li>)}
