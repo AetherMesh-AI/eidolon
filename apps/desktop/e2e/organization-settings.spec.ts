@@ -48,6 +48,18 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
       await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
     })
     await expect(navigation).toBeVisible()
+    const rail = settings.locator('.eid-settings-layout > aside')
+    if (await rail.isVisible()) {
+      const rows = await rail.locator('button[aria-describedby]').evaluateAll(elements => elements.map(element => ({
+        label: element.getAttribute('aria-label'),
+        height: element.getBoundingClientRect().height,
+        contentHeight: element.scrollHeight
+      })))
+      expect(rows.length).toBeGreaterThan(0)
+      for (const row of rows) {
+        expect(row.height, `${row.label} retains its full text height`).toBeGreaterThanOrEqual(row.contentHeight - 1)
+      }
+    }
     const health = page.getByRole('contentinfo', { name: 'System health', exact: true })
     await expect(health).toHaveCount(1)
     await expect(health).toBeInViewport({ ratio: 1 })

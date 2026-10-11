@@ -117,7 +117,7 @@ export const OverlayNavItem = memo(function OverlayNavItem({
       aria-label={label}
       className={cn(
         'flex w-full items-center justify-start gap-2 rounded-md border px-2 text-left text-[length:var(--conversation-text-font-size)] font-normal transition-colors',
-        description ? 'min-h-7 py-2.5' : 'h-7',
+        description ? 'min-h-7 shrink-0 py-2.5' : 'h-7',
         nested
           ? active
             ? 'border-transparent bg-(--chrome-action-hover) font-medium text-foreground'
