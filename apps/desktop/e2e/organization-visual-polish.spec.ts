@@ -238,6 +238,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
   const focusChecks: object[] = []
   const columnChecks: object[] = []
   const objectiveChecks: object[] = []
+  const homeChecks: object[] = []
   const contrastChecks: Array<{ text: string | null; contrastRatio: number; opacity: number }> = []
 
   const runtime = await app.evaluate(() => ({
@@ -260,7 +261,8 @@ test('keeps native organization navigation, roster and objective layouts usable 
           captures,
           focusChecks,
           columnChecks,
-          objectiveChecks
+          objectiveChecks,
+          homeChecks
         },
         null,
         2
@@ -582,6 +584,17 @@ test('keeps native organization navigation, roster and objective layouts usable 
     await expect(page.getByRole('button', { name: 'Message organization', exact: true })).toBeInViewport({ ratio: 1 })
     await expect(page.getByRole('contentinfo', { name: 'System health', exact: true })).toBeInViewport({ ratio: 1 })
     await expect(page.getByRole('navigation', { name: 'Primary', exact: true }).getByRole('link', { name: 'Settings', exact: true })).toBeInViewport({ ratio: 1 })
+    const snapshotNote = workspace.locator('.eid-home-snapshot-note')
+    await expect(snapshotNote).toHaveText('This overview shows retained records in the current snapshot. Open the full views for complete history.')
+    await expect(snapshotNote).toBeInViewport({ ratio: 1 })
+    const geometry = await workspace.evaluate(element => {
+      const rect = (selector: string) => element.querySelector(selector)!.getBoundingClientRect().toJSON()
+      return { hero: rect('.eid-home-hero'), cards: rect('.eid-home-grid'), activity: rect('.eid-home-activity'), note: rect('.eid-home-snapshot-note') }
+    })
+    const health = await page.getByRole('contentinfo', { name: 'System health', exact: true }).boundingBox()
+    expect(geometry.activity.bottom).toBeLessThanOrEqual(health!.y)
+    expect(geometry.cards.bottom).toBeLessThan(geometry.activity.top)
+    homeChecks.push({ viewport: `${width}x${height}`, ...geometry, health })
     await capture(`home-fit-${width}-${height}`)
 
     if (width === 1280) {

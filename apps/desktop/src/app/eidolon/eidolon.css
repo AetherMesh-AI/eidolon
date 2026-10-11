@@ -393,6 +393,7 @@
 .eid-home-intake[open] { margin-top: 20px; }
 .eid-home-activity { margin-top: 12px; }
 .eid-home-activity > header { margin-bottom: 10px; }
+.eid-home-activity > header > a { flex-shrink: 0; white-space: nowrap; }
 .eid-home-activity ol { margin: 0; }
 @media (min-width: 1101px) and (min-height: 650px) {
   .eid-page:has(> .eid-home) { height: 100%; }
@@ -402,7 +403,7 @@
   .eid-home-panel-body { flex: 1 1 auto; }
   .eid-home-grid > .eid-home-panel { min-height: 0; }
   .eid-home-activity { max-height: clamp(155px, calc(100vh - 650px), 240px); overflow: auto; margin: 0; padding: 16px 20px; }
-  .eid-home > .eid-note { margin: 0; }
+  .eid-page:has(> .eid-home) { padding-bottom: 8px; }
   .eid-home:has(.eid-home-intake[open]) { height: auto; }
   .eid-home:has(.eid-home-intake[open]) > .eid-home-grid { flex: none; }
 }
