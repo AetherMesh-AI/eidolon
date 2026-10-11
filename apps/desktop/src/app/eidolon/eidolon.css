@@ -475,3 +475,5 @@
 .eid-messages-view :is(button, a, input, textarea, summary, .eid-owner-chat-scroll):focus-visible { outline-width: 3px; }
 .eid-messages-view .eid-owner-chat-scroll { max-height: calc(100dvh - 90px); scroll-margin: 8px; }
 .eid-messages-view .eid-owner-chat-composer { scroll-margin: 8px; }
+
+.eid-owner-chat-compose-area { display: grid; gap: 8px; }

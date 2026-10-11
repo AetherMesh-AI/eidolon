@@ -330,6 +330,8 @@ function OwnerChatPanel({
       ) : thread && !thread.canSend && !thread.activeTurnId && thread.unavailableReason ? (
         <p role="status">{thread.unavailableReason}</p>
       ) : null}
+      <div className="eid-owner-chat-compose-area">
+      {workspace && allowance}
       <form
         aria-label={copy.message}
         className="eid-owner-chat-composer"
@@ -341,7 +343,6 @@ function OwnerChatPanel({
           }
         }}
       >
-        {workspace && allowance}
         <label htmlFor={`owner-message-${agent.identityId}`}>{copy.message}</label>
         {latest && (
           workspace ? <details className="eid-owner-chat-reply-context"><summary>{copy.replyingTo}</summary><p className="eid-note">{latest.text.slice(0, 100)}</p></details> : <p className="eid-note">
@@ -397,6 +398,7 @@ function OwnerChatPanel({
           )}
         </div>
       </form>
+      </div>
     </div>
   )
 }
