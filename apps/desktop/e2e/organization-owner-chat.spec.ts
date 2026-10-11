@@ -242,6 +242,65 @@ test('retains exact worker chat, deduplicates owner send and fences a cancelled 
   await page.screenshot({ path: test.info().outputPath('native-messages-conversation-reference.png') })
   await page.screenshot({ path: test.info().outputPath('native-messages-conversation-wide.png') })
 
+  // Reference comparison uses the supported, retained conversation above. The
+  // visual-polish spec separately retains the older-runtime compatibility state.
+  const referenceCaptures: object[] = []
+  const retainedIdentity = {
+    threadId: sends[0].params.threadId,
+    identityId: sends[0].params.identityId,
+    profile: sends[0].params.profile
+  }
+  const referenceCalls = running.calls.length
+  const referenceSends = sends.length
+  const referenceRenewals = renewals.length
+  for (const mode of ['dark', 'light'] as const) {
+    await navigation(page).getByRole('link', { name: 'Settings', exact: true }).click()
+    await page.getByRole('button', { name: 'Appearance', exact: true }).click()
+    await page.getByRole('button').filter({ has: page.getByText('AetherMesh', { exact: true }) }).click()
+    await page.getByRole('button', { name: mode === 'dark' ? 'Dark' : 'Light', exact: true }).click()
+    await expect(page.locator('html')).toHaveAttribute('data-hermes-theme', 'nous')
+    await expect.poll(() => page.locator('html').evaluate(element => element.classList.contains('dark'))).toBe(mode === 'dark')
+    conversation = await openWorkerChat(page)
+    await page.getByRole('textbox', { name: 'Search members', exact: true }).fill('')
+    await expect(transcriptMessage(firstMessage)).toBeVisible()
+    await expect(transcriptMessage(firstReply)).toBeVisible()
+    await expect(conversation.getByRole('textbox', { name: 'Message', exact: true })).toBeInViewport({ ratio: 1 })
+    await expect(page.getByRole('region', { name: 'Member context', exact: true })).toBeVisible()
+    const retained = await rpc<ThreadView>(page, sends[0], 'organization.ownerChat.read', retainedIdentity)
+    expect(retained.error).toBeUndefined()
+    expect(retained.result?.id).toBe(accepted.result?.id)
+    expect(retained.result?.identityId).toBe(accepted.result?.identityId)
+    expect(retained.result?.messages.map(message => message.id)).toEqual(accepted.result?.messages.map(message => message.id))
+    expect(running.calls).toHaveLength(referenceCalls)
+    expect(sends).toHaveLength(referenceSends)
+    expect(renewals).toHaveLength(referenceRenewals)
+    const bytes = Buffer.from(await running.fixture.app.evaluate(async ({ BrowserWindow }) =>
+      (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
+    const name = `reference-messages-populated-${mode}`
+    writeFileSync(test.info().outputPath(`${name}.png`), bytes)
+    referenceCaptures.push({ name, sha256: createHash('sha256').update(bytes).digest('hex'),
+      viewport: await page.evaluate(() => ({ width: innerWidth, height: innerHeight, devicePixelRatio })),
+      theme: await page.locator('html').getAttribute('data-hermes-theme'),
+      mode: await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme),
+      threadId: retained.result?.id, identityId: retained.result?.identityId,
+      messageIds: retained.result?.messages.map(message => message.id),
+      scriptedProviderCalls: running.calls.length, ownerSends: sends.length, allowanceRenewals: renewals.length })
+  }
+  writeFileSync(test.info().outputPath('populated-messages-reference-evidence.json'), JSON.stringify({
+    sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+    sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
+    scenario: 'supported-authenticated-retained-owner-chat-loopback-provider',
+    initialScriptedProviderCalls: referenceCalls, initialOwnerSends: referenceSends,
+    initialAllowanceRenewals: referenceRenewals, captures: referenceCaptures
+  }, null, 2))
+  // Restore the original theme before the existing composer/recovery matrix.
+  await navigation(page).getByRole('link', { name: 'Settings', exact: true }).click()
+  await page.getByRole('button', { name: 'Appearance', exact: true }).click()
+  await page.getByRole('button').filter({ has: page.getByText('Eidolon', { exact: true }) }).click()
+  await page.getByRole('button', { name: 'Dark', exact: true }).click()
+  conversation = await openWorkerChat(page)
+
+
   for (const [width, height, zoom] of [[1536, 961, 1], [1280, 720, 1], [760, 900, 1], [1280, 720, 1.25], [1280, 720, 2]]) {
     await inspectComposer(`retained-${width}-${zoom}`, width, height, zoom)
   }
