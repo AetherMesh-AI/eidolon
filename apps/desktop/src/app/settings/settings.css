@@ -27,7 +27,8 @@
   gap: 24px;
 }
 .eid-settings-layout > aside {
-  padding: 0 8px 12px 0;
+  padding: 6px 8px 12px 6px;
+  scroll-padding: 6px;
   background: transparent;
 }
 .eid-settings-layout > aside small {
@@ -114,7 +115,7 @@
   }
   .eid-settings-layout > div {
     display: flex;
-    padding: 0;
+    padding: 6px;
     height: auto;
     min-height: 32px;
   }
