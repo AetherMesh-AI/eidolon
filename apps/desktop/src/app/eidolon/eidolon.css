@@ -18,7 +18,7 @@
   --text-secondary: var(--ui-text-secondary);
   --text-muted: var(--ui-text-secondary);
   --status-success: color-mix(in srgb, var(--ui-green) 65%, var(--ui-text-primary));
-  --status-warning: color-mix(in srgb, var(--ui-yellow) 45%, var(--ui-text-primary));
+  --status-warning: color-mix(in srgb, var(--ui-yellow) 25%, var(--ui-text-primary));
   --status-danger: color-mix(in srgb, var(--ui-red) 65%, var(--ui-text-primary));
   --status-info: color-mix(in srgb, var(--ui-blue) 65%, var(--ui-text-primary));
   color: var(--text-primary);
@@ -285,7 +285,7 @@
 
 /* Quiet controls remain readable on every organization surface; shared tokens
  * still own the colors and the selected theme owns progress fill. */
-.eidolon { --ui-text-secondary: color-mix(in srgb, var(--ui-text-primary) 85%, var(--ui-bg-editor)); --ui-text-tertiary: var(--ui-text-secondary); --dt-muted-foreground: var(--ui-text-secondary); }
+.eidolon { --ui-text-primary: var(--eidolon-foreground, var(--theme-foreground)); --ui-text-secondary: var(--ui-text-primary); --ui-text-tertiary: var(--ui-text-secondary); --dt-foreground: var(--ui-text-primary); --dt-muted-foreground: var(--ui-text-secondary); --dt-primary-foreground: var(--eidolon-on-primary); }
 .eid-home-record-compact { padding: 14px 0; }
 .eid-home-record-compact h3 { margin-bottom: 0; font-size: 18px; }
 .eid-home-record-compact .eid-home-progress { margin: 12px 0 0; }

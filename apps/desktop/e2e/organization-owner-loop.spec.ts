@@ -271,7 +271,9 @@ test('preserves unsupported work and grants across navigation, dismissal, reload
   // Seed only a legacy local-storage fixture. It must remain exact and must
   // never be submitted to the runtime ledger merely by opening its history.
   await page.evaluate(({ key, bytes }) => localStorage.setItem(key, bytes), { key: legacyKey, bytes: legacyBytes })
-  await navigation.getByText('Tools and configuration', { exact: true }).click()
+  const toolsDisclosure = navigation.getByText('Tools and configuration', { exact: true })
+  if ((await toolsDisclosure.locator('..').getAttribute('open')) === null) { await toolsDisclosure.click() }
+  await expect(toolsDisclosure.locator('..')).toHaveAttribute('open', '')
   await assertRailLayout('03a-expanded-rail-controls')
   await navigation.getByRole('link', { name: 'Legacy prototype history', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Legacy prototype history', exact: true })).toBeVisible()
