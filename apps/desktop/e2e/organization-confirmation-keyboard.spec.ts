@@ -103,6 +103,10 @@ test('native confirmation keyboard respects focused actions in shared host and s
     }
   }
 
+  const more = page.getByRole('complementary', { name: 'Eidolon navigation', exact: true })
+    .getByRole('button', { name: 'More workspace options', exact: true })
+  if (await more.locator('..').getAttribute('open') === null) await more.click()
+  await expect(more.locator('..')).toHaveAttribute('open', '')
   const history = page.locator('.eid-rail-history')
   if (await history.getAttribute('open') === null) await history.locator('summary').click()
   function sessionRow(title: string): Locator {
