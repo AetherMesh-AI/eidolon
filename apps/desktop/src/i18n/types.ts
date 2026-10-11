@@ -12,6 +12,7 @@ import type { OrganizationHomeCopy } from './organization-home'
 import type { OrganizationOwnerChatCopy } from './organization-owner-chat'
 import type { OrganizationRosterCopy } from './organization-roster'
 import type { OrganizationWorkCopy } from './organization-work'
+import type { settingsWorkspaceEn } from './settings-workspace'
 
 export type Locale = 'en' | 'zh' | 'zh-hant' | 'ja' | 'ar' | 'ru'
 
@@ -57,6 +58,7 @@ interface AuxTaskCopy {
 }
 
 export interface Translations {
+  settingsWorkspace: typeof settingsWorkspaceEn
   organizationHome: OrganizationHomeCopy
   organizationFoundation: OrganizationFoundationCopy
   organizationOwnerChat: OrganizationOwnerChatCopy

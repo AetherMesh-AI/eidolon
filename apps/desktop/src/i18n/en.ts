@@ -6,12 +6,14 @@ import { organizationHomeEn } from './organization-home'
 import { organizationOwnerChatEn } from './organization-owner-chat'
 import { organizationRosterEn } from './organization-roster'
 import { organizationWorkEn } from './organization-work'
+import { settingsWorkspaceEn } from './settings-workspace'
 import type { Translations } from './types'
 
 export const en: Translations = {
   organizationOwnerChat: organizationOwnerChatEn,
   organizationConversations: organizationConversationsEn,
   organizationHome: organizationHomeEn,
+  settingsWorkspace: settingsWorkspaceEn,
   organizationFoundation: organizationFoundationEn,
   organizationWork: organizationWorkEn,
   organizationRoster: organizationRosterEn,

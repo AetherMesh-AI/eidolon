@@ -34,6 +34,7 @@ interface OverlayNavItemProps {
   /** Stable identity for the row, used as its `data-tour` handle. */
   id?: string
   label: string
+  description?: string
   // Renders as an indented child of another nav item: smaller icon and a
   // lighter active state so it never competes with the boxed parent item.
   nested?: boolean
@@ -105,14 +106,18 @@ export const OverlayNavItem = memo(function OverlayNavItem({
   icon: Icon,
   id,
   label,
+  description,
   nested,
   onClick,
   trailing
 }: OverlayNavItemProps) {
   return (
     <button
+      aria-describedby={description && id ? `${id}-description` : undefined}
+      aria-label={label}
       className={cn(
-        'flex h-7 w-full items-center justify-start gap-2 rounded-md border px-2 text-left text-[length:var(--conversation-text-font-size)] font-normal transition-colors',
+        'flex w-full items-center justify-start gap-2 rounded-md border px-2 text-left text-[length:var(--conversation-text-font-size)] font-normal transition-colors',
+        description ? 'min-h-7 py-2.5' : 'h-7',
         nested
           ? active
             ? 'border-transparent bg-(--chrome-action-hover) font-medium text-foreground'
@@ -134,7 +139,17 @@ export const OverlayNavItem = memo(function OverlayNavItem({
           active ? 'text-foreground/80' : 'text-muted-foreground/80'
         )}
       />
-      <span className="min-w-0 flex-1 truncate">{label}</span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate">{label}</span>
+        {description && (
+          <small
+            className="mt-1 block whitespace-normal text-(--ui-text-secondary)"
+            id={id ? `${id}-description` : undefined}
+          >
+            {description}
+          </small>
+        )}
+      </span>
       {trailing}
     </button>
   )
@@ -145,6 +160,7 @@ export interface OverlayNavLink {
   icon: IconComponent
   id: string
   label: string
+  description?: string
   onSelect: () => void
 }
 
@@ -171,6 +187,7 @@ export function OverlayNav({ footer, groups }: { footer?: ReactNode; groups: Ove
             {group.gapBefore && <div aria-hidden className="h-2" />}
             <OverlayNavItem
               active={group.active}
+              description={group.description}
               icon={group.icon}
               id={group.id}
               label={group.label}
