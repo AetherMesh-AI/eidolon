@@ -1248,6 +1248,7 @@ for (const locale of ['ja', 'ar', 'ru'] as const) {
     const header = page.getByRole('banner', { name: copy.heading, exact: true })
     await expect(header.locator('[data-slot="connection-switcher"]')).toBeVisible()
     const captures: object[] = []
+    const headerCaptures: object[] = []
     const focusChecks: object[] = []
     for (const mode of ['dark', 'light'] as const) {
       await page.evaluate(() => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(100))
@@ -1280,6 +1281,12 @@ for (const locale of ['ja', 'ar', 'ru'] as const) {
         for (let index = 1; index < sortedRects.length; index++) {
           expect(sortedRects[index].left, `${sortedRects[index - 1].label} overlaps ${sortedRects[index].label}`).toBeGreaterThanOrEqual(sortedRects[index - 1].right)
         }
+        // Capture the header before opening Search; the modal backdrop blurs it.
+        const headerName = `workspace-header-${locale}-${mode}-${width}-${height}-${zoom}.png`
+        const headerBytes = Buffer.from(await app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
+        writeFileSync(test.info().outputPath(headerName), headerBytes)
+        headerCaptures.push({ name: headerName, width, height, zoom, controlRects: sortedRects, captureMethod: 'electron.capturePage', sha256: createHash('sha256').update(headerBytes).digest('hex') })
+        await test.info().attach(headerName, { body: headerBytes, contentType: 'image/png' })
         await header.locator('[data-slot="connection-switcher"]').getByRole('button').click()
         await expect(page.getByRole('menuitemradio', { name: /Temporary organization connection/ })).toBeVisible()
         await page.keyboard.press('Escape')
@@ -1307,7 +1314,7 @@ for (const locale of ['ja', 'ar', 'ru'] as const) {
     await test.info().attach('workspace-translated-evidence', { contentType: 'application/json', body: JSON.stringify({
       sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
       sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
-      locale, providerCalls: mock.receivedPrompts.length, methods, captures, focusChecks
+      locale, providerCalls: mock.receivedPrompts.length, methods, captures, headerCaptures, focusChecks
     }) })
   })
 }
