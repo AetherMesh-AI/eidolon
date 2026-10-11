@@ -438,6 +438,18 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await expect(page.getByRole('button', { name: 'Open settings', exact: true })).toHaveCount(0)
   await capture('01-home-wide-dark')
 
+  // Browsing the explicit Home entry must not open chats or renew allowances.
+  await page.getByRole('button', { name: 'Message organization', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Message organization', exact: true })).toBeVisible()
+  const executiveChoices = page.getByRole('navigation', { name: 'Choose an agent', exact: true })
+  await expect(executiveChoices.getByRole('button')).toHaveCount(1)
+  await executiveChoices.getByRole('button', { name: /Avery/ }).click()
+  await expect(page.getByRole('region', { name: 'Member conversation', exact: true }).getByRole('heading', { name: 'Avery', exact: true })).toBeVisible()
+  await capture('home-message-explicit-recipient')
+  expect([...new Set(organizationMethods)].sort()).toEqual(['organization.outcomes', 'organization.snapshot'])
+  expect(mock.receivedPrompts).toHaveLength(0)
+  await navigation.getByRole('link', { name: 'Home', exact: true }).click()
+
   // Home puts the overview first; explicit New objective reaches the retained form.
   {
     await page.getByRole('button', { name: 'New objective', exact: true }).click()

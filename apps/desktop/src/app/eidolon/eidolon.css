@@ -362,3 +362,6 @@
 .eid-delivery-outcomes { margin-bottom: 28px; }
 .eid-delivery-outcomes .eid-home-record > a { display: block; margin-top: 10px; }
 @media (width < 800px) { .eid-deliverables-heading { padding-top: 24px; } .eid-deliverables-heading h1 { font-size: 29px; } .eid-roster-surface .eid-organization-list { padding-inline: 10px; } }
+
+.eid-home-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; max-width: 360px; }
+.eid-home-actions > p { flex-basis: 100%; font-size: 12px; }

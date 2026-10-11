@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { Link, useLocation } from 'react-router'
+import { Link, useLocation, useNavigate } from 'react-router'
 
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n/context'
@@ -81,6 +81,8 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
   const copy = t.organizationHome
   const data = homeData(snapshot)
   const { hash } = useLocation()
+  const navigate = useNavigate()
+  const canChooseRecipient = snapshot.connection?.state === 'ready' && Boolean(snapshot.connection.ownerScope ?? snapshot.connection.scope)
   const intakeFocused = useRef(false)
   // eslint-disable-next-line no-restricted-syntax -- one-shot focus guard for explicit navigation, not mirrored reactive data
   useEffect(() => {
@@ -118,9 +120,11 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
           <p>{copy.introduction}</p>
         </div>
         {adapter.mode === 'runtime' && (
-          <Button onClick={focusIntake} variant="default">
-            {copy.newObjective}
-          </Button>
+          <div className="eid-home-actions">
+            <Button disabled={!canChooseRecipient} onClick={() => navigate('/messages?recipient=executive')} variant="default">{copy.messageOrganization}</Button>
+            <Button onClick={focusIntake} variant="secondary">{copy.newObjective}</Button>
+            {!canChooseRecipient && <p role="status">{copy.messageOrganizationUnavailable}</p>}
+          </div>
         )}
       </header>
       {snapshot.connection && snapshot.connection.state !== 'ready' && (

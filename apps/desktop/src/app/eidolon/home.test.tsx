@@ -1,5 +1,5 @@
-import { cleanup, render, screen } from '@testing-library/react'
-import { MemoryRouter } from 'react-router'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { MemoryRouter, useLocation } from 'react-router'
 import { afterEach, expect, it, vi } from 'vitest'
 
 import { Home, HomeObjective } from './home'
@@ -148,4 +148,27 @@ it('focuses explicit intake navigation once after connection readiness without s
   } finally {
     HTMLElement.prototype.scrollIntoView = original
   }
+})
+
+
+it('opens a scoped executive chooser only after explicit Home action and never submits work', () => {
+  const current = { ...snapshot, connection: { scope: 'socket', ownerScope: 'current-organization', state: 'ready' as const } }
+  const adapter = { mode: 'runtime', getSnapshot: () => current, createObjective: vi.fn(), openOwnerChat: vi.fn(), sendOwnerChat: vi.fn() } as unknown as RuntimeOrganizationAdapter
+
+  function Location() {
+    const value = useLocation()
+
+    return <output>{value.pathname + value.search}</output>
+  }
+
+  const tree = (value: OrganizationSnapshot) => <MemoryRouter initialEntries={['/home']}><Home adapter={adapter} snapshot={value} /><Location /></MemoryRouter>
+  const view = render(tree(snapshot))
+  expect(screen.getByRole('button', { name: 'Message organization' })).toHaveProperty('disabled', true)
+  expect(screen.getByText(/Connect to the current organization before choosing/)).toBeTruthy()
+  view.rerender(tree(current))
+  fireEvent.click(screen.getByRole('button', { name: 'Message organization' }))
+  expect(screen.getByText('/messages?recipient=executive')).toBeTruthy()
+  expect(adapter.createObjective).not.toHaveBeenCalled()
+  expect(adapter.openOwnerChat).not.toHaveBeenCalled()
+  expect(adapter.sendOwnerChat).not.toHaveBeenCalled()
 })

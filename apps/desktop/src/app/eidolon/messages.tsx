@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
 
 import { Button } from '@/components/ui/button'
 import { SearchField } from '@/components/ui/search-field'
@@ -37,6 +37,8 @@ export function Messages({
   const { t } = useI18n()
   const copy = t.organizationHome
   const messages = copy.memberMessages
+  const [params] = useSearchParams()
+  const executiveEntry = params.get('recipient') === 'executive'
   const [selected, setSelected] = useState<{ id: string; identityId?: string; scope?: string } | null>(null)
   const [query, setQuery] = useState('')
   const scope = snapshot.connection?.ownerScope ?? snapshot.connection?.scope
@@ -48,7 +50,8 @@ export function Messages({
   }
 
   const agents = snapshot.agents.filter(
-    agent => agent.persistent && agent.role !== 'Owner' && !agent.id.startsWith('control:')
+    agent => agent.persistent && agent.role !== 'Owner' && !agent.id.startsWith('control:') &&
+      (!executiveEntry || (agent.role === 'Executive' && (agent.lifecycle === undefined || agent.lifecycle === 'active')))
   )
 
   const matches = agents.filter(agent =>
@@ -64,7 +67,7 @@ export function Messages({
   return (
     <>
       <header className="eid-home-hero">
-        <div><h1>{copy.messages}</h1><p>{copy.messagesNote}</p></div>
+        <div><h1>{executiveEntry ? copy.messageOrganization : copy.messages}</h1><p>{executiveEntry ? copy.executiveMessageNote : copy.messagesNote}</p></div>
       </header>
       <div className="eid-messages-layout" data-member-selected={Boolean(agent)}>
         <section aria-label={messages.members} className="eid-message-members">
@@ -83,8 +86,8 @@ export function Messages({
               </Button>
             ))}
           </nav>
-          {!matches.length && <p role="status">{agents.length ? messages.noMatches : copy.noAgents}</p>}
-          <p className="eid-note">{messages.directoryNote}</p>
+          {!matches.length && <p role="status">{agents.length ? messages.noMatches : executiveEntry ? copy.noMessageExecutive : copy.noAgents}</p>}
+          <p className="eid-note">{messages.directoryNote}</p>{executiveEntry && !agents.length && <Link to="/organization">{copy.reviewMessageRoster}</Link>}
         </section>
         <section aria-label={messages.conversation} className="eid-message-conversation">
           {agent ? (
@@ -98,7 +101,7 @@ export function Messages({
               />
             </>
           ) : (
-            <div className="eid-message-empty"><h2>{copy.chooseAgent}</h2><p>{agents.length ? messages.selectNote : copy.noAgents}</p></div>
+            <div className="eid-message-empty"><h2>{copy.chooseAgent}</h2><p>{agents.length ? messages.selectNote : executiveEntry ? copy.noMessageExecutive : copy.noAgents}</p></div>
           )}
         </section>
         {agent && <section aria-label={messages.memberContext} className="eid-message-context">

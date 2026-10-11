@@ -99,3 +99,30 @@ work. The final gallery must use one current build, label all synthetic fixture
 data, include the four matched screens plus all other pages, and identify any
 accepted capability/health-bar exceptions. Earlier PR screenshots are iteration
 evidence, not a substitute for that final gallery.
+
+
+## Window fit and organization message follow-up
+
+The later explicit goal requires main overviews and controls to fit normal
+windows. Use bounded summary panels with internal scrolling/drill-down for long
+lists; natural transcript scrolling is appropriate. Do not clip controls, hide
+important content or shrink text to manufacture fit. Test 1536×961 reference size,
+1440×900, 1280×720 and narrow widths plus zoom/reflow, with persistent navigation
+and bottom health. Small windows and large text still need reachable overflow.
+
+The current runtime has member-specific durable chats, not a shared organization
+conversation. A Home entry may offer explicit selection among the current
+organization's available Executives before opening that member's existing chat;
+it must not silently select a globally named Executive, send, renew allowance or
+create an objective. Missing connection/recipient states must be explicit.
+
+Backend audit: persistent multiple Executives and explicit objective
+executive/manager IDs already exist. `organization_identity._assign_objective`
+checks an enabled Executive, enabled Manager, accepts and reporting relationship;
+omitted manager selection defaults to the configured `manager` identity.
+Executive hierarchical planning is `request.decompose`, while `request.plan` is
+Manager-scoped. There is no `new.task` responsibility or automatic new-objective
+selection by department/capacity in this path. A future typed intake router needs
+explicit eligible-handler selection, one recorded accountable objective lead and
+visible no-handler intervention; it is outside this UI correction and is not
+claimed as implemented.
