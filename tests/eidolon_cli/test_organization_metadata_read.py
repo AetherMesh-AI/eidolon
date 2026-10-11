@@ -88,3 +88,26 @@ def test_incomplete_or_unknown_schema_is_unsupported_without_changes(tmp_path):
     with pytest.raises(MetadataError, match='unsupported_schema'):
         save(path)
     assert files(tmp_path) == before
+
+
+@pytest.mark.parametrize('table,old,new', [
+    (0, 'singleton INTEGER PRIMARY KEY', 'singleton INTEGER'),
+    (1, 'idempotency_key TEXT NOT NULL UNIQUE', 'idempotency_key TEXT NOT NULL'),
+    (1, ', PRIMARY KEY(organization_id, revision)', ''),
+    (2, 'idempotency_key TEXT PRIMARY KEY', 'idempotency_key TEXT'),
+    (0, 'display_name TEXT NOT NULL', 'display_name TEXT'),
+    (0, ' CHECK(singleton=1)', ''),
+    (0, ' CHECK(revision>0)', ''),
+    (2, 'idempotency_key TEXT PRIMARY KEY', 'idempotency_key TEXT COLLATE NOCASE PRIMARY KEY'),
+])
+def test_same_columns_with_wrong_constraints_are_unsupported_without_repair(tmp_path, table, old, new):
+    from eidolon_cli.organization_metadata import _DDL
+    path = tmp_path / 'state.db'
+    with sqlite3.connect(path) as conn:
+        for index, statement in enumerate(_DDL):
+            conn.execute(statement.replace(old, new) if index == table else statement)
+    before = files(tmp_path)
+    assert read_descriptor(path) == {'capabilityVersion': 1, 'state': 'unsupported', 'metadata': None, 'reason': 'schema'}
+    with pytest.raises(MetadataError, match='unsupported_schema'):
+        save(path)
+    assert files(tmp_path) == before

@@ -113,3 +113,38 @@ def test_rpc_rejects_symlink_to_unauthorized_sibling_ledger(served, tmp_path):
     assert call()['error']['code'] == 4001
     assert call('organization.saveMetadata', intent())['error']['code'] == 4001
     assert list(outside.iterdir()) == []
+
+
+@pytest.mark.parametrize('damage', ['json', 'root', 'missing', 'version', 'owner', 'revision', 'timestamp', 'identity'])
+def test_corrupt_receipt_is_storage_error_without_repair_or_cas_fallback(served, damage):
+    import copy
+    import json
+    original = call('organization.saveMetadata', intent())['result']
+    path = served / 'organization' / 'state.db'
+    # The original receipt must still be decoded before an otherwise stale CAS.
+    call('organization.saveMetadata', {**intent(), 'idempotencyKey': 'later',
+         'expectedOrganizationId': original['metadata']['organizationId'], 'expectedRevision': 1,
+         'displayName': 'Later revision'})
+    result = copy.deepcopy({key: value for key, value in original.items() if key != 'scope'})
+    mutations = {
+        'json': lambda: '{not JSON',
+        'root': lambda: json.dumps([]),
+        'missing': lambda: json.dumps({'capabilityVersion': 1, 'state': 'ready'}),
+        'version': lambda: json.dumps({**result, 'capabilityVersion': True}),
+        'owner': lambda: json.dumps({**result, 'metadata': {**result['metadata'], 'owner': None}}),
+        'revision': lambda: json.dumps({**result, 'metadata': {**result['metadata'], 'revision': False}}),
+        'timestamp': lambda: json.dumps({**result, 'metadata': {**result['metadata'], 'createdAt': 'yesterday'}}),
+        'identity': lambda: json.dumps({**result, 'metadata': {**result['metadata'],
+                    'organizationId': result['metadata']['owner']['ownerId']}}),
+    }
+    with closing(sqlite3.connect(path)) as conn:
+        conn.execute('UPDATE organization_metadata_receipts SET result_json=? WHERE idempotency_key=?',
+                     (mutations[damage](), intent()['idempotencyKey']))
+        conn.commit()
+        before = tuple(conn.iterdump())
+    response = call('organization.saveMetadata', intent())
+    assert response['error']['code'] == 5072
+    assert response['error']['data'] == {'reason': 'corrupt'}
+    assert str(served) not in str(response)
+    with closing(sqlite3.connect(path)) as conn:
+        assert tuple(conn.iterdump()) == before

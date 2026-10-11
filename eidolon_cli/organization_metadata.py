@@ -36,6 +36,21 @@ _DDL = (
         input_hash TEXT NOT NULL, result_json TEXT NOT NULL)''',
 )
 
+# PRAGMA-visible constraints are part of the v1 storage contract, not just names.
+_COLUMN_RULES = {
+    'organization_metadata': (('INTEGER', 0, 1), ('INTEGER', 1, 0), ('TEXT', 1, 0),
+                              ('TEXT', 1, 0), ('TEXT', 1, 0), ('TEXT', 1, 0),
+                              ('INTEGER', 1, 0), ('TEXT', 1, 0), ('TEXT', 1, 0)),
+    'organization_metadata_audit': (('TEXT', 1, 1), ('INTEGER', 1, 2), ('TEXT', 1, 0),
+                                    ('TEXT', 1, 0), ('TEXT', 1, 0)),
+    'organization_metadata_receipts': (('TEXT', 0, 1), ('TEXT', 1, 0), ('TEXT', 1, 0), ('TEXT', 1, 0)),
+}
+_UNIQUE_KEYS = {
+    'organization_metadata': set(),  # INTEGER PRIMARY KEY is the rowid, not an index.
+    'organization_metadata_audit': {('pk', ('organization_id', 'revision')), ('u', ('idempotency_key',))},
+    'organization_metadata_receipts': {('pk', ('idempotency_key',))},
+}
+
 
 class MetadataError(RuntimeError):
     def __init__(self, reason: str):
@@ -63,6 +78,75 @@ def _record(row):
             'revision': row['revision'], 'createdAt': row['created_at'], 'updatedAt': row['updated_at']}
 
 
+def _compatible_table(conn, name, columns):
+    fields = conn.execute(f'PRAGMA table_xinfo({name})').fetchall()
+    if tuple(row['name'] for row in fields) != columns:
+        return False
+    if tuple((row['type'].upper(), row['notnull'], row['pk']) for row in fields) != _COLUMN_RULES[name]:
+        return False
+    if any(row['hidden'] or row['dflt_value'] is not None for row in fields):
+        return False
+    keys = set()
+    for index in conn.execute('SELECT * FROM pragma_index_list(?)', (name,)):
+        if not index['unique']:
+            continue
+        fields = conn.execute('SELECT * FROM pragma_index_xinfo(?) WHERE key=1 ORDER BY seqno',
+                              (index['name'],)).fetchall()
+        if index['partial'] or any(row['cid'] < 0 or row['coll'] != 'BINARY' or row['desc'] for row in fields):
+            return False
+        keys.add((index['origin'], tuple(row['name'] for row in fields)))
+    if keys != _UNIQUE_KEYS[name]:
+        return False
+    # SQLite exposes keys through PRAGMA, but not CHECK expressions. These are
+    # the v1 writer's two fixed clauses; unknown spellings fail closed.
+    sql = conn.execute('SELECT sql FROM sqlite_master WHERE name=?', (name,)).fetchone()[0]
+    compact = ''.join(sql.lower().split())
+    checks = ('check(singleton=1)', 'check(revision>0)') if name == 'organization_metadata' else ()
+    return compact.count('check(') == len(checks) and all(check in compact for check in checks)
+
+
+def _validate_record(record):
+    try:
+        if not isinstance(record, dict) or set(record) != {
+                'organizationId', 'displayName', 'owner', 'revision', 'createdAt', 'updatedAt'}:
+            raise ValueError('record')
+        owner = record['owner']
+        if not isinstance(owner, dict) or set(owner) != {'ownerId', 'displayName'}:
+            raise ValueError('owner')
+        _uuid(record['organizationId'], 'organizationId')
+        _uuid(owner['ownerId'], 'ownerId')
+        if (_text(record['displayName'], 'displayName', 160) != record['displayName']
+                or _text(owner['displayName'], 'ownerDisplayName', 160) != owner['displayName']):
+            raise ValueError('name')
+        if type(record['revision']) is not int or record['revision'] < 1:
+            raise ValueError('revision')
+        for field in ('createdAt', 'updatedAt'):
+            if datetime.fromisoformat(record[field]).tzinfo is None:
+                raise ValueError('timestamp')
+    except (ValueError, TypeError):
+        raise MetadataError('corrupt') from None
+    return record
+
+
+def _receipt_result(receipt, metadata):
+    try:
+        if not isinstance(receipt['result_json'], str):
+            raise ValueError('receipt')
+        result = json.loads(receipt['result_json'])
+        if (not isinstance(result, dict) or set(result) != {'capabilityVersion', 'state', 'metadata'}
+                or type(result['capabilityVersion']) is not int or result['capabilityVersion'] != _VERSION
+                or result['state'] != 'ready'):
+            raise ValueError('receipt')
+        record = _validate_record(result['metadata'])
+        if (record['organizationId'] != metadata['organizationId']
+                or record['owner']['ownerId'] != metadata['owner']['ownerId']
+                or record['createdAt'] != metadata['createdAt'] or record['revision'] > metadata['revision']):
+            raise ValueError('receipt identity/revision')
+        return result
+    except (ValueError, TypeError, RecursionError):
+        raise MetadataError('corrupt') from None
+
+
 def _inspect(conn):
     objects = dict(conn.execute("SELECT name,type FROM sqlite_master WHERE name LIKE 'organization_metadata%'"))
     present = set(objects) & _TABLES.keys()
@@ -71,8 +155,7 @@ def _inspect(conn):
     if present != _TABLES.keys():
         return _descriptor('unsupported', reason='incomplete_schema')
     for name, columns in _TABLES.items():
-        actual = tuple(row[1] for row in conn.execute(f'PRAGMA table_info({name})'))
-        if objects[name] != 'table' or actual != columns:
+        if objects[name] != 'table' or not _compatible_table(conn, name, columns):
             return _descriptor('unsupported', reason='schema')
     rows = conn.execute('SELECT * FROM organization_metadata').fetchall()
     if not rows:
@@ -85,19 +168,7 @@ def _inspect(conn):
     row = rows[0]
     if row['schema_version'] != _VERSION:
         return _descriptor('unsupported', reason='schema_version')
-    try:
-        _uuid(row['organization_id'], 'organizationId')
-        _uuid(row['owner_id'], 'ownerId')
-        _text(row['display_name'], 'displayName', 160)
-        _text(row['owner_display_name'], 'ownerDisplayName', 160)
-        if type(row['revision']) is not int or row['revision'] < 1:
-            raise ValueError('revision')
-        for field in ('created_at', 'updated_at'):
-            if datetime.fromisoformat(row[field]).tzinfo is None:
-                raise ValueError('timestamp')
-    except (ValueError, TypeError):
-        raise MetadataError('corrupt') from None
-    return _descriptor('ready', metadata=_record(row))
+    return _descriptor('ready', metadata=_validate_record(_record(row)))
 
 
 def read_descriptor(path: Path) -> dict:
@@ -155,7 +226,7 @@ def _save_in_transaction(conn, payload, key, input_hash):
                 raise MetadataError('idempotency_conflict')
             if not metadata or receipt['organization_id'] != metadata['organizationId']:
                 raise MetadataError('identity_conflict')
-            return json.loads(receipt['result_json'])
+            return _receipt_result(receipt, metadata)
     expected_id, expected_revision = payload['expectedOrganizationId'], payload['expectedRevision']
     if metadata:
         if metadata['organizationId'] != expected_id:
