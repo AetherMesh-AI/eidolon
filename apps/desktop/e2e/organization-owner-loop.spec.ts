@@ -210,6 +210,11 @@ test('preserves unsupported work and grants across navigation, dismissal, reload
   await nativeWindow.dispose()
 
   const assertRailLayout = async (name: string) => {
+    // Disclosure clicks can scroll the rail to reveal their target. Establish
+    // the top through real wheel input before proving downward scrolling.
+    await navigation.hover({ position: { x: 8, y: 8 } })
+    await page.mouse.wheel(0, -2000)
+    await expect.poll(() => navigation.evaluate(rail => rail.scrollTop)).toBe(0)
     const geometry = await navigation.evaluate(rail => {
       const heading = rail.querySelector('.eid-rail-history > summary')!.getBoundingClientRect()
       const tree = rail.querySelector('.eid-session-tree')!.getBoundingClientRect()
@@ -225,7 +230,7 @@ test('preserves unsupported work and grants across navigation, dismissal, reload
     expect(geometry.sidebarBottom).toBeLessThanOrEqual(geometry.treeBottom + 1)
     expect(geometry.sidebarLeft).toBeGreaterThanOrEqual(geometry.treeLeft - 1)
     expect(geometry.sidebarRight).toBeLessThanOrEqual(geometry.treeRight + 1)
-    await navigation.hover()
+    await navigation.hover({ position: { x: 8, y: 8 } })
     await page.mouse.wheel(0, 2000)
     if (geometry.overflow) {
       await expect.poll(() => navigation.evaluate(rail => rail.scrollTop)).toBeGreaterThan(geometry.scrollTop)
@@ -240,7 +245,7 @@ test('preserves unsupported work and grants across navigation, dismissal, reload
     }
     expect(await mountedSidebar!.evaluate(node => node.isConnected)).toBe(true)
     await capture(name)
-    await navigation.hover()
+    await navigation.hover({ position: { x: 8, y: 8 } })
     await page.mouse.wheel(0, -2000)
     await expect.poll(() => navigation.evaluate(rail => rail.scrollTop)).toBe(0)
   }
