@@ -86,6 +86,7 @@ interface RegistryConfig {
 
 // ── Secondary (pool) backends ──────────────────────────────────────────────
 interface Secondary {
+  transportGeneration?: number
   /** Scope key from registryBackendScopeKey(connectionId, profile). */
   scope: string
   profile: string
@@ -158,12 +159,24 @@ const ACTIVATION_LEASE_MS = 30_000
 // an in-place hot update that preserves the sockets. Production strips
 // import.meta.hot, and a fresh page realm starts with an empty container, so the
 // runtime behavior is identical to plain module state.
+interface RuntimeProducer {
+  gateway: HermesGateway
+  generation: number
+  profile: string
+  connectionId: string | null
+  entry?: Secondary
+}
+
 interface GatewayRegistryState {
   config: RegistryConfig | null
   primaryGateway: HermesGateway | null
   /** Registry source currently served by primaryGateway, when known. */
   primaryConnectionId: null | string
   primaryProfile: string
+  primaryRouteSuspended?: boolean
+  primaryGeneration?: number
+  nextTransportGeneration?: number
+  runtimeProducers?: Map<string, Map<number, RuntimeProducer>>
   activeKey: string
   activationEpoch: number
   secondaries: Map<string, Secondary>
@@ -290,12 +303,25 @@ export function setPrimaryGateway(gateway: HermesGateway | null, profile = 'defa
     g.primaryConnectionId = null
   }
 
+  if (!gateway) {g.primaryRouteSuspended = false}
+
+  // A replaced physical primary cannot stand in for the previously selected
+  // profile while a newer selection still owns foreground publication.
+  if (gateway && g.activeKey === PRIMARY_SCOPE && g.primaryProfile !== next) {
+    g.primaryRouteSuspended = true
+    g.$gateway.set(null)
+    setGatewayState('closed')
+  }
+
   g.primaryGateway = gateway
   g.primaryProfile = next
 
-  if (connection) {g.primaryConnectionId = connection.connectionId?.trim() || null}
+  if (connection) {
+    g.primaryConnectionId = connection.connectionId?.trim() || null
+    g.primaryGeneration = nextTransportGeneration()
+  }
 
-  if (g.activeKey === PRIMARY_SCOPE) {
+  if (g.activeKey === PRIMARY_SCOPE && !g.primaryRouteSuspended) {
     setApiRequestConnection(g.primaryConnectionId)
   }
 }
@@ -408,7 +434,7 @@ export function gatewayActivationEpoch(): number {
 
 export function activeGateway(): HermesGateway | null {
   if (g.activeKey === PRIMARY_SCOPE) {
-    return g.primaryGateway
+    return g.primaryRouteSuspended ? null : g.primaryGateway
   }
 
   // A named scope resolves to ITS socket or nothing. Falling back to the
@@ -504,7 +530,7 @@ function reportGatewayState(profile: string, state: ConnectionState): void {
 }
 
 export function reportPrimaryGatewayState(state: ConnectionState): void {
-  reportGatewayState(PRIMARY_SCOPE, state)
+  reportGatewayState(PRIMARY_SCOPE, g.primaryRouteSuspended ? 'closed' : state)
 }
 
 function setActive(profile: string): void {
@@ -524,6 +550,7 @@ function applyActive(profile: string, activationEpoch: number): boolean {
   }
 
   g.activeKey = normKey(profile)
+  g.primaryRouteSuspended = false
   const gateway = activeGateway()
   g.$gateway.set(gateway)
   setGatewayState(gateway?.connectionState ?? 'closed')
@@ -818,15 +845,21 @@ function createSecondary(profile: string, connectionId: null | string = null): S
   // connection id, so stamp this closure-owned profile before registry fan-in;
   // the recorder must not promote an arbitrary wire `profile` field instead.
   entry.offEvent = gateway.onEvent(event => {
-    const scopedEvent = stampSecondaryProfileOwner({ ...event, ...(connectionId ? { connectionId } : {}) }, profile)
+    rememberRuntimeProducer(event, {
+      gateway, generation: entry.transportGeneration ?? 0, profile,
+      connectionId: connectionId ?? entry.connection?.connectionId?.trim() ?? null, entry
+    })
+    const scopedEvent = stampSecondaryProfileOwner({ ...event, connectionId: connectionId ?? undefined }, profile)
 
     g.config?.onEvent(scopedEvent)
     releaseTerminalTurnLease(entry.scope, event)
+    releaseTerminalTurnLease(producerLeaseScope(entry, entry.transportGeneration ?? 0), event)
   })
   entry.offState = gateway.onState(state => {
     reportGatewayState(scope, state)
 
     if (state === 'open') {
+      entry.transportGeneration = nextTransportGeneration()
       entry.reconnectAttempt = 0
       clearTimer(entry)
     } else if (state === 'closed' || state === 'error') {
@@ -880,6 +913,87 @@ async function sharedPrimaryRoute(profile: string, spawnPriority: SpawnPriority 
   } catch {
     return false
   }
+}
+
+// Runtime IDs belong to the socket generation that produced them. Logical
+// local/profile equality cannot distinguish two simultaneously live processes.
+const producerLeaseScope = (entry: Secondary, generation: number) => `${entry.scope}\u0000generation:${generation}`
+
+function nextTransportGeneration(): number {
+  g.nextTransportGeneration = (g.nextTransportGeneration ?? 0) + 1
+
+  return g.nextTransportGeneration
+}
+
+function rememberRuntimeProducer(event: GatewayEvent, producer: RuntimeProducer): void {
+  const id = event.session_id?.trim()
+
+  if (!id || !producer.generation) {return}
+  const ledger = g.runtimeProducers ??= new Map()
+  const producers = ledger.get(id) ?? new Map<number, RuntimeProducer>()
+  producers.set(producer.generation, producer)
+  ledger.set(id, producers)
+}
+
+export function recordPrimaryRuntimeProducer(event: GatewayEvent): void {
+  if (!g.primaryGateway) {return}
+  rememberRuntimeProducer(event, {
+    gateway: g.primaryGateway, generation: g.primaryGeneration ?? 0,
+    profile: g.primaryProfile, connectionId: g.primaryConnectionId
+  })
+}
+
+function producerIsCurrent(producer: RuntimeProducer): boolean {
+  const entry = producer.entry
+
+  return isOpen(producer.gateway) && (entry
+    ? g.secondaries.get(entry.scope) === entry && entry.transportGeneration === producer.generation
+    : g.primaryGateway === producer.gateway && g.primaryGeneration === producer.generation)
+}
+
+function runtimeProducer(connectionId: string | null, profile: string, sessionId: unknown): RuntimeProducer | undefined {
+  if (typeof sessionId !== 'string') {return undefined}
+
+  const candidates = [...(g.runtimeProducers?.get(sessionId.trim())?.values() ?? [])].filter(producer =>
+    producer.profile === normKey(profile) && (connectionId?.trim()
+      ? producer.connectionId === connectionId.trim()
+      : !producer.entry?.connectionId))
+
+  if (!candidates.length) {return undefined}
+  const current = candidates.filter(producerIsCurrent)
+
+  if (current.length !== 1) {
+    throw new Error('Eidolon runtime transport is unavailable or ambiguous; resume the session before retrying')
+  }
+
+  return current[0]
+}
+
+function retainRuntimeProducer(producer: RuntimeProducer): () => void {
+  if (!producerIsCurrent(producer)) {throw new Error('Eidolon runtime transport is no longer connected')}
+  const entry = producer.entry
+
+  if (!entry) {return () => undefined}
+  entry.activeRequests += 1
+  let released = false
+
+  return () => {
+    if (released) {return}
+    released = true
+    entry.activeRequests = Math.max(0, entry.activeRequests - 1)
+    drainPendingConnectionRedial(entry)
+  }
+}
+
+async function requestOnRuntimeProducer<T>(producer: RuntimeProducer, method: string,
+  params: Record<string, unknown>, timeoutMs?: number, signal?: AbortSignal): Promise<T> {
+  const release = retainRuntimeProducer(producer)
+
+  try {
+    return await (timeoutMs === undefined && signal === undefined
+      ? producer.gateway.request<T>(method, params)
+      : producer.gateway.request<T>(method, params, timeoutMs, signal))
+  } finally {release()}
 }
 
 // Resolve and open `profile`'s socket WITHOUT changing the active gateway.
@@ -969,6 +1083,9 @@ export async function requestGatewayForProfile<T>(
   timeoutMs?: number,
   signal?: AbortSignal
 ): Promise<T> {
+  const producer = runtimeProducer(null, profile, params.session_id)
+
+  if (producer) {return requestOnRuntimeProducer<T>(producer, method, params, timeoutMs, signal)}
   const route = await gatewayForProfile(profile, true)
 
   try {
@@ -1003,23 +1120,13 @@ export async function requestGatewayForAgent<T>(
   timeoutMs?: number,
   signal?: AbortSignal
 ): Promise<T> {
+  const producer = runtimeProducer(connectionId, profile, params.session_id)
+
+  if (producer) {return requestOnRuntimeProducer<T>(producer, method, params, timeoutMs, signal)}
   const key = normKey(profile)
   const scope = registryBackendScopeKey(connectionId, key)
 
   if (scope === key) {
-    return requestGatewayForProfile<T>(key, method, params, timeoutMs, signal)
-  }
-
-  // Keep authenticated local owner RPCs on an established legacy transport.
-  // A matching profile alone must never redirect a different registry source.
-  const legacy = g.secondaries.get(key)
-  const opened = legacy?.openedConnection
-
-  if (legacy && !legacy.connectionId && legacy.wantOpen && isOpen(legacy.gateway) &&
-      !legacy.connectPromise && !legacy.reconnecting && !legacy.pendingConnectionRedial &&
-      opened && legacy.connection === opened && opened.mode === 'local' &&
-      !opened.sharedPrimary && !opened.sharedRemote && opened.profile === key &&
-      opened.connectionId === connectionId?.trim()) {
     return requestGatewayForProfile<T>(key, method, params, timeoutMs, signal)
   }
 
@@ -1335,11 +1442,16 @@ export async function retainGatewayForSessionTurn(
   // Primary events do not flow through a Secondary's terminal-event listener.
   // Registering a no-op lease here would leave a phantom key that can suppress
   // the real hold if this route is later re-homed as a secondary.
-  if (isPrimaryRegistryRoute(connectionId, normKey(profile))) {
+  const producer = runtimeProducer(connectionId, profile, sessionId)
+
+  if (producer ? !producer.entry : isPrimaryRegistryRoute(connectionId, normKey(profile))) {
     return () => undefined
   }
 
-  const scope = registryBackendScopeKey(connectionId, normKey(profile))
+  const scope = producer?.entry
+    ? producerLeaseScope(producer.entry, producer.generation)
+    : registryBackendScopeKey(connectionId, normKey(profile))
+
   const key = turnLeaseKey(scope, sessionId)
 
   cancelTurnLeaseRelease(key)
@@ -1352,7 +1464,7 @@ export async function retainGatewayForSessionTurn(
     return () => undefined
   }
 
-  const releaseRoute = await retainGatewayForAgent(connectionId, profile)
+  const releaseRoute = producer ? retainRuntimeProducer(producer) : await retainGatewayForAgent(connectionId, profile)
   let released = false
 
   const release = () => {
@@ -1813,6 +1925,10 @@ export function pruneSecondaryGateways(keep: Set<string>): void {
       continue
     }
 
+    if ([...g.turnLeases.keys()].some(lease => lease.startsWith(`${key}\u0000generation:`))) {
+      continue
+    }
+
     // The route is no longer live work. Release turn leases first so their
     // counted request holds cannot outlive a disposed route or leave a stale
     // release closure attached to a later same-key socket.
@@ -1869,6 +1985,8 @@ export function closeLegacySecondaryGateways(): void {
 }
 
 export function closeSecondaryGateways(): void {
+  g.runtimeProducers?.clear()
+
   // Full teardown releases every routed-turn lease (class-2 #94284) and the
   // renderer-generation ledger; the predicate close leaves live sources'
   // leases alone (their sockets stay open).

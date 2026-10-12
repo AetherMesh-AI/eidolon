@@ -14,6 +14,7 @@ import {
 } from '@/store/connections'
 import {
   $activeGatewayRoute,
+  $gateway,
   activeGateway,
   closeSecondaryGateways,
   disposeSecondariesForConnection,
@@ -1937,6 +1938,7 @@ it('keeps an active same-named legacy secondary when the background primary resp
   expect($activeGatewayRoute.get()).toBe('observation-a')
   expect(readOwner().ownerRoute).toEqual(owner)
   expect($gatewayState.get()).toBe('open')
+  act(() => { FakeWebSocket.instances[1].event({ type: 'approval.request', session_id: 'owned' }) })
   const request = vi.spyOn(foreground!, 'request').mockResolvedValue({ via: 'existing-secondary' })
   await expect(requestGatewayForProfile('observation-a', 'session.activate', { session_id: 'owned' }))
     .resolves.toEqual({ via: 'existing-secondary' })
@@ -2036,4 +2038,56 @@ it('ignores a superseded primary socket opening after a newer Settings connectio
   expect(primaryGatewaySource()).toEqual({ profile: 'observation-b', connectionId: 'local' })
   expect($activeGatewayProfile.get()).toBe('observation-b')
   expect(events).not.toHaveBeenCalled()
+})
+
+
+it('keeps a changed primary unavailable after a newer selection fails before activation, then reopens the requested profile', async () => {
+  const desktop = fakeDesktop()
+  const original = { ...primaryConn, mode: 'local', connectionId: 'local', profile: 'default' }
+  const replacement = { ...original, profile: 'observation-a', wsUrl: 'ws://127.0.0.1:6543/ws?token=primary' }
+  const recoveredDefault = { ...original, wsUrl: 'ws://127.0.0.1:7654/ws?token=default' }
+  desktop.getConnection.mockResolvedValue(original)
+  ;(window as { hermesDesktop?: unknown }).hermesDesktop = desktop
+  render(<Harness />)
+  await flushAsync()
+  desktop.getConnection.mockResolvedValue(replacement)
+  desktop.getGatewayWsUrl.mockResolvedValue(replacement.wsUrl)
+  FakeWebSocket.mode = 'hold'
+  act(() => { desktop.emitBackendExit(); FakeWebSocket.instances[0].drop() })
+  await advanceBackoff()
+  const held = FakeWebSocket.instances.at(-1)!
+  expect(held.readyState).toBe(0)
+  const failedSelection = deferred<typeof coderConn>()
+  desktop.getConnection.mockImplementation(profile => profile === 'coder' ? failedSelection.promise : Promise.resolve(replacement))
+  const barrier = beginGatewaySwitch()
+  let failure: unknown
+  const selecting = ensureGatewayProfile('coder').catch(error => { failure = error })
+  await flushAsync()
+  act(() => { held.open() })
+  await flushAsync()
+  expect(primaryGatewaySource()).toEqual({ profile: 'observation-a', connectionId: 'local' })
+  expect($gatewaySwitching.get()).toBe(true)
+  failedSelection.reject(new Error('B unavailable'))
+  await act(async () => { await selecting })
+  expect(failure).toBeDefined()
+  expect(activeGateway()).toBeNull()
+  expect($gateway.get()).toBeNull()
+  expect($gatewayState.get()).toBe('closed')
+  expect($activeGatewayProfile.get()).toBe('default')
+  expect($activeGatewayRoute.get()).toBe('default')
+  expect(createOrganizationScopeReader()().connected).toBe(false)
+  expect($gatewaySwitching.get()).toBe(true)
+  endGatewaySwitch(barrier)
+  desktop.getConnection.mockImplementation(async profile => profile === 'default' ? recoveredDefault : replacement)
+  desktop.getGatewayWsUrl.mockImplementation(async profile => (profile as unknown) === 'default' ? recoveredDefault.wsUrl : replacement.wsUrl)
+  FakeWebSocket.mode = 'open'
+  vi.useRealTimers()
+  await act(async () => { await ensureGatewayProfile('default') })
+  vi.useFakeTimers()
+  expect(FakeWebSocket.instances.at(-1)?.url).toBe(recoveredDefault.wsUrl)
+  expect($connection.get()).toMatchObject(recoveredDefault)
+  expect($activeGatewayProfile.get()).toBe('default')
+  expect($activeGatewayRoute.get()).toBe('default')
+  expect(activeGateway()).not.toBeNull()
+  expect($gatewayState.get()).toBe('open')
 })

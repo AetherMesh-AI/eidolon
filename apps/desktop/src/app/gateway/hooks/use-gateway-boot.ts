@@ -33,6 +33,7 @@ import {
   primaryGatewaySource,
   pruneSecondaryGateways,
   reconnectSecondaryGateways,
+  recordPrimaryRuntimeProducer,
   reportPrimaryGatewayState,
   setPrimaryGateway,
   setPrimaryGatewayConnection,
@@ -893,6 +894,7 @@ export function useGatewayBoot({
     })
 
     const offEvent = gateway.onEvent(event => {
+      recordPrimaryRuntimeProducer(event)
       const source = primaryGatewaySource()
 
       const scopedEvent = {

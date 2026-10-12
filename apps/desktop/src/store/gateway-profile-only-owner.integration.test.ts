@@ -15,6 +15,7 @@ vi.mock('@/eidolon', async importActual => ({
   setApiRequestConnection: vi.fn(),
   HermesGateway: class {
     connectionState = 'closed'
+    private stateHandlers = new Set<(state: string) => void>()
     private eventHandlers = new Set<
       (event: { payload?: Record<string, unknown>; session_id?: string; type: string }) => void
     >()
@@ -26,10 +27,14 @@ vi.mock('@/eidolon', async importActual => ({
 
     connect = async (): Promise<void> => {
       this.connectionState = 'open'
+
+      for (const handler of this.stateHandlers) {handler('open')}
     }
 
     close = (): void => {
       this.connectionState = 'closed'
+
+      for (const handler of this.stateHandlers) {handler('closed')}
     }
 
     onEvent = (
@@ -40,7 +45,11 @@ vi.mock('@/eidolon', async importActual => ({
       return () => this.eventHandlers.delete(handler)
     }
 
-    onState = (): (() => void) => () => undefined
+    onState = (handler: (state: string) => void): (() => void) => {
+      this.stateHandlers.add(handler)
+
+      return () => this.stateHandlers.delete(handler)
+    }
 
     emit = (event: { payload?: Record<string, unknown>; session_id?: string; type: string }): void => {
       for (const handler of this.eventHandlers) {
@@ -54,6 +63,8 @@ const {
   closeSecondaryGateways,
   configureGatewayRegistry,
   ensureGatewayForProfile,
+  pruneSecondaryGateways,
+  recordPrimaryRuntimeProducer,
   retireLocalProfileGateways,
   requestGatewayForAgent,
   setPrimaryGateway
@@ -83,6 +94,7 @@ function installDesktop(): void {
   ;(window as unknown as { hermesDesktop: unknown }).hermesDesktop = {
     getConnection: vi.fn(async (profile: string) => ({
       authMode: 'token',
+      connectionId: 'local',
       mode: 'local',
       profile,
       token: 'test-token',
@@ -118,6 +130,7 @@ beforeEach(() => {
 
 afterEach(() => {
   closeSecondaryGateways()
+  vi.useRealTimers()
   clearAllSessionStates()
   $sessionTiles.set([])
   $profiles.set([])
@@ -175,6 +188,41 @@ describe('profile-only secondary approval ownership', () => {
     expect(secondary.request).toHaveBeenCalledWith('approval.respond', { session_id: 'rt-before-respawn', choice: 'once' })
     expect(replacement.request).not.toHaveBeenCalled()
     expect(ambient).not.toHaveBeenCalled()
+  })
+
+  it('keeps paired local/profile approvals on their producing generations and releases the actual prompt hold at terminal', async () => {
+    vi.useFakeTimers()
+    await ensureGatewayForProfile('research')
+    const secondary = gatewayMocks.instances[0]
+    secondary.emit({ session_id: 'old-runtime', type: 'approval.request' })
+    // Durable exact owner hints can name the same logical tuple as the new
+    // primary. The original producer remains the authority for this runtime.
+    setSessionOwnerHint('old-runtime', { connectionId: 'local', profile: 'research' })
+    const replacement = { connectionState: 'open', request: vi.fn(async () => ({ via: 'new-primary' })) }
+    setPrimaryGateway(replacement as never, 'research', { connectionId: 'local' })
+    const event = { session_id: 'new-runtime', type: 'approval.request', profile: 'research', connectionId: 'local' }
+    recordPrimaryRuntimeProducer(event)
+    recordSessionEventScope(event)
+    const ambient = vi.fn()
+    await expect(requestForOwnedSession('old-runtime', ambient as never, 'approval.respond', { session_id: 'old-runtime' }))
+      .resolves.toEqual({ method: 'approval.respond', params: { session_id: 'old-runtime' } })
+    await expect(requestForOwnedSession('new-runtime', ambient as never, 'approval.respond', { session_id: 'new-runtime' }))
+      .resolves.toEqual({ via: 'new-primary' })
+    expect(replacement.request).toHaveBeenCalledTimes(1)
+    secondary.request.mockResolvedValue({ status: 'streaming' })
+    await requestForOwnedSession('old-runtime', ambient as never, 'prompt.submit', { session_id: 'old-runtime', prompt: 'continue' })
+    await ensureGatewayForProfile('research')
+    pruneSecondaryGateways(new Set())
+    expect(secondary.connectionState).toBe('open')
+    secondary.emit({ session_id: 'old-runtime', type: 'session.info', payload: { running: false } })
+    await vi.advanceTimersByTimeAsync(501)
+    pruneSecondaryGateways(new Set())
+    expect(secondary.connectionState).toBe('closed')
+    expect(ambient).not.toHaveBeenCalled()
+    expect(replacement.request).toHaveBeenCalledTimes(1)
+    await expect(requestForOwnedSession('old-runtime', ambient as never, 'approval.respond', { session_id: 'old-runtime' }))
+      .rejects.toThrow('runtime transport is unavailable')
+    expect(replacement.request).toHaveBeenCalledTimes(1)
   })
 
   it('does not route an exact remote primary owner through a same-named legacy secondary', async () => {
