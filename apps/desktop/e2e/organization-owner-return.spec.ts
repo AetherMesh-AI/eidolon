@@ -130,6 +130,8 @@ test('recovers the exact uncertain owner send and renewal only after returning t
   await panel.getByRole('textbox', { name: 'Message', exact: true }).fill(firstMessage)
   await panel.getByRole('button', { name: 'Send message', exact: true }).click()
   await expect(panel.getByText(/Delivery is not confirmed/)).toBeVisible()
+  const sendAlert = (await panel.getByRole('alert').textContent())!.trim()
+  expect(sendAlert).toContain('Scripted uncertain organization.ownerChat.send')
   expect(writes).toHaveLength(1)
   expect(running.calls).toHaveLength(0)
   const routeA = page.url()
@@ -152,6 +154,8 @@ test('recovers the exact uncertain owner send and renewal only after returning t
       .getByRole('dialog', { name: 'Replenish allowance', exact: true })
       .getByText('Scripted uncertain organization.ownerChat.renew', { exact: true })
   ).toBeVisible()
+  const renewalAlert = (await panel.getByRole('alert').textContent())!.trim()
+  expect(renewalAlert).toContain('Scripted uncertain organization.ownerChat.renew')
   await page
     .getByRole('dialog', { name: 'Replenish allowance', exact: true })
     .getByRole('button', { name: 'Cancel', exact: true })
@@ -195,6 +199,6 @@ test('recovers the exact uncertain owner send and renewal only after returning t
       switchingDoor: 'existing connection switcher'
     })
   })
-  await acknowledgeExpectedErrorBanner(page, 'Scripted uncertain organization.ownerChat.send')
-  await acknowledgeExpectedErrorBanner(page, 'Scripted uncertain organization.ownerChat.renew')
+  await acknowledgeExpectedErrorBanner(page, sendAlert)
+  await acknowledgeExpectedErrorBanner(page, renewalAlert)
 })
