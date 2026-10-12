@@ -1979,8 +1979,15 @@ it('settles the primary socket identity during a newer foreground intent and tag
   desktop.getConnection.mockImplementation(async profile => profile === 'coder' ? coderConn : replacement)
   desktop.getGatewayWsUrl.mockImplementation(async profile => (profile as unknown) === 'coder' ? coderConn.wsUrl : replacement.wsUrl)
   FakeWebSocket.mode = 'hold'
+  const socketCount = FakeWebSocket.instances.length
   act(() => { desktop.emitBackendExit(); FakeWebSocket.instances[0].drop() })
-  await advanceBackoff()
+  // Stop when the dial starts: advancing an entire backoff cap can also
+  // expire this deliberately held socket's connection timeout.
+  await act(async () => {
+    for (let step = 0; step < 20 && FakeWebSocket.instances.length === socketCount; step++) {
+      await vi.advanceTimersToNextTimerAsync()
+    }
+  })
   const held = FakeWebSocket.instances.at(-1)!
   expect(held.readyState).toBe(0)
   expect(held.url).toBe(replacement.wsUrl)
@@ -2053,8 +2060,15 @@ it('keeps a changed primary unavailable after a newer selection fails before act
   desktop.getConnection.mockResolvedValue(replacement)
   desktop.getGatewayWsUrl.mockResolvedValue(replacement.wsUrl)
   FakeWebSocket.mode = 'hold'
+  const socketCount = FakeWebSocket.instances.length
   act(() => { desktop.emitBackendExit(); FakeWebSocket.instances[0].drop() })
-  await advanceBackoff()
+  // Stop when the dial starts: advancing an entire backoff cap can also
+  // expire this deliberately held socket's connection timeout.
+  await act(async () => {
+    for (let step = 0; step < 20 && FakeWebSocket.instances.length === socketCount; step++) {
+      await vi.advanceTimersToNextTimerAsync()
+    }
+  })
   const held = FakeWebSocket.instances.at(-1)!
   expect(held.readyState).toBe(0)
   const failedSelection = deferred<typeof coderConn>()

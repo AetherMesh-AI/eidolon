@@ -1,5 +1,5 @@
 import { type ConnectionState, type GatewayEvent, registryBackendScopeKey, resolveGatewayWsUrl } from '@aethermesh/shared'
-import { atom } from 'nanostores'
+import { atom, batch } from 'nanostores'
 
 import { HermesGateway, setApiRequestConnection } from '@/eidolon'
 import type { HermesConnection } from '@/global'
@@ -165,6 +165,8 @@ interface RuntimeProducer {
   profile: string
   connectionId: string | null
   entry?: Secondary
+  scopeProfile?: boolean
+  correlated?: boolean
 }
 
 interface PrimaryDial {
@@ -371,6 +373,24 @@ export function connectPrimaryGateway(gateway: HermesGateway, connection: Hermes
   return attempt.promise
 }
 
+/** Publish a settled primary only for the foreground activation that requested it. */
+export function adoptPrimaryGatewayConnection(gateway: HermesGateway, connection: HermesConnection, activationEpoch: number): boolean {
+  if (g.primaryGateway !== gateway || !isOpen(gateway) || !isActivePrimary() ||
+      gatewayActivationEpoch() !== activationEpoch ||
+      (connection.mode === 'local' && connection.profile && normKey(connection.profile) !== g.primaryProfile)) {return false}
+
+  batch(() => {
+    publishActiveConnection(connection)
+    applyActive(PRIMARY_SCOPE, beginGatewayActivation())
+  })
+
+  return true
+}
+
+export function isPrimaryGateway(gateway: HermesGateway): boolean {
+  return g.primaryGateway === gateway
+}
+
 export function setPrimaryGatewayConnectionId(connectionId: null | string | undefined): void {
   // Hardening for #95628: while the active route is a secondary scope, the
   // window is looking at a NON-primary socket — any connection id flowing
@@ -464,7 +484,7 @@ async function requestOnPrimaryGateway<T>(
   }
 
   return requestGatewayWithRuntimeBinding<T>(gateway, method, params, timeoutMs, signal,
-    typeof params.profile === 'string' ? normKey(params.profile) : undefined)
+    typeof params.profile === 'string' ? normKey(params.profile) : undefined, typeof params.profile === 'string')
 }
 
 export function isActivePrimary(): boolean {
@@ -963,26 +983,29 @@ async function sharedPrimaryRoute(profile: string, spawnPriority: SpawnPriority 
 }
 
 // Only operations whose API contract names a live runtime use producer proof.
-// Durable IDs used by resume/delete/title/etc. must retain logical-owner routing.
+// Durable-first resume/delete IDs retain logical-owner routing; title is runtime-only.
 const RUNTIME_SESSION_METHODS = new Set([
-  'prompt.submit', 'prompt.background', 'prompt.btw', 'session.activate', 'session.usage',
+  'prompt.submit', 'prompt.background', 'prompt.btw', 'session.title', 'slash.exec', 'session.activate', 'session.usage',
   'session.context_breakdown', 'session.status', 'session.history', 'session.undo', 'session.compress',
   'session.save', 'session.close', 'session.branch', 'session.interrupt', 'session.steer', 'session.redirect',
   'session.cwd.set', 'session.control', 'session.control.read', 'session.events.since',
   'approval.pending', 'approval.received', 'approval.respond', 'clarify.respond', 'sudo.respond', 'secret.respond',
+  'handoff.state', 'handoff.fail', 'process.list', 'process.kill',
+  'rollback.list', 'rollback.restore', 'rollback.diff', 'command.dispatch',
+  'tools.configure', 'tools.show', 'tools.list', 'toolsets.list', 'model.options', 'reload.mcp', 'session.set_hidden',
   'terminal.read.respond', 'preview.read.respond', 'preview.act.respond', 'window.read.respond',
   'tour.respond', 'mcp.setup.respond', 'terminal.resize', 'message.react', 'handoff.request',
   'clipboard.paste', 'image.attach', 'image.attach_bytes', 'image.detach', 'pdf.attach', 'file.attach',
-  'input.detect_drop', 'preview.restart', 'subagent.steer'
+  'input.detect_drop', 'preview.restart', 'subagent.steer', 'subagent.list', 'subagent.interrupt', 'subagent.tail'
 ])
 
 const RUNTIME_RESPONSE_METHODS = new Set(['session.create', 'session.resume', 'session.branch'])
 
-function captureRuntimeTransport(gateway: HermesGateway, profile?: string): RuntimeProducer | undefined {
+function captureRuntimeTransport(gateway: HermesGateway, profile?: string, scopeProfile = false): RuntimeProducer | undefined {
   if (gateway === g.primaryGateway) {
     g.primaryGeneration ??= nextTransportGeneration()
 
-    return { gateway, generation: g.primaryGeneration, profile: profile ?? g.primaryProfile, connectionId: g.primaryConnectionId }
+    return { gateway, generation: g.primaryGeneration, profile: profile ?? g.primaryProfile, connectionId: g.primaryConnectionId, scopeProfile }
   }
 
   const entry = [...g.secondaries.values()].find(candidate => candidate.gateway === gateway)
@@ -996,10 +1019,16 @@ function captureRuntimeTransport(gateway: HermesGateway, profile?: string): Runt
 
 /** Correlate runtime-producing responses with the transport that sent them. */
 export async function requestGatewayWithRuntimeBinding<T>(gateway: HermesGateway, method: string,
-  params: Record<string, unknown> = {}, timeoutMs?: number, signal?: AbortSignal, profile?: string): Promise<T> {
-  const producer = captureRuntimeTransport(gateway, profile)
+  params: Record<string, unknown> = {}, timeoutMs?: number, signal?: AbortSignal, profile?: string, scopeProfile = false): Promise<T> {
+  const producer = captureRuntimeTransport(gateway, profile, scopeProfile)
 
   if (producer && RUNTIME_SESSION_METHODS.has(method)) {
+    const bound = typeof params.session_id === 'string' ? g.runtimeProducers?.get(params.session_id.trim())?.get(producer.generation) : undefined
+
+    if (bound?.correlated && bound.profile !== producer.profile) {
+      throw new Error('Eidolon runtime belongs to another profile')
+    }
+
     const known = runtimeProducer(producer.connectionId, producer.profile, params.session_id)
 
     if (known && (known.gateway !== gateway || known.generation !== producer.generation)) {
@@ -1017,7 +1046,7 @@ export async function requestGatewayWithRuntimeBinding<T>(gateway: HermesGateway
       throw new Error('Eidolon runtime transport changed before the session response settled')
     }
 
-    rememberRuntimeProducer({ type: 'session.info', session_id: result.session_id }, producer)
+    rememberRuntimeProducer({ type: 'session.info', session_id: result.session_id }, { ...producer, correlated: true })
   }
 
   return result
@@ -1039,16 +1068,28 @@ function rememberRuntimeProducer(event: GatewayEvent, producer: RuntimeProducer)
   if (!id || !producer.generation) {return}
   const ledger = g.runtimeProducers ??= new Map()
   const producers = ledger.get(id) ?? new Map<number, RuntimeProducer>()
+  const established = producers.get(producer.generation)
+
+  if (established?.correlated) {
+    if (producer.correlated && established.profile !== producer.profile) {
+      throw new Error('Eidolon runtime belongs to another profile')
+    }
+
+    if (!producer.correlated) {return}
+  }
+
   producers.set(producer.generation, producer)
   ledger.set(id, producers)
 }
 
-export function recordPrimaryRuntimeProducer(event: GatewayEvent): void {
-  if (!g.primaryGateway) {return}
+export function recordPrimaryRuntimeProducer(event: GatewayEvent): { profile: string; connectionId: string | null } {
+  if (!g.primaryGateway) {return primaryGatewaySource()}
   rememberRuntimeProducer(event, {
     gateway: g.primaryGateway, generation: g.primaryGeneration ?? 0,
     profile: g.primaryProfile, connectionId: g.primaryConnectionId
   })
+
+  return g.runtimeProducers?.get(event.session_id?.trim() ?? '')?.get(g.primaryGeneration ?? 0) ?? primaryGatewaySource()
 }
 
 function producerIsCurrent(producer: RuntimeProducer): boolean {
@@ -1098,7 +1139,7 @@ async function requestOnRuntimeProducer<T>(producer: RuntimeProducer, method: st
   const release = retainRuntimeProducer(producer)
 
   try {
-    return await requestGatewayWithRuntimeBinding<T>(producer.gateway, method, params, timeoutMs, signal, producer.profile)
+    return await requestGatewayWithRuntimeBinding<T>(producer.gateway, method, producer.scopeProfile ? { ...params, profile: producer.profile } : params, timeoutMs, signal, producer.profile, producer.scopeProfile)
   } finally {release()}
 }
 
@@ -1204,7 +1245,7 @@ export async function requestGatewayForProfile<T>(
     // Same arity contract as the ambient path in session-request-router: only
     // pass the deadline args through when the caller set them, so a plain
     // profile-routed RPC keeps its two-argument call shape.
-    return await requestGatewayWithRuntimeBinding<T>(route.gateway, method, routedParams, timeoutMs, signal, route.key)
+    return await requestGatewayWithRuntimeBinding<T>(route.gateway, method, routedParams, timeoutMs, signal, route.key, route.scopeProfile)
   } finally {
     route.release()
   }

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef } from 'react'
 
 import type { HermesGateway } from '@/eidolon'
 import { RECONNECT_ATTEMPT_TIMEOUT_MS, withTimeout } from '@/lib/with-timeout'
-import { $gateway, activeGateway, connectPrimaryGateway, ensureActiveGatewayOpen, gatewayActivationEpoch, isActivePrimary, requestGatewayWithRuntimeBinding } from '@/store/gateway'
+import { $gateway, activeGatewayProfileKey, adoptPrimaryGatewayConnection, connectPrimaryGateway, ensureActiveGatewayOpen, gatewayActivationEpoch, isActivePrimary, isPrimaryGateway, requestGatewayWithRuntimeBinding } from '@/store/gateway'
 import { $gatewaySwitching } from '@/store/gateway-switch'
 import { $gatewayState, setConnection } from '@/store/session'
 import { currentSourceSwitchIntent, isCurrentSourceSwitchIntent } from '@/store/source-switch-intent'
@@ -72,10 +72,11 @@ export function useGatewayRequest() {
       reauthErrorRef.current = null
       const intent = currentSourceSwitchIntent()
       const activationEpoch = gatewayActivationEpoch()
+      const requestedProfile = activeGatewayProfileKey()
 
       const ownsForeground = () => isCurrentSourceSwitchIntent(intent) &&
         gatewayActivationEpoch() === activationEpoch && isActivePrimary() &&
-        activeGateway() === existing && !$gatewaySwitching.get()
+        isPrimaryGateway(existing) && !$gatewaySwitching.get()
 
       try {
         // This path owns the window primary. The descriptor must identify its
@@ -110,10 +111,13 @@ export function useGatewayRequest() {
         await connectPrimaryGateway(existing, conn, wsUrl)
 
         if (!ownsForeground()) {return null}
-        connectionRef.current = conn
-        setConnection(conn)
 
-        return existing
+        if (!adoptPrimaryGatewayConnection(existing, conn, activationEpoch)) {return null}
+        connectionRef.current = conn
+
+        // Recover the view, but never replay an old owner's operation in a
+        // replacement process that serves a different profile.
+        return activeGatewayProfileKey() === requestedProfile ? existing : null
       } catch (error) {
         if (isGatewayReauthRequired(error)) {
           reauthErrorRef.current = error

@@ -55,6 +55,7 @@ const {
   disposeSecondariesForConnection,
   openGatewayForAgent,
   pruneSecondaryGateways,
+  recordPrimaryRuntimeProducer,
   requestGatewayForAgent,
   requestGatewayForProfile,
   retainGatewayForAgent,
@@ -677,4 +678,30 @@ describe('attached shared-remote group turns (#96493)', () => {
     expect(await ensureGatewayForAgent('homelab', 'voter')).toBe(false)
     expect(secondaryGateways).toHaveLength(0)
   })
+})
+
+
+it.each([false, true])('keeps silent shared-primary runtime B controls scoped across an event (event: %s)', async withEvent => {
+  const primary = makePrimary()
+  setPrimaryGateway(primary as never, 'default', { connectionId: 'shared' })
+  installDesktop(vi.fn(async (profile: null | string) => ({ port: 4242,
+    ...(profile ? { profile, sharedPrimary: true } : {}), token: 'primary-token' })))
+  primary.request.mockResolvedValueOnce({ session_id: 'runtime-b' } as never)
+  await requestGatewayForProfile('venture', 'session.resume', { session_id: 'stored-b', profile: 'wrong' })
+  expect(primary.request).toHaveBeenLastCalledWith('session.resume', { session_id: 'stored-b', profile: 'venture' })
+
+  if (withEvent) {
+    const source = recordPrimaryRuntimeProducer({ type: 'session.info', session_id: 'runtime-b', profile: 'default' })
+    expect(source).toMatchObject({ profile: 'venture', connectionId: 'shared' })
+  }
+
+  for (const method of ['session.control', 'session.control.read']) {
+    await requestGatewayForProfile('venture', method, { session_id: 'runtime-b', profile: 'wrong' })
+    expect(primary.request).toHaveBeenLastCalledWith(method, { session_id: 'runtime-b', profile: 'venture' })
+    const count = primary.request.mock.calls.length
+    await expect(requestGatewayForProfile('default', method, { session_id: 'runtime-b' })).rejects.toThrow('profile')
+    expect(primary.request).toHaveBeenCalledTimes(count)
+  }
+
+  expect(secondaryGateways).toHaveLength(0)
 })

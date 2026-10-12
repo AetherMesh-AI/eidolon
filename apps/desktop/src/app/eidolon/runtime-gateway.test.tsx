@@ -3,14 +3,26 @@ import { useEffect, useState } from 'react'
 import { Link, MemoryRouter, Route, Routes } from 'react-router'
 import { beforeEach, expect, it, vi } from 'vitest'
 
+vi.mock('@/store/gateway-switch', async () => {
+  const { atom } = await import('nanostores')
+
+  return { $gatewaySwitching: atom(false) }
+})
+
 vi.mock('@/store/settings-scope', () => ({ setSettingsScope: vi.fn() }))
 
 const routing = vi.hoisted(() => ({ connectionId: 'a', epoch: 1 }))
 vi.mock('@/store/gateway', async () => {
   const { atom } = await import('nanostores')
 
+  const $gateway = atom<unknown>(null)
+  const $activeGatewayRoute = atom('default')
+
   return {
-    $gateway: atom(null), $localOwnerProofRevision: atom(0), $activeGatewayRoute: atom('default'),
+    $gateway, $localOwnerProofRevision: atom(0), $activeGatewayRoute,
+    activeGatewayProfileKey: () => $activeGatewayRoute.get(),
+    isPrimaryGateway: (gateway: unknown) => $gateway.get() === gateway,
+    requestGatewayWithRuntimeBinding: (gateway: { request: (...args: unknown[]) => Promise<unknown> }, ...args: unknown[]) => gateway.request(...args),
     activeGatewayConnectionId: () => routing.connectionId, gatewayActivationEpoch: () => routing.epoch,
     ensureActiveGatewayOpen: vi.fn(), isActivePrimary: () => true
   }

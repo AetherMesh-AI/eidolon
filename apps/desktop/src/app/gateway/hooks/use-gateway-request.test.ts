@@ -54,6 +54,8 @@ import type * as HermesModule from '@/eidolon'
 import { HermesGateway } from '@/eidolon'
 import {
   $gateway,
+  activeGateway,
+  activeGatewayProfileKey,
   closeSecondaryGateways,
   configureGatewayRegistry,
   connectPrimaryGateway,
@@ -64,6 +66,7 @@ import {
 } from '@/store/gateway'
 import { $activeGatewayProfile } from '@/store/profile'
 import { $connection, $gatewayState } from '@/store/session'
+import { beginSourceSwitchIntent } from '@/store/source-switch-intent'
 
 import { useGatewayRequest } from './use-gateway-request'
 
@@ -448,4 +451,45 @@ it.each(['session.resume', 'session.create'])('a late %s response cannot restore
   await expect(pending).resolves.toMatchObject({ error: expect.objectContaining({ message: expect.stringContaining('response settled') }) })
   await expect(requestGatewayForAgent('local', 'default', 'approval.respond', { session_id: 'runtime-r' }))
     .rejects.toThrow('runtime transport is unavailable')
+})
+
+
+it.each([false, true])('reconciles a request-triggered changed-profile primary only while its intent is current (superseded: %s)', async superseded => {
+  const desktop = installPrimaryDesktop('token')
+  const connection = { ...await desktop.getConnection(), profile: 'research', baseUrl: 'http://127.0.0.1:6262', wsUrl: 'ws://127.0.0.1:6262/api/ws' }
+  desktop.getConnection.mockResolvedValue(connection)
+  desktop.getGatewayWsUrl.mockResolvedValue({ ok: true, wsUrl: connection.wsUrl })
+  const primary = makePrimaryGateway()
+  setPrimaryGateway(primary as unknown as HermesGateway, 'default', { connectionId: 'local' })
+  $gateway.set(primary as unknown as HermesGateway)
+  $gatewayState.set('open')
+  primary.close()
+  primary.request.mockRejectedValueOnce(new Error('connection closed'))
+  const connect = primary.connect.getMockImplementation() as (wsUrl: string) => Promise<void>
+  primary.connect.mockImplementation(async (wsUrl: string) => {
+    if (superseded) {beginSourceSwitchIntent()}
+
+    return connect(wsUrl)
+  })
+  const { result } = renderHook(() => useGatewayRequest())
+  await act(async () => {
+    await expect(result.current.requestGateway('session.create', { title: 'belongs to default' })).rejects.toThrow('connection closed')
+  })
+  expect(primary.connectionState).toBe('open')
+  expect(primary.request).toHaveBeenCalledTimes(1)
+
+  if (superseded) {
+    expect(activeGateway()).toBeNull()
+    expect($activeGatewayProfile.get()).toBe('default')
+    expect($connection.get()).toBeNull()
+    expect($gatewayState.get()).toBe('closed')
+  } else {
+    expect(activeGateway()).toBe(primary)
+    expect(activeGatewayProfileKey()).toBe('research')
+    expect($activeGatewayProfile.get()).toBe('research')
+    expect($connection.get()).toMatchObject({ profile: 'research', baseUrl: connection.baseUrl })
+    expect($gatewayState.get()).toBe('open')
+    primary.request.mockResolvedValueOnce({ pong: true })
+    await act(async () => { await expect(result.current.requestGateway('ping')).resolves.toEqual({ pong: true }) })
+  }
 })

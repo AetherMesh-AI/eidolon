@@ -356,3 +356,20 @@ describe('profile-only secondary approval ownership', () => {
     expect(getConnection).not.toHaveBeenCalled()
   })
 })
+
+
+it.each(['session.title', 'slash.exec', 'handoff.state', 'handoff.fail', 'process.list', 'process.kill',
+  'rollback.list', 'rollback.restore', 'rollback.diff', 'command.dispatch', 'tools.configure', 'tools.show', 'tools.list', 'toolsets.list', 'model.options', 'reload.mcp', 'session.set_hidden', 'subagent.list', 'subagent.interrupt', 'subagent.tail'])('routes live %s to its same-profile producer and rejects retired proof', async method => {
+  await ensureGatewayForProfile('research')
+  const secondary = gatewayMocks.instances[0]
+  secondary.emit({ session_id: 'runtime-command', type: 'approval.request' })
+  const replacement = { connectionState: 'open', request: vi.fn() }
+  setPrimaryGateway(replacement as never, 'research', { connectionId: 'local' })
+  const params = { session_id: 'runtime-command', title: 'Updated title', command: '/title Updated title' }
+  await expect(requestGatewayForAgent('local', 'research', method, params)).resolves.toEqual({ method, params })
+  expect(secondary.request).toHaveBeenLastCalledWith(method, params)
+  expect(replacement.request).not.toHaveBeenCalled()
+  retireLocalProfileGateways('research')
+  await expect(requestGatewayForAgent('local', 'research', method, params)).rejects.toThrow('runtime transport is unavailable')
+  expect(replacement.request).not.toHaveBeenCalled()
+})
