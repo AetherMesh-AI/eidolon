@@ -85,3 +85,20 @@ it('keeps work overview scoped to open objectives and labels retained data after
   expect(screen.queryByRole('region', { name: 'Closed work' })).toBeNull()
   expect(screen.getByText('Last known records · reconnect to refresh')).toBeTruthy()
 })
+
+
+it('shows only retained objective details and preserves authored phase text', () => {
+  const openWork = vi.fn()
+  const openRequests = vi.fn()
+  const { rerender } = render(<ObjectiveProgress objective={objective} onReviewRequests={openRequests} onReviewWork={openWork} snapshot={snapshot} />)
+  const details = within(screen.getByRole('region', { name: 'Objective details' }))
+  expect(details.getByText(objective.ownerId!)).toBeTruthy()
+  expect(details.getAllByText('Not recorded')).toHaveLength(2)
+  expect(screen.getByRole('region', { name: 'Objective details' }).querySelector('time')?.dateTime).toBe(objective.createdAt)
+  const changed = { ...objective, phase: 'Owner phase 日本語', priority: 'P2' as const }
+  rerender(<ObjectiveProgress objective={changed} onReviewRequests={openRequests} onReviewWork={openWork} snapshot={snapshot} />)
+  expect(details.getByText(changed.phase)).toBeTruthy()
+  expect(details.getByText(changed.priority)).toBeTruthy()
+  expect(openWork).not.toHaveBeenCalled()
+  expect(openRequests).not.toHaveBeenCalled()
+})

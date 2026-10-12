@@ -17,6 +17,9 @@ export const organizationSurfacesEn = {
     interruptedNote: "Showing the last received state. Automatic recovery is limited; use Retry connection if updates do not resume."
   },
   objectives: {
+    noMatches: "No matching objectives",
+    filterHint: "Try another title or status.",
+    clearFilters: "Clear filters",
     active: 'Active',
     waiting: 'Waiting',
     objectivePages: "Objective pages",
@@ -85,6 +88,9 @@ export const organizationSurfacesJa = {
     interruptedNote: "最後に受信した状態を表示しています。自動復旧には上限があります。更新が再開しない場合は接続を再試行してください。"
   },
   objectives: {
+    noMatches: "一致する目標はありません",
+    filterHint: "別のタイトルまたは状態で検索してください。",
+    clearFilters: "絞り込みを解除",
     active: '進行中',
     waiting: '待機中',
     objectivePages: "目標のページ",
@@ -153,6 +159,9 @@ export const organizationSurfacesZh = {
     interruptedNote: "显示最后收到的状态。自动恢复次数有限；如果更新未恢复，请重试连接。"
   },
   objectives: {
+    noMatches: "没有匹配的目标",
+    filterHint: "请尝试其他标题或状态。",
+    clearFilters: "清除筛选",
     active: '进行中',
     waiting: '等待中',
     objectivePages: "目标分页",
@@ -221,6 +230,9 @@ export const organizationSurfacesZhHant = {
     interruptedNote: "顯示最後收到的狀態。自動復原次數有限；如果更新未恢復，請重試連線。"
   },
   objectives: {
+    noMatches: "沒有符合條件的目標",
+    filterHint: "請嘗試其他標題或狀態。",
+    clearFilters: "清除篩選",
     active: '進行中',
     waiting: '等待中',
     objectivePages: "目標分頁",
@@ -289,6 +301,9 @@ export const organizationSurfacesAr = {
     interruptedNote: "تُعرض آخر حالة مستلمة. الاسترداد التلقائي محدود؛ استخدم إعادة محاولة الاتصال إذا لم تستأنف التحديثات."
   },
   objectives: {
+    noMatches: "لا توجد أهداف مطابقة",
+    filterHint: "جرّب عنوانًا أو حالة أخرى.",
+    clearFilters: "مسح عوامل التصفية",
     active: 'نشط',
     waiting: 'في الانتظار',
     objectivePages: "صفحات الأهداف",
@@ -357,6 +372,9 @@ export const organizationSurfacesRu = {
     interruptedNote: "Показано последнее полученное состояние. Автоматическое восстановление ограничено; повторите подключение, если обновления не возобновляются."
   },
   objectives: {
+    noMatches: "Нет подходящих целей",
+    filterHint: "Попробуйте другое название или состояние.",
+    clearFilters: "Сбросить фильтры",
     active: 'Активна',
     waiting: 'Ожидание',
     objectivePages: "Страницы целей",

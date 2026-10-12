@@ -42,7 +42,6 @@ export function Status({ status }: { status: keyof typeof labels }) {
 
 function ObjectiveList({ objectives, snapshot, onClearFilters }: { objectives: Objective[]; snapshot: OrganizationSnapshot; onClearFilters?: () => void }) {
   const { t, locale } = useI18n()
-  const copy = t.organizationWork
   const list = t.organizationSurfaces.objectives
   const number = new Intl.NumberFormat(locale)
   const percent = new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 2 })
@@ -52,7 +51,7 @@ function ObjectiveList({ objectives, snapshot, onClearFilters }: { objectives: O
 
   return objectives.length ? <><div className="eid-list">{objectives.slice(currentPage * 25, (currentPage + 1) * 25).map(objective => <Link className="eid-row" key={objective.id} to={`/objectives/${objective.id}`}>
     <span className="eid-objective-summary"><strong>{objective.title}</strong><small>{objective.description}</small><small>{objective.progress === undefined ? t.organizationHome.progressUnknown : `${percent.format(objective.progress / 100)}${objective.source === 'runtime' ? '' : ` · ${list.localEstimate}`}`} · {objective.milestone || list.noMilestone}</small><small>{list.responsibleTeam}: {responsibleTeams(snapshot, objective, list.unknownTeam)}</small></span><Status status={objective.status} />
-  </Link>)}</div>{objectives.length > 25 && <nav aria-label={list.objectivePages} className="eid-toolbar"><button className="eid-button" disabled={!currentPage} onClick={() => setPage(currentPage - 1)}>{list.previousPage}</button><span role="status">{list.pageRange(number.format(currentPage * 25 + 1), number.format(Math.min((currentPage + 1) * 25, objectives.length)), number.format(objectives.length))}</span><button className="eid-button" disabled={currentPage === lastPage} onClick={() => setPage(currentPage + 1)}>{list.nextPage}</button></nav>}</> : onClearFilters ? <div className="eid-empty"><h2>{copy.noMatchingObjectives}</h2><p>{copy.objectiveFilterHint}</p><Button onClick={onClearFilters} variant="secondary">{copy.clearFilters}</Button></div> : <div className="eid-empty"><h2>{list.noObjectives}</h2><p>{list.noObjectivesNote}</p><Link className="eid-button" to="/home#eid-home-intake">{t.organizationHome.newObjective}</Link></div>
+  </Link>)}</div>{objectives.length > 25 && <nav aria-label={list.objectivePages} className="eid-toolbar"><button className="eid-button" disabled={!currentPage} onClick={() => setPage(currentPage - 1)}>{list.previousPage}</button><span role="status">{list.pageRange(number.format(currentPage * 25 + 1), number.format(Math.min((currentPage + 1) * 25, objectives.length)), number.format(objectives.length))}</span><button className="eid-button" disabled={currentPage === lastPage} onClick={() => setPage(currentPage + 1)}>{list.nextPage}</button></nav>}</> : onClearFilters ? <div className="eid-empty"><h2>{list.noMatches}</h2><p>{list.filterHint}</p><Button onClick={onClearFilters} variant="secondary">{list.clearFilters}</Button></div> : <div className="eid-empty"><h2>{list.noObjectives}</h2><p>{list.noObjectivesNote}</p><Link className="eid-button" to="/home#eid-home-intake">{t.organizationHome.newObjective}</Link></div>
 }
 
 

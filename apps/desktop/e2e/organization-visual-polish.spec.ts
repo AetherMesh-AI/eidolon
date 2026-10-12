@@ -551,7 +551,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
     const recordDetails = overview.getByRole('region', { name: 'Objective details', exact: true })
     await expect(recordDetails).toContainText('Avery')
     await expect(recordDetails).toContainText('Draft and review')
-    await expect(recordDetails.locator('time')).toHaveAttribute('datetime', new Date(createdAt).toISOString())
+    await expect(recordDetails.locator('time')).toHaveAttribute('datetime', createdAt)
     await expect(recordDetails).toBeInViewport({ ratio: 1 })
     await expect(page.locator('.eid-objective-hero .eid-objective-scenery')).toHaveAttribute('aria-hidden', 'true')
     await capture(`reference-objective-${mode}`)
@@ -1524,7 +1524,7 @@ for (const [locale, suffix, dark, light] of [
             await expect(details).toBeVisible()
             await expect(details).toContainText('Avery')
             await expect(details).toContainText('Draft and review')
-            await expect(details.locator('time')).toHaveAttribute('datetime', new Date(createdAt).toISOString())
+            await expect(details.locator('time')).toHaveAttribute('datetime', createdAt)
           } else if (route === '/organization') {
             await expect(page.getByRole('heading', { name: copy.organization, exact: true })).toBeVisible()
             await expect(page.getByRole('textbox', { name: copy.findAgent, exact: true })).toBeVisible()
