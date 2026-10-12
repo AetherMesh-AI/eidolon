@@ -289,7 +289,7 @@ describe('useGatewayRequest', () => {
     expect(desktop.getGatewayWsUrlFor).toHaveBeenCalledWith({ connectionId: 'ssh-source', profile: 'research' })
     expect(desktop.getConnection).not.toHaveBeenCalled()
     expect(desktop.getGatewayWsUrl).not.toHaveBeenCalled()
-    expect(gateway.connect).toHaveBeenLastCalledWith(expect.stringContaining('ticket=fresh-2'))
+    expect(gateway.connect).toHaveBeenLastCalledWith(expect.stringContaining('ticket=fresh-2'), null)
   })
 
   it('does not reconnect for a non-transport request failure', async () => {

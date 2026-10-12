@@ -391,7 +391,7 @@ export function connectPrimaryGateway(gateway: HermesGateway, connection: Hermes
 
     assertOAuthConnectionAuthority(connection, authority)
 
-    return gateway.connect(wsUrl)
+    return gateway.connect(wsUrl, connection.oauthSessionIdentity ?? null)
   }).then(() => {
     if (g.primaryDial !== attempt) { throw new Error('Eidolon primary connection attempt was superseded') }
 
@@ -712,7 +712,7 @@ export function assertOAuthConnectionAuthority(connection: { oauthSessionIdentit
 }
 
 export function primaryGatewayOAuthSessionIdentity(): string | undefined {
-  return g.primaryDial?.connection.oauthSessionIdentity ?? g.primaryConnection?.oauthSessionIdentity
+  return g.primaryDial ? g.primaryDial.connection.oauthSessionIdentity : g.primaryConnection?.oauthSessionIdentity
 }
 
 export function assertGatewayOAuthAuthority(gateway: HermesGateway, revision: number) {
@@ -842,7 +842,7 @@ async function openSecondary(entry: Secondary, spawnPriority: SpawnPriority = 'b
     assertOAuthConnectionAuthority(conn, authority)
 
     try {
-      await entry.gateway.connect(wsUrl)
+      await entry.gateway.connect(wsUrl, conn.oauthSessionIdentity ?? null)
       assertOAuthConnectionAuthority(conn, authority)
       assertOAuthSourceRevision(entry.connectionId, revision)
     } catch (error) {

@@ -781,9 +781,9 @@ it.each(['changed', 'unrelated'] as const)('scopes descriptorless legacy opening
     .resolves.toMatchObject({ params: { title: 'new legacy intent' } })
 })
 
-it('retires a pending replacement primary before real transport replay and preserves its successor', async () => {
+it.each(['oauth', 'token', 'local'] as const)('retires a pending primary before replay and preserves its %s successor', async successorKind => {
   const { JsonRpcGatewayClient } = await import('@aethermesh/shared')
-  const { connectPrimaryGateway } = await import('./gateway')
+  const { connectPrimaryGateway, primaryGatewayOAuthSessionIdentity } = await import('./gateway')
 
   class Socket extends EventTarget {
     readyState = 0
@@ -803,39 +803,131 @@ it('retires a pending replacement primary before real transport replay and prese
 
   const gateway = client as unknown as Parameters<typeof setPrimaryGateway>[0]
 
-  const descriptor = (identity: string) => ({ mode: 'remote', connectionId: 'pending-primary', authMode: 'oauth',
-    baseUrl: 'https://fixture.invalid', wsUrl: 'wss://fixture.invalid/api/ws', oauthSessionIdentity: identity })
+  const accountA = `pending-primary-a-${successorKind}`
+  const accountB = `pending-primary-b-${successorKind}`
+  const accountC = `pending-primary-c-${successorKind}`
+
+  const descriptor = (identity: string) => {
+    const successor = identity === accountC && successorKind !== 'oauth'
+
+    return { mode: successor && successorKind === 'local' ? 'local' : 'remote', connectionId: 'pending-primary',
+      profile: 'default', authMode: successor ? successorKind : 'oauth', baseUrl: 'https://fixture.invalid',
+      wsUrl: 'wss://fixture.invalid/api/ws', oauthSessionIdentity: successor ? undefined : identity }
+  }
 
   setPrimaryGateway(gateway, 'default')
 
   try {
-    const first = connectPrimaryGateway(gateway!, descriptor('pending-primary-a') as never, 'wss://fixture.invalid/api/ws')
+    const first = connectPrimaryGateway(gateway!, descriptor(accountA) as never, 'wss://fixture.invalid/api/ws')
     await Promise.resolve()
     sockets[0].open()
     await first
     sockets[0].dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ jsonrpc: '2.0', method: 'event',
       params: { type: 'message.delta', session_id: 'old-session', seq: 3, payload: {} } }) }))
     expect(client.getSeqWatermarks()).toEqual({ 'old-session': 3 })
-    retireOAuthSession('pending-primary-a', ['pending-primary'], 'pending-primary-b')
+    retireOAuthSession(accountA, ['pending-primary'], accountB)
 
-    const pending = connectPrimaryGateway(gateway!, descriptor('pending-primary-b') as never, 'wss://fixture.invalid/api/ws')
+    const pending = connectPrimaryGateway(gateway!, descriptor(accountB) as never, 'wss://fixture.invalid/api/ws')
       .then(() => ({ ok: true }), error => ({ error }))
 
     await Promise.resolve()
-    retireOAuthSession('pending-primary-b', ['pending-primary'], 'pending-primary-c')
+    retireOAuthSession(accountB, ['pending-primary'], accountC)
     sockets[1].open()
     expect(sockets[1].frames).toEqual([])
-    const successor = connectPrimaryGateway(gateway!, descriptor('pending-primary-c') as never, 'wss://fixture.invalid/api/ws')
+    const successor = connectPrimaryGateway(gateway!, descriptor(accountC) as never, 'wss://fixture.invalid/api/ws')
     await Promise.resolve()
-    retireOAuthSession('pending-primary-a')
+    expect(primaryGatewayOAuthSessionIdentity()).toBe(successorKind === 'oauth' ? accountC : undefined)
+    retireOAuthSession(accountA)
     expect(sockets[2].readyState).toBe(0)
     sockets[2].open()
     await successor
     expect(await pending).toHaveProperty('error')
     expect(client.connectionState).toBe('open')
     expect(sockets[2].readyState).toBe(1)
+    expect(sockets[2].frames).toEqual([])
+    expect(client.getSeqWatermarks()).toEqual({})
+
+    // A normal reconnect under C must retain C's legitimate resume cursor.
+    sockets[2].dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ jsonrpc: '2.0', method: 'event',
+      params: { type: 'message.delta', session_id: 'c-session', seq: 1, payload: {} } }) }))
+    client.close()
+    const sameAccount = connectPrimaryGateway(gateway!, descriptor(accountC) as never, 'wss://fixture.invalid/api/ws')
+    await Promise.resolve()
+    sockets[3].open()
+    await sameAccount
+    expect(sockets[3].frames).toEqual([expect.objectContaining({ method: 'session.events.since',
+      params: { session_id: 'c-session', last_seen: 1 } })])
   } finally {
     client.close()
     setPrimaryGateway(null)
   }
+})
+
+it('does not let a retired partial replay publish or flush a successor account replay hold', async () => {
+  const { JsonRpcGatewayClient } = await import('@aethermesh/shared')
+
+  class Socket extends EventTarget {
+    readyState = 0
+    frames: Array<{ id: string; method: string; params: Record<string, unknown> }> = []
+    send(payload: string) { this.frames.push(JSON.parse(payload)) }
+    close() { this.readyState = 3; this.dispatchEvent(new Event('close')) }
+    open() { this.readyState = 1; this.dispatchEvent(new Event('open')) }
+    message(frame: unknown) { this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(frame) })) }
+    event(session: string, seq: number) {
+      this.message({ jsonrpc: '2.0', method: 'event', params: { type: 'message.delta', session_id: session, seq, payload: {} } })
+    }
+  }
+  const sockets: Socket[] = []
+
+  const client = new JsonRpcGatewayClient({ socketFactory: () => {
+    const socket = new Socket()
+    sockets.push(socket)
+
+    return socket as never
+  } })
+
+  const observed: unknown[] = []
+  client.onEvent(event => observed.push(event))
+
+  try {
+    const first = client.connect('wss://fixture.invalid/api/ws', 'batch-a')
+    sockets[0].open()
+    await first
+    sockets[0].event('a-first', 1)
+    sockets[0].event('a-second', 1)
+    client.close()
+    const replayA = client.connect('wss://fixture.invalid/api/ws', 'batch-a')
+    sockets[1].open()
+    await replayA
+    expect(sockets[1].frames).toHaveLength(2)
+    sockets[1].message({ jsonrpc: '2.0', id: sockets[1].frames[0].id, result: { epoch: 'a-epoch',
+      events: [{ type: 'message.delta', session_id: 'a-first', seq: 2 }] } })
+    sockets[1].event('a-first', 3)
+
+    // Switch before A's second replay response settles. Closing rejects it;
+    // A's already-fulfilled first result must not publish later under C.
+    const firstC = client.connect('wss://fixture.invalid/api/ws', 'batch-c')
+    sockets[2].open()
+    expect(sockets[2].frames).toEqual([])
+    sockets[2].event('c-only', 1)
+    client.close()
+    const replayC = client.connect('wss://fixture.invalid/api/ws', 'batch-c')
+    sockets[3].open()
+    expect(sockets[3].frames).toEqual([expect.objectContaining({ method: 'session.events.since',
+      params: { session_id: 'c-only', last_seen: 1 } })])
+    sockets[3].event('c-only', 3)
+    observed.length = 0
+    await Promise.all([firstC, replayC])
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(observed).toEqual([])
+    expect(client.getSeqWatermarks()).toEqual({ 'c-only': 1 })
+    sockets[3].message({ jsonrpc: '2.0', id: sockets[3].frames[0].id, result: { epoch: 'c-epoch',
+      events: [{ type: 'message.delta', session_id: 'c-only', seq: 2 }] } })
+    await vi.waitFor(() => expect(observed).toEqual([
+      expect.objectContaining({ session_id: 'c-only', seq: 2 }),
+      expect.objectContaining({ session_id: 'c-only', seq: 3 })
+    ]))
+    expect(client.getSeqWatermarks()).toEqual({ 'c-only': 3 })
+  } finally { client.close() }
 })
