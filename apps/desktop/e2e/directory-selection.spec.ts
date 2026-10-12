@@ -45,10 +45,17 @@ test('confirms actual directory selections, cancels without switching and expose
     await expect(trigger).toBeEnabled()
   }
 
-  const refresh = async (profile: string) => {
+  const refresh = async (profile: string, expectedName: string) => {
     await trigger.click()
-    await dialog.getByRole('button', { name: 'Refresh current organization', exact: true }).click()
-    await expect(dialog.getByRole('option').filter({ hasText: profile })).toBeVisible()
+    const refreshButton = dialog.getByRole('button', { name: 'Refresh current organization', exact: true })
+    await refreshButton.click()
+    const entry = dialog.getByRole('option').filter({ hasText: profile })
+    // The profile label may already identify a stale unconfigured record.
+    // Wait for the saved metadata and completed fresh read before leaving it.
+    await expect(entry).toContainText(expectedName)
+    await expect(entry).toContainText('Verified now')
+    await expect(entry).not.toContainText('Last known')
+    await expect(refreshButton).toBeEnabled()
     await page.keyboard.press('Escape')
     await expect(trigger).toBeFocused()
   }
@@ -60,7 +67,7 @@ test('confirms actual directory selections, cancels without switching and expose
     await editor.getByLabel('Your display name', { exact: true }).fill('Fixture Owner')
     await editor.getByRole('button', { name: 'Save names', exact: true }).click()
     await expect(editor).toHaveCount(0)
-    await refresh(profile)
+    await refresh(profile, name)
   }
 
   const prepare = async (profile: string) => {
@@ -75,7 +82,7 @@ test('confirms actual directory selections, cancels without switching and expose
     await visit(profileA)
     await initialize('Directory A', profileA)
     await visit(profileB)
-    await refresh(profileB)
+    await refresh(profileB, 'Not configured')
     const unconfiguredB = dedicated.ledger(1)
     await visit(profileA)
     await prepare(profileB)
