@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { execFileSync, spawn } from 'node:child_process'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
@@ -10927,7 +10928,7 @@ async function fetchJsonForProfile(profile, path) {
 // Issue an arbitrary method against a profile's resolved backend, parsed JSON.
 async function requestJsonForProfile(profile: string, path: string, method: string, body?: string) {
   return requestProfileBackendJson(profile, path, { method, body, timeoutMs: DEFAULT_FETCH_TIMEOUT_MS },
-    ensureBackend, backendJsonTransports(oauthAccountAuthority.captureRequest()))
+    ensureBackend, backendJsonTransports())
 }
 
 async function probeRemoteAuthMode(rawUrl) {
@@ -15855,7 +15856,11 @@ async function getJsonForBackend(descriptor, path, opts: any = {}) {
 // analogue of the hermes:api handler's own auth split: OAuth backends prefer a
 // native bearer (cookieless RFC 8252 flow) and fall back to the OAuth cookie
 // partition; token/local descriptors use the static session-token header.
-function backendJsonTransports(authority = oauthAccountAuthority.captureRequest()) {
+// Carry IPC admission ownership through routing, discovery, descriptor resolution,
+// fan-out and auth fallback. Concurrent requests keep separate async contexts.
+const oauthRequestAuthority = new AsyncLocalStorage<number>()
+
+function backendJsonTransports(authority = oauthRequestAuthority.getStore() ?? oauthAccountAuthority.captureRequest()) {
   return {
     assertAuthority: connection => assertOAuthDescriptorAuthority(connection, authority),
     ensureNativeAccessToken,
@@ -16563,7 +16568,7 @@ async function handleHermesApiRequest(request) {
   return response
 }
 
-ipcMain.handle('hermes:api', async (_event, request) => {
+ipcMain.handle('hermes:api', (_event, request) => oauthRequestAuthority.run(oauthAccountAuthority.captureRequest(), async () => {
   // Hold the deletion gate for BOTH profile deletes and renames: a concurrent
   // renderer reconnect entering ensureBackend() mid-mutation would otherwise
   // respawn the old-name backend and recreate its HERMES_HOME (#45474).
@@ -16591,7 +16596,7 @@ ipcMain.handle('hermes:api', async (_event, request) => {
   const releaseProfileDeletion = profileDeletionGate.acquire(mutatingProfile)
 
   return handleHermesApiRequest(request).finally(releaseProfileDeletion)
-})
+}))
 
 // One deduper per cross-window cue — the choke point every window shares. Main
 // handles IPC serially, so the first window to claim a key wins with no race.

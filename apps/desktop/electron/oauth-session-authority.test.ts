@@ -243,3 +243,82 @@ it.each(['same-scope', 'unrelated-scope'] as const)('owns profile REST before it
 
   expect(transports.fetchJsonViaOauthSession).not.toHaveBeenCalled()
 })
+
+// Run the real IPC admission and routing functions, replacing only machine and
+// transport dependencies. Starting at a JSON helper would miss late capture.
+it.each(['registry', 'generic', 'owner-lookup'] as const)('retains IPC admission ownership through held %s resolution', async door => {
+  const { AsyncLocalStorage } = await import('node:async_hooks')
+  const fs = await import('node:fs')
+  const vm = await import('node:vm')
+  const ts = await import('typescript')
+  const source = fs.readFileSync(new URL('./main.ts', import.meta.url), 'utf8')
+  const ast = ts.createSourceFile('main.ts', source, ts.ScriptTarget.Latest, true)
+
+  const names = new Set(['assertOAuthDescriptorAuthority', 'backendJsonTransports', 'fetchJsonForBackend',
+    'fetchJsonForProfile', 'requestJsonForProfile', 'dispatchRegistryApiRequest', 'handleHermesApiRequest', 'interceptSessionRequestForRemote'])
+
+  const nodes = ast.statements.filter(node =>
+    (ts.isFunctionDeclaration(node) && node.name && names.has(node.name.text)) ||
+    (ts.isVariableStatement(node) && node.declarationList.declarations.some(declaration => declaration.name.getText(ast) === 'oauthRequestAuthority')) ||
+    (ts.isExpressionStatement(node) && node.getText(ast).startsWith("ipcMain.handle('hermes:api',")))
+
+  const authority = createOAuthSessionAuthority()
+  const scope = 'ipc-fixture'
+  authority.capture(scope)
+  const held = deferred<void>()
+  const entered = vi.fn()
+  const writes = vi.fn(async () => ({ updated: true }))
+  const cookieWrites = vi.fn(async () => ({ wrongCookieWrite: true }))
+  let waiting = true
+  let handler!: (event: unknown, request: unknown) => Promise<unknown>
+  const descriptor = () => ({ mode: 'remote', authMode: 'oauth', baseUrl: 'https://fixture.invalid', oauthSessionIdentity: authority.capture(scope) })
+
+  const resolve = async () => {
+    if (waiting && door !== 'owner-lookup') { entered(); await held.promise }
+
+    return descriptor()
+  }
+
+  const dependencies = {
+    AsyncLocalStorage, URL, URLSearchParams, oauthAccountAuthority: authority, oauthAccountScope: () => scope,
+    requestBackendJson, requestProfileBackendJson,
+    ipcMain: { handle: (_name: string, callback: typeof handler) => { handler = callback } },
+    DEFAULT_FETCH_TIMEOUT_MS: 1000,
+    apiRequestRegistryConnectionId: (request: { connectionId?: string }) => request.connectionId,
+    backendDialClaims: { run: (_key: unknown, callback: () => unknown) => callback() },
+    backendScopeKey: () => 'fixture', ensureRegistryBackend: resolve, ensureBackend: resolve,
+    pathForRegistryBackendRequest: (path: string) => path, resolveTimeoutMs: () => 1000,
+    ensureNativeAccessToken: vi.fn(async () => 'current-account-token'), fetchJson: writes, fetchJsonViaOauthSession: cookieWrites,
+    profileNameFromDeleteRequest: () => null, profileRenameFromRequest: () => null,
+    prepareProfileRenameRequest: async () => null, prepareProfileDeleteRequest: async () => null,
+    resolveProfileApiRequest: (_profile: unknown, path: string) => ({ requestPath: path }),
+    profileRouteOptions: () => ({}), resolveRouteProfile: () => null,
+    profileHasRemoteOverride: () => door === 'owner-lookup', globalRemoteActive: () => false,
+    remoteOwnerProfileForSession: async () => {
+      if (waiting) { entered(); await held.promise }
+
+      return 'remote-worker'
+    }
+  }
+
+  const code = ts.transpileModule(nodes.map(node => node.getText(ast)).join('\n'), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS }
+  }).outputText
+
+  vm.runInNewContext(code, dependencies)
+
+  const request = { method: 'PATCH', path: '/api/sessions/fixture', body: { title: 'original intent' },
+    ...(door === 'registry' ? { connectionId: 'fixture' } : door === 'generic' ? { profile: 'worker' } : {}) }
+
+  const pending = handler(null, request).then(value => ({ value }), error => ({ error }))
+  await vi.waitFor(() => expect(entered).toHaveBeenCalledOnce())
+  authority.beginChange(scope).finish()
+  waiting = false
+  // A concurrent fresh admission must not replace the held request's context.
+  await expect(handler(null, { ...request, body: { title: 'fresh intent' } })).resolves.toEqual({ updated: true })
+  held.resolve()
+  expect(await pending).toHaveProperty('error')
+  expect(cookieWrites).not.toHaveBeenCalled()
+  expect(writes).toHaveBeenCalledOnce()
+  expect(writes).toHaveBeenCalledWith(expect.any(String), null, expect.objectContaining({ method: 'PATCH', body: { title: 'fresh intent' } }))
+})

@@ -369,7 +369,21 @@ export function connectPrimaryGateway(gateway: HermesGateway, connection: Hermes
   if (isOpen(gateway)) {return Promise.resolve()}
   const attempt: PrimaryDial = { gateway, connection, promise: Promise.resolve(), settled: false }
   g.primaryDial = attempt
-  const off = gateway.onState(state => { if (state === 'open') {settlePrimaryDial(attempt)} })
+
+  const off = gateway.onState(state => {
+    if (state !== 'open' || g.primaryDial !== attempt) { return }
+
+    try {
+      assertOAuthConnectionAuthority(connection, authority)
+    } catch {
+      gateway.close()
+
+      return
+    }
+
+    settlePrimaryDial(attempt)
+  })
+
   attempt.promise = Promise.resolve().then(() => {
     if (g.primaryDial !== attempt || g.primaryGateway !== gateway) {
       throw new Error('Eidolon primary connection attempt was superseded')
@@ -379,6 +393,8 @@ export function connectPrimaryGateway(gateway: HermesGateway, connection: Hermes
 
     return gateway.connect(wsUrl)
   }).then(() => {
+    if (g.primaryDial !== attempt) { throw new Error('Eidolon primary connection attempt was superseded') }
+
     try { assertOAuthConnectionAuthority(connection, authority) } catch (error) { gateway.close(); throw error }
     settlePrimaryDial(attempt)
   }).finally(() => {
@@ -696,7 +712,7 @@ export function assertOAuthConnectionAuthority(connection: { oauthSessionIdentit
 }
 
 export function primaryGatewayOAuthSessionIdentity(): string | undefined {
-  return g.primaryConnection?.oauthSessionIdentity ?? g.primaryDial?.connection.oauthSessionIdentity
+  return g.primaryDial?.connection.oauthSessionIdentity ?? g.primaryConnection?.oauthSessionIdentity
 }
 
 export function assertGatewayOAuthAuthority(gateway: HermesGateway, revision: number) {
@@ -2312,8 +2328,17 @@ export function retireOAuthSession(identity: string, connectionIds: string[] = [
   if (nextIdentity) { changes.set(nextIdentity, authority) }
   ;(g.retiredOAuthAccounts ??= new Set<string>()).add(identity)
 
-  if (primaryGatewayOAuthSessionIdentity() === identity) {
+  const pending = g.primaryDial
+  const retiresPending = pending?.connection.oauthSessionIdentity === identity
+  const retiresSettled = g.primaryConnection?.oauthSessionIdentity === identity
+
+  if (retiresPending || retiresSettled) {
     g.primaryGeneration = nextTransportGeneration()
+  }
+
+  // A settled owner's retirement must not close a different account's pending
+  // replacement. A pending owner's retirement must close before open/replay.
+  if (retiresPending || (!pending && retiresSettled)) {
     g.primaryDial = undefined
     g.primaryGateway?.close()
   }

@@ -780,3 +780,62 @@ it.each(['changed', 'unrelated'] as const)('scopes descriptorless legacy opening
   await expect(requestGatewayForProfile('legacy-worker', 'organization.create_objective', { title: 'new legacy intent' }))
     .resolves.toMatchObject({ params: { title: 'new legacy intent' } })
 })
+
+it('retires a pending replacement primary before real transport replay and preserves its successor', async () => {
+  const { JsonRpcGatewayClient } = await import('@aethermesh/shared')
+  const { connectPrimaryGateway } = await import('./gateway')
+
+  class Socket extends EventTarget {
+    readyState = 0
+    frames: unknown[] = []
+    send(payload: string) { this.frames.push(JSON.parse(payload)) }
+    close() { this.readyState = 3; this.dispatchEvent(new Event('close')) }
+    open() { this.readyState = 1; this.dispatchEvent(new Event('open')) }
+  }
+  const sockets: Socket[] = []
+
+  const client = new JsonRpcGatewayClient({ connectTimeoutMs: 100, socketFactory: () => {
+    const socket = new Socket()
+    sockets.push(socket)
+
+    return socket as never
+  } })
+
+  const gateway = client as unknown as Parameters<typeof setPrimaryGateway>[0]
+
+  const descriptor = (identity: string) => ({ mode: 'remote', connectionId: 'pending-primary', authMode: 'oauth',
+    baseUrl: 'https://fixture.invalid', wsUrl: 'wss://fixture.invalid/api/ws', oauthSessionIdentity: identity })
+
+  setPrimaryGateway(gateway, 'default')
+
+  try {
+    const first = connectPrimaryGateway(gateway!, descriptor('pending-primary-a') as never, 'wss://fixture.invalid/api/ws')
+    await Promise.resolve()
+    sockets[0].open()
+    await first
+    sockets[0].dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ jsonrpc: '2.0', method: 'event',
+      params: { type: 'message.delta', session_id: 'old-session', seq: 3, payload: {} } }) }))
+    expect(client.getSeqWatermarks()).toEqual({ 'old-session': 3 })
+    retireOAuthSession('pending-primary-a', ['pending-primary'], 'pending-primary-b')
+
+    const pending = connectPrimaryGateway(gateway!, descriptor('pending-primary-b') as never, 'wss://fixture.invalid/api/ws')
+      .then(() => ({ ok: true }), error => ({ error }))
+
+    await Promise.resolve()
+    retireOAuthSession('pending-primary-b', ['pending-primary'], 'pending-primary-c')
+    sockets[1].open()
+    expect(sockets[1].frames).toEqual([])
+    const successor = connectPrimaryGateway(gateway!, descriptor('pending-primary-c') as never, 'wss://fixture.invalid/api/ws')
+    await Promise.resolve()
+    retireOAuthSession('pending-primary-a')
+    expect(sockets[2].readyState).toBe(0)
+    sockets[2].open()
+    await successor
+    expect(await pending).toHaveProperty('error')
+    expect(client.connectionState).toBe('open')
+    expect(sockets[2].readyState).toBe(1)
+  } finally {
+    client.close()
+    setPrimaryGateway(null)
+  }
+})
