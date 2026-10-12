@@ -22,8 +22,8 @@ import { organizationPackageProposal } from './organization-package-proposal'
 import { organizationProviderTarget } from './organization-provider-target'
 import { expect, test } from './test'
 
-// Capture the actual native window. Chromium's screenshot path can return a
-// background-only frame after reload even when the retained UI is mounted.
+// Capture the actual native window after checking readiness. The mounted UI
+// can still be covered by the cold-reload CONNECTING overlay.
 async function captureRequests(name: string) {
   const { app, page } = fixture!
   await page.evaluate(async () => {
@@ -420,17 +420,20 @@ test('retains owner attention across reloads, answers the requesting worker, and
   await expect(inbox).toContainText('Needs You: 1 · Unread: 1')
   // A returning owner sees the durable blocker even when it arrived off-page.
   await page.reload()
+  await waitForAppReady(fixture!)
   await expect(inbox).toContainText('Needs You: 1 · Unread: 1', { timeout: 60_000 })
   await inbox.getByRole('button', { name: 'Mark seen', exact: true }).click()
   await expect(inbox).toContainText('Needs You: 1 · Unread: 0')
   await expect(inbox.getByRole('button', { name: 'Seen', exact: true })).toBeDisabled()
   await page.reload()
+  await waitForAppReady(fixture!)
   await expect(inbox).toContainText('Needs You: 1 · Unread: 0', { timeout: 60_000 })
   await expect(inbox.getByRole('button', { name: 'Seen', exact: true })).toBeDisabled()
   // Acknowledgement cannot answer the question or resume the blocked worker.
   expect(stages.filter(stage => stage.kind === 'work.draft')).toHaveLength(1)
   await expect(page).toHaveURL(/#\/requests/ )
   await expect(inbox).toBeVisible()
+  await expect(page.getByText('CONNECTING', { exact: true })).toHaveCount(0)
   // Retain both capture paths at the same state to diagnose the earlier blank frame.
   await page.screenshot({ path: testInfo.outputPath('02-durable-seen-blocker-cdp.png') })
   await captureRequests('02-durable-seen-blocker.png')
