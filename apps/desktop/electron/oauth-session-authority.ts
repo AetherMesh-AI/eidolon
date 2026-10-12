@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import type { NativeTokenSet } from './native-oauth'
 
 /** Owns an authenticated account lifetime, not rotating access credentials. */
-export function createOAuthSessionAuthority(onRetired: (identity: string) => void = () => {}) {
+export function createOAuthSessionAuthority(onRetired: (identity: string, scope: string) => void = () => {}) {
   const operations = new Map<string, Set<() => void>>()
   const scopes = new Map<string, { identity: string; changing: boolean }>()
 
@@ -48,7 +48,7 @@ export function createOAuthSessionAuthority(onRetired: (identity: string) => voi
 
       for (const cancel of operations.get(previous) ?? []) { cancel() }
       operations.delete(previous)
-      onRetired(previous)
+      onRetired(previous, scope)
 
       const assertChange = () => {
         if (state(scope).identity !== identity) {

@@ -204,7 +204,7 @@ declare global {
         // secondary gateways scoped to it. Optional: older Electron mains
         // don't emit it.
         onChanged?: (
-          callback: (payload: { connectionId: string; reason: 'removed' | 'saved' | 'updated' | 'auth-changed'; oauthSessionIdentity?: string }) => void
+          callback: (payload: { connectionId: string; reason: 'removed' | 'saved' | 'updated' | 'auth-changed'; oauthSessionIdentity?: string; oauthConnectionIds?: string[] }) => void
         ) => () => void
       }
       sshConfigHosts: () => Promise<DesktopSshHostsResult>

@@ -7251,12 +7251,17 @@ function resolveOauthPartitionForUrl(url) {
 const oauthCookieCleanup = createOAuthCookieCleanupQueue()
 const oauthLoginWindows = new Map<BrowserWindow, string>()
 
-const oauthAccountAuthority = createOAuthSessionAuthority(identity => {
+const oauthAccountAuthority = createOAuthSessionAuthority((identity, scope) => {
   for (const [win, owner] of oauthLoginWindows) {
     if (owner === identity && !win.isDestroyed()) { win.destroy() }
   }
 
-  broadcastConnectionsChanged({ connectionId: '', reason: 'auth-changed', oauthSessionIdentity: identity })
+  const oauthConnectionIds = readDesktopConnectionsRegistry().connections
+    .filter(source => (source.kind === 'remote' || source.kind === 'cloud') && source.authMode === 'oauth' &&
+      oauthAccountScope(source.url) === scope)
+    .map(source => source.id)
+
+  broadcastConnectionsChanged({ connectionId: '', reason: 'auth-changed', oauthSessionIdentity: identity, oauthConnectionIds })
   const primary = backendConnectionState.getPromise()
   void primary?.then(connection => {
     if (connection.oauthSessionIdentity === identity && backendConnectionState.getPromise() === primary) {
@@ -11254,7 +11259,7 @@ function sendConnectionApplied() {
 // scoped to that connection. Without this, a removed remote/cloud source keeps
 // its renderer WebSocket open and streaming as a ghost, and an edited one
 // keeps talking to the OLD endpoint until idle-reap.
-function broadcastConnectionsChanged(payload: { connectionId: string; reason: 'removed' | 'saved' | 'updated' | 'auth-changed'; oauthSessionIdentity?: string }) {
+function broadcastConnectionsChanged(payload: { connectionId: string; reason: 'removed' | 'saved' | 'updated' | 'auth-changed'; oauthSessionIdentity?: string; oauthConnectionIds?: string[] }) {
   for (const win of BrowserWindow.getAllWindows()) {
     const { webContents } = win
 

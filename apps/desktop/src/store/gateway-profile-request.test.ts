@@ -53,6 +53,7 @@ const {
   ensureGatewayForProfile,
   gatewayActivationEpoch,
   disposeSecondariesForConnection,
+  disposeSecondariesForOAuthSession,
   openGatewayForAgent,
   pruneSecondaryGateways,
   recordPrimaryRuntimeProducer,
@@ -704,4 +705,50 @@ it.each([false, true])('keeps silent shared-primary runtime B controls scoped ac
   }
 
   expect(secondaryGateways).toHaveLength(0)
+})
+
+it('rejects a secondary request opened before an OAuth account change, then permits a fresh request', async () => {
+  let release!: (value: unknown) => void
+  const held = new Promise(resolve => { release = resolve })
+
+  const connection = { connectionId: 'oauth-opening', profile: 'worker', authMode: 'oauth',
+    oauthSessionIdentity: 'new-account', baseUrl: 'https://fixture.invalid', wsUrl: 'wss://fixture.invalid/api/ws?ticket=new' }
+
+  const getConnectionFor = vi.fn().mockReturnValueOnce(held).mockResolvedValue(connection)
+
+  ;(window as unknown as { hermesDesktop: unknown }).hermesDesktop = {
+    getConnectionFor,
+    getGatewayWsUrlFor: vi.fn(async () => ({ ok: true, wsUrl: connection.wsUrl })),
+    touchBackend: vi.fn(async () => undefined)
+  }
+  const pending = requestGatewayForAgent('oauth-opening', 'worker', 'organization.create_objective', { title: 'old intent' })
+  await vi.waitFor(() => expect(getConnectionFor).toHaveBeenCalledOnce())
+  disposeSecondariesForOAuthSession('old-account', ['oauth-opening'])
+  release(connection)
+  await expect(pending).rejects.toThrow('OAuth account session changed')
+  expect(secondaryGateways.every(gateway => gateway.request.mock.calls.length === 0)).toBe(true)
+  await expect(requestGatewayForAgent('oauth-opening', 'worker', 'organization.create_objective', { title: 'new intent' }))
+    .resolves.toMatchObject({ params: { title: 'new intent' } })
+})
+
+it('closes a late OAuth handshake after account retirement before sending the held request', async () => {
+  let release!: () => void
+  connectGate = new Promise<void>(resolve => { release = resolve })
+
+  const connection = { connectionId: 'oauth-handshake', profile: 'worker', authMode: 'oauth',
+    oauthSessionIdentity: 'old-account', baseUrl: 'https://fixture.invalid', wsUrl: 'wss://fixture.invalid/api/ws?ticket=old' }
+
+  ;(window as unknown as { hermesDesktop: unknown }).hermesDesktop = {
+    getConnectionFor: vi.fn(async () => connection),
+    getGatewayWsUrlFor: vi.fn(async () => ({ ok: true, wsUrl: connection.wsUrl })),
+    touchBackend: vi.fn(async () => undefined)
+  }
+  const pending = requestGatewayForAgent('oauth-handshake', 'worker', 'organization.create_objective', { title: 'old intent' })
+  await vi.waitFor(() => expect(secondaryGateways[0]?.connect).toHaveBeenCalledOnce())
+  disposeSecondariesForOAuthSession('old-account', ['oauth-handshake'])
+  const closeCount = secondaryGateways[0].close.mock.calls.length
+  release()
+  await expect(pending).rejects.toThrow('OAuth account session changed')
+  expect(secondaryGateways[0].request).not.toHaveBeenCalled()
+  expect(secondaryGateways[0].close.mock.calls.length).toBeGreaterThan(closeCount)
 })

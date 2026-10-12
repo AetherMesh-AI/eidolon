@@ -65,7 +65,7 @@ describe('OAuth account authority across production request seams', () => {
     expect(next.authenticationIdentity).not.toBe(descriptor.authenticationIdentity)
     mintTicket.mockResolvedValue('ticket-for-b')
     await expect(refresh(next)).resolves.toContain('ticket-for-b')
-    expect(retired).toHaveBeenCalledExactlyOnceWith(owner)
+    expect(retired).toHaveBeenCalledExactlyOnceWith(owner, scope)
   })
 
   it.each(['success', 'rejection'] as const)('prevents an old native refresh %s from overwriting a new account', async outcome => {

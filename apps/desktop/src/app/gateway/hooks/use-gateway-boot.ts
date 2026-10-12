@@ -939,7 +939,7 @@ export function useGatewayBoot({
           activeGateway()?.close()
         }
 
-        disposeSecondariesForOAuthSession(identity)
+        disposeSecondariesForOAuthSession(identity, payload.oauthConnectionIds)
 
         return
       }

@@ -187,6 +187,7 @@ interface GatewayRegistryState {
   primaryDial?: PrimaryDial
   nextTransportGeneration?: number
   runtimeProducers?: Map<string, Map<number, RuntimeProducer>>
+  oauthSourceRevisions?: Map<string, number>
   activeKey: string
   activationEpoch: number
   secondaries: Map<string, Secondary>
@@ -659,6 +660,16 @@ function clearTimer(entry: Secondary): void {
   }
 }
 
+function oauthSourceRevision(connectionId: string | null): number {
+  return g.oauthSourceRevisions?.get(connectionId?.trim() ?? '') ?? 0
+}
+
+function assertOAuthSourceRevision(connectionId: string | null, revision: number) {
+  if (oauthSourceRevision(connectionId) !== revision) {
+    throw new Error('Eidolon OAuth account session changed while opening the source.')
+  }
+}
+
 async function openSecondary(entry: Secondary, spawnPriority: SpawnPriority = 'background'): Promise<void> {
   const desktop = window.hermesDesktop
 
@@ -685,6 +696,8 @@ async function openSecondary(entry: Secondary, spawnPriority: SpawnPriority = 'b
 
     return
   }
+
+  const revision = oauthSourceRevision(entry.connectionId)
 
   const pending = (async () => {
     // A secondary can be reopened directly by the next routed user action,
@@ -741,6 +754,7 @@ async function openSecondary(entry: Secondary, spawnPriority: SpawnPriority = 'b
             `Timed out connecting to profile "${entry.profile}"`
           )
 
+    assertOAuthSourceRevision(entry.connectionId, revision)
     entry.connection = conn
 
     const wsDeps =
@@ -759,9 +773,14 @@ async function openSecondary(entry: Secondary, spawnPriority: SpawnPriority = 'b
       `Timed out re-minting the gateway WebSocket URL for profile "${entry.profile}"`
     )
 
+    assertOAuthSourceRevision(entry.connectionId, revision)
+
     try {
       await entry.gateway.connect(wsUrl)
+      assertOAuthSourceRevision(entry.connectionId, revision)
     } catch (error) {
+      if (oauthSourceRevision(entry.connectionId) !== revision) { entry.gateway.close() }
+
       // Log the dial target for support, but RETHROW THE ORIGINAL ERROR —
       // reconnectSecondary classifies failures by message ("No connection
       // with id", "no longer exists") to fail-stop permanent conditions, and
@@ -1276,6 +1295,7 @@ export async function requestGatewayForAgent<T>(
   timeoutMs?: number,
   signal?: AbortSignal
 ): Promise<T> {
+  const revision = oauthSourceRevision(connectionId)
   const producer = RUNTIME_SESSION_METHODS.has(method) ? runtimeProducer(connectionId, profile, params.session_id) : undefined
 
   if (producer) {return requestOnRuntimeProducer<T>(producer, method, params, timeoutMs, signal)}
@@ -1298,7 +1318,10 @@ export async function requestGatewayForAgent<T>(
     return requestOnPrimaryGateway<T>(method, params, timeoutMs, signal)
   }
 
-  if (await isAttachedSharedRemote(connectionId, key)) {
+  const sharedRemote = await isAttachedSharedRemote(connectionId, key)
+  assertOAuthSourceRevision(connectionId, revision)
+
+  if (sharedRemote) {
     return requestOnPrimaryGateway<T>(method, { ...params, profile: key }, timeoutMs, signal)
   }
 
@@ -1324,6 +1347,8 @@ export async function requestGatewayForAgent<T>(
     if (!isOpen(entry.gateway)) {
       await openSecondary(entry)
     }
+
+    assertOAuthSourceRevision(connectionId, revision)
 
     return await requestGatewayWithRuntimeBinding<T>(entry.gateway, method, params, timeoutMs, signal, entry.profile)
   } finally {
@@ -2212,11 +2237,15 @@ export function retireLocalProfileGateways(profile: string): void {
 // fresh sockets target the NEW endpoint, but request/relay leases and mounted
 // foreground runtimes keep their old socket until they drain; the active scope
 // re-activates when its replacement is safe to publish.
-export function disposeSecondariesForOAuthSession(identity: string): void {
+export function disposeSecondariesForOAuthSession(identity: string, connectionIds: string[] = []): void {
+  const revisions = g.oauthSourceRevisions ??= new Map<string, number>()
+  const affected = new Set(connectionIds)
+
+  for (const id of affected) { revisions.set(id, (revisions.get(id) ?? 0) + 1) }
   let activeInvalidated = false
 
   for (const [key, entry] of [...g.secondaries]) {
-    if (entry.connection?.oauthSessionIdentity !== identity) { continue }
+    if (entry.connection?.oauthSessionIdentity !== identity && !(entry.connection === null && affected.has(entry.connectionId ?? ''))) { continue }
 
     activeInvalidated ||= key === g.activeKey
     disposeSecondary(entry)
