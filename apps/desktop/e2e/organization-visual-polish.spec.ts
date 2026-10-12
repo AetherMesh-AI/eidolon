@@ -1252,9 +1252,9 @@ for (const locale of ['ja', 'ar', 'ru'] as const) {
     const { app, page, mock } = fixture
 
     const copy = {
-      ja: { home: 'あなたの組織', edit: '組織名と所有者名を編集', health: 'システムの状態', heading: 'ワークスペースの操作', search: '読み込み済みの記録を検索', kinds: { agent: 'メンバー' }, dark: 'ダーク', light: 'ライト', settingsSearch: '検索' },
-      ar: { home: 'مؤسستك', edit: 'تعديل اسم المؤسسة والمالك', health: 'حالة النظام', heading: 'عناصر تحكم مساحة العمل', search: 'البحث في السجلات المحمّلة', kinds: { agent: 'عضو' }, dark: 'داكن', light: 'فاتح', settingsSearch: 'بحث' },
-      ru: { home: 'Ваша организация', edit: 'Изменить названия организации и владельца', health: 'Состояние системы', heading: 'Управление рабочей областью', search: 'Поиск загруженных записей', kinds: { agent: 'Участник' }, dark: 'Тёмная', light: 'Светлая', settingsSearch: 'Поиск' }
+      ja: { objectives: '目標', home: 'あなたの組織', edit: '組織名と所有者名を編集', health: 'システムの状態', heading: 'ワークスペースの操作', search: '読み込み済みの記録を検索', kinds: { agent: 'メンバー' }, dark: 'ダーク', light: 'ライト', settingsSearch: '検索' },
+      ar: { objectives: 'الأهداف', home: 'مؤسستك', edit: 'تعديل اسم المؤسسة والمالك', health: 'حالة النظام', heading: 'عناصر تحكم مساحة العمل', search: 'البحث في السجلات المحمّلة', kinds: { agent: 'عضو' }, dark: 'داكن', light: 'فاتح', settingsSearch: 'بحث' },
+      ru: { objectives: 'Цели', home: 'Ваша организация', edit: 'Изменить названия организации и владельца', health: 'Состояние системы', heading: 'Управление рабочей областью', search: 'Поиск загруженных записей', kinds: { agent: 'Участник' }, dark: 'Тёмная', light: 'Светлая', settingsSearch: 'Поиск' }
     }[locale]
 
     const methods: string[] = []
@@ -1288,6 +1288,7 @@ for (const locale of ['ja', 'ar', 'ru'] as const) {
 
       return result.ok
     })).toBe(true)
+    await expect(page.getByRole('navigation', { name: 'Primary', exact: true }).getByRole('link', { name: copy.objectives, exact: true })).toBeVisible()
     const header = page.getByRole('banner', { name: copy.heading, exact: true })
     await expect(header.locator('[data-slot="connection-switcher"]')).toBeVisible()
     const captures: object[] = []

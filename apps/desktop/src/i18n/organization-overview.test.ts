@@ -6,7 +6,7 @@ it.each(['ja', 'zh', 'zh-hant', 'ar', 'ru'] as const)('supplies localized home, 
   const copy = TRANSLATIONS[locale]
   const english = TRANSLATIONS.en
 
-  for (const key of ['home', 'messages', 'work', 'heading', 'introduction', 'happening', 'needsYou', 'ready', 'newObjective', 'owner', 'outcomesUnavailable', 'requestsUnavailable', 'messagesNote', 'workNote', 'noAgents', 'chooseAgent', 'unknownStatus'] as const) {
+  for (const key of ['home', 'messages', 'work', 'objectives', 'organization', 'settings', 'heading', 'introduction', 'happening', 'needsYou', 'ready', 'newObjective', 'owner', 'outcomesUnavailable', 'requestsUnavailable', 'messagesNote', 'workNote', 'noAgents', 'chooseAgent', 'unknownStatus'] as const) {
     expect(copy.organizationHome[key]).not.toBe(english.organizationHome[key])
   }
 

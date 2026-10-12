@@ -1,6 +1,6 @@
 .eid-workspace-shell { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; overflow: clip; }
 .eid-workspace-body { flex: 1; min-height: 0; min-width: 0; position: relative; overflow: auto; }
-.eid-workspace-header { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; min-height: 30px; padding: 6px 18px; background: var(--ui-bg-secondary); border-bottom: 1px solid var(--ui-stroke-tertiary); }
+.eid-workspace-header { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; min-height: 30px; padding: 5px 18px; background: var(--ui-bg-secondary); border-bottom: 1px solid var(--ui-stroke-tertiary); }
 .eid-workspace-identity, .eid-workspace-actions { display: flex; align-items: center; min-width: 0; gap: 8px; }
 .eid-workspace-identity { flex: 1 1 auto; flex-wrap: wrap; row-gap: 6px; }
 .eid-workspace-actions { flex: 0 0 auto; justify-content: flex-end; }
@@ -10,7 +10,8 @@
 .eid-workspace-identity > button > span { overflow-wrap: anywhere; }
 .eid-workspace-connection { color: var(--ui-text-secondary); font-size: 11px; }
 .eidolon.eid-workspace-header :is(button, a):focus-visible, .eid-workspace-search :is(button, a, input):focus-visible, .eid-owner-editor :is(button, a, input):focus-visible { outline: 3px solid var(--ui-accent); outline-offset: 2px; transition-property: color, background-color, border-color, box-shadow; }
-/* Six-pixel block padding contains the full focus outline on every reflowed row. */
+/* Five-pixel block padding contains the outline; an 18px identity line keeps the single row at 30px. */
+.eidolon.eid-workspace-header { line-height: 18px; }
 .eidolon.eid-workspace-header button { line-height: 18px; padding-block: 0; }
 .eid-workspace-search-results { min-height: 0; max-height: 60vh; overflow: auto; padding: 6px; overflow-wrap: anywhere; }
 .eid-workspace-search-results ul { list-style: none; margin: 0; padding: 0; }
