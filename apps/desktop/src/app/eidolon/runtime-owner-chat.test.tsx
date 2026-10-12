@@ -302,11 +302,13 @@ it.each(['inline', 'workspace'] as const)('keeps a focused editable draft and re
   const scrollIntoView = vi.fn()
   Object.defineProperty(input.closest('.eid-owner-chat-compose-area'), 'scrollIntoView', { value: scrollIntoView })
   input.focus()
+
   if (layout === 'workspace') {
     expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center', inline: 'nearest' })
   } else {
     expect(scrollIntoView).not.toHaveBeenCalled()
   }
+
   await act(async () => {
     await vi.advanceTimersByTimeAsync(15000)
   })
@@ -508,4 +510,83 @@ it('keeps workspace limits and drafting available when conversation details are 
   expect(screen.getByRole('region', { name: 'Conversation messages' }).getAttribute('tabindex')).toBe('0')
   expect(h.adapter.sendOwnerChat).not.toHaveBeenCalled()
   expect(h.adapter.renewOwnerChat).not.toHaveBeenCalled()
+})
+
+it('returns an uncertain send to A after a colliding B identity without sending or leaking it to B', async () => {
+  const a = harness()
+  const b = harness()
+  b.h.snapshot.connection = { scope: 'socket-b:default', ownerScope: 'connection-b:default', state: 'ready' }
+  const pending = deferred<OwnerChatThread>()
+  vi.mocked(a.h.adapter.sendOwnerChat!).mockReturnValueOnce(pending.promise)
+  let rendered = render(a.view())
+  fireEvent.change(await open(), { target: { value: 'Only A owns this message' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
+  const original = vi.mocked(a.h.adapter.sendOwnerChat!).mock.calls[0][0]
+  rendered.unmount()
+  rendered = render(b.view())
+  await open()
+  await act(async () => pending.reject(new Error('A reply lost after leaving')))
+  expect((screen.getByRole('textbox', { name: 'Message' }) as HTMLTextAreaElement).value).toBe('')
+  expect(screen.queryByText(/Delivery is not confirmed/)).toBeNull()
+  expect(b.h.adapter.sendOwnerChat).not.toHaveBeenCalled()
+  rendered.unmount()
+  a.h.snapshot.connection = { ...a.h.snapshot.connection!, scope: 'socket-a-returned:default' }
+  rendered = render(a.view())
+  await open()
+  await screen.findByText(/Delivery is not confirmed/)
+  expect((screen.getByRole('textbox', { name: 'Message' }) as HTMLTextAreaElement).value).toBe(original.text)
+  fireEvent.click(screen.getByRole('button', { name: 'Retry same message' }))
+  await waitFor(() => expect(a.h.adapter.sendOwnerChat).toHaveBeenCalledTimes(2))
+  expect(vi.mocked(a.h.adapter.sendOwnerChat!).mock.calls[1][0]).toEqual(original)
+  expect(b.h.adapter.sendOwnerChat).not.toHaveBeenCalled()
+  expect(a.h.thread.turns).toHaveLength(1)
+  expect(b.h.thread.turns).toHaveLength(0)
+  rendered.unmount()
+})
+
+it('returns an uncertain renewal to A despite colliding B thread and policy versions', async () => {
+  const a = harness()
+  const b = harness()
+
+  for (const { h } of [a, b]) {
+    h.thread = {
+      ...h.thread, policyGeneration: 7,
+      budget: { ...h.thread.budget, version: 2 },
+      renewal: { canRenew: true, maxAdditionalCalls: 3, maxOutstandingCalls: 32,
+        maxCumulativeCalls: 1000000, tokensPerCall: 34816, unavailableReason: null }
+    }
+    h.adapter.renewOwnerChat = vi.fn(async intent => ({
+      ...h.thread, budget: { ...h.thread.budget, version: 3 },
+      renewalReceipt: { id: 'receipt', idempotencyKey: intent.idempotencyKey, additionalCalls: 3,
+        budgetVersion: 3, policyGeneration: 7, createdAt: '2026-10-08T12:00:00Z' }
+    }))
+  }
+
+  b.h.snapshot.connection = { scope: 'socket-b:default', ownerScope: 'connection-b:default', state: 'ready' }
+  const pending = deferred<OwnerChatThread>()
+  vi.mocked(a.h.adapter.renewOwnerChat!).mockReturnValueOnce(pending.promise)
+  let rendered = render(a.view())
+  await open()
+  fireEvent.click(screen.getByRole('button', { name: 'Replenish allowance' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm additional allowance' }))
+  const original = vi.mocked(a.h.adapter.renewOwnerChat!).mock.calls[0][0]
+  rendered.unmount()
+  rendered = render(b.view())
+  await open()
+  await act(async () => pending.reject(new Error('A renewal reply lost after leaving')))
+  expect(screen.queryByRole('button', { name: 'Retry same allowance update' })).toBeNull()
+  expect(b.h.adapter.renewOwnerChat).not.toHaveBeenCalled()
+  rendered.unmount()
+  a.h.snapshot.connection = { ...a.h.snapshot.connection!, scope: 'socket-a-returned:default' }
+  rendered = render(a.view())
+  await open()
+  fireEvent.click(await screen.findByRole('button', { name: 'Retry same allowance update' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm additional allowance' }))
+  await waitFor(() => expect(a.h.adapter.renewOwnerChat).toHaveBeenCalledTimes(2))
+  expect(vi.mocked(a.h.adapter.renewOwnerChat!).mock.calls[1][0]).toEqual(original)
+  expect(b.h.adapter.renewOwnerChat).not.toHaveBeenCalled()
+  expect(a.h.adapter.sendOwnerChat).not.toHaveBeenCalled()
+  expect(b.h.adapter.sendOwnerChat).not.toHaveBeenCalled()
+  await waitFor(() => expect(Object.keys($ownerChatRenewals.get())).toHaveLength(0))
+  rendered.unmount()
 })

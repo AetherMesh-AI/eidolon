@@ -20,14 +20,12 @@ const result = (status: ConnectionSwitchOutcome['status'], connectionId = 'b'): 
 })
 
 async function setup() {
-  const request = vi
-    .fn()
-    .mockResolvedValue({
-      capabilityVersion: 1,
-      state: 'unconfigured',
-      metadata: null,
-      scope: { kind: 'served-profile', profile: 'default' }
-    })
+  const request = vi.fn().mockResolvedValue({
+    capabilityVersion: 1,
+    state: 'unconfigured',
+    metadata: null,
+    scope: { kind: 'served-profile', profile: 'default' }
+  })
 
   let changed = () => {}
 
@@ -244,5 +242,58 @@ it('suppresses completion when the source changes during destination verificatio
   })
   expect((await confirmation).status).toBe('superseded')
   expect(h.source.current?.connectionId).toBe('a')
+  h.directory.dispose()
+})
+
+it.each(['shared', 'profile-mismatch', 'malformed'] as const)(
+  'does not trust a cached destination after a fresh %s descriptor',
+  async kind => {
+    const h = await setup()
+    h.request.mockResolvedValueOnce({
+      capabilityVersion: kind === 'malformed' ? '1' : 1,
+      state: 'unconfigured',
+      metadata: null,
+      scope:
+        kind === 'shared'
+          ? { kind: 'shared' }
+          : { kind: 'served-profile', profile: kind === 'profile-mismatch' ? 'other' : 'default' }
+    })
+    h.activation.prepare(h.key)
+    const answer = await h.activation.confirm()
+    expect(answer.status).toBe('committed-unverified')
+    expect(answer.outcome).toMatchObject({ status: 'committed', published: true })
+    expect(h.source.current?.connectionId).toBe('b')
+    expect(h.select).toHaveBeenCalledExactlyOnceWith('b', 'default')
+    expect(h.request.mock.calls).toEqual([['organization.descriptor', {}]])
+    expect(h.directory.getSnapshot().entries.find(entry => entry.key === h.key)?.freshness).not.toBe('fresh')
+    h.directory.dispose()
+  }
+)
+
+it('checks the release gate again after preparation without touching either source', async () => {
+  const h = await setup()
+  let enabled = true
+  const activation = createOrganizationDirectoryActivation({ ...h.args, enabled: () => enabled })
+  expect(activation.prepare(h.key)).toBe(true)
+  enabled = false
+  expect(await activation.confirm()).toEqual({ status: 'disabled' })
+  expect(h.source.current?.connectionId).toBe('a')
+  expect(h.select).not.toHaveBeenCalled()
+  expect(h.request).not.toHaveBeenCalled()
+  h.directory.dispose()
+})
+
+it('preserves a pre-publication failure without reading the cached destination or replaying selection', async () => {
+  const h = await setup()
+  const error = new Error('Authentication refused before publication')
+  h.select.mockResolvedValueOnce({ ...result('unchanged'), error, published: false })
+  h.activation.prepare(h.key)
+  const answer = await h.activation.confirm()
+  expect(answer).toMatchObject({ status: 'unchanged', outcome: { error, published: false } })
+  expect(h.source.current?.connectionId).toBe('a')
+  expect(h.request).not.toHaveBeenCalled()
+  expect(h.select).toHaveBeenCalledTimes(1)
+  expect(await h.activation.confirm()).toEqual({ status: 'cancelled' })
+  expect(h.select).toHaveBeenCalledTimes(1)
   h.directory.dispose()
 })
