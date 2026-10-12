@@ -1,5 +1,13 @@
 /** Organization and deliverable surface copy. Runtime/user content is never translated here. */
 export const organizationSurfacesEn = {
+  objectiveRecord: {
+    heading: "Objective details",
+    created: "Created",
+    owner: "Executive owner",
+    priority: "Priority",
+    phase: "Current phase",
+    notRecorded: "Not recorded"
+  },
   runtimeState: {
     heading: "Organization runtime",
     disconnected: "Organization disconnected",
@@ -60,6 +68,14 @@ export const organizationSurfacesEn = {
 }
 
 export const organizationSurfacesJa = {
+  objectiveRecord: {
+    heading: "目標の詳細",
+    created: "作成日時",
+    owner: "統括責任者",
+    priority: "優先度",
+    phase: "現在の段階",
+    notRecorded: "記録なし"
+  },
   runtimeState: {
     heading: "組織の実行環境",
     disconnected: "組織との接続が切れています",
@@ -120,6 +136,14 @@ export const organizationSurfacesJa = {
 } satisfies typeof organizationSurfacesEn
 
 export const organizationSurfacesZh = {
+  objectiveRecord: {
+    heading: "目标详情",
+    created: "创建时间",
+    owner: "执行负责人",
+    priority: "优先级",
+    phase: "当前阶段",
+    notRecorded: "未记录"
+  },
   runtimeState: {
     heading: "组织运行环境",
     disconnected: "组织已断开连接",
@@ -180,6 +204,14 @@ export const organizationSurfacesZh = {
 } satisfies typeof organizationSurfacesEn
 
 export const organizationSurfacesZhHant = {
+  objectiveRecord: {
+    heading: "目標詳情",
+    created: "建立時間",
+    owner: "執行負責人",
+    priority: "優先級",
+    phase: "目前階段",
+    notRecorded: "未記錄"
+  },
   runtimeState: {
     heading: "組織執行環境",
     disconnected: "組織已中斷連線",
@@ -240,6 +272,14 @@ export const organizationSurfacesZhHant = {
 } satisfies typeof organizationSurfacesEn
 
 export const organizationSurfacesAr = {
+  objectiveRecord: {
+    heading: "تفاصيل الهدف",
+    created: "تاريخ الإنشاء",
+    owner: "المالك التنفيذي",
+    priority: "الأولوية",
+    phase: "المرحلة الحالية",
+    notRecorded: "غير مسجّل"
+  },
   runtimeState: {
     heading: "بيئة تشغيل المؤسسة",
     disconnected: "المؤسسة غير متصلة",
@@ -300,6 +340,14 @@ export const organizationSurfacesAr = {
 } satisfies typeof organizationSurfacesEn
 
 export const organizationSurfacesRu = {
+  objectiveRecord: {
+    heading: "Сведения о цели",
+    created: "Создана",
+    owner: "Ответственный руководитель",
+    priority: "Приоритет",
+    phase: "Текущий этап",
+    notRecorded: "Не зафиксировано"
+  },
   runtimeState: {
     heading: "Среда выполнения организации",
     disconnected: "Организация отключена",

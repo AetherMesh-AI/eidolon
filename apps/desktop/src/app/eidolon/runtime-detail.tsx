@@ -17,6 +17,7 @@ import { RuntimePriority } from './runtime-priority'
 import { RuntimeReplacement } from './runtime-replacement'
 import { RuntimeRequests } from './runtime-requests'
 import { RuntimeWorkPackages } from './runtime-work-packages'
+import { OrganizationScenery } from './scenery'
 import type { Objective, OrganizationSnapshot, RuntimeOrganizationAdapter } from './types'
 import { WorkGraph } from './work-graph'
 import { Knowledge, Status } from './workspace'
@@ -98,7 +99,7 @@ export function RuntimeObjectiveDetail({ objective, adapter, snapshot, historyCo
 
   return <>
     <Link className="eid-back" to="/objectives">← {copy.objectives}</Link>
-    <header className="eid-page-header eid-objective-hero"><div><p className="sr-only">{t.organizationHome.detail.objectiveRuntime}</p><h1>{objective.title}</h1><p className="eid-result-text">{objective.description}</p></div><Status status={objective.status} /></header>
+    <header className="eid-page-header eid-objective-hero"><OrganizationScenery className="eid-objective-scenery" /><div><p className="sr-only">{t.organizationHome.detail.objectiveRuntime}</p><div className="eid-objective-heading"><h1>{objective.title}</h1><Status status={objective.status} /></div><p className="eid-result-text">{objective.description}</p></div></header>
     <div className="eid-inline"><span>{t.organizationRoster.objectiveExecutive} · {owner?.name || objective.ownerId || t.organizationHome.unassigned}</span>{objective.managerId && <span>{t.organizationRoster.objectiveManager} · {manager?.name || objective.managerId}</span>}<Button onClick={() => setInspecting(true)} size="sm" variant="secondary">{t.organizationHome.detail.inspectObjective}</Button></div>
     <ObjectiveProgress controls={<>
       <RuntimeDispatch adapter={adapter} key={`dispatch:${snapshot.connection?.scope}:${snapshot.connection?.ownerScope}:${objective.id}`} objective={objective} snapshot={snapshot} />

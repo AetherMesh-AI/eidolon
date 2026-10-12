@@ -19,3 +19,8 @@
 @media (max-width: 800px) { .eid-home-hero > .eid-home-scenery { inset-inline-start: 55%; width: 45%; opacity: .3; } }
 
 [dir="rtl"] .eid-home-hero > .eid-home-scenery { mask-image: linear-gradient(to left, transparent, black 45%); }
+
+.eid-objective-hero { position: relative; isolation: isolate; }
+.eid-objective-hero > .eid-objective-scenery { position: absolute; inset-block: -16px; inset-inline: 45% 0; z-index: -1; width: 55%; height: calc(100% + 32px); mask-image: linear-gradient(to right, transparent, black 60%); opacity: .35; }
+[dir="rtl"] .eid-objective-hero > .eid-objective-scenery { mask-image: linear-gradient(to left, transparent, black 60%); }
+@media (max-width: 800px) { .eid-objective-hero > .eid-objective-scenery { opacity: .15; } }

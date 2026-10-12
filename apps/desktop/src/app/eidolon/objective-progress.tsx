@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n/context'
 
 import { AgentAvatar } from './avatar'
+import { LocalizedTime } from './localized-time'
 import { objectiveWorkData } from './objective-work-data'
 import type { Objective, OrganizationSnapshot, OrganizationTask } from './types'
 
@@ -98,6 +99,15 @@ export function ObjectiveProgress({ objective, snapshot, controls, onReviewReque
         <p>{data.accepted ? t.organizationHome.accepted : copy.notAccepted}</p>
         {data.accepted && <p className="eid-result-text">{objective.acceptance?.summary || objective.result || copy.acceptedRecorded}</p>}
         <Button onClick={onReviewWork} size="sm" variant="secondary">{copy.inspectAcceptance}</Button>
+      </section>
+      <section aria-label={t.organizationSurfaces.objectiveRecord.heading} className="eid-home-panel eid-objective-record">
+        <header><h2>{t.organizationSurfaces.objectiveRecord.heading}</h2></header>
+        <dl>
+          <dt>{t.organizationSurfaces.objectiveRecord.created}</dt><dd><LocalizedTime value={objective.createdAt} /></dd>
+          <dt>{t.organizationSurfaces.objectiveRecord.owner}</dt><dd>{agentName(objective.ownerId)}</dd>
+          <dt>{t.organizationSurfaces.objectiveRecord.priority}</dt><dd>{objective.priority || t.organizationSurfaces.objectiveRecord.notRecorded}</dd>
+          <dt>{t.organizationSurfaces.objectiveRecord.phase}</dt><dd>{objective.phase || t.organizationSurfaces.objectiveRecord.notRecorded}</dd>
+        </dl>
       </section>
     </div>
   </div>
