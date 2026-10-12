@@ -43,6 +43,8 @@ test('returns an uncertain intake through dedicated profile owners without start
   let releaseDescriptor: (() => void) | undefined
   let originalKey = ''
   let originalParams: Record<string, unknown> | undefined
+  let submissionReceipt: Record<string, unknown> | undefined
+  let releaseReceipt: (() => void) | undefined
 
   const registration = await page.evaluate(async () => {
     const bridge = (
@@ -67,8 +69,17 @@ test('returns an uncertain intake through dedicated profile owners without start
   await page.routeWebSocket(/.*/, socket => {
     const server = socket.connectToServer()
     let heldId: number | undefined
+    let receiptId: number | undefined
     server.onMessage(message => {
-      const response = JSON.parse(message.toString()) as { id?: number }
+      const response = JSON.parse(message.toString()) as { id?: number; result?: { data?: Record<string, unknown> } }
+
+      if (receiptId !== undefined && response.id === receiptId) {
+        submissionReceipt = response.result?.data
+        receiptId = undefined
+        releaseReceipt = () => socket.send(message)
+
+        return
+      }
 
       if (heldId !== undefined && response.id === heldId) {
         heldId = undefined
@@ -107,6 +118,11 @@ test('returns an uncertain intake through dedicated profile owners without start
               }
             : {})
         })
+      }
+
+      if (destination === 'a' && request.method === 'organization.observeRead' &&
+        request.params?.method === 'organization.checkSubmission') {
+        receiptId = request.id
       }
 
       if (destination === 'b' && request.method === 'organization.descriptor' && holdDescriptor) {
@@ -253,9 +269,41 @@ s.set_objective_archived(ident,True,expected_revision=0,idempotency_key='switch-
   await page.getByRole('button', { name: 'New objective', exact: true }).click()
   await expect(page.getByRole('textbox', { name: 'Objective', exact: true })).toHaveValue(title)
   expect(page.url()).toBe(originalRoute)
+  // Uncertain submissions permit an explicit retry with the retained key.
+  // Returning alone must neither retry nor perform a receipt lookup.
+  expect(originalParams).toEqual({
+    title, deliveryMode: 'managed_artifact', executiveId: 'executive', managerId: 'manager', idempotencyKey: originalKey
+  })
+  await expect(page.getByRole('combobox', { name: 'Delivery scope', exact: true })).toHaveValue('managed_artifact')
+  expect(methods.filter(item => item.method === 'organization.create')).toEqual([
+    { method: 'organization.create', destination: 'a', key: originalKey }
+  ])
+  expect(methods.filter(item => item.method === 'organization.checkSubmission' ||
+    item.nestedMethod === 'organization.checkSubmission')).toEqual([])
+  await expect(page.getByText(/^Submission is unconfirmed\./)).toBeVisible()
+  await expect(page.getByText(/^Submission is unconfirmed\./)).toContainText('Retry keeps the same request key.')
+  await expect(page.getByRole('button', { name: 'Create objective', exact: true })).toBeEnabled()
+  const checkSubmission = page.getByRole('button', { name: 'Check submission', exact: true })
+  await expect(checkSubmission).toBeEnabled()
+  await checkSubmission.click()
+  await expect.poll(() => Boolean(releaseReceipt)).toBe(true)
   await expect(page.getByRole('button', { name: 'Create objective', exact: true })).toBeDisabled()
-  await page.getByRole('button', { name: 'Check submission', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Checking submission…', exact: true })).toBeDisabled()
+  expect(methods.filter(item => item.method === 'organization.create')).toEqual([
+    { method: 'organization.create', destination: 'a', key: originalKey }
+  ])
+  releaseReceipt!()
   await expect(page.getByText(/^Submission recorded\./)).toBeVisible()
+  expect(submissionReceipt).toMatchObject({
+    version: 1, profile: profileA, idempotencyKey: originalKey,
+    objective: { title, archived: true }
+  })
+  await expect(page.getByRole('button', { name: 'Create objective', exact: true })).toBeDisabled()
+  // Exercise the submit handler as well as the disabled control: a known
+  // accepted receipt must prevent another write even on form submission.
+  await page.getByRole('textbox', { name: 'Objective', exact: true }).evaluate(element => {
+    element.closest('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+  })
   expect(methods.filter(item => item.method === 'organization.create')).toEqual([
     { method: 'organization.create', destination: 'a', key: originalKey }
   ])
@@ -298,6 +346,7 @@ s.set_objective_archived(ident,True,expected_revision=0,idempotency_key='switch-
       originalRoute,
       originalKey,
       originalParams,
+      submissionReceipt,
       methods,
       schedulerStarts: remote.starts(),
       providerCalls: mock.receivedPrompts.length,
