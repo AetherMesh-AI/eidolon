@@ -50,9 +50,10 @@ export {
   sortProviders
 } from './providers'
 
-import { $gateway, gatewayTransportGeneration, requestGatewayForProfile } from '@/store/gateway'
+import { $gateway, $gatewayTransportRevision, gatewayTransportGeneration, requestGatewayForProfile } from '@/store/gateway'
+import { $gatewaySwitching } from '@/store/gateway-switch'
 import { $gatewayState } from '@/store/session'
-import { currentSourceSwitchIntent } from '@/store/source-switch-intent'
+import { $sourceSwitchIntent, currentSourceSwitchIntent } from '@/store/source-switch-intent'
 
 interface DesktopOnboardingOverlayProps {
   enabled: boolean
@@ -195,6 +196,12 @@ export function DesktopOnboardingOverlay({
   const { t } = useI18n()
   const onboarding = useStore($desktopOnboarding)
   const boot = useStore($desktopBoot)
+  const sourceIntent = useStore($sourceSwitchIntent)
+  const gateway = useStore($gateway)
+  const switching = useStore($gatewaySwitching)
+  // Re-read the foreground generation even when its object/profile is reused.
+  useStore($gatewayTransportRevision)
+  const transportGeneration = gateway ? gatewayTransportGeneration(gateway) : undefined
   const onCompletedRef = useRef(onCompleted)
   onCompletedRef.current = onCompleted
   const targetProfile = onboarding.targetProfile ?? profile
@@ -235,19 +242,16 @@ export function DesktopOnboardingOverlay({
 
   useEffect(() => {
     let active = true
-    const intent = currentSourceSwitchIntent()
-    const gateway = $gateway.get()
-    const generation = gateway ? gatewayTransportGeneration(gateway) : undefined
 
-    if (enabled || onboarding.requested) {
+    if ((enabled || onboarding.requested) && !switching) {
       void refreshOnboarding({ ...ctx, shouldPublish: () => active &&
-        currentSourceSwitchIntent() === intent && $gateway.get() === gateway &&
-        (!gateway || gatewayTransportGeneration(gateway) === generation) &&
+        currentSourceSwitchIntent() === sourceIntent && $gateway.get() === gateway && !$gatewaySwitching.get() &&
+        (!gateway || gatewayTransportGeneration(gateway) === transportGeneration) &&
         (!enabled || $gatewayState.get() === 'open') })
     }
 
     return () => { active = false }
-  }, [ctx, enabled, onboarding.requested])
+  }, [ctx, enabled, onboarding.requested, sourceIntent, gateway, transportGeneration, switching])
 
   // When the Providers settings page asked to connect a specific provider, the
   // store stashed its id. Once the provider list has loaded and we're back at

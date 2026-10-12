@@ -385,6 +385,43 @@ describe('refreshOnboarding', () => {
     expect($desktopOnboarding.get().reason).toContain('request timed out')
   })
 
+  it('refreshes an already populated provider catalog for a new owned source read', async () => {
+    const api = vi.fn(async () => ({ providers: [makeOAuthProvider('replacement-source')] }))
+    installApiMock(api)
+    $desktopOnboarding.set(baseState({ providers: [makeOAuthProvider('previous-source')] }))
+    await refreshOnboarding({ profile: 'default', shouldPublish: () => true, requestGateway: emptyOpenRouterGateway() })
+    expect(api).toHaveBeenCalledTimes(1)
+    expect($desktopOnboarding.get().providers?.map(provider => provider.id)).toEqual(['replacement-source'])
+  })
+
+  it.each(['success', 'failure'])('retires a held provider-list %s without overwriting the fresh source', async outcome => {
+    let releaseOld!: (value: { providers: OAuthProvider[] }) => void
+    let rejectOld!: (reason: Error) => void
+    const oldResponse = new Promise<{ providers: OAuthProvider[] }>((resolve, reject) => { releaseOld = resolve; rejectOld = reject })
+    let releaseFresh!: (value: { providers: OAuthProvider[] }) => void
+    const freshResponse = new Promise<{ providers: OAuthProvider[] }>(resolve => { releaseFresh = resolve })
+    const api = vi.fn().mockReturnValueOnce(oldResponse).mockReturnValueOnce(freshResponse)
+    installApiMock(api)
+    $desktopOnboarding.set(baseState({ requested: true }))
+    let oldCurrent = true
+    const old = refreshOnboarding({ profile: 'default', shouldPublish: () => oldCurrent, requestGateway: emptyOpenRouterGateway() })
+    await vi.waitFor(() => expect(api).toHaveBeenCalledTimes(1))
+    oldCurrent = false
+    const fresh = refreshOnboarding({ profile: 'default', shouldPublish: () => true, requestGateway: emptyOpenRouterGateway() })
+    await vi.waitFor(() => expect(api).toHaveBeenCalledTimes(2))
+    releaseFresh({ providers: [makeOAuthProvider('fresh-source')] })
+    await fresh
+    const current = $desktopOnboarding.get()
+
+    if (outcome === 'success') {releaseOld({ providers: [makeOAuthProvider('retired-source')] })}
+    else {rejectOld(new Error('retired source unavailable'))}
+
+    await old
+    expect($desktopOnboarding.get()).toBe(current)
+    expect(current.providers?.map(provider => provider.id)).toEqual(['fresh-source'])
+    expect(current.mode).toBe('oauth')
+  })
+
   it('deduplicates concurrent provider refresh calls', async () => {
     let resolveProviders!: (value: { providers: OAuthProvider[] }) => void
 

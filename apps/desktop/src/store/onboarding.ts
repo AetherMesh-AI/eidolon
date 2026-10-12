@@ -165,7 +165,14 @@ export const $desktopOnboarding = atom<DesktopOnboardingState>(INITIAL)
 let flowGeneration = 0
 let flowProfile: string | undefined
 let pollTimer: number | null = null
-let providersRefreshPromise: null | Promise<void> = null
+
+let providersRefresh: null | {
+  token: object
+  owner?: () => boolean
+  profile?: string
+  generation: number
+  promise: Promise<void>
+} = null
 
 const errMessage = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
@@ -423,37 +430,38 @@ function providerResolutionFailure(reason: null | string) {
     : 'Connected, but Eidolon still cannot resolve a usable provider.'
 }
 
-async function refreshProviders() {
-  if (providersRefreshPromise) {
-    await providersRefreshPromise
+async function refreshProviders(ctx?: OnboardingContext) {
+  const owner = ctx?.shouldPublish
+  const profile = ctx?.profile ?? $desktopOnboarding.get().targetProfile
+  const generation = flowGeneration
+
+  if (owner && !owner()) {return}
+
+  if (providersRefresh && providersRefresh.owner === owner && providersRefresh.profile === profile &&
+      providersRefresh.generation === generation && (!owner || owner())) {
+    await providersRefresh.promise
 
     return
   }
 
-  const generation = flowGeneration
-  providersRefreshPromise = (async () => {
+  const token = {}
+
+  const promise = Promise.resolve().then(async () => {
     try {
-      const { providers } = await listOAuthProviders($desktopOnboarding.get().targetProfile)
+      const { providers } = await listOAuthProviders(profile)
 
-      if (generation !== flowGeneration) {
-        return
-      }
-
+      if (generation !== flowGeneration || (owner && !owner())) {return}
       patch({ mode: providers.length > 0 ? 'oauth' : 'apikey', providers })
     } catch {
-      if (generation !== flowGeneration) {
-        return
-      }
-
+      if (generation !== flowGeneration || (owner && !owner())) {return}
       patch({ mode: 'apikey', providers: [] })
     } finally {
-      if (generation === flowGeneration) {
-        providersRefreshPromise = null
-      }
+      if (providersRefresh?.token === token) {providersRefresh = null}
     }
-  })()
+  })
 
-  await providersRefreshPromise
+  providersRefresh = { token, owner, profile, generation, promise }
+  await promise
 }
 
 export function requestDesktopOnboarding(reason = DEFAULT_ONBOARDING_REASON) {
@@ -501,7 +509,7 @@ export function consumePendingCredentialWarning(): null | string {
 // even though configured===true, and refreshes the provider list.
 export function startManualOnboarding(reason: null | string = DEFAULT_MANUAL_ONBOARDING_REASON, profile?: string) {
   cancelOnboardingFlow()
-  providersRefreshPromise = null
+  providersRefresh = null
   patch({
     manual: true,
     targetProfile: profile,
@@ -567,7 +575,7 @@ export function clearPendingProviderOAuth() {
 // first-run flow has no close affordance because the app can't run yet.
 export function closeManualOnboarding() {
   cancelOnboardingFlow()
-  providersRefreshPromise = null
+  providersRefresh = null
   pendingProviderOAuthId = null
 
   patch({ targetProfile: undefined, manual: false, requested: false, localEndpoint: false, flow: { status: 'idle' } })
@@ -614,7 +622,7 @@ export async function refreshOnboarding(ctx: OnboardingContext) {
   // switch a provider while already configured. Just ensure the provider
   // list is loaded and show the picker.
   if ($desktopOnboarding.get().manual) {
-    await refreshProviders()
+    await refreshProviders(ctx)
 
     return false
   }
@@ -655,11 +663,13 @@ export async function refreshOnboarding(ctx: OnboardingContext) {
   writeCachedConfigured(false)
   patch({ configured: false, reason })
 
-  if (state.providers !== null && !state.requested) {
+  // An owned replacement read cannot reuse an unqualified catalog from the
+  // previous source, even when its profile label is unchanged.
+  if (state.providers !== null && !state.requested && !ctx.shouldPublish) {
     return false
   }
 
-  await refreshProviders()
+  await refreshProviders(ctx)
 
   return false
 }

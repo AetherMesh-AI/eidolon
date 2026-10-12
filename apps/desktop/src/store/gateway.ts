@@ -199,6 +199,7 @@ interface GatewayRegistryState {
   $gateway: ReturnType<typeof atom<HermesGateway | null>>
   $activeProfile: ReturnType<typeof atom<string>>
   $localOwnerProofRevision?: ReturnType<typeof atom<number>>
+  $transportRevision?: ReturnType<typeof atom<number>>
 }
 
 const STATE_KEY = Symbol.for('hermes.desktop.gatewayRegistryState')
@@ -276,6 +277,7 @@ const openedSecondaryScopes = (): Set<string> => (g.openedSecondaryScopes ??= ne
 // Re-exported as a stable binding: the atom instance lives in `g`, so every hot
 // reload of this module hands back the SAME atom subscribers are already wired
 // to. (A fresh `atom()` per reload would orphan existing subscriptions.)
+export const $gatewayTransportRevision = (g.$transportRevision ??= atom(0))
 export const $gateway = g.$gateway
 
 // The profile the ACTIVE gateway is actually routed to. Registry-owned: the
@@ -1066,6 +1068,7 @@ const producerLeaseScope = (entry: Secondary, generation: number) => `${entry.sc
 
 function nextTransportGeneration(): number {
   g.nextTransportGeneration = (g.nextTransportGeneration ?? 0) + 1
+  $gatewayTransportRevision.set(g.nextTransportGeneration)
 
   return g.nextTransportGeneration
 }
