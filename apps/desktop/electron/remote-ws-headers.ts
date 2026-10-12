@@ -2,6 +2,7 @@ import { registryGatewayWsUrl } from './plugin-profile-routes'
 
 export interface RegistryGatewayWsConnection {
   authMode: string
+  oauthSessionIdentity?: string
   baseUrl: string
   wsUrl: string
   headers?: Record<string, string>
@@ -10,6 +11,7 @@ export interface RegistryGatewayWsConnection {
 }
 
 interface RegistryGatewayWsUrlDependencies {
+  assertAuthority?: (connection: RegistryGatewayWsConnection) => void
   ensureBackend: (connectionId: unknown, profile: unknown) => Promise<RegistryGatewayWsConnection>
   mintTicket: (baseUrl: string, headers?: Record<string, string>) => Promise<string>
   buildTicketUrl: (baseUrl: string, ticket: string) => string
@@ -81,6 +83,7 @@ export function createRegistryGatewayWsUrlHandler(dependencies: RegistryGatewayW
   return async (payload: unknown): Promise<string> => {
     const { connectionId, profile } = payload && typeof payload === 'object' ? (payload as any) : ({} as any)
     const connection = await dependencies.ensureBackend(connectionId, profile)
+    dependencies.assertAuthority?.(connection)
     let wsUrl = connection.wsUrl
 
     if (connection.authMode === 'oauth') {
@@ -88,6 +91,7 @@ export function createRegistryGatewayWsUrlHandler(dependencies: RegistryGatewayW
       wsUrl = dependencies.buildTicketUrl(connection.baseUrl, ticket)
     }
 
+    dependencies.assertAuthority?.(connection)
     const finalWsUrl = registryGatewayWsUrl(connection, wsUrl)
 
     dependencies.rememberHeaders(finalWsUrl, connection.headers)
@@ -102,10 +106,13 @@ export async function refreshPrimaryGatewayWsUrl(
   connection: RegistryGatewayWsConnection,
   dependencies: Omit<RegistryGatewayWsUrlDependencies, 'ensureBackend'>
 ) {
+  dependencies.assertAuthority?.(connection)
+
   const wsUrl = connection.authMode === 'oauth'
     ? dependencies.buildTicketUrl(connection.baseUrl, await dependencies.mintTicket(connection.baseUrl, connection.headers))
     : connection.wsUrl
 
+  dependencies.assertAuthority?.(connection)
   dependencies.rememberHeaders(wsUrl, connection.headers)
 
   return wsUrl

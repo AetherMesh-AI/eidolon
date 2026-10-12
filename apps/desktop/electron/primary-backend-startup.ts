@@ -19,7 +19,7 @@ export type PrimaryBackendStartupResult<RuntimeBackend, Connection> =
 // retain it on cached descriptors; never relabel an old connection at lookup.
 const remoteAuthenticationKey = randomBytes(32)
 
-export function remoteAuthenticationIdentity(baseUrl: string, authMode: string, token: unknown, headers?: Record<string, string>) {
+export function remoteAuthenticationIdentity(baseUrl: string, authMode: string, token: unknown, headers?: Record<string, string>, oauthSessionIdentity?: string) {
   // HTTP field names are case-insensitive, but values remain exact. Reject
   // duplicate spellings rather than guessing how a particular dialer merges them.
   const canonicalHeaders = new Map<string, string>()
@@ -35,7 +35,7 @@ export function remoteAuthenticationIdentity(baseUrl: string, authMode: string, 
   }
 
   return createHmac('sha256', remoteAuthenticationKey)
-    .update(JSON.stringify([baseUrl, authMode, token, [...canonicalHeaders].sort(([a], [b]) => a.localeCompare(b))]))
+    .update(JSON.stringify([baseUrl, authMode, token, oauthSessionIdentity, [...canonicalHeaders].sort(([a], [b]) => a.localeCompare(b))]))
     .digest('hex')
 }
 
@@ -47,6 +47,7 @@ export function assertRemoteAuthenticationIdentity(opened: string | undefined, c
 
 interface ResolvedPrimaryRemote {
   authenticationIdentity?: string
+  oauthSessionIdentity?: string
   authMode?: 'oauth' | 'token'
   baseUrl: string
   connectionId?: string
@@ -80,6 +81,7 @@ export function createPrimaryRemoteConnection<State extends object>(
 ) {
   return {
     authenticationIdentity: remote.authenticationIdentity,
+    oauthSessionIdentity: remote.oauthSessionIdentity,
     baseUrl: remote.baseUrl,
     headers: remote.headers === undefined ? undefined : Object.freeze({ ...remote.headers }),
     mode: 'remote' as const,

@@ -277,6 +277,7 @@ import { runNativeLogin } from './native-oauth-login'
 import { loadNativeTokenSet, type NativeTokenStoreIo, persistNativeTokenSet } from './native-token-store'
 import { serializeJsonBody, setJsonRequestHeaders } from './oauth-net-request'
 import { LEGACY_OAUTH_PARTITION, resolveOauthPartition } from './oauth-partition'
+import { createOAuthCookieCleanupQueue, createOAuthSessionAuthority, createOwnedNativeAccountResolver } from './oauth-session-authority'
 import { createParentStartMarkerResolver, parentWatchdogEnv } from './parent-process-identity'
 import { registerPetOverlayIpc } from './pet-overlay-ipc'
 import {
@@ -7247,6 +7248,42 @@ function resolveOauthPartitionForUrl(url) {
   }
 }
 
+const oauthCookieCleanup = createOAuthCookieCleanupQueue()
+const oauthLoginWindows = new Map<BrowserWindow, string>()
+
+const oauthAccountAuthority = createOAuthSessionAuthority(identity => {
+  for (const [win, owner] of oauthLoginWindows) {
+    if (owner === identity && !win.isDestroyed()) { win.destroy() }
+  }
+
+  broadcastConnectionsChanged({ connectionId: '', reason: 'auth-changed', oauthSessionIdentity: identity })
+  const primary = backendConnectionState.getPromise()
+  void primary?.then(connection => {
+    if (connection.oauthSessionIdentity === identity && backendConnectionState.getPromise() === primary) {
+      backendConnectionState.invalidate()
+    }
+  }).catch(() => {})
+
+  for (const [key, entry] of backendPool) {
+    void entry.connectionPromise?.then(connection => {
+      if (connection.oauthSessionIdentity === identity && backendPool.get(key) === entry) {
+        backendPool.delete(key)
+      }
+    }).catch(() => {})
+  }
+})
+
+function oauthAccountScope(baseUrl: string) {
+  // Shared cookie jars share account transitions, including portal sign-in.
+  return resolveOauthPartitionForUrl(baseUrl)
+}
+
+function assertOAuthDescriptorAuthority(connection) {
+  if (connection.authMode === 'oauth') {
+    oauthAccountAuthority.assertCurrent(oauthAccountScope(connection.baseUrl), connection.oauthSessionIdentity)
+  }
+}
+
 function getOauthSessionForUrl(url) {
   const partition = resolveOauthPartitionForUrl(url)
 
@@ -7535,6 +7572,9 @@ function openOauthLoginWindow(baseUrl, { silent = false } = {}) {
     // Re-check the cookie jar on every successful navigation (the callback
     // redirect is the moment cookies get set) plus a low-frequency poll as a
     // belt-and-braces fallback for IDPs that finish via in-page JS.
+    oauthLoginWindows.set(win, oauthAccountAuthority.capture(oauthAccountScope(baseUrl)))
+    win.once('closed', () => oauthLoginWindows.delete(win))
+
     win.webContents.on('did-navigate', () => void checkCookie())
     win.webContents.on('did-redirect-navigation', () => void checkCookie())
     win.webContents.on('did-frame-navigate', () => void checkCookie())
@@ -7585,7 +7625,11 @@ function openOauthLoginWindow(baseUrl, { silent = false } = {}) {
 // session cookie is attached automatically by Electron's net stack. Used for
 // authed REST against a gated gateway, including minting WS tickets.
 function fetchJsonViaOauthSession(url, options: any = {}) {
+  const scope = oauthAccountScope(url)
+  const identity = oauthAccountAuthority.capture(scope)
+
   return new Promise((resolve, reject) => {
+    oauthAccountAuthority.assertCurrent(scope, identity)
     const sess = getOauthSessionForUrl(url)
 
     if (!sess) {
@@ -7628,6 +7672,7 @@ function fetchJsonViaOauthSession(url, options: any = {}) {
     }
 
     let timedOut = false
+    let retired = false
 
     const timer = setTimeout(() => {
       timedOut = true
@@ -7645,7 +7690,7 @@ function fetchJsonViaOauthSession(url, options: any = {}) {
       const chunks = []
       res.on('data', chunk => chunks.push(Buffer.from(chunk)))
       res.on('end', () => {
-        if (timedOut) {
+        if (timedOut || retired) {
           return
         }
 
@@ -7684,13 +7729,22 @@ function fetchJsonViaOauthSession(url, options: any = {}) {
       })
     })
     request.on('error', error => {
-      if (timedOut) {
+      if (timedOut || retired) {
         return
       }
 
       clearTimeout(timer)
       reject(error)
     })
+
+    const untrack = oauthAccountAuthority.track(scope, identity, () => {
+      retired = true
+      clearTimeout(timer)
+      request.abort()
+      reject(new Error('Eidolon OAuth account session changed during request.'))
+    })
+
+    request.once('close', untrack)
 
     if (body) {
       request.write(body)
@@ -7765,8 +7819,11 @@ function _storeNativeTokens(baseUrl: string, tokens: NativeTokenSet) {
 }
 
 function _clearNativeTokens(baseUrl: string) {
-  _nativeTokens.delete(baseUrl)
-  _persistNativeTokens(baseUrl, null)
+  const change = oauthAccountAuthority.beginChange(oauthAccountScope(baseUrl))
+  change.finish(() => {
+    _nativeTokens.delete(baseUrl)
+    _persistNativeTokens(baseUrl, null)
+  })
 }
 
 // True when we hold native bearer tokens for this gateway (the native-flow
@@ -7790,46 +7847,22 @@ function postJsonNoAuth(url: string, body: unknown, opts: any = {}) {
 // Return a valid native access token for baseUrl, refreshing via
 // /auth/native/refresh if the stored one is at/near expiry. Returns null when
 // there are no tokens or the refresh is terminally rejected (caller re-logins).
+const resolveOwnedNativeAccount = createOwnedNativeAccountResolver()
+
 async function ensureNativeAccessToken(baseUrl: string): Promise<string | null> {
-  const tokens = _loadNativeTokens(baseUrl)
-
-  if (!tokens) {
-    return null
-  }
-
-  if (!tokenNeedsRefresh(tokens, Math.floor(Date.now() / 1000))) {
-    return tokens.accessToken
-  }
-
-  if (!tokens.refreshToken) {
-    // Access token expired and no RT to rotate — force re-login.
-    _clearNativeTokens(baseUrl)
-
-    return null
-  }
-
-  try {
-    const body = await postJsonNoAuth(
+  return resolveOwnedNativeAccount(baseUrl, {
+    authority: oauthAccountAuthority,
+    scope: oauthAccountScope(baseUrl),
+    tokens: _loadNativeTokens(baseUrl),
+    needsRefresh: tokens => tokenNeedsRefresh(tokens, Math.floor(Date.now() / 1000)),
+    refresh: async tokens => parseTokenResponse(await postJsonNoAuth(
       nativeRefreshUrl(baseUrl),
       { refresh_token: tokens.refreshToken, provider: tokens.provider },
       { timeoutMs: 10_000 }
-    )
-
-    const rotated = parseTokenResponse(body)
-    _storeNativeTokens(baseUrl, rotated)
-
-    return rotated.accessToken
-  } catch (error: any) {
-    // A 401 means the RT is dead (session_expired) — drop tokens so the UI
-    // prompts a fresh native login. A 503/transient keeps them for a retry.
-    if (error && error.statusCode === 401) {
-      _clearNativeTokens(baseUrl)
-
-      return null
-    }
-
-    throw error
-  }
+    )),
+    publish: tokens => _storeNativeTokens(baseUrl, tokens),
+    clear: () => _clearNativeTokens(baseUrl)
+  })
 }
 
 // OAuth-session download that streams the response body straight to a
@@ -8122,9 +8155,15 @@ async function saveGatewayFileViaDataUrl(
 // a few times before failing — those 1-3s flaps were promoting into the
 // full-screen "couldn't start" lockout on reconnect.
 async function mintGatewayWsTicket(baseUrl, headers = {}) {
-  return withTransientRetries(async () => {
+  const scope = oauthAccountScope(baseUrl)
+  const identity = oauthAccountAuthority.capture(scope)
+
+  return oauthAccountAuthority.run(scope, identity, () => withTransientRetries(async () => {
+    oauthAccountAuthority.assertCurrent(scope, identity)
     // Native flow: mint the ticket with the bearer token, no cookie involved.
     const nativeAt = await ensureNativeAccessToken(baseUrl).catch(() => null)
+
+    oauthAccountAuthority.assertCurrent(scope, identity)
 
     if (nativeAt) {
       const body = (await fetchJson(`${baseUrl}/api/auth/ws-ticket`, null, {
@@ -8156,7 +8195,7 @@ async function mintGatewayWsTicket(baseUrl, headers = {}) {
     }
 
     return ticket
-  })
+  }))
 }
 
 // Build a fresh WS URL for the *current* connection. Critical for reconnects:
@@ -8175,6 +8214,7 @@ async function freshGatewayWsUrl(profile) {
   const connection = await ensureBackend(profile)
 
   return refreshPrimaryGatewayWsUrl(connection, {
+    assertAuthority: assertOAuthDescriptorAuthority,
     mintTicket: mintGatewayWsTicket,
     buildTicketUrl: buildGatewayWsUrlWithTicket,
     rememberHeaders: rememberRemoteWsHeaders
@@ -8399,6 +8439,9 @@ function renewPortalAccessSilently() {
         return
       }
 
+      oauthLoginWindows.set(win, oauthAccountAuthority.capture(oauthAccountScope(resolvePortalBaseUrl())))
+      win.once('closed', () => oauthLoginWindows.delete(win))
+
       win.webContents.on('did-navigate', () => void checkCookie())
       win.webContents.on('did-redirect-navigation', () => void checkCookie())
       win.webContents.on('did-frame-navigate', () => void checkCookie())
@@ -8503,6 +8546,9 @@ function openPortalLoginWindow() {
 
       return
     }
+
+    oauthLoginWindows.set(win, oauthAccountAuthority.capture(oauthAccountScope(resolvePortalBaseUrl())))
+    win.once('closed', () => oauthLoginWindows.delete(win))
 
     win.webContents.on('did-navigate', () => void checkCookie())
     win.webContents.on('did-redirect-navigation', () => void checkCookie())
@@ -8709,7 +8755,13 @@ async function cloudAgentSilentSignIn(dashboardUrl) {
     await renewPortalAccessSilently()
   }
 
-  await openOauthLoginWindow(baseUrl, { silent: true })
+  const change = oauthAccountAuthority.beginChange(oauthAccountScope(baseUrl))
+
+  try {
+    await oauthCookieCleanup.wait(oauthAccountScope(baseUrl))
+    change.assertCurrent()
+    await openOauthLoginWindow(baseUrl, { silent: true })
+  } finally { change.finish() }
 
   return { baseUrl, connected: await hasOauthSessionCookie(baseUrl) }
 }
@@ -9866,7 +9918,8 @@ async function buildRemoteConnection(
 ) {
   const baseUrl = normalizeRemoteBaseUrl(rawUrl)
   const remoteHeaders = decryptRemoteHeaders(headers)
-  const authenticationIdentity = remoteAuthenticationIdentity(baseUrl, authMode, token, remoteHeaders)
+  const oauthSessionIdentity = authMode === 'oauth' ? oauthAccountAuthority.capture(oauthAccountScope(baseUrl)) : undefined
+  const authenticationIdentity = remoteAuthenticationIdentity(baseUrl, authMode, token, remoteHeaders, oauthSessionIdentity)
   // For token/oauth remotes the meaningful host is the real backend URL; for
   // SSH remotes the caller passes the entered/resolved host explicitly (the
   // baseUrl is a 127.0.0.1 tunnel and would be useless in the pill).
@@ -9920,12 +9973,14 @@ async function buildRemoteConnection(
       )
     }
 
+    oauthAccountAuthority.assertCurrent(oauthAccountScope(baseUrl), oauthSessionIdentity)
     const wsUrl = buildGatewayWsUrlWithTicket(baseUrl, ticket)
 
     rememberRemoteWsHeaders(wsUrl, remoteHeaders)
 
     return {
       authenticationIdentity,
+      oauthSessionIdentity,
       baseUrl,
       mode: 'remote',
       source,
@@ -11199,7 +11254,7 @@ function sendConnectionApplied() {
 // scoped to that connection. Without this, a removed remote/cloud source keeps
 // its renderer WebSocket open and streaming as a ghost, and an edited one
 // keeps talking to the OLD endpoint until idle-reap.
-function broadcastConnectionsChanged(payload: { connectionId: string; reason: 'removed' | 'saved' | 'updated' }) {
+function broadcastConnectionsChanged(payload: { connectionId: string; reason: 'removed' | 'saved' | 'updated' | 'auth-changed'; oauthSessionIdentity?: string }) {
   for (const win of BrowserWindow.getAllWindows()) {
     const { webContents } = win
 
@@ -11303,6 +11358,7 @@ async function ensureBackend(profile, opts: { spawnPriority?: LocalBackendSpawnP
 
   if (route.backend === 'primary') {
     const connection = await startHermes()
+    assertOAuthDescriptorAuthority(connection)
 
     // Shared-member lookups can reuse this same cached descriptor. Do not let
     // two old descriptors agree after the registry's credentials have changed.
@@ -11317,7 +11373,8 @@ async function ensureBackend(profile, opts: { spawnPriority?: LocalBackendSpawnP
         normalizeRemoteBaseUrl(source.url),
         normAuthMode(source.authMode),
         source.authMode === 'oauth' ? null : decryptDesktopSecret(source.token),
-        decryptRemoteHeaders(source.headers)
+        decryptRemoteHeaders(source.headers),
+        source.authMode === 'oauth' ? oauthAccountAuthority.capture(oauthAccountScope(source.url)) : undefined
       ))
     }
 
@@ -15648,6 +15705,7 @@ ipcMain.handle('hermes:agents:roster', async () => {
 // Registry-scoped fresh WS URL: the (connectionId, profile) analogue of
 // hermes:gateway:ws-url. Same single-use-ticket discipline for OAuth sources.
 const registryGatewayWsUrlHandler = createRegistryGatewayWsUrlHandler({
+  assertAuthority: assertOAuthDescriptorAuthority,
   ensureBackend: ensureRegistryBackend,
   mintTicket: mintGatewayWsTicket,
   buildTicketUrl: buildGatewayWsUrlWithTicket,
@@ -15809,6 +15867,7 @@ async function fetchJsonForBackend(
   opts: { method?: string; body?: unknown; upload?: unknown; timeoutMs?: number } = {}
 ) {
   return requestBackendJson(descriptor, path, opts, {
+    assertAuthority: assertOAuthDescriptorAuthority,
     ensureNativeAccessToken,
     fetchJson,
     fetchJsonViaOauthSession
@@ -15829,63 +15888,72 @@ ipcMain.handle('hermes:connection-config:oauth-login', async (_event, rawUrl) =>
   //   - a failed native login reports the error rather than auto-falling back
   //     to the embedded flow — one sign-in action opens at most one window.
   const baseUrl = normalizeRemoteBaseUrl(rawUrl)
-
-  let statusBody: any = null
+  const change = oauthAccountAuthority.beginChange(oauthAccountScope(baseUrl))
 
   try {
-    statusBody = await fetchPublicJson(`${baseUrl}/api/status`, { timeoutMs: 8_000 })
-  } catch {
-    // Can't read status — fall through to the embedded flow, which has its
-    // own error handling and works against any gated gateway.
-  }
+    await oauthCookieCleanup.wait(oauthAccountScope(baseUrl))
+    change.assertCurrent()
 
-  const authRequired = statusBody && authModeFromStatus(statusBody) === 'oauth'
-  const providers = authRequired ? await gatewayAuthProviders(baseUrl) : []
+    let statusBody: any = null
 
-  const strategy = resolveLoginStrategy(statusBody, { providers })
-
-  if (strategy === 'native') {
     try {
-      const tokens = await runNativeLogin(baseUrl, {
-        openExternal: url => shell.openExternal(url),
-        postJson: (url, body, opts) => postJsonNoAuth(url, body, opts),
-        rememberLog
-      })
-
-      _storeNativeTokens(baseUrl, tokens)
-      // Confirmed sign-in — release the reauth latch so the next
-      // startHermes() re-dials instead of replaying the stale rejection.
-      remoteReauthFailure = null
-
-      return { ok: true, baseUrl, connected: true }
-    } catch (error) {
-      rememberLog(`[native-oauth] native login failed (${error instanceof Error ? error.message : String(error)})`)
-
-      return { ok: false, error: error instanceof Error ? error.message : String(error), connected: false }
+      statusBody = await fetchPublicJson(`${baseUrl}/api/status`, { timeoutMs: 8_000 })
+    } catch {
+      // Can't read status — fall through to the embedded flow, which has its
+      // own error handling and works against any gated gateway.
     }
+
+    const authRequired = statusBody && authModeFromStatus(statusBody) === 'oauth'
+    const providers = authRequired ? await gatewayAuthProviders(baseUrl) : []
+
+    const strategy = resolveLoginStrategy(statusBody, { providers })
+
+    change.assertCurrent()
+
+    if (strategy === 'native') {
+      try {
+        const tokens = await runNativeLogin(baseUrl, {
+          openExternal: url => shell.openExternal(url),
+          postJson: (url, body, opts) => postJsonNoAuth(url, body, opts),
+          rememberLog
+        })
+
+        change.finish(() => _storeNativeTokens(baseUrl, tokens))
+        // Confirmed sign-in — release the reauth latch so the next
+        // startHermes() re-dials instead of replaying the stale rejection.
+        remoteReauthFailure = null
+
+        return { ok: true, baseUrl, connected: true }
+      } catch (error) {
+        rememberLog(`[native-oauth] native login failed (${error instanceof Error ? error.message : String(error)})`)
+
+        return { ok: false, error: error instanceof Error ? error.message : String(error), connected: false }
+      }
+    }
+
+    // Legacy embedded-webview cookie flow.
+    await openOauthLoginWindow(baseUrl)
+
+    const connected = await hasOauthSessionCookie(baseUrl)
+
+    // Only a CONFIRMED sign-in releases the latch. A cancelled/closed login
+    // window must leave it set, or the overlay's "Sign in" button starts
+    // flickering again on the next retry.
+    if (connected) {
+      remoteReauthFailure = null
+    }
+
+    return { ok: true, baseUrl, connected }
+  } finally {
+    change.finish()
   }
-
-  // Legacy embedded-webview cookie flow.
-  await openOauthLoginWindow(baseUrl)
-
-  const connected = await hasOauthSessionCookie(baseUrl)
-
-  // Only a CONFIRMED sign-in releases the latch. A cancelled/closed login
-  // window must leave it set, or the overlay's "Sign in" button starts
-  // flickering again on the next retry.
-  if (connected) {
-    remoteReauthFailure = null
-  }
-
-  return { ok: true, baseUrl, connected }
 })
 ipcMain.handle('hermes:connection-config:oauth-logout', async (_event, rawUrl) => {
   const baseUrl = normalizeRemoteBaseUrl(rawUrl)
-  await clearOauthSession(baseUrl)
-
-  // Also drop any native (RFC 8252) bearer tokens for this gateway so a
-  // logout clears BOTH auth shapes.
   _clearNativeTokens(baseUrl)
+  const change = oauthAccountAuthority.beginChange(oauthAccountScope(baseUrl))
+
+  try { await oauthCookieCleanup.clear(oauthAccountScope(baseUrl), () => clearOauthSession(baseUrl)) } finally { change.finish() }
 
   // Report against the SAME liveness notion the Settings indicator uses
   // (AT-or-RT cookie, or a native token) so a logout that left any session
@@ -15903,12 +15971,20 @@ ipcMain.handle('hermes:cloud:status', async () => ({
   signedIn: await hasLivePortalSession()
 }))
 ipcMain.handle('hermes:cloud:login', async () => {
-  await openPortalLoginWindow()
+  const change = oauthAccountAuthority.beginChange(oauthAccountScope(resolvePortalBaseUrl()))
+
+  try {
+    await oauthCookieCleanup.wait(oauthAccountScope(resolvePortalBaseUrl()))
+    change.assertCurrent()
+    await openPortalLoginWindow()
+  } finally { change.finish() }
 
   return { ok: true, signedIn: await hasLivePortalSession() }
 })
 ipcMain.handle('hermes:cloud:logout', async () => {
-  await clearOauthSession(resolvePortalBaseUrl())
+  const change = oauthAccountAuthority.beginChange(oauthAccountScope(resolvePortalBaseUrl()))
+
+  try { await oauthCookieCleanup.clear(oauthAccountScope(resolvePortalBaseUrl()), () => clearOauthSession(resolvePortalBaseUrl())) } finally { change.finish() }
 
   return { ok: true, signedIn: await hasLivePortalSession() }
 })

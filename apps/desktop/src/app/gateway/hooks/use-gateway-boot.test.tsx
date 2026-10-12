@@ -212,7 +212,7 @@ const coderConn = {
 function fakeDesktop() {
   let bootProgressHandler: ((payload: Record<string, unknown>) => void) | null = null
   let backendExit: (() => void) | null = null
-  let registryChanged: ((payload: { connectionId: string; reason: string }) => void) | null = null
+  let registryChanged: ((payload: { connectionId: string; reason: string; oauthSessionIdentity?: string }) => void) | null = null
 
   return {
     connections: {
@@ -222,7 +222,7 @@ function fakeDesktop() {
         return () => { registryChanged = null }
       })
     },
-    emitRegistryChanged(payload: { connectionId: string; reason: string }) { registryChanged?.(payload) },
+    emitRegistryChanged(payload: { connectionId: string; reason: string; oauthSessionIdentity?: string }) { registryChanged?.(payload) },
     getConnection: vi.fn(async (profile?: null | string) => {
       const key = (profile ?? '').trim()
 
@@ -2147,4 +2147,27 @@ it.each([
   const intent = currentSourceSwitchIntent()
   act(() => { desktop.emitRegistryChanged(payload) })
   expect(currentSourceSwitchIntent()).toBe(intent)
+})
+
+it('retires a matching OAuth account socket and held lookup, without retiring an unrelated account', async () => {
+  const desktop = fakeDesktop() as Omit<ReturnType<typeof fakeDesktop>, 'getConnection'> & { getConnection: ReturnType<typeof vi.fn> }
+  const connection = { ...primaryConn, authMode: 'oauth', oauthSessionIdentity: 'account-a' }
+  desktop.getConnection.mockResolvedValue(connection)
+  ;(window as { hermesDesktop?: unknown }).hermesDesktop = desktop
+  render(<Harness />)
+  await flushAsync()
+  const intent = currentSourceSwitchIntent()
+  act(() => { desktop.emitRegistryChanged({ connectionId: '', reason: 'auth-changed', oauthSessionIdentity: 'unrelated' }) })
+  expect(currentSourceSwitchIntent()).toBe(intent)
+  expect($gatewayState.get()).toBe('open')
+  const pending = deferred<typeof connection>()
+  desktop.getConnection.mockReturnValue(pending.promise)
+  act(() => { desktop.emitBackendExit(); FakeWebSocket.instances[0].drop() })
+  await advanceBackoff()
+  act(() => { desktop.emitRegistryChanged({ connectionId: '', reason: 'auth-changed', oauthSessionIdentity: 'account-a' }) })
+  expect(currentSourceSwitchIntent()).not.toBe(intent)
+  pending.resolve({ ...connection, oauthSessionIdentity: 'account-b', profile: 'observation-a' })
+  await flushAsync()
+  expect($activeGatewayProfile.get()).toBe('default')
+  expect($connection.get()?.oauthSessionIdentity).not.toBe('account-b')
 })

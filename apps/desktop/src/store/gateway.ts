@@ -2212,6 +2212,23 @@ export function retireLocalProfileGateways(profile: string): void {
 // fresh sockets target the NEW endpoint, but request/relay leases and mounted
 // foreground runtimes keep their old socket until they drain; the active scope
 // re-activates when its replacement is safe to publish.
+export function disposeSecondariesForOAuthSession(identity: string): void {
+  let activeInvalidated = false
+
+  for (const [key, entry] of [...g.secondaries]) {
+    if (entry.connection?.oauthSessionIdentity !== identity) { continue }
+
+    activeInvalidated ||= key === g.activeKey
+    disposeSecondary(entry)
+    g.secondaries.delete(key)
+  }
+
+  if (activeInvalidated) {
+    setActive(PRIMARY_SCOPE)
+    g.config?.onActiveConnectionInvalidated?.(g.primaryProfile, gatewayActivationEpoch())
+  }
+}
+
 export function disposeSecondariesForConnection(connectionId: string, opts: { redial?: boolean } = {}): void {
   const id = String(connectionId || '').trim()
   let activeInvalidated = false

@@ -231,6 +231,7 @@ export interface ResolvedConnectionSshDescriptor {
 }
 
 export interface ResolvedConnectionDescriptor {
+  oauthSessionIdentity?: string
   authMode?: unknown
   baseUrl?: string
   /** Property presence means this descriptor claims registry qualification.

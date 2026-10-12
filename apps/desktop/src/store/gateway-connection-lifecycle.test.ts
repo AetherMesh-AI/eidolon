@@ -57,6 +57,7 @@ const {
   closeSecondaryGateways,
   configureGatewayRegistry,
   disposeSecondariesForConnection,
+  disposeSecondariesForOAuthSession,
   ensureActiveGatewayOpen,
   ensureGatewayForAgent,
   ensureGatewayForProfile,
@@ -531,4 +532,21 @@ describe('reconnect fail-stop on a removed connection', () => {
     expect(result).not.toBeNull()
     expect((result as unknown as { connectionState: string }).connectionState).toBe('open')
   })
+})
+
+it('retires only sockets owned by an old OAuth session across source profiles', async () => {
+  const getConnectionFor = vi.fn(async ({ connectionId, profile }: { connectionId: string; profile: string }) => ({
+    ...descriptorFor(connectionId, profile),
+    oauthSessionIdentity: profile === 'old' ? 'retired-account' : 'current-account'
+  }))
+
+  installDesktop({ getConnectionFor })
+  await ensureGatewayForAgent('same-source', 'old')
+  await ensureGatewayForAgent('same-source', 'current')
+  await ensureGatewayForAgent('unrelated', 'current')
+  disposeSecondariesForOAuthSession('retired-account')
+  expect(gatewayMocks.instances[0].close).toHaveBeenCalledOnce()
+  expect(gatewayMocks.instances[1].close).not.toHaveBeenCalled()
+  expect(gatewayMocks.instances[2].close).not.toHaveBeenCalled()
+  expect(getConnectionFor).toHaveBeenCalledTimes(3)
 })

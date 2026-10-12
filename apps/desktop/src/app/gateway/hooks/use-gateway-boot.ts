@@ -26,6 +26,7 @@ import {
   configureGatewayRegistry,
   connectPrimaryGateway,
   disposeSecondariesForConnection,
+  disposeSecondariesForOAuthSession,
   ensureActiveGatewayOpen,
   ensureGatewayForProfile,
   gatewayActivationEpoch,
@@ -925,6 +926,21 @@ export function useGatewayBoot({
     // disposed AND re-dialed so its sockets target the new endpoint.
     const offConnectionsChanged = desktop.connections?.onChanged?.(payload => {
       if (!payload || typeof payload.connectionId !== 'string') {
+        return
+      }
+
+      if (payload.reason === 'auth-changed') {
+        const identity = payload.oauthSessionIdentity
+
+        if (!identity) { return }
+
+        if ($connection.get()?.oauthSessionIdentity === identity) {
+          beginSourceSwitchIntent()
+          activeGateway()?.close()
+        }
+
+        disposeSecondariesForOAuthSession(identity)
+
         return
       }
 
