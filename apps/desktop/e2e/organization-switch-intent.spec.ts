@@ -406,7 +406,9 @@ test('reconciles the served local profile after the actual primary process exits
   // Establish passive mode through real profile doors, then remember A only
   // for the next primary generation. The active foreground remains default.
   for (const profile of [profileA, 'default']) {
+    await page.evaluate(() => { location.hash = '#/' })
     await page.locator('[data-slot="profile-rail"]').getByRole('button', { name: profile, exact: true }).click()
+    await page.getByRole('navigation', { name: 'Primary', exact: true }).getByRole('link', { name: 'Home', exact: true }).click()
     await expect(page.locator('.eid-workspace-header').getByRole('button', { name: new RegExp(profile) })).toBeVisible()
   }
 
