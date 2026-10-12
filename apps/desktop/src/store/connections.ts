@@ -480,7 +480,6 @@ async function performConnectionSwitch(connectionId: string, options: SelectConn
           throw error
         }
 
-        if (token !== null && isCurrentGatewaySwitch(token)) {published = true}
         warning = { phase: 'activation', error }
       }
 
@@ -489,8 +488,6 @@ async function performConnectionSwitch(connectionId: string, options: SelectConn
       if (!targetIsActive()) {
         throw new Error(`Connection "${targetConnection.label}" did not become active.`)
       }
-
-      if (token !== null && isCurrentGatewaySwitch(token)) {published = true}
 
       if (revision !== switchRevision || !isCurrentSourceSwitchIntent(intent)) {
         return finish('superseded')

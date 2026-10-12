@@ -128,6 +128,7 @@ beforeEach(() => {
       profile,
       registryScoped: true
     })
+    options?.onPublished?.()
   })
   openGatewayAgent.mockReset()
   openGatewayAgent.mockResolvedValue(undefined)

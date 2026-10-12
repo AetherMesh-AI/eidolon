@@ -1441,11 +1441,17 @@ export async function ensureGatewayForAgent(
 
     await ensureGatewayForProfile(profile)
 
+    if (!signal?.aborted) {onPublished?.()}
+
     return !signal?.aborted
   }
 
   if (await isAttachedSharedRemote(connectionId, profile, 'foreground')) {
-    return Boolean(isOpen(g.primaryGateway) && !signal?.aborted)
+    const activated = Boolean(isOpen(g.primaryGateway) && !signal?.aborted)
+
+    if (activated) {onPublished?.()}
+
+    return activated
   }
 
   if (!window.hermesDesktop?.getConnectionFor) {
