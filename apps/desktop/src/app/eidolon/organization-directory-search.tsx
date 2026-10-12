@@ -1,3 +1,5 @@
+import './organization-directory.css'
+
 import { useEffect, useId, useState, useSyncExternalStore } from 'react'
 
 import { Button } from '@/components/ui/button'
@@ -18,6 +20,8 @@ export interface OrganizationDirectoryCopy {
   unnamed: string
   unconfigured: string
   unsupported: string
+  choose?: string
+  inspectionOnly?: string
 }
 
 /** Unmounted preparation surface. Highlighting is inspection, never activation. */
@@ -56,6 +60,7 @@ export function OrganizationDirectorySearch({
       open
     >
       <DialogContent
+        className="eidolon eid-organization-directory"
         onCloseAutoFocus={event => {
           event.preventDefault()
 
@@ -132,6 +137,8 @@ export function OrganizationDirectorySearch({
             ))}
           </ul>
         </div>
+        {copy.choose && <Button disabled>{copy.choose}</Button>}
+        {copy.inspectionOnly && <p>{copy.inspectionOnly}</p>}
         {!results.length && <p role="status">{copy.empty}</p>}
         {view.error && <p role="status">{copy.unavailable}</p>}
         <Button

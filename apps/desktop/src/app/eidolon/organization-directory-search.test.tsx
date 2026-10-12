@@ -136,13 +136,23 @@ it('drops a filtered highlight and exposes no stale active descendant', async ()
   h.directory.dispose()
 })
 
-it('closes on owner loss and never returns focus into the former owner', async () => {
+it.each([false, true])('flushes deferred close autofocus with owner lost = %s', async lost => {
   const h = await setup()
-  act(h.invalidate)
-  expect(h.close).toHaveBeenCalled()
-  h.ui.unmount()
-  await waitFor(() => expect(h.returnFocus).not.toHaveBeenCalled())
-  expect(h.request).not.toHaveBeenCalled()
-  h.ui.unmount()
-  h.directory.dispose()
+
+  if (lost) {act(h.invalidate)}
+  vi.useFakeTimers()
+
+  try {
+    await act(async () => {
+      h.ui.unmount()
+      await vi.runOnlyPendingTimersAsync()
+    })
+    expect(h.returnFocus).toHaveBeenCalledTimes(lost ? 0 : 1)
+
+    if (lost) {expect(h.close).toHaveBeenCalled()}
+    expect(h.request).not.toHaveBeenCalled()
+  } finally {
+    vi.useRealTimers()
+    h.directory.dispose()
+  }
 })

@@ -1,20 +1,20 @@
 # Authorized organization directory and cache — review preparation
 
-This separate branch explicitly depends on unmerged, independently reviewed PR94 head `219dd58173f9d5c75fd8b6b0ed5294f10e696ba0`, tree `47816e0b9e333c93e67593909f6a94d86b1ac921`. That head and its prerequisites remain unchanged. Main merges remain held, including the unresolved PR92 approval.
+This runtime-wiring branch depends on unmerged PR95 head `d31a5527cbbe60e98b5eb5479c01c001e81a9ffd`, tree `14624f8db3843681873aba6f6179284b91e26d3b`, which itself depends on independently reviewed PR94 head `219dd58173f9d5c75fd8b6b0ed5294f10e696ba0`. Both heads and their evidence remain preserved. All main merges remain held, including the unresolved PR92 approval.
 
-## Implemented preparation
+## Implemented behavior
 
-`organization-directory.ts` implements a window-local display cache bounded to 100 entries. It uses the existing validated metadata client only on explicit refresh through a captured eligible scope. Source subscriptions revoke freshness; endpoint edits and removed routes evict records; stale and out-of-order responses cannot publish. Restored lower revisions replace prior records. The cache projects organization display fields only and has no activation, disk persistence, enumeration, reconnect or mutation API.
+The bounded display cache from PR95 now has a runtime source adapter observing the existing gateway, profile, connection, registry and observation stores. It performs no registry initialization, enumeration or dialing. Registry object changes advance an independent generation, so credential/query/auth edits revoke freshness even when their redacted endpoint is unchanged. Tests cover those edits with late old responses and verify secrets remain absent from cache snapshots.
 
-`organization-directory-search.tsx` supplies an unmounted searchable inspection surface using existing Dialog, SearchField and Button primitives. Duplicate names retain connection/profile context; stale entries are labeled. Search, pointer/keyboard highlighting and Enter perform no activation or reads. Only explicit Refresh requests the current descriptor. Localized copy is a required input; application catalog wiring and native layout proof remain open. No application entry point mounts the component.
+The workspace header opens localized organization inspection. Opening, searching, highlighting, Enter and closing perform no requests or destination activation. Explicit Refresh reads only the eligible captured current descriptor. The cache is created lazily and disposed on header teardown; no directory data is written to disk. Search preserves duplicate routed identities and labels stale names. All six supported locales have copy. Destination activation is disabled and has no UI callback.
 
-The metadata hook now subscribes to observation epoch and switching atoms. A same-route switch immediately removes stale descriptor authority and reads again after completion. The new regression fails against the preserved PR94 hook and passes with this correction.
+A separate, unconnected activation coordinator requires an explicit prepare/confirm action and has a closed default release gate. Tests with an injected switch exercise cancellation before admission, changed owners/endpoints, unchanged/superseded outcomes, committed results with trailing errors, destination verification failure, late verification and synthetic A→B→A return preserving original uncertain intake/send/renewal ownership and keys. It never navigates or rolls back a committed route. Cancellation after admission is deliberately unsupported because the reviewed switch API cannot undo publication; this remains a release-gate limitation, not a successful cancellation claim.
 
-Cache and component tests cover redaction, copied IDs, bounded eviction, route removal/re-addition, endpoint edits, identity/restored revision changes, overlapping reads, A→B→A, search/highlight without requests, current-only refresh and owner-loss focus suppression. Existing owner-scoped draft regressions remain in the validation set.
+The prior same-route metadata subscription fix is retained. Focus tests now explicitly flush deferred dialog teardown, with a positive restoration control and a negative owner-loss control. Native fixture coverage exercises inspection without activation, explicit refresh, current draft DOM/route preservation, keyboard highlighting/cancellation/focus, and narrow/200% English/Arabic layouts. These cases do not prove native cross-destination return to uncertain drafts.
 
-## Remaining enablement gates
+## Remaining activation gates
 
-Runtime registry/source adapter integration, explicit activation and return with uncertain intake/send/renewal, failure before/after publication, native keyboard/focus/narrow/200%/RTL cases, and stopped-scheduler proof remain required before enabling the selector. A display cache never grants activation or write authority. This preparation adds no RPC, migration, credentials or merge. The following original design contract remains the boundary for that work.
+Activation remains disconnected until independent source review, dedicated/shared profile authority, native switching and failure before/after publication, uncertain intake/send/renewal return, and stopped-scheduler-with-queued-work proof pass. The current coordinator's injected switch tests and inherited real-reset draft tests are complementary evidence, not a combined native activation journey. Display records never grant write authority. No new RPC, migration, credentials or main merge is included. The original design contract below remains the boundary for further work.
 
 ## Bounded first delivery
 
@@ -50,4 +50,4 @@ Implementation tests must additionally prove bounded eviction, route removal/re-
 
 The same-route observation subscription gap is now fixed with a reproducing regression. Before activation wiring, reconcile dedicated transport profile names with logical UI aliases before accepting descriptor scope. These are review questions, not reasons to broaden discovery or change PR94 during independent review.
 
-The original design-only preparation is superseded by the implemented work and remaining gates listed above; selector enablement and merges remain held.
+The original design-only preparation is superseded by the implemented work and remaining gates above. Inspection is wired; destination activation and all main merges remain held.

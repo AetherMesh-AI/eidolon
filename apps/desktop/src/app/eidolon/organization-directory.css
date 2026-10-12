@@ -1,0 +1,6 @@
+.eid-organization-directory { width: min(32rem, calc(100vw - 2rem)); overflow-wrap: anywhere; }
+.eid-organization-directory [role="listbox"] { list-style: none; margin: 8px 0; padding: 6px; max-height: 35vh; overflow: auto; }
+.eid-organization-directory [role="option"] { padding: 8px; border-radius: 4px; }
+.eid-organization-directory [role="option"][aria-selected="true"] { background: var(--ui-bg-secondary); box-shadow: inset 0 0 0 1px var(--ui-accent); }
+.eid-organization-directory small { color: var(--ui-text-secondary); }
+.eid-organization-directory :is(button, input, [role="listbox"]):focus-visible { outline: 3px solid var(--ui-accent); outline-offset: 2px; transition-property: color, background-color, border-color, box-shadow; }

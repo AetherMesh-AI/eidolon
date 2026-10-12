@@ -375,6 +375,40 @@ with sqlite3.connect(sys.argv[1]) as conn:
 
           await expect(dialog).toHaveCount(0)
           await expect(trigger).toBeFocused()
+
+          // Inspect the real runtime directory without enabling destination activation.
+          const directoryCopy = locale === 'ar'
+            ? { title: 'المؤسسات', refresh: 'تحديث المؤسسة الحالية', search: 'البحث عن المؤسسات', choose: 'استخدام المؤسسة المحددة' }
+            : { title: 'Organizations', refresh: 'Refresh current organization', search: 'Search organizations', choose: 'Use selected organization' }
+
+          const directoryTrigger = page.getByRole('button', { name: directoryCopy.title, exact: true })
+          const beforeInspection = stored()
+          const beforeOpenReads = observedMethods.filter(method => method === 'organization.descriptor').length
+          await directoryTrigger.click()
+          const directoryDialog = page.getByRole('dialog', { name: directoryCopy.title, exact: true })
+          await expect(directoryDialog).toBeVisible()
+          await expect(directoryDialog.getByRole('button', { name: directoryCopy.choose, exact: true })).toBeDisabled()
+          expect(observedMethods.filter(method => method === 'organization.descriptor')).toHaveLength(beforeOpenReads)
+          await directoryDialog.getByRole('button', { name: directoryCopy.refresh, exact: true }).click()
+          await expect(directoryDialog.getByRole('option')).toContainText(beforeInspection!.display_name)
+          const afterRefreshReads = observedMethods.filter(method => method === 'organization.descriptor').length
+          await directoryDialog.getByRole('textbox', { name: directoryCopy.search, exact: true }).fill(beforeInspection!.display_name)
+          const list = directoryDialog.getByRole('listbox')
+          await list.scrollIntoViewIfNeeded()
+          await verifyKeyboardFocus(page, list, `directory-${locale}-${mode}-${width}-${zoom}`)
+          await page.keyboard.press('ArrowDown')
+          await expect(directoryDialog.getByRole('option')).toHaveAttribute('aria-selected', 'true')
+          await page.keyboard.press('Enter')
+          expect(observedMethods.filter(method => method === 'organization.descriptor')).toHaveLength(afterRefreshReads)
+          expect(stored()).toEqual(beforeInspection)
+          const directoryWindow = await app.browserWindow(page)
+          const directoryImage = Buffer.from(await directoryWindow.evaluate(async window => (await window.webContents.capturePage()).toPNG().toString('base64')), 'base64')
+          const directoryName = `organization-directory-${locale}-${mode}-${width}-${height}-${zoom}`
+          await test.info().attach(directoryName, { body: directoryImage, contentType: 'image/png' })
+          captures.push({ name: directoryName, locale, mode, width, height, zoom, sha256: createHash('sha256').update(directoryImage).digest('hex'), captureMethod: 'electron.capturePage', activationEnabled: false } as typeof captures[number])
+          await page.keyboard.press('Escape')
+          await expect(directoryDialog).toHaveCount(0)
+          await expect(directoryTrigger).toBeFocused()
         }
       }
 
