@@ -23,6 +23,13 @@ class _ReadView(_ObservationView):
             yield conn
 
 
+def _scoped_thread(value):
+    # Match the existing owner-chat RPC contract using only the authenticated
+    # served profile; never a caller-supplied routing label.
+    from eidolon_cli.profiles import get_active_profile_name
+    return {**value, 'profile': get_active_profile_name()}
+
+
 # Public method -> projection and accepted argument names. No dynamic getattr
 # from caller input, profile routing, execution methods or fallback dispatch.
 _READS = {
@@ -30,7 +37,7 @@ _READS = {
     'organization.outcomes': (_ReadView.outcomes, {'limit', 'before', 'unreadOnly'}),
     'organization.history': (_ReadView.history, {'query', 'state', 'before', 'limit'}),
     'organization.historyObjective': (lambda view, id: view.history_objective(id), {'id'}),
-    'organization.ownerChat.read': (_ReadView.owner_chat_read, {'threadId', 'identityId', 'beforeMessageId', 'limit'}),
+    'organization.ownerChat.read': (lambda view, **params: _scoped_thread(view.owner_chat_read(**params)), {'threadId', 'identityId', 'beforeMessageId', 'limit'}),
     'organization.evidence': (lambda view, id: view.evidence(id), {'id'}),
     'organization.toolReceipts': (lambda view, id: view.tool_receipts(id), {'id'}),
     'organization.executionAudit': (lambda view, id: view.execution_audit(id), {'id'}),

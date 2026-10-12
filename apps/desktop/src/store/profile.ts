@@ -641,6 +641,8 @@ export interface EnsureGatewayAgentOptions {
   /** Continue the initiating connection pick rather than claiming a new intent. */
   intent?: SourceSwitchIntent
   beforeActivate?: () => boolean
+  /** Records publication by this activation, independently of foreground intent. */
+  onPublished?: () => void
   /** Revokes this caller's right to activate or publish after async work. */
   signal?: AbortSignal
 }
@@ -676,7 +678,7 @@ function releaseWhenAborted(promise: Promise<void>, signal?: AbortSignal): Promi
 export async function ensureGatewayAgent(
   connectionId: null | string,
   profile: string,
-  { beforeActivate, signal, intent = beginSourceSwitchIntent() }: EnsureGatewayAgentOptions = {}
+  { beforeActivate, onPublished, signal, intent = beginSourceSwitchIntent() }: EnsureGatewayAgentOptions = {}
 ): Promise<void> {
   const target = normalizeProfileKey(profile)
   const connection = (connectionId ?? '').trim() || null
@@ -711,7 +713,7 @@ export async function ensureGatewayAgent(
     // Descriptor resolves concurrently with the dial, same as the profile
     // path, so no await sits between the activation and the publication.
     const activation = signal
-      ? ensureGatewayForAgent(connection, target, { signal })
+      ? ensureGatewayForAgent(connection, target, { signal, ...(onPublished ? { onPublished } : {}) })
       : ensureGatewayForAgent(connection, target)
 
     const [descriptor, activated] = await Promise.all([resolveConnectionForAgent(connection, target), activation])
@@ -744,6 +746,7 @@ export async function ensureGatewayAgent(
       setComposerSelectionOwner(connection, target)
       $activeGatewayProfile.set(target)
     })
+    onPublished?.()
   })()
 
   // Cancellation releases the mutex immediately; activationWork remains

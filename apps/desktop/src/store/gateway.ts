@@ -1430,7 +1430,7 @@ export async function openGatewayForAgent(
 export async function ensureGatewayForAgent(
   connectionId: null | string,
   profile: string,
-  { signal }: { signal?: AbortSignal } = {}
+  { signal, onPublished }: { signal?: AbortSignal; onPublished?: () => void } = {}
 ): Promise<boolean> {
   const scope = registryBackendScopeKey(connectionId, profile)
 
@@ -1504,6 +1504,7 @@ export async function ensureGatewayForAgent(
 
   if (activated && entry.connection) {
     publishActiveConnection(entry.connection)
+    onPublished?.()
   }
 
   return activated

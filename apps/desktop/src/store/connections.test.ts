@@ -23,6 +23,7 @@ const $gatewaySwitching = atom(false)
 
 interface ActivationOptions {
   beforeActivate?: () => boolean
+  onPublished?: () => void
   signal?: AbortSignal
 }
 
@@ -727,6 +728,8 @@ describe('selectConnection', () => {
             profile,
             registryScoped: true
           })
+
+          options?.onPublished?.()
 
           return new Promise<void>(resolve => {
             releaseDescriptor = () => {

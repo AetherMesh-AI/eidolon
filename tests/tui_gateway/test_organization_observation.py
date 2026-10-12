@@ -180,3 +180,14 @@ def test_detail_projection_sql_is_enforced_read_only(served, monkeypatch, statem
     assert response['error']['code'] == 5073
     with sqlite3.connect(store.path) as conn:
         assert list(conn.iterdump()) == before
+
+
+def test_passive_owner_chat_read_preserves_complete_legacy_inner_contract(served):
+    store = OrganizationStore(served / 'organization' / 'state.db')
+    identity = next(a['identityId'] for a in store.snapshot()['agents'] if a['id'] == 'manager')
+    thread = store.owner_chat_open('manager', identity)
+    expected = {**store.owner_chat_read(thread, identity), 'profile': 'default'}
+    response = call({'method': 'organization.ownerChat.read',
+                     'params': {'threadId': thread, 'identityId': identity}}, method='organization.observeRead')
+    assert response['result']['data'] == expected
+    assert response['result']['data']['profile'] == response['result']['scope']['profile']

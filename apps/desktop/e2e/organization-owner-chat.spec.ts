@@ -5,6 +5,8 @@ import { writeFileSync } from 'node:fs'
 /** Actual Electron → authenticated gateway → identity ledger → loopback provider. */
 import type { Page } from '@playwright/test'
 
+import { validOwnerChatThread } from '../src/app/eidolon/runtime-owner-chat-contract'
+
 import { verifyKeyboardFocus } from './focus-visibility'
 import {
   continuedMessage,
@@ -245,14 +247,17 @@ test('retains exact worker chat, deduplicates owner send and fences a cancelled 
   // Reference comparison uses the supported, retained conversation above. The
   // visual-polish spec separately retains the older-runtime compatibility state.
   const referenceCaptures: object[] = []
+
   const retainedIdentity = {
     threadId: sends[0].params.threadId,
     identityId: sends[0].params.identityId,
     profile: sends[0].params.profile
   }
+
   const referenceCalls = running.calls.length
   const referenceSends = sends.length
   const referenceRenewals = renewals.length
+
   for (const mode of ['dark', 'light'] as const) {
     await navigation(page).getByRole('link', { name: 'Settings', exact: true }).click()
     await page.getByRole('button', { name: 'Appearance', exact: true }).click()
@@ -274,8 +279,10 @@ test('retains exact worker chat, deduplicates owner send and fences a cancelled 
     expect(running.calls).toHaveLength(referenceCalls)
     expect(sends).toHaveLength(referenceSends)
     expect(renewals).toHaveLength(referenceRenewals)
+
     const bytes = Buffer.from(await running.fixture.app.evaluate(async ({ BrowserWindow }) =>
       (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
+
     const name = `reference-messages-populated-${mode}`
     writeFileSync(test.info().outputPath(`${name}.png`), bytes)
     referenceCaptures.push({ name, sha256: createHash('sha256').update(bytes).digest('hex'),
@@ -286,6 +293,7 @@ test('retains exact worker chat, deduplicates owner send and fences a cancelled 
       messageIds: retained.result?.messages.map(message => message.id),
       scriptedProviderCalls: running.calls.length, ownerSends: sends.length, allowanceRenewals: renewals.length })
   }
+
   writeFileSync(test.info().outputPath('populated-messages-reference-evidence.json'), JSON.stringify({
     sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
     sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
@@ -353,6 +361,18 @@ test('retains exact worker chat, deduplicates owner send and fences a cancelled 
   expect(retained.result?.identityId).toBe(accepted.result?.identityId)
   expect(retained.result?.budget.callsReserved).toBe(2)
   expect(retained.result?.turns.at(-1)?.status).toBe('cancelled')
+
+  // Real authenticated passive RPC, validated by the renderer's complete
+  // contract. It must preserve the inner served profile and retained schema.
+  const observed = await rpc<{ data: ThreadView & { profile: string }; scope: { profile: string } }>(page, sends[0], 'organization.observeRead', {
+    method: 'organization.ownerChat.read', params: { threadId: identity.threadId, identityId: identity.identityId }
+  })
+
+  expect(observed.error).toBeUndefined()
+  expect(validOwnerChatThread(observed.result?.data)).toBe(true)
+  expect(observed.result?.data).toEqual(retained.result)
+  expect(observed.result?.data.profile).toBe(observed.result?.scope.profile)
+  expect(running.calls).toHaveLength(2)
 
   const snapshot = await rpc<{ objectives: unknown[] }>(page, sends[0], 'organization.snapshot', {
     profile: sends[0].params.profile

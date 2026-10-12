@@ -258,3 +258,22 @@ it('records successful publication after reset even when a newer browse intent s
   expect(setLastUsed).not.toHaveBeenCalled()
   expect($gatewaySwitching.get()).toBe(false)
 })
+
+it.each(['reject', 'nonlanding', 'land'] as const)('attributes publication to the actual activation after a newer Settings reset (%s)', async outcome => {
+  $connection.set({ connectionId: 'local', profile: 'default', mode: 'local', baseUrl: '' } as HermesConnection)
+  const activation = deferred<boolean>()
+  ensureGatewayForAgent.mockReturnValueOnce(activation.promise)
+  const pending = selectConnectionWithOutcome('homelab', { profile: 'research' })
+  await vi.waitFor(() => expect($gatewaySwitching.get()).toBe(true))
+  const newerToken = beginGatewaySwitch()
+  $connection.set({ connectionId: 'homelab', profile: 'research', mode: 'remote', baseUrl: 'https://example.invalid' } as HermesConnection)
+
+  try {
+    if (outcome === 'reject') {activation.reject(new Error('old activation failed'))}
+    else {activation.resolve(false)}
+
+    expect(await pending).toMatchObject({ status: 'superseded', resetStarted: true, published: false, observedRoute: { connectionId: 'homelab', profile: 'research' } })
+    expect($gatewaySwitching.get()).toBe(true)
+    expect(setLastUsed).not.toHaveBeenCalled()
+  } finally {endGatewaySwitch(newerToken)}
+})

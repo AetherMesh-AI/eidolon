@@ -401,12 +401,7 @@ async function performConnectionSwitch(connectionId: string, options: SelectConn
   // repaint. Null while queued, or if it stepped aside before its turn.
   let token = null as GatewaySwitchToken | null
 
-  const offPublication = $connection.listen(() => {
-    // Activation is serialized by ensureGatewayAgent. Once this operation has
-    // entered reset, its publication remains a fact even if a newer foreground
-    // intent owns navigation. Do not use that intent as a publication filter.
-    if (resetStarted && targetIsActive()) {published = true}
-  })
+
 
   try {
     // Phase 1 — open the target's socket; the active route is untouched.
@@ -443,6 +438,7 @@ async function performConnectionSwitch(connectionId: string, options: SelectConn
         const activation = ensureGatewayAgent(connectionId, targetProfile, {
           signal: activationController.signal,
           intent,
+          onPublished: () => {published = true},
           beforeActivate: () => {
             if (revision !== switchRevision || !isCurrentSourceSwitchIntent(intent)) {
               return false
@@ -484,7 +480,7 @@ async function performConnectionSwitch(connectionId: string, options: SelectConn
           throw error
         }
 
-        published = true
+        if (token !== null && isCurrentGatewaySwitch(token)) {published = true}
         warning = { phase: 'activation', error }
       }
 
@@ -494,7 +490,7 @@ async function performConnectionSwitch(connectionId: string, options: SelectConn
         throw new Error(`Connection "${targetConnection.label}" did not become active.`)
       }
 
-      published = true
+      if (token !== null && isCurrentGatewaySwitch(token)) {published = true}
 
       if (revision !== switchRevision || !isCurrentSourceSwitchIntent(intent)) {
         return finish('superseded')
@@ -555,8 +551,6 @@ async function performConnectionSwitch(connectionId: string, options: SelectConn
 
     return finish('failed')
   } finally {
-    offPublication()
-
     if (revision === switchRevision) {
       pendingTarget = null
       pendingIntent = null

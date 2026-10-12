@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { useEffect, useState } from 'react'
 import { Link, MemoryRouter, Route, Routes } from 'react-router'
 import { beforeEach, expect, it, vi } from 'vitest'
 
@@ -35,6 +36,7 @@ import { beginSourceSwitchIntent } from '@/store/source-switch-intent'
 
 import { createPrototypeAdapter } from '../../../test-fixtures/organization-prototype'
 
+import { ownerChatThread } from './runtime-owner-chat.test-support'
 import { createOrganizationScopeReader, OrganizationRuntimeProvider, useRuntimeOrganization } from './runtime-provider'
 import type { OrganizationSnapshot } from './types'
 import { OrganizationWorkspace } from './workspace'
@@ -347,6 +349,38 @@ it('opens the actual selected /requests attention inbox using only captured pass
   const view = render(<MemoryRouter initialEntries={['/requests']}><OrganizationWorkspace /></MemoryRouter>)
   expect(await screen.findByRole('button', { name: 'Inspect request: work.draft' })).toBeTruthy()
   expect(request).toHaveBeenCalledWith('organization.observeRead', { method: 'organization.attention', params: { before: undefined, unreadOnly: false, limit: 25 } }, 15000, expect.any(AbortSignal))
+  expect(request.mock.calls.every(([method]) => ['organization.observe', 'organization.observeRead'].includes(method))).toBe(true)
+  view.unmount()
+})
+
+it('validates a retained owner-chat read successfully through the mounted provider after source intent changes', async () => {
+  const thread = { ...ownerChatThread(), profile: 'remote-writing' }
+  const scope = { kind: 'served-profile', profile: 'remote-writing' }
+
+  const request = vi.fn(async (method: string, params: Record<string, unknown>) => {
+    if (method === 'organization.observe') {return { capabilityVersion: 1, state: 'available', scope, snapshot: snapshot('Selected organization') }}
+
+    if (method === 'organization.observeRead' && params.method === 'organization.ownerChat.read') {return { capabilityVersion: 1, state: 'available', scope, data: thread }}
+    throw new Error(`Forbidden read: ${method}`)
+  })
+
+  $gateway.set({ request, connectionState: 'open' } as never)
+  beginSourceSwitchIntent()
+
+  function RetainedChat() {
+    const { adapter, snapshot: current } = useRuntimeOrganization()!
+    const [result, setResult] = useState('waiting')
+    useEffect(() => {
+      if (current.connection?.state === 'ready') {
+        void adapter.readOwnerChat!({ threadId: thread.id, identityId: thread.identityId }).then(value => setResult(`${value.id}:${value.profile}`), () => setResult('invalid'))
+      }
+    }, [adapter, current.connection?.state])
+
+    return <output>{result}</output>
+  }
+
+  const view = render(<OrganizationRuntimeProvider><RetainedChat /></OrganizationRuntimeProvider>)
+  expect(await screen.findByText(`${thread.id}:remote-writing`)).toBeTruthy()
   expect(request.mock.calls.every(([method]) => ['organization.observe', 'organization.observeRead'].includes(method))).toBe(true)
   view.unmount()
 })
