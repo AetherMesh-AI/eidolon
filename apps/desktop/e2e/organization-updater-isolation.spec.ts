@@ -49,7 +49,7 @@ test('a backend release notification obstructs the header until explicitly dismi
 
   try {
     const { app, page, sandbox, mockUrl } = running.fixture
-    remote = await startOrganizationSwitchGateway(sandbox, mockUrl, 1)
+    remote = await startOrganizationSwitchGateway(sandbox, mockUrl)
     await page.evaluate(async ({ url, token }) => {
       const bridge = (window as unknown as { hermesDesktop: { connections: { save(input: unknown): Promise<{ ok: boolean }>; setLaunchMode(mode: 'last-used'): Promise<{ ok: boolean; registry: { launchMode: string } }> } } }).hermesDesktop
 
@@ -80,6 +80,25 @@ test('a backend release notification obstructs the header until explicitly dismi
     await expect(page.locator('.eid-workspace-header [data-slot="connection-switcher"]')).toHaveAttribute('aria-busy', 'false')
     await expect.poll(() => remote!.updateChecks()).toBeGreaterThan(checksBeforeReload)
     const toast = page.getByRole('status').filter({ has: page.getByText('Update ready', { exact: true }) })
+    await expect(toast).toHaveCount(0)
+
+    // Introduce the release only after startup. Session initialization clears
+    // notifications and invokes their dismissal callbacks, persisting a snooze.
+    // Use the public command while its cached status is current, so it only
+    // checks availability; never click an install action.
+    const checkThroughMenu = async () => {
+      await page.locator('.eid-workspace-header').click({ button: 'right' })
+      await page.getByRole('menuitem', { name: 'Update Eidolon', exact: true }).click()
+    }
+
+    await checkThroughMenu()
+    await expect(page.getByText('The backend is running the latest version.', { exact: true })).toBeVisible()
+    await page.keyboard.press('Escape')
+    const checksBeforeRelease = remote.updateChecks()
+    remote.setUpdateBehind(1)
+    await checkThroughMenu()
+    await expect.poll(() => remote!.updateChecks()).toBeGreaterThan(checksBeforeRelease)
+    await page.keyboard.press('Escape')
     await expect(toast).toBeVisible()
     expect(remote.updateChecks()).toBeGreaterThan(0)
 
@@ -114,11 +133,27 @@ test('a backend release notification obstructs the header until explicitly dismi
       body: JSON.stringify({
         sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
         sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
-        backendChecks: remote.updateChecks(), checksBeforeReload, launchMode: 'last-used', restoredSource: 'Updater fixture B', obstructedBeforeDismissal: blocked,
+        backendChecks: remote.updateChecks(), checksBeforeReload, checksBeforeRelease, releaseIntroducedAfterStartup: true, availabilityCheck: 'public Update Eidolon menu command from known-current status', launchMode: 'last-used', restoredSource: 'Updater fixture B', obstructedBeforeDismissal: blocked,
         dismissal: 'public Dismiss notification button', switcherOpenedAfterDismissal: true,
         schedulerStarts: remote.starts(), providerCalls: running.calls.length
       })
     })
+  } catch (error) {
+    const window = await running.fixture.app.browserWindow(running.fixture.page)
+    await test.info().attach('backend-updater-before-cleanup', {
+      contentType: 'image/png',
+      body: Buffer.from(await window.evaluate(async window => (await window.webContents.capturePage()).toPNG().toString('base64')), 'base64')
+    })
+    await test.info().attach('backend-updater-failure-state', {
+      contentType: 'application/json',
+      body: JSON.stringify({
+        sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+        sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
+        backendChecks: remote?.updateChecks(),
+        snoozeUntil: await running.fixture.page.evaluate(() => localStorage.getItem('hermes:update-toast-snooze-until'))
+      })
+    })
+    throw error
   } finally {
     await remote?.close()
     await running.fixture.cleanup()

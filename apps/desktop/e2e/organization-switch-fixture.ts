@@ -1,6 +1,6 @@
 /** A real secondary gateway in a temporary home. No installed runtime or real credentials. */
 import { execFileSync, spawn } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import path from 'node:path'
 
@@ -40,6 +40,8 @@ export async function startOrganizationSwitchGateway(sandbox: Sandbox, mockUrl: 
   const marker = path.join(sandbox.root, 'organization-switch-scheduler-starts')
   const recoveryComplete = `${marker}.recovery-complete`
   const updateChecks = `${marker}.update-checks`
+  const updateAvailability = `${marker}.update-availability`
+  writeFileSync(updateAvailability, String(updateBehind))
   const token = 'organization-switch-fixture-token'
   const env = { ...buildAppEnv(sandbox), HERMES_HOME: home, HERMES_DASHBOARD_SESSION_TOKEN: token }
 
@@ -73,10 +75,10 @@ from pathlib import Path
 # update actions remain real; dedicated updater coverage opts into a release.
 import eidolon_cli.banner as banner
 update_marker=sys.argv[4]
-update_behind=int(sys.argv[5])
+update_availability=Path(sys.argv[5])
 def isolated_update_check(*args, **kwargs):
  with Path(update_marker).open('a') as f: f.write('check\\n')
- return update_behind
+ return int(update_availability.read_text())
 banner.check_for_updates=isolated_update_check
 import eidolon_cli.organization_service as service_module
 from eidolon_cli.organization_service import OrganizationService
@@ -104,7 +106,7 @@ main()
       String(port),
       recoveryComplete,
       updateChecks,
-      String(updateBehind)
+      updateAvailability
     ],
     { cwd: root, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] }
   )
@@ -193,6 +195,7 @@ s.create_objective(sys.argv[2],idempotency_key='native-stopped-queue')
       home,
       token,
       close,
+      setUpdateBehind: (behind: 0 | 1) => writeFileSync(updateAvailability, String(behind)),
       updateChecks: () => (existsSync(updateChecks) ? readFileSync(updateChecks, 'utf8').trim().split('\n').length : 0),
       ledger: () => fixtureLedger(home, env),
       starts: () => (existsSync(marker) ? readFileSync(marker, 'utf8').trim().split('\n').length : 0)

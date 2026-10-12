@@ -21,8 +21,16 @@ it.each([0, 1])('isolates remote update availability at %i through the real HTTP
     })
 
     expect(response.status).toBe(200)
-    expect(await response.json()).toMatchObject({ behind, update_available: behind > 0 })
+    expect(await response.json()).toMatchObject({ behind, update_available: behind > 0, can_apply: true })
     expect(remote.updateChecks()).toBeGreaterThan(before)
+    remote.setUpdateBehind(behind === 0 ? 1 : 0)
+
+    const changed = await fetch(`${remote.url}/api/eidolon/update/check?force=true`, {
+      headers: { 'X-Hermes-Session-Token': remote.token }
+    })
+
+    expect(changed.status).toBe(200)
+    expect(await changed.json()).toMatchObject({ behind: behind === 0 ? 1 : 0, update_available: behind === 0, can_apply: true })
     expect(remote.starts()).toBe(0)
     const denied = await fetch(`${remote.url}/api/eidolon/update/check?force=true`)
     expect([401, 403]).toContain(denied.status)
