@@ -27,11 +27,11 @@ export function createRemoteWsHeaderStore(limit = 100) {
   const headersByUrl = new Map<string, Record<string, string>>()
 
   const remember = (wsUrl: string, headers: Record<string, string> = {}) => {
-    if (!wsUrl || Object.keys(headers).length === 0) {
+    if (!wsUrl) {
       return
     }
 
-    headersByUrl.set(String(wsUrl), headers)
+    headersByUrl.set(String(wsUrl), { ...headers })
 
     while (headersByUrl.size > limit) {
       const oldest = headersByUrl.keys().next().value
@@ -58,7 +58,7 @@ export function createRemoteWsHeaderStore(limit = 100) {
     return headers
   }
 
-  return { headersFor, remember }
+  return { has: (requestUrl: string) => headersByUrl.has(String(requestUrl)), headersFor, remember }
 }
 
 export function applyRemoteRequestHeaders(

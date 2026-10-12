@@ -243,3 +243,22 @@ test('cached shared descriptors cannot authorize an edited registry authenticati
     assert.throws(() => assertRemoteAuthenticationIdentity(undefined, configured), /authentication configuration changed/)
   }
 })
+
+
+test('equivalent HTTP header name casing preserves opened authentication authority', () => {
+  const opened = remoteAuthenticationIdentity('https://gateway.example.test', 'token', 'secret', { 'X-Key': 'ExactValue' })
+  const configured = remoteAuthenticationIdentity('https://gateway.example.test', 'token', 'secret', { 'x-key': 'ExactValue' })
+  assert.equal(opened, configured)
+  assert.doesNotThrow(() => assertRemoteAuthenticationIdentity(opened, configured))
+
+  for (const value of ['exactvalue', 'ExactValue ', 'ChangedValue']) {
+    const edited = remoteAuthenticationIdentity('https://gateway.example.test', 'token', 'secret', { 'x-key': value })
+    assert.throws(() => assertRemoteAuthenticationIdentity(opened, edited), /authentication configuration changed/)
+  }
+})
+
+test.each(['first', 'different'])('rejects ambiguous case-duplicate headers without exposing values (%s)', value => {
+  assert.throws(() => remoteAuthenticationIdentity('https://gateway.example.test', 'token', 'secret', {
+    'X-Key': 'first', 'x-key': value
+  }), { message: 'Ambiguous duplicate remote authentication header names.' })
+})

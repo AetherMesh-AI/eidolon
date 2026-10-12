@@ -165,3 +165,19 @@ describe('registry gateway WebSocket headers', () => {
     expect(store.headersFor('wss://gateway.example/api/ws?token=secret&trace=one')).toEqual({})
   })
 })
+
+
+it('an empty exact descriptor clears prior dial headers and remains authoritative', () => {
+  const store = createRemoteWsHeaderStore()
+  const url = 'wss://gateway.example.test/api/ws?token=synthetic'
+  store.remember(url, { 'X-Key': 'old-value' })
+  store.remember(url, {})
+  expect(store.has(url)).toBe(true)
+  expect(store.headersFor(url)).toEqual({})
+  const fallback = { 'X-Key': 'saved-value' }
+  let actual: unknown
+  applyRemoteRequestHeaders({ url }, result => { actual = result }, requestUrl =>
+    store.has(requestUrl) ? store.headersFor(requestUrl) : fallback)
+  expect(actual).toEqual({})
+  expect(store.has('wss://other.example.test/api/ws')).toBe(false)
+})

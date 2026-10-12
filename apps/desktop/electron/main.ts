@@ -9070,7 +9070,8 @@ function rememberRemoteWsHeaders(wsUrl, headers = {}) {
 function headersForRemoteRequest(requestUrl) {
   const exactWsHeaders = remoteWsHeaderStore.headersFor(requestUrl)
 
-  if (exactWsHeaders && Object.keys(exactWsHeaders).length > 0) {
+  // An explicitly empty exact descriptor forbids fallback to saved headers.
+  if (remoteWsHeaderStore.has(requestUrl)) {
     return exactWsHeaders
   }
 

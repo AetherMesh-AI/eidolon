@@ -20,8 +20,22 @@ export type PrimaryBackendStartupResult<RuntimeBackend, Connection> =
 const remoteAuthenticationKey = randomBytes(32)
 
 export function remoteAuthenticationIdentity(baseUrl: string, authMode: string, token: unknown, headers?: Record<string, string>) {
+  // HTTP field names are case-insensitive, but values remain exact. Reject
+  // duplicate spellings rather than guessing how a particular dialer merges them.
+  const canonicalHeaders = new Map<string, string>()
+
+  for (const [name, value] of Object.entries(headers ?? {})) {
+    const key = name.toLowerCase()
+
+    if (canonicalHeaders.has(key)) {
+      throw new Error('Ambiguous duplicate remote authentication header names.')
+    }
+
+    canonicalHeaders.set(key, value)
+  }
+
   return createHmac('sha256', remoteAuthenticationKey)
-    .update(JSON.stringify([baseUrl, authMode, token, Object.entries(headers ?? {}).sort(([a], [b]) => a.localeCompare(b))]))
+    .update(JSON.stringify([baseUrl, authMode, token, [...canonicalHeaders].sort(([a], [b]) => a.localeCompare(b))]))
     .digest('hex')
 }
 
