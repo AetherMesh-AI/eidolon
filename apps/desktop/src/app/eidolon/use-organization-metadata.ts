@@ -2,7 +2,7 @@ import { useStore } from '@nanostores/react'
 import { useEffect, useMemo, useSyncExternalStore } from 'react'
 
 import { $pendingConnectionId } from '@/store/connections'
-import { $activeGatewayRoute, $gateway } from '@/store/gateway'
+import { $activeGatewayRoute, $gateway, $localOwnerProofRevision } from '@/store/gateway'
 import { $organizationObservationEpoch, $organizationObservationSwitching } from '@/store/organization-observation-mode'
 import { $activeGatewayProfile, $gatewaySwapTarget } from '@/store/profile'
 import { $connection, $gatewayState } from '@/store/session'
@@ -45,6 +45,7 @@ const client = createOrganizationMetadataClient(readOrganizationMetadataScope, (
 })
 
 export function useOrganizationMetadata() {
+  const proofRevision = useStore($localOwnerProofRevision)
   const gateway = useStore($gateway)
   const route = useStore($activeGatewayRoute)
   const profile = useStore($activeGatewayProfile)
@@ -55,7 +56,7 @@ export function useOrganizationMetadata() {
   const observationEpoch = useStore($organizationObservationEpoch)
   const observationSwitching = useStore($organizationObservationSwitching)
   // The compiler cannot infer dependencies hidden behind store.get().
-  const scope = useMemo(readOrganizationMetadataScope, [gateway, route, profile, swap, connection, state, pending, observationEpoch, observationSwitching])
+  const scope = useMemo(readOrganizationMetadataScope, [proofRevision, gateway, route, profile, swap, connection, state, pending, observationEpoch, observationSwitching])
   const view = useSyncExternalStore(client.subscribe, client.getSnapshot)
   useEffect(() => {
     if (scope.eligible) {

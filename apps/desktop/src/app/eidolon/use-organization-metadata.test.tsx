@@ -12,7 +12,7 @@ import { useOrganizationMetadata } from './use-organization-metadata'
 
 vi.mock('@/store/connections', () => ({ $pendingConnectionId: atom(null) }))
 vi.mock('@/store/gateway', () => ({
-  $gateway: atom(null),
+  $gateway: atom(null), $localOwnerProofRevision: atom(0),
   $activeGatewayRoute: atom('default'),
   activeGatewayConnectionId: () => 'local'
 }))

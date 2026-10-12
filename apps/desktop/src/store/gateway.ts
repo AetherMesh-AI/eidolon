@@ -172,6 +172,7 @@ interface GatewayRegistryState {
   turnLeaseReleaseTimers: Map<string, ReturnType<typeof setTimeout>>
   $gateway: ReturnType<typeof atom<HermesGateway | null>>
   $activeProfile: ReturnType<typeof atom<string>>
+  $localOwnerProofRevision?: ReturnType<typeof atom<number>>
 }
 
 const STATE_KEY = Symbol.for('hermes.desktop.gatewayRegistryState')
@@ -225,6 +226,17 @@ function gatewayState(): GatewayRegistryState {
 }
 
 const g = gatewayState()
+
+/** Legacy local owner proof has asynchronous guards outside the socket state.
+ * Keep their invalidation observable even when a reconnect reuses both objects. */
+export const $localOwnerProofRevision = (g.$localOwnerProofRevision ??= atom(0))
+
+function notifyLocalOwnerProof(entry: Secondary): void {
+  // A retired generation must never invalidate its replacement or another route.
+  if (!entry.connectionId && g.activeKey === entry.scope && g.secondaries.get(entry.scope) === entry) {
+    $localOwnerProofRevision.set($localOwnerProofRevision.get() + 1)
+  }
+}
 
 // Dev HMR can hand a newer module an older state-container shape. Keep the
 // generation ledger lazy so an already-open socket still survives the update.
@@ -683,12 +695,14 @@ async function openSecondary(entry: Secondary, spawnPriority: SpawnPriority = 'b
   })()
 
   entry.connectPromise = pending
+  notifyLocalOwnerProof(entry)
 
   try {
     await pending
   } finally {
     if (entry.connectPromise === pending) {
       entry.connectPromise = null
+      notifyLocalOwnerProof(entry)
     }
   }
 }
@@ -714,6 +728,7 @@ async function reconnectSecondary(entry: Secondary): Promise<void> {
   }
 
   entry.reconnecting = true
+  notifyLocalOwnerProof(entry)
 
   try {
     await openSecondary(entry)
@@ -740,6 +755,7 @@ async function reconnectSecondary(entry: Secondary): Promise<void> {
     // Other transport failure → fall through to the backoff below.
   } finally {
     entry.reconnecting = false
+    notifyLocalOwnerProof(entry)
 
     if (entry.wantOpen && !isOpen(entry.gateway)) {
       scheduleReconnect(entry)
@@ -1713,6 +1729,7 @@ export function touchSecondaryGateways(): void {
 // socket. Caller handles removal from the map.
 function disposeSecondary(entry: Secondary): void {
   entry.wantOpen = false
+  notifyLocalOwnerProof(entry)
   clearTimer(entry)
   entry.offEvent()
   entry.offState()

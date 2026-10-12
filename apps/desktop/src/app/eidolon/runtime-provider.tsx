@@ -2,7 +2,7 @@ import { createContext, type ReactNode, useContext, useMemo, useSyncExternalStor
 
 import { useGatewayRequest } from '@/app/gateway/hooks/use-gateway-request'
 import { translateNow } from '@/i18n/runtime'
-import { $activeGatewayRoute, $gateway, activeGatewayConnectionId, activeGatewayLocalOwnerRoute } from '@/store/gateway'
+import { $activeGatewayRoute, $gateway, $localOwnerProofRevision, activeGatewayConnectionId, activeGatewayLocalOwnerRoute } from '@/store/gateway'
 import { $organizationObservationEpoch, $organizationObservationSwitching } from '@/store/organization-observation-mode'
 import { $activeGatewayProfile, $gatewaySwapTarget } from '@/store/profile'
 import { $connection, $gatewayState } from '@/store/session'
@@ -66,6 +66,7 @@ export function createOrganizationScopeReader() {
     return {
       key: JSON.stringify([
         $organizationObservationEpoch.get(),
+        $localOwnerProofRevision.get(),
         gateway ? socketIds.get(gateway) : null,
         connectionId,
         localRoute?.connectionId ?? null,
@@ -173,6 +174,7 @@ export function OrganizationRuntimeProvider({ children }: { children: ReactNode 
             $organizationObservationEpoch.listen(listener),
             $organizationObservationSwitching.listen(listener),
             $gateway.listen(listener),
+            $localOwnerProofRevision.listen(listener),
             $activeGatewayRoute.listen(listener),
             $gatewayState.listen(listener),
             $connection.listen(listener),

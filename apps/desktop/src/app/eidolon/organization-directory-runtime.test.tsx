@@ -16,7 +16,7 @@ import { createRuntimeOrganizationDirectory } from './organization-directory-run
 
 vi.mock('@/store/connections', () => ({ $pendingConnectionId: atom(null), $connectionsRegistry: atom(null) }))
 vi.mock('@/store/gateway', () => ({
-  $gateway: atom(null),
+  $gateway: atom(null), $localOwnerProofRevision: atom(0),
   $activeGatewayRoute: atom('default'),
   activeGatewayConnectionId: () => 'a'
 }))

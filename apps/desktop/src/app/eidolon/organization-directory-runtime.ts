@@ -1,5 +1,5 @@
 import { $connectionsRegistry, $pendingConnectionId } from '@/store/connections'
-import { $activeGatewayRoute, $gateway } from '@/store/gateway'
+import { $activeGatewayRoute, $gateway, $localOwnerProofRevision } from '@/store/gateway'
 import { $organizationObservationEpoch, $organizationObservationSwitching } from '@/store/organization-observation-mode'
 import { $activeGatewayProfile, $gatewaySwapTarget } from '@/store/profile'
 import { $connection, $gatewayState } from '@/store/session'
@@ -50,6 +50,7 @@ export function subscribeOrganizationDirectorySource(changed: () => void) {
     $pendingConnectionId,
     $activeGatewayRoute,
     $gateway,
+    $localOwnerProofRevision,
     $organizationObservationEpoch,
     $organizationObservationSwitching,
     $activeGatewayProfile,

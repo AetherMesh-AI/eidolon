@@ -10,7 +10,7 @@ vi.mock('@/store/gateway', async () => {
   const { atom } = await import('nanostores')
 
   return {
-    $gateway: atom(null), $activeGatewayRoute: atom('default'),
+    $gateway: atom(null), $localOwnerProofRevision: atom(0), $activeGatewayRoute: atom('default'),
     activeGatewayConnectionId: () => routing.connectionId, gatewayActivationEpoch: () => routing.epoch,
     ensureActiveGatewayOpen: vi.fn(), isActivePrimary: () => true
   }
