@@ -826,6 +826,7 @@ it.each(['oauth', 'token', 'local'] as const)('retires a pending primary before 
       params: { type: 'message.delta', session_id: 'old-session', seq: 3, payload: {} } }) }))
     expect(client.getSeqWatermarks()).toEqual({ 'old-session': 3 })
     retireOAuthSession(accountA, ['pending-primary'], accountB)
+    expect(client.getSeqWatermarks()).toEqual({})
 
     const pending = connectPrimaryGateway(gateway!, descriptor(accountB) as never, 'wss://fixture.invalid/api/ws')
       .then(() => ({ ok: true }), error => ({ error }))
@@ -863,7 +864,7 @@ it.each(['oauth', 'token', 'local'] as const)('retires a pending primary before 
   }
 })
 
-it('does not let a retired partial replay publish or flush a successor account replay hold', async () => {
+it.each(['before', 'during'] as const)('rejects retired partial replay settling %s successor replay', async timing => {
   const { JsonRpcGatewayClient } = await import('@aethermesh/shared')
 
   class Socket extends EventTarget {
@@ -903,11 +904,22 @@ it('does not let a retired partial replay publish or flush a successor account r
     sockets[1].message({ jsonrpc: '2.0', id: sockets[1].frames[0].id, result: { epoch: 'a-epoch',
       events: [{ type: 'message.delta', session_id: 'a-first', seq: 2 }] } })
     sockets[1].event('a-first', 3)
+    observed.length = 0
+
+    if (timing === 'before') {
+      client.close('batch-a')
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(observed).toEqual([])
+      expect(client.getSeqWatermarks()).toEqual({})
+    }
 
     // Switch before A's second replay response settles. Closing rejects it;
     // A's already-fulfilled first result must not publish later under C.
     const firstC = client.connect('wss://fixture.invalid/api/ws', 'batch-c')
     sockets[2].open()
+    client.close('batch-a')
+    expect(client.connectionState).toBe('open')
     expect(sockets[2].frames).toEqual([])
     sockets[2].event('c-only', 1)
     client.close()

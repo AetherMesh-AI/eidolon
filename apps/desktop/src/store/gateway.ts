@@ -2118,7 +2118,7 @@ export function touchSecondaryGateways(): void {
 
 // Tear a secondary down: stop its reconnect loop, detach listeners, close the
 // socket. Caller handles removal from the map.
-function disposeSecondary(entry: Secondary): void {
+function disposeSecondary(entry: Secondary, retiredReplayAuthority?: string): void {
   entry.wantOpen = false
   entry.pendingConnectionRedial = false
   releaseTurnLeasesForScope(producerLeaseScope(entry, entry.transportGeneration ?? 0))
@@ -2126,7 +2126,8 @@ function disposeSecondary(entry: Secondary): void {
   clearTimer(entry)
   entry.offEvent()
   entry.offState()
-  entry.gateway.close()
+
+  if (retiredReplayAuthority) { entry.gateway.close(retiredReplayAuthority) } else { entry.gateway.close() }
 }
 
 // Invariant restore for every eviction path: if the active key names a
@@ -2340,7 +2341,7 @@ export function retireOAuthSession(identity: string, connectionIds: string[] = [
   // replacement. A pending owner's retirement must close before open/replay.
   if (retiresPending || (!pending && retiresSettled)) {
     g.primaryDial = undefined
-    g.primaryGateway?.close()
+    g.primaryGateway?.close(identity)
   }
 
   const revisions = g.oauthSourceRevisions ??= new Map<string, number>()
@@ -2353,7 +2354,7 @@ export function retireOAuthSession(identity: string, connectionIds: string[] = [
     if (entry.connection?.oauthSessionIdentity !== identity && !(entry.connection === null && affected.has(entry.connectionId ?? ''))) { continue }
 
     activeInvalidated ||= key === g.activeKey
-    disposeSecondary(entry)
+    disposeSecondary(entry, identity)
     g.secondaries.delete(key)
   }
 

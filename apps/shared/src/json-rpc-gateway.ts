@@ -184,11 +184,7 @@ export class JsonRpcGatewayClient {
     // Omitted authority preserves compatibility for callers without accounts.
     if (replayAuthority !== undefined && replayAuthority !== this.replayAuthority) {
       this.replayAuthority = replayAuthority
-      this.replayGeneration += 1
-      this.lastSeenSeq.clear()
-      this.replayEpoch = null
-      this.replayHold = null
-      this.replayInFlight = false
+      this.resetReplayState()
       this.close()
     }
 
@@ -296,7 +292,13 @@ export class JsonRpcGatewayClient {
     })
   }
 
-  close(): void {
+  close(retiredReplayAuthority?: string): void {
+    if (retiredReplayAuthority !== undefined) {
+      if (retiredReplayAuthority !== this.replayAuthority) { return }
+
+      this.resetReplayState()
+    }
+
     const socket = this.socket
 
     if (!socket) {
@@ -531,6 +533,14 @@ export class JsonRpcGatewayClient {
   /** Test/telemetry hook: current last-seen seq map snapshot. */
   getSeqWatermarks(): Record<string, number> {
     return Object.fromEntries(this.lastSeenSeq)
+  }
+
+  private resetReplayState(): void {
+    this.replayGeneration += 1
+    this.lastSeenSeq.clear()
+    this.replayEpoch = null
+    this.replayHold = null
+    this.replayInFlight = false
   }
 
   /**
