@@ -1,4 +1,4 @@
-import { type NoProviderFixture, setupNoProvider } from './fixtures'
+import { type NoProviderFixture, setupNoProvider, waitForAppReady } from './fixtures'
 import { expect, test } from './test'
 
 type UpdateEvidence = {
@@ -61,6 +61,14 @@ test('a backend release notification obstructs the header until explicitly dismi
     await switcher.click()
     await page.getByRole('menuitemradio', { name: 'Updater fixture B', exact: true }).click()
     await expect(switcher).toContainText('Updater fixture B')
+    await expect(page.locator('.eid-workspace-header [data-slot="connection-switcher"]')).toHaveAttribute('aria-busy', 'false')
+    // A published label does not mean the renderer finished adopting the route.
+    // Exercise startup on the now-selected source, rather than racing the
+    // old renderer's mode-change check against connection retirement.
+    const checksBeforeReload = remote.updateChecks()
+    await page.reload()
+    await waitForAppReady(running.fixture)
+    await expect.poll(() => remote!.updateChecks()).toBeGreaterThan(checksBeforeReload)
     const toast = page.getByRole('status').filter({ has: page.getByText('Update ready', { exact: true }) })
     await expect(toast).toBeVisible()
     expect(remote.updateChecks()).toBeGreaterThan(0)
@@ -70,10 +78,15 @@ test('a backend release notification obstructs the header until explicitly dismi
       const rect = element.getBoundingClientRect()
       const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)
 
-      return Boolean(hit?.closest('[role="status"]'))
+      return Boolean(hit?.closest('[role="status"]')?.textContent?.includes('Update ready'))
     })
 
     expect(blocked).toBe(true)
+    const obstructedWindow = await app.browserWindow(page)
+    await test.info().attach('backend-update-obstruction', {
+      contentType: 'image/png',
+      body: Buffer.from(await obstructedWindow.evaluate(async window => (await window.webContents.capturePage()).toPNG().toString('base64')), 'base64')
+    })
     await toast.getByRole('button', { name: 'Dismiss notification', exact: true }).click()
     await expect(toast).toBeHidden()
     await switcher.click()
@@ -91,7 +104,7 @@ test('a backend release notification obstructs the header until explicitly dismi
       body: JSON.stringify({
         sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
         sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
-        backendChecks: remote.updateChecks(), obstructedBeforeDismissal: blocked,
+        backendChecks: remote.updateChecks(), checksBeforeReload, obstructedBeforeDismissal: blocked,
         dismissal: 'public Dismiss notification button', switcherOpenedAfterDismissal: true,
         schedulerStarts: remote.starts(), providerCalls: running.calls.length
       })
