@@ -164,11 +164,11 @@ main()
       [
         '-c',
         `
-  import sys
-  from pathlib import Path
-  from eidolon_cli.organization_store import OrganizationStore
-  s=OrganizationStore(Path(sys.argv[1])/'organization'/'state.db')
-  s.create_objective(sys.argv[2],idempotency_key='native-stopped-queue')
+import sys
+from pathlib import Path
+from eidolon_cli.organization_store import OrganizationStore
+s=OrganizationStore(Path(sys.argv[1])/'organization'/'state.db')
+s.create_objective(sys.argv[2],idempotency_key='native-stopped-queue')
   `,
         home,
         queuedSwitchTitle
