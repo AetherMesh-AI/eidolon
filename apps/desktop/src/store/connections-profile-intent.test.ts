@@ -270,9 +270,9 @@ it.each(['reject', 'nonlanding', 'land'] as const)('attributes publication to th
 
   try {
     if (outcome === 'reject') {activation.reject(new Error('old activation failed'))}
-    else {activation.resolve(false)}
+    else {activation.resolve(outcome === 'land')}
 
-    expect(await pending).toMatchObject({ status: 'superseded', resetStarted: true, published: false, observedRoute: { connectionId: 'homelab', profile: 'research' } })
+    expect(await pending).toMatchObject({ status: 'superseded', resetStarted: true, published: outcome === 'land', observedRoute: { connectionId: 'homelab', profile: 'research' } })
     expect($gatewaySwitching.get()).toBe(true)
     expect(setLastUsed).not.toHaveBeenCalled()
   } finally {endGatewaySwitch(newerToken)}

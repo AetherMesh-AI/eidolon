@@ -1,11 +1,12 @@
-import { organizationExecutiveMessageZh, organizationMemberMessagesZh } from './organization-member-messages'
-import { organizationHomeCountsZh } from './organization-home-counts'
 import { defineFieldCopy } from '@/app/settings/field-copy'
 
 import { organizationConversationsZh } from './organization-conversations'
 import { organizationFoundationEn } from './organization-foundation'
 import { organizationHomeEn, organizationWorkspaceZh } from './organization-home'
-import { organizationMetadataEn } from './organization-metadata'
+import { organizationHomeCountsZh } from './organization-home-counts'
+import { organizationExecutiveMessageZh, organizationMemberMessagesZh } from './organization-member-messages'
+import { organizationMetadataZh } from './organization-metadata'
+import { organizationOverviewZh } from './organization-overview'
 import { organizationOwnerChatZh } from './organization-owner-chat'
 import { organizationRosterZh } from './organization-roster'
 import { organizationSurfacesZh } from './organization-surfaces'
@@ -14,11 +15,11 @@ import { settingsWorkspaceEn } from './settings-workspace'
 import type { Translations } from './types'
 
 export const zh: Translations = {
-  organizationMetadata: organizationMetadataEn,
+  organizationMetadata: organizationMetadataZh,
   organizationOwnerChat: organizationOwnerChatZh,
   organizationConversations: organizationConversationsZh,
   organizationSurfaces: organizationSurfacesZh,
-  organizationHome: { ...organizationHomeEn, ...organizationExecutiveMessageZh, memberMessages: organizationMemberMessagesZh, workspace: organizationWorkspaceZh, detail: { ...organizationHomeEn.detail, ...organizationHomeCountsZh } },
+  organizationHome: { ...organizationHomeEn, ...organizationOverviewZh, ...organizationExecutiveMessageZh, memberMessages: organizationMemberMessagesZh, workspace: organizationWorkspaceZh, detail: { ...organizationHomeEn.detail, ...organizationHomeCountsZh } },
   settingsWorkspace: settingsWorkspaceEn,
   organizationFoundation: organizationFoundationEn,
   organizationWork: organizationWorkZh,

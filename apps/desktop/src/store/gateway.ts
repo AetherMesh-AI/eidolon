@@ -1441,17 +1441,13 @@ export async function ensureGatewayForAgent(
 
     await ensureGatewayForProfile(profile)
 
-    if (!signal?.aborted) {onPublished?.()}
-
     return !signal?.aborted
   }
 
   if (await isAttachedSharedRemote(connectionId, profile, 'foreground')) {
-    const activated = Boolean(isOpen(g.primaryGateway) && !signal?.aborted)
-
-    if (activated) {onPublished?.()}
-
-    return activated
+    // Reusing an open socket is readiness, not publication of this profile's
+    // descriptor. The profile layer owns that later atomic publication.
+    return Boolean(isOpen(g.primaryGateway) && !signal?.aborted)
   }
 
   if (!window.hermesDesktop?.getConnectionFor) {

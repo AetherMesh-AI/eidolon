@@ -231,6 +231,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await waitForAppReady(fixture)
   await expect.poll(async () => {
     await page.getByRole('complementary', { name: 'Eidolon navigation', exact: true }).getByRole('link', { name: 'Home', exact: true }).click()
+
     return dismissedUpdates
   }).toBeGreaterThan(0)
   await expect(updateToast).toBeHidden()
@@ -395,10 +396,12 @@ test('keeps native organization navigation, roster and objective layouts usable 
 
     for (const row of await page.locator('.eid-progress-task').all()) {
       expect(await row.evaluate(element => element.scrollWidth - element.clientWidth), 'recorded task row fits its card').toBeLessThanOrEqual(1)
+
       for (const content of await row.locator(':scope > strong, :scope > small, :scope > .eid-status').all()) {
         expect(await content.evaluate(element => element.scrollWidth - element.clientWidth), 'task title, assignee and translated status remain readable').toBeLessThanOrEqual(1)
       }
     }
+
     contrastChecks.push(...colors)
     expect(await target.evaluate(element => {
       const style = getComputedStyle(element)
@@ -543,6 +546,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
     for (const card of await assignmentCards.all()) {
       await expect(card).toBeInViewport({ ratio: 1 })
     }
+
     objectiveChecks.push({ mode, viewport: '1536x961', ...geometry })
     await capture(`reference-objective-${mode}`)
     displayedSnapshot = {
@@ -555,9 +559,11 @@ test('keeps native organization navigation, roster and objective layouts usable 
     }
     await page.reload()
     await expect(assignmentCards).toHaveCount(3)
+
     for (const card of await assignmentCards.all()) {
       await expect(card.locator('.eid-progress-tasks > li')).toHaveCount(3)
     }
+
     await workspace.evaluate(element => { element.scrollTop = 0 })
     await expect(phase.getByRole('button', { name: 'Pause new dispatch', exact: true })).toBeInViewport({ ratio: 1 })
     await capture(`objective-multiple-tasks-${mode}`)
@@ -606,11 +612,13 @@ test('keeps native organization navigation, roster and objective layouts usable 
         await toggle.click()
         await expect(details).toHaveAttribute('open', '')
       }
+
       await phase.locator('summary').first().scrollIntoViewIfNeeded()
       await capture(`objective-expanded-${mode}-${zoom}-start`, workspace, zoom !== 1, true)
       await phase.locator('details p').last().scrollIntoViewIfNeeded()
       await expect(phase.locator('details p').last()).toBeInViewport({ ratio: 1 })
       await capture(`objective-expanded-${mode}-${zoom}-end`, workspace, zoom !== 1, true)
+
       for (const details of await phase.locator('details').all()) {
         await details.locator('summary').click()
         await expect(details).not.toHaveAttribute('open', '')
@@ -705,14 +713,17 @@ test('keeps native organization navigation, roster and objective layouts usable 
     const events = workspace.locator('.eid-home-activity ol > li')
     await expect(events).toHaveCount(4)
     await expect(workspace.locator('.eid-home-activity').getByRole('link', { name: 'View activity', exact: false })).toBeInViewport({ ratio: 1 })
+
     if (height >= 900) {
       for (const event of await events.all()) {
         await expect(event).toBeInViewport({ ratio: 1 })
         await expect(event.locator('time')).toBeInViewport({ ratio: 1 })
       }
     }
+
     const geometry = await workspace.evaluate(element => {
       const rect = (selector: string) => element.querySelector(selector)!.getBoundingClientRect().toJSON()
+
       return {
         hero: rect('.eid-home-hero'), cards: rect('.eid-home-grid'), activity: rect('.eid-home-activity'), note: rect('.eid-home-snapshot-note'),
         activityRows: [...element.querySelectorAll('.eid-home-activity ol > li')].map(row => ({
@@ -720,9 +731,11 @@ test('keeps native organization navigation, roster and objective layouts usable 
         }))
       }
     })
+
     if (width === 1536) {
       expect(Math.abs(geometry.cards.bottom - 695), 'Home card bottom approaches the matched reference').toBeLessThanOrEqual(5)
     }
+
     const health = await page.getByRole('contentinfo', { name: 'System health', exact: true }).boundingBox()
     expect(geometry.activity.bottom).toBeLessThanOrEqual(health!.y)
     expect(geometry.cards.bottom).toBeLessThan(geometry.activity.top)
@@ -1042,7 +1055,9 @@ test('retains translated Objective labels and opened explanations with contained
     const server = socket.connectToServer()
     socket.onMessage(message => {
       const request = JSON.parse(message.toString()) as { id?: number; method?: string }
+
       if (request.method?.startsWith('organization.')) { methods.push(request.method) }
+
       if (request.method === 'organization.snapshot' || request.method === 'organization.outcomes') {
         socket.send(JSON.stringify({ jsonrpc: '2.0', id: request.id, result: request.method === 'organization.snapshot' ? snapshot : snapshot.outcomes }))
       } else { server.send(message) }
@@ -1055,6 +1070,7 @@ test('retains translated Objective labels and opened explanations with contained
   await expect(phase.getByRole('button', { name: '新規実行を一時停止', exact: true })).toBeEnabled()
   const captures: object[] = []
   const focusChecks: object[] = []
+
   for (const [width, height, zoom] of [[1536, 961, 1], [1280, 720, 1], [1280, 720, 2], [760, 900, 1]]) {
     await page.evaluate(value => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(value * 100), 1)
     await app.evaluate(({ BrowserWindow }, size) => {
@@ -1066,11 +1082,14 @@ test('retains translated Objective labels and opened explanations with contained
     await expect.poll(() => page.evaluate(() => innerWidth)).toBe(width)
     await page.evaluate(value => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(value * 100), zoom)
     await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(zoom)
+
     for (const details of await phase.locator('details').all()) {
       if (await details.getAttribute('open') === null) { await details.locator('summary').click() }
       await expect(details).toHaveAttribute('open', '')
     }
+
     const controls = phase.locator('button:not(:disabled), select, summary')
+
     for (const control of await controls.all()) {
       const label = (await control.textContent())?.trim() ?? ''
       await control.scrollIntoViewIfNeeded()
@@ -1078,13 +1097,17 @@ test('retains translated Objective labels and opened explanations with contained
       await expect(control).toBeInViewport({ ratio: 1 })
       expect(await control.evaluate(element => element.scrollWidth - element.clientWidth), label).toBeLessThanOrEqual(1)
     }
+
     for (const row of await page.locator('.eid-progress-task').all()) {
       expect(await row.evaluate(element => element.scrollWidth - element.clientWidth), 'recorded task row fits its card').toBeLessThanOrEqual(1)
+
       for (const content of await row.locator(':scope > strong, :scope > small, :scope > .eid-status').all()) {
         expect(await content.evaluate(element => element.scrollWidth - element.clientWidth), 'task title, assignee and translated status remain readable').toBeLessThanOrEqual(1)
       }
     }
+
     expect(await phase.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
+
     for (const [position, target] of [['start', phase.locator('summary').first()], ['end', phase.locator('details p').last()]] as const) {
       await target.scrollIntoViewIfNeeded()
       await expect(target).toBeInViewport({ ratio: 1 })
@@ -1094,14 +1117,17 @@ test('retains translated Objective labels and opened explanations with contained
         await document.fonts.ready
         await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
       })
+
       const bytes = zoom !== 1
         ? Buffer.from(await app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
         : await page.screenshot({ path: test.info().outputPath(name), animations: 'disabled', caret: 'hide' })
+
       if (zoom !== 1) { writeFileSync(test.info().outputPath(name), bytes) }
       await test.info().attach(name, { body: bytes, contentType: 'image/png' })
       captures.push({ name, width, height, zoom, sha256: createHash('sha256').update(bytes).digest('hex') })
     }
   }
+
   expect(mock.receivedPrompts).toHaveLength(0)
   expect([...new Set(methods)].every(method => ['organization.descriptor', 'organization.snapshot', 'organization.outcomes'].includes(method))).toBe(true)
   await test.info().attach('objective-translated-evidence', { contentType: 'application/json', body: JSON.stringify({
@@ -1117,19 +1143,23 @@ test('keeps workspace controls and loaded-record inspection usable without execu
   fixture = await setupMockBackend()
   const { app, page, mock } = fixture
   const methods: string[] = []
+
   const searchSnapshot = { ...snapshot, conversations: [{
     id: 'header-conversation', subject: 'Release evidence discussion', objectiveId: 'release', taskId: null, projectId: null,
     participants: [{ id: 'writer', name: 'Robin', team: 'Product' }, { id: 'manager', name: 'Morgan', team: 'Product' }], status: 'answered', waitingAgentId: null,
     messages: [{ id: 'header-message', senderId: 'writer', recipientId: 'manager', body: 'Retained internal message; inspection leaves it unread.', createdAt, readAt: null, replyToId: null }]
   }] }
+
   await page.routeWebSocket(/.*/, socket => {
     const server = socket.connectToServer()
     socket.onMessage(message => {
       const request = JSON.parse(message.toString()) as { id?: number; method?: string }
-      if (request.method?.startsWith('organization.')) methods.push(request.method)
+
+      if (request.method?.startsWith('organization.')) {methods.push(request.method)}
+
       if (request.method === 'organization.snapshot' || request.method === 'organization.outcomes') {
         socket.send(JSON.stringify({ jsonrpc: '2.0', id: request.id, result: request.method === 'organization.snapshot' ? searchSnapshot : snapshot.outcomes }))
-      } else server.send(message)
+      } else {server.send(message)}
     })
   })
   await page.reload()
@@ -1138,6 +1168,7 @@ test('keeps workspace controls and loaded-record inspection usable without execu
   const focusChecks: object[] = []
   const header = page.getByRole('banner', { name: 'Workspace controls', exact: true })
   const search = page.getByRole('dialog', { name: 'Search loaded records', exact: true })
+
   const resize = async (width: number, height: number, zoom: number) => {
     await page.evaluate(() => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(100))
     await app.evaluate(({ BrowserWindow }, size) => {
@@ -1148,6 +1179,7 @@ test('keeps workspace controls and loaded-record inspection usable without execu
     await page.evaluate(value => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(value * 100), zoom)
     await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(zoom)
   }
+
   for (const mode of ['Dark', 'Light'] as const) {
     await resize(1536, 961, 1)
     await page.evaluate(() => { location.hash = '/settings?tab=config:appearance' })
@@ -1160,15 +1192,18 @@ test('keeps workspace controls and loaded-record inspection usable without execu
     await expect(page.getByRole('dialog').last()).toBeVisible()
     await page.keyboard.press('Escape')
     await page.evaluate(() => { location.hash = '/home' })
+
     for (const [width, height, zoom] of [[1536, 961, 1], [1280, 720, 1], [760, 900, 1], [1280, 720, 2]]) {
       await resize(width, height, zoom)
       await expect(header).toHaveCount(1)
       await expect(page.getByRole('contentinfo', { name: 'System health', exact: true })).toHaveCount(1)
       await expect(header).toBeInViewport({ ratio: 1 })
       expect(await header.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
+
       for (const button of await header.getByRole('button').all()) {
         focusChecks.push(await verifyKeyboardFocus(page, button, `Header ${mode} ${width} ${zoom} ${await button.getAttribute('aria-label')}`))
       }
+
       await header.getByRole('button', { name: 'Search loaded records', exact: true }).click()
       const input = search.getByRole('textbox', { name: 'Search loaded records', exact: true })
       await input.fill('Avery')
@@ -1193,6 +1228,7 @@ test('keeps workspace controls and loaded-record inspection usable without execu
       await expect(header.getByRole('button', { name: 'Search loaded records', exact: true })).toBeFocused()
     }
   }
+
   await resize(1536, 961, 1)
   await header.getByRole('button', { name: 'Search loaded records', exact: true }).click()
   await search.getByRole('textbox', { name: 'Search loaded records', exact: true }).fill('autumn release')
@@ -1214,20 +1250,24 @@ for (const locale of ['ja', 'ar', 'ru'] as const) {
   test(`keeps translated workspace controls usable in ${locale} with multiple connections`, async () => {
     fixture = await setupMockBackend({ extraDisplayConfig: `  language: ${locale}` })
     const { app, page, mock } = fixture
+
     const copy = {
-      ja: { heading: 'ワークスペースの操作', search: '読み込み済みの記録を検索', kinds: { agent: 'メンバー' }, dark: 'ダーク', light: 'ライト', settingsSearch: '検索' },
-      ar: { heading: 'عناصر تحكم مساحة العمل', search: 'البحث في السجلات المحمّلة', kinds: { agent: 'عضو' }, dark: 'داكن', light: 'فاتح', settingsSearch: 'بحث' },
-      ru: { heading: 'Управление рабочей областью', search: 'Поиск загруженных записей', kinds: { agent: 'Участник' }, dark: 'Тёмная', light: 'Светлая', settingsSearch: 'Поиск' }
+      ja: { home: 'あなたの組織', edit: '組織名と所有者名を編集', health: 'システムの状態', heading: 'ワークスペースの操作', search: '読み込み済みの記録を検索', kinds: { agent: 'メンバー' }, dark: 'ダーク', light: 'ライト', settingsSearch: '検索' },
+      ar: { home: 'مؤسستك', edit: 'تعديل اسم المؤسسة والمالك', health: 'حالة النظام', heading: 'عناصر تحكم مساحة العمل', search: 'البحث في السجلات المحمّلة', kinds: { agent: 'عضو' }, dark: 'داكن', light: 'فاتح', settingsSearch: 'بحث' },
+      ru: { home: 'Ваша организация', edit: 'Изменить названия организации и владельца', health: 'Состояние системы', heading: 'Управление рабочей областью', search: 'Поиск загруженных записей', kinds: { agent: 'Участник' }, dark: 'Тёмная', light: 'Светлая', settingsSearch: 'Поиск' }
     }[locale]
+
     const methods: string[] = []
     await page.routeWebSocket(/.*/, socket => {
       const server = socket.connectToServer()
       socket.onMessage(message => {
         const request = JSON.parse(message.toString()) as { id?: number; method?: string }
-        if (request.method?.startsWith('organization.')) methods.push(request.method)
+
+        if (request.method?.startsWith('organization.')) {methods.push(request.method)}
+
         if (request.method === 'organization.snapshot' || request.method === 'organization.outcomes') {
           socket.send(JSON.stringify({ jsonrpc: '2.0', id: request.id, result: request.method === 'organization.snapshot' ? snapshot : snapshot.outcomes }))
-        } else server.send(message)
+        } else {server.send(message)}
       })
     })
     await page.reload()
@@ -1240,9 +1280,12 @@ for (const locale of ['ja', 'ar', 'ru'] as const) {
         getConnection(): Promise<{ baseUrl: string; token: string }>
         connections: { save(input: { kind: 'remote'; label: string; url: string; token: string }): Promise<{ ok: boolean }> }
       } }).hermesDesktop
+
       const current = await bridge.getConnection()
-      if (!/^http:\/\/(127\.0\.0\.1|localhost):/.test(current.baseUrl)) throw new Error('Expected temporary loopback backend')
+
+      if (!/^http:\/\/(127\.0\.0\.1|localhost):/.test(current.baseUrl)) {throw new Error('Expected temporary loopback backend')}
       const result = await bridge.connections.save({ kind: 'remote', label: 'Temporary organization connection with a long descriptive name', url: current.baseUrl, token: current.token })
+
       return result.ok
     })).toBe(true)
     const header = page.getByRole('banner', { name: copy.heading, exact: true })
@@ -1250,6 +1293,7 @@ for (const locale of ['ja', 'ar', 'ru'] as const) {
     const captures: object[] = []
     const headerCaptures: object[] = []
     const focusChecks: object[] = []
+
     for (const mode of ['dark', 'light'] as const) {
       await page.evaluate(() => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(100))
       await app.evaluate(({ BrowserWindow }) => { const window = BrowserWindow.getAllWindows()[0]; window.unmaximize(); window.setMinimumSize(600, 600); window.setContentSize(1536, 961) })
@@ -1260,6 +1304,7 @@ for (const locale of ['ja', 'ar', 'ru'] as const) {
       await expect.poll(() => page.locator('html').evaluate(element => element.classList.contains('dark'))).toBe(mode === 'dark')
       await expect(header.getByRole('button', { name: copy.settingsSearch, exact: true })).toBeVisible()
       await page.evaluate(() => { location.hash = '/home' })
+
       for (const [width, height, zoom] of [[1280, 720, 1], [760, 900, 1], [1280, 720, 2]]) {
         await page.evaluate(() => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(100))
         await app.evaluate(({ BrowserWindow }, size) => { BrowserWindow.getAllWindows()[0].setContentSize(size.width, size.height) }, { width, height })
@@ -1268,19 +1313,40 @@ for (const locale of ['ja', 'ar', 'ru'] as const) {
         await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(zoom)
         await expect(header).toBeInViewport({ ratio: 1 })
         expect(await header.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
+
         for (const button of await header.getByRole('button').all()) {
           focusChecks.push(await verifyKeyboardFocus(page, button, `${locale} ${mode} ${width} ${zoom} ${await button.getAttribute('aria-label')}`))
         }
+
         // Scroll bounds alone miss a flex child painted over its sibling. Every
         // header control must keep a separate click target at each locale/zoom.
         const controlRects = await header.getByRole('button').evaluateAll(buttons => buttons.map(button => {
           const rect = button.getBoundingClientRect()
-          return { label: button.getAttribute('aria-label'), left: rect.left, right: rect.right }
+
+          return { label: button.getAttribute('aria-label'), left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom }
         }))
+
         const sortedRects = controlRects.sort((a, b) => a.left - b.left)
-        for (let index = 1; index < sortedRects.length; index++) {
-          expect(sortedRects[index].left, `${sortedRects[index - 1].label} overlaps ${sortedRects[index].label}`).toBeGreaterThanOrEqual(sortedRects[index - 1].right)
+
+        for (let index = 0; index < sortedRects.length; index++) {
+          for (const other of sortedRects.slice(index + 1)) {
+            const rect = sortedRects[index]
+            expect(rect.right <= other.left || other.right <= rect.left || rect.bottom <= other.top || other.bottom <= rect.top,
+              `${rect.label} overlaps ${other.label}`).toBe(true)
+          }
         }
+
+        // Full identity labels must reflow, not merely keep separate hit targets.
+        for (const label of await header.locator('.eid-workspace-organization-name, .eid-workspace-identity button span').all()) {
+          if (await label.isVisible()) {
+            expect(await label.evaluate(element => ({ clipped: element.scrollWidth > element.clientWidth + 1,
+              ellipsis: getComputedStyle(element).textOverflow === 'ellipsis' }))).toEqual({ clipped: false, ellipsis: false })
+          }
+        }
+
+        await expect(page.getByRole('heading', { name: copy.home, exact: true })).toBeVisible()
+        await expect(header.getByRole('button', { name: copy.edit, exact: true })).toBeVisible()
+        await expect(page.getByRole('contentinfo', { name: copy.health, exact: true })).toBeVisible()
         // Capture the header before opening Search; the modal backdrop blurs it.
         const headerName = `workspace-header-${locale}-${mode}-${width}-${height}-${zoom}.png`
         const headerBytes = Buffer.from(await app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
@@ -1309,6 +1375,7 @@ for (const locale of ['ja', 'ar', 'ru'] as const) {
         await expect(header.getByRole('button', { name: copy.search, exact: true })).toBeFocused()
       }
     }
+
     expect(mock.receivedPrompts).toHaveLength(0)
     expect([...new Set(methods)].sort()).toEqual(['organization.descriptor', 'organization.snapshot'])
     await test.info().attach('workspace-translated-evidence', { contentType: 'application/json', body: JSON.stringify({
@@ -1398,10 +1465,12 @@ for (const [locale, suffix, dark, light] of [
       const server = socket.connectToServer()
       socket.onMessage(message => {
         const request = JSON.parse(message.toString()) as { id?: number; method?: string }
-        if (request.method?.startsWith('organization.')) methods.push(request.method)
+
+        if (request.method?.startsWith('organization.')) {methods.push(request.method)}
+
         if (request.method === 'organization.snapshot' || request.method === 'organization.outcomes') {
           socket.send(JSON.stringify({ jsonrpc: '2.0', id: request.id, result: request.method === 'organization.snapshot' ? snapshot : snapshot.outcomes }))
-        } else server.send(message)
+        } else {server.send(message)}
       })
     })
     await page.reload()
@@ -1409,19 +1478,23 @@ for (const [locale, suffix, dark, light] of [
     await expect(page.locator('html')).toHaveAttribute('lang', locale)
     await expect(page.locator('html')).toHaveAttribute('dir', locale === 'ar' ? 'rtl' : 'ltr')
     const captures: object[] = []
+
     for (const mode of ['dark', 'light'] as const) {
       await page.evaluate(() => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(100))
       await app.evaluate(({ BrowserWindow }) => { const window = BrowserWindow.getAllWindows()[0]; window.unmaximize(); window.setMinimumSize(600, 600); window.setContentSize(1536, 961) })
       await page.evaluate(() => { location.hash = '/settings?tab=config:appearance' })
       await page.getByRole('button').filter({ has: page.getByText('AetherMesh', { exact: true }) }).click()
       await page.getByRole('button', { name: mode === 'dark' ? dark : light, exact: true }).click()
+
       for (const [width, height, zoom] of [[1536, 961, 1], [1280, 720, 2]]) {
         await page.evaluate(() => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(100))
         await app.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0].setContentSize(size.width, size.height), { width, height })
         await page.evaluate(value => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(value * 100), zoom)
         await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(zoom)
+
         for (const route of ['/organization', '/artifacts?source=organization', '/messages', '/messages?recipient=executive']) {
           await page.evaluate(value => { location.hash = value }, route)
+
           if (route === '/organization') {
             await expect(page.getByRole('heading', { name: copy.organization, exact: true })).toBeVisible()
             await expect(page.getByRole('textbox', { name: copy.findAgent, exact: true })).toBeVisible()
@@ -1432,15 +1505,18 @@ for (const [locale, suffix, dark, light] of [
           } else {
             await expect(page.getByRole('textbox', { name: copy.search, exact: true })).toBeVisible()
             await expect(page.getByText(copy.directoryNote, { exact: true })).toBeVisible()
+
             if (route.includes('recipient')) {
               await expect(page.getByText(copy.executiveMessageNote, { exact: true })).toBeVisible()
               await expect(page.locator('.eid-message-members nav button')).toHaveCount(1)
             }
+
             await page.locator('.eid-message-members nav').getByRole('button', { name: /Avery/ }).click()
             await expect(page.getByRole('region', { name: copy.memberContext, exact: true })).toBeVisible()
             await expect(page.getByRole('heading', { name: copy.responsibilities, exact: true })).toBeVisible()
             await expect(page.getByText(copy.linkedWorkNote, { exact: true })).toBeVisible()
           }
+
           const focalCopy = route === '/organization' ? copy.findAgent : route === '/artifacts?source=organization' ? copy.deliverablesIntroduction : route.includes('recipient') ? copy.executiveMessageNote : copy.linkedWorkNote
           const focal = page.getByText(focalCopy, { exact: true })
           // Center the evidence target with space on both sides. Nearest-edge
@@ -1448,9 +1524,11 @@ for (const [locale, suffix, dark, light] of [
           await focal.evaluate(element => element.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' }))
           await expect(focal).toBeInViewport({ ratio: 1 })
           expect(await page.locator('.eid-workspace').evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
+
           if (route.startsWith('/artifacts')) {
             expect(await page.locator('.eid-deliverables').evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
           }
+
           await page.evaluate(async () => { await document.fonts.ready; await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))) })
           const appearance = await page.locator('html').evaluate(element => ({ theme: element.getAttribute('data-hermes-theme'), dark: element.classList.contains('dark'), dir: element.getAttribute('dir') }))
           expect(appearance).toEqual({ theme: 'nous', dark: mode === 'dark', dir: locale === 'ar' ? 'rtl' : 'ltr' })
@@ -1464,6 +1542,7 @@ for (const [locale, suffix, dark, light] of [
         }
       }
     }
+
     expect(mock.receivedPrompts).toHaveLength(0)
     expect(methods.length).toBeGreaterThan(0)
     expect([...new Set(methods)].every(method => ['organization.descriptor', 'organization.snapshot', 'organization.outcomes'].includes(method))).toBe(true)

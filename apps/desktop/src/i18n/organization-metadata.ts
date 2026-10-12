@@ -1,4 +1,4 @@
-/** Foundation copy uses the catalog fallback until translations are reviewed. */
+/** Organization identity copy. Stored display names remain verbatim in every locale. */
 export const organizationMetadataEn = {
   title: 'Organization and owner',
   unnamed: 'Unnamed organization',
@@ -24,4 +24,129 @@ export const organizationMetadataEn = {
     'The original organization is not available. Keep this request until its original connection and identity can be confirmed.',
   savedNames: (organization: string, owner: string) => `Saved names: ${organization} · ${owner}`,
   revision: (revision: number) => `Saved revision ${revision}`
+}
+
+export const organizationMetadataJa: typeof organizationMetadataEn = {
+  "title": "組織と所有者",
+  "unnamed": "名前のない組織",
+  "owner": "所有者",
+  "edit": "組織名と所有者名を編集",
+  "note": "組織と人間の所有者の表示名です。権限の変更や作業の開始は行いません。",
+  "organizationName": "組織名",
+  "ownerName": "あなたの表示名",
+  "save": "名前を保存",
+  "cancel": "キャンセル",
+  "refresh": "保存済みの名前を更新",
+  "retry": "元の保存結果を確認",
+  "saving": "名前を保存中…",
+  "loading": "保存済みの名前を読み込み中…",
+  "unavailable": "この接続では名前を取得できません。編集するには組織自身のランタイムに接続してください。",
+  "unsupported": "このランタイムは組織名の編集に対応していません。",
+  "invalid": "ランタイムが名前を拒否しました。保存済みの内容を更新してから再試行してください。",
+  "conflict": "保存済みの組織が変更されました。名前を更新し、下書きを確認してから保存してください。",
+  "uncertain": "保存結果は不明です。元のリクエストはこの組織用に保持され、新しいリクエストは自動送信されません。",
+  "storage": "保存済みの名前を読み取れませんでした。更新して再試行してください。",
+  "blockedRetry": "元の組織を利用できません。元の接続と識別情報を確認できるまで、このリクエストを保持してください。",
+  savedNames: (organization, owner) => `保存済みの名前: ${organization} · ${owner}`,
+  revision: revision => `保存済みのリビジョン ${revision}`
+}
+
+export const organizationMetadataZh: typeof organizationMetadataEn = {
+  "title": "组织与所有者",
+  "unnamed": "未命名组织",
+  "owner": "所有者",
+  "edit": "编辑组织和所有者名称",
+  "note": "名称用于描述此组织及其人类所有者，不会更改权限或启动工作。",
+  "organizationName": "组织名称",
+  "ownerName": "你的显示名称",
+  "save": "保存名称",
+  "cancel": "取消",
+  "refresh": "刷新已保存名称",
+  "retry": "检查原始保存结果",
+  "saving": "正在保存名称…",
+  "loading": "正在加载已保存名称…",
+  "unavailable": "此连接无法获取名称。请连接组织自身的运行时以编辑。",
+  "unsupported": "此运行时不支持编辑组织名称。",
+  "invalid": "运行时拒绝了这些名称。请刷新已保存版本后重试。",
+  "conflict": "已保存的组织已更改。请刷新名称、检查草稿，然后重新保存。",
+  "uncertain": "保存结果未知。此组织的原始请求已保留，不会自动发送新请求。",
+  "storage": "无法读取已保存名称。请刷新后重试。",
+  "blockedRetry": "原组织不可用。在确认其原始连接和身份之前，请保留此请求。",
+  savedNames: (organization, owner) => `已保存名称：${organization} · ${owner}`,
+  revision: revision => `已保存修订版本 ${revision}`
+}
+
+export const organizationMetadataZhHant: typeof organizationMetadataEn = {
+  "title": "組織與擁有者",
+  "unnamed": "未命名組織",
+  "owner": "擁有者",
+  "edit": "編輯組織與擁有者名稱",
+  "note": "名稱用於描述此組織及其人類擁有者，不會變更權限或啟動工作。",
+  "organizationName": "組織名稱",
+  "ownerName": "你的顯示名稱",
+  "save": "儲存名稱",
+  "cancel": "取消",
+  "refresh": "更新已儲存名稱",
+  "retry": "檢查原始儲存結果",
+  "saving": "正在儲存名稱…",
+  "loading": "正在載入已儲存名稱…",
+  "unavailable": "此連線無法取得名稱。請連線至組織本身的執行環境以編輯。",
+  "unsupported": "此執行環境不支援編輯組織名稱。",
+  "invalid": "執行環境拒絕了這些名稱。請更新已儲存版本後重試。",
+  "conflict": "已儲存的組織已變更。請更新名稱、檢查草稿，然後重新儲存。",
+  "uncertain": "儲存結果未知。此組織的原始請求已保留，不會自動傳送新請求。",
+  "storage": "無法讀取已儲存名稱。請更新後重試。",
+  "blockedRetry": "原組織無法使用。在確認其原始連線與身分之前，請保留此請求。",
+  savedNames: (organization, owner) => `已儲存名稱：${organization} · ${owner}`,
+  revision: revision => `已儲存修訂版本 ${revision}`
+}
+
+export const organizationMetadataAr: typeof organizationMetadataEn = {
+  "title": "المؤسسة والمالك",
+  "unnamed": "مؤسسة بلا اسم",
+  "owner": "المالك",
+  "edit": "تعديل اسم المؤسسة والمالك",
+  "note": "تصف الأسماء هذه المؤسسة ومالكها البشري. ولا تغيّر الأذونات أو تبدأ العمل.",
+  "organizationName": "اسم المؤسسة",
+  "ownerName": "اسم العرض الخاص بك",
+  "save": "حفظ الأسماء",
+  "cancel": "إلغاء",
+  "refresh": "تحديث الأسماء المحفوظة",
+  "retry": "التحقق من الحفظ الأصلي",
+  "saving": "جارٍ حفظ الأسماء…",
+  "loading": "جارٍ تحميل الأسماء المحفوظة…",
+  "unavailable": "الأسماء غير متاحة عبر هذا الاتصال. اتصل ببيئة تشغيل المؤسسة نفسها لتعديلها.",
+  "unsupported": "لا تدعم بيئة التشغيل هذه تعديل أسماء المؤسسات.",
+  "invalid": "رفضت بيئة التشغيل هذه الأسماء. حدّث النسخة المحفوظة قبل المحاولة مجدداً.",
+  "conflict": "تغيّرت المؤسسة المحفوظة. حدّث أسماءها وراجع مسودتك ثم احفظ من جديد.",
+  "uncertain": "نتيجة الحفظ غير معروفة. تم الاحتفاظ بطلبك الأصلي لهذه المؤسسة، ولن يُرسل طلب جديد تلقائياً.",
+  "storage": "تعذّرت قراءة الأسماء المحفوظة. حدّثها للمحاولة مجدداً.",
+  "blockedRetry": "المؤسسة الأصلية غير متاحة. احتفظ بهذا الطلب حتى يتأكد اتصالها الأصلي وهويتها.",
+  savedNames: (organization, owner) => `الأسماء المحفوظة: ${organization} · ${owner}`,
+  revision: revision => `المراجعة المحفوظة ${revision}`
+}
+
+export const organizationMetadataRu: typeof organizationMetadataEn = {
+  "title": "Организация и владелец",
+  "unnamed": "Организация без названия",
+  "owner": "Владелец",
+  "edit": "Изменить названия организации и владельца",
+  "note": "Названия описывают организацию и её владельца-человека. Они не меняют разрешения и не запускают работу.",
+  "organizationName": "Название организации",
+  "ownerName": "Ваше отображаемое имя",
+  "save": "Сохранить названия",
+  "cancel": "Отмена",
+  "refresh": "Обновить сохранённые названия",
+  "retry": "Проверить исходное сохранение",
+  "saving": "Сохранение названий…",
+  "loading": "Загрузка сохранённых названий…",
+  "unavailable": "Названия недоступны через это подключение. Для редактирования подключитесь к собственной среде организации.",
+  "unsupported": "Эта среда не поддерживает изменение названий организации.",
+  "invalid": "Среда отклонила эти названия. Обновите сохранённую версию перед повторной попыткой.",
+  "conflict": "Сохранённая организация изменилась. Обновите названия, проверьте черновик и сохраните снова.",
+  "uncertain": "Результат сохранения неизвестен. Исходный запрос сохранён для этой организации; новый запрос не будет отправлен автоматически.",
+  "storage": "Не удалось прочитать сохранённые названия. Обновите их и повторите попытку.",
+  "blockedRetry": "Исходная организация недоступна. Сохраните запрос до подтверждения её исходного подключения и идентичности.",
+  savedNames: (organization, owner) => `Сохранённые названия: ${organization} · ${owner}`,
+  revision: revision => `Сохранённая редакция ${revision}`
 }
