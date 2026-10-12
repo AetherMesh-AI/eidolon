@@ -38,6 +38,7 @@ export async function startOrganizationSwitchGateway(sandbox: Sandbox, mockUrl: 
   writeMockProviderConfig(home, mockUrl, undefined, 'approvals:\n  mode: manual')
   writeEnvFile(home)
   const marker = path.join(sandbox.root, 'organization-switch-scheduler-starts')
+  const recoveryComplete = `${marker}.recovery-complete`
   const token = 'organization-switch-fixture-token'
   const env = { ...buildAppEnv(sandbox), HERMES_HOME: home, HERMES_DASHBOARD_SESSION_TOKEN: token }
 
@@ -67,7 +68,17 @@ export async function startOrganizationSwitchGateway(sandbox: Sandbox, mockUrl: 
       `
 import sys
 from pathlib import Path
+import eidolon_cli.organization_service as service_module
 from eidolon_cli.organization_service import OrganizationService
+recover=service_module.start_existing_services
+# Capture the path before the CLI rewrites argv.
+recovery_path=sys.argv[3]
+def completed_recovery():
+ try:
+  return recover()
+ finally:
+  Path(recovery_path).write_text('complete')
+service_module.start_existing_services=completed_recovery
 original=OrganizationService.start
 marker=sys.argv[1]
 port=sys.argv[2]
@@ -80,7 +91,8 @@ from eidolon_cli.main import main
 main()
 `,
       marker,
-      String(port)
+      String(port),
+      recoveryComplete
     ],
     { cwd: root, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] }
   )
@@ -134,14 +146,14 @@ main()
         /* bounded startup polling */
       }
 
-      if (ready) {
+      if (ready && existsSync(recoveryComplete)) {
         break
       }
 
       await new Promise(resolve => setTimeout(resolve, 250))
     }
 
-    if (!ready) {
+    if (!ready || !existsSync(recoveryComplete)) {
       throw new Error(`Fixture gateway startup timed out: ${log}`)
     }
 
