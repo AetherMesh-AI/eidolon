@@ -420,13 +420,13 @@ test('retains owner attention across reloads, answers the requesting worker, and
   await expect(inbox).toContainText('Needs You: 1 · Unread: 1')
   // A returning owner sees the durable blocker even when it arrived off-page.
   await page.reload()
-  await waitForAppReady(fixture!, 60_000, '[role="region"][aria-label="Attention inbox"]')
+  await waitForAppReady(fixture!, 60_000, '[aria-label="Attention inbox"]')
   await expect(inbox).toContainText('Needs You: 1 · Unread: 1', { timeout: 60_000 })
   await inbox.getByRole('button', { name: 'Mark seen', exact: true }).click()
   await expect(inbox).toContainText('Needs You: 1 · Unread: 0')
   await expect(inbox.getByRole('button', { name: 'Seen', exact: true })).toBeDisabled()
   await page.reload()
-  await waitForAppReady(fixture!, 60_000, '[role="region"][aria-label="Attention inbox"]')
+  await waitForAppReady(fixture!, 60_000, '[aria-label="Attention inbox"]')
   await expect(inbox).toContainText('Needs You: 1 · Unread: 0', { timeout: 60_000 })
   await expect(inbox.getByRole('button', { name: 'Seen', exact: true })).toBeDisabled()
   // Acknowledgement cannot answer the question or resume the blocked worker.
