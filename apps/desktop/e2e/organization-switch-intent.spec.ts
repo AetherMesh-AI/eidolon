@@ -248,7 +248,8 @@ s.set_objective_archived(ident,True,expected_revision=0,idempotency_key='switch-
   await page.getByRole('button', { name: 'Organizations', exact: true }).click()
   const inspection = page.getByRole('dialog', { name: 'Organizations', exact: true })
   await inspection.getByRole('button', { name: 'Refresh current organization', exact: true }).click()
-  await expect(inspection.getByRole('option')).toContainText(profileB)
+  const destinationEntry = inspection.getByRole('option').filter({ hasText: profileB })
+  await expect(destinationEntry).toContainText(profileB)
   await expect(inspection.getByRole('button', { name: 'Use selected organization', exact: true })).toBeDisabled()
   holdDescriptor = true
   await inspection.getByRole('button', { name: 'Refresh current organization', exact: true }).click()
@@ -267,7 +268,7 @@ s.set_objective_archived(ident,True,expected_revision=0,idempotency_key='switch-
   await expect(inspection).toBeHidden()
   releaseDescriptor!()
   await page.getByRole('button', { name: 'Organizations', exact: true }).click()
-  await expect(inspection.getByRole('option')).toContainText('Last known')
+  await expect(destinationEntry).toContainText('Last known')
   await expect(inspection.getByRole('button', { name: 'Use selected organization', exact: true })).toBeDisabled()
   await page.keyboard.press('Escape')
   expect(remote.ledger()).toBe(beforeB)
