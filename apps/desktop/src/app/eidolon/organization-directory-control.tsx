@@ -4,7 +4,9 @@ import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
 import { useI18n } from '@/i18n/context'
 import { organizationDirectoryCopy } from '@/i18n/organization-directory'
+import { directoryActivationCopy } from '@/i18n/organization-directory-activation'
 
+import { createOrganizationDirectoryActivation } from './organization-directory-activation'
 import {
   createRuntimeOrganizationDirectory,
   subscribeOrganizationDirectorySource
@@ -12,7 +14,9 @@ import {
 import { OrganizationDirectorySearch } from './organization-directory-search'
 import { readOrganizationMetadataScope } from './use-organization-metadata'
 
-/** Inspection is available; destination activation remains deliberately unwired. */
+/** Production stays inspection-only; the explicit acceptance build tests the actual door. */
+const selectionEnabled = import.meta.env.MODE === 'organization-directory-acceptance'
+
 export function OrganizationDirectoryControl() {
   const { locale } = useI18n()
 
@@ -22,7 +26,14 @@ export function OrganizationDirectoryControl() {
   )
 
   const copy = organizationDirectoryCopy[locale]
-  const runtimeRef = useRef<ReturnType<typeof createRuntimeOrganizationDirectory> | null>(null)
+
+  const runtimeRef = useRef<
+    | (ReturnType<typeof createRuntimeOrganizationDirectory> & {
+        activation: ReturnType<typeof createOrganizationDirectoryActivation>
+      })
+    | null
+  >(null)
+
   const [origin, setOrigin] = useState<string | null>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   useEffect(
@@ -46,7 +57,17 @@ export function OrganizationDirectoryControl() {
         aria-label={copy.heading}
         disabled={!eligible}
         onClick={() => {
-          runtimeRef.current ??= createRuntimeOrganizationDirectory()
+          if (!runtimeRef.current) {
+            const next = createRuntimeOrganizationDirectory()
+            runtimeRef.current = {
+              ...next,
+              activation: createOrganizationDirectoryActivation({
+                ...next,
+                enabled: () => selectionEnabled
+              })
+            }
+          }
+
           const source = runtimeRef.current?.readSource().current
 
           if (source?.scope.eligible) {
@@ -62,6 +83,8 @@ export function OrganizationDirectoryControl() {
       </Button>
       {origin && runtime && (
         <OrganizationDirectorySearch
+          activation={selectionEnabled ? runtime.activation : undefined}
+          activationCopy={directoryActivationCopy[locale]}
           copy={copy}
           directory={runtime.directory}
           isCurrent={current}

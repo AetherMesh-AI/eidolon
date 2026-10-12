@@ -1,10 +1,16 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { expect, it, vi } from 'vitest'
 
+import { directoryActivationCopy } from '@/i18n/organization-directory-activation'
+
+import { deferred } from '../../test/deferred'
+
 import { createOrganizationDirectory, type DirectorySource } from './organization-directory'
+import type { ActivationResult, createOrganizationDirectoryActivation } from './organization-directory-activation'
 import { type OrganizationDirectoryCopy, OrganizationDirectorySearch } from './organization-directory-search'
 
 const copy: OrganizationDirectoryCopy = {
+  choose: 'Use selected organization',
   heading: 'Organizations',
   description: 'Inspect organizations already verified in this window.',
   search: 'Search organizations',
@@ -18,7 +24,7 @@ const copy: OrganizationDirectoryCopy = {
   unsupported: 'Unsupported'
 }
 
-async function setup() {
+async function setup(activation?: ReturnType<typeof createOrganizationDirectoryActivation>) {
   const request = vi.fn().mockResolvedValue({
     capabilityVersion: 1,
     state: 'ready',
@@ -71,6 +77,8 @@ async function setup() {
 
   const ui = render(
     <OrganizationDirectorySearch
+      activation={activation}
+      activationCopy={directoryActivationCopy.en}
       copy={copy}
       directory={directory}
       isCurrent={() => current}
@@ -139,7 +147,10 @@ it('drops a filtered highlight and exposes no stale active descendant', async ()
 it.each([false, true])('flushes deferred close autofocus with owner lost = %s', async lost => {
   const h = await setup()
 
-  if (lost) {act(h.invalidate)}
+  if (lost) {
+    act(h.invalidate)
+  }
+
   vi.useFakeTimers()
 
   try {
@@ -149,10 +160,59 @@ it.each([false, true])('flushes deferred close autofocus with owner lost = %s', 
     })
     expect(h.returnFocus).toHaveBeenCalledTimes(lost ? 0 : 1)
 
-    if (lost) {expect(h.close).toHaveBeenCalled()}
+    if (lost) {
+      expect(h.close).toHaveBeenCalled()
+    }
+
     expect(h.request).not.toHaveBeenCalled()
   } finally {
     vi.useRealTimers()
     h.directory.dispose()
   }
 })
+
+it('requires confirmation, cancels without selecting and restores choice focus', async () => {
+  const activation = { prepare: vi.fn(() => true), cancel: vi.fn(() => true), confirm: vi.fn() }
+  const h = await setup(activation)
+  fireEvent.click(screen.getAllByRole('option')[0])
+  fireEvent.keyDown(screen.getByRole('listbox'), { key: 'Enter' })
+  expect(activation.prepare).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: copy.choose }))
+  expect(activation.prepare).toHaveBeenCalledTimes(1)
+  expect(activation.confirm).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: directoryActivationCopy.en.cancel }))
+  expect(activation.cancel).toHaveBeenCalledTimes(1)
+  expect(activation.confirm).not.toHaveBeenCalled()
+  expect(window.document.activeElement).toBe(screen.getByRole('button', { name: copy.choose }))
+  h.directory.dispose()
+})
+
+it.each(['verified', 'committed-unverified', 'superseded', 'unchanged', 'unavailable', 'disabled'] as const)(
+  'keeps an admitted selection visible until its explicit %s outcome',
+  async status => {
+    const completion = deferred<ActivationResult>()
+
+    const activation = {
+      prepare: vi.fn(() => true),
+      cancel: vi.fn(() => true),
+      confirm: vi.fn(() => completion.promise)
+    }
+
+    const h = await setup(activation)
+    fireEvent.click(screen.getAllByRole('option')[0])
+    fireEvent.click(screen.getByRole('button', { name: copy.choose }))
+    fireEvent.click(screen.getByRole('button', { name: directoryActivationCopy.en.confirm }))
+    expect(screen.getByRole('status').textContent).toBe(directoryActivationCopy.en.pending)
+    expect(screen.queryByRole('button', { name: directoryActivationCopy.en.cancel })).toBeNull()
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
+    act(() => h.invalidate())
+    expect(h.close).not.toHaveBeenCalled()
+    expect(activation.cancel).not.toHaveBeenCalled()
+    await act(async () => completion.resolve({ status }))
+    expect(screen.getByRole('status').textContent).toBe(directoryActivationCopy.en[status])
+    expect(activation.confirm).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: directoryActivationCopy.en.close }))
+    expect(h.close).toHaveBeenCalledTimes(1)
+    h.directory.dispose()
+  }
+)

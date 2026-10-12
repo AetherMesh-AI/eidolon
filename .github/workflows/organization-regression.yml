@@ -275,6 +275,14 @@ jobs:
         env:
           EIDOLON_REQUIRE_PROJECT_SANDBOX: '1'
         run: xvfb-run -a npx playwright test e2e/organization-*.spec.ts --workers=1 --retries=0
+      - name: Verify gated directory confirmation in an explicit acceptance build
+        working-directory: apps/desktop
+        env:
+          EIDOLON_REQUIRE_PROJECT_SANDBOX: '1'
+          PLAYWRIGHT_JSON_OUTPUT_NAME: directory-report/results.json
+        run: |
+          npx vite build --mode organization-directory-acceptance --emptyOutDir false
+          xvfb-run -a npx playwright test e2e/directory-selection.spec.ts --workers=1 --retries=0 --output directory-test-results --reporter list,json
       - name: Verify complete desktop suite when requested
         if: github.event_name == 'workflow_dispatch' && inputs.full_desktop_suite
         working-directory: apps/desktop
@@ -287,5 +295,7 @@ jobs:
           path: |
             apps/desktop/test-results/
             apps/desktop/playwright-report/
+            apps/desktop/directory-test-results/
+            apps/desktop/directory-report/
           retention-days: 7
           if-no-files-found: warn

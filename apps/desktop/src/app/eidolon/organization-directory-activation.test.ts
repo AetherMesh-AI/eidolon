@@ -297,3 +297,33 @@ it('preserves a pre-publication failure without reading the cached destination o
   expect(h.select).toHaveBeenCalledTimes(1)
   h.directory.dispose()
 })
+
+it('does not verify a different organization than the selected cached identity', async () => {
+  const h = await setup()
+
+  const metadata = (organizationId: string) => ({
+    capabilityVersion: 1,
+    state: 'ready',
+    scope: { kind: 'served-profile', profile: 'default' },
+    metadata: {
+      organizationId,
+      displayName: 'Selected name',
+      revision: 1,
+      owner: { ownerId: '22222222-2222-4222-8222-222222222222', displayName: 'Owner' },
+      createdAt: '2026-10-12T00:00:00Z',
+      updatedAt: '2026-10-12T00:00:00Z'
+    }
+  })
+
+  try {
+    h.go('b')
+    h.request.mockResolvedValueOnce(metadata('11111111-1111-4111-8111-111111111111'))
+    await h.directory.refresh()
+    h.go('a')
+    expect(h.activation.prepare(h.key)).toBe(true)
+    h.request.mockResolvedValueOnce(metadata('33333333-3333-4333-8333-333333333333'))
+    expect((await h.activation.confirm()).status).toBe('committed-unverified')
+  } finally {
+    h.directory.dispose()
+  }
+})

@@ -4,13 +4,13 @@ import { selectOrganizationConnection } from '@/store/organization-switch'
 import type { DirectorySource, OrganizationDirectory, OrganizationDirectoryEntry } from './organization-directory'
 import { organizationEndpointIdentity } from './organization-owner'
 
-type ActivationResult = {
+export type ActivationResult = {
   status: 'disabled' | 'cancelled' | 'unavailable' | 'superseded' | 'verified' | 'committed-unverified' | 'unchanged'
   outcome?: ConnectionSwitchOutcome
 }
 const endpoint = (value: string | null) => (value === null ? null : organizationEndpointIdentity(value))
 
-/** Prepared coordinator, not connected to the UI. The default release gate is closed. */
+/** Explicit preparation and confirmation. The default release gate is closed. */
 export function createOrganizationDirectoryActivation({
   directory,
   readSource,
@@ -127,7 +127,10 @@ export function createOrganizationDirectoryActivation({
 
         return {
           status:
-            refreshed === 'verified' && verified && verified.state !== 'unsupported'
+            refreshed === 'verified' &&
+            verified &&
+            verified.state !== 'unsupported' &&
+            verified.organizationId === entry.organizationId
               ? 'verified'
               : 'committed-unverified',
           outcome
