@@ -53,7 +53,7 @@ def test_missing_and_metadata_only_do_not_initialize_execution(tmp_path, monkeyp
         assert conn.execute("SELECT name FROM sqlite_master WHERE name='objectives'").fetchone() is None
 
 
-@pytest.mark.parametrize('damage', ['legacy', 'missing_table', 'missing_column'])
+@pytest.mark.parametrize('damage', ['legacy', 'missing_table', 'missing_column', 'missing_migrated_column'])
 def test_older_schema_is_unsupported_without_migration(tmp_path, damage):
     path = tmp_path / 'organization' / 'state.db'
     if damage == 'legacy':
@@ -65,6 +65,8 @@ def test_older_schema_is_unsupported_without_migration(tmp_path, damage):
         with sqlite3.connect(path) as conn:
             if damage == 'missing_table':
                 conn.execute('DROP TABLE organization_management_audit')
+            elif damage == 'missing_migrated_column':
+                conn.execute('ALTER TABLE owner_chat_turns DROP COLUMN context_message_ids')
             else:
                 conn.execute('ALTER TABLE organization_management_audit RENAME COLUMN before_state TO old_before')
     before = files(tmp_path)
