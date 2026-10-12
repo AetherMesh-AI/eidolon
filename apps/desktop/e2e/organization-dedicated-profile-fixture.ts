@@ -111,31 +111,34 @@ if 'serve' in sys.argv:
       [profileA, profileB]
     )
 
-    for (const home of homes) {
-      await expect.poll(() => existsSync(path.join(home, '.fixture-recovery-complete')), { timeout: 90_000 }).toBe(true)
-      execFileSync(
-        switchPython,
-        [
-          '-c',
-          `
+    return {
+      fixture,
+      routes,
+      homes,
+      env,
+      // Seed only after the caller has installed transport interception and
+      // reloaded the renderer while every organization ledger is still empty.
+      seedQueuedWork: async () => {
+        for (const home of homes) {
+          await expect.poll(() => existsSync(path.join(home, '.fixture-recovery-complete')), { timeout: 90_000 }).toBe(true)
+          execFileSync(
+            switchPython,
+            [
+              '-c',
+              `
 import sys
 from pathlib import Path
 from eidolon_cli.organization_store import OrganizationStore
 s=OrganizationStore(Path(sys.argv[1])/'organization'/'state.db')
 s.create_objective(sys.argv[2],idempotency_key='native-stopped-profile-queue')
 `,
-          home,
-          home === homes[0] ? queuedSourceTitle : queuedSwitchTitle
-        ],
-        { cwd: path.resolve(import.meta.dirname, '../../..'), env }
-      )
-    }
-
-    return {
-      fixture,
-      routes,
-      homes,
-      env,
+              home,
+              home === homes[0] ? queuedSourceTitle : queuedSwitchTitle
+            ],
+            { cwd: path.resolve(import.meta.dirname, '../../..'), env }
+          )
+        }
+      },
       ledger: (index: number) => fixtureLedger(homes[index], env),
       starts: (index: number) => {
         const marker = path.join(homes[index], '.fixture-scheduler-starts')

@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import path from 'node:path'
 
-import { type MockBackendFixture } from './fixtures'
+import { type MockBackendFixture, waitForAppReady } from './fixtures'
 import { profileA, profileB, queuedSourceTitle, setupDedicatedProfiles } from './organization-dedicated-profile-fixture'
 import { queuedSwitchTitle, switchPython } from './organization-switch-fixture'
 import { acknowledgeExpectedErrorBanner, expect, test } from './test'
@@ -149,6 +149,12 @@ s.set_objective_archived(ident,True,expected_revision=0,idempotency_key='switch-
     })
   })
 
+  // Routing affects new sockets only; boot may already have warmed profile
+  // sockets. Reconnect before seeding, so no queued work faces a cold boot.
+  await page.reload()
+  await waitForAppReady(fixture)
+  await dedicated.seedQueuedWork()
+
   const nav = page
     .getByRole('complementary', { name: 'Eidolon navigation' })
     .getByRole('navigation', { name: 'Primary', exact: true })
@@ -165,6 +171,10 @@ s.set_objective_archived(ident,True,expected_revision=0,idempotency_key='switch-
       page.getByRole('link', { name: profile === profileA ? queuedSourceTitle : queuedSwitchTitle, exact: true })
     ).toBeVisible()
     await expect(page.locator('.eid-workspace-header').getByRole('button', { name: new RegExp(profile) })).toBeVisible()
+  }
+
+  for (const destination of ['a', 'b'] as const) {
+    expect(methods.some(item => item.destination === destination && item.method === 'organization.observe')).toBe(true)
   }
 
   expect(dedicated.starts(0)).toBe(0)
