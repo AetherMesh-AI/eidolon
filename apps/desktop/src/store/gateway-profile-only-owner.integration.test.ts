@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const gatewayMocks = vi.hoisted(() => {
   const instances: Array<{
     connectionState: string
+    queuedState: (state: string) => () => void
+    queuedEvent: (event: { payload?: Record<string, unknown>; session_id?: string; type: string }) => () => void
     emit: (event: { payload?: Record<string, unknown>; session_id?: string; type: string }) => void
     request: ReturnType<typeof vi.fn>
   }> = []
@@ -51,6 +53,18 @@ vi.mock('@/eidolon', async importActual => ({
       return () => this.stateHandlers.delete(handler)
     }
 
+    queuedState = (state: string) => {
+      const handlers = [...this.stateHandlers]
+
+      return () => { for (const handler of handlers) {handler(state)} }
+    }
+
+    queuedEvent = (event: { payload?: Record<string, unknown>; session_id?: string; type: string }) => {
+      const handlers = [...this.eventHandlers]
+
+      return () => { for (const handler of handlers) {handler(event)} }
+    }
+
     emit = (event: { payload?: Record<string, unknown>; session_id?: string; type: string }): void => {
       for (const handler of this.eventHandlers) {
         handler(event)
@@ -67,6 +81,7 @@ const {
   recordPrimaryRuntimeProducer,
   retireLocalProfileGateways,
   requestGatewayForAgent,
+  requestGatewayForProfile,
   setPrimaryGateway
 } = await import('./gateway')
 
@@ -223,6 +238,83 @@ describe('profile-only secondary approval ownership', () => {
     await expect(requestForOwnedSession('old-runtime', ambient as never, 'approval.respond', { session_id: 'old-runtime' }))
       .rejects.toThrow('runtime transport is unavailable')
     expect(replacement.request).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not let a retired generation hold pin an idle replacement at the same profile', async () => {
+    await ensureGatewayForProfile('research')
+    const retired = gatewayMocks.instances[0]
+    retired.emit({ session_id: 'retired-turn', type: 'approval.request' })
+    retired.request.mockResolvedValue({ status: 'streaming' })
+    await requestForOwnedSession('retired-turn', vi.fn() as never, 'prompt.submit', { session_id: 'retired-turn' })
+    const holds = (globalThis as unknown as Record<symbol, { turnLeases: Map<string, unknown> }>)[Symbol.for('hermes.desktop.gatewayRegistryState')].turnLeases
+    expect(holds.size).toBe(1)
+    retireLocalProfileGateways('research')
+    expect(holds.size).toBe(0)
+    expect(retired.connectionState).toBe('closed')
+    await ensureGatewayForProfile('research')
+    const replacement = gatewayMocks.instances[1]
+    expect(replacement.connectionState).toBe('open')
+    await ensureGatewayForProfile('default')
+    pruneSecondaryGateways(new Set())
+    expect(replacement.connectionState).toBe('closed')
+  })
+
+  it('ignores retired callbacks while a same-scope replacement owns a live generation hold', async () => {
+    vi.useFakeTimers()
+    await ensureGatewayForProfile('research')
+    const retired = gatewayMocks.instances[0]
+    retired.emit({ session_id: 'aba-runtime', type: 'approval.request' })
+    retired.request.mockResolvedValue({ status: 'streaming' })
+    await requestForOwnedSession('aba-runtime', vi.fn() as never, 'prompt.submit', { session_id: 'aba-runtime' })
+    const lateClose = retired.queuedState('closed')
+    const lateTerminal = retired.queuedEvent({ session_id: 'aba-runtime', type: 'session.info', payload: { running: false } })
+    retireLocalProfileGateways('research')
+    await ensureGatewayForProfile('research')
+    const replacement = gatewayMocks.instances[1]
+    replacement.emit({ session_id: 'aba-runtime', type: 'approval.request' })
+    replacement.request.mockResolvedValue({ status: 'streaming' })
+    await requestForOwnedSession('aba-runtime', vi.fn() as never, 'prompt.submit', { session_id: 'aba-runtime' })
+    await ensureGatewayForProfile('default')
+    lateClose()
+    lateTerminal()
+    await vi.advanceTimersByTimeAsync(501)
+    pruneSecondaryGateways(new Set())
+    expect(replacement.connectionState).toBe('open')
+    replacement.emit({ session_id: 'aba-runtime', type: 'session.info', payload: { running: false } })
+    await vi.advanceTimersByTimeAsync(501)
+    pruneSecondaryGateways(new Set())
+    expect(replacement.connectionState).toBe('closed')
+  })
+
+  it.each(['session.resume', 'session.delete'])('routes durable %s IDs by logical owner despite colliding runtime IDs', async method => {
+    await ensureGatewayForProfile('research')
+    const secondary = gatewayMocks.instances[0]
+    secondary.emit({ session_id: 'stored-on-primary', type: 'approval.request' })
+    const primary = { connectionState: 'open', request: vi.fn(async () => ({ session_id: 'resumed-primary' })) }
+    setPrimaryGateway(primary as never, 'research', { connectionId: 'local' })
+    recordPrimaryRuntimeProducer({ type: 'approval.request', session_id: 'stored-on-secondary' })
+    await expect(requestGatewayForAgent('local', 'research', method, { session_id: 'stored-on-primary' }))
+      .resolves.toEqual({ session_id: 'resumed-primary' })
+    expect(primary.request).toHaveBeenCalledWith(method, { session_id: 'stored-on-primary' })
+    expect(secondary.request).not.toHaveBeenCalled()
+    await requestGatewayForProfile('research', method, { session_id: 'stored-on-secondary' })
+    expect(secondary.request).toHaveBeenCalledWith(method, { session_id: 'stored-on-secondary' })
+    expect(primary.request).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['session.resume', 'session.delete'])('does not let retired runtime proof veto a durable %s identity', async method => {
+    const retired = { connectionState: 'open', request: vi.fn() }
+    setPrimaryGateway(retired as never, 'research', { connectionId: 'local' })
+    recordPrimaryRuntimeProducer({ type: 'approval.request', session_id: 'stored-collision' })
+    retired.connectionState = 'closed'
+    const replacement = { connectionState: 'open', request: vi.fn(async () => ({ session_id: 'new-runtime' })) }
+    setPrimaryGateway(replacement as never, 'research', { connectionId: 'local' })
+    await expect(requestGatewayForAgent('local', 'research', method, { session_id: 'stored-collision' }))
+      .resolves.toEqual({ session_id: 'new-runtime' })
+    await expect(requestGatewayForProfile('research', method, { session_id: 'stored-collision' }))
+      .resolves.toEqual({ session_id: 'new-runtime' })
+    expect(replacement.request).toHaveBeenCalledTimes(2)
+    expect(retired.request).not.toHaveBeenCalled()
   })
 
   it('does not route an exact remote primary owner through a same-named legacy secondary', async () => {

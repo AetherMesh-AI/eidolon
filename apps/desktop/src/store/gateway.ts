@@ -167,6 +167,13 @@ interface RuntimeProducer {
   entry?: Secondary
 }
 
+interface PrimaryDial {
+  gateway: HermesGateway
+  connection: HermesConnection
+  promise: Promise<void>
+  settled: boolean
+}
+
 interface GatewayRegistryState {
   config: RegistryConfig | null
   primaryGateway: HermesGateway | null
@@ -175,6 +182,7 @@ interface GatewayRegistryState {
   primaryProfile: string
   primaryRouteSuspended?: boolean
   primaryGeneration?: number
+  primaryDial?: PrimaryDial
   nextTransportGeneration?: number
   runtimeProducers?: Map<string, Map<number, RuntimeProducer>>
   activeKey: string
@@ -300,6 +308,7 @@ export function setPrimaryGateway(gateway: HermesGateway | null, profile = 'defa
   const next = normKey(profile)
 
   if (g.primaryGateway !== gateway) {
+    g.primaryGeneration = undefined
     g.primaryConnectionId = null
   }
 
@@ -324,6 +333,42 @@ export function setPrimaryGateway(gateway: HermesGateway | null, profile = 'defa
   if (g.activeKey === PRIMARY_SCOPE && !g.primaryRouteSuspended) {
     setApiRequestConnection(g.primaryConnectionId)
   }
+}
+
+function settlePrimaryDial(attempt: PrimaryDial | undefined): void {
+  if (!attempt || attempt.settled || g.primaryDial !== attempt ||
+      g.primaryGateway !== attempt.gateway || !isOpen(attempt.gateway)) {return}
+
+  attempt.settled = true
+  const connection = attempt.connection
+  setPrimaryGateway(attempt.gateway,
+    connection.mode === 'local' && connection.profile ? normKey(connection.profile) : g.primaryProfile,
+    connection)
+}
+
+/** Every primary dial settles its descriptor and generation before events. */
+export function connectPrimaryGateway(gateway: HermesGateway, connection: HermesConnection, wsUrl: string): Promise<void> {
+  if (g.primaryGateway !== gateway) {return Promise.reject(new Error('Eidolon primary gateway changed'))}
+
+  if (gateway.connectionState === 'connecting' && g.primaryDial?.gateway === gateway) {return g.primaryDial.promise}
+
+  if (isOpen(gateway)) {return Promise.resolve()}
+  const attempt: PrimaryDial = { gateway, connection, promise: Promise.resolve(), settled: false }
+  g.primaryDial = attempt
+  const off = gateway.onState(state => { if (state === 'open') {settlePrimaryDial(attempt)} })
+  attempt.promise = Promise.resolve().then(() => {
+    if (g.primaryDial !== attempt || g.primaryGateway !== gateway) {
+      throw new Error('Eidolon primary connection attempt was superseded')
+    }
+
+    return gateway.connect(wsUrl)
+  }).then(() => { settlePrimaryDial(attempt) }).finally(() => {
+    off()
+
+    if (g.primaryDial === attempt) {g.primaryDial = undefined}
+  })
+
+  return attempt.promise
 }
 
 export function setPrimaryGatewayConnectionId(connectionId: null | string | undefined): void {
@@ -418,9 +463,8 @@ async function requestOnPrimaryGateway<T>(
     throw new Error('Eidolon gateway unavailable')
   }
 
-  return timeoutMs === undefined && signal === undefined
-    ? gateway.request<T>(method, params)
-    : gateway.request<T>(method, params, timeoutMs, signal)
+  return requestGatewayWithRuntimeBinding<T>(gateway, method, params, timeoutMs, signal,
+    typeof params.profile === 'string' ? normKey(params.profile) : undefined)
 }
 
 export function isActivePrimary(): boolean {
@@ -530,6 +574,7 @@ function reportGatewayState(profile: string, state: ConnectionState): void {
 }
 
 export function reportPrimaryGatewayState(state: ConnectionState): void {
+  if (state === 'open') {settlePrimaryDial(g.primaryDial)}
   reportGatewayState(PRIMARY_SCOPE, g.primaryRouteSuspended ? 'closed' : state)
 }
 
@@ -845,6 +890,7 @@ function createSecondary(profile: string, connectionId: null | string = null): S
   // connection id, so stamp this closure-owned profile before registry fan-in;
   // the recorder must not promote an arbitrary wire `profile` field instead.
   entry.offEvent = gateway.onEvent(event => {
+    if (g.secondaries.get(scope) !== entry) {return}
     rememberRuntimeProducer(event, {
       gateway, generation: entry.transportGeneration ?? 0, profile,
       connectionId: connectionId ?? entry.connection?.connectionId?.trim() ?? null, entry
@@ -856,6 +902,7 @@ function createSecondary(profile: string, connectionId: null | string = null): S
     releaseTerminalTurnLease(producerLeaseScope(entry, entry.transportGeneration ?? 0), event)
   })
   entry.offState = gateway.onState(state => {
+    if (g.secondaries.get(scope) !== entry) {return}
     reportGatewayState(scope, state)
 
     if (state === 'open') {
@@ -913,6 +960,67 @@ async function sharedPrimaryRoute(profile: string, spawnPriority: SpawnPriority 
   } catch {
     return false
   }
+}
+
+// Only operations whose API contract names a live runtime use producer proof.
+// Durable IDs used by resume/delete/title/etc. must retain logical-owner routing.
+const RUNTIME_SESSION_METHODS = new Set([
+  'prompt.submit', 'prompt.background', 'prompt.btw', 'session.activate', 'session.usage',
+  'session.context_breakdown', 'session.status', 'session.history', 'session.undo', 'session.compress',
+  'session.save', 'session.close', 'session.branch', 'session.interrupt', 'session.steer', 'session.redirect',
+  'session.cwd.set', 'session.control', 'session.control.read', 'session.events.since',
+  'approval.pending', 'approval.received', 'approval.respond', 'clarify.respond', 'sudo.respond', 'secret.respond',
+  'terminal.read.respond', 'preview.read.respond', 'preview.act.respond', 'window.read.respond',
+  'tour.respond', 'mcp.setup.respond', 'terminal.resize', 'message.react', 'handoff.request',
+  'clipboard.paste', 'image.attach', 'image.attach_bytes', 'image.detach', 'pdf.attach', 'file.attach',
+  'input.detect_drop', 'preview.restart', 'subagent.steer'
+])
+
+const RUNTIME_RESPONSE_METHODS = new Set(['session.create', 'session.resume', 'session.branch'])
+
+function captureRuntimeTransport(gateway: HermesGateway, profile?: string): RuntimeProducer | undefined {
+  if (gateway === g.primaryGateway) {
+    g.primaryGeneration ??= nextTransportGeneration()
+
+    return { gateway, generation: g.primaryGeneration, profile: profile ?? g.primaryProfile, connectionId: g.primaryConnectionId }
+  }
+
+  const entry = [...g.secondaries.values()].find(candidate => candidate.gateway === gateway)
+
+  if (!entry) {return undefined}
+  entry.transportGeneration ??= nextTransportGeneration()
+
+  return { gateway, generation: entry.transportGeneration, profile: entry.profile,
+    connectionId: entry.connectionId ?? entry.connection?.connectionId?.trim() ?? null, entry }
+}
+
+/** Correlate runtime-producing responses with the transport that sent them. */
+export async function requestGatewayWithRuntimeBinding<T>(gateway: HermesGateway, method: string,
+  params: Record<string, unknown> = {}, timeoutMs?: number, signal?: AbortSignal, profile?: string): Promise<T> {
+  const producer = captureRuntimeTransport(gateway, profile)
+
+  if (producer && RUNTIME_SESSION_METHODS.has(method)) {
+    const known = runtimeProducer(producer.connectionId, producer.profile, params.session_id)
+
+    if (known && (known.gateway !== gateway || known.generation !== producer.generation)) {
+      throw new Error('Eidolon runtime request belongs to another transport generation')
+    }
+  }
+
+  const result = await (timeoutMs === undefined && signal === undefined
+    ? gateway.request<T>(method, params)
+    : gateway.request<T>(method, params, timeoutMs, signal))
+
+  if (RUNTIME_RESPONSE_METHODS.has(method) && result && typeof result === 'object' &&
+      'session_id' in result && typeof result.session_id === 'string' && result.session_id.trim()) {
+    if (!producer || !producerIsCurrent(producer)) {
+      throw new Error('Eidolon runtime transport changed before the session response settled')
+    }
+
+    rememberRuntimeProducer({ type: 'session.info', session_id: result.session_id }, producer)
+  }
+
+  return result
 }
 
 // Runtime IDs belong to the socket generation that produced them. Logical
@@ -990,9 +1098,7 @@ async function requestOnRuntimeProducer<T>(producer: RuntimeProducer, method: st
   const release = retainRuntimeProducer(producer)
 
   try {
-    return await (timeoutMs === undefined && signal === undefined
-      ? producer.gateway.request<T>(method, params)
-      : producer.gateway.request<T>(method, params, timeoutMs, signal))
+    return await requestGatewayWithRuntimeBinding<T>(producer.gateway, method, params, timeoutMs, signal, producer.profile)
   } finally {release()}
 }
 
@@ -1083,7 +1189,7 @@ export async function requestGatewayForProfile<T>(
   timeoutMs?: number,
   signal?: AbortSignal
 ): Promise<T> {
-  const producer = runtimeProducer(null, profile, params.session_id)
+  const producer = RUNTIME_SESSION_METHODS.has(method) ? runtimeProducer(null, profile, params.session_id) : undefined
 
   if (producer) {return requestOnRuntimeProducer<T>(producer, method, params, timeoutMs, signal)}
   const route = await gatewayForProfile(profile, true)
@@ -1098,9 +1204,7 @@ export async function requestGatewayForProfile<T>(
     // Same arity contract as the ambient path in session-request-router: only
     // pass the deadline args through when the caller set them, so a plain
     // profile-routed RPC keeps its two-argument call shape.
-    return await (timeoutMs === undefined && signal === undefined
-      ? route.gateway.request<T>(method, routedParams)
-      : route.gateway.request<T>(method, routedParams, timeoutMs, signal))
+    return await requestGatewayWithRuntimeBinding<T>(route.gateway, method, routedParams, timeoutMs, signal, route.key)
   } finally {
     route.release()
   }
@@ -1120,7 +1224,7 @@ export async function requestGatewayForAgent<T>(
   timeoutMs?: number,
   signal?: AbortSignal
 ): Promise<T> {
-  const producer = runtimeProducer(connectionId, profile, params.session_id)
+  const producer = RUNTIME_SESSION_METHODS.has(method) ? runtimeProducer(connectionId, profile, params.session_id) : undefined
 
   if (producer) {return requestOnRuntimeProducer<T>(producer, method, params, timeoutMs, signal)}
   const key = normKey(profile)
@@ -1169,9 +1273,7 @@ export async function requestGatewayForAgent<T>(
       await openSecondary(entry)
     }
 
-    return await (timeoutMs === undefined && signal === undefined
-      ? entry.gateway.request<T>(method, params)
-      : entry.gateway.request<T>(method, params, timeoutMs, signal))
+    return await requestGatewayWithRuntimeBinding<T>(entry.gateway, method, params, timeoutMs, signal, entry.profile)
   } finally {
     entry.activeRequests = Math.max(0, entry.activeRequests - 1)
 
@@ -1859,6 +1961,8 @@ export function touchSecondaryGateways(): void {
 // socket. Caller handles removal from the map.
 function disposeSecondary(entry: Secondary): void {
   entry.wantOpen = false
+  entry.pendingConnectionRedial = false
+  releaseTurnLeasesForScope(producerLeaseScope(entry, entry.transportGeneration ?? 0))
   notifyLocalOwnerProof(entry)
   clearTimer(entry)
   entry.offEvent()
@@ -1925,7 +2029,7 @@ export function pruneSecondaryGateways(keep: Set<string>): void {
       continue
     }
 
-    if ([...g.turnLeases.keys()].some(lease => lease.startsWith(`${key}\u0000generation:`))) {
+    if ([...g.turnLeases.keys()].some(lease => lease.startsWith(`${producerLeaseScope(entry, entry.transportGeneration ?? 0)}\u0000`))) {
       continue
     }
 

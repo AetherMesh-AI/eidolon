@@ -51,12 +51,15 @@ vi.mock('@/eidolon', async importOriginal => {
 })
 
 import type * as HermesModule from '@/eidolon'
-import type { HermesGateway } from '@/eidolon'
+import { HermesGateway } from '@/eidolon'
 import {
   $gateway,
   closeSecondaryGateways,
   configureGatewayRegistry,
+  connectPrimaryGateway,
   ensureGatewayForAgent,
+  recordPrimaryRuntimeProducer,
+  requestGatewayForAgent,
   setPrimaryGateway
 } from '@/store/gateway'
 import { $activeGatewayProfile } from '@/store/profile'
@@ -65,6 +68,7 @@ import { $connection, $gatewayState } from '@/store/session'
 import { useGatewayRequest } from './use-gateway-request'
 
 interface TestGateway {
+  close: () => void
   connect: ReturnType<typeof vi.fn>
   connectionState: string
   request: ReturnType<typeof vi.fn>
@@ -130,6 +134,11 @@ function installRemoteDesktop() {
 function installPrimaryDesktop(authMode: 'oauth' | 'token') {
   const getConnection = vi.fn(async (profile?: null | string) => ({
     authMode,
+    isFullscreen: false,
+    nativeOverlayWidth: 0,
+    logs: [] as string[],
+    windowButtonPosition: null,
+    connectionId: 'local',
     baseUrl: authMode === 'oauth' ? 'https://gateway.example.test' : 'http://127.0.0.1:5151',
     mode: authMode === 'oauth' ? ('remote' as const) : ('local' as const),
     profile: profile ?? 'default',
@@ -157,11 +166,10 @@ function installPrimaryDesktop(authMode: 'oauth' | 'token') {
 }
 
 function makePrimaryGateway(): TestGateway {
-  return {
-    connect: vi.fn(async () => undefined),
-    connectionState: 'open',
-    request: vi.fn()
-  }
+  const gateway = new HermesGateway() as unknown as TestGateway
+  gateway.connectionState = 'open'
+
+  return gateway
 }
 
 async function activateRemoteGateway() {
@@ -342,6 +350,7 @@ describe('useGatewayRequest', () => {
     const desktop = installPrimaryDesktop(authMode)
     const primary = makePrimaryGateway()
     primary.request.mockRejectedValueOnce(new Error('connection closed')).mockResolvedValueOnce({ recovered: true })
+    primary.connectionState = 'closed'
 
     setPrimaryGateway(primary as unknown as HermesGateway, 'default')
     $gateway.set(primary as unknown as HermesGateway)
@@ -353,7 +362,7 @@ describe('useGatewayRequest', () => {
       await expect(result.current.requestGateway('session.resume')).resolves.toEqual({ recovered: true })
     })
 
-    expect(desktop.getConnection).toHaveBeenCalledWith('default')
+    expect(desktop.getConnection).toHaveBeenCalledWith()
     expect(desktop.getGatewayWsUrl).toHaveBeenCalledWith('default')
     expect(desktop.getConnectionFor).not.toHaveBeenCalled()
     expect(desktop.getGatewayWsUrlFor).not.toHaveBeenCalled()
@@ -389,4 +398,54 @@ describe('useGatewayRequest', () => {
     await vi.advanceTimersByTimeAsync(20_000)
     await pending
   })
+})
+
+
+it.each(['session.resume', 'session.create'])('request-triggered reconnect retires old proof and binds a silent %s response', async method => {
+  const desktop = installPrimaryDesktop('token')
+  const primary = makePrimaryGateway()
+  setPrimaryGateway(primary as unknown as HermesGateway, 'default', { connectionId: 'local' })
+  $gateway.set(primary as unknown as HermesGateway)
+  recordPrimaryRuntimeProducer({ type: 'approval.request', session_id: 'runtime-r' })
+  primary.close()
+  $gatewayState.set('closed')
+  primary.request.mockRejectedValueOnce(new Error('connection closed')).mockResolvedValueOnce({ pong: true })
+  const { result } = renderHook(() => useGatewayRequest())
+  await act(async () => { await expect(result.current.requestGateway('ping')).resolves.toEqual({ pong: true }) })
+  expect(desktop.getConnection).toHaveBeenCalledWith()
+  await expect(requestGatewayForAgent('local', 'default', 'approval.respond', { session_id: 'runtime-r' }))
+    .rejects.toThrow('runtime transport is unavailable')
+  primary.request.mockResolvedValueOnce({ session_id: 'runtime-r', stored_session_id: 'stored-s' })
+  await act(async () => {
+    await expect(result.current.requestGateway(method, method === 'session.resume' ? { session_id: 'stored-s' } : { title: 'new session' }))
+      .resolves.toEqual({ session_id: 'runtime-r', stored_session_id: 'stored-s' })
+  })
+  primary.request.mockResolvedValue({ status: 'complete' })
+  await expect(requestGatewayForAgent('local', 'default', 'prompt.submit', { session_id: 'runtime-r' }))
+    .resolves.toEqual({ status: 'complete' })
+  await expect(requestGatewayForAgent('local', 'default', 'approval.respond', { session_id: 'runtime-r' }))
+    .resolves.toEqual({ status: 'complete' })
+})
+
+it.each(['session.resume', 'session.create'])('a late %s response cannot restore proof after its transport is replaced', async method => {
+  const desktop = installPrimaryDesktop('token')
+  const primary = makePrimaryGateway()
+  setPrimaryGateway(primary as unknown as HermesGateway, 'default', { connectionId: 'local' })
+  $gateway.set(primary as unknown as HermesGateway)
+  $gatewayState.set('open')
+  recordPrimaryRuntimeProducer({ type: 'approval.request', session_id: 'runtime-r' })
+  let release!: (value: { session_id: string }) => void
+  primary.request.mockReturnValueOnce(new Promise(resolve => { release = resolve }))
+  const { result } = renderHook(() => useGatewayRequest())
+
+  const pending = result.current.requestGateway(method, method === 'session.resume' ? { session_id: 'stored-s' } : { title: 'new session' })
+    .then(value => ({ value }), error => ({ error }))
+
+  primary.close()
+  const connection = await desktop.getConnection()
+  await connectPrimaryGateway(primary as unknown as HermesGateway, connection, connection.wsUrl)
+  release({ session_id: 'runtime-r' })
+  await expect(pending).resolves.toMatchObject({ error: expect.objectContaining({ message: expect.stringContaining('response settled') }) })
+  await expect(requestGatewayForAgent('local', 'default', 'approval.respond', { session_id: 'runtime-r' }))
+    .rejects.toThrow('runtime transport is unavailable')
 })

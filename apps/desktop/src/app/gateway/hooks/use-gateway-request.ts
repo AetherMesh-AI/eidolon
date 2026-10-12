@@ -4,9 +4,10 @@ import { useCallback, useEffect, useRef } from 'react'
 
 import type { HermesGateway } from '@/eidolon'
 import { RECONNECT_ATTEMPT_TIMEOUT_MS, withTimeout } from '@/lib/with-timeout'
-import { $gateway, ensureActiveGatewayOpen, isActivePrimary } from '@/store/gateway'
-import { $activeGatewayProfile } from '@/store/profile'
+import { $gateway, activeGateway, connectPrimaryGateway, ensureActiveGatewayOpen, gatewayActivationEpoch, isActivePrimary, requestGatewayWithRuntimeBinding } from '@/store/gateway'
+import { $gatewaySwitching } from '@/store/gateway-switch'
 import { $gatewayState, setConnection } from '@/store/session'
+import { currentSourceSwitchIntent, isCurrentSourceSwitchIntent } from '@/store/source-switch-intent'
 
 export function useGatewayRequest() {
   const gatewayState = useStore($gatewayState)
@@ -53,7 +54,7 @@ export function useGatewayRequest() {
       return null
     }
 
-    if (gatewayStateRef.current === 'open') {
+    if (gatewayStateRef.current === 'open' && existing.connectionState === 'open') {
       return existing
     }
 
@@ -69,24 +70,29 @@ export function useGatewayRequest() {
       }
 
       reauthErrorRef.current = null
+      const intent = currentSourceSwitchIntent()
+      const activationEpoch = gatewayActivationEpoch()
+
+      const ownsForeground = () => isCurrentSourceSwitchIntent(intent) &&
+        gatewayActivationEpoch() === activationEpoch && isActivePrimary() &&
+        activeGateway() === existing && !$gatewaySwitching.get()
 
       try {
-        // Reconnect to whichever profile the gateway is currently routed to (not
-        // always the primary), so a sleep/wake reconnect keeps the user on the
-        // profile they were chatting in. Both awaits below are IPC round-trips
+        // This path owns the window primary. The descriptor must identify its
+        // actual process, independently of a remembered or foreground profile.
+        // Both awaits below are IPC round-trips
         // into the main process with no timeout of their own (#93454) — a
         // wedged main-process round-trip otherwise hangs this await forever,
         // latching reconnectingRef.current so every later requestGateway() call
         // returns the same never-settling promise. Bound the same way
         // use-gateway-boot.ts bounds the primary boot/soft-switch equivalents.
         const conn = await withTimeout(
-          desktop.getConnection($activeGatewayProfile.get()),
+          desktop.getConnection(),
           RECONNECT_ATTEMPT_TIMEOUT_MS,
           'Timed out reconnecting to Eidolon backend'
         )
 
-        connectionRef.current = conn
-        setConnection(conn)
+        if (!ownsForeground()) {return null}
 
         // Re-mint the WS URL before reconnecting. OAuth tickets are single-use
         // and short-lived, so the cached conn.wsUrl ticket is dead here;
@@ -100,7 +106,12 @@ export function useGatewayRequest() {
           'Timed out re-minting the gateway WebSocket URL'
         )
 
-        await existing.connect(wsUrl)
+        if (!ownsForeground()) {return null}
+        await connectPrimaryGateway(existing, conn, wsUrl)
+
+        if (!ownsForeground()) {return null}
+        connectionRef.current = conn
+        setConnection(conn)
 
         return existing
       } catch (error) {
@@ -108,8 +119,10 @@ export function useGatewayRequest() {
           reauthErrorRef.current = error
         }
 
-        connectionRef.current = null
-        setConnection(null)
+        if (ownsForeground()) {
+          connectionRef.current = null
+          setConnection(null)
+        }
 
         return null
       } finally {
@@ -129,7 +142,7 @@ export function useGatewayRequest() {
       }
 
       try {
-        return await gateway.request<T>(method, params, timeoutMs, signal)
+        return await requestGatewayWithRuntimeBinding<T>(gateway, method, params, timeoutMs, signal)
       } catch (error) {
         if (!isGatewayTransportError(error)) {
           throw error
@@ -154,7 +167,7 @@ export function useGatewayRequest() {
           throw error
         }
 
-        return recovered.request<T>(method, params, timeoutMs, signal)
+        return requestGatewayWithRuntimeBinding<T>(recovered, method, params, timeoutMs, signal)
       }
     },
     [ensureGatewayOpen]

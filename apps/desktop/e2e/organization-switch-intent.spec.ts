@@ -407,7 +407,9 @@ test('reconciles the served local profile after the actual primary process exits
   // for the next primary generation. The active foreground remains default.
   for (const profile of [profileA, 'default']) {
     await page.evaluate(() => { location.hash = '#/' })
-    await page.locator('[data-slot="profile-rail"]').getByRole('button', { name: profile, exact: true }).click()
+    // The pinned home button uses an action label while a named profile is active.
+    const label = profile === 'default' ? 'Switch to default' : profile
+    await page.locator('[data-slot="profile-rail"]').getByRole('button', { name: label, exact: true }).click()
     await page.getByRole('navigation', { name: 'Primary', exact: true }).getByRole('link', { name: 'Home', exact: true }).click()
     await expect(page.locator('.eid-workspace-header').getByRole('button', { name: new RegExp(profile) })).toBeVisible()
   }

@@ -24,6 +24,7 @@ import {
   closeLegacySecondaryGateways,
   closeSecondaryGateways,
   configureGatewayRegistry,
+  connectPrimaryGateway,
   disposeSecondariesForConnection,
   ensureActiveGatewayOpen,
   ensureGatewayForProfile,
@@ -275,18 +276,6 @@ export function useGatewayBoot({
     // genuinely changes between reads).
     const gatewayOpen = () => gateway.connectionState === 'open'
 
-    // The socket's open transition owns transport identity, independently of
-    // whichever foreground intent is current when connect() later settles.
-    let openingPrimary: HermesConnection | null = null
-
-    const connectPrimary = (connection: HermesConnection, wsUrl: string) => {
-      if (!gatewayOpen() && gateway.connectionState !== 'connecting') {
-        openingPrimary = connection
-      }
-
-      return gateway.connect(wsUrl)
-    }
-
     const clearReconnectTimer = () => {
       if (reconnectTimer !== null) {
         clearTimeout(reconnectTimer)
@@ -381,7 +370,7 @@ export function useGatewayBoot({
 
         if (cancelled || !isCurrentSourceSwitchIntent(intent) || $gatewaySwitching.get()) {return}
 
-        await connectPrimary(conn, wsUrl)
+        await connectPrimaryGateway(gateway, conn, wsUrl)
 
         if (cancelled || !isCurrentSourceSwitchIntent(intent) || $gatewaySwitching.get()) {
           return
@@ -679,7 +668,7 @@ export function useGatewayBoot({
           return
         }
 
-        await connectPrimary(conn, wsUrl)
+        await connectPrimaryGateway(gateway, conn, wsUrl)
 
         if (!ownsSwitch()) {
           return
@@ -856,15 +845,6 @@ export function useGatewayBoot({
     })
 
     const offState = gateway.onState(st => {
-      if (st === 'open' && openingPrimary && !cancelled) {
-        const connection = openingPrimary
-        openingPrimary = null
-        setPrimaryGateway(gateway,
-          connection.mode === 'local' && connection.profile
-            ? normalizeProfileKey(connection.profile) : primaryGatewaySource().profile,
-          connection)
-      }
-
       // Mirror to the composer only while the primary is the active profile —
       // a background secondary reconnect mustn't flip the foreground state.
       reportPrimaryGatewayState(st)
@@ -1116,7 +1096,7 @@ export function useGatewayBoot({
           'Timed out minting the gateway WebSocket URL'
         )
 
-        await connectPrimary(conn, wsUrl)
+        await connectPrimaryGateway(gateway, conn, wsUrl)
 
         if (cancelled) {
           return
