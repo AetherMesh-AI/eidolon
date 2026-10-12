@@ -521,7 +521,7 @@ export function startManualOnboarding(reason: null | string = DEFAULT_MANUAL_ONB
     reason: reason ? reason.trim() || DEFAULT_ONBOARDING_REASON : null,
     flow: { status: 'idle' }
   })
-  void refreshProviders()
+  // The mounted overlay owns catalog reads and retires them with its source.
 }
 
 // Open the onboarding overlay directly on the local / custom endpoint form

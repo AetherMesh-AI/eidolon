@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { HermesGateway } from '@/eidolon'
 import { $gateway, setPrimaryGateway } from '@/store/gateway'
 import * as notifications from '@/store/notifications'
-import { $desktopOnboarding, type DesktopOnboardingState, type OnboardingContext } from '@/store/onboarding'
+import { $desktopOnboarding, closeManualOnboarding, type DesktopOnboardingState, type OnboardingContext, startManualOnboarding } from '@/store/onboarding'
 import { $gatewayState } from '@/store/session'
 import { beginSourceSwitchIntent } from '@/store/source-switch-intent'
 import { makeOAuthProvider } from '@/test/oauth-provider'
@@ -247,5 +247,51 @@ describe('provider response publication ownership', () => {
     view.unmount()
     Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: previousBridge })
     $gatewayState.set('closed')
+  })
+})
+
+describe('manual provider entry publication ownership', () => {
+  it.each(['success', 'failure'])('loads on first open and rejects retired manual catalog %s', async result => {
+    setProviders([])
+    $desktopOnboarding.set({ ...$desktopOnboarding.get(), configured: true })
+    $gatewayState.set('open')
+    let resolve!: (value: { providers: OAuthProvider[] }) => void
+    let reject!: (reason: Error) => void
+    const held = new Promise<{ providers: OAuthProvider[] }>((yes, no) => { resolve = yes; reject = no })
+    const providerApi = vi.fn().mockReturnValueOnce(held).mockResolvedValue({ providers: [makeOAuthProvider('fresh')] })
+    const previousBridge = window.hermesDesktop
+    Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: {
+      api: ({ path }: { path: string }) => path === '/api/providers/oauth' ? providerApi() : Promise.resolve({ providers: [] })
+    } })
+    const request = vi.fn(async () => ({ ok: true }) as never)
+    const view = render(<DesktopOnboardingOverlay enabled profile="default" requestGateway={request} />)
+
+    try {
+      await act(async () => { startManualOnboarding(null, 'default') })
+      await vi.waitFor(() => expect(providerApi).toHaveBeenCalledTimes(1))
+      // The public entry must not compete with the mounted effect, even on the
+      // same source. A reconnect then owns a genuinely new catalog request.
+      await act(async () => { beginSourceSwitchIntent() })
+      await vi.waitFor(() => expect(providerApi).toHaveBeenCalledTimes(2))
+      await vi.waitFor(() => expect($desktopOnboarding.get().providers?.[0]?.id).toBe('fresh'))
+      const current = $desktopOnboarding.get()
+      await act(async () => {
+        if (result === 'success') {resolve({ providers: [makeOAuthProvider('retired')] })}
+        else {reject(new Error('Retired provider request failed'))}
+
+        await held.catch(() => {})
+      })
+      expect($desktopOnboarding.get()).toBe(current)
+      expect($desktopOnboarding.get().mode).toBe('oauth')
+      await act(async () => { closeManualOnboarding() })
+      await act(async () => { startManualOnboarding(null, 'default') })
+      await vi.waitFor(() => expect(providerApi).toHaveBeenCalledTimes(3))
+      await vi.waitFor(() => expect($desktopOnboarding.get().providers?.[0]?.id).toBe('fresh'))
+    } finally {
+      view.unmount()
+      closeManualOnboarding()
+      Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: previousBridge })
+      $gatewayState.set('closed')
+    }
   })
 })
