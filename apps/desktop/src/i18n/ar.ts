@@ -1,12 +1,17 @@
-import { organizationExecutiveMessageAr, organizationMemberMessagesAr } from './organization-member-messages'
-import { organizationHomeCountsAr } from './organization-home-counts'
-import { organizationSurfacesAr } from './organization-surfaces'
-import { organizationWorkspaceAr } from './organization-home'
 import { defineLocale } from './define-locale'
 import { organizationConversationsAr } from './organization-conversations'
+import { organizationWorkspaceAr } from './organization-home'
+import { organizationHomeCountsAr } from './organization-home-counts'
+import { organizationExecutiveMessageAr, organizationMemberMessagesAr } from './organization-member-messages'
 import { organizationOwnerChatAr } from './organization-owner-chat'
+import { organizationSurfacesAr } from './organization-surfaces'
 
 export const ar = defineLocale({
+  organizationWork: {
+    observationUnavailable: 'عرض حالة المؤسسة غير متاح.',
+    observationUnconfigured: 'لم تتم تهيئة تنفيذ المؤسسة.',
+    observationUnsupported: 'لا تدعم هذه الخدمة عرض حالة المؤسسة.',
+  },
   organizationSurfaces: organizationSurfacesAr,
   organizationHome: { ...organizationExecutiveMessageAr, memberMessages: organizationMemberMessagesAr, workspace: organizationWorkspaceAr, detail: organizationHomeCountsAr },
   organizationOwnerChat: organizationOwnerChatAr,

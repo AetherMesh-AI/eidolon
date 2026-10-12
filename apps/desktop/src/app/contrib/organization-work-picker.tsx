@@ -4,7 +4,8 @@ import { useLocation, useNavigate } from 'react-router'
 
 import { Button } from '@/components/ui/button'
 import { $connectionsRegistry } from '@/store/connection-registry-state'
-import { $activeConnectionId, $pendingConnectionId, selectConnection } from '@/store/connections'
+import { $activeConnectionId, $pendingConnectionId } from '@/store/connections'
+import { selectOrganizationConnection } from '@/store/organization-switch'
 import type { OrganizationOwnerWork } from '@/store/organization-work'
 import { $activeGatewayProfile, $gatewaySwapTarget } from '@/store/profile'
 import { $connection } from '@/store/session'
@@ -58,7 +59,13 @@ export function OrganizationWorkPicker({ owners, onClose }: { owners: Organizati
           throw new Error(copy.sourceUnavailable)
         }
 
-        await selectConnection(route.connectionId, { profile: route.profile, preserveRoute: true })
+        const outcome = await selectOrganizationConnection(route.connectionId, route.profile)
+
+        if (outcome.status === 'superseded') {return}
+
+        if (outcome.status === 'unchanged' && outcome.reason !== 'already_active') {
+          throw new Error(copy.sourceUnavailable)
+        }
       }
 
       // A superseded click or edited endpoint must not open another owner's

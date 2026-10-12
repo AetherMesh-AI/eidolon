@@ -122,7 +122,7 @@ export async function refreshConnectionsRegistry(): Promise<DesktopConnectionsRe
   return registry
 }
 
-async function rememberConnection(connectionId: string, isCurrent: () => boolean): Promise<void> {
+async function rememberConnection(connectionId: string, isCurrent: () => boolean): Promise<unknown> {
   const setLastUsed = window.hermesDesktop?.connections?.setLastUsed
 
   if (!setLastUsed) {
@@ -141,10 +141,11 @@ async function rememberConnection(connectionId: string, isCurrent: () => boolean
     if (isCurrent()) {
       setConnectionsRegistry(result.registry)
     }
-  } catch {
+  } catch (error) {
     // The source is already usable. A read-only/full userData directory (or
     // a stalled IPC) must not turn a successful backend switch into a false
     // connection failure.
+    return error
   }
 }
 
@@ -283,12 +284,39 @@ export interface SelectConnectionOptions {
   preserveRoute?: boolean
 }
 
+export interface ConnectionSwitchOutcome {
+  status: 'committed' | 'unchanged' | 'superseded'
+  reason: 'selected' | 'already_active' | 'pending' | 'unknown_target' | 'failed' | 'superseded'
+  requested: { connectionId: string; profile: string }
+  observedRoute: { connectionId: string; profile: string } | null
+  resetStarted: boolean
+  published: boolean
+  phase?: 'dial' | 'activation' | 'bookkeeping' | 'refresh'
+  error?: unknown
+}
+
+/** Existing Sessions callers retain their rejection/navigation behavior. */
 export async function selectConnection(connectionId: string, options: SelectConnectionOptions = {}): Promise<void> {
+  await performConnectionSwitch(connectionId, options, true)
+}
+
+/** Page-owned callers must inspect supersession, not infer success from a void promise. */
+export function selectConnectionWithOutcome(connectionId: string, options: SelectConnectionOptions = {}): Promise<ConnectionSwitchOutcome> {
+  return performConnectionSwitch(connectionId, options, false)
+}
+
+async function performConnectionSwitch(connectionId: string, options: SelectConnectionOptions, legacyErrors: boolean): Promise<ConnectionSwitchOutcome> {
   const registry = $connectionsRegistry.get()
   const targetConnection = registry?.connections.find(connection => connection.id === connectionId)
 
+  const observedRoute = () => {
+    const active = $connection.get()
+
+    return active?.connectionId ? { connectionId: active.connectionId, profile: normalizeProfileKey(active.profile) } : null
+  }
+
   if (!registry || !targetConnection) {
-    return
+    return { status: 'unchanged', reason: 'unknown_target', requested: { connectionId, profile: normalizeProfileKey(options.profile) }, observedRoute: observedRoute(), resetStarted: false, published: false }
   }
 
   // A user-initiated source switch collapses "All profiles" browse mode: the
@@ -314,12 +342,25 @@ export async function selectConnection(connectionId: string, options: SelectConn
   }
 
   if (pendingTarget === targetKey && pendingIntent !== null && isCurrentSourceSwitchIntent(pendingIntent)) {
-    return
+    return { status: 'unchanged', reason: 'pending', requested: { connectionId, profile: targetProfile }, observedRoute: observedRoute(), resetStarted: false, published: false }
   }
 
   const intent = beginSourceSwitchIntent()
   const startingRevision = switchRevision
   const sourceStillCurrent = () => startingRevision === switchRevision && isCurrentSourceSwitchIntent(intent) && targetIsActive()
+
+  let resetStarted = false
+  let published = false
+  let phase: ConnectionSwitchOutcome['phase'] = 'dial'
+  let warning: Pick<ConnectionSwitchOutcome, 'phase' | 'error'> = {}
+
+  const finish = (reason: ConnectionSwitchOutcome['reason']): ConnectionSwitchOutcome => {
+    const superseded = !isCurrentSourceSwitchIntent(intent)
+
+    return { status: superseded ? 'superseded' : published ? 'committed' : 'unchanged',
+      reason: superseded ? 'superseded' : reason, requested: { connectionId, profile: targetProfile },
+      observedRoute: observedRoute(), resetStarted, published, ...warning }
+  }
 
   const switching =
     pendingTarget !== null ||
@@ -328,9 +369,11 @@ export async function selectConnection(connectionId: string, options: SelectConn
     currentProfile !== targetProfile
 
   if (!switching) {
-    await rememberConnection(connectionId, sourceStillCurrent)
+    const error = await rememberConnection(connectionId, sourceStillCurrent)
 
-    return
+    if (error) {warning = { phase: 'bookkeeping', error }}
+
+    return finish('already_active')
   }
 
   if (pendingTarget === null && currentConnectionId === connectionId && currentProfile === targetProfile) {
@@ -342,9 +385,11 @@ export async function selectConnection(connectionId: string, options: SelectConn
     captureNewChatSource()
 
     if (!options.preserveRoute) { requestFreshSession() }
-    await rememberConnection(connectionId, sourceStillCurrent)
+    const error = await rememberConnection(connectionId, sourceStillCurrent)
 
-    return
+    if (error) {warning = { phase: 'bookkeeping', error }}
+
+    return finish('already_active')
   }
 
   const revision = ++switchRevision
@@ -355,6 +400,10 @@ export async function selectConnection(connectionId: string, options: SelectConn
   // barrier and, if the commit then fails, owes the still-active source a
   // repaint. Null while queued, or if it stepped aside before its turn.
   let token = null as GatewaySwitchToken | null
+
+  const offPublication = $connection.listen(() => {
+    if (resetStarted && isCurrentSourceSwitchIntent(intent) && targetIsActive()) {published = true}
+  })
 
   try {
     // Phase 1 — open the target's socket; the active route is untouched.
@@ -370,9 +419,10 @@ export async function selectConnection(connectionId: string, options: SelectConn
     // activates, so the user doesn't flip through it on the way to the source
     // they picked last; its socket stays warm for that click or idles out.
     if (revision !== switchRevision || !isCurrentSourceSwitchIntent(intent)) {
-      return
+      return finish('superseded')
     }
 
+    phase = 'activation'
     // Phase 2 — commit. The hook runs inside the activation's serialized
     // section, right before the socket is activated: sever the previous
     // backend's bindings, then publish, with nothing in between. A click that
@@ -395,6 +445,7 @@ export async function selectConnection(connectionId: string, options: SelectConn
               return false
             }
 
+            resetStarted = true
             token = beginGatewaySwitch(intent)
             markActivationStarted()
 
@@ -429,6 +480,9 @@ export async function selectConnection(connectionId: string, options: SelectConn
         if (!isTimeoutError(error) || !targetIsActive()) {
           throw error
         }
+
+        published = true
+        warning = { phase: 'activation', error }
       }
 
       // Even a superseded foreground intent still owes recovery if it wiped
@@ -437,8 +491,10 @@ export async function selectConnection(connectionId: string, options: SelectConn
         throw new Error(`Connection "${targetConnection.label}" did not become active.`)
       }
 
+      if (isCurrentSourceSwitchIntent(intent)) {published = true}
+
       if (revision !== switchRevision || !isCurrentSourceSwitchIntent(intent)) {
-        return
+        return finish('superseded')
       }
     } finally {
       // Lower the barrier the moment the commit settles — before the
@@ -453,12 +509,15 @@ export async function selectConnection(connectionId: string, options: SelectConn
     // request from repainting its profile list after that newer activation.
     if (revision === switchRevision) {
       const isCurrent = () => revision === switchRevision && isCurrentSourceSwitchIntent(intent) && targetIsActive()
-      await rememberConnection(connectionId, isCurrent)
+      phase = 'bookkeeping'
+      const error = await rememberConnection(connectionId, isCurrent)
+
+      if (error) {warning = { phase, error }}
 
       // Remembering is bounded but asynchronous. A newer click may now own
       // the route; never repaint its profile, navigation or preferences.
       if (!isCurrent()) {
-        return
+        return finish('superseded')
       }
 
       if (!restoreOnBoot) {
@@ -469,8 +528,11 @@ export async function selectConnection(connectionId: string, options: SelectConn
       captureNewChatSource()
 
       if (!options.preserveRoute) { requestFreshSession() }
-      await refreshActiveProfile()
+      phase = 'refresh'
+      await withTimeout(refreshActiveProfile(), SWITCH_COMMIT_TIMEOUT_MS, 'Timed out refreshing the selected connection.')
     }
+
+    return finish('selected')
   } catch (error) {
     const recoveryToken = token !== null && isCurrentGatewaySwitch(token) ? token : null
 
@@ -483,9 +545,15 @@ export async function selectConnection(connectionId: string, options: SelectConn
     if (revision === switchRevision && isCurrentSourceSwitchIntent(intent)) {
       if (recoveryToken !== null && !options.preserveRoute) { requestFreshSession() }
 
-      throw error
+      if (legacyErrors) {throw error}
     }
+
+    warning = { phase, error }
+
+    return finish('failed')
   } finally {
+    offPublication()
+
     if (revision === switchRevision) {
       pendingTarget = null
       pendingIntent = null

@@ -19,9 +19,11 @@ export interface OrganizationScope {
   ownerRoute?: { connectionId: string; profile: string }
   connected: boolean
   switching?: boolean
+  observationOnly?: boolean
 }
 export interface OrganizationGateway {
   request<T>(method: string, params: Record<string, unknown>, timeoutMs: number, signal: AbortSignal): Promise<T>
+  observe?(signal: AbortSignal): Promise<OrganizationSnapshot>
   getScope(): OrganizationScope
   subscribeScope(listener: () => void): () => void
 }
@@ -99,7 +101,7 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
   const resetScope = () => {
     const next = gateway.getScope()
 
-    if (next.key === scope.key && next.connected === scope.connected && next.switching === scope.switching) {return false}
+    if (next.key === scope.key && next.connected === scope.connected && next.switching === scope.switching && next.observationOnly === scope.observationOnly) {return false}
     const changed = next.key !== scope.key
     const ownerChanged = scope.ownerKey && next.ownerKey ? scope.ownerKey !== next.ownerKey : changed
     epoch++
@@ -145,7 +147,17 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
 
     const read = (async () => {
       try {
-        const result = await Promise.resolve().then(() => gateway.request<OrganizationSnapshot>('organization.snapshot', {}, 15000, controller.signal))
+        const result = await Promise.resolve().then(() => {
+          if (!current(token) || controller.signal.aborted) {throw new Error('Organization scope changed.')}
+
+          if (scope.observationOnly) {
+            if (!gateway.observe) {throw new Error(translateNow('organizationWork.observationUnavailable'))}
+
+            return gateway.observe(controller.signal)
+          }
+
+          return gateway.request<OrganizationSnapshot>('organization.snapshot', {}, 15000, controller.signal)
+        })
 
         if (current(token) && version === writeVersion && !controller.signal.aborted) {accept(result, order)}
       } catch (reason) {

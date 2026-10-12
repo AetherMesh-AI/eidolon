@@ -28,7 +28,7 @@ const {
   selectProfile, newSessionInProfile, newSessionInAgent, setShowAllProfiles, ensureGatewayAgent
 } = await import('./profile')
 
-const { selectConnection, setConnectionsRegistry, $connectionsRegistry, _resetConnectionsForTests } = await import('./connections')
+const { selectConnectionWithOutcome, selectConnection, setConnectionsRegistry, $connectionsRegistry, _resetConnectionsForTests } = await import('./connections')
 
 const registry: DesktopConnectionsRegistry = {
   connections: [{ id: 'homelab', kind: 'remote', label: 'Homelab', tokenPreview: null, tokenSet: true }],
@@ -57,10 +57,12 @@ afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
 
 describe('connection bookkeeping versus real profile intent doors', () => {
   it.each([
-    ['failure', false], ['nonlanding', false], ['timeout', false],
-    ['failure', true], ['nonlanding', true], ['timeout', true]
+    ['failure', false, false], ['nonlanding', false, false], ['timeout', false, false],
+    ['failure', true, false], ['nonlanding', true, false], ['timeout', true, false],
+    ['failure', false, true], ['nonlanding', false, true], ['timeout', false, true],
+    ['failure', true, true], ['nonlanding', true, true], ['timeout', true, true]
   ] as const)(
-    'reset recovery after %s follows the reset owner (newer reset=%s)', async (outcome, newerReset) => {
+    'reset recovery after %s follows the reset owner (newer reset=%s, result API=%s)', async (outcome, newerReset, resultApi) => {
       vi.useFakeTimers()
       $connection.set({ connectionId: 'local', profile: 'default', mode: 'local', baseUrl: '' } as HermesConnection)
       $showAllProfiles.set(true)
@@ -77,7 +79,7 @@ describe('connection bookkeeping versus real profile intent doors', () => {
       const activation = deferred<boolean>()
       ensureGatewayForAgent.mockReturnValueOnce(activation.promise)
       const freshRequests = $freshSessionRequest.get()
-      const switching = selectConnection('homelab', { profile: 'research' })
+      const switching = resultApi ? selectConnectionWithOutcome('homelab', { profile: 'research' }) : selectConnection('homelab', { profile: 'research' })
       let newerToken: number | undefined
 
       try {
@@ -94,7 +96,9 @@ describe('connection bookkeeping versus real profile intent doors', () => {
         else if (outcome === 'nonlanding') { activation.resolve(false) }
         else { await vi.advanceTimersByTimeAsync(20_000) }
 
-        await expect(switching).resolves.toBeUndefined()
+        if (resultApi) {await expect(switching).resolves.toMatchObject({ status: 'superseded', resetStarted: true, published: false })}
+        else {await expect(switching).resolves.toBeUndefined()}
+
         await vi.advanceTimersByTimeAsync(0)
         expect(refresh).toHaveBeenCalledTimes(newerReset ? 0 : 1)
         expect($sessions.get().map(session => session.id)).toEqual(newerReset ? [] : ['recovered-session'])
@@ -151,7 +155,7 @@ describe('connection bookkeeping versus real profile intent doors', () => {
   it.each(['activation', 'profile selection'] as const)('A→B→A through %s cannot revive an older continuation', async door => {
     const remembered = deferred<Awaited<ReturnType<typeof setLastUsed>>>()
     setLastUsed.mockReturnValueOnce(remembered.promise)
-    const first = selectConnection('homelab', { profile: 'research' })
+    const first = selectConnectionWithOutcome('homelab', { profile: 'research' })
     await vi.waitFor(() => expect(setLastUsed).toHaveBeenCalledOnce())
 
     if (door === 'activation') {
@@ -168,7 +172,7 @@ describe('connection bookkeeping versus real profile intent doors', () => {
     const freshRequests = $freshSessionRequest.get()
     $showAllProfiles.set(true)
     remembered.resolve({ ok: true, registry: { ...registry, lastUsed: 'homelab' } })
-    await first
+    expect(await first).toMatchObject({ status: 'superseded', published: true, observedRoute: { connectionId: 'homelab', profile: 'research' } })
     expect($connectionsRegistry.get()).toBe(registry)
     expect($showAllProfiles.get()).toBe(true)
     expect($freshSessionRequest.get()).toBe(freshRequests)
@@ -207,4 +211,37 @@ describe('connection bookkeeping versus real profile intent doors', () => {
     expect($connectionsRegistry.get()).toBe(registry)
     expect(getProfiles).not.toHaveBeenCalled()
   })
+})
+
+it('organization selection reports a real reset callback failure without leaving observation suspended', async () => {
+  const { selectOrganizationConnection } = await import('./organization-switch')
+  const { $organizationObservationEpoch, $organizationObservationSwitching } = await import('./organization-observation-mode')
+  $connection.set({ connectionId: 'local', profile: 'default', mode: 'local', baseUrl: '' } as HermesConnection)
+  const off = registerGatewaySwitchLifecycle({ beforeConnectionSwitch: () => {throw new Error('reset failed')}, refreshSessions: vi.fn() })
+
+  try {
+    const result = await selectOrganizationConnection('homelab', 'research')
+    expect(result).toMatchObject({ status: 'unchanged', reason: 'failed', phase: 'activation', resetStarted: true, published: false, observedRoute: { connectionId: 'local', profile: 'default' } })
+    expect($gatewaySwitching.get()).toBe(false)
+    expect($organizationObservationSwitching.get()).toBe(false)
+    expect($organizationObservationEpoch.get()).toBeGreaterThan(0)
+  } finally {off()}
+})
+
+it('coalesces identical organization picks until a newer foreground intent takes ownership', async () => {
+  const { selectOrganizationConnection } = await import('./organization-switch')
+  const { $organizationObservationSwitching } = await import('./organization-observation-mode')
+  const remembered = deferred<Awaited<ReturnType<typeof setLastUsed>>>()
+  setLastUsed.mockReturnValueOnce(remembered.promise)
+  const first = selectOrganizationConnection('homelab', 'research')
+  expect(selectOrganizationConnection('homelab', 'research')).toBe(first)
+  await vi.waitFor(() => expect(setLastUsed).toHaveBeenCalledOnce())
+  expect($organizationObservationSwitching.get()).toBe(true)
+  setShowAllProfiles(true)
+  const latest = selectOrganizationConnection('homelab', 'research')
+  expect(latest).not.toBe(first)
+  remembered.resolve({ ok: true, registry })
+  expect(await first).toMatchObject({ status: 'superseded' })
+  expect(await latest).toMatchObject({ status: 'committed' })
+  expect($organizationObservationSwitching.get()).toBe(false)
 })

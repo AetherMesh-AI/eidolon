@@ -19,7 +19,7 @@ import { SIDEBAR_NAV_AREA } from '../routes'
 import { OrganizationActiveWorkBridge, OrganizationWorkIndicator, PluginNavigation } from './organization-shell'
 
 const data = vi.hoisted(() => ({ snapshot: null as OrganizationSnapshot | null, selectConnection: vi.fn(), readScope: vi.fn() }))
-vi.mock('@/store/connections', async original => ({ ...(await original<typeof ConnectionsModule>()), selectConnection: data.selectConnection }))
+vi.mock('@/store/connections', async original => ({ ...(await original<typeof ConnectionsModule>()), selectConnectionWithOutcome: data.selectConnection }))
 vi.mock('../eidolon/runtime-provider', () => ({
   createOrganizationScopeReader: () => data.readScope,
   useRuntimeOrganization: () => (data.snapshot ? { snapshot: data.snapshot } : null)
@@ -143,7 +143,8 @@ it('shows exact background owners and opens only the chosen connection/profile a
   $activeGatewayProfile.set('research')
   let endpoint = 'https://old.example'
   let finish!: () => void
-  data.selectConnection.mockImplementation(() => new Promise<void>(resolve => { finish = () => { $connection.set({ connectionId: 'remote-a', mode: 'remote', baseUrl: endpoint } as never); resolve() } }))
+  let resultStatus = 'committed'
+  data.selectConnection.mockImplementation(() => new Promise(resolve => { finish = () => { $connection.set({ connectionId: 'remote-a', mode: 'remote', baseUrl: endpoint } as never); resolve({ status: resultStatus, reason: 'selected' }) } }))
   const view = render(<MemoryRouter initialEntries={['/ordinary-chat']}><OrganizationWorkIndicator /><Link to="/newer-route">Other page</Link><Location /></MemoryRouter>)
   fireEvent.click(screen.getByRole('button', { name: /Organization work:/ }))
   expect(screen.getByTestId('location').textContent).toBe('/ordinary-chat')
@@ -165,6 +166,13 @@ it('shows exact background owners and opens only the chosen connection/profile a
   expect(screen.getByRole('alert')).toBeTruthy()
   expect(screen.getByTestId('location').textContent).toBe('/ordinary-chat')
   endpoint = 'https://old.example'
+  resultStatus = 'superseded'
+  fireEvent.click(screen.getByRole('button', { name: 'Open requests: Remote A / research' }))
+  await act(async () => { finish() })
+  expect(screen.getByTestId('location').textContent).toBe('/ordinary-chat')
+  expect(screen.getByRole('button', { name: 'Open requests: Remote A / research' })).toBeTruthy()
+  act(() => { $connection.set({ connectionId: 'local' } as never) })
+  resultStatus = 'committed'
   fireEvent.click(screen.getByRole('button', { name: 'Open requests: Remote A / research' }))
   fireEvent.click(screen.getByRole('link', { name: 'Other page' }))
   await act(async () => { finish() })

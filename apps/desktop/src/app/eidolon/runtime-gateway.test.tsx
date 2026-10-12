@@ -28,8 +28,10 @@ vi.mock('@/store/profile', async () => {
 })
 
 import { $activeGatewayRoute, $gateway } from '@/store/gateway'
+import { $organizationObservationEpoch, $organizationObservationSwitching } from '@/store/organization-observation-mode'
 import { $activeGatewayProfile, $gatewaySwapTarget } from '@/store/profile'
 import { $connection, $gatewayState } from '@/store/session'
+import { beginSourceSwitchIntent } from '@/store/source-switch-intent'
 
 import { createPrototypeAdapter } from '../../../test-fixtures/organization-prototype'
 
@@ -47,6 +49,8 @@ function snapshot(title: string): OrganizationSnapshot {
 
 const connection = (sharedPrimary = false) => ({ connectionId: routing.connectionId, mode: 'remote', baseUrl: `https://${routing.connectionId}.example`, profile: sharedPrimary ? 'research' : 'remote-writing', sharedPrimary })
 beforeEach(() => {
+  $organizationObservationEpoch.set(0)
+  $organizationObservationSwitching.set(false)
   routing.connectionId = 'a'
   routing.epoch++
   $gateway.set(null)
@@ -277,4 +281,51 @@ it('keeps secrets out of renderer scope identity while retaining endpoint and pr
   expect(scope.ownerKey).toContain('https://example.test/path')
   expect(scope.ownerRoute).toEqual({ connectionId: routing.connectionId, profile: $activeGatewayProfile.get() })
   expect(JSON.stringify(scope.ownerRoute)).not.toMatch(/password|secret|token|https/)
+})
+
+it('keeps selection reads non-starting through remount and fences late A → B → A responses', async () => {
+  beginSourceSwitchIntent()
+  let resolveOld!: (value: unknown) => void
+  const envelope = (title: string) => ({ capabilityVersion: 1, state: 'available', scope: { kind: 'served-profile', profile: 'remote-writing' }, snapshot: snapshot(title) })
+  const request = vi.fn().mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve })).mockResolvedValue(envelope('Current A'))
+  $gateway.set({ request, connectionState: 'open' } as never)
+  const mount = () => render(<MemoryRouter initialEntries={['/objectives']}><OrganizationWorkspace /></MemoryRouter>)
+  const view = mount()
+  await waitFor(() => expect(request).toHaveBeenCalledTimes(1))
+  const signal = request.mock.calls[0][3] as AbortSignal
+  act(() => {
+    $organizationObservationSwitching.set(true)
+    $organizationObservationEpoch.set(2)
+    routing.connectionId = 'b'
+    $connection.set(connection() as never)
+    routing.connectionId = 'a'
+    $connection.set(connection() as never)
+    $organizationObservationSwitching.set(false)
+  })
+  expect(signal.aborted).toBe(true)
+  expect(await screen.findByRole('link', { name: /Current A/ })).toBeTruthy()
+  await act(async () => { resolveOld(envelope('Obsolete A')); await Promise.resolve() })
+  expect(screen.queryByRole('link', { name: /Obsolete A/ })).toBeNull()
+  view.unmount()
+  const remount = mount()
+  expect(await screen.findByRole('link', { name: /Current A/ })).toBeTruthy()
+
+  for (const call of request.mock.calls) {expect(call.slice(0, 3)).toEqual(['organization.observe', {}, 10000])}
+  remount.unmount()
+})
+
+it.each(['unsupported', 'unconfigured', 'foreign', 'shared'])('never falls back to a starting read for %s observation', async state => {
+  beginSourceSwitchIntent()
+
+  if (state === 'shared') {$connection.set(connection(true) as never); $activeGatewayProfile.set('research')}
+  const request = vi.fn().mockResolvedValue({ capabilityVersion: 1, state: state === 'foreign' ? 'available' : state, scope: { kind: 'served-profile', profile: state === 'foreign' ? 'foreign-profile' : 'remote-writing' }, snapshot: state === 'foreign' ? snapshot('Foreign secret') : null })
+  $gateway.set({ request, connectionState: 'open' } as never)
+  const view = render(<MemoryRouter><OrganizationWorkspace /></MemoryRouter>)
+  await waitFor(() => expect(screen.getByText(/observation|initialized|invalid/i)).toBeTruthy())
+  expect(screen.queryByRole('link', { name: /Foreign secret/ })).toBeNull()
+
+  if (state === 'shared') {expect(request).not.toHaveBeenCalled()}
+  else {expect(request).toHaveBeenCalledExactlyOnceWith('organization.observe', {}, 10000, expect.any(AbortSignal))}
+
+  view.unmount()
 })

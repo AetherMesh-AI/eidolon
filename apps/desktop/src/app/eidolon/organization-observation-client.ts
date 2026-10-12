@@ -28,7 +28,7 @@ export interface ObservationView {
   error: 'unavailable' | 'unsupported' | 'invalid' | 'storage' | null
 }
 
-function validate(value: unknown, profile: string): OrganizationObservation {
+export function validateOrganizationObservation(value: unknown, profile: string): OrganizationObservation {
   const item = value as OrganizationObservation
 
   if (!item || item.capabilityVersion !== 1 || item.scope?.kind !== 'served-profile' ||
@@ -102,7 +102,7 @@ export function createOrganizationObservationClient(gateway: ObservationGateway)
 
         let observation: OrganizationObservation
 
-        try {observation = validate(response, captured.profile)} catch {
+        try {observation = validateOrganizationObservation(response, captured.profile)} catch {
           publish({ observation: null, busy: false, error: 'invalid' })
 
           return

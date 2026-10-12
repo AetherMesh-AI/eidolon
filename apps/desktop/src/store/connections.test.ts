@@ -87,6 +87,7 @@ const {
   refreshConnectionsRegistry,
   _resetConnectionsForTests,
   selectConnection,
+  selectConnectionWithOutcome,
   setConnectionsRegistry
 } = await import('./connections')
 
@@ -699,7 +700,7 @@ describe('selectConnection', () => {
     }
   })
 
-  it('a timed-out activation that already published cannot republish after a newer source wins', async () => {
+  it.each([false, true])('a timed-out published activation cannot republish after a newer source wins (outcomes=%s)', async outcomes => {
     vi.useFakeTimers()
 
     try {
@@ -759,9 +760,11 @@ describe('selectConnection', () => {
           })
         })
 
-      const timedOutOwner = selectConnection('homelab')
+      const timedOutOwner = outcomes ? selectConnectionWithOutcome('homelab') : selectConnection('homelab')
       await vi.advanceTimersByTimeAsync(20_000)
-      await timedOutOwner
+      const outcome = await timedOutOwner
+
+      if (outcomes) {expect(outcome).toMatchObject({ status: 'committed', published: true, resetStarted: true, phase: 'activation' })}
 
       // Fail open: A really did become active before its trailing descriptor
       // work timed out, so the commit remains successful.
@@ -964,4 +967,26 @@ describe('page-owned source switching', () => {
     expect($activeSessionId.get()).toBe(outcome === 'same-source' ? 'previous-runtime' : null)
     expect($pendingConnectionId.get()).toBeNull()
   })
+})
+
+// Result ownership is distinct from route equality and from reset completion.
+it('reports unchanged failures and superseded pending intents without claiming a commit', async () => {
+  setConnectionsRegistry(registry)
+  $connection.set({ connectionId: 'local', profile: 'default' })
+  openGatewayAgent.mockRejectedValueOnce(new Error('offline'))
+  expect(await selectConnectionWithOutcome('homelab')).toMatchObject({ status: 'unchanged', reason: 'failed', resetStarted: false, published: false, phase: 'dial' })
+  const pending = deferred<void>()
+  openGatewayAgent.mockReturnValueOnce(pending.promise)
+  const first = selectConnectionWithOutcome('homelab')
+  expect(await selectConnectionWithOutcome('homelab')).toMatchObject({ status: 'unchanged', reason: 'pending' })
+  await selectConnectionWithOutcome('work-vps')
+  pending.resolve()
+  expect(await first).toMatchObject({ status: 'superseded', published: false, observedRoute: { connectionId: 'work-vps', profile: 'default' } })
+})
+
+it('retains a published route when refresh fails and reports the failure phase', async () => {
+  setConnectionsRegistry(registry)
+  $connection.set({ connectionId: 'local', profile: 'default' })
+  refreshActiveProfile.mockRejectedValueOnce(new Error('refresh unavailable'))
+  expect(await selectConnectionWithOutcome('homelab')).toMatchObject({ status: 'committed', published: true, resetStarted: true, phase: 'refresh', observedRoute: { connectionId: 'homelab', profile: 'default' } })
 })

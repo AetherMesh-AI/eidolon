@@ -1,10 +1,13 @@
 import { createContext, type ReactNode, useContext, useMemo, useSyncExternalStore } from 'react'
 
 import { useGatewayRequest } from '@/app/gateway/hooks/use-gateway-request'
+import { translateNow } from '@/i18n/runtime'
 import { $activeGatewayRoute, $gateway, activeGatewayConnectionId } from '@/store/gateway'
+import { $organizationObservationEpoch, $organizationObservationSwitching } from '@/store/organization-observation-mode'
 import { $activeGatewayProfile, $gatewaySwapTarget } from '@/store/profile'
 import { $connection, $gatewayState } from '@/store/session'
 
+import { validateOrganizationObservation } from './organization-observation-client'
 import { organizationEndpointIdentity, organizationOwnerKey } from './organization-owner'
 import { createRuntimeAdapter } from './runtime-adapter'
 import type { OrganizationSnapshot, RuntimeOrganizationAdapter } from './types'
@@ -56,6 +59,7 @@ export function createOrganizationScopeReader() {
 
     return {
       key: JSON.stringify([
+        $organizationObservationEpoch.get(),
         gateway ? socketIds.get(gateway) : null,
         connectionId,
         $activeGatewayRoute.get(),
@@ -73,10 +77,12 @@ export function createOrganizationScopeReader() {
         gateway &&
         $gatewayState.get() === 'open' &&
         !$gatewaySwapTarget.get() &&
+        !$organizationObservationSwitching.get() &&
         descriptorMatches &&
         sourceMatches
       ),
-      switching: Boolean($gatewaySwapTarget.get())
+      observationOnly: $organizationObservationEpoch.get() > 0,
+      switching: Boolean($gatewaySwapTarget.get()) || $organizationObservationSwitching.get()
     }
   }
 }
@@ -111,11 +117,32 @@ export function OrganizationRuntimeProvider({ children }: { children: ReactNode 
 
           return requestGateway(method, routed, timeout, signal)
         },
+        observe: async signal => {
+          const gateway = $gateway.get()
+          const connection = $connection.get()
+
+          // No reconnect helper or caller-supplied profile. Shared-profile
+          // destinations stay unavailable until the backend grants a scope.
+          if (!gateway || !connection || connection.sharedPrimary || connection.sharedRemote || signal.aborted) {
+            throw new Error(translateNow('organizationWork.observationUnavailable'))
+          }
+
+          const profile = connection.profile || 'default'
+          const result = validateOrganizationObservation(await gateway.request('organization.observe', {}, 10000, signal), profile)
+
+          if (result.state !== 'available' || !result.snapshot) {
+            throw new Error(result.state === 'unconfigured' ? translateNow('organizationWork.observationUnconfigured') : translateNow('organizationWork.observationUnsupported'))
+          }
+
+          return { ...result.snapshot, runtime: { ...result.snapshot.runtime!, profile } }
+        },
         getScope: createOrganizationScopeReader(),
         subscribeScope(listener) {
           // listen (not subscribe) avoids starting a poll for each atom's initial
           // value. The adapter performs one initial read after all listeners bind.
           const off = [
+            $organizationObservationEpoch.listen(listener),
+            $organizationObservationSwitching.listen(listener),
             $gateway.listen(listener),
             $activeGatewayRoute.listen(listener),
             $gatewayState.listen(listener),
