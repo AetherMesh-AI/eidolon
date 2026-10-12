@@ -40,22 +40,6 @@ export async function startOrganizationSwitchGateway(sandbox: Sandbox, mockUrl: 
   const marker = path.join(sandbox.root, 'organization-switch-scheduler-starts')
   const token = 'organization-switch-fixture-token'
   const env = { ...buildAppEnv(sandbox), HERMES_HOME: home, HERMES_DASHBOARD_SESSION_TOKEN: token }
-  execFileSync(
-    switchPython,
-    [
-      '-c',
-      `
-import sys
-from pathlib import Path
-from eidolon_cli.organization_store import OrganizationStore
-s=OrganizationStore(Path(sys.argv[1])/'organization'/'state.db')
-s.create_objective(sys.argv[2],idempotency_key='native-stopped-queue')
-`,
-      home,
-      queuedSwitchTitle
-    ],
-    { cwd: root, env }
-  )
 
   const port = await new Promise<number>((resolve, reject) => {
     const server = createServer()
@@ -160,6 +144,25 @@ main()
     if (!ready) {
       throw new Error(`Fixture gateway startup timed out: ${log}`)
     }
+
+    // Startup recovery legitimately starts pre-existing ledgers. Seed only after
+    // the empty gateway is ready so observation meets queued work with no scheduler.
+    execFileSync(
+      switchPython,
+      [
+        '-c',
+        `
+  import sys
+  from pathlib import Path
+  from eidolon_cli.organization_store import OrganizationStore
+  s=OrganizationStore(Path(sys.argv[1])/'organization'/'state.db')
+  s.create_objective(sys.argv[2],idempotency_key='native-stopped-queue')
+  `,
+        home,
+        queuedSwitchTitle
+      ],
+      { cwd: root, env }
+    )
 
     return {
       url,
