@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS owner_chat_turns (
  reason TEXT, created REAL NOT NULL, finished REAL, policy_generation INTEGER NOT NULL,
  calls_reserved INTEGER NOT NULL, tokens_reserved INTEGER NOT NULL,
  dispatched INTEGER NOT NULL DEFAULT 0, input_tokens INTEGER, output_tokens INTEGER,
- provider TEXT, model TEXT, selected_provider TEXT);
+ provider TEXT, model TEXT, selected_provider TEXT, context_message_ids TEXT, context_omitted_count INTEGER);
 CREATE INDEX IF NOT EXISTS owner_chat_turn_order ON owner_chat_turns(thread_id,created,id);
 CREATE UNIQUE INDEX IF NOT EXISTS owner_chat_live_turn ON owner_chat_turns(thread_id)
  WHERE status IN ('pending','running');

@@ -141,6 +141,8 @@ jobs:
             tests/eidolon_cli/test_organization_identity.py
             tests/eidolon_cli/test_organization_metadata.py
             tests/eidolon_cli/test_organization_metadata_read.py
+            tests/eidolon_cli/test_organization_observation.py
+            tests/tui_gateway/test_organization_observation.py
             tests/tui_gateway/test_organization_metadata.py
             tests/eidolon_cli/test_organization_identity_memory.py
             tests/eidolon_cli/test_organization_identity_assignments.py
