@@ -542,7 +542,7 @@ it.each(['A-B', 'A-B-A', 'new-generation'])('does not replay a held original req
 
 it('retains logical member B when its shared primary reconnects on the same launch profile', async () => {
   const desktop = installPrimaryDesktop('oauth')
-  const primaryConnection = { ...await desktop.getConnection(), connectionId: 'shared', profile: 'default' }
+  const primaryConnection = { ...await desktop.getConnection(), authenticationIdentity: 'opened-authentication', connectionId: 'shared', profile: 'default' }
   const memberConnection = { ...primaryConnection, profile: 'member-b', sharedPrimary: true }
   desktop.getConnection.mockImplementation(async profile => profile === 'member-b' ? memberConnection : primaryConnection)
   const primary = makePrimaryGateway()
@@ -570,12 +570,12 @@ it('retains logical member B when its shared primary reconnects on the same laun
 })
 
 
-it.each(['newer-intent', 'changed-endpoint'])('does not republish or retry a shared member after its descriptor lookup loses ownership (%s)', async change => {
+it.each(['newer-intent', 'changed-endpoint', 'changed-authentication', 'changed-primary-authentication', 'changed-registry-authentication', 'missing-authentication'])('does not republish or retry a shared member after its descriptor lookup loses ownership (%s)', async change => {
   const desktop = installPrimaryDesktop('oauth')
-  const primaryConnection = { ...await desktop.getConnection(), connectionId: 'shared', profile: 'default' }
-  const memberConnection = { ...primaryConnection, profile: 'member-b', sharedPrimary: true }
+  const primaryConnection = { ...await desktop.getConnection(), authenticationIdentity: change === 'missing-authentication' ? undefined : 'opened-authentication', connectionId: 'shared', profile: 'default' }
+  const memberConnection = { ...primaryConnection, profile: 'member-b', sharedPrimary: change !== 'changed-registry-authentication', sharedRemote: change === 'changed-registry-authentication' }
   desktop.getConnection.mockImplementation(async profile => {
-    if (profile !== 'member-b') {return primaryConnection}
+    if (profile !== 'member-b') {return change === 'changed-primary-authentication' ? { ...primaryConnection, authenticationIdentity: 'new-authentication' } : primaryConnection}
 
     if (change === 'newer-intent') {
       beginSourceSwitchIntent()
@@ -584,8 +584,11 @@ it.each(['newer-intent', 'changed-endpoint'])('does not republish or retry a sha
       return memberConnection
     }
 
-    return { ...memberConnection, baseUrl: 'https://other.example.test' }
+    return change === 'changed-endpoint'
+      ? { ...memberConnection, baseUrl: 'https://other.example.test' }
+      : change === 'missing-authentication' ? memberConnection : { ...memberConnection, authenticationIdentity: 'new-authentication' }
   })
+  desktop.getConnectionFor.mockImplementation(async ({ profile }) => desktop.getConnection(profile))
   const primary = makePrimaryGateway()
   setPrimaryGateway(primary as unknown as HermesGateway, 'default', primaryConnection)
   await ensureGatewayForProfile('default')

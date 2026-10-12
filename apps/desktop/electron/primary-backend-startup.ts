@@ -1,3 +1,5 @@
+import { createHmac, randomBytes } from 'node:crypto'
+
 import type { FirstRunSetupDecision } from './first-run-setup-gate'
 
 export interface PrimaryBackendStartupOptions<Backend, RuntimeBackend, Remote, Connection> {
@@ -12,7 +14,25 @@ export interface PrimaryBackendStartupOptions<Backend, RuntimeBackend, Remote, C
 export type PrimaryBackendStartupResult<RuntimeBackend, Connection> =
   { kind: 'local'; backend: RuntimeBackend } | { kind: 'remote'; connection: Connection }
 
+// Process-local keyed identity: no token/header values or reusable unkeyed
+// credential digest crosses the bridge. Capture before asynchronous dialing and
+// retain it on cached descriptors; never relabel an old connection at lookup.
+const remoteAuthenticationKey = randomBytes(32)
+
+export function remoteAuthenticationIdentity(baseUrl: string, authMode: string, token: unknown, headers?: Record<string, string>) {
+  return createHmac('sha256', remoteAuthenticationKey)
+    .update(JSON.stringify([baseUrl, authMode, token, Object.entries(headers ?? {}).sort(([a], [b]) => a.localeCompare(b))]))
+    .digest('hex')
+}
+
+export function assertRemoteAuthenticationIdentity(opened: string | undefined, configured: string) {
+  if (!opened || opened !== configured) {
+    throw new Error('Eidolon remote authentication configuration changed; reconnect the source before retrying.')
+  }
+}
+
 interface ResolvedPrimaryRemote {
+  authenticationIdentity?: string
   authMode?: 'oauth' | 'token'
   baseUrl: string
   connectionId?: string
@@ -44,6 +64,7 @@ export function createPrimaryRemoteConnection<State extends object>(
   windowState: State
 ) {
   return {
+    authenticationIdentity: remote.authenticationIdentity,
     baseUrl: remote.baseUrl,
     mode: 'remote' as const,
     source: remote.source,

@@ -5,9 +5,11 @@ import { test, vi } from 'vitest'
 import { createSourcePythonBackend } from './archive-update-caller'
 import { createFirstRunSetupGate } from './first-run-setup-gate'
 import {
+  assertRemoteAuthenticationIdentity,
   capturePrimaryBackendLaunch,
   createPrimaryRemoteConnection,
   FirstRunSetupResetError,
+  remoteAuthenticationIdentity,
   runPrimaryBackendStartup
 } from './primary-backend-startup'
 
@@ -35,6 +37,7 @@ test('primary remote descriptor preserves a resolved registry connection id', ()
       authMode: 'token',
       baseUrl: 'https://gateway.example.com',
       connectionId: 'skateway',
+      authenticationIdentity: 'opened-authentication',
       remoteKind: 'url',
       source: 'settings',
       token: 'secret',
@@ -45,6 +48,7 @@ test('primary remote descriptor preserves a resolved registry connection id', ()
   )
 
   assert.equal(connection.connectionId, 'skateway')
+  assert.equal(connection.authenticationIdentity, 'opened-authentication')
   assert.equal(connection.mode, 'remote')
   assert.deepEqual(connection.logs, ['ready'])
   assert.equal(connection.isFullscreen, false)
@@ -208,3 +212,34 @@ for (const initial of ['observation-a', 'default', null]) {
     assert.equal(result.backend.command, '/isolated/python')
   })
 }
+
+
+test('same-endpoint authentication identity changes with token, auth mode and header values', () => {
+  const identify = remoteAuthenticationIdentity
+  const url = 'https://gateway.example.test'
+  const original = identify(url, 'token', 'first-secret', { 'X-Key': 'first-header', 'X-Other': 'same' })
+  assert.equal(original, identify(url, 'token', 'first-secret', { 'X-Other': 'same', 'X-Key': 'first-header' }))
+  assert.notEqual(original, identify(url, 'token', 'second-secret', { 'X-Key': 'first-header', 'X-Other': 'same' }))
+  assert.notEqual(original, identify(url, 'oauth', 'first-secret', { 'X-Key': 'first-header', 'X-Other': 'same' }))
+  assert.notEqual(original, identify(url, 'token', 'first-secret', { 'X-Key': 'second-header', 'X-Other': 'same' }))
+  assert.match(original, /^[a-f0-9]{64}$/)
+  assert.equal(original.includes('first-secret'), false)
+  assert.equal(original.includes('first-header'), false)
+})
+
+
+test('cached shared descriptors cannot authorize an edited registry authentication configuration', () => {
+  const url = 'https://gateway.example.test'
+  const opened = remoteAuthenticationIdentity(url, 'token', 'original-token', { 'X-Key': 'original-header' })
+
+  assert.doesNotThrow(() => assertRemoteAuthenticationIdentity(opened, opened))
+
+  for (const configured of [
+    remoteAuthenticationIdentity(url, 'token', 'edited-token', { 'X-Key': 'original-header' }),
+    remoteAuthenticationIdentity(url, 'oauth', null, { 'X-Key': 'original-header' }),
+    remoteAuthenticationIdentity(url, 'token', 'original-token', { 'X-Key': 'edited-header' })
+  ]) {
+    assert.throws(() => assertRemoteAuthenticationIdentity(opened, configured), /authentication configuration changed/)
+    assert.throws(() => assertRemoteAuthenticationIdentity(undefined, configured), /authentication configuration changed/)
+  }
+})

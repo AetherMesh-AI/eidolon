@@ -82,7 +82,7 @@ import {
   recordSessionEventScope,
   resetTileRuntimeBindings
 } from '@/store/session-states'
-import { currentSourceSwitchIntent, isCurrentSourceSwitchIntent } from '@/store/source-switch-intent'
+import { beginSourceSwitchIntent, currentSourceSwitchIntent, isCurrentSourceSwitchIntent } from '@/store/source-switch-intent'
 import { windowProfileOverride } from '@/store/windows'
 import type { RpcEvent } from '@/types/eidolon'
 
@@ -934,6 +934,13 @@ export function useGatewayBoot({
       // registry snapshot for it.
       if (payload.reason === 'saved') {
         return
+      }
+
+      // A profile override can use a registry source as its physical primary
+      // even when that source is not registry.primary. Retiring secondaries
+      // alone does not fence an already pending primary/member lookup.
+      if ($connection.get()?.connectionId === payload.connectionId) {
+        beginSourceSwitchIntent()
       }
 
       disposeSecondariesForConnection(payload.connectionId, { redial: payload.reason === 'updated' })

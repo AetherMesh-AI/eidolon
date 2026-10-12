@@ -129,7 +129,12 @@ export function useGatewayRequest() {
 
           if (!ownsForeground()) {return null}
 
+          // Same URL/source can still mean different credentials or header values.
+          // Compare the captured descriptor identities, never current registry labels.
           if (!(foregroundConnection.sharedPrimary || foregroundConnection.sharedRemote) ||
+              (conn.mode === 'remote' && !conn.authenticationIdentity) ||
+              foregroundConnection.authenticationIdentity !== conn.authenticationIdentity ||
+              requestedConnection?.authenticationIdentity !== conn.authenticationIdentity ||
               foregroundConnection.baseUrl !== conn.baseUrl ||
               foregroundConnection.connectionId !== conn.connectionId ||
               normalizeProfileKey(foregroundConnection.profile) !== requestedProfile) {

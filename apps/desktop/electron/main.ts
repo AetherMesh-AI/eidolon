@@ -304,9 +304,11 @@ import { createKeepAwake } from './power-save'
 import { capturePreviewContents } from './preview-capture'
 import { PreviewReachRegistry } from './preview-reach'
 import {
+  assertRemoteAuthenticationIdentity,
   capturePrimaryBackendLaunch,
   createPrimaryRemoteConnection,
   FirstRunSetupResetError,
+  remoteAuthenticationIdentity,
   runPrimaryBackendStartup
 } from './primary-backend-startup'
 import { rehomePrimaryConnection } from './primary-connection-rehome'
@@ -9870,6 +9872,7 @@ async function buildRemoteConnection(
 ) {
   const baseUrl = normalizeRemoteBaseUrl(rawUrl)
   const remoteHeaders = decryptRemoteHeaders(headers)
+  const authenticationIdentity = remoteAuthenticationIdentity(baseUrl, authMode, token, remoteHeaders)
   // For token/oauth remotes the meaningful host is the real backend URL; for
   // SSH remotes the caller passes the entered/resolved host explicitly (the
   // baseUrl is a 127.0.0.1 tunnel and would be useless in the pill).
@@ -9928,6 +9931,7 @@ async function buildRemoteConnection(
     rememberRemoteWsHeaders(wsUrl, remoteHeaders)
 
     return {
+      authenticationIdentity,
       baseUrl,
       mode: 'remote',
       source,
@@ -9954,6 +9958,7 @@ async function buildRemoteConnection(
   rememberRemoteWsHeaders(wsUrl, remoteHeaders)
 
   return {
+    authenticationIdentity,
     baseUrl,
     mode: 'remote',
     source,
@@ -11304,6 +11309,24 @@ async function ensureBackend(profile, opts: { spawnPriority?: LocalBackendSpawnP
 
   if (route.backend === 'primary') {
     const connection = await startHermes()
+
+    // Shared-member lookups can reuse this same cached descriptor. Do not let
+    // two old descriptors agree after the registry's credentials have changed.
+    if (connection.mode === 'remote' && connection.remoteKind !== 'ssh' && connection.connectionId) {
+      const source = readDesktopConnectionsRegistry().connections.find(entry => entry.id === connection.connectionId)
+
+      if (!source || (source.kind !== 'remote' && source.kind !== 'cloud')) {
+        throw new Error('Eidolon remote source is no longer registered.')
+      }
+
+      assertRemoteAuthenticationIdentity(connection.authenticationIdentity, remoteAuthenticationIdentity(
+        normalizeRemoteBaseUrl(source.url),
+        normAuthMode(source.authMode),
+        source.authMode === 'oauth' ? null : decryptDesktopSecret(source.token),
+        decryptRemoteHeaders(source.headers)
+      ))
+    }
+
     setWslBridgeProfileState(key, connection.mode !== 'remote')
 
     // A shared backend still owes the caller its profile scope, so renderer-side

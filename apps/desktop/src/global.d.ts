@@ -747,6 +747,8 @@ export interface DesktopPluginProfileRoute {
 }
 
 export interface HermesConnection {
+  // Opaque, process-local identity of the authentication used to resolve this remote.
+  authenticationIdentity?: string
   baseUrl: string
   darwinMajor?: number
   isFullscreen: boolean

@@ -49,7 +49,7 @@ import {
   setSelectedStoredSessionId
 } from '@/store/session'
 import { $sessionTiles, $workingSessionIds, clearAllSessionStates, publishSessionState } from '@/store/session-states'
-import { beginSourceSwitchIntent } from '@/store/source-switch-intent'
+import { beginSourceSwitchIntent, currentSourceSwitchIntent } from '@/store/source-switch-intent'
 
 import { deferred } from '../../../test/deferred'
 
@@ -212,8 +212,17 @@ const coderConn = {
 function fakeDesktop() {
   let bootProgressHandler: ((payload: Record<string, unknown>) => void) | null = null
   let backendExit: (() => void) | null = null
+  let registryChanged: ((payload: { connectionId: string; reason: string }) => void) | null = null
 
   return {
+    connections: {
+      onChanged: vi.fn(callback => {
+        registryChanged = callback
+
+        return () => { registryChanged = null }
+      })
+    },
+    emitRegistryChanged(payload: { connectionId: string; reason: string }) { registryChanged?.(payload) },
     getConnection: vi.fn(async (profile?: null | string) => {
       const key = (profile ?? '').trim()
 
@@ -636,7 +645,7 @@ describe('useGatewayBoot remote reconnect loop (real hook, fake socket)', () => 
 
       return coderConn.wsUrl
     })
-    desktop.connections = { list: vi.fn(async () => registryConnections), setLastUsed }
+    Object.assign(desktop.connections, { list: vi.fn(async () => registryConnections), setLastUsed })
     ;(window as { hermesDesktop?: unknown }).hermesDesktop = desktop
 
     const beforeConnectionSwitch = vi.fn()
@@ -722,10 +731,10 @@ describe('useGatewayBoot remote reconnect loop (real hook, fake socket)', () => 
       registryScoped: true
     }))
     desktop.getGatewayWsUrlFor = vi.fn(async () => coderConn.wsUrl)
-    desktop.connections = {
+    Object.assign(desktop.connections, {
       list: vi.fn(async () => registryConnections),
       setLastUsed: vi.fn(async (id: string) => ({ ok: true, registry: { ...registryConnections, lastUsed: id } }))
-    }
+    })
     ;(window as { hermesDesktop?: unknown }).hermesDesktop = desktop
 
     render(<Harness />)
@@ -2104,4 +2113,38 @@ it('keeps a changed primary unavailable after a newer selection fails before act
   expect($activeGatewayRoute.get()).toBe('default')
   expect(activeGateway()).not.toBeNull()
   expect($gatewayState.get()).toBe('open')
+})
+
+
+it.each(['updated', 'removed'])('fences a held primary lookup when its registry authentication source is %s', async reason => {
+  const desktop = fakeDesktop()
+
+  ;(window as { hermesDesktop?: unknown }).hermesDesktop = desktop
+  render(<Harness />)
+  await flushAsync()
+  const pending = deferred<typeof primaryConn>()
+  desktop.getConnection.mockReturnValue(pending.promise)
+  act(() => { desktop.emitBackendExit(); FakeWebSocket.instances[0].drop() })
+  await advanceBackoff()
+  const intent = currentSourceSwitchIntent()
+  act(() => { desktop.emitRegistryChanged({ connectionId: primaryConn.connectionId, reason }) })
+  expect(currentSourceSwitchIntent()).not.toBe(intent)
+  pending.resolve({ ...primaryConn, profile: 'observation-a' })
+  await flushAsync()
+  expect($activeGatewayProfile.get()).toBe('default')
+  expect($connection.get()).toMatchObject(primaryConn)
+})
+
+it.each([
+  { connectionId: primaryConn.connectionId, reason: 'saved' },
+  { connectionId: 'unrelated-source', reason: 'updated' }
+])('preserves foreground recovery authority for a non-material or unrelated registry event %j', async payload => {
+  const desktop = fakeDesktop()
+
+  ;(window as { hermesDesktop?: unknown }).hermesDesktop = desktop
+  render(<Harness />)
+  await flushAsync()
+  const intent = currentSourceSwitchIntent()
+  act(() => { desktop.emitRegistryChanged(payload) })
+  expect(currentSourceSwitchIntent()).toBe(intent)
 })
