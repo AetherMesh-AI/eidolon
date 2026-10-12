@@ -20,7 +20,7 @@ export const profileA = 'observation-a'
 export const profileB = 'observation-b'
 export const queuedSourceTitle = 'Queued work belonging only to profile A'
 
-export async function setupDedicatedProfiles() {
+export async function setupDedicatedProfiles(options: { providerUrl?: string } = {}) {
   const sandbox = createSandbox('dedicated-organization')
   const mock = await startMockServer()
   const observer = path.join(sandbox.root, 'python-observer')
@@ -29,7 +29,7 @@ export async function setupDedicatedProfiles() {
 
   for (const home of [sandbox.hermesHome, ...homes]) {
     mkdirSync(home, { recursive: true })
-    writeMockProviderConfig(home, mock.url, undefined, 'approvals:\n  mode: manual')
+    writeMockProviderConfig(home, options.providerUrl ?? mock.url, undefined, 'approvals:\n  mode: manual')
     writeEnvFile(home)
   }
 

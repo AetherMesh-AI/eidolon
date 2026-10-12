@@ -1,7 +1,9 @@
 /** Actual durable admissions; only their successful acknowledgement is replaced. */
 import { execFileSync } from 'node:child_process'
 
+import { directoryRecovery, directoryRecoveryDriver } from './directory-recovery-driver'
 import { buildAppEnv, waitForAppReady } from './fixtures'
+import { profileA, profileB } from './organization-dedicated-profile-fixture'
 import { firstMessage, firstReply, setupOwnerChatFixture } from './organization-owner-chat-fixture'
 import { fixtureLedger, startOrganizationSwitchGateway } from './organization-switch-fixture'
 import { acknowledgeExpectedErrorBanner, expect, test } from './test'
@@ -21,12 +23,17 @@ test.afterEach(async () => {
 })
 
 test('recovers durably accepted owner send and renewal after lost acknowledgements and source return', async () => {
-  running = await setupOwnerChatFixture()
+  running = await setupOwnerChatFixture({ dedicatedProfiles: directoryRecovery })
   const { page, app, sandbox, mockUrl } = running.fixture
-  remote = await startOrganizationSwitchGateway(sandbox, mockUrl)
-  const beforeB = remote.ledger()
+  const dedicated = running.dedicated
+  const directory = directoryRecoveryDriver(page)
 
-  const local = await page.evaluate(
+  if (!dedicated) { remote = await startOrganizationSwitchGateway(sandbox, mockUrl) }
+  const destinationLedger = () => dedicated ? dedicated.ledger(1) : remote!.ledger()
+  const destinationStarts = () => dedicated ? dedicated.starts(1) : remote!.starts()
+  const sourceHome = dedicated?.homes[0] ?? sandbox.hermesHome
+
+  const local = dedicated ? profileA : await page.evaluate(
     async ({ url, token }) => {
       const bridge = (
         window as unknown as {
@@ -51,12 +58,12 @@ test('recovers durably accepted owner send and renewal after lost acknowledgemen
 
       return local.label
     },
-    { url: remote.url, token: remote.token }
+    { url: remote!.url, token: remote!.token }
   )
 
   const writes: Array<{ destination: string; method: string; params: Record<string, unknown> }> = []
   const accepted: Array<{ method: string; params: Record<string, unknown>; result: Record<string, unknown> }> = []
-  const portB = new URL(remote.url).port
+  const portB = new URL(dedicated ? dedicated.routes[1].baseUrl : remote!.url).port
   await page.routeWebSocket(/.*/, socket => {
     const server = socket.connectToServer()
     const operations = new Map<number, { method: string; params: Record<string, unknown> }>()
@@ -69,7 +76,7 @@ test('recovers durably accepted owner send and renewal after lost acknowledgemen
         expect(reply.error).toBeUndefined()
         expect(reply.result).toBeTruthy()
         accepted.push({ ...operation, result: reply.result! })
-        expect(fixtureLedger(sandbox.hermesHome, buildAppEnv(sandbox))).toContain(
+        expect(fixtureLedger(sourceHome, buildAppEnv(sandbox))).toContain(
           String(operation.params.idempotencyKey)
         )
         socket.send(
@@ -98,6 +105,13 @@ test('recovers durably accepted owner send and renewal after lost acknowledgemen
   await page.reload()
   await waitForAppReady(running.fixture)
 
+  if (dedicated) {
+    await dedicated.seedQueuedWork()
+    await directory.bootstrap()
+  }
+
+  const beforeB = destinationLedger()
+
   const navigation = page
     .getByRole('complementary', { name: 'Eidolon navigation' })
     .getByRole('navigation', { name: 'Primary', exact: true })
@@ -105,6 +119,12 @@ test('recovers durably accepted owner send and renewal after lost acknowledgemen
   const switcher = page.locator('.eid-workspace-header [data-slot="connection-switcher"]')
 
   async function choose(label: string) {
+    if (dedicated) {
+      await directory.choose(label)
+
+      return
+    }
+
     await switcher.getByRole('button').click()
     await page.getByRole('menuitemradio', { name: label }).click()
     await expect(switcher.getByRole('button')).toContainText(label)
@@ -128,12 +148,12 @@ test('recovers durably accepted owner send and renewal after lost acknowledgemen
 
   async function visitB() {
     const count = writes.length
-    await choose('Owner recovery B')
+    await choose(dedicated ? profileB : 'Owner recovery B')
     await navigation.getByRole('link', { name: 'Home', exact: true }).click()
     expect(writes).toHaveLength(count)
     expect(writes.filter(item => item.destination === 'b')).toEqual([])
-    expect(remote!.ledger()).toBe(beforeB)
-    expect(remote!.starts()).toBe(0)
+    expect(destinationLedger()).toBe(beforeB)
+    expect(destinationStarts()).toBe(0)
     expect(await page.locator('body').textContent()).not.toContain(firstMessage)
     await choose(local)
   }
@@ -178,7 +198,9 @@ test('recovers durably accepted owner send and renewal after lost acknowledgemen
   const renewalAlert = (await panel.getByRole('alert').textContent())!.trim()
   expect(renewalAlert).toContain('Scripted uncertain organization.ownerChat.renew')
   expect(writes).toHaveLength(2)
+  const beforeRenewalReturn = fixtureLedger(sourceHome, buildAppEnv(sandbox))
   await visitB()
+  expect(fixtureLedger(sourceHome, buildAppEnv(sandbox))).toBe(beforeRenewalReturn)
   panel = await conversation()
   await expect(panel.getByText(firstReply, { exact: true })).toBeVisible()
   await expect(panel.getByRole('button', { name: 'Retry same allowance update', exact: true })).toHaveCount(0)
@@ -190,26 +212,27 @@ test('recovers durably accepted owner send and renewal after lost acknowledgemen
     budgetVersion: Number(writes[1].params.expectedBudgetVersion) + 1,
     policyGeneration: writes[1].params.expectedPolicyGeneration
   })
-  const durable = fixtureLedger(sandbox.hermesHome, buildAppEnv(sandbox))
+  const durable = fixtureLedger(sourceHome, buildAppEnv(sandbox))
   expect(durable).toContain(String(writes[0].params.idempotencyKey))
   expect(durable).toContain(String(writes[1].params.idempotencyKey))
   expect(writes.every(item => item.destination === 'a')).toBe(true)
   expect(running.calls).toHaveLength(1)
   expect(running.providerErrors).toEqual([])
-  expect(remote.ledger()).toBe(beforeB)
-  expect(remote.starts()).toBe(0)
+  expect(destinationLedger()).toBe(beforeB)
+  expect(destinationStarts()).toBe(0)
   await expect(panel.getByRole('button', { name: 'Retry same allowance update', exact: true })).toHaveCount(0)
-  expect(remote.updateChecks()).toBeGreaterThan(0)
+
+  if (remote) { expect(remote.updateChecks()).toBeGreaterThan(0) }
   await expect(page.getByRole('status').filter({ has: page.getByText('Update ready', { exact: true }) })).toHaveCount(0)
   const window = await app.browserWindow(page)
-  await test.info().attach('owner-accepted-return-recovered', {
+  await test.info().attach(directoryRecovery ? 'directory-owner-accepted-return-recovered' : 'owner-accepted-return-recovered', {
     contentType: 'image/png',
     body: Buffer.from(
       await window.evaluate(async window => (await window.webContents.capturePage()).toPNG().toString('base64')),
       'base64'
     )
   })
-  await test.info().attach('owner-accepted-return-evidence', {
+  await test.info().attach(directoryRecovery ? 'directory-owner-accepted-return-evidence' : 'owner-accepted-return-evidence', {
     contentType: 'application/json',
     body: JSON.stringify({
       sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
@@ -217,14 +240,24 @@ test('recovers durably accepted owner send and renewal after lost acknowledgemen
       writes,
       accepted,
       scriptedProviderCalls: running.calls.length,
-      schedulerStartsB: remote.starts(),
-      isolatedBackendUpdateChecks: remote.updateChecks(),
+      schedulerStartsB: destinationStarts(),
+      schedulerStartsA: dedicated?.starts(0),
+      descriptors: dedicated?.routes,
+      isolatedBackendUpdateChecks: remote?.updateChecks(),
       failureModel:
         'actual gateway admissions and durable SQLite keys; successful acknowledgements replaced; return reads reconcile without resubmission',
       productionActivationEnabled: false,
-      switchingDoor: 'existing connection switcher'
+      switchingDoor: dedicated ? 'actual Organizations directory with explicit confirmation' : 'existing connection switcher'
     })
   })
+
+  if (dedicated) {
+    expect(dedicated.starts(0)).toBe(0)
+    expect(dedicated.starts(1)).toBe(0)
+    expect(dedicated.fixture.mock.receivedPrompts).toHaveLength(0)
+  }
+
+  expect(running.providerErrors).toEqual([])
   await acknowledgeExpectedErrorBanner(page, sendAlert)
   await acknowledgeExpectedErrorBanner(page, renewalAlert)
 })

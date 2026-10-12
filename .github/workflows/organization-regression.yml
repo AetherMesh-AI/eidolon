@@ -285,7 +285,7 @@ jobs:
           PLAYWRIGHT_JSON_OUTPUT_NAME: directory-report/results.json
         run: |
           npx vite build --mode organization-directory-acceptance --emptyOutDir false
-          xvfb-run -a npx playwright test e2e/directory-selection.spec.ts --workers=1 --retries=0 --output directory-test-results --reporter list,json
+          EIDOLON_DIRECTORY_RECOVERY_ACCEPTANCE=1 xvfb-run -a npx playwright test e2e/directory-selection.spec.ts e2e/organization-owner-accepted-return.spec.ts e2e/organization-switch-intent.spec.ts --grep 'confirms actual directory|recovers durably accepted owner|returns an uncertain intake' --workers=1 --retries=0 --output directory-test-results --reporter list,json
       - name: Verify complete desktop suite when requested
         if: github.event_name == 'workflow_dispatch' && inputs.full_desktop_suite
         working-directory: apps/desktop

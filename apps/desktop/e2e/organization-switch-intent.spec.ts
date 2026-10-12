@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 
+import { directoryRecovery, directoryRecoveryDriver } from './directory-recovery-driver'
 import { type MockBackendFixture, waitForAppReady } from './fixtures'
 import { profileA, profileB, queuedSourceTitle, setupDedicatedProfiles } from './organization-dedicated-profile-fixture'
 import { queuedSwitchTitle, switchPython } from './organization-switch-fixture'
@@ -27,6 +28,7 @@ test('returns an uncertain intake through dedicated profile owners without start
   const dedicated = await setupDedicatedProfiles()
   fixture = dedicated.fixture
   const { page, app, mock } = fixture
+  const directory = directoryRecoveryDriver(page)
   const env = { ...dedicated.env, HERMES_HOME: dedicated.homes[0] }
 
   const remote = {
@@ -51,6 +53,7 @@ test('returns an uncertain intake through dedicated profile owners without start
   let originalParams: Record<string, unknown> | undefined
   let submissionReceipt: Record<string, unknown> | undefined
   let releaseReceipt: (() => void) | undefined
+  let receiptHeld = false
 
   const registration = await page.evaluate(async () => {
     const bridge = (
@@ -127,7 +130,8 @@ test('returns an uncertain intake through dedicated profile owners without start
       }
 
       if (destination === 'a' && request.method === 'organization.observeRead' &&
-        request.params?.method === 'organization.checkSubmission') {
+        request.params?.method === 'organization.checkSubmission' && !receiptHeld) {
+        receiptHeld = true
         receiptId = request.id
       }
 
@@ -193,6 +197,8 @@ s.set_objective_archived(ident,True,expected_revision=0,idempotency_key='switch-
       page.getByRole('link', { name: profile === profileA ? queuedSourceTitle : queuedSwitchTitle, exact: true })
     ).toBeVisible()
     await expect(page.locator('.eid-workspace-header').getByRole('button', { name: new RegExp(profile) })).toBeVisible()
+
+    if (directoryRecovery) { await directory.rememberCurrent(profile) }
   }
 
   for (const destination of ['a', 'b'] as const) {
@@ -221,6 +227,12 @@ s.set_objective_archived(ident,True,expected_revision=0,idempotency_key='switch-
   expect(remote.ledger()).toBe(beforeB)
 
   async function choose(profile: string) {
+    if (directoryRecovery) {
+      await directory.choose(profile)
+
+      return
+    }
+
     await work.click()
     await page
       .getByRole('region', { name: 'Work by connection and profile', exact: true })
@@ -262,7 +274,7 @@ s.set_objective_archived(ident,True,expected_revision=0,idempotency_key='switch-
   expect(remote.starts()).toBe(0)
   expect(mock.receivedPrompts).toHaveLength(0)
   const nativeWindow = await app.browserWindow(page)
-  await test.info().attach('stopped-destination-observation', {
+  await test.info().attach(directoryRecovery ? 'directory-stopped-destination-observation' : 'stopped-destination-observation', {
     body: Buffer.from(
       await nativeWindow.evaluate(async window => (await window.webContents.capturePage()).toPNG().toString('base64')),
       'base64'
@@ -298,7 +310,21 @@ s.set_objective_archived(ident,True,expected_revision=0,idempotency_key='switch-
   expect(methods.filter(item => item.method === 'organization.create')).toEqual([
     { method: 'organization.create', destination: 'a', key: originalKey }
   ])
-  releaseReceipt!()
+
+  if (directoryRecovery) {
+    await nav.getByRole('link', { name: 'Messages', exact: true }).click()
+    const newerRoute = page.url()
+    releaseReceipt!()
+    await expect(page.getByRole('heading', { name: 'Messages', exact: true })).toBeVisible()
+    expect(page.url()).toBe(newerRoute)
+    await nav.getByRole('link', { name: 'Home', exact: true }).click()
+    await page.getByRole('button', { name: 'New objective', exact: true }).click()
+    await expect(page.getByRole('textbox', { name: 'Objective', exact: true })).toHaveValue(title)
+    await page.getByRole('button', { name: 'Check submission', exact: true }).click()
+  } else {
+    releaseReceipt!()
+  }
+
   await expect(page.getByText(/^Submission recorded\./)).toBeVisible()
   expect(submissionReceipt).toMatchObject({
     version: 1, profile: profileA, idempotencyKey: originalKey,
@@ -314,15 +340,12 @@ s.set_objective_archived(ident,True,expected_revision=0,idempotency_key='switch-
     { method: 'organization.create', destination: 'a', key: originalKey }
   ])
   expect(methods.filter(item => item.method === 'organization.checkSubmission')).toEqual([])
-  expect(methods.filter(item => item.nestedMethod === 'organization.checkSubmission')).toEqual([
-    {
-      method: 'organization.observeRead',
-      destination: 'a',
-      key: undefined,
-      nestedMethod: 'organization.checkSubmission',
-      nestedKey: originalKey
-    }
-  ])
+  expect(methods.filter(item => item.nestedMethod === 'organization.checkSubmission')).toEqual(
+    Array.from({ length: directoryRecovery ? 2 : 1 }, () => ({
+      method: 'organization.observeRead', destination: 'a', key: undefined,
+      nestedMethod: 'organization.checkSubmission', nestedKey: originalKey
+    }))
+  )
   expect(
     methods
       .filter(item => item.destination === 'b')
@@ -337,14 +360,14 @@ s.set_objective_archived(ident,True,expected_revision=0,idempotency_key='switch-
   expect(remote.ledger()).toBe(beforeB)
   expect(remote.starts()).toBe(0)
   expect(mock.receivedPrompts).toHaveLength(0)
-  await test.info().attach('returned-original-uncertain-intake', {
+  await test.info().attach(directoryRecovery ? 'directory-returned-original-uncertain-intake' : 'returned-original-uncertain-intake', {
     body: Buffer.from(
       await nativeWindow.evaluate(async window => (await window.webContents.capturePage()).toPNG().toString('base64')),
       'base64'
     ),
     contentType: 'image/png'
   })
-  await test.info().attach('native-source-return-evidence', {
+  await test.info().attach(directoryRecovery ? 'directory-native-source-return-evidence' : 'native-source-return-evidence', {
     contentType: 'application/json',
     body: JSON.stringify({
       sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
@@ -359,8 +382,9 @@ s.set_objective_archived(ident,True,expected_revision=0,idempotency_key='switch-
       originalLedgerSha256: createHash('sha256').update(beforeA).digest('hex'),
       destinationLedgerSha256: createHash('sha256').update(beforeB).digest('hex'),
       sameEndpointRegistrySaveDropsLateRead: true,
+      newerNavigationDuringReceipt: directoryRecovery,
       productionActivationEnabled: false,
-      switchingDoor: 'OrganizationWorkPicker → selectOrganizationConnection',
+      switchingDoor: directoryRecovery ? 'actual Organizations directory with explicit confirmation' : 'OrganizationWorkPicker → selectOrganizationConnection',
       authorityScope: 'distinct dedicated local profiles on one registry source; not distinct connections',
       descriptors: dedicated.routes,
       schedulerStartsA: dedicated.starts(0)
