@@ -2,7 +2,7 @@
 from contextlib import closing, contextmanager
 import sqlite3
 
-from eidolon_cli.organization_observation import _ObservationView, read_observation
+from eidolon_cli.organization_observation import _ObservationView, _storage_failure, read_observation
 
 
 class _ReadView(_ObservationView):
@@ -75,8 +75,14 @@ def read_detail(home, method, params):
         project, allowed = _DIRECT_READS[method]
         if not isinstance(params, dict) or set(params) - allowed:
             raise ValueError('Unsupported observation read parameters')
+        try:
+            data = project(home, params)
+        except sqlite3.Error as exc:
+            # These helpers deliberately support a missing execution ledger, so
+            # retain their cold-read semantics instead of snapshot preflight.
+            return _storage_failure(exc)
         return {'capabilityVersion': 1, 'state': 'available', 'snapshot': None,
-                'data': project(home, params)}
+                'data': data}
 
     if not isinstance(method, str) or method not in _READS or not isinstance(params, dict):
         raise ValueError('Unsupported observation read')

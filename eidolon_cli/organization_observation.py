@@ -66,6 +66,16 @@ def _result(state, reason=None, snapshot=None):
             **({'reason': reason} if reason else {})}
 
 
+def _storage_failure(exc):
+    """Keep snapshot and direct passive reads on the same sanitized contract."""
+    code = getattr(exc, 'sqlite_errorcode', 0) & 255
+    if code == sqlite3.SQLITE_ERROR and str(exc).startswith(('no such table:', 'no such column:')):
+        return _result('unsupported', 'schema')
+    reason = {sqlite3.SQLITE_BUSY: 'locked', sqlite3.SQLITE_LOCKED: 'locked',
+              sqlite3.SQLITE_CORRUPT: 'corrupt', sqlite3.SQLITE_NOTADB: 'corrupt'}.get(code, 'unreadable')
+    raise ObservationError(reason) from None
+
+
 def read_observation(home: Path, *, projection=None):
     """Observe committed records and compare policy without adopting it.
 
@@ -105,11 +115,6 @@ def read_observation(home: Path, *, projection=None):
                 return {**_result('available'), 'data': projection(view)}
             return _result('available', snapshot=view._snapshot(conn))
     except sqlite3.Error as exc:
-        code = getattr(exc, 'sqlite_errorcode', 0) & 255
-        if code == sqlite3.SQLITE_ERROR and str(exc).startswith(('no such table:', 'no such column:')):
-            return _result('unsupported', 'schema')
-        reason = {sqlite3.SQLITE_BUSY: 'locked', sqlite3.SQLITE_LOCKED: 'locked',
-                  sqlite3.SQLITE_CORRUPT: 'corrupt', sqlite3.SQLITE_NOTADB: 'corrupt'}.get(code, 'unreadable')
-        raise ObservationError(reason) from None
+        return _storage_failure(exc)
     except (ValueError, TypeError, KeyError, IndexError, AttributeError):
         raise ObservationError('corrupt') from None

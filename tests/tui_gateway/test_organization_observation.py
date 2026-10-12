@@ -191,3 +191,81 @@ def test_passive_owner_chat_read_preserves_complete_legacy_inner_contract(served
                      'params': {'threadId': thread, 'identityId': identity}}, method='organization.observeRead')
     assert response['result']['data'] == expected
     assert response['result']['data']['profile'] == response['result']['scope']['profile']
+
+
+@pytest.mark.parametrize('method,params', [
+    ('organization.checkSubmission', {'idempotencyKey': 'retained-key'}),
+    ('organization.projectSetup', {}),
+    ('organization.projectDraft', {'project': {}, 'expectedRevision': 'a' * 64}),
+])
+@pytest.mark.parametrize('storage', ['metadata_only', 'corrupt', 'locked'])
+def test_direct_observation_storage_failures_are_sanitized_and_dispatch_survives(served, monkeypatch, method, params, storage):
+    import hashlib
+    import sqlite3
+    from contextlib import closing, nullcontext
+    from eidolon_cli.organization_metadata import save_metadata
+    from eidolon_constants import get_eidolon_home
+
+    path = served / 'organization' / 'state.db'
+    if storage == 'metadata_only':
+        save_metadata(path, display_name='Retained organization', owner_display_name='Owner',
+                      expected_organization_id=None, expected_revision=None, idempotency_key='metadata')
+    elif storage == 'corrupt':
+        path.parent.mkdir()
+        path.write_bytes(b'not a database: private retained contents')
+    else:
+        OrganizationStore(path).create_objective('Retained work', idempotency_key='retained-key')
+
+    def retained_files():
+        return {str(p.relative_to(served)): hashlib.sha256(p.read_bytes()).hexdigest()
+                for p in served.rglob('*') if p.is_file() and not p.name.endswith(('-wal', '-shm'))}
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError('Observation provisioned or wrote organization storage')
+    monkeypatch.setattr(OrganizationStore, '__init__', forbidden)
+    monkeypatch.setattr(OrganizationStore, '_write', forbidden)
+    inherited = served.parent / 'unrelated-inherited-home'
+    token = set_eidolon_home_override(inherited)
+    try:
+        with closing(sqlite3.connect(path)) if storage == 'locked' else nullcontext() as lock:
+            if lock is not None:
+                assert lock.execute('PRAGMA journal_mode=DELETE').fetchone()[0] == 'delete'
+                lock.execute('BEGIN EXCLUSIVE')
+            before = retained_files()
+            response = call({'method': method, 'params': params}, method='organization.observeRead')
+            assert response['id'] == 7
+            if storage == 'metadata_only':
+                assert response['result']['state'] == 'unsupported'
+                assert response['result']['reason'] == 'schema'
+                assert response['result']['snapshot'] is None
+                assert 'data' not in response['result']
+            else:
+                assert response['error'] == {
+                    'code': 5073, 'message': f'Organization observation: {storage}',
+                    'data': {'reason': storage},
+                }
+            assert str(served) not in str(response)
+            assert 'private retained contents' not in str(response)
+            assert retained_files() == before
+            assert get_eidolon_home() == inherited
+            # Inline dispatch remains usable after a storage failure; no escaped
+            # exception can terminate a stdio request loop or poison its scope.
+            following = call({'method': 'organization.ownerChat.send', 'params': {}}, method='organization.observeRead')
+            assert following['error']['code'] == -32602
+            assert get_eidolon_home() == inherited
+    finally:
+        reset_eidolon_home_override(token)
+
+
+def test_direct_cold_reads_remain_available_without_execution_storage(served):
+    receipt = call({'method': 'organization.checkSubmission', 'params': {'idempotencyKey': 'not-admitted'}},
+                   method='organization.observeRead')['result']
+    assert receipt['state'] == 'available'
+    assert receipt['data']['objective'] is None
+    assert receipt['data']['idempotencyKey'] == 'not-admitted'
+    setup = call({'method': 'organization.projectSetup', 'params': {}},
+                 method='organization.observeRead')['result']
+    assert setup['state'] == 'available'
+    assert setup['data']['blocked'] is False
+    assert setup['data']['ledgerProjects'] == []
+    assert not (served / 'organization').exists()
