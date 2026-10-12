@@ -51,10 +51,18 @@ test('a backend release notification obstructs the header until explicitly dismi
     const { app, page, sandbox, mockUrl } = running.fixture
     remote = await startOrganizationSwitchGateway(sandbox, mockUrl, 1)
     await page.evaluate(async ({ url, token }) => {
-      const bridge = (window as unknown as { hermesDesktop: { connections: { save(input: unknown): Promise<{ ok: boolean }> } } }).hermesDesktop
+      const bridge = (window as unknown as { hermesDesktop: { connections: { save(input: unknown): Promise<{ ok: boolean }>; setLaunchMode(mode: 'last-used'): Promise<{ ok: boolean; registry: { launchMode: string } }> } } }).hermesDesktop
 
       if (!(await bridge.connections.save({ kind: 'remote', label: 'Updater fixture B', url, authMode: 'token', token })).ok) {
         throw new Error('Could not register isolated updater gateway')
+      }
+
+      // Reload normally restores the registry primary. This scenario explicitly
+      // asks the existing preference to restore the source selected through UI.
+      const launch = await bridge.connections.setLaunchMode('last-used')
+
+      if (!launch.ok || launch.registry.launchMode !== 'last-used') {
+        throw new Error('Could not configure isolated last-used startup')
       }
     }, { url: remote.url, token: remote.token })
     const switcher = page.locator('.eid-workspace-header [data-slot="connection-switcher"]').getByRole('button')
@@ -68,6 +76,8 @@ test('a backend release notification obstructs the header until explicitly dismi
     const checksBeforeReload = remote.updateChecks()
     await page.reload()
     await waitForAppReady(running.fixture)
+    await expect(switcher).toContainText('Updater fixture B')
+    await expect(page.locator('.eid-workspace-header [data-slot="connection-switcher"]')).toHaveAttribute('aria-busy', 'false')
     await expect.poll(() => remote!.updateChecks()).toBeGreaterThan(checksBeforeReload)
     const toast = page.getByRole('status').filter({ has: page.getByText('Update ready', { exact: true }) })
     await expect(toast).toBeVisible()
@@ -104,7 +114,7 @@ test('a backend release notification obstructs the header until explicitly dismi
       body: JSON.stringify({
         sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
         sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
-        backendChecks: remote.updateChecks(), checksBeforeReload, obstructedBeforeDismissal: blocked,
+        backendChecks: remote.updateChecks(), checksBeforeReload, launchMode: 'last-used', restoredSource: 'Updater fixture B', obstructedBeforeDismissal: blocked,
         dismissal: 'public Dismiss notification button', switcherOpenedAfterDismissal: true,
         schedulerStarts: remote.starts(), providerCalls: running.calls.length
       })
