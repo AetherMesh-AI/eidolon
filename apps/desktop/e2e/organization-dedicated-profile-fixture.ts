@@ -36,7 +36,7 @@ export async function setupDedicatedProfiles() {
   writeFileSync(
     path.join(observer, 'sitecustomize.py'),
     `
-import sys
+import os,sys
 if 'serve' in sys.argv:
  from pathlib import Path
  import eidolon_cli.organization_service as service
@@ -48,6 +48,7 @@ if 'serve' in sys.argv:
   return original_start(self)
  def recorded_recovery():
   result=original_recovery()
+  (Path(get_eidolon_home())/'.fixture-serve-pid').write_text(str(os.getpid()))
   (Path(get_eidolon_home())/'.fixture-recovery-complete').write_text('complete')
   return result
  service.OrganizationService.start=recorded_start

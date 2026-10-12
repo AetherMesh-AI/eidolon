@@ -111,3 +111,14 @@ export async function runPrimaryBackendStartup<Backend, RuntimeBackend, Remote, 
 
   return { kind: 'local', backend: await ensureLocalRuntime(backend) }
 }
+
+
+/** Capture before boot waits: remembering a workspace cannot retarget this
+ * generation. Null deliberately preserves the legacy launch without --profile. */
+export function capturePrimaryBackendLaunch(preference: string | null, home: string) {
+  return {
+    profile: preference || 'default',
+    home,
+    backendArgs: [...(preference ? ['--profile', preference] : []), 'serve', '--host', '127.0.0.1', '--port', '0']
+  }
+}

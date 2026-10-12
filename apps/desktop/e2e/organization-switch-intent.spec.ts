@@ -1,12 +1,18 @@
 /** Test-first candidate: existing source door, real isolated gateways, no production activation enablement. */
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
+import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 
 import { type MockBackendFixture, waitForAppReady } from './fixtures'
 import { profileA, profileB, queuedSourceTitle, setupDedicatedProfiles } from './organization-dedicated-profile-fixture'
 import { queuedSwitchTitle, switchPython } from './organization-switch-fixture'
 import { acknowledgeExpectedErrorBanner, expect, test } from './test'
+
+type NativeConnectionBridge = {
+  profile: { remember(profile: string): Promise<unknown> }
+  getConnection(): Promise<{ profile?: string; baseUrl: string }>
+}
 
 const root = path.resolve(import.meta.dirname, '../../..')
 let fixture: MockBackendFixture | undefined
@@ -362,4 +368,85 @@ s.set_objective_archived(ident,True,expected_revision=0,idempotency_key='switch-
   })
   expect(dedicated.starts(0)).toBe(0)
   await acknowledgeExpectedErrorBanner(page, 'Scripted cross-source admission reply lost')
+})
+
+
+test('reconciles the served local profile after the actual primary process exits', async () => {
+  const dedicated = await setupDedicatedProfiles()
+  fixture = dedicated.fixture
+  const { page, app, mock, sandbox } = fixture
+  const pidPath = path.join(sandbox.hermesHome, '.fixture-serve-pid')
+  await expect.poll(() => existsSync(pidPath)).toBe(true)
+  const primaryPid = Number(readFileSync(pidPath, 'utf8'))
+  expect(Number.isSafeInteger(primaryPid) && primaryPid > 1).toBe(true)
+  const observations: Array<{ profile?: string; state?: string }> = []
+  await page.routeWebSocket(/.*/, socket => {
+    const server = socket.connectToServer()
+    const observationIds = new Set<number>()
+    socket.onMessage(message => {
+      const request = JSON.parse(message.toString()) as { id: number; method?: string }
+
+      if (request.method === 'organization.observe') { observationIds.add(request.id) }
+      server.send(message)
+    })
+    server.onMessage(message => {
+      const response = JSON.parse(message.toString()) as { id: number; result?: { state?: string; scope?: { profile?: string } } }
+
+      if (observationIds.delete(response.id)) {
+        observations.push({ profile: response.result?.scope?.profile, state: response.result?.state })
+      }
+
+      socket.send(message)
+    })
+  })
+
+  // Establish passive mode through real profile doors, then remember A only
+  // for the next primary generation. The active foreground remains default.
+  for (const profile of [profileA, 'default']) {
+    await page.locator('[data-slot="profile-rail"]').getByRole('button', { name: profile, exact: true }).click()
+    await expect(page.locator('.eid-workspace-header').getByRole('button', { name: new RegExp(profile) })).toBeVisible()
+  }
+
+  await page.evaluate(async profile => { await (window as unknown as { hermesDesktop: NativeConnectionBridge }).hermesDesktop.profile.remember(profile) }, profileA)
+
+  const previous = await page.evaluate(async () => {
+    const { profile, baseUrl } = await (window as unknown as { hermesDesktop: NativeConnectionBridge }).hermesDesktop.getConnection()
+
+    return { profile, baseUrl }
+  })
+
+  expect(previous.profile).toBe('default')
+  // PID comes only from this isolated fixture's served-home marker.
+  process.kill(primaryPid, 'SIGTERM')
+  const exited = page.getByRole('alert').filter({ hasText: 'Backend stopped' })
+  const expectedExit = 'Backend stoppedEidolon background process exited.'
+  await expect(exited).toHaveText(expectedExit)
+  await exited.getByRole('button', { name: 'Dismiss notification', exact: true }).click()
+  await acknowledgeExpectedErrorBanner(page, expectedExit)
+  await expect(page.locator('.eid-workspace-header').getByRole('button', { name: new RegExp(profileA) })).toBeVisible({ timeout: 90_000 })
+  await expect.poll(() => observations.some(item => item.profile === profileA), { timeout: 90_000 }).toBe(true)
+
+  const replacement = await page.evaluate(async () => {
+    const { profile, baseUrl } = await (window as unknown as { hermesDesktop: NativeConnectionBridge }).hermesDesktop.getConnection()
+
+    return { profile, baseUrl }
+  })
+
+  expect(replacement.profile).toBe(profileA)
+  expect(replacement.baseUrl).not.toBe(previous.baseUrl)
+  expect(mock.receivedPrompts).toHaveLength(0)
+  const nativeWindow = await app.browserWindow(page)
+  await test.info().attach('primary-respawn-profile-recovered', {
+    body: Buffer.from(await nativeWindow.evaluate(async window => (await window.webContents.capturePage()).toPNG().toString('base64')), 'base64'),
+    contentType: 'image/png'
+  })
+  await test.info().attach('primary-respawn-profile-evidence', {
+    contentType: 'application/json',
+    body: JSON.stringify({
+      sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+      sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
+      previous, replacement, observations, providerCalls: mock.receivedPrompts.length,
+      exitedFixturePrimaryPid: primaryPid, productionActivationEnabled: false
+    })
+  })
 })

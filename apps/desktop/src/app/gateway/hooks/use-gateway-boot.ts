@@ -81,6 +81,7 @@ import {
   recordSessionEventScope,
   resetTileRuntimeBindings
 } from '@/store/session-states'
+import { currentSourceSwitchIntent, isCurrentSourceSwitchIntent } from '@/store/source-switch-intent'
 import { windowProfileOverride } from '@/store/windows'
 import type { RpcEvent } from '@/types/eidolon'
 
@@ -308,6 +309,11 @@ export function useGatewayBoot({
       }
 
       reconnecting = true
+      const intent = currentSourceSwitchIntent()
+      let activationEpoch = manual?.activationEpoch ?? gatewayActivationEpoch()
+
+      const ownsForeground = () => !cancelled && isActivePrimary() &&
+        gatewayActivationEpoch() === activationEpoch && isCurrentSourceSwitchIntent(intent) && !$gatewaySwitching.get()
 
       try {
         // Drop a stale REMOTE backend cache before re-dialing. After sleep/wake a
@@ -333,16 +339,16 @@ export function useGatewayBoot({
           'Timed out reconnecting to Eidolon backend'
         )
 
-        setPrimaryGatewayConnection(conn)
-
-        if (cancelled) {
+        if (cancelled || !isCurrentSourceSwitchIntent(intent) || $gatewaySwitching.get()) {
           return
         }
+
+        setPrimaryGatewayConnection(conn)
 
         // Only publish the primary descriptor when the primary is active.
         // Otherwise a background-profile view would inherit the primary's
         // mode/baseUrl and break image.attach / fs / media routing (#46651).
-        if (isActivePrimary()) {
+        if (ownsForeground()) {
           publish(conn)
         }
 
@@ -360,10 +366,25 @@ export function useGatewayBoot({
           'Timed out re-minting the gateway WebSocket URL'
         )
 
+        if (cancelled || !isCurrentSourceSwitchIntent(intent) || $gatewaySwitching.get()) {return}
+
         await gateway.connect(wsUrl)
 
-        if (cancelled) {
+        if (cancelled || !isCurrentSourceSwitchIntent(intent) || $gatewaySwitching.get()) {
           return
+        }
+
+        if (conn.mode === 'local' && conn.profile) {
+          // Reconcile the physical primary even in the background. Its internal
+          // key is distinct from a same-named active legacy secondary.
+          const publishForeground = ownsForeground()
+          setPrimaryGateway(gateway, normalizeProfileKey(conn.profile), conn)
+
+          if (publishForeground) {
+            if (await adoptPrimaryProfile(conn, ownsForeground)) {
+              activationEpoch = gatewayActivationEpoch()
+            }
+          }
         }
 
         reconnectAttempt = 0
@@ -391,10 +412,11 @@ export function useGatewayBoot({
         // (#53902/#73082). A genuinely live turn re-asserts busy on its next
         // post-reconnect event.
         // A manual retry may finish after the user has moved to another route.
-        if (!manual || (isActivePrimary() && gatewayActivationEpoch() === manual.activationEpoch)) {
+        if (ownsForeground()) {
           reconcileBusyStatesOnReconnect()
-          await callbacksRef.current.refreshHermesConfig().catch(() => undefined)
-          await callbacksRef.current.refreshSessions().catch(() => undefined)
+          await callbacksRef.current.refreshHermesConfig(false, ownsForeground).catch(() => undefined)
+
+          if (ownsForeground()) {await callbacksRef.current.refreshSessions(ownsForeground).catch(() => undefined)}
         }
       } catch (err) {
         // OAuth session expired mid-reconnect: surface the actionable "sign in

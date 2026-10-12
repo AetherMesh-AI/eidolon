@@ -304,6 +304,7 @@ import { createKeepAwake } from './power-save'
 import { capturePreviewContents } from './preview-capture'
 import { PreviewReachRegistry } from './preview-reach'
 import {
+  capturePrimaryBackendLaunch,
   createPrimaryRemoteConnection,
   FirstRunSetupResetError,
   runPrimaryBackendStartup
@@ -12746,7 +12747,8 @@ async function startHermes() {
   // no-op when the preference file already exists.
   migrateActiveProfileIfMissing()
 
-  const primaryProfile = primaryProfileKey()
+  const launch = capturePrimaryBackendLaunch(readActiveDesktopProfile(), HERMES_HOME)
+  const primaryProfile = launch.profile
   const connectionAttempt = backendConnectionState.startAttempt(primaryProfile)
 
   // Legacy path callers without an explicit profile belong to the primary
@@ -12807,18 +12809,9 @@ async function startHermes() {
     }
 
     const token = crypto.randomBytes(32).toString('base64url')
-    // --port 0: the OS assigns an ephemeral port; the child announces it on stdout.
-    const backendArgs = ['serve', '--host', '127.0.0.1', '--port', '0']
-    // Pin the desktop's chosen profile via the global --profile flag. This is
-    // deterministic (it wins over the sticky ~/.hermes/active_profile file) and
-    // resolves HERMES_HOME the same way `hermes -p <name>` does on the CLI. An
-    // unset preference keeps the legacy launch so existing installs are
-    // unaffected.
-    const activeProfile = readActiveDesktopProfile()
-
-    if (activeProfile) {
-      backendArgs.unshift('--profile', activeProfile)
-    }
+    // Use the same pre-await capture as the attempt owner and descriptor.
+    // Its null preference keeps the legacy launch without a --profile flag.
+    const backendArgs = launch.backendArgs
 
     const setup = await runPrimaryBackendStartup({
       connectRemote,
@@ -12864,7 +12857,7 @@ async function startHermes() {
     await advanceBootProgress('backend.spawn', `Starting Eidolon backend via ${backend.label}`, 84)
     rememberLog(`Starting Eidolon backend via ${backend.label}`)
 
-    const profile = primaryProfileKey()
+    const profile = primaryProfile
     const parentStartMarker = await desktopParentStartMarker()
     const backendNonce = crypto.randomBytes(16).toString('hex')
     const parentIdentityEnv = parentWatchdogEnv(process.pid, parentStartMarker, backendNonce)
@@ -12884,7 +12877,7 @@ async function startHermes() {
           // Mismatch would split config / sessions / .env / logs across two
           // directories. install.ps1 sets HERMES_HOME via setx; the desktop
           // can't reliably do that, so we set it inline for every spawn.
-          HERMES_HOME,
+          HERMES_HOME: launch.home,
           ...backend.env,
           TERMINAL_CWD: hermesCwd,
           HERMES_DASHBOARD_SESSION_TOKEN: token,

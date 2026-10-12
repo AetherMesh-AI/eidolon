@@ -19,6 +19,9 @@ import { stampSecondaryProfileOwner } from '@/store/session-event-provenance'
 // handleGatewayEvent, so background sessions keep painting. Single-profile users
 // only ever have the primary, so their path is byte-for-byte unchanged.
 
+// Primary transport identity must never collide with a named profile pool key.
+const PRIMARY_SCOPE = '@primary'
+
 const normKey = (profile: string | null | undefined): string => (profile ?? '').trim() || 'default'
 
 // Spawn-slot priority handed to Electron main with every backend dial. A
@@ -183,7 +186,7 @@ function createRegistryState(): GatewayRegistryState {
     primaryGateway: null,
     primaryConnectionId: null,
     primaryProfile: 'default',
-    activeKey: 'default',
+    activeKey: PRIMARY_SCOPE,
     activationEpoch: 0,
     secondaries: new Map<string, Secondary>(),
     openedSecondaryScopes: new Set<string>(),
@@ -226,6 +229,11 @@ function gatewayState(): GatewayRegistryState {
 }
 
 const g = gatewayState()
+
+// Migrate the old HMR primary key without reclassifying an active secondary.
+if (g.activeKey === g.primaryProfile && (g.$gateway.get() === g.primaryGateway || !g.secondaries.has(g.activeKey))) {
+  g.activeKey = PRIMARY_SCOPE
+}
 
 /** Legacy local owner proof has asynchronous guards outside the socket state.
  * Keep their invalidation observable even when a reconnect reuses both objects. */
@@ -275,27 +283,19 @@ export function emitLocalGatewayEvent(event: GatewayEvent): void {
   g.config?.onEvent(event)
 }
 
-export function setPrimaryGateway(gateway: HermesGateway | null, profile = 'default'): void {
+export function setPrimaryGateway(gateway: HermesGateway | null, profile = 'default', connection?: Pick<HermesConnection, 'connectionId'>): void {
   const next = normKey(profile)
 
   if (g.primaryGateway !== gateway) {
     g.primaryConnectionId = null
   }
 
-  // Route identity is exact-scope, never bare-name (#93892 follow-up): when
-  // the active route IS the primary and the primary re-homes to another
-  // profile, the active key must follow it. Leaving the old bare profile name
-  // behind lets a later same-named LOCAL secondary inherit the active-route
-  // spare in pruneSecondaryGateways — a remote tile keep-set of composite
-  // scopes then appears to "pin" that unrelated local socket forever.
-  if (g.activeKey === g.primaryProfile) {
-    g.activeKey = next
-  }
-
   g.primaryGateway = gateway
   g.primaryProfile = next
 
-  if (g.activeKey === g.primaryProfile) {
+  if (connection) {g.primaryConnectionId = connection.connectionId?.trim() || null}
+
+  if (g.activeKey === PRIMARY_SCOPE) {
     setApiRequestConnection(g.primaryConnectionId)
   }
 }
@@ -314,7 +314,7 @@ export function setPrimaryGatewayConnectionId(connectionId: null | string | unde
 
   g.primaryConnectionId = (connectionId ?? '').trim() || null
 
-  if (g.activeKey === g.primaryProfile) {
+  if (g.activeKey === PRIMARY_SCOPE) {
     setApiRequestConnection(g.primaryConnectionId)
   }
 }
@@ -398,7 +398,7 @@ async function requestOnPrimaryGateway<T>(
 }
 
 export function isActivePrimary(): boolean {
-  return g.activeKey === g.primaryProfile
+  return g.activeKey === PRIMARY_SCOPE
 }
 
 /** Changes on every active route selection, including same-profile source swaps. */
@@ -407,7 +407,7 @@ export function gatewayActivationEpoch(): number {
 }
 
 export function activeGateway(): HermesGateway | null {
-  if (g.activeKey === g.primaryProfile) {
+  if (g.activeKey === PRIMARY_SCOPE) {
     return g.primaryGateway
   }
 
@@ -430,7 +430,7 @@ export function activeGateway(): HermesGateway | null {
  * profile comparison attributed gateway B's 'default' activity to gateway A.
  */
 export function activeGatewayConnectionId(): null | string {
-  if (g.activeKey === g.primaryProfile) {
+  if (g.activeKey === PRIMARY_SCOPE) {
     return g.primaryConnectionId ?? (g.config?.activeConnectionId?.()?.trim() || null)
   }
 
@@ -442,7 +442,7 @@ export function activeGatewayConnectionId(): null | string {
  * Only the descriptor generation that authenticated this open socket can prove it.
  * Display names, registry membership, and ambient primary identity are not evidence. */
 export function activeGatewayLocalOwnerRoute(connection: HermesConnection | null, profile: string) {
-  if (g.activeKey === g.primaryProfile) {return undefined}
+  if (g.activeKey === PRIMARY_SCOPE) {return undefined}
   const entry = g.secondaries.get(g.activeKey)
   const opened = entry?.openedConnection
 
@@ -499,7 +499,7 @@ function reportGatewayState(profile: string, state: ConnectionState): void {
 }
 
 export function reportPrimaryGatewayState(state: ConnectionState): void {
-  reportGatewayState(g.primaryProfile, state)
+  reportGatewayState(PRIMARY_SCOPE, state)
 }
 
 function setActive(profile: string): void {
@@ -536,7 +536,7 @@ function applyActive(profile: string, activationEpoch: number): boolean {
   // fallback path funnels through applyActive, so the published profile can
   // never linger on a backend that is no longer selected (#89206).
   const routeProfile =
-    g.activeKey === g.primaryProfile ? g.primaryProfile : (g.secondaries.get(g.activeKey)?.profile ?? g.primaryProfile)
+    g.activeKey === PRIMARY_SCOPE ? g.primaryProfile : (g.secondaries.get(g.activeKey)?.profile ?? g.primaryProfile)
 
   g.$activeProfile.set(routeProfile)
   g.config?.onActiveRouteChanged?.(routeProfile)
@@ -1566,7 +1566,7 @@ export async function ensureGatewayForProfile(profile: string): Promise<void> {
   const activationEpoch = beginGatewayActivation()
 
   if (key === g.primaryProfile) {
-    applyActive(key, activationEpoch)
+    applyActive(PRIMARY_SCOPE, activationEpoch)
 
     return
   }
@@ -1577,7 +1577,7 @@ export async function ensureGatewayForProfile(profile: string): Promise<void> {
   // descriptor — $activeGatewayProfile still moves to `key`, so request
   // scoping and profile-aware surfaces behave identically.
   if (await sharedPrimaryRoute(key, 'foreground')) {
-    applyActive(g.primaryProfile, activationEpoch)
+    applyActive(PRIMARY_SCOPE, activationEpoch)
 
     return
   }
@@ -1635,7 +1635,7 @@ export async function ensureGatewayForProfile(profile: string): Promise<void> {
 // Reconnect the active gateway after a transient request failure. Primary
 // reconnects are owned by use-gateway-boot, so we only drive secondaries here.
 export async function ensureActiveGatewayOpen(): Promise<HermesGateway | null> {
-  if (g.activeKey === g.primaryProfile) {
+  if (g.activeKey === PRIMARY_SCOPE) {
     return g.primaryGateway
   }
 
@@ -1743,8 +1743,8 @@ function disposeSecondary(entry: Secondary): void {
 // (closeSecondaryGateways in use-gateway-boot) left activeKey pointing at an
 // evicted registry scope and every call silently hit the primary backend.
 function restoreActiveToPrimaryIfEvicted(): void {
-  if (g.activeKey !== g.primaryProfile && !g.secondaries.has(g.activeKey)) {
-    setActive(g.primaryProfile)
+  if (g.activeKey !== PRIMARY_SCOPE && !g.secondaries.has(g.activeKey)) {
+    setActive(PRIMARY_SCOPE)
   }
 }
 
@@ -1955,7 +1955,7 @@ export function disposeSecondariesForConnection(connectionId: string, opts: { re
   }
 
   if (activeInvalidated && !opts.redial) {
-    setActive(g.primaryProfile)
+    setActive(PRIMARY_SCOPE)
     g.config?.onActiveConnectionInvalidated?.(g.primaryProfile, gatewayActivationEpoch())
   }
 }

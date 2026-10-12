@@ -2,8 +2,10 @@ import assert from 'node:assert/strict'
 
 import { test, vi } from 'vitest'
 
+import { createSourcePythonBackend } from './archive-update-caller'
 import { createFirstRunSetupGate } from './first-run-setup-gate'
 import {
+  capturePrimaryBackendLaunch,
   createPrimaryRemoteConnection,
   FirstRunSetupResetError,
   runPrimaryBackendStartup
@@ -173,3 +175,36 @@ test('reset rejects with a typed error and never enters either backend', async (
   assert.equal(options.connectRemote.mock.calls.length, 0)
   assert.equal(options.ensureLocalRuntime.mock.calls.length, 0)
 })
+
+
+for (const initial of ['observation-a', 'default', null]) {
+  test(`deferred local startup keeps captured profile/argv/home when preference ${initial} changes`, async () => {
+    let preference = initial
+    const launch = capturePrimaryBackendLaunch(preference, '/isolated/home')
+    let release!: () => void
+    const waiting = new Promise<void>(resolve => { release = resolve })
+
+    const options = startupOptions({
+      waitForLocalStart: () => waiting,
+      prepareLocalBackend: () => createSourcePythonBackend('/isolated/runtime', 'fixture', launch.backendArgs, {
+        hermesHome: '/isolated/home', findSystemPython: () => '/isolated/python'
+      }),
+      ensureLocalRuntime: async backend => backend
+    })
+
+    const pending = runPrimaryBackendStartup(options)
+    preference = 'observation-b'
+    release()
+    const result = await pending
+    assert.equal(result.kind, 'local')
+
+    if (result.kind !== 'local') {throw new Error('Expected local startup')}
+    assert.equal(launch.profile, initial || 'default')
+    assert.notEqual(launch.profile, preference)
+    assert.deepEqual(result.backend.args.slice(2), [
+      ...(initial ? ['--profile', initial] : []), 'serve', '--host', '127.0.0.1', '--port', '0'
+    ])
+    assert.equal(launch.home, '/isolated/home')
+    assert.equal(result.backend.command, '/isolated/python')
+  })
+}
