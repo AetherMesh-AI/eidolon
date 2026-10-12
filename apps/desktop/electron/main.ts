@@ -11258,11 +11258,11 @@ async function waitForBackendExit(child, timeoutMs = 5000) {
   await wait(1000)
 }
 
-// The profile the primary (window) backend runs as. readActiveDesktopProfile()
-// returns the desktop's stored preference, or null when unset (legacy launch
-// that defers to active_profile / default).
+// A live/in-flight primary keeps its captured profile. Remembering another
+// workspace changes only the next launch preference, never this backend owner.
+// Once that generation is cleared, the stored preference selects the next boot.
 function primaryProfileKey() {
-  return readActiveDesktopProfile() || 'default'
+  return backendConnectionState.getProfile() ?? readActiveDesktopProfile() ?? 'default'
 }
 
 // Options describing the current connection setup for `resolveProfileBackendRoute`.
@@ -12746,8 +12746,8 @@ async function startHermes() {
   // no-op when the preference file already exists.
   migrateActiveProfileIfMissing()
 
-  const connectionAttempt = backendConnectionState.startAttempt()
   const primaryProfile = primaryProfileKey()
+  const connectionAttempt = backendConnectionState.startAttempt(primaryProfile)
 
   // Legacy path callers without an explicit profile belong to the primary
   // window backend. Profile-scoped callers still pass their key directly.
@@ -13063,6 +13063,7 @@ async function startHermes() {
       baseUrl,
       mode: 'local',
       source: 'local',
+      profile: primaryProfile,
       authMode: 'token',
       token: authToken,
       wsUrl,

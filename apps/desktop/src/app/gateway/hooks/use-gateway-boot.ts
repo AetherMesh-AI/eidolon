@@ -533,11 +533,16 @@ export function useGatewayBoot({
     // session id against the wrong backend — the HUD then falls back to the
     // default profile's last session (#82285). The override wins over the
     // stored preference; absent, behavior is unchanged.
-    async function adoptPrimaryProfile(shouldPublish: () => boolean = () => true): Promise<boolean> {
+    async function adoptPrimaryProfile(connection: HermesConnection, shouldPublish: () => boolean = () => true): Promise<boolean> {
       const override = windowProfileOverride()
 
       try {
-        const profileKey = override ?? (await desktop.profile?.get?.())?.profile ?? ''
+        // A local descriptor identifies the running backend; the remembered
+        // workspace can change without restarting it. Remote aliases and older
+        // descriptors retain the preference fallback.
+        const profileKey = override ??
+          (connection.mode === 'local' ? connection.profile : undefined) ??
+          (await desktop.profile?.get?.())?.profile ?? ''
 
         if (!shouldPublish()) {
           return false
@@ -656,7 +661,7 @@ export function useGatewayBoot({
         // list rather than blanking the rail. NOT awaited: refreshProfiles
         // now carries a bounded retry chain (#70679), and switch completion
         // must not wait out backoff timers against an unhealthy backend.
-        if (!(await adoptPrimaryProfile(ownsSwitch)) || !ownsSwitch()) {
+        if (!(await adoptPrimaryProfile(conn, ownsSwitch)) || !ownsSwitch()) {
           return
         }
 
@@ -1080,7 +1085,7 @@ export function useGatewayBoot({
         // (cwd seed, config, sessions) are independent REST calls — running
         // them serially added their sum to time-to-populated-sidebar when only
         // the max is needed.
-        await adoptPrimaryProfile()
+        await adoptPrimaryProfile(conn)
 
         setDesktopBootStep({
           phase: 'renderer.config',

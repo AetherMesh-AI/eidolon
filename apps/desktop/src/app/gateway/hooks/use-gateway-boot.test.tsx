@@ -1847,3 +1847,17 @@ describe('useGatewayBoot remote reconnect loop (real hook, fake socket)', () => 
     expect($gatewayState.get()).toBe('open')
   })
 })
+
+
+it('adopts the authenticated local primary profile rather than a changed next-launch preference', async () => {
+  const desktop = fakeDesktop()
+  desktop.profile.get.mockResolvedValue({ profile: 'observation-a' })
+  desktop.getConnection.mockResolvedValue({ ...primaryConn, mode: 'local', profile: 'default' } as never)
+  ;(window as { hermesDesktop?: unknown }).hermesDesktop = desktop
+  render(<Harness />)
+  await flushAsync()
+  expect($activeGatewayProfile.get()).toBe('default')
+  expect(isActivePrimary()).toBe(true)
+  expect($connection.get()?.profile).toBe('default')
+  expect(desktop.profile.get).not.toHaveBeenCalled()
+})
