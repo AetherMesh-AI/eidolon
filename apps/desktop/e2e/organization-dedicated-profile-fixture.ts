@@ -18,6 +18,7 @@ import { expect } from './test'
 
 export const profileA = 'observation-a'
 export const profileB = 'observation-b'
+export const queuedSourceTitle = 'Queued work belonging only to profile A'
 
 export async function setupDedicatedProfiles() {
   const sandbox = createSandbox('dedicated-organization')
@@ -124,7 +125,7 @@ s=OrganizationStore(Path(sys.argv[1])/'organization'/'state.db')
 s.create_objective(sys.argv[2],idempotency_key='native-stopped-profile-queue')
 `,
           home,
-          queuedSwitchTitle
+          home === homes[0] ? queuedSourceTitle : queuedSwitchTitle
         ],
         { cwd: path.resolve(import.meta.dirname, '../../..'), env }
       )

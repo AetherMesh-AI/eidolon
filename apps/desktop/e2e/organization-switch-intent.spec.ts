@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import path from 'node:path'
 
 import { type MockBackendFixture } from './fixtures'
-import { profileA, profileB, setupDedicatedProfiles } from './organization-dedicated-profile-fixture'
+import { profileA, profileB, queuedSourceTitle, setupDedicatedProfiles } from './organization-dedicated-profile-fixture'
 import { queuedSwitchTitle, switchPython } from './organization-switch-fixture'
 import { acknowledgeExpectedErrorBanner, expect, test } from './test'
 
@@ -161,7 +161,9 @@ s.set_objective_archived(ident,True,expected_revision=0,idempotency_key='switch-
     })
     await page.locator('[data-slot="profile-rail"]').getByRole('button', { name: profile, exact: true }).click()
     await nav.getByRole('link', { name: 'Home', exact: true }).click()
-    await expect(page.getByText(queuedSwitchTitle, { exact: true })).toBeVisible()
+    await expect(
+      page.getByText(profile === profileA ? queuedSourceTitle : queuedSwitchTitle, { exact: true })
+    ).toBeVisible()
     await expect(page.locator('.eid-workspace-header').getByRole('button', { name: new RegExp(profile) })).toBeVisible()
   }
 
