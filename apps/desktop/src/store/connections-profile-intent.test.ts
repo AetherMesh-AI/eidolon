@@ -16,16 +16,12 @@ vi.mock('@/store/gateway', () => ({
   openGatewayForAgent: vi.fn(async () => undefined),
   openGatewayForProfile: vi.fn(async () => undefined)
 }))
-vi.mock('@/eidolon', () => ({ getProfiles, setApiRequestProfile: vi.fn() }))
+vi.mock('@/eidolon', () => ({ getProfiles, setApiRequestProfile: vi.fn(), resetSidebarBatchCapability: vi.fn() }))
 vi.mock('@/lib/query-client', () => ({ invalidateProfileScopedQueries: vi.fn() }))
+vi.mock('@/app/contrib/hooks/use-background-sync', () => ({ resetLiveRuntimeTracking: vi.fn() }))
 vi.mock('@/store/starmap', () => ({ resetStarmapGraph: vi.fn() }))
-vi.mock('@/store/gateway-switch', () => ({
-  beginGatewaySwitch: vi.fn(() => 1),
-  endGatewaySwitch: vi.fn(),
-  recoverActiveSourceAfterFailedGatewaySwitch: vi.fn()
-}))
-
-const { $connection } = await import('./session')
+const { $connection, $sessions, $sessionsLoading, setSessions, setSessionsLoading } = await import('./session')
+const { $gatewaySwitching, beginGatewaySwitch, endGatewaySwitch, registerGatewaySwitchLifecycle } = await import('./gateway-switch')
 
 const {
   $activeGatewayProfile, $newChatProfile, $showAllProfiles, $freshSessionRequest,
@@ -57,9 +53,68 @@ beforeEach(() => {
       ({ connectionId, profile, registryScoped: true, mode: 'remote', baseUrl: 'https://example.invalid' }) as HermesConnection
   } })
 })
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
 
 describe('connection bookkeeping versus real profile intent doors', () => {
+  it.each([
+    ['failure', false], ['nonlanding', false], ['timeout', false],
+    ['failure', true], ['nonlanding', true], ['timeout', true]
+  ] as const)(
+    'reset recovery after %s follows the reset owner (newer reset=%s)', async (outcome, newerReset) => {
+      vi.useFakeTimers()
+      $connection.set({ connectionId: 'local', profile: 'default', mode: 'local', baseUrl: '' } as HermesConnection)
+      $showAllProfiles.set(true)
+      setSessions([{ id: 'original-session', profile: 'default' } as never])
+      setSessionsLoading(false)
+
+      const refresh = vi.fn(async (shouldPublish?: () => boolean) => {
+        expect($connection.get()?.connectionId).toBe('local')
+
+        if (shouldPublish?.()) { setSessions([{ id: 'recovered-session', profile: 'default' } as never]) }
+      })
+
+      const off = registerGatewaySwitchLifecycle({ beforeConnectionSwitch: vi.fn(), refreshSessions: refresh })
+      const activation = deferred<boolean>()
+      ensureGatewayForAgent.mockReturnValueOnce(activation.promise)
+      const freshRequests = $freshSessionRequest.get()
+      const switching = selectConnection('homelab', { profile: 'research' })
+      let newerToken: number | undefined
+
+      try {
+        await vi.advanceTimersByTimeAsync(0)
+        expect($gatewaySwitching.get()).toBe(true)
+        expect($sessions.get()).toEqual([])
+        expect($sessionsLoading.get()).toBe(true)
+        // Same value and route: only foreground intent changes, not reset ownership.
+        setShowAllProfiles(true)
+
+        if (newerReset) { newerToken = beginGatewaySwitch() }
+
+        if (outcome === 'failure') { activation.reject(new Error('Activation failed')) }
+        else if (outcome === 'nonlanding') { activation.resolve(false) }
+        else { await vi.advanceTimersByTimeAsync(20_000) }
+
+        await expect(switching).resolves.toBeUndefined()
+        await vi.advanceTimersByTimeAsync(0)
+        expect(refresh).toHaveBeenCalledTimes(newerReset ? 0 : 1)
+        expect($sessions.get().map(session => session.id)).toEqual(newerReset ? [] : ['recovered-session'])
+        expect($sessionsLoading.get()).toBe(newerReset)
+        expect($gatewaySwitching.get()).toBe(newerReset)
+        expect($showAllProfiles.get()).toBe(true)
+        expect($freshSessionRequest.get()).toBe(freshRequests)
+        expect($newChatProfile.get()).toBeNull()
+        expect(setLastUsed).not.toHaveBeenCalled()
+      } finally {
+        activation.resolve(false)
+        await vi.advanceTimersByTimeAsync(0)
+
+        if (newerToken !== undefined) { endGatewaySwitch(newerToken) }
+        setSessionsLoading(false)
+        off()
+      }
+    }
+  )
+
   it.each(['selectProfile', 'newSessionInProfile', 'newSessionInAgent'] as const)(
     'a pending %s owns the draft before its route publishes', async door => {
       const remembered = deferred<Awaited<ReturnType<typeof setLastUsed>>>()

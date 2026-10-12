@@ -63,6 +63,7 @@ vi.mock('@/store/gateway-switch', () => ({
   $gatewaySwitching,
   beginGatewaySwitch,
   endGatewaySwitch,
+  isCurrentGatewaySwitch: (token: number) => token === latestSwitchToken,
   recoverActiveSourceAfterFailedGatewaySwitch,
   wipeSessionListsForGatewaySwitch
 }))

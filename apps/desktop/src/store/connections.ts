@@ -8,6 +8,7 @@ import {
   beginGatewaySwitch,
   endGatewaySwitch,
   type GatewaySwitchToken,
+  isCurrentGatewaySwitch,
   recoverActiveSourceAfterFailedGatewaySwitch
 } from '@/store/gateway-switch'
 import {
@@ -430,12 +431,14 @@ export async function selectConnection(connectionId: string, options: SelectConn
         }
       }
 
-      if (revision !== switchRevision || !isCurrentSourceSwitchIntent(intent)) {
-        return
-      }
-
+      // Even a superseded foreground intent still owes recovery if it wiped
+      // the active source and no newer reset owns that wipe.
       if (!targetIsActive()) {
         throw new Error(`Connection "${targetConnection.label}" did not become active.`)
+      }
+
+      if (revision !== switchRevision || !isCurrentSourceSwitchIntent(intent)) {
+        return
       }
     } finally {
       // Lower the barrier the moment the commit settles — before the
@@ -469,16 +472,16 @@ export async function selectConnection(connectionId: string, options: SelectConn
       await refreshActiveProfile()
     }
   } catch (error) {
-    if (revision === switchRevision && isCurrentSourceSwitchIntent(intent)) {
-      if (token !== null) {
-        // This switch wiped for a commit that never landed. The previous
-        // source is still the active one, and nothing reactive re-pulls its
-        // lists (no scope moved): repaint it and land on a fresh draft there,
-        // matching what a failed Settings apply leaves behind.
-        recoverActiveSourceAfterFailedGatewaySwitch(token)
+    const recoveryToken = token !== null && isCurrentGatewaySwitch(token) ? token : null
 
-        if (!options.preserveRoute) { requestFreshSession() }
-      }
+    if (recoveryToken !== null) {
+      // Reset ownership outlives foreground intent: a browse-only pick can
+      // invalidate navigation without taking responsibility for wiped lists.
+      recoverActiveSourceAfterFailedGatewaySwitch(recoveryToken)
+    }
+
+    if (revision === switchRevision && isCurrentSourceSwitchIntent(intent)) {
+      if (recoveryToken !== null && !options.preserveRoute) { requestFreshSession() }
 
       throw error
     }
