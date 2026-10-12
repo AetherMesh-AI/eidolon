@@ -244,6 +244,37 @@ describe('refreshOnboarding', () => {
     expect(window.localStorage.getItem('hermes-desktop-onboarded-v1')).toBe('1')
   })
 
+  it.each(['ready', 'fallback'])('does not publish a retired readiness result (%s)', async outcome => {
+    const notifySpy = vi.spyOn(notifications, 'notify')
+    notifySpy.mockClear()
+    const onCompleted = vi.fn()
+    const api = vi.fn()
+    installApiMock(api)
+    const state = baseState({ configured: true, providers: [makeOAuthProvider('cached')] })
+    $desktopOnboarding.set(state)
+    let release!: () => void
+    const held = new Promise<void>(resolve => { release = resolve })
+    let current = true
+
+    const pending = refreshOnboarding({
+      shouldPublish: () => current,
+      onCompleted,
+      requestGateway: async method => {
+        await held
+
+        return (outcome === 'ready' ? keylessCustomGateway() : fallbackTimeoutGateway())(method) as never
+      }
+    })
+
+    current = false
+    release()
+    await expect(pending).resolves.toBe(false)
+    expect($desktopOnboarding.get()).toBe(state)
+    expect(onCompleted).not.toHaveBeenCalled()
+    expect(notifySpy).not.toHaveBeenCalled()
+    expect(api).not.toHaveBeenCalled()
+  })
+
   it('shows a non-blocking notification when preserving configured on fallback', async () => {
     const notifySpy = vi.spyOn(notifications, 'notify')
 

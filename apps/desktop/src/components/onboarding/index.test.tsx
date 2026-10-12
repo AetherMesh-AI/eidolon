@@ -1,11 +1,14 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import * as notifications from '@/store/notifications'
 import { $desktopOnboarding, type DesktopOnboardingState, type OnboardingContext } from '@/store/onboarding'
+import { $gatewayState } from '@/store/session'
+import { beginSourceSwitchIntent } from '@/store/source-switch-intent'
 import { makeOAuthProvider } from '@/test/oauth-provider'
 import type { OAuthProvider } from '@/types/eidolon'
 
-import { Picker } from '.'
+import { DesktopOnboardingOverlay, Picker } from '.'
 
 function setProviders(providers: OAuthProvider[]) {
   $desktopOnboarding.set({
@@ -124,5 +127,39 @@ describe('onboarding Picker', () => {
     render(<Picker ctx={ctx} />)
 
     expect(screen.queryByRole('button', { name: "I'll choose a provider later" })).toBeNull()
+  })
+})
+
+
+describe('automatic readiness source lifetime', () => {
+  it.each(['disconnect', 'newer-source', 'unmount'])('does not show a stale readiness failure after %s', async retirement => {
+    setProviders([])
+    $desktopOnboarding.set({ ...$desktopOnboarding.get(), configured: true })
+    $gatewayState.set('open')
+    const notify = vi.spyOn(notifications, 'notify')
+    notify.mockClear()
+    let release!: () => void
+    const held = new Promise<void>(resolve => { release = resolve })
+
+    const request = vi.fn(async () => {
+      await held
+      throw new Error('retired transport closed')
+    })
+
+    const view = render(<DesktopOnboardingOverlay enabled profile="default" requestGateway={request} />)
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(2))
+    await act(async () => {
+      if (retirement === 'disconnect') { $gatewayState.set('closed') }
+
+      if (retirement === 'newer-source') { beginSourceSwitchIntent() }
+
+      if (retirement === 'unmount') { view.unmount() }
+      release()
+      await Promise.allSettled(request.mock.results.map(result => result.value))
+    })
+    expect(notify).not.toHaveBeenCalled()
+    expect($desktopOnboarding.get().configured).toBe(true)
+    notify.mockRestore()
+    $gatewayState.set('closed')
   })
 })

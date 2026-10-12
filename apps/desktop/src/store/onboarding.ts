@@ -78,6 +78,8 @@ export interface DesktopOnboardingState {
 }
 
 export interface OnboardingContext {
+  // Automatic readiness reads may settle after their source or view is retired.
+  shouldPublish?: () => boolean
   onCompleted?: () => void
   profile?: string
   requestGateway: <T = unknown>(method: string, params?: Record<string, unknown>) => Promise<T>
@@ -618,6 +620,10 @@ export async function refreshOnboarding(ctx: OnboardingContext) {
   }
 
   const runtime = await checkRuntime(ctx)
+
+  if (ctx.shouldPublish && !ctx.shouldPublish()) {
+    return false
+  }
 
   if (runtime.ready) {
     completeDesktopOnboarding()

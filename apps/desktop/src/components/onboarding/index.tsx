@@ -50,7 +50,9 @@ export {
   sortProviders
 } from './providers'
 
-import { requestGatewayForProfile } from '@/store/gateway'
+import { $gateway, gatewayTransportGeneration, requestGatewayForProfile } from '@/store/gateway'
+import { $gatewayState } from '@/store/session'
+import { currentSourceSwitchIntent } from '@/store/source-switch-intent'
 
 interface DesktopOnboardingOverlayProps {
   enabled: boolean
@@ -232,9 +234,19 @@ export function DesktopOnboardingOverlay({
   }
 
   useEffect(() => {
+    let active = true
+    const intent = currentSourceSwitchIntent()
+    const gateway = $gateway.get()
+    const generation = gateway ? gatewayTransportGeneration(gateway) : undefined
+
     if (enabled || onboarding.requested) {
-      void refreshOnboarding(ctx)
+      void refreshOnboarding({ ...ctx, shouldPublish: () => active &&
+        currentSourceSwitchIntent() === intent && $gateway.get() === gateway &&
+        (!gateway || gatewayTransportGeneration(gateway) === generation) &&
+        (!enabled || $gatewayState.get() === 'open') })
     }
+
+    return () => { active = false }
   }, [ctx, enabled, onboarding.requested])
 
   // When the Providers settings page asked to connect a specific provider, the
