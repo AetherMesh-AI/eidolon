@@ -168,7 +168,9 @@ test('recovers durably accepted owner send and renewal after lost acknowledgemen
       .getByRole('dialog', { name: 'Replenish allowance', exact: true })
       .getByText('Scripted uncertain organization.ownerChat.renew', { exact: true })
   ).toBeVisible()
-  const renewalAlert = (await panel.getByRole('alert').textContent())!.trim()
+  // The modal makes its background aria-hidden; the unchanged banner guard
+  // observes DOM alerts, including this exact background error.
+  const renewalAlert = (await panel.getByRole('alert', { includeHidden: true }).textContent())!.trim()
   expect(renewalAlert).toContain('Scripted uncertain organization.ownerChat.renew')
   await page
     .getByRole('dialog', { name: 'Replenish allowance', exact: true })
