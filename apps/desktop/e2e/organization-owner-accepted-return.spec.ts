@@ -240,6 +240,7 @@ test('recovers durably accepted owner send and renewal after lost acknowledgemen
       writes,
       accepted,
       scriptedProviderCalls: running.calls.length,
+      unintendedProviderCalls: running.fixture.mock.receivedPrompts.length,
       schedulerStartsB: destinationStarts(),
       schedulerStartsA: dedicated?.starts(0),
       descriptors: dedicated?.routes,
@@ -254,7 +255,7 @@ test('recovers durably accepted owner send and renewal after lost acknowledgemen
   if (dedicated) {
     expect(dedicated.starts(0)).toBe(0)
     expect(dedicated.starts(1)).toBe(0)
-    expect(dedicated.fixture.mock.receivedPrompts).toHaveLength(0)
+    expect(running.fixture.mock.receivedPrompts).toHaveLength(0)
   }
 
   expect(running.providerErrors).toEqual([])

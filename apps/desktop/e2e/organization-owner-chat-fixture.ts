@@ -197,7 +197,9 @@ export async function setupOwnerChatFixture(options: { dedicatedProfiles?: boole
 
     if (options.dedicatedProfiles) {
       dedicated = await setupDedicatedProfiles({ providerUrl })
-      fixture = { ...dedicated.fixture, mockUrl: providerUrl, cleanup }
+      // Owner responses are handled by the proxy; other inference reaches this
+      // upstream mock, not the dedicated helper's unused default provider.
+      fixture = { ...dedicated.fixture, mock, mockUrl: providerUrl, cleanup }
     } else {
       const launch = await launchDesktop(buildAppEnv(sandbox))
       fixture = { ...launch, mock, mockUrl: providerUrl, sandbox, cleanup }
