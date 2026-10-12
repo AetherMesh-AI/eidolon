@@ -373,3 +373,26 @@ it.each(['session.title', 'slash.exec', 'handoff.state', 'handoff.fail', 'proces
   await expect(requestGatewayForAgent('local', 'research', method, params)).rejects.toThrow('runtime transport is unavailable')
   expect(replacement.request).not.toHaveBeenCalled()
 })
+
+
+it('keeps session config.set on its producer and never falls through to replacement global settings', async () => {
+  await ensureGatewayForProfile('research')
+  const secondary = gatewayMocks.instances[0]
+  secondary.emit({ session_id: 'runtime-model', type: 'session.info' })
+  let globalWrites = 0
+
+  const replacement = { connectionState: 'open', request: vi.fn(async () => { globalWrites++;
+
+ return { saved: true } }) }
+
+  setPrimaryGateway(replacement as never, 'research', { connectionId: 'local' })
+  const params = { session_id: 'runtime-model', key: 'model', value: 'fixture-model --session' }
+  await expect(requestGatewayForAgent('local', 'research', 'config.set', params)).resolves.toEqual({ method: 'config.set', params })
+  expect(secondary.request).toHaveBeenLastCalledWith('config.set', params)
+  expect(globalWrites).toBe(0)
+  retireLocalProfileGateways('research')
+  await expect(requestGatewayForAgent('local', 'research', 'config.set', params)).rejects.toThrow('runtime transport is unavailable')
+  expect(globalWrites).toBe(0)
+  await expect(requestGatewayForAgent('local', 'research', 'config.set', { key: 'model', value: 'explicit-profile-default' })).resolves.toEqual({ saved: true })
+  expect(globalWrites).toBe(1)
+})

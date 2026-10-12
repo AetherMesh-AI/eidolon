@@ -21,6 +21,7 @@ vi.mock('@/store/gateway', async () => {
   return {
     $gateway, $localOwnerProofRevision: atom(0), $activeGatewayRoute,
     activeGatewayProfileKey: () => $activeGatewayRoute.get(),
+    gatewayTransportGeneration: () => 1,
     isPrimaryGateway: (gateway: unknown) => $gateway.get() === gateway,
     requestGatewayWithRuntimeBinding: (gateway: { request: (...args: unknown[]) => Promise<unknown> }, ...args: unknown[]) => gateway.request(...args),
     activeGatewayConnectionId: () => routing.connectionId, gatewayActivationEpoch: () => routing.epoch,
@@ -37,7 +38,7 @@ vi.mock('@/store/session', async () => {
 vi.mock('@/store/profile', async () => {
   const { atom } = await import('nanostores')
 
-  return { $activeGatewayProfile: atom('default'), $gatewaySwapTarget: atom(null) }
+  return { $activeGatewayProfile: atom('default'), $gatewaySwapTarget: atom(null), normalizeProfileKey: (profile: string) => profile.trim() || 'default' }
 })
 
 import { $activeGatewayRoute, $gateway } from '@/store/gateway'

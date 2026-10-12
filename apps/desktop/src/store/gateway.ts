@@ -381,7 +381,8 @@ export function adoptPrimaryGatewayConnection(gateway: HermesGateway, connection
 
   batch(() => {
     publishActiveConnection(connection)
-    applyActive(PRIMARY_SCOPE, beginGatewayActivation())
+    applyActive(PRIMARY_SCOPE, beginGatewayActivation(),
+      connection.sharedPrimary || connection.sharedRemote ? connection.profile : undefined)
   })
 
   return true
@@ -609,7 +610,7 @@ function beginGatewayActivation(): number {
   return g.activationEpoch
 }
 
-function applyActive(profile: string, activationEpoch: number): boolean {
+function applyActive(profile: string, activationEpoch: number, logicalProfile?: string): boolean {
   if (gatewayActivationEpoch() !== activationEpoch) {
     return false
   }
@@ -636,7 +637,7 @@ function applyActive(profile: string, activationEpoch: number): boolean {
     g.activeKey === PRIMARY_SCOPE ? g.primaryProfile : (g.secondaries.get(g.activeKey)?.profile ?? g.primaryProfile)
 
   g.$activeProfile.set(routeProfile)
-  g.config?.onActiveRouteChanged?.(routeProfile)
+  g.config?.onActiveRouteChanged?.(logicalProfile ?? routeProfile)
 
   return true
 }
@@ -992,7 +993,7 @@ const RUNTIME_SESSION_METHODS = new Set([
   'approval.pending', 'approval.received', 'approval.respond', 'clarify.respond', 'sudo.respond', 'secret.respond',
   'handoff.state', 'handoff.fail', 'process.list', 'process.kill',
   'rollback.list', 'rollback.restore', 'rollback.diff', 'command.dispatch',
-  'tools.configure', 'tools.show', 'tools.list', 'toolsets.list', 'model.options', 'reload.mcp', 'session.set_hidden',
+  'config.set', 'tools.configure', 'tools.show', 'tools.list', 'toolsets.list', 'model.options', 'reload.mcp', 'session.set_hidden',
   'terminal.read.respond', 'preview.read.respond', 'preview.act.respond', 'window.read.respond',
   'tour.respond', 'mcp.setup.respond', 'terminal.resize', 'message.react', 'handoff.request',
   'clipboard.paste', 'image.attach', 'image.attach_bytes', 'image.detach', 'pdf.attach', 'file.attach',
@@ -1017,6 +1018,11 @@ function captureRuntimeTransport(gateway: HermesGateway, profile?: string, scope
     connectionId: entry.connectionId ?? entry.connection?.connectionId?.trim() ?? null, entry }
 }
 
+/** Capture before dispatch so a late transport failure cannot authorize a new generation. */
+export function gatewayTransportGeneration(gateway: HermesGateway): number | undefined {
+  return captureRuntimeTransport(gateway)?.generation
+}
+
 /** Correlate runtime-producing responses with the transport that sent them. */
 export async function requestGatewayWithRuntimeBinding<T>(gateway: HermesGateway, method: string,
   params: Record<string, unknown> = {}, timeoutMs?: number, signal?: AbortSignal, profile?: string, scopeProfile = false): Promise<T> {
@@ -1036,9 +1042,11 @@ export async function requestGatewayWithRuntimeBinding<T>(gateway: HermesGateway
     }
   }
 
+  const requestParams = producer && scopeProfile ? { ...params, profile: producer.profile } : params
+
   const result = await (timeoutMs === undefined && signal === undefined
-    ? gateway.request<T>(method, params)
-    : gateway.request<T>(method, params, timeoutMs, signal))
+    ? gateway.request<T>(method, requestParams)
+    : gateway.request<T>(method, requestParams, timeoutMs, signal))
 
   if (RUNTIME_RESPONSE_METHODS.has(method) && result && typeof result === 'object' &&
       'session_id' in result && typeof result.session_id === 'string' && result.session_id.trim()) {

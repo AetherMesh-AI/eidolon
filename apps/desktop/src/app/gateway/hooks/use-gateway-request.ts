@@ -4,9 +4,10 @@ import { useCallback, useEffect, useRef } from 'react'
 
 import type { HermesGateway } from '@/eidolon'
 import { RECONNECT_ATTEMPT_TIMEOUT_MS, withTimeout } from '@/lib/with-timeout'
-import { $gateway, activeGatewayProfileKey, adoptPrimaryGatewayConnection, connectPrimaryGateway, ensureActiveGatewayOpen, gatewayActivationEpoch, isActivePrimary, isPrimaryGateway, requestGatewayWithRuntimeBinding } from '@/store/gateway'
+import { $gateway, activeGatewayProfileKey, adoptPrimaryGatewayConnection, connectPrimaryGateway, ensureActiveGatewayOpen, gatewayActivationEpoch, gatewayTransportGeneration, isActivePrimary, isPrimaryGateway, requestGatewayWithRuntimeBinding } from '@/store/gateway'
 import { $gatewaySwitching } from '@/store/gateway-switch'
-import { $gatewayState, setConnection } from '@/store/session'
+import { $activeGatewayProfile, normalizeProfileKey } from '@/store/profile'
+import { $connection, $gatewayState, setConnection } from '@/store/session'
 import { currentSourceSwitchIntent, isCurrentSourceSwitchIntent } from '@/store/source-switch-intent'
 
 export function useGatewayRequest() {
@@ -72,10 +73,13 @@ export function useGatewayRequest() {
       reauthErrorRef.current = null
       const intent = currentSourceSwitchIntent()
       const activationEpoch = gatewayActivationEpoch()
-      const requestedProfile = activeGatewayProfileKey()
+      const requestedProfile = normalizeProfileKey($activeGatewayProfile.get())
+      const requestedConnection = $connection.get()
+      const sharedMember = Boolean(requestedConnection?.sharedPrimary || requestedConnection?.sharedRemote)
 
       const ownsForeground = () => isCurrentSourceSwitchIntent(intent) &&
         gatewayActivationEpoch() === activationEpoch && isActivePrimary() &&
+        normalizeProfileKey($activeGatewayProfile.get()) === requestedProfile &&
         isPrimaryGateway(existing) && !$gatewaySwitching.get()
 
       try {
@@ -112,12 +116,33 @@ export function useGatewayRequest() {
 
         if (!ownsForeground()) {return null}
 
-        if (!adoptPrimaryGatewayConnection(existing, conn, activationEpoch)) {return null}
-        connectionRef.current = conn
+        let foregroundConnection = conn
+
+        if (sharedMember) {
+          foregroundConnection = await withTimeout(
+            requestedConnection?.sharedRemote && requestedConnection.connectionId && desktop.getConnectionFor
+              ? desktop.getConnectionFor({ connectionId: requestedConnection.connectionId, profile: requestedProfile })
+              : desktop.getConnection(requestedProfile),
+            RECONNECT_ATTEMPT_TIMEOUT_MS,
+            'Timed out resolving the shared member after reconnect'
+          )
+
+          if (!ownsForeground()) {return null}
+
+          if (!(foregroundConnection.sharedPrimary || foregroundConnection.sharedRemote) ||
+              foregroundConnection.baseUrl !== conn.baseUrl ||
+              foregroundConnection.connectionId !== conn.connectionId ||
+              normalizeProfileKey(foregroundConnection.profile) !== requestedProfile) {
+            throw new Error('Eidolon shared member route changed during reconnect')
+          }
+        }
+
+        if (!adoptPrimaryGatewayConnection(existing, foregroundConnection, activationEpoch)) {return null}
+        connectionRef.current = foregroundConnection
 
         // Recover the view, but never replay an old owner's operation in a
         // replacement process that serves a different profile.
-        return activeGatewayProfileKey() === requestedProfile ? existing : null
+        return normalizeProfileKey($activeGatewayProfile.get()) === requestedProfile ? existing : null
       } catch (error) {
         if (isGatewayReauthRequired(error)) {
           reauthErrorRef.current = error
@@ -145,10 +170,31 @@ export function useGatewayRequest() {
         throw new Error('Eidolon gateway unavailable')
       }
 
+      // A failed RPC belongs to the foreground and transport that dispatched
+      // it, not whichever profile happens to be selected when it rejects.
+      const intent = currentSourceSwitchIntent()
+      const activationEpoch = gatewayActivationEpoch()
+      const profile = normalizeProfileKey($activeGatewayProfile.get())
+      const connection = $connection.get()
+
+      const scopeProfile = isActivePrimary() && normalizeProfileKey(connection?.profile) === profile &&
+        Boolean(connection?.sharedPrimary || connection?.sharedRemote)
+
+      if (isActivePrimary() && profile !== activeGatewayProfileKey() && !scopeProfile) {
+        throw new Error('Eidolon selected profile has no verified shared primary route')
+      }
+
+      const generation = gatewayTransportGeneration(gateway)
+
+      const ownsRequest = () => isCurrentSourceSwitchIntent(intent) &&
+        gatewayActivationEpoch() === activationEpoch && normalizeProfileKey($activeGatewayProfile.get()) === profile &&
+        gatewayRef.current === gateway && $gateway.get() === gateway &&
+        gatewayTransportGeneration(gateway) === generation
+
       try {
-        return await requestGatewayWithRuntimeBinding<T>(gateway, method, params, timeoutMs, signal)
+        return await requestGatewayWithRuntimeBinding<T>(gateway, method, params, timeoutMs, signal, profile, scopeProfile)
       } catch (error) {
-        if (!isGatewayTransportError(error)) {
+        if (!isGatewayTransportError(error) || !ownsRequest()) {
           throw error
         }
 
@@ -171,7 +217,12 @@ export function useGatewayRequest() {
           throw error
         }
 
-        return requestGatewayWithRuntimeBinding<T>(recovered, method, params, timeoutMs, signal)
+        // Recovery may advance this owner's generation. It cannot grant an
+        // old operation the authority of a newer source-selection intent.
+        if (!isCurrentSourceSwitchIntent(intent) || normalizeProfileKey($activeGatewayProfile.get()) !== profile ||
+            recovered !== gateway || gatewayRef.current !== gateway || $gateway.get() !== gateway) {throw error}
+
+        return requestGatewayWithRuntimeBinding<T>(recovered, method, params, timeoutMs, signal, profile, scopeProfile)
       }
     },
     [ensureGatewayOpen]

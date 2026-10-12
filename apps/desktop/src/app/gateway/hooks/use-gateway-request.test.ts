@@ -60,6 +60,7 @@ import {
   configureGatewayRegistry,
   connectPrimaryGateway,
   ensureGatewayForAgent,
+  ensureGatewayForProfile,
   recordPrimaryRuntimeProducer,
   requestGatewayForAgent,
   setPrimaryGateway
@@ -217,10 +218,11 @@ async function expectSecondaryRecoveryFailure(
   expect(gateway.connect).toHaveBeenCalledTimes(1)
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   gatewayMocks.instances.length = 0
   closeSecondaryGateways()
   setPrimaryGateway(null)
+  await ensureGatewayForProfile('default')
   $gateway.set(null)
   $connection.set(null)
   $gatewayState.set('idle')
@@ -492,4 +494,129 @@ it.each([false, true])('reconciles a request-triggered changed-profile primary o
     primary.request.mockResolvedValueOnce({ pong: true })
     await act(async () => { await expect(result.current.requestGateway('ping')).resolves.toEqual({ pong: true }) })
   }
+})
+
+
+it.each(['A-B', 'A-B-A', 'new-generation'])('does not replay a held original request after ownership changes (%s)', async change => {
+  const desktop = installRemoteDesktop()
+  const primary = makePrimaryGateway()
+  setPrimaryGateway(primary as unknown as HermesGateway, 'default', { connectionId: 'local' })
+  await ensureGatewayForProfile('default')
+  let rejectOriginal!: (error: Error) => void
+  primary.request.mockReturnValueOnce(new Promise((_resolve, reject) => { rejectOriginal = reject }))
+  const { result } = renderHook(() => useGatewayRequest())
+  const transportError = new Error('connection closed')
+
+  const pending = result.current.requestGateway('session.create', { title: 'A-only draft' })
+    .then(value => ({ value }), error => ({ error }))
+
+  let secondary: TestGateway | undefined
+  await act(async () => {
+    if (change === 'new-generation') {
+      primary.close()
+      const connection = { ...await installPrimaryDesktop('token').getConnection(), profile: 'default' }
+      await connectPrimaryGateway(primary as unknown as HermesGateway, connection, connection.wsUrl)
+    } else {
+      beginSourceSwitchIntent()
+      await ensureGatewayForAgent('ssh-source', 'research')
+      secondary = $gateway.get() as unknown as TestGateway
+
+      if (change === 'A-B-A') {
+        beginSourceSwitchIntent()
+        await ensureGatewayForProfile('default')
+      }
+
+      primary.close()
+    }
+  })
+  const descriptorCalls = desktop.getConnection.mock.calls.length
+  await act(async () => {
+    rejectOriginal(transportError)
+    await expect(pending).resolves.toEqual({ error: transportError })
+  })
+  expect(primary.request).toHaveBeenCalledTimes(1)
+  expect(secondary?.request.mock.calls ?? []).toEqual([])
+  expect(desktop.getConnection).toHaveBeenCalledTimes(descriptorCalls)
+})
+
+
+it('retains logical member B when its shared primary reconnects on the same launch profile', async () => {
+  const desktop = installPrimaryDesktop('oauth')
+  const primaryConnection = { ...await desktop.getConnection(), connectionId: 'shared', profile: 'default' }
+  const memberConnection = { ...primaryConnection, profile: 'member-b', sharedPrimary: true }
+  desktop.getConnection.mockImplementation(async profile => profile === 'member-b' ? memberConnection : primaryConnection)
+  const primary = makePrimaryGateway()
+  setPrimaryGateway(primary as unknown as HermesGateway, 'default', primaryConnection)
+  await ensureGatewayForProfile('default')
+  $activeGatewayProfile.set('member-b')
+  $connection.set(memberConnection)
+  $gatewayState.set('open')
+  primary.close()
+  primary.request.mockRejectedValueOnce(new Error('connection closed')).mockResolvedValueOnce({ session_id: 'member-runtime' })
+  const { result } = renderHook(() => useGatewayRequest())
+  await act(async () => {
+    await expect(result.current.requestGateway('session.resume', { session_id: 'member-stored', profile: 'wrong' })).resolves.toEqual({ session_id: 'member-runtime' })
+  })
+  expect($activeGatewayProfile.get()).toBe('member-b')
+  expect(activeGatewayProfileKey()).toBe('default')
+  expect($connection.get()).toMatchObject({ profile: 'member-b', sharedPrimary: true })
+  expect(primary.request.mock.calls).toEqual([
+    ['session.resume', { session_id: 'member-stored', profile: 'member-b' }],
+    ['session.resume', { session_id: 'member-stored', profile: 'member-b' }]
+  ])
+  primary.request.mockResolvedValueOnce({ goal: 'B goal' })
+  await requestGatewayForAgent('shared', 'member-b', 'session.control.read', { session_id: 'member-runtime', profile: 'wrong' })
+  expect(primary.request).toHaveBeenLastCalledWith('session.control.read', { session_id: 'member-runtime', profile: 'member-b' })
+})
+
+
+it.each(['newer-intent', 'changed-endpoint'])('does not republish or retry a shared member after its descriptor lookup loses ownership (%s)', async change => {
+  const desktop = installPrimaryDesktop('oauth')
+  const primaryConnection = { ...await desktop.getConnection(), connectionId: 'shared', profile: 'default' }
+  const memberConnection = { ...primaryConnection, profile: 'member-b', sharedPrimary: true }
+  desktop.getConnection.mockImplementation(async profile => {
+    if (profile !== 'member-b') {return primaryConnection}
+
+    if (change === 'newer-intent') {
+      beginSourceSwitchIntent()
+      $activeGatewayProfile.set('member-c')
+
+      return memberConnection
+    }
+
+    return { ...memberConnection, baseUrl: 'https://other.example.test' }
+  })
+  const primary = makePrimaryGateway()
+  setPrimaryGateway(primary as unknown as HermesGateway, 'default', primaryConnection)
+  await ensureGatewayForProfile('default')
+  $activeGatewayProfile.set('member-b')
+  $connection.set(memberConnection)
+  $gatewayState.set('open')
+  primary.close()
+  primary.request.mockRejectedValueOnce(new Error('connection closed'))
+  const { result } = renderHook(() => useGatewayRequest())
+  await act(async () => {
+    await expect(result.current.requestGateway('session.create', { title: 'B only' })).rejects.toThrow('connection closed')
+  })
+  expect(primary.request).toHaveBeenCalledTimes(1)
+
+  if (change === 'newer-intent') {
+    expect($activeGatewayProfile.get()).toBe('member-c')
+    expect($connection.get()).toBe(memberConnection)
+  } else {
+    expect($activeGatewayProfile.get()).toBe('member-b')
+    expect($connection.get()).toBeNull()
+  }
+})
+
+
+it('does not treat an unverified selected member as the primary request owner', async () => {
+  installPrimaryDesktop('oauth')
+  const primary = makePrimaryGateway()
+  setPrimaryGateway(primary as unknown as HermesGateway, 'default', { connectionId: 'shared' })
+  await ensureGatewayForProfile('default')
+  $activeGatewayProfile.set('member-b')
+  const { result } = renderHook(() => useGatewayRequest())
+  await expect(result.current.requestGateway('session.create', { title: 'B only' })).rejects.toThrow('no verified shared primary route')
+  expect(primary.request).not.toHaveBeenCalled()
 })
