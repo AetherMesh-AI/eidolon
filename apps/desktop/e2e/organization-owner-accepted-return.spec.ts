@@ -199,6 +199,8 @@ test('recovers durably accepted owner send and renewal after lost acknowledgemen
   expect(remote.ledger()).toBe(beforeB)
   expect(remote.starts()).toBe(0)
   await expect(panel.getByRole('button', { name: 'Retry same allowance update', exact: true })).toHaveCount(0)
+  expect(remote.updateChecks()).toBeGreaterThan(0)
+  await expect(page.getByRole('status').filter({ has: page.getByText('Update ready', { exact: true }) })).toHaveCount(0)
   const window = await app.browserWindow(page)
   await test.info().attach('owner-accepted-return-recovered', {
     contentType: 'image/png',
@@ -216,6 +218,7 @@ test('recovers durably accepted owner send and renewal after lost acknowledgemen
       accepted,
       scriptedProviderCalls: running.calls.length,
       schedulerStartsB: remote.starts(),
+      isolatedBackendUpdateChecks: remote.updateChecks(),
       failureModel:
         'actual gateway admissions and durable SQLite keys; successful acknowledgements replaced; return reads reconcile without resubmission',
       productionActivationEnabled: false,
