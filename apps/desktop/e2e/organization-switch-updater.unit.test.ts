@@ -32,8 +32,13 @@ it.each([0, 1])('isolates remote update availability at %i through the real HTTP
     expect(changed.status).toBe(200)
     expect(await changed.json()).toMatchObject({ behind: behind === 0 ? 1 : 0, update_available: behind === 0, can_apply: true })
     expect(remote.starts()).toBe(0)
+    expect(remote.updatePosts()).toBe(0)
     const denied = await fetch(`${remote.url}/api/eidolon/update/check?force=true`)
     expect([401, 403]).toContain(denied.status)
+    // An unauthenticated action is refused, and proves the passive counter is live.
+    const deniedAction = await fetch(`${remote.url}/api/eidolon/update`, { method: 'POST' })
+    expect([401, 403]).toContain(deniedAction.status)
+    expect(remote.updatePosts()).toBe(1)
   } finally {
     await remote?.close()
     await mock.close()

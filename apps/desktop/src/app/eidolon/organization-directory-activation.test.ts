@@ -147,7 +147,7 @@ it('verifies committed scope while retaining a trailing error and never rolling 
   })
   h.activation.prepare(h.key)
   const outcome = await h.activation.confirm()
-  expect(outcome).toMatchObject({ status: 'verified', outcome: { error, published: true } })
+  expect(outcome).toMatchObject({ status: 'selected-unconfigured', outcome: { error, published: true } })
   expect(h.source.current?.connectionId).toBe('b')
   expect(h.select).toHaveBeenCalledExactlyOnceWith('b', 'default')
   expect(h.request.mock.calls).toEqual([['organization.descriptor', {}]])
@@ -172,7 +172,7 @@ it('does not pretend an admitted switch can be cancelled or initiate a duplicate
   expect((await h.activation.confirm()).status).toBe('unavailable')
   h.go('b')
   pending.resolve(result('committed'))
-  expect((await confirmation).status).toBe('verified')
+  expect((await confirmation).status).toBe('selected-unconfigured')
   expect(h.select).toHaveBeenCalledTimes(1)
   h.directory.dispose()
 })
@@ -218,9 +218,9 @@ it('retains original uncertain intake, send and renewal keys through synthetic A
 
   const before = structuredClone([$intakeDrafts.get(), $ownerChatDrafts.get(), $ownerChatRenewals.get()])
   h.activation.prepare(h.key)
-  expect((await h.activation.confirm()).status).toBe('verified')
+  expect((await h.activation.confirm()).status).toBe('selected-unconfigured')
   h.activation.prepare(JSON.stringify(['a', 'default']))
-  expect((await h.activation.confirm()).status).toBe('verified')
+  expect((await h.activation.confirm()).status).toBe('selected-unconfigured')
   expect([$intakeDrafts.get(), $ownerChatDrafts.get(), $ownerChatRenewals.get()]).toEqual(before)
   expect(h.request.mock.calls.every(([method]) => method === 'organization.descriptor')).toBe(true)
   h.directory.dispose()
@@ -298,31 +298,41 @@ it('preserves a pre-publication failure without reading the cached destination o
   h.directory.dispose()
 })
 
-it('does not verify a different organization than the selected cached identity', async () => {
+it.each([
+  ['11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-111111111111', 'verified'],
+  ['11111111-1111-4111-8111-111111111111', '33333333-3333-4333-8333-333333333333', 'committed-unverified'],
+  [null, null, 'selected-unconfigured'],
+  ['11111111-1111-4111-8111-111111111111', null, 'committed-unverified'],
+  [null, '11111111-1111-4111-8111-111111111111', 'committed-unverified']
+] as const)('verifies the selected identity/state %s → %s as %s', async (before, after, expected) => {
   const h = await setup()
 
-  const metadata = (organizationId: string) => ({
+  const metadata = (organizationId: string | null) => ({
     capabilityVersion: 1,
-    state: 'ready',
+    state: organizationId === null ? 'unconfigured' : 'ready',
     scope: { kind: 'served-profile', profile: 'default' },
-    metadata: {
-      organizationId,
-      displayName: 'Selected name',
-      revision: 1,
-      owner: { ownerId: '22222222-2222-4222-8222-222222222222', displayName: 'Owner' },
-      createdAt: '2026-10-12T00:00:00Z',
-      updatedAt: '2026-10-12T00:00:00Z'
-    }
+    metadata:
+      organizationId === null
+        ? null
+        : {
+            organizationId,
+            displayName: 'Selected name',
+            revision: 1,
+            owner: { ownerId: '22222222-2222-4222-8222-222222222222', displayName: 'Owner' },
+            createdAt: '2026-10-12T00:00:00Z',
+            updatedAt: '2026-10-12T00:00:00Z'
+          }
   })
 
   try {
     h.go('b')
-    h.request.mockResolvedValueOnce(metadata('11111111-1111-4111-8111-111111111111'))
+    h.request.mockResolvedValueOnce(metadata(before))
     await h.directory.refresh()
     h.go('a')
     expect(h.activation.prepare(h.key)).toBe(true)
-    h.request.mockResolvedValueOnce(metadata('33333333-3333-4333-8333-333333333333'))
-    expect((await h.activation.confirm()).status).toBe('committed-unverified')
+    h.request.mockResolvedValueOnce(metadata(after))
+    expect((await h.activation.confirm()).status).toBe(expected)
+    expect(h.select).toHaveBeenCalledExactlyOnceWith('b', 'default')
   } finally {
     h.directory.dispose()
   }

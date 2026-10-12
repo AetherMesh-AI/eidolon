@@ -5,7 +5,15 @@ import type { DirectorySource, OrganizationDirectory, OrganizationDirectoryEntry
 import { organizationEndpointIdentity } from './organization-owner'
 
 export type ActivationResult = {
-  status: 'disabled' | 'cancelled' | 'unavailable' | 'superseded' | 'verified' | 'committed-unverified' | 'unchanged'
+  status:
+    | 'disabled'
+    | 'cancelled'
+    | 'unavailable'
+    | 'superseded'
+    | 'verified'
+    | 'selected-unconfigured'
+    | 'committed-unverified'
+    | 'unchanged'
   outcome?: ConnectionSwitchOutcome
 }
 const endpoint = (value: string | null) => (value === null ? null : organizationEndpointIdentity(value))
@@ -125,12 +133,17 @@ export function createOrganizationDirectoryActivation({
           .getSnapshot()
           .entries.find(item => item.key === entry.key && item.freshness === 'fresh')
 
+        if (refreshed !== 'verified' || !verified || verified.organizationId !== entry.organizationId) {
+          return { status: 'committed-unverified', outcome }
+        }
+
+        if (entry.state === 'unconfigured' && verified.state === 'unconfigured' && verified.organizationId === null) {
+          return { status: 'selected-unconfigured', outcome }
+        }
+
         return {
           status:
-            refreshed === 'verified' &&
-            verified &&
-            verified.state !== 'unsupported' &&
-            verified.organizationId === entry.organizationId
+            entry.state === 'ready' && verified.state === 'ready' && verified.organizationId !== null
               ? 'verified'
               : 'committed-unverified',
           outcome

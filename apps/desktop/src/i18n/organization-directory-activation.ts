@@ -16,6 +16,7 @@ export const directoryActivationCopy: Record<Locale, DirectoryActivationCopy> = 
       'Switch to this saved connection and profile, then verify the organization. This does not start or resume work.',
     pending: 'Selecting and verifying the organization. Selection has started and cannot be cancelled here.',
     verified: 'Selected organization verified.',
+    'selected-unconfigured': 'Connection and profile selected. No organization is configured.',
     'committed-unverified':
       'The selected organization could not be verified. The connection may have changed. Check the current organization before continuing.',
     unchanged: 'The connection did not change. Selection was not completed.',
@@ -31,6 +32,7 @@ export const directoryActivationCopy: Record<Locale, DirectoryActivationCopy> = 
     explanation: '保存済みの接続とプロファイルに切り替え、組織を確認します。作業は開始・再開しません。',
     pending: '組織を選択して確認しています。選択は開始済みのため、ここではキャンセルできません。',
     verified: '選択した組織を確認しました。',
+    'selected-unconfigured': '接続とプロファイルを選択しました。組織は未設定です。',
     'committed-unverified':
       '選択した組織を確認できませんでした。接続が変わった可能性があります。続行する前に現在の組織を確認してください。',
     unchanged: '接続は変更されませんでした。選択は完了していません。',
@@ -46,6 +48,7 @@ export const directoryActivationCopy: Record<Locale, DirectoryActivationCopy> = 
     explanation: '切换到此已保存的连接和配置，再验证组织。这不会开始或恢复工作。',
     pending: '正在选择并验证组织。选择已开始，无法在此取消。',
     verified: '已验证所选组织。',
+    'selected-unconfigured': '已选择连接和配置。尚未配置组织。',
     'committed-unverified': '无法验证所选组织。连接可能已更改。继续前请检查当前组织。',
     unchanged: '连接未更改。选择未完成。',
     superseded: '另一项选择已优先处理。请检查当前组织。',
@@ -60,6 +63,7 @@ export const directoryActivationCopy: Record<Locale, DirectoryActivationCopy> = 
     explanation: '切換至此已儲存的連線和設定檔，再驗證組織。這不會開始或繼續工作。',
     pending: '正在選取並驗證組織。選取已開始，無法在此取消。',
     verified: '已驗證所選組織。',
+    'selected-unconfigured': '已選取連線和設定檔。尚未設定組織。',
     'committed-unverified': '無法驗證所選組織。連線可能已變更。繼續前請檢查目前的組織。',
     unchanged: '連線未變更。選取未完成。',
     superseded: '另一項選取已優先處理。請檢查目前的組織。',
@@ -74,6 +78,7 @@ export const directoryActivationCopy: Record<Locale, DirectoryActivationCopy> = 
     explanation: 'انتقل إلى الاتصال وملف التعريف المحفوظين ثم تحقق من المؤسسة. لن يبدأ هذا العمل أو يستأنفه.',
     pending: 'جارٍ اختيار المؤسسة والتحقق منها. بدأ الاختيار ولا يمكن إلغاؤه هنا.',
     verified: 'تم التحقق من المؤسسة المختارة.',
+    'selected-unconfigured': 'تم اختيار الاتصال وملف التعريف. لم يتم إعداد أي مؤسسة.',
     'committed-unverified': 'تعذر التحقق من المؤسسة المختارة. ربما تغير الاتصال. تحقق من المؤسسة الحالية قبل المتابعة.',
     unchanged: 'لم يتغير الاتصال. لم يكتمل الاختيار.',
     superseded: 'حصل اختيار آخر على الأولوية. تحقق من المؤسسة الحالية.',
@@ -89,6 +94,7 @@ export const directoryActivationCopy: Record<Locale, DirectoryActivationCopy> = 
       'Перейти к сохранённому подключению и профилю, затем проверить организацию. Работа не начнётся и не возобновится.',
     pending: 'Выбор и проверка организации. Выбор уже начат, отменить его здесь нельзя.',
     verified: 'Выбранная организация проверена.',
+    'selected-unconfigured': 'Подключение и профиль выбраны. Организация не настроена.',
     'committed-unverified':
       'Не удалось проверить выбранную организацию. Подключение могло измениться. Проверьте текущую организацию перед продолжением.',
     unchanged: 'Подключение не изменилось. Выбор не завершён.',

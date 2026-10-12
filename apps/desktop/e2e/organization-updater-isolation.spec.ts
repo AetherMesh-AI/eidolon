@@ -122,6 +122,7 @@ test('a backend release notification obstructs the header until explicitly dismi
     await expect(page.getByRole('menuitemradio', { name: 'Updater fixture B', exact: true })).toBeVisible()
     await page.keyboard.press('Escape')
     expect(remote.starts()).toBe(0)
+    expect(remote.updatePosts()).toBe(0)
     expect(running.calls).toHaveLength(0)
     const window = await app.browserWindow(page)
     await test.info().attach('backend-update-dismissed', {
@@ -135,7 +136,7 @@ test('a backend release notification obstructs the header until explicitly dismi
         sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
         backendChecks: remote.updateChecks(), checksBeforeReload, checksBeforeRelease, releaseIntroducedAfterStartup: true, availabilityCheck: 'public Update Eidolon menu command from known-current status', launchMode: 'last-used', restoredSource: 'Updater fixture B', obstructedBeforeDismissal: blocked,
         dismissal: 'public Dismiss notification button', switcherOpenedAfterDismissal: true,
-        schedulerStarts: remote.starts(), providerCalls: running.calls.length
+        schedulerStarts: remote.starts(), backendUpdatePosts: remote.updatePosts(), providerCalls: running.calls.length
       })
     })
   } catch (error) {
@@ -150,6 +151,7 @@ test('a backend release notification obstructs the header until explicitly dismi
         sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
         sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
         backendChecks: remote?.updateChecks(),
+        backendUpdatePosts: remote?.updatePosts(),
         snoozeUntil: await running.fixture.page.evaluate(() => localStorage.getItem('hermes:update-toast-snooze-until'))
       })
     })

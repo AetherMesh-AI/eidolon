@@ -98,6 +98,14 @@ def observed_start(self):
  with Path(marker).open('a') as f: f.write('start\\n')
  return original(self)
 OrganizationService.start=observed_start
+# Passive evidence only: authentication and update handlers remain unchanged.
+import eidolon_cli.web_server as web_server
+update_posts=Path(update_marker+'.posts')
+@web_server.app.middleware('http')
+async def observe_update_posts(request, call_next):
+ if request.method == 'POST' and request.url.path in ('/api/eidolon/update', '/api/hermes/update'):
+  with update_posts.open('a') as f: f.write('post\\n')
+ return await call_next(request)
 sys.argv=['eidolon','serve','--host','127.0.0.1','--port',port,'--skip-build']
 from eidolon_cli.main import main
 main()
@@ -196,6 +204,7 @@ s.create_objective(sys.argv[2],idempotency_key='native-stopped-queue')
       token,
       close,
       setUpdateBehind: (behind: 0 | 1) => writeFileSync(updateAvailability, String(behind)),
+      updatePosts: () => (existsSync(`${updateChecks}.posts`) ? readFileSync(`${updateChecks}.posts`, 'utf8').trim().split('\n').length : 0),
       updateChecks: () => (existsSync(updateChecks) ? readFileSync(updateChecks, 'utf8').trim().split('\n').length : 0),
       ledger: () => fixtureLedger(home, env),
       starts: () => (existsSync(marker) ? readFileSync(marker, 'utf8').trim().split('\n').length : 0)

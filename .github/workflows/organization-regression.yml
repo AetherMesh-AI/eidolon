@@ -268,6 +268,7 @@ jobs:
           sudo apt-get install -y xvfb libgtk-3-0 libnotify4 libnss3 libxss1 libxtst6 xdg-utils libatspi2.0-0 libdrm2 libgbm1 libasound2 fonts-noto-cjk
           fc-match --format='%{family}\n' ':lang=ja'
       - name: Build desktop
+        id: desktop-build
         working-directory: apps/desktop
         run: npm run build
       - name: Verify synthetic owner, setup, attention, multi-repository and outcome flows
@@ -276,6 +277,8 @@ jobs:
           EIDOLON_REQUIRE_PROJECT_SANDBOX: '1'
         run: xvfb-run -a npx playwright test e2e/organization-*.spec.ts --workers=1 --retries=0
       - name: Verify gated directory confirmation in an explicit acceptance build
+        # Preserve the failed standard gate while retaining independent directory evidence.
+        if: ${{ !cancelled() && steps.desktop-build.outcome == 'success' }}
         working-directory: apps/desktop
         env:
           EIDOLON_REQUIRE_PROJECT_SANDBOX: '1'

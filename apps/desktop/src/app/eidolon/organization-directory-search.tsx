@@ -223,7 +223,8 @@ export function OrganizationDirectorySearch({
           <section aria-label={activationCopy.confirm}>
             <p>{activationCopy.explanation}</p>
             <p>
-              {prepared.name ?? copy.unnamed} · {prepared.connectionLabel} · {prepared.profile}
+              {prepared.name ?? (prepared.state === 'unconfigured' ? copy.unconfigured : copy.unnamed)} ·{' '}
+              {prepared.connectionLabel} · {prepared.profile}
             </p>
             {pending ? (
               <p role="status">{activationCopy.pending}</p>

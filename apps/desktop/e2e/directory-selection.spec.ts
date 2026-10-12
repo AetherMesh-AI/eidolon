@@ -58,15 +58,13 @@ test('confirms actual directory selections, cancels without switching and expose
 
     const capture = async (name: string) => {
       const window = await app.browserWindow(page)
-      await test
-        .info()
-        .attach(name, {
-          contentType: 'image/png',
-          body: Buffer.from(
-            await window.evaluate(async window => (await window.webContents.capturePage()).toPNG().toString('base64')),
-            'base64'
-          )
-        })
+      await test.info().attach(name, {
+        contentType: 'image/png',
+        body: Buffer.from(
+          await window.evaluate(async window => (await window.webContents.capturePage()).toPNG().toString('base64')),
+          'base64'
+        )
+      })
       captures.push(name)
     }
 
@@ -84,24 +82,44 @@ test('confirms actual directory selections, cancels without switching and expose
       await expect(trigger).toBeFocused()
     }
 
-    await initialize('Directory A')
-    // Bootstrap the second visited record through the existing switcher only once.
-    await switcher.click()
-    await page.getByRole('menuitemradio', { name: 'Directory fixture B', exact: true }).click()
-    await expect(switcher).toContainText('Directory fixture B')
-    await initialize('Directory B')
-    await switcher.click()
-    await page.getByRole('menuitemradio', { name: local, exact: true }).click()
-    await expect(switcher).toContainText(local)
-    const beforeA = fixtureLedger(sandbox.hermesHome, buildAppEnv(sandbox))
-    const beforeB = remote.ledger()
-
     const prepare = async (name: string) => {
       await trigger.click()
       await dialog.getByRole('option').filter({ hasText: name }).click()
       await dialog.getByRole('button', { name: 'Use selected organization', exact: true }).click()
       await expect(dialog.getByRole('button', { name: 'Confirm organization selection', exact: true })).toBeVisible()
     }
+
+    await initialize('Directory A')
+    // Bootstrap the second visited record through the existing switcher only once.
+    await switcher.click()
+    await page.getByRole('menuitemradio', { name: 'Directory fixture B', exact: true }).click()
+    await expect(switcher).toContainText('Directory fixture B')
+    await trigger.click()
+    await dialog.getByRole('button', { name: 'Refresh current organization', exact: true }).click()
+    await expect(dialog.getByRole('option').filter({ hasText: 'Directory fixture B' })).toContainText('Not configured')
+    await page.keyboard.press('Escape')
+    const unconfiguredB = remote.ledger()
+    await switcher.click()
+    await page.getByRole('menuitemradio', { name: local, exact: true }).click()
+    await expect(switcher).toContainText(local)
+    await prepare('Directory fixture B')
+    await expect(dialog.getByRole('region', { name: 'Confirm organization selection', exact: true })).toContainText(
+      'Not configured'
+    )
+    await dialog.getByRole('button', { name: 'Confirm organization selection', exact: true }).click()
+    await expect(dialog.getByRole('status')).toHaveText(
+      'Connection and profile selected. No organization is configured.'
+    )
+    await expect(switcher).toContainText('Directory fixture B')
+    await capture('directory-selected-unconfigured')
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+    expect(remote.ledger()).toBe(unconfiguredB)
+    await initialize('Directory B')
+    await switcher.click()
+    await page.getByRole('menuitemradio', { name: local, exact: true }).click()
+    await expect(switcher).toContainText(local)
+    const beforeA = fixtureLedger(sandbox.hermesHome, buildAppEnv(sandbox))
+    const beforeB = remote.ledger()
 
     await prepare('Directory B')
     await expect(switcher).toContainText(local)
@@ -157,6 +175,8 @@ with sqlite3.connect(sys.argv[1]) as c:
         cancelledWithoutSwitch: true,
         cancelFocusRestored: true,
         bothDirectionsVerified: true,
+        unconfiguredOutcome: 'selected-unconfigured',
+        unconfiguredSelectionPreservedLedger: true,
         destinationIdentityMismatch: 'committed-unverified',
         ledgersUnchangedBySelection: true,
         schedulerStartsB: remote.starts(),
