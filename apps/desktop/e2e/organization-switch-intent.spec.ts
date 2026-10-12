@@ -162,7 +162,7 @@ s.set_objective_archived(ident,True,expected_revision=0,idempotency_key='switch-
     await page.locator('[data-slot="profile-rail"]').getByRole('button', { name: profile, exact: true }).click()
     await nav.getByRole('link', { name: 'Home', exact: true }).click()
     await expect(
-      page.getByText(profile === profileA ? queuedSourceTitle : queuedSwitchTitle, { exact: true })
+      page.getByRole('link', { name: profile === profileA ? queuedSourceTitle : queuedSwitchTitle, exact: true })
     ).toBeVisible()
     await expect(page.locator('.eid-workspace-header').getByRole('button', { name: new RegExp(profile) })).toBeVisible()
   }
@@ -200,7 +200,7 @@ s.set_objective_archived(ident,True,expected_revision=0,idempotency_key='switch-
 
   await choose(profileB)
   await nav.getByRole('link', { name: 'Home', exact: true }).click()
-  await expect(page.getByText(queuedSwitchTitle, { exact: true })).toBeVisible()
+  await expect(page.getByRole('link', { name: queuedSwitchTitle, exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Organizations', exact: true }).click()
   const inspection = page.getByRole('dialog', { name: 'Organizations', exact: true })
   await inspection.getByRole('button', { name: 'Refresh current organization', exact: true }).click()
