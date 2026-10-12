@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef } from 'react'
 
 import type { HermesGateway } from '@/eidolon'
 import { RECONNECT_ATTEMPT_TIMEOUT_MS, withTimeout } from '@/lib/with-timeout'
-import { $gateway, activeGatewayProfileKey, adoptPrimaryGatewayConnection, connectPrimaryGateway, ensureActiveGatewayOpen, gatewayActivationEpoch, gatewayTransportGeneration, isActivePrimary, isPrimaryGateway, requestGatewayWithRuntimeBinding } from '@/store/gateway'
+import { $gateway, activeGatewayProfileKey, adoptPrimaryGatewayConnection, assertGatewayOAuthAuthority, assertOAuthConnectionAuthority, captureOAuthRequestAuthority, connectPrimaryGateway, ensureActiveGatewayOpen, gatewayActivationEpoch, gatewayTransportGeneration, isActivePrimary, isPrimaryGateway, requestGatewayWithRuntimeBinding } from '@/store/gateway'
 import { $gatewaySwitching } from '@/store/gateway-switch'
 import { $activeGatewayProfile, normalizeProfileKey } from '@/store/profile'
 import { $connection, $gatewayState, setConnection } from '@/store/session'
@@ -48,7 +48,7 @@ export function useGatewayRequest() {
     []
   )
 
-  const ensureGatewayOpen = useCallback(async () => {
+  const ensureGatewayOpen = useCallback(async (authority = captureOAuthRequestAuthority()) => {
     const existing = gatewayRef.current
 
     if (!existing) {
@@ -98,6 +98,7 @@ export function useGatewayRequest() {
         )
 
         if (!ownsForeground()) {return null}
+        assertOAuthConnectionAuthority(conn, authority)
 
         // Re-mint the WS URL before reconnecting. OAuth tickets are single-use
         // and short-lived, so the cached conn.wsUrl ticket is dead here;
@@ -112,6 +113,7 @@ export function useGatewayRequest() {
         )
 
         if (!ownsForeground()) {return null}
+        assertOAuthConnectionAuthority(conn, authority)
         await connectPrimaryGateway(existing, conn, wsUrl)
 
         if (!ownsForeground()) {return null}
@@ -169,6 +171,7 @@ export function useGatewayRequest() {
 
   const requestGateway = useCallback(
     async <T>(method: string, params: Record<string, unknown> = {}, timeoutMs?: number, signal?: AbortSignal) => {
+      const authority = captureOAuthRequestAuthority()
       const gateway = gatewayRef.current
 
       if (!gateway) {
@@ -196,6 +199,8 @@ export function useGatewayRequest() {
         gatewayRef.current === gateway && $gateway.get() === gateway &&
         gatewayTransportGeneration(gateway) === generation
 
+      assertGatewayOAuthAuthority(gateway, authority)
+
       try {
         return await requestGatewayWithRuntimeBinding<T>(gateway, method, params, timeoutMs, signal, profile, scopeProfile)
       } catch (error) {
@@ -207,7 +212,7 @@ export function useGatewayRequest() {
         // single-use ticket). Background profiles stay on the registry's
         // connection-owned reconnect path, including composite remote/SSH
         // sources.
-        const recovered = isActivePrimary() ? await ensureGatewayOpen() : await ensureActiveGatewayOpen()
+        const recovered = isActivePrimary() ? await ensureGatewayOpen(authority) : await ensureActiveGatewayOpen()
 
         if (!recovered) {
           // Prefer the reauth error from the failed reconnect (OAuth session
@@ -226,6 +231,8 @@ export function useGatewayRequest() {
         // old operation the authority of a newer source-selection intent.
         if (!isCurrentSourceSwitchIntent(intent) || normalizeProfileKey($activeGatewayProfile.get()) !== profile ||
             recovered !== gateway || gatewayRef.current !== gateway || $gateway.get() !== gateway) {throw error}
+
+        assertGatewayOAuthAuthority(recovered, authority)
 
         return requestGatewayWithRuntimeBinding<T>(recovered, method, params, timeoutMs, signal, profile, scopeProfile)
       }

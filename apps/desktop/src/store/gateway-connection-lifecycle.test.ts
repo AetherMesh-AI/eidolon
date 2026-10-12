@@ -57,7 +57,7 @@ const {
   closeSecondaryGateways,
   configureGatewayRegistry,
   disposeSecondariesForConnection,
-  disposeSecondariesForOAuthSession,
+  retireOAuthSession,
   ensureActiveGatewayOpen,
   ensureGatewayForAgent,
   ensureGatewayForProfile,
@@ -544,7 +544,7 @@ it('retires only sockets owned by an old OAuth session across source profiles', 
   await ensureGatewayForAgent('same-source', 'old')
   await ensureGatewayForAgent('same-source', 'current')
   await ensureGatewayForAgent('unrelated', 'current')
-  disposeSecondariesForOAuthSession('retired-account')
+  retireOAuthSession('retired-account')
   expect(gatewayMocks.instances[0].close).toHaveBeenCalledOnce()
   expect(gatewayMocks.instances[1].close).not.toHaveBeenCalled()
   expect(gatewayMocks.instances[2].close).not.toHaveBeenCalled()

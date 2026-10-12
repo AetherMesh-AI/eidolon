@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { requestBackendJson } from './backend-json-request'
+import { requestBackendJson, requestProfileBackendJson } from './backend-json-request'
 import type { NativeTokenSet } from './native-oauth'
 import { createOAuthCookieCleanupQueue, createOAuthSessionAuthority, createOwnedNativeAccountResolver, refreshOwnedNativeAccount } from './oauth-session-authority'
 import { createPrimaryRemoteConnection, remoteAuthenticationIdentity } from './primary-backend-startup'
@@ -171,4 +171,75 @@ it('waits for old cookie cleanup before a replacement login can publish', async 
   held.resolve()
   await Promise.all([clear, next])
   expect(events).toEqual(['old cookies removed', 'new login'])
+})
+
+it.each(['retired', 'same-account'] as const)('owns profile REST mutation across a held native refresh: %s', async scenario => {
+  const authority = createOAuthSessionAuthority()
+  const scope = 'profile-rest'
+  const revision = authority.captureRequest()
+
+  const descriptor = { mode: 'remote' as const, authMode: 'oauth', baseUrl: 'https://fixture.invalid',
+    oauthSessionIdentity: authority.capture(scope) }
+
+  const held = deferred<NativeTokenSet>()
+  const refresh = vi.fn(() => held.promise)
+
+  const transports = {
+    assertAuthority: (connection: typeof descriptor) => authority.assertRequest(scope, connection.oauthSessionIdentity, revision),
+    ensureNativeAccessToken: () => refreshOwnedNativeAccount({ authority, scope, tokens: accountA,
+      needsRefresh: () => true, refresh, publish: vi.fn(), clear: vi.fn() }),
+    fetchJson: vi.fn(async () => ({ updated: true })),
+    fetchJsonViaOauthSession: vi.fn(async () => ({ wrongAccountWrite: true }))
+  }
+
+  const pending = requestProfileBackendJson('worker', '/api/sessions/fixture', { method: 'PATCH', body: { title: 'original intent' } },
+    async () => descriptor, transports)
+
+  const settled = pending.then(value => ({ value }), error => ({ error }))
+  await vi.waitFor(() => expect(refresh).toHaveBeenCalledOnce())
+
+  if (scenario === 'retired') {authority.beginChange(scope).finish()}
+  held.resolve({ ...accountA, accessToken: 'rotated-a' })
+  const outcome = await settled
+  expect(transports.fetchJsonViaOauthSession).not.toHaveBeenCalled()
+
+  if (scenario === 'retired') {
+    expect(outcome).toHaveProperty('error')
+    expect(transports.fetchJson).not.toHaveBeenCalled()
+  } else {
+    expect(outcome).toEqual({ value: { updated: true } })
+    expect(transports.fetchJson).toHaveBeenCalledWith('https://fixture.invalid/api/sessions/fixture', null,
+      expect.objectContaining({ method: 'PATCH', body: { title: 'original intent' }, bearer: 'rotated-a' }))
+  }
+})
+
+it.each(['same-scope', 'unrelated-scope'] as const)('owns profile REST before its first descriptor: %s', async scenario => {
+  const authority = createOAuthSessionAuthority()
+  const revision = authority.captureRequest()
+  const scope = 'unresolved-profile-rest'
+  const held = deferred<{ mode: 'remote'; authMode: string; baseUrl: string; oauthSessionIdentity: string }>()
+
+  const transports = {
+    assertAuthority: (connection: { oauthSessionIdentity?: string }) => authority.assertRequest(scope, connection.oauthSessionIdentity, revision),
+    ensureNativeAccessToken: vi.fn(async () => 'current-token'),
+    fetchJson: vi.fn(async () => ({ updated: true })),
+    fetchJsonViaOauthSession: vi.fn()
+  }
+
+  const pending = requestProfileBackendJson('worker', '/api/sessions/fixture', { method: 'PATCH' }, () => held.promise, transports)
+  const settled = pending.then(value => ({ value }), error => ({ error }))
+  authority.beginChange(scenario === 'same-scope' ? scope : 'unrelated-profile-rest').finish()
+  held.resolve({ mode: 'remote', authMode: 'oauth', baseUrl: 'https://fixture.invalid', oauthSessionIdentity: authority.capture(scope) })
+  const outcome = await settled
+
+  if (scenario === 'same-scope') {
+    expect(outcome).toHaveProperty('error')
+    expect(transports.ensureNativeAccessToken).not.toHaveBeenCalled()
+    expect(transports.fetchJson).not.toHaveBeenCalled()
+  } else {
+    expect(outcome).toEqual({ value: { updated: true } })
+    expect(transports.fetchJson).toHaveBeenCalledOnce()
+  }
+
+  expect(transports.fetchJsonViaOauthSession).not.toHaveBeenCalled()
 })

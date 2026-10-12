@@ -58,7 +58,7 @@ import {
   makeUnsignedOauthError,
   waitForHermesReady
 } from './backend-health'
-import { requestBackendJson } from './backend-json-request'
+import { requestBackendJson, requestProfileBackendJson } from './backend-json-request'
 import { backendCommandMatches, createBackendOwnership, createBackendShutdownCoordinator } from './backend-ownership'
 import {
   canImportHermesCli,
@@ -7261,7 +7261,7 @@ const oauthAccountAuthority = createOAuthSessionAuthority((identity, scope) => {
       oauthAccountScope(source.url) === scope)
     .map(source => source.id)
 
-  broadcastConnectionsChanged({ connectionId: '', reason: 'auth-changed', oauthSessionIdentity: identity, oauthConnectionIds })
+  broadcastConnectionsChanged({ connectionId: '', reason: 'auth-changed', oauthSessionIdentity: identity, oauthNextSessionIdentity: oauthAccountAuthority.capture(scope), oauthConnectionIds })
   const primary = backendConnectionState.getPromise()
   void primary?.then(connection => {
     if (connection.oauthSessionIdentity === identity && backendConnectionState.getPromise() === primary) {
@@ -7283,9 +7283,13 @@ function oauthAccountScope(baseUrl: string) {
   return resolveOauthPartitionForUrl(baseUrl)
 }
 
-function assertOAuthDescriptorAuthority(connection) {
+function assertOAuthDescriptorAuthority(connection, requestRevision?: number) {
   if (connection.authMode === 'oauth') {
-    oauthAccountAuthority.assertCurrent(oauthAccountScope(connection.baseUrl), connection.oauthSessionIdentity)
+    if (requestRevision !== undefined) {
+      oauthAccountAuthority.assertRequest(oauthAccountScope(connection.baseUrl), connection.oauthSessionIdentity, requestRevision)
+    } else {
+      oauthAccountAuthority.assertCurrent(oauthAccountScope(connection.baseUrl), connection.oauthSessionIdentity)
+    }
   }
 }
 
@@ -10922,23 +10926,8 @@ async function fetchJsonForProfile(profile, path) {
 
 // Issue an arbitrary method against a profile's resolved backend, parsed JSON.
 async function requestJsonForProfile(profile: string, path: string, method: string, body?: string) {
-  const conn = await ensureBackend(profile)
-  const url = `${conn.baseUrl}${path}`
-  const opts = { method, body, timeoutMs: DEFAULT_FETCH_TIMEOUT_MS }
-
-  if (conn.authMode === 'oauth') {
-    // Native RFC 8252 flow: authenticate with the bearer token (cookieless)
-    // when we hold one for this gateway; otherwise use the cookie partition.
-    const nativeAt = await ensureNativeAccessToken(conn.baseUrl).catch(() => null)
-
-    if (nativeAt) {
-      return fetchJson(url, null, { ...opts, bearer: nativeAt, headers: conn.headers })
-    }
-
-    return fetchJsonViaOauthSession(url, { ...opts, headers: conn.headers })
-  }
-
-  return fetchJson(url, conn.token, { ...opts, headers: conn.headers })
+  return requestProfileBackendJson(profile, path, { method, body, timeoutMs: DEFAULT_FETCH_TIMEOUT_MS },
+    ensureBackend, backendJsonTransports(oauthAccountAuthority.captureRequest()))
 }
 
 async function probeRemoteAuthMode(rawUrl) {
@@ -11259,7 +11248,7 @@ function sendConnectionApplied() {
 // scoped to that connection. Without this, a removed remote/cloud source keeps
 // its renderer WebSocket open and streaming as a ghost, and an edited one
 // keeps talking to the OLD endpoint until idle-reap.
-function broadcastConnectionsChanged(payload: { connectionId: string; reason: 'removed' | 'saved' | 'updated' | 'auth-changed'; oauthSessionIdentity?: string; oauthConnectionIds?: string[] }) {
+function broadcastConnectionsChanged(payload: { connectionId: string; reason: 'removed' | 'saved' | 'updated' | 'auth-changed'; oauthSessionIdentity?: string; oauthNextSessionIdentity?: string; oauthConnectionIds?: string[] }) {
   for (const win of BrowserWindow.getAllWindows()) {
     const { webContents } = win
 
@@ -15866,17 +15855,21 @@ async function getJsonForBackend(descriptor, path, opts: any = {}) {
 // analogue of the hermes:api handler's own auth split: OAuth backends prefer a
 // native bearer (cookieless RFC 8252 flow) and fall back to the OAuth cookie
 // partition; token/local descriptors use the static session-token header.
+function backendJsonTransports(authority = oauthAccountAuthority.captureRequest()) {
+  return {
+    assertAuthority: connection => assertOAuthDescriptorAuthority(connection, authority),
+    ensureNativeAccessToken,
+    fetchJson,
+    fetchJsonViaOauthSession
+  }
+}
+
 async function fetchJsonForBackend(
   descriptor,
   path,
   opts: { method?: string; body?: unknown; upload?: unknown; timeoutMs?: number } = {}
 ) {
-  return requestBackendJson(descriptor, path, opts, {
-    assertAuthority: assertOAuthDescriptorAuthority,
-    ensureNativeAccessToken,
-    fetchJson,
-    fetchJsonViaOauthSession
-  })
+  return requestBackendJson(descriptor, path, opts, backendJsonTransports())
 }
 
 ipcMain.handle('hermes:connection-config:probe', async (_event, rawUrl) => probeRemoteAuthMode(rawUrl))

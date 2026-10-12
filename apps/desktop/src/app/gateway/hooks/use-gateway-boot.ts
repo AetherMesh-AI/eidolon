@@ -26,16 +26,17 @@ import {
   configureGatewayRegistry,
   connectPrimaryGateway,
   disposeSecondariesForConnection,
-  disposeSecondariesForOAuthSession,
   ensureActiveGatewayOpen,
   ensureGatewayForProfile,
   gatewayActivationEpoch,
   isActivePrimary,
   liveSecondaryConnectionIds,
+  primaryGatewayOAuthSessionIdentity,
   pruneSecondaryGateways,
   reconnectSecondaryGateways,
   recordPrimaryRuntimeProducer,
   reportPrimaryGatewayState,
+  retireOAuthSession,
   setPrimaryGateway,
   setPrimaryGatewayConnection,
   touchSecondaryGateways
@@ -934,12 +935,11 @@ export function useGatewayBoot({
 
         if (!identity) { return }
 
-        if ($connection.get()?.oauthSessionIdentity === identity) {
+        if ($connection.get()?.oauthSessionIdentity === identity || (isActivePrimary() && primaryGatewayOAuthSessionIdentity() === identity)) {
           beginSourceSwitchIntent()
-          activeGateway()?.close()
         }
 
-        disposeSecondariesForOAuthSession(identity, payload.oauthConnectionIds)
+        retireOAuthSession(identity, payload.oauthConnectionIds, payload.oauthNextSessionIdentity)
 
         return
       }

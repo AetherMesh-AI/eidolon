@@ -93,3 +93,16 @@ export async function requestBackendJson(
     return ownedSend(`${baseUrl}${legacyPath}${queryStart < 0 ? '' : path.slice(queryStart)}`)
   }
 }
+
+/** Profile/session REST uses the same descriptor-owned transport as registry REST. */
+export async function requestProfileBackendJson(
+  profile: string | null,
+  path: string,
+  options: BackendJsonOptions,
+  resolveBackend: (profile: string | null) => Promise<ResolvedConnectionDescriptor>,
+  transports: BackendJsonTransports
+) {
+  const descriptor = await resolveBackend(profile)
+
+  return requestBackendJson(descriptor, path, options, transports)
+}

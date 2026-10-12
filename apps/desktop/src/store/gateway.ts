@@ -188,6 +188,10 @@ interface GatewayRegistryState {
   nextTransportGeneration?: number
   runtimeProducers?: Map<string, Map<number, RuntimeProducer>>
   oauthSourceRevisions?: Map<string, number>
+  oauthAccountRevision?: number
+  oauthAccountChanges?: Map<string, number>
+  retiredOAuthAccounts?: Set<string>
+  primaryConnection?: Pick<HermesConnection, 'connectionId' | 'oauthSessionIdentity'> | null
   activeKey: string
   activationEpoch: number
   secondaries: Map<string, Secondary>
@@ -309,12 +313,13 @@ export function emitLocalGatewayEvent(event: GatewayEvent): void {
   g.config?.onEvent(event)
 }
 
-export function setPrimaryGateway(gateway: HermesGateway | null, profile = 'default', connection?: Pick<HermesConnection, 'connectionId'>): void {
+export function setPrimaryGateway(gateway: HermesGateway | null, profile = 'default', connection?: Pick<HermesConnection, 'connectionId' | 'oauthSessionIdentity'>): void {
   const next = normKey(profile)
 
   if (g.primaryGateway !== gateway) {
     g.primaryGeneration = undefined
     g.primaryConnectionId = null
+    g.primaryConnection = null
   }
 
   if (!gateway) {g.primaryRouteSuspended = false}
@@ -331,6 +336,7 @@ export function setPrimaryGateway(gateway: HermesGateway | null, profile = 'defa
   g.primaryProfile = next
 
   if (connection) {
+    g.primaryConnection = connection
     g.primaryConnectionId = connection.connectionId?.trim() || null
     g.primaryGeneration = nextTransportGeneration()
   }
@@ -353,6 +359,9 @@ function settlePrimaryDial(attempt: PrimaryDial | undefined): void {
 
 /** Every primary dial settles its descriptor and generation before events. */
 export function connectPrimaryGateway(gateway: HermesGateway, connection: HermesConnection, wsUrl: string): Promise<void> {
+  const authority = captureOAuthRequestAuthority()
+  assertOAuthConnectionAuthority(connection, authority)
+
   if (g.primaryGateway !== gateway) {return Promise.reject(new Error('Eidolon primary gateway changed'))}
 
   if (gateway.connectionState === 'connecting' && g.primaryDial?.gateway === gateway) {return g.primaryDial.promise}
@@ -366,8 +375,13 @@ export function connectPrimaryGateway(gateway: HermesGateway, connection: Hermes
       throw new Error('Eidolon primary connection attempt was superseded')
     }
 
+    assertOAuthConnectionAuthority(connection, authority)
+
     return gateway.connect(wsUrl)
-  }).then(() => { settlePrimaryDial(attempt) }).finally(() => {
+  }).then(() => {
+    try { assertOAuthConnectionAuthority(connection, authority) } catch (error) { gateway.close(); throw error }
+    settlePrimaryDial(attempt)
+  }).finally(() => {
     off()
 
     if (g.primaryDial === attempt) {g.primaryDial = undefined}
@@ -439,7 +453,8 @@ function isPrimaryRegistryRoute(connectionId: null | string, profile: string): b
 async function isAttachedSharedRemote(
   connectionId: null | string,
   profile: string,
-  spawnPriority: SpawnPriority = 'background'
+  spawnPriority: SpawnPriority = 'background',
+  authority = captureOAuthRequestAuthority()
 ): Promise<boolean> {
   const id = String(connectionId ?? '').trim()
   const key = normKey(profile)
@@ -465,8 +480,12 @@ async function isAttachedSharedRemote(
       `Timed out resolving shared-remote route for "${key}"`
     )
 
+    assertOAuthConnectionAuthority(conn, authority)
+
     return Boolean(conn && typeof conn === 'object' && (conn as { sharedRemote?: boolean }).sharedRemote === true)
-  } catch {
+  } catch (error) {
+    if (error instanceof RetiredOAuthAccountError) { throw error }
+
     // Probe failed. A secondary at this already-attached source is the #96493
     // ghost WebSocket (accept/close, messages=1). Prefer the primary until a
     // later probe can prove isolation (`sharedRemote: false`). Isolated SSH
@@ -660,6 +679,33 @@ function clearTimer(entry: Secondary): void {
   }
 }
 
+class RetiredOAuthAccountError extends Error {
+  constructor() { super('Eidolon OAuth account session changed; retry as a new request.') }
+}
+
+export function captureOAuthRequestAuthority(): number {
+  return g.oauthAccountRevision ?? 0
+}
+
+export function assertOAuthConnectionAuthority(connection: { oauthSessionIdentity?: string } | null | undefined, revision: number) {
+  const identity = connection?.oauthSessionIdentity
+
+  if (identity && (g.retiredOAuthAccounts?.has(identity) || (g.oauthAccountChanges?.get(identity) ?? 0) > revision)) {
+    throw new RetiredOAuthAccountError()
+  }
+}
+
+export function primaryGatewayOAuthSessionIdentity(): string | undefined {
+  return g.primaryConnection?.oauthSessionIdentity ?? g.primaryDial?.connection.oauthSessionIdentity
+}
+
+export function assertGatewayOAuthAuthority(gateway: HermesGateway, revision: number) {
+  const connection = gateway === g.primaryGateway ? g.primaryConnection
+    : [...g.secondaries.values()].find(entry => entry.gateway === gateway)?.connection
+
+  assertOAuthConnectionAuthority(connection, revision)
+}
+
 function oauthSourceRevision(connectionId: string | null): number {
   return g.oauthSourceRevisions?.get(connectionId?.trim() ?? '') ?? 0
 }
@@ -670,7 +716,7 @@ function assertOAuthSourceRevision(connectionId: string | null, revision: number
   }
 }
 
-async function openSecondary(entry: Secondary, spawnPriority: SpawnPriority = 'background'): Promise<void> {
+async function openSecondary(entry: Secondary, spawnPriority: SpawnPriority = 'background', authority = captureOAuthRequestAuthority()): Promise<void> {
   const desktop = window.hermesDesktop
 
   if (!desktop) {
@@ -693,6 +739,7 @@ async function openSecondary(entry: Secondary, spawnPriority: SpawnPriority = 'b
     }
 
     await entry.connectPromise
+    assertOAuthConnectionAuthority(entry.connection, authority)
 
     return
   }
@@ -755,6 +802,7 @@ async function openSecondary(entry: Secondary, spawnPriority: SpawnPriority = 'b
           )
 
     assertOAuthSourceRevision(entry.connectionId, revision)
+    assertOAuthConnectionAuthority(conn, authority)
     entry.connection = conn
 
     const wsDeps =
@@ -775,11 +823,14 @@ async function openSecondary(entry: Secondary, spawnPriority: SpawnPriority = 'b
 
     assertOAuthSourceRevision(entry.connectionId, revision)
 
+    assertOAuthConnectionAuthority(conn, authority)
+
     try {
       await entry.gateway.connect(wsUrl)
+      assertOAuthConnectionAuthority(conn, authority)
       assertOAuthSourceRevision(entry.connectionId, revision)
     } catch (error) {
-      if (oauthSourceRevision(entry.connectionId) !== revision) { entry.gateway.close() }
+      if (error instanceof RetiredOAuthAccountError || oauthSourceRevision(entry.connectionId) !== revision) { entry.gateway.close() }
 
       // Log the dial target for support, but RETHROW THE ORIGINAL ERROR —
       // reconnectSecondary classifies failures by message ("No connection
@@ -977,7 +1028,7 @@ function createSecondary(profile: string, connectionId: null | string = null): S
 // the second dial fails (tunnel/token are per-backend) and the closed socket
 // poisons the active gateway with "not connected" even though the primary is
 // open right next to it.
-async function sharedPrimaryRoute(profile: string, spawnPriority: SpawnPriority = 'background'): Promise<boolean> {
+async function sharedPrimaryRoute(profile: string, spawnPriority: SpawnPriority = 'background', authority = captureOAuthRequestAuthority()): Promise<boolean> {
   const desktop = window.hermesDesktop
 
   if (!desktop) {
@@ -998,8 +1049,12 @@ async function sharedPrimaryRoute(profile: string, spawnPriority: SpawnPriority 
       `Timed out resolving the shared-primary route for profile "${profile}"`
     )
 
+    assertOAuthConnectionAuthority(conn, authority)
+
     return Boolean(conn && typeof conn === 'object' && (conn as { sharedPrimary?: boolean }).sharedPrimary === true)
-  } catch {
+  } catch (error) {
+    if (error instanceof RetiredOAuthAccountError) { throw error }
+
     return false
   }
 }
@@ -1047,6 +1102,8 @@ export function gatewayTransportGeneration(gateway: HermesGateway): number | und
 /** Correlate runtime-producing responses with the transport that sent them. */
 export async function requestGatewayWithRuntimeBinding<T>(gateway: HermesGateway, method: string,
   params: Record<string, unknown> = {}, timeoutMs?: number, signal?: AbortSignal, profile?: string, scopeProfile = false): Promise<T> {
+  const authority = captureOAuthRequestAuthority()
+  assertGatewayOAuthAuthority(gateway, authority)
   const producer = captureRuntimeTransport(gateway, profile, scopeProfile)
 
   if (producer && RUNTIME_SESSION_METHODS.has(method)) {
@@ -1068,6 +1125,8 @@ export async function requestGatewayWithRuntimeBinding<T>(gateway: HermesGateway
   const result = await (timeoutMs === undefined && signal === undefined
     ? gateway.request<T>(method, requestParams)
     : gateway.request<T>(method, requestParams, timeoutMs, signal))
+
+  assertGatewayOAuthAuthority(gateway, authority)
 
   if (RUNTIME_RESPONSE_METHODS.has(method) && result && typeof result === 'object' &&
       'session_id' in result && typeof result.session_id === 'string' && result.session_id.trim()) {
@@ -1179,7 +1238,8 @@ async function requestOnRuntimeProducer<T>(producer: RuntimeProducer, method: st
 async function gatewayForProfile(
   profile: string,
   leaseRequest = false,
-  spawnPriority: SpawnPriority = 'background'
+  spawnPriority: SpawnPriority = 'background',
+  authority = captureOAuthRequestAuthority()
 ): Promise<{ gateway: HermesGateway | null; key: string; release: () => void; scopeProfile: boolean }> {
   const key = normKey(profile)
   const noRelease = () => undefined
@@ -1188,7 +1248,7 @@ async function gatewayForProfile(
     return { gateway: g.primaryGateway, key, release: noRelease, scopeProfile: false }
   }
 
-  if (!g.secondaries.has(key) && await sharedPrimaryRoute(key, spawnPriority)) {
+  if (!g.secondaries.has(key) && await sharedPrimaryRoute(key, spawnPriority, authority)) {
     return { gateway: g.primaryGateway, key, release: noRelease, scopeProfile: true }
   }
 
@@ -1238,7 +1298,7 @@ async function gatewayForProfile(
 
   try {
     if (!isOpen(entry.gateway)) {
-      await openSecondary(entry, spawnPriority)
+      await openSecondary(entry, spawnPriority, authority)
     }
   } catch (error) {
     release()
@@ -1260,10 +1320,11 @@ export async function requestGatewayForProfile<T>(
   timeoutMs?: number,
   signal?: AbortSignal
 ): Promise<T> {
+  const authority = captureOAuthRequestAuthority()
   const producer = RUNTIME_SESSION_METHODS.has(method) ? runtimeProducer(null, profile, params.session_id) : undefined
 
   if (producer) {return requestOnRuntimeProducer<T>(producer, method, params, timeoutMs, signal)}
-  const route = await gatewayForProfile(profile, true)
+  const route = await gatewayForProfile(profile, true, 'background', authority)
 
   try {
     if (!route.gateway) {
@@ -1275,6 +1336,8 @@ export async function requestGatewayForProfile<T>(
     // Same arity contract as the ambient path in session-request-router: only
     // pass the deadline args through when the caller set them, so a plain
     // profile-routed RPC keeps its two-argument call shape.
+    assertGatewayOAuthAuthority(route.gateway, authority)
+
     return await requestGatewayWithRuntimeBinding<T>(route.gateway, method, routedParams, timeoutMs, signal, route.key, route.scopeProfile)
   } finally {
     route.release()
@@ -1295,6 +1358,7 @@ export async function requestGatewayForAgent<T>(
   timeoutMs?: number,
   signal?: AbortSignal
 ): Promise<T> {
+  const authority = captureOAuthRequestAuthority()
   const revision = oauthSourceRevision(connectionId)
   const producer = RUNTIME_SESSION_METHODS.has(method) ? runtimeProducer(connectionId, profile, params.session_id) : undefined
 
@@ -1318,7 +1382,7 @@ export async function requestGatewayForAgent<T>(
     return requestOnPrimaryGateway<T>(method, params, timeoutMs, signal)
   }
 
-  const sharedRemote = await isAttachedSharedRemote(connectionId, key)
+  const sharedRemote = await isAttachedSharedRemote(connectionId, key, 'background', authority)
   assertOAuthSourceRevision(connectionId, revision)
 
   if (sharedRemote) {
@@ -1345,10 +1409,12 @@ export async function requestGatewayForAgent<T>(
 
   try {
     if (!isOpen(entry.gateway)) {
-      await openSecondary(entry)
+      await openSecondary(entry, 'background', authority)
     }
 
     assertOAuthSourceRevision(connectionId, revision)
+
+    assertOAuthConnectionAuthority(entry.connection, authority)
 
     return await requestGatewayWithRuntimeBinding<T>(entry.gateway, method, params, timeoutMs, signal, entry.profile)
   } finally {
@@ -2237,7 +2303,21 @@ export function retireLocalProfileGateways(profile: string): void {
 // fresh sockets target the NEW endpoint, but request/relay leases and mounted
 // foreground runtimes keep their old socket until they drain; the active scope
 // re-activates when its replacement is safe to publish.
-export function disposeSecondariesForOAuthSession(identity: string, connectionIds: string[] = []): void {
+export function retireOAuthSession(identity: string, connectionIds: string[] = [], nextIdentity?: string): void {
+  const authority = (g.oauthAccountRevision ?? 0) + 1
+  g.oauthAccountRevision = authority
+  const changes = g.oauthAccountChanges ??= new Map<string, number>()
+  changes.set(identity, authority)
+
+  if (nextIdentity) { changes.set(nextIdentity, authority) }
+  ;(g.retiredOAuthAccounts ??= new Set<string>()).add(identity)
+
+  if (primaryGatewayOAuthSessionIdentity() === identity) {
+    g.primaryGeneration = nextTransportGeneration()
+    g.primaryDial = undefined
+    g.primaryGateway?.close()
+  }
+
   const revisions = g.oauthSourceRevisions ??= new Map<string, number>()
   const affected = new Set(connectionIds)
 

@@ -4,14 +4,15 @@ import type { NativeTokenSet } from './native-oauth'
 
 /** Owns an authenticated account lifetime, not rotating access credentials. */
 export function createOAuthSessionAuthority(onRetired: (identity: string, scope: string) => void = () => {}) {
+  let revision = 0
   const operations = new Map<string, Set<() => void>>()
-  const scopes = new Map<string, { identity: string; changing: boolean }>()
+  const scopes = new Map<string, { identity: string; changing: boolean; revision: number }>()
 
   const state = (scope: string) => {
     let value = scopes.get(scope)
 
     if (!value) {
-      value = { identity: randomUUID(), changing: false }
+      value = { identity: randomUUID(), changing: false, revision: 0 }
       scopes.set(scope, value)
     }
 
@@ -27,6 +28,14 @@ export function createOAuthSessionAuthority(onRetired: (identity: string, scope:
   }
 
   return {
+    captureRequest: () => revision,
+    assertRequest(scope: string, identity: string | undefined, requestRevision: number) {
+      assertCurrent(scope, identity)
+
+      if (state(scope).revision > requestRevision) {
+        throw new Error('Eidolon OAuth account session changed while resolving the request.')
+      }
+    },
     capture: (scope: string) => state(scope).identity,
     assertCurrent,
     track(scope: string, identity: string, cancel: () => void) {
@@ -44,7 +53,7 @@ export function createOAuthSessionAuthority(onRetired: (identity: string, scope:
     beginChange(scope: string) {
       const previous = state(scope).identity
       const identity = randomUUID()
-      scopes.set(scope, { identity, changing: true })
+      scopes.set(scope, { identity, changing: true, revision: ++revision })
 
       for (const cancel of operations.get(previous) ?? []) { cancel() }
       operations.delete(previous)

@@ -53,7 +53,7 @@ const {
   ensureGatewayForProfile,
   gatewayActivationEpoch,
   disposeSecondariesForConnection,
-  disposeSecondariesForOAuthSession,
+  retireOAuthSession,
   openGatewayForAgent,
   pruneSecondaryGateways,
   recordPrimaryRuntimeProducer,
@@ -723,7 +723,7 @@ it('rejects a secondary request opened before an OAuth account change, then perm
   }
   const pending = requestGatewayForAgent('oauth-opening', 'worker', 'organization.create_objective', { title: 'old intent' })
   await vi.waitFor(() => expect(getConnectionFor).toHaveBeenCalledOnce())
-  disposeSecondariesForOAuthSession('old-account', ['oauth-opening'])
+  retireOAuthSession('old-account', ['oauth-opening'])
   release(connection)
   await expect(pending).rejects.toThrow('OAuth account session changed')
   expect(secondaryGateways.every(gateway => gateway.request.mock.calls.length === 0)).toBe(true)
@@ -736,7 +736,7 @@ it('closes a late OAuth handshake after account retirement before sending the he
   connectGate = new Promise<void>(resolve => { release = resolve })
 
   const connection = { connectionId: 'oauth-handshake', profile: 'worker', authMode: 'oauth',
-    oauthSessionIdentity: 'old-account', baseUrl: 'https://fixture.invalid', wsUrl: 'wss://fixture.invalid/api/ws?ticket=old' }
+    oauthSessionIdentity: 'handshake-old-account', baseUrl: 'https://fixture.invalid', wsUrl: 'wss://fixture.invalid/api/ws?ticket=old' }
 
   ;(window as unknown as { hermesDesktop: unknown }).hermesDesktop = {
     getConnectionFor: vi.fn(async () => connection),
@@ -745,10 +745,38 @@ it('closes a late OAuth handshake after account retirement before sending the he
   }
   const pending = requestGatewayForAgent('oauth-handshake', 'worker', 'organization.create_objective', { title: 'old intent' })
   await vi.waitFor(() => expect(secondaryGateways[0]?.connect).toHaveBeenCalledOnce())
-  disposeSecondariesForOAuthSession('old-account', ['oauth-handshake'])
+  retireOAuthSession('handshake-old-account', ['oauth-handshake'])
   const closeCount = secondaryGateways[0].close.mock.calls.length
   release()
   await expect(pending).rejects.toThrow('OAuth account session changed')
   expect(secondaryGateways[0].request).not.toHaveBeenCalled()
   expect(secondaryGateways[0].close.mock.calls.length).toBeGreaterThan(closeCount)
+})
+
+it.each(['changed', 'unrelated'] as const)('scopes descriptorless legacy opening to its resolved OAuth account: %s', async scenario => {
+  let release!: (value: unknown) => void
+  const held = new Promise(resolve => { release = resolve })
+
+  const connection = { profile: 'legacy-worker', authMode: 'oauth', oauthSessionIdentity: scenario === 'changed' ? 'legacy-next-changed' : 'legacy-unrelated-current',
+    baseUrl: 'https://legacy.invalid', wsUrl: 'wss://legacy.invalid/api/ws?ticket=new' }
+
+  const getConnection = vi.fn().mockReturnValueOnce(held).mockResolvedValue(connection)
+
+  ;(window as unknown as { hermesDesktop: unknown }).hermesDesktop = {
+    getConnection, getGatewayWsUrl: vi.fn(async () => ({ ok: true, wsUrl: connection.wsUrl })), touchBackend: vi.fn(async () => undefined)
+  }
+  const pending = requestGatewayForProfile('legacy-worker', 'organization.create_objective', { title: 'old legacy intent' })
+  await vi.waitFor(() => expect(getConnection).toHaveBeenCalledOnce())
+  retireOAuthSession(`legacy-old-${scenario}`, [], `legacy-next-${scenario}`)
+  release(connection)
+
+  if (scenario === 'changed') {
+    await expect(pending).rejects.toThrow('OAuth account session changed')
+    expect(secondaryGateways.every(gateway => gateway.request.mock.calls.length === 0)).toBe(true)
+  } else {
+    await expect(pending).resolves.toMatchObject({ params: { title: 'old legacy intent' } })
+  }
+
+  await expect(requestGatewayForProfile('legacy-worker', 'organization.create_objective', { title: 'new legacy intent' }))
+    .resolves.toMatchObject({ params: { title: 'new legacy intent' } })
 })

@@ -63,6 +63,7 @@ import {
   ensureGatewayForProfile,
   recordPrimaryRuntimeProducer,
   requestGatewayForAgent,
+  retireOAuthSession,
   setPrimaryGateway
 } from '@/store/gateway'
 import { $activeGatewayProfile } from '@/store/profile'
@@ -622,4 +623,48 @@ it('does not treat an unverified selected member as the primary request owner', 
   const { result } = renderHook(() => useGatewayRequest())
   await expect(result.current.requestGateway('session.create', { title: 'B only' })).rejects.toThrow('no verified shared primary route')
   expect(primary.request).not.toHaveBeenCalled()
+})
+
+it('does not replay a null-descriptor primary request after a held recovery resolves for a new OAuth account', async () => {
+  const desktop = installPrimaryDesktop('oauth')
+  const primary = makePrimaryGateway()
+  setPrimaryGateway(primary as unknown as HermesGateway, 'default')
+  $gateway.set(primary as unknown as HermesGateway)
+  $gatewayState.set('closed')
+  $connection.set(null)
+  primary.connectionState = 'closed'
+  primary.request.mockRejectedValueOnce(new Error('connection closed')).mockResolvedValue({ replayed: true })
+  let release!: (value: Awaited<ReturnType<typeof desktop.getConnection>>) => void
+  const held = new Promise<Awaited<ReturnType<typeof desktop.getConnection>>>(resolve => { release = resolve })
+  const next = { ...await desktop.getConnection(), oauthSessionIdentity: 'null-recovery-next' }
+  desktop.getConnection.mockReturnValue(held)
+  const { result } = renderHook(() => useGatewayRequest())
+  const request = result.current.requestGateway('organization.create_objective', { title: 'old intent' })
+  await vi.waitFor(() => expect(desktop.getConnection).toHaveBeenCalledTimes(2))
+  retireOAuthSession('null-recovery-old', [], 'null-recovery-next')
+  release(next)
+  await expect(request).rejects.toThrow()
+  expect(primary.request).toHaveBeenCalledOnce()
+})
+
+it('retires a background physical primary and its runtime producer while preserving unrelated foreground', async () => {
+  installRemoteDesktop()
+  const primary = makePrimaryGateway()
+  primary.request.mockResolvedValue({ session_id: 'background-primary-runtime' })
+  setPrimaryGateway(primary as unknown as HermesGateway, 'default', {
+    connectionId: 'background-oauth', oauthSessionIdentity: 'background-primary-old'
+  })
+  $gateway.set(primary as unknown as HermesGateway)
+  await requestGatewayForAgent('background-oauth', 'default', 'session.create')
+  await ensureGatewayForAgent('unrelated-source', 'research')
+  const foreground = activeGateway()
+  retireOAuthSession('background-primary-old', ['background-oauth'], 'background-primary-next')
+  expect(primary.close).toHaveBeenCalledOnce()
+  expect(activeGateway()).toBe(foreground)
+  expect(foreground?.connectionState).toBe('open')
+  await expect(requestGatewayForAgent('background-oauth', 'default', 'config.set', {
+    session_id: 'background-primary-runtime', key: 'fixture', value: 'old intent'
+  })).rejects.toThrow()
+  await expect(requestGatewayForAgent('background-oauth', 'default', 'profiles.list')).rejects.toThrow()
+  expect(primary.request).toHaveBeenCalledOnce()
 })
