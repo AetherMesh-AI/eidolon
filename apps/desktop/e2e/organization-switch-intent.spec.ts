@@ -3,37 +3,32 @@ import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import path from 'node:path'
 
-import { buildAppEnv, type MockBackendFixture, setupMockBackend, waitForAppReady } from './fixtures'
-import {
-  fixtureLedger,
-  queuedSwitchTitle,
-  startOrganizationSwitchGateway,
-  switchPython
-} from './organization-switch-fixture'
+import { type MockBackendFixture } from './fixtures'
+import { profileA, profileB, setupDedicatedProfiles } from './organization-dedicated-profile-fixture'
+import { queuedSwitchTitle, switchPython } from './organization-switch-fixture'
 import { acknowledgeExpectedErrorBanner, expect, test } from './test'
 
 const root = path.resolve(import.meta.dirname, '../../..')
 let fixture: MockBackendFixture | undefined
-let remote: Awaited<ReturnType<typeof startOrganizationSwitchGateway>> | undefined
 
 test.setTimeout(240_000)
 test.afterEach(async () => {
-  // The remote child lives under the desktop sandbox; stop it before removing that home.
-  try {
-    await remote?.close()
-  } finally {
-    await fixture?.cleanup()
-    remote = undefined
-    fixture = undefined
-  }
+  await fixture?.cleanup()
+  fixture = undefined
 })
 
-test('returns an uncertain intake to its original route owner and key without starting queued destination work', async () => {
-  fixture = await setupMockBackend({ extraConfig: 'approvals:\n  mode: manual' })
-  await waitForAppReady(fixture)
-  remote = await startOrganizationSwitchGateway(fixture.sandbox, fixture.mockUrl)
-  const { page, app, sandbox, mock } = fixture
-  const env = buildAppEnv(sandbox)
+test('returns an uncertain intake through dedicated profile owners without starting queued destination work', async () => {
+  const dedicated = await setupDedicatedProfiles()
+  fixture = dedicated.fixture
+  const { page, app, mock } = fixture
+  const env = { ...dedicated.env, HERMES_HOME: dedicated.homes[0] }
+
+  const remote = {
+    url: dedicated.routes[1].baseUrl,
+    ledger: () => dedicated.ledger(1),
+    starts: () => dedicated.starts(1)
+  }
+
   const title = 'Retain this original admission across two real sources'
 
   const methods: Array<{
@@ -49,42 +44,25 @@ test('returns an uncertain intake to its original route owner and key without st
   let originalKey = ''
   let originalParams: Record<string, unknown> | undefined
 
-  const registration = await page.evaluate(
-    async ({ url, token }) => {
-      const bridge = (
-        window as unknown as {
-          hermesDesktop: {
-            connections: {
-              list(): Promise<{ connections: Array<{ id: string; kind: string; label: string }> }>
-              save(input: unknown): Promise<{ ok: boolean; connection: { id: string } }>
-            }
-          }
+  const registration = await page.evaluate(async () => {
+    const bridge = (
+      window as unknown as {
+        hermesDesktop: {
+          connections: { list(): Promise<{ connections: Array<{ id: string; kind: string; label: string }> }> }
         }
-      ).hermesDesktop
-
-      const local = (await bridge.connections.list()).connections.find(item => item.kind === 'local')
-
-      if (!local) {
-        throw new Error('Expected isolated local fixture source')
       }
+    ).hermesDesktop
 
-      const result = await bridge.connections.save({
-        kind: 'remote',
-        label: 'Observation B',
-        url,
-        authMode: 'token',
-        token
-      })
+    const local = (await bridge.connections.list()).connections.find(item => item.kind === 'local')
 
-      if (!result.ok) {
-        throw new Error('Fixture remote registration failed')
-      }
+    if (!local) {
+      throw new Error('Missing actual local registry source')
+    }
 
-      return { local, remoteId: result.connection.id }
-    },
-    { url: remote.url, token: remote.token }
-  )
+    return { local }
+  })
 
+  const localPort = new URL(dedicated.routes[0].baseUrl).port
   const remotePort = new URL(remote.url).port
   await page.routeWebSocket(/.*/, socket => {
     const server = socket.connectToServer()
@@ -106,7 +84,15 @@ test('returns an uncertain intake to its original route owner and key without st
         params?: Record<string, unknown>
       }
 
-      const destination = new URL(socket.url()).port === remotePort ? 'b' : 'a'
+      const port = new URL(socket.url()).port
+
+      if (port !== remotePort && port !== localPort) {
+        server.send(message)
+
+        return
+      }
+
+      const destination = port === remotePort ? 'b' : 'a'
 
       if (request.method?.startsWith('organization.')) {
         const nested = request.params?.params as Record<string, unknown> | undefined
@@ -162,13 +148,25 @@ s.set_objective_archived(ident,True,expected_revision=0,idempotency_key='switch-
       }
     })
   })
-  await page.reload()
-  await waitForAppReady(fixture)
 
   const nav = page
     .getByRole('complementary', { name: 'Eidolon navigation' })
     .getByRole('navigation', { name: 'Primary', exact: true })
 
+  // Bootstrap only: visit both real dedicated profiles to retain their work owners.
+  // The uncertain-intake journey below uses OrganizationWorkPicker exclusively.
+  for (const profile of [profileA, profileB, profileA]) {
+    await page.evaluate(() => {
+      location.hash = '#/'
+    })
+    await page.locator('[data-slot="profile-rail"]').getByRole('button', { name: profile, exact: true }).click()
+    await nav.getByRole('link', { name: 'Home', exact: true }).click()
+    await expect(page.getByText(queuedSwitchTitle, { exact: true })).toBeVisible()
+    await expect(page.locator('.eid-workspace-header').getByRole('button', { name: new RegExp(profile) })).toBeVisible()
+  }
+
+  expect(dedicated.starts(0)).toBe(0)
+  expect(dedicated.starts(1)).toBe(0)
   await nav.getByRole('link', { name: 'Home', exact: true }).click()
   await page.getByRole('button', { name: 'New objective', exact: true }).click()
   await page.getByRole('textbox', { name: 'Objective', exact: true }).fill(title)
@@ -177,57 +175,53 @@ s.set_objective_archived(ident,True,expected_revision=0,idempotency_key='switch-
   await expect(page.getByText('Scripted cross-source admission reply lost', { exact: true })).toBeVisible()
   expect(originalKey).not.toBe('')
   const originalRoute = page.url()
-  const beforeA = fixtureLedger(sandbox.hermesHome, env)
+  const beforeA = dedicated.ledger(0)
   const beforeB = remote.ledger()
   expect(remote.starts()).toBe(0)
-  const switcher = page.locator('.eid-workspace-header [data-slot="connection-switcher"]')
-  await switcher.getByRole('button').click()
+  const work = page.locator('.eid-workspace-header').getByRole('button', { name: /^Organization work:/ })
+  const readsBeforeDismissal = methods.filter(item => item.destination === 'b').length
+  await work.click()
   await page.keyboard.press('Escape')
   expect(page.url()).toBe(originalRoute)
-  expect(methods.filter(item => item.destination === 'b')).toEqual([])
+  expect(methods.filter(item => item.destination === 'b')).toHaveLength(readsBeforeDismissal)
   expect(remote.ledger()).toBe(beforeB)
 
-  async function choose(label: string) {
-    await switcher.getByRole('button').click()
-    await page.getByRole('menuitemradio', { name: label }).click()
-    await expect(switcher.getByRole('button')).toContainText(label)
-    await expect(switcher).toHaveAttribute('aria-busy', 'false')
+  async function choose(profile: string) {
+    await work.click()
+    await page
+      .getByRole('region', { name: 'Work by connection and profile', exact: true })
+      .getByRole('button', { name: `Open requests: ${registration.local.label} / ${profile}`, exact: true })
+      .click()
+    await expect(page.getByRole('region', { name: 'Work by connection and profile', exact: true })).toBeHidden()
+    await expect(page.locator('.eid-workspace-header').getByRole('button', { name: new RegExp(profile) })).toBeVisible()
   }
 
-  await choose('Observation B')
+  await choose(profileB)
   await nav.getByRole('link', { name: 'Home', exact: true }).click()
   await expect(page.getByText(queuedSwitchTitle, { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Organizations', exact: true }).click()
   const inspection = page.getByRole('dialog', { name: 'Organizations', exact: true })
   await inspection.getByRole('button', { name: 'Refresh current organization', exact: true }).click()
-  await expect(inspection.getByRole('option')).toContainText('Observation B')
+  await expect(inspection.getByRole('option')).toContainText(profileB)
   await expect(inspection.getByRole('button', { name: 'Use selected organization', exact: true })).toBeDisabled()
   holdDescriptor = true
   await inspection.getByRole('button', { name: 'Refresh current organization', exact: true }).click()
   await expect.poll(() => Boolean(releaseDescriptor)).toBe(true)
-  // Electron strips query values before persisting this URL. The save event must
-  // still invalidate an in-flight read even though the displayed endpoint is unchanged.
-  const hiddenQuery = 'synthetic-private-query'
-  await page.evaluate(
-    async ({ id, url, token }) => {
-      const bridge = (
-        window as unknown as { hermesDesktop: { connections: { save(input: unknown): Promise<{ ok: boolean }> } } }
-      ).hermesDesktop
+  // A registry save must revoke an in-flight read even when the dedicated
+  // profile endpoint is unchanged. URL credentials remain a separate refusal gate.
+  await page.evaluate(async local => {
+    const bridge = (
+      window as unknown as { hermesDesktop: { connections: { save(input: unknown): Promise<{ ok: boolean }> } } }
+    ).hermesDesktop
 
-      if (
-        !(await bridge.connections.save({ id, kind: 'remote', label: 'Observation B', url, authMode: 'token', token }))
-          .ok
-      ) {
-        throw new Error('Fixture same-endpoint edit failed')
-      }
-    },
-    { id: registration.remoteId, url: `${remote.url}?credential=${hiddenQuery}`, token: remote.token }
-  )
+    if (!(await bridge.connections.save({ id: local.id, kind: 'local', label: local.label })).ok) {
+      throw new Error('Fixture registry save failed')
+    }
+  }, registration.local)
   await expect(inspection).toBeHidden()
   releaseDescriptor!()
   await page.getByRole('button', { name: 'Organizations', exact: true }).click()
   await expect(inspection.getByRole('option')).toContainText('Last known')
-  expect(await inspection.textContent()).not.toContain(hiddenQuery)
   await expect(inspection.getByRole('button', { name: 'Use selected organization', exact: true })).toBeDisabled()
   await page.keyboard.press('Escape')
   expect(remote.ledger()).toBe(beforeB)
@@ -242,7 +236,7 @@ s.set_objective_archived(ident,True,expected_revision=0,idempotency_key='switch-
     contentType: 'image/png'
   })
 
-  await choose(registration.local.label)
+  await choose(profileA)
   await nav.getByRole('link', { name: 'Home', exact: true }).click()
   await page.getByRole('button', { name: 'New objective', exact: true }).click()
   await expect(page.getByRole('textbox', { name: 'Objective', exact: true })).toHaveValue(title)
@@ -273,7 +267,7 @@ s.set_objective_archived(ident,True,expected_revision=0,idempotency_key='switch-
           item.method === 'organization.observeRead'
       )
   ).toBe(true)
-  expect(fixtureLedger(sandbox.hermesHome, env)).toBe(beforeA)
+  expect(dedicated.ledger(0)).toBe(beforeA)
   expect(remote.ledger()).toBe(beforeB)
   expect(remote.starts()).toBe(0)
   expect(mock.receivedPrompts).toHaveLength(0)
@@ -297,10 +291,14 @@ s.set_objective_archived(ident,True,expected_revision=0,idempotency_key='switch-
       providerCalls: mock.receivedPrompts.length,
       originalLedgerSha256: createHash('sha256').update(beforeA).digest('hex'),
       destinationLedgerSha256: createHash('sha256').update(beforeB).digest('hex'),
-      normalizedQuerySaveDropsLateRead: true,
+      sameEndpointRegistrySaveDropsLateRead: true,
       productionActivationEnabled: false,
-      switchingDoor: 'existing connection switcher'
+      switchingDoor: 'OrganizationWorkPicker → selectOrganizationConnection',
+      authorityScope: 'distinct dedicated local profiles on one registry source; not distinct connections',
+      descriptors: dedicated.routes,
+      schedulerStartsA: dedicated.starts(0)
     })
   })
+  expect(dedicated.starts(0)).toBe(0)
   await acknowledgeExpectedErrorBanner(page, 'Scripted cross-source admission reply lost')
 })
