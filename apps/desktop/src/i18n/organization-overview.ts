@@ -1,9 +1,18 @@
 import type { OrganizationHomeCopy } from './organization-home'
 
 // Product chrome only; retained objective titles, member names and records stay verbatim.
-type OverviewCopy = Pick<OrganizationHomeCopy, 'home' | 'messages' | 'work' | 'objectives' | 'organization' | 'deliverables' | 'settings' | 'heading' | 'introduction' | 'happening' | 'happeningNote' | 'needsYou' | 'needsNote' | 'ready' | 'readyNote' | 'noWork' | 'noNeeds' | 'noReady' | 'activity' | 'activityNote' | 'noActivity' | 'viewActivity' | 'viewObjectives' | 'viewRequests' | 'viewDeliverables' | 'viewObjective' | 'reviewRequest' | 'accepted' | 'owner' | 'unassigned' | 'progressUnknown' | 'paused' | 'newObjective' | 'newObjectiveNote' | 'snapshotNote' | 'connecting' | 'lastKnown' | 'details' | 'statuses' | 'completedTasks' | 'health'>
+type OverviewCopy = Pick<OrganizationHomeCopy, 'home' | 'messages' | 'work' | 'objectives' | 'organization' | 'deliverables' | 'settings' | 'heading' | 'introduction' | 'happening' | 'happeningNote' | 'needsYou' | 'needsNote' | 'ready' | 'readyNote' | 'noWork' | 'noNeeds' | 'noReady' | 'activity' | 'activityNote' | 'noActivity' | 'viewActivity' | 'viewObjectives' | 'viewRequests' | 'viewDeliverables' | 'viewObjective' | 'reviewRequest' | 'accepted' | 'owner' | 'unassigned' | 'progressUnknown' | 'paused' | 'newObjective' | 'newObjectiveNote' | 'snapshotNote' | 'connecting' | 'lastKnown' | 'details' | 'statuses' | 'completedTasks' | 'outcomesUnavailable' | 'requestsUnavailable' | 'workNote' | 'messagesNote' | 'noAgents' | 'chooseAgent' | 'unknownStatus' | 'running' | 'health'>
 
 export const organizationOverviewJa: OverviewCopy = {
+  "outcomesUnavailable": "このランタイムは成果一覧を提供していません。保持された成果は目標画面で確認してください。",
+  "requestsUnavailable": "このランタイムは依頼キューを提供していません。",
+  "workNote": "現在の目標を追跡し、作業、レビュー、証拠を確認できます。",
+  "messagesNote": "永続メンバーを選び、既存の会話を開きます。メッセージは権限の追加や利用枠の更新を行いません。",
+  "noAgents": "この表示に永続メンバーはいません。",
+  "chooseAgent": "エージェントを選択",
+  "unknownStatus": "状態は未報告",
+  running: (value: string) => `取得済みの実行段階: ${value}`,
+
   "home": "ホーム",
   "messages": "メッセージ",
   "work": "作業の概要",
@@ -86,6 +95,15 @@ export const organizationOverviewJa: OverviewCopy = {
 }
 
 export const organizationOverviewZh: OverviewCopy = {
+  "outcomesUnavailable": "此运行时未提供成果收件箱。请打开目标以查看保留的结果。",
+  "requestsUnavailable": "此运行时未提供请求队列。",
+  "workNote": "跟踪当前目标，并查看其工作、审核和证据。",
+  "messagesNote": "选择一位持久成员以打开已有对话。消息不会授予新权限或续增额度。",
+  "noAgents": "此视图没有可用的持久成员。",
+  "chooseAgent": "选择代理",
+  "unknownStatus": "尚未报告状态",
+  running: (value: string) => `已领取的执行阶段：${value}`,
+
   "home": "首页",
   "messages": "消息",
   "work": "工作概览",
@@ -168,6 +186,15 @@ export const organizationOverviewZh: OverviewCopy = {
 }
 
 export const organizationOverviewZhHant: OverviewCopy = {
+  "outcomesUnavailable": "此執行環境未提供成果收件匣。請開啟目標以檢視保留的結果。",
+  "requestsUnavailable": "此執行環境未提供請求佇列。",
+  "workNote": "追蹤目前目標，並檢視其工作、審查與證據。",
+  "messagesNote": "選擇一位持續存在的成員以開啟既有對話。訊息不會授予新權限或增加額度。",
+  "noAgents": "此檢視沒有可用的持續存在成員。",
+  "chooseAgent": "選擇代理",
+  "unknownStatus": "尚未回報狀態",
+  running: (value: string) => `已領取的執行階段：${value}`,
+
   "home": "首頁",
   "messages": "訊息",
   "work": "工作概覽",
@@ -250,6 +277,15 @@ export const organizationOverviewZhHant: OverviewCopy = {
 }
 
 export const organizationOverviewAr: OverviewCopy = {
+  "outcomesUnavailable": "لم توفر بيئة التشغيل صندوق النتائج. افتح الأهداف لفحص النتائج المحتفظ بها.",
+  "requestsUnavailable": "لم توفر بيئة التشغيل قائمة الطلبات.",
+  "workNote": "تابع الأهداف الحالية ثم افتح أعمالها ومراجعاتها وأدلتها.",
+  "messagesNote": "اختر عضواً دائماً لفتح المحادثة الحالية. لا تمنح الرسائل أذونات جديدة ولا تجدد الحصص.",
+  "noAgents": "لا يوجد أعضاء دائمون متاحون في هذا العرض.",
+  "chooseAgent": "اختر وكيلاً",
+  "unknownStatus": "لم يُبلّغ عن الحالة",
+  running: (value: string) => `مراحل تم حجزها بالفعل: ${value}`,
+
   "home": "الرئيسية",
   "messages": "الرسائل",
   "work": "نظرة عامة على العمل",
@@ -332,6 +368,15 @@ export const organizationOverviewAr: OverviewCopy = {
 }
 
 export const organizationOverviewRu: OverviewCopy = {
+  "outcomesUnavailable": "Среда не предоставила список результатов. Откройте цели, чтобы просмотреть сохранённые итоги.",
+  "requestsUnavailable": "Среда не предоставила очередь запросов.",
+  "workNote": "Следите за текущими целями и открывайте их работы, проверки и подтверждения.",
+  "messagesNote": "Выберите постоянного участника, чтобы открыть существующий диалог. Сообщения не предоставляют новых разрешений и не пополняют лимиты.",
+  "noAgents": "В этом представлении нет доступных постоянных участников.",
+  "chooseAgent": "Выберите агента",
+  "unknownStatus": "Статус не указан",
+  running: (value: string) => `Уже взятые в работу этапы: ${value}`,
+
   "home": "Главная",
   "messages": "Сообщения",
   "work": "Обзор работы",
