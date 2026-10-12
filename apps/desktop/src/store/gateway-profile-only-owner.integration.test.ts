@@ -55,6 +55,7 @@ const {
   configureGatewayRegistry,
   ensureGatewayForProfile,
   retireLocalProfileGateways,
+  requestGatewayForAgent,
   setPrimaryGateway
 } = await import('./gateway')
 
@@ -159,6 +160,32 @@ describe('profile-only secondary approval ownership', () => {
       session_id: 'rt-secondary'
     })
     expect(ambient).not.toHaveBeenCalled()
+  })
+
+  it('answers an established secondary approval after the physical primary respawns with the same profile', async () => {
+    await ensureGatewayForProfile('research')
+    const secondary = gatewayMocks.instances[0]
+    secondary.emit({ session_id: 'rt-before-respawn', type: 'approval.request' })
+    const replacement = { connectionState: 'open', request: vi.fn() }
+    setPrimaryGateway(replacement as never, 'research', { connectionId: 'local' })
+    const ambient = vi.fn()
+    await expect(requestForOwnedSession('rt-before-respawn', ambient as never, 'approval.respond', {
+      session_id: 'rt-before-respawn', choice: 'once'
+    })).resolves.toEqual({ method: 'approval.respond', params: { session_id: 'rt-before-respawn', choice: 'once' } })
+    expect(secondary.request).toHaveBeenCalledWith('approval.respond', { session_id: 'rt-before-respawn', choice: 'once' })
+    expect(replacement.request).not.toHaveBeenCalled()
+    expect(ambient).not.toHaveBeenCalled()
+  })
+
+  it('does not route an exact remote primary owner through a same-named legacy secondary', async () => {
+    await ensureGatewayForProfile('research')
+    const secondary = gatewayMocks.instances[0]
+    const remote = { connectionState: 'open', request: vi.fn(async () => ({ via: 'remote-primary' })) }
+    setPrimaryGateway(remote as never, 'research', { connectionId: 'remote-owner' })
+    await expect(requestGatewayForAgent('remote-owner', 'research', 'approval.respond', { session_id: 'remote' }))
+      .resolves.toEqual({ via: 'remote-primary' })
+    expect(remote.request).toHaveBeenCalledWith('approval.respond', { session_id: 'remote' })
+    expect(secondary.request).not.toHaveBeenCalled()
   })
 
   it('rejects unproven profiles and retires only transient local ownership, never durable exact routes', async () => {

@@ -1,3 +1,4 @@
+import type { GatewayEvent } from '@aethermesh/shared'
 import { act, cleanup, render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -19,7 +20,9 @@ import {
   ensureGatewayForAgent,
   ensureGatewayForProfile,
   isActivePrimary,
+  primaryGatewaySource,
   requestGatewayForAgent,
+  requestGatewayForProfile,
   retainGatewayForAgent
 } from '@/store/gateway'
 import { reconnectGateway } from '@/store/gateway-reconnect'
@@ -93,7 +96,7 @@ class FakeWebSocket {
   static CLOSED = 3
   // Flipped by the test: 'open' = next socket connects; 'fail' = next socket
   // errors (a dead remote). Mirrors a VPS going away after the first connect.
-  static mode: 'open' | 'fail' = 'open'
+  static mode: 'open' | 'fail' | 'hold' = 'open'
   static instances: FakeWebSocket[] = []
   // Ping behavior: 'pong' answers with a healthy pong frame; 'silent' swallows
   // the request (the half-open-socket simulation — connection looks OPEN but
@@ -107,6 +110,8 @@ class FakeWebSocket {
 
   constructor(public url: string) {
     FakeWebSocket.instances.push(this)
+
+    if (FakeWebSocket.mode === 'hold') {return}
     const willOpen = FakeWebSocket.mode === 'open'
     // Resolve on the next microtask/macrotask so connect()'s promise wiring is
     // in place before open/error fires (matches real async socket handshake).
@@ -167,6 +172,15 @@ class FakeWebSocket {
       })
     }
     // 'silent': swallow — a healthy socket answers, a half-open one never does.
+  }
+
+  open() {
+    this.readyState = FakeWebSocket.OPEN
+    this.emit('open', {})
+  }
+
+  event(event: Record<string, unknown>) {
+    this.emit('message', { data: JSON.stringify({ method: 'event', params: event }) })
   }
 
   private emit(type: string, ev: unknown) {
@@ -254,15 +268,17 @@ function fakeDesktop() {
 function Harness({
   beforeConnectionSwitch = () => undefined,
   refreshHermesConfig = async () => undefined,
-  refreshSessions
+  refreshSessions,
+  handleGatewayEvent = () => undefined
 }: {
+  handleGatewayEvent?: (event: GatewayEvent) => void
   beforeConnectionSwitch?: () => void
   refreshHermesConfig?: (force?: boolean, shouldPublish?: () => boolean) => Promise<void>
   refreshSessions?: (shouldPublish?: () => boolean) => Promise<void>
 } = {}) {
   useGatewayBoot({
     beforeConnectionSwitch,
-    handleGatewayEvent: () => undefined,
+    handleGatewayEvent,
     onConnectionReady: () => undefined,
     onGatewayReady: () => undefined,
     refreshHermesConfig,
@@ -1876,7 +1892,8 @@ it('reconciles a local primary respawn to its served profile after the remembere
   const replacement = { ...original, profile: 'observation-a', baseUrl: 'http://127.0.0.1:5432', wsUrl: 'ws://127.0.0.1:5432/ws?token=new' }
   desktop.getConnection.mockResolvedValue(original)
   ;(window as { hermesDesktop?: unknown }).hermesDesktop = desktop
-  render(<Harness />)
+  const events = vi.fn()
+  render(<Harness handleGatewayEvent={events} />)
   await flushAsync()
   desktop.profile.get.mockResolvedValue({ profile: 'observation-a' })
   desktop.getConnection.mockResolvedValue(replacement)
@@ -1888,6 +1905,8 @@ it('reconciles a local primary respawn to its served profile after the remembere
   expect($activeGatewayProfile.get()).toBe('observation-a')
   expect($activeGatewayRoute.get()).toBe('observation-a')
   expect(isActivePrimary()).toBe(true)
+  act(() => { FakeWebSocket.instances.at(-1)!.event({ type: 'approval.request', session_id: 'primary-new-runtime' }) })
+  expect(events).toHaveBeenLastCalledWith(expect.objectContaining({ profile: 'observation-a', connectionId: 'local' }))
   expect(createOrganizationScopeReader()().ownerRoute).toEqual({ connectionId: 'local', profile: 'observation-a' })
 })
 
@@ -1918,6 +1937,12 @@ it('keeps an active same-named legacy secondary when the background primary resp
   expect($activeGatewayRoute.get()).toBe('observation-a')
   expect(readOwner().ownerRoute).toEqual(owner)
   expect($gatewayState.get()).toBe('open')
+  const request = vi.spyOn(foreground!, 'request').mockResolvedValue({ via: 'existing-secondary' })
+  await expect(requestGatewayForProfile('observation-a', 'session.activate', { session_id: 'owned' }))
+    .resolves.toEqual({ via: 'existing-secondary' })
+  await expect(requestGatewayForAgent('local', 'observation-a', 'prompt.submit', { session_id: 'owned' }))
+    .resolves.toEqual({ via: 'existing-secondary' })
+  expect(request.mock.calls.map(call => call[0])).toEqual(['session.activate', 'prompt.submit'])
 })
 
 it('does not publish a held primary reconnect over a newer foreground intent', async () => {
@@ -1936,4 +1961,79 @@ it('does not publish a held primary reconnect over a newer foreground intent', a
   await flushAsync()
   expect($activeGatewayProfile.get()).toBe('default')
   expect($connection.get()).toMatchObject(original)
+})
+
+
+it('settles the primary socket identity during a newer foreground intent and tags events by their producer', async () => {
+  const desktop = fakeDesktop()
+  const original = { ...primaryConn, mode: 'local', connectionId: 'local', profile: 'default' }
+  const replacement = { ...original, profile: 'observation-a', wsUrl: 'ws://127.0.0.1:6543/ws?token=primary' }
+  desktop.getConnection.mockResolvedValue(original)
+  ;(window as { hermesDesktop?: unknown }).hermesDesktop = desktop
+  const events = vi.fn()
+  render(<Harness handleGatewayEvent={events} />)
+  await flushAsync()
+  const primary = activeGateway()
+  desktop.getConnection.mockImplementation(async profile => profile === 'coder' ? coderConn : replacement)
+  desktop.getGatewayWsUrl.mockImplementation(async profile => (profile as unknown) === 'coder' ? coderConn.wsUrl : replacement.wsUrl)
+  FakeWebSocket.mode = 'hold'
+  act(() => { desktop.emitBackendExit(); FakeWebSocket.instances[0].drop() })
+  await advanceBackoff()
+  const held = FakeWebSocket.instances.at(-1)!
+  expect(held.readyState).toBe(0)
+  expect(held.url).toBe(replacement.wsUrl)
+  FakeWebSocket.mode = 'open'
+  vi.useRealTimers()
+  await act(async () => {
+    beginSourceSwitchIntent()
+    await ensureGatewayProfile('coder')
+  })
+  vi.useFakeTimers()
+  const foreground = activeGateway()
+  const connection = $connection.get()
+  const barrier = beginGatewaySwitch()
+  act(() => { held.open(); held.event({ type: 'approval.request', session_id: 'primary-after-respawn', profile: 'spoof', connectionId: 'spoof' }) })
+  await flushAsync()
+  expect(primaryGatewaySource()).toEqual({ profile: 'observation-a', connectionId: 'local' })
+  expect(activeGateway()).toBe(foreground)
+  expect(activeGateway()).not.toBe(primary)
+  expect($connection.get()).toBe(connection)
+  expect($activeGatewayProfile.get()).toBe('coder')
+  expect($gatewaySwitching.get()).toBe(true)
+  expect(events).toHaveBeenLastCalledWith(expect.objectContaining({
+    type: 'approval.request', session_id: 'primary-after-respawn', profile: 'observation-a', connectionId: 'local'
+  }))
+  endGatewaySwitch(barrier)
+})
+
+
+it('ignores a superseded primary socket opening after a newer Settings connection', async () => {
+  const desktop = fakeDesktop()
+  const original = { ...primaryConn, mode: 'local', connectionId: 'local', profile: 'default' }
+  const first = { ...original, profile: 'observation-a', wsUrl: 'ws://127.0.0.1:6543/ws?token=first' }
+  const latest = { ...original, profile: 'observation-b', wsUrl: 'ws://127.0.0.1:7654/ws?token=latest' }
+  desktop.getConnection.mockResolvedValue(original)
+  ;(window as { hermesDesktop?: unknown }).hermesDesktop = desktop
+  const events = vi.fn()
+  render(<Harness handleGatewayEvent={events} />)
+  await flushAsync()
+  desktop.getConnection.mockResolvedValue(first)
+  desktop.getGatewayWsUrl.mockResolvedValue(first.wsUrl)
+  FakeWebSocket.mode = 'hold'
+  act(() => { desktop.emitBackendExit(); FakeWebSocket.instances[0].drop() })
+  await advanceBackoff()
+  const stale = FakeWebSocket.instances.at(-1)!
+  expect(stale.readyState).toBe(0)
+  desktop.getConnection.mockResolvedValue(latest)
+  desktop.getGatewayWsUrl.mockResolvedValue(latest.wsUrl)
+  FakeWebSocket.mode = 'open'
+  act(() => { connectionApplied?.() })
+  await flushAsync()
+  expect(primaryGatewaySource()).toEqual({ profile: 'observation-b', connectionId: 'local' })
+  events.mockClear()
+  act(() => { stale.open(); stale.event({ type: 'approval.request', session_id: 'stale-runtime' }) })
+  await flushAsync()
+  expect(primaryGatewaySource()).toEqual({ profile: 'observation-b', connectionId: 'local' })
+  expect($activeGatewayProfile.get()).toBe('observation-b')
+  expect(events).not.toHaveBeenCalled()
 })

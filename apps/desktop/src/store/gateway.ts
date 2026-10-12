@@ -419,6 +419,11 @@ export function activeGateway(): HermesGateway | null {
   return g.secondaries.get(g.activeKey)?.gateway ?? null
 }
 
+/** Provenance of the physical primary, never the foreground secondary. */
+export function primaryGatewaySource(): { profile: string; connectionId: string | null } {
+  return { profile: g.primaryProfile, connectionId: g.primaryConnectionId }
+}
+
 /**
  * The registry connection serving the gateway the user is currently looking
  * at. A registry-backed primary takes its identity from the published primary
@@ -888,11 +893,11 @@ async function gatewayForProfile(
   const key = normKey(profile)
   const noRelease = () => undefined
 
-  if (key === g.primaryProfile) {
+  if (key === g.primaryProfile && !g.secondaries.has(key)) {
     return { gateway: g.primaryGateway, key, release: noRelease, scopeProfile: false }
   }
 
-  if (await sharedPrimaryRoute(key, spawnPriority)) {
+  if (!g.secondaries.has(key) && await sharedPrimaryRoute(key, spawnPriority)) {
     return { gateway: g.primaryGateway, key, release: noRelease, scopeProfile: true }
   }
 
@@ -1005,6 +1010,19 @@ export async function requestGatewayForAgent<T>(
     return requestGatewayForProfile<T>(key, method, params, timeoutMs, signal)
   }
 
+  // Keep authenticated local owner RPCs on an established legacy transport.
+  // A matching profile alone must never redirect a different registry source.
+  const legacy = g.secondaries.get(key)
+  const opened = legacy?.openedConnection
+
+  if (legacy && !legacy.connectionId && legacy.wantOpen && isOpen(legacy.gateway) &&
+      !legacy.connectPromise && !legacy.reconnecting && !legacy.pendingConnectionRedial &&
+      opened && legacy.connection === opened && opened.mode === 'local' &&
+      !opened.sharedPrimary && !opened.sharedRemote && opened.profile === key &&
+      opened.connectionId === connectionId?.trim()) {
+    return requestGatewayForProfile<T>(key, method, params, timeoutMs, signal)
+  }
+
   // A primary remote selected from the connection registry carries its source
   // id in the active connection descriptor. Requests for that exact
   // (connection, profile) already have an owning socket: the window primary.
@@ -1014,7 +1032,7 @@ export async function requestGatewayForAgent<T>(
   // Require both owner identities to agree before collapsing the route; a
   // different source or profile must retain its isolated secondary.
   if (isPrimaryRegistryRoute(connectionId, key)) {
-    return requestGatewayForProfile<T>(key, method, params, timeoutMs, signal)
+    return requestOnPrimaryGateway<T>(method, params, timeoutMs, signal)
   }
 
   if (await isAttachedSharedRemote(connectionId, key)) {

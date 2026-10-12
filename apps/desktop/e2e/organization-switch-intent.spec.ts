@@ -379,21 +379,24 @@ test('reconciles the served local profile after the actual primary process exits
   await expect.poll(() => existsSync(pidPath)).toBe(true)
   const primaryPid = Number(readFileSync(pidPath, 'utf8'))
   expect(Number.isSafeInteger(primaryPid) && primaryPid > 1).toBe(true)
-  const observations: Array<{ profile?: string; state?: string }> = []
+  let exitedPrimary = false
+  const observations: Array<{ profile?: string; state?: string; socketUrl: string; requestedAfterExit: boolean }> = []
   await page.routeWebSocket(/.*/, socket => {
     const server = socket.connectToServer()
-    const observationIds = new Set<number>()
+    const observationIds = new Map<number, boolean>()
     socket.onMessage(message => {
       const request = JSON.parse(message.toString()) as { id: number; method?: string }
 
-      if (request.method === 'organization.observe') { observationIds.add(request.id) }
+      if (request.method === 'organization.observe') { observationIds.set(request.id, exitedPrimary) }
       server.send(message)
     })
     server.onMessage(message => {
       const response = JSON.parse(message.toString()) as { id: number; result?: { state?: string; scope?: { profile?: string } } }
 
-      if (observationIds.delete(response.id)) {
-        observations.push({ profile: response.result?.scope?.profile, state: response.result?.state })
+      if (observationIds.has(response.id)) {
+        observations.push({ profile: response.result?.scope?.profile, state: response.result?.state,
+          socketUrl: socket.url(), requestedAfterExit: observationIds.get(response.id)! })
+        observationIds.delete(response.id)
       }
 
       socket.send(message)
@@ -418,13 +421,13 @@ test('reconciles the served local profile after the actual primary process exits
   expect(previous.profile).toBe('default')
   // PID comes only from this isolated fixture's served-home marker.
   process.kill(primaryPid, 'SIGTERM')
+  exitedPrimary = true
   const exited = page.getByRole('alert').filter({ hasText: 'Backend stopped' })
   const expectedExit = 'Backend stoppedEidolon background process exited.'
   await expect(exited).toHaveText(expectedExit)
   await exited.getByRole('button', { name: 'Dismiss notification', exact: true }).click()
   await acknowledgeExpectedErrorBanner(page, expectedExit)
   await expect(page.locator('.eid-workspace-header').getByRole('button', { name: new RegExp(profileA) })).toBeVisible({ timeout: 90_000 })
-  await expect.poll(() => observations.some(item => item.profile === profileA), { timeout: 90_000 }).toBe(true)
 
   const replacement = await page.evaluate(async () => {
     const { profile, baseUrl } = await (window as unknown as { hermesDesktop: NativeConnectionBridge }).hermesDesktop.getConnection()
@@ -434,6 +437,8 @@ test('reconciles the served local profile after the actual primary process exits
 
   expect(replacement.profile).toBe(profileA)
   expect(replacement.baseUrl).not.toBe(previous.baseUrl)
+  await expect.poll(() => observations.some(item => item.requestedAfterExit && item.profile === profileA &&
+    new URL(item.socketUrl).host === new URL(replacement.baseUrl!).host), { timeout: 90_000 }).toBe(true)
   expect(mock.receivedPrompts).toHaveLength(0)
   const nativeWindow = await app.browserWindow(page)
   await test.info().attach('primary-respawn-profile-recovered', {

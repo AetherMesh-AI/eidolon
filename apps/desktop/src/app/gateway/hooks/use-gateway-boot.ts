@@ -21,7 +21,6 @@ import { resetBackgroundPollingGuard } from '@/store/composer-status'
 import {
   $gateway,
   activeGateway,
-  activeGatewayConnectionId,
   closeLegacySecondaryGateways,
   closeSecondaryGateways,
   configureGatewayRegistry,
@@ -31,6 +30,7 @@ import {
   gatewayActivationEpoch,
   isActivePrimary,
   liveSecondaryConnectionIds,
+  primaryGatewaySource,
   pruneSecondaryGateways,
   reconnectSecondaryGateways,
   reportPrimaryGatewayState,
@@ -274,6 +274,18 @@ export function useGatewayBoot({
     // genuinely changes between reads).
     const gatewayOpen = () => gateway.connectionState === 'open'
 
+    // The socket's open transition owns transport identity, independently of
+    // whichever foreground intent is current when connect() later settles.
+    let openingPrimary: HermesConnection | null = null
+
+    const connectPrimary = (connection: HermesConnection, wsUrl: string) => {
+      if (!gatewayOpen() && gateway.connectionState !== 'connecting') {
+        openingPrimary = connection
+      }
+
+      return gateway.connect(wsUrl)
+    }
+
     const clearReconnectTimer = () => {
       if (reconnectTimer !== null) {
         clearTimeout(reconnectTimer)
@@ -368,17 +380,16 @@ export function useGatewayBoot({
 
         if (cancelled || !isCurrentSourceSwitchIntent(intent) || $gatewaySwitching.get()) {return}
 
-        await gateway.connect(wsUrl)
+        await connectPrimary(conn, wsUrl)
 
         if (cancelled || !isCurrentSourceSwitchIntent(intent) || $gatewaySwitching.get()) {
           return
         }
 
         if (conn.mode === 'local' && conn.profile) {
-          // Reconcile the physical primary even in the background. Its internal
-          // key is distinct from a same-named active legacy secondary.
+          // Physical identity already settled on open. Adopt it into the view
+          // only while this reconnect still owns the foreground.
           const publishForeground = ownsForeground()
-          setPrimaryGateway(gateway, normalizeProfileKey(conn.profile), conn)
 
           if (publishForeground) {
             if (await adoptPrimaryProfile(conn, ownsForeground)) {
@@ -667,7 +678,7 @@ export function useGatewayBoot({
           return
         }
 
-        await gateway.connect(wsUrl)
+        await connectPrimary(conn, wsUrl)
 
         if (!ownsSwitch()) {
           return
@@ -844,6 +855,15 @@ export function useGatewayBoot({
     })
 
     const offState = gateway.onState(st => {
+      if (st === 'open' && openingPrimary && !cancelled) {
+        const connection = openingPrimary
+        openingPrimary = null
+        setPrimaryGateway(gateway,
+          connection.mode === 'local' && connection.profile
+            ? normalizeProfileKey(connection.profile) : primaryGatewaySource().profile,
+          connection)
+      }
+
       // Mirror to the composer only while the primary is the active profile —
       // a background secondary reconnect mustn't flip the foreground state.
       reportPrimaryGatewayState(st)
@@ -872,15 +892,13 @@ export function useGatewayBoot({
       }
     })
 
-    const sourceProfile = normalizeProfileKey($activeGatewayProfile.get())
-
     const offEvent = gateway.onEvent(event => {
-      const connectionId = activeGatewayConnectionId()
+      const source = primaryGatewaySource()
 
       const scopedEvent = {
         ...event,
-        profile: sourceProfile,
-        ...(connectionId ? { connectionId } : {})
+        profile: source.profile,
+        connectionId: source.connectionId ?? undefined
       }
 
       recordSessionEventScope(scopedEvent)
@@ -1096,7 +1114,7 @@ export function useGatewayBoot({
           'Timed out minting the gateway WebSocket URL'
         )
 
-        await gateway.connect(wsUrl)
+        await connectPrimary(conn, wsUrl)
 
         if (cancelled) {
           return
