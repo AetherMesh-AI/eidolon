@@ -1,6 +1,20 @@
 # Authorized organization directory and cache — review preparation
 
-This proposal and its baseline tests are separate from PR94 head `97e61d3afd3cfca0863ce464bc6ba0c2ef3d94a7`. They do not enable a selector or alter production behavior. PR92/PR93/PR94 acceptance and native verification remain prerequisites.
+This separate branch explicitly depends on unmerged, independently reviewed PR94 head `219dd58173f9d5c75fd8b6b0ed5294f10e696ba0`, tree `47816e0b9e333c93e67593909f6a94d86b1ac921`. That head and its prerequisites remain unchanged. Main merges remain held, including the unresolved PR92 approval.
+
+## Implemented preparation
+
+`organization-directory.ts` implements a window-local display cache bounded to 100 entries. It uses the existing validated metadata client only on explicit refresh through a captured eligible scope. Source subscriptions revoke freshness; endpoint edits and removed routes evict records; stale and out-of-order responses cannot publish. Restored lower revisions replace prior records. The cache projects organization display fields only and has no activation, disk persistence, enumeration, reconnect or mutation API.
+
+`organization-directory-search.tsx` supplies an unmounted searchable inspection surface using existing Dialog, SearchField and Button primitives. Duplicate names retain connection/profile context; stale entries are labeled. Search, pointer/keyboard highlighting and Enter perform no activation or reads. Only explicit Refresh requests the current descriptor. Localized copy is a required input; application catalog wiring and native layout proof remain open. No application entry point mounts the component.
+
+The metadata hook now subscribes to observation epoch and switching atoms. A same-route switch immediately removes stale descriptor authority and reads again after completion. The new regression fails against the preserved PR94 hook and passes with this correction.
+
+Cache and component tests cover redaction, copied IDs, bounded eviction, route removal/re-addition, endpoint edits, identity/restored revision changes, overlapping reads, A→B→A, search/highlight without requests, current-only refresh and owner-loss focus suppression. Existing owner-scoped draft regressions remain in the validation set.
+
+## Remaining enablement gates
+
+Runtime registry/source adapter integration, explicit activation and return with uncertain intake/send/renewal, failure before/after publication, native keyboard/focus/narrow/200%/RTL cases, and stopped-scheduler proof remain required before enabling the selector. A display cache never grants activation or write authority. This preparation adds no RPC, migration, credentials or merge. The following original design contract remains the boundary for that work.
 
 ## Bounded first delivery
 
@@ -34,6 +48,6 @@ Implementation tests must additionally prove bounded eviction, route removal/re-
 
 ## Source audit concerns to review before implementation
 
-The metadata hook currently derives eligibility through the runtime scope reader but memoizes/subscribes to gateway/profile/pending stores directly. PR94 adds observation epochs and an organization-switching atom to that scope reader. Review whether a same-route observation-generation change reliably causes a descriptor re-read; a cached memo must not leave naming controls unavailable or reuse stale authority. Also reconcile dedicated transport profile names with logical UI aliases before accepting descriptor scope. These are review questions, not reasons to broaden discovery or change PR94 during independent review.
+The same-route observation subscription gap is now fixed with a reproducing regression. Before activation wiring, reconcile dedicated transport profile names with logical UI aliases before accepting descriptor scope. These are review questions, not reasons to broaden discovery or change PR94 during independent review.
 
-No production patch, new RPC, cache store, migration, credentials, selector enablement or merge is included in this preparation.
+The original design-only preparation is superseded by the implemented work and remaining gates listed above; selector enablement and merges remain held.

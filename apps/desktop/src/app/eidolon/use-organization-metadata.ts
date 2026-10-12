@@ -3,6 +3,7 @@ import { useEffect, useMemo, useSyncExternalStore } from 'react'
 
 import { $pendingConnectionId } from '@/store/connections'
 import { $activeGatewayRoute, $gateway } from '@/store/gateway'
+import { $organizationObservationEpoch, $organizationObservationSwitching } from '@/store/organization-observation-mode'
 import { $activeGatewayProfile, $gatewaySwapTarget } from '@/store/profile'
 import { $connection, $gatewayState } from '@/store/session'
 
@@ -51,8 +52,10 @@ export function useOrganizationMetadata() {
   const connection = useStore($connection)
   const state = useStore($gatewayState)
   const pending = useStore($pendingConnectionId)
+  const observationEpoch = useStore($organizationObservationEpoch)
+  const observationSwitching = useStore($organizationObservationSwitching)
   // The compiler cannot infer dependencies hidden behind store.get().
-  const scope = useMemo(currentScope, [gateway, route, profile, swap, connection, state, pending])
+  const scope = useMemo(currentScope, [gateway, route, profile, swap, connection, state, pending, observationEpoch, observationSwitching])
   const view = useSyncExternalStore(client.subscribe, client.getSnapshot)
   useEffect(() => {
     if (scope.eligible) {
