@@ -403,6 +403,12 @@ test('reconciles the served local profile after the actual primary process exits
     })
   })
 
+  // The Electron fixture installs the banner guard as an init script after
+  // launch. Reload to activate it (and the socket observer) before process exit.
+  await page.reload()
+  await waitForAppReady(fixture)
+  expect(await page.evaluate(() => Array.isArray((window as unknown as { __ERROR_BANNER_GUARD__?: string[] }).__ERROR_BANNER_GUARD__))).toBe(true)
+
   // Establish passive mode through real profile doors, then remember A only
   // for the next primary generation. The active foreground remains default.
   for (const profile of [profileA, 'default']) {
