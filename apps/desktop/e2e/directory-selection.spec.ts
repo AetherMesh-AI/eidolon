@@ -27,7 +27,9 @@ test('confirms actual directory selections, cancels without switching and expose
   }
 
   const expectProfile = async (profile: string) => {
-    await expect(header.getByRole('button', { name: new RegExp(profile) })).toBeVisible()
+    // Modal dialogs hide the background from the accessibility tree. This is
+    // a read-only visual assertion; never interact with the hidden background.
+    await expect(header.getByRole('button', { name: new RegExp(profile), includeHidden: true })).toBeVisible()
   }
 
   // Bootstrap visited records through the existing profile rail. Every selection
