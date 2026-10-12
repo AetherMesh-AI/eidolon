@@ -66,7 +66,7 @@ def _result(state, reason=None, snapshot=None):
             **({'reason': reason} if reason else {})}
 
 
-def read_observation(home: Path):
+def read_observation(home: Path, *, projection=None):
     """Observe committed records and compare policy without adopting it.
 
     Use a WAL-aware SQLite read-only connection, not immutable mode. Transient
@@ -100,8 +100,10 @@ def read_observation(home: Path):
             except Exception:
                 raise ObservationError('configuration_invalid') from None
             settings = resolve_settings(conn, settings)
-            snapshot = _ObservationView(path, conn, settings)._snapshot(conn)
-            return _result('available', snapshot=snapshot)
+            view = _ObservationView(path, conn, settings)
+            if projection is not None:
+                return {**_result('available'), 'data': projection(view)}
+            return _result('available', snapshot=view._snapshot(conn))
     except sqlite3.Error as exc:
         code = getattr(exc, 'sqlite_errorcode', 0) & 255
         if code == sqlite3.SQLITE_ERROR and str(exc).startswith(('no such table:', 'no such column:')):

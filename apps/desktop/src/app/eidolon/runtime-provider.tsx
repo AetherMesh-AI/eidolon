@@ -136,6 +136,26 @@ export function OrganizationRuntimeProvider({ children }: { children: ReactNode 
 
           return { ...result.snapshot, runtime: { ...result.snapshot.runtime!, profile } }
         },
+        observeRead: async <T,>(method: string, params: Record<string, unknown>, signal: AbortSignal): Promise<T> => {
+          const gateway = $gateway.get()
+          const connection = $connection.get()
+
+          if (!gateway || !connection || connection.sharedPrimary || connection.sharedRemote || signal.aborted) {
+            throw new Error(translateNow('organizationWork.observationUnavailable'))
+          }
+
+          const result = await gateway.request<{ capabilityVersion: number; state: string; scope: { kind: string; profile: string }; data?: T }>('organization.observeRead', { method, params }, 15000, signal)
+
+          if (result?.capabilityVersion !== 1 || result.scope?.kind !== 'served-profile' || result.scope.profile !== (connection.profile || 'default')) {
+            throw new Error(translateNow('organizationWork.observationUnavailable'))
+          }
+
+          if (result.state !== 'available' || !('data' in result)) {
+            throw new Error(result.state === 'unconfigured' ? translateNow('organizationWork.observationUnconfigured') : translateNow('organizationWork.observationUnsupported'))
+          }
+
+          return result.data as T
+        },
         getScope: createOrganizationScopeReader(),
         subscribeScope(listener) {
           // listen (not subscribe) avoids starting a poll for each atom's initial

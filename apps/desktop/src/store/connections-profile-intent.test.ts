@@ -245,3 +245,16 @@ it('coalesces identical organization picks until a newer foreground intent takes
   expect(await latest).toMatchObject({ status: 'committed' })
   expect($organizationObservationSwitching.get()).toBe(false)
 })
+
+it('records successful publication after reset even when a newer browse intent supersedes it', async () => {
+  $connection.set({ connectionId: 'local', profile: 'default', mode: 'local', baseUrl: '' } as HermesConnection)
+  const activation = deferred<boolean>()
+  ensureGatewayForAgent.mockReturnValueOnce(activation.promise)
+  const pending = selectConnectionWithOutcome('homelab', { profile: 'research' })
+  await vi.waitFor(() => expect($gatewaySwitching.get()).toBe(true))
+  setShowAllProfiles(true)
+  activation.resolve(true)
+  expect(await pending).toMatchObject({ status: 'superseded', resetStarted: true, published: true, observedRoute: { connectionId: 'homelab', profile: 'research' } })
+  expect(setLastUsed).not.toHaveBeenCalled()
+  expect($gatewaySwitching.get()).toBe(false)
+})

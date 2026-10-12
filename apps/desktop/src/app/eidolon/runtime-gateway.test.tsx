@@ -329,3 +329,24 @@ it.each(['unsupported', 'unconfigured', 'foreign', 'shared'])('never falls back 
 
   view.unmount()
 })
+
+it('opens the actual selected /requests attention inbox using only captured passive observation', async () => {
+  beginSourceSwitchIntent()
+  const attention = { items: [{ requestId: 'blocked', objectiveId: 'Review objective', revision: 1, seen: false, createdAt: '2026-10-12T00:00:00Z', updatedAt: '2026-10-12T00:00:00Z' }], total: 1, unread: 1, hasMore: false, nextCursor: null }
+  const value = { ...snapshot('Review objective'), attention, requests: [{ id: 'blocked', objectiveId: 'Review objective', type: 'work.draft', status: 'pending_intervention', team: 'research', priority: 1, attempts: 1, createdAt: '2026-10-12T00:00:00Z', attentionRevision: 1, reason: 'Needs owner facts' }] }
+  const scope = { kind: 'served-profile', profile: 'remote-writing' }
+
+  const request = vi.fn(async (method: string, params: Record<string, unknown>) => {
+    if (method === 'organization.observe') {return { capabilityVersion: 1, state: 'available', scope, snapshot: value }}
+
+    if (method === 'organization.observeRead' && params.method === 'organization.attention') {return { capabilityVersion: 1, state: 'available', scope, data: attention }}
+    throw new Error(`Forbidden passive endpoint: ${method}`)
+  })
+
+  $gateway.set({ request, connectionState: 'open' } as never)
+  const view = render(<MemoryRouter initialEntries={['/requests']}><OrganizationWorkspace /></MemoryRouter>)
+  expect(await screen.findByRole('button', { name: 'Inspect request: work.draft' })).toBeTruthy()
+  expect(request).toHaveBeenCalledWith('organization.observeRead', { method: 'organization.attention', params: { before: undefined, unreadOnly: false, limit: 25 } }, 15000, expect.any(AbortSignal))
+  expect(request.mock.calls.every(([method]) => ['organization.observe', 'organization.observeRead'].includes(method))).toBe(true)
+  view.unmount()
+})

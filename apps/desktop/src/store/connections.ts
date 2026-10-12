@@ -402,7 +402,10 @@ async function performConnectionSwitch(connectionId: string, options: SelectConn
   let token = null as GatewaySwitchToken | null
 
   const offPublication = $connection.listen(() => {
-    if (resetStarted && isCurrentSourceSwitchIntent(intent) && targetIsActive()) {published = true}
+    // Activation is serialized by ensureGatewayAgent. Once this operation has
+    // entered reset, its publication remains a fact even if a newer foreground
+    // intent owns navigation. Do not use that intent as a publication filter.
+    if (resetStarted && targetIsActive()) {published = true}
   })
 
   try {
@@ -491,7 +494,7 @@ async function performConnectionSwitch(connectionId: string, options: SelectConn
         throw new Error(`Connection "${targetConnection.label}" did not become active.`)
       }
 
-      if (isCurrentSourceSwitchIntent(intent)) {published = true}
+      published = true
 
       if (revision !== switchRevision || !isCurrentSourceSwitchIntent(intent)) {
         return finish('superseded')

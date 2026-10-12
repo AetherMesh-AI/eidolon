@@ -25,11 +25,11 @@ def served(tmp_path, monkeypatch):
     return home
 
 
-def call(params=None, transport=None):
+def call(params=None, transport=None, method="organization.observe"):
     responses = Queue()
     transport = transport or SimpleNamespace(closed=False)
     transport.write = lambda response: responses.put(response)
-    result = server.dispatch({'jsonrpc': '2.0', 'id': 7, 'method': 'organization.observe',
+    result = server.dispatch({'jsonrpc': '2.0', 'id': 7, 'method': method,
                               'params': {} if params is None else params}, transport=transport)
     return result if result is not None else responses.get(timeout=10)
 
@@ -112,3 +112,71 @@ def test_inherited_secret_scope_is_replaced_without_hydration(served, monkeypatc
         assert 'foreign-team' not in str(result)
     finally:
         reset_secret_scope(token)
+
+
+def test_passive_detail_reads_never_construct_service_or_mutate_policy(served, monkeypatch):
+    import sqlite3
+    import eidolon_cli.organization_service as services
+    store = OrganizationStore(served / 'organization' / 'state.db')
+    objective = store.create_objective('Needs owner review', idempotency_key='attention')
+    claim = store.claim_next()
+    assert store.fail(claim, 'Needs facts')
+    identity = next(a['identityId'] for a in store.snapshot()['agents'] if a['id'] == 'manager')
+    thread = store.owner_chat_open('manager', identity)
+    (served / 'config.yaml').write_text('organization:\n  max_workers: 3\n')
+    def dump():
+        with sqlite3.connect(store.path) as conn:
+            return list(conn.iterdump())
+    before = dump()
+    def forbidden(*args, **kwargs):
+        raise AssertionError('Passive read acquired mutable runtime authority')
+    monkeypatch.setattr(OrganizationStore, '__init__', forbidden)
+    monkeypatch.setattr(OrganizationStore, '_connect', forbidden)
+    monkeypatch.setattr(OrganizationStore, '_write', forbidden)
+    monkeypatch.setattr(services.OrganizationService, '__init__', forbidden)
+    monkeypatch.setattr(services.OrganizationService, 'refresh_configuration', forbidden)
+    reads = [
+        ('organization.attention', {'limit': 1, 'unreadOnly': True}),
+        ('organization.outcomes', {}), ('organization.history', {'state': 'all'}),
+        ('organization.historyObjective', {'id': objective['id']}),
+        ('organization.ownerChat.read', {'threadId': thread, 'identityId': identity}),
+        ('organization.toolReceipts', {'id': claim['id']}),
+        ('organization.executionAudit', {'id': claim['id']}),
+        ('organization.projectSetup', {}), ('organization.checkSubmission', {'idempotencyKey': 'attention'}),
+    ]
+    for method, params in reads:
+        result = call({'method': method, 'params': params}, method='organization.observeRead')
+        assert 'error' not in result, (method, result)
+        assert result['result']['state'] == 'available'
+        assert result['result']['scope'] == {'kind': 'served-profile', 'profile': 'default'}
+    attention = call({'method': 'organization.attention', 'params': {}}, method='organization.observeRead')['result']['data']
+    assert attention['items'][0]['requestId'] == claim['id']
+    assert attention['total'] == attention['unread'] == 1
+    assert dump() == before
+
+
+def test_passive_detail_read_rejects_mutations_and_scope_widening(served):
+    for method, params in [('organization.createObjective', {}), ('organization.attention', {'profile': 'sibling'}),
+                           ('organization.ownerChat.send', {}), ('profiles.list', {})]:
+        response = call({'method': method, 'params': params}, method='organization.observeRead')
+        assert response['error']['code'] == -32602
+    assert not (served / 'organization').exists()
+
+
+@pytest.mark.parametrize('statement', ['CREATE TABLE forbidden_write (id TEXT)',
+                                      'UPDATE organization_policy SET generation=generation+1'])
+def test_detail_projection_sql_is_enforced_read_only(served, monkeypatch, statement):
+    import sqlite3
+    from eidolon_cli.organization_observation_reads import _ReadView, _READS
+    store = OrganizationStore(served / 'organization' / 'state.db')
+    def attempted_write(view, **params):
+        with view._connect() as conn:
+            conn.execute(statement)
+        raise AssertionError('SQLite accepted an observation write')
+    monkeypatch.setitem(_READS, 'organization.attention', (attempted_write, set()))
+    with sqlite3.connect(store.path) as conn:
+        before = list(conn.iterdump())
+    response = call({'method': 'organization.attention', 'params': {}}, method='organization.observeRead')
+    assert response['error']['code'] == 5073
+    with sqlite3.connect(store.path) as conn:
+        assert list(conn.iterdump()) == before

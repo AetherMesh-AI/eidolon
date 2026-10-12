@@ -23,6 +23,7 @@ export interface OrganizationScope {
 }
 export interface OrganizationGateway {
   request<T>(method: string, params: Record<string, unknown>, timeoutMs: number, signal: AbortSignal): Promise<T>
+  observeRead?<T>(method: string, params: Record<string, unknown>, signal: AbortSignal): Promise<T>
   observe?(signal: AbortSignal): Promise<OrganizationSnapshot>
   getScope(): OrganizationScope
   subscribeScope(listener: () => void): () => void
@@ -232,6 +233,16 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
     return result
   }
 
+  const passiveRequest = <T,>(method: string, params: Record<string, unknown>, signal: AbortSignal): Promise<T> => {
+    if (scope.observationOnly) {
+      if (!gateway.observeRead) {return Promise.reject(new Error(translateNow('organizationWork.observationUnavailable')))}
+
+      return gateway.observeRead<T>(method, params, signal)
+    }
+
+    return gateway.request<T>(method, params, 15000, signal)
+  }
+
   const readHistory = async <T,>(method: string, params: Record<string, unknown>, offlineMessage?: string): Promise<T> => {
     resetScope()
     const token = epoch
@@ -242,7 +253,7 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
     watchScope()
 
     try {
-      const result = await gateway.request<T>(method, params, 15000, controller.signal)
+      const result = await passiveRequest<T>(method, params, controller.signal)
 
       if (!current(token) || controller.signal.aborted) {throw new Error(translateNow('organizationRuntime.auditScopeChanged'))}
 
@@ -489,7 +500,7 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
       watchScope()
 
       try {
-        const result = await gateway.request<OrganizationArtifact>('organization.evidence', { id }, 15000, controller.signal)
+        const result = await passiveRequest<OrganizationArtifact>('organization.evidence', { id }, controller.signal)
 
         if (!current(token) || controller.signal.aborted) {throw new Error('The connection or profile changed. Reopen the artifact in its original profile.')}
 
@@ -510,7 +521,7 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
       watchScope()
 
       try {
-        const result = await gateway.request<OrganizationToolEvidence[]>('organization.toolReceipts', { id: requestId }, 15000, controller.signal)
+        const result = await passiveRequest<OrganizationToolEvidence[]>('organization.toolReceipts', { id: requestId }, controller.signal)
 
         if (!current(token) || controller.signal.aborted) {throw new Error(translateNow('organizationRuntime.auditScopeChanged'))}
 
@@ -529,7 +540,7 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
       watchScope()
 
       try {
-        const result = await gateway.request<OrganizationExecutionAudit>('organization.executionAudit', { id: requestId }, 15000, controller.signal)
+        const result = await passiveRequest<OrganizationExecutionAudit>('organization.executionAudit', { id: requestId }, controller.signal)
 
         if (!current(token) || controller.signal.aborted) {throw new Error(translateNow('organizationRuntime.auditScopeChanged'))}
         const validReport = (row: OrganizationExecutionAudit['contexts'][number]) => row && typeof row.attemptToken === 'string' && typeof row.createdAt === 'string' && row.report && typeof row.report === 'object' && !Array.isArray(row.report)

@@ -23,3 +23,9 @@ Mounted-provider tests exercise the real shared intent entry point, captured obs
 This is a local review diff. No new publication, hosted CI, native Electron run or live paid provider call accompanies it. The integration tests use deterministic transports and do not establish live-model reliability. A real-store-to-native-shell journey, successful return with uncertain intake/send/renewal intent, keyboard behavior, and backend stopped-scheduler evidence are still required before enabling a new visible organization selector. The observation API's separately reviewed backend evidence does not substitute for a combined native integration run.
 
 PR92's previously rejected merge remains blocked pending explicit approval resolution; no retry was attempted. PR93 remains draft under the parent hold. Local development does not resolve either merge gate. The earlier preparation document is historical and its proposed-contract wording should be read alongside this implemented contract.
+
+## Independent review corrections
+
+The initial integration missed mounted passive detail reads: `/requests` defaults to attention and called the service-backed legacy RPC even though its snapshot was observational. The follow-up routes every passive adapter read through a fixed, authenticated, non-mutating detail endpoint, with backend no-service/no-policy-write assertions and mounted attention coverage. The initial hosted run is evidence only for its original head, never the corrected source.
+
+Publication metadata is now independent of foreground intent. Once this operation enters the serialized activation/reset, a later browse-only intent can supersede navigation without erasing the fact that activation published. A real-profile-store regression checks successful publication after reset and supersession; this corrects outcome metadata, not a demonstrated rollback/navigation bug.
