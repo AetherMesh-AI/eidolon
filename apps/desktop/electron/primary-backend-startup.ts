@@ -50,6 +50,7 @@ interface ResolvedPrimaryRemote {
   authMode?: 'oauth' | 'token'
   baseUrl: string
   connectionId?: string
+  headers?: Record<string, string>
   remoteHermesVersion?: string
   remoteHost?: string
   remoteKind?: 'cloud' | 'ssh' | 'url'
@@ -80,6 +81,7 @@ export function createPrimaryRemoteConnection<State extends object>(
   return {
     authenticationIdentity: remote.authenticationIdentity,
     baseUrl: remote.baseUrl,
+    headers: remote.headers === undefined ? undefined : Object.freeze({ ...remote.headers }),
     mode: 'remote' as const,
     source: remote.source,
     authMode: remote.authMode || 'token',

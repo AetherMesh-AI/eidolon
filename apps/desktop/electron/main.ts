@@ -349,7 +349,8 @@ import {
 import {
   applyRemoteRequestHeaders,
   createRegistryGatewayWsUrlHandler,
-  createRemoteWsHeaderStore
+  createRemoteWsHeaderStore,
+  refreshPrimaryGatewayWsUrl
 } from './remote-ws-headers'
 import { missingRendererAssets } from './renderer-bundle'
 import { loadRendererLoadErrorPage } from './renderer-load-error-page'
@@ -8173,19 +8174,11 @@ async function freshGatewayWsUrl(profile) {
   // legacy callers and single-profile users are unchanged.
   const connection = await ensureBackend(profile)
 
-  if (connection.authMode === 'oauth') {
-    const ticket = await mintGatewayWsTicket(connection.baseUrl, connection.headers)
-    const wsUrl = buildGatewayWsUrlWithTicket(connection.baseUrl, ticket)
-
-    rememberRemoteWsHeaders(wsUrl, connection.headers)
-
-    return wsUrl
-  }
-
-  // Local/token: the cached wsUrl already carries the (long-lived) token.
-  rememberRemoteWsHeaders(connection.wsUrl, connection.headers)
-
-  return connection.wsUrl
+  return refreshPrimaryGatewayWsUrl(connection, {
+    mintTicket: mintGatewayWsTicket,
+    buildTicketUrl: buildGatewayWsUrlWithTicket,
+    rememberHeaders: rememberRemoteWsHeaders
+  })
 }
 
 // --- Hermes Cloud discovery + silent per-agent sign-in (cloud-auto-discovery
@@ -9063,7 +9056,7 @@ function encryptIncomingRemoteHeaders(raw, existing, options: { allowPlainText?:
   return out
 }
 
-function rememberRemoteWsHeaders(wsUrl, headers = {}) {
+function rememberRemoteWsHeaders(wsUrl, headers) {
   remoteWsHeaderStore.remember(wsUrl, headers)
 }
 

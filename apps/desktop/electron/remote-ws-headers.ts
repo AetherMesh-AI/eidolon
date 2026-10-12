@@ -26,8 +26,8 @@ type RemoteRequestCallback = (result: { requestHeaders?: Record<string, string> 
 export function createRemoteWsHeaderStore(limit = 100) {
   const headersByUrl = new Map<string, Record<string, string>>()
 
-  const remember = (wsUrl: string, headers: Record<string, string> = {}) => {
-    if (!wsUrl) {
+  const remember = (wsUrl: string, headers?: Record<string, string>) => {
+    if (!wsUrl || headers === undefined) {
       return
     }
 
@@ -94,4 +94,19 @@ export function createRegistryGatewayWsUrlHandler(dependencies: RegistryGatewayW
 
     return finalWsUrl
   }
+}
+
+// The primary path preserves its existing profile routing; registry routing is
+// applied separately by createRegistryGatewayWsUrlHandler.
+export async function refreshPrimaryGatewayWsUrl(
+  connection: RegistryGatewayWsConnection,
+  dependencies: Omit<RegistryGatewayWsUrlDependencies, 'ensureBackend'>
+) {
+  const wsUrl = connection.authMode === 'oauth'
+    ? dependencies.buildTicketUrl(connection.baseUrl, await dependencies.mintTicket(connection.baseUrl, connection.headers))
+    : connection.wsUrl
+
+  dependencies.rememberHeaders(wsUrl, connection.headers)
+
+  return wsUrl
 }
