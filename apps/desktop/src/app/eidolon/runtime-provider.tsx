@@ -2,7 +2,7 @@ import { createContext, type ReactNode, useContext, useMemo, useSyncExternalStor
 
 import { useGatewayRequest } from '@/app/gateway/hooks/use-gateway-request'
 import { translateNow } from '@/i18n/runtime'
-import { $activeGatewayRoute, $gateway, activeGatewayConnectionId } from '@/store/gateway'
+import { $activeGatewayRoute, $gateway, activeGatewayConnectionId, activeGatewayLocalOwnerRoute } from '@/store/gateway'
 import { $organizationObservationEpoch, $organizationObservationSwitching } from '@/store/organization-observation-mode'
 import { $activeGatewayProfile, $gatewaySwapTarget } from '@/store/profile'
 import { $connection, $gatewayState } from '@/store/session'
@@ -45,7 +45,13 @@ export function createOrganizationScopeReader() {
       socketIds.set(gateway, ++nextSocketId)
     }
 
-    let ownerKey = organizationOwnerKey(connectionId, logicalProfile, connection)
+    const localRoute = !connectionId && !$gatewaySwapTarget.get() &&
+      !$organizationObservationSwitching.get() && $gatewayState.get() === 'open'
+      ? activeGatewayLocalOwnerRoute(connection, logicalProfile)
+      : undefined
+
+    const ownerConnectionId = connectionId ?? localRoute?.connectionId ?? null
+    let ownerKey = organizationOwnerKey(ownerConnectionId, logicalProfile, connection)
 
     if (
       !connection &&
@@ -62,6 +68,7 @@ export function createOrganizationScopeReader() {
         $organizationObservationEpoch.get(),
         gateway ? socketIds.get(gateway) : null,
         connectionId,
+        localRoute?.connectionId ?? null,
         $activeGatewayRoute.get(),
         logicalProfile,
         organizationEndpointIdentity(connection?.baseUrl),
@@ -71,7 +78,9 @@ export function createOrganizationScopeReader() {
         profile
       ]),
       ownerKey,
-      ownerRoute: connectionId && sourceMatches && descriptorMatches ? { connectionId, profile: logicalProfile } : undefined,
+      ownerRoute: sourceMatches && descriptorMatches
+        ? (connectionId ? { connectionId, profile: logicalProfile } : localRoute)
+        : undefined,
       connected: Boolean(
         connection &&
         gateway &&

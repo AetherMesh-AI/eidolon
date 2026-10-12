@@ -89,6 +89,8 @@ interface Secondary {
   /** Registry connection serving this socket; null = the local/legacy path. */
   connectionId: null | string
   connection: HermesConnection | null
+  /** Descriptor generation whose socket connection actually completed. */
+  openedConnection: HermesConnection | null
   gateway: HermesGateway
   /** True after this entry completed at least one socket connection. */
   openedOnce: boolean
@@ -423,6 +425,33 @@ export function activeGatewayConnectionId(): null | string {
   return g.secondaries.get(g.activeKey)?.connectionId ?? null
 }
 
+/** Organization navigation may name a legacy local profile's resolved source
+ * without changing the legacy transport key (which still permits remote overrides).
+ * Only the descriptor generation that authenticated this open socket can prove it.
+ * Display names, registry membership, and ambient primary identity are not evidence. */
+export function activeGatewayLocalOwnerRoute(connection: HermesConnection | null, profile: string) {
+  if (g.activeKey === g.primaryProfile) {return undefined}
+  const entry = g.secondaries.get(g.activeKey)
+  const opened = entry?.openedConnection
+
+  if (
+    !entry || entry.connectionId || !entry.wantOpen || !isOpen(entry.gateway) ||
+    entry.connectPromise || entry.reconnecting || entry.pendingConnectionRedial ||
+    !opened || entry.connection !== opened || !connection ||
+    entry.profile !== profile || opened.profile !== profile || connection.profile !== profile ||
+    opened.mode !== 'local' || connection.mode !== 'local' ||
+    opened.sharedPrimary || opened.sharedRemote || connection.sharedPrimary || connection.sharedRemote ||
+    typeof opened.connectionId !== 'string' || !opened.connectionId ||
+    opened.connectionId.trim() !== opened.connectionId ||
+    connection.connectionId !== opened.connectionId ||
+    typeof opened.baseUrl !== 'string' || !opened.baseUrl || connection.baseUrl !== opened.baseUrl ||
+    typeof opened.token !== 'string' || !opened.token || connection.token !== opened.token ||
+    connection.wsUrl !== opened.wsUrl || connection.authMode !== opened.authMode
+  ) {return undefined}
+
+  return { connectionId: opened.connectionId, profile }
+}
+
 /**
  * Registry connections currently served by a live (open-socket) secondary.
  * Used by the reconnect path when the restarted primary's own registry
@@ -629,6 +658,7 @@ async function openSecondary(entry: Secondary, spawnPriority: SpawnPriority = 'b
       throw error
     }
 
+    entry.openedConnection = conn
     entry.openedOnce = true
     openedScopes.add(entry.scope)
 
@@ -745,6 +775,7 @@ function createSecondary(profile: string, connectionId: null | string = null): S
     profile,
     connectionId,
     connection: null,
+    openedConnection: null,
     gateway,
     openedOnce: false,
     activeRequests: 0,
