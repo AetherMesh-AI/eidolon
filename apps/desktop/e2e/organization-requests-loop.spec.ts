@@ -30,6 +30,12 @@ async function captureRequests(name: string) {
     await document.fonts.ready
     await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
   })
+  if (name === '02-durable-seen-blocker.png') {
+    // Compare the Chromium path both before and after the paint wait. This
+    // separates a reload/paint race from a native-vs-CDP capture discrepancy.
+    await page.screenshot({ path: test.info().outputPath('02-durable-seen-blocker-after-paint-cdp.png') })
+  }
+
   const window = await app.browserWindow(page)
 
   const captured = await window.evaluate(async window => {
