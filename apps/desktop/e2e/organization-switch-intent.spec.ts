@@ -35,7 +35,15 @@ test('returns an uncertain intake to its original route owner and key without st
   const { page, app, sandbox, mock } = fixture
   const env = buildAppEnv(sandbox)
   const title = 'Retain this original admission across two real sources'
-  const methods: Array<{ method: string; destination: 'a' | 'b'; key?: string }> = []
+
+  const methods: Array<{
+    method: string
+    destination: 'a' | 'b'
+    key?: string
+    nestedMethod?: string
+    nestedKey?: string
+  }> = []
+
   let holdDescriptor = false
   let releaseDescriptor: (() => void) | undefined
   let originalKey = ''
@@ -101,7 +109,18 @@ test('returns an uncertain intake to its original route owner and key without st
       const destination = new URL(socket.url()).port === remotePort ? 'b' : 'a'
 
       if (request.method?.startsWith('organization.')) {
-        methods.push({ method: request.method, destination, key: request.params?.idempotencyKey as string | undefined })
+        const nested = request.params?.params as Record<string, unknown> | undefined
+        methods.push({
+          method: request.method,
+          destination,
+          key: request.params?.idempotencyKey as string | undefined,
+          ...(request.method === 'organization.observeRead'
+            ? {
+                nestedMethod: request.params?.method as string | undefined,
+                nestedKey: nested?.idempotencyKey as string | undefined
+              }
+            : {})
+        })
       }
 
       if (destination === 'b' && request.method === 'organization.descriptor' && holdDescriptor) {
@@ -234,8 +253,15 @@ s.set_objective_archived(ident,True,expected_revision=0,idempotency_key='switch-
   expect(methods.filter(item => item.method === 'organization.create')).toEqual([
     { method: 'organization.create', destination: 'a', key: originalKey }
   ])
-  expect(methods.filter(item => item.method === 'organization.checkSubmission')).toEqual([
-    { method: 'organization.checkSubmission', destination: 'a', key: originalKey }
+  expect(methods.filter(item => item.method === 'organization.checkSubmission')).toEqual([])
+  expect(methods.filter(item => item.nestedMethod === 'organization.checkSubmission')).toEqual([
+    {
+      method: 'organization.observeRead',
+      destination: 'a',
+      key: undefined,
+      nestedMethod: 'organization.checkSubmission',
+      nestedKey: originalKey
+    }
   ])
   expect(
     methods
