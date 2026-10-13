@@ -206,7 +206,7 @@
    text or editor controls. Dedicated pages retain their original spacing. */
 .eid-settings-cards:not(.eid-settings-model-only) .eid-settings-card-editor { padding-block: 8px; }
 .eid-settings-cards:not(.eid-settings-model-only) .eid-settings-card-body { margin-top: 6px; }
-.eid-settings-cards:not(.eid-settings-model-only) .eid-settings-card-body .settings-content > div { padding-block: 5px; }
+.eid-settings-cards:not(.eid-settings-model-only) .eid-settings-card-body .settings-content > div { padding-block: 3px; }
 .eid-settings-cards:not(.eid-settings-model-only) :is(.eid-settings-model-advanced, .eid-settings-model-parameters, .eid-settings-notification-sound) > summary { padding-block: 6px; }
 
 /* At high zoom the headings can exhaust a fixed-height endpoint editor.
@@ -241,3 +241,4 @@
 /* Eight full-size switches fit the established 300px first-row contract. */
 .eid-settings-cards:not(.eid-settings-model-only) .settings-row:has([role="switch"]) > div { min-height: 24px; padding-block: 2px; }
 .eid-settings-cards:not(.eid-settings-model-only) .eid-settings-notification-kinds .settings-row > div { min-height: 24px; }
+.eid-settings-cards:not(.eid-settings-model-only) .settings-row:has([role="switch"]) > div > div:last-child { display: flex; align-items: center; }

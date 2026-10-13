@@ -59,7 +59,20 @@ with s._connect() as c:
   await waitForAppReady(fixture)
   await page.evaluate(id => { location.hash = `/objectives/${id}` }, ids[0])
   const form = page.getByRole('region', { name: 'Objective dispatch', exact: true })
-  await expect(form.getByText('New dispatch enabled · Dispatch revision: 0', { exact: true })).toBeVisible()
+
+  async function expectDispatch(state: string, revision: number) {
+    await expect(form.locator(':scope > p').first()).toHaveText(`${state} · Already claimed stages: 0`)
+    const details = form.locator('details')
+    await details.locator('summary').focus()
+    await page.keyboard.press('Enter')
+    await expect(details).toHaveAttribute('open', '')
+    await expect(details.getByText(`Dispatch revision: ${revision}`, { exact: true })).toBeVisible()
+    await details.locator('summary').focus()
+    await page.keyboard.press('Enter')
+    await expect(details).not.toHaveAttribute('open', '')
+  }
+
+  await expectDispatch('New dispatch enabled', 0)
   const phase = page.getByRole('region', { name: 'Current phase', exact: true })
   const pause = phase.getByRole('button', { name: 'Pause new dispatch', exact: true })
   await expect(pause).toBeInViewport({ ratio: 1 })
@@ -68,7 +81,7 @@ with s._connect() as c:
   await page.keyboard.press('Enter')
   await expect(form.getByRole('status')).toHaveText('Dispatch change confirmed · Receipt revision: 1')
   await page.reload()
-  await expect(form.getByText('New dispatch paused · Dispatch revision: 1', { exact: true })).toBeVisible()
+  await expectDispatch('New dispatch paused', 1)
   await expect(form.getByText('Already claimed stages: 0', { exact: true })).toBeVisible()
   await form.getByRole('button', { name: 'Resume dispatch', exact: true }).click()
   await expect(form.getByRole('status')).toHaveText('Dispatch change confirmed · Receipt revision: 2')
@@ -83,7 +96,7 @@ with s._write() as c:
   await form.getByRole('button', { name: 'Resume dispatch', exact: true }).click()
   const expectedDeadlineError = 'Objective deadline reached. Automatic execution has stopped; create a revised objective to authorize a new deadline. Retry sends the same change once more. Review the current value before starting a different change.'
   await expect(form.getByRole('alert')).toHaveText(expectedDeadlineError)
-  await expect(form.getByText('New dispatch paused · Dispatch revision: 3', { exact: true })).toBeVisible()
+  await expectDispatch('New dispatch paused', 3)
   expect(retained()).toEqual(expired)
   const states = JSON.parse(run(prelude + `print(json.dumps([s._objective_view(i)['dispatchControl'] for i in ${JSON.stringify(ids)}]))`))
   expect(states).toEqual([{ paused: true, revision: 3, runningCount: 0 }, { paused: false, revision: 0, runningCount: 0 }])

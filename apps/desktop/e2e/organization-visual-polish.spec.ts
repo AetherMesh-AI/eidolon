@@ -1695,6 +1695,14 @@ for (const [locale, suffix, dark, light] of [
 
           const focalCopy = route === '/work' ? copy.workNote : route === '/objectives' ? copy.objectiveSearch : route === '/objectives/release' ? copy.objectiveRecord : route === '/organization' ? copy.findAgent : route === '/artifacts?source=organization' ? copy.deliverablesIntroduction : route.includes('recipient') ? copy.executiveMessageNote : copy.linkedWorkNote
           const focal = page.getByText(focalCopy, { exact: true })
+
+          if (route === '/messages?recipient=executive') {
+            const directoryDetails = page.locator('.eid-message-directory-details > summary')
+            await directoryDetails.focus()
+            await page.keyboard.press('Enter')
+            await expect(page.locator('.eid-message-directory-details')).toHaveAttribute('open', '')
+          }
+
           // Center the evidence target with space on both sides. Nearest-edge
           // scrolling can leave a fractional CSS pixel clipped at 200% zoom.
           await focal.evaluate(element => element.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' }))

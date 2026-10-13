@@ -208,7 +208,8 @@ test('retains exact worker chat, deduplicates owner send and fences a cancelled 
     const detailsFocus = await verifyKeyboardFocus(page, composeDetails, `${label} reply and allowance details`)
     await setOwnerChatDetails(conversation, true)
     const allowance = conversation.locator('.eid-owner-chat-allowance')
-    await allowance.scrollIntoViewIfNeeded()
+    // Leave room on both edges at fractional layout coordinates under 200% zoom.
+    await allowance.evaluate(element => element.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' }))
     await expect(allowance).toBeInViewport({ ratio: 1 })
     const allowanceBounds = await allowance.boundingBox()
     await setOwnerChatDetails(conversation, false)
