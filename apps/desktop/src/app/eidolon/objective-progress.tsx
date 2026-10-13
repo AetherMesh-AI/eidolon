@@ -35,6 +35,8 @@ export function ObjectiveProgress({ objective, snapshot, controls, onReviewReque
   const number = new Intl.NumberFormat(locale)
   const agentName = (id?: string | null) => snapshot.agents.find(agent => agent.id === id)?.name || id || t.organizationHome.unassigned
   const progress = objective.progress
+  const lifecycle = ['executive_planning', 'execution_review', 'integration_review', 'accepted'] as const
+  const supportedPhase = objective.source === 'runtime' && lifecycle.some(phase => phase === objective.phaseCode)
 
   const taskRows = (tasks: OrganizationTask[]) => <ul className="eid-progress-tasks">
     {tasks.slice(0, 3).map(task => <li className="eid-progress-task" key={task.id}>
@@ -55,9 +57,15 @@ export function ObjectiveProgress({ objective, snapshot, controls, onReviewReque
     <div className="eid-objective-progress-main">
       <section aria-label={copy.phase} className="eid-home-panel eid-objective-phase">
         <div className="eid-objective-phase-heading">
-          <div className="eid-recorded-phase"><span>{copy.phase}</span><strong dir="auto">{objectivePhaseLabel(objective, copy.phases) || copy.phaseUnknown}</strong></div>
+          <div className="eid-recorded-phase"><span>{copy.phase}</span>{!supportedPhase && <strong dir="auto">{objectivePhaseLabel(objective, copy.phases) || copy.phaseUnknown}</strong>}</div>
           <Button onClick={onReviewWork} size="micro" variant="secondary">{copy.inspectWork}</Button>
         </div>
+        {supportedPhase && <ol aria-label={copy.phase} className="eid-objective-lifecycle">
+          {lifecycle.map(phase => <li aria-current={objective.phaseCode === phase ? 'step' : undefined} key={phase}>
+            <span aria-hidden="true" className="eid-lifecycle-marker" />
+            <span>{copy.phases[phase]}</span>
+          </li>)}
+        </ol>}
         {controls && <div className="eid-objective-actions">{controls}</div>}
         {!controls && objective.dispatchControl?.paused && <p className="eid-home-paused">{t.organizationHome.paused} · {t.organizationHome.running(number.format(objective.dispatchControl.runningCount))}</p>}
       </section>

@@ -593,3 +593,73 @@
 .eid-messages-view .eid-message-search { width: 100%; flex: none; border: 1px solid var(--eidolon-border-subtle); border-radius: 8px; padding: 4px 8px; background: var(--eidolon-bg); }
 .eid-messages-view .eid-message-search:focus-within { border-color: var(--ui-accent); }
 .eid-messages-view .eid-message-search input { flex: 1 1 0%; width: 0; field-sizing: fixed; }
+
+/* Home cards keep recorded facts together without changing their action owners. */
+.eid-home-grid .eid-home-record-heading { flex-direction: row; flex-wrap: wrap; align-items: baseline; justify-content: space-between; }
+.eid-home-grid .eid-home-record-heading h3 { flex: 1 1 220px; }
+.eid-home-grid .eid-home-record-heading .eid-status { flex: none; }
+.eid-home-grid .eid-home-objective-primary:first-child,
+.eid-home-grid .eid-home-request,
+.eid-home-grid .eid-home-delivery { padding: 14px; margin-block: 4px 10px; border: 1px solid var(--eidolon-border-subtle); border-radius: 8px; background: var(--eidolon-bg); }
+.eid-home-grid .eid-home-record > p { margin-block: 8px; }
+.eid-home-grid .eid-home-progress { margin-block: 12px; }
+.eid-home-grid .eid-home-objective-facts { gap: 6px; margin-block: 10px; }
+.eid-home-grid .eid-home-objective-facts > p { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.eid-home-grid .eid-home-record .eid-home-action { margin-top: 10px; padding: 6px 12px; border: 1px solid var(--eidolon-border-subtle); border-radius: 6px; background: var(--ui-bg-secondary); }
+.eid-home-grid .eid-home-request-context { margin-bottom: 8px; }
+.eid-home-grid .eid-home-record h3 { margin-bottom: 8px; }
+.eid-home-grid .eid-home-record-time { margin-top: 8px; }
+.eid-home-activity li { border: 1px solid var(--eidolon-border-subtle); }
+
+/* Policy is an explicit disclosure; search and persistent member selection stay primary. */
+.eid-message-directory-details { flex: none; font-size: 12px; }
+.eid-message-directory-details > summary { padding-block: 6px; }
+.eid-message-directory-details p { margin-block: 8px; }
+/* The entry row is compact; secondary details never hide charges or uncertain outcomes. */
+.eid-messages-view .eid-owner-chat-compose-details { margin-bottom: 6px; font-size: 12px; }
+.eid-messages-view .eid-owner-chat-compose-details[open] { padding: 8px; border: 1px solid var(--eidolon-border-subtle); border-radius: 8px; }
+.eid-messages-view .eid-owner-chat-compose-details[open] > summary { margin-bottom: 8px; }
+.eid-messages-view .eid-owner-chat-composer { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+.eid-messages-view .eid-owner-chat-composer textarea { grid-column: 1; grid-row: 1; min-height: 48px; max-height: 140px; resize: vertical; }
+.eid-messages-view .eid-owner-chat-composer > .eid-owner-chat-actions { display: contents; }
+.eid-messages-view .eid-owner-chat-composer > .eid-owner-chat-actions > button { grid-column: 2; grid-row: 1; align-self: stretch; border-radius: 8px; }
+.eid-messages-view .eid-owner-chat-charge { grid-column: 1 / -1; grid-row: 2; margin: 0; }
+.eid-messages-view .eid-message-members nav button { min-height: 88px; gap: 12px; padding: 12px; }
+.eid-messages-view .eid-message-members nav .eid-avatar { width: 48px; height: 48px; font-size: 16px; flex: none; }
+.eid-messages-view .eid-owner-chat-message:has(.eid-owner-chat-message-avatar) { position: relative; padding-inline-start: 44px; }
+.eid-owner-chat-message-avatar { position: absolute; inset-inline-start: 0; top: 2px; }
+.eid-owner-chat-message-avatar .eid-avatar { width: 32px; height: 32px; }
+.eid-messages-view .eid-owner-chat-message > button { font-size: 11px; line-height: 1.4; }
+.eid-messages-view .eid-owner-chat-message-meta { gap: 8px; }
+@media (max-width: 800px) {
+  .eid-messages-view .eid-owner-chat-composer { grid-template-columns: minmax(0, 1fr); }
+  .eid-messages-view .eid-owner-chat-composer > .eid-owner-chat-actions { display: flex; grid-column: 1; grid-row: 2; justify-content: flex-end; }
+  .eid-messages-view .eid-owner-chat-charge { grid-row: 3; }
+}
+
+/* Only the recorded current lifecycle step is marked; no completed history is inferred. */
+.eid-objective-lifecycle { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); list-style: none; padding: 0; margin: 10px 0; gap: 12px; }
+.eid-objective-lifecycle li { min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 5px; text-align: center; font-size: 11px; line-height: 1.3; overflow-wrap: anywhere; }
+.eid-lifecycle-marker { width: 14px; height: 14px; flex: none; border: 1px solid var(--eidolon-border-strong); border-radius: 50%; background: var(--eidolon-bg); }
+.eid-objective-lifecycle [aria-current=step] { color: var(--ui-text-primary); font-weight: 600; }
+.eid-objective-lifecycle [aria-current=step] .eid-lifecycle-marker { background: var(--ui-accent); box-shadow: 0 0 0 3px var(--eidolon-surface-3); border-color: var(--ui-accent); }
+.eid-objective-overview button, .eid-objective-overview select { min-height: 34px; padding: 6px 10px; border-radius: 6px; }
+.eid-objective-progress-main { gap: 10px; }
+.eid-objective-overview .eid-progress-summary { border-bottom: 0; border-radius: 10px 10px 0 0; margin-bottom: -10px; padding-bottom: 8px; }
+.eid-objective-overview .eid-team-work { border: 1px solid var(--eidolon-border-subtle); border-top: 0; border-radius: 0 0 10px 10px; background: var(--eidolon-surface-1); padding: 0 10px 10px; }
+.eid-objective-overview .eid-team-work > p { margin: 0 4px 6px; }
+.eid-objective-overview .eid-team-work-grid > article { padding: 10px; background: var(--eidolon-bg); }
+.eid-team-work-grid > article > header { margin-bottom: 8px; }
+.eid-team-work-grid > article > p { margin-block: 6px; font-size: 12px; }
+.eid-team-work-grid .eid-progress-tasks { margin-top: 10px; gap: 6px; }
+.eid-team-work-grid .eid-progress-task { padding: 6px 8px; min-height: 50px; gap: 2px 6px; }
+.eid-team-work-grid .eid-progress-task > strong { font-size: 12px; line-height: 1.35; }
+.eid-team-work-grid .eid-progress-task > small { font-size: 10px; line-height: 1.3; }
+@media (max-width: 1100px) {
+  .eid-objective-overview .eid-progress-summary { border-bottom: 1px solid var(--eidolon-border-subtle); border-radius: 10px; margin-bottom: 0; }
+  .eid-objective-overview .eid-team-work { border-top: 1px solid var(--eidolon-border-subtle); border-radius: 10px; padding-top: 10px; }
+}
+
+.eid-objective-overview .eid-progress-summary { padding-block: 8px; }
+.eid-objective-overview .eid-progress-summary h2 { margin-bottom: 4px; }
+.eid-objective-overview .eid-progress-summary header p { font-size: 11px; line-height: 16px; margin: 0; }

@@ -1,4 +1,3 @@
-/** Actual durable admissions; only their successful acknowledgement is replaced. */
 import { execFileSync } from 'node:child_process'
 
 import { directoryRecovery, directoryRecoveryDriver } from './directory-recovery-driver'
@@ -6,6 +5,8 @@ import { buildAppEnv, waitForAppReady } from './fixtures'
 import { profileA, profileB } from './organization-dedicated-profile-fixture'
 import { firstMessage, firstReply, setupOwnerChatFixture } from './organization-owner-chat-fixture'
 import { fixtureLedger, startOrganizationSwitchGateway } from './organization-switch-fixture'
+/** Actual durable admissions; only their successful acknowledgement is replaced. */
+import { setOwnerChatDetails } from './owner-chat-controls'
 import { acknowledgeExpectedErrorBanner, expect, test } from './test'
 
 let running: Awaited<ReturnType<typeof setupOwnerChatFixture>> | undefined
@@ -178,6 +179,7 @@ test('recovers durably accepted owner send and renewal after lost acknowledgemen
     expect.arrayContaining([expect.objectContaining({ idempotencyKey: writes[0].params.idempotencyKey })])
   )
   expect(running.calls).toHaveLength(1)
+  await setOwnerChatDetails(panel, true)
   await panel.getByRole('button', { name: 'Replenish allowance', exact: true }).click()
   await page
     .getByRole('dialog', { name: 'Replenish allowance', exact: true })
@@ -203,6 +205,7 @@ test('recovers durably accepted owner send and renewal after lost acknowledgemen
   expect(fixtureLedger(sourceHome, buildAppEnv(sandbox))).toBe(beforeRenewalReturn)
   panel = await conversation()
   await expect(panel.getByText(firstReply, { exact: true })).toBeVisible()
+  await setOwnerChatDetails(panel, true)
   await expect(panel.getByRole('button', { name: 'Retry same allowance update', exact: true })).toHaveCount(0)
   expect(writes).toHaveLength(2)
   expect(accepted).toHaveLength(2)
@@ -220,6 +223,7 @@ test('recovers durably accepted owner send and renewal after lost acknowledgemen
   expect(running.providerErrors).toEqual([])
   expect(destinationLedger()).toBe(beforeB)
   expect(destinationStarts()).toBe(0)
+  await setOwnerChatDetails(panel, true)
   await expect(panel.getByRole('button', { name: 'Retry same allowance update', exact: true })).toHaveCount(0)
 
   if (remote) { expect(remote.updateChecks()).toBeGreaterThan(0) }

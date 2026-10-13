@@ -220,3 +220,20 @@
   .eid-settings-page:has(.eid-custom-endpoints) .settings-content > div { height: auto; overflow: visible; }
   .eid-custom-endpoints :is(button, input, textarea, select) { scroll-margin: 7px; }
 }
+
+/* A decorative hero and saved summaries give the overview substance without new write owners. */
+.eid-settings-heading { position: relative; isolation: isolate; min-height: 92px; padding-block: 12px 18px; }
+.eid-settings-heading > div { position: relative; }
+.eid-settings-heading h1 { font-size: 40px; font-weight: 600; }
+.eid-settings-scenery { --eidolon-bg: var(--ui-bg-editor); position: absolute; inset-block: 0; inset-inline: auto 0; width: 62%; height: 100%; z-index: -1; pointer-events: none; mask-image: linear-gradient(to right, transparent, black 45%); }
+.eid-settings-layout > aside button[data-tour^="nav-"] { min-height: 56px; padding-block: 6px; }
+.eid-settings-layout > aside small { margin-top: 2px; line-height: 1.25; }
+.eid-settings-cards:not(.eid-settings-model-only) .eid-settings-notification-kinds { grid-template-columns: minmax(0, 1fr); }
+.eid-settings-card-summary { margin-top: 12px; }
+.eid-settings-summary { margin: 0; display: grid; gap: 8px; font-size: 12px; }
+.eid-settings-summary > div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; border-top: 1px solid var(--ui-stroke-tertiary); padding-top: 8px; }
+.eid-settings-summary dt { color: var(--ui-text-secondary); }
+.eid-settings-summary dd { margin: 0; overflow-wrap: anywhere; }
+@media (max-width: 800px) { .eid-settings-heading h1 { font-size: 30px; } .eid-settings-summary > div { grid-template-columns: minmax(0, 1fr); gap: 4px; } }
+
+[dir="rtl"] .eid-settings-scenery { mask-image: linear-gradient(to left, transparent, black 45%); }

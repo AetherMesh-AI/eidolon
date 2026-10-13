@@ -27,6 +27,7 @@ export const organizationHomeEn = {
     members: 'Members',
     search: 'Search members',
     noMatches: 'No members match this search.',
+    directoryDetails: 'About member conversations',
     directoryNote: 'Persistent members in this profile. Selecting a member does not open or renew their conversation.',
     conversation: 'Member conversation',
     selectNote: 'Choose a member, then select Chat to read the retained conversation or send a message.',

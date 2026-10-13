@@ -79,7 +79,7 @@ export function RuntimePriority({ objective, adapter, snapshot }: {
 
   return <section aria-label={copy.priorityHeading} className="eid-priority-controls">
     <h2 className="sr-only">{copy.priorityHeading}</h2>
-    <p>{copy.priorityCurrent}: {objective.priority} · {copy.priorityVersion}: {objective.priorityRevision ?? copy.notRecorded}</p>
+    <p>{copy.priorityCurrent}: {objective.priority}</p>
     {!editable ? <p>{copy.priorityTerminal}</p> : !supported ? <p>{copy.priorityUnavailable}</p> : null}
     {((editable && supported) || (intent && adapter.changePriority)) && <>
       <div className="eid-inline">

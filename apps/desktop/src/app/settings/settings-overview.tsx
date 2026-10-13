@@ -7,7 +7,8 @@ import { Bell, Cpu, KeyRound, Lock, Palette, Wrench } from '@/lib/icons'
 import type { SettingsView } from './types'
 
 /** Compose existing owners; never aggregate their writes into a global save. */
-export function SettingsOverview({ editor, notifications, onSelect, editorOnly = false, editorLabel }: {
+export function SettingsOverview({ editor, notifications, onSelect, editorOnly = false, editorLabel, summaries }: {
+  summaries?: Partial<Record<SettingsView, ReactNode>>
   editorLabel?: string
   editorOnly?: boolean
   editor: ReactNode
@@ -33,7 +34,7 @@ export function SettingsOverview({ editor, notifications, onSelect, editorOnly =
         <div><h3>{card.title}</h3><p>{copy.sections[card.id]}</p></div>
         <Button aria-label={copy.openSection.replace('{section}', card.title)} onClick={() => onSelect(card.id)} size="sm" type="button" variant="secondary">{copy.openSection.replace('{section}', card.title)}</Button>
       </header>
-      {'content' in card && <div className="eid-settings-card-body">{card.content}</div>}
+      {'content' in card ? <div className="eid-settings-card-body">{card.content}</div> : summaries?.[card.id] && <div className="eid-settings-card-summary">{summaries[card.id]}</div>}
     </section>)}
   </div>
 }

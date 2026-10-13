@@ -98,7 +98,8 @@ const snapshot = {
       title: 'Prepare the autumn release brief',
       description: 'Bring the launch narrative, verified changes, and review notes into one clear brief.',
       status: 'active',
-      phase: 'Draft and review',
+      phaseCode: 'execution_review',
+      phase: 'Execution and review',
       milestone: 'Release context verified',
       progress: 60,
       priority: 'P3',
@@ -533,6 +534,9 @@ test('keeps native organization navigation, roster and objective layouts usable 
     await workspace.evaluate(element => { element.scrollTop = 0 })
     const summary = overview.getByRole('region', { name: 'Progress overview', exact: true })
     const phase = overview.getByRole('region', { name: 'Current phase', exact: true })
+    const lifecycle = phase.getByRole('list', { name: 'Current phase', exact: true })
+    await expect(lifecycle.locator('[aria-current=step]')).toHaveCount(1)
+    await expect(lifecycle.locator('[aria-current=step]')).toHaveText('Execution and review')
     await expect(phase.getByRole('button', { name: 'Pause new dispatch', exact: true })).toBeEnabled()
     await expect(phase.getByRole('combobox', { name: 'New priority', exact: true })).toHaveValue('P3')
     const assignmentCards = overview.locator('.eid-team-work-grid > article')
@@ -564,7 +568,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
 
     const recordDetails = overview.getByRole('region', { name: 'Objective details', exact: true })
     await expect(recordDetails).toContainText('Avery')
-    await expect(recordDetails).toContainText('Draft and review')
+    await expect(recordDetails).toContainText('Execution and review')
     await expect(recordDetails.locator('time')).toHaveAttribute('datetime', createdAt)
     await expect(recordDetails).toBeInViewport({ ratio: 1 })
     await expect(page.locator('.eid-objective-hero .eid-objective-scenery')).toHaveAttribute('aria-hidden', 'true')
@@ -660,7 +664,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
         await expect(details).not.toHaveAttribute('open', '')
       }
 
-      await expect(phase).toContainText('Draft and review')
+      await expect(phase).toContainText('Execution and review')
       await expect(phase.getByRole('combobox', { name: 'New priority', exact: true })).toHaveValue('P2')
       await expect(overview.getByRole('region', { name: 'Delivery', exact: true })).toContainText('has not been recorded')
     }
@@ -923,7 +927,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await capture('08-home-wide-light')
   await resize(1536, 961)
   const primaryObjective = workspace.locator('.eid-home-objective-primary').first()
-  await expect(primaryObjective).toContainText('Draft and review')
+  await expect(primaryObjective).toContainText('Execution and review')
   await expect(primaryObjective.getByRole('list', { name: 'Recorded task states', exact: true })).toBeVisible()
   await expect(primaryObjective.getByRole('link', { name: 'View objective →', exact: true })).toBeInViewport({ ratio: 1 })
   await expect(page.getByRole('contentinfo', { name: 'System health', exact: true })).toBeInViewport({ ratio: 1 })
@@ -1473,6 +1477,7 @@ const translatedSurfaceExpectations = {
     objectiveRecord: "目標の詳細",
     objectivePhase: "実行とレビュー",
     "search": "メンバーを検索",
+    "directoryDetails": "メンバーとの会話について",
     "directoryNote": "このプロファイルの永続メンバーです。選択しても会話は開かず、利用枠も追加されません。",
     "memberContext": "メンバーの背景情報",
     "responsibilities": "担当業務",
@@ -1491,6 +1496,7 @@ const translatedSurfaceExpectations = {
     objectiveRecord: "目标详情",
     objectivePhase: "执行与审查",
     "search": "搜索成员",
+    "directoryDetails": "关于成员对话",
     "directoryNote": "此配置文件中的持久成员。选择成员不会打开对话或补充其额度。",
     "memberContext": "成员背景",
     "responsibilities": "职责",
@@ -1509,6 +1515,7 @@ const translatedSurfaceExpectations = {
     objectiveRecord: "目標詳情",
     objectivePhase: "執行與審查",
     "search": "搜尋成員",
+    "directoryDetails": "關於成員對話",
     "directoryNote": "此設定檔中的持久成員。選取成員不會開啟對話或補充其額度。",
     "memberContext": "成員背景",
     "responsibilities": "職責",
@@ -1527,6 +1534,7 @@ const translatedSurfaceExpectations = {
     objectiveRecord: "تفاصيل الهدف",
     objectivePhase: "التنفيذ والمراجعة",
     "search": "البحث عن أعضاء",
+    "directoryDetails": "حول محادثات الأعضاء",
     "directoryNote": "أعضاء دائمون في هذا الملف الشخصي. لا يؤدي اختيار عضو إلى فتح محادثته أو تجديد حصتها.",
     "memberContext": "سياق العضو",
     "responsibilities": "المسؤوليات",
@@ -1545,6 +1553,7 @@ const translatedSurfaceExpectations = {
     objectiveRecord: "Сведения о цели",
     objectivePhase: "Выполнение и проверка",
     "search": "Поиск участников",
+    "directoryDetails": "О диалогах с участниками",
     "directoryNote": "Постоянные участники этого профиля. Выбор участника не открывает диалог и не пополняет его лимит.",
     "memberContext": "Контекст участника",
     "responsibilities": "Обязанности",
@@ -1652,6 +1661,10 @@ for (const [locale, suffix, dark, light] of [
             await expect(page.locator('.eid-delivery-outcomes').getByRole('heading', { name: 'Document provider boundaries', exact: true })).toBeVisible()
           } else {
             await expect(page.getByRole('textbox', { name: copy.search, exact: true })).toBeVisible()
+            const directoryDetails = page.locator('.eid-message-directory-details > summary')
+            await expect(directoryDetails).toHaveText(copy.directoryDetails)
+            await directoryDetails.focus()
+            await page.keyboard.press('Enter')
             await expect(page.getByText(copy.directoryNote, { exact: true })).toBeVisible()
 
             if (route.includes('recipient')) {
@@ -1659,6 +1672,9 @@ for (const [locale, suffix, dark, light] of [
               await expect(page.locator('.eid-message-members nav button')).toHaveCount(1)
             }
 
+            await directoryDetails.focus()
+            await page.keyboard.press('Enter')
+            await expect(page.locator('.eid-message-directory-details')).not.toHaveAttribute('open', '')
             await page.locator('.eid-message-members nav').getByRole('button', { name: /Avery/ }).click()
             await expect(page.getByRole('region', { name: copy.memberContext, exact: true })).toBeVisible()
             await expect(page.getByRole('heading', { name: copy.responsibilities, exact: true })).toBeVisible()

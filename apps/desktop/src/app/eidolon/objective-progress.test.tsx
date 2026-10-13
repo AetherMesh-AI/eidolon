@@ -139,9 +139,11 @@ it.each(['en', 'ar'] as const)('isolates authored RTL and LTR records from inter
   const state = { ...snapshot, objectives: [record], tasks: [{ ...task, title: 'التحقق من النتيجة' }] }
   const before = JSON.stringify(state)
   render(<I18nProvider configClient={null} initialLocale={locale}><ObjectiveProgress objective={record} onReviewRequests={vi.fn()} onReviewWork={vi.fn()} snapshot={state} /></I18nProvider>)
+
   for (const value of [record.phase, record.workPackages[0].title, record.workPackages[0].description, state.tasks[0].title]) {
     for (const element of screen.getAllByText(value)) { expect(element.getAttribute('dir')).toBe('auto') }
   }
+
   expect(JSON.stringify(state)).toBe(before)
 })
 
@@ -159,4 +161,27 @@ it.each([['ar', 'التنفيذ والمراجعة'], ['ru', 'Выполнени
   expect(screen.getAllByText(label)).toHaveLength(2)
   expect(screen.queryByText('Execution and review')).toBeNull()
   expect(record.phase).toBe('Execution and review')
+})
+
+
+it.each(['executive_planning', 'execution_review', 'integration_review', 'accepted'] as const)(
+  'marks only the recorded %s lifecycle step without inventing completed history', phaseCode => {
+    render(<ObjectiveProgress objective={{ ...objective, phaseCode }} onReviewRequests={vi.fn()} onReviewWork={vi.fn()} snapshot={snapshot} />)
+    const phase = within(screen.getByRole('region', { name: 'Current phase' }))
+    const steps = within(phase.getByRole('list', { name: 'Current phase' })).getAllByRole('listitem')
+    expect(steps.filter(step => step.getAttribute('aria-current') === 'step')).toHaveLength(1)
+    const names = { executive_planning: 'Executive decomposition and manager planning', execution_review: 'Execution and review', integration_review: 'Integrated outcome acceptance', accepted: 'Accepted integrated outcome' }
+    expect(steps.find(step => step.getAttribute('aria-current') === 'step')?.textContent).toBe(names[phaseCode])
+    expect(steps.filter(step => step.getAttribute('aria-current') === null)).toHaveLength(steps.length - 1)
+  }
+)
+
+it('keeps intervention and unrecognized phase text outside the lifecycle sequence', () => {
+  const { rerender } = render(<ObjectiveProgress objective={{ ...objective, phaseCode: 'intervention' }} onReviewRequests={vi.fn()} onReviewWork={vi.fn()} snapshot={snapshot} />)
+  const phase = screen.getByRole('region', { name: 'Current phase' })
+  expect(within(phase).queryByRole('list')).toBeNull()
+  expect(phase.textContent).toContain('Pending intervention')
+  rerender(<ObjectiveProgress objective={{ ...objective, phaseCode: 'future-code', phase: 'Retained future phase' }} onReviewRequests={vi.fn()} onReviewWork={vi.fn()} snapshot={snapshot} />)
+  expect(within(phase).queryByRole('list')).toBeNull()
+  expect(phase.textContent).toContain('Retained future phase')
 })

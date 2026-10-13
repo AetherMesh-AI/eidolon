@@ -464,3 +464,21 @@ share a wrapping toolbar. Narrow/zoomed layouts may wrap these controls, while
 allowance, errors, recovery and the composer remain reachable. Authored message
 bodies, names and composer text determine their own direction independently of the
 interface; selection and disclosure never send or renew a conversation.
+
+The compact Messages entry row keeps its send/cancel owner unchanged. Reply and
+allowance details expose the finite budget, explicit renewal confirmation,
+continuation anchor and character limit; collapsing them preserves the draft.
+Provider charges and uncertain send/cancel/renewal outcomes remain outside the
+collapsed content. Member selection/search never opens or renews a conversation.
+
+A supported objective lifecycle marks only its recorded current step. Earlier
+steps are not painted as completed, and intervention, legacy or unknown phase
+codes retain their explicit label instead of being forced into the sequence.
+Revision diagnostics live in disclosures; current dispatch/priority, running
+work, review requirements and errors remain visible.
+
+Settings overview summaries read the existing profile-scoped configuration cache
+and the existing appearance context. They show a fixed list of non-secret saved
+fields, preserve explicit false/zero values and distinguish missing/error states.
+A configured provider does not establish connection health. The original Model,
+Notifications and destination pages continue to own every write.

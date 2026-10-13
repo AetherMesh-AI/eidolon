@@ -17,6 +17,7 @@ import {
   secondMessage,
   setupOwnerChatFixture
 } from './organization-owner-chat-fixture'
+import { setOwnerChatDetails } from './owner-chat-controls'
 import { acknowledgeExpectedErrorBanner, expect, test } from './test'
 
 interface RecordedSend {
@@ -206,18 +207,26 @@ test('retains exact worker chat, deduplicates owner send and fences a cancelled 
     await message.scrollIntoViewIfNeeded()
     const composerFocus = await verifyKeyboardFocus(page, message, `${label} composer`)
     await expect(message).toBeInViewport({ ratio: 1 })
+    await setOwnerChatDetails(conversation, true)
     await expect(conversation.locator('.eid-owner-chat-allowance')).toBeInViewport({ ratio: 1 })
     const action = conversation.getByRole('button', { name: /^(Send message|Cancel reply)$/, exact: true })
     await expect(action).toBeInViewport({ ratio: 1 })
     await expect(conversation.locator('.eid-owner-chat-charge')).toBeInViewport({ ratio: 1 })
 
     if (width >= 1280 && zoom === 1) {
+      const entry = await message.boundingBox()
+      const send = await action.boundingBox()
+      expect(entry!.height, 'compact composer entry remains at most 56px').toBeLessThanOrEqual(56)
+      expect(Math.abs(entry!.y - send!.y), 'send action shares the entry row').toBeLessThanOrEqual(1)
       // At normal desktop sizes the actual inner panel must not scroll to
       // reach charges, limits and composing; only history scrolls internally.
       const panel = conversation.locator('.eid-owner-chat-panel')
       expect(await panel.evaluate(element => element.scrollHeight - element.clientHeight)).toBeLessThanOrEqual(1)
       await expect(scroll.locator('.eid-owner-chat-bubble').last()).toBeInViewport({ ratio: 1 })
     }
+
+    await setOwnerChatDetails(conversation, false)
+    await message.focus()
 
     const bytes = Buffer.from(await running!.fixture.app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
     writeFileSync(test.info().outputPath(`composer-${label}.png`), bytes)
@@ -312,8 +321,10 @@ test('retains exact worker chat, deduplicates owner send and fences a cancelled 
     expect(geometry.actions.y).toBeLessThan(geometry.recipient.bottom)
     expect(geometry.transcript.height).toBeGreaterThan(350)
     await expect(conversation.getByRole('button', { name: 'Hide conversation', exact: true })).toBeInViewport({ ratio: 1 })
+    await setOwnerChatDetails(conversation, true)
     await expect(conversation.getByRole('button', { name: 'Replenish allowance', exact: true })).toBeInViewport({ ratio: 1 })
 
+    await setOwnerChatDetails(conversation, false)
     await page.evaluate(() => { if (document.activeElement instanceof HTMLElement) {document.activeElement.blur()} })
 
     const bytes = Buffer.from(await running.fixture.app.evaluate(async ({ BrowserWindow }) =>
@@ -422,12 +433,14 @@ test('retains exact worker chat, deduplicates owner send and fences a cancelled 
 
   // Allowance changes are explicit, reversible before confirmation, and never
   // themselves produce inference or erase the cancelled turn's reservation.
+  await setOwnerChatDetails(conversation, true)
   await conversation.getByRole('button', { name: 'Replenish allowance', exact: true }).click()
   let renewalDialog = page.getByRole('dialog', { name: 'Replenish allowance', exact: true })
   await expect(renewalDialog).toBeVisible()
   await renewalDialog.getByRole('button', { name: 'Cancel', exact: true }).click()
   expect(renewals).toHaveLength(0)
   expect(running.calls).toHaveLength(2)
+  await setOwnerChatDetails(conversation, true)
   await conversation.getByRole('button', { name: 'Replenish allowance', exact: true }).click()
   renewalDialog = page.getByRole('dialog', { name: 'Replenish allowance', exact: true })
   await page.screenshot({ path: test.info().outputPath('native-owner-chat-renewal-confirm.png') })
@@ -457,6 +470,7 @@ test('retains exact worker chat, deduplicates owner send and fences a cancelled 
   await expect(transcriptMessage(secondMessage)).toBeVisible()
   const afterReload = await rpc<ThreadView>(page, sends[0], 'organization.ownerChat.read', identity)
   expect(afterReload.result?.budget).toEqual(renewed.result?.budget)
+  await setOwnerChatDetails(conversation, true)
   await expect(conversation.getByRole('button', { name: 'Replenish allowance', exact: true })).toBeDisabled()
   await page.screenshot({ path: test.info().outputPath('native-owner-chat-renewed.png') })
   await conversation.getByRole('textbox', { name: 'Message', exact: true }).fill(continuedMessage)

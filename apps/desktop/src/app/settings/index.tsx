@@ -34,6 +34,7 @@ import { $localModelsEnabled } from '@/store/local-models-flag'
 import { notifyError } from '@/store/notifications'
 import { $settingsScopeProfile } from '@/store/settings-scope'
 
+import { OrganizationScenery } from '../eidolon/scenery'
 import { useRouteEnumParam } from '../hooks/use-route-enum-param'
 import { OverlayIconButton } from '../overlays/overlay-chrome'
 import { OverlayMain, OverlayNav, type OverlayNavGroup, OverlaySplitLayout } from '../overlays/overlay-split-layout'
@@ -53,6 +54,7 @@ import { PluginsSettings } from './plugins-settings'
 import { PROVIDER_VIEWS, ProvidersSettings, type ProviderView } from './providers-settings'
 import { SessionsSettings } from './sessions-settings'
 import { SettingsOverview } from './settings-overview'
+import { AppearanceSummary, SavedSettingsSummary } from './settings-summary'
 import type { SettingsPageProps, SettingsView as SettingsViewId } from './types'
 
 const SETTINGS_VIEWS: readonly SettingsViewId[] = [
@@ -369,11 +371,17 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
   const activeSettingsContent =
     (activeView === 'overview' || (activeView.startsWith('config:') && activeView !== 'config:appearance')) ? (
       <SettingsOverview
-        editor={<ConfigSettings compactOverview={activeView === 'overview'} activeSectionId={activeView === 'overview' ? 'model' : activeView.slice('config:'.length)} importInputRef={importInputRef} onConfigSaved={onConfigSaved} onMainModelChanged={onMainModelChanged} />}
+        editor={<ConfigSettings activeSectionId={activeView === 'overview' ? 'model' : activeView.slice('config:'.length)} compactOverview={activeView === 'overview'} importInputRef={importInputRef} onConfigSaved={onConfigSaved} onMainModelChanged={onMainModelChanged} />}
         editorLabel={activeView === 'overview' ? undefined : t.settings.sections[activeView.slice('config:'.length)]}
         editorOnly={activeView !== 'overview'}
         notifications={<NotificationsSettings compactOverview />}
         onSelect={setActiveView}
+        summaries={activeView === 'overview' ? {
+          providers: <SavedSettingsSummary section="providers" />,
+          'config:safety': <SavedSettingsSummary section="safety" />,
+          'config:workspace': <SavedSettingsSummary section="workspace" />,
+          'config:appearance': <AppearanceSummary />
+        } : undefined}
       />
     ) : activeView === 'config:appearance' ? (
       <AppearanceSettings />
@@ -420,6 +428,7 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
   return (
     <OverlayView closeLabel={t.settings.closeSettings} inline onClose={onClose} rootClassName="eid-settings-page">
       <header className="eid-settings-heading">
+        <OrganizationScenery className="eid-settings-scenery" />
         <div>
           <h1>{copy.heading}</h1>
           <p>{copy.introduction}</p>

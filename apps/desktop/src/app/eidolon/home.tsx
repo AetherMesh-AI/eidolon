@@ -225,7 +225,7 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
           </header>
           <div aria-label={copy.ready} className="eid-home-panel-body" role="group" tabIndex={0}>
           {data.deliverables.slice(0, 3).map(item => (
-            <article className="eid-home-record" key={item.objectiveId}>
+            <article className="eid-home-record eid-home-delivery" key={item.objectiveId}>
               <small className="eid-status-completed">{copy.accepted}</small>
               <h3 dir="auto">{item.title}</h3>
               <p dir="auto">{item.summary}</p>
