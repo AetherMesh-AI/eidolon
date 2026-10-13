@@ -7,9 +7,9 @@
 .eid-workspace-identity { flex: 1 1 auto; flex-wrap: wrap; row-gap: 6px; }
 .eid-workspace-actions { flex: 0 0 auto; justify-content: flex-end; }
 /* Reflow complete identity labels instead of shrinking them into ambiguous fragments. */
-.eid-workspace-identity > button { flex: 0 1 auto; min-width: 28px; max-width: 100%; height: auto; white-space: normal; }
-.eid-workspace-identity > button > span { min-width: 0; }
-.eid-workspace-identity > button > span { overflow-wrap: anywhere; }
+.eid-workspace-identity > button, .eid-workspace-actions > button[data-size=lg] { flex: 0 1 auto; min-width: 28px; max-width: 100%; height: auto; white-space: normal; }
+.eid-workspace-identity > button > span, .eid-workspace-actions > button[data-size=lg] > span { min-width: 0; }
+.eid-workspace-identity > button > span, .eid-workspace-actions > button[data-size=lg] > span { overflow-wrap: anywhere; }
 .eid-workspace-connection { color: var(--ui-text-secondary); font-size: 11px; }
 .eidolon.eid-workspace-header :is(button, a):focus-visible, .eid-workspace-search :is(button, a, input):focus-visible, .eid-owner-editor :is(button, a, input):focus-visible { outline: 3px solid var(--ui-accent); outline-offset: 2px; transition-property: color, background-color, border-color, box-shadow; }
 
