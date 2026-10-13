@@ -1,6 +1,6 @@
 .eid-workspace-shell { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; overflow: clip; }
 .eid-workspace-body { flex: 1; min-height: 0; min-width: 0; position: relative; overflow: auto; }
-.eid-workspace-header { flex: none; display: grid; grid-template-columns: minmax(240px, 1fr) minmax(160px, 380px) minmax(300px, auto); align-items: center; gap: 16px; min-height: 65px; padding: 10px max(18px, var(--titlebar-tools-right, 18px), var(--pane-native-controls-right, 0px)) 10px max(22px, var(--pane-native-controls-left, 0px)); background: var(--ui-bg-secondary); border-bottom: 1px solid var(--ui-stroke-tertiary); -webkit-app-region: drag; }
+.eid-workspace-header { flex: none; display: grid; grid-template-columns: minmax(240px, 1fr) minmax(160px, 380px) minmax(320px, auto); align-items: center; gap: 16px; min-height: 65px; padding: 10px max(18px, var(--titlebar-tools-right, 18px), var(--pane-native-controls-right, 0px)) 10px max(22px, var(--pane-native-controls-left, 0px)); background: var(--ui-bg-secondary); border-bottom: 1px solid var(--ui-stroke-tertiary); -webkit-app-region: drag; }
 .eid-workspace-header :is(button, a, input, [data-slot=connection-switcher]) { -webkit-app-region: no-drag; }
 .eid-workspace-search-trigger { width: 100%; justify-content: flex-start; min-width: 0; white-space: normal; text-align: start; }
 .eid-workspace-identity, .eid-workspace-actions { display: flex; align-items: center; min-width: 0; gap: 8px; }
