@@ -69,7 +69,7 @@ export function WorkspaceHeader() {
       {/* The switcher owns registry initialization and change subscriptions, even with one source. */}
       <ConnectionSwitcher compact onConnect={() => navigateToWorkspacePage(navigate, '/settings?tab=connections')} preserveRoute={() => isWorkspacePageRoute(locationRef.current.pathname)} />
     </div>
-    <Button aria-label={copy.search} className="eid-workspace-search-trigger" disabled={!available} onClick={() => { if (current()) {setSearchScope(snapshot!.connection!.scope)} }} ref={searchTrigger} size="lg" variant="outline"><Codicon name="search" /><span>{copy.search}</span></Button>
+    <Button aria-label={copy.search} className="eid-workspace-search-trigger" disabled={!available} onClick={() => { if (current()) {setSearchScope(snapshot!.connection!.scope)} }} ref={searchTrigger} size="lg" variant="outline"><Codicon name="search" /><span className="eid-workspace-action-label">{copy.search}</span></Button>
     <div className="eid-workspace-actions">
       <OrganizationWorkIndicator compact />
       <Button aria-label={t.organizationMetadata.edit} disabled={!canEdit} onClick={() => { if (readScope().connected && readScope().key === identity.scope.key && !$pendingConnectionId.get()) { setEditingScope(editorScope) } }} ref={ownerTrigger} size="lg" variant="ghost"><Codicon name="account" /><span>{saved?.owner.displayName ?? t.organizationMetadata.owner}</span></Button>
