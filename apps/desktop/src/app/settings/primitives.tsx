@@ -176,12 +176,14 @@ export function ListRow({
 export function ToggleRow({
   checked,
   description,
+  collapsibleDescription = false,
   disabled,
   label,
   onChange
 }: {
   checked: boolean
   description?: string
+  collapsibleDescription?: boolean
   disabled?: boolean
   label: string
   onChange: (on: boolean) => void
@@ -199,8 +201,10 @@ export function ToggleRow({
           }}
         />
       }
-      description={description}
-      title={label}
+      description={collapsibleDescription ? undefined : description}
+      title={collapsibleDescription && description
+        ? <details className="eid-settings-toggle-description"><summary>{label}</summary><p>{description}</p></details>
+        : label}
     />
   )
 }

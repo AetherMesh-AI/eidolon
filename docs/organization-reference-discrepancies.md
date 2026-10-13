@@ -513,3 +513,28 @@ slice's hosted native verification, review and postmerge checks. The broader
 remaining visual pass is roughly two to four further cycles, or 3–6 hours plus
 review and authorization delays, with low confidence. No bounded estimate can
 be given for resolution of the merge authorization rejection.
+
+
+## Combined follow-up awaiting hosted verification
+
+The compact Notifications overview keeps all eight switches visible. Each of its
+seven alert-kind explanations now opens through a native keyboard disclosure;
+opening one does not change the preference, and explanations remain available
+when the master notification switch disables the individual switches. Dedicated
+Notifications retains expanded descriptions. The Model owner, drafts, Apply
+button and save boundaries remain unchanged.
+
+The hosted Settings scenario now requires a collapsed first-row height of at most
+340px at 1536×961, compared with the preceding approximately 437px and the
+reference approximately 295px. This is an acceptance target, not a measured
+result. It checks keyboard explanation access, all eight switches and the
+existing narrow/200% paths. Local tests pass: 52 across the affected review,
+progress and Settings owners, plus two focused disclosure cases. Main/E2E type
+checks pass; changed-file lint has zero errors and 14 existing Settings-spec
+formatting warnings.
+
+This work combines the separately retained review-findings and Settings-height
+changes into the existing PR137 draft for new branch verification. Its previous
+exact-head clearance applies only to e0cf5b265d6163e0ff1cd259ef4c90b34d73b7e3
+and is invalid for the combined candidate. The merge approval rejection remains
+unresolved; no merge retry is authorized by this follow-up.

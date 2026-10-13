@@ -55,6 +55,7 @@ export function NotificationsSettings({ compactOverview = false }: { compactOver
       {NATIVE_NOTIFICATION_KINDS.map(kind => (
         <ToggleRow
           checked={prefs.enabled && prefs.kinds[kind]}
+          collapsibleDescription={compactOverview}
           description={copy.kinds[kind].description}
           disabled={!prefs.enabled}
           key={kind}

@@ -194,3 +194,10 @@
 @media (min-width: 1251px) {
   .eid-settings-cards:not(.eid-settings-model-only) .eid-settings-notification-kinds { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 16px; }
 }
+
+/* Keep every overview switch visible; explain each kind in a keyboard-accessible
+   disclosure instead of letting seven descriptions stretch both first-row cards. */
+.eid-settings-toggle-description > summary { cursor: pointer; }
+.eid-settings-toggle-description > p { margin-top: 4px; font-size: 12px; line-height: 1.35; font-weight: 400; }
+.eid-settings-cards:not(.eid-settings-model-only) .eid-settings-notification-kinds { align-items: start; }
+.eid-settings-cards:not(.eid-settings-model-only) .eid-settings-notification-kinds .settings-row > div { min-height: 30px; }
