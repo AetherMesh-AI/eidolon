@@ -242,3 +242,16 @@
 .eid-settings-cards:not(.eid-settings-model-only) .settings-row:has([role="switch"]) > div { min-height: 24px; padding-block: 2px; }
 .eid-settings-cards:not(.eid-settings-model-only) .eid-settings-notification-kinds .settings-row > div { min-height: 24px; }
 .eid-settings-cards:not(.eid-settings-model-only) .settings-row:has([role="switch"]) > div > div:last-child { display: flex; align-items: center; }
+
+/* Configuration occupies the middle row; shorter summaries form the bottom band. */
+.eid-settings-heading { padding-block: 24px 6px; }
+.eid-settings-layout > aside button[data-tour^="nav-"] { padding-block: 3px; min-height: 56px; }
+.eid-settings-cards:not(.eid-settings-model-only) .eid-settings-notification-kinds { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; }
+.eid-settings-cards:not(.eid-settings-model-only) .settings-row:has([role="switch"]) > div { min-height: 36px; padding-block: 3px; gap: 8px; }
+.eid-settings-cards:not(.eid-settings-model-only) .eid-settings-notification-kinds .settings-row > div { min-height: 36px; }
+.eid-settings-cards:not(.eid-settings-model-only) .settings-row:has([role="switch"]) > div > div:first-child > div + div { margin-top: 1px; font-size: 11px; line-height: 13px; }
+.eid-settings-cards:not(.eid-settings-model-only) > [data-section="providers"],
+.eid-settings-cards:not(.eid-settings-model-only) > [data-section="config:appearance"] { min-height: 0; }
+.eid-settings-cards:not(.eid-settings-model-only) :is([data-section="providers"], [data-section="config:appearance"]) .eid-settings-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.eid-settings-cards:not(.eid-settings-model-only) :is([data-section="providers"], [data-section="config:appearance"]) .eid-settings-summary > div { grid-template-columns: minmax(0, 1fr); gap: 3px; padding-top: 6px; }
+@media (max-width: 800px) { .eid-settings-cards:not(.eid-settings-model-only) .eid-settings-notification-kinds { grid-template-columns: minmax(0, 1fr); } }

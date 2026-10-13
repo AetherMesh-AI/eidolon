@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router'
 
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n/context'
+import { CheckCircle2, FileText } from '@/lib/icons'
 
 import { AgentAvatar } from './avatar'
 import { Command } from './command'
@@ -40,11 +41,12 @@ export function HomeObjective({
 
   return (
     <article className={`eid-home-record${compact ? ' eid-home-record-compact' : ' eid-home-objective-primary'}`}>
+      {!compact && <header className="eid-home-objective-label"><FileText aria-hidden="true" /><small>{copy.workspace.kinds.objective}</small><span className={`eid-status eid-status-${objective.status}`}>{status}</span></header>}
       <div className="eid-home-record-heading">
         <h3 dir="auto">
           <Link to={`/objectives/${encodeURIComponent(objective.id)}`}>{objective.title}</Link>
         </h3>
-        <span className={`eid-status eid-status-${objective.status}`}>{status}</span>
+        {compact && <span className={`eid-status eid-status-${objective.status}`}>{status}</span>}
       </div>
       {!compact && <p className="eid-home-description" dir="auto">{objective.description}</p>}
       <p>
@@ -70,9 +72,9 @@ export function HomeObjective({
         </p>
       )}
       {!compact && (
-        <Link className="eid-home-action" to={`/objectives/${encodeURIComponent(objective.id)}`}>
+        <footer className="eid-home-record-actions"><Link className="eid-home-action" to={`/objectives/${encodeURIComponent(objective.id)}`}>
           {copy.viewObjective} →
-        </Link>
+        </Link></footer>
       )}
     </article>
   )
@@ -95,9 +97,9 @@ export function HomeRequest({ request, snapshot }: { request: OrganizationReques
       <h3 dir="auto">{request.requestedOutcome || request.reason || t.organizationWork.needsYou}</h3>
       {request.requestedOutcome && request.reason && request.reason !== request.requestedOutcome && <p dir="auto">{request.reason}</p>}
       <p className="eid-note" dir="auto">{objective?.title || request.objectiveId}</p>
-      <Link className="eid-home-action" to={`/objectives/${encodeURIComponent(request.objectiveId)}`}>
+      <footer className="eid-home-record-actions"><Link className="eid-home-action" to={`/objectives/${encodeURIComponent(request.objectiveId)}`}>
         {t.organizationHome.reviewRequest} →
-      </Link>
+      </Link></footer>
     </article>
   )
 }
@@ -226,13 +228,13 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
           <div aria-label={copy.ready} className="eid-home-panel-body" role="group" tabIndex={0}>
           {data.deliverables.slice(0, 3).map(item => (
             <article className="eid-home-record eid-home-delivery" key={item.objectiveId}>
-              <small className="eid-status-completed">{copy.accepted}</small>
+              <div className="eid-home-delivery-label"><CheckCircle2 aria-hidden="true" /><small className="eid-status-completed">{copy.accepted}</small></div>
               <h3 dir="auto">{item.title}</h3>
               <p dir="auto">{item.summary}</p>
               <div className="eid-home-record-time"><LocalizedTime value={item.updatedAt} /></div>
-              <Link className="eid-home-action" to={`/objectives/${encodeURIComponent(item.objectiveId)}`}>
+              <footer className="eid-home-record-actions"><Link className="eid-home-action" to={`/objectives/${encodeURIComponent(item.objectiveId)}`}>
                 {copy.viewObjective} →
-              </Link>
+              </Link></footer>
             </article>
           ))}
           {!data.deliverables.length && (

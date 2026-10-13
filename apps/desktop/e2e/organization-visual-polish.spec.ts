@@ -547,6 +547,15 @@ test('keeps native organization navigation, roster and objective layouts usable 
     await expect(lifecycle.locator('[aria-current=step]')).toHaveText('Execution and review')
     await expect(phase.getByRole('button', { name: 'Pause new dispatch', exact: true })).toBeEnabled()
     await expect(phase.getByRole('combobox', { name: 'New priority', exact: true })).toHaveValue('P3')
+
+    const markers = await lifecycle.locator('li').evaluateAll(items => items.map(item => {
+      const marker = item.querySelector('.eid-lifecycle-marker')!.getBoundingClientRect()
+      const label = item.querySelector('span:last-child')!.getBoundingClientRect()
+
+      return { markerBottom: marker.bottom, labelTop: label.top, markerCenter: marker.x + marker.width / 2, labelCenter: label.x + label.width / 2 }
+    }))
+
+    expect(markers.every(item => item.markerBottom <= item.labelTop && Math.abs(item.markerCenter - item.labelCenter) <= 1)).toBe(true)
     const assignmentCards = overview.locator('.eid-team-work-grid > article')
     await expect(assignmentCards).toHaveCount(3)
 

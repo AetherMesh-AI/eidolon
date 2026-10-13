@@ -21,14 +21,14 @@ export function SettingsOverview({ editor, notifications, onSelect, editorOnly =
   const cards = [
     { id: 'config:model', title: t.settings.sections.model, icon: Cpu, content: editor },
     { id: 'notifications', title: t.settings.nav.notifications, icon: Bell, content: notifications },
-    { id: 'providers', title: t.settings.nav.providers, icon: KeyRound },
-    { id: 'config:safety', title: t.settings.sections.safety, icon: Lock },
     { id: 'config:workspace', title: t.settings.sections.workspace, icon: Wrench },
+    { id: 'config:safety', title: t.settings.sections.safety, icon: Lock },
+    { id: 'providers', title: t.settings.nav.providers, icon: KeyRound },
     { id: 'config:appearance', title: t.settings.sections.appearance, icon: Palette }
   ] as const
 
   return <div className={editorOnly ? 'eid-settings-cards eid-settings-model-only' : 'eid-settings-cards'}>
-    {cards.filter(card => !editorOnly || card.id === 'config:model').map(card => <section aria-label={editorOnly ? editorLabel ?? card.title : card.title} className={'content' in card ? 'eid-settings-card eid-settings-card-editor' : 'eid-settings-card'} key={card.id}>
+    {cards.filter(card => !editorOnly || card.id === 'config:model').map(card => <section aria-label={editorOnly ? editorLabel ?? card.title : card.title} className={'content' in card ? 'eid-settings-card eid-settings-card-editor' : 'eid-settings-card'} data-section={card.id} key={card.id}>
       <header>
         <span className="eid-settings-card-icon"><card.icon /></span>
         <div><h3>{card.title}</h3><p>{copy.sections[card.id]}</p></div>

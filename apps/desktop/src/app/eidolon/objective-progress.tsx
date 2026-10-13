@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n/context'
+import { AlertCircle, CheckCircle2, CircleIcon, Clock, Eye, X } from '@/lib/icons'
 
 import { AgentAvatar } from './avatar'
 import { LocalizedTime } from './localized-time'
@@ -38,13 +39,20 @@ export function ObjectiveProgress({ objective, snapshot, controls, onReviewReque
   const lifecycle = ['executive_planning', 'execution_review', 'integration_review', 'accepted'] as const
   const supportedPhase = objective.source === 'runtime' && lifecycle.some(phase => phase === objective.phaseCode)
 
+  const taskIcons = { completed: CheckCircle2, working: Clock, review: Eye, blocked: AlertCircle, queued: CircleIcon, cancelled: X }
+
   const taskRows = (tasks: OrganizationTask[]) => <ul className="eid-progress-tasks">
-    {tasks.slice(0, 3).map(task => <li className="eid-progress-task" key={task.id}>
-      <strong dir="auto">{task.title}</strong>
-      <span className={`eid-status eid-status-${task.status}`}>{copy.taskStatus[task.status]}</span>
-      <small dir="auto">{agentName(task.assignedAgentId ?? task.ownerId)}</small>
-      {task.coordination?.state === 'waiting' && <small>{task.coordination.reason || copy.dependenciesWaiting}</small>}
-    </li>)}
+    {tasks.slice(0, 3).map(task => {
+      const StatusIcon = taskIcons[task.status]
+
+      return <li className="eid-progress-task" key={task.id}>
+        <StatusIcon aria-hidden="true" className={`eid-task-state-icon eid-status-${task.status}`} />
+        <strong dir="auto">{task.title}</strong>
+        <span className={`eid-status eid-status-${task.status}`}>{copy.taskStatus[task.status]}</span>
+        <small dir="auto">{agentName(task.assignedAgentId ?? task.ownerId)}</small>
+        {task.coordination?.state === 'waiting' && <small>{task.coordination.reason || copy.dependenciesWaiting}</small>}
+      </li>
+    })}
     {tasks.length > 3 && <li>{copy.moreTasks(tasks.length - 3, number.format(tasks.length - 3))}</li>}
     {!tasks.length && <li>{copy.noTasks}</li>}
   </ul>
@@ -81,7 +89,6 @@ export function ObjectiveProgress({ objective, snapshot, controls, onReviewReque
       </section>
       <section aria-label={copy.teamWork} className="eid-team-work">
         <h2 className="sr-only">{copy.teamWork}</h2>
-        <p>{copy.teamNote}</p>
         <div className="eid-team-work-grid">
           {data.groups.map(group => <article className="eid-home-panel" key={group.package.id}>
             <header><div className="eid-team-owner"><AgentAvatar name={agentName(group.package.managerId)} /><div><h3 dir="auto">{group.package.title}</h3><small>{t.organizationRoster.objectiveManager} · <bdi>{agentName(group.package.managerId)}</bdi></small></div></div></header>
@@ -94,6 +101,7 @@ export function ObjectiveProgress({ objective, snapshot, controls, onReviewReque
             {taskRows(data.ungrouped)}
           </article>}
         </div>
+        <p>{copy.teamNote}</p>
       </section>
       <ObjectiveReviewFindings objective={objective} />
     </div>

@@ -44,19 +44,17 @@ export function NotificationsSettings({ compactOverview = false }: { compactOver
       {!compactOverview && <SectionHeading icon={Bell} title={copy.title} />}
       {!compactOverview && <Caption className="mb-2 leading-(--conversation-caption-line-height)">{copy.intro}</Caption>}
 
+      <div className="eid-settings-notification-kinds">
       <ToggleRow
         checked={prefs.enabled}
-        collapsibleDescription={compactOverview}
         description={compactOverview ? `${copy.intro} ${copy.enableAllDesc}` : copy.enableAllDesc}
         label={copy.enableAll}
         onChange={setNativeNotifyEnabled}
       />
 
-      <div className="eid-settings-notification-kinds">
       {NATIVE_NOTIFICATION_KINDS.map(kind => (
         <ToggleRow
           checked={prefs.enabled && prefs.kinds[kind]}
-          collapsibleDescription={compactOverview}
           description={copy.kinds[kind].description}
           disabled={!prefs.enabled}
           key={kind}
