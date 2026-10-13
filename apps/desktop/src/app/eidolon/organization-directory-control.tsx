@@ -54,7 +54,7 @@ export function OrganizationDirectoryControl({ label }: { label?: string }) {
   return (
     <>
       <Button
-        aria-label={copy.heading}
+        aria-label={label ? `${label} · ${copy.heading}` : copy.heading}
         disabled={!eligible}
         onClick={() => {
           if (!runtimeRef.current) {

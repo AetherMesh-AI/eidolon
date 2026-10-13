@@ -11,7 +11,7 @@ test('confirms actual directory selections, cancels without switching and expose
   const { app, page, mock } = dedicated.fixture
   const captures: string[] = []
   const header = page.locator('.eid-workspace-header')
-  const trigger = header.getByRole('button', { name: 'Organizations', exact: true })
+  const trigger = header.getByRole('button', { name: /^(?:Unnamed organization|Directory A|Directory B) · Organizations$/ })
   const dialog = page.getByRole('dialog', { name: 'Organizations', exact: true })
 
   const capture = async (name: string) => {
@@ -66,6 +66,7 @@ test('confirms actual directory selections, cancels without switching and expose
     await expect(refreshButton).toBeEnabled()
     await page.keyboard.press('Escape')
     await expect(trigger).toBeFocused()
+    await expect(trigger).toHaveAccessibleName(`${expectedName === 'Not configured' ? 'Unnamed organization' : expectedName} · Organizations`)
   }
 
   const initialize = async (name: string, profile: string) => {

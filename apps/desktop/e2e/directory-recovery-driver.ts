@@ -8,7 +8,7 @@ export const directoryRecovery = process.env.EIDOLON_DIRECTORY_RECOVERY_ACCEPTAN
 
 export function directoryRecoveryDriver(page: Page) {
   const header = page.locator('.eid-workspace-header')
-  const trigger = header.getByRole('button', { name: 'Organizations', exact: true })
+  const trigger = header.getByRole('button', { name: 'Unnamed organization · Organizations', exact: true })
   const dialog = page.getByRole('dialog', { name: 'Organizations', exact: true })
   const nav = page.getByRole('navigation', { name: 'Primary', exact: true })
 

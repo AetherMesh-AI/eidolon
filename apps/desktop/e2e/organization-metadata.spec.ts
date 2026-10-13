@@ -381,8 +381,8 @@ with sqlite3.connect(sys.argv[1]) as conn:
             ? { title: 'المؤسسات', refresh: 'تحديث المؤسسة الحالية', search: 'البحث عن المؤسسات', choose: 'استخدام المؤسسة المحددة' }
             : { title: 'Organizations', refresh: 'Refresh current organization', search: 'Search organizations', choose: 'Use selected organization' }
 
-          const directoryTrigger = page.getByRole('button', { name: directoryCopy.title, exact: true })
           const beforeInspection = stored()
+          const directoryTrigger = page.getByRole('button', { name: `${beforeInspection!.display_name} · ${directoryCopy.title}`, exact: true })
           const beforeOpenReads = observedMethods.filter(method => method === 'organization.descriptor').length
           await directoryTrigger.click()
           const directoryDialog = page.getByRole('dialog', { name: directoryCopy.title, exact: true })
