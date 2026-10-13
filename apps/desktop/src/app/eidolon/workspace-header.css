@@ -1,6 +1,6 @@
 .eid-workspace-shell { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; overflow: clip; }
 .eid-workspace-body { flex: 1; min-height: 0; min-width: 0; position: relative; overflow: auto; }
-.eid-workspace-header { flex: none; display: grid; grid-template-columns: minmax(160px, 1fr) minmax(200px, 380px) auto; align-items: center; gap: 16px; min-height: 65px; padding: 10px max(18px, var(--titlebar-tools-right, 18px)) 10px 22px; background: var(--ui-bg-secondary); border-bottom: 1px solid var(--ui-stroke-tertiary); -webkit-app-region: drag; }
+.eid-workspace-header { flex: none; display: grid; grid-template-columns: minmax(160px, 1fr) minmax(200px, 380px) auto; align-items: center; gap: 16px; min-height: 65px; padding: 10px max(18px, var(--titlebar-tools-right, 18px), var(--pane-native-controls-right, 0px)) 10px max(22px, var(--pane-native-controls-left, 0px)); background: var(--ui-bg-secondary); border-bottom: 1px solid var(--ui-stroke-tertiary); -webkit-app-region: drag; }
 .eid-workspace-header :is(button, a, input, [data-slot=connection-switcher]) { -webkit-app-region: no-drag; }
 .eid-workspace-search-trigger { width: 100%; justify-content: flex-start; min-width: 0; white-space: normal; text-align: start; }
 .eid-workspace-identity, .eid-workspace-actions { display: flex; align-items: center; min-width: 0; gap: 8px; }
@@ -33,9 +33,12 @@
   .eid-workspace-body .eid-home > .eid-home-hero { min-height: 80px; padding-block: 2px; }
 }
 @media (max-width: 900px) {
-  .eid-workspace-header { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding-inline: 8px; padding-right: max(8px, var(--titlebar-tools-right, 8px)); }
-  .eid-workspace-search-trigger { grid-column: 1 / -1; grid-row: 2; }
-  .eid-workspace-actions { flex-wrap: wrap; }
+  /* Share the available width across complete labels, rather than letting an
+     auto account column reduce the organization name to a character per line. */
+  .eid-workspace-header { display: flex; flex-wrap: wrap; gap: 6px; min-height: 34px; padding: 5px max(8px, var(--titlebar-tools-right, 8px), var(--pane-native-controls-right, 0px)) 5px max(8px, var(--pane-native-controls-left, 0px)); }
+  .eid-workspace-identity, .eid-workspace-actions { display: contents; }
+  .eidolon.eid-workspace-header button { min-height: 18px; height: auto; line-height: 18px; padding: 0 4px; font-size: 11px; max-width: 100%; }
+  .eid-workspace-search-trigger { width: auto; }
   .eid-workspace-action-label, .eid-workspace-connection { display: none; }
 
 }

@@ -516,6 +516,7 @@ const syncWorkspaceTitle = () => {
       tabTitle: stored ? undefined : () => <SessionDraftTitle scope={selected} />,
       // Pages aren't tab-able: the main zone's bar stands down while one shows.
       headerVeto: $workspaceIsPage.get(),
+      nativeControlsInHeader: true,
       placement: 'main',
       minWidth: '22vw',
       tabDrag: workspaceTabDrag,

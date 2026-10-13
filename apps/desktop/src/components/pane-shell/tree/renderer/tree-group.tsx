@@ -349,6 +349,16 @@ export function TreeGroup({
   const verticalCollapse = Boolean(node.minimized) && parentAxis === 'row' && !isEmpty && shown.length <= 1
   // A minimized group IS its header, so it shows one regardless.
   const headerVisible = !isEmpty && !verticalCollapse && (Boolean(node.minimized) || stripVisible)
+  const controlsInHeader = !headerVisible && !verticalCollapse && !editMode && paneChrome(active).nativeControlsInHeader
+
+  const controlsStyle = wcOverlap
+    ? controlsInHeader
+      ? {
+          '--pane-native-controls-left': wcOverlap.x <= 0 ? `${wcOverlap.width}px` : '0px',
+          '--pane-native-controls-right': wcOverlap.x > 0 ? `${wcOverlap.width}px` : '0px'
+        } as CSSProperties
+      : { paddingTop: wcOverlap.y + wcOverlap.height }
+    : undefined
 
   // Keep the activated tab — and, on the last one, the trailing "+" — inside
   // the strip's scroll window. Opening a tab past the right edge otherwise
@@ -431,7 +441,7 @@ export function TreeGroup({
         setMenuPane((e.target as HTMLElement).closest('[data-tree-tab]')?.getAttribute('data-tree-tab') ?? undefined)
       }}
       ref={ref}
-      style={wcOverlap ? { paddingTop: wcOverlap.y + wcOverlap.height } : undefined}
+      style={controlsStyle}
     >
       {wcOverlap && (
         <div

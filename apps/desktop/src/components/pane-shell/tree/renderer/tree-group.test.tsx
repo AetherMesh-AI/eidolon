@@ -4,10 +4,18 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { registry } from '@/contrib/registry'
 
+import type * as Geometry from '../../geometry'
 import type { GroupNode } from '../model'
 import { $treeDragging, NEW_SESSION_DRAG, SESSION_TILE_DRAG } from '../store'
 
 import { TreeGroup } from './tree-group'
+
+const nativeOverlap = vi.hoisted(() => ({ value: null as null | { x: number; y: number; width: number; height: number } }))
+
+vi.mock('../../geometry', async importOriginal => ({
+  ...await importOriginal<typeof Geometry>(),
+  useWindowControlsOverlap: () => nativeOverlap.value
+}))
 
 let root: null | Root = null
 let container: HTMLDivElement | null = null
@@ -53,10 +61,28 @@ afterEach(() => {
   root = null
   container = null
   disposePane = null
+  nativeOverlap.value = null
   vi.unstubAllGlobals()
 })
 
 describe('TreeGroup', () => {
+  it.each([{ x: 0, side: 'left' }, { x: 700, side: 'right' }])('publishes the $side native corner to an owning header and restores vertical clearance for tabs', ({ x, side }) => {
+    nativeOverlap.value = { x, y: 0, width: 100, height: 34 }
+    vi.stubGlobal('CSS', { escape: (value: string) => value })
+    disposePane = registry.register({
+      area: 'panes', id: 'inset-owner', title: 'Inset owner',
+      data: { nativeControlsInHeader: true }, render: () => <div>Header owns native inset</div>
+    })
+    const node: GroupNode = { id: 'inset-zone', type: 'group', panes: ['inset-owner'], active: 'inset-owner', tabStrip: 'never' }
+    render(<TreeGroup node={node} />)
+    const group = () => globalThis.document.querySelector<HTMLElement>('[data-tree-group="inset-zone"]')!
+    expect(group().style.paddingTop).toBe('')
+    expect(group().style.getPropertyValue(`--pane-native-controls-${side}`)).toBe('100px')
+    render(<TreeGroup node={{ ...node, tabStrip: 'always' }} />)
+    expect(group().style.paddingTop).toBe('34px')
+    expect(group().style.getPropertyValue(`--pane-native-controls-${side}`)).toBe('')
+  })
+
   it('points the docked-zone chevron in the collapse or restore action direction', () => {
     disposePane = registry.register({
       area: 'panes',
