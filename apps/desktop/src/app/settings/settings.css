@@ -191,9 +191,6 @@
 /* Keep the overview's primary controls visible, with every alert kind present.
    Context/fallback fields retain their mounted configuration owner in a disclosure. */
 .eid-settings-cards:not(.eid-settings-model-only) > .eid-settings-card:not(.eid-settings-card-editor) { min-height: 112px; }
-@media (min-width: 1251px) {
-  .eid-settings-cards:not(.eid-settings-model-only) .eid-settings-notification-kinds { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 16px; }
-}
 
 /* Keep every overview switch visible; explain each kind in a keyboard-accessible
    disclosure instead of letting seven descriptions stretch both first-row cards. */
@@ -246,7 +243,11 @@
 /* Configuration occupies the middle row; shorter summaries form the bottom band. */
 .eid-settings-heading { padding-block: 24px 6px; }
 .eid-settings-layout > aside button[data-tour^="nav-"] { padding-block: 3px; min-height: 56px; }
-.eid-settings-cards:not(.eid-settings-model-only) .eid-settings-notification-kinds { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; }
+/* Preserve one vertical list and its focus outlines inside the compact editor. */
+.eid-settings-cards:not(.eid-settings-model-only) .eid-settings-notification-kinds { display: grid; grid-template-columns: minmax(0, 1fr); max-height: 180px; overflow-y: auto; padding: 7px; margin: -7px; scroll-padding: 7px; }
+@media (min-width: 1251px) {
+  .eid-settings-cards:not(.eid-settings-model-only) > :is([data-section="config:workspace"], [data-section="config:safety"]) { min-height: 275px; }
+}
 .eid-settings-cards:not(.eid-settings-model-only) .settings-row:has([role="switch"]) > div { min-height: 36px; padding-block: 3px; gap: 8px; }
 .eid-settings-cards:not(.eid-settings-model-only) .eid-settings-notification-kinds .settings-row > div { min-height: 36px; }
 .eid-settings-cards:not(.eid-settings-model-only) .settings-row:has([role="switch"]) > div > div:first-child > div + div { margin-top: 1px; font-size: 11px; line-height: 13px; }

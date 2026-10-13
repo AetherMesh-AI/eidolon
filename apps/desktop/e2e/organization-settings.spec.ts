@@ -196,8 +196,14 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
   // Reference first-row height is about 295px. Keep the real controls within a
   // small content allowance, preserving controls and their focus outlines.
   expect(Math.max(...cards.map(card => card.height))).toBeLessThanOrEqual(300)
-  // Overview content uses the page scroller, with secondary controls disclosed
-  // explicitly. All notification kinds remain directly reachable.
+  const middleCards = await settings.locator('.eid-settings-cards > :is([data-section="config:workspace"], [data-section="config:safety"])').evaluateAll(elements => elements.map(element => element.getBoundingClientRect().toJSON()))
+  expect(middleCards).toHaveLength(2)
+  expect(middleCards.every(card => card.height >= 275 && card.height <= 285)).toBe(true)
+  expect(Math.abs(middleCards[0].top - middleCards[1].top)).toBeLessThanOrEqual(1)
+  const bottomCards = await settings.locator('.eid-settings-cards > :is([data-section="providers"], [data-section="config:appearance"])').evaluateAll(elements => elements.map(element => element.getBoundingClientRect().toJSON()))
+  expect(bottomCards.every(card => card.top > middleCards[0].bottom && card.bottom <= 915)).toBe(true)
+  // The page owns overview scrolling, with a bounded notification list preserving
+  // one switch column. Secondary editors retain their native disclosures.
   const advancedModel = settings.locator('.eid-settings-model-advanced')
   await expect(advancedModel).not.toHaveAttribute('open', '')
   const advancedSummary = advancedModel.locator('summary')
@@ -239,6 +245,12 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
   await expect(approvalSwitch).toHaveAttribute('aria-checked', beforeApproval!)
   const notificationRows = await notifications.locator('.settings-row:has([role="switch"]) > div').evaluateAll(rows => rows.map(row => row.getBoundingClientRect().height))
   expect(notificationRows.every(height => height >= 34 && height <= 38)).toBe(true)
+  const switchRects = await notifications.getByRole('switch').evaluateAll(elements => elements.map(element => element.getBoundingClientRect().toJSON()))
+  expect(Math.max(...switchRects.map(rect => rect.right)) - Math.min(...switchRects.map(rect => rect.right))).toBeLessThanOrEqual(1)
+  expect(switchRects.every((rect, index) => index === 0 || rect.top > switchRects[index - 1].bottom)).toBe(true)
+  const notificationList = notifications.locator('.eid-settings-notification-kinds')
+  expect(await notificationList.evaluate(element => element.scrollHeight > element.clientHeight + 1)).toBe(true)
+  focusChecks.push(await verifyKeyboardFocus(page, notifications.getByRole('switch').last(), 'overview final notification kind in scroll list'))
   await expect(notifications.getByRole('switch').last()).toBeInViewport()
   const enabled = notifications.getByRole('switch').first()
   const beforeConfig = readFileSync(configPath, 'utf8')
