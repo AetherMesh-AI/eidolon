@@ -1270,7 +1270,7 @@ test('keeps workspace controls and loaded-record inspection usable without execu
     await page.keyboard.press('Escape')
     await page.evaluate(() => { location.hash = '/home' })
 
-    for (const [width, height, zoom] of [[1536, 961, 1], [1280, 720, 1], [760, 900, 1], [1280, 720, 2]]) {
+    for (const [width, height, zoom] of [[1536, 961, 1], [1280, 720, 1], [1120, 720, 1], [760, 900, 1], [1280, 720, 2]]) {
       await resize(width, height, zoom)
       await expect(header).toHaveCount(1)
       await expect(page.getByRole('contentinfo', { name: 'System health', exact: true })).toHaveCount(1)
