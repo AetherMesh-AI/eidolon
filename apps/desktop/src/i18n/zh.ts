@@ -1,5 +1,6 @@
 import { defineFieldCopy } from '@/app/settings/field-copy'
 
+import { customEndpointsZh } from './custom-endpoints'
 import { organizationConversationsZh } from './organization-conversations'
 import { organizationFoundationEn } from './organization-foundation'
 import { organizationHomeEn, organizationWorkspaceZh } from './organization-home'
@@ -16,6 +17,7 @@ import { settingsWorkspaceEn } from './settings-workspace'
 import type { Translations } from './types'
 
 export const zh: Translations = {
+  customEndpoints: customEndpointsZh,
   organizationMetadata: organizationMetadataZh,
   organizationOwnerChat: organizationOwnerChatZh,
   organizationConversations: organizationConversationsZh,
@@ -546,7 +548,7 @@ export const zh: Translations = {
       providers: '提供方',
       providerAccounts: '账号',
       providerApiKeys: 'API 密钥',
-      providerCustomEndpoints: '自定义端点',
+      providerCustomEndpoints: customEndpointsZh.heading,
       providerLocalModels: '本地模型',
       gateway: '网关',
       apiKeys: '工具与密钥',

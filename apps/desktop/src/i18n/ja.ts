@@ -1,5 +1,6 @@
 import { defineFieldCopy } from '@/app/settings/field-copy'
 
+import { customEndpointsJa } from './custom-endpoints'
 import { defineLocale } from './define-locale'
 import { organizationConversationsJa } from './organization-conversations'
 import { organizationWorkspaceJa } from './organization-home'
@@ -14,6 +15,7 @@ import { organizationSurfacesJa } from './organization-surfaces'
 import { organizationWorkJa } from './organization-work'
 
 export const ja = defineLocale({
+  customEndpoints: customEndpointsJa,
   organizationMetadata: organizationMetadataJa,
   organizationSurfaces: organizationSurfacesJa,
   organizationHome: { ...organizationOverviewJa, ...organizationExecutiveMessageJa, memberMessages: organizationMemberMessagesJa, workspace: organizationWorkspaceJa, detail: { ...organizationObjectiveDetailJa, ...organizationHomeCountsJa } },
@@ -448,7 +450,7 @@ export const ja = defineLocale({
       providers: 'プロバイダー',
       providerAccounts: 'アカウント',
       providerApiKeys: 'API キー',
-      providerCustomEndpoints: 'カスタムエンドポイント',
+      providerCustomEndpoints: customEndpointsJa.heading,
       providerLocalModels: 'ローカルモデル',
       gateway: 'ゲートウェイ',
       apiKeys: 'ツールとキー',

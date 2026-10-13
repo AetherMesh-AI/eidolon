@@ -1,5 +1,6 @@
 import type { TipId } from '@/lib/tips/catalog'
 
+import type { customEndpointsEn } from './custom-endpoints'
 import type { OrganizationConversationsCopy } from './organization-conversations'
 import type { OrganizationFoundationCopy } from './organization-foundation'
 import type { OrganizationHomeCopy } from './organization-home'
@@ -60,6 +61,7 @@ interface AuxTaskCopy {
 }
 
 export interface Translations {
+  customEndpoints: typeof customEndpointsEn
   organizationMetadata: typeof organizationMetadataEn
   organizationSurfaces: typeof organizationSurfacesEn
   settingsWorkspace: typeof settingsWorkspaceEn

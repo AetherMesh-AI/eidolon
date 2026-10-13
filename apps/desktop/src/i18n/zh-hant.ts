@@ -1,5 +1,6 @@
 import { defineFieldCopy } from '@/app/settings/field-copy'
 
+import { customEndpointsZhHant } from './custom-endpoints'
 import { defineLocale } from './define-locale'
 import { organizationConversationsZhHant } from './organization-conversations'
 import { organizationWorkspaceZhHant } from './organization-home'
@@ -14,6 +15,7 @@ import { organizationSurfacesZhHant } from './organization-surfaces'
 import { organizationWorkZhHant } from './organization-work'
 
 export const zhHant = defineLocale({
+  customEndpoints: customEndpointsZhHant,
   organizationMetadata: organizationMetadataZhHant,
   organizationSurfaces: organizationSurfacesZhHant,
   organizationHome: { ...organizationOverviewZhHant, ...organizationExecutiveMessageZhHant, memberMessages: organizationMemberMessagesZhHant, workspace: organizationWorkspaceZhHant, detail: { ...organizationObjectiveDetailZhHant, ...organizationHomeCountsZhHant } },
@@ -430,7 +432,7 @@ export const zhHant = defineLocale({
       providers: '提供方',
       providerAccounts: '帳號',
       providerApiKeys: 'API 金鑰',
-      providerCustomEndpoints: '自訂端點',
+      providerCustomEndpoints: customEndpointsZhHant.heading,
       providerLocalModels: '本地模型',
       gateway: '閘道',
       apiKeys: '工具與金鑰',

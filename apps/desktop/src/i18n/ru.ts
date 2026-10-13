@@ -1,5 +1,6 @@
 import { defineFieldCopy } from '@/app/settings/field-copy'
 
+import { customEndpointsRu } from './custom-endpoints'
 import { defineLocale } from './define-locale'
 import { organizationConversationsRu } from './organization-conversations'
 import { organizationDispatchRu } from './organization-dispatch-copy'
@@ -35,6 +36,7 @@ const RU_NOUN = (count: number | string, one: string, few: string, many: string)
 }
 
 export const ru = defineLocale({
+  customEndpoints: customEndpointsRu,
   organizationMetadata: organizationMetadataRu,
   organizationWork: {
     requester: 'Инициатор запроса',
@@ -459,7 +461,7 @@ export const ru = defineLocale({
       providers: 'Провайдеры',
       providerAccounts: 'Аккаунты',
       providerApiKeys: 'API-ключи',
-      providerCustomEndpoints: 'Свои эндпоинты',
+      providerCustomEndpoints: customEndpointsRu.heading,
       gateway: 'Шлюзы',
       apiKeys: 'Инструменты и ключи',
       keybinds: 'Горячие клавиши',

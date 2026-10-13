@@ -1,3 +1,4 @@
+import { customEndpointsAr } from './custom-endpoints'
 import { defineLocale } from './define-locale'
 import { organizationConversationsAr } from './organization-conversations'
 import { organizationDispatchAr } from './organization-dispatch-copy'
@@ -12,6 +13,7 @@ import { organizationOwnerChatAr } from './organization-owner-chat'
 import { organizationSurfacesAr } from './organization-surfaces'
 
 export const ar = defineLocale({
+  customEndpoints: customEndpointsAr,
   organizationMetadata: organizationMetadataAr,
   organizationWork: {
     requester: 'مقدّم الطلب',
@@ -397,6 +399,7 @@ export const ar = defineLocale({
       providers: 'المزودون',
       providerAccounts: 'الحسابات',
       providerApiKeys: 'مفاتيح API',
+      providerCustomEndpoints: customEndpointsAr.heading,
       gateway: 'البوابة',
       apiKeys: 'الأدوات والمفاتيح',
       keysTools: 'الأدوات',

@@ -1,5 +1,6 @@
 import { FIELD_DESCRIPTIONS, FIELD_LABELS } from '@/app/settings/constants'
 
+import { customEndpointsEn } from './custom-endpoints'
 import { organizationConversationsEn } from './organization-conversations'
 import { organizationFoundationEn } from './organization-foundation'
 import { organizationHomeEn } from './organization-home'
@@ -12,6 +13,7 @@ import { settingsWorkspaceEn } from './settings-workspace'
 import type { Translations } from './types'
 
 export const en: Translations = {
+  customEndpoints: customEndpointsEn,
   organizationMetadata: organizationMetadataEn,
   organizationOwnerChat: organizationOwnerChatEn,
   organizationConversations: organizationConversationsEn,
@@ -566,7 +568,7 @@ export const en: Translations = {
       providers: 'Providers',
       providerAccounts: 'Accounts',
       providerApiKeys: 'API keys',
-      providerCustomEndpoints: 'Custom Endpoints',
+      providerCustomEndpoints: customEndpointsEn.heading,
       providerLocalModels: 'Local Models',
       gateway: 'Gateways',
       apiKeys: 'Tools & Keys',
