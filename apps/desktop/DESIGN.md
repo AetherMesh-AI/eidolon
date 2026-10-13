@@ -501,6 +501,8 @@ At the 1536px reference viewport, search retains its 380px width and aligns near
 x887. Profile/settings controls share the organization group; attention and owner
 controls remain on the right. The right reservation includes native window
 clearance, and smaller windows may reduce search width before compact reflow.
+Text reflow rules exclude the Settings/Search icon button, which retains its
+36px square hit area at wide, compact and zoomed viewports.
 Wide Home activity cards stay within the 195–225px reference range. Event text
 and timestamps use the full card width below the member identity, without
 inventing extra events or a causal connection between independent records.

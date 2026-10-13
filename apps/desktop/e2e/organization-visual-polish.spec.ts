@@ -1299,9 +1299,13 @@ test('keeps workspace controls and loaded-record inspection usable without execu
         header: await header.boundingBox(),
         search: await header.getByRole('button', { name: 'Search loaded records', exact: true }).boundingBox(),
         identity: await header.locator('.eid-workspace-organization-trigger').boundingBox(),
+        iconTarget: await header.locator('button[data-size=icon]').boundingBox(),
         actions: await header.locator('.eid-workspace-actions').boundingBox(),
         nativeRightInset: await header.evaluate(element => Number.parseFloat(getComputedStyle(element).paddingRight))
       }
+
+      expect(headerGeometry.iconTarget!.width, 'icon control preserves its minimum hit width').toBeGreaterThanOrEqual(36)
+      expect(headerGeometry.iconTarget!.height, 'icon control preserves its minimum hit height').toBeGreaterThanOrEqual(36)
 
       if (width >= 1280 && zoom === 1) {
         expect(headerGeometry.header!.height, 'identity keeps the existing page origin').toBe(65)

@@ -11,9 +11,9 @@
 .eid-workspace-header .eid-workspace-actions > button[data-size=lg] { padding-inline: 4px; }
 .eid-workspace-header .eid-workspace-profile-trigger { padding-inline: 8px; }
 /* Reflow complete identity labels instead of shrinking them into ambiguous fragments. */
-.eid-workspace-identity > button, .eid-workspace-actions > button[data-size=lg] { flex: 0 1 auto; min-width: 28px; max-width: 100%; height: auto; white-space: normal; }
-.eid-workspace-identity > button > span, .eid-workspace-actions > button[data-size=lg] > span { min-width: 0; }
-.eid-workspace-identity > button > span, .eid-workspace-actions > button[data-size=lg] > span { overflow-wrap: anywhere; }
+.eid-workspace-identity > button[data-size=lg], .eid-workspace-actions > button[data-size=lg] { flex: 0 1 auto; min-width: 28px; max-width: 100%; height: auto; white-space: normal; }
+.eid-workspace-identity > button[data-size=lg] > span, .eid-workspace-actions > button[data-size=lg] > span { min-width: 0; }
+.eid-workspace-identity > button[data-size=lg] > span, .eid-workspace-actions > button[data-size=lg] > span { overflow-wrap: anywhere; }
 .eid-workspace-connection { color: var(--ui-text-secondary); font-size: 11px; }
 .eidolon.eid-workspace-header :is(button, a):focus-visible, .eid-workspace-search :is(button, a, input):focus-visible, .eid-owner-editor :is(button, a, input):focus-visible { outline: 3px solid var(--ui-accent); outline-offset: 2px; transition-property: color, background-color, border-color, box-shadow; }
 
@@ -41,7 +41,7 @@
      auto account column reduce the organization name to a character per line. */
   .eid-workspace-header { display: flex; flex-wrap: wrap; gap: 6px; min-height: 34px; padding: 5px max(8px, var(--titlebar-tools-right, 8px), var(--pane-native-controls-right, 0px)) 5px max(8px, var(--pane-native-controls-left, 0px)); }
   .eid-workspace-identity, .eid-workspace-actions { display: contents; min-width: 0; }
-  .eidolon.eid-workspace-header button { min-height: 18px; height: auto; line-height: 18px; padding: 0 4px; font-size: 11px; max-width: 100%; }
+  .eidolon.eid-workspace-header button:not([data-size=icon]) { min-height: 18px; height: auto; line-height: 18px; padding: 0 4px; font-size: 11px; max-width: 100%; }
   .eid-workspace-search-trigger { width: auto; }
   .eid-workspace-action-label, .eid-workspace-connection { display: none; }
 
