@@ -712,7 +712,7 @@
 
 .eid-messages-view .eid-owner-chat-heading .eid-message-recipient > .eid-avatar { width: 56px; height: 56px; font-size: 20px; flex: none; }
 .eid-messages-view .eid-message-members nav { margin-inline: -18px; padding-inline: 0; }
-.eid-messages-view .eid-message-members nav button { padding-inline: 30px; border-radius: 0; }
+.eid-messages-view .eid-message-members nav button { padding-inline: 36px; border-radius: 0; }
 .eid-messages-view .eid-message-members nav button:focus-visible { outline-offset: -3px; }
 .eid-messages-view .eid-owner-chat-composer textarea { border-radius: 10px; }
 @media (min-width: 1201px) { .eid-messages-view .eid-message-conversation { padding-bottom: 10px; } }
