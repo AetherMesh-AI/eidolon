@@ -6,6 +6,7 @@ import { organizationWorkspaceRu } from './organization-home'
 import { organizationHomeCountsRu } from './organization-home-counts'
 import { organizationExecutiveMessageRu, organizationMemberMessagesRu } from './organization-member-messages'
 import { organizationMetadataRu } from './organization-metadata'
+import { organizationObjectiveDetailRu } from './organization-objective-detail'
 import { organizationOverviewRu } from './organization-overview'
 import { organizationOwnerChatRu } from './organization-owner-chat'
 import { organizationSurfacesRu } from './organization-surfaces'
@@ -39,7 +40,7 @@ export const ru = defineLocale({
     observationUnsupported: 'Этот сервер не поддерживает просмотр состояния организации.',
   },
   organizationSurfaces: organizationSurfacesRu,
-  organizationHome: { ...organizationOverviewRu, ...organizationExecutiveMessageRu, memberMessages: organizationMemberMessagesRu, workspace: organizationWorkspaceRu, detail: organizationHomeCountsRu },
+  organizationHome: { ...organizationOverviewRu, ...organizationExecutiveMessageRu, memberMessages: organizationMemberMessagesRu, workspace: organizationWorkspaceRu, detail: { ...organizationObjectiveDetailRu, ...organizationHomeCountsRu } },
   organizationOwnerChat: organizationOwnerChatRu,
   organizationConversations: organizationConversationsRu,
   sessionImport: {

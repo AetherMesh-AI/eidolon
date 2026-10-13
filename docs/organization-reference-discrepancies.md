@@ -337,3 +337,25 @@ all five non-English locales, dark/light, normal desktop and 200% zoom. Existing
 read-only RPC and zero-provider assertions remain. This is preparation, not
 visual acceptance; the full reference discrepancy checklist remains open.
 These UI changes are excluded from consolidated PR133.
+
+UI baseline 82e292c0fb931b1f79b1e251c51c41ab450eba84 (tree
+ff08810dec1cb1580038709e7d9aaff2d57036e7), run 38323021547, passed
+1,495 selected component/helper tests and 44 native cases (41 standard plus
+three directory cases; no native skips/flaky/unexpected results). Artifact
+11780915305 SHA256 e2823163da458a644959f644955e7b8444c7e0658886826a465928cef719cd08
+was verified against the exact source: 34 inline provenance records and ten
+file provenance records. Representative English objective, Japanese and Chinese
+lists, Traditional Chinese objective, Arabic RTL objective and Russian 200%
+objective captures were actually inspected. The new details and list copy are
+visible; large text uses reachable scrolling, not simultaneous whole-page fit.
+This is not final reference parity or a completed all-screen gallery.
+
+Those pixels exposed inherited English overview labels. The next UI-only slice
+provides full objective-overview copy for all five non-English catalogs, retaining
+existing localized plural functions, authored phase/task text, review truth and
+controls. Objective inspector and other legacy labels still require follow-up.
+It also adds the visual suite's font/two-animation-frame barrier before native
+directory captures: PR133's final artifact had passing DOM assertions but several
+PNGs still showed earlier frames. Original artifacts are preserved. This capture
+change must be validated with fresh pixels; it does not change directory behavior,
+assertion deadlines, retries or production activation.

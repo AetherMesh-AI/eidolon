@@ -2,6 +2,9 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { MemoryRouter } from 'react-router'
 import { afterEach, expect, it, vi } from 'vitest'
 
+import { TRANSLATIONS } from '@/i18n/catalog'
+import { I18nProvider } from '@/i18n/context'
+
 import { ObjectiveProgress } from './objective-progress'
 import { objectiveWorkData } from './objective-work-data'
 import type { Objective, OrganizationSnapshot, OrganizationTask, OrganizationWorkPackage } from './types'
@@ -101,4 +104,30 @@ it('shows only retained objective details and preserves authored phase text', ()
   expect(details.getByText(changed.priority)).toBeTruthy()
   expect(openWork).not.toHaveBeenCalled()
   expect(openRequests).not.toHaveBeenCalled()
+})
+
+
+it.each(['ja', 'zh', 'zh-hant', 'ar', 'ru'] as const)('keeps review truth and authored work while localizing the overview (%s)', locale => {
+  const record = { ...objective, phase: 'Recorded phase العربية', workPackages: [assignment] }
+  const state = { ...snapshot, objectives: [record] }
+  const before = JSON.stringify(state)
+  const copy = TRANSLATIONS[locale].organizationHome.detail
+  const openWork = vi.fn()
+  const openRequests = vi.fn()
+  render(<I18nProvider configClient={null} initialLocale={locale}><ObjectiveProgress objective={record} onReviewRequests={openRequests} onReviewWork={openWork} snapshot={state} /></I18nProvider>)
+  const overview = within(screen.getByRole('region', { name: copy.overview }))
+  expect(overview.getByRole('heading', { name: copy.progress })).toBeTruthy()
+  expect(overview.getByText(copy.progressNote)).toBeTruthy()
+  expect(overview.getByRole('region', { name: copy.delivery }).textContent).toContain(copy.notAccepted)
+  expect(overview.getByText(task.title)).toBeTruthy()
+  expect(overview.getByText(assignment.description)).toBeTruthy()
+  expect(overview.getAllByText(record.phase)).toHaveLength(2)
+  expect(overview.queryByRole('button', { name: 'Inspect work and evidence' })).toBeNull()
+  expect(openWork).not.toHaveBeenCalled()
+  expect(openRequests).not.toHaveBeenCalled()
+  fireEvent.click(overview.getByRole('button', { name: copy.inspectWork }))
+  fireEvent.click(overview.getByRole('button', { name: copy.inspectRequests }))
+  expect(openWork).toHaveBeenCalledOnce()
+  expect(openRequests).toHaveBeenCalledOnce()
+  expect(JSON.stringify(state)).toBe(before)
 })

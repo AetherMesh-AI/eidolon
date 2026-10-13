@@ -1,19 +1,18 @@
 import { describe, expect, it } from 'vitest'
 
 import { TRANSLATIONS } from './catalog'
-
 import { organizationHomeEn } from './organization-home'
 import { organizationHomeCountsAr, organizationHomeCountsJa, organizationHomeCountsRu, organizationHomeCountsZh, organizationHomeCountsZhHant } from './organization-home-counts'
 
 describe('organization count summaries', () => {
-  it('loads count translations through each catalog while preserving unrelated fallback and workspace copy', () => {
-    for (const [locale, copy] of [
-      ['ja', organizationHomeCountsJa], ['zh', organizationHomeCountsZh], ['zh-hant', organizationHomeCountsZhHant],
-      ['ar', organizationHomeCountsAr], ['ru', organizationHomeCountsRu]
+  it('loads count translations alongside localized overview and workspace copy', () => {
+    for (const [locale, copy, overview] of [
+      ['ja', organizationHomeCountsJa, '目標の概要'], ['zh', organizationHomeCountsZh, '目标概览'], ['zh-hant', organizationHomeCountsZhHant, '目標概覽'],
+      ['ar', organizationHomeCountsAr, 'نظرة عامة على الهدف'], ['ru', organizationHomeCountsRu, 'Обзор цели']
     ] as const) {
       const home = TRANSLATIONS[locale].organizationHome
       expect(home.detail.moreTasks(2, '٢')).toBe(copy.moreTasks(2, '٢'))
-      expect(home.detail.overview).toBe(organizationHomeEn.detail.overview)
+      expect(home.detail.overview).toBe(overview)
       expect(home.workspace.search).not.toBe(organizationHomeEn.workspace.search)
     }
   })
@@ -46,7 +45,8 @@ describe('organization count summaries', () => {
       ['ar', organizationHomeCountsAr], ['ru', organizationHomeCountsRu]
     ] as const) {
       const formatted = new Intl.NumberFormat(locale).format(count)
-      for (const summarize of Object.values(copy)) expect(summarize(count, formatted)).toContain(formatted)
+
+      for (const summarize of Object.values(copy)) {expect(summarize(count, formatted)).toContain(formatted)}
     }
   })
 })

@@ -6,6 +6,7 @@ import { organizationHomeEn, organizationWorkspaceZh } from './organization-home
 import { organizationHomeCountsZh } from './organization-home-counts'
 import { organizationExecutiveMessageZh, organizationMemberMessagesZh } from './organization-member-messages'
 import { organizationMetadataZh } from './organization-metadata'
+import { organizationObjectiveDetailZh } from './organization-objective-detail'
 import { organizationOverviewZh } from './organization-overview'
 import { organizationOwnerChatZh } from './organization-owner-chat'
 import { organizationRosterZh } from './organization-roster'
@@ -19,7 +20,7 @@ export const zh: Translations = {
   organizationOwnerChat: organizationOwnerChatZh,
   organizationConversations: organizationConversationsZh,
   organizationSurfaces: organizationSurfacesZh,
-  organizationHome: { ...organizationHomeEn, ...organizationOverviewZh, ...organizationExecutiveMessageZh, memberMessages: organizationMemberMessagesZh, workspace: organizationWorkspaceZh, detail: { ...organizationHomeEn.detail, ...organizationHomeCountsZh } },
+  organizationHome: { ...organizationHomeEn, ...organizationOverviewZh, ...organizationExecutiveMessageZh, memberMessages: organizationMemberMessagesZh, workspace: organizationWorkspaceZh, detail: { ...organizationObjectiveDetailZh, ...organizationHomeCountsZh } },
   settingsWorkspace: settingsWorkspaceEn,
   organizationFoundation: organizationFoundationEn,
   organizationWork: organizationWorkZh,

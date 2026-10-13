@@ -1395,6 +1395,7 @@ for (const locale of ['ja', 'ar', 'ru'] as const) {
 
 const translatedSurfaceExpectations = {
   "Ja": {
+    objectiveOverview: "目標の概要",
     objectiveSearch: "目標を検索",
     objectiveRecord: "目標の詳細",
     "search": "メンバーを検索",
@@ -1409,6 +1410,7 @@ const translatedSurfaceExpectations = {
     "findAgent": "エージェントを検索"
   },
   "Zh": {
+    objectiveOverview: "目标概览",
     objectiveSearch: "搜索目标",
     objectiveRecord: "目标详情",
     "search": "搜索成员",
@@ -1423,6 +1425,7 @@ const translatedSurfaceExpectations = {
     "findAgent": "查找智能体"
   },
   "ZhHant": {
+    objectiveOverview: "目標概覽",
     objectiveSearch: "搜尋目標",
     objectiveRecord: "目標詳情",
     "search": "搜尋成員",
@@ -1437,6 +1440,7 @@ const translatedSurfaceExpectations = {
     "findAgent": "尋找代理"
   },
   "Ar": {
+    objectiveOverview: "نظرة عامة على الهدف",
     objectiveSearch: "البحث في الأهداف",
     objectiveRecord: "تفاصيل الهدف",
     "search": "البحث عن أعضاء",
@@ -1451,6 +1455,7 @@ const translatedSurfaceExpectations = {
     "findAgent": "البحث عن وكيل"
   },
   "Ru": {
+    objectiveOverview: "Обзор цели",
     objectiveSearch: "Поиск целей",
     objectiveRecord: "Сведения о цели",
     "search": "Поиск участников",
@@ -1520,6 +1525,9 @@ for (const [locale, suffix, dark, light] of [
             await expect(page.locator('.eid-list').getByRole('link', { name: /Review the workspace navigation/ })).toHaveCount(0)
             await search.fill('')
           } else if (route === '/objectives/release') {
+            await expect(page.getByRole('region', { name: copy.objectiveOverview, exact: true })).toBeVisible()
+            await expect(page.getByRole('heading', { name: 'Progress overview', exact: true })).toHaveCount(0)
+            await expect(page.getByRole('button', { name: 'Inspect work and evidence', exact: true })).toHaveCount(0)
             const details = page.getByRole('region', { name: copy.objectiveRecord, exact: true })
             await expect(details).toBeVisible()
             await expect(details).toContainText('Avery')
