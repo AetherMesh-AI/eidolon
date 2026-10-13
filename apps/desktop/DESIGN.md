@@ -477,11 +477,18 @@ codes retain their explicit label instead of being forced into the sequence.
 Revision diagnostics live in disclosures; current dispatch/priority, running
 work, review requirements and errors remain visible.
 
-Settings overview summaries read the existing profile-scoped configuration cache
-and the existing appearance context. They show a fixed list of non-secret saved
+Settings overview summaries capture their source and profile in both the read
+and cache key, independently of the editor's ambient cache. A source change waits
+for its own first read; late prior-owner results cannot populate the new summary.
+Editor cache writes trigger revalidation without replacing editor drafts. They
+show a fixed list of non-secret saved
 fields, preserve explicit false/zero values and distinguish missing/error states.
 A configured provider does not establish connection health. The original Model,
 Notifications and destination pages continue to own every write.
+
+Priority details always show the authoritative current revision, including on
+terminal or unsupported records. The expected revision of a draft or exact retry
+is labeled separately; receiving a newer snapshot never rewrites retained intent.
 
 The header's decorative monogram derives only from the saved organization name;
 an unnamed organization uses the neutral organization glyph. Its second line is

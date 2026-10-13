@@ -1,11 +1,17 @@
 import { useStore } from '@nanostores/react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect } from 'react'
 
+import { getApiRequestConnection, getHermesConfigRecord } from '@/eidolon'
 import { useI18n } from '@/i18n'
+import { $pendingConnectionId } from '@/store/connections'
+import { $activeGatewayProfile, $gatewaySwapTarget } from '@/store/profile'
+import { $connection } from '@/store/session'
 import { $settingsRequestProfile } from '@/store/settings-scope'
 import { useTheme } from '@/themes/context'
 import type { HermesConfigRecord } from '@/types/eidolon'
 
-import { useHermesConfigRecord } from '../hooks/use-config-record'
+import { HERMES_CONFIG_KEY, hermesConfigKey } from '../hooks/use-config-record'
 
 import { FIELD_LABELS } from './constants'
 import { fieldCopyForSchemaKey } from './field-copy'
@@ -49,10 +55,35 @@ export function SettingsConfigSummary({ section, record, loading = false, failed
 }
 
 export function SavedSettingsSummary({ section }: { section: SummarySection }) {
-  const profile = useStore($settingsRequestProfile)
-  const { data, isPending, isError } = useHermesConfigRecord(profile)
+  const requestedProfile = useStore($settingsRequestProfile)
+  const activeProfile = useStore($activeGatewayProfile)
+  const connection = useStore($connection)
+  const pending = useStore($pendingConnectionId)
+  const swapping = useStore($gatewaySwapTarget)
+  const client = useQueryClient()
+  const profile = requestedProfile ?? activeProfile
+  // Capture the REST route and non-secret descriptor identity in both the read
+  // and its cache owner. A late prior-owner response can only populate its own key.
+  const connectionId = getApiRequestConnection()
+  const owner = JSON.stringify([connectionId, connection?.baseUrl, connection?.remoteIdentity, connection?.authenticationIdentity, connection?.oauthSessionIdentity, profile])
+  const enabled = !!connection && !pending && !swapping
 
-  return <SettingsConfigSummary failed={isError} loading={isPending} record={data} section={section} />
+  const { data, isPending, isError } = useQuery({
+    queryKey: [...HERMES_CONFIG_KEY, 'saved-summary', owner],
+    queryFn: () => getHermesConfigRecord({ connectionId, profile }),
+    enabled,
+    staleTime: 0
+  })
+
+  // Existing editors keep their cache and draft ownership. Their write-through
+  // only requests an independent read from this summary's captured owner.
+  useEffect(() => client.getQueryCache().subscribe(event => {
+    if (enabled && event.type === 'updated' && event.action.type === 'success' && event.action.manual && JSON.stringify(event.query.queryKey) === JSON.stringify(hermesConfigKey(requestedProfile))) {
+      void client.invalidateQueries({ queryKey: [...HERMES_CONFIG_KEY, 'saved-summary', owner], exact: true }, { cancelRefetch: false })
+    }
+  }), [client, enabled, owner, requestedProfile])
+
+  return <SettingsConfigSummary failed={enabled && isError} loading={!enabled || isPending} record={enabled ? data : undefined} section={section} />
 }
 
 export function AppearanceSummary() {
