@@ -65,7 +65,7 @@ export function WorkspaceHeader() {
 
   return <header aria-label={copy.heading} className="eidolon eid-workspace-header" data-slot="workspace-header">
     <div className="eid-workspace-identity">
-      <OrganizationDirectoryControl label={identity.view.descriptor && identity.view.descriptor.state !== 'unsupported' ? saved?.displayName ?? t.organizationMetadata.unnamed : undefined} />
+      <OrganizationDirectoryControl label={identity.view.descriptor && identity.view.descriptor.state !== 'unsupported' ? saved?.displayName ?? t.organizationMetadata.unnamed : undefined} organizationName={saved?.displayName} />
       {/* The switcher owns registry initialization and change subscriptions, even with one source. */}
       <ConnectionSwitcher compact onConnect={() => navigateToWorkspacePage(navigate, '/settings?tab=connections')} preserveRoute={() => isWorkspacePageRoute(locationRef.current.pathname)} />
     </div>

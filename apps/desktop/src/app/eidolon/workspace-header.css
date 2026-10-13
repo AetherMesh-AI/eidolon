@@ -1,6 +1,6 @@
 .eid-workspace-shell { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; overflow: clip; }
 .eid-workspace-body { flex: 1; min-height: 0; min-width: 0; position: relative; overflow: auto; }
-.eid-workspace-header { flex: none; display: grid; grid-template-columns: minmax(240px, 1fr) minmax(160px, 380px) minmax(320px, auto); align-items: center; gap: 16px; min-height: 65px; padding: 10px max(18px, var(--titlebar-tools-right, 18px), var(--pane-native-controls-right, 0px)) 10px max(22px, var(--pane-native-controls-left, 0px)); background: var(--ui-bg-secondary); border-bottom: 1px solid var(--ui-stroke-tertiary); -webkit-app-region: drag; }
+.eid-workspace-header { flex: none; display: grid; grid-template-columns: minmax(240px, 1fr) minmax(160px, 210px) minmax(320px, auto); align-items: center; gap: 16px; min-height: 65px; padding: 10px max(18px, var(--titlebar-tools-right, 18px), var(--pane-native-controls-right, 0px)) 10px max(22px, var(--pane-native-controls-left, 0px)); background: var(--ui-bg-secondary); border-bottom: 1px solid var(--ui-stroke-tertiary); -webkit-app-region: drag; }
 .eid-workspace-header :is(button, a, input, [data-slot=connection-switcher]) { -webkit-app-region: no-drag; }
 .eid-workspace-search-trigger { width: 100%; justify-content: flex-start; min-width: 0; white-space: normal; text-align: start; }
 .eid-workspace-identity, .eid-workspace-actions { display: flex; align-items: center; min-width: 0; gap: 8px; }
@@ -56,6 +56,18 @@
 .eid-owner-editor p { overflow-wrap: anywhere; }
 .eid-owner-editor .eid-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 .eid-workspace-organization-name { max-width: 100%; overflow-wrap: anywhere; }
+.eid-workspace-organization-copy { display: flex; flex-direction: column; align-items: flex-start; text-align: start; gap: 2px; line-height: 16px; }
+.eid-workspace-header .eid-workspace-organization-trigger { padding: 4px 10px; }
+.eid-workspace-organization-copy small { color: var(--ui-text-secondary); font-size: 10px; font-weight: 400; }
+.eid-workspace-organization-name { font-weight: 600; }
+.eid-workspace-organization-monogram { display: grid; place-items: center; flex: none; width: 32px; height: 32px; border-radius: 7px; border: 1px solid var(--ui-stroke-tertiary); background: var(--ui-bg-tertiary); color: var(--ui-text-primary); font-size: 11px; font-weight: 600; }
+.eid-workspace-header button { border-radius: 7px; }
+.eid-workspace-header .eid-workspace-search-trigger { min-height: 36px; }
+@media (max-width: 1200px) {
+  .eid-workspace-organization-copy { display: contents; }
+  .eid-workspace-organization-copy small, .eid-workspace-organization-monogram { display: none; }
+  .eid-workspace-header .eid-workspace-search-trigger { min-height: 18px; }
+}
 
 .eid-owner-editor button { transition-property: color, background-color, border-color, box-shadow; }
 

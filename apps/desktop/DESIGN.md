@@ -482,3 +482,8 @@ and the existing appearance context. They show a fixed list of non-secret saved
 fields, preserve explicit false/zero values and distinguish missing/error states.
 A configured provider does not establish connection health. The original Model,
 Notifications and destination pages continue to own every write.
+
+The header's decorative monogram derives only from the saved organization name;
+an unnamed organization uses the neutral organization glyph. Its second line is
+the localized organization label, never an invented connection or activity state.
+Compact widths hide decorative details while retaining complete action names.

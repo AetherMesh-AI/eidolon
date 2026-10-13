@@ -1281,6 +1281,18 @@ test('keeps workspace controls and loaded-record inspection usable without execu
       await expect(header).toBeInViewport({ ratio: 1 })
       expect(await header.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
 
+      const headerGeometry = {
+        header: await header.boundingBox(),
+        search: await header.getByRole('button', { name: 'Search loaded records', exact: true }).boundingBox(),
+        identity: await header.locator('.eid-workspace-organization-trigger').boundingBox()
+      }
+
+      if (width >= 1280 && zoom === 1) {
+        expect(headerGeometry.header!.height, 'identity keeps the existing page origin').toBe(65)
+        expect(headerGeometry.search!.width, 'search leaves room for complete identity and account controls').toBeLessThanOrEqual(210)
+        await expect(header.locator('.eid-workspace-organization-copy small')).toBeInViewport({ ratio: 1 })
+      }
+
       for (const button of await header.getByRole('button').all()) {
         focusChecks.push(await verifyKeyboardFocus(page, button, `Header ${mode} ${width} ${zoom} ${await button.getAttribute('aria-label')}`))
       }
@@ -1302,7 +1314,7 @@ test('keeps workspace controls and loaded-record inspection usable without execu
       writeFileSync(test.info().outputPath(name), bytes)
       const appearance = await page.locator('html').evaluate(element => ({ theme: element.getAttribute('data-hermes-theme'), dark: element.classList.contains('dark') }))
       expect(appearance).toEqual({ theme: 'nous', dark: mode === 'Dark' })
-      captures.push({ name, width, height, zoom, ...appearance, sha256: createHash('sha256').update(bytes).digest('hex') })
+      captures.push({ name, width, height, zoom, ...appearance, headerGeometry, sha256: createHash('sha256').update(bytes).digest('hex') })
       await test.info().attach(name, { body: bytes, contentType: 'image/png' })
       await page.keyboard.press('Escape')
       await expect(search).toBeHidden()

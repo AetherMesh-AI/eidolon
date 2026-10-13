@@ -172,9 +172,11 @@ it('mounts inspection safely in StrictMode, refreshes explicitly and restores re
 it.each(['en', 'ja', 'zh', 'zh-hant', 'ar', 'ru'] as const)('exposes the authored organization and localized directory action in %s without changing eligibility', async locale => {
   const label = 'Aether Research · أبحاث'
   const action = organizationDirectoryCopy[locale].heading
-  render(<I18nProvider configClient={null} initialLocale={locale}><OrganizationDirectoryControl label={label} /></I18nProvider>)
+  const ui = render(<I18nProvider configClient={null} initialLocale={locale}><OrganizationDirectoryControl label={label} organizationName={label} /></I18nProvider>)
   const trigger = screen.getByRole('button', { name: `${label} · ${action}` }) as HTMLButtonElement
   expect(trigger.textContent).toContain(label)
+  expect(trigger.querySelector('.eid-workspace-organization-monogram')?.getAttribute('aria-hidden')).toBe('true')
+  expect(trigger.querySelector('.eid-workspace-organization-monogram')?.textContent).toBe('AR')
   expect(trigger.disabled).toBe(false)
   fireEvent.click(trigger)
   expect(screen.getByRole('dialog', { name: action })).toBeTruthy()
@@ -182,6 +184,9 @@ it.each(['en', 'ja', 'zh', 'zh-hant', 'ar', 'ru'] as const)('exposes the authore
   await act(async () => { $organizationObservationSwitching.set(true) })
   expect(screen.queryByRole('dialog')).toBeNull()
   expect(trigger.disabled).toBe(true)
+  expect(request).not.toHaveBeenCalled()
+  ui.rerender(<I18nProvider configClient={null} initialLocale={locale}><OrganizationDirectoryControl /></I18nProvider>)
+  expect(screen.getByRole('button', { name: action }).querySelector('.eid-workspace-organization-monogram')?.textContent).toBe('')
   expect(request).not.toHaveBeenCalled()
 })
 
