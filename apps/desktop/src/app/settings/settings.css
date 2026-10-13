@@ -208,3 +208,15 @@
 .eid-settings-cards:not(.eid-settings-model-only) .eid-settings-card-body { margin-top: 6px; }
 .eid-settings-cards:not(.eid-settings-model-only) .eid-settings-card-body .settings-content > div { padding-block: 5px; }
 .eid-settings-cards:not(.eid-settings-model-only) :is(.eid-settings-model-advanced, .eid-settings-model-parameters, .eid-settings-notification-sound) > summary { padding-block: 6px; }
+
+/* At high zoom the headings can exhaust a fixed-height endpoint editor.
+   Keep one page scroller so every draft control and its focus ring is reachable. */
+@media (max-height: 600px) {
+  .eid-settings-page:has(.eid-custom-endpoints) { overflow-y: auto; scroll-padding: 7px; }
+  .eid-settings-page:has(.eid-custom-endpoints) .eid-settings-layout { flex: none; height: auto; overflow: visible; grid-template-rows: auto; }
+  .eid-settings-page:has(.eid-custom-endpoints) .eid-settings-main { overflow: visible; }
+  .eid-settings-page:has(.eid-custom-endpoints) .eid-settings-controls { flex: none; overflow: visible; }
+  .eid-settings-page:has(.eid-custom-endpoints) .settings-content,
+  .eid-settings-page:has(.eid-custom-endpoints) .settings-content > div { height: auto; overflow: visible; }
+  .eid-custom-endpoints :is(button, input, textarea, select) { scroll-margin: 7px; }
+}

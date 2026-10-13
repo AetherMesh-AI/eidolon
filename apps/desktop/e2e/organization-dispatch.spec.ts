@@ -5,7 +5,7 @@ import path from 'node:path'
 
 import { buildAppEnv, type MockBackendFixture, setupMockBackend, waitForAppReady } from './fixtures'
 import { verifyKeyboardFocus } from './focus-visibility'
-import { expect, test } from './test'
+import { acknowledgeExpectedErrorBanner, expect, test } from './test'
 
 let fixture: MockBackendFixture | undefined
 const root = path.resolve(import.meta.dirname, '../../..')
@@ -81,7 +81,8 @@ with s._write() as c:
 `)
   const expired = retained()
   await form.getByRole('button', { name: 'Resume dispatch', exact: true }).click()
-  await expect(form.getByRole('alert')).toContainText('Objective deadline reached')
+  const expectedDeadlineError = 'Objective deadline reached. Automatic execution has stopped; create a revised objective to authorize a new deadline. Retry sends the same change once more. Review the current value before starting a different change.'
+  await expect(form.getByRole('alert')).toHaveText(expectedDeadlineError)
   await expect(form.getByText('New dispatch paused · Dispatch revision: 3', { exact: true })).toBeVisible()
   expect(retained()).toEqual(expired)
   const states = JSON.parse(run(prelude + `print(json.dumps([s._objective_view(i)['dispatchControl'] for i in ${JSON.stringify(ids)}]))`))
@@ -91,4 +92,8 @@ with s._write() as c:
   await form.scrollIntoViewIfNeeded()
   await page.screenshot({ path: testInfo.outputPath('objective-dispatch-expired.png') })
   await testInfo.attach('dispatch-evidence', { body: JSON.stringify({ sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(), sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { cwd: root, encoding: 'utf8' }).trim(), focus, screenshot: 'objective-pause-keyboard.png', sha256: createHash('sha256').update(capture).digest('hex'), ids, changes, states, originalStatePreserved: true, deniedResumePreservedState: true, providerCalls: 0 }), contentType: 'application/json' })
+  await page.evaluate(() => { location.hash = '/home' })
+  await acknowledgeExpectedErrorBanner(page, expectedDeadlineError)
+  expect(retained()).toEqual(expired)
+  expect(mock.receivedPrompts).toHaveLength(0)
 })

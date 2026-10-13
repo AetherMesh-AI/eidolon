@@ -73,7 +73,31 @@ for (const [locale, heading, nameLabel, modelLabel, saveLabel, testLabel, dark, 
         await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(zoom)
         const target = zoom === 1 ? name : save
         await target.evaluate(element => element.scrollIntoView({ block: 'center', inline: 'nearest' }))
-        focusChecks.push(await verifyKeyboardFocus(page, target, `endpoint ${locale} ${mode} ${zoom}`))
+
+        try {
+          focusChecks.push(await verifyKeyboardFocus(page, target, `endpoint ${locale} ${mode} ${zoom}`))
+        } catch (error) {
+          // Playwright crops zoomed failure screenshots; retain the complete native
+          // window and ancestor geometry without weakening any focus assertion.
+          const diagnostic = `custom-endpoints-${locale}-${mode}-${zoom}-failure`
+          const bytes = Buffer.from(await app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
+          writeFileSync(test.info().outputPath(`${diagnostic}.png`), bytes)
+
+          const geometry = await target.evaluate(element => {
+            const rows = []
+
+            for (let node: Element | null = element; node; node = node.parentElement) {
+              const style = getComputedStyle(node)
+              rows.push({ tag: node.tagName, className: node.className, rect: node.getBoundingClientRect().toJSON(), clientHeight: node.clientHeight, scrollHeight: node.scrollHeight, scrollTop: node.scrollTop, overflowX: style.overflowX, overflowY: style.overflowY })
+            }
+
+            return rows
+          })
+
+          writeFileSync(test.info().outputPath(`${diagnostic}.json`), JSON.stringify(geometry, null, 2))
+          throw error
+        }
+
         await expect(target).toBeInViewport({ ratio: 1 })
         await expect(name).toHaveValue('Authored endpoint draft')
         await expect(model).toHaveValue('vendor/model-original')

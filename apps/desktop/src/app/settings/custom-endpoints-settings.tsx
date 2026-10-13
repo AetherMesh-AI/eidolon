@@ -231,7 +231,7 @@ export function CustomEndpointsSettings({ onConfigSaved, onMainModelChanged }: C
 
   return (
     <SettingsContent>
-      <div className="space-y-6">
+      <div className="eid-custom-endpoints space-y-6">
         <section>
           <SectionHeading icon={Globe} meta={`${endpoints.length}`} title={m.heading} />
           <div className="divide-y divide-border/40 rounded-md border border-border/50">
