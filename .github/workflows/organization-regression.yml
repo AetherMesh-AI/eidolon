@@ -225,6 +225,11 @@ jobs:
           fi
           scripts/run_tests.sh "${native_tests[@]}" -j 3 -- "${diagnostic_args[@]}"
 
+      - name: Retain Windows attention phase timings
+        if: ${{ always() && matrix.os == 'windows-latest' && matrix.suite == 'outcomes-attention' }}
+        run: |
+          python -c 'import os,pathlib; files=sorted(pathlib.Path(os.environ["RUNNER_TEMP"]).glob("organization-timing-*.jsonl")); [print(p.read_text(encoding="utf-8")) for p in files]'
+
   native-windows:
     # Retain the existing check name. This gate cannot succeed if a native
     # matrix entry fails, is cancelled or is skipped.
