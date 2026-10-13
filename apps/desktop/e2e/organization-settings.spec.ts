@@ -467,6 +467,7 @@ for (const locale of ['ja', 'ar', 'ru'] as const) {
     const before = await switches.evaluateAll(elements => elements.map(element => element.getAttribute('aria-checked')))
     const captures: object[] = []
     const focusChecks: object[] = []
+    const thumbChecks: object[] = []
 
     for (const zoom of [100, 200]) {
       await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1280, 720))
@@ -479,6 +480,15 @@ for (const locale of ['ja', 'ar', 'ru'] as const) {
         await expect(target).toBeFocused()
         await expect(target).toHaveAttribute('aria-description', /\S/)
         focusChecks.push(await verifyKeyboardFocus(page, target, `notification ${locale} ${zoom} ${index}`))
+        const track = await target.boundingBox()
+        const thumb = await target.locator('[data-slot="switch-thumb"]').boundingBox()
+        expect(track).not.toBeNull()
+        expect(thumb).not.toBeNull()
+        expect(thumb!.x).toBeGreaterThanOrEqual(track!.x)
+        expect(thumb!.x + thumb!.width).toBeLessThanOrEqual(track!.x + track!.width)
+        expect(thumb!.y).toBeGreaterThanOrEqual(track!.y)
+        expect(thumb!.y + thumb!.height).toBeLessThanOrEqual(track!.y + track!.height)
+        thumbChecks.push({ locale, zoom, index, track, thumb })
         await expect(target).toBeInViewport({ ratio: 1 })
       }
       const list = notifications.locator('.eid-settings-notification-kinds')
@@ -501,7 +511,7 @@ for (const locale of ['ja', 'ar', 'ru'] as const) {
       sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
       sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
       scenario: 'synthetic-settings-notification-keyboard', locale, providerCalls: mock.receivedPrompts.length,
-      captures, focusChecks
+      captures, focusChecks, thumbChecks
     }, null, 2))
   })
 }

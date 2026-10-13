@@ -14,67 +14,65 @@ a few alternate Settings themes. The theme regression separately exercises all
 built-in palettes and appearance persistence. Existing mockup references are
 input direction, not rendered evidence and not final gallery substitutes.
 
-## Final acceptance checklist — 2026-10-13
+## Final acceptance checklist — current candidate
 
-Overall reference parity is **not signed off**. The verified baseline is PR137
-head `7dfbefb2566ba2915a35696c52f209ad70f719ac`, tree
-`62d9453bcf7a399eea39dafea95fcdef2ce3706c`, in
-[run 38348587837](https://github.com/AetherMesh-AI/eidolon/actions/runs/38348587837).
-Its nine checks, 1,541 selected tests and 44 native cases passed with zero
-skips/flakes/retries. Independent bounded source/CI review cleared that exact
-head. Pixel inspection below was performed by the implementing agent; it is not
-an independent final visual signoff. Merge remains on hold.
+The last fully verified candidate is PR137 head
+`e6e74ff582fbb56a66ab807a851c61adcc776b2e`, tree
+`f7f244c18456fda2e4d527a6a0046a8c474f6ae9`, in
+[run 38472282716](https://github.com/AetherMesh-AI/eidolon/actions/runs/38472282716).
+All nine checks, 1,581 selected component tests and 53 native cases passed with
+zero skips, retries or flakes. Independent source review cleared that exact tree.
+Independent pixel review accepted Settings desktop composition (vertical
+notifications, 275px middle row and compact bottom band). Home, Messages and
+Objective structural acceptance from `a9a43464` stands. Do not reopen those
+layouts as part of remaining-page work.
 
-Accepted/proven within that baseline; do not reopen unrelated backend audits:
+Ten Settings images from `e6e74ff5` were delivered to Library with successful
+metadata writeback. They include light/dark desktop, narrow, light 200%, and
+JA/AR/RU notification focus at both zoom levels. The accepted composition does
+not excuse the independently confirmed Arabic checked-thumb overflow. The next
+candidate corrects direction-aware movement and adds native containment/state
+checks. Those new assertions have not yet run at this source revision.
 
-- [x] Persistent identity/context, requester attribution, finite chat renewal and retained drafts preserve their existing contracts.
-- [x] Current-round review findings stay read-only; unmet counts/conflicts remain visible and final acceptance remains independent.
-- [x] All eight notification switches, explanation access, keyboard controls and independent Settings save owners are retained.
-- [x] Full review-panel border clears the footer (6.33px at 1536×961); Settings first row is 295.64px, near the approximately 295px reference.
-- [x] Existing navigation/recovery and theme-persistence checks passed; sampled normal/narrow/200% evidence is retained.
-- [x] Four interim Home/Messages/Objective/Settings images from PR135 source `54f6202c` were delivered through Library; the local delivery receipt records success and the parent confirmed receipt. This was interim delivery, not the final all-page gallery.
+“Captured” means retained native evidence exists, not final pixel approval.
+Only Home, Messages, Objective Detail and Settings have supplied image references.
+Other destinations require consistent shared design, not an invented reference.
 
-The next Messages sizing delta and new Work Overview normal/200% coverage require
-fresh native evidence and renewed source review. They do not change the accepted
-snapshot above. Existing tests remain regression guards for later presentation
-changes; their presence does not imply those features need redesigning again.
+| Surface | Retained evidence / accepted scope | Still outstanding |
+| --- | --- | --- |
+| Home | Structural reference pixels accepted; intake and durable-state regressions retained | Final merged-build gallery and exceptional-state inventory |
+| Messages | Structural reference pixels accepted; directory, conversation, renewal and retained drafts verified | Final gallery and deeper action-copy audit |
+| Objective Detail | Structural reference pixels accepted; review evidence, intervention and accepted outcomes verified | Final before/after intervention and outcome gallery |
+| Work Overview | 26 captures across translated normal/200% and wide/narrow appearances | Shared-design pixel acceptance and final gallery |
+| Objectives | 44 list/outcome captures; search and routing verified | Empty/loading/stale and archived-outcome gallery |
+| Organization | List/grid/inspectors and selected staffing states captured | Secondary forms and locale audit |
+| Deliverables | 26 captures; recorded artifact/evidence inspection and routing verified | Final exact-artifact, empty/loading/error gallery |
+| Settings | Desktop composition accepted; 53 captures cover standard destinations, subviews, breakpoints and selected themes; 48 notification focus checks pass | RTL thumb fix; all-section locale/zoom/focus review; final gallery |
+| System health | Single footer and owned details; ten captures plus state regressions | Complete state/theme/zoom gallery; never infer provider health |
+| Secondary pages | Shared headings and labeled Activity filters prepared; 42 affected component regressions pass | Dedicated hosted six-locale, both-mode, normal/200% gallery not yet verified |
+| History | Existing persistent history behavior preserved | Expanded history and actual synthetic-chat gallery not yet verified |
 
-“Captured” below means retained native evidence exists, not that every image has
-received final pixel review. Only Home, Messages, Objective Detail and Settings
-have supplied image references; the other pages need shared-design acceptance,
-not a fabricated claim of matching an absent reference.
+The next gallery scenarios cover Needs You, Activity, Capabilities (Skills,
+Tools and MCP), Messaging, Execution Profiles, Import history, Legacy history,
+expanded chat history, and 21 Settings destinations/subviews. Separate bounded
+Linux jobs retain the existing native suite's deadlines, assertions and retries.
+Synthetic history setup uses one loopback scripted provider call; page browsing
+must make no additional provider calls. Settings uses zero provider calls.
 
-| Page | Reference / shared design | Themes and viewport evidence | Localization and navigation | Remaining acceptance |
-| --- | --- | --- | --- | --- |
-| Home | Reference composition partly matched; question/requester hierarchy implemented | Dark/light, 1536×961, short/narrow, 125%/200% captured | Six-catalog core labels; intake retention and explicit-recipient navigation tested | Final matched pixels, deeper request text and accepted-outcome hierarchy |
-| Messages | Three-column reference arrangement and extra transcript space implemented | Dark/light wide/short/narrow; translated 200% captures; AR/RU retained context captured | Persistent recipient/history, finite renewal and cancellation tested; core six-catalog labels | Full-width search correction pending native; header/member-row polish, final populated/empty/recovery gallery and deeper action-copy audit |
-| Work Overview | Shared design, no supplied reference | Dark/light wide/narrow captured | State/owner-request routing tested; core copy covered | English 200% and five-language normal/200% checks prepared, not yet verified; final pixels/gallery remain open |
-| Objectives | Shared design, no supplied reference | Dark/light wide/narrow and translated normal/200% captured | Search and outcome routing tested; six-catalog list labels | Final empty/loading/stale and archived-outcome gallery |
-| Objective Detail | Reference composition partly matched; current review strip y825.25, disclosed evidence authoritative | Dark/light, short/narrow, 125%/200%; 20 translated review images verified | Pause/resume, priority, owner-input and accepted-delivery paths tested; six-catalog phases/review labels | Border correction accepted; final matched-reference visual signoff and before/after intervention/acceptance gallery remain open |
-| Organization | Shared design, no supplied reference | Dark/light list/grid/inspector, narrow and translated 200% captured | Persistent identities, role/context labels, inspector and directory navigation tested | Secondary staffing/project/configuration forms need final gallery and locale audit |
-| Deliverables | Shared design, no supplied reference | Dark/light session files and accepted evidence, narrow and translated 200% captured | Actual recorded artifact/evidence inspection and source routing tested | Final gallery of exact accepted artifact, empty/loading/error cases |
-| Settings | First-row height correction accepted: 295.64px vs approximately 295px | Overview dark/light; narrow/200%; standard sections captured; three themes with focus/narrow checks | All eight switches, disclosures, Model drafts/Apply and independent saves tested | Height correction accepted; remaining card/header treatment, all section pixels/locales and final gallery remain open |
-| System health | Single bottom bar and owned details | Multiple real status fixtures and narrow details captured | Core six-catalog health labels and state/navigation checks | Final all-state light/dark/200% gallery; no inferred provider health |
-| Tools/configuration | Existing destinations retained | Coverage varies by destination; no comprehensive final gallery | Needs You, Activity, Skills, Messaging, Execution, Import history and Legacy routes need final inventory | Shared-design, both themes, locales, 200% and navigation signoff per available destination |
-| History | Existing mounted history retained | No final expanded-history/synthetic-chat gallery | Persistent-history behavior covered separately | Shared-design, both themes, locales and 200% visual signoff |
+Final release gates remain:
 
-Genuinely outstanding final release gates (bounded functional acceptance above is retained):
-
-- [ ] Four matched-size reference comparisons approved; residual mismatches named.
+- [x] Four reference compositions independently accepted within their stated scope.
+- [ ] RTL checked/unchecked/focused/disabled thumb containment verified natively.
 - [ ] Every available requested destination and relevant empty/loading/error state included.
-- [ ] Default dark/light plus representative alternate themes inspected; theme persistence retained.
-- [ ] EN/JA/ZH/ZH-Hant/AR/RU interface copy audited; English fallback explicitly marked incomplete, authored records unchanged.
-- [ ] Narrow/short and 200% keyboard paths verified; reachable scrolling distinguished from simultaneous fit; focus outlines and footer clear.
-- [ ] Reconfirm the already accepted navigation/draft/identity/intervention/acceptance paths on the final build; change them only for demonstrated regressions.
-- [ ] Labeled gallery and original screenshots from one final merged build delivered through Library with source/tree, dimensions and hashes.
+- [ ] Default dark/light and representative alternate themes inspected.
+- [ ] EN/JA/ZH/ZH-Hant/AR/RU interface copy audited; English fallback explicitly incomplete.
+- [ ] Narrow/short and 200% keyboard paths verified; scrolling distinguished from simultaneous fit.
+- [ ] Existing navigation/draft/identity/intervention/acceptance regressions pass on final source.
+- [ ] Labeled gallery and original screenshots from one final merged build delivered to Library.
 
-Remaining estimate: Messages sizing plus Work Overview coverage needs one hosted
-validation/review cycle, typically 45–75 minutes. Broader presentation, deep
-locale review and final-gallery acceptance remain approximately two to four
-cycles / 3–6 hours plus review/authorization delays, with low confidence. Final
-merged-build gallery delivery cannot complete while the merge hold remains;
-interim screenshots have already been delivered and native candidate artifacts
-remain available for review.
+Merge remains on hold pending authorization. Candidate evidence can be reviewed
+and delivered now; a merged-build gallery cannot be claimed before that gate.
+Real voice, per-agent VMs and live model reliability remain outside this UI scope.
 
 ## Page coverage
 

@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { useI18n } from '@/i18n/context'
 
+import { WorkspacePageHeading } from '../workspace-page-heading'
+
 import { demoSnapshot } from './demo'
 import type { OrganizationSnapshot } from './types'
 
@@ -103,8 +105,7 @@ export function LegacyOrganizationHistory({ storage }: { storage?: Pick<Storage,
   return (
     <main className="eidolon eid-workspace">
       <div className="eid-page">
-        <h1>{copy.legacyTitle}</h1>
-        <p>{copy.legacyNote}</p>
+        <WorkspacePageHeading description={copy.legacyNote} title={copy.legacyTitle} />
         {record.raw !== null && (
           <Button onClick={() => exportLegacyOrganization(record)} variant="secondary">
             {copy.legacyExport}

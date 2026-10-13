@@ -1,0 +1,14 @@
+.eid-workspace-page-heading { min-width: 0; margin-bottom: 24px; color: var(--ui-text-primary); }
+header.eid-workspace-page-heading > h1 { margin: 0; font: 500 36px/1.2 Georgia, 'Times New Roman', serif; letter-spacing: -.025em; overflow-wrap: anywhere; }
+header.eid-workspace-page-heading > p { margin: 10px 0 0; color: var(--ui-text-secondary); font-size: 13px; line-height: 1.5; }
+.eid-page-search-heading { padding: 24px 24px 16px; margin-bottom: 0; }
+.eid-page-search-heading + .eid-page-search-controls { padding-top: 0; }
+.eid-secondary-surface :is(button, a, input, textarea, select, summary):focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 3px; transition-property: color, background-color, border-color, box-shadow; }
+.eid-secondary-surface :is(button, a, input, textarea, select, summary) { scroll-margin: 7px; }
+@media (max-width: 800px) {
+  header.eid-workspace-page-heading > h1 { font-size: 29px; }
+  .eid-page-search-heading { padding-inline: 18px; }
+}
+@media (max-height: 600px) {
+  .eid-page-search-heading { padding-block: 12px 8px; }
+}

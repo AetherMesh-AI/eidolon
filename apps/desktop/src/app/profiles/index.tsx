@@ -22,7 +22,6 @@ import {
   PanelBody,
   PanelDetail,
   PanelEmpty,
-  PanelHeader,
   PanelList,
   PanelListRow,
   type PanelMenuItem,
@@ -30,6 +29,7 @@ import {
   PanelPill,
   PanelSectionLabel
 } from '../overlays/panel'
+import { WorkspacePageHeading } from '../workspace-page-heading'
 
 import { CreateProfileDialog } from './create-profile-dialog'
 import { DeleteProfileDialog } from './delete-profile-dialog'
@@ -103,7 +103,7 @@ export function ProfilesView({ onClose }: ProfilesViewProps) {
   )
 
   return (
-    <Panel closeLabel={p.close} onClose={onClose}>
+    <Panel className="eid-secondary-surface" closeLabel={p.close} onClose={onClose}>
       {!profiles ? (
         <PageLoader label={p.loading} />
       ) : profiles.length === 0 ? (
@@ -119,7 +119,7 @@ export function ProfilesView({ onClose }: ProfilesViewProps) {
         />
       ) : (
         <>
-          <PanelHeader subtitle={p.count(profiles.length)} title={p.title} />
+          <WorkspacePageHeading description={p.count(profiles.length)} title={p.title} />
           <PanelBody>
             <PanelList
               onSearchChange={setQuery}

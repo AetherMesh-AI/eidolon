@@ -843,6 +843,7 @@ export function SkillsView({
     <PageSearchShell
       {...props}
       activeTab={mode}
+      heading={t.sidebar.nav.skills}
       onSearchChange={setQuery}
       onTabChange={id => setMode(id as (typeof SKILLS_MODES)[number])}
       // MCP manages a handful of entries with the editor right there —

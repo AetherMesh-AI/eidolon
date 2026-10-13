@@ -272,7 +272,7 @@ jobs:
       - name: Verify components, fixture helpers and types before native work
         working-directory: apps/desktop
         run: |
-          npx vitest run electron/backend-connection-state.test.ts electron/primary-backend-startup.test.ts electron/remote-ws-headers.test.ts electron/oauth-session-authority.test.ts src/store/gateway-connection-lifecycle.test.ts src/app/gateway/hooks/use-gateway-boot.test.tsx src/app/gateway/hooks/use-gateway-request.test.ts src/store/gateway-profile-request.test.ts src/store/gateway-profile-only-owner.integration.test.ts src/store/session-states-runtime-map.test.ts src/components/pane-shell/tree/renderer/tree-group.test.tsx src/components/pane-shell/tree/renderer/strip-visibility.test.ts src/components/pane-shell/tree/renderer/tab-strip-hide.test.tsx src/app/chat/sidebar/chrome.test.tsx src/app/chat/sidebar/session-row.test.tsx src/app/chat/sidebar/projects/overview-row.test.tsx src/app/eidolon src/app/artifacts/workspace.test.tsx src/components/ui/confirm-dialog.test.tsx src/components/ui/confirm-dialog-unmount.test.tsx src/store/onboarding.test.ts src/components/onboarding/index.test.tsx src/store/organization-work.test.ts src/store/connections.test.ts src/store/connections-profile-intent.test.ts src/store/connections-shared-publication.test.ts src/i18n/organization-overview.test.ts src/i18n/organization-directory.test.ts src/store/gateway-switch.test.ts src/app/contrib/organization-shell.test.tsx src/app/contrib/surfaces.test.tsx src/app/routes.test.ts src/app/routes.workspace-reveal.test.ts src/app/settings src/app/overlays/overlay-view.test.tsx src/app/shell/hooks/use-status-snapshot.test.ts src/app/shell/titlebar.test.ts src/themes e2e/organization-*.unit.test.ts
+          npx vitest run electron/backend-connection-state.test.ts electron/primary-backend-startup.test.ts electron/remote-ws-headers.test.ts electron/oauth-session-authority.test.ts src/store/gateway-connection-lifecycle.test.ts src/app/gateway/hooks/use-gateway-boot.test.tsx src/app/gateway/hooks/use-gateway-request.test.ts src/store/gateway-profile-request.test.ts src/store/gateway-profile-only-owner.integration.test.ts src/store/session-states-runtime-map.test.ts src/components/pane-shell/tree/renderer/tree-group.test.tsx src/components/pane-shell/tree/renderer/strip-visibility.test.ts src/components/pane-shell/tree/renderer/tab-strip-hide.test.tsx src/app/chat/sidebar/chrome.test.tsx src/app/chat/sidebar/session-row.test.tsx src/app/chat/sidebar/projects/overview-row.test.tsx src/app/eidolon src/app/artifacts/workspace.test.tsx src/app/page-search-shell.test.tsx src/app/skills/index.test.tsx src/app/messaging/index.test.tsx src/app/profiles/index.test.tsx src/app/session-import/index.test.tsx src/components/ui/confirm-dialog.test.tsx src/components/ui/confirm-dialog-unmount.test.tsx src/store/onboarding.test.ts src/components/onboarding/index.test.tsx src/store/organization-work.test.ts src/store/connections.test.ts src/store/connections-profile-intent.test.ts src/store/connections-shared-publication.test.ts src/i18n/organization-overview.test.ts src/i18n/organization-directory.test.ts src/store/gateway-switch.test.ts src/app/contrib/organization-shell.test.tsx src/app/contrib/surfaces.test.tsx src/app/routes.test.ts src/app/routes.workspace-reveal.test.ts src/app/settings src/app/overlays/overlay-view.test.tsx src/app/shell/hooks/use-status-snapshot.test.ts src/app/shell/titlebar.test.ts src/themes e2e/organization-*.unit.test.ts
           npm run typecheck
       - name: Install required native project isolation
         run: bash scripts/ci/organization-sandbox.sh
@@ -313,5 +313,57 @@ jobs:
             apps/desktop/playwright-report/
             apps/desktop/directory-test-results/
             apps/desktop/directory-report/
+          retention-days: 7
+          if-no-files-found: warn
+
+  workspace-gallery:
+    name: Workspace gallery (${{ matrix.group }}, Linux)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [secondary, settings]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Install locked Python runtime and test dependencies
+        run: |
+          python -m pip install uv==0.12.23
+          uv sync --locked --python 3.12 --extra dev
+          uv pip install --no-deps pytest-timeout==2.4.0 exceptiongroup==1.3.0 'https://files.pythonhosted.org/packages/6e/c2/61d3e0f47e2b74ef40a68b9e6ad5984f6241a942f7cd3bbfbdbd03861ea9/tomli-2.2.1-py3-none-any.whl#sha256=cb55c73c5f4408779d0cf3eef9f762b9c9f147a77de7b258bef0a5628adc85cc'
+      - name: Install locked desktop dependencies
+        run: npm ci
+      - name: Install required native project isolation
+        run: bash scripts/ci/organization-sandbox.sh
+      - name: Install Electron system dependencies
+        run: |
+          sudo apt-get install -y xvfb libgtk-3-0 libnotify4 libnss3 libxss1 libxtst6 xdg-utils libatspi2.0-0 libdrm2 libgbm1 libasound2 fonts-noto-cjk
+          fc-match --format='%{family}\n' ':lang=ja'
+      - name: Build desktop
+        working-directory: apps/desktop
+        run: npm run build
+      - name: Verify page composition, zoom and keyboard access
+        working-directory: apps/desktop
+        env:
+          EIDOLON_REQUIRE_PROJECT_SANDBOX: '1'
+          GALLERY_GROUP: ${{ matrix.group }}
+        run: xvfb-run -a npx playwright test "e2e/workspace-${GALLERY_GROUP}-gallery.spec.ts" --workers=1 --retries=0
+      - name: Retain workspace gallery evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: workspace-gallery-${{ matrix.group }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            apps/desktop/test-results/
+            apps/desktop/playwright-report/
           retention-days: 7
           if-no-files-found: warn

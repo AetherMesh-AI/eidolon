@@ -76,6 +76,14 @@ one-off at the call site.
 - **Pages are durable destinations.** Chat, Skills, Messaging, and Artifacts
   remain in shell chrome. Do not hide a distinct product noun inside an
   unrelated page.
+- **Secondary page headings share one hierarchy.** Needs You, Activity, Capabilities,
+  Messaging, Execution Profiles and import/legacy history use `WorkspacePageHeading`.
+  The heading is presentation only; search, forms, saves and navigation stay with
+  their existing owners. Activity filters keep visible labels and authored text
+  chooses its own reading direction.
+- **Switch movement follows reading direction.** Checked thumbs move toward the
+  inline end and remain inside their tracks in LTR and RTL. Disabled controls
+  retain their state and enabled controls keep visible keyboard focus at 200% zoom.
 - **Settings stays in the workspace.** Its descriptive navigation and rounded
   control groups keep the primary rail and single bottom health bar visible.
   Existing page owners retain saves, scope, providers and appearance preferences.
