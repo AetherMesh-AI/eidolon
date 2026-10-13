@@ -119,6 +119,16 @@ afterEach(() => {
 })
 
 describe('ConnectionSwitcher', () => {
+  it('forwards a live page-preservation predicate without evaluating it at the click', () => {
+    $connectionsRegistry.set(registry([connection('local', 'This device', 'local'), connection('homelab', 'Homelab')]))
+    const preserveRoute = vi.fn(() => true)
+    render(<ConnectionSwitcher onConnect={onConnect} preserveRoute={preserveRoute} />)
+    fireEvent.pointerDown(screen.getByRole('button'), { button: 0, ctrlKey: false, pointerType: 'mouse' })
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Homelab' }))
+    expect(selectConnection).toHaveBeenCalledWith('homelab', { preserveRoute })
+    expect(preserveRoute).not.toHaveBeenCalled()
+  })
+
   it('waits for primary boot fetches before restoring the launch source', async () => {
     $connectionsRegistry.set(registry([connection('local', 'This device', 'local'), connection('homelab', 'Homelab')]))
     render(<ConnectionSwitcher onConnect={onConnect} />)

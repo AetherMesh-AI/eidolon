@@ -13,7 +13,7 @@ import { $activeGatewayProfile, $gatewaySwapTarget } from '@/store/profile'
 
 import { ConnectionSwitcher } from '../chat/sidebar/connection-switcher'
 import { OrganizationWorkIndicator } from '../contrib/organization-shell'
-import { navigateToWorkspacePage } from '../routes'
+import { isWorkspacePageRoute, navigateToWorkspacePage } from '../routes'
 
 import { OrganizationDirectoryControl } from './organization-directory-control'
 import type { MetadataDescriptor } from './organization-metadata-client'
@@ -36,6 +36,10 @@ export function WorkspaceHeader() {
   const organization = useRuntimeOrganization()
   const navigate = useNavigate()
   const location = useLocation()
+  // Source switching can finish after the owner navigates to a page. Read the
+  // latest route at completion so late bookkeeping cannot replace that page.
+  const locationRef = useRef(location)
+  locationRef.current = location
   const readScope = useMemo(createOrganizationScopeReader, [])
   const searchTrigger = useRef<HTMLButtonElement>(null)
   const [searchScope, setSearchScope] = useState<string | null>(null)
@@ -66,7 +70,7 @@ export function WorkspaceHeader() {
       <Button aria-label={copy.profile(profile)} onClick={() => navigateToWorkspacePage(navigate, '/profiles')} size="micro" variant="ghost"><Codicon name="organization" /><span>{profile}</span></Button>
       <OrganizationDirectoryControl />
       {/* The switcher owns registry initialization and change subscriptions, even with one source. */}
-      <ConnectionSwitcher compact onConnect={() => navigateToWorkspacePage(navigate, '/settings?tab=connections')} />
+      <ConnectionSwitcher compact onConnect={() => navigateToWorkspacePage(navigate, '/settings?tab=connections')} preserveRoute={() => isWorkspacePageRoute(locationRef.current.pathname)} />
     </div>
     <Button aria-label={copy.search} disabled={!available} onClick={() => { if (current()) {setSearchScope(snapshot!.connection!.scope)} }} ref={searchTrigger} size="micro" variant="ghost"><Codicon name="search" /><span className="eid-workspace-action-label">{copy.search}</span></Button>
     <div className="eid-workspace-actions">
