@@ -17,6 +17,7 @@ import { RuntimePriority } from './runtime-priority'
 import { RuntimeReplacement } from './runtime-replacement'
 import { RuntimeRequests } from './runtime-requests'
 import { RuntimeWorkPackages } from './runtime-work-packages'
+import { OrganizationScenery } from './scenery'
 import type { Objective, OrganizationSnapshot, RuntimeOrganizationAdapter } from './types'
 import { WorkGraph } from './work-graph'
 import { Knowledge, Status } from './workspace'
@@ -31,36 +32,37 @@ export function RuntimeStatus({
   warningsOnly?: boolean
 }) {
   const { t } = useI18n()
+  const stateCopy = t.organizationSurfaces.runtimeState
   const connection = snapshot.connection
 
   if (warningsOnly && connection?.state !== 'error' && connection?.state !== 'disconnected') { return null }
 
   return (
-    <section aria-label="Organization runtime" className="eid-runtime-status">
+    <section aria-label={stateCopy.heading} className="eid-runtime-status">
       <div className="eid-toolbar">
         <strong>
           {connection?.state === 'disconnected'
-            ? 'Organization disconnected'
+            ? stateCopy.disconnected
             : connection?.state === 'error'
-              ? 'Organization updates interrupted'
-              : 'Organization runtime'}
+              ? stateCopy.interrupted
+              : stateCopy.heading}
         </strong>
-        {connection?.state === 'connecting' && <Loader label="Connecting to organization" />}
+        {connection?.state === 'connecting' && <Loader label={t.organizationHome.connecting} />}
         {connection?.state === 'error' && (
           <Button onClick={() => void adapter.refresh()} size="sm" variant="secondary">
-            Retry connection
+            {stateCopy.retry}
           </Button>
         )}
       </div>
       {connection?.error && <p role="alert">{connection.error}</p>}
       {connection?.state === 'disconnected' && (
         <p>
-          Reconnect the current profile’s gateway to view and submit work. Running work may continue on the backend.
+          {stateCopy.disconnectedNote}
         </p>
       )}
       {connection?.state === 'error' && (
         <p>
-          Showing the last received state. Automatic recovery is limited; use Retry connection if updates do not resume.
+          {stateCopy.interruptedNote}
         </p>
       )}
       {!warningsOnly && snapshot.runtime && (
@@ -97,7 +99,7 @@ export function RuntimeObjectiveDetail({ objective, adapter, snapshot, historyCo
 
   return <>
     <Link className="eid-back" to="/objectives">← {copy.objectives}</Link>
-    <header className="eid-page-header eid-objective-hero"><div><p className="sr-only">{t.organizationHome.detail.objectiveRuntime}</p><h1>{objective.title}</h1><p className="eid-result-text">{objective.description}</p></div><Status status={objective.status} /></header>
+    <header className="eid-page-header eid-objective-hero"><OrganizationScenery className="eid-objective-scenery" /><div><p className="sr-only">{t.organizationHome.detail.objectiveRuntime}</p><div className="eid-objective-heading"><h1>{objective.title}</h1><Status status={objective.status} /></div><p className="eid-result-text">{objective.description}</p></div></header>
     <div className="eid-inline"><span>{t.organizationRoster.objectiveExecutive} · {owner?.name || objective.ownerId || t.organizationHome.unassigned}</span>{objective.managerId && <span>{t.organizationRoster.objectiveManager} · {manager?.name || objective.managerId}</span>}<Button onClick={() => setInspecting(true)} size="sm" variant="secondary">{t.organizationHome.detail.inspectObjective}</Button></div>
     <ObjectiveProgress controls={<>
       <RuntimeDispatch adapter={adapter} key={`dispatch:${snapshot.connection?.scope}:${snapshot.connection?.ownerScope}:${objective.id}`} objective={objective} snapshot={snapshot} />

@@ -2,6 +2,9 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { MemoryRouter } from 'react-router'
 import { afterEach, expect, it, vi } from 'vitest'
 
+import { TRANSLATIONS } from '@/i18n/catalog'
+import { I18nProvider } from '@/i18n/context'
+
 import { ObjectiveProgress } from './objective-progress'
 import { objectiveWorkData } from './objective-work-data'
 import type { Objective, OrganizationSnapshot, OrganizationTask, OrganizationWorkPackage } from './types'
@@ -84,4 +87,47 @@ it('keeps work overview scoped to open objectives and labels retained data after
   expect(within(card).getByRole('link', { name: 'View objective →' }).getAttribute('href')).toBe('/objectives/objective')
   expect(screen.queryByRole('region', { name: 'Closed work' })).toBeNull()
   expect(screen.getByText('Last known records · reconnect to refresh')).toBeTruthy()
+})
+
+
+it('shows only retained objective details and preserves authored phase text', () => {
+  const openWork = vi.fn()
+  const openRequests = vi.fn()
+  const { rerender } = render(<ObjectiveProgress objective={objective} onReviewRequests={openRequests} onReviewWork={openWork} snapshot={snapshot} />)
+  const details = within(screen.getByRole('region', { name: 'Objective details' }))
+  expect(details.getByText(objective.ownerId!)).toBeTruthy()
+  expect(details.getAllByText('Not recorded')).toHaveLength(2)
+  expect(screen.getByRole('region', { name: 'Objective details' }).querySelector('time')?.dateTime).toBe(objective.createdAt)
+  const changed = { ...objective, phase: 'Owner phase 日本語', priority: 'P2' as const }
+  rerender(<ObjectiveProgress objective={changed} onReviewRequests={openRequests} onReviewWork={openWork} snapshot={snapshot} />)
+  expect(details.getByText(changed.phase)).toBeTruthy()
+  expect(details.getByText(changed.priority)).toBeTruthy()
+  expect(openWork).not.toHaveBeenCalled()
+  expect(openRequests).not.toHaveBeenCalled()
+})
+
+
+it.each(['ja', 'zh', 'zh-hant', 'ar', 'ru'] as const)('keeps review truth and authored work while localizing the overview (%s)', locale => {
+  const record = { ...objective, phase: 'Recorded phase العربية', workPackages: [assignment] }
+  const state = { ...snapshot, objectives: [record] }
+  const before = JSON.stringify(state)
+  const copy = TRANSLATIONS[locale].organizationHome.detail
+  const openWork = vi.fn()
+  const openRequests = vi.fn()
+  render(<I18nProvider configClient={null} initialLocale={locale}><ObjectiveProgress objective={record} onReviewRequests={openRequests} onReviewWork={openWork} snapshot={state} /></I18nProvider>)
+  const overview = within(screen.getByRole('region', { name: copy.overview }))
+  expect(overview.getByRole('heading', { name: copy.progress })).toBeTruthy()
+  expect(overview.getByText(copy.progressNote)).toBeTruthy()
+  expect(overview.getByRole('region', { name: copy.delivery }).textContent).toContain(copy.notAccepted)
+  expect(overview.getByText(task.title)).toBeTruthy()
+  expect(overview.getByText(assignment.description)).toBeTruthy()
+  expect(overview.getAllByText(record.phase)).toHaveLength(2)
+  expect(overview.queryByRole('button', { name: 'Inspect work and evidence' })).toBeNull()
+  expect(openWork).not.toHaveBeenCalled()
+  expect(openRequests).not.toHaveBeenCalled()
+  fireEvent.click(overview.getByRole('button', { name: copy.inspectWork }))
+  fireEvent.click(overview.getByRole('button', { name: copy.inspectRequests }))
+  expect(openWork).toHaveBeenCalledOnce()
+  expect(openRequests).toHaveBeenCalledOnce()
+  expect(JSON.stringify(state)).toBe(before)
 })

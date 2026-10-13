@@ -6,6 +6,7 @@ import { organizationWorkspaceJa } from './organization-home'
 import { organizationHomeCountsJa } from './organization-home-counts'
 import { organizationExecutiveMessageJa, organizationMemberMessagesJa } from './organization-member-messages'
 import { organizationMetadataJa } from './organization-metadata'
+import { organizationObjectiveDetailJa } from './organization-objective-detail'
 import { organizationOverviewJa } from './organization-overview'
 import { organizationOwnerChatJa } from './organization-owner-chat'
 import { organizationRosterJa } from './organization-roster'
@@ -15,7 +16,7 @@ import { organizationWorkJa } from './organization-work'
 export const ja = defineLocale({
   organizationMetadata: organizationMetadataJa,
   organizationSurfaces: organizationSurfacesJa,
-  organizationHome: { ...organizationOverviewJa, ...organizationExecutiveMessageJa, memberMessages: organizationMemberMessagesJa, workspace: organizationWorkspaceJa, detail: organizationHomeCountsJa },
+  organizationHome: { ...organizationOverviewJa, ...organizationExecutiveMessageJa, memberMessages: organizationMemberMessagesJa, workspace: organizationWorkspaceJa, detail: { ...organizationObjectiveDetailJa, ...organizationHomeCountsJa } },
   organizationOwnerChat: organizationOwnerChatJa,
   organizationConversations: organizationConversationsJa,
   organizationWork: organizationWorkJa,

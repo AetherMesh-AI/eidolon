@@ -547,3 +547,10 @@
 .eid-progress-task > small { grid-column: 1; }
 .eid-progress-task > small + small { grid-column: 1 / -1; margin-top: 3px; }
 .eid-team-work-grid .eid-progress-tasks { gap: 8px; }
+
+.eid-objective-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 18px; }
+.eid-objective-heading > h1 { margin: 0; }
+.eid-objective-heading > .eid-status { flex: none; }
+.eid-objective-record dl { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); gap: 10px 14px; margin: 0; font-size: 12px; }
+.eid-objective-record dt, .eid-objective-record dd { margin: 0; overflow-wrap: anywhere; }
+.eid-objective-record dt { color: var(--text-secondary); }

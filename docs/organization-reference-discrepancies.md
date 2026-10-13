@@ -320,3 +320,42 @@ Independent review of PR80 initial head 00098960 found two blockers before nativ
 The PR80 review follow-up also restores Settings search's existing localized `settings.search.pill`, supplies all new workspace copy for Japanese, Simplified/Traditional Chinese, Arabic and Russian, and adds native Japanese/Arabic/Russian header coverage in both themes at short, narrow and 200% sizes. Arabic checks document RTL direction. A second temporary loopback connection exercises the actual registry/switcher menu and long-label geometry; a pending-connection component regression ensures stale search closes and does not reopen. The header permits the switcher's external focus outline without changing inner-label truncation. These changes cover the new vocabulary, not all previously untranslated UI. Native results and pixel review are pending.
 
 PR80 initial run 38142901115 was cancelled on supersession, not accepted. Its retained real owner-chat trace confirms the new search draft/DOM-retention checks passed and records a later short read-error composer failure: inner panel overflow was 24px at 1280×720, against the unchanged maximum of 1px. Actual failed pixels were inspected. The follow-up reclaims the header's 30px from conversation-only bottom and recipient spacing at short desktop sizes; fonts, controls and directory heading position stay unchanged. The same no-scroll/viewport checks remain, and matched Messages checks now explicitly require content origin within 1px of y64. Fresh native proof is required. PR78 postmerge run 38142243548 passed all nine checks, 888 selected tests, all types and 23 native scenarios in17.4 minutes; artifact audits and Japanese/short-window pixel reinspection passed on main12ec6563/treeee25f775.
+
+
+## Independent local continuation after consolidation
+
+The Objective Detail reference was reopened beside the PR131 native capture at
+1536 × 961. The next isolated slice reuses theme-derived decorative scenery in
+the objective header, places status beside the title, and adds a compact aside
+with recorded creation time, executive ownership, priority and phase. It does
+not manufacture stage history, delivery dates, project identity or acceptance.
+The same slice moves objective-list navigation and runtime connection warnings
+into all six language catalogs. Authored content and canonical IDs are preserved.
+
+Native coverage is prepared for objective search and the details card across
+all five non-English locales, dark/light, normal desktop and 200% zoom. Existing
+read-only RPC and zero-provider assertions remain. This is preparation, not
+visual acceptance; the full reference discrepancy checklist remains open.
+These UI changes are excluded from consolidated PR133.
+
+UI baseline 82e292c0fb931b1f79b1e251c51c41ab450eba84 (tree
+ff08810dec1cb1580038709e7d9aaff2d57036e7), run 38323021547, passed
+1,495 selected component/helper tests and 44 native cases (41 standard plus
+three directory cases; no native skips/flaky/unexpected results). Artifact
+11780915305 SHA256 e2823163da458a644959f644955e7b8444c7e0658886826a465928cef719cd08
+was verified against the exact source: 34 inline provenance records and ten
+file provenance records. Representative English objective, Japanese and Chinese
+lists, Traditional Chinese objective, Arabic RTL objective and Russian 200%
+objective captures were actually inspected. The new details and list copy are
+visible; large text uses reachable scrolling, not simultaneous whole-page fit.
+This is not final reference parity or a completed all-screen gallery.
+
+Those pixels exposed inherited English overview labels. The next UI-only slice
+provides full objective-overview copy for all five non-English catalogs, retaining
+existing localized plural functions, authored phase/task text, review truth and
+controls. Objective inspector and other legacy labels still require follow-up.
+It also adds the visual suite's font/two-animation-frame barrier before native
+directory captures: PR133's final artifact had passing DOM assertions but several
+PNGs still showed earlier frames. Original artifacts are preserved. This capture
+change must be validated with fresh pixels; it does not change directory behavior,
+assertion deadlines, retries or production activation.

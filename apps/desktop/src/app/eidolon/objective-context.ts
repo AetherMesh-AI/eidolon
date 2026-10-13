@@ -7,11 +7,11 @@ export function responsibleAgents(snapshot: OrganizationSnapshot, objective: Obj
   return snapshot.agents.filter(agent => ids.has(agent.id) || agent.objectiveId === objective.id)
 }
 
-export function responsibleTeams(snapshot: OrganizationSnapshot, objective: Objective) {
+export function responsibleTeams(snapshot: OrganizationSnapshot, objective: Objective, unknownTeam = 'Unknown · team not recorded') {
   const agents = responsibleAgents(snapshot, objective)
   const teams = [...new Set(agents.map(agent => agent.team?.trim()).filter((team): team is string => !!team))]
 
-  if (!agents.length || agents.some(agent => !agent.team?.trim())) {teams.push('Unknown · team not recorded')}
+  if (!agents.length || agents.some(agent => !agent.team?.trim())) {teams.push(unknownTeam)}
 
   return teams.join(', ')
 }

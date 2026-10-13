@@ -548,6 +548,12 @@ test('keeps native organization navigation, roster and objective layouts usable 
     }
 
     objectiveChecks.push({ mode, viewport: '1536x961', ...geometry })
+    const recordDetails = overview.getByRole('region', { name: 'Objective details', exact: true })
+    await expect(recordDetails).toContainText('Avery')
+    await expect(recordDetails).toContainText('Draft and review')
+    await expect(recordDetails.locator('time')).toHaveAttribute('datetime', createdAt)
+    await expect(recordDetails).toBeInViewport({ ratio: 1 })
+    await expect(page.locator('.eid-objective-hero .eid-objective-scenery')).toHaveAttribute('aria-hidden', 'true')
     await capture(`reference-objective-${mode}`)
     displayedSnapshot = {
       ...snapshot,
@@ -1389,6 +1395,9 @@ for (const locale of ['ja', 'ar', 'ru'] as const) {
 
 const translatedSurfaceExpectations = {
   "Ja": {
+    objectiveOverview: "目標の概要",
+    objectiveSearch: "目標を検索",
+    objectiveRecord: "目標の詳細",
     "search": "メンバーを検索",
     "directoryNote": "このプロファイルの永続メンバーです。選択しても会話は開かず、利用枠も追加されません。",
     "memberContext": "メンバーの背景情報",
@@ -1401,6 +1410,9 @@ const translatedSurfaceExpectations = {
     "findAgent": "エージェントを検索"
   },
   "Zh": {
+    objectiveOverview: "目标概览",
+    objectiveSearch: "搜索目标",
+    objectiveRecord: "目标详情",
     "search": "搜索成员",
     "directoryNote": "此配置文件中的持久成员。选择成员不会打开对话或补充其额度。",
     "memberContext": "成员背景",
@@ -1413,6 +1425,9 @@ const translatedSurfaceExpectations = {
     "findAgent": "查找智能体"
   },
   "ZhHant": {
+    objectiveOverview: "目標概覽",
+    objectiveSearch: "搜尋目標",
+    objectiveRecord: "目標詳情",
     "search": "搜尋成員",
     "directoryNote": "此設定檔中的持久成員。選取成員不會開啟對話或補充其額度。",
     "memberContext": "成員背景",
@@ -1425,6 +1440,9 @@ const translatedSurfaceExpectations = {
     "findAgent": "尋找代理"
   },
   "Ar": {
+    objectiveOverview: "نظرة عامة على الهدف",
+    objectiveSearch: "البحث في الأهداف",
+    objectiveRecord: "تفاصيل الهدف",
     "search": "البحث عن أعضاء",
     "directoryNote": "أعضاء دائمون في هذا الملف الشخصي. لا يؤدي اختيار عضو إلى فتح محادثته أو تجديد حصتها.",
     "memberContext": "سياق العضو",
@@ -1437,6 +1455,9 @@ const translatedSurfaceExpectations = {
     "findAgent": "البحث عن وكيل"
   },
   "Ru": {
+    objectiveOverview: "Обзор цели",
+    objectiveSearch: "Поиск целей",
+    objectiveRecord: "Сведения о цели",
     "search": "Поиск участников",
     "directoryNote": "Постоянные участники этого профиля. Выбор участника не открывает диалог и не пополняет его лимит.",
     "memberContext": "Контекст участника",
@@ -1493,10 +1514,26 @@ for (const [locale, suffix, dark, light] of [
         await page.evaluate(value => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(value * 100), zoom)
         await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(zoom)
 
-        for (const route of ['/organization', '/artifacts?source=organization', '/messages', '/messages?recipient=executive']) {
+        for (const route of ['/organization', '/artifacts?source=organization', '/messages', '/messages?recipient=executive', '/objectives', '/objectives/release']) {
           await page.evaluate(value => { location.hash = value }, route)
 
-          if (route === '/organization') {
+          if (route === '/objectives') {
+            const search = page.getByRole('textbox', { name: copy.objectiveSearch, exact: true })
+            await expect(search).toBeVisible()
+            await search.fill('autumn')
+            await expect(page.locator('.eid-list').getByRole('link', { name: /Prepare the autumn release brief/ })).toBeVisible()
+            await expect(page.locator('.eid-list').getByRole('link', { name: /Review the workspace navigation/ })).toHaveCount(0)
+            await search.fill('')
+          } else if (route === '/objectives/release') {
+            await expect(page.getByRole('region', { name: copy.objectiveOverview, exact: true })).toBeVisible()
+            await expect(page.getByRole('heading', { name: 'Progress overview', exact: true })).toHaveCount(0)
+            await expect(page.getByRole('button', { name: 'Inspect work and evidence', exact: true })).toHaveCount(0)
+            const details = page.getByRole('region', { name: copy.objectiveRecord, exact: true })
+            await expect(details).toBeVisible()
+            await expect(details).toContainText('Avery')
+            await expect(details).toContainText('Draft and review')
+            await expect(details.locator('time')).toHaveAttribute('datetime', createdAt)
+          } else if (route === '/organization') {
             await expect(page.getByRole('heading', { name: copy.organization, exact: true })).toBeVisible()
             await expect(page.getByRole('textbox', { name: copy.findAgent, exact: true })).toBeVisible()
           } else if (route === '/artifacts?source=organization') {
@@ -1518,7 +1555,7 @@ for (const [locale, suffix, dark, light] of [
             await expect(page.getByText(copy.linkedWorkNote, { exact: true })).toBeVisible()
           }
 
-          const focalCopy = route === '/organization' ? copy.findAgent : route === '/artifacts?source=organization' ? copy.deliverablesIntroduction : route.includes('recipient') ? copy.executiveMessageNote : copy.linkedWorkNote
+          const focalCopy = route === '/objectives' ? copy.objectiveSearch : route === '/objectives/release' ? copy.objectiveRecord : route === '/organization' ? copy.findAgent : route === '/artifacts?source=organization' ? copy.deliverablesIntroduction : route.includes('recipient') ? copy.executiveMessageNote : copy.linkedWorkNote
           const focal = page.getByText(focalCopy, { exact: true })
           // Center the evidence target with space on both sides. Nearest-edge
           // scrolling can leave a fractional CSS pixel clipped at 200% zoom.
@@ -1535,7 +1572,7 @@ for (const [locale, suffix, dark, light] of [
           expect(appearance).toEqual({ theme: 'nous', dark: mode === 'dark', dir: locale === 'ar' ? 'rtl' : 'ltr' })
           const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)
           expect(overflow).toBeLessThanOrEqual(1)
-          const name = `translated-${locale}-${mode}-${route.includes('recipient') ? 'executive' : route.startsWith('/artifacts') ? 'deliverables' : route.slice(1)}-${width}-${height}-${zoom}.png`
+          const name = `translated-${locale}-${mode}-${route.includes('recipient') ? 'executive' : route.startsWith('/artifacts') ? 'deliverables' : route.slice(1).replaceAll('/', '-')}-${width}-${height}-${zoom}.png`
           const bytes = Buffer.from(await app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
           writeFileSync(test.info().outputPath(name), bytes)
           captures.push({ name, locale, route, width, height, zoom, ...appearance, overflow, sha256: createHash('sha256').update(bytes).digest('hex') })
