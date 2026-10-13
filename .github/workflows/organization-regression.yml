@@ -217,7 +217,13 @@ jobs:
             work-packages) native_tests=("${work_package_tests[@]}") ;;
             *) echo 'Unknown native suite' >&2; exit 1 ;;
           esac
-          scripts/run_tests.sh "${native_tests[@]}" -j 3
+          diagnostic_args=()
+          if [[ '${{ matrix.os }}' == 'windows-latest' && '${{ matrix.suite }}' == 'outcomes-attention' ]]; then
+            # Retain the 300s file cap and every assertion. Phase timings and
+            # live stacks distinguish slow setup from a blocked test operation.
+            diagnostic_args=(-vv -s -p scripts.ci.organization_timing -o faulthandler_timeout=30)
+          fi
+          scripts/run_tests.sh "${native_tests[@]}" -j 3 -- "${diagnostic_args[@]}"
 
   native-windows:
     # Retain the existing check name. This gate cannot succeed if a native
