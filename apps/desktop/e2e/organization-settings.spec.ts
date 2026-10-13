@@ -177,8 +177,8 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
   expect(Math.abs(cards[0].top - cards[1].top)).toBeLessThanOrEqual(1)
   expect(cards[1].left).toBeGreaterThan(cards[0].right)
   // Reference first-row height is about 295px. Keep the real controls within a
-  // modest content allowance, rather than stretching to the prior 437px row.
-  expect(Math.max(...cards.map(card => card.height))).toBeLessThanOrEqual(340)
+  // small content allowance, preserving controls and their focus outlines.
+  expect(Math.max(...cards.map(card => card.height))).toBeLessThanOrEqual(300)
   // Overview content uses the page scroller, with secondary controls disclosed
   // explicitly. All notification kinds remain directly reachable.
   const advancedModel = settings.locator('.eid-settings-model-advanced')

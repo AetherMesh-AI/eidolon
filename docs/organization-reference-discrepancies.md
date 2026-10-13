@@ -11,7 +11,33 @@ capture to imitate that viewport. Recheck representative narrow windows and the
 selected alternate theme after changing structure. Archive source commit/tree,
 route/state, viewport, theme and original PNG hash for every iteration.
 
-## Latest verified candidate — PR137, 2026-10-13
+## Current verified baseline and local spacing correction
+
+PR137 head `989844a0810a5a8965cb2251e04dc85d7f2bc4c0`, tree
+`29a2a0f995f6429d30c3c03677cd546a296d2762`, passed all nine jobs in
+[run 38345446168](https://github.com/AetherMesh-AI/eidolon/actions/runs/38345446168).
+Its 1,541 selected tests and 44 native scenarios passed without retries, skips or
+flaky cases. Artifact 11789817817 has SHA-256
+`218a52067b9fcc5164726913cb227f284ab05daa6dd0a482b68ac43e276fd18c`.
+44 provenance records, 11 reference PNGs, 40 translated objective PNGs, eight
+retained-context PNGs and 20 review PNGs were verified. Actual Settings both
+modes, collapsed/expanded Objective and AR/RU 200% review pixels were inspected.
+
+Instrumented Settings geometry is y174.296875–491.046875, height 316.75px in both
+modes, approximately 120px shorter than the prior capture but about 22px taller
+than the reference. The objective review panel is y825.25–934.671875; its content
+and disclosure fit, but its lower border extends about 1.7px below the footer
+boundary. This is a remaining mismatch, not whole-panel-fit acceptance.
+
+A separate local correction trims only outer/body/disclosure spacing, retaining
+all text, switches, controls, evidence and save owners. Native assertions now
+require the entire review panel to clear the footer by 4px and Settings' first
+row to be at most 300px. These are **unverified targets for the local delta**, not
+measurements from the green baseline. The reviewed remote head stays unchanged.
+The current page-by-page final gate is in
+[the capture inventory](organization-ui-capture-inventory.md#final-acceptance-checklist--2026-10-13).
+
+## Earlier verified candidate — PR137 e0cf, 2026-10-13
 
 Head `e0cf5b265d6163e0ff1cd259ef4c90b34d73b7e3`, tree
 `8a1411179474acb4a1ee195bb12b224760443704`, passed all nine checks in

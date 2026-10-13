@@ -14,6 +14,52 @@ a few alternate Settings themes. The theme regression separately exercises all
 built-in palettes and appearance persistence. Existing mockup references are
 input direction, not rendered evidence and not final gallery substitutes.
 
+## Final acceptance checklist — 2026-10-13
+
+This checklist is **not signed off**. Current verified baseline is PR137 head
+`989844a0810a5a8965cb2251e04dc85d7f2bc4c0`, tree
+`29a2a0f995f6429d30c3c03677cd546a296d2762`, in
+[run 38345446168](https://github.com/AetherMesh-AI/eidolon/actions/runs/38345446168).
+All nine checks passed: 1,541 selected tests and 44 native cases, zero
+skips/flakes/retries. The separately prepared spacing correction is not covered
+by that run. That baseline received independent source/CI clearance but is not merged. The
+new spacing delta needs renewed review; the separate merge hold remains.
+
+“Captured” below means retained native evidence exists, not that every image has
+received final pixel review. Only Home, Messages, Objective Detail and Settings
+have supplied image references; the other pages need shared-design acceptance,
+not a fabricated claim of matching an absent reference.
+
+| Page | Reference / shared design | Themes and viewport evidence | Localization and navigation | Remaining acceptance |
+| --- | --- | --- | --- | --- |
+| Home | Reference composition partly matched; question/requester hierarchy implemented | Dark/light, 1536×961, short/narrow, 125%/200% captured | Six-catalog core labels; intake retention and explicit-recipient navigation tested | Final matched pixels, deeper request text and accepted-outcome hierarchy |
+| Messages | Three-column reference arrangement and extra transcript space implemented | Dark/light wide/short/narrow; translated 200% captures; AR/RU retained context captured | Persistent recipient/history, finite renewal and cancellation tested; core six-catalog labels | Final populated/empty/recovery gallery; deeper conversation-action copy audit |
+| Work Overview | Shared design, no supplied reference | Dark/light wide/narrow captured | State/owner-request routing tested; core copy covered | Explicit 200% and full locale pixel signoff; representative final gallery |
+| Objectives | Shared design, no supplied reference | Dark/light wide/narrow and translated normal/200% captured | Search and outcome routing tested; six-catalog list labels | Final empty/loading/stale and archived-outcome gallery |
+| Objective Detail | Reference composition partly matched; current review strip y825.25, disclosed evidence authoritative | Dark/light, short/narrow, 125%/200%; 20 translated review images verified | Pause/resume, priority, owner-input and accepted-delivery paths tested; six-catalog phases/review labels | Full border clears footer (local correction pending native); final before/after intervention and acceptance gallery |
+| Organization | Shared design, no supplied reference | Dark/light list/grid/inspector, narrow and translated 200% captured | Persistent identities, role/context labels, inspector and directory navigation tested | Secondary staffing/project/configuration forms need final gallery and locale audit |
+| Deliverables | Shared design, no supplied reference | Dark/light session files and accepted evidence, narrow and translated 200% captured | Actual recorded artifact/evidence inspection and source routing tested | Final gallery of exact accepted artifact, empty/loading/error cases |
+| Settings | Reference first row now 316.75px vs approximately 295px | Overview dark/light; narrow/200%; standard sections captured; three themes with focus/narrow checks | All eight switches, disclosures, Model drafts/Apply and independent saves tested | Residual height correction pending native; all section pixels/locales and final gallery remain open |
+| System health | Single bottom bar and owned details | Multiple real status fixtures and narrow details captured | Core six-catalog health labels and state/navigation checks | Final all-state light/dark/200% gallery; no inferred provider health |
+| Tools/configuration | Existing destinations retained | Coverage varies by destination; no comprehensive final gallery | Needs You, Activity, Skills, Messaging, Execution, Import history and Legacy routes need final inventory | Shared-design, both themes, locales, 200% and navigation signoff per available destination |
+| History | Existing mounted history retained | No final expanded-history/synthetic-chat gallery | Persistent-history behavior covered separately | Shared-design, both themes, locales and 200% visual signoff |
+
+Final release gate (all remain open until independently checked on one build):
+
+- [ ] Four matched-size reference comparisons approved; residual mismatches named.
+- [ ] Every available requested destination and relevant empty/loading/error state included.
+- [ ] Default dark/light plus representative alternate themes inspected; theme persistence retained.
+- [ ] EN/JA/ZH/ZH-Hant/AR/RU interface copy audited; English fallback explicitly marked incomplete, authored records unchanged.
+- [ ] Narrow/short and 200% keyboard paths verified; reachable scrolling distinguished from simultaneous fit; focus outlines and footer clear.
+- [ ] Navigation, retained drafts/identities, intervention/resume and accepted outcomes retain their existing authority and save boundaries.
+- [ ] Labeled gallery and original screenshots from one final merged build delivered through Library with source/tree, dimensions and hashes.
+
+Remaining estimate: the local spacing delta needs about 45–75 minutes for hosted
+validation and review once branch verification is available. Broader visual and
+gallery acceptance remains roughly two to four further cycles / 3–6 hours plus
+review and authorization delays, with low confidence; the deep Settings/secondary
+locale audit can expand that range. Merge authorization timing is unbounded.
+
 ## Page coverage
 
 | Surface | Required states | Current slice evidence |

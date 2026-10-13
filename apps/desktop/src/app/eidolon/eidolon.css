@@ -580,7 +580,7 @@
 .eid-review-findings ol > li { padding-block: 10px; border-top: 1px solid var(--ui-stroke-tertiary); }
 .eid-review-findings ol > li > span { margin-inline-start: 10px; }
 .eid-review-findings :is(strong, small) { overflow-wrap: anywhere; }
-.eid-objective-overview .eid-review-findings { padding: 12px 14px; }
+.eid-objective-overview .eid-review-findings { padding: 8px 14px; }
 .eid-objective-overview .eid-review-findings > header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; margin-bottom: 8px; }
 .eid-review-findings > header h2 { margin: 0; font-size: 18px; line-height: 1.25; }
 .eid-review-findings > header p { font-size: 12px; }

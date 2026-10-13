@@ -201,3 +201,10 @@
 .eid-settings-toggle-description > p { margin-top: 4px; font-size: 12px; line-height: 1.35; font-weight: 400; }
 .eid-settings-cards:not(.eid-settings-model-only) .eid-settings-notification-kinds { align-items: start; }
 .eid-settings-cards:not(.eid-settings-model-only) .eid-settings-notification-kinds .settings-row > div { min-height: 30px; }
+
+/* Trim outer rhythm to the matched reference row without shrinking switches,
+   text or editor controls. Dedicated pages retain their original spacing. */
+.eid-settings-cards:not(.eid-settings-model-only) .eid-settings-card-editor { padding-block: 8px; }
+.eid-settings-cards:not(.eid-settings-model-only) .eid-settings-card-body { margin-top: 6px; }
+.eid-settings-cards:not(.eid-settings-model-only) .eid-settings-card-body .settings-content > div { padding-block: 5px; }
+.eid-settings-cards:not(.eid-settings-model-only) :is(.eid-settings-model-advanced, .eid-settings-model-parameters, .eid-settings-notification-sound) > summary { padding-block: 6px; }
