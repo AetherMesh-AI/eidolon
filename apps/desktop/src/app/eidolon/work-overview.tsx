@@ -5,7 +5,6 @@ import { useI18n } from '@/i18n/context'
 import { Activity } from './activity'
 import { HomeObjective } from './home'
 import { homeData } from './home-data'
-import { TaskCounts } from './objective-progress'
 import { objectiveWorkData } from './objective-work-data'
 import type { OrganizationSnapshot } from './types'
 
@@ -24,7 +23,6 @@ export function WorkOverview({ snapshot }: { snapshot: OrganizationSnapshot }) {
 
         return <section aria-label={objective.title} className="eid-home-panel" key={objective.id}>
           <HomeObjective objective={objective} snapshot={snapshot} />
-          <TaskCounts objective={objective} snapshot={snapshot} />
           <p>{copy.detail.delegationCount(data.groups.length, number.format(data.groups.length))}</p>
           <p>{snapshot.requests ? copy.detail.ownerRequestCount(data.requests.length, number.format(data.requests.length)) : copy.requestsUnavailable}</p>
         </section>

@@ -2,6 +2,7 @@ import { defineFieldCopy } from '@/app/settings/field-copy'
 
 import { defineLocale } from './define-locale'
 import { organizationConversationsRu } from './organization-conversations'
+import { organizationDispatchRu } from './organization-dispatch-copy'
 import { organizationWorkspaceRu } from './organization-home'
 import { organizationHomeCountsRu } from './organization-home-counts'
 import { organizationExecutiveMessageRu, organizationMemberMessagesRu } from './organization-member-messages'
@@ -35,10 +36,24 @@ const RU_NOUN = (count: number | string, one: string, few: string, many: string)
 export const ru = defineLocale({
   organizationMetadata: organizationMetadataRu,
   organizationWork: {
+    ...organizationDispatchRu,
+    objectives: 'Цели',
+    work: 'Работа',
+    activity: 'Активность',
+    artifacts: 'Результаты',
+    decisions: 'Решения',
+
+    packagePlanning: "Планирование",
+    packagePlanned: "Запланировано",
+    packageWorking: "В работе",
+    completed: "Завершено",
+    blocked: "Заблокировано",
+    cancelled: "Отменено",
     observationUnavailable: 'Просмотр состояния организации недоступен.',
     observationUnconfigured: 'Выполнение задач организации не инициализировано.',
     observationUnsupported: 'Этот сервер не поддерживает просмотр состояния организации.',
   },
+  organizationRoster: { objectiveExecutive: "Ответственный руководитель", objectiveManager: "Ответственный менеджер" },
   organizationSurfaces: organizationSurfacesRu,
   organizationHome: { ...organizationOverviewRu, ...organizationExecutiveMessageRu, memberMessages: organizationMemberMessagesRu, workspace: organizationWorkspaceRu, detail: { ...organizationObjectiveDetailRu, ...organizationHomeCountsRu } },
   organizationOwnerChat: organizationOwnerChatRu,

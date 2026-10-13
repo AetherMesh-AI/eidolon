@@ -8,8 +8,9 @@ import { AgentAvatar } from './avatar'
 import { Command } from './command'
 import { homeData } from './home-data'
 import { LocalizedTime } from './localized-time'
-import { OrganizationScenery } from './scenery'
+import { TaskCounts } from './objective-progress'
 import { RuntimeSetup } from './runtime-setup'
+import { OrganizationScenery } from './scenery'
 import type { Objective, OrganizationAdapter, OrganizationSnapshot } from './types'
 
 export function HomeObjective({
@@ -37,17 +38,17 @@ export function HomeObjective({
   const status = copy.statuses[objective.status as keyof typeof copy.statuses] ?? copy.unknownStatus
 
   return (
-    <article className={`eid-home-record${compact ? ' eid-home-record-compact' : ''}`}>
+    <article className={`eid-home-record${compact ? ' eid-home-record-compact' : ' eid-home-objective-primary'}`}>
       <div className="eid-home-record-heading">
-        <h3>
+        <h3 dir="auto">
           <Link to={`/objectives/${encodeURIComponent(objective.id)}`}>{objective.title}</Link>
         </h3>
         <span className={`eid-status eid-status-${objective.status}`}>{status}</span>
       </div>
-      {!compact && <p className="eid-home-description">{objective.description}</p>}
+      {!compact && <p className="eid-home-description" dir="auto">{objective.description}</p>}
       <p>
         <small>
-          {copy.owner}: {owner?.name || objective.ownerId || copy.unassigned}
+          {copy.owner}: <bdi>{owner?.name || objective.ownerId || copy.unassigned}</bdi>
         </small>
       </p>
       {objective.progress !== undefined && Number.isFinite(objective.progress) ? (
@@ -58,6 +59,10 @@ export function HomeObjective({
       ) : (
         <small>{copy.progressUnknown}</small>
       )}
+      {!compact && <div className="eid-home-objective-facts">
+        <p><small>{copy.detail.phase}</small><strong dir="auto">{objective.phase || copy.detail.phaseUnknown}</strong></p>
+        <TaskCounts objective={objective} snapshot={snapshot} />
+      </div>}
       {objective.dispatchControl?.paused && (
         <p className="eid-home-paused">
           {copy.paused} · {copy.running(new Intl.NumberFormat(locale).format(objective.dispatchControl.runningCount))}
@@ -181,8 +186,8 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
           <div aria-label={copy.needsYou} className="eid-home-panel-body" role="group" tabIndex={0}>
           {data.requests.slice(0, 3).map(request => (
             <article className="eid-home-record" key={request.id}>
-              <h3>{snapshot.objectives.find(item => item.id === request.objectiveId)?.title ?? request.objectiveId}</h3>
-              <p>{request.reason || request.requestedOutcome || t.organizationWork.needsYou}</p>
+              <h3 dir="auto">{snapshot.objectives.find(item => item.id === request.objectiveId)?.title ?? request.objectiveId}</h3>
+              <p dir="auto">{request.reason || request.requestedOutcome || t.organizationWork.needsYou}</p>
               <Link className="eid-home-action" to={`/objectives/${encodeURIComponent(request.objectiveId)}`}>
                 {copy.reviewRequest} →
               </Link>
@@ -205,8 +210,8 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
           {data.deliverables.slice(0, 3).map(item => (
             <article className="eid-home-record" key={item.objectiveId}>
               <small className="eid-status-completed">{copy.accepted}</small>
-              <h3>{item.title}</h3>
-              <p>{item.summary}</p>
+              <h3 dir="auto">{item.title}</h3>
+              <p dir="auto">{item.summary}</p>
               <div className="eid-home-record-time"><LocalizedTime value={item.updatedAt} /></div>
               <Link className="eid-home-action" to={`/objectives/${encodeURIComponent(item.objectiveId)}`}>
                 {copy.viewObjective} →
@@ -238,9 +243,9 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
               <li key={event.id}>
                 <AgentAvatar name={agent?.name ?? copy.organization} />
                 <div>
-                  <strong>{agent?.name ?? copy.organization}</strong>
+                  <strong dir="auto">{agent?.name ?? copy.organization}</strong>
                   {agent && <small>{({ Owner: t.organizationRoster.owner, Executive: t.organizationRoster.executive, Manager: t.organizationRoster.manager, Worker: t.organizationRoster.worker, Director: t.organizationRoster.manager, Employee: t.organizationRoster.worker } as Record<string, string>)[agent.role] ?? agent.role}</small>}
-                  <p>{event.text}</p>
+                  <p dir="auto">{event.text}</p>
                   <LocalizedTime value={event.timestamp} />
                 </div>
               </li>

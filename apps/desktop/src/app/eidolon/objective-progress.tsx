@@ -36,9 +36,9 @@ export function ObjectiveProgress({ objective, snapshot, controls, onReviewReque
 
   const taskRows = (tasks: OrganizationTask[]) => <ul className="eid-progress-tasks">
     {tasks.slice(0, 3).map(task => <li className="eid-progress-task" key={task.id}>
-      <strong>{task.title}</strong>
+      <strong dir="auto">{task.title}</strong>
       <span className={`eid-status eid-status-${task.status}`}>{copy.taskStatus[task.status]}</span>
-      <small>{agentName(task.assignedAgentId ?? task.ownerId)}</small>
+      <small dir="auto">{agentName(task.assignedAgentId ?? task.ownerId)}</small>
       {task.coordination?.state === 'waiting' && <small>{task.coordination.reason || copy.dependenciesWaiting}</small>}
     </li>)}
     {tasks.length > 3 && <li>{copy.moreTasks(tasks.length - 3, number.format(tasks.length - 3))}</li>}
@@ -53,7 +53,7 @@ export function ObjectiveProgress({ objective, snapshot, controls, onReviewReque
     <div className="eid-objective-progress-main">
       <section aria-label={copy.phase} className="eid-home-panel eid-objective-phase">
         <div className="eid-objective-phase-heading">
-          <div className="eid-recorded-phase"><span>{copy.phase}</span><strong>{objective.phase || copy.phaseUnknown}</strong></div>
+          <div className="eid-recorded-phase"><span>{copy.phase}</span><strong dir="auto">{objective.phase || copy.phaseUnknown}</strong></div>
           <Button onClick={onReviewWork} size="micro" variant="secondary">{copy.inspectWork}</Button>
         </div>
         {controls && <div className="eid-objective-actions">{controls}</div>}
@@ -74,8 +74,8 @@ export function ObjectiveProgress({ objective, snapshot, controls, onReviewReque
         <p>{copy.teamNote}</p>
         <div className="eid-team-work-grid">
           {data.groups.map(group => <article className="eid-home-panel" key={group.package.id}>
-            <header><div className="eid-team-owner"><AgentAvatar name={agentName(group.package.managerId)} /><div><h3>{group.package.title}</h3><small>{t.organizationRoster.objectiveManager} · {agentName(group.package.managerId)}</small></div></div></header>
-            <p>{group.package.description}</p>
+            <header><div className="eid-team-owner"><AgentAvatar name={agentName(group.package.managerId)} /><div><h3 dir="auto">{group.package.title}</h3><small>{t.organizationRoster.objectiveManager} · <bdi>{agentName(group.package.managerId)}</bdi></small></div></div></header>
+            <p dir="auto">{group.package.description}</p>
             <p className="eid-note">{copy.packageStatus}: {t.organizationWork[group.package.status === 'planning' ? 'packagePlanning' : group.package.status === 'planned' ? 'packagePlanned' : group.package.status === 'working' ? 'packageWorking' : group.package.status]}</p>
             {taskRows(group.tasks)}
           </article>)}
@@ -89,7 +89,7 @@ export function ObjectiveProgress({ objective, snapshot, controls, onReviewReque
     <div aria-label={copy.attentionAndDelivery} className="eid-objective-progress-aside" role="region">
       <section aria-label={copy.needsInput} className="eid-home-panel">
         <header><h2>{copy.needsInput}</h2></header>
-        {data.requests.slice(0, 2).map(request => <article className="eid-home-record" key={request.id}><p>{request.reason || request.requestedOutcome || t.organizationWork.needsYou}</p><small>{request.team}</small></article>)}
+        {data.requests.slice(0, 2).map(request => <article className="eid-home-record" key={request.id}><p dir="auto">{request.reason || request.requestedOutcome || t.organizationWork.needsYou}</p><small>{request.team}</small></article>)}
         {!data.requests.length && <p>{snapshot.requests ? t.organizationHome.noNeeds : t.organizationHome.requestsUnavailable}</p>}
         {data.requests.length > 2 && <p>{copy.moreRequests(data.requests.length - 2, number.format(data.requests.length - 2))}</p>}
         <Button onClick={onReviewRequests} size="sm" variant="secondary">{copy.inspectRequests}</Button>
@@ -97,16 +97,16 @@ export function ObjectiveProgress({ objective, snapshot, controls, onReviewReque
       <section aria-label={copy.delivery} className="eid-home-panel">
         <header><h2>{copy.delivery}</h2></header>
         <p>{data.accepted ? t.organizationHome.accepted : copy.notAccepted}</p>
-        {data.accepted && <p className="eid-result-text">{objective.acceptance?.summary || objective.result || copy.acceptedRecorded}</p>}
+        {data.accepted && <p className="eid-result-text" dir="auto">{objective.acceptance?.summary || objective.result || copy.acceptedRecorded}</p>}
         <Button onClick={onReviewWork} size="sm" variant="secondary">{copy.inspectAcceptance}</Button>
       </section>
       <section aria-label={t.organizationSurfaces.objectiveRecord.heading} className="eid-home-panel eid-objective-record">
         <header><h2>{t.organizationSurfaces.objectiveRecord.heading}</h2></header>
         <dl>
           <dt>{t.organizationSurfaces.objectiveRecord.created}</dt><dd><LocalizedTime value={objective.createdAt} /></dd>
-          <dt>{t.organizationSurfaces.objectiveRecord.owner}</dt><dd>{agentName(objective.ownerId)}</dd>
+          <dt>{t.organizationSurfaces.objectiveRecord.owner}</dt><dd dir="auto">{agentName(objective.ownerId)}</dd>
           <dt>{t.organizationSurfaces.objectiveRecord.priority}</dt><dd>{objective.priority || t.organizationSurfaces.objectiveRecord.notRecorded}</dd>
-          <dt>{t.organizationSurfaces.objectiveRecord.phase}</dt><dd>{objective.phase || t.organizationSurfaces.objectiveRecord.notRecorded}</dd>
+          <dt>{t.organizationSurfaces.objectiveRecord.phase}</dt><dd dir="auto">{objective.phase || t.organizationSurfaces.objectiveRecord.notRecorded}</dd>
         </dl>
       </section>
     </div>

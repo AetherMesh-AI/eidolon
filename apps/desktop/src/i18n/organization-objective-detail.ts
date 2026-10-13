@@ -4,6 +4,12 @@ type DetailCopy = Omit<OrganizationHomeCopy['detail'], 'moreTasks' | 'moreReques
 
 // Translate presentation only. Recorded phase, task and evidence text stays authored.
 export const organizationObjectiveDetailJa: DetailCopy = {
+  tasksLabel: "タスク",
+  resultLabel: "結果",
+  noReviewedResult: "レビュー済みの結果はまだありません。",
+  runtimeNote: "状態と完了は現在のプロファイルの実行環境から報告されます。",
+  fullEvidence: "タスクの証拠全文",
+  views: "目標の表示",
   overview: '目標の概要', progress: '進捗の概要', progressNote: '記録されたタスクの進捗です。最終的な受け入れは別途判断されます。',
   phase: '現在の段階', phaseUnknown: '段階は未報告', taskStates: '記録されたタスクの状態',
   taskStatus: { completed: '完了', working: '作業中', review: 'レビュー中', blocked: 'ブロック中', queued: '待機中', cancelled: 'キャンセル済み' },
@@ -18,6 +24,12 @@ export const organizationObjectiveDetailJa: DetailCopy = {
 }
 
 export const organizationObjectiveDetailZh: DetailCopy = {
+  tasksLabel: "任务",
+  resultLabel: "结果",
+  noReviewedResult: "暂无已审核的结果。",
+  runtimeNote: "状态和完成情况由当前配置文件的运行环境报告。",
+  fullEvidence: "完整任务证据",
+  views: "目标视图",
   overview: '目标概览', progress: '进度概览', progressNote: '已记录的任务进度。最终验收需单独决定。',
   phase: '当前阶段', phaseUnknown: '尚未报告阶段', taskStates: '已记录的任务状态',
   taskStatus: { completed: '已完成', working: '工作中', review: '审核中', blocked: '受阻', queued: '排队中', cancelled: '已取消' },
@@ -31,6 +43,12 @@ export const organizationObjectiveDetailZh: DetailCopy = {
 }
 
 export const organizationObjectiveDetailZhHant: DetailCopy = {
+  tasksLabel: "任務",
+  resultLabel: "結果",
+  noReviewedResult: "尚無已審查的結果。",
+  runtimeNote: "狀態和完成情況由目前設定檔的執行環境回報。",
+  fullEvidence: "完整任務證據",
+  views: "目標檢視",
   overview: '目標概覽', progress: '進度概覽', progressNote: '已記錄的任務進度。最終驗收需另行決定。',
   phase: '目前階段', phaseUnknown: '尚未回報階段', taskStates: '已記錄的任務狀態',
   taskStatus: { completed: '已完成', working: '工作中', review: '審查中', blocked: '受阻', queued: '排隊中', cancelled: '已取消' },
@@ -44,6 +62,12 @@ export const organizationObjectiveDetailZhHant: DetailCopy = {
 }
 
 export const organizationObjectiveDetailAr: DetailCopy = {
+  tasksLabel: "المهام",
+  resultLabel: "النتيجة",
+  noReviewedResult: "لا توجد نتيجة تمت مراجعتها بعد.",
+  runtimeNote: "تُبلّغ بيئة تشغيل ملف التعريف الحالي الحالة والاكتمال.",
+  fullEvidence: "أدلة المهمة الكاملة",
+  views: "عروض الهدف",
   overview: 'نظرة عامة على الهدف', progress: 'نظرة عامة على التقدم', progressNote: 'تقدم المهام المسجل. القبول النهائي قرار منفصل.',
   phase: 'المرحلة الحالية', phaseUnknown: 'لم تُبلّغ المرحلة', taskStates: 'حالات المهام المسجلة',
   taskStatus: { completed: 'مكتملة', working: 'قيد العمل', review: 'قيد المراجعة', blocked: 'متعطلة', queued: 'في الانتظار', cancelled: 'ملغاة' },
@@ -57,6 +81,12 @@ export const organizationObjectiveDetailAr: DetailCopy = {
 }
 
 export const organizationObjectiveDetailRu: DetailCopy = {
+  tasksLabel: "Задачи",
+  resultLabel: "Результат",
+  noReviewedResult: "Проверенного результата пока нет.",
+  runtimeNote: "Состояние и завершение сообщает среда выполнения текущего профиля.",
+  fullEvidence: "Полные доказательства задачи",
+  views: "Представления цели",
   overview: 'Обзор цели', progress: 'Обзор прогресса', progressNote: 'Записанный прогресс задач. Окончательная приёмка — отдельное решение.',
   phase: 'Текущий этап', phaseUnknown: 'Этап не указан', taskStates: 'Записанные состояния задач',
   taskStatus: { completed: 'Завершено', working: 'В работе', review: 'На проверке', blocked: 'Заблокировано', queued: 'В очереди', cancelled: 'Отменено' },

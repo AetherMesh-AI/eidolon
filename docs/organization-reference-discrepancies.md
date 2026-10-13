@@ -11,6 +11,46 @@ capture to imitate that viewport. Recheck representative narrow windows and the
 selected alternate theme after changing structure. Archive source commit/tree,
 route/state, viewport, theme and original PNG hash for every iteration.
 
+## Current matched-image audit — 2026-10-13
+
+All four original 1536×961 JPEGs were reopened and compared with actual native
+1536×961 PNGs from head `4e2fb978c191cc247f0f188189fd4f6c509bd667`, tree
+`5d008dd30badf7293e670815b609ae42adbbd210`. The
+[verified native run](https://github.com/AetherMesh-AI/eidolon/actions/runs/38326122458)
+passed 41 standard and three directory cases. Captures use temporary synthetic
+profiles and scripted provider responses; they establish UI behavior, not live
+model reliability. The remainder of this document records earlier iterations;
+this table supersedes their descriptions of the current build.
+
+| Page | Current verified baseline | Remaining reference difference | Next bounded work |
+| --- | --- | --- | --- |
+| Home | 203px rail, scenic hero, three unequal panels, lower activity strip and persistent health bar | Primary objective remains a plain record; request/delivery cards have less hierarchy; long records scroll inside panels | Box the primary objective and expose only recorded phase/current task states; retain full-history links and accepted-outcome requirements |
+| Messages | Directory, populated member conversation and context occupy three columns; finite allowance and real recipient identity are retained | Control/notice density reduces transcript height; profile header and composer spacing differ | Compact existing controls while preserving opening, renewal, cancellation and reply anchors; do not fabricate presence or chat history |
+| Objective | Scenic title/status, progress and manager assignment cards, input/delivery/details aside; all five translated overview captures verified | Dispatch/priority controls are denser than the reference; review section remains below the overview; authored text inherits interface direction | Isolate authored direction and localize remaining overview/inspector labels; later reorganize supported review controls without inventing stage history |
+| Settings | Real Model/Notifications owners in a six-card overview with descriptive secondary navigation | Two large editors dominate four short destination cards; schema defaults and notification rows make the page tall | Keep context/fallback fields mounted in an explicit disclosure; arrange alert kinds compactly and rebalance destination cards |
+
+The local follow-up implements the Home/Settings changes and authored-direction
+isolation described above. Its native captures are **pending**, so this is not a
+claim that those changes match the originals or fit every viewport.
+
+Capability mappings remain explicit: organization profile fields, global Save,
+live presence, unread/group state, attachment/voice controls and completed stage
+history are not fabricated. The clean organization/search/profile top bar and
+single bottom health bar follow the later user direction. Settings-owned themes,
+all six languages, narrow/zoomed reachability and production activation fences
+remain acceptance requirements. The local slice adds Arabic/Russian dispatch and priority controls, including
+recovery and boundary messages. Deeper legacy request/settings views still contain
+English fallback; translating these controls does not complete them.
+
+Next milestone: one to two implementation/validation cycles for the bounded
+Home/Settings and authored-text changes. Full UI completion is estimated at three
+to five further cycles for Messages/review placement, remaining language coverage,
+secondary pages and the final same-build gallery. Recent hosted native cycles
+have taken about 30–35 minutes each, excluding implementation and independent
+review; findings may add cycles.
+
+## Earlier acceptance checklist and iteration history
+
 ## Shared shell
 
 - [ ] Match reference rail proportion (about 203px of the 1536px image), brand

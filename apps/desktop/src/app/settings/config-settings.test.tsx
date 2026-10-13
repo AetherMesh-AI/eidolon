@@ -66,7 +66,7 @@ async function renderConfigSettings() {
     </MemoryRouter>
   )
 
-  return { importInputRef, navigateSection: (activeSectionId: string) => view.rerender(<MemoryRouter><QueryClientProvider client={client}><SettingsOverview editor={<ConfigSettings activeSectionId={activeSectionId === 'overview' ? 'model' : activeSectionId} importInputRef={importInputRef} />} editorOnly={activeSectionId !== 'overview'} notifications={null} onSelect={() => {}} /></QueryClientProvider></MemoryRouter>) }
+  return { importInputRef, navigateSection: (activeSectionId: string) => view.rerender(<MemoryRouter><QueryClientProvider client={client}><SettingsOverview editor={<ConfigSettings activeSectionId={activeSectionId === 'overview' ? 'model' : activeSectionId} compactOverview={activeSectionId === 'overview'} importInputRef={importInputRef} />} editorOnly={activeSectionId !== 'overview'} notifications={null} onSelect={() => {}} /></QueryClientProvider></MemoryRouter>) }
 }
 
 describe('ConfigSettings autosave', () => {
@@ -202,4 +202,30 @@ it('retains pending configuration autosave when returning to Overview before deb
   } finally {
     vi.useRealTimers()
   }
+})
+
+
+it('keeps context drafts and the same field mounted while the overview disclosure closes', async () => {
+  getHermesConfigRecord.mockResolvedValue({ model: 'fixture', model_context_length: 4096 })
+  getHermesConfigSchema.mockResolvedValue({ fields: { model_context_length: { type: 'number', default: 0, description: 'Context window' } } })
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+  try {
+    const view = await renderConfigSettings()
+    view.navigateSection('overview')
+    const summary = await screen.findByText('Context and fallback models')
+    const disclosure = summary.closest('details')!
+    expect(disclosure.open).toBe(false)
+    fireEvent.click(summary)
+    expect(disclosure.open).toBe(true)
+    const input = screen.getByRole('spinbutton')
+    fireEvent.change(input, { target: { value: '8192' } })
+    fireEvent.click(summary)
+    expect(disclosure.open).toBe(false)
+    view.navigateSection('model')
+    expect(screen.getByRole('spinbutton')).toBe(input)
+    expect((input as HTMLInputElement).value).toBe('8192')
+    await vi.advanceTimersByTimeAsync(700)
+    await waitFor(() => expect(saveHermesConfig).toHaveBeenCalledTimes(1))
+    expect(saveHermesConfig.mock.calls[0][0]).toEqual({ model_context_length: 8192 })
+  } finally { vi.useRealTimers() }
 })

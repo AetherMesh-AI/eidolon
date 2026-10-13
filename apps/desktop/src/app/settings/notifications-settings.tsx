@@ -51,6 +51,7 @@ export function NotificationsSettings({ compactOverview = false }: { compactOver
         onChange={setNativeNotifyEnabled}
       />
 
+      <div className="eid-settings-notification-kinds">
       {NATIVE_NOTIFICATION_KINDS.map(kind => (
         <ToggleRow
           checked={prefs.enabled && prefs.kinds[kind]}
@@ -61,6 +62,7 @@ export function NotificationsSettings({ compactOverview = false }: { compactOver
           onChange={on => setNativeNotifyKind(kind, on)}
         />
       ))}
+      </div>
 
       <details className="eid-settings-notification-sound" open={compactOverview ? undefined : true}>
         <summary hidden={!compactOverview}>{copy.completionSoundTitle}</summary>

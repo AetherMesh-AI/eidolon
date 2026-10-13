@@ -554,3 +554,11 @@
 .eid-objective-record dl { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); gap: 10px 14px; margin: 0; font-size: 12px; }
 .eid-objective-record dt, .eid-objective-record dd { margin: 0; overflow-wrap: anywhere; }
 .eid-objective-record dt { color: var(--text-secondary); }
+
+/* Primary objective summarizes only recorded current work; the next objective
+   retains its compact row and existing navigation. */
+.eid-home-grid .eid-home-objective-primary:first-child { border: 1px solid var(--eidolon-border-subtle); border-radius: 8px; padding: 14px; background: var(--eidolon-surface-3); margin-block: 4px 12px; }
+.eid-home-objective-facts { display: grid; gap: 8px; margin-block: 12px; }
+.eid-home-objective-facts > p { display: grid; gap: 3px; margin: 0; }
+.eid-home-objective-facts strong { font-size: 13px; font-weight: 500; }
+.eid-home-objective-facts .eid-task-counts { margin: 0; }

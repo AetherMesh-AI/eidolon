@@ -35,6 +35,12 @@ export const organizationHomeEn = {
     retainedContext: 'Identity, memory and history'
   },
   detail: {
+    tasksLabel: "Tasks",
+    resultLabel: "Result",
+    noReviewedResult: "No reviewed result yet.",
+    runtimeNote: "State and completion are reported by the current-profile runtime.",
+    fullEvidence: "Full task evidence",
+    views: "Objective views",
     overview: 'Objective overview',
     progress: 'Progress overview',
     progressNote: 'Recorded task progress. Final acceptance is a separate decision.',

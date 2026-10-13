@@ -80,9 +80,9 @@ export function RuntimeStatus({
 }
 
 export function RuntimeObjectiveDetail({ objective, adapter, snapshot, historyControls }: { objective: Objective; adapter: RuntimeOrganizationAdapter; snapshot: OrganizationSnapshot; historyControls?: ReactNode }) {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const copy = t.organizationWork
-  const [tab, setTab] = useState('work')
+  const [tab, setTab] = useState<'work' | 'activity' | 'artifacts' | 'decisions'>('work')
   const [inspecting, setInspecting] = useState(false)
   const [evidenceId, setEvidenceId] = useState<string | null>(null)
   const requestsRef = useRef<HTMLDivElement>(null)
@@ -99,14 +99,19 @@ export function RuntimeObjectiveDetail({ objective, adapter, snapshot, historyCo
 
   return <>
     <Link className="eid-back" to="/objectives">← {copy.objectives}</Link>
-    <header className="eid-page-header eid-objective-hero"><OrganizationScenery className="eid-objective-scenery" /><div><p className="sr-only">{t.organizationHome.detail.objectiveRuntime}</p><div className="eid-objective-heading"><h1>{objective.title}</h1><Status status={objective.status} /></div><p className="eid-result-text">{objective.description}</p></div></header>
-    <div className="eid-inline"><span>{t.organizationRoster.objectiveExecutive} · {owner?.name || objective.ownerId || t.organizationHome.unassigned}</span>{objective.managerId && <span>{t.organizationRoster.objectiveManager} · {manager?.name || objective.managerId}</span>}<Button onClick={() => setInspecting(true)} size="sm" variant="secondary">{t.organizationHome.detail.inspectObjective}</Button></div>
+    <header className="eid-page-header eid-objective-hero"><OrganizationScenery className="eid-objective-scenery" /><div><p className="sr-only">{t.organizationHome.detail.objectiveRuntime}</p><div className="eid-objective-heading"><h1 dir="auto">{objective.title}</h1><Status status={objective.status} /></div><p className="eid-result-text" dir="auto">{objective.description}</p></div></header>
+    <div className="eid-inline"><span>{t.organizationRoster.objectiveExecutive} · <bdi>{owner?.name || objective.ownerId || t.organizationHome.unassigned}</bdi></span>{objective.managerId && <span>{t.organizationRoster.objectiveManager} · <bdi>{manager?.name || objective.managerId}</bdi></span>}<Button onClick={() => setInspecting(true)} size="sm" variant="secondary">{t.organizationHome.detail.inspectObjective}</Button></div>
     <ObjectiveProgress controls={<>
       <RuntimeDispatch adapter={adapter} key={`dispatch:${snapshot.connection?.scope}:${snapshot.connection?.ownerScope}:${objective.id}`} objective={objective} snapshot={snapshot} />
       <RuntimePriority adapter={adapter} key={`${snapshot.connection?.scope}:${snapshot.connection?.ownerScope}:${objective.id}`} objective={objective} snapshot={snapshot} />
     </>} objective={objective} onReviewRequests={() => reveal(requestsRef.current)} onReviewWork={() => { setTab('work'); reveal(workRef.current) }} snapshot={snapshot} />
-    {inspecting && <Inspector kind="objective" onClose={() => setInspecting(false)} title={objective.title}><MetadataSummary objective={objective} /><RuntimeWorkPackages objective={objective} snapshot={snapshot} /><dl><dt>Status</dt><dd>{objective.status}</dd><dt>Owner</dt><dd>{owner?.name || objective.ownerId}</dd><dt>Tasks</dt><dd>{tasks.length}</dd><dt>Result</dt><dd className="eid-result-text">{objective.result || 'No reviewed result yet.'}</dd></dl><p>State and completion are reported by the current-profile runtime.</p></Inspector>}
-    {evidenceId && <RuntimeArtifact adapter={adapter} evidenceId={evidenceId} key={evidenceId} onClose={() => setEvidenceId(null)} snapshot={snapshot} title="Full task evidence" />}
+    {inspecting && <Inspector kind="objective" onClose={() => setInspecting(false)} title={objective.title}><MetadataSummary objective={objective} /><RuntimeWorkPackages objective={objective} snapshot={snapshot} /><dl>
+      <dt>{t.organizationSurfaces.objectives.status}</dt><dd><Status status={objective.status} /></dd>
+      <dt>{t.organizationSurfaces.objectiveRecord.owner}</dt><dd dir="auto">{owner?.name || objective.ownerId || t.organizationHome.unassigned}</dd>
+      <dt>{t.organizationHome.detail.tasksLabel}</dt><dd>{new Intl.NumberFormat(locale).format(tasks.length)}</dd>
+      <dt>{t.organizationHome.detail.resultLabel}</dt><dd className="eid-result-text" dir="auto">{objective.result || t.organizationHome.detail.noReviewedResult}</dd>
+    </dl><p>{t.organizationHome.detail.runtimeNote}</p></Inspector>}
+    {evidenceId && <RuntimeArtifact adapter={adapter} evidenceId={evidenceId} key={evidenceId} onClose={() => setEvidenceId(null)} snapshot={snapshot} title={t.organizationHome.detail.fullEvidence} />}
     <div aria-label={t.organizationHome.detail.objectiveControls} className="eid-objective-controls" role="region">
     {objective.projects?.length ? <section aria-label={copy.objectiveProjects}>
       <h2>{copy.objectiveProjects}</h2>
@@ -119,8 +124,8 @@ export function RuntimeObjectiveDetail({ objective, adapter, snapshot, historyCo
     <RuntimeRequests adapter={adapter} objective={objective} snapshot={snapshot} />
     </div>
     <div aria-label={t.organizationHome.detail.workDetails} ref={workRef} role="region" tabIndex={-1}>
-    <div aria-label="Objective views" className="eid-tabs" role="tablist">{(['work', 'activity', 'artifacts', 'decisions'] as const).map(name => <button aria-selected={tab === name} key={name} onClick={() => setTab(name)} role="tab">{copy[name]}</button>)}</div>
-    <section aria-label={tab} role="tabpanel">
+    <div aria-label={t.organizationHome.detail.views} className="eid-tabs" role="tablist">{(['work', 'activity', 'artifacts', 'decisions'] as const).map(name => <button aria-selected={tab === name} key={name} onClick={() => setTab(name)} role="tab">{copy[name]}</button>)}</div>
+    <section aria-label={copy[tab]} role="tabpanel">
       {tab === 'work' && <><RuntimeAcceptance objective={objective} onOpenEvidence={setEvidenceId} /><RuntimeWorkPackages objective={objective} snapshot={snapshot} /><WorkGraph objectiveId={objective.id} onOpenEvidence={setEvidenceId} snapshot={snapshot} /></>}
       {tab === 'activity' && <Activity objectiveId={objective.id} snapshot={snapshot} />}
       {tab === 'artifacts' && <Knowledge adapter={adapter} objectiveId={objective.id} snapshot={snapshot} />}

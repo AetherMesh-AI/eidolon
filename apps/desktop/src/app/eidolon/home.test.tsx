@@ -243,3 +243,20 @@ it('opens organization evidence from the accepted-results action without creatin
   expect(screen.getByText('/artifacts?source=organization')).toBeTruthy()
   expect(adapter.createObjective).not.toHaveBeenCalled()
 })
+
+
+it('summarizes only current scoped work on the primary objective without inventing accepted delivery', () => {
+  const current = { id: 'task', objectiveId: objective.id, title: 'Recorded work', ownerId: 'worker', status: 'completed' as const, dependsOn: [], currentRound: true }
+  const record = { ...objective, phase: 'مراجعة (P2)' }
+  const state = { ...snapshot, objectives: [record], tasks: [current, { ...current, id: 'old', currentRound: false }, { ...current, id: 'other', objectiveId: 'other' }] }
+  const before = JSON.stringify(state)
+  const view = render(<MemoryRouter><HomeObjective objective={record} snapshot={state} /></MemoryRouter>)
+  expect(screen.getByText(record.phase).getAttribute('dir')).toBe('auto')
+  const counts = screen.getByRole('list', { name: 'Recorded task states' })
+  expect(counts.textContent).toBe('1 Completed')
+  expect(screen.queryByText('Accepted deliverable')).toBeNull()
+  expect(screen.getByRole('link', { name: 'View objective →' }).getAttribute('href')).toBe('/objectives/open')
+  view.rerender(<MemoryRouter><HomeObjective compact objective={record} snapshot={state} /></MemoryRouter>)
+  expect(screen.queryByRole('list', { name: 'Recorded task states' })).toBeNull()
+  expect(JSON.stringify(state)).toBe(before)
+})
