@@ -136,6 +136,7 @@ jobs:
         run: |
           ledger_identity_tests=(
             tests/eidolon_cli/test_organization_store.py
+            tests/eidolon_cli/test_organization_schema_initialization.py
             tests/eidolon_cli/test_organization_budget_migration.py
             tests/eidolon_cli/test_organization_artifact_retention.py
             tests/eidolon_cli/test_organization_identity.py
