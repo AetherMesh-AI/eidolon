@@ -4,9 +4,8 @@ import { atom } from 'nanostores'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 const state = vi.hoisted(() => ({ read: vi.fn() }))
-vi.mock('@/store/profile', () => ({ $activeGatewayProfile: atom('alpha'), $gatewaySwapTarget: atom(null) }))
+vi.mock('@/store/profile', () => ({ $activeGatewayProfile: atom('alpha'), $gatewaySwapTarget: atom(null), normalizeProfileKey: (name: string) => name }))
 vi.mock('@/store/connections', () => ({ $pendingConnectionId: atom(null) }))
-vi.mock('@/store/settings-scope', () => ({ $settingsRequestProfile: atom<string | undefined>(undefined) }))
 vi.mock('@/store/session', () => ({ $connection: atom({ baseUrl: 'http://fixture.invalid', connectionId: 'fixture', authenticationIdentity: 'fixture-auth' }) }))
 vi.mock('@/themes/context', () => ({ useTheme: vi.fn() }))
 vi.mock('@/eidolon', async () => {
@@ -23,8 +22,9 @@ vi.mock('@/eidolon', async () => {
 
 import { $activeGatewayProfile } from '@/store/profile'
 import { $connection } from '@/store/session'
+import { $settingsScopeOverride, setSettingsScope } from '@/store/settings-scope'
 
-import { HERMES_CONFIG_KEY } from '../hooks/use-config-record'
+import { HERMES_CONFIG_KEY, hermesConfigKey } from '../hooks/use-config-record'
 
 import { SavedSettingsSummary } from './settings-summary'
 
@@ -38,11 +38,48 @@ const deferred = () => {
 let client: QueryClient
 beforeEach(() => {
   $activeGatewayProfile.set('alpha')
+  $settingsScopeOverride.set(null)
   $connection.set({ ...$connection.get()!, baseUrl: 'http://fixture.invalid', connectionId: 'fixture', authenticationIdentity: 'fixture-auth' })
   state.read.mockReset()
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
 })
 afterEach(() => { cleanup(); client.clear() })
+
+it('namespaces active and explicit editor revisions across a shared-source profile switch', async () => {
+  const oldActiveA = deferred()
+  const explicitA = deferred()
+  const savedExplicitA = deferred()
+  client.setQueryData(HERMES_CONFIG_KEY, { model: { provider: 'Initial active A' } })
+  client.setQueryData(HERMES_CONFIG_KEY, { model: { provider: 'Updated active A' } })
+  state.read.mockReturnValueOnce(oldActiveA.promise)
+    .mockResolvedValueOnce({ model: { provider: 'Current B' } })
+    .mockReturnValueOnce(explicitA.promise)
+    .mockReturnValueOnce(savedExplicitA.promise)
+  render(<QueryClientProvider client={client}><SavedSettingsSummary section="providers" /></QueryClientProvider>)
+  await waitFor(() => expect(state.read).toHaveBeenCalledTimes(1))
+
+  // Shared remote profiles preserve the descriptor and connection identity.
+  await act(async () => { $activeGatewayProfile.set('beta') })
+  await screen.findByText('Current B')
+  const explicitKey = hermesConfigKey('alpha')
+  client.setQueryData(explicitKey, { model: { provider: 'Explicit editor A' } })
+  await act(async () => { setSettingsScope('alpha') })
+  await waitFor(() => expect(state.read).toHaveBeenCalledTimes(3))
+  expect(screen.queryByText('Current B')).toBeNull()
+  await act(async () => { client.setQueryData(explicitKey, { model: { provider: 'Saved explicit A' } }) })
+  expect(client.getQueryState(explicitKey)?.dataUpdateCount).toBe(client.getQueryState(HERMES_CONFIG_KEY)?.dataUpdateCount)
+  await waitFor(() => expect(state.read).toHaveBeenCalledTimes(4))
+  expect(state.read.mock.calls[3][0]).toEqual({ connectionId: 'fixture', profile: 'alpha' })
+
+  await act(async () => { oldActiveA.resolve({ model: { provider: 'Stale active A' } }) })
+  expect(screen.queryByText('Stale active A')).toBeNull()
+  expect(screen.getByRole('status').textContent).toContain('Loading')
+  await act(async () => { savedExplicitA.resolve({ model: { provider: 'Verified explicit A' } }) })
+  await screen.findByText('Verified explicit A')
+  await act(async () => { explicitA.resolve({ model: { provider: 'Pre-save explicit A' } }) })
+  expect(screen.queryByText('Pre-save explicit A')).toBeNull()
+  expect(screen.getByText('Verified explicit A')).toBeTruthy()
+})
 
 it('never paints previous-owner configuration during a deferred switch or late previous-owner completion', async () => {
   const lateA = deferred()

@@ -70,7 +70,8 @@ export function SavedSettingsSummary({ section }: { section: SummarySection }) {
   const editorKey = JSON.stringify(hermesConfigKey(requestedProfile))
 
   // An editor write must start a new read even if the previous generation has
-  // no data yet. Sharing this cache revision also coalesces all summary cards.
+  // no data yet. The cache identity namespaces independent revision counters;
+  // sharing both also coalesces all summary cards.
   const editorRevision = useSyncExternalStore(
     notify => client.getQueryCache().subscribe(event => {
       if (JSON.stringify(event.query.queryKey) === editorKey) { notify() }
@@ -79,7 +80,7 @@ export function SavedSettingsSummary({ section }: { section: SummarySection }) {
   )
 
   const { data, isPending, isError } = useQuery({
-    queryKey: [...HERMES_CONFIG_KEY, 'saved-summary', owner, editorRevision],
+    queryKey: [...HERMES_CONFIG_KEY, 'saved-summary', owner, editorKey, editorRevision],
     queryFn: () => getHermesConfigRecord({ connectionId, profile }),
     placeholderData: (previous, query) => query?.queryKey[2] === owner ? previous : undefined,
     enabled,
