@@ -43,12 +43,14 @@ export function ObjectiveProgress({ objective, snapshot, controls, onReviewReque
 
   const taskRows = (tasks: OrganizationTask[]) => <ul className="eid-progress-tasks">
     {tasks.slice(0, 3).map(task => {
-      const StatusIcon = taskIcons[task.status]
+      const knownStatus = typeof task.status === 'string' && Object.hasOwn(taskIcons, task.status)
+      const StatusIcon = knownStatus ? taskIcons[task.status] : CircleIcon
+      const status = knownStatus ? task.status : 'unknown'
 
       return <li className="eid-progress-task" key={task.id}>
-        <StatusIcon aria-hidden="true" className={`eid-task-state-icon eid-status-${task.status}`} />
+        <StatusIcon aria-hidden="true" className={`eid-task-state-icon eid-status-${status}`} />
         <strong dir="auto">{task.title}</strong>
-        <span className={`eid-status eid-status-${task.status}`}>{copy.taskStatus[task.status]}</span>
+        <span className={`eid-status eid-status-${status}`}>{knownStatus ? copy.taskStatus[task.status] : copy.taskStatus.unknown}</span>
         <small dir="auto">{agentName(task.assignedAgentId ?? task.ownerId)}</small>
         {task.coordination?.state === 'waiting' && <small>{task.coordination.reason || copy.dependenciesWaiting}</small>}
       </li>

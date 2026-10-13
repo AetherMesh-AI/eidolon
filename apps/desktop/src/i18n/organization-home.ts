@@ -53,7 +53,7 @@ export const organizationHomeEn = {
     phase: 'Current phase',
     phaseUnknown: 'Phase not reported',
     taskStates: 'Recorded task states',
-    taskStatus: { completed: 'Completed', working: 'Working', review: 'In review', blocked: 'Blocked', queued: 'Queued', cancelled: 'Cancelled' },
+    taskStatus: { completed: 'Completed', working: 'Working', review: 'In review', blocked: 'Blocked', queued: 'Queued', cancelled: 'Cancelled', unknown: 'Unknown status' },
     noTasks: 'No current tasks recorded in this view.',
     teamWork: 'Delegated work',
     teamNote: 'Current-round manager assignments and their recorded tasks. Earlier rounds remain in the work history.',

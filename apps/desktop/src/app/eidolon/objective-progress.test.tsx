@@ -7,6 +7,7 @@ import { I18nProvider } from '@/i18n/context'
 
 import { ObjectiveProgress } from './objective-progress'
 import { objectiveWorkData } from './objective-work-data'
+import { validateSnapshot } from './runtime-snapshot-contract'
 import type { Objective, OrganizationSnapshot, OrganizationTask, OrganizationWorkPackage } from './types'
 import { WorkOverview } from './work-overview'
 
@@ -184,4 +185,30 @@ it('keeps intervention and unrecognized phase text outside the lifecycle sequenc
   rerender(<ObjectiveProgress objective={{ ...objective, phaseCode: 'future-code', phase: 'Retained future phase' }} onReviewRequests={vi.fn()} onReviewWork={vi.fn()} snapshot={snapshot} />)
   expect(within(phase).queryByRole('list')).toBeNull()
   expect(phase.textContent).toContain('Retained future phase')
+})
+
+it.each(['waiting_for_runtime', '__proto__', 'constructor', null, { state: 'future' }])('retains an admitted unknown task status without crashing or inferring completion (%j)', status => {
+  const admitted = validateSnapshot(JSON.parse(JSON.stringify({
+    ...snapshot,
+    runtime: { capabilities: [], maxWorkers: 1, state: 'running', scope: 'Current objective' },
+    tasks: [{ ...task, status }]
+  })))
+  expect(admitted.tasks[0].status).toEqual(status)
+  const before = JSON.stringify(admitted)
+  const openWork = vi.fn()
+  const openRequests = vi.fn()
+  render(<ObjectiveProgress objective={admitted.objectives[0]} onReviewRequests={openRequests} onReviewWork={openWork} snapshot={admitted} />)
+  const row = screen.getByText(task.title).closest('li')!
+
+  expect(within(row).getByText('Unknown status')).toBeTruthy()
+  expect(within(row).getByText(task.ownerId)).toBeTruthy()
+  expect(row.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true')
+  expect(within(row).queryByText('Completed')).toBeNull()
+  expect(objectiveWorkData(admitted.objectives[0], admitted).counts.completed).toBe(0)
+  expect(screen.getByRole('region', { name: 'Delivery' }).textContent).toContain('has not been recorded')
+  expect(openWork).not.toHaveBeenCalled()
+  expect(openRequests).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: 'Inspect work and evidence' }))
+  expect(openWork).toHaveBeenCalledOnce()
+  expect(JSON.stringify(admitted)).toBe(before)
 })
