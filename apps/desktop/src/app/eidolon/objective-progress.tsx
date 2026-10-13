@@ -5,6 +5,7 @@ import { useI18n } from '@/i18n/context'
 
 import { AgentAvatar } from './avatar'
 import { LocalizedTime } from './localized-time'
+import { objectivePhaseLabel } from './objective-phase'
 import { objectiveWorkData } from './objective-work-data'
 import type { Objective, OrganizationSnapshot, OrganizationTask } from './types'
 
@@ -53,7 +54,7 @@ export function ObjectiveProgress({ objective, snapshot, controls, onReviewReque
     <div className="eid-objective-progress-main">
       <section aria-label={copy.phase} className="eid-home-panel eid-objective-phase">
         <div className="eid-objective-phase-heading">
-          <div className="eid-recorded-phase"><span>{copy.phase}</span><strong dir="auto">{objective.phase || copy.phaseUnknown}</strong></div>
+          <div className="eid-recorded-phase"><span>{copy.phase}</span><strong dir="auto">{objectivePhaseLabel(objective, copy.phases) || copy.phaseUnknown}</strong></div>
           <Button onClick={onReviewWork} size="micro" variant="secondary">{copy.inspectWork}</Button>
         </div>
         {controls && <div className="eid-objective-actions">{controls}</div>}
@@ -106,7 +107,7 @@ export function ObjectiveProgress({ objective, snapshot, controls, onReviewReque
           <dt>{t.organizationSurfaces.objectiveRecord.created}</dt><dd><LocalizedTime value={objective.createdAt} /></dd>
           <dt>{t.organizationSurfaces.objectiveRecord.owner}</dt><dd dir="auto">{agentName(objective.ownerId)}</dd>
           <dt>{t.organizationSurfaces.objectiveRecord.priority}</dt><dd>{objective.priority || t.organizationSurfaces.objectiveRecord.notRecorded}</dd>
-          <dt>{t.organizationSurfaces.objectiveRecord.phase}</dt><dd dir="auto">{objective.phase || t.organizationSurfaces.objectiveRecord.notRecorded}</dd>
+          <dt>{t.organizationSurfaces.objectiveRecord.phase}</dt><dd dir="auto">{objectivePhaseLabel(objective, copy.phases) || t.organizationSurfaces.objectiveRecord.notRecorded}</dd>
         </dl>
       </section>
     </div>

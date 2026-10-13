@@ -151,3 +151,12 @@ it.each([['ar', 'المدير المسؤول', 'قيد العمل'], ['ru', 'О�
   expect(screen.getByText(stateLabel, { exact: false })).toBeTruthy()
   expect(screen.queryByText('Manager owner', { exact: false })).toBeNull()
 })
+
+
+it.each([['ar', 'التنفيذ والمراجعة'], ['ru', 'Выполнение и проверка']] as const)('uses typed runtime phases consistently in the overview and details (%s)', (locale, label) => {
+  const record = { ...objective, phaseCode: 'execution_review', phase: 'Execution and review' }
+  render(<I18nProvider configClient={null} initialLocale={locale}><ObjectiveProgress objective={record} onReviewRequests={vi.fn()} onReviewWork={vi.fn()} snapshot={snapshot} /></I18nProvider>)
+  expect(screen.getAllByText(label)).toHaveLength(2)
+  expect(screen.queryByText('Execution and review')).toBeNull()
+  expect(record.phase).toBe('Execution and review')
+})

@@ -1,3 +1,5 @@
+import { organizationPhasesEn } from './organization-phases'
+
 /** Source messages; untranslated locales inherit English through the existing catalog. */
 export const organizationHomeEn = {
   workspace: {
@@ -35,6 +37,7 @@ export const organizationHomeEn = {
     retainedContext: 'Identity, memory and history'
   },
   detail: {
+    phases: organizationPhasesEn,
     tasksLabel: "Tasks",
     resultLabel: "Result",
     noReviewedResult: "No reviewed result yet.",

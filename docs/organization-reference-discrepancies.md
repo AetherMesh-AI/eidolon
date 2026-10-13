@@ -399,3 +399,21 @@ directory captures: PR133's final artifact had passing DOM assertions but severa
 PNGs still showed earlier frames. Original artifacts are preserved. This capture
 change must be validated with fresh pixels; it does not change directory behavior,
 assertion deadlines, retries or production activation.
+
+
+## Runtime phase localization follow-up (local; native verification pending)
+
+The gateway historically emits `phase` as English prose, while older runtimes
+and prototype metadata can contain free text. The additive `phaseCode` projection
+uses stable values for executive/legacy planning, execution/review, intervention,
+integrated acceptance, accepted delivery and legacy reviewed outcomes. The
+existing `phase` text and transition precedence remain unchanged.
+
+The renderer localizes only recognized string codes from runtime objectives.
+Missing, malformed and future codes fall back to the exact recorded text;
+prototype phases remain authored even if a code is present. This does not infer
+stage history or accepted delivery from task completion. Real-ledger tests cover
+intervention/resume and durable acceptance, including 100% completed tasks before
+final acceptance, plus retained legacy shapes. Native translated fixtures now
+exercise typed phases while keeping English authored titles/descriptions in
+Arabic interfaces; those captures require a later hosted run.

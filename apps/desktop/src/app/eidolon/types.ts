@@ -77,6 +77,8 @@ export interface ObjectiveReplacementInput {
   confirmed: true
 }
 export interface Objective extends ObjectiveMetadata {
+  /** Optional display code from the runtime; unknown codes retain phase text. */
+  phaseCode?: string
   dispatchControl?: DispatchState
   priorityRevision?: number
   replacementEligible?: boolean

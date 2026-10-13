@@ -8,6 +8,7 @@ import { AgentAvatar } from './avatar'
 import { Command } from './command'
 import { homeData } from './home-data'
 import { LocalizedTime } from './localized-time'
+import { objectivePhaseLabel } from './objective-phase'
 import { TaskCounts } from './objective-progress'
 import { RuntimeSetup } from './runtime-setup'
 import { OrganizationScenery } from './scenery'
@@ -60,7 +61,7 @@ export function HomeObjective({
         <small>{copy.progressUnknown}</small>
       )}
       {!compact && <div className="eid-home-objective-facts">
-        <p><small>{copy.detail.phase}</small><strong dir="auto">{objective.phase || copy.detail.phaseUnknown}</strong></p>
+        <p><small>{copy.detail.phase}</small><strong dir="auto">{objectivePhaseLabel(objective, copy.detail.phases) || copy.detail.phaseUnknown}</strong></p>
         <TaskCounts objective={objective} snapshot={snapshot} />
       </div>}
       {objective.dispatchControl?.paused && (

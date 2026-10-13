@@ -21,6 +21,17 @@ from eidolon_cli.organization_project_workspace import project_validation_view
 from eidolon_cli.organization_project_execution import project_execution_view
 
 
+_PHASE_LABELS = {
+    'legacy_reviewed': 'Legacy reviewed outcome',
+    'accepted': 'Accepted integrated outcome',
+    'integration_review': 'Integrated outcome acceptance',
+    'intervention': 'Pending intervention',
+    'executive_planning': 'Executive decomposition and manager planning',
+    'legacy_planning': 'Legacy manager planning',
+    'execution_review': 'Execution and review',
+}
+
+
 def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
     # Archive changes only the projection. Exact reads still resolve every ID.
     # Bound poll work to the current ledger instead of loading archived task,
@@ -73,7 +84,14 @@ def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
         replacement = replacement_reasons(usage)
         if replacement and replacement != ['deadline'] and any((resolution_options(conn, r) if resolution_options else allowed_resolutions(conn, r, settings)) for r in queue):
             replacement = []
-        objectives.append({'planningMode': planning_mode(conn, row['id']), 'workPackages': packages_view(conn, row['id']), 'history': history, 'id': row['id'], 'title': row['title'], 'description': control['amended_scope'] or row['description'],
+        mode = planning_mode(conn, row['id'])
+        phase_code = ('legacy_reviewed' if control['status'] == 'legacy_completed' else
+                      'accepted' if status == 'completed' else
+                      'integration_review' if control['status'] in {'integrating', 'reviewing'} else
+                      'intervention' if status == 'needs_input' else
+                      ('executive_planning' if mode == 'executive_packages' else 'legacy_planning') if not work else
+                      'execution_review')
+        objectives.append({'planningMode': mode, 'workPackages': packages_view(conn, row['id']), 'history': history, 'id': row['id'], 'title': row['title'], 'description': control['amended_scope'] or row['description'],
                            **replacement_links(conn, row['id']),
                            'replacementEligible': not row['cancelled'] and control['status'] not in {'accepted', 'legacy_completed'} and not any(r['status'] == 'running' for r in queue) and bool(replacement),
                            'projects': [public_project(project) for project in objective_projects(conn, row['id'])], 'originalDescription': row['description'], 'deliveryMode': control['delivery_mode'],
@@ -91,7 +109,7 @@ def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
                            'ownerId': 'manager' if control['status'] == 'legacy_completed' else objective_assignment_view(conn, row['id'])['executiveId'], 'priority': f"P{6-row['priority']}", 'priorityRevision': priority_revision(conn, row['id']), 'dispatchControl': dispatch_view(conn, row['id']),
                            'progress': round(100 * done / len(work)) if work else 0,
                            'result': (final['content'] if final else '\n\n'.join(t['result'] or '' for t in work)) if status == 'completed' else None,
-                           'phase': 'Legacy reviewed outcome' if control['status'] == 'legacy_completed' else 'Accepted integrated outcome' if status == 'completed' else 'Integrated outcome acceptance' if control['status'] in {'integrating', 'reviewing'} else 'Pending intervention' if status == 'needs_input' else ('Executive decomposition and manager planning' if planning_mode(conn, row['id']) == 'executive_packages' else 'Legacy manager planning') if not work else 'Execution and review'})
+                           'phaseCode': phase_code, 'phase': _PHASE_LABELS[phase_code]})
     visible = {o['id'] for o in objectives}
     tasks = [t for t in tasks if t['objective_id'] in visible]
     requests = [r for r in requests if r['objective_id'] in visible]
