@@ -571,6 +571,8 @@ test('keeps native organization navigation, roster and objective layouts usable 
 
     expect(Math.abs(geometry.main.x - 222), 'Objective reference left gutter').toBeLessThanOrEqual(10)
     expect(Math.abs(geometry.main.width - 898), 'Objective reference main column').toBeLessThanOrEqual(10)
+    expect(geometry.phase.y, 'lifecycle begins below the compact objective identity row').toBeLessThanOrEqual(220)
+    expect(geometry.cards[0].y, 'assignment cards rise toward the reference progress row').toBeLessThanOrEqual(480)
     expect(geometry.summary.height, 'compact progress retains completion and acceptance context').toBeLessThanOrEqual(190)
     expect(geometry.actions.y + geometry.actions.height, 'real controls precede the progress summary').toBeLessThan(geometry.summary.y)
     expect(geometry.summary.y + geometry.summary.height, 'progress precedes delegated work').toBeLessThan(geometry.cards[0].y)
@@ -952,6 +954,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await expect(primaryObjective).toContainText('Execution and review')
   await expect(primaryObjective.getByRole('list', { name: 'Recorded task states', exact: true })).toBeVisible()
   await expect(primaryObjective.getByRole('link', { name: 'View objective →', exact: true })).toBeInViewport({ ratio: 1 })
+  expect(await workspace.locator('.eid-home-panel-body').first().evaluate(element => element.scrollHeight - element.clientHeight), 'primary and compact secondary objectives fit without a nested scrollbar').toBeLessThanOrEqual(1)
   await expect(page.getByRole('contentinfo', { name: 'System health', exact: true })).toBeInViewport({ ratio: 1 })
 
   const chrome = await page.evaluate(() => {

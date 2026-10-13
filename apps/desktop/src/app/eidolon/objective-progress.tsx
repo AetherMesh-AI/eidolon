@@ -64,9 +64,8 @@ export function ObjectiveProgress({ objective, snapshot, controls, onReviewReque
   }} role="region">
     <div className="eid-objective-progress-main">
       <section aria-label={copy.phase} className="eid-home-panel eid-objective-phase">
-        <div className="eid-objective-phase-heading">
+        <div className={supportedPhase ? 'sr-only' : 'eid-objective-phase-heading'}>
           <div className="eid-recorded-phase"><span>{copy.phase}</span>{!supportedPhase && <strong dir="auto">{objectivePhaseLabel(objective, copy.phases) || copy.phaseUnknown}</strong>}</div>
-          <Button onClick={onReviewWork} size="micro" variant="secondary">{copy.inspectWork}</Button>
         </div>
         {supportedPhase && <ol aria-label={copy.phase} className="eid-objective-lifecycle">
           {lifecycle.map(phase => <li aria-current={objective.phaseCode === phase ? 'step' : undefined} key={phase}>
@@ -78,7 +77,7 @@ export function ObjectiveProgress({ objective, snapshot, controls, onReviewReque
         {!controls && objective.dispatchControl?.paused && <p className="eid-home-paused">{t.organizationHome.paused} · {t.organizationHome.running(number.format(objective.dispatchControl.runningCount))}</p>}
       </section>
       <section aria-label={copy.progress} className="eid-home-panel eid-progress-summary">
-        <header><h2>{copy.progress}</h2><p>{copy.progressNote}</p></header>
+        <header><div className="eid-progress-heading"><h2>{copy.progress}</h2><Button onClick={onReviewWork} size="micro" variant="secondary">{copy.inspectWork}</Button></div><p>{copy.progressNote}</p></header>
         <div className="eid-progress-metrics">
         {progress !== undefined && Number.isFinite(progress) ? <div className="eid-home-progress">
           <progress aria-label={copy.progress} max={100} value={progress} />

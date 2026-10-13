@@ -49,6 +49,7 @@ export function HomeObjective({
         {compact && <span className={`eid-status eid-status-${objective.status}`}>{status}</span>}
       </div>
       {!compact && <p className="eid-home-description" dir="auto">{objective.description}</p>}
+      {!compact && <>
       <p>
         <small>
           {copy.owner}: <bdi>{owner?.name || objective.ownerId || copy.unassigned}</bdi>
@@ -62,6 +63,7 @@ export function HomeObjective({
       ) : (
         <small>{copy.progressUnknown}</small>
       )}
+      </>}
       {!compact && <div className="eid-home-objective-facts">
         <p><small>{copy.detail.phase}</small><strong dir="auto">{objectivePhaseLabel(objective, copy.detail.phases) || copy.detail.phaseUnknown}</strong></p>
         <TaskCounts objective={objective} snapshot={snapshot} />

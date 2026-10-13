@@ -255,3 +255,5 @@
 .eid-settings-cards:not(.eid-settings-model-only) :is([data-section="providers"], [data-section="config:appearance"]) .eid-settings-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .eid-settings-cards:not(.eid-settings-model-only) :is([data-section="providers"], [data-section="config:appearance"]) .eid-settings-summary > div { grid-template-columns: minmax(0, 1fr); gap: 3px; padding-top: 6px; }
 @media (max-width: 800px) { .eid-settings-cards:not(.eid-settings-model-only) .eid-settings-notification-kinds { grid-template-columns: minmax(0, 1fr); } }
+
+.eid-settings-heading h1 { margin-top: 6px; }
