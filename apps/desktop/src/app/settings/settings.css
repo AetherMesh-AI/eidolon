@@ -245,6 +245,7 @@
 .eid-settings-layout > aside button[data-tour^="nav-"] { padding-block: 3px; min-height: 56px; }
 /* Preserve one vertical list and its focus outlines inside the compact editor. */
 .eid-settings-cards:not(.eid-settings-model-only) .eid-settings-notification-kinds { display: grid; grid-template-columns: minmax(0, 1fr); max-height: 180px; overflow-y: auto; padding: 7px; margin: -7px; scroll-padding: 7px; }
+.eid-settings-cards:not(.eid-settings-model-only) .eid-settings-notification-kinds [role="switch"] { scroll-margin: 7px; }
 @media (min-width: 1251px) {
   .eid-settings-cards:not(.eid-settings-model-only) > .eid-settings-card:is([data-section="config:workspace"], [data-section="config:safety"]) { min-height: 275px; }
 }

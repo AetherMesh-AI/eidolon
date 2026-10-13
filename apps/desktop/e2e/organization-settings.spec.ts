@@ -451,3 +451,57 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
 
   expect(mock.receivedPrompts).toHaveLength(0)
 })
+
+for (const locale of ['ja', 'ar', 'ru'] as const) {
+  test(`keeps the Settings notification list keyboard reachable in ${locale} at normal and 200 percent zoom`, async () => {
+    fixture = await setupMockBackend({ extraDisplayConfig: `  language: ${locale}` })
+    const { app, page, mock } = fixture
+    await waitForAppReady(fixture)
+    await expect(page.locator('html')).toHaveAttribute('lang', locale)
+    await expect(page.locator('html')).toHaveAttribute('dir', locale === 'ar' ? 'rtl' : 'ltr')
+    await page.evaluate(() => { window.location.hash = '/settings' })
+    const settings = page.locator('.eid-settings-page')
+    const notifications = settings.locator('.eid-settings-cards > [data-section="notifications"]')
+    const switches = notifications.getByRole('switch')
+    await expect(switches).toHaveCount(8)
+    const before = await switches.evaluateAll(elements => elements.map(element => element.getAttribute('aria-checked')))
+    const captures: object[] = []
+    const focusChecks: object[] = []
+
+    for (const zoom of [100, 200]) {
+      await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1280, 720))
+      await page.evaluate(percent => (window as any).hermesDesktop.zoom.setPercent(percent), zoom)
+      await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(zoom / 100)
+      await switches.first().focus()
+      for (let index = 0; index < 8; index++) {
+        if (index > 0) { await page.keyboard.press('Tab') }
+        const target = switches.nth(index)
+        await expect(target).toBeFocused()
+        await expect(target).toHaveAttribute('aria-description', /\S/)
+        focusChecks.push(await verifyKeyboardFocus(page, target, `notification ${locale} ${zoom} ${index}`))
+        await expect(target).toBeInViewport({ ratio: 1 })
+      }
+      const list = notifications.locator('.eid-settings-notification-kinds')
+      expect(await list.evaluate(element => element.scrollTop)).toBeGreaterThan(0)
+      expect(await settings.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
+      const rects = await switches.evaluateAll(elements => elements.map(element => element.getBoundingClientRect().toJSON()))
+      expect(Math.max(...rects.map(rect => rect.right)) - Math.min(...rects.map(rect => rect.right))).toBeLessThanOrEqual(1)
+      expect(rects.every((rect, index) => index === 0 || rect.top > rects[index - 1].bottom)).toBe(true)
+      expect(await switches.evaluateAll(elements => elements.map(element => element.getAttribute('aria-checked')))).toEqual(before)
+      const viewport = await page.evaluate(() => ({ width: innerWidth, height: innerHeight, devicePixelRatio }))
+      const bytes = Buffer.from(await app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
+      const pixelSize = { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) }
+      expect(pixelSize).toEqual({ width: viewport.width * viewport.devicePixelRatio, height: viewport.height * viewport.devicePixelRatio })
+      const name = `settings-notifications-${locale}-${zoom}.png`
+      writeFileSync(test.info().outputPath(name), bytes)
+      captures.push({ name, locale, zoom, viewport, pixelSize, sha256: createHash('sha256').update(bytes).digest('hex') })
+    }
+    expect(mock.receivedPrompts).toHaveLength(0)
+    writeFileSync(test.info().outputPath('settings-notification-focus-evidence.json'), JSON.stringify({
+      sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+      sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
+      scenario: 'synthetic-settings-notification-keyboard', locale, providerCalls: mock.receivedPrompts.length,
+      captures, focusChecks
+    }, null, 2))
+  })
+}
