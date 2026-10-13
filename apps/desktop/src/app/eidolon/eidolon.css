@@ -562,3 +562,13 @@
 .eid-home-objective-facts > p { display: grid; gap: 3px; margin: 0; }
 .eid-home-objective-facts strong { font-size: 13px; font-weight: 500; }
 .eid-home-objective-facts .eid-task-counts { margin: 0; }
+
+.eid-owner-chat-tools-inline { display: contents; }
+
+/* Keep recipient identity and explicit opening controls together without moving chat state. */
+.eid-messages-view .eid-owner-chat-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.eid-messages-view .eid-owner-chat-heading .eid-message-recipient { min-width: 0; padding: 0; margin: 0; }
+.eid-messages-view .eid-owner-chat-tools { display: flex; flex-wrap: wrap; align-items: start; gap: 8px 12px; }
+.eid-messages-view .eid-owner-chat-tools > nav { margin-inline-start: auto; }
+.eid-messages-view .eid-owner-chat-tools:has(details[open]) { display: block; }
+.eid-messages-view .eid-owner-chat-tools:has(details[open]) > nav { margin-top: 10px; }

@@ -296,6 +296,24 @@ test('retains exact worker chat, deduplicates owner send and fences a cancelled 
     expect(sends).toHaveLength(referenceSends)
     expect(renewals).toHaveLength(referenceRenewals)
 
+    const geometry = await conversation.evaluate(element => {
+      const box = (selector: string) => {
+        const rect = element.querySelector(selector)!.getBoundingClientRect()
+
+        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height, bottom: rect.bottom }
+      }
+
+      return { heading: box('.eid-owner-chat-heading'), recipient: box('.eid-message-recipient'),
+        actions: box('.eid-owner-chat-heading .eid-owner-chat-actions'), transcript: box('.eid-owner-chat-scroll') }
+    })
+
+    // A normal desktop keeps explicit chat controls beside the recipient and
+    // leaves useful reading space; the existing narrow/zoom matrix follows.
+    expect(geometry.actions.y).toBeLessThan(geometry.recipient.bottom)
+    expect(geometry.transcript.height).toBeGreaterThan(350)
+    await expect(conversation.getByRole('button', { name: 'Hide conversation', exact: true })).toBeInViewport({ ratio: 1 })
+    await expect(conversation.getByRole('button', { name: 'Replenish allowance', exact: true })).toBeInViewport({ ratio: 1 })
+
     const bytes = Buffer.from(await running.fixture.app.evaluate(async ({ BrowserWindow }) =>
       (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
 
@@ -305,7 +323,7 @@ test('retains exact worker chat, deduplicates owner send and fences a cancelled 
       viewport: await page.evaluate(() => ({ width: innerWidth, height: innerHeight, devicePixelRatio })),
       theme: await page.locator('html').getAttribute('data-hermes-theme'),
       mode: await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme),
-      threadId: retained.result?.id, identityId: retained.result?.identityId,
+      geometry, threadId: retained.result?.id, identityId: retained.result?.identityId,
       messageIds: retained.result?.messages.map(message => message.id),
       scriptedProviderCalls: running.calls.length, ownerSends: sends.length, allowanceRenewals: renewals.length })
   }

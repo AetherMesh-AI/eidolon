@@ -68,7 +68,7 @@ function OwnerChatTranscript({ thread, sendRevision, workspace }: { thread: Owne
               tabIndex={-1}
             >
               <div className="eid-owner-chat-message-meta">
-                <span>{message.role === 'owner' ? copy.you : thread.recipient.name}</span>
+                <bdi>{message.role === 'owner' ? copy.you : thread.recipient.name}</bdi>
                 <LocalizedTime value={message.createdAt} />
               </div>
               {target && (
@@ -87,7 +87,7 @@ function OwnerChatTranscript({ thread, sendRevision, workspace }: { thread: Owne
                 </Button>
               )}
               {!target && message.replyToMessageId && <p className="eid-note">{copy.retainedAnchor}</p>}
-              <p className="eid-owner-chat-bubble">{message.text}</p>
+              <p className="eid-owner-chat-bubble" dir="auto">{message.text}</p>
               {turn && (
                 <div className="eid-owner-chat-turn" role="status">
                   <span>{turnLabel(turn, copy)}</span>
@@ -263,10 +263,10 @@ function OwnerChatPanel({
       <header className="eid-owner-chat-identity">
         <AgentAvatar name={thread.recipient.name} />
         <div>
-          <strong>{thread.recipient.name}</strong>
+          <strong dir="auto">{thread.recipient.name}</strong>
           <p>
             {thread.recipient.role}
-            {thread.recipient.team ? ` · ${thread.recipient.team}` : ''}
+            {thread.recipient.team && <> · <bdi>{thread.recipient.team}</bdi></>}
           </p>
         </div>
       </header>
@@ -282,23 +282,25 @@ function OwnerChatPanel({
 
   return (
     <div className="eid-owner-chat-panel">
-      {workspace ? <details className="eid-owner-chat-information"><summary>{copy.details}</summary>{information}</details> : information}
-      <nav aria-label={copy.needsYou} className="eid-owner-chat-actions">
-        <Button asChild size="sm" variant="secondary">
-          <Link to="/home">{copy.createObjective}</Link>
-        </Button>
-        <Button asChild size="sm" variant="secondary">
-          <Link to="/requests">
-            {copy.needsYou} ({pending})
-          </Link>
-        </Button>
-      </nav>
+      <div className={workspace ? 'eid-owner-chat-tools' : 'eid-owner-chat-tools-inline'}>
+        {workspace ? <details className="eid-owner-chat-information"><summary>{copy.details}</summary>{information}</details> : information}
+        <nav aria-label={copy.needsYou} className="eid-owner-chat-actions">
+          <Button asChild size="sm" variant="secondary">
+            <Link to="/home">{copy.createObjective}</Link>
+          </Button>
+          <Button asChild size="sm" variant="secondary">
+            <Link to="/requests">
+              {copy.needsYou} ({pending})
+            </Link>
+          </Button>
+        </nav>
+      </div>
       {pending > 0 && <p className="eid-note">{copy.pendingNote}</p>}
       {!ready && <p role="status">{copy.offline}</p>}
       {thread && (
         <>
           {historyPage && <p className="eid-note">{copy.historyPage}</p>}
-          <div className="eid-owner-chat-actions">
+          {(page?.history?.hasMore || historyPage) && <div className="eid-owner-chat-actions">
             {page?.history?.hasMore && (
               <Button disabled={!ready || !!busy} onClick={() => void loadEarlier()} size="sm" variant="secondary">
                 {copy.earlier}
@@ -309,7 +311,7 @@ function OwnerChatPanel({
                 {copy.latest}
               </Button>
             )}
-          </div>
+          </div>}
           <OwnerChatTranscript sendRevision={sendRevision} thread={page!} workspace={workspace} />
           {!workspace && allowance}
 
@@ -354,12 +356,13 @@ function OwnerChatPanel({
       >
         <label htmlFor={`owner-message-${agent.identityId}`}>{copy.message}</label>
         {latest && (
-          workspace ? <details className="eid-owner-chat-reply-context"><summary>{copy.replyingTo}</summary><p className="eid-note">{latest.text.slice(0, 100)}</p></details> : <p className="eid-note">
+          workspace ? <details className="eid-owner-chat-reply-context"><summary>{copy.replyingTo}</summary><p className="eid-note" dir="auto">{latest.text.slice(0, 100)}</p></details> : <p className="eid-note">
             {copy.replyingTo}: {latest.text.slice(0, 100)}
           </p>
         )}
         <Textarea
           aria-describedby={`owner-limit-${agent.identityId}`}
+          dir="auto"
           disabled={composerDisabled}
           id={`owner-message-${agent.identityId}`}
           onChange={event => setOwnerChatDraft(draftKey, { text: event.target.value })}
@@ -444,32 +447,38 @@ export function OrganizationOwnerChat({
     return null
   }
 
+  const role = agent.role === 'Executive' ? t.organizationRoster.executive
+    : agent.role === 'Manager' ? t.organizationRoster.manager : t.organizationRoster.worker
+
   return (
     <section aria-label={copy.heading} className="eid-owner-chat">
-      <div className="eid-owner-chat-actions">
-        <Button
-          aria-expanded={open}
-          disabled={!supported}
-          onClick={() => {
-            setOpen(!open)
-            onOpenChange?.(!open)
-          }}
-          variant="secondary"
-        >
-          <MessageCircle />
-          {open ? copy.hide : copy.chat}
-        </Button>
-        <Tip label={copy.callUnavailable}>
-          <span aria-label={copy.callUnavailable} tabIndex={0}>
-            <Button aria-describedby={`owner-call-${agent.identityId ?? agent.id}`} disabled variant="secondary">
-              {copy.call}
-            </Button>
+      <header className={layout === 'workspace' ? 'eid-owner-chat-heading' : undefined}>
+        {layout === 'workspace' && <div className="eid-message-recipient"><AgentAvatar name={agent.name} /><div><h2 dir="auto">{agent.name}</h2><p>{role}{agent.team && <> · <bdi>{agent.team}</bdi></>}</p></div></div>}
+        <div className="eid-owner-chat-actions">
+          <Button
+            aria-expanded={open}
+            disabled={!supported}
+            onClick={() => {
+              setOpen(!open)
+              onOpenChange?.(!open)
+            }}
+            variant="secondary"
+          >
+            <MessageCircle />
+            {open ? copy.hide : copy.chat}
+          </Button>
+          <Tip label={copy.callUnavailable}>
+            <span aria-label={copy.callUnavailable} tabIndex={0}>
+              <Button aria-describedby={`owner-call-${agent.identityId ?? agent.id}`} disabled variant="secondary">
+                {copy.call}
+              </Button>
+            </span>
+          </Tip>
+          <span className="sr-only" id={`owner-call-${agent.identityId ?? agent.id}`}>
+            {copy.callUnavailable}
           </span>
-        </Tip>
-        <span className="sr-only" id={`owner-call-${agent.identityId ?? agent.id}`}>
-          {copy.callUnavailable}
-        </span>
-      </div>
+        </div>
+      </header>
       {!supported && <p className="eid-note">{copy.unavailable}</p>}
       {open && supported && adapter && (
         <OwnerChatPanel

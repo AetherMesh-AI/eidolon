@@ -32,7 +32,8 @@ import {
   $pendingConnectionId,
   initializeConnectionsRegistry,
   refreshConnectionsRegistry,
-  selectConnection
+  selectConnection,
+  type SelectConnectionOptions
 } from '@/store/connections'
 import { closeFindBar } from '@/store/find-in-page'
 import { notifyError } from '@/store/notifications'
@@ -40,7 +41,7 @@ import { isAuxiliaryWindow, isPeerInstanceWindow } from '@/store/windows'
 
 import { ConnectionGlyph } from './connection-glyph'
 
-export function ConnectionSwitcher({ compact = false, onConnect }: { compact?: boolean; onConnect: () => void }) {
+export function ConnectionSwitcher({ compact = false, onConnect, preserveRoute }: { compact?: boolean; onConnect: () => void; preserveRoute?: SelectConnectionOptions['preserveRoute'] }) {
   const { t } = useI18n()
   const registry = useStore($connectionsRegistry)
   const activeConnectionId = useStore($activeConnectionId)
@@ -128,7 +129,7 @@ export function ConnectionSwitcher({ compact = false, onConnect }: { compact?: b
     triggerHaptic('selection')
     const connection = connections.find(candidate => candidate.id === connectionId)
 
-    void selectConnection(connectionId).catch(error =>
+    void (preserveRoute === undefined ? selectConnection(connectionId) : selectConnection(connectionId, { preserveRoute })).catch(error =>
       notifyError(error, t.profiles.switchConnectionFailed(connection?.label ?? connectionId))
     )
   }

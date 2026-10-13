@@ -280,8 +280,9 @@ export interface SelectConnectionOptions {
    *  there. The fleet profile rail passes the exact square the user clicked. */
   profile?: null | string
   /** A page-owned switch keeps its navigation intent. The commit hook still
-   * resets machine-bound draft state; only the extra new-chat route is skipped. */
-  preserveRoute?: boolean
+   * resets machine-bound draft state; only the extra new-chat route is skipped. A callback reads the current
+   * page intent after asynchronous activation/bookkeeping, not the initial click. */
+  preserveRoute?: boolean | (() => boolean)
 }
 
 export interface ConnectionSwitchOutcome {
@@ -306,6 +307,7 @@ export function selectConnectionWithOutcome(connectionId: string, options: Selec
 }
 
 async function performConnectionSwitch(connectionId: string, options: SelectConnectionOptions, legacyErrors: boolean): Promise<ConnectionSwitchOutcome> {
+  const preserveRoute = () => typeof options.preserveRoute === 'function' ? options.preserveRoute() : options.preserveRoute
   const registry = $connectionsRegistry.get()
   const targetConnection = registry?.connections.find(connection => connection.id === connectionId)
 
@@ -384,7 +386,7 @@ async function performConnectionSwitch(connectionId: string, options: SelectConn
     // <source>::x exactly, never a bare profile string.
     captureNewChatSource()
 
-    if (!options.preserveRoute) { requestFreshSession() }
+    if (!preserveRoute()) { requestFreshSession() }
     const error = await rememberConnection(connectionId, sourceStillCurrent)
 
     if (error) {warning = { phase: 'bookkeeping', error }}
@@ -523,7 +525,7 @@ async function performConnectionSwitch(connectionId: string, options: SelectConn
       $newChatProfile.set(targetProfile)
       captureNewChatSource()
 
-      if (!options.preserveRoute) { requestFreshSession() }
+      if (!preserveRoute()) { requestFreshSession() }
       phase = 'refresh'
       await withTimeout(refreshActiveProfile(), SWITCH_COMMIT_TIMEOUT_MS, 'Timed out refreshing the selected connection.')
     }
@@ -539,7 +541,7 @@ async function performConnectionSwitch(connectionId: string, options: SelectConn
     }
 
     if (revision === switchRevision && isCurrentSourceSwitchIntent(intent)) {
-      if (recoveryToken !== null && !options.preserveRoute) { requestFreshSession() }
+      if (recoveryToken !== null && !preserveRoute()) { requestFreshSession() }
 
       if (legacyErrors) {throw error}
     }

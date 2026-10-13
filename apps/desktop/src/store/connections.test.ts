@@ -237,6 +237,24 @@ describe('connection registry cache', () => {
 })
 
 describe('selectConnection', () => {
+  it.each([true, false])('honors the current page intent after delayed bookkeeping (%s)', async preservePage => {
+    setConnectionsRegistry(registry)
+    $connection.set({ connectionId: 'local', mode: 'local' })
+    const remembered = deferred<Awaited<ReturnType<typeof setLastUsed>>>()
+    setLastUsed.mockImplementationOnce(() => remembered.promise)
+    let onPage = false
+    const switching = selectConnection('homelab', { preserveRoute: () => onPage })
+    await vi.waitFor(() => expect(setLastUsed).toHaveBeenCalledWith('homelab'))
+    onPage = preservePage
+    remembered.resolve({ ok: true, registry: { ...registry, lastUsed: 'homelab' } })
+    await switching
+    expect($connection.get()?.connectionId).toBe('homelab')
+    expect(beforeConnectionSwitch).toHaveBeenCalledOnce()
+    expect(wipeSessionListsForGatewaySwitch).toHaveBeenCalledOnce()
+    expect(refreshActiveProfile).toHaveBeenCalledOnce()
+    expect(requestFreshSession).toHaveBeenCalledTimes(preservePage ? 0 : 1)
+  })
+
   it('dials a secondary source and starts a fresh source-scoped draft', async () => {
     setConnectionsRegistry(registry)
     $connection.set({ connectionId: 'local', mode: 'local' })

@@ -6,7 +6,7 @@ import { Messages } from './messages'
 import { ownerChatSnapshot, ownerChatThread } from './runtime-owner-chat.test-support'
 import type { RuntimeOrganizationAdapter } from './types'
 
-afterEach(cleanup)
+afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 it('selects only persistent members and opens their exact durable identity only after Chat is requested', async () => {
   const snapshot = ownerChatSnapshot()
@@ -127,4 +127,37 @@ it('organization entry offers explicit executive choice without opening or sendi
   expect(screen.getAllByText(/No active executive with a verified identity is available/)).toHaveLength(2)
   expect(screen.getByRole('link', { name: 'Review organization roster' }).getAttribute('href')).toBe('/organization')
   expect(screen.queryByRole('button', { name: 'Chat' })).toBeNull()
+})
+
+
+it('keeps the chosen identity beside chat controls and preserves authored direction and drafts', async () => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} unobserve() {} })
+  const snapshot = ownerChatSnapshot()
+  const thread = ownerChatThread()
+  thread.messages = [{ id: 'retained-message', role: 'agent', turnId: 'retained-turn', replyToMessageId: null, text: 'English retained reply.', createdAt: '2026-10-08T12:00:00Z' }]
+  thread.latestMessageId = 'retained-message'
+
+  const adapter = {
+    mode: 'runtime', getSnapshot: () => snapshot,
+    openOwnerChat: vi.fn(async () => thread), readOwnerChat: vi.fn(),
+    sendOwnerChat: vi.fn(), cancelOwnerChat: vi.fn()
+  } as unknown as RuntimeOrganizationAdapter
+
+  render(<div dir="rtl"><MemoryRouter><Messages adapter={adapter} snapshot={snapshot} /></MemoryRouter></div>)
+  fireEvent.click(screen.getByRole('button', { name: /Worker 1/ }))
+  const conversation = screen.getByRole('region', { name: 'Member conversation' })
+  const heading = within(conversation).getByRole('heading', { name: 'Worker 1' })
+  expect(heading.getAttribute('dir')).toBe('auto')
+  expect(heading.closest('header')?.contains(within(conversation).getByRole('button', { name: 'Chat' }))).toBe(true)
+  expect(adapter.openOwnerChat).not.toHaveBeenCalled()
+  fireEvent.click(within(conversation).getByRole('button', { name: 'Chat' }))
+  const composer = await within(conversation).findByRole('textbox', { name: 'Message' })
+  expect(composer.getAttribute('dir')).toBe('auto')
+  const log = within(conversation).getByRole('log')
+  expect(within(log).getByText('English retained reply.').getAttribute('dir')).toBe('auto')
+  fireEvent.change(composer, { target: { value: 'Unsent discussion' } })
+  fireEvent.click(within(conversation).getByText('Conversation details'))
+  expect(within(conversation).getByRole('textbox', { name: 'Message' })).toBe(composer)
+  expect(composer).toHaveProperty('value', 'Unsent discussion')
+  expect(adapter.sendOwnerChat).not.toHaveBeenCalled()
 })

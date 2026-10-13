@@ -1407,6 +1407,7 @@ const translatedSurfaceExpectations = {
     objectiveOverview: "目標の概要",
     objectiveSearch: "目標を検索",
     objectiveRecord: "目標の詳細",
+    objectivePhase: "実行とレビュー",
     "search": "メンバーを検索",
     "directoryNote": "このプロファイルの永続メンバーです。選択しても会話は開かず、利用枠も追加されません。",
     "memberContext": "メンバーの背景情報",
@@ -1422,6 +1423,7 @@ const translatedSurfaceExpectations = {
     objectiveOverview: "目标概览",
     objectiveSearch: "搜索目标",
     objectiveRecord: "目标详情",
+    objectivePhase: "执行与审查",
     "search": "搜索成员",
     "directoryNote": "此配置文件中的持久成员。选择成员不会打开对话或补充其额度。",
     "memberContext": "成员背景",
@@ -1437,6 +1439,7 @@ const translatedSurfaceExpectations = {
     objectiveOverview: "目標概覽",
     objectiveSearch: "搜尋目標",
     objectiveRecord: "目標詳情",
+    objectivePhase: "執行與審查",
     "search": "搜尋成員",
     "directoryNote": "此設定檔中的持久成員。選取成員不會開啟對話或補充其額度。",
     "memberContext": "成員背景",
@@ -1452,6 +1455,7 @@ const translatedSurfaceExpectations = {
     objectiveOverview: "نظرة عامة على الهدف",
     objectiveSearch: "البحث في الأهداف",
     objectiveRecord: "تفاصيل الهدف",
+    objectivePhase: "التنفيذ والمراجعة",
     "search": "البحث عن أعضاء",
     "directoryNote": "أعضاء دائمون في هذا الملف الشخصي. لا يؤدي اختيار عضو إلى فتح محادثته أو تجديد حصتها.",
     "memberContext": "سياق العضو",
@@ -1467,6 +1471,7 @@ const translatedSurfaceExpectations = {
     objectiveOverview: "Обзор цели",
     objectiveSearch: "Поиск целей",
     objectiveRecord: "Сведения о цели",
+    objectivePhase: "Выполнение и проверка",
     "search": "Поиск участников",
     "directoryNote": "Постоянные участники этого профиля. Выбор участника не открывает диалог и не пополняет его лимит.",
     "memberContext": "Контекст участника",
@@ -1491,6 +1496,10 @@ for (const [locale, suffix, dark, light] of [
     fixture = await setupMockBackend({ extraDisplayConfig: `  language: ${locale}` })
     const { app, page, mock } = fixture
     const copy = translatedSurfaceExpectations[suffix]
+    const localizedSnapshot = { ...snapshot, objectives: snapshot.objectives.map(objective =>
+      objective.id === 'release' ? { ...objective, phaseCode: 'execution_review', phase: 'Execution and review' } : objective
+    ) }
+
     const methods: string[] = []
     await page.routeWebSocket(/.*/, socket => {
       const server = socket.connectToServer()
@@ -1500,7 +1509,7 @@ for (const [locale, suffix, dark, light] of [
         if (request.method?.startsWith('organization.')) {methods.push(request.method)}
 
         if (request.method === 'organization.snapshot' || request.method === 'organization.outcomes') {
-          socket.send(JSON.stringify({ jsonrpc: '2.0', id: request.id, result: request.method === 'organization.snapshot' ? snapshot : snapshot.outcomes }))
+          socket.send(JSON.stringify({ jsonrpc: '2.0', id: request.id, result: request.method === 'organization.snapshot' ? localizedSnapshot : localizedSnapshot.outcomes }))
         } else {server.send(message)}
       })
     })
@@ -1542,12 +1551,12 @@ for (const [locale, suffix, dark, light] of [
             const details = page.getByRole('region', { name: copy.objectiveRecord, exact: true })
             await expect(details).toBeVisible()
             await expect(details).toContainText('Avery')
-            await expect(details).toContainText('Draft and review')
+            await expect(details).toContainText(copy.objectivePhase)
             await expect(details.locator('time')).toHaveAttribute('datetime', createdAt)
             // Authored English remains LTR inside the Arabic interface.
             await expect(page.locator('.eid-objective-heading h1')).toHaveCSS('direction', 'ltr')
             await expect(page.locator('.eid-objective-hero .eid-result-text')).toHaveCSS('direction', 'ltr')
-            await expect(details.getByText('Draft and review', { exact: true })).toHaveCSS('direction', 'ltr')
+            await expect(details.getByText(copy.objectivePhase, { exact: true })).toHaveCSS('direction', locale === 'ar' ? 'rtl' : 'ltr')
           } else if (route === '/organization') {
             await expect(page.getByRole('heading', { name: copy.organization, exact: true })).toBeVisible()
             await expect(page.getByRole('textbox', { name: copy.findAgent, exact: true })).toBeVisible()
