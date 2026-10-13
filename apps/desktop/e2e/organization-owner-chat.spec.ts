@@ -204,11 +204,17 @@ test('retains exact worker chat, deduplicates owner send and fences a cancelled 
     await page.keyboard.press('End')
     await expect.poll(() => scroll.evaluate(element => element.scrollHeight - element.clientHeight - element.scrollTop)).toBeLessThanOrEqual(1)
     await expect(scroll.locator('.eid-owner-chat-bubble').last()).toBeInViewport()
+    const composeDetails = conversation.locator('.eid-owner-chat-compose-details > summary')
+    const detailsFocus = await verifyKeyboardFocus(page, composeDetails, `${label} reply and allowance details`)
+    await setOwnerChatDetails(conversation, true)
+    const allowance = conversation.locator('.eid-owner-chat-allowance')
+    await allowance.scrollIntoViewIfNeeded()
+    await expect(allowance).toBeInViewport({ ratio: 1 })
+    const allowanceBounds = await allowance.boundingBox()
+    await setOwnerChatDetails(conversation, false)
     await message.scrollIntoViewIfNeeded()
     const composerFocus = await verifyKeyboardFocus(page, message, `${label} composer`)
     await expect(message).toBeInViewport({ ratio: 1 })
-    await setOwnerChatDetails(conversation, true)
-    await expect(conversation.locator('.eid-owner-chat-allowance')).toBeInViewport({ ratio: 1 })
     const action = conversation.getByRole('button', { name: /^(Send message|Cancel reply)$/, exact: true })
     await expect(action).toBeInViewport({ ratio: 1 })
     await expect(conversation.locator('.eid-owner-chat-charge')).toBeInViewport({ ratio: 1 })
@@ -219,7 +225,7 @@ test('retains exact worker chat, deduplicates owner send and fences a cancelled 
       expect(entry!.height, 'compact composer entry remains at most 56px').toBeLessThanOrEqual(56)
       expect(Math.abs(entry!.y - send!.y), 'send action shares the entry row').toBeLessThanOrEqual(1)
       // At normal desktop sizes the actual inner panel must not scroll to
-      // reach charges, limits and composing; only history scrolls internally.
+      // reach charges and composing with secondary details closed; history scrolls internally.
       const panel = conversation.locator('.eid-owner-chat-panel')
       expect(await panel.evaluate(element => element.scrollHeight - element.clientHeight)).toBeLessThanOrEqual(1)
       await expect(scroll.locator('.eid-owner-chat-bubble').last()).toBeInViewport({ ratio: 1 })
@@ -230,7 +236,7 @@ test('retains exact worker chat, deduplicates owner send and fences a cancelled 
 
     const bytes = Buffer.from(await running!.fixture.app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
     writeFileSync(test.info().outputPath(`composer-${label}.png`), bytes)
-    await test.info().attach(`composer-${label}-evidence`, { contentType: 'application/json', body: JSON.stringify({ sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(), sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(), viewport: await page.evaluate(() => ({ width: innerWidth, height: innerHeight, devicePixelRatio })), sha256: createHash('sha256').update(bytes).digest('hex'), panelGeometry: await conversation.locator('.eid-owner-chat-panel').evaluate(element => ({ scrollHeight: element.scrollHeight, clientHeight: element.clientHeight, scrollTop: element.scrollTop })), transcriptFocus, composerFocus }) })
+    await test.info().attach(`composer-${label}-evidence`, { contentType: 'application/json', body: JSON.stringify({ sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(), sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(), viewport: await page.evaluate(() => ({ width: innerWidth, height: innerHeight, devicePixelRatio })), sha256: createHash('sha256').update(bytes).digest('hex'), panelGeometry: await conversation.locator('.eid-owner-chat-panel').evaluate(element => ({ scrollHeight: element.scrollHeight, clientHeight: element.clientHeight, scrollTop: element.scrollTop })), transcriptFocus, composerFocus, detailsFocus, allowanceBounds }) })
     await page.evaluate(() => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(100))
     await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(1)
   }
