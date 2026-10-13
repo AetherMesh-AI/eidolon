@@ -332,7 +332,11 @@ test('retains exact worker chat, deduplicates owner send and fences a cancelled 
     await expect(conversation.getByRole('button', { name: 'Replenish allowance', exact: true })).toBeInViewport({ ratio: 1 })
 
     await setOwnerChatDetails(conversation, false)
-    await page.evaluate(() => { if (document.activeElement instanceof HTMLElement) {document.activeElement.blur()} })
+    await page.evaluate(async () => {
+      if (document.activeElement instanceof HTMLElement) {document.activeElement.blur()}
+      await document.fonts.ready
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+    })
 
     const bytes = Buffer.from(await running.fixture.app.evaluate(async ({ BrowserWindow }) =>
       (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
