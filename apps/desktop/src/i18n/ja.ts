@@ -468,6 +468,16 @@ export const ja = defineLocale({
       intro: 'アプリ内トーストとは別の、ネイティブのデスクトップ通知です。設定は端末ごとに保存されます。',
       enableAll: '通知を有効にする',
       enableAllDesc: 'オフで以下の通知をすべて無効にします。',
+      overviewDescriptions: {
+        enabled: "端末のOS通知",
+        approval: "コマンドの承認・拒否",
+        input: "質問やシークレットの入力",
+        turnDone: "アプリがバックグラウンド時",
+        turnError: "バックグラウンドのエラー",
+        backgroundDone: "端末コマンドが完了",
+        credits: "利用の停止・再開",
+        plugin: "バックグラウンドのプラグイン通知"
+      },
       focusedHint: '完了通知は Eidolon がバックグラウンドにあるときのみ表示されます。',
       kinds: {
         approval: {

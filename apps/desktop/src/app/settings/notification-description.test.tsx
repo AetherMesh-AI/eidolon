@@ -34,3 +34,18 @@ it('keeps the dedicated settings explanation expanded with its existing switch o
   fireEvent.click(screen.getByRole('switch', { name: 'Input needed' }))
   expect(onChange).toHaveBeenCalledExactlyOnceWith(true)
 })
+
+
+it('shows a concise overview caption while preserving the full accessible explanation and save owner', () => {
+  const onChange = vi.fn()
+  const props = { checked: true, description: 'A command is waiting for you to approve or reject it.', descriptionPreview: 'Approve or reject a command', label: 'Approval needed', onChange }
+  const view = render(<ToggleRow {...props} />)
+  expect(screen.getByText(props.descriptionPreview)).toBeTruthy()
+  const toggle = screen.getByRole('switch', { name: props.label })
+  expect(toggle.getAttribute('aria-description')).toBe(props.description)
+  fireEvent.click(toggle)
+  expect(onChange).toHaveBeenCalledExactlyOnceWith(false)
+  view.rerender(<ToggleRow {...props} disabled />)
+  expect(toggle.getAttribute('aria-description')).toBe(props.description)
+  expect(toggle.hasAttribute('disabled')).toBe(true)
+})

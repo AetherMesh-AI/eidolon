@@ -627,6 +627,16 @@ export const zh: Translations = {
       intro: '原生桌面通知，区别于应用内提示。设置按设备保存，每台电脑各自独立。',
       enableAll: '启用通知',
       enableAllDesc: '关闭后静音下方所有通知。',
+      overviewDescriptions: {
+        enabled: "此设备的系统通知",
+        approval: "批准或拒绝命令",
+        input: "需要回答或密钥",
+        turnDone: "应用在后台时提醒",
+        turnError: "后台轮次错误",
+        backgroundDone: "终端命令已完成",
+        credits: "访问暂停或恢复",
+        plugin: "后台插件提醒"
+      },
       focusedHint: '完成提醒仅在 Eidolon 处于后台时触发。',
       kinds: {
         approval: {

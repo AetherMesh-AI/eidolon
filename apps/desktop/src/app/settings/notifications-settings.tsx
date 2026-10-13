@@ -48,6 +48,7 @@ export function NotificationsSettings({ compactOverview = false }: { compactOver
       <ToggleRow
         checked={prefs.enabled}
         description={compactOverview ? `${copy.intro} ${copy.enableAllDesc}` : copy.enableAllDesc}
+        descriptionPreview={compactOverview ? copy.overviewDescriptions.enabled : undefined}
         label={copy.enableAll}
         onChange={setNativeNotifyEnabled}
       />
@@ -56,6 +57,7 @@ export function NotificationsSettings({ compactOverview = false }: { compactOver
         <ToggleRow
           checked={prefs.enabled && prefs.kinds[kind]}
           description={copy.kinds[kind].description}
+          descriptionPreview={compactOverview ? copy.overviewDescriptions[kind] : undefined}
           disabled={!prefs.enabled}
           key={kind}
           label={copy.kinds[kind].label}

@@ -566,6 +566,7 @@ export interface Translations {
       intro: string
       enableAll: string
       enableAllDesc: string
+      overviewDescriptions: Record<'enabled' | 'approval' | 'backgroundDone' | 'credits' | 'input' | 'plugin' | 'turnDone' | 'turnError', string>
       focusedHint: string
       kinds: Record<
         'approval' | 'backgroundDone' | 'credits' | 'input' | 'plugin' | 'turnDone' | 'turnError',

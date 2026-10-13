@@ -647,6 +647,16 @@ export const en: Translations = {
       intro: 'OS notifications (not in-app toasts). Per device.',
       enableAll: 'Enable notifications',
       enableAllDesc: 'Off silences every notification below.',
+      overviewDescriptions: {
+        enabled: "Device-level OS alerts",
+        approval: "Approve or reject a command",
+        input: "Question or secret needed",
+        turnDone: "While app is in background",
+        turnError: "Background turn errors",
+        backgroundDone: "Terminal command completed",
+        credits: "Access paused or restored",
+        plugin: "Background plugin alerts"
+      },
       focusedHint: 'Completion alerts only fire while Eidolon is in the background.',
       kinds: {
         approval: {
