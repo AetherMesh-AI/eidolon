@@ -843,6 +843,7 @@ export function SkillsView({
     <PageSearchShell
       {...props}
       activeTab={mode}
+      embedded={embedded}
       heading={t.sidebar.nav.skills}
       onSearchChange={setQuery}
       onTabChange={id => setMode(id as (typeof SKILLS_MODES)[number])}

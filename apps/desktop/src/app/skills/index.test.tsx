@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { QueryClientProvider } from '@tanstack/react-query'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { MemoryRouter } from 'react-router'
+import { MemoryRouter, useLocation } from 'react-router'
 import type * as ReactRouterDom from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -122,6 +122,40 @@ afterEach(() => {
 // (2× in a row on PR #93612, plus a main run the same hour). Give this file
 // headroom; the tests are not slow individually.
 describe('SkillsView toolset management', { timeout: 60_000 }, () => {
+  it('keeps embedded capabilities under the parent heading with local tabs and pinned writes', async () => {
+    const { SkillsView } = await import('./index')
+
+    function ParentRoute() {
+      const location = useLocation()
+
+      return <output aria-label="Parent route">{location.pathname}{location.search}</output>
+    }
+
+    await act(async () => {
+      render(
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter initialEntries={['/profiles?tab=advanced']}>
+            <h2>Capabilities</h2>
+            <SkillsView data-testid="embedded-capabilities" embedded fixedProfile="review-bot" />
+            <ParentRoute />
+          </MemoryRouter>
+        </QueryClientProvider>
+      )
+    })
+
+    expect(screen.getByRole('heading', { level: 2, name: 'Capabilities' })).toBeTruthy()
+    expect(screen.queryByRole('heading', { level: 1 })).toBeNull()
+    expect(screen.getByTestId('embedded-capabilities').classList.contains('eid-secondary-surface')).toBe(false)
+    await waitFor(() => expect(getSkills).toHaveBeenCalledWith('review-bot'))
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Tools/ })) })
+    const toggle = await screen.findByRole('switch', { name: 'Turn Web Search toolset off' })
+    await act(async () => { fireEvent.click(toggle) })
+    await waitFor(() => expect(setToolsetEnabled).toHaveBeenCalledWith('web', false, 'review-bot'))
+    expect(screen.getByLabelText('Parent route').textContent).toBe('/profiles?tab=advanced')
+    expect(navigateSpy).not.toHaveBeenCalled()
+    expect(getProfiles).not.toHaveBeenCalled()
+  })
+
   it('renders a switch for each toolset and toggles it off', async () => {
     await renderSkills()
 
