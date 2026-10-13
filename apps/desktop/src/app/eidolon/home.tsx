@@ -12,7 +12,7 @@ import { objectivePhaseLabel } from './objective-phase'
 import { TaskCounts } from './objective-progress'
 import { RuntimeSetup } from './runtime-setup'
 import { OrganizationScenery } from './scenery'
-import type { Objective, OrganizationAdapter, OrganizationSnapshot } from './types'
+import type { Objective, OrganizationAdapter, OrganizationRequest, OrganizationSnapshot } from './types'
 
 export function HomeObjective({
   objective,
@@ -74,6 +74,30 @@ export function HomeObjective({
           {copy.viewObjective} →
         </Link>
       )}
+    </article>
+  )
+}
+
+export function HomeRequest({ request, snapshot }: { request: OrganizationRequest; snapshot: OrganizationSnapshot }) {
+  const { t } = useI18n()
+  const requester = snapshot.agents.find(agent => agent.id === request.requesterId)
+  const objective = snapshot.objectives.find(item => item.id === request.objectiveId)
+
+  return (
+    <article className="eid-home-record eid-home-request">
+      <div className="eid-home-request-context">
+        {requester && <AgentAvatar name={requester.name} />}
+        <div>
+          <small>{t.organizationWork.requester}: <bdi>{requester?.name || request.requesterId || t.organizationWork.notRecorded}</bdi></small>
+          <div className="eid-home-record-time">{t.organizationSurfaces.objectiveRecord.created}: <LocalizedTime value={request.createdAt} /></div>
+        </div>
+      </div>
+      <h3 dir="auto">{request.requestedOutcome || request.reason || t.organizationWork.needsYou}</h3>
+      {request.requestedOutcome && request.reason && request.reason !== request.requestedOutcome && <p dir="auto">{request.reason}</p>}
+      <p className="eid-note" dir="auto">{objective?.title || request.objectiveId}</p>
+      <Link className="eid-home-action" to={`/objectives/${encodeURIComponent(request.objectiveId)}`}>
+        {t.organizationHome.reviewRequest} →
+      </Link>
     </article>
   )
 }
@@ -185,15 +209,7 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
             <p>{copy.needsNote}</p>
           </header>
           <div aria-label={copy.needsYou} className="eid-home-panel-body" role="group" tabIndex={0}>
-          {data.requests.slice(0, 3).map(request => (
-            <article className="eid-home-record" key={request.id}>
-              <h3 dir="auto">{snapshot.objectives.find(item => item.id === request.objectiveId)?.title ?? request.objectiveId}</h3>
-              <p dir="auto">{request.reason || request.requestedOutcome || t.organizationWork.needsYou}</p>
-              <Link className="eid-home-action" to={`/objectives/${encodeURIComponent(request.objectiveId)}`}>
-                {copy.reviewRequest} →
-              </Link>
-            </article>
-          ))}
+          {data.requests.slice(0, 3).map(request => <HomeRequest key={request.id} request={request} snapshot={snapshot} />)}
           {!data.requests.length && (
             <p className="eid-home-empty">{snapshot.requests ? copy.noNeeds : copy.requestsUnavailable}</p>
           )}

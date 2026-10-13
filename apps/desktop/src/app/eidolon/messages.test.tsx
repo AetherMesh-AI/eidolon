@@ -4,7 +4,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 
 import { Messages } from './messages'
 import { ownerChatSnapshot, ownerChatThread } from './runtime-owner-chat.test-support'
-import type { RuntimeOrganizationAdapter } from './types'
+import type { OrganizationAgent, RuntimeOrganizationAdapter } from './types'
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
@@ -160,4 +160,16 @@ it('keeps the chosen identity beside chat controls and preserves authored direct
   expect(within(conversation).getByRole('textbox', { name: 'Message' })).toBe(composer)
   expect(composer).toHaveProperty('value', 'Unsent discussion')
   expect(adapter.sendOwnerChat).not.toHaveBeenCalled()
+})
+
+
+it('preserves an unfamiliar retained role instead of inventing a Worker role', () => {
+  const snapshot = ownerChatSnapshot()
+  snapshot.agents[0] = { ...snapshot.agents[0], name: 'Retained specialist', role: 'Auditor' as OrganizationAgent['role'] }
+  render(<MemoryRouter><Messages snapshot={snapshot} /></MemoryRouter>)
+  fireEvent.click(screen.getByRole('button', { name: /Retained specialist/ }))
+  const conversation = screen.getByRole('region', { name: 'Member conversation' })
+  const recipient = within(conversation).getByRole('heading', { name: 'Retained specialist' }).closest('.eid-message-recipient')!
+  expect(recipient.textContent).toContain('Auditor')
+  expect(recipient.textContent).not.toContain('Worker')
 })

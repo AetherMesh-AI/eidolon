@@ -41,7 +41,7 @@ export function NotificationsSettings({ compactOverview = false }: { compactOver
 
   return (
     <SettingsContent>
-      <SectionHeading icon={Bell} title={copy.title} />
+      {!compactOverview && <SectionHeading icon={Bell} title={copy.title} />}
       <Caption className="mb-2 leading-(--conversation-caption-line-height)">{copy.intro}</Caption>
 
       <ToggleRow

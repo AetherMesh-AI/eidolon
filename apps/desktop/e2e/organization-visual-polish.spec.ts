@@ -158,7 +158,7 @@ const snapshot = {
     },
     { id: 'sources', objectiveId: 'release', title: 'Verify source material', ownerId: 'researcher', managingAgentId: 'manager', workPackageId: 'sources-package', currentRound: true, status: 'completed', dependsOn: [] }
   ],
-  requests: [{ id: 'fixture-question', objectiveId: 'navigation', type: 'request.question', team: 'Product', priority: 2, status: 'pending_intervention', reason: 'Review the proposed owner journey before the next iteration.', attempts: 0, createdAt }],
+  requests: [{ id: 'fixture-question', objectiveId: 'navigation', requesterId: 'manager', type: 'request.question', team: 'Product', priority: 2, status: 'pending_intervention', reason: 'Review the proposed owner journey before the next iteration.', attempts: 0, createdAt }],
   activity: ['executive', 'manager', 'writer', 'reviewer'].map((agentId, index) => ({ id: `fixture-event-${index}`, agentId, source: 'runtime', kind: 'system', text: ['Synthetic direction recorded for the release brief.', 'Synthetic manager assignment recorded.', 'Synthetic draft prepared for review.', 'Synthetic review evidence recorded.'][index], timestamp: createdAt })),
   knowledge: [],
   conversations: []
@@ -676,6 +676,8 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await expect(page.locator('#eid-objective')).toBeAttached()
   await expect(page.getByRole('region', { name: 'What’s happening?', exact: true })).toBeVisible()
   await expect(page.getByRole('region', { name: 'What needs me?', exact: true })).toContainText('Review the proposed owner journey')
+  await expect(page.getByRole('region', { name: 'What needs me?', exact: true }).getByRole('heading', { name: 'Review the proposed owner journey before the next iteration.', exact: true })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'What needs me?', exact: true })).toContainText('Requested by: Morgan')
   await expect(page.getByRole('region', { name: 'What’s ready?', exact: true })).toContainText('Synthetic reviewed scope')
   await expect(workspace.locator('.eid-runtime-status')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Open settings', exact: true })).toHaveCount(0)
@@ -1496,7 +1498,16 @@ for (const [locale, suffix, dark, light] of [
     fixture = await setupMockBackend({ extraDisplayConfig: `  language: ${locale}` })
     const { app, page, mock } = fixture
     const copy = translatedSurfaceExpectations[suffix]
-    const localizedSnapshot = { ...snapshot, objectives: snapshot.objectives.map(objective =>
+
+    const retainedCopy = locale === 'ar'
+      ? { identity: 'هوية دائمة', memory: 'الذاكرة الشخصية', questions: 'الأسئلة المفتوحة', history: 'سجل الهوية الحديث' }
+      : locale === 'ru' ? { identity: 'Постоянная идентичность', memory: 'Личная память', questions: 'Открытые вопросы', history: 'Последняя история участника' } : null
+
+    const localizedSnapshot = { ...snapshot, agents: snapshot.agents.map(agent => ({ ...agent, context: {
+      contextSummary: 'Verify release evidence before accepting the outcome.',
+      memory: { facts: [], decisions: [], lessons: [], openQuestions: ['Which audience should this brief address?'] },
+      recentHistory: []
+    } })), objectives: snapshot.objectives.map(objective =>
       objective.id === 'release' ? { ...objective, phaseCode: 'execution_review', phase: 'Execution and review' } : objective
     ) }
 
@@ -1601,6 +1612,27 @@ for (const [locale, suffix, dark, light] of [
           writeFileSync(test.info().outputPath(name), bytes)
           captures.push({ name, locale, route, width, height, zoom, ...appearance, overflow, sha256: createHash('sha256').update(bytes).digest('hex') })
           await test.info().attach(name, { body: bytes, contentType: 'image/png' })
+
+          if (retainedCopy && route === '/messages?recipient=executive') {
+            const retained = page.locator('.eid-message-context details')
+            await retained.locator(':scope > summary').click()
+            await expect(retained.getByRole('heading', { name: retainedCopy.identity, exact: true })).toBeVisible()
+            await expect(retained.getByRole('region', { name: retainedCopy.memory, exact: true })).toBeVisible()
+            await expect(retained.getByRole('region', { name: retainedCopy.history, exact: true })).toBeVisible()
+            const questions = retained.getByRole('region', { name: retainedCopy.questions, exact: true })
+            const question = questions.getByText('Which audience should this brief address?', { exact: true })
+            await question.scrollIntoViewIfNeeded()
+            await expect(question).toBeInViewport({ ratio: 1 })
+            await expect(question).toHaveCSS('direction', 'ltr')
+            expect(await questions.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
+            await page.evaluate(async () => { await document.fonts.ready; await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))) })
+            const retainedName = `retained-${locale}-${mode}-${width}-${height}-${zoom}.png`
+            const retainedBytes = Buffer.from(await app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
+            writeFileSync(test.info().outputPath(retainedName), retainedBytes)
+            captures.push({ name: retainedName, locale, route, width, height, zoom, ...appearance, captureMethod: 'electron.capturePage', sha256: createHash('sha256').update(retainedBytes).digest('hex') })
+            await test.info().attach(retainedName, { body: retainedBytes, contentType: 'image/png' })
+            await retained.locator(':scope > summary').click()
+          }
         }
       }
     }

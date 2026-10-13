@@ -447,8 +447,12 @@ export function OrganizationOwnerChat({
     return null
   }
 
-  const role = agent.role === 'Executive' ? t.organizationRoster.executive
-    : agent.role === 'Manager' ? t.organizationRoster.manager : t.organizationRoster.worker
+  const roles: Record<string, string> = {
+    Executive: t.organizationRoster.executive,
+    Manager: t.organizationRoster.manager,
+    Worker: t.organizationRoster.worker
+  }
+  const role = roles[agent.role] ?? agent.role
 
   return (
     <section aria-label={copy.heading} className="eid-owner-chat">

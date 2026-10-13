@@ -3,6 +3,7 @@ import { organizationConversationsAr } from './organization-conversations'
 import { organizationDispatchAr } from './organization-dispatch-copy'
 import { organizationWorkspaceAr } from './organization-home'
 import { organizationHomeCountsAr } from './organization-home-counts'
+import { organizationIdentityAr } from './organization-identity-copy'
 import { organizationExecutiveMessageAr, organizationMemberMessagesAr } from './organization-member-messages'
 import { organizationMetadataAr } from './organization-metadata'
 import { organizationObjectiveDetailAr } from './organization-objective-detail'
@@ -13,6 +14,8 @@ import { organizationSurfacesAr } from './organization-surfaces'
 export const ar = defineLocale({
   organizationMetadata: organizationMetadataAr,
   organizationWork: {
+    requester: 'مقدّم الطلب',
+    notRecorded: 'غير مسجّل',
     ...organizationDispatchAr,
     objectives: 'الأهداف',
     work: 'العمل',
@@ -30,7 +33,7 @@ export const ar = defineLocale({
     observationUnconfigured: 'لم تتم تهيئة تنفيذ المؤسسة.',
     observationUnsupported: 'لا تدعم هذه الخدمة عرض حالة المؤسسة.',
   },
-  organizationRoster: { objectiveExecutive: "المالك التنفيذي", objectiveManager: "المدير المسؤول" },
+  organizationRoster: { ...organizationIdentityAr, objectiveExecutive: "المالك التنفيذي", objectiveManager: "المدير المسؤول" },
   organizationSurfaces: organizationSurfacesAr,
   organizationHome: { ...organizationOverviewAr, ...organizationExecutiveMessageAr, memberMessages: organizationMemberMessagesAr, workspace: organizationWorkspaceAr, detail: { ...organizationObjectiveDetailAr, ...organizationHomeCountsAr } },
   organizationOwnerChat: organizationOwnerChatAr,

@@ -572,3 +572,6 @@
 .eid-messages-view .eid-owner-chat-tools > nav { margin-inline-start: auto; }
 .eid-messages-view .eid-owner-chat-tools:has(details[open]) { display: block; }
 .eid-messages-view .eid-owner-chat-tools:has(details[open]) > nav { margin-top: 10px; }
+
+.eid-home-request-context { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.eid-home-request-context .eid-home-record-time { margin-top: 3px; }

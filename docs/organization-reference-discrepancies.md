@@ -34,11 +34,13 @@ or full reference parity.
 | Settings | Candidate six-card overview retains real Model/Notifications controls and now collapses context/fallback fields without unmounting them. | First row ends around y648, versus y474 in the reference. Model stretches to notification height; lower destination cards are partly below the viewport. Reference organization-profile and global-save semantics are unsupported. | Rebalance real settings groups and spacing while retaining per-page save owners, all switches and scoped configuration. |
 
 Coordinates above are approximate visual landmarks from the actual pixels, not
-instrumented geometry. The local Messages follow-up adds native geometry evidence
-for recipient/action alignment and transcript reading space; those checks have
-not yet run on hosted Electron. The phase follow-up has local ledger, projection
-and UI regressions but likewise awaits native verification. Neither is included
-in the reviewed PR135 screenshots.
+instrumented geometry. The later Messages follow-up at `638052de` passed native
+geometry checks: the transcript is 482px high and first-message metadata appears
+approximately 93px higher than in PR135. Its phase labels also passed native
+translated coverage. Neither change appears in the reviewed PR135 screenshots.
+The subsequent navigation correction at `ce165df7` passed all nine checks in
+run `38338421694`: 1,528 selected tests and 44 native scenarios with zero
+skips/flakes/retries. Shared-source Home refusal and no-read/no-start checks passed.
 
 The clean organization/search/profile header, single bottom health bar,
 Settings-owned themes, all six languages and narrow/zoomed keyboard reachability
@@ -406,7 +408,7 @@ change must be validated with fresh pixels; it does not change directory behavio
 assertion deadlines, retries or production activation.
 
 
-## Runtime phase localization follow-up (local; native verification pending)
+## Runtime phase localization follow-up
 
 The gateway historically emits `phase` as English prose, while older runtimes
 and prototype metadata can contain free text. The additive `phaseCode` projection
@@ -421,4 +423,35 @@ stage history or accepted delivery from task completion. Real-ledger tests cover
 intervention/resume and durable acceptance, including 100% completed tasks before
 final acceptance, plus retained legacy shapes. Native translated fixtures now
 exercise typed phases while keeping English authored titles/descriptions in
-Arabic interfaces; those captures require a later hosted run.
+Arabic interfaces. Prior head `638052de49896544fe55a3fdcf7d2f59e7753172`
+passed this native slice in run `38335277560` (41 standard plus three directory
+cases; zero skips or flaky cases). The later navigation fix at
+`ce165df72400468efaaf25c53fff3c5660efc90e` also passed this native slice in
+run `38338421694`; its exact tested tree is
+`f2a878876024ed31c4000f028df8eb8298d904e3`.
+
+
+## Separate local follow-up after PR136
+
+Not included in PR136 head `ce165df72400468efaaf25c53fff3c5660efc90e`:
+Home presents the pending question as its heading with the recorded requester and
+creation time, rather than implying that the assigned executor asked it. Missing
+requester identity remains explicit. Arabic/Russian identity, memory, history and
+open-question labels are filled in while authored records stay unchanged. The
+compact Settings overview removes a duplicate Notifications heading; all switches
+and existing save owners remain in place. The conversation header now falls back
+to the recorded role when it is unfamiliar, matching directory/context behavior.
+
+Local tests passed (649 across organization, catalog and affected Settings owners).
+Native Home requester checks are prepared, but hosted verification and new pixel
+comparison remain pending. These changes do not establish final reference parity.
+
+Retained authored context and history now choose their own text direction; Arabic
+interface direction no longer determines English memory text. Prepared native
+coverage opens retained memory in Arabic and Russian, checks the unresolved
+question at normal size and 200% zoom, and records new captures. This follow-up
+remains local and is not certified by earlier PR136 artifacts.
+
+A separate recovery regression changes the current page intent while activation
+is pending, then rejects activation. Both page preservation and fresh-chat
+recovery pass while the previous machine-bound session remains cleared.

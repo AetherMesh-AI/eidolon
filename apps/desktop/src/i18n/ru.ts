@@ -5,6 +5,7 @@ import { organizationConversationsRu } from './organization-conversations'
 import { organizationDispatchRu } from './organization-dispatch-copy'
 import { organizationWorkspaceRu } from './organization-home'
 import { organizationHomeCountsRu } from './organization-home-counts'
+import { organizationIdentityRu } from './organization-identity-copy'
 import { organizationExecutiveMessageRu, organizationMemberMessagesRu } from './organization-member-messages'
 import { organizationMetadataRu } from './organization-metadata'
 import { organizationObjectiveDetailRu } from './organization-objective-detail'
@@ -36,6 +37,8 @@ const RU_NOUN = (count: number | string, one: string, few: string, many: string)
 export const ru = defineLocale({
   organizationMetadata: organizationMetadataRu,
   organizationWork: {
+    requester: 'Инициатор запроса',
+    notRecorded: 'Не зафиксировано',
     ...organizationDispatchRu,
     objectives: 'Цели',
     work: 'Работа',
@@ -53,7 +56,7 @@ export const ru = defineLocale({
     observationUnconfigured: 'Выполнение задач организации не инициализировано.',
     observationUnsupported: 'Этот сервер не поддерживает просмотр состояния организации.',
   },
-  organizationRoster: { objectiveExecutive: "Ответственный руководитель", objectiveManager: "Ответственный менеджер" },
+  organizationRoster: { ...organizationIdentityRu, objectiveExecutive: "Ответственный руководитель", objectiveManager: "Ответственный менеджер" },
   organizationSurfaces: organizationSurfacesRu,
   organizationHome: { ...organizationOverviewRu, ...organizationExecutiveMessageRu, memberMessages: organizationMemberMessagesRu, workspace: organizationWorkspaceRu, detail: { ...organizationObjectiveDetailRu, ...organizationHomeCountsRu } },
   organizationOwnerChat: organizationOwnerChatRu,
