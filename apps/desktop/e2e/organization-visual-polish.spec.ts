@@ -514,7 +514,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
     await page.keyboard.press('Tab')
     await expect(members.getByRole('button', { name: /Robin/ })).toBeFocused()
     await page.keyboard.press('Tab')
-    const directoryDetails = members.locator('.eid-message-directory-details')
+    const directoryDetails = page.locator('.eid-message-members .eid-message-directory-details')
     await expect(directoryDetails.locator('summary')).toBeFocused()
     await page.keyboard.press('Enter')
     await expect(directoryDetails).toHaveAttribute('open', '')
