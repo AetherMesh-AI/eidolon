@@ -2,6 +2,7 @@
 export const settingsWorkspaceEn = {
   heading: 'Settings',
   overview: 'Overview',
+  modelParameters: 'Context and fallback models',
   openSection: 'Open {section}',
   introduction: 'Configure this desktop and its connected runtime.',
   saveNote: 'Some changes save automatically. Use each page’s Save or confirmation controls where shown.',
@@ -26,4 +27,13 @@ export const settingsWorkspaceEn = {
     sessions: 'Review and restore archived conversations',
     about: 'Application information and updates'
   }
+}
+
+export const modelParametersByLocale = {
+  en: settingsWorkspaceEn.modelParameters,
+  ja: 'コンテキストとフォールバックモデル',
+  zh: '上下文与备用模型',
+  'zh-hant': '上下文與備用模型',
+  ar: 'السياق والنماذج البديلة',
+  ru: 'Контекст и резервные модели'
 }

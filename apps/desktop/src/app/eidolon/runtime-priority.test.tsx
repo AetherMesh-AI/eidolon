@@ -3,13 +3,16 @@ import { useSyncExternalStore } from 'react'
 import { MemoryRouter } from 'react-router'
 import { expect, it, vi } from 'vitest'
 
+import { TRANSLATIONS } from '@/i18n/catalog'
+import { I18nProvider } from '@/i18n/context'
+
 import { createRuntimeAdapter, type OrganizationGateway } from './runtime-adapter'
 import { RuntimeHistoryObjectiveDetail } from './runtime-history'
 import { RuntimePriority } from './runtime-priority'
 import type { PriorityChange, PriorityReceipt } from './runtime-priority-types'
 import type { Objective, OrganizationSnapshot } from './types'
 
-async function fixture(initialRevision = 0, historyRoute = false) {
+async function fixture(initialRevision = 0, historyRoute = false, locale: 'en' | 'ar' | 'ru' = 'en') {
   let profile = 'alpha'
 
   let notify = () => {}
@@ -61,8 +64,8 @@ async function fixture(initialRevision = 0, historyRoute = false) {
     return value.objectives[0] ? <RuntimePriority adapter={adapter} key={value.connection?.scope} objective={value.objectives[0]} snapshot={value} /> : null
   }
 
-  const rendered = render(<View />)
-  await screen.findByRole('combobox', { name: 'New priority' })
+  const rendered = render(<I18nProvider configClient={null} initialLocale={locale}><View /></I18nProvider>)
+  await screen.findByRole('combobox', { name: TRANSLATIONS[locale].organizationWork.priorityNew })
 
   return { adapter, request, rendered, lose: () => { lose = true }, intercept: (fn?: () => Promise<unknown>) => { intercept = fn },
     reply: () => ({ receipt: [...receipts.values()][0], profile, objective: archived ?? snapshot.objectives[0], snapshot: structuredClone(snapshot) }),
@@ -226,4 +229,21 @@ it('recovers an archived receipt through the real detail route while keeping the
   expect(screen.queryByRole('button', { name: 'Retry priority save' })).toBeNull()
   expect(screen.queryByRole('combobox', { name: 'New priority' })).toBeNull()
   expect(screen.queryByRole('alert')).toBeNull()
+})
+
+
+it.each([
+  ['ar', 'الأولوية الجديدة', 'حفظ الأولوية', 'إعادة محاولة حفظ الأولوية', 'تم حفظ P5 → P2 (النسخة 1).'],
+  ['ru', 'Новый приоритет', 'Сохранить приоритет', 'Повторить сохранение приоритета', 'Сохранено: P5 → P2 (версия 1).']
+] as const)('preserves the exact uncertain priority intent in %s', async (locale, field, save, retry, saved) => {
+  const f = await fixture(0, false, locale)
+  f.lose()
+  fireEvent.change(screen.getByRole('combobox', { name: field }), { target: { value: 'P2' } })
+  fireEvent.click(screen.getByRole('button', { name: save }))
+  await screen.findByRole('alert')
+  const original = calls(f.request)[0][1]
+  expect(original).toMatchObject({ id: 'obj-a', priority: 'P2', expectedRevision: 0 })
+  fireEvent.click(screen.getByRole('button', { name: retry }))
+  await screen.findByText(saved)
+  expect(calls(f.request).map(call => call[1])).toEqual([original, original])
 })

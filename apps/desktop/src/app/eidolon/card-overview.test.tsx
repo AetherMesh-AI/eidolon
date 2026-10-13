@@ -11,7 +11,8 @@ it('identifies responsible teams from assigned agents and task owners, not roles
   adapter.loadDemo()
   render(<MemoryRouter initialEntries={['/objectives']}><OrganizationWorkspace adapter={adapter} /></MemoryRouter>)
   const card = within(screen.getByRole('link', { name: /Workspace navigation review/ }))
-  expect(card.getByText('Responsible team: Engineering')).toBeTruthy()
+  expect(card.getByText('Responsible team:', { exact: false }).textContent).toBe('Responsible team: Engineering')
+  expect(card.getByText('Engineering').tagName).toBe('BDI')
 })
 
 it.each(['Grid', 'List'])('separates role, team and current assignment on %s agent cards', mode => {
@@ -56,7 +57,7 @@ it('makes absent responsibility, assignment, decisions and artifacts explicit', 
   const snapshot = { ...base.getSnapshot(), agents: [{ id: objective.ownerId, name: 'Owner', role: 'Not a team', responsibilities: [], capabilities: [], status: 'idle' as const, summary: '' }] }
   const adapter = { ...base, getSnapshot: () => snapshot }
   const view = render(<MemoryRouter initialEntries={['/objectives']}><OrganizationWorkspace adapter={adapter} /></MemoryRouter>)
-  expect(screen.getByText('Responsible team: Unknown · team not recorded')).toBeTruthy()
+  expect(screen.getByText('Responsible team:', { exact: false }).textContent).toBe('Responsible team: Unknown · team not recorded')
   view.unmount()
   const detail = render(<MemoryRouter initialEntries={['/objectives/' + objective.id]}><OrganizationWorkspace adapter={adapter} /></MemoryRouter>)
   expect(within(screen.getByRole('region', { name: 'Recent decisions' })).getByText(/Unknown.*no decisions recorded/i)).toBeTruthy()

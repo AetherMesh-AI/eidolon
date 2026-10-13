@@ -84,6 +84,7 @@ it('keeps work overview scoped to open objectives and labels retained data after
   render(<MemoryRouter><WorkOverview snapshot={{ ...snapshot, objectives: [paused, { ...objective, id: 'closed', title: 'Closed work', status: 'completed' }], connection: { state: 'error', scope: 'scope' } }} /></MemoryRouter>)
   const card = screen.getByRole('region', { name: objective.title })
   expect(within(card).getByText(/New dispatch paused/)).toBeTruthy()
+  expect(within(card).getAllByRole('list', { name: 'Recorded task states' })).toHaveLength(1)
   expect(within(card).getByRole('link', { name: 'View objective →' }).getAttribute('href')).toBe('/objectives/objective')
   expect(screen.queryByRole('region', { name: 'Closed work' })).toBeNull()
   expect(screen.getByText('Last known records · reconnect to refresh')).toBeTruthy()
@@ -130,4 +131,23 @@ it.each(['ja', 'zh', 'zh-hant', 'ar', 'ru'] as const)('keeps review truth and au
   expect(openWork).toHaveBeenCalledOnce()
   expect(openRequests).toHaveBeenCalledOnce()
   expect(JSON.stringify(state)).toBe(before)
+})
+
+
+it.each(['en', 'ar'] as const)('isolates authored RTL and LTR records from interface direction (%s)', locale => {
+  const record = { ...objective, phase: 'مرحلة المراجعة (P2)', workPackages: [{ ...assignment, title: 'مراجعة الإصدار', description: 'Scope (release-2)' }] }
+  const state = { ...snapshot, objectives: [record], tasks: [{ ...task, title: 'التحقق من النتيجة' }] }
+  const before = JSON.stringify(state)
+  render(<I18nProvider configClient={null} initialLocale={locale}><ObjectiveProgress objective={record} onReviewRequests={vi.fn()} onReviewWork={vi.fn()} snapshot={state} /></I18nProvider>)
+  for (const value of [record.phase, record.workPackages[0].title, record.workPackages[0].description, state.tasks[0].title]) {
+    for (const element of screen.getAllByText(value)) { expect(element.getAttribute('dir')).toBe('auto') }
+  }
+  expect(JSON.stringify(state)).toBe(before)
+})
+
+it.each([['ar', 'المدير المسؤول', 'قيد العمل'], ['ru', 'Ответственный менеджер', 'В работе']] as const)('translates recorded manager ownership and assignment state in %s', (locale, managerLabel, stateLabel) => {
+  render(<I18nProvider configClient={null} initialLocale={locale}><ObjectiveProgress objective={{ ...objective, workPackages: [assignment] }} onReviewRequests={vi.fn()} onReviewWork={vi.fn()} snapshot={snapshot} /></I18nProvider>)
+  expect(screen.getByText(`${managerLabel} ·`, { exact: false }).querySelector('bdi')?.textContent).toBe('manager')
+  expect(screen.getByText(stateLabel, { exact: false })).toBeTruthy()
+  expect(screen.queryByText('Manager owner', { exact: false })).toBeNull()
 })

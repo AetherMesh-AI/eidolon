@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { getElevenLabsVoices, getHermesConfigSchema, saveHermesConfig } from '@/eidolon'
 import { useI18n } from '@/i18n'
+import { modelParametersByLocale } from '@/i18n/settings-workspace'
 import { triggerHaptic } from '@/lib/haptics'
 import { confirm } from '@/store/confirm'
 import {
@@ -92,7 +93,7 @@ function ConfigSettingsInner({
   importInputRef,
   scopeProfile
 }: ConfigSettingsProps & { scopeProfile: string | undefined }) {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const c = t.settings.config
   const keepAwake = useStore($keepAwake)
   const disableF12 = useStore($disableF12)
@@ -421,6 +422,8 @@ function ConfigSettingsInner({
       {visibleFields.length === 0 && activeSectionId !== 'chat' ? (
         <EmptyState description={c.emptyDesc} title={c.emptyTitle} />
       ) : visibleFields.length === 0 ? null : (
+        <details className="eid-settings-model-parameters" open={compactOverview && activeSectionId === 'model' ? undefined : true}>
+          <summary hidden={!compactOverview || activeSectionId !== 'model'}>{modelParametersByLocale[locale]}</summary>
         <div className="grid gap-1">
           {visibleFields.map(([key, field]) => (
             <div className="scroll-mt-6 rounded-lg" id={`setting-field-${key}`} key={key}>
@@ -451,6 +454,7 @@ function ConfigSettingsInner({
             </div>
           ))}
         </div>
+        </details>
       )}
       <input
         accept=".json,application/json"

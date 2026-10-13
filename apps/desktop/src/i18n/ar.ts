@@ -1,5 +1,6 @@
 import { defineLocale } from './define-locale'
 import { organizationConversationsAr } from './organization-conversations'
+import { organizationDispatchAr } from './organization-dispatch-copy'
 import { organizationWorkspaceAr } from './organization-home'
 import { organizationHomeCountsAr } from './organization-home-counts'
 import { organizationExecutiveMessageAr, organizationMemberMessagesAr } from './organization-member-messages'
@@ -12,10 +13,24 @@ import { organizationSurfacesAr } from './organization-surfaces'
 export const ar = defineLocale({
   organizationMetadata: organizationMetadataAr,
   organizationWork: {
+    ...organizationDispatchAr,
+    objectives: 'الأهداف',
+    work: 'العمل',
+    activity: 'النشاط',
+    artifacts: 'المخرجات',
+    decisions: 'القرارات',
+
+    packagePlanning: "قيد التخطيط",
+    packagePlanned: "مخطط لها",
+    packageWorking: "قيد العمل",
+    completed: "مكتملة",
+    blocked: "متعطلة",
+    cancelled: "ملغاة",
     observationUnavailable: 'عرض حالة المؤسسة غير متاح.',
     observationUnconfigured: 'لم تتم تهيئة تنفيذ المؤسسة.',
     observationUnsupported: 'لا تدعم هذه الخدمة عرض حالة المؤسسة.',
   },
+  organizationRoster: { objectiveExecutive: "المالك التنفيذي", objectiveManager: "المدير المسؤول" },
   organizationSurfaces: organizationSurfacesAr,
   organizationHome: { ...organizationOverviewAr, ...organizationExecutiveMessageAr, memberMessages: organizationMemberMessagesAr, workspace: organizationWorkspaceAr, detail: { ...organizationObjectiveDetailAr, ...organizationHomeCountsAr } },
   organizationOwnerChat: organizationOwnerChatAr,

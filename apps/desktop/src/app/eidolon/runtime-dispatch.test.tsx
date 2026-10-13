@@ -3,12 +3,15 @@ import { useSyncExternalStore } from 'react'
 import { MemoryRouter } from 'react-router'
 import { expect, it, vi } from 'vitest'
 
+import { TRANSLATIONS } from '@/i18n/catalog'
+import { I18nProvider } from '@/i18n/context'
+
 import { createRuntimeAdapter, type OrganizationGateway } from './runtime-adapter'
 import type { DispatchReceipt } from './runtime-dispatch-types'
 import { RuntimeHistoryObjectiveDetail } from './runtime-history'
 import type { Objective, OrganizationSnapshot } from './types'
 
-async function fixture() {
+async function fixture(locale: 'en' | 'ar' | 'ru' = 'en') {
   let profile = 'alpha'
 
   let notify = () => {}
@@ -57,8 +60,8 @@ async function fixture() {
     return <MemoryRouter><RuntimeHistoryObjectiveDetail adapter={adapter} key={value.connection?.scope} objectiveId={profile === 'alpha' ? 'obj-a' : 'obj-b'} snapshot={value} /></MemoryRouter>
   }
 
-  render(<View />)
-  await screen.findByRole('button', { name: 'Pause new dispatch' })
+  render(<I18nProvider configClient={null} initialLocale={locale}><View /></I18nProvider>)
+  await screen.findByRole('button', { name: TRANSLATIONS[locale].organizationWork.dispatchPause })
 
   return { adapter, request, reply, lose: () => { lose = true }, deny: (value: boolean) => { deny = value }, intercept: (fn?: () => Promise<unknown>) => { intercept = fn },
     async archive() {
@@ -158,4 +161,20 @@ it('acknowledges a historical retry without replacing current state or offering 
   fireEvent.click(screen.getByRole('button', { name: 'Pause new dispatch' }))
   await screen.findByText('Dispatch change confirmed · Receipt revision: 5', { selector: '[role="status"]' })
   expect(calls(f.request).at(-1)![1].expectedRevision).toBe(4)
+})
+
+
+it.each([
+  ['ar', 'إيقاف الجدولة الجديدة مؤقتاً', 'إعادة محاولة تغيير الجدولة نفسه', 'استئناف الجدولة'],
+  ['ru', 'Приостановить новые запуски', 'Повторить то же изменение запуска', 'Возобновить запуск']
+] as const)('preserves the exact uncertain dispatch intent in %s', async (locale, pause, retry, resume) => {
+  const f = await fixture(locale)
+  f.lose()
+  fireEvent.click(screen.getByRole('button', { name: pause }))
+  await screen.findByRole('alert')
+  const original = calls(f.request)[0][1]
+  expect(original).toMatchObject({ id: 'obj-a', paused: true, expectedRevision: 0 })
+  fireEvent.click(screen.getByRole('button', { name: retry }))
+  await screen.findByRole('button', { name: resume })
+  expect(calls(f.request).map(call => call[1])).toEqual([original, original])
 })
