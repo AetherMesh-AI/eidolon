@@ -246,7 +246,7 @@
 /* Preserve one vertical list and its focus outlines inside the compact editor. */
 .eid-settings-cards:not(.eid-settings-model-only) .eid-settings-notification-kinds { display: grid; grid-template-columns: minmax(0, 1fr); max-height: 180px; overflow-y: auto; padding: 7px; margin: -7px; scroll-padding: 7px; }
 @media (min-width: 1251px) {
-  .eid-settings-cards:not(.eid-settings-model-only) > :is([data-section="config:workspace"], [data-section="config:safety"]) { min-height: 275px; }
+  .eid-settings-cards:not(.eid-settings-model-only) > .eid-settings-card:is([data-section="config:workspace"], [data-section="config:safety"]) { min-height: 275px; }
 }
 .eid-settings-cards:not(.eid-settings-model-only) .settings-row:has([role="switch"]) > div { min-height: 36px; padding-block: 3px; gap: 8px; }
 .eid-settings-cards:not(.eid-settings-model-only) .eid-settings-notification-kinds .settings-row > div { min-height: 36px; }
