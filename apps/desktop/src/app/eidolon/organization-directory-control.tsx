@@ -17,7 +17,7 @@ import { readOrganizationMetadataScope } from './use-organization-metadata'
 /** Production stays inspection-only; the explicit acceptance build tests the actual door. */
 const selectionEnabled = import.meta.env.MODE === 'organization-directory-acceptance'
 
-export function OrganizationDirectoryControl() {
+export function OrganizationDirectoryControl({ label }: { label?: string }) {
   const { locale } = useI18n()
 
   const eligible = useSyncExternalStore(
@@ -75,11 +75,12 @@ export function OrganizationDirectoryControl() {
           }
         }}
         ref={trigger}
-        size="micro"
+        size="lg"
         variant="ghost"
       >
         <Codicon name="organization" />
-        <span className="eid-workspace-action-label">{copy.heading}</span>
+        <span className="eid-workspace-organization-name">{label ?? copy.heading}</span>
+        <Codicon name="chevron-down" />
       </Button>
       {origin && runtime && (
         <OrganizationDirectorySearch

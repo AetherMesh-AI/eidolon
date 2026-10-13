@@ -312,6 +312,11 @@ test('keeps native organization navigation, roster and objective layouts usable 
   }
 
   async function capture(name: string, target = workspace, nativeWindow = false, preserveScroll = false) {
+    // Matched review images are neutral-focus; keyboard checks retain their own evidence.
+    if (name.startsWith('reference-')) {
+      await page.evaluate(() => { if (document.activeElement instanceof HTMLElement) {document.activeElement.blur()} })
+    }
+
     if (!preserveScroll) {
       await target.evaluate(element => { element.scrollTop = 0 })
     }
@@ -922,6 +927,25 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await expect(primaryObjective.getByRole('list', { name: 'Recorded task states', exact: true })).toBeVisible()
   await expect(primaryObjective.getByRole('link', { name: 'View objective →', exact: true })).toBeInViewport({ ratio: 1 })
   await expect(page.getByRole('contentinfo', { name: 'System health', exact: true })).toBeInViewport({ ratio: 1 })
+
+  const chrome = await page.evaluate(() => {
+    const bounds = (selector: string) => document.querySelector(selector)!.getBoundingClientRect().toJSON()
+
+    return { header: bounds('.eid-workspace-header'), search: bounds('.eid-workspace-search-trigger'),
+      firstNavigation: bounds('.eid-rail nav a'), brand: bounds('.eid-brand'),
+      headerDrag: getComputedStyle(document.querySelector('.eid-workspace-header')!).getPropertyValue('-webkit-app-region'),
+      searchDrag: getComputedStyle(document.querySelector('.eid-workspace-search-trigger')!).getPropertyValue('-webkit-app-region') }
+  })
+
+  expect(chrome.header.y).toBe(0)
+  expect(chrome.header.height).toBe(65)
+  expect(chrome.search.width).toBe(380)
+  expect(chrome.firstNavigation.y).toBeGreaterThanOrEqual(110)
+  expect(chrome.firstNavigation.y).toBeLessThanOrEqual(118)
+  expect(chrome.headerDrag).toBe('drag')
+  expect(chrome.searchDrag).toBe('no-drag')
+  homeChecks.push({ name: 'reference-shared-chrome', ...chrome })
+  focusChecks.push(await verifyKeyboardFocus(page, page.getByRole('button', { name: 'Search loaded records', exact: true }), 'Shared header search'))
   await capture('reference-home-light')
   await resize(1220)
 

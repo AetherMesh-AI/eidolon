@@ -23,6 +23,7 @@ test.afterEach(async () => {
     const currentReadiness = await fixture.page.evaluate(() => (window as any).__settingsEditorReadiness ?? [])
     await test.info().attach('settings-editor-readiness', { body: JSON.stringify(initialEditorReadiness.length ? initialEditorReadiness : currentReadiness, null, 2), contentType: 'application/json' })
   }
+
   await fixture?.cleanup()
   fixture = undefined
   initialEditorReadiness = []
@@ -35,10 +36,12 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
   const { app, page, mock, sandbox } = fixture
   await app.evaluate(() => {
     const rows: any[] = []
+
     ;(globalThis as any).__settingsConfigRequests = rows
     // Observe real Node HTTP requests without replacing IPC, responses or routing.
     process.getBuiltinModule('diagnostics_channel').channel('http.client.request.start').subscribe(({ request }: any) => {
       const url = new URL(request.path, 'http://127.0.0.1')
+
       if (!['/api/config', '/api/config/schema', '/api/model/info', '/api/model/options', '/api/model/auxiliary', '/api/model/moa'].includes(url.pathname)) {
         return
       }
@@ -54,18 +57,24 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
   })
   await page.evaluate(() => {
     const rows: object[] = []
+
     ;(window as any).__settingsEditorReadiness = rows
     let previous = ''
+
     const record = () => {
       const root = document.querySelector('.eid-settings-page')
+
       const state = {
         mounted: !!root,
         skeletons: root?.querySelectorAll('[data-slot=skeleton]').length ?? 0,
         applyPresent: [...(root?.querySelectorAll('button') ?? [])].some(button => button.textContent?.trim() === 'Apply')
       }
+
       const key = JSON.stringify(state)
+
       if (key !== previous) { rows.push({ at: Date.now(), ...state }); previous = key }
     }
+
     new MutationObserver(record).observe(document.body, { childList: true, subtree: true })
     record()
   })
@@ -92,6 +101,11 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
   }
 
   async function capture(name: string, nativeWindow = false) {
+    // Matched review images are neutral-focus; keyboard checks retain their own evidence.
+    if (name.startsWith('reference-')) {
+      await page.evaluate(() => { if (document.activeElement instanceof HTMLElement) {document.activeElement.blur()} })
+    }
+
     await expect(settings.locator('[data-slot="skeleton"]')).toHaveCount(0)
     await page.evaluate(async () => {
       await document.fonts.ready
@@ -125,10 +139,13 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
     // Page screenshots crop Electron content at non-default zoom. Retain the
     // full native surface, and verify pixel dimensions rather than trusting DPR.
     const viewport = await page.evaluate(() => ({ width: innerWidth, height: innerHeight, devicePixelRatio }))
+
     const bytes = nativeWindow
       ? Buffer.from(await app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
       : await page.screenshot({ path: test.info().outputPath(`${name}.png`), animations: 'disabled', caret: 'hide' })
+
     const pixelSize = { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) }
+
     if (nativeWindow) {
       expect(pixelSize).toEqual({ width: viewport.width * viewport.devicePixelRatio, height: viewport.height * viewport.devicePixelRatio })
       writeFileSync(test.info().outputPath(`${name}.png`), bytes)
@@ -201,8 +218,10 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
   await parameters.locator('summary').focus()
   await page.keyboard.press('Enter')
   await expect(parameters).not.toHaveAttribute('open', '')
+
   const nestedScrollers = await settings.locator('.eid-settings-card-body .settings-content > div').evaluateAll(elements =>
     elements.filter(element => element.scrollHeight > element.clientHeight + 1).length)
+
   expect(nestedScrollers).toBe(0)
   await expect(settings.getByRole('button', { name: 'Open Appearance', exact: true })).toBeInViewport({ ratio: 1 })
   await capture('reference-settings-overview')

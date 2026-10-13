@@ -65,17 +65,16 @@ export function WorkspaceHeader() {
 
   return <header aria-label={copy.heading} className="eidolon eid-workspace-header" data-slot="workspace-header">
     <div className="eid-workspace-identity">
-      {identity.view.descriptor && identity.view.descriptor.state !== 'unsupported' && <span className="eid-workspace-organization-name" title={saved?.displayName}>{saved?.displayName ?? t.organizationMetadata.unnamed}</span>}
-      <Button aria-label={t.organizationMetadata.edit} disabled={!canEdit} onClick={() => { if (readScope().connected && readScope().key === identity.scope.key && !$pendingConnectionId.get()) { setEditingScope(editorScope) } }} ref={ownerTrigger} size="micro" title={t.organizationMetadata.edit} variant="ghost"><Codicon name="account" /><span>{saved?.owner.displayName ?? t.organizationMetadata.owner}</span></Button>
-      <Button aria-label={copy.profile(profile)} onClick={() => navigateToWorkspacePage(navigate, '/profiles')} size="micro" variant="ghost"><Codicon name="organization" /><span>{profile}</span></Button>
-      <OrganizationDirectoryControl />
+      <OrganizationDirectoryControl label={identity.view.descriptor && identity.view.descriptor.state !== 'unsupported' ? saved?.displayName ?? t.organizationMetadata.unnamed : undefined} />
       {/* The switcher owns registry initialization and change subscriptions, even with one source. */}
       <ConnectionSwitcher compact onConnect={() => navigateToWorkspacePage(navigate, '/settings?tab=connections')} preserveRoute={() => isWorkspacePageRoute(locationRef.current.pathname)} />
     </div>
-    <Button aria-label={copy.search} disabled={!available} onClick={() => { if (current()) {setSearchScope(snapshot!.connection!.scope)} }} ref={searchTrigger} size="micro" variant="ghost"><Codicon name="search" /><span className="eid-workspace-action-label">{copy.search}</span></Button>
+    <Button aria-label={copy.search} className="eid-workspace-search-trigger" disabled={!available} onClick={() => { if (current()) {setSearchScope(snapshot!.connection!.scope)} }} ref={searchTrigger} size="lg" variant="outline"><Codicon name="search" /><span>{copy.search}</span></Button>
     <div className="eid-workspace-actions">
       <OrganizationWorkIndicator compact />
-      <Button aria-label={settings ? t.settings.search.pill : copy.settings} onClick={() => settings ? openCommandPalettePage('settings') : navigateToWorkspacePage(navigate, '/settings')} size="micro" variant="ghost"><Codicon name={settings ? 'search' : 'settings-gear'} /><span className="eid-workspace-action-label">{settings ? t.settings.search.pill : copy.settings}</span></Button>
+      <Button aria-label={t.organizationMetadata.edit} disabled={!canEdit} onClick={() => { if (readScope().connected && readScope().key === identity.scope.key && !$pendingConnectionId.get()) { setEditingScope(editorScope) } }} ref={ownerTrigger} size="lg" variant="ghost"><Codicon name="account" /><span>{saved?.owner.displayName ?? t.organizationMetadata.owner}</span></Button>
+      <Button aria-label={copy.profile(profile)} onClick={() => navigateToWorkspacePage(navigate, '/profiles')} size="lg" variant="ghost"><Codicon name="organization" /><span>{profile}</span></Button>
+      <Button aria-label={settings ? t.settings.search.pill : copy.settings} onClick={() => settings ? openCommandPalettePage('settings') : navigateToWorkspacePage(navigate, '/settings')} size="icon" variant="ghost"><Codicon name={settings ? 'search' : 'settings-gear'} /></Button>
     </div>
     {editingScope === editorScope && identity.scope.eligible && <OrganizationOwnerEditor client={identity.client} draftKey={JSON.stringify([identity.scope.ownerKey, saved?.organizationId ?? 'unconfigured'])} key={editingScope} onClose={() => setEditingScope(null)} onReturnFocus={receipt => {
       const scope = readScope()
