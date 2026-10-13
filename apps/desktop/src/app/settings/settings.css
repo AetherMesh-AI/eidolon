@@ -237,3 +237,7 @@
 @media (max-width: 800px) { .eid-settings-heading h1 { font-size: 30px; } .eid-settings-summary > div { grid-template-columns: minmax(0, 1fr); gap: 4px; } }
 
 [dir="rtl"] .eid-settings-scenery { mask-image: linear-gradient(to left, transparent, black 45%); }
+
+/* Eight full-size switches fit the established 300px first-row contract. */
+.eid-settings-cards:not(.eid-settings-model-only) .settings-row:has([role="switch"]) > div { min-height: 24px; padding-block: 2px; }
+.eid-settings-cards:not(.eid-settings-model-only) .eid-settings-notification-kinds .settings-row > div { min-height: 24px; }

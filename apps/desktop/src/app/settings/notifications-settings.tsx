@@ -42,11 +42,12 @@ export function NotificationsSettings({ compactOverview = false }: { compactOver
   return (
     <SettingsContent>
       {!compactOverview && <SectionHeading icon={Bell} title={copy.title} />}
-      <Caption className="mb-2 leading-(--conversation-caption-line-height)">{copy.intro}</Caption>
+      {!compactOverview && <Caption className="mb-2 leading-(--conversation-caption-line-height)">{copy.intro}</Caption>}
 
       <ToggleRow
         checked={prefs.enabled}
-        description={copy.enableAllDesc}
+        collapsibleDescription={compactOverview}
+        description={compactOverview ? `${copy.intro} ${copy.enableAllDesc}` : copy.enableAllDesc}
         label={copy.enableAll}
         onChange={setNativeNotifyEnabled}
       />
