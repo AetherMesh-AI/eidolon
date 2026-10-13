@@ -54,6 +54,24 @@ durable history before initial backend reads, and select AetherMesh for actual
 light surfaces because Eidolon's two appearance preferences intentionally remain
 dark. No complete gallery pass is claimed for either failed candidate.
 
+At `71cfd186`, Settings retained 760 captures: ZH passed; the other five cases
+failed only on Keyboard Shortcuts horizontal overflow at 200% in both themes
+(125px in EN/JA/ZH-Hant/AR; 227px in RU). Shortcuts now wrap labels and alternate
+bindings, and the short Settings grid no longer inherits a content minimum width.
+The secondary job reached its unchanged 20-minute deadline after three timed-out
+cases. Its traces exposed a remaining short Profiles list focus clip and a fixture
+mismatch after chat navigation: passive organization observation read the empty
+sandbox instead of the synthetic snapshot. The repair reserves one full list
+control's height, supplies the explicit read-only observation response, and checks
+only the first/last eligible controls without serial metadata reads for hundreds
+of unused catalog controls. All original assertions and deadlines remain.
+These are sampled keyboard checks, not exhaustive tab-order or page-state proof.
+
+Independent source review also found that `SkillsView` consumed but did not
+forward `embedded` to its shell. The parent-owned profile editor now retains its
+heading and chrome. A regression through the real embedded view failed before
+the one-line fix, then passed while preserving local tab state and pinned writes.
+
 “Captured” means retained native evidence exists, not final pixel approval.
 Only Home, Messages, Objective Detail and Settings have supplied image references.
 Other destinations require consistent shared design, not an invented reference.

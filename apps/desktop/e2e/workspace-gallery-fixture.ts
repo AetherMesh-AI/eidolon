@@ -37,14 +37,22 @@ export async function setupGallery(locale: string, seedHistory = false) {
     const { page } = fixture
     await waitForAppReady(fixture)
     const methods: string[] = []
+    const observationReads: string[] = []
     const state = { snapshot: structuredClone(snapshot) }
     state.snapshot.activity[1].text = 'سجل تجريبي للمراجعة · Synthetic record'
     await page.routeWebSocket(/.*/, socket => {
       const server = socket.connectToServer()
       socket.onMessage(message => {
-        const request = JSON.parse(message.toString()) as { id?: number; method?: string }
+        const request = JSON.parse(message.toString()) as { id?: number; method?: string; params?: { method?: string } }
         if (request.method?.startsWith('organization.')) { methods.push(request.method) }
-        if (request.method === 'organization.snapshot' || request.method === 'organization.outcomes') {
+        if (request.method === 'organization.observe') {
+          socket.send(JSON.stringify({ jsonrpc: '2.0', id: request.id, result: { capabilityVersion: 1, state: 'available', scope: { kind: 'served-profile', profile: 'default' }, snapshot: state.snapshot } }))
+        } else if (request.method === 'organization.observeRead') {
+          observationReads.push(request.params?.method ?? '')
+          if (request.params?.method === 'organization.outcomes') {
+            socket.send(JSON.stringify({ jsonrpc: '2.0', id: request.id, result: { capabilityVersion: 1, state: 'available', scope: { kind: 'served-profile', profile: 'default' }, data: state.snapshot.outcomes } }))
+          } else { server.send(message) }
+        } else if (request.method === 'organization.snapshot' || request.method === 'organization.outcomes') {
           socket.send(JSON.stringify({ jsonrpc: '2.0', id: request.id, result: request.method === 'organization.snapshot' ? state.snapshot : state.snapshot.outcomes }))
         } else { server.send(message) }
       })
@@ -57,7 +65,7 @@ export async function setupGallery(locale: string, seedHistory = false) {
     const focusChecks: object[] = []
     const thumbChecks: object[] = []
     const failures: { label: string; error: string }[] = []
-    return { ...fixture, locale, sessionId, methods, state, captures, focusChecks, thumbChecks, failures, seedProviderCalls: seedHistory ? 1 : 0 }
+    return { ...fixture, locale, sessionId, methods, observationReads, state, captures, focusChecks, thumbChecks, failures, seedProviderCalls: seedHistory ? 1 : 0 }
   } catch (error) {
     await fixture.cleanup()
     throw error
@@ -99,21 +107,26 @@ export async function setGalleryAppearance(fixture: GalleryFixture, mode: 'dark'
 }
 
 export async function verifyGalleryControls(fixture: GalleryFixture, scope: Locator, label: string) {
-  const controls: Locator[] = []
-  for (const target of await scope.locator('button, a[href], input:not([type="hidden"]), select, textarea, summary').all()) {
-    if (await target.isVisible() && await target.isEnabled() && await target.getAttribute('tabindex') !== '-1') {
-      // Credential focus expands its card and changes sibling positions.
+  const candidates = scope.locator('button:visible, a[href]:visible, input:not([type="hidden"]):visible, select:visible, textarea:visible, summary:visible')
+  const count = await candidates.count()
+  const controls: { index: number; target: Locator }[] = []
+  // Only the first and last eligible controls are exercised. Do not serialize
+  // metadata reads for hundreds of catalog buttons that the check never uses.
+  for (const direction of [1, -1]) {
+    for (let index = direction === 1 ? 0 : count - 1; index >= 0 && index < count; index += direction) {
+      const target = candidates.nth(index)
+      if (!await target.isEnabled() || await target.getAttribute('tabindex') === '-1') { continue }
       const placeholder = await target.getAttribute('placeholder')
       const stable = placeholder ? scope.getByPlaceholder(placeholder, { exact: true }) : target
-      controls.push(await stable.count() === 1 ? stable : target)
+      if (!controls.some(control => control.index === index)) {
+        controls.push({ index, target: await stable.count() === 1 ? stable : target })
+      }
+      break
     }
   }
-  // First and last controls exercise both ends of each real page's scroll owner.
-  for (const index of [...new Set([0, controls.length - 1])].filter(index => index >= 0 && index < controls.length)) {
-    // Approach from the previous control: the following CodeMirror editor may
-    // intentionally consume Shift+Tab as indentation rather than navigation.
-    fixture.focusChecks.push(await verifyKeyboardFocus(fixture.page, controls[index], `${label} control ${index}`, 'previous'))
-    await expect(controls[index]).toBeInViewport({ ratio: 1 })
+  for (const { index, target } of controls) {
+    fixture.focusChecks.push(await verifyKeyboardFocus(fixture.page, target, `${label} control ${index}`, 'previous'))
+    await expect(target).toBeInViewport({ ratio: 1 })
   }
   for (const target of await scope.locator('[data-slot="switch"]').all()) {
     if (!await target.isVisible()) { continue }
@@ -186,13 +199,14 @@ export function persistGalleryEvidence(fixture: GalleryFixture, group: string) {
     sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
     scenario: `synthetic-workspace-${group}-gallery`, locale: fixture.locale,
     seedProviderCalls: fixture.seedProviderCalls, galleryProviderCalls: fixture.mock.receivedPrompts.length - fixture.seedProviderCalls,
-    organizationMethods: [...new Set(fixture.methods)], captures: fixture.captures, focusChecks: fixture.focusChecks, thumbChecks: fixture.thumbChecks, failures: fixture.failures
+    organizationMethods: [...new Set(fixture.methods)], observationReads: [...new Set(fixture.observationReads)], captures: fixture.captures, focusChecks: fixture.focusChecks, thumbChecks: fixture.thumbChecks, failures: fixture.failures
   }, null, 2))
 }
 
 export function writeGalleryEvidence(fixture: GalleryFixture, group: string) {
   persistGalleryEvidence(fixture, group)
   expect(fixture.mock.receivedPrompts).toHaveLength(fixture.seedProviderCalls)
-  expect(fixture.methods.every(method => ['organization.descriptor', 'organization.snapshot', 'organization.outcomes', 'organization.attention'].includes(method))).toBe(true)
+  expect(fixture.methods.every(method => ['organization.descriptor', 'organization.snapshot', 'organization.outcomes', 'organization.attention', 'organization.observe', 'organization.observeRead'].includes(method))).toBe(true)
+  expect(fixture.observationReads.every(method => ['organization.outcomes', 'organization.attention'].includes(method))).toBe(true)
   expect(fixture.failures, 'Every destination must pass its original assertions').toEqual([])
 }

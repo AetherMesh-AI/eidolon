@@ -37,6 +37,7 @@
 }
 .eid-settings-main {
   padding-top: 0;
+  min-width: 0;
   max-width: none;
 }
 .eid-settings-main > header {
@@ -108,7 +109,7 @@
     font-size: 29px;
   }
   .eid-settings-layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);
     gap: 12px;
   }
@@ -128,6 +129,13 @@
     padding-block: 18px;
     border-radius: 16px;
   }
+}
+
+/* Keep a shortcut's label and every alternative binding readable at high zoom. */
+@media (max-width: 800px) {
+  .eid-settings-controls .eid-keybind-row { flex-wrap: wrap; }
+  .eid-settings-controls .eid-keybind-row > span:first-child { flex-basis: 100%; white-space: normal; overflow-wrap: anywhere; }
+  .eid-settings-controls .eid-keybind-combos { min-width: 0; max-width: calc(100% - 36px); flex-shrink: 1; flex-wrap: wrap; }
 }
 
 /* Settings now belongs to the keyboard-navigable organization workspace. */

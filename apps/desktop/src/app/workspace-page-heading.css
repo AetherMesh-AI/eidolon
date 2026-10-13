@@ -13,3 +13,7 @@ header.eid-workspace-page-heading > p { margin: 10px 0 0; color: var(--ui-text-s
 @media (max-height: 600px) {
   .eid-page-search-heading { padding-block: 12px 8px; }
 }
+@media (max-height: 600px) and (width < 760px) {
+  /* Leave room for one complete list control and its focus outline below search. */
+  .eid-secondary-surface .eid-panel-list { height: 100px; min-height: 100px; max-height: none; }
+}
