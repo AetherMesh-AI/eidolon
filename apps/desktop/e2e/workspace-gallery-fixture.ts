@@ -193,6 +193,17 @@ export async function captureGallery(fixture: GalleryFixture, name: string, scop
     synthetic: true, sha256: createHash('sha256').update(bytes).digest('hex') })
 }
 
+/** Initial composition captures start at the page's beginning; focus captures keep actual keyboard scrolling. */
+export async function positionGalleryAtStart(scope: Locator) {
+  await scope.evaluate(element => {
+    const containers = new Set<Element>([element, ...element.querySelectorAll('*')])
+    for (let parent = element.parentElement; parent; parent = parent.parentElement) { containers.add(parent) }
+    for (const container of containers) {
+      if (container instanceof HTMLElement) { container.scrollTop = 0; container.scrollLeft = 0 }
+    }
+  })
+}
+
 export function persistGalleryEvidence(fixture: GalleryFixture, group: string) {
   writeFileSync(test.info().outputPath(`workspace-${group}-gallery-evidence.json`), JSON.stringify({
     sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),

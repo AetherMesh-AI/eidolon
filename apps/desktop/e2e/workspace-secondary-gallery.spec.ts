@@ -1,5 +1,5 @@
 import { expect, test } from './test'
-import { captureGallery, checkGalleryDestination, type GalleryFixture, galleryLocales, persistGalleryEvidence, resizeGallery, setGalleryAppearance, setupGallery, verifyGalleryControls, writeGalleryEvidence } from './workspace-gallery-fixture'
+import { captureGallery, checkGalleryDestination, type GalleryFixture, galleryLocales, persistGalleryEvidence, positionGalleryAtStart, resizeGallery, setGalleryAppearance, setupGallery, verifyGalleryControls, writeGalleryEvidence } from './workspace-gallery-fixture'
 
 let fixture: GalleryFixture | undefined
 test.setTimeout(300_000)
@@ -50,6 +50,7 @@ for (const copy of galleryLocales) {
               }
             }
             const label = `secondary-${name}-${copy.locale}-${mode}-${zoom * 100}`
+            await positionGalleryAtStart(scope)
             await captureGallery(current, label, scope)
             await verifyGalleryControls(current, scope, label)
             if (zoom === 2) { await captureGallery(current, `${label}-focus`, scope) }

@@ -1,5 +1,5 @@
 import { expect, test } from './test'
-import { captureGallery, checkGalleryDestination, type GalleryFixture, galleryLocales, persistGalleryEvidence, resizeGallery, setGalleryAppearance, setupGallery, verifyGalleryControls, verifyNotificationStates, writeGalleryEvidence } from './workspace-gallery-fixture'
+import { captureGallery, checkGalleryDestination, type GalleryFixture, galleryLocales, persistGalleryEvidence, positionGalleryAtStart, resizeGallery, setGalleryAppearance, setupGallery, verifyGalleryControls, verifyNotificationStates, writeGalleryEvidence } from './workspace-gallery-fixture'
 
 let fixture: GalleryFixture | undefined
 test.setTimeout(300_000)
@@ -36,6 +36,7 @@ for (const copy of galleryLocales) {
             await expect(editor.locator('[data-slot="skeleton"]')).toHaveCount(0)
             await expect.poll(() => editor.innerText()).toMatch(/\S/)
             const name = `sections-${destination.replaceAll(/[^a-z]+/g, '-')}-${copy.locale}-${mode}-${zoom * 100}`
+            await positionGalleryAtStart(scope)
             await captureGallery(current, name, scope)
             await verifyGalleryControls(current, editor, name)
             if (zoom === 2) { await captureGallery(current, `${name}-focus`, scope) }

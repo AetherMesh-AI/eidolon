@@ -72,6 +72,17 @@ forward `embedded` to its shell. The parent-owned profile editor now retains its
 heading and chrome. A regression through the real embedded view failed before
 the one-line fix, then passed while preserving local tab state and pinned writes.
 
+At `c26dbc83`, all six Settings cases passed: 780 captures, 1,064 sampled focus
+checks and 1,128 switch-containment checks. Seventeen unchanged PNGs were saved
+to Library for independent review, including Arabic states at both zooms and
+Russian/English shortcuts at 200%. The secondary gallery completed within its
+original deadline with RU passing; the other five cases failed only on the first
+Needs You control's clipped focus outline at 200% in both themes. Request controls
+now receive scroll margin and their workspace scroller receives matching padding.
+Initial composition captures now reset page scroll positions; separate focus
+captures continue to retain the keyboard's actual scrolling. No complete native
+pass or final all-page acceptance is claimed for the superseded candidate.
+
 “Captured” means retained native evidence exists, not final pixel approval.
 Only Home, Messages, Objective Detail and Settings have supplied image references.
 Other destinations require consistent shared design, not an invented reference.
@@ -108,8 +119,10 @@ Final release gates remain:
 - [ ] Existing navigation/draft/identity/intervention/acceptance regressions pass on final source.
 - [ ] Labeled gallery and original screenshots from one final merged build delivered to Library.
 
-Merge remains on hold pending authorization. Candidate evidence can be reviewed
-and delivered now; a merged-build gallery cannot be claimed before that gate.
+The user renewed merge authorization after this candidate: merge only when CI,
+source review and UI review pass for the exact final head, then verify the
+post-merge build. Candidate evidence can be reviewed and delivered first;
+a merged-build gallery cannot be claimed before that verification.
 Real voice, per-agent VMs and live model reliability remain outside this UI scope.
 
 ## Authorized follow-on: budget-aware Fixed/Auto routing

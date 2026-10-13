@@ -438,7 +438,7 @@ export function RuntimeRequests({
   }
 
   return (
-    <section aria-label="Runtime requests">
+    <section aria-label="Runtime requests" className="eid-runtime-requests">
       <div className="eid-toolbar">
         <h2>{copy.requests}</h2>
         {objective && !terminal && (
