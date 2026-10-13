@@ -14,6 +14,9 @@ const startManualProviderOAuth = vi.fn()
 const startManualLocalEndpoint = vi.fn()
 const onboarding = atom({ manual: false })
 
+// Provider settings render the picker, not the application switch lifecycle.
+vi.mock('@/store/gateway-switch', () => ({ $gatewaySwitching: atom(false) }))
+
 vi.mock('@/store/profile', () => ({
   $activeGatewayProfile: atom('alpha'),
   $profiles: atom([]),

@@ -12,6 +12,7 @@ import {
   writeMockProviderConfig
 } from './fixtures'
 import { startMockServer } from './mock-server'
+import { setupDedicatedProfiles } from './organization-dedicated-profile-fixture'
 import { organizationProviderTarget } from './organization-provider-target'
 
 export const firstMessage = 'Owner chat fixture: please explain your role using only this conversation.'
@@ -30,13 +31,14 @@ interface ProviderPayload {
   max_completion_tokens?: number
 }
 
-export async function setupOwnerChatFixture() {
+export async function setupOwnerChatFixture(options: { dedicatedProfiles?: boolean } = {}) {
   const calls: ProviderPayload[] = []
   const providerErrors: string[] = []
   const pending: Array<() => void> = []
   const mock = await startMockServer()
   const sandbox = createSandbox('owner-chat')
   let fixture: MockBackendFixture | undefined
+  let dedicated: Awaited<ReturnType<typeof setupDedicatedProfiles>> | undefined
 
   const server = http.createServer((request, response) => {
     const chunks: Buffer[] = []
@@ -70,10 +72,12 @@ export async function setupOwnerChatFixture() {
           calls.push(payload!)
           assert.ok(calls.length <= 27, 'No automatic provider retry or duplicate replay')
           const latestText = submitted.conversation.messages.at(-1)?.text
+
           const content = JSON.stringify({
             reply:
               latestText === secondMessage ? lateReply : latestText === continuedMessage ? continuedReply : firstReply
           })
+
           const identity = { id: `owner-chat-${calls.length}`, created: 1, model: 'mock-model' }
           const usage = { prompt_tokens: 40, completion_tokens: 40, total_tokens: 80 }
 
@@ -149,7 +153,11 @@ export async function setupOwnerChatFixture() {
     releaseReplies()
 
     try {
-      await fixture?.app.close()
+      if (dedicated) {
+        await dedicated.fixture.cleanup()
+      } else {
+        await fixture?.app.close()
+      }
     } finally {
       try {
         if (server.listening) {
@@ -186,13 +194,21 @@ export async function setupOwnerChatFixture() {
       false
     )
     writeEnvFile(sandbox.hermesHome)
-    const launch = await launchDesktop(buildAppEnv(sandbox))
-    fixture = { ...launch, mock, mockUrl: providerUrl, sandbox, cleanup }
-    await waitForAppReady(fixture, 120_000)
+
+    if (options.dedicatedProfiles) {
+      dedicated = await setupDedicatedProfiles({ providerUrl })
+      // Owner responses are handled by the proxy; other inference reaches this
+      // upstream mock, not the dedicated helper's unused default provider.
+      fixture = { ...dedicated.fixture, mock, mockUrl: providerUrl, cleanup }
+    } else {
+      const launch = await launchDesktop(buildAppEnv(sandbox))
+      fixture = { ...launch, mock, mockUrl: providerUrl, sandbox, cleanup }
+      await waitForAppReady(fixture, 120_000)
+    }
   } catch (error) {
     await cleanup()
     throw error
   }
 
-  return { fixture, calls, providerErrors, releaseReplies }
+  return { fixture, calls, providerErrors, releaseReplies, dedicated }
 }

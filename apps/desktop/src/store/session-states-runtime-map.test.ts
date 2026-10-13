@@ -186,7 +186,7 @@ describe('knownOwnerForSession / requestForOwnedSession', () => {
 
     const primaryRequest = vi.fn(async (method: string, params: unknown) => ({ method, params, via: 'primary' }))
 
-    setPrimaryGateway({ onEvent: () => () => undefined, request: primaryRequest, state: 'open' } as never, 'default')
+    setPrimaryGateway({ onEvent: () => () => undefined, request: primaryRequest, connectionState: 'open' } as never, 'default')
     setPrimaryGatewayConnection({ connectionId: 'local' })
 
     const ambient = vi.fn(async () => ({ via: 'ambient' }))

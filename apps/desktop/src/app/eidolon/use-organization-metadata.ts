@@ -2,7 +2,8 @@ import { useStore } from '@nanostores/react'
 import { useEffect, useMemo, useSyncExternalStore } from 'react'
 
 import { $pendingConnectionId } from '@/store/connections'
-import { $activeGatewayRoute, $gateway } from '@/store/gateway'
+import { $activeGatewayRoute, $gateway, $localOwnerProofRevision } from '@/store/gateway'
+import { $organizationObservationEpoch, $organizationObservationSwitching } from '@/store/organization-observation-mode'
 import { $activeGatewayProfile, $gatewaySwapTarget } from '@/store/profile'
 import { $connection, $gatewayState } from '@/store/session'
 
@@ -11,7 +12,7 @@ import { createOrganizationScopeReader } from './runtime-provider'
 
 const readOwnerScope = createOrganizationScopeReader()
 
-function currentScope(): MetadataScope {
+export function readOrganizationMetadataScope(): MetadataScope {
   const owner = readOwnerScope()
   const gateway = $gateway.get()
   const connection = $connection.get()
@@ -37,13 +38,14 @@ function currentScope(): MetadataScope {
   }
 }
 
-const client = createOrganizationMetadataClient(currentScope, () => crypto.randomUUID(), {
+const client = createOrganizationMetadataClient(readOrganizationMetadataScope, () => crypto.randomUUID(), {
   getItem: key => sessionStorage.getItem(key),
   setItem: (key, value) => sessionStorage.setItem(key, value),
   removeItem: key => sessionStorage.removeItem(key)
 })
 
 export function useOrganizationMetadata() {
+  const proofRevision = useStore($localOwnerProofRevision)
   const gateway = useStore($gateway)
   const route = useStore($activeGatewayRoute)
   const profile = useStore($activeGatewayProfile)
@@ -51,8 +53,10 @@ export function useOrganizationMetadata() {
   const connection = useStore($connection)
   const state = useStore($gatewayState)
   const pending = useStore($pendingConnectionId)
+  const observationEpoch = useStore($organizationObservationEpoch)
+  const observationSwitching = useStore($organizationObservationSwitching)
   // The compiler cannot infer dependencies hidden behind store.get().
-  const scope = useMemo(currentScope, [gateway, route, profile, swap, connection, state, pending])
+  const scope = useMemo(readOrganizationMetadataScope, [proofRevision, gateway, route, profile, swap, connection, state, pending, observationEpoch, observationSwitching])
   const view = useSyncExternalStore(client.subscribe, client.getSnapshot)
   useEffect(() => {
     if (scope.eligible) {

@@ -585,11 +585,12 @@ export async function setupPackagedApp(): Promise<PackagedAppFixture> {
  *     so checking the composer alone catches the app mid-boot at ~92%
  *     with the loading bar still showing.
  */
-export async function waitForAppReady(fixture: MockBackendFixture | NoProviderFixture | DeadBackendFixture, timeoutMs = 60_000): Promise<void> {
+export async function waitForAppReady(fixture: MockBackendFixture | NoProviderFixture | DeadBackendFixture, timeoutMs = 60_000, readySelector = 'textarea, [contenteditable="true"]'): Promise<void> {
   const { page, app } = fixture
 
-  // Wait for the composer to exist in the DOM (not necessarily interactive yet).
-  await page.waitForSelector('textarea, [contenteditable="true"]', {
+  // Wait for this route's content to mount; non-chat routes can name their own
+  // surface instead of requiring a composer. Occlusion is checked separately.
+  await page.waitForSelector(readySelector, {
     state: 'attached',
     timeout: timeoutMs,
   })

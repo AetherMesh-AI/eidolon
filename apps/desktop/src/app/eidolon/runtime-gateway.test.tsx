@@ -1,6 +1,13 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { useEffect, useState } from 'react'
 import { Link, MemoryRouter, Route, Routes } from 'react-router'
 import { beforeEach, expect, it, vi } from 'vitest'
+
+vi.mock('@/store/gateway-switch', async () => {
+  const { atom } = await import('nanostores')
+
+  return { $gatewaySwitching: atom(false) }
+})
 
 vi.mock('@/store/settings-scope', () => ({ setSettingsScope: vi.fn() }))
 
@@ -8,8 +15,18 @@ const routing = vi.hoisted(() => ({ connectionId: 'a', epoch: 1 }))
 vi.mock('@/store/gateway', async () => {
   const { atom } = await import('nanostores')
 
+  const $gateway = atom<unknown>(null)
+  const $activeGatewayRoute = atom('default')
+
   return {
-    $gateway: atom(null), $activeGatewayRoute: atom('default'),
+    $gateway, $localOwnerProofRevision: atom(0), $activeGatewayRoute,
+    activeGatewayProfileKey: () => $activeGatewayRoute.get(),
+    gatewayTransportGeneration: () => 1,
+    captureOAuthRequestAuthority: () => 0,
+    assertGatewayOAuthAuthority: vi.fn(),
+    assertOAuthConnectionAuthority: vi.fn(),
+    isPrimaryGateway: (gateway: unknown) => $gateway.get() === gateway,
+    requestGatewayWithRuntimeBinding: (gateway: { request: (...args: unknown[]) => Promise<unknown> }, ...args: unknown[]) => gateway.request(...args),
     activeGatewayConnectionId: () => routing.connectionId, gatewayActivationEpoch: () => routing.epoch,
     ensureActiveGatewayOpen: vi.fn(), isActivePrimary: () => true
   }
@@ -24,15 +41,18 @@ vi.mock('@/store/session', async () => {
 vi.mock('@/store/profile', async () => {
   const { atom } = await import('nanostores')
 
-  return { $activeGatewayProfile: atom('default'), $gatewaySwapTarget: atom(null) }
+  return { $activeGatewayProfile: atom('default'), $gatewaySwapTarget: atom(null), normalizeProfileKey: (profile: string) => profile.trim() || 'default' }
 })
 
 import { $activeGatewayRoute, $gateway } from '@/store/gateway'
+import { $organizationObservationEpoch, $organizationObservationSwitching } from '@/store/organization-observation-mode'
 import { $activeGatewayProfile, $gatewaySwapTarget } from '@/store/profile'
 import { $connection, $gatewayState } from '@/store/session'
+import { beginSourceSwitchIntent } from '@/store/source-switch-intent'
 
 import { createPrototypeAdapter } from '../../../test-fixtures/organization-prototype'
 
+import { ownerChatThread } from './runtime-owner-chat.test-support'
 import { createOrganizationScopeReader, OrganizationRuntimeProvider, useRuntimeOrganization } from './runtime-provider'
 import type { OrganizationSnapshot } from './types'
 import { OrganizationWorkspace } from './workspace'
@@ -47,6 +67,8 @@ function snapshot(title: string): OrganizationSnapshot {
 
 const connection = (sharedPrimary = false) => ({ connectionId: routing.connectionId, mode: 'remote', baseUrl: `https://${routing.connectionId}.example`, profile: sharedPrimary ? 'research' : 'remote-writing', sharedPrimary })
 beforeEach(() => {
+  $organizationObservationEpoch.set(0)
+  $organizationObservationSwitching.set(false)
   routing.connectionId = 'a'
   routing.epoch++
   $gateway.set(null)
@@ -277,4 +299,104 @@ it('keeps secrets out of renderer scope identity while retaining endpoint and pr
   expect(scope.ownerKey).toContain('https://example.test/path')
   expect(scope.ownerRoute).toEqual({ connectionId: routing.connectionId, profile: $activeGatewayProfile.get() })
   expect(JSON.stringify(scope.ownerRoute)).not.toMatch(/password|secret|token|https/)
+})
+
+it('keeps selection reads non-starting through remount and fences late A → B → A responses', async () => {
+  beginSourceSwitchIntent()
+  let resolveOld!: (value: unknown) => void
+  const envelope = (title: string) => ({ capabilityVersion: 1, state: 'available', scope: { kind: 'served-profile', profile: 'remote-writing' }, snapshot: snapshot(title) })
+  const request = vi.fn().mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve })).mockResolvedValue(envelope('Current A'))
+  $gateway.set({ request, connectionState: 'open' } as never)
+  const mount = () => render(<MemoryRouter initialEntries={['/objectives']}><OrganizationWorkspace /></MemoryRouter>)
+  const view = mount()
+  await waitFor(() => expect(request).toHaveBeenCalledTimes(1))
+  const signal = request.mock.calls[0][3] as AbortSignal
+  act(() => {
+    $organizationObservationSwitching.set(true)
+    $organizationObservationEpoch.set(2)
+    routing.connectionId = 'b'
+    $connection.set(connection() as never)
+    routing.connectionId = 'a'
+    $connection.set(connection() as never)
+    $organizationObservationSwitching.set(false)
+  })
+  expect(signal.aborted).toBe(true)
+  expect(await screen.findByRole('link', { name: /Current A/ })).toBeTruthy()
+  await act(async () => { resolveOld(envelope('Obsolete A')); await Promise.resolve() })
+  expect(screen.queryByRole('link', { name: /Obsolete A/ })).toBeNull()
+  view.unmount()
+  const remount = mount()
+  expect(await screen.findByRole('link', { name: /Current A/ })).toBeTruthy()
+
+  for (const call of request.mock.calls) {expect(call.slice(0, 3)).toEqual(['organization.observe', {}, 10000])}
+  remount.unmount()
+})
+
+it.each(['unsupported', 'unconfigured', 'foreign', 'shared'])('never falls back to a starting read for %s observation', async state => {
+  beginSourceSwitchIntent()
+
+  if (state === 'shared') {$connection.set(connection(true) as never); $activeGatewayProfile.set('research')}
+  const request = vi.fn().mockResolvedValue({ capabilityVersion: 1, state: state === 'foreign' ? 'available' : state, scope: { kind: 'served-profile', profile: state === 'foreign' ? 'foreign-profile' : 'remote-writing' }, snapshot: state === 'foreign' ? snapshot('Foreign secret') : null })
+  $gateway.set({ request, connectionState: 'open' } as never)
+  const view = render(<MemoryRouter><OrganizationWorkspace /></MemoryRouter>)
+  await waitFor(() => expect(screen.getByText(/observation|initialized|invalid/i)).toBeTruthy())
+  expect(screen.queryByRole('link', { name: /Foreign secret/ })).toBeNull()
+
+  if (state === 'shared') {expect(request).not.toHaveBeenCalled()}
+  else {expect(request).toHaveBeenCalledExactlyOnceWith('organization.observe', {}, 10000, expect.any(AbortSignal))}
+
+  view.unmount()
+})
+
+it('opens the actual selected /requests attention inbox using only captured passive observation', async () => {
+  beginSourceSwitchIntent()
+  const attention = { items: [{ requestId: 'blocked', objectiveId: 'Review objective', revision: 1, seen: false, createdAt: '2026-10-12T00:00:00Z', updatedAt: '2026-10-12T00:00:00Z' }], total: 1, unread: 1, hasMore: false, nextCursor: null }
+  const value = { ...snapshot('Review objective'), attention, requests: [{ id: 'blocked', objectiveId: 'Review objective', type: 'work.draft', status: 'pending_intervention', team: 'research', priority: 1, attempts: 1, createdAt: '2026-10-12T00:00:00Z', attentionRevision: 1, reason: 'Needs owner facts' }] }
+  const scope = { kind: 'served-profile', profile: 'remote-writing' }
+
+  const request = vi.fn(async (method: string, params: Record<string, unknown>) => {
+    if (method === 'organization.observe') {return { capabilityVersion: 1, state: 'available', scope, snapshot: value }}
+
+    if (method === 'organization.observeRead' && params.method === 'organization.attention') {return { capabilityVersion: 1, state: 'available', scope, data: attention }}
+    throw new Error(`Forbidden passive endpoint: ${method}`)
+  })
+
+  $gateway.set({ request, connectionState: 'open' } as never)
+  const view = render(<MemoryRouter initialEntries={['/requests']}><OrganizationWorkspace /></MemoryRouter>)
+  expect(await screen.findByRole('button', { name: 'Inspect request: work.draft' })).toBeTruthy()
+  expect(request).toHaveBeenCalledWith('organization.observeRead', { method: 'organization.attention', params: { before: undefined, unreadOnly: false, limit: 25 } }, 15000, expect.any(AbortSignal))
+  expect(request.mock.calls.every(([method]) => ['organization.observe', 'organization.observeRead'].includes(method))).toBe(true)
+  view.unmount()
+})
+
+it('validates a retained owner-chat read successfully through the mounted provider after source intent changes', async () => {
+  const thread = { ...ownerChatThread(), profile: 'remote-writing' }
+  const scope = { kind: 'served-profile', profile: 'remote-writing' }
+
+  const request = vi.fn(async (method: string, params: Record<string, unknown>) => {
+    if (method === 'organization.observe') {return { capabilityVersion: 1, state: 'available', scope, snapshot: snapshot('Selected organization') }}
+
+    if (method === 'organization.observeRead' && params.method === 'organization.ownerChat.read') {return { capabilityVersion: 1, state: 'available', scope, data: thread }}
+    throw new Error(`Forbidden read: ${method}`)
+  })
+
+  $gateway.set({ request, connectionState: 'open' } as never)
+  beginSourceSwitchIntent()
+
+  function RetainedChat() {
+    const { adapter, snapshot: current } = useRuntimeOrganization()!
+    const [result, setResult] = useState('waiting')
+    useEffect(() => {
+      if (current.connection?.state === 'ready') {
+        void adapter.readOwnerChat!({ threadId: thread.id, identityId: thread.identityId }).then(value => setResult(`${value.id}:${value.profile}`), () => setResult('invalid'))
+      }
+    }, [adapter, current.connection?.state])
+
+    return <output>{result}</output>
+  }
+
+  const view = render(<OrganizationRuntimeProvider><RetainedChat /></OrganizationRuntimeProvider>)
+  expect(await screen.findByText(`${thread.id}:remote-writing`)).toBeTruthy()
+  expect(request.mock.calls.every(([method]) => ['organization.observe', 'organization.observeRead'].includes(method))).toBe(true)
+  view.unmount()
 })

@@ -204,7 +204,7 @@ declare global {
         // secondary gateways scoped to it. Optional: older Electron mains
         // don't emit it.
         onChanged?: (
-          callback: (payload: { connectionId: string; reason: 'removed' | 'saved' | 'updated' }) => void
+          callback: (payload: { connectionId: string; reason: 'removed' | 'saved' | 'updated' | 'auth-changed'; oauthSessionIdentity?: string; oauthNextSessionIdentity?: string; oauthConnectionIds?: string[] }) => void
         ) => () => void
       }
       sshConfigHosts: () => Promise<DesktopSshHostsResult>
@@ -747,6 +747,9 @@ export interface DesktopPluginProfileRoute {
 }
 
 export interface HermesConnection {
+  // Opaque, process-local identity of the authentication used to resolve this remote.
+  authenticationIdentity?: string
+  oauthSessionIdentity?: string
   baseUrl: string
   darwinMajor?: number
   isFullscreen: boolean

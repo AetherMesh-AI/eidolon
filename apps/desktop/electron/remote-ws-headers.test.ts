@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 
+import { createPrimaryRemoteConnection } from './primary-backend-startup'
 import {
   applyRemoteRequestHeaders,
   createRegistryGatewayWsUrlHandler,
   createRemoteWsHeaderStore,
+  refreshPrimaryGatewayWsUrl,
   type RegistryGatewayWsConnection
 } from './remote-ws-headers'
 
@@ -164,4 +166,69 @@ describe('registry gateway WebSocket headers', () => {
     expectRequestHeaders(store, result, accessHeaders)
     expect(store.headersFor('wss://gateway.example/api/ws?token=secret&trace=one')).toEqual({})
   })
+})
+
+
+it('an empty exact descriptor clears prior dial headers and remains authoritative', () => {
+  const store = createRemoteWsHeaderStore()
+  const url = 'wss://gateway.example.test/api/ws?token=synthetic'
+  store.remember(url, { 'X-Key': 'old-value' })
+  store.remember(url, {})
+  expect(store.has(url)).toBe(true)
+  expect(store.headersFor(url)).toEqual({})
+  const fallback = { 'X-Key': 'saved-value' }
+  let actual: unknown
+  applyRemoteRequestHeaders({ url }, result => { actual = result }, requestUrl =>
+    store.has(requestUrl) ? store.headersFor(requestUrl) : fallback)
+  expect(actual).toEqual({})
+  expect(store.has('wss://other.example.test/api/ws')).toBe(false)
+})
+
+it.each(['token', 'oauth'] as const)('preserves primary %s header provenance through first and refreshed dials', async authMode => {
+  const store = createRemoteWsHeaderStore()
+  const configured = { ...accessHeaders }
+
+  const remote = {
+    authMode, baseUrl: 'https://gateway.example', headers: configured,
+    token: authMode === 'token' ? 'token' : null,
+    wsUrl: 'wss://gateway.example/api/ws?credential=initial'
+  }
+
+  const connection = createPrimaryRemoteConnection(remote, [], {})
+  configured['CF-Access-Client-Secret'] = 'later-config'
+  expect(Object.isFrozen(connection.headers)).toBe(true)
+  let sequence = 0
+
+  const dependencies = {
+    mintTicket: vi.fn(async (_baseUrl: string, headers?: Record<string, string>) => {
+      expect(headers).toEqual(accessHeaders)
+
+      return String(++sequence)
+    }),
+    buildTicketUrl: (_baseUrl: string, ticket: string) => `wss://gateway.example/api/ws?ticket=${ticket}`,
+    rememberHeaders: store.remember
+  }
+
+  const first = await refreshPrimaryGatewayWsUrl(connection, dependencies)
+  expectRequestHeaders(store, first, accessHeaders)
+  const next = await refreshPrimaryGatewayWsUrl(connection, dependencies)
+  expectRequestHeaders(store, next, accessHeaders)
+  expect(dependencies.mintTicket).toHaveBeenCalledTimes(authMode === 'oauth' ? 2 : 0)
+
+  if (authMode === 'oauth') {expect(next).not.toBe(first)}
+
+  // Missing metadata cannot replace known headers; intentional removal can.
+  store.remember(next, undefined)
+  expectRequestHeaders(store, next, accessHeaders)
+  const removed = createPrimaryRemoteConnection({ ...remote, wsUrl: next, headers: {} }, [], {})
+
+  const cleared = await refreshPrimaryGatewayWsUrl(removed, {
+    ...dependencies, mintTicket: async () => 'removed'
+  })
+
+  expect(store.has(cleared)).toBe(true)
+  expectRequestHeaders(store, cleared, undefined)
+  const unknown = 'wss://gateway.example/api/ws?unknown=true'
+  store.remember(unknown, undefined)
+  expect(store.has(unknown)).toBe(false)
 })

@@ -4,6 +4,7 @@ import { beforeEach, expect, it, vi } from 'vitest'
 
 import { $pendingConnectionId } from '@/store/connections'
 import { $activeGatewayRoute, $gateway } from '@/store/gateway'
+import { $organizationObservationEpoch, $organizationObservationSwitching } from '@/store/organization-observation-mode'
 import { $activeGatewayProfile, $gatewaySwapTarget } from '@/store/profile'
 import { $connection, $gatewayState } from '@/store/session'
 
@@ -11,7 +12,7 @@ import { useOrganizationMetadata } from './use-organization-metadata'
 
 vi.mock('@/store/connections', () => ({ $pendingConnectionId: atom(null) }))
 vi.mock('@/store/gateway', () => ({
-  $gateway: atom(null),
+  $gateway: atom(null), $localOwnerProofRevision: atom(0),
   $activeGatewayRoute: atom('default'),
   activeGatewayConnectionId: () => 'local'
 }))
@@ -37,6 +38,8 @@ const descriptor = {
 
 let request = vi.fn()
 beforeEach(() => {
+  $organizationObservationEpoch.set(0)
+  $organizationObservationSwitching.set(false)
   request = vi.fn().mockResolvedValue(descriptor)
   $gateway.set({ request } as unknown as NonNullable<ReturnType<typeof $gateway.get>>)
   $connection.set({ connectionId: 'local', profile: 'default', baseUrl: 'http://localhost:4321' } as NonNullable<
@@ -95,4 +98,23 @@ it('holds reads during a profile mismatch and resumes only after scope agreement
   act(() => $activeGatewayProfile.set('default'))
   await waitFor(() => expect(h.result.current.view.descriptor?.state).toBe('unconfigured'))
   expect(request).toHaveBeenCalledTimes(1)
+})
+
+
+it('revokes metadata during same-route observation switching and rereads after its generation changes', async () => {
+  const h = renderHook(useOrganizationMetadata)
+  await waitFor(() => expect(h.result.current.view.descriptor?.state).toBe('unconfigured'))
+  const original = h.result.current.scope.key
+  act(() => {
+    $organizationObservationSwitching.set(true)
+    $organizationObservationEpoch.set(1)
+  })
+  expect(h.result.current.scope.eligible).toBe(false)
+  expect(h.result.current.scope.key).not.toBe(original)
+  expect(h.result.current.view.descriptor).toBeNull()
+  expect(request).toHaveBeenCalledTimes(1)
+  act(() => $organizationObservationSwitching.set(false))
+  await waitFor(() => expect(h.result.current.view.descriptor?.state).toBe('unconfigured'))
+  expect(request).toHaveBeenCalledTimes(2)
+  expect(request.mock.calls.every(([method]) => method === 'organization.descriptor')).toBe(true)
 })

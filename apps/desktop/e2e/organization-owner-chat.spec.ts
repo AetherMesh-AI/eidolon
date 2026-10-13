@@ -5,6 +5,8 @@ import { writeFileSync } from 'node:fs'
 /** Actual Electron → authenticated gateway → identity ledger → loopback provider. */
 import type { Page } from '@playwright/test'
 
+import { validOwnerChatThread } from '../src/app/eidolon/runtime-owner-chat-contract'
+
 import { verifyKeyboardFocus } from './focus-visibility'
 import {
   continuedMessage,
@@ -159,6 +161,22 @@ test('retains exact worker chat, deduplicates owner send and fences a cancelled 
   expect(sends).toHaveLength(0)
   expect(renewals).toHaveLength(0)
   await page.screenshot({ path: test.info().outputPath('workspace-search-retained-owner-draft.png') })
+  const directoryOrigin = page.url()
+  await page.getByRole('button', { name: 'Organizations', exact: true }).click()
+  const directory = page.getByRole('dialog', { name: 'Organizations', exact: true })
+  await expect(directory.getByRole('button', { name: 'Use selected organization', exact: true })).toBeDisabled()
+  await directory.getByRole('button', { name: 'Refresh current organization', exact: true }).click()
+  await expect(directory.getByRole('option')).toHaveCount(1)
+  await directory.getByRole('textbox', { name: 'Search organizations', exact: true }).fill('unmatched name')
+  await page.keyboard.press('Escape')
+  await expect(directory).toBeHidden()
+  await expect(page.getByRole('button', { name: 'Organizations', exact: true })).toBeFocused()
+  expect(page.url()).toBe(directoryOrigin)
+  await expect(draftBeforeSearch).toHaveValue('Retain this unsent owner intent while inspecting loaded records.')
+  expect(await draftBeforeSearch.evaluate((element, previous) => element === previous, draftNode)).toBe(true)
+  expect(sends).toHaveLength(0)
+  expect(renewals).toHaveLength(0)
+  await page.screenshot({ path: test.info().outputPath('directory-retained-owner-draft.png') })
   await draftBeforeSearch.fill('')
 
   const transcriptMessage = (text: string) => conversation
@@ -245,14 +263,17 @@ test('retains exact worker chat, deduplicates owner send and fences a cancelled 
   // Reference comparison uses the supported, retained conversation above. The
   // visual-polish spec separately retains the older-runtime compatibility state.
   const referenceCaptures: object[] = []
+
   const retainedIdentity = {
     threadId: sends[0].params.threadId,
     identityId: sends[0].params.identityId,
     profile: sends[0].params.profile
   }
+
   const referenceCalls = running.calls.length
   const referenceSends = sends.length
   const referenceRenewals = renewals.length
+
   for (const mode of ['dark', 'light'] as const) {
     await navigation(page).getByRole('link', { name: 'Settings', exact: true }).click()
     await page.getByRole('button', { name: 'Appearance', exact: true }).click()
@@ -274,8 +295,10 @@ test('retains exact worker chat, deduplicates owner send and fences a cancelled 
     expect(running.calls).toHaveLength(referenceCalls)
     expect(sends).toHaveLength(referenceSends)
     expect(renewals).toHaveLength(referenceRenewals)
+
     const bytes = Buffer.from(await running.fixture.app.evaluate(async ({ BrowserWindow }) =>
       (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
+
     const name = `reference-messages-populated-${mode}`
     writeFileSync(test.info().outputPath(`${name}.png`), bytes)
     referenceCaptures.push({ name, sha256: createHash('sha256').update(bytes).digest('hex'),
@@ -286,6 +309,7 @@ test('retains exact worker chat, deduplicates owner send and fences a cancelled 
       messageIds: retained.result?.messages.map(message => message.id),
       scriptedProviderCalls: running.calls.length, ownerSends: sends.length, allowanceRenewals: renewals.length })
   }
+
   writeFileSync(test.info().outputPath('populated-messages-reference-evidence.json'), JSON.stringify({
     sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
     sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
@@ -353,6 +377,18 @@ test('retains exact worker chat, deduplicates owner send and fences a cancelled 
   expect(retained.result?.identityId).toBe(accepted.result?.identityId)
   expect(retained.result?.budget.callsReserved).toBe(2)
   expect(retained.result?.turns.at(-1)?.status).toBe('cancelled')
+
+  // Real authenticated passive RPC, validated by the renderer's complete
+  // contract. It must preserve the inner served profile and retained schema.
+  const observed = await rpc<{ data: ThreadView & { profile: string }; scope: { profile: string } }>(page, sends[0], 'organization.observeRead', {
+    method: 'organization.ownerChat.read', params: { threadId: identity.threadId, identityId: identity.identityId }
+  })
+
+  expect(observed.error).toBeUndefined()
+  expect(validOwnerChatThread(observed.result?.data)).toBe(true)
+  expect(observed.result?.data).toEqual(retained.result)
+  expect(observed.result?.data.profile).toBe(observed.result?.scope.profile)
+  expect(running.calls).toHaveLength(2)
 
   const snapshot = await rpc<{ objectives: unknown[] }>(page, sends[0], 'organization.snapshot', {
     profile: sends[0].params.profile

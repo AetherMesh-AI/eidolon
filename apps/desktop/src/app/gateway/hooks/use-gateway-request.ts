@@ -4,9 +4,11 @@ import { useCallback, useEffect, useRef } from 'react'
 
 import type { HermesGateway } from '@/eidolon'
 import { RECONNECT_ATTEMPT_TIMEOUT_MS, withTimeout } from '@/lib/with-timeout'
-import { $gateway, ensureActiveGatewayOpen, isActivePrimary } from '@/store/gateway'
-import { $activeGatewayProfile } from '@/store/profile'
-import { $gatewayState, setConnection } from '@/store/session'
+import { $gateway, activeGatewayProfileKey, adoptPrimaryGatewayConnection, assertGatewayOAuthAuthority, assertOAuthConnectionAuthority, captureOAuthRequestAuthority, connectPrimaryGateway, ensureActiveGatewayOpen, gatewayActivationEpoch, gatewayTransportGeneration, isActivePrimary, isPrimaryGateway, requestGatewayWithRuntimeBinding } from '@/store/gateway'
+import { $gatewaySwitching } from '@/store/gateway-switch'
+import { $activeGatewayProfile, normalizeProfileKey } from '@/store/profile'
+import { $connection, $gatewayState, setConnection } from '@/store/session'
+import { currentSourceSwitchIntent, isCurrentSourceSwitchIntent } from '@/store/source-switch-intent'
 
 export function useGatewayRequest() {
   const gatewayState = useStore($gatewayState)
@@ -46,14 +48,14 @@ export function useGatewayRequest() {
     []
   )
 
-  const ensureGatewayOpen = useCallback(async () => {
+  const ensureGatewayOpen = useCallback(async (authority = captureOAuthRequestAuthority()) => {
     const existing = gatewayRef.current
 
     if (!existing) {
       return null
     }
 
-    if (gatewayStateRef.current === 'open') {
+    if (gatewayStateRef.current === 'open' && existing.connectionState === 'open') {
       return existing
     }
 
@@ -69,24 +71,34 @@ export function useGatewayRequest() {
       }
 
       reauthErrorRef.current = null
+      const intent = currentSourceSwitchIntent()
+      const activationEpoch = gatewayActivationEpoch()
+      const requestedProfile = normalizeProfileKey($activeGatewayProfile.get())
+      const requestedConnection = $connection.get()
+      const sharedMember = Boolean(requestedConnection?.sharedPrimary || requestedConnection?.sharedRemote)
+
+      const ownsForeground = () => isCurrentSourceSwitchIntent(intent) &&
+        gatewayActivationEpoch() === activationEpoch && isActivePrimary() &&
+        normalizeProfileKey($activeGatewayProfile.get()) === requestedProfile &&
+        isPrimaryGateway(existing) && !$gatewaySwitching.get()
 
       try {
-        // Reconnect to whichever profile the gateway is currently routed to (not
-        // always the primary), so a sleep/wake reconnect keeps the user on the
-        // profile they were chatting in. Both awaits below are IPC round-trips
+        // This path owns the window primary. The descriptor must identify its
+        // actual process, independently of a remembered or foreground profile.
+        // Both awaits below are IPC round-trips
         // into the main process with no timeout of their own (#93454) — a
         // wedged main-process round-trip otherwise hangs this await forever,
         // latching reconnectingRef.current so every later requestGateway() call
         // returns the same never-settling promise. Bound the same way
         // use-gateway-boot.ts bounds the primary boot/soft-switch equivalents.
         const conn = await withTimeout(
-          desktop.getConnection($activeGatewayProfile.get()),
+          desktop.getConnection(),
           RECONNECT_ATTEMPT_TIMEOUT_MS,
           'Timed out reconnecting to Eidolon backend'
         )
 
-        connectionRef.current = conn
-        setConnection(conn)
+        if (!ownsForeground()) {return null}
+        assertOAuthConnectionAuthority(conn, authority)
 
         // Re-mint the WS URL before reconnecting. OAuth tickets are single-use
         // and short-lived, so the cached conn.wsUrl ticket is dead here;
@@ -100,16 +112,53 @@ export function useGatewayRequest() {
           'Timed out re-minting the gateway WebSocket URL'
         )
 
-        await existing.connect(wsUrl)
+        if (!ownsForeground()) {return null}
+        assertOAuthConnectionAuthority(conn, authority)
+        await connectPrimaryGateway(existing, conn, wsUrl)
 
-        return existing
+        if (!ownsForeground()) {return null}
+
+        let foregroundConnection = conn
+
+        if (sharedMember) {
+          foregroundConnection = await withTimeout(
+            requestedConnection?.sharedRemote && requestedConnection.connectionId && desktop.getConnectionFor
+              ? desktop.getConnectionFor({ connectionId: requestedConnection.connectionId, profile: requestedProfile })
+              : desktop.getConnection(requestedProfile),
+            RECONNECT_ATTEMPT_TIMEOUT_MS,
+            'Timed out resolving the shared member after reconnect'
+          )
+
+          if (!ownsForeground()) {return null}
+
+          // Same URL/source can still mean different credentials or header values.
+          // Compare the captured descriptor identities, never current registry labels.
+          if (!(foregroundConnection.sharedPrimary || foregroundConnection.sharedRemote) ||
+              (conn.mode === 'remote' && !conn.authenticationIdentity) ||
+              foregroundConnection.authenticationIdentity !== conn.authenticationIdentity ||
+              requestedConnection?.authenticationIdentity !== conn.authenticationIdentity ||
+              foregroundConnection.baseUrl !== conn.baseUrl ||
+              foregroundConnection.connectionId !== conn.connectionId ||
+              normalizeProfileKey(foregroundConnection.profile) !== requestedProfile) {
+            throw new Error('Eidolon shared member route changed during reconnect')
+          }
+        }
+
+        if (!adoptPrimaryGatewayConnection(existing, foregroundConnection, activationEpoch)) {return null}
+        connectionRef.current = foregroundConnection
+
+        // Recover the view, but never replay an old owner's operation in a
+        // replacement process that serves a different profile.
+        return normalizeProfileKey($activeGatewayProfile.get()) === requestedProfile ? existing : null
       } catch (error) {
         if (isGatewayReauthRequired(error)) {
           reauthErrorRef.current = error
         }
 
-        connectionRef.current = null
-        setConnection(null)
+        if (ownsForeground()) {
+          connectionRef.current = null
+          setConnection(null)
+        }
 
         return null
       } finally {
@@ -122,16 +171,40 @@ export function useGatewayRequest() {
 
   const requestGateway = useCallback(
     async <T>(method: string, params: Record<string, unknown> = {}, timeoutMs?: number, signal?: AbortSignal) => {
+      const authority = captureOAuthRequestAuthority()
       const gateway = gatewayRef.current
 
       if (!gateway) {
         throw new Error('Eidolon gateway unavailable')
       }
 
+      // A failed RPC belongs to the foreground and transport that dispatched
+      // it, not whichever profile happens to be selected when it rejects.
+      const intent = currentSourceSwitchIntent()
+      const activationEpoch = gatewayActivationEpoch()
+      const profile = normalizeProfileKey($activeGatewayProfile.get())
+      const connection = $connection.get()
+
+      const scopeProfile = isActivePrimary() && normalizeProfileKey(connection?.profile) === profile &&
+        Boolean(connection?.sharedPrimary || connection?.sharedRemote)
+
+      if (isActivePrimary() && profile !== activeGatewayProfileKey() && !scopeProfile) {
+        throw new Error('Eidolon selected profile has no verified shared primary route')
+      }
+
+      const generation = gatewayTransportGeneration(gateway)
+
+      const ownsRequest = () => isCurrentSourceSwitchIntent(intent) &&
+        gatewayActivationEpoch() === activationEpoch && normalizeProfileKey($activeGatewayProfile.get()) === profile &&
+        gatewayRef.current === gateway && $gateway.get() === gateway &&
+        gatewayTransportGeneration(gateway) === generation
+
+      assertGatewayOAuthAuthority(gateway, authority)
+
       try {
-        return await gateway.request<T>(method, params, timeoutMs, signal)
+        return await requestGatewayWithRuntimeBinding<T>(gateway, method, params, timeoutMs, signal, profile, scopeProfile)
       } catch (error) {
-        if (!isGatewayTransportError(error)) {
+        if (!isGatewayTransportError(error) || !ownsRequest()) {
           throw error
         }
 
@@ -139,7 +212,7 @@ export function useGatewayRequest() {
         // single-use ticket). Background profiles stay on the registry's
         // connection-owned reconnect path, including composite remote/SSH
         // sources.
-        const recovered = isActivePrimary() ? await ensureGatewayOpen() : await ensureActiveGatewayOpen()
+        const recovered = isActivePrimary() ? await ensureGatewayOpen(authority) : await ensureActiveGatewayOpen()
 
         if (!recovered) {
           // Prefer the reauth error from the failed reconnect (OAuth session
@@ -154,7 +227,14 @@ export function useGatewayRequest() {
           throw error
         }
 
-        return recovered.request<T>(method, params, timeoutMs, signal)
+        // Recovery may advance this owner's generation. It cannot grant an
+        // old operation the authority of a newer source-selection intent.
+        if (!isCurrentSourceSwitchIntent(intent) || normalizeProfileKey($activeGatewayProfile.get()) !== profile ||
+            recovered !== gateway || gatewayRef.current !== gateway || $gateway.get() !== gateway) {throw error}
+
+        assertGatewayOAuthAuthority(recovered, authority)
+
+        return requestGatewayWithRuntimeBinding<T>(recovered, method, params, timeoutMs, signal, profile, scopeProfile)
       }
     },
     [ensureGatewayOpen]

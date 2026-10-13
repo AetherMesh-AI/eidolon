@@ -1,6 +1,9 @@
 /** Real Electron → gateway → persistent organization → deterministic local provider.
  * Staffing is applied by an explicitly scoped manager; an unhandled question
  * reaches the owner and resumes the exact persistent worker after its answer. */
+import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { writeFileSync } from 'node:fs'
 import http from 'node:http'
 
 import {
@@ -18,6 +21,49 @@ import { exactOrganizationEvidence, type OrganizationEvidenceContext } from './o
 import { organizationPackageProposal } from './organization-package-proposal'
 import { organizationProviderTarget } from './organization-provider-target'
 import { expect, test } from './test'
+
+// Capture the actual native window after checking readiness. The mounted UI
+// can still be covered by the cold-reload CONNECTING overlay.
+async function captureRequests(name: string) {
+  const { app, page } = fixture!
+  await page.evaluate(async () => {
+    await document.fonts.ready
+    await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+  })
+
+  if (name === '02-durable-seen-blocker.png') {
+    // Compare the Chromium path both before and after the paint wait. This
+    // separates a reload/paint race from a native-vs-CDP capture discrepancy.
+    await page.screenshot({ path: test.info().outputPath('02-durable-seen-blocker-after-paint-cdp.png') })
+  }
+
+  const window = await app.browserWindow(page)
+
+  const captured = await window.evaluate(async window => {
+    const image = await window.webContents.capturePage()
+    const bitmap = image.toBitmap()
+    const colors = new Set<number>()
+
+    for (let offset = 0; offset < bitmap.length && colors.size < 256; offset += 4) {
+      colors.add(bitmap.readUInt32LE(offset))
+    }
+
+    return { png: image.toPNG().toString('base64'), colors: colors.size, size: image.getSize(),
+      visible: window.isVisible(), minimized: window.isMinimized(), url: window.webContents.getURL() }
+  })
+
+  const { png, ...native } = captured
+  const bytes = Buffer.from(png, 'base64')
+  writeFileSync(test.info().outputPath(name), bytes)
+  await test.info().attach(name, { body: bytes, contentType: 'image/png' })
+  await test.info().attach(`${name}.json`, { contentType: 'application/json', body: JSON.stringify({
+    sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+    sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
+    captureMethod: 'electron.capturePage', sha256: createHash('sha256').update(bytes).digest('hex'), native,
+    rendered: await page.locator('body').innerText()
+  }) })
+  expect(native.colors, `${name} must contain populated native pixels, not a blank frame`).toBeGreaterThan(32)
+}
 
 const objectiveTitle = 'Write the audience-specific release brief'
 const question = 'Who should receive the release brief?'
@@ -306,7 +352,7 @@ test.afterEach(async ({}, testInfo) => {
   })
 
   if (fixture && !fixture.page.isClosed()) {
-    await fixture.page.screenshot({ path: testInfo.outputPath('native-request-final-state.png') })
+    await captureRequests('native-request-final-state.png')
   }
 })
 test.afterAll(async () => {
@@ -337,7 +383,7 @@ test('retains owner attention across reloads, answers the requesting worker, and
   await form.getByRole('textbox', { name: 'Managed teams (comma separated)', exact: true }).fill('general')
   await form.getByRole('spinbutton', { name: 'Concurrent execution limit', exact: true }).fill('2')
   await expect(form.getByRole('button', { name: 'Save organization', exact: true })).toBeEnabled()
-  await page.screenshot({ path: testInfo.outputPath('01-scoped-staffing-editor.png') })
+  await captureRequests('01-scoped-staffing-editor.png')
   await form.getByRole('button', { name: 'Save organization', exact: true }).click()
   await expect(form).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Inspect Staffing lead', exact: true })).toBeVisible()
@@ -374,16 +420,23 @@ test('retains owner attention across reloads, answers the requesting worker, and
   await expect(inbox).toContainText('Needs You: 1 · Unread: 1')
   // A returning owner sees the durable blocker even when it arrived off-page.
   await page.reload()
+  await waitForAppReady(fixture!, 60_000, '[aria-label="Attention inbox"]')
   await expect(inbox).toContainText('Needs You: 1 · Unread: 1', { timeout: 60_000 })
   await inbox.getByRole('button', { name: 'Mark seen', exact: true }).click()
   await expect(inbox).toContainText('Needs You: 1 · Unread: 0')
   await expect(inbox.getByRole('button', { name: 'Seen', exact: true })).toBeDisabled()
   await page.reload()
+  await waitForAppReady(fixture!, 60_000, '[aria-label="Attention inbox"]')
   await expect(inbox).toContainText('Needs You: 1 · Unread: 0', { timeout: 60_000 })
   await expect(inbox.getByRole('button', { name: 'Seen', exact: true })).toBeDisabled()
   // Acknowledgement cannot answer the question or resume the blocked worker.
   expect(stages.filter(stage => stage.kind === 'work.draft')).toHaveLength(1)
-  await page.screenshot({ path: testInfo.outputPath('02-durable-seen-blocker.png') })
+  await expect(page).toHaveURL(/#\/requests/ )
+  await expect(inbox).toBeVisible()
+  await expect(page.getByText('CONNECTING', { exact: true })).toHaveCount(0)
+  // Retain both capture paths at the same state to diagnose the earlier blank frame.
+  await page.screenshot({ path: testInfo.outputPath('02-durable-seen-blocker-cdp.png') })
+  await captureRequests('02-durable-seen-blocker.png')
   await questionRow.click()
   const inspector = page.getByRole('complementary', { name: 'Request details' })
   await expect(inspector.getByText(question, { exact: true })).toBeVisible()
@@ -394,7 +447,7 @@ test('retains owner attention across reloads, answers the requesting worker, and
   await expect(inspector.getByRole('region', { name: 'Task scope', exact: true })).toContainText(
     'Use supplied facts and ask the owner for the intended audience.'
   )
-  await page.screenshot({ path: testInfo.outputPath('02a-parent-task-context.png') })
+  await captureRequests('02a-parent-task-context.png')
   await inspector.getByRole('button', { name: 'Back', exact: true }).click()
   await expect(inspector.getByRole('textbox', { name: 'Response', exact: true })).toHaveValue(answer)
   await inspector.getByRole('button', { name: 'Open parent request', exact: true }).click()
@@ -403,7 +456,7 @@ test('retains owner attention across reloads, answers the requesting worker, and
   expect(stages.filter(stage => stage.kind === 'work.draft')).toHaveLength(1)
   await questionRow.click()
   await inspector.getByRole('textbox', { name: 'Response', exact: true }).fill(answer)
-  await page.screenshot({ path: testInfo.outputPath('02-question-owner-response.png') })
+  await captureRequests('02-question-owner-response.png')
   await inspector.getByRole('button', { name: 'Submit response', exact: true }).click()
   await expect(inspector.getByRole('button', { name: 'Submit response', exact: true })).toHaveCount(0)
 
@@ -424,7 +477,7 @@ test('retains owner attention across reloads, answers the requesting worker, and
 
   await expect(header).toContainText('Completed', { timeout: 90_000 })
   await expect(page.getByText(deliverable, { exact: true }).first()).toBeVisible()
-  await page.screenshot({ path: testInfo.outputPath('03-accepted-request-outcome.png') })
+  await captureRequests('03-accepted-request-outcome.png')
   expect(providerErrors).toEqual([])
   expect(stages.filter(stage => stage.kind === 'work.draft').map(stage => stage.agentId)).toEqual([
     proposedMember.id,

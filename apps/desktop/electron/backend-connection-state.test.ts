@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
 import { createBackendConnectionState } from './backend-connection-state'
+import { resolveProfileBackendRoute } from './connection-config'
 
 type FakeProcess = { id: string }
 
@@ -104,4 +105,46 @@ test('an invalidated attempt cannot attach a late-spawned process', () => {
 
   assert.equal(state.attachProcess(staleAttempt, { id: 'late' }), null)
   assert.equal(state.getProcess(), null)
+})
+
+
+test('remembering a workspace cannot relabel the live primary or redirect a named-profile return', () => {
+  const state = createBackendConnectionState<FakeProcess, string>()
+  let preference = 'default'
+  const primaryProfile = () => state.getProfile() ?? preference
+  const boot = state.startAttempt(primaryProfile())
+  state.setPromise(boot, Promise.resolve('default backend'))
+  const owner = state.attachProcess(boot, { id: 'default' })!
+
+  for (const selected of ['observation-a', 'observation-b', 'observation-a']) {
+    preference = selected
+    assert.equal(primaryProfile(), 'default')
+    assert.equal(resolveProfileBackendRoute(selected, { primaryProfile: primaryProfile() }).backend, 'pool')
+    assert.equal(resolveProfileBackendRoute('default', { primaryProfile: primaryProfile() }).backend, 'primary')
+  }
+
+  // A genuine teardown/next boot adopts the remembered selection.
+  state.invalidate()
+  assert.equal(primaryProfile(), 'observation-a')
+  const replacement = state.startAttempt(primaryProfile())
+  state.setPromise(replacement, Promise.resolve('a backend'))
+  assert.equal(state.clearForCurrentProcess(owner), false)
+  assert.equal(state.clearPromiseForAttempt(boot), false)
+  assert.equal(state.setPromise(boot, Promise.resolve('late default')), false)
+  assert.equal(state.getProfile(), 'observation-a')
+  assert.equal(resolveProfileBackendRoute('observation-a', { primaryProfile: primaryProfile() }).backend, 'primary')
+})
+
+test('failed or exited primary generations release their captured profile', () => {
+  const state = createBackendConnectionState<FakeProcess, string>()
+  const failed = state.startAttempt('a')
+  state.setPromise(failed, Promise.resolve('failed'))
+  assert.equal(state.getProfile(), 'a')
+  assert.equal(state.clearPromiseForAttempt(failed), true)
+  assert.equal(state.getProfile(), null)
+  const next = state.startAttempt('b')
+  state.setPromise(next, Promise.resolve('b'))
+  const owner = state.attachProcess(next, { id: 'b' })!
+  assert.equal(state.clearForCurrentProcess(owner), true)
+  assert.equal(state.getProfile(), null)
 })

@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { execFileSync, spawn } from 'node:child_process'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
@@ -58,7 +59,7 @@ import {
   makeUnsignedOauthError,
   waitForHermesReady
 } from './backend-health'
-import { requestBackendJson } from './backend-json-request'
+import { requestBackendJson, requestProfileBackendJson } from './backend-json-request'
 import { backendCommandMatches, createBackendOwnership, createBackendShutdownCoordinator } from './backend-ownership'
 import {
   canImportHermesCli,
@@ -277,6 +278,7 @@ import { runNativeLogin } from './native-oauth-login'
 import { loadNativeTokenSet, type NativeTokenStoreIo, persistNativeTokenSet } from './native-token-store'
 import { serializeJsonBody, setJsonRequestHeaders } from './oauth-net-request'
 import { LEGACY_OAUTH_PARTITION, resolveOauthPartition } from './oauth-partition'
+import { createOAuthCookieCleanupQueue, createOAuthSessionAuthority, createOwnedNativeAccountResolver } from './oauth-session-authority'
 import { createParentStartMarkerResolver, parentWatchdogEnv } from './parent-process-identity'
 import { registerPetOverlayIpc } from './pet-overlay-ipc'
 import {
@@ -304,8 +306,11 @@ import { createKeepAwake } from './power-save'
 import { capturePreviewContents } from './preview-capture'
 import { PreviewReachRegistry } from './preview-reach'
 import {
+  assertRemoteAuthenticationIdentity,
+  capturePrimaryBackendLaunch,
   createPrimaryRemoteConnection,
   FirstRunSetupResetError,
+  remoteAuthenticationIdentity,
   runPrimaryBackendStartup
 } from './primary-backend-startup'
 import { rehomePrimaryConnection } from './primary-connection-rehome'
@@ -346,7 +351,8 @@ import {
 import {
   applyRemoteRequestHeaders,
   createRegistryGatewayWsUrlHandler,
-  createRemoteWsHeaderStore
+  createRemoteWsHeaderStore,
+  refreshPrimaryGatewayWsUrl
 } from './remote-ws-headers'
 import { missingRendererAssets } from './renderer-bundle'
 import { loadRendererLoadErrorPage } from './renderer-load-error-page'
@@ -7243,6 +7249,51 @@ function resolveOauthPartitionForUrl(url) {
   }
 }
 
+const oauthCookieCleanup = createOAuthCookieCleanupQueue()
+const oauthLoginWindows = new Map<BrowserWindow, string>()
+
+const oauthAccountAuthority = createOAuthSessionAuthority((identity, scope) => {
+  for (const [win, owner] of oauthLoginWindows) {
+    if (owner === identity && !win.isDestroyed()) { win.destroy() }
+  }
+
+  const oauthConnectionIds = readDesktopConnectionsRegistry().connections
+    .filter(source => (source.kind === 'remote' || source.kind === 'cloud') && source.authMode === 'oauth' &&
+      oauthAccountScope(source.url) === scope)
+    .map(source => source.id)
+
+  broadcastConnectionsChanged({ connectionId: '', reason: 'auth-changed', oauthSessionIdentity: identity, oauthNextSessionIdentity: oauthAccountAuthority.capture(scope), oauthConnectionIds })
+  const primary = backendConnectionState.getPromise()
+  void primary?.then(connection => {
+    if (connection.oauthSessionIdentity === identity && backendConnectionState.getPromise() === primary) {
+      backendConnectionState.invalidate()
+    }
+  }).catch(() => {})
+
+  for (const [key, entry] of backendPool) {
+    void entry.connectionPromise?.then(connection => {
+      if (connection.oauthSessionIdentity === identity && backendPool.get(key) === entry) {
+        backendPool.delete(key)
+      }
+    }).catch(() => {})
+  }
+})
+
+function oauthAccountScope(baseUrl: string) {
+  // Shared cookie jars share account transitions, including portal sign-in.
+  return resolveOauthPartitionForUrl(baseUrl)
+}
+
+function assertOAuthDescriptorAuthority(connection, requestRevision?: number) {
+  if (connection.authMode === 'oauth') {
+    if (requestRevision !== undefined) {
+      oauthAccountAuthority.assertRequest(oauthAccountScope(connection.baseUrl), connection.oauthSessionIdentity, requestRevision)
+    } else {
+      oauthAccountAuthority.assertCurrent(oauthAccountScope(connection.baseUrl), connection.oauthSessionIdentity)
+    }
+  }
+}
+
 function getOauthSessionForUrl(url) {
   const partition = resolveOauthPartitionForUrl(url)
 
@@ -7531,6 +7582,9 @@ function openOauthLoginWindow(baseUrl, { silent = false } = {}) {
     // Re-check the cookie jar on every successful navigation (the callback
     // redirect is the moment cookies get set) plus a low-frequency poll as a
     // belt-and-braces fallback for IDPs that finish via in-page JS.
+    oauthLoginWindows.set(win, oauthAccountAuthority.capture(oauthAccountScope(baseUrl)))
+    win.once('closed', () => oauthLoginWindows.delete(win))
+
     win.webContents.on('did-navigate', () => void checkCookie())
     win.webContents.on('did-redirect-navigation', () => void checkCookie())
     win.webContents.on('did-frame-navigate', () => void checkCookie())
@@ -7581,7 +7635,11 @@ function openOauthLoginWindow(baseUrl, { silent = false } = {}) {
 // session cookie is attached automatically by Electron's net stack. Used for
 // authed REST against a gated gateway, including minting WS tickets.
 function fetchJsonViaOauthSession(url, options: any = {}) {
+  const scope = oauthAccountScope(url)
+  const identity = oauthAccountAuthority.capture(scope)
+
   return new Promise((resolve, reject) => {
+    oauthAccountAuthority.assertCurrent(scope, identity)
     const sess = getOauthSessionForUrl(url)
 
     if (!sess) {
@@ -7624,6 +7682,7 @@ function fetchJsonViaOauthSession(url, options: any = {}) {
     }
 
     let timedOut = false
+    let retired = false
 
     const timer = setTimeout(() => {
       timedOut = true
@@ -7641,7 +7700,7 @@ function fetchJsonViaOauthSession(url, options: any = {}) {
       const chunks = []
       res.on('data', chunk => chunks.push(Buffer.from(chunk)))
       res.on('end', () => {
-        if (timedOut) {
+        if (timedOut || retired) {
           return
         }
 
@@ -7680,13 +7739,22 @@ function fetchJsonViaOauthSession(url, options: any = {}) {
       })
     })
     request.on('error', error => {
-      if (timedOut) {
+      if (timedOut || retired) {
         return
       }
 
       clearTimeout(timer)
       reject(error)
     })
+
+    const untrack = oauthAccountAuthority.track(scope, identity, () => {
+      retired = true
+      clearTimeout(timer)
+      request.abort()
+      reject(new Error('Eidolon OAuth account session changed during request.'))
+    })
+
+    request.once('close', untrack)
 
     if (body) {
       request.write(body)
@@ -7761,8 +7829,11 @@ function _storeNativeTokens(baseUrl: string, tokens: NativeTokenSet) {
 }
 
 function _clearNativeTokens(baseUrl: string) {
-  _nativeTokens.delete(baseUrl)
-  _persistNativeTokens(baseUrl, null)
+  const change = oauthAccountAuthority.beginChange(oauthAccountScope(baseUrl))
+  change.finish(() => {
+    _nativeTokens.delete(baseUrl)
+    _persistNativeTokens(baseUrl, null)
+  })
 }
 
 // True when we hold native bearer tokens for this gateway (the native-flow
@@ -7786,46 +7857,22 @@ function postJsonNoAuth(url: string, body: unknown, opts: any = {}) {
 // Return a valid native access token for baseUrl, refreshing via
 // /auth/native/refresh if the stored one is at/near expiry. Returns null when
 // there are no tokens or the refresh is terminally rejected (caller re-logins).
+const resolveOwnedNativeAccount = createOwnedNativeAccountResolver()
+
 async function ensureNativeAccessToken(baseUrl: string): Promise<string | null> {
-  const tokens = _loadNativeTokens(baseUrl)
-
-  if (!tokens) {
-    return null
-  }
-
-  if (!tokenNeedsRefresh(tokens, Math.floor(Date.now() / 1000))) {
-    return tokens.accessToken
-  }
-
-  if (!tokens.refreshToken) {
-    // Access token expired and no RT to rotate — force re-login.
-    _clearNativeTokens(baseUrl)
-
-    return null
-  }
-
-  try {
-    const body = await postJsonNoAuth(
+  return resolveOwnedNativeAccount(baseUrl, {
+    authority: oauthAccountAuthority,
+    scope: oauthAccountScope(baseUrl),
+    tokens: _loadNativeTokens(baseUrl),
+    needsRefresh: tokens => tokenNeedsRefresh(tokens, Math.floor(Date.now() / 1000)),
+    refresh: async tokens => parseTokenResponse(await postJsonNoAuth(
       nativeRefreshUrl(baseUrl),
       { refresh_token: tokens.refreshToken, provider: tokens.provider },
       { timeoutMs: 10_000 }
-    )
-
-    const rotated = parseTokenResponse(body)
-    _storeNativeTokens(baseUrl, rotated)
-
-    return rotated.accessToken
-  } catch (error: any) {
-    // A 401 means the RT is dead (session_expired) — drop tokens so the UI
-    // prompts a fresh native login. A 503/transient keeps them for a retry.
-    if (error && error.statusCode === 401) {
-      _clearNativeTokens(baseUrl)
-
-      return null
-    }
-
-    throw error
-  }
+    )),
+    publish: tokens => _storeNativeTokens(baseUrl, tokens),
+    clear: () => _clearNativeTokens(baseUrl)
+  })
 }
 
 // OAuth-session download that streams the response body straight to a
@@ -8118,9 +8165,15 @@ async function saveGatewayFileViaDataUrl(
 // a few times before failing — those 1-3s flaps were promoting into the
 // full-screen "couldn't start" lockout on reconnect.
 async function mintGatewayWsTicket(baseUrl, headers = {}) {
-  return withTransientRetries(async () => {
+  const scope = oauthAccountScope(baseUrl)
+  const identity = oauthAccountAuthority.capture(scope)
+
+  return oauthAccountAuthority.run(scope, identity, () => withTransientRetries(async () => {
+    oauthAccountAuthority.assertCurrent(scope, identity)
     // Native flow: mint the ticket with the bearer token, no cookie involved.
     const nativeAt = await ensureNativeAccessToken(baseUrl).catch(() => null)
+
+    oauthAccountAuthority.assertCurrent(scope, identity)
 
     if (nativeAt) {
       const body = (await fetchJson(`${baseUrl}/api/auth/ws-ticket`, null, {
@@ -8152,7 +8205,7 @@ async function mintGatewayWsTicket(baseUrl, headers = {}) {
     }
 
     return ticket
-  })
+  }))
 }
 
 // Build a fresh WS URL for the *current* connection. Critical for reconnects:
@@ -8170,19 +8223,12 @@ async function freshGatewayWsUrl(profile) {
   // legacy callers and single-profile users are unchanged.
   const connection = await ensureBackend(profile)
 
-  if (connection.authMode === 'oauth') {
-    const ticket = await mintGatewayWsTicket(connection.baseUrl, connection.headers)
-    const wsUrl = buildGatewayWsUrlWithTicket(connection.baseUrl, ticket)
-
-    rememberRemoteWsHeaders(wsUrl, connection.headers)
-
-    return wsUrl
-  }
-
-  // Local/token: the cached wsUrl already carries the (long-lived) token.
-  rememberRemoteWsHeaders(connection.wsUrl, connection.headers)
-
-  return connection.wsUrl
+  return refreshPrimaryGatewayWsUrl(connection, {
+    assertAuthority: assertOAuthDescriptorAuthority,
+    mintTicket: mintGatewayWsTicket,
+    buildTicketUrl: buildGatewayWsUrlWithTicket,
+    rememberHeaders: rememberRemoteWsHeaders
+  })
 }
 
 // --- Hermes Cloud discovery + silent per-agent sign-in (cloud-auto-discovery
@@ -8403,6 +8449,9 @@ function renewPortalAccessSilently() {
         return
       }
 
+      oauthLoginWindows.set(win, oauthAccountAuthority.capture(oauthAccountScope(resolvePortalBaseUrl())))
+      win.once('closed', () => oauthLoginWindows.delete(win))
+
       win.webContents.on('did-navigate', () => void checkCookie())
       win.webContents.on('did-redirect-navigation', () => void checkCookie())
       win.webContents.on('did-frame-navigate', () => void checkCookie())
@@ -8507,6 +8556,9 @@ function openPortalLoginWindow() {
 
       return
     }
+
+    oauthLoginWindows.set(win, oauthAccountAuthority.capture(oauthAccountScope(resolvePortalBaseUrl())))
+    win.once('closed', () => oauthLoginWindows.delete(win))
 
     win.webContents.on('did-navigate', () => void checkCookie())
     win.webContents.on('did-redirect-navigation', () => void checkCookie())
@@ -8713,7 +8765,13 @@ async function cloudAgentSilentSignIn(dashboardUrl) {
     await renewPortalAccessSilently()
   }
 
-  await openOauthLoginWindow(baseUrl, { silent: true })
+  const change = oauthAccountAuthority.beginChange(oauthAccountScope(baseUrl))
+
+  try {
+    await oauthCookieCleanup.wait(oauthAccountScope(baseUrl))
+    change.assertCurrent()
+    await openOauthLoginWindow(baseUrl, { silent: true })
+  } finally { change.finish() }
 
   return { baseUrl, connected: await hasOauthSessionCookie(baseUrl) }
 }
@@ -9060,14 +9118,15 @@ function encryptIncomingRemoteHeaders(raw, existing, options: { allowPlainText?:
   return out
 }
 
-function rememberRemoteWsHeaders(wsUrl, headers = {}) {
+function rememberRemoteWsHeaders(wsUrl, headers) {
   remoteWsHeaderStore.remember(wsUrl, headers)
 }
 
 function headersForRemoteRequest(requestUrl) {
   const exactWsHeaders = remoteWsHeaderStore.headersFor(requestUrl)
 
-  if (exactWsHeaders && Object.keys(exactWsHeaders).length > 0) {
+  // An explicitly empty exact descriptor forbids fallback to saved headers.
+  if (remoteWsHeaderStore.has(requestUrl)) {
     return exactWsHeaders
   }
 
@@ -9869,6 +9928,8 @@ async function buildRemoteConnection(
 ) {
   const baseUrl = normalizeRemoteBaseUrl(rawUrl)
   const remoteHeaders = decryptRemoteHeaders(headers)
+  const oauthSessionIdentity = authMode === 'oauth' ? oauthAccountAuthority.capture(oauthAccountScope(baseUrl)) : undefined
+  const authenticationIdentity = remoteAuthenticationIdentity(baseUrl, authMode, token, remoteHeaders, oauthSessionIdentity)
   // For token/oauth remotes the meaningful host is the real backend URL; for
   // SSH remotes the caller passes the entered/resolved host explicitly (the
   // baseUrl is a 127.0.0.1 tunnel and would be useless in the pill).
@@ -9922,11 +9983,14 @@ async function buildRemoteConnection(
       )
     }
 
+    oauthAccountAuthority.assertCurrent(oauthAccountScope(baseUrl), oauthSessionIdentity)
     const wsUrl = buildGatewayWsUrlWithTicket(baseUrl, ticket)
 
     rememberRemoteWsHeaders(wsUrl, remoteHeaders)
 
     return {
+      authenticationIdentity,
+      oauthSessionIdentity,
       baseUrl,
       mode: 'remote',
       source,
@@ -9953,6 +10017,7 @@ async function buildRemoteConnection(
   rememberRemoteWsHeaders(wsUrl, remoteHeaders)
 
   return {
+    authenticationIdentity,
     baseUrl,
     mode: 'remote',
     source,
@@ -10862,23 +10927,8 @@ async function fetchJsonForProfile(profile, path) {
 
 // Issue an arbitrary method against a profile's resolved backend, parsed JSON.
 async function requestJsonForProfile(profile: string, path: string, method: string, body?: string) {
-  const conn = await ensureBackend(profile)
-  const url = `${conn.baseUrl}${path}`
-  const opts = { method, body, timeoutMs: DEFAULT_FETCH_TIMEOUT_MS }
-
-  if (conn.authMode === 'oauth') {
-    // Native RFC 8252 flow: authenticate with the bearer token (cookieless)
-    // when we hold one for this gateway; otherwise use the cookie partition.
-    const nativeAt = await ensureNativeAccessToken(conn.baseUrl).catch(() => null)
-
-    if (nativeAt) {
-      return fetchJson(url, null, { ...opts, bearer: nativeAt, headers: conn.headers })
-    }
-
-    return fetchJsonViaOauthSession(url, { ...opts, headers: conn.headers })
-  }
-
-  return fetchJson(url, conn.token, { ...opts, headers: conn.headers })
+  return requestProfileBackendJson(profile, path, { method, body, timeoutMs: DEFAULT_FETCH_TIMEOUT_MS },
+    ensureBackend, backendJsonTransports())
 }
 
 async function probeRemoteAuthMode(rawUrl) {
@@ -11199,7 +11249,7 @@ function sendConnectionApplied() {
 // scoped to that connection. Without this, a removed remote/cloud source keeps
 // its renderer WebSocket open and streaming as a ghost, and an edited one
 // keeps talking to the OLD endpoint until idle-reap.
-function broadcastConnectionsChanged(payload: { connectionId: string; reason: 'removed' | 'saved' | 'updated' }) {
+function broadcastConnectionsChanged(payload: { connectionId: string; reason: 'removed' | 'saved' | 'updated' | 'auth-changed'; oauthSessionIdentity?: string; oauthNextSessionIdentity?: string; oauthConnectionIds?: string[] }) {
   for (const win of BrowserWindow.getAllWindows()) {
     const { webContents } = win
 
@@ -11258,11 +11308,11 @@ async function waitForBackendExit(child, timeoutMs = 5000) {
   await wait(1000)
 }
 
-// The profile the primary (window) backend runs as. readActiveDesktopProfile()
-// returns the desktop's stored preference, or null when unset (legacy launch
-// that defers to active_profile / default).
+// A live/in-flight primary keeps its captured profile. Remembering another
+// workspace changes only the next launch preference, never this backend owner.
+// Once that generation is cleared, the stored preference selects the next boot.
 function primaryProfileKey() {
-  return readActiveDesktopProfile() || 'default'
+  return backendConnectionState.getProfile() ?? readActiveDesktopProfile() ?? 'default'
 }
 
 // Options describing the current connection setup for `resolveProfileBackendRoute`.
@@ -11303,6 +11353,26 @@ async function ensureBackend(profile, opts: { spawnPriority?: LocalBackendSpawnP
 
   if (route.backend === 'primary') {
     const connection = await startHermes()
+    assertOAuthDescriptorAuthority(connection)
+
+    // Shared-member lookups can reuse this same cached descriptor. Do not let
+    // two old descriptors agree after the registry's credentials have changed.
+    if (connection.mode === 'remote' && connection.remoteKind !== 'ssh' && connection.connectionId) {
+      const source = readDesktopConnectionsRegistry().connections.find(entry => entry.id === connection.connectionId)
+
+      if (!source || (source.kind !== 'remote' && source.kind !== 'cloud')) {
+        throw new Error('Eidolon remote source is no longer registered.')
+      }
+
+      assertRemoteAuthenticationIdentity(connection.authenticationIdentity, remoteAuthenticationIdentity(
+        normalizeRemoteBaseUrl(source.url),
+        normAuthMode(source.authMode),
+        source.authMode === 'oauth' ? null : decryptDesktopSecret(source.token),
+        decryptRemoteHeaders(source.headers),
+        source.authMode === 'oauth' ? oauthAccountAuthority.capture(oauthAccountScope(source.url)) : undefined
+      ))
+    }
+
     setWslBridgeProfileState(key, connection.mode !== 'remote')
 
     // A shared backend still owes the caller its profile scope, so renderer-side
@@ -12746,8 +12816,9 @@ async function startHermes() {
   // no-op when the preference file already exists.
   migrateActiveProfileIfMissing()
 
-  const connectionAttempt = backendConnectionState.startAttempt()
-  const primaryProfile = primaryProfileKey()
+  const launch = capturePrimaryBackendLaunch(readActiveDesktopProfile(), HERMES_HOME)
+  const primaryProfile = launch.profile
+  const connectionAttempt = backendConnectionState.startAttempt(primaryProfile)
 
   // Legacy path callers without an explicit profile belong to the primary
   // window backend. Profile-scoped callers still pass their key directly.
@@ -12807,18 +12878,9 @@ async function startHermes() {
     }
 
     const token = crypto.randomBytes(32).toString('base64url')
-    // --port 0: the OS assigns an ephemeral port; the child announces it on stdout.
-    const backendArgs = ['serve', '--host', '127.0.0.1', '--port', '0']
-    // Pin the desktop's chosen profile via the global --profile flag. This is
-    // deterministic (it wins over the sticky ~/.hermes/active_profile file) and
-    // resolves HERMES_HOME the same way `hermes -p <name>` does on the CLI. An
-    // unset preference keeps the legacy launch so existing installs are
-    // unaffected.
-    const activeProfile = readActiveDesktopProfile()
-
-    if (activeProfile) {
-      backendArgs.unshift('--profile', activeProfile)
-    }
+    // Use the same pre-await capture as the attempt owner and descriptor.
+    // Its null preference keeps the legacy launch without a --profile flag.
+    const backendArgs = launch.backendArgs
 
     const setup = await runPrimaryBackendStartup({
       connectRemote,
@@ -12864,7 +12926,7 @@ async function startHermes() {
     await advanceBootProgress('backend.spawn', `Starting Eidolon backend via ${backend.label}`, 84)
     rememberLog(`Starting Eidolon backend via ${backend.label}`)
 
-    const profile = primaryProfileKey()
+    const profile = primaryProfile
     const parentStartMarker = await desktopParentStartMarker()
     const backendNonce = crypto.randomBytes(16).toString('hex')
     const parentIdentityEnv = parentWatchdogEnv(process.pid, parentStartMarker, backendNonce)
@@ -12884,7 +12946,7 @@ async function startHermes() {
           // Mismatch would split config / sessions / .env / logs across two
           // directories. install.ps1 sets HERMES_HOME via setx; the desktop
           // can't reliably do that, so we set it inline for every spawn.
-          HERMES_HOME,
+          HERMES_HOME: launch.home,
           ...backend.env,
           TERMINAL_CWD: hermesCwd,
           HERMES_DASHBOARD_SESSION_TOKEN: token,
@@ -13063,6 +13125,7 @@ async function startHermes() {
       baseUrl,
       mode: 'local',
       source: 'local',
+      profile: primaryProfile,
       authMode: 'token',
       token: authToken,
       wsUrl,
@@ -15637,6 +15700,7 @@ ipcMain.handle('hermes:agents:roster', async () => {
 // Registry-scoped fresh WS URL: the (connectionId, profile) analogue of
 // hermes:gateway:ws-url. Same single-use-ticket discipline for OAuth sources.
 const registryGatewayWsUrlHandler = createRegistryGatewayWsUrlHandler({
+  assertAuthority: assertOAuthDescriptorAuthority,
   ensureBackend: ensureRegistryBackend,
   mintTicket: mintGatewayWsTicket,
   buildTicketUrl: buildGatewayWsUrlWithTicket,
@@ -15792,16 +15856,25 @@ async function getJsonForBackend(descriptor, path, opts: any = {}) {
 // analogue of the hermes:api handler's own auth split: OAuth backends prefer a
 // native bearer (cookieless RFC 8252 flow) and fall back to the OAuth cookie
 // partition; token/local descriptors use the static session-token header.
+// Carry IPC admission ownership through routing, discovery, descriptor resolution,
+// fan-out and auth fallback. Concurrent requests keep separate async contexts.
+const oauthRequestAuthority = new AsyncLocalStorage<number>()
+
+function backendJsonTransports(authority = oauthRequestAuthority.getStore() ?? oauthAccountAuthority.captureRequest()) {
+  return {
+    assertAuthority: connection => assertOAuthDescriptorAuthority(connection, authority),
+    ensureNativeAccessToken,
+    fetchJson,
+    fetchJsonViaOauthSession
+  }
+}
+
 async function fetchJsonForBackend(
   descriptor,
   path,
   opts: { method?: string; body?: unknown; upload?: unknown; timeoutMs?: number } = {}
 ) {
-  return requestBackendJson(descriptor, path, opts, {
-    ensureNativeAccessToken,
-    fetchJson,
-    fetchJsonViaOauthSession
-  })
+  return requestBackendJson(descriptor, path, opts, backendJsonTransports())
 }
 
 ipcMain.handle('hermes:connection-config:probe', async (_event, rawUrl) => probeRemoteAuthMode(rawUrl))
@@ -15818,63 +15891,72 @@ ipcMain.handle('hermes:connection-config:oauth-login', async (_event, rawUrl) =>
   //   - a failed native login reports the error rather than auto-falling back
   //     to the embedded flow — one sign-in action opens at most one window.
   const baseUrl = normalizeRemoteBaseUrl(rawUrl)
-
-  let statusBody: any = null
+  const change = oauthAccountAuthority.beginChange(oauthAccountScope(baseUrl))
 
   try {
-    statusBody = await fetchPublicJson(`${baseUrl}/api/status`, { timeoutMs: 8_000 })
-  } catch {
-    // Can't read status — fall through to the embedded flow, which has its
-    // own error handling and works against any gated gateway.
-  }
+    await oauthCookieCleanup.wait(oauthAccountScope(baseUrl))
+    change.assertCurrent()
 
-  const authRequired = statusBody && authModeFromStatus(statusBody) === 'oauth'
-  const providers = authRequired ? await gatewayAuthProviders(baseUrl) : []
+    let statusBody: any = null
 
-  const strategy = resolveLoginStrategy(statusBody, { providers })
-
-  if (strategy === 'native') {
     try {
-      const tokens = await runNativeLogin(baseUrl, {
-        openExternal: url => shell.openExternal(url),
-        postJson: (url, body, opts) => postJsonNoAuth(url, body, opts),
-        rememberLog
-      })
-
-      _storeNativeTokens(baseUrl, tokens)
-      // Confirmed sign-in — release the reauth latch so the next
-      // startHermes() re-dials instead of replaying the stale rejection.
-      remoteReauthFailure = null
-
-      return { ok: true, baseUrl, connected: true }
-    } catch (error) {
-      rememberLog(`[native-oauth] native login failed (${error instanceof Error ? error.message : String(error)})`)
-
-      return { ok: false, error: error instanceof Error ? error.message : String(error), connected: false }
+      statusBody = await fetchPublicJson(`${baseUrl}/api/status`, { timeoutMs: 8_000 })
+    } catch {
+      // Can't read status — fall through to the embedded flow, which has its
+      // own error handling and works against any gated gateway.
     }
+
+    const authRequired = statusBody && authModeFromStatus(statusBody) === 'oauth'
+    const providers = authRequired ? await gatewayAuthProviders(baseUrl) : []
+
+    const strategy = resolveLoginStrategy(statusBody, { providers })
+
+    change.assertCurrent()
+
+    if (strategy === 'native') {
+      try {
+        const tokens = await runNativeLogin(baseUrl, {
+          openExternal: url => shell.openExternal(url),
+          postJson: (url, body, opts) => postJsonNoAuth(url, body, opts),
+          rememberLog
+        })
+
+        change.finish(() => _storeNativeTokens(baseUrl, tokens))
+        // Confirmed sign-in — release the reauth latch so the next
+        // startHermes() re-dials instead of replaying the stale rejection.
+        remoteReauthFailure = null
+
+        return { ok: true, baseUrl, connected: true }
+      } catch (error) {
+        rememberLog(`[native-oauth] native login failed (${error instanceof Error ? error.message : String(error)})`)
+
+        return { ok: false, error: error instanceof Error ? error.message : String(error), connected: false }
+      }
+    }
+
+    // Legacy embedded-webview cookie flow.
+    await openOauthLoginWindow(baseUrl)
+
+    const connected = await hasOauthSessionCookie(baseUrl)
+
+    // Only a CONFIRMED sign-in releases the latch. A cancelled/closed login
+    // window must leave it set, or the overlay's "Sign in" button starts
+    // flickering again on the next retry.
+    if (connected) {
+      remoteReauthFailure = null
+    }
+
+    return { ok: true, baseUrl, connected }
+  } finally {
+    change.finish()
   }
-
-  // Legacy embedded-webview cookie flow.
-  await openOauthLoginWindow(baseUrl)
-
-  const connected = await hasOauthSessionCookie(baseUrl)
-
-  // Only a CONFIRMED sign-in releases the latch. A cancelled/closed login
-  // window must leave it set, or the overlay's "Sign in" button starts
-  // flickering again on the next retry.
-  if (connected) {
-    remoteReauthFailure = null
-  }
-
-  return { ok: true, baseUrl, connected }
 })
 ipcMain.handle('hermes:connection-config:oauth-logout', async (_event, rawUrl) => {
   const baseUrl = normalizeRemoteBaseUrl(rawUrl)
-  await clearOauthSession(baseUrl)
-
-  // Also drop any native (RFC 8252) bearer tokens for this gateway so a
-  // logout clears BOTH auth shapes.
   _clearNativeTokens(baseUrl)
+  const change = oauthAccountAuthority.beginChange(oauthAccountScope(baseUrl))
+
+  try { await oauthCookieCleanup.clear(oauthAccountScope(baseUrl), () => clearOauthSession(baseUrl)) } finally { change.finish() }
 
   // Report against the SAME liveness notion the Settings indicator uses
   // (AT-or-RT cookie, or a native token) so a logout that left any session
@@ -15892,12 +15974,20 @@ ipcMain.handle('hermes:cloud:status', async () => ({
   signedIn: await hasLivePortalSession()
 }))
 ipcMain.handle('hermes:cloud:login', async () => {
-  await openPortalLoginWindow()
+  const change = oauthAccountAuthority.beginChange(oauthAccountScope(resolvePortalBaseUrl()))
+
+  try {
+    await oauthCookieCleanup.wait(oauthAccountScope(resolvePortalBaseUrl()))
+    change.assertCurrent()
+    await openPortalLoginWindow()
+  } finally { change.finish() }
 
   return { ok: true, signedIn: await hasLivePortalSession() }
 })
 ipcMain.handle('hermes:cloud:logout', async () => {
-  await clearOauthSession(resolvePortalBaseUrl())
+  const change = oauthAccountAuthority.beginChange(oauthAccountScope(resolvePortalBaseUrl()))
+
+  try { await oauthCookieCleanup.clear(oauthAccountScope(resolvePortalBaseUrl()), () => clearOauthSession(resolvePortalBaseUrl())) } finally { change.finish() }
 
   return { ok: true, signedIn: await hasLivePortalSession() }
 })
@@ -16478,7 +16568,7 @@ async function handleHermesApiRequest(request) {
   return response
 }
 
-ipcMain.handle('hermes:api', async (_event, request) => {
+ipcMain.handle('hermes:api', (_event, request) => oauthRequestAuthority.run(oauthAccountAuthority.captureRequest(), async () => {
   // Hold the deletion gate for BOTH profile deletes and renames: a concurrent
   // renderer reconnect entering ensureBackend() mid-mutation would otherwise
   // respawn the old-name backend and recreate its HERMES_HOME (#45474).
@@ -16506,7 +16596,7 @@ ipcMain.handle('hermes:api', async (_event, request) => {
   const releaseProfileDeletion = profileDeletionGate.acquire(mutatingProfile)
 
   return handleHermesApiRequest(request).finally(releaseProfileDeletion)
-})
+}))
 
 // One deduper per cross-window cue — the choke point every window shares. Main
 // handles IPC serially, so the first window to claim a key wins with no race.

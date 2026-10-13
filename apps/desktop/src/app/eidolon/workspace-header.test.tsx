@@ -13,6 +13,7 @@ import { WorkspaceHeader } from './workspace-header'
 import { searchWorkspace } from './workspace-search'
 
 const state = vi.hoisted(() => ({ snapshot: null as ReturnType<typeof ownerChatSnapshot> | null, scope: 'socket-a:default', commands: vi.fn() }))
+vi.mock('./organization-directory-control', () => ({ OrganizationDirectoryControl: () => null }))
 vi.mock('@/store/profile', () => ({ $activeGatewayProfile: atom('default'), $gatewaySwapTarget: atom(null) }))
 vi.mock('@/store/connections', () => ({ $activeConnectionId: atom('local'), $pendingConnectionId: atom(null), $connectionsRegistry: atom({ connections: [{ id: 'local', label: 'This Mac' }] }) }))
 vi.mock('@/store/command-palette', () => ({ openCommandPalettePage: (...args: unknown[]) => state.commands(...args) }))

@@ -15,6 +15,7 @@ const state = vi.hoisted(() => ({
   request: vi.fn()
 }))
 
+vi.mock('./organization-directory-control', () => ({ OrganizationDirectoryControl: () => null }))
 vi.mock('@/store/profile', () => ({ $activeGatewayProfile: atom('default'), $gatewaySwapTarget: atom(null) }))
 vi.mock('@/store/connections', () => ({ $pendingConnectionId: atom(null) }))
 vi.mock('@/store/command-palette', () => ({ openCommandPalettePage: vi.fn() }))

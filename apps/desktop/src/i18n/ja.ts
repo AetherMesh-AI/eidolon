@@ -1,18 +1,21 @@
-import { organizationExecutiveMessageJa, organizationMemberMessagesJa } from './organization-member-messages'
-import { organizationHomeCountsJa } from './organization-home-counts'
-import { organizationSurfacesJa } from './organization-surfaces'
-import { organizationWorkspaceJa } from './organization-home'
 import { defineFieldCopy } from '@/app/settings/field-copy'
 
 import { defineLocale } from './define-locale'
 import { organizationConversationsJa } from './organization-conversations'
+import { organizationWorkspaceJa } from './organization-home'
+import { organizationHomeCountsJa } from './organization-home-counts'
+import { organizationExecutiveMessageJa, organizationMemberMessagesJa } from './organization-member-messages'
+import { organizationMetadataJa } from './organization-metadata'
+import { organizationOverviewJa } from './organization-overview'
 import { organizationOwnerChatJa } from './organization-owner-chat'
 import { organizationRosterJa } from './organization-roster'
+import { organizationSurfacesJa } from './organization-surfaces'
 import { organizationWorkJa } from './organization-work'
 
 export const ja = defineLocale({
+  organizationMetadata: organizationMetadataJa,
   organizationSurfaces: organizationSurfacesJa,
-  organizationHome: { ...organizationExecutiveMessageJa, memberMessages: organizationMemberMessagesJa, workspace: organizationWorkspaceJa, detail: organizationHomeCountsJa },
+  organizationHome: { ...organizationOverviewJa, ...organizationExecutiveMessageJa, memberMessages: organizationMemberMessagesJa, workspace: organizationWorkspaceJa, detail: organizationHomeCountsJa },
   organizationOwnerChat: organizationOwnerChatJa,
   organizationConversations: organizationConversationsJa,
   organizationWork: organizationWorkJa,

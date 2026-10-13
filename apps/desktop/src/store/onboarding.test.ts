@@ -244,6 +244,37 @@ describe('refreshOnboarding', () => {
     expect(window.localStorage.getItem('hermes-desktop-onboarded-v1')).toBe('1')
   })
 
+  it.each(['ready', 'fallback'])('does not publish a retired readiness result (%s)', async outcome => {
+    const notifySpy = vi.spyOn(notifications, 'notify')
+    notifySpy.mockClear()
+    const onCompleted = vi.fn()
+    const api = vi.fn()
+    installApiMock(api)
+    const state = baseState({ configured: true, providers: [makeOAuthProvider('cached')] })
+    $desktopOnboarding.set(state)
+    let release!: () => void
+    const held = new Promise<void>(resolve => { release = resolve })
+    let current = true
+
+    const pending = refreshOnboarding({
+      shouldPublish: () => current,
+      onCompleted,
+      requestGateway: async method => {
+        await held
+
+        return (outcome === 'ready' ? keylessCustomGateway() : fallbackTimeoutGateway())(method) as never
+      }
+    })
+
+    current = false
+    release()
+    await expect(pending).resolves.toBe(false)
+    expect($desktopOnboarding.get()).toBe(state)
+    expect(onCompleted).not.toHaveBeenCalled()
+    expect(notifySpy).not.toHaveBeenCalled()
+    expect(api).not.toHaveBeenCalled()
+  })
+
   it('shows a non-blocking notification when preserving configured on fallback', async () => {
     const notifySpy = vi.spyOn(notifications, 'notify')
 
@@ -352,6 +383,43 @@ describe('refreshOnboarding', () => {
     expect(api).toHaveBeenCalledTimes(1)
     expect($desktopOnboarding.get().configured).toBe(false)
     expect($desktopOnboarding.get().reason).toContain('request timed out')
+  })
+
+  it('refreshes an already populated provider catalog for a new owned source read', async () => {
+    const api = vi.fn(async () => ({ providers: [makeOAuthProvider('replacement-source')] }))
+    installApiMock(api)
+    $desktopOnboarding.set(baseState({ providers: [makeOAuthProvider('previous-source')] }))
+    await refreshOnboarding({ profile: 'default', shouldPublish: () => true, requestGateway: emptyOpenRouterGateway() })
+    expect(api).toHaveBeenCalledTimes(1)
+    expect($desktopOnboarding.get().providers?.map(provider => provider.id)).toEqual(['replacement-source'])
+  })
+
+  it.each(['success', 'failure'])('retires a held provider-list %s without overwriting the fresh source', async outcome => {
+    let releaseOld!: (value: { providers: OAuthProvider[] }) => void
+    let rejectOld!: (reason: Error) => void
+    const oldResponse = new Promise<{ providers: OAuthProvider[] }>((resolve, reject) => { releaseOld = resolve; rejectOld = reject })
+    let releaseFresh!: (value: { providers: OAuthProvider[] }) => void
+    const freshResponse = new Promise<{ providers: OAuthProvider[] }>(resolve => { releaseFresh = resolve })
+    const api = vi.fn().mockReturnValueOnce(oldResponse).mockReturnValueOnce(freshResponse)
+    installApiMock(api)
+    $desktopOnboarding.set(baseState({ requested: true }))
+    let oldCurrent = true
+    const old = refreshOnboarding({ profile: 'default', shouldPublish: () => oldCurrent, requestGateway: emptyOpenRouterGateway() })
+    await vi.waitFor(() => expect(api).toHaveBeenCalledTimes(1))
+    oldCurrent = false
+    const fresh = refreshOnboarding({ profile: 'default', shouldPublish: () => true, requestGateway: emptyOpenRouterGateway() })
+    await vi.waitFor(() => expect(api).toHaveBeenCalledTimes(2))
+    releaseFresh({ providers: [makeOAuthProvider('fresh-source')] })
+    await fresh
+    const current = $desktopOnboarding.get()
+
+    if (outcome === 'success') {releaseOld({ providers: [makeOAuthProvider('retired-source')] })}
+    else {rejectOld(new Error('retired source unavailable'))}
+
+    await old
+    expect($desktopOnboarding.get()).toBe(current)
+    expect(current.providers?.map(provider => provider.id)).toEqual(['fresh-source'])
+    expect(current.mode).toBe('oauth')
   })
 
   it('deduplicates concurrent provider refresh calls', async () => {

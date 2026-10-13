@@ -1,0 +1,492 @@
+/** Test-first candidate: existing source door, real isolated gateways, no production activation enablement. */
+import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { existsSync, readFileSync } from 'node:fs'
+import path from 'node:path'
+
+import { directoryRecovery, directoryRecoveryDriver } from './directory-recovery-driver'
+import { type MockBackendFixture, waitForAppReady } from './fixtures'
+import { profileA, profileB, queuedSourceTitle, setupDedicatedProfiles } from './organization-dedicated-profile-fixture'
+import { queuedSwitchTitle, switchPython } from './organization-switch-fixture'
+import { acknowledgeExpectedErrorBanner, expect, test } from './test'
+
+type NativeConnectionBridge = {
+  profile: { remember(profile: string): Promise<unknown> }
+  getConnection(): Promise<{ profile?: string; baseUrl: string }>
+}
+
+const root = path.resolve(import.meta.dirname, '../../..')
+let fixture: MockBackendFixture | undefined
+
+test.setTimeout(240_000)
+test.afterEach(async () => {
+  await fixture?.cleanup()
+  fixture = undefined
+})
+
+test('returns an uncertain intake through dedicated profile owners without starting queued destination work', async () => {
+  const dedicated = await setupDedicatedProfiles()
+  fixture = dedicated.fixture
+  const { page, app, mock } = fixture
+  const directory = directoryRecoveryDriver(page)
+  const env = { ...dedicated.env, HERMES_HOME: dedicated.homes[0] }
+
+  const remote = {
+    url: dedicated.routes[1].baseUrl,
+    ledger: () => dedicated.ledger(1),
+    starts: () => dedicated.starts(1)
+  }
+
+  const title = 'Retain this original admission across two real sources'
+
+  const methods: Array<{
+    method: string
+    destination: 'a' | 'b'
+    key?: string
+    nestedMethod?: string
+    nestedKey?: string
+  }> = []
+
+  let holdDescriptor = false
+  let releaseDescriptor: (() => void) | undefined
+  let originalKey = ''
+  let originalParams: Record<string, unknown> | undefined
+  let submissionReceipt: Record<string, unknown> | undefined
+  let releaseReceipt: (() => void) | undefined
+  let receiptHeld = false
+
+  const registration = await page.evaluate(async () => {
+    const bridge = (
+      window as unknown as {
+        hermesDesktop: {
+          connections: { list(): Promise<{ connections: Array<{ id: string; kind: string; label: string }> }> }
+        }
+      }
+    ).hermesDesktop
+
+    const local = (await bridge.connections.list()).connections.find(item => item.kind === 'local')
+
+    if (!local) {
+      throw new Error('Missing actual local registry source')
+    }
+
+    return { local }
+  })
+
+  const localPort = new URL(dedicated.routes[0].baseUrl).port
+  const remotePort = new URL(remote.url).port
+  await page.routeWebSocket(/.*/, socket => {
+    const server = socket.connectToServer()
+    let heldId: number | undefined
+    let receiptId: number | undefined
+    server.onMessage(message => {
+      const response = JSON.parse(message.toString()) as { id?: number; result?: { data?: Record<string, unknown> } }
+
+      if (receiptId !== undefined && response.id === receiptId) {
+        submissionReceipt = response.result?.data
+        receiptId = undefined
+        releaseReceipt = () => socket.send(message)
+
+        return
+      }
+
+      if (heldId !== undefined && response.id === heldId) {
+        heldId = undefined
+        releaseDescriptor = () => socket.send(message)
+      } else {
+        socket.send(message)
+      }
+    })
+    socket.onMessage(message => {
+      const request = JSON.parse(message.toString()) as {
+        id?: number
+        method?: string
+        params?: Record<string, unknown>
+      }
+
+      const port = new URL(socket.url()).port
+
+      if (port !== remotePort && port !== localPort) {
+        server.send(message)
+
+        return
+      }
+
+      const destination = port === remotePort ? 'b' : 'a'
+
+      if (request.method?.startsWith('organization.')) {
+        const nested = request.params?.params as Record<string, unknown> | undefined
+        methods.push({
+          method: request.method,
+          destination,
+          key: request.params?.idempotencyKey as string | undefined,
+          ...(request.method === 'organization.observeRead'
+            ? {
+                nestedMethod: request.params?.method as string | undefined,
+                nestedKey: nested?.idempotencyKey as string | undefined
+              }
+            : {})
+        })
+      }
+
+      if (destination === 'a' && request.method === 'organization.observeRead' &&
+        request.params?.method === 'organization.checkSubmission' && !receiptHeld) {
+        receiptHeld = true
+        receiptId = request.id
+      }
+
+      if (destination === 'b' && request.method === 'organization.descriptor' && holdDescriptor) {
+        heldId = request.id
+        holdDescriptor = false
+      }
+
+      if (destination === 'a' && request.method === 'organization.create') {
+        expect(originalKey).toBe('')
+        originalKey = String(request.params?.idempotencyKey)
+        originalParams = request.params
+        execFileSync(
+          switchPython,
+          [
+            '-c',
+            `
+import json,os,sys
+from pathlib import Path
+from eidolon_cli.organization_store import OrganizationStore
+p=json.loads(sys.argv[1]);s=OrganizationStore(Path(os.environ['HERMES_HOME'])/'organization'/'state.db')
+with s._write() as c:
+ ident=s._create_objective(c,p['title'],idempotency_key=p['idempotencyKey'],delivery_mode=p['deliveryMode'])
+ s._cancel_objective(c,ident)
+s.set_objective_archived(ident,True,expected_revision=0,idempotency_key='switch-fixture-archive')
+`,
+            JSON.stringify(request.params)
+          ],
+          { cwd: root, env }
+        )
+        socket.send(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            id: request.id,
+            error: { code: 5070, message: 'Scripted cross-source admission reply lost' }
+          })
+        )
+      } else {
+        server.send(message)
+      }
+    })
+  })
+
+  // Routing affects new sockets only; boot may already have warmed profile
+  // sockets. Reconnect before seeding, so no queued work faces a cold boot.
+  await page.reload()
+  await waitForAppReady(fixture)
+  await dedicated.seedQueuedWork()
+
+  const nav = page
+    .getByRole('complementary', { name: 'Eidolon navigation' })
+    .getByRole('navigation', { name: 'Primary', exact: true })
+
+  // Bootstrap only: visit both real dedicated profiles to retain their work owners.
+  // The uncertain-intake journey below uses OrganizationWorkPicker exclusively.
+  for (const profile of [profileA, profileB, profileA]) {
+    await page.evaluate(() => {
+      location.hash = '#/'
+    })
+    await page.locator('[data-slot="profile-rail"]').getByRole('button', { name: profile, exact: true }).click()
+    await nav.getByRole('link', { name: 'Home', exact: true }).click()
+    await expect(
+      page.getByRole('link', { name: profile === profileA ? queuedSourceTitle : queuedSwitchTitle, exact: true })
+    ).toBeVisible()
+    await expect(page.locator('.eid-workspace-header').getByRole('button', { name: new RegExp(profile) })).toBeVisible()
+
+    if (directoryRecovery) { await directory.rememberCurrent(profile) }
+  }
+
+  for (const destination of ['a', 'b'] as const) {
+    expect(methods.some(item => item.destination === destination && item.method === 'organization.observe')).toBe(true)
+  }
+
+  expect(dedicated.starts(0)).toBe(0)
+  expect(dedicated.starts(1)).toBe(0)
+  await nav.getByRole('link', { name: 'Home', exact: true }).click()
+  await page.getByRole('button', { name: 'New objective', exact: true }).click()
+  await page.getByRole('textbox', { name: 'Objective', exact: true }).fill(title)
+  await page.getByRole('combobox', { name: 'Delivery scope', exact: true }).selectOption('managed_artifact')
+  await page.getByRole('button', { name: 'Create objective', exact: true }).click()
+  await expect(page.getByText('Scripted cross-source admission reply lost', { exact: true })).toBeVisible()
+  expect(originalKey).not.toBe('')
+  const originalRoute = page.url()
+  const beforeA = dedicated.ledger(0)
+  const beforeB = remote.ledger()
+  expect(remote.starts()).toBe(0)
+  const work = page.locator('.eid-workspace-header').getByRole('button', { name: /^Organization work:/ })
+  const readsBeforeDismissal = methods.filter(item => item.destination === 'b').length
+  await work.click()
+  await page.keyboard.press('Escape')
+  expect(page.url()).toBe(originalRoute)
+  expect(methods.filter(item => item.destination === 'b')).toHaveLength(readsBeforeDismissal)
+  expect(remote.ledger()).toBe(beforeB)
+
+  async function choose(profile: string) {
+    if (directoryRecovery) {
+      await directory.choose(profile)
+
+      return
+    }
+
+    await work.click()
+    await page
+      .getByRole('region', { name: 'Work by connection and profile', exact: true })
+      .getByRole('button', { name: `Open requests: ${registration.local.label} / ${profile}`, exact: true })
+      .click()
+    await expect(page.getByRole('region', { name: 'Work by connection and profile', exact: true })).toBeHidden()
+    await expect(page.locator('.eid-workspace-header').getByRole('button', { name: new RegExp(profile) })).toBeVisible()
+  }
+
+  await choose(profileB)
+  await nav.getByRole('link', { name: 'Home', exact: true }).click()
+  await expect(page.getByRole('link', { name: queuedSwitchTitle, exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Organizations', exact: true }).click()
+  const inspection = page.getByRole('dialog', { name: 'Organizations', exact: true })
+  await inspection.getByRole('button', { name: 'Refresh current organization', exact: true }).click()
+  const destinationEntry = inspection.getByRole('option').filter({ hasText: profileB })
+  await expect(destinationEntry).toContainText(profileB)
+  await expect(inspection.getByRole('button', { name: 'Use selected organization', exact: true })).toBeDisabled()
+  holdDescriptor = true
+  await inspection.getByRole('button', { name: 'Refresh current organization', exact: true }).click()
+  await expect.poll(() => Boolean(releaseDescriptor)).toBe(true)
+  // A registry save must revoke an in-flight read even when the dedicated
+  // profile endpoint is unchanged. URL credentials remain a separate refusal gate.
+  await page.evaluate(async local => {
+    const bridge = (
+      window as unknown as { hermesDesktop: { connections: { save(input: unknown): Promise<{ ok: boolean }> } } }
+    ).hermesDesktop
+
+    if (!(await bridge.connections.save({ id: local.id, kind: 'local', label: local.label })).ok) {
+      throw new Error('Fixture registry save failed')
+    }
+  }, registration.local)
+  await expect(inspection).toBeHidden()
+  releaseDescriptor!()
+  await page.getByRole('button', { name: 'Organizations', exact: true }).click()
+  await expect(destinationEntry).toContainText('Last known')
+  await expect(inspection.getByRole('button', { name: 'Use selected organization', exact: true })).toBeDisabled()
+  await page.keyboard.press('Escape')
+  expect(remote.ledger()).toBe(beforeB)
+  expect(remote.starts()).toBe(0)
+  expect(mock.receivedPrompts).toHaveLength(0)
+  const nativeWindow = await app.browserWindow(page)
+  await test.info().attach(directoryRecovery ? 'directory-stopped-destination-observation' : 'stopped-destination-observation', {
+    body: Buffer.from(
+      await nativeWindow.evaluate(async window => (await window.webContents.capturePage()).toPNG().toString('base64')),
+      'base64'
+    ),
+    contentType: 'image/png'
+  })
+
+  await choose(profileA)
+  await nav.getByRole('link', { name: 'Home', exact: true }).click()
+  await page.getByRole('button', { name: 'New objective', exact: true }).click()
+  await expect(page.getByRole('textbox', { name: 'Objective', exact: true })).toHaveValue(title)
+  expect(page.url()).toBe(originalRoute)
+  // Uncertain submissions permit an explicit retry with the retained key.
+  // Returning alone must neither retry nor perform a receipt lookup.
+  expect(originalParams).toEqual({
+    title, deliveryMode: 'managed_artifact', executiveId: 'executive', managerId: 'manager', idempotencyKey: originalKey
+  })
+  await expect(page.getByRole('combobox', { name: 'Delivery scope', exact: true })).toHaveValue('managed_artifact')
+  expect(methods.filter(item => item.method === 'organization.create')).toEqual([
+    { method: 'organization.create', destination: 'a', key: originalKey }
+  ])
+  expect(methods.filter(item => item.method === 'organization.checkSubmission' ||
+    item.nestedMethod === 'organization.checkSubmission')).toEqual([])
+  await expect(page.getByText(/^Submission is unconfirmed\./)).toBeVisible()
+  await expect(page.getByText(/^Submission is unconfirmed\./)).toContainText('Retry keeps the same request key.')
+  await expect(page.getByRole('button', { name: 'Create objective', exact: true })).toBeEnabled()
+  const checkSubmission = page.getByRole('button', { name: 'Check submission', exact: true })
+  await expect(checkSubmission).toBeEnabled()
+  await checkSubmission.click()
+  await expect.poll(() => Boolean(releaseReceipt)).toBe(true)
+  await expect(page.getByRole('button', { name: 'Create objective', exact: true })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Checking submission…', exact: true })).toBeDisabled()
+  expect(methods.filter(item => item.method === 'organization.create')).toEqual([
+    { method: 'organization.create', destination: 'a', key: originalKey }
+  ])
+
+  if (directoryRecovery) {
+    await nav.getByRole('link', { name: 'Messages', exact: true }).click()
+    const newerRoute = page.url()
+    releaseReceipt!()
+    await expect(page.getByRole('heading', { name: 'Messages', exact: true })).toBeVisible()
+    expect(page.url()).toBe(newerRoute)
+    await nav.getByRole('link', { name: 'Home', exact: true }).click()
+    await page.getByRole('button', { name: 'New objective', exact: true }).click()
+    await expect(page.getByRole('textbox', { name: 'Objective', exact: true })).toHaveValue(title)
+    await page.getByRole('button', { name: 'Check submission', exact: true }).click()
+  } else {
+    releaseReceipt!()
+  }
+
+  await expect(page.getByText(/^Submission recorded\./)).toBeVisible()
+  expect(submissionReceipt).toMatchObject({
+    version: 1, profile: profileA, idempotencyKey: originalKey,
+    objective: { title, archived: true }
+  })
+  await expect(page.getByRole('button', { name: 'Create objective', exact: true })).toBeDisabled()
+  // Exercise the submit handler as well as the disabled control: a known
+  // accepted receipt must prevent another write even on form submission.
+  await page.getByRole('textbox', { name: 'Objective', exact: true }).evaluate(element => {
+    element.closest('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+  })
+  expect(methods.filter(item => item.method === 'organization.create')).toEqual([
+    { method: 'organization.create', destination: 'a', key: originalKey }
+  ])
+  expect(methods.filter(item => item.method === 'organization.checkSubmission')).toEqual([])
+  expect(methods.filter(item => item.nestedMethod === 'organization.checkSubmission')).toEqual(
+    Array.from({ length: directoryRecovery ? 2 : 1 }, () => ({
+      method: 'organization.observeRead', destination: 'a', key: undefined,
+      nestedMethod: 'organization.checkSubmission', nestedKey: originalKey
+    }))
+  )
+  expect(
+    methods
+      .filter(item => item.destination === 'b')
+      .every(
+        item =>
+          item.method === 'organization.observe' ||
+          item.method === 'organization.descriptor' ||
+          item.method === 'organization.observeRead'
+      )
+  ).toBe(true)
+  expect(dedicated.ledger(0)).toBe(beforeA)
+  expect(remote.ledger()).toBe(beforeB)
+  expect(remote.starts()).toBe(0)
+  expect(mock.receivedPrompts).toHaveLength(0)
+  await test.info().attach(directoryRecovery ? 'directory-returned-original-uncertain-intake' : 'returned-original-uncertain-intake', {
+    body: Buffer.from(
+      await nativeWindow.evaluate(async window => (await window.webContents.capturePage()).toPNG().toString('base64')),
+      'base64'
+    ),
+    contentType: 'image/png'
+  })
+  await test.info().attach(directoryRecovery ? 'directory-native-source-return-evidence' : 'native-source-return-evidence', {
+    contentType: 'application/json',
+    body: JSON.stringify({
+      sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+      sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
+      originalRoute,
+      originalKey,
+      originalParams,
+      submissionReceipt,
+      methods,
+      schedulerStarts: remote.starts(),
+      providerCalls: mock.receivedPrompts.length,
+      originalLedgerSha256: createHash('sha256').update(beforeA).digest('hex'),
+      destinationLedgerSha256: createHash('sha256').update(beforeB).digest('hex'),
+      sameEndpointRegistrySaveDropsLateRead: true,
+      newerNavigationDuringReceipt: directoryRecovery,
+      productionActivationEnabled: false,
+      switchingDoor: directoryRecovery ? 'actual Organizations directory with explicit confirmation' : 'OrganizationWorkPicker → selectOrganizationConnection',
+      authorityScope: 'distinct dedicated local profiles on one registry source; not distinct connections',
+      descriptors: dedicated.routes,
+      schedulerStartsA: dedicated.starts(0)
+    })
+  })
+  expect(dedicated.starts(0)).toBe(0)
+  await acknowledgeExpectedErrorBanner(page, 'Scripted cross-source admission reply lost')
+})
+
+
+test('reconciles the served local profile after the actual primary process exits', async () => {
+  const dedicated = await setupDedicatedProfiles()
+  fixture = dedicated.fixture
+  const { page, app, mock, sandbox } = fixture
+  const pidPath = path.join(sandbox.hermesHome, '.fixture-serve-pid')
+  await expect.poll(() => existsSync(pidPath)).toBe(true)
+  const primaryPid = Number(readFileSync(pidPath, 'utf8'))
+  expect(Number.isSafeInteger(primaryPid) && primaryPid > 1).toBe(true)
+  let exitedPrimary = false
+  const observations: Array<{ profile?: string; state?: string; socketUrl: string; requestedAfterExit: boolean }> = []
+  await page.routeWebSocket(/.*/, socket => {
+    const server = socket.connectToServer()
+    const observationIds = new Map<number, boolean>()
+    socket.onMessage(message => {
+      const request = JSON.parse(message.toString()) as { id: number; method?: string }
+
+      if (request.method === 'organization.observe') { observationIds.set(request.id, exitedPrimary) }
+      server.send(message)
+    })
+    server.onMessage(message => {
+      const response = JSON.parse(message.toString()) as { id: number; result?: { state?: string; scope?: { profile?: string } } }
+
+      if (observationIds.has(response.id)) {
+        observations.push({ profile: response.result?.scope?.profile, state: response.result?.state,
+          socketUrl: socket.url(), requestedAfterExit: observationIds.get(response.id)! })
+        observationIds.delete(response.id)
+      }
+
+      socket.send(message)
+    })
+  })
+
+  // The Electron fixture installs the banner guard as an init script after
+  // launch. Reload to activate it (and the socket observer) before process exit.
+  await page.reload()
+  await waitForAppReady(fixture)
+  expect(await page.evaluate(() => Array.isArray((window as unknown as { __ERROR_BANNER_GUARD__?: string[] }).__ERROR_BANNER_GUARD__))).toBe(true)
+
+  // Establish passive mode through real profile doors, then remember A only
+  // for the next primary generation. The active foreground remains default.
+  for (const profile of [profileA, 'default']) {
+    await page.evaluate(() => { location.hash = '#/' })
+    // The pinned home button uses an action label while a named profile is active.
+    const label = profile === 'default' ? 'Switch to default' : profile
+    await page.locator('[data-slot="profile-rail"]').getByRole('button', { name: label, exact: true }).click()
+    await page.getByRole('navigation', { name: 'Primary', exact: true }).getByRole('link', { name: 'Home', exact: true }).click()
+    await expect(page.locator('.eid-workspace-header').getByRole('button', { name: new RegExp(profile) })).toBeVisible()
+  }
+
+  await page.evaluate(async profile => { await (window as unknown as { hermesDesktop: NativeConnectionBridge }).hermesDesktop.profile.remember(profile) }, profileA)
+
+  const previous = await page.evaluate(async () => {
+    const { profile, baseUrl } = await (window as unknown as { hermesDesktop: NativeConnectionBridge }).hermesDesktop.getConnection()
+
+    return { profile, baseUrl }
+  })
+
+  expect(previous.profile).toBe('default')
+  // PID comes only from this isolated fixture's served-home marker.
+  process.kill(primaryPid, 'SIGTERM')
+  exitedPrimary = true
+  const exited = page.getByRole('alert').filter({ hasText: 'Backend stopped' })
+  const expectedExit = 'Backend stoppedEidolon background process exited.'
+  await expect(exited).toHaveText(expectedExit)
+  await exited.getByRole('button', { name: 'Dismiss notification', exact: true }).click()
+  await acknowledgeExpectedErrorBanner(page, expectedExit)
+  await expect(page.locator('.eid-workspace-header').getByRole('button', { name: new RegExp(profileA) })).toBeVisible({ timeout: 90_000 })
+
+  const replacement = await page.evaluate(async () => {
+    const { profile, baseUrl } = await (window as unknown as { hermesDesktop: NativeConnectionBridge }).hermesDesktop.getConnection()
+
+    return { profile, baseUrl }
+  })
+
+  expect(replacement.profile).toBe(profileA)
+  expect(replacement.baseUrl).not.toBe(previous.baseUrl)
+  await expect.poll(() => observations.some(item => item.requestedAfterExit && item.profile === profileA &&
+    new URL(item.socketUrl).host === new URL(replacement.baseUrl!).host), { timeout: 90_000 }).toBe(true)
+  expect(mock.receivedPrompts).toHaveLength(0)
+  const nativeWindow = await app.browserWindow(page)
+  await test.info().attach('primary-respawn-profile-recovered', {
+    body: Buffer.from(await nativeWindow.evaluate(async window => (await window.webContents.capturePage()).toPNG().toString('base64')), 'base64'),
+    contentType: 'image/png'
+  })
+  await test.info().attach('primary-respawn-profile-evidence', {
+    contentType: 'application/json',
+    body: JSON.stringify({
+      sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+      sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
+      previous, replacement, observations, providerCalls: mock.receivedPrompts.length,
+      exitedFixturePrimaryPid: primaryPid, productionActivationEnabled: false
+    })
+  })
+})

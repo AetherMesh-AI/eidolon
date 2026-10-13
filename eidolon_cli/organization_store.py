@@ -106,12 +106,16 @@ def _text(value, field, limit=10000):
     return value.strip()
 
 
+# One DDL contract for initialization and non-migrating observation preflight.
+ORGANIZATION_SCHEMA = (_SCHEMA + REPLACEMENT_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA + COORDINATION_SCHEMA + HISTORY_SCHEMA + ATTENTION_SCHEMA + PROJECTS_SCHEMA + OUTCOME_SCHEMA + REGISTRY_SCHEMA + PACKAGE_SCHEMA + CONVERSATION_SCHEMA + OWNER_CHAT_SCHEMA + PRIORITY_SCHEMA + DISPATCH_SCHEMA)
+
+
 class OrganizationStore(OrganizationDispatchStore, OrganizationPriorityStore, OrganizationReplacementStore, OrganizationOwnerChatStore, OrganizationConversationStore, OrganizationPackageStore, OrganizationOutcomeStore, OrganizationAttentionStore, OrganizationHistoryStore, OrganizationCoordinationStore, OrganizationProjectExecutionStore, OrganizationBudgetStore, OrganizationRequestStore, OrganizationManagementStore, OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
     def __init__(self, path: Path | str, settings: OrganizationSettings | None = None):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
-            conn.executescript(_SCHEMA + REPLACEMENT_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA + COORDINATION_SCHEMA + HISTORY_SCHEMA + ATTENTION_SCHEMA + PROJECTS_SCHEMA + OUTCOME_SCHEMA + REGISTRY_SCHEMA + PACKAGE_SCHEMA + CONVERSATION_SCHEMA + OWNER_CHAT_SCHEMA + PRIORITY_SCHEMA + DISPATCH_SCHEMA)
+            conn.executescript(ORGANIZATION_SCHEMA)
         self.settings = settings or OrganizationSettings()
         with self._write() as conn:
             self.settings = resolve_settings(conn, settings)
@@ -789,18 +793,22 @@ class OrganizationStore(OrganizationDispatchStore, OrganizationPriorityStore, Or
             conn.execute("UPDATE requests SET attempts=? WHERE id=?", (self.settings.max_attempts, ident))
 
     def snapshot(self):
-        from eidolon_cli.organization_snapshot import build_snapshot
         with self._connect() as conn:
             conn.execute("BEGIN")
-            result = build_snapshot(conn, self.settings, resolution_options=self.allowed_owner_resolutions)
-            result['runtime']['management'] = self.management_view(conn)
-            if not self._policy_current(conn):
-                for request in result['requests']:
-                    request['allowedResolutions'] = []
-                result['runtime'].update({'state': 'policy_changed', 'capabilities': [], 'readRoots': [],
-                    'readFileEnabled': False, 'workspaceApplyEnabled': False,
-                    'scope': 'Organization grants or routing changed. Wait for active work to stop, then refresh Organization before submitting or retrying work.'})
-            return result
+            return self._snapshot(conn)
+
+    def _snapshot(self, conn):
+        """Project one existing transaction; observation supplies a read-only connection."""
+        from eidolon_cli.organization_snapshot import build_snapshot
+        result = build_snapshot(conn, self.settings, resolution_options=self.allowed_owner_resolutions)
+        result['runtime']['management'] = self.management_view(conn)
+        if not self._policy_current(conn):
+            for request in result['requests']:
+                request['allowedResolutions'] = []
+            result['runtime'].update({'state': 'policy_changed', 'capabilities': [], 'readRoots': [],
+                'readFileEnabled': False, 'workspaceApplyEnabled': False,
+                'scope': 'Organization grants or routing changed. Wait for active work to stop, then refresh Organization before submitting or retrying work.'})
+        return result
 
     def evidence(self, evidence_id):
         ident = _text(evidence_id, "Evidence ID", 128)

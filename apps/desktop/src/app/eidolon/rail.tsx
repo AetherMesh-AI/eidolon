@@ -44,10 +44,10 @@ export function OrganizationRail({
     { to: '/home', label: home.home, icon: Command },
     { to: '/messages', label: home.messages, icon: MessageCircle },
     { to: '/work', label: home.work, icon: LayoutDashboard },
-    { to: '/objectives', label: copy.objectives, icon: Network },
-    { to: '/organization', label: copy.organization, icon: Users },
+    { to: '/objectives', label: home.objectives, icon: Network },
+    { to: '/organization', label: home.organization, icon: Users },
     { to: '/artifacts', label: home.deliverables, icon: FolderOpen },
-    { to: '/settings', label: copy.settings, icon: Settings }
+    { to: '/settings', label: home.settings, icon: Settings }
   ]
 
   const advanced = [

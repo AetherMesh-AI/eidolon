@@ -12,7 +12,9 @@
     "playwright.config.ts",
     "src/themes/presets.ts",
     "src/themes/eidolon.ts",
-    "src/themes/types.ts"
+    "src/themes/types.ts",
+    "src/app/eidolon/runtime-owner-chat-contract.ts",
+    "src/app/eidolon/runtime-owner-chat-types.ts"
   ],
   "exclude": [
     "electron"

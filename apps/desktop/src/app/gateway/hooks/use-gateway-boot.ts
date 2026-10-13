@@ -21,19 +21,22 @@ import { resetBackgroundPollingGuard } from '@/store/composer-status'
 import {
   $gateway,
   activeGateway,
-  activeGatewayConnectionId,
   closeLegacySecondaryGateways,
   closeSecondaryGateways,
   configureGatewayRegistry,
+  connectPrimaryGateway,
   disposeSecondariesForConnection,
   ensureActiveGatewayOpen,
   ensureGatewayForProfile,
   gatewayActivationEpoch,
   isActivePrimary,
   liveSecondaryConnectionIds,
+  primaryGatewayOAuthSessionIdentity,
   pruneSecondaryGateways,
   reconnectSecondaryGateways,
+  recordPrimaryRuntimeProducer,
   reportPrimaryGatewayState,
+  retireOAuthSession,
   setPrimaryGateway,
   setPrimaryGatewayConnection,
   touchSecondaryGateways
@@ -81,6 +84,7 @@ import {
   recordSessionEventScope,
   resetTileRuntimeBindings
 } from '@/store/session-states'
+import { beginSourceSwitchIntent, currentSourceSwitchIntent, isCurrentSourceSwitchIntent } from '@/store/source-switch-intent'
 import { windowProfileOverride } from '@/store/windows'
 import type { RpcEvent } from '@/types/eidolon'
 
@@ -308,6 +312,11 @@ export function useGatewayBoot({
       }
 
       reconnecting = true
+      const intent = currentSourceSwitchIntent()
+      let activationEpoch = manual?.activationEpoch ?? gatewayActivationEpoch()
+
+      const ownsForeground = () => !cancelled && isActivePrimary() &&
+        gatewayActivationEpoch() === activationEpoch && isCurrentSourceSwitchIntent(intent) && !$gatewaySwitching.get()
 
       try {
         // Drop a stale REMOTE backend cache before re-dialing. After sleep/wake a
@@ -333,16 +342,16 @@ export function useGatewayBoot({
           'Timed out reconnecting to Eidolon backend'
         )
 
-        setPrimaryGatewayConnection(conn)
-
-        if (cancelled) {
+        if (cancelled || !isCurrentSourceSwitchIntent(intent) || $gatewaySwitching.get()) {
           return
         }
+
+        setPrimaryGatewayConnection(conn)
 
         // Only publish the primary descriptor when the primary is active.
         // Otherwise a background-profile view would inherit the primary's
         // mode/baseUrl and break image.attach / fs / media routing (#46651).
-        if (isActivePrimary()) {
+        if (ownsForeground()) {
           publish(conn)
         }
 
@@ -360,10 +369,24 @@ export function useGatewayBoot({
           'Timed out re-minting the gateway WebSocket URL'
         )
 
-        await gateway.connect(wsUrl)
+        if (cancelled || !isCurrentSourceSwitchIntent(intent) || $gatewaySwitching.get()) {return}
 
-        if (cancelled) {
+        await connectPrimaryGateway(gateway, conn, wsUrl)
+
+        if (cancelled || !isCurrentSourceSwitchIntent(intent) || $gatewaySwitching.get()) {
           return
+        }
+
+        if (conn.mode === 'local' && conn.profile) {
+          // Physical identity already settled on open. Adopt it into the view
+          // only while this reconnect still owns the foreground.
+          const publishForeground = ownsForeground()
+
+          if (publishForeground) {
+            if (await adoptPrimaryProfile(conn, ownsForeground)) {
+              activationEpoch = gatewayActivationEpoch()
+            }
+          }
         }
 
         reconnectAttempt = 0
@@ -391,10 +414,11 @@ export function useGatewayBoot({
         // (#53902/#73082). A genuinely live turn re-asserts busy on its next
         // post-reconnect event.
         // A manual retry may finish after the user has moved to another route.
-        if (!manual || (isActivePrimary() && gatewayActivationEpoch() === manual.activationEpoch)) {
+        if (ownsForeground()) {
           reconcileBusyStatesOnReconnect()
-          await callbacksRef.current.refreshHermesConfig().catch(() => undefined)
-          await callbacksRef.current.refreshSessions().catch(() => undefined)
+          await callbacksRef.current.refreshHermesConfig(false, ownsForeground).catch(() => undefined)
+
+          if (ownsForeground()) {await callbacksRef.current.refreshSessions(ownsForeground).catch(() => undefined)}
         }
       } catch (err) {
         // OAuth session expired mid-reconnect: surface the actionable "sign in
@@ -533,11 +557,16 @@ export function useGatewayBoot({
     // session id against the wrong backend — the HUD then falls back to the
     // default profile's last session (#82285). The override wins over the
     // stored preference; absent, behavior is unchanged.
-    async function adoptPrimaryProfile(shouldPublish: () => boolean = () => true): Promise<boolean> {
+    async function adoptPrimaryProfile(connection: HermesConnection, shouldPublish: () => boolean = () => true): Promise<boolean> {
       const override = windowProfileOverride()
 
       try {
-        const profileKey = override ?? (await desktop.profile?.get?.())?.profile ?? ''
+        // A local descriptor identifies the running backend; the remembered
+        // workspace can change without restarting it. Remote aliases and older
+        // descriptors retain the preference fallback.
+        const profileKey = override ??
+          (connection.mode === 'local' ? connection.profile : undefined) ??
+          (await desktop.profile?.get?.())?.profile ?? ''
 
         if (!shouldPublish()) {
           return false
@@ -640,7 +669,7 @@ export function useGatewayBoot({
           return
         }
 
-        await gateway.connect(wsUrl)
+        await connectPrimaryGateway(gateway, conn, wsUrl)
 
         if (!ownsSwitch()) {
           return
@@ -656,7 +685,7 @@ export function useGatewayBoot({
         // list rather than blanking the rail. NOT awaited: refreshProfiles
         // now carries a bounded retry chain (#70679), and switch completion
         // must not wait out backoff timers against an unhealthy backend.
-        if (!(await adoptPrimaryProfile(ownsSwitch)) || !ownsSwitch()) {
+        if (!(await adoptPrimaryProfile(conn, ownsSwitch)) || !ownsSwitch()) {
           return
         }
 
@@ -845,15 +874,13 @@ export function useGatewayBoot({
       }
     })
 
-    const sourceProfile = normalizeProfileKey($activeGatewayProfile.get())
-
     const offEvent = gateway.onEvent(event => {
-      const connectionId = activeGatewayConnectionId()
+      const source = recordPrimaryRuntimeProducer(event)
 
       const scopedEvent = {
         ...event,
-        profile: sourceProfile,
-        ...(connectionId ? { connectionId } : {})
+        profile: source.profile,
+        connectionId: source.connectionId ?? undefined
       }
 
       recordSessionEventScope(scopedEvent)
@@ -903,12 +930,33 @@ export function useGatewayBoot({
         return
       }
 
+      if (payload.reason === 'auth-changed') {
+        const identity = payload.oauthSessionIdentity
+
+        if (!identity) { return }
+
+        if ($connection.get()?.oauthSessionIdentity === identity || (isActivePrimary() && primaryGatewayOAuthSessionIdentity() === identity)) {
+          beginSourceSwitchIntent()
+        }
+
+        retireOAuthSession(identity, payload.oauthConnectionIds, payload.oauthNextSessionIdentity)
+
+        return
+      }
+
       // 'saved' is a pure registry-refresh push (new connection or label
       // rename — #95393): no endpoint moved, so there is nothing to dispose,
       // redial, or forget. The switcher's own onChanged listener re-pulls the
       // registry snapshot for it.
       if (payload.reason === 'saved') {
         return
+      }
+
+      // A profile override can use a registry source as its physical primary
+      // even when that source is not registry.primary. Retiring secondaries
+      // alone does not fence an already pending primary/member lookup.
+      if ($connection.get()?.connectionId === payload.connectionId) {
+        beginSourceSwitchIntent()
       }
 
       disposeSecondariesForConnection(payload.connectionId, { redial: payload.reason === 'updated' })
@@ -1069,7 +1117,7 @@ export function useGatewayBoot({
           'Timed out minting the gateway WebSocket URL'
         )
 
-        await gateway.connect(wsUrl)
+        await connectPrimaryGateway(gateway, conn, wsUrl)
 
         if (cancelled) {
           return
@@ -1080,7 +1128,7 @@ export function useGatewayBoot({
         // (cwd seed, config, sessions) are independent REST calls — running
         // them serially added their sum to time-to-populated-sidebar when only
         // the max is needed.
-        await adoptPrimaryProfile()
+        await adoptPrimaryProfile(conn)
 
         setDesktopBootStep({
           phase: 'renderer.config',

@@ -128,6 +128,8 @@ export class JsonRpcGatewayClient {
    * silently believe nothing was missed.
    */
   private replayEpoch: string | null = null
+  private replayAuthority: string | null | undefined
+  private replayGeneration = 0
   private readonly eventHandlers = new Map<string, Set<(event: GatewayEvent) => void>>()
   private readonly stateHandlers = new Set<(state: ConnectionState) => void>()
   private readonly options: Required<Omit<GatewayClientOptions, 'socketFactory'>> &
@@ -153,7 +155,7 @@ export class JsonRpcGatewayClient {
     return this.state
   }
 
-  async connect(wsUrl: string): Promise<void> {
+  async connect(wsUrl: string, replayAuthority?: string | null): Promise<void> {
     // Refuse garbage; WebSocket coerces non-strings into
     // `ws://<origin>/[object%20Object]` (#68250 stale-emit boot loop).
     const invalidUrl = () => {
@@ -176,6 +178,14 @@ export class JsonRpcGatewayClient {
 
     if (url.protocol !== 'ws:' && url.protocol !== 'wss:') {
       throw invalidUrl()
+    }
+
+    // Account ownership is separate from a rotating ticket or backend epoch.
+    // Omitted authority preserves compatibility for callers without accounts.
+    if (replayAuthority !== undefined && replayAuthority !== this.replayAuthority) {
+      this.replayAuthority = replayAuthority
+      this.resetReplayState()
+      this.close()
     }
 
     if (this.socket?.readyState === WebSocket.OPEN || this.state === 'connecting') {
@@ -282,7 +292,13 @@ export class JsonRpcGatewayClient {
     })
   }
 
-  close(): void {
+  close(retiredReplayAuthority?: string): void {
+    if (retiredReplayAuthority !== undefined) {
+      if (retiredReplayAuthority !== this.replayAuthority) { return }
+
+      this.resetReplayState()
+    }
+
     const socket = this.socket
 
     if (!socket) {
@@ -519,6 +535,14 @@ export class JsonRpcGatewayClient {
     return Object.fromEntries(this.lastSeenSeq)
   }
 
+  private resetReplayState(): void {
+    this.replayGeneration += 1
+    this.lastSeenSeq.clear()
+    this.replayEpoch = null
+    this.replayHold = null
+    this.replayInFlight = false
+  }
+
   /**
    * After a reconnect, ask the gateway to replay every event newer than our
    * per-session watermarks. Replayed frames go through the SAME dispatchEvent
@@ -532,6 +556,7 @@ export class JsonRpcGatewayClient {
     }
 
     this.replayInFlight = true
+    const generation = this.replayGeneration
     // Park live frames for the sessions we're about to replay so a frame
     // racing the replay response can't dispatch ahead of (or duplicate) the
     // gap events. Sessions without watermarks are unaffected.
@@ -557,7 +582,11 @@ export class JsonRpcGatewayClient {
         )
       )
 
+      if (generation !== this.replayGeneration) { return }
+
       for (const result of results) {
+        if (generation !== this.replayGeneration) { return }
+
         if (result.status !== 'fulfilled' || !Array.isArray(result.value?.events)) {
           continue
         }
@@ -578,6 +607,8 @@ export class JsonRpcGatewayClient {
         }
 
         for (const event of result.value.events) {
+          if (generation !== this.replayGeneration) { return }
+
           if (!event?.type) {
             continue
           }
@@ -588,8 +619,11 @@ export class JsonRpcGatewayClient {
     } catch {
       // Replay is an optimization over lossy-reconnect; never surface errors.
     } finally {
-      this.flushReplayHold()
-      this.replayInFlight = false
+      if (generation === this.replayGeneration && this.replayHold === hold) {
+        this.flushReplayHold(generation)
+
+        if (generation === this.replayGeneration) { this.replayInFlight = false }
+      }
     }
   }
 
@@ -632,7 +666,7 @@ export class JsonRpcGatewayClient {
   }
 
   /** Release frames parked during a replay fetch, seq-gated against dupes. */
-  private flushReplayHold(): void {
+  private flushReplayHold(generation: number): void {
     const hold = this.replayHold
     this.replayHold = null
 
@@ -642,6 +676,8 @@ export class JsonRpcGatewayClient {
 
     for (const parked of hold.values()) {
       for (const event of parked) {
+        if (generation !== this.replayGeneration) { return }
+
         this.dispatchIfNewer(event)
       }
     }

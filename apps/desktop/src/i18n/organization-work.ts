@@ -1,5 +1,8 @@
 /** Copy for the canonical organization ledger surfaces, kept together across locales. */
 const copy = {
+  observationUnavailable: ['Organization observation is unavailable.', '組織の状態を参照できません。', '无法查看组织状态。', '無法檢視組織狀態。'],
+  observationUnconfigured: ['Organization execution is not initialized.', '組織の実行環境は初期化されていません。', '组织执行环境尚未初始化。', '組織執行環境尚未初始化。'],
+  observationUnsupported: ['Organization observation is unsupported by this backend.', 'このバックエンドは組織の状態参照に対応していません。', '此后端不支持查看组织状态。', '此後端不支援檢視組織狀態。'],
   dispatchDetails: ['Pause and resume details', '一時停止と再開の詳細', '暂停和恢复详情', '暫停與恢復詳情'],
   priorityDetails: ['Priority details', '優先度の詳細', '优先级详情', '優先順序詳情'],
   dispatchConfirmed: ["Dispatch change confirmed", "実行制御の変更を確認しました", "调度变更已确认", "排程變更已確認"],

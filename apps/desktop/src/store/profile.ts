@@ -29,6 +29,7 @@ import { $poolLimits } from '@/store/pool-limits'
 import { notifyRemoteOverrideAuthFailure } from '@/store/profile-remote-override'
 import { clearComposerSelectionOwner, setComposerSelectionOwner, setConnection } from '@/store/session'
 import type { SessionOwnerRoute } from '@/store/session-request-router'
+import { beginSourceSwitchIntent, type SourceSwitchIntent } from '@/store/source-switch-intent'
 import { resetStarmapGraph } from '@/store/starmap'
 import type { ProfileInfo } from '@/types/eidolon'
 
@@ -232,6 +233,7 @@ export async function switchProfile(name: string): Promise<void> {
     return
   }
 
+  beginSourceSwitchIntent()
   setActiveProfile(name)
   await window.hermesDesktop.profile.set(name)
 }
@@ -489,7 +491,7 @@ async function resolveConnectionForProfile(profile: string): Promise<HermesConne
 // their sockets — so their sessions keep streaming concurrently. A null/empty
 // target means "no explicit profile" → keep the current gateway (a plain new
 // chat stays put; single-profile users never leave the primary).
-export async function ensureGatewayProfile(profile: string | null | undefined): Promise<void> {
+export async function ensureGatewayProfile(profile: string | null | undefined, intent?: SourceSwitchIntent): Promise<void> {
   if (profile == null || !String(profile).trim()) {
     // "No explicit profile" = use the current gateway. But if an explicit swap
     // (e.g. the user just picked a profile in the switcher) is still in flight,
@@ -501,6 +503,8 @@ export async function ensureGatewayProfile(profile: string | null | undefined): 
 
     return
   }
+
+  if (intent === undefined) { beginSourceSwitchIntent() }
 
   const target = normalizeProfileKey(profile)
 
@@ -634,7 +638,11 @@ export async function openGatewayAgent(connectionId: string, profile: string): P
 // another one steps aside without a destructive wipe. Not consulted on the
 // null-connectionId profile fallthrough.
 export interface EnsureGatewayAgentOptions {
+  /** Continue the initiating connection pick rather than claiming a new intent. */
+  intent?: SourceSwitchIntent
   beforeActivate?: () => boolean
+  /** Records publication by this activation, independently of foreground intent. */
+  onPublished?: () => void
   /** Revokes this caller's right to activate or publish after async work. */
   signal?: AbortSignal
 }
@@ -670,13 +678,13 @@ function releaseWhenAborted(promise: Promise<void>, signal?: AbortSignal): Promi
 export async function ensureGatewayAgent(
   connectionId: null | string,
   profile: string,
-  { beforeActivate, signal }: EnsureGatewayAgentOptions = {}
+  { beforeActivate, onPublished, signal, intent = beginSourceSwitchIntent() }: EnsureGatewayAgentOptions = {}
 ): Promise<void> {
   const target = normalizeProfileKey(profile)
   const connection = (connectionId ?? '').trim() || null
 
   if (!connection) {
-    return ensureGatewayProfile(target)
+    return ensureGatewayProfile(target, intent)
   }
 
   // Serialize against any in-flight profile/agent switch (shared mutex). A
@@ -705,7 +713,7 @@ export async function ensureGatewayAgent(
     // Descriptor resolves concurrently with the dial, same as the profile
     // path, so no await sits between the activation and the publication.
     const activation = signal
-      ? ensureGatewayForAgent(connection, target, { signal })
+      ? ensureGatewayForAgent(connection, target, { signal, ...(onPublished ? { onPublished } : {}) })
       : ensureGatewayForAgent(connection, target)
 
     const [descriptor, activated] = await Promise.all([resolveConnectionForAgent(connection, target), activation])
@@ -738,6 +746,7 @@ export async function ensureGatewayAgent(
       setComposerSelectionOwner(connection, target)
       $activeGatewayProfile.set(target)
     })
+    onPublished?.()
   })()
 
   // Cancellation releases the mutex immediately; activationWork remains
@@ -789,6 +798,7 @@ export const $profileScope = computed([$showAllProfiles, $activeGatewayProfile],
 // chats at it, and swap the single live gateway onto its backend (which moves
 // $activeGatewayProfile → name, so $profileScope follows).
 export function selectProfile(name: string): void {
+  beginSourceSwitchIntent()
   const target = normalizeProfileKey(name)
   // Switching profiles (or coming back from the all-profiles browse view) starts
   // fresh; re-tapping the profile you're already in leaves your session be.
@@ -877,6 +887,7 @@ function activateOnCurrentSource(target: string): Promise<void> {
 // reads the profile the user clicked "+" under, not whatever
 // $activeGatewayProfile holds once an in-flight profile swap settles (#79005).
 export function pinNewChatProfile(name: string): string {
+  beginSourceSwitchIntent()
   const target = normalizeProfileKey(name)
   $newChatProfile.set(target)
   $newChatRoute.set(null)
@@ -917,6 +928,7 @@ export function newSessionInAgent(route: AgentProfileRoute): void {
     throw new Error('Agent profile route is missing connectionId')
   }
 
+  beginSourceSwitchIntent()
   $newChatProfile.set(captured.profile)
   $newChatRoute.set(captured)
   $newChatConnectionId.set(captured.connectionId)
@@ -928,11 +940,12 @@ export function newSessionInAgent(route: AgentProfileRoute): void {
 }
 
 export function setShowAllProfiles(value: boolean): void {
+  beginSourceSwitchIntent()
   $showAllProfiles.set(value)
 }
 
 export function toggleShowAllProfiles(): void {
-  $showAllProfiles.set(!$showAllProfiles.get())
+  setShowAllProfiles(!$showAllProfiles.get())
 }
 
 // ── Hotkey-driven profile switching ────────────────────────────────────────

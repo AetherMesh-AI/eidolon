@@ -2,6 +2,7 @@ import { registryGatewayWsUrl } from './plugin-profile-routes'
 
 export interface RegistryGatewayWsConnection {
   authMode: string
+  oauthSessionIdentity?: string
   baseUrl: string
   wsUrl: string
   headers?: Record<string, string>
@@ -10,6 +11,7 @@ export interface RegistryGatewayWsConnection {
 }
 
 interface RegistryGatewayWsUrlDependencies {
+  assertAuthority?: (connection: RegistryGatewayWsConnection) => void
   ensureBackend: (connectionId: unknown, profile: unknown) => Promise<RegistryGatewayWsConnection>
   mintTicket: (baseUrl: string, headers?: Record<string, string>) => Promise<string>
   buildTicketUrl: (baseUrl: string, ticket: string) => string
@@ -26,12 +28,12 @@ type RemoteRequestCallback = (result: { requestHeaders?: Record<string, string> 
 export function createRemoteWsHeaderStore(limit = 100) {
   const headersByUrl = new Map<string, Record<string, string>>()
 
-  const remember = (wsUrl: string, headers: Record<string, string> = {}) => {
-    if (!wsUrl || Object.keys(headers).length === 0) {
+  const remember = (wsUrl: string, headers?: Record<string, string>) => {
+    if (!wsUrl || headers === undefined) {
       return
     }
 
-    headersByUrl.set(String(wsUrl), headers)
+    headersByUrl.set(String(wsUrl), { ...headers })
 
     while (headersByUrl.size > limit) {
       const oldest = headersByUrl.keys().next().value
@@ -58,7 +60,7 @@ export function createRemoteWsHeaderStore(limit = 100) {
     return headers
   }
 
-  return { headersFor, remember }
+  return { has: (requestUrl: string) => headersByUrl.has(String(requestUrl)), headersFor, remember }
 }
 
 export function applyRemoteRequestHeaders(
@@ -81,6 +83,7 @@ export function createRegistryGatewayWsUrlHandler(dependencies: RegistryGatewayW
   return async (payload: unknown): Promise<string> => {
     const { connectionId, profile } = payload && typeof payload === 'object' ? (payload as any) : ({} as any)
     const connection = await dependencies.ensureBackend(connectionId, profile)
+    dependencies.assertAuthority?.(connection)
     let wsUrl = connection.wsUrl
 
     if (connection.authMode === 'oauth') {
@@ -88,10 +91,29 @@ export function createRegistryGatewayWsUrlHandler(dependencies: RegistryGatewayW
       wsUrl = dependencies.buildTicketUrl(connection.baseUrl, ticket)
     }
 
+    dependencies.assertAuthority?.(connection)
     const finalWsUrl = registryGatewayWsUrl(connection, wsUrl)
 
     dependencies.rememberHeaders(finalWsUrl, connection.headers)
 
     return finalWsUrl
   }
+}
+
+// The primary path preserves its existing profile routing; registry routing is
+// applied separately by createRegistryGatewayWsUrlHandler.
+export async function refreshPrimaryGatewayWsUrl(
+  connection: RegistryGatewayWsConnection,
+  dependencies: Omit<RegistryGatewayWsUrlDependencies, 'ensureBackend'>
+) {
+  dependencies.assertAuthority?.(connection)
+
+  const wsUrl = connection.authMode === 'oauth'
+    ? dependencies.buildTicketUrl(connection.baseUrl, await dependencies.mintTicket(connection.baseUrl, connection.headers))
+    : connection.wsUrl
+
+  dependencies.assertAuthority?.(connection)
+  dependencies.rememberHeaders(wsUrl, connection.headers)
+
+  return wsUrl
 }

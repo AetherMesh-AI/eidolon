@@ -13,6 +13,7 @@ export interface BackendJsonTransportOptions extends BackendJsonOptions {
 }
 
 export interface BackendJsonTransports {
+  assertAuthority?: (descriptor: ResolvedConnectionDescriptor) => void
   ensureNativeAccessToken: (baseUrl: string) => Promise<null | string>
   fetchJson: (url: string, token: unknown, options: BackendJsonTransportOptions) => Promise<unknown>
   fetchJsonViaOauthSession: (url: string, options: BackendJsonTransportOptions) => Promise<unknown>
@@ -34,6 +35,8 @@ export async function requestBackendJson(
   options: BackendJsonOptions,
   transports: BackendJsonTransports
 ): Promise<unknown> {
+  const assertAuthority = () => transports.assertAuthority?.(descriptor)
+  assertAuthority()
   const { baseUrl, headers, token } = descriptor
   const requestOptions: BackendJsonTransportOptions = { ...options, headers }
   let send: (url: string) => Promise<unknown>
@@ -46,6 +49,8 @@ export async function requestBackendJson(
     // Resolve auth once so the fallback cannot change credentials or partition.
     const nativeAt = await transports.ensureNativeAccessToken(baseUrl).catch(() => null)
 
+    assertAuthority()
+
     if (nativeAt) {
       requestOptions.bearer = nativeAt
       send = url => transports.fetchJson(url, null, requestOptions)
@@ -56,8 +61,16 @@ export async function requestBackendJson(
     send = url => transports.fetchJson(url, token, requestOptions)
   }
 
+  const ownedSend = async (url: string) => {
+    assertAuthority()
+    const result = await send(url)
+    assertAuthority()
+
+    return result
+  }
+
   try {
-    return await send(`${baseUrl}${path}`)
+    return await ownedSend(`${baseUrl}${path}`)
   } catch (error) {
     const queryStart = path.indexOf('?')
     const pathname = queryStart < 0 ? path : path.slice(0, queryStart)
@@ -77,6 +90,19 @@ export async function requestBackendJson(
 
     // Keep the resolved origin/base path and exact query/body/auth. Do not
     // re-resolve a descriptor, normalize the query, or retry the fallback.
-    return send(`${baseUrl}${legacyPath}${queryStart < 0 ? '' : path.slice(queryStart)}`)
+    return ownedSend(`${baseUrl}${legacyPath}${queryStart < 0 ? '' : path.slice(queryStart)}`)
   }
+}
+
+/** Profile/session REST uses the same descriptor-owned transport as registry REST. */
+export async function requestProfileBackendJson(
+  profile: string | null,
+  path: string,
+  options: BackendJsonOptions,
+  resolveBackend: (profile: string | null) => Promise<ResolvedConnectionDescriptor>,
+  transports: BackendJsonTransports
+) {
+  const descriptor = await resolveBackend(profile)
+
+  return requestBackendJson(descriptor, path, options, transports)
 }

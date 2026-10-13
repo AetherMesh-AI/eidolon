@@ -68,6 +68,6 @@ Reuse current controls, themes and localization patterns. The milestone is compl
 
 ## Delivery sequence
 
-First implement standalone metadata/CAS and scoped RPC tests. Next add the authorized directory/cache, then persisted names and the scoped owner editor, then searchable selection with explicit route outcomes and native failure tests. Resolve non-starting observation before enabling selection. Keep these under one focused milestone with independent source review and final combined native verification. Do not declare the milestone complete after only adding labels or a metadata table.
+First implement standalone metadata/CAS and scoped RPC tests. Next add the authorized directory/cache, then persisted names and the scoped owner editor, then searchable selection with explicit route outcomes and native failure tests. The [scoped observation API](organization-observation.md) provides non-starting reads, but the active adapter still uses the legacy snapshot path. Resolve all selection-caused refreshes before enabling selection. Keep these under one focused milestone with independent source review and final combined native verification. Do not declare the milestone complete after only adding labels or a metadata table.
 
 Before implementation, independent review should settle the explicit-initialization contract and selector scope above. Cross-profile migration, account authentication, multiple organizations within one profile, invite/member permissions and active-session source switching remain separate work.

@@ -1,12 +1,14 @@
-import { organizationExecutiveMessageRu, organizationMemberMessagesRu } from './organization-member-messages'
-import { organizationHomeCountsRu } from './organization-home-counts'
-import { organizationSurfacesRu } from './organization-surfaces'
-import { organizationWorkspaceRu } from './organization-home'
 import { defineFieldCopy } from '@/app/settings/field-copy'
 
 import { defineLocale } from './define-locale'
 import { organizationConversationsRu } from './organization-conversations'
+import { organizationWorkspaceRu } from './organization-home'
+import { organizationHomeCountsRu } from './organization-home-counts'
+import { organizationExecutiveMessageRu, organizationMemberMessagesRu } from './organization-member-messages'
+import { organizationMetadataRu } from './organization-metadata'
+import { organizationOverviewRu } from './organization-overview'
 import { organizationOwnerChatRu } from './organization-owner-chat'
+import { organizationSurfacesRu } from './organization-surfaces'
 
 // RU_PLURAL: (count, one, few, many) — русские формы сущ. падежа
 // RU_NOUN: (count, one, few, many) — формы род. множественного
@@ -30,8 +32,14 @@ const RU_NOUN = (count: number | string, one: string, few: string, many: string)
 }
 
 export const ru = defineLocale({
+  organizationMetadata: organizationMetadataRu,
+  organizationWork: {
+    observationUnavailable: 'Просмотр состояния организации недоступен.',
+    observationUnconfigured: 'Выполнение задач организации не инициализировано.',
+    observationUnsupported: 'Этот сервер не поддерживает просмотр состояния организации.',
+  },
   organizationSurfaces: organizationSurfacesRu,
-  organizationHome: { ...organizationExecutiveMessageRu, memberMessages: organizationMemberMessagesRu, workspace: organizationWorkspaceRu, detail: organizationHomeCountsRu },
+  organizationHome: { ...organizationOverviewRu, ...organizationExecutiveMessageRu, memberMessages: organizationMemberMessagesRu, workspace: organizationWorkspaceRu, detail: organizationHomeCountsRu },
   organizationOwnerChat: organizationOwnerChatRu,
   organizationConversations: organizationConversationsRu,
   sessionImport: {

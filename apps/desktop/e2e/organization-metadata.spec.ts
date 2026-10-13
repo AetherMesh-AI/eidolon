@@ -10,6 +10,19 @@ import { acknowledgeExpectedErrorBanner, collectErrorBanners, expect, test } fro
 for (const locale of ['en', 'ar'] as const) {
   test(`saves organization and owner names explicitly and retains their identities across reload in ${locale}`, async () => {
     test.setTimeout(180_000)
+
+    const copy = locale === 'ar' ? {
+      edit: 'تعديل اسم المؤسسة والمالك', title: 'المؤسسة والمالك', organizationName: 'اسم المؤسسة',
+      ownerName: 'اسم العرض الخاص بك', save: 'حفظ الأسماء', cancel: 'إلغاء', refresh: 'تحديث الأسماء المحفوظة',
+      retry: 'التحقق من الحفظ الأصلي', storage: 'تعذّرت قراءة الأسماء المحفوظة. حدّثها للمحاولة مجدداً.',
+      uncertain: 'نتيجة الحفظ غير معروفة. تم الاحتفاظ بطلبك الأصلي لهذه المؤسسة، ولن يُرسل طلب جديد تلقائياً.'
+    } : {
+      edit: 'Edit organization and owner names', title: 'Organization and owner', organizationName: 'Organization name',
+      ownerName: 'Your display name', save: 'Save names', cancel: 'Cancel', refresh: 'Refresh saved names',
+      retry: 'Check original Save', storage: 'The saved names could not be read. Refresh to try again.',
+      uncertain: 'The Save result is unknown. Your original request is retained for this organization; no new request will be sent automatically.'
+    }
+
     const fixture = await setupMockBackend({ extraDisplayConfig: `  language: ${locale}` })
     const { app, page, sandbox, mock } = fixture
     const ledger = join(sandbox.hermesHome, 'organization', 'state.db')
@@ -101,21 +114,21 @@ print(json.dumps(dict(row) if row else None))
       })
       await page.reload()
       await waitForAppReady(fixture)
-      const trigger = page.getByRole('button', { name: 'Edit organization and owner names', exact: true })
+      const trigger = page.getByRole('button', { name: copy.edit, exact: true })
       await expect(trigger).toBeEnabled()
       expect(stored()).toBeNull()
       await trigger.click()
-      const dialog = page.getByRole('dialog', { name: 'Organization and owner' })
-      await dialog.getByLabel('Organization name', { exact: true }).fill('Cancelled draft')
-      await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+      const dialog = page.getByRole('dialog', { name: copy.title })
+      await dialog.getByLabel(copy.organizationName, { exact: true }).fill('Cancelled draft')
+      await dialog.getByRole('button', { name: copy.cancel, exact: true }).click()
       await expect(dialog).toHaveCount(0)
       await expect(trigger).toBeFocused()
       expect(stored()).toBeNull()
 
       await trigger.click()
-      await dialog.getByLabel('Organization name', { exact: true }).fill('Research studio')
-      await dialog.getByLabel('Your display name', { exact: true }).fill('Alex')
-      await dialog.getByRole('button', { name: 'Save names', exact: true }).click()
+      await dialog.getByLabel(copy.organizationName, { exact: true }).fill('Research studio')
+      await dialog.getByLabel(copy.ownerName, { exact: true }).fill('Alex')
+      await dialog.getByRole('button', { name: copy.save, exact: true }).click()
       await expect(dialog).toHaveCount(0)
       await expect(trigger).toBeFocused()
       await expect(trigger).toContainText('Alex')
@@ -132,9 +145,9 @@ print(json.dumps(dict(row) if row else None))
       expect(stored()).toEqual(first)
 
       await trigger.click()
-      await dialog.getByLabel('Organization name', { exact: true }).fill('Research studio revised')
-      await dialog.getByLabel('Your display name', { exact: true }).fill('Alex Rivera')
-      await dialog.getByRole('button', { name: 'Save names', exact: true }).click()
+      await dialog.getByLabel(copy.organizationName, { exact: true }).fill('Research studio revised')
+      await dialog.getByLabel(copy.ownerName, { exact: true }).fill('Alex Rivera')
+      await dialog.getByRole('button', { name: copy.save, exact: true }).click()
       await expect(dialog).toHaveCount(0)
       expect(stored()).toMatchObject({
         organization_id: first.organization_id,
@@ -150,8 +163,8 @@ print(json.dumps(dict(row) if row else None))
       await page.reload()
       await waitForAppReady(fixture)
       await trigger.click()
-      await dialog.getByLabel('Organization name', { exact: true }).fill('Retained original Save')
-      await dialog.getByRole('button', { name: 'Save names', exact: true }).click()
+      await dialog.getByLabel(copy.organizationName, { exact: true }).fill('Retained original Save')
+      await dialog.getByRole('button', { name: copy.save, exact: true }).click()
       await expect.poll(() => stored()?.revision).toBe(3)
       await page.reload()
       await waitForAppReady(fixture)
@@ -160,13 +173,13 @@ print(json.dumps(dict(row) if row else None))
       await trigger.click()
 
       const uncertainMessage =
-        'The Save result is unknown. Your original request is retained for this organization; no new request will be sent automatically.'
+        copy.uncertain
 
       await expect(dialog.getByRole('alert')).toHaveText(uncertainMessage)
-      await expect(dialog.getByLabel('Organization name', { exact: true })).toHaveValue('Retained original Save')
-      await expect(dialog.getByLabel('Organization name', { exact: true })).toBeDisabled()
+      await expect(dialog.getByLabel(copy.organizationName, { exact: true })).toHaveValue('Retained original Save')
+      await expect(dialog.getByLabel(copy.organizationName, { exact: true })).toBeDisabled()
       rejectRetry = true
-      await dialog.getByRole('button', { name: 'Check original Save', exact: true }).click()
+      await dialog.getByRole('button', { name: copy.retry, exact: true }).click()
       await expect(dialog).toHaveCount(0)
       expect(savedRequests).toHaveLength(4)
       expect(stored()?.revision).toBe(3)
@@ -174,7 +187,7 @@ print(json.dumps(dict(row) if row else None))
       await waitForAppReady(fixture)
       await trigger.click()
       await expect(dialog.getByRole('alert')).toHaveText(uncertainMessage)
-      await dialog.getByRole('button', { name: 'Check original Save', exact: true }).click()
+      await dialog.getByRole('button', { name: copy.retry, exact: true }).click()
       await expect(dialog).toHaveCount(0)
       expect(savedRequests).toHaveLength(5)
       expect(savedRequests[4]).toEqual(savedRequests[2])
@@ -217,32 +230,32 @@ with sqlite3.connect(sys.argv[1]) as conn:
       }
 
       await trigger.click()
-      await dialog.getByLabel('Organization name', { exact: true }).fill('Original A draft')
+      await dialog.getByLabel(copy.organizationName, { exact: true }).fill('Original A draft')
       restoreMetadata(replacement)
-      await dialog.getByRole('button', { name: 'Refresh saved names', exact: true }).click()
+      await dialog.getByRole('button', { name: copy.refresh, exact: true }).click()
       await expect(dialog).toHaveCount(0)
       await trigger.click()
-      await expect(dialog.getByLabel('Organization name', { exact: true })).toHaveValue('Replacement organization')
-      await dialog.getByLabel('Organization name', { exact: true }).fill('Replacement B draft')
+      await expect(dialog.getByLabel(copy.organizationName, { exact: true })).toHaveValue('Replacement organization')
+      await dialog.getByLabel(copy.organizationName, { exact: true }).fill('Replacement B draft')
       restoreMetadata(originalRecord)
-      await dialog.getByRole('button', { name: 'Refresh saved names', exact: true }).click()
+      await dialog.getByRole('button', { name: copy.refresh, exact: true }).click()
       await expect(dialog).toHaveCount(0)
       await trigger.click()
-      await expect(dialog.getByLabel('Organization name', { exact: true })).toHaveValue('Original A draft')
+      await expect(dialog.getByLabel(copy.organizationName, { exact: true })).toHaveValue('Original A draft')
       restoreMetadata(null)
-      await dialog.getByRole('button', { name: 'Refresh saved names', exact: true }).click()
+      await dialog.getByRole('button', { name: copy.refresh, exact: true }).click()
       await expect(dialog).toHaveCount(0)
       await trigger.click()
-      await expect(dialog.getByLabel('Organization name', { exact: true })).toHaveValue('')
+      await expect(dialog.getByLabel(copy.organizationName, { exact: true })).toHaveValue('')
       // Removing the identity while its durable receipts remain is deliberately
       // inconsistent storage. The backend must reject it, never reinitialize it.
-      const missingIdentityError = 'The saved names could not be read. Refresh to try again.'
+      const missingIdentityError = copy.storage
       await expect(dialog.getByRole('alert')).toHaveText(missingIdentityError)
-      await expect(dialog.getByRole('button', { name: 'Save names', exact: true })).toBeDisabled()
-      await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+      await expect(dialog.getByRole('button', { name: copy.save, exact: true })).toBeDisabled()
+      await dialog.getByRole('button', { name: copy.cancel, exact: true }).click()
       restoreMetadata(originalRecord)
       await trigger.click()
-      await dialog.getByRole('button', { name: 'Refresh saved names', exact: true }).click()
+      await dialog.getByRole('button', { name: copy.refresh, exact: true }).click()
       await expect(dialog).toHaveCount(0)
       expect(savedRequests).toHaveLength(5)
       await acknowledgeExpectedErrorBanner(page, missingIdentityError)
@@ -310,7 +323,7 @@ with sqlite3.connect(sys.argv[1]) as conn:
           await expect(dialog).toBeVisible()
           await verifyKeyboardFocus(
             page,
-            dialog.getByLabel('Organization name', { exact: true }),
+            dialog.getByLabel(copy.organizationName, { exact: true }),
             `owner-editor-${locale}-${mode}-${width}-${zoom}`
           )
           const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
@@ -321,7 +334,9 @@ with sqlite3.connect(sys.argv[1]) as conn:
             height: innerHeight,
             scale: devicePixelRatio
           }))
+
           expect(viewport).toEqual({ width: width / zoom, height: height / zoom, scale: zoom })
+
           const png = Buffer.from(
             await app.evaluate(async ({ BrowserWindow }) =>
               (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')
@@ -344,15 +359,62 @@ with sqlite3.connect(sys.argv[1]) as conn:
             sha256: createHash('sha256').update(png).digest('hex'),
             captureMethod: 'electron.capturePage'
           })
-          await page.keyboard.press('Escape')
+
+          if (zoom === 2) {
+            const name = `Native ${mode} name at 200%`
+            await dialog.getByLabel(copy.organizationName, { exact: true }).fill(name)
+            const save = dialog.getByRole('button', { name: copy.save, exact: true })
+            await save.scrollIntoViewIfNeeded()
+            await verifyKeyboardFocus(page, save, `owner-save-${locale}-${mode}-${zoom}`)
+            await expect(save).toBeInViewport({ ratio: 1 })
+            await page.keyboard.press('Enter')
+            await expect.poll(() => stored()?.display_name).toBe(name)
+          } else {
+            await page.keyboard.press('Escape')
+          }
+
           await expect(dialog).toHaveCount(0)
           await expect(trigger).toBeFocused()
+
+          // Inspect the real runtime directory without enabling destination activation.
+          const directoryCopy = locale === 'ar'
+            ? { title: 'المؤسسات', refresh: 'تحديث المؤسسة الحالية', search: 'البحث عن المؤسسات', choose: 'استخدام المؤسسة المحددة' }
+            : { title: 'Organizations', refresh: 'Refresh current organization', search: 'Search organizations', choose: 'Use selected organization' }
+
+          const directoryTrigger = page.getByRole('button', { name: directoryCopy.title, exact: true })
+          const beforeInspection = stored()
+          const beforeOpenReads = observedMethods.filter(method => method === 'organization.descriptor').length
+          await directoryTrigger.click()
+          const directoryDialog = page.getByRole('dialog', { name: directoryCopy.title, exact: true })
+          await expect(directoryDialog).toBeVisible()
+          await expect(directoryDialog.getByRole('button', { name: directoryCopy.choose, exact: true })).toBeDisabled()
+          expect(observedMethods.filter(method => method === 'organization.descriptor')).toHaveLength(beforeOpenReads)
+          await directoryDialog.getByRole('button', { name: directoryCopy.refresh, exact: true }).click()
+          await expect(directoryDialog.getByRole('option')).toContainText(beforeInspection!.display_name)
+          const afterRefreshReads = observedMethods.filter(method => method === 'organization.descriptor').length
+          await directoryDialog.getByRole('textbox', { name: directoryCopy.search, exact: true }).fill(beforeInspection!.display_name)
+          const list = directoryDialog.getByRole('listbox')
+          await list.scrollIntoViewIfNeeded()
+          await verifyKeyboardFocus(page, list, `directory-${locale}-${mode}-${width}-${zoom}`)
+          await page.keyboard.press('ArrowDown')
+          await expect(directoryDialog.getByRole('option')).toHaveAttribute('aria-selected', 'true')
+          await page.keyboard.press('Enter')
+          expect(observedMethods.filter(method => method === 'organization.descriptor')).toHaveLength(afterRefreshReads)
+          expect(stored()).toEqual(beforeInspection)
+          const directoryWindow = await app.browserWindow(page)
+          const directoryImage = Buffer.from(await directoryWindow.evaluate(async window => (await window.webContents.capturePage()).toPNG().toString('base64')), 'base64')
+          const directoryName = `organization-directory-${locale}-${mode}-${width}-${height}-${zoom}`
+          await test.info().attach(directoryName, { body: directoryImage, contentType: 'image/png' })
+          captures.push({ name: directoryName, locale, mode, width, height, zoom, sha256: createHash('sha256').update(directoryImage).digest('hex'), captureMethod: 'electron.capturePage', activationEnabled: false } as typeof captures[number])
+          await page.keyboard.press('Escape')
+          await expect(directoryDialog).toHaveCount(0)
+          await expect(directoryTrigger).toBeFocused()
         }
       }
 
       expect(await collectErrorBanners(page)).toEqual([])
       expect(mock.receivedPrompts).toHaveLength(0)
-      expect(observedMethods.filter(method => method === 'organization.saveMetadata')).toHaveLength(5)
+      expect(observedMethods.filter(method => method === 'organization.saveMetadata')).toHaveLength(7)
       expect(observedMethods).not.toContain('session.create')
       expect(observedMethods).not.toContain('chat.send')
       expect(

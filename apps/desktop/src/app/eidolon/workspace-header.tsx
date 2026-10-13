@@ -15,6 +15,7 @@ import { ConnectionSwitcher } from '../chat/sidebar/connection-switcher'
 import { OrganizationWorkIndicator } from '../contrib/organization-shell'
 import { navigateToWorkspacePage } from '../routes'
 
+import { OrganizationDirectoryControl } from './organization-directory-control'
 import type { MetadataDescriptor } from './organization-metadata-client'
 import { OrganizationOwnerEditor } from './organization-owner-editor'
 import { createOrganizationScopeReader, useRuntimeOrganization } from './runtime-provider'
@@ -63,6 +64,7 @@ export function WorkspaceHeader() {
       {identity.view.descriptor && identity.view.descriptor.state !== 'unsupported' && <span className="eid-workspace-organization-name" title={saved?.displayName}>{saved?.displayName ?? t.organizationMetadata.unnamed}</span>}
       <Button aria-label={t.organizationMetadata.edit} disabled={!canEdit} onClick={() => { if (readScope().connected && readScope().key === identity.scope.key && !$pendingConnectionId.get()) { setEditingScope(editorScope) } }} ref={ownerTrigger} size="micro" title={t.organizationMetadata.edit} variant="ghost"><Codicon name="account" /><span>{saved?.owner.displayName ?? t.organizationMetadata.owner}</span></Button>
       <Button aria-label={copy.profile(profile)} onClick={() => navigateToWorkspacePage(navigate, '/profiles')} size="micro" variant="ghost"><Codicon name="organization" /><span>{profile}</span></Button>
+      <OrganizationDirectoryControl />
       {/* The switcher owns registry initialization and change subscriptions, even with one source. */}
       <ConnectionSwitcher compact onConnect={() => navigateToWorkspacePage(navigate, '/settings?tab=connections')} />
     </div>
