@@ -72,7 +72,9 @@
 }
 .eid-settings-controls .settings-content > div {
   padding-inline: clamp(18px, 2.5vw, 30px);
+  padding-top: 7px;
   padding-bottom: 24px;
+  scroll-padding: 7px;
 }
 .eid-settings-controls .settings-row {
   margin-block: 4px;
@@ -137,7 +139,8 @@
 }
 
 /* Overview cards retain the real Model and Notifications save owners. */
-.eid-settings-overview-content { flex: 1; min-height: 0; overflow: auto; padding: 7px; margin: -7px; }
+.eid-settings-overview-content { flex: 1; min-height: 0; overflow: auto; padding: 7px; margin: -7px; scroll-padding: 7px; }
+.eid-settings-page :is(button, a, input, textarea, select, summary) { scroll-margin: 7px; }
 .eid-settings-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .eid-settings-card { min-width: 0; border: 1px solid var(--ui-stroke-tertiary); border-radius: 10px; background: var(--ui-bg-secondary); padding: 16px; }
 .eid-settings-card > header { display: flex; align-items: flex-start; gap: 12px; }
@@ -206,21 +209,16 @@
 .eid-settings-cards:not(.eid-settings-model-only) .eid-settings-card-body .settings-content > div { padding-block: 3px; }
 .eid-settings-cards:not(.eid-settings-model-only) :is(.eid-settings-model-advanced, .eid-settings-model-parameters, .eid-settings-notification-sound) > summary { padding-block: 6px; }
 
-/* At high zoom the headings can exhaust a fixed-height endpoint editor.
-   Keep one page scroller so every draft control and its focus ring is reachable. */
+/* At high zoom the heading/navigation can exhaust every fixed-height editor.
+   Keep one page scroller so controls and focus rings remain reachable. */
 @media (max-height: 600px) {
-  /* The overview heading and navigation must not consume the entire focus area. */
-  .eid-settings-page:has(.eid-settings-overview-content) { overflow-y: auto; scroll-padding: 7px; }
-  .eid-settings-page:has(.eid-settings-overview-content) .eid-settings-layout { flex: none; height: auto; overflow: visible; grid-template-rows: auto; }
-  .eid-settings-page:has(.eid-settings-overview-content) .eid-settings-main { overflow: visible; }
-  .eid-settings-page:has(.eid-settings-overview-content) .eid-settings-overview-content { flex: none; overflow: visible; }
-  .eid-settings-page:has(.eid-custom-endpoints) { overflow-y: auto; scroll-padding: 7px; }
-  .eid-settings-page:has(.eid-custom-endpoints) .eid-settings-layout { flex: none; height: auto; overflow: visible; grid-template-rows: auto; }
-  .eid-settings-page:has(.eid-custom-endpoints) .eid-settings-main { overflow: visible; }
-  .eid-settings-page:has(.eid-custom-endpoints) .eid-settings-controls { flex: none; overflow: visible; }
-  .eid-settings-page:has(.eid-custom-endpoints) .settings-content,
-  .eid-settings-page:has(.eid-custom-endpoints) .settings-content > div { height: auto; overflow: visible; }
-  .eid-custom-endpoints :is(button, input, textarea, select) { scroll-margin: 7px; }
+  .eid-settings-page { overflow-y: auto; scroll-padding: 7px; }
+  .eid-settings-page .eid-settings-layout { flex: none; height: auto; overflow: visible; grid-template-rows: auto; }
+  .eid-settings-page .eid-settings-main { overflow: visible; }
+  .eid-settings-page :is(.eid-settings-overview-content, .eid-settings-controls) { flex: none; overflow: visible; }
+  .eid-settings-page .settings-content,
+  .eid-settings-page .settings-content > div { height: auto; overflow: visible; }
+  .eid-settings-page :is(button, input, textarea, select, summary) { scroll-margin: 7px; }
 }
 
 /* A decorative hero and saved summaries give the overview substance without new write owners. */

@@ -80,8 +80,8 @@
 .eid-activity-filters > .eid-filter { flex: 1 1 170px; min-width: 0; max-width: 100%; }
 .eid-activity-filters :is(input, select) { width: 100%; min-width: 0; }
 .eidolon .eid-row.eid-activity-row { text-align: start; }
-.eid-activity-row > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.eid-activity-row > span > :is(strong, small) { display: block; }
+.eid-activity-copy { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.eid-activity-copy > :is(strong, small) { display: block; }
 .eid-activity-row time { flex-shrink: 0; }
 .eid-filter input, .eid-filter select { color: var(--text-primary); background: var(--eidolon-surface-1); border: 1px solid var(--eidolon-border); border-radius: 6px; padding: 8px 12px; }
 .eid-list { padding: 0; list-style: none; }

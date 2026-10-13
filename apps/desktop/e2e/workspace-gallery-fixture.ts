@@ -20,22 +20,22 @@ export const galleryLocales = [
 ] as const
 
 export async function setupGallery(locale: string, seedHistory = false) {
-  const fixture = await setupMockBackend({ extraDisplayConfig: `  language: ${locale}` })
-  try {
-    const { page, mock } = fixture
-    await waitForAppReady(fixture)
-    let sessionId: string | undefined
-  
-    if (seedHistory) {
-      const builder = await RealSessionBuilder.start(fixture.sandbox.hermesHome)
+  let sessionId: string | undefined
+  const fixture = await setupMockBackend({
+    extraDisplayConfig: `  language: ${locale}`,
+    beforeLaunch: seedHistory ? async (sandbox, mock) => {
+      const builder = await RealSessionBuilder.start(sandbox.hermesHome)
       try {
         sessionId = (await builder.createSession({ title: 'Synthetic gallery history', turns: ['Synthetic history for UI review. No external work is requested.'] })).sessionId
       } finally {
         await builder.close()
       }
       expect(mock.receivedPrompts).toHaveLength(1)
-    }
-  
+    } : undefined
+  })
+  try {
+    const { page } = fixture
+    await waitForAppReady(fixture)
     const methods: string[] = []
     const state = { snapshot: structuredClone(snapshot) }
     state.snapshot.activity[1].text = 'سجل تجريبي للمراجعة · Synthetic record'
@@ -89,16 +89,24 @@ export async function resizeGallery(fixture: GalleryFixture, width: number, heig
 export async function setGalleryAppearance(fixture: GalleryFixture, mode: 'dark' | 'light', label: string) {
   await resizeGallery(fixture, 1536, 961)
   await fixture.page.evaluate(() => { location.hash = '/settings?tab=config:appearance' })
-  await fixture.page.getByRole('button').filter({ has: fixture.page.getByText('Eidolon', { exact: true }) }).click()
+  // Eidolon intentionally stays dark in both appearance preferences. Use the
+  // retained AetherMesh light palette to exercise actual light surfaces.
+  const theme = mode === 'dark' ? { label: 'Eidolon', id: 'eidolon' } : { label: 'AetherMesh', id: 'nous' }
+  await fixture.page.getByRole('button').filter({ has: fixture.page.getByText(theme.label, { exact: true }) }).click()
   await fixture.page.getByRole('button', { name: label, exact: true }).click()
-  await expect(fixture.page.locator('html')).toHaveAttribute('data-hermes-theme', 'eidolon')
+  await expect(fixture.page.locator('html')).toHaveAttribute('data-hermes-theme', theme.id)
   await expect.poll(() => fixture.page.locator('html').evaluate(element => element.classList.contains('dark'))).toBe(mode === 'dark')
 }
 
 export async function verifyGalleryControls(fixture: GalleryFixture, scope: Locator, label: string) {
   const controls: Locator[] = []
   for (const target of await scope.locator('button, a[href], input:not([type="hidden"]), select, textarea, summary').all()) {
-    if (await target.isVisible() && await target.isEnabled() && await target.getAttribute('tabindex') !== '-1') { controls.push(target) }
+    if (await target.isVisible() && await target.isEnabled() && await target.getAttribute('tabindex') !== '-1') {
+      // Credential focus expands its card and changes sibling positions.
+      const placeholder = await target.getAttribute('placeholder')
+      const stable = placeholder ? scope.getByPlaceholder(placeholder, { exact: true }) : target
+      controls.push(await stable.count() === 1 ? stable : target)
+    }
   }
   // First and last controls exercise both ends of each real page's scroll owner.
   for (const index of [...new Set([0, controls.length - 1])].filter(index => index >= 0 && index < controls.length)) {
@@ -172,9 +180,7 @@ export async function captureGallery(fixture: GalleryFixture, name: string, scop
     synthetic: true, sha256: createHash('sha256').update(bytes).digest('hex') })
 }
 
-export function writeGalleryEvidence(fixture: GalleryFixture, group: string) {
-  expect(fixture.mock.receivedPrompts).toHaveLength(fixture.seedProviderCalls)
-  expect(fixture.methods.every(method => ['organization.descriptor', 'organization.snapshot', 'organization.outcomes', 'organization.attention'].includes(method))).toBe(true)
+export function persistGalleryEvidence(fixture: GalleryFixture, group: string) {
   writeFileSync(test.info().outputPath(`workspace-${group}-gallery-evidence.json`), JSON.stringify({
     sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
     sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
@@ -182,5 +188,11 @@ export function writeGalleryEvidence(fixture: GalleryFixture, group: string) {
     seedProviderCalls: fixture.seedProviderCalls, galleryProviderCalls: fixture.mock.receivedPrompts.length - fixture.seedProviderCalls,
     organizationMethods: [...new Set(fixture.methods)], captures: fixture.captures, focusChecks: fixture.focusChecks, thumbChecks: fixture.thumbChecks, failures: fixture.failures
   }, null, 2))
+}
+
+export function writeGalleryEvidence(fixture: GalleryFixture, group: string) {
+  persistGalleryEvidence(fixture, group)
+  expect(fixture.mock.receivedPrompts).toHaveLength(fixture.seedProviderCalls)
+  expect(fixture.methods.every(method => ['organization.descriptor', 'organization.snapshot', 'organization.outcomes', 'organization.attention'].includes(method))).toBe(true)
   expect(fixture.failures, 'Every destination must pass its original assertions').toEqual([])
 }

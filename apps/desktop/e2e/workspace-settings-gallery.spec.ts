@@ -1,9 +1,12 @@
 import { expect, test } from './test'
-import { captureGallery, checkGalleryDestination, type GalleryFixture, galleryLocales, resizeGallery, setGalleryAppearance, setupGallery, verifyGalleryControls, verifyNotificationStates, writeGalleryEvidence } from './workspace-gallery-fixture'
+import { captureGallery, checkGalleryDestination, type GalleryFixture, galleryLocales, persistGalleryEvidence, resizeGallery, setGalleryAppearance, setupGallery, verifyGalleryControls, verifyNotificationStates, writeGalleryEvidence } from './workspace-gallery-fixture'
 
 let fixture: GalleryFixture | undefined
 test.setTimeout(300_000)
-test.afterEach(async () => { await fixture?.cleanup(); fixture = undefined })
+test.afterEach(async () => {
+  try { if (fixture) { persistGalleryEvidence(fixture, 'settings') } }
+  finally { await fixture?.cleanup(); fixture = undefined }
+})
 
 const destinations = [
   'config:model', 'config:chat', 'config:appearance', 'config:workspace', 'config:safety', 'config:browser',

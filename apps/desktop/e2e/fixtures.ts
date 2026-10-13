@@ -343,6 +343,8 @@ export interface MockBackendOptions {
   extraConfig?: string
   /** Override the mock model's context window for compression scenarios. */
   modelContextLength?: number
+  /** Populate durable synthetic records before desktop/backend caches first load. */
+  beforeLaunch?: (sandbox: Sandbox, mock: Awaited<ReturnType<typeof startMockServer>>) => Promise<void>
 }
 
 /**
@@ -370,6 +372,14 @@ export async function setupMockBackend(options: MockBackendOptions = {}): Promis
     options.modelContextLength,
   )
   writeEnvFile(sandbox.hermesHome)
+
+  try {
+    await options.beforeLaunch?.(sandbox, mock)
+  } catch (error) {
+    await mock.close()
+    sandbox.cleanup()
+    throw error
+  }
 
   // 3. Build env + launch
   const env = buildAppEnv(sandbox)

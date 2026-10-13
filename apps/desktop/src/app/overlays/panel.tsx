@@ -136,7 +136,7 @@ export function PanelList({
           value={searchValue ?? ''}
         />
       ) : null}
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">{children}</div>
+      <div className="eid-detail-scroll flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">{children}</div>
     </div>
   )
 }

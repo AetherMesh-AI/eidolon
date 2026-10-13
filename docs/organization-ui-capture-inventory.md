@@ -42,6 +42,18 @@ control without altering any outline assertion. Repairs add scroll padding to
 the demonstrated clipping containers. Independent destinations continue collecting
 evidence after a failed assertion, and the case still fails if any assertion failed.
 
+The `fccba238` expansion retained additional dark-mode evidence but still failed.
+Traces confirmed clipped Profiles list controls and the same short-height failure
+across Settings editors, plus normal-height About/provider-key edge clipping.
+The next repair extends the existing page scroller to all Settings sections below
+600px and adds focus clearance to the demonstrated list/editor boundaries.
+Pixel inspection also caught an Activity avatar stretch introduced by the new
+text-column selector; that selector is narrowed and native square-avatar geometry
+is asserted. Fixture corrections use stable expanding-credential locators, seed
+durable history before initial backend reads, and select AetherMesh for actual
+light surfaces because Eidolon's two appearance preferences intentionally remain
+dark. No complete gallery pass is claimed for either failed candidate.
+
 “Captured” means retained native evidence exists, not final pixel approval.
 Only Home, Messages, Objective Detail and Settings have supplied image references.
 Other destinations require consistent shared design, not an invented reference.
@@ -84,7 +96,8 @@ Real voice, per-agent VMs and live model reliability remain outside this UI scop
 
 ## Authorized follow-on: budget-aware Fixed/Auto routing
 
-Queued after the UI acceptance milestone; do not interrupt the current fixes or
+Explicitly confirmed by the user and queued after the UI acceptance milestone;
+do not interrupt the current fixes or
 gallery delivery. No implementation is included in this UI candidate.
 
 - Extend durable objective admission accounting in `organization_budget.py` and
@@ -98,6 +111,15 @@ gallery delivery. No implementation is included in this UI candidate.
   not become a fictitious refund or a measured zero.
 - Show cost/quota evidence and distinguish configured ceilings, measured usage
   and unknown subscription allowance. Do not invent current subscription quota.
+- Give managers remaining allowance, in-flight reservations, reset/window time,
+  user priorities and completion/review reserve. Proactively reduce concurrency,
+  defer low-priority work and choose cheaper capable allowed models as headroom
+  shrinks, while hard admission guards remain the backstop.
+- Accept manually entered subscription percentages with timestamp, uncertainty
+  and a conservative buffer. An opaque percentage is not an exact token balance;
+  slowing concurrency alone does not reduce total consumption. Where provider
+  metering is unknown, distinguish local enforcement from an externally guaranteed
+  cap. Preserve user priorities, permissions and configured data destinations.
 - Preserve durable agent identity and memory across model changes. Start with
   deterministic routing rules and evidence-based escalation; learned routing
   follows measured accepted-task outcomes, not optimistic task completion alone.
