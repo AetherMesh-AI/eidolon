@@ -6,9 +6,9 @@ import { SearchField } from '@/components/ui/search-field'
 import { useI18n } from '@/i18n/context'
 
 import { AgentContext } from './agent-context'
-import { OrganizationScenery } from './scenery'
 import { AgentAvatar } from './avatar'
 import { OrganizationOwnerChat } from './runtime-owner-chat'
+import { OrganizationScenery } from './scenery'
 import type { OrganizationAgent, OrganizationSnapshot, RuntimeOrganizationAdapter } from './types'
 
 /** Only recorded ownership, assignment or current package membership links work. */
@@ -83,7 +83,7 @@ export function Messages({
                 variant="ghost"
               >
                 <AgentAvatar name={item.name} />
-                <span><strong>{item.name}</strong><small>{roles[item.role] ?? item.role}{item.team ? ` · ${item.team}` : ''}</small></span>
+                <span><strong dir="auto">{item.name}</strong><small>{roles[item.role] ?? item.role}{item.team && <> · <bdi>{item.team}</bdi></>}</small></span>
               </Button>
             ))}
           </nav>
@@ -93,7 +93,6 @@ export function Messages({
         <section aria-label={messages.conversation} className="eid-message-conversation">
           {agent ? (
             <>
-              <header className="eid-message-recipient"><AgentAvatar name={agent.name} /><div><h2>{agent.name}</h2><p>{roles[agent.role] ?? agent.role}{agent.team ? ` · ${agent.team}` : ''}</p></div></header>
               <OrganizationOwnerChat
                 adapter={adapter}
                 agent={agent}
@@ -110,15 +109,15 @@ export function Messages({
           <header className="eid-message-profile">
             <OrganizationScenery className="eid-message-scenery" />
             <AgentAvatar name={agent.name} />
-            <h2>{agent.name}</h2>
-            <p>{roles[agent.role] ?? agent.role}{agent.team ? ` · ${agent.team}` : ''}</p>
+            <h2 dir="auto">{agent.name}</h2>
+            <p>{roles[agent.role] ?? agent.role}{agent.team && <> · <bdi>{agent.team}</bdi></>}</p>
           </header>
-          <p className="eid-result-text">{agent.purpose || agent.summary}</p>
-          {!!agent.responsibilities.length && <section aria-label={messages.responsibilities}><h3>{messages.responsibilities}</h3><ul>{agent.responsibilities.map((item, index) => <li key={index}>{item}</li>)}</ul></section>}
+          <p className="eid-result-text" dir="auto">{agent.purpose || agent.summary}</p>
+          {!!agent.responsibilities.length && <section aria-label={messages.responsibilities}><h3>{messages.responsibilities}</h3><ul>{agent.responsibilities.map((item, index) => <li dir="auto" key={index}>{item}</li>)}</ul></section>}
           <section aria-label={messages.linkedWork}>
             <h3>{messages.linkedWork}</h3>
             <p className="eid-note">{messages.linkedWorkNote}</p>
-            {objectives.length ? <ul>{objectives.map(objective => <li key={objective.id}><Link to={`/objectives/${objective.id}`}>{objective.title}</Link></li>)}</ul> : <p>{messages.noLinkedWork}</p>}
+            {objectives.length ? <ul>{objectives.map(objective => <li key={objective.id}><Link dir="auto" to={`/objectives/${objective.id}`}>{objective.title}</Link></li>)}</ul> : <p>{messages.noLinkedWork}</p>}
           </section>
           <details><summary>{messages.retainedContext}</summary><AgentContext agent={agent} snapshot={snapshot} /></details>
         </section>}

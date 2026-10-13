@@ -11,43 +11,48 @@ capture to imitate that viewport. Recheck representative narrow windows and the
 selected alternate theme after changing structure. Archive source commit/tree,
 route/state, viewport, theme and original PNG hash for every iteration.
 
-## Current matched-image audit — 2026-10-13
+## Current matched-image audit — PR135 candidate, 2026-10-13
 
-All four original 1536×961 JPEGs were reopened and compared with actual native
-1536×961 PNGs from head `4e2fb978c191cc247f0f188189fd4f6c509bd667`, tree
-`5d008dd30badf7293e670815b609ae42adbbd210`. The
-[verified native run](https://github.com/AetherMesh-AI/eidolon/actions/runs/38326122458)
-passed 41 standard and three directory cases. Captures use temporary synthetic
-profiles and scripted provider responses; they establish UI behavior, not live
-model reliability. The remainder of this document records earlier iterations;
-this table supersedes their descriptions of the current build.
+Originals and native candidate PNGs are all **1536×961**, without resizing.
+Candidate head `54f6202cd136a3ee1ec9f7598cdfd6e0ed6af9cb`, tree
+`9a820dd5aba3e9f470db511dc83421c1726c5eaf`, was independently reviewed.
+[CI 38331770120](https://github.com/AetherMesh-AI/eidolon/actions/runs/38331770120)
+passed nine jobs, 1,510 selected tests and 44 native cases with zero skips/flakes.
+Native evidence used merge `2bbe9b69add292b1f1810eae76d32715ba9eaa3d` with the
+same tree. Artifact 11783104831 has SHA-256
+`9db2e2cd8f6d20fff382a5a7bbce2755d543d2f3c5743812617d1ec4e445e905`.
+All 44 provenance records, 40 translated PNGs and 11 reference PNGs were verified.
+Actual Home, Messages, Objective and Settings pixels were inspected. These are
+synthetic temporary profiles and scripted responses, not live-model reliability
+or full reference parity.
 
-| Page | Current verified baseline | Remaining reference difference | Next bounded work |
+| Page | Matched-dimension comparison | Remaining concrete gap | Bounded follow-up |
 | --- | --- | --- | --- |
-| Home | 203px rail, scenic hero, three unequal panels, lower activity strip and persistent health bar | Primary objective remains a plain record; request/delivery cards have less hierarchy; long records scroll inside panels | Box the primary objective and expose only recorded phase/current task states; retain full-history links and accepted-outcome requirements |
-| Messages | Directory, populated member conversation and context occupy three columns; finite allowance and real recipient identity are retained | Control/notice density reduces transcript height; profile header and composer spacing differ | Compact existing controls while preserving opening, renewal, cancellation and reply anchors; do not fabricate presence or chat history |
-| Objective | Scenic title/status, progress and manager assignment cards, input/delivery/details aside; all five translated overview captures verified | Dispatch/priority controls are denser than the reference; review section remains below the overview; authored text inherits interface direction | Isolate authored direction and localize remaining overview/inspector labels; later reorganize supported review controls without inventing stage history |
-| Settings | Real Model/Notifications owners in a six-card overview with descriptive secondary navigation | Two large editors dominate four short destination cards; schema defaults and notification rows make the page tall | Keep context/fallback fields mounted in an explicit disclosure; arrange alert kinds compactly and rebalance destination cards |
+| Home | Both use an approximately 203px rail, unequal three-panel row and bottom activity strip. Candidate primary objective now has a distinct summary, phase and current task counts; its action is visible. | Request and accepted-delivery records have less hierarchy than the reference. The activity strip shows recorded events, without invented live presence or causal arrows. | Enrich request identity/reason and real accepted artifact metadata while retaining authoritative request and delivery actions. |
+| Messages | Candidate directory/conversation boundary is around x540, versus x538 in the reference; context begins around x1218 in both. | Candidate first-message metadata starts around y308, versus y225 in the reference: recipient actions and details/formal-action rows consume reading space. Allowance and recovery controls are real requirements absent from the reference. | Put explicit chat controls beside the recipient; combine the secondary toolbar; preserve identity, opening, renewal, cancellation, drafts and history. |
+| Objective | Candidate title, three manager columns and input/delivery/details aside reproduce the main arrangement. | Reference has a compact review strip near the bottom; candidate requests begin near y906 and review evidence is farther down. Runtime phase prose still uses English. | Localize known backend phase codes without translating authored text; later bring supported review evidence into the overview without inventing stage history or acceptance. |
+| Settings | Candidate six-card overview retains real Model/Notifications controls and now collapses context/fallback fields without unmounting them. | First row ends around y648, versus y474 in the reference. Model stretches to notification height; lower destination cards are partly below the viewport. Reference organization-profile and global-save semantics are unsupported. | Rebalance real settings groups and spacing while retaining per-page save owners, all switches and scoped configuration. |
 
-The local follow-up implements the Home/Settings changes and authored-direction
-isolation described above. Its native captures are **pending**, so this is not a
-claim that those changes match the originals or fit every viewport.
+Coordinates above are approximate visual landmarks from the actual pixels, not
+instrumented geometry. The local Messages follow-up adds native geometry evidence
+for recipient/action alignment and transcript reading space; those checks have
+not yet run on hosted Electron. The phase follow-up has local ledger, projection
+and UI regressions but likewise awaits native verification. Neither is included
+in the reviewed PR135 screenshots.
 
-Capability mappings remain explicit: organization profile fields, global Save,
-live presence, unread/group state, attachment/voice controls and completed stage
-history are not fabricated. The clean organization/search/profile top bar and
-single bottom health bar follow the later user direction. Settings-owned themes,
-all six languages, narrow/zoomed reachability and production activation fences
-remain acceptance requirements. The local slice adds Arabic/Russian dispatch and priority controls, including
-recovery and boundary messages. Deeper legacy request/settings views still contain
-English fallback; translating these controls does not complete them.
+The clean organization/search/profile header, single bottom health bar,
+Settings-owned themes, all six languages and narrow/zoomed keyboard reachability
+remain requirements. Deeper request/settings translations, secondary-page review
+and a final gallery from one merged build remain unfinished. Unsupported presence,
+groups, voice, attachments and fabricated historical stages must not be added to
+imitate the reference.
 
-Next milestone: one to two implementation/validation cycles for the bounded
-Home/Settings and authored-text changes. Full UI completion is estimated at three
-to five further cycles for Messages/review placement, remaining language coverage,
-secondary pages and the final same-build gallery. Recent hosted native cycles
-have taken about 30–35 minutes each, excluding implementation and independent
-review; findings may add cycles.
+Estimate: the next phase/Messages milestone needs roughly 60–120 minutes including
+hosted native validation once publication can proceed. The remaining complete UI
+pass is approximately three to five implementation/validation cycles, about 4–8
+hours plus independent review. Recent native jobs take 25–35 minutes; translation
+depth and new narrow-layout findings can add cycles. This is a planning range,
+not a completion promise.
 
 ## Earlier acceptance checklist and iteration history
 

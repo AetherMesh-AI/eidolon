@@ -444,8 +444,9 @@ reload persistence. Imported third-party palettes share these tokens but cannot
 be exhaustively verified by the built-in matrix.
 
 Objective Detail puts recorded progress and current-round manager assignments
-before execution controls, with owner input and delivery beside them. A phase
-label is backend data, not an invented completed-stage timeline. Exclude tasks
+before execution controls, with owner input and delivery beside them. Known runtime phase codes select localized display labels; older or unknown codes
+retain the recorded phase text. A phase label is backend data, not an invented
+completed-stage timeline. Exclude tasks
 explicitly marked historical or outside the current round; preserve their full
 history in the existing Work view. Link packages through their recorded IDs,
 never infer delegation from reporting relationships. Completed tasks and packages
@@ -456,3 +457,10 @@ assignee with a readable status badge; empty and truncated-list notices stay
 plain. These rows do not add inferred timestamps, artifacts or review decisions.
 Overview actions focus the existing request
 and Work sections; they do not duplicate mutation or evidence ownership.
+
+Messages places the selected persistent identity beside explicit opening controls
+at normal desktop widths. Secondary conversation details and formal-action links
+share a wrapping toolbar. Narrow/zoomed layouts may wrap these controls, while
+allowance, errors, recovery and the composer remain reachable. Authored message
+bodies, names and composer text determine their own direction independently of the
+interface; selection and disclosure never send or renew a conversation.
