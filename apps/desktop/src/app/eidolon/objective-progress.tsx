@@ -6,6 +6,7 @@ import { useI18n } from '@/i18n/context'
 import { AgentAvatar } from './avatar'
 import { LocalizedTime } from './localized-time'
 import { objectivePhaseLabel } from './objective-phase'
+import { ObjectiveReviewFindings } from './objective-review-findings'
 import { objectiveWorkData } from './objective-work-data'
 import type { Objective, OrganizationSnapshot, OrganizationTask } from './types'
 
@@ -86,6 +87,7 @@ export function ObjectiveProgress({ objective, snapshot, controls, onReviewReque
           </article>}
         </div>
       </section>
+      <ObjectiveReviewFindings objective={objective} />
     </div>
     <div aria-label={copy.attentionAndDelivery} className="eid-objective-progress-aside" role="region">
       <section aria-label={copy.needsInput} className="eid-home-panel">

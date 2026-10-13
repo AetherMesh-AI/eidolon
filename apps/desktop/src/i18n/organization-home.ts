@@ -1,4 +1,5 @@
 import { organizationPhasesEn } from './organization-phases'
+import { reviewFindingsEn } from './organization-review-findings'
 
 /** Source messages; untranslated locales inherit English through the existing catalog. */
 export const organizationHomeEn = {
@@ -37,6 +38,7 @@ export const organizationHomeEn = {
     retainedContext: 'Identity, memory and history'
   },
   detail: {
+    reviewFindings: reviewFindingsEn,
     phases: organizationPhasesEn,
     tasksLabel: "Tasks",
     resultLabel: "Result",

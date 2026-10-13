@@ -104,7 +104,7 @@ const snapshot = {
       priorityRevision: 0,
       dispatchControl: { paused: false, revision: 0, runningCount: 1 },
       planningMode: 'executive_packages',
-      acceptance: { status: 'reviewing', round: 1, maxReplans: 2, criteria: ['Brief reflects verified changes'], summary: null, deliverableId: null },
+      acceptance: { status: 'blocked', round: 1, maxReplans: 2, criteria: ['Brief reflects verified changes'], summary: 'Conflicting source dates require resolution.', deliverableId: null, criteriaResults: [{ criterion: 'Brief reflects verified changes', satisfied: false, reason: 'Two source dates remain unresolved.', evidenceIds: ['fixture-source-a', 'fixture-source-b'] }], conflicts: ['Published launch dates disagree.'] },
       workPackages: [
         { id: 'release-package', objectiveId: 'release', round: 1, managerId: 'manager', title: 'Release documentation', description: 'Draft the narrative from verified changes.', criterionIndexes: [0], projectIds: [], dependencyIds: [], maxTasks: 3, planRequestId: 'fixture-plan', status: 'working', taskIds: ['draft'] },
         { id: 'evidence-package', objectiveId: 'release', round: 1, managerId: 'manager', title: 'Acceptance evidence', description: 'Review supporting evidence against the brief.', criterionIndexes: [0], projectIds: [], dependencyIds: ['release-package'], maxTasks: 3, planRequestId: 'fixture-evidence-plan', status: 'working', taskIds: ['review'] },
@@ -547,7 +547,6 @@ test('keeps native organization navigation, roster and objective layouts usable 
       await expect(card).toBeInViewport({ ratio: 1 })
     }
 
-    objectiveChecks.push({ mode, viewport: '1536x961', ...geometry })
     const recordDetails = overview.getByRole('region', { name: 'Objective details', exact: true })
     await expect(recordDetails).toContainText('Avery')
     await expect(recordDetails).toContainText('Draft and review')
@@ -555,6 +554,18 @@ test('keeps native organization navigation, roster and objective layouts usable 
     await expect(recordDetails).toBeInViewport({ ratio: 1 })
     await expect(page.locator('.eid-objective-hero .eid-objective-scenery')).toHaveAttribute('aria-hidden', 'true')
     await capture(`reference-objective-${mode}`)
+    const findings = overview.getByRole('region', { name: 'Recorded review findings', exact: true })
+    await expect(findings.getByRole('region', { name: 'Unresolved conflicts', exact: true })).toContainText('Published launch dates disagree.')
+    await expect(findings.getByText('Unmet criteria · 1', { exact: true })).toBeVisible()
+    await expect(findings.locator('summary')).toBeInViewport({ ratio: 1 })
+    objectiveChecks.push({ mode, viewport: '1536x961', ...geometry, reviewFindings: await findings.boundingBox(), reviewDisclosure: await findings.locator('summary').boundingBox() })
+    await findings.locator('summary').click()
+    await expect(findings.getByText('Not met', { exact: true })).toBeVisible()
+    await expect(findings.getByText('fixture-source-a, fixture-source-b', { exact: true })).toBeVisible()
+    await findings.getByText('Two source dates remain unresolved.', { exact: true }).scrollIntoViewIfNeeded()
+    await capture(`objective-review-findings-${mode}`, workspace, false, true)
+    await findings.locator('summary').click()
+
     displayedSnapshot = {
       ...snapshot,
       objectives: snapshot.objectives.map(objective => objective.id !== 'release' || !objective.workPackages ? objective : {
@@ -1406,6 +1417,7 @@ for (const locale of ['ja', 'ar', 'ru'] as const) {
 
 const translatedSurfaceExpectations = {
   "Ja": {
+    reviewFindings: "記録されたレビュー所見", reviewUnmet: "未充足",
     objectiveOverview: "目標の概要",
     objectiveSearch: "目標を検索",
     objectiveRecord: "目標の詳細",
@@ -1422,6 +1434,7 @@ const translatedSurfaceExpectations = {
     "findAgent": "エージェントを検索"
   },
   "Zh": {
+    reviewFindings: "已记录的审查结论", reviewUnmet: "未满足",
     objectiveOverview: "目标概览",
     objectiveSearch: "搜索目标",
     objectiveRecord: "目标详情",
@@ -1438,6 +1451,7 @@ const translatedSurfaceExpectations = {
     "findAgent": "查找智能体"
   },
   "ZhHant": {
+    reviewFindings: "已記錄的審查結論", reviewUnmet: "未滿足",
     objectiveOverview: "目標概覽",
     objectiveSearch: "搜尋目標",
     objectiveRecord: "目標詳情",
@@ -1454,6 +1468,7 @@ const translatedSurfaceExpectations = {
     "findAgent": "尋找代理"
   },
   "Ar": {
+    reviewFindings: "نتائج المراجعة المسجلة", reviewUnmet: "غير مستوفى",
     objectiveOverview: "نظرة عامة على الهدف",
     objectiveSearch: "البحث في الأهداف",
     objectiveRecord: "تفاصيل الهدف",
@@ -1470,6 +1485,7 @@ const translatedSurfaceExpectations = {
     "findAgent": "البحث عن وكيل"
   },
   "Ru": {
+    reviewFindings: "Записанные выводы проверки", reviewUnmet: "Не выполнен",
     objectiveOverview: "Обзор цели",
     objectiveSearch: "Поиск целей",
     objectiveRecord: "Сведения о цели",
@@ -1612,6 +1628,25 @@ for (const [locale, suffix, dark, light] of [
           writeFileSync(test.info().outputPath(name), bytes)
           captures.push({ name, locale, route, width, height, zoom, ...appearance, overflow, sha256: createHash('sha256').update(bytes).digest('hex') })
           await test.info().attach(name, { body: bytes, contentType: 'image/png' })
+
+          if (route === '/objectives/release') {
+            const findings = page.getByRole('region', { name: copy.reviewFindings, exact: true })
+            await expect(findings.getByText('Published launch dates disagree.', { exact: true })).toBeVisible()
+            await findings.locator('summary').click()
+            await expect(findings.getByText(copy.reviewUnmet, { exact: true })).toBeVisible()
+            const reason = findings.getByText('Two source dates remain unresolved.', { exact: true })
+            await reason.scrollIntoViewIfNeeded()
+            await expect(reason).toBeInViewport({ ratio: 1 })
+            await expect(reason).toHaveCSS('direction', 'ltr')
+            expect(await findings.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
+            await page.evaluate(async () => { await document.fonts.ready; await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))) })
+            const reviewName = `review-${locale}-${mode}-${width}-${height}-${zoom}.png`
+            const reviewBytes = Buffer.from(await app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
+            writeFileSync(test.info().outputPath(reviewName), reviewBytes)
+            captures.push({ name: reviewName, locale, route, width, height, zoom, ...appearance, captureMethod: 'electron.capturePage', sha256: createHash('sha256').update(reviewBytes).digest('hex') })
+            await test.info().attach(reviewName, { body: reviewBytes, contentType: 'image/png' })
+            await findings.locator('summary').click()
+          }
 
           if (retainedCopy && route === '/messages?recipient=executive') {
             const retained = page.locator('.eid-message-context details')

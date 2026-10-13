@@ -575,3 +575,15 @@
 
 .eid-home-request-context { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
 .eid-home-request-context .eid-home-record-time { margin-top: 3px; }
+
+.eid-review-findings details > summary { cursor: pointer; padding-block: 6px; }
+.eid-review-findings ol > li { padding-block: 10px; border-top: 1px solid var(--ui-stroke-tertiary); }
+.eid-review-findings ol > li > span { margin-inline-start: 10px; }
+.eid-review-findings :is(strong, small) { overflow-wrap: anywhere; }
+.eid-objective-overview .eid-review-findings { padding: 12px 14px; }
+.eid-objective-overview .eid-review-findings > header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; margin-bottom: 8px; }
+.eid-review-findings > header h2 { margin: 0; font-size: 18px; line-height: 1.25; }
+.eid-review-findings > header p { font-size: 12px; }
+.eid-review-findings > section { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.eid-review-findings > section h3 { margin: 0; font-size: 13px; }
+.eid-review-findings ul { margin: 0; padding-inline-start: 18px; }

@@ -1,11 +1,13 @@
 import type { OrganizationHomeCopy } from './organization-home'
 import { organizationPhasesAr, organizationPhasesJa, organizationPhasesRu, organizationPhasesZh, organizationPhasesZhHant } from './organization-phases'
+import { reviewFindingsAr, reviewFindingsJa, reviewFindingsRu, reviewFindingsZh, reviewFindingsZhHant } from './organization-review-findings'
 
 type DetailCopy = Omit<OrganizationHomeCopy['detail'], 'moreTasks' | 'moreRequests' | 'delegationCount' | 'ownerRequestCount'>
 
 // Translate presentation and explicit runtime phase codes; free text stays authored.
 export const organizationObjectiveDetailJa: DetailCopy = {
   phases: organizationPhasesJa,
+  reviewFindings: reviewFindingsJa,
   tasksLabel: "タスク",
   resultLabel: "結果",
   noReviewedResult: "レビュー済みの結果はまだありません。",
@@ -27,6 +29,7 @@ export const organizationObjectiveDetailJa: DetailCopy = {
 
 export const organizationObjectiveDetailZh: DetailCopy = {
   phases: organizationPhasesZh,
+  reviewFindings: reviewFindingsZh,
   tasksLabel: "任务",
   resultLabel: "结果",
   noReviewedResult: "暂无已审核的结果。",
@@ -47,6 +50,7 @@ export const organizationObjectiveDetailZh: DetailCopy = {
 
 export const organizationObjectiveDetailZhHant: DetailCopy = {
   phases: organizationPhasesZhHant,
+  reviewFindings: reviewFindingsZhHant,
   tasksLabel: "任務",
   resultLabel: "結果",
   noReviewedResult: "尚無已審查的結果。",
@@ -67,6 +71,7 @@ export const organizationObjectiveDetailZhHant: DetailCopy = {
 
 export const organizationObjectiveDetailAr: DetailCopy = {
   phases: organizationPhasesAr,
+  reviewFindings: reviewFindingsAr,
   tasksLabel: "المهام",
   resultLabel: "النتيجة",
   noReviewedResult: "لا توجد نتيجة تمت مراجعتها بعد.",
@@ -87,6 +92,7 @@ export const organizationObjectiveDetailAr: DetailCopy = {
 
 export const organizationObjectiveDetailRu: DetailCopy = {
   phases: organizationPhasesRu,
+  reviewFindings: reviewFindingsRu,
   tasksLabel: "Задачи",
   resultLabel: "Результат",
   noReviewedResult: "Проверенного результата пока нет.",

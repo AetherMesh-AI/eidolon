@@ -11,7 +11,31 @@ capture to imitate that viewport. Recheck representative narrow windows and the
 selected alternate theme after changing structure. Archive source commit/tree,
 route/state, viewport, theme and original PNG hash for every iteration.
 
-## Current matched-image audit — PR135 candidate, 2026-10-13
+## Latest verified candidate — PR137, 2026-10-13
+
+Head `e0cf5b265d6163e0ff1cd259ef4c90b34d73b7e3`, tree
+`8a1411179474acb4a1ee195bb12b224760443704`, passed all nine checks in
+[CI 38340709893](https://github.com/AetherMesh-AI/eidolon/actions/runs/38340709893):
+1,532 selected tests and 44 native scenarios, zero skips/flakes/retries.
+Artifact 11787546920 SHA-256
+`c428d022908d1712b4593bf26608a1474d7d8b1e3bf7c0a70e7a75c2cf0eb938`
+was verified against merge `a84a8c3e5738ca6da0e98b60506deaea89aa4829`.
+All 44 provenance records, 40 translated PNGs, 11 reference PNGs and eight
+retained-memory PNGs were checked. Actual Home, Settings and Arabic/Russian
+200% retained-memory captures were inspected.
+
+Home now leads with the pending request and its recorded requester/time.
+Settings' first row ends around y611 instead of y648; all six cards fit the
+1536×961 capture. The reference first row still ends near y474, so this is a
+bounded improvement rather than parity. Retained questions are readable at
+200% after scrolling; the whole expanded page need not fit simultaneously.
+The review-findings work below remains separate and locally unverified in native UI.
+
+Published PR136 main `df5c6b36b5c935f181b792a49be0475cda092792` passed
+all nine postmerge checks in run `38340548982`, including 1,528 selected tests,
+44 native scenarios and the shared-source Home/no-read/no-start regression.
+
+## Earlier matched-image audit — PR135 candidate, 2026-10-13
 
 Originals and native candidate PNGs are all **1536×961**, without resizing.
 Candidate head `54f6202cd136a3ee1ec9f7598cdfd6e0ed6af9cb`, tree
@@ -49,7 +73,7 @@ and a final gallery from one merged build remain unfinished. Unsupported presenc
 groups, voice, attachments and fabricated historical stages must not be added to
 imitate the reference.
 
-Estimate: the next phase/Messages milestone needs roughly 60–120 minutes including
+Historical PR135 estimate (superseded by the current estimate below): the next phase/Messages milestone needs roughly 60–120 minutes including
 hosted native validation once publication can proceed. The remaining complete UI
 pass is approximately three to five implementation/validation cycles, about 4–8
 hours plus independent review. Recent native jobs take 25–35 minutes; translation
@@ -442,16 +466,50 @@ compact Settings overview removes a duplicate Notifications heading; all switche
 and existing save owners remain in place. The conversation header now falls back
 to the recorded role when it is unfamiliar, matching directory/context behavior.
 
-Local tests passed (649 across organization, catalog and affected Settings owners).
-Native Home requester checks are prepared, but hosted verification and new pixel
-comparison remain pending. These changes do not establish final reference parity.
+Local tests passed (639 across organization, catalog and affected Settings owners).
+PR137 subsequently passed native Home requester and retained-context checks,
+as recorded above. These changes do not establish final reference parity.
 
 Retained authored context and history now choose their own text direction; Arabic
 interface direction no longer determines English memory text. Prepared native
 coverage opens retained memory in Arabic and Russian, checks the unresolved
-question at normal size and 200% zoom, and records new captures. This follow-up
-remains local and is not certified by earlier PR136 artifacts.
+question at normal size and 200% zoom, and records new captures. This coverage passed at PR137; earlier PR136 artifacts
+do not certify those later changes.
 
 A separate recovery regression changes the current page intent while activation
 is pending, then rejects activation. Both page preservation and fresh-chat
 recovery pass while the previous machine-bound session remains cleared.
+
+
+## Separate local review-findings follow-up after PR137
+
+The existing snapshot already supplies current-round `criteriaResults` and
+`conflicts`, but the objective UI did not display them. A compact read-only
+section now shows exact unresolved conflicts and a disclosure for criterion
+judgments, reasons and supporting evidence IDs. It does not infer final
+acceptance from task completion, a positive judgment or an artifact ID.
+The labels cover all six catalogs; authored records retain their own direction.
+Older snapshots without these fields show no fabricated review history.
+
+Seven regression cases fail against the preceding overview and pass with the
+section wired in. Thirty focused tests and main/E2E type checks pass. Native
+normal/200% zoom, light/dark and translated captures are prepared but unverified.
+This local follow-up is excluded from PR137's independently cleared candidate.
+The unmet-criteria count and all conflicts stay visible outside the disclosure.
+Only the detailed criterion reasons and evidence IDs are collapsed.
+
+PR137 native geometry places the manager cards at y524.265625 with height
+284.984375, ending at y809.25 in both themes. The reference cards span roughly
+y468–842 and its review strip begins near y858; its task content differs. The new
+section follows the existing cards, but its actual position is not yet measured.
+New native assertions require the collapsed review summary in the 1536×961
+viewport, capture expanded findings, and record review/Settings card geometry.
+The current Settings first row is approximately y174–611 (437px), versus reference
+y179–474 (295px). Those Settings/reference coordinates are pixel estimates; the
+objective candidate card coordinates above are instrumented native geometry.
+
+Current planning estimate after publication is unblocked: 60–120 minutes for this
+slice's hosted native verification, review and postmerge checks. The broader
+remaining visual pass is roughly two to four further cycles, or 3–6 hours plus
+review and authorization delays, with low confidence. No bounded estimate can
+be given for resolution of the merge authorization rejection.
