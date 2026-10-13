@@ -951,7 +951,8 @@ test('keeps native organization navigation, roster and objective layouts usable 
 
   expect(chrome.header.y).toBe(0)
   expect(chrome.header.height).toBe(65)
-  expect(chrome.search.width).toBe(210)
+  expect(chrome.search.width).toBe(380)
+  expect(Math.abs(chrome.search.x - 887), 'wide search aligns with the reference while clearing native controls').toBeLessThanOrEqual(10)
   expect(chrome.firstNavigation.y).toBeGreaterThanOrEqual(110)
   expect(chrome.firstNavigation.y).toBeLessThanOrEqual(118)
   expect(chrome.headerDrag).toBe('drag')
@@ -1292,13 +1293,23 @@ test('keeps workspace controls and loaded-record inspection usable without execu
       const headerGeometry = {
         header: await header.boundingBox(),
         search: await header.getByRole('button', { name: 'Search loaded records', exact: true }).boundingBox(),
-        identity: await header.locator('.eid-workspace-organization-trigger').boundingBox()
+        identity: await header.locator('.eid-workspace-organization-trigger').boundingBox(),
+        actions: await header.locator('.eid-workspace-actions').boundingBox(),
+        nativeRightInset: await header.evaluate(element => Number.parseFloat(getComputedStyle(element).paddingRight))
       }
 
       if (width >= 1280 && zoom === 1) {
         expect(headerGeometry.header!.height, 'identity keeps the existing page origin').toBe(65)
-        expect(headerGeometry.search!.width, 'search leaves room for complete identity and account controls').toBeLessThanOrEqual(210)
+        expect(headerGeometry.search!.width, 'responsive search retains a usable width').toBeGreaterThanOrEqual(160)
+        expect(headerGeometry.search!.width).toBeLessThanOrEqual(380)
+        expect(headerGeometry.search!.x + headerGeometry.search!.width).toBeLessThanOrEqual(headerGeometry.actions!.x)
+        expect(headerGeometry.actions!.x + headerGeometry.actions!.width).toBeLessThanOrEqual(headerGeometry.header!.x + headerGeometry.header!.width - headerGeometry.nativeRightInset + 1)
         await expect(header.locator('.eid-workspace-organization-copy small')).toBeInViewport({ ratio: 1 })
+      }
+
+      if (width === 1536 && zoom === 1) {
+        expect(headerGeometry.search!.width, 'full reference search width').toBe(380)
+        expect(Math.abs(headerGeometry.search!.x - 887), 'full reference search position with native clearance').toBeLessThanOrEqual(10)
       }
 
       for (const button of await header.getByRole('button').all()) {

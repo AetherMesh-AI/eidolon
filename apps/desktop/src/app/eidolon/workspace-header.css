@@ -1,11 +1,15 @@
 .eid-workspace-shell { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; overflow: clip; }
 .eid-workspace-body { flex: 1; min-height: 0; min-width: 0; position: relative; overflow: auto; }
-.eid-workspace-header { flex: none; display: grid; grid-template-columns: minmax(240px, 1fr) minmax(160px, 210px) minmax(320px, auto); align-items: center; gap: 16px; min-height: 65px; padding: 10px max(18px, var(--titlebar-tools-right, 18px), var(--pane-native-controls-right, 0px)) 10px max(22px, var(--pane-native-controls-left, 0px)); background: var(--ui-bg-secondary); border-bottom: 1px solid var(--ui-stroke-tertiary); -webkit-app-region: drag; }
+.eid-workspace-header { --eid-header-right-inset: max(18px, var(--titlebar-tools-right, 18px), var(--pane-native-controls-right, 0px)); flex: none; display: grid; grid-template-columns: minmax(410px, 1fr) minmax(160px, 380px) minmax(112px, auto); align-items: center; gap: 16px; min-height: 65px; padding: 10px var(--eid-header-right-inset) 10px max(22px, var(--pane-native-controls-left, 0px)); background: var(--ui-bg-secondary); border-bottom: 1px solid var(--ui-stroke-tertiary); -webkit-app-region: drag; }
 .eid-workspace-header :is(button, a, input, [data-slot=connection-switcher]) { -webkit-app-region: no-drag; }
 .eid-workspace-search-trigger { width: 100%; justify-content: flex-start; min-width: 0; white-space: normal; text-align: start; }
 .eid-workspace-identity, .eid-workspace-actions { display: flex; align-items: center; min-width: 0; gap: 8px; }
 .eid-workspace-identity { flex: 1 1 auto; flex-wrap: wrap; row-gap: 6px; }
-.eid-workspace-actions { flex: 0 0 auto; justify-content: flex-end; }
+/* Keep the wide search near the reference's trailing edge while native controls
+   share the right-side reservation. Long real owner names can still reflow. */
+.eid-workspace-actions { flex: 0 0 auto; justify-content: flex-end; min-width: max(112px, calc(253px - var(--eid-header-right-inset))); }
+.eid-workspace-header .eid-workspace-actions > button[data-size=lg] { padding-inline: 4px; }
+.eid-workspace-header .eid-workspace-profile-trigger { padding-inline: 8px; }
 /* Reflow complete identity labels instead of shrinking them into ambiguous fragments. */
 .eid-workspace-identity > button, .eid-workspace-actions > button[data-size=lg] { flex: 0 1 auto; min-width: 28px; max-width: 100%; height: auto; white-space: normal; }
 .eid-workspace-identity > button > span, .eid-workspace-actions > button[data-size=lg] > span { min-width: 0; }
@@ -36,7 +40,7 @@
   /* Share the available width across complete labels, rather than letting an
      auto account column reduce the organization name to a character per line. */
   .eid-workspace-header { display: flex; flex-wrap: wrap; gap: 6px; min-height: 34px; padding: 5px max(8px, var(--titlebar-tools-right, 8px), var(--pane-native-controls-right, 0px)) 5px max(8px, var(--pane-native-controls-left, 0px)); }
-  .eid-workspace-identity, .eid-workspace-actions { display: contents; }
+  .eid-workspace-identity, .eid-workspace-actions { display: contents; min-width: 0; }
   .eidolon.eid-workspace-header button { min-height: 18px; height: auto; line-height: 18px; padding: 0 4px; font-size: 11px; max-width: 100%; }
   .eid-workspace-search-trigger { width: auto; }
   .eid-workspace-action-label, .eid-workspace-connection { display: none; }

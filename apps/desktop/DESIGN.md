@@ -497,3 +497,7 @@ The header's decorative monogram derives only from the saved organization name;
 an unnamed organization uses the neutral organization glyph. Its second line is
 the localized organization label, never an invented connection or activity state.
 Compact widths hide decorative details while retaining complete action names.
+At the 1536px reference viewport, search retains its 380px width and aligns near
+x887. Profile/settings controls share the organization group; attention and owner
+controls remain on the right. The right reservation includes native window
+clearance, and smaller windows may reduce search width before compact reflow.
