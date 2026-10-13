@@ -15,6 +15,12 @@ test('confirms actual directory selections, cancels without switching and expose
   const dialog = page.getByRole('dialog', { name: 'Organizations', exact: true })
 
   const capture = async (name: string) => {
+    // DOM assertions can precede Electron's painted frame. Use the same paint
+    // barrier as the visual suite before capturing the native content surface.
+    await page.evaluate(async () => {
+      await document.fonts.ready
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+    })
     const window = await app.browserWindow(page)
     await test.info().attach(name, {
       contentType: 'image/png',
