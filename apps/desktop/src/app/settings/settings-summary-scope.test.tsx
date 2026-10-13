@@ -77,12 +77,59 @@ it('never paints previous-owner configuration during a deferred switch or late p
 it('revalidates saved summaries after an existing editor cache write while retaining same-owner values', async () => {
   const refresh = deferred()
   state.read.mockResolvedValueOnce({ model: { provider: 'Saved A' } }).mockReturnValueOnce(refresh.promise)
-  render(<QueryClientProvider client={client}><SavedSettingsSummary section="providers" /></QueryClientProvider>)
+  render(<QueryClientProvider client={client}><SavedSettingsSummary section="providers" /><SavedSettingsSummary section="safety" /><SavedSettingsSummary section="workspace" /></QueryClientProvider>)
   await screen.findByText('Saved A')
+  expect(state.read).toHaveBeenCalledTimes(1)
   await act(async () => { client.setQueryData(HERMES_CONFIG_KEY, { model: { provider: 'Editor A' } }) })
   await waitFor(() => expect(state.read).toHaveBeenCalledTimes(2))
   expect(screen.getByText('Saved A')).toBeTruthy()
   expect(screen.queryByText('Editor A')).toBeNull()
   await act(async () => { refresh.resolve({ model: { provider: 'Verified A' } }) })
   await screen.findByText('Verified A')
+})
+
+it.each(['initial', 'refresh'] as const)('starts a post-save read while the %s read is pending and fences later source changes', async phase => {
+  const beforeSave = deferred()
+  const afterSave = deferred()
+
+  if (phase === 'refresh') { state.read.mockResolvedValueOnce({ model: { provider: 'Cached A' } }) }
+  state.read.mockReturnValueOnce(beforeSave.promise).mockReturnValueOnce(afterSave.promise)
+  render(<QueryClientProvider client={client}><SavedSettingsSummary section="providers" /></QueryClientProvider>)
+
+  if (phase === 'refresh') {
+    await screen.findByText('Cached A')
+    await act(async () => { void client.invalidateQueries({ queryKey: HERMES_CONFIG_KEY }) })
+  }
+
+  const readsBeforeSave = phase === 'refresh' ? 2 : 1
+  await waitFor(() => expect(state.read).toHaveBeenCalledTimes(readsBeforeSave))
+  await act(async () => { client.setQueryData(HERMES_CONFIG_KEY, { model: { provider: 'Saved editor A' } }) })
+  await waitFor(() => expect(state.read).toHaveBeenCalledTimes(readsBeforeSave + 1))
+
+  if (phase === 'refresh') { expect(screen.getByText('Cached A')).toBeTruthy() }
+  await act(async () => { beforeSave.resolve({ model: { provider: 'Pre-save A' } }) })
+  expect(screen.queryByText('Pre-save A')).toBeNull()
+  await act(async () => { afterSave.resolve({ model: { provider: 'Post-save A' } }) })
+  await screen.findByText('Post-save A')
+
+  const oldRefresh = deferred()
+  const oldSavedRead = deferred()
+  const newSource = deferred()
+  state.read.mockReturnValueOnce(oldRefresh.promise).mockReturnValueOnce(oldSavedRead.promise).mockReturnValueOnce(newSource.promise)
+  await act(async () => { void client.invalidateQueries({ queryKey: HERMES_CONFIG_KEY }) })
+  await waitFor(() => expect(state.read).toHaveBeenCalledTimes(readsBeforeSave + 2))
+  await act(async () => { client.setQueryData(HERMES_CONFIG_KEY, { model: { provider: 'Second editor save A' } }) })
+  await waitFor(() => expect(state.read).toHaveBeenCalledTimes(readsBeforeSave + 3))
+  await act(async () => { $activeGatewayProfile.set('beta') })
+  await waitFor(() => expect(state.read).toHaveBeenCalledTimes(readsBeforeSave + 4))
+  expect(screen.queryByText('Post-save A')).toBeNull()
+  await act(async () => {
+    oldRefresh.resolve({ model: { provider: 'Old refresh A' } })
+    oldSavedRead.resolve({ model: { provider: 'Old saved read A' } })
+  })
+  expect(screen.queryByText('Old refresh A')).toBeNull()
+  expect(screen.queryByText('Old saved read A')).toBeNull()
+  expect(screen.getByRole('status').textContent).toContain('Loading')
+  await act(async () => { newSource.resolve({ model: { provider: 'Current B' } }) })
+  await screen.findByText('Current B')
 })

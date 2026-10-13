@@ -480,7 +480,9 @@ work, review requirements and errors remain visible.
 Settings overview summaries capture their source and profile in both the read
 and cache key, independently of the editor's ambient cache. A source change waits
 for its own first read; late prior-owner results cannot populate the new summary.
-Editor cache writes trigger revalidation without replacing editor drafts. They
+Editor cache writes advance the summary read generation, so a pending pre-save
+read cannot swallow the post-save read. Same-owner values remain visible while
+refreshing, and all three cards share that generation without replacing drafts. They
 show a fixed list of non-secret saved
 fields, preserve explicit false/zero values and distinguish missing/error states.
 A configured provider does not establish connection health. The original Model,

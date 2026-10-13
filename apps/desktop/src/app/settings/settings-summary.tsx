@@ -1,6 +1,6 @@
 import { useStore } from '@nanostores/react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect } from 'react'
+import { useSyncExternalStore } from 'react'
 
 import { getApiRequestConnection, getHermesConfigRecord } from '@/eidolon'
 import { useI18n } from '@/i18n'
@@ -67,21 +67,24 @@ export function SavedSettingsSummary({ section }: { section: SummarySection }) {
   const connectionId = getApiRequestConnection()
   const owner = JSON.stringify([connectionId, connection?.baseUrl, connection?.remoteIdentity, connection?.authenticationIdentity, connection?.oauthSessionIdentity, profile])
   const enabled = !!connection && !pending && !swapping
+  const editorKey = JSON.stringify(hermesConfigKey(requestedProfile))
+
+  // An editor write must start a new read even if the previous generation has
+  // no data yet. Sharing this cache revision also coalesces all summary cards.
+  const editorRevision = useSyncExternalStore(
+    notify => client.getQueryCache().subscribe(event => {
+      if (JSON.stringify(event.query.queryKey) === editorKey) { notify() }
+    }),
+    () => client.getQueryState(hermesConfigKey(requestedProfile))?.dataUpdateCount ?? 0
+  )
 
   const { data, isPending, isError } = useQuery({
-    queryKey: [...HERMES_CONFIG_KEY, 'saved-summary', owner],
+    queryKey: [...HERMES_CONFIG_KEY, 'saved-summary', owner, editorRevision],
     queryFn: () => getHermesConfigRecord({ connectionId, profile }),
+    placeholderData: (previous, query) => query?.queryKey[2] === owner ? previous : undefined,
     enabled,
     staleTime: 0
   })
-
-  // Existing editors keep their cache and draft ownership. Their write-through
-  // only requests an independent read from this summary's captured owner.
-  useEffect(() => client.getQueryCache().subscribe(event => {
-    if (enabled && event.type === 'updated' && event.action.type === 'success' && event.action.manual && JSON.stringify(event.query.queryKey) === JSON.stringify(hermesConfigKey(requestedProfile))) {
-      void client.invalidateQueries({ queryKey: [...HERMES_CONFIG_KEY, 'saved-summary', owner], exact: true }, { cancelRefetch: false })
-    }
-  }), [client, enabled, owner, requestedProfile])
 
   return <SettingsConfigSummary failed={enabled && isError} loading={!enabled || isPending} record={enabled ? data : undefined} section={section} />
 }
