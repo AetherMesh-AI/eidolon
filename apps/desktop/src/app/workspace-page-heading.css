@@ -5,6 +5,7 @@ header.eid-workspace-page-heading > p { margin: 10px 0 0; color: var(--ui-text-s
 .eid-page-search-heading + .eid-page-search-controls { padding-top: 0; }
 .eid-secondary-surface :is(button, a, input, textarea, select, summary):focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 3px; transition-property: color, background-color, border-color, box-shadow; }
 .eid-secondary-surface :is(button, a, input, textarea, select, summary) { scroll-margin: 7px; }
+.eid-secondary-surface .eid-detail-scroll { padding: 7px; scroll-padding: 7px; }
 @media (max-width: 800px) {
   header.eid-workspace-page-heading > h1 { font-size: 29px; }
   .eid-page-search-heading { padding-inline: 18px; }

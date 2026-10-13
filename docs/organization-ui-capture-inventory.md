@@ -32,7 +32,15 @@ metadata writeback. They include light/dark desktop, narrow, light 200%, and
 JA/AR/RU notification focus at both zoom levels. The accepted composition does
 not excuse the independently confirmed Arabic checked-thumb overflow. The next
 candidate corrects direction-aware movement and adds native containment/state
-checks. Those new assertions have not yet run at this source revision.
+checks. The first expanded gallery at `332a1013` failed: all six locales exposed
+the Appearance pet picker's clipped final focus outline; Arabic Tools exposed a
+clipped list outline. English/Arabic checked, unchecked and disabled switch
+captures reached at 100% show contained thumbs, but 200% was not reached and no
+complete gallery pass is claimed. A separate Profiles probe entered CodeMirror,
+where Shift+Tab intentionally indents; the probe now approaches from the previous
+control without altering any outline assertion. Repairs add scroll padding to
+the demonstrated clipping containers. Independent destinations continue collecting
+evidence after a failed assertion, and the case still fails if any assertion failed.
 
 “Captured” means retained native evidence exists, not final pixel approval.
 Only Home, Messages, Objective Detail and Settings have supplied image references.
@@ -73,6 +81,32 @@ Final release gates remain:
 Merge remains on hold pending authorization. Candidate evidence can be reviewed
 and delivered now; a merged-build gallery cannot be claimed before that gate.
 Real voice, per-agent VMs and live model reliability remain outside this UI scope.
+
+## Authorized follow-on: budget-aware Fixed/Auto routing
+
+Queued after the UI acceptance milestone; do not interrupt the current fixes or
+gallery delivery. No implementation is included in this UI candidate.
+
+- Extend durable objective admission accounting in `organization_budget.py` and
+  policy parsing in `organization_policy.py` to project, manager and agent scopes,
+  with atomic concurrent reservations and capacity retained for review.
+- Make provider/model allowlists and configured fallbacks explicit. The root
+  executive stays Fixed; assignment-level Auto proposals may select model and
+  reasoning only within runtime-enforced limits and existing data destinations.
+- Bound retries, context and concurrency at admission/execution. Account for
+  review, rework, integration and tool costs; unknown or interrupted usage must
+  not become a fictitious refund or a measured zero.
+- Show cost/quota evidence and distinguish configured ceilings, measured usage
+  and unknown subscription allowance. Do not invent current subscription quota.
+- Preserve durable agent identity and memory across model changes. Start with
+  deterministic routing rules and evidence-based escalation; learned routing
+  follows measured accepted-task outcomes, not optimistic task completion alone.
+
+The existing reservation seam, executor (`organization_executor.py`), owner-chat
+executor and tool audit accounting are starting points, not proof this feature
+already exists. After UI acceptance, report a repository-grounded sequence and
+regression plan before expanding these contracts. The feature authorizes no new
+paid calls, subscriptions, credentials, provider destinations or security changes.
 
 ## Page coverage
 

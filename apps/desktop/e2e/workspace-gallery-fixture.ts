@@ -56,7 +56,8 @@ export async function setupGallery(locale: string, seedHistory = false) {
     const captures: object[] = []
     const focusChecks: object[] = []
     const thumbChecks: object[] = []
-    return { ...fixture, locale, sessionId, methods, state, captures, focusChecks, thumbChecks, seedProviderCalls: seedHistory ? 1 : 0 }
+    const failures: { label: string; error: string }[] = []
+    return { ...fixture, locale, sessionId, methods, state, captures, focusChecks, thumbChecks, failures, seedProviderCalls: seedHistory ? 1 : 0 }
   } catch (error) {
     await fixture.cleanup()
     throw error
@@ -64,6 +65,13 @@ export async function setupGallery(locale: string, seedHistory = false) {
 }
 
 export type GalleryFixture = Awaited<ReturnType<typeof setupGallery>>
+
+/** Retain every failure while inspecting independent destinations in the same bounded run. */
+export async function checkGalleryDestination(fixture: GalleryFixture, label: string, check: () => Promise<void>) {
+  try { await check() } catch (error) {
+    fixture.failures.push({ label, error: error instanceof Error ? error.stack ?? error.message : String(error) })
+  }
+}
 
 export async function resizeGallery(fixture: GalleryFixture, width: number, height: number, zoom = 1) {
   await fixture.page.evaluate(() => (window as any).hermesDesktop.zoom.setPercent(100))
@@ -94,7 +102,9 @@ export async function verifyGalleryControls(fixture: GalleryFixture, scope: Loca
   }
   // First and last controls exercise both ends of each real page's scroll owner.
   for (const index of [...new Set([0, controls.length - 1])].filter(index => index >= 0 && index < controls.length)) {
-    fixture.focusChecks.push(await verifyKeyboardFocus(fixture.page, controls[index], `${label} control ${index}`))
+    // Approach from the previous control: the following CodeMirror editor may
+    // intentionally consume Shift+Tab as indentation rather than navigation.
+    fixture.focusChecks.push(await verifyKeyboardFocus(fixture.page, controls[index], `${label} control ${index}`, 'previous'))
     await expect(controls[index]).toBeInViewport({ ratio: 1 })
   }
   for (const target of await scope.locator('[data-slot="switch"]').all()) {
@@ -170,6 +180,7 @@ export function writeGalleryEvidence(fixture: GalleryFixture, group: string) {
     sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
     scenario: `synthetic-workspace-${group}-gallery`, locale: fixture.locale,
     seedProviderCalls: fixture.seedProviderCalls, galleryProviderCalls: fixture.mock.receivedPrompts.length - fixture.seedProviderCalls,
-    organizationMethods: [...new Set(fixture.methods)], captures: fixture.captures, focusChecks: fixture.focusChecks, thumbChecks: fixture.thumbChecks
+    organizationMethods: [...new Set(fixture.methods)], captures: fixture.captures, focusChecks: fixture.focusChecks, thumbChecks: fixture.thumbChecks, failures: fixture.failures
   }, null, 2))
+  expect(fixture.failures, 'Every destination must pass its original assertions').toEqual([])
 }
