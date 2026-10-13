@@ -564,3 +564,23 @@ changes into the existing PR137 draft for new branch verification. Its previous
 exact-head clearance applies only to e0cf5b265d6163e0ff1cd259ef4c90b34d73b7e3
 and is invalid for the combined candidate. The merge approval rejection remains
 unresolved; no merge retry is authorized by this follow-up.
+
+
+## Messages search and remaining coverage follow-up
+
+The 1536×961 populated Messages capture at source `7dfbefb2` still showed a
+content-sized member input where the reference uses the directory width. The
+Messages page now owns a full-width rounded search treatment using existing
+theme tokens, while the shared SearchField remains unchanged. Native geometry
+assertions require the field to fill its member column and its input to fill the
+space beside the search/clear icons, including long queries, narrow views and
+translated normal/200% views. Clearing search retains the selected conversation
+and unsent draft. No chat allowance, filtering semantics or identity routing is
+changed. Local Messages/owner-chat tests pass (18 cases). Native proof is pending.
+
+The next outstanding coverage item is Work Overview: English 200% keyboard access
+and five-language normal/200% captured views are prepared in the existing native
+scenarios. The all-page capture inventory now distinguishes accepted source/CI
+contracts and geometry corrections from remaining visual/copy/gallery work.
+Four earlier interim screenshots were delivered through Library; the final
+all-page gallery from one final merged build remains outstanding.

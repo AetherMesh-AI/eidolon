@@ -8,6 +8,7 @@ import { BUILTIN_THEME_LIST } from '../src/themes/presets'
 
 import { type MockBackendFixture, setupMockBackend, waitForAppReady } from './fixtures'
 import { verifyKeyboardFocus } from './focus-visibility'
+import { verifyMemberSearchGeometry } from './organization-message-search'
 import { acknowledgeExpectedErrorBanner, expect, test } from './test'
 
 const createdAt = '2026-10-08T09:00:00Z'
@@ -479,16 +480,25 @@ test('keeps native organization navigation, roster and objective layouts usable 
       const headerBounds = await page.getByRole('banner', { name: 'Workspace controls', exact: true }).boundingBox()
       expect(Math.abs(bounds!.y - 64), 'Messages content origin matches the reference header').toBeLessThanOrEqual(1)
       expect(Math.abs(headerBounds!.y + headerBounds!.height - bounds!.y)).toBeLessThanOrEqual(1)
-      columnChecks.push({ mode, width, height, columns, workspace: bounds, header: headerBounds, targetWidths })
+      columnChecks.push({ mode, width, height, columns, workspace: bounds, header: headerBounds, targetWidths, memberSearch: await verifyMemberSearchGeometry(page) })
       await expect(page.locator('.eid-message-members').getByRole('heading', { name: 'Messages', exact: true })).toBeVisible()
       focusChecks.push(await verifyKeyboardFocus(page, search, `Messages search ${mode} ${width}x${height}`))
       await expect(page.getByRole('contentinfo', { name: 'System health', exact: true })).toBeInViewport({ ratio: 1 })
       await capture(width === 1536 ? `reference-messages-${mode}` : `messages-selected-short-${mode}`)
+      await search.fill('A long member query that must stay within the existing member column')
+      await verifyMemberSearchGeometry(page)
+      await search.focus()
+      await page.keyboard.press('Tab')
+      await expect(page.getByRole('button', { name: 'Clear search', exact: true })).toBeFocused()
+      await page.keyboard.press('Enter')
+      await expect(search).toHaveValue('')
+      await expect(page.getByRole('region', { name: 'Member conversation', exact: true }).getByRole('heading', { name: 'Robin', exact: true })).toBeVisible()
     }
 
     await resize(1220)
     await capture(`messages-selected-medium-${mode}`)
     await resize(760)
+    await verifyMemberSearchGeometry(page)
     await capture(`messages-selected-narrow-${mode}`)
     // Traverse the context with Tab, then follow the recorded link using Enter.
     await search.fill('Robin')
@@ -668,6 +678,17 @@ test('keeps native organization navigation, roster and objective layouts usable 
     await capture(`work-overview-wide-${mode}`)
     await resize(760)
     await capture(`work-overview-narrow-${mode}`)
+    await resize(1280, 720)
+    await page.evaluate(() => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(200))
+    await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(2)
+    const workLink = card.getByRole('link', { name: 'View objective →', exact: true })
+    await workLink.scrollIntoViewIfNeeded()
+    focusChecks.push(await verifyKeyboardFocus(page, workLink, `Work overview objective link ${mode} 200 percent`))
+    await expect(workLink).toBeInViewport({ ratio: 1 })
+    expect(await page.locator('.eid-work-overview').evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
+    await capture(`work-overview-200-${mode}`, workspace, true, true)
+    await page.evaluate(() => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(100))
+    await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(1)
     await resize(1220)
     await navigation.getByRole('link', { name: 'Objectives', exact: true }).click()
     await workspace.getByRole('link').filter({ has: page.getByText('Review the workspace navigation', { exact: true }) }).click()
@@ -1421,6 +1442,7 @@ for (const locale of ['ja', 'ar', 'ru'] as const) {
 
 const translatedSurfaceExpectations = {
   "Ja": {
+    workHeading: "作業の概要", workNote: "現在の目標を追跡し、作業、レビュー、証拠を確認できます。",
     reviewFindings: "記録されたレビュー所見", reviewUnmet: "未充足",
     objectiveOverview: "目標の概要",
     objectiveSearch: "目標を検索",
@@ -1438,6 +1460,7 @@ const translatedSurfaceExpectations = {
     "findAgent": "エージェントを検索"
   },
   "Zh": {
+    workHeading: "工作概览", workNote: "跟踪当前目标，并查看其工作、审核和证据。",
     reviewFindings: "已记录的审查结论", reviewUnmet: "未满足",
     objectiveOverview: "目标概览",
     objectiveSearch: "搜索目标",
@@ -1455,6 +1478,7 @@ const translatedSurfaceExpectations = {
     "findAgent": "查找智能体"
   },
   "ZhHant": {
+    workHeading: "工作概覽", workNote: "追蹤目前目標，並檢視其工作、審查與證據。",
     reviewFindings: "已記錄的審查結論", reviewUnmet: "未滿足",
     objectiveOverview: "目標概覽",
     objectiveSearch: "搜尋目標",
@@ -1472,6 +1496,7 @@ const translatedSurfaceExpectations = {
     "findAgent": "尋找代理"
   },
   "Ar": {
+    workHeading: "نظرة عامة على العمل", workNote: "تابع الأهداف الحالية ثم افتح أعمالها ومراجعاتها وأدلتها.",
     reviewFindings: "نتائج المراجعة المسجلة", reviewUnmet: "غير مستوفى",
     objectiveOverview: "نظرة عامة على الهدف",
     objectiveSearch: "البحث في الأهداف",
@@ -1489,6 +1514,7 @@ const translatedSurfaceExpectations = {
     "findAgent": "البحث عن وكيل"
   },
   "Ru": {
+    workHeading: "Обзор работы", workNote: "Следите за текущими целями и открывайте их работы, проверки и подтверждения.",
     reviewFindings: "Записанные выводы проверки", reviewUnmet: "Не выполнен",
     objectiveOverview: "Обзор цели",
     objectiveSearch: "Поиск целей",
@@ -1563,10 +1589,15 @@ for (const [locale, suffix, dark, light] of [
         await page.evaluate(value => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(value * 100), zoom)
         await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(zoom)
 
-        for (const route of ['/organization', '/artifacts?source=organization', '/messages', '/messages?recipient=executive', '/objectives', '/objectives/release']) {
+        for (const route of ['/organization', '/artifacts?source=organization', '/messages', '/messages?recipient=executive', '/work', '/objectives', '/objectives/release']) {
           await page.evaluate(value => { location.hash = value }, route)
 
-          if (route === '/objectives') {
+          if (route === '/work') {
+            await expect(page.getByRole('heading', { name: copy.workHeading, exact: true })).toBeVisible()
+            await expect(page.getByText(copy.workNote, { exact: true })).toBeVisible()
+            await expect(page.locator('.eid-work-overview').getByRole('region', { name: 'Prepare the autumn release brief', exact: true })).toBeVisible()
+            expect(await page.locator('.eid-work-overview').evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
+          } else if (route === '/objectives') {
             const search = page.getByRole('textbox', { name: copy.objectiveSearch, exact: true })
             await expect(search).toBeVisible()
             await search.fill('autumn')
@@ -1610,7 +1641,7 @@ for (const [locale, suffix, dark, light] of [
             await expect(page.getByText(copy.linkedWorkNote, { exact: true })).toBeVisible()
           }
 
-          const focalCopy = route === '/objectives' ? copy.objectiveSearch : route === '/objectives/release' ? copy.objectiveRecord : route === '/organization' ? copy.findAgent : route === '/artifacts?source=organization' ? copy.deliverablesIntroduction : route.includes('recipient') ? copy.executiveMessageNote : copy.linkedWorkNote
+          const focalCopy = route === '/work' ? copy.workNote : route === '/objectives' ? copy.objectiveSearch : route === '/objectives/release' ? copy.objectiveRecord : route === '/organization' ? copy.findAgent : route === '/artifacts?source=organization' ? copy.deliverablesIntroduction : route.includes('recipient') ? copy.executiveMessageNote : copy.linkedWorkNote
           const focal = page.getByText(focalCopy, { exact: true })
           // Center the evidence target with space on both sides. Nearest-edge
           // scrolling can leave a fractional CSS pixel clipped at 200% zoom.
@@ -1627,10 +1658,11 @@ for (const [locale, suffix, dark, light] of [
           expect(appearance).toEqual({ theme: 'nous', dark: mode === 'dark', dir: locale === 'ar' ? 'rtl' : 'ltr' })
           const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)
           expect(overflow).toBeLessThanOrEqual(1)
+          const memberSearch = route.startsWith('/messages') ? await verifyMemberSearchGeometry(page) : undefined
           const name = `translated-${locale}-${mode}-${route.includes('recipient') ? 'executive' : route.startsWith('/artifacts') ? 'deliverables' : route.slice(1).replaceAll('/', '-')}-${width}-${height}-${zoom}.png`
           const bytes = Buffer.from(await app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
           writeFileSync(test.info().outputPath(name), bytes)
-          captures.push({ name, locale, route, width, height, zoom, ...appearance, overflow, sha256: createHash('sha256').update(bytes).digest('hex') })
+          captures.push({ name, locale, route, width, height, zoom, ...appearance, overflow, memberSearch, sha256: createHash('sha256').update(bytes).digest('hex') })
           await test.info().attach(name, { body: bytes, contentType: 'image/png' })
 
           if (route === '/objectives/release') {

@@ -587,3 +587,9 @@
 .eid-review-findings > section { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
 .eid-review-findings > section h3 { margin: 0; font-size: 13px; }
 .eid-review-findings ul { margin: 0; padding-inline-start: 18px; }
+
+/* The member directory owns its full-width search treatment. Keep shared search
+   fields content-sized elsewhere and derive color from the selected theme. */
+.eid-messages-view .eid-message-search { width: 100%; flex: none; border: 1px solid var(--eidolon-border-subtle); border-radius: 8px; padding: 4px 8px; background: var(--eidolon-bg); }
+.eid-messages-view .eid-message-search:focus-within { border-color: var(--ui-accent); }
+.eid-messages-view .eid-message-search input { flex: 1 1 0%; width: 0; field-sizing: fixed; }

@@ -73,7 +73,7 @@ export function Messages({
             <h1>{executiveEntry ? copy.messageOrganization : copy.messages}</h1>
             <p>{executiveEntry ? copy.executiveMessageNote : copy.messagesNote}</p>
           </header>
-          <SearchField aria-label={messages.search} containerClassName="opacity-100" onChange={setQuery} placeholder={messages.search} value={query} />
+          <SearchField aria-label={messages.search} containerClassName="eid-message-search opacity-100" onChange={setQuery} placeholder={messages.search} value={query} />
           <nav aria-label={copy.chooseAgent}>
             {matches.map(item => (
               <Button
