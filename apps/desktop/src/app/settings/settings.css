@@ -209,6 +209,11 @@
 /* At high zoom the headings can exhaust a fixed-height endpoint editor.
    Keep one page scroller so every draft control and its focus ring is reachable. */
 @media (max-height: 600px) {
+  /* The overview heading and navigation must not consume the entire focus area. */
+  .eid-settings-page:has(.eid-settings-overview-content) { overflow-y: auto; scroll-padding: 7px; }
+  .eid-settings-page:has(.eid-settings-overview-content) .eid-settings-layout { flex: none; height: auto; overflow: visible; grid-template-rows: auto; }
+  .eid-settings-page:has(.eid-settings-overview-content) .eid-settings-main { overflow: visible; }
+  .eid-settings-page:has(.eid-settings-overview-content) .eid-settings-overview-content { flex: none; overflow: visible; }
   .eid-settings-page:has(.eid-custom-endpoints) { overflow-y: auto; scroll-padding: 7px; }
   .eid-settings-page:has(.eid-custom-endpoints) .eid-settings-layout { flex: none; height: auto; overflow: visible; grid-template-rows: auto; }
   .eid-settings-page:has(.eid-custom-endpoints) .eid-settings-main { overflow: visible; }
