@@ -951,7 +951,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
 
   expect(chrome.header.y).toBe(0)
   expect(chrome.header.height).toBe(65)
-  expect(chrome.search.width).toBe(380)
+  expect(chrome.search.width).toBe(210)
   expect(chrome.firstNavigation.y).toBeGreaterThanOrEqual(110)
   expect(chrome.firstNavigation.y).toBeLessThanOrEqual(118)
   expect(chrome.headerDrag).toBe('drag')
