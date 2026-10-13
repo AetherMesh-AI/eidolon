@@ -795,6 +795,11 @@ test('keeps native organization navigation, roster and objective layouts usable 
 
     if (width === 1536) {
       expect(Math.abs(geometry.cards.bottom - 695), 'Home card bottom approaches the matched reference').toBeLessThanOrEqual(5)
+
+      for (const event of geometry.activityRows) {
+        expect(event.bounds.width, 'activity card keeps the reference width').toBeGreaterThanOrEqual(195)
+        expect(event.bounds.width, 'activity card keeps the reference width').toBeLessThanOrEqual(225)
+      }
     }
 
     const health = await page.getByRole('contentinfo', { name: 'System health', exact: true }).boundingBox()

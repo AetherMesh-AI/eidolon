@@ -665,3 +665,13 @@
 .eid-objective-overview .eid-progress-summary header p { font-size: 11px; line-height: 16px; margin: 0; }
 .eid-objective-actions .eid-dispatch-controls > p > small { display: inline; }
 .eid-messages-view .eid-owner-chat-allowance { scroll-margin: 8px; }
+
+@media (min-width: 1101px) {
+  .eid-home-activity ol { grid-template-columns: repeat(4, minmax(0, 225px)); }
+  .eid-home-activity li { display: grid; grid-template-columns: 28px minmax(0, 1fr); align-content: start; gap: 0 8px; padding: 8px; }
+  .eid-home-activity li > .eid-avatar { grid-row: 1 / span 2; }
+  .eid-home-activity li > div { display: contents; }
+  .eid-home-activity li :is(strong, small) { grid-column: 2; }
+  .eid-home-activity li :is(p, time) { grid-column: 1 / -1; }
+  .eid-home-activity li p { margin-block: 6px; }
+}
