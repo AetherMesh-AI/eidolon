@@ -119,7 +119,14 @@ export async function verifyGalleryControls(fixture: GalleryFixture, scope: Loca
       const placeholder = await target.getAttribute('placeholder')
       const stable = placeholder ? scope.getByPlaceholder(placeholder, { exact: true }) : target
       if (!controls.some(control => control.index === index)) {
-        controls.push({ index, target: await stable.count() === 1 ? stable : target })
+        const selected = await stable.count() === 1 ? stable : target
+        // Pin this DOM node. Positional locators may silently rebind when a
+        // background catalog query inserts buttons during keyboard traversal.
+        const identity = `${label}-${index}`
+        await selected.evaluate((element, key) => element.setAttribute('data-gallery-focus-identity', key), identity)
+        const pinned = scope.locator(`[data-gallery-focus-identity=${JSON.stringify(identity)}]`)
+        await expect(pinned).toHaveCount(1)
+        controls.push({ index, target: pinned })
       }
       break
     }

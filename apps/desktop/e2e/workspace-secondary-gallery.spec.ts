@@ -37,6 +37,8 @@ for (const copy of galleryLocales) {
             await expect(heading).toBeVisible()
             await expect(heading).toHaveCSS('font-family', /Georgia/)
             await expect(scope.locator('[data-slot="skeleton"]')).toHaveCount(0)
+            // Skills uses PageLoader status surfaces rather than skeleton slots.
+            await expect(scope.locator('[role="status"][aria-label]:has([role="presentation"])')).toHaveCount(0)
             if (name === 'activity') {
               const rows = scope.locator('.eid-activity-row')
               await expect(rows).toHaveCount(current.state.snapshot.activity.length)

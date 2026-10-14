@@ -87,18 +87,17 @@ test('a backend release notification obstructs the header until explicitly dismi
     // Use the public command while its cached status is current, so it only
     // checks availability; never click an install action.
     const checkThroughMenu = async () => {
-      await page.locator('.eid-workspace-header').click({ button: 'right' })
+      // The connection control stays above notifications; Settings below is
+      // deliberately tested for real toast interception later in this flow.
+      await switcher.click({ button: 'right' })
       await page.getByRole('menuitem', { name: 'Update Eidolon', exact: true }).click()
     }
 
     await checkThroughMenu()
-    const currentNotice = page.getByRole('status').filter({ has: page.getByText('The backend is running the latest version.', { exact: true }) })
+    const currentNotice = page.getByRole('dialog').filter({ has: page.getByText('The backend is running the latest version.', { exact: true }) })
     await expect(currentNotice).toBeVisible()
-    // Escape closes menus, not notifications. Dismiss the first result before
-    // issuing another menu command through the same header coordinates.
-    await currentNotice.getByRole('button', { name: 'Dismiss notification', exact: true }).click()
-    await expect(currentNotice).toBeHidden()
     await page.keyboard.press('Escape')
+    await expect(currentNotice).toBeHidden()
     const checksBeforeRelease = remote.updateChecks()
     remote.setUpdateBehind(1)
     await checkThroughMenu()
