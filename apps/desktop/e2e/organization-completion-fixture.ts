@@ -162,18 +162,18 @@ export async function setupCompletionFixture(budgetLimited: boolean, options: Co
   const routingConfig = options.modelRouting ? {
     max_cost_usd: '5',
     model_routes: [
-      { id: 'ineligible', provider: 'custom', model: 'mock-ineligible', reasoning: 'none', request_types: ['work.draft'], evidence_level: 1, max_context_tokens: 32768, max_output_tokens: 2048 },
-      { id: 'economy', provider: 'custom', model: 'mock-economy', reasoning: 'none', request_types: ['work.draft', 'work.analyze'], evidence_level: 2, max_context_tokens: 32768, max_output_tokens: 2048 },
-      { id: 'quality', provider: 'custom', model: 'mock-quality', reasoning: 'low', request_types: routingTypes, evidence_level: 3, max_context_tokens: 32768, max_output_tokens: 2048 }
+      { id: 'ineligible', provider: 'mock', model: 'mock-ineligible', reasoning: 'none', request_types: ['work.draft'], evidence_level: 1, max_context_tokens: 32768, max_output_tokens: 2048 },
+      { id: 'economy', provider: 'mock', model: 'mock-economy', reasoning: 'none', request_types: ['work.draft', 'work.analyze'], evidence_level: 2, max_context_tokens: 32768, max_output_tokens: 2048 },
+      { id: 'quality', provider: 'mock', model: 'mock-quality', reasoning: 'low', request_types: routingTypes, evidence_level: 3, max_context_tokens: 32768, max_output_tokens: 2048 }
     ],
     model_assignments: [
       { agent_id: 'executive', mode: 'fixed', route_ids: ['quality'], minimum_evidence: 3, max_fallbacks: 0 },
       { agent_id: 'worker-1', mode: 'auto', route_ids: ['ineligible', 'quality', 'economy'], minimum_evidence: 2, max_fallbacks: 0 }
     ],
     model_costs: [
-      { provider: 'custom', model: 'mock-ineligible', input_usd_per_million: '0.1', output_usd_per_million: '0.2' },
-      { provider: 'custom', model: 'mock-economy', input_usd_per_million: '1', output_usd_per_million: '2' },
-      { provider: 'custom', model: 'mock-quality', input_usd_per_million: '3', output_usd_per_million: '6' },
+      { provider: 'mock', model: 'mock-ineligible', input_usd_per_million: '0.1', output_usd_per_million: '0.2' },
+      { provider: 'mock', model: 'mock-economy', input_usd_per_million: '1', output_usd_per_million: '2' },
+      { provider: 'mock', model: 'mock-quality', input_usd_per_million: '3', output_usd_per_million: '6' },
       { provider: 'custom', model: 'mock-model', input_usd_per_million: '2', output_usd_per_million: '4' }
     ]
   } : {}

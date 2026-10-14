@@ -39,7 +39,7 @@ export function assertEconomyDispatch(audit: NativeRoutingAudit, request: Native
   expect(audit.requestId).toBe(request.id)
   expect(audit.modelDispatches).toHaveLength(1)
   const dispatch = audit.modelDispatches[0]
-  expect(dispatch).toMatchObject({ requestId: request.id, routeId: 'economy', mode: 'auto', selectedProvider: 'custom', adapterProvider: 'custom', model: 'mock-economy', reasoning: 'none' })
+  expect(dispatch).toMatchObject({ requestId: request.id, routeId: 'economy', mode: 'auto', selectedProvider: 'mock', adapterProvider: 'custom', model: 'mock-economy', reasoning: 'none' })
   expect(dispatch.id).toBe(request.routeDispatch?.id)
   expect(nanodollars(dispatch.pricing.inputUsdPerMillion)).toBe(1_000_000_000n)
   expect(nanodollars(dispatch.pricing.outputUsdPerMillion)).toBe(2_000_000_000n)
