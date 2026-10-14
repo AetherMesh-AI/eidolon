@@ -59,6 +59,11 @@ export async function captureOwnerPolicy(
 
       await expect.poll(targetIsVisible).toBe(true)
 
+      if (await target.locator.evaluate(element => element.matches('input,select'))) {
+        expect(await target.locator.evaluate(element => element.getBoundingClientRect().height),
+          `${target.name}: single-line control must not stretch beside a tall fieldset`).toBeLessThanOrEqual(64)
+      }
+
       if (await target.locator.evaluate(element => element.getAttribute('role') === 'checkbox')) {
         await target.locator.evaluate(async element => {
           (element as HTMLElement).blur()

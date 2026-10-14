@@ -14,7 +14,7 @@
 .eid-policy-editor fieldset { border: 0; padding: 0; margin: 0; }
 .eid-policy-editor label { display: grid; gap: 6px; min-width: 0; }
 .eid-policy-editor :is(input, select) { min-width: 0; width: 100%; }
-.eid-policy-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.eid-policy-fields { display: grid; align-items: start; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .eid-policy-row { margin-block: 12px; min-width: 0; }
 .eid-policy-row > summary { margin-bottom: 12px; cursor: pointer; overflow-wrap: anywhere; }
 .eid-policy-editor .eid-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; flex-shrink: 0; }
