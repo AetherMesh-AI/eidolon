@@ -39,7 +39,8 @@ export async function captureOwnerPolicy(
     for (const [index, target] of targets.entries()) {
       await expect(target.locator).toHaveCount(1)
       await target.locator.evaluate(element => element.scrollIntoView({ block: 'center', inline: 'nearest' }))
-      await expect.poll(() => target.locator.evaluate(element => {
+
+      const targetIsVisible = () => target.locator.evaluate(element => {
         const rect = element.getBoundingClientRect()
         const label = element.closest('label')?.getBoundingClientRect()
         const point = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
@@ -48,11 +49,22 @@ export async function captureOwnerPolicy(
           rect.top >= 0 && rect.bottom <= window.innerHeight + 1 &&
           (!label || (label.top >= 0 && label.bottom <= window.innerHeight + 1 && label.left >= 0 && label.right <= window.innerWidth + 1)) &&
           element.scrollWidth <= element.clientWidth + 1 && !!point && (point === element || element.contains(point))
-      })).toBe(true)
+      })
+
+      await expect.poll(targetIsVisible).toBe(true)
 
       if (await target.locator.evaluate(element => element.matches('input,select,button,[role=checkbox]'))) {
         focus.push({ zoom, ...(await verifyKeyboardFocus(page, target.locator, target.name)) })
       }
+
+      // Layout can precede the native compositor. Settle rendered frames
+      // after keyboard scrolling as well as programmatic scrolling.
+      await expect.poll(targetIsVisible).toBe(true)
+      await page.evaluate(async () => {
+        await document.fonts.ready
+        await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+      })
+      await expect.poll(targetIsVisible).toBe(true)
 
       const file = `${scenario}-${zoom}-${index + 1}.png`
       const nativeWindow = await app.browserWindow(page)

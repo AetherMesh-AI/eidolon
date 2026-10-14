@@ -232,3 +232,7 @@ native/fts5_cjk/*.so
 .eidolon-sandbox-e2e*/
 eidolon_agent.egg-info/
 compose.eidolon.local.yml
+
+# Native owner-policy acceptance reports and pixel evidence.
+/apps/desktop/owner-policy-test-results/
+/apps/desktop/owner-policy-report/

@@ -77,6 +77,7 @@ export function RoutingFields({ value, update, descriptor }: PolicyFieldsProps<O
               <label>
                 {copy.reasoning}
                 <select
+                  aria-label={copy.reasoning}
                   className={controlVariants()}
                   onChange={event => change(index, { reasoning: event.target.value })}
                   value={route.reasoning}
@@ -222,6 +223,7 @@ export function AssignmentFields({
         <label>
           {copy.mode}
           <select
+            aria-label={copy.mode}
             className={controlVariants()}
             onChange={event => {
               if (event.target.value === 'legacy') {
@@ -403,6 +405,7 @@ export function BudgetFields({ value, update, descriptor }: PolicyFieldsProps<Ow
         <label>
           {copy.adaptive_pacing_enabled}
           <select
+            aria-label={copy.adaptive_pacing_enabled}
             className={controlVariants()}
             disabled={managed('adaptive_pacing_enabled')}
             onChange={event => update({ ...value, adaptive_pacing_enabled: event.target.value === 'true' })}

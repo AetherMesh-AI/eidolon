@@ -2116,23 +2116,43 @@ it('keeps a changed primary unavailable after a newer selection fails before act
 })
 
 
-it.each(['updated', 'removed'])('fences a held primary lookup when its registry authentication source is %s', async reason => {
-  const desktop = fakeDesktop()
+it.each([
+  { reason: 'updated', jitter: 0 },
+  { reason: 'updated', jitter: 0.5 },
+  { reason: 'removed', jitter: 0 },
+  { reason: 'removed', jitter: 0.5 }
+])('fences a held primary lookup when its registry authentication source is $reason (jitter $jitter)', async ({ reason, jitter }) => {
+  const random = vi.spyOn(Math, 'random').mockReturnValue(jitter)
+  const publishedProfiles: Array<string | undefined> = []
+  const stopObserving = $connection.listen(connection => publishedProfiles.push(connection?.profile))
 
-  ;(window as { hermesDesktop?: unknown }).hermesDesktop = desktop
-  render(<Harness />)
-  await flushAsync()
-  const pending = deferred<typeof primaryConn>()
-  desktop.getConnection.mockReturnValue(pending.promise)
-  act(() => { desktop.emitBackendExit(); FakeWebSocket.instances[0].drop() })
-  await advanceBackoff()
-  const intent = currentSourceSwitchIntent()
-  act(() => { desktop.emitRegistryChanged({ connectionId: primaryConn.connectionId, reason }) })
-  expect(currentSourceSwitchIntent()).not.toBe(intent)
-  pending.resolve({ ...primaryConn, profile: 'observation-a' })
-  await flushAsync()
-  expect($activeGatewayProfile.get()).toBe('default')
-  expect($connection.get()).toMatchObject(primaryConn)
+  try {
+    const desktop = fakeDesktop()
+
+    ;(window as { hermesDesktop?: unknown }).hermesDesktop = desktop
+    render(<Harness />)
+    await flushAsync()
+    const bootReads = desktop.getConnection.mock.calls.length
+    const pending = deferred<typeof primaryConn>()
+    // Hold only this lookup. A zero-delay retry after the fence is a new read
+    // and must receive fakeDesktop's current registry, not this stale response.
+    desktop.getConnection.mockReturnValueOnce(pending.promise)
+    act(() => { desktop.emitBackendExit(); FakeWebSocket.instances[0].drop() })
+    await advanceBackoff()
+    expect(desktop.getConnection).toHaveBeenCalledTimes(bootReads + 1)
+    const intent = currentSourceSwitchIntent()
+    act(() => { desktop.emitRegistryChanged({ connectionId: primaryConn.connectionId, reason }) })
+    expect(currentSourceSwitchIntent()).not.toBe(intent)
+    pending.resolve({ ...primaryConn, profile: 'observation-a' })
+    await flushAsync()
+    expect(desktop.getConnection).toHaveBeenCalledTimes(bootReads + 1 + (jitter === 0 ? 1 : 0))
+    expect(publishedProfiles).not.toContain('observation-a')
+    expect($activeGatewayProfile.get()).toBe('default')
+    expect($connection.get()).toMatchObject(primaryConn)
+  } finally {
+    stopObserving()
+    random.mockRestore()
+  }
 })
 
 it.each([
