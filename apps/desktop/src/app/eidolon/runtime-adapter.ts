@@ -47,8 +47,11 @@ export function organizationErrorMessage(reason: unknown) {
 /** Server-owned truth. Reads are single-flight and bounded; losing the last
  * subscriber stops polling. Every response and write is bound to its socket
  * scope, and an obsolete scope aborts the transport before it can retry there. */
+let diagnosticAdapterId = 0
+
 export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrganizationAdapter {
   let scope = gateway.getScope()
+  let diagnosticObservedScope = scope
   let snapshot = emptySnapshot(scope)
   let epoch = 0
   let sequence = 0
@@ -69,10 +72,31 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
   const configurationKeys = new Map<string, string>()
   const historyKeys = new Map<string, string>()
 
+  // Temporary diagnostic branch only: bounded state-machine receipts, no payloads or credentials.
+  const diagnosticId = ++diagnosticAdapterId
+  let diagnosticCount = 0
+  const diagnosticScopes = new Map<string, number>()
+  const diagnose = (event: string, extra: Record<string, unknown> = {}) => {
+    if (diagnosticCount++ >= 500) {return}
+    const observed = diagnosticObservedScope
+    for (const key of [scope.key, observed.key]) {
+      if (!diagnosticScopes.has(key)) {diagnosticScopes.set(key, diagnosticScopes.size + 1)}
+    }
+    console.debug('[organization-poll-diagnostic]', JSON.stringify({
+      at: Date.now(), adapter: diagnosticId, event, epoch, sequence, lastApplied, writeVersion,
+      pendingWrites, failures, subscribers: listeners.size, reading: Boolean(reading), timer: timer !== undefined,
+      scope: diagnosticScopes.get(scope.key), observedScope: diagnosticScopes.get(observed.key),
+      connected: scope.connected, observedConnected: observed.connected, state: snapshot.connection?.state,
+      objectives: snapshot.objectives.length, tasks: snapshot.tasks.length,
+      requests: snapshot.requests?.map(request => ({ type: request.type, status: request.status })), ...extra
+    }))
+  }
+
   const publish = (next: OrganizationSnapshot) => {
     // A quiet snapshot poll must not repaint the whole organization graph.
     if (JSON.stringify(snapshot) === JSON.stringify(next)) {return}
     snapshot = next
+    diagnose('publish')
     listeners.forEach(listener => listener())
   }
 
@@ -80,7 +104,12 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
     if (timer !== undefined) {clearTimeout(timer); timer = undefined}
   }
 
-  const current = (token: number) => token === epoch && gateway.getScope().key === scope.key
+  const current = (token: number) => {
+    if (token !== epoch) {return false}
+    diagnosticObservedScope = gateway.getScope()
+
+    return diagnosticObservedScope.key === scope.key
+  }
 
   const accept = (value: OrganizationSnapshot, order: number) => {
     if (order < lastApplied) {return}
@@ -93,16 +122,21 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
 
   const schedule = (delay?: number) => {
     clearTimer()
+    diagnose('schedule', { delay })
 
     if (!listeners.size || !scope.connected || failures >= 3 || pendingWrites) {return}
     const active = snapshot.requests?.some(request => request.status === 'queued' || request.status === 'running')
-    timer = setTimeout(() => { timer = undefined; void refresh() }, delay ?? (failures ? 2500 * 2 ** failures : active ? 2500 : 15000))
+    const nextDelay = delay ?? (failures ? 2500 * 2 ** failures : active ? 2500 : 15000)
+    timer = setTimeout(() => { timer = undefined; diagnose('timer-fired'); void refresh() }, nextDelay)
+    diagnose('timer-scheduled', { delay: nextDelay })
   }
 
   const resetScope = () => {
     const next = gateway.getScope()
+    diagnosticObservedScope = next
 
     if (next.key === scope.key && next.connected === scope.connected && next.switching === scope.switching && next.observationOnly === scope.observationOnly) {return false}
+    diagnose('reset-scope')
     const changed = next.key !== scope.key
     const ownerChanged = scope.ownerKey && next.ownerKey ? scope.ownerKey !== next.ownerKey : changed
     epoch++
@@ -134,6 +168,7 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
 
   async function refresh(): Promise<void> {
     resetScope()
+    diagnose('refresh')
 
     if (!scope.connected || pendingWrites) {return}
 
@@ -160,8 +195,10 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
           return gateway.request<OrganizationSnapshot>('organization.snapshot', {}, 15000, controller.signal)
         })
 
+        diagnose('read-result', { token, version, order, cachedCurrent: token === epoch && diagnosticObservedScope.key === scope.key, aborted: controller.signal.aborted })
         if (current(token) && version === writeVersion && !controller.signal.aborted) {accept(result, order)}
       } catch (reason) {
+        diagnose('read-error', { token, version, order, cachedCurrent: token === epoch && diagnosticObservedScope.key === scope.key, aborted: controller.signal.aborted })
         if (current(token) && version === writeVersion && order >= lastApplied && !controller.signal.aborted) {
           failures++
           publish({ ...snapshot, connection: { ...snapshot.connection, scope: scope.key, ownerScope: scope.ownerKey, ownerRoute: scope.ownerRoute, state: 'error', error: organizationErrorMessage(reason) } })
@@ -170,6 +207,7 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
         controllers.delete(controller)
         releaseScope()
 
+        diagnose('read-finally', { token, cachedCurrent: token === epoch && diagnosticObservedScope.key === scope.key })
         if (current(token)) {reading = undefined; schedule()}
       }
     })()
@@ -193,6 +231,7 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
     const order = ++sequence
     writeVersion++
     pendingWrites++
+    diagnose('write-start', { method, token, order })
     const controller = new AbortController()
     controllers.add(controller)
     watchScope()
@@ -219,6 +258,7 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
         controllers.delete(controller)
         releaseScope()
 
+        diagnose('write-finally', { method, token, order, cachedCurrent: token === epoch && diagnosticObservedScope.key === scope.key })
         if (current(token)) {
           pendingWrites--
           mutations.delete(key)
@@ -553,6 +593,7 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
     getSnapshot: () => snapshot,
     subscribe(listener) {
       listeners.add(listener)
+      diagnose('subscribe')
 
       if (listeners.size === 1) {
         watchScope()
@@ -561,6 +602,7 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
 
       return () => {
         listeners.delete(listener)
+        diagnose('unsubscribe')
 
         if (!listeners.size) {
           offScope?.()

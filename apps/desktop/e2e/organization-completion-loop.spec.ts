@@ -18,6 +18,9 @@ import { openOrganizationDisclosure, openOrganizationRequests } from './organiza
 import { expect, test } from './test'
 
 const projectTests = 'Project tests (requires external verification when unavailable)'
+const pollDiagnostics: unknown[] = []
+let diagnosticSocketUrl: string | undefined
+
 let running: Awaited<ReturnType<typeof setupCompletionFixture>> | undefined
 
 test.setTimeout(360_000)
@@ -125,6 +128,20 @@ test.afterEach(async ({}, testInfo) => {
   }
 
   try {
+    if (testInfo.status !== testInfo.expectedStatus && diagnosticSocketUrl && !running.fixture.page.isClosed()) {
+      try {
+        const response = await organizationRequest<{ capabilityVersion: number; state: string; scope: { kind: string; profile: string }; snapshot?: { objectives?: unknown[]; tasks?: unknown[]; requests?: { type: string; status: string }[] } }>(
+          running.fixture.page, { url: diagnosticSocketUrl, params: {} }, 'organization.observe'
+        )
+        const observed = response.result
+        const available = !response.error && observed?.capabilityVersion === 1 && observed.state === 'available' &&
+          observed.scope?.kind === 'served-profile' && observed.scope.profile === 'default' && Boolean(observed.snapshot)
+        pollDiagnostics.push({ at: Date.now(), event: 'post-failure-independent-observation', available,
+          ...(available ? { objectives: observed?.snapshot?.objectives?.length, tasks: observed?.snapshot?.tasks?.length,
+            requests: observed?.snapshot?.requests?.map(request => ({ type: request.type, status: request.status })) } : {}) })
+      } catch {pollDiagnostics.push({ at: Date.now(), event: 'post-failure-independent-read-failed' })}
+    }
+    await testInfo.attach('completion-poll-diagnostics', { body: JSON.stringify(pollDiagnostics, null, 2), contentType: 'application/json' })
     await testInfo.attach('completion-provider-receipts', {
       body: JSON.stringify(
         { stages: running.stages, providerErrors: running.providerErrors, status: testInfo.status },
@@ -149,6 +166,7 @@ test.afterEach(async ({}, testInfo) => {
   } finally {
     await running.fixture.cleanup()
     running = undefined
+    diagnosticSocketUrl = undefined
   }
 })
 
@@ -157,6 +175,52 @@ test('requires explicit check replacement, retains its audit, and completes only
   running = await setupCompletionFixture(false)
   let { page } = running.fixture
   const { stages, providerErrors } = running
+  pollDiagnostics.length = 0
+  const record = (value: unknown) => { if (pollDiagnostics.length < 2000) {pollDiagnostics.push(value)} }
+  page.on('console', message => {
+    if (message.text().startsWith('[organization-poll-diagnostic] ')) {
+      try {record(JSON.parse(message.text().slice('[organization-poll-diagnostic] '.length)))} catch { /* Diagnostic output must not fail acceptance. */ }
+    }
+  })
+  page.on('pageerror', error => record({ at: Date.now(), event: 'pageerror', name: error.name }))
+  await page.addInitScript(() => {
+    let count = 0
+    const timer = setInterval(() => {
+      console.debug('[organization-poll-diagnostic]', JSON.stringify({
+        at: Date.now(), event: 'renderer-heartbeat', visibility: document.visibilityState
+      }))
+      if (++count >= 120) {clearInterval(timer)}
+    }, 2500)
+  })
+  let socketIndex = 0
+  page.on('websocket', socket => {
+    const transport = ++socketIndex
+    const methods = new Map<string | number, string>()
+    record({ at: Date.now(), event: 'socket-open', transport })
+    socket.on('close', () => record({ at: Date.now(), event: 'socket-close', transport }))
+    socket.on('framesent', frame => {
+      try {
+        const value = JSON.parse(String(frame.payload))
+        if (typeof value.method === 'string' && value.method.startsWith('organization.')) {
+          diagnosticSocketUrl = socket.url()
+          methods.set(value.id, value.method)
+          record({ at: Date.now(), event: 'rpc-send', transport, method: value.method, id: value.id })
+        }
+      } catch { /* Ignore non-JSON transport frames. */ }
+    })
+    socket.on('framereceived', frame => {
+      try {
+        const value = JSON.parse(String(frame.payload))
+        const method = methods.get(value.id)
+        if (!method) {return}
+        methods.delete(value.id)
+        const snapshot = value.result?.snapshot ?? value.result
+        record({ at: Date.now(), event: 'rpc-result', transport, method, id: value.id,
+          errorCode: value.error?.code, objectives: snapshot?.objectives?.length, tasks: snapshot?.tasks?.length,
+          requests: snapshot?.requests?.map((request: { type?: string; status?: string }) => ({ type: request.type, status: request.status })) })
+      } catch { /* Ignore non-JSON transport frames. */ }
+    })
+  })
   const ownerWrites: RecordedResolution[] = []
   page.on('websocket', socket =>
     socket.on('framesent', frame => {
