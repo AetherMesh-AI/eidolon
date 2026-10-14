@@ -82,28 +82,31 @@ test('a backend release notification obstructs the header until explicitly dismi
     const toast = page.getByRole('status').filter({ has: page.getByText('Update ready', { exact: true }) })
     await expect(toast).toHaveCount(0)
 
-    // Introduce the release only after startup. Session initialization clears
-    // notifications and invokes their dismissal callbacks, persisting a snooze.
-    // Use the public command while its cached status is current, so it only
-    // checks availability; never click an install action.
-    const checkThroughMenu = async () => {
-      // The connection control stays above notifications; Settings below is
-      // deliberately tested for real toast interception later in this flow.
-      await switcher.click({ button: 'right' })
-      await page.getByRole('menuitem', { name: 'Update Eidolon', exact: true }).click()
-    }
-
-    await checkThroughMenu()
+    // Establish the current-version dialog and its normal Escape dismissal
+    // before exposing a release. Never use this install-capable command after.
+    await switcher.click({ button: 'right' })
+    await page.getByRole('menuitem', { name: 'Update Eidolon', exact: true }).click()
     const currentNotice = page.getByRole('dialog').filter({ has: page.getByText('The backend is running the latest version.', { exact: true }) })
     await expect(currentNotice).toBeVisible()
     await page.keyboard.press('Escape')
     await expect(currentNotice).toBeHidden()
+
+    // Introduce the release only after startup. Exercise the production
+    // read-only focus poll, not the install-capable “Update Eidolon” command:
+    // another availability check can make that command apply an update.
+    // Change Date only; real timers, toast lifetime and debounce keep running.
     const checksBeforeRelease = remote.updateChecks()
+    expect(remote.updatePosts()).toBe(0)
     remote.setUpdateBehind(1)
-    await checkThroughMenu()
+    await page.clock.setFixedTime(new Date(Date.now() + 6 * 60 * 1000))
+    await page.evaluate(() => globalThis.window.dispatchEvent(new Event('focus')))
     await expect.poll(() => remote!.updateChecks()).toBeGreaterThan(checksBeforeRelease)
+    await expect(toast).toBeVisible()
+    expect(remote.updatePosts()).toBe(0)
+    // Escape must not count as explicitly dismissing this notification.
     await page.keyboard.press('Escape')
     await expect(toast).toBeVisible()
+    expect(remote.updatePosts()).toBe(0)
     expect(remote.updateChecks()).toBeGreaterThan(0)
 
     // The grouped header places Settings under this toast; the connection
@@ -141,7 +144,7 @@ test('a backend release notification obstructs the header until explicitly dismi
       body: JSON.stringify({
         sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
         sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
-        backendChecks: remote.updateChecks(), checksBeforeReload, checksBeforeRelease, releaseIntroducedAfterStartup: true, availabilityCheck: 'public Update Eidolon menu command from known-current status', launchMode: 'last-used', restoredSource: 'Updater fixture B', obstructedBeforeDismissal: blocked,
+        backendChecks: remote.updateChecks(), checksBeforeReload, checksBeforeRelease, releaseIntroducedAfterStartup: true, availabilityCheck: 'production window focus poll after Date-only throttle advance', launchMode: 'last-used', restoredSource: 'Updater fixture B', obstructedBeforeDismissal: blocked,
         obstructedControl: 'Settings', dismissal: 'public Dismiss notification button', sameControlReceivesPointerAfterDismissal: true, switcherOpenedAfterDismissal: true,
         schedulerStarts: remote.starts(), backendUpdatePosts: remote.updatePosts(), providerCalls: running.calls.length
       })
