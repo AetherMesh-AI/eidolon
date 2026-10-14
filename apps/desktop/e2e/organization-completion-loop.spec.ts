@@ -250,20 +250,41 @@ test('requires explicit check replacement, retains its audit, and completes only
   await setReserveZoom(100)
   const reserveScreenshot = testInfo.outputPath('01-completion-reserve-allowance.png')
   await reserveRegion.screenshot({ path: reserveScreenshot })
-  const reserveZoomScreenshot = testInfo.outputPath('01-completion-reserve-allowance-200.png')
   await setReserveZoom(200)
   const reserveGeometry = await reserveRegion.evaluate(element => ({ width: element.clientWidth, contentWidth: element.scrollWidth }))
   expect(reserveGeometry.contentWidth).toBeLessThanOrEqual(reserveGeometry.width + 1)
-  await reserveRegion.screenshot({ path: reserveZoomScreenshot })
+  // Electron zoom and locator crop coordinates do not use the same pixel space.
+  // Retain actual viewport pixels and prove each amount/note is reachable instead.
+  const zoomCaptures: Array<{ zoom: number; file: string; sha256: string }> = []
+  const reserveParts = reserveRegion.locator('dd, p')
+  await expect(reserveParts).toHaveCount(7)
+  for (let index = 0; index < await reserveParts.count(); index += 1) {
+    const part = reserveParts.nth(index)
+    await part.evaluate(element => element.scrollIntoView({ block: 'center', inline: 'nearest' }))
+    await expect.poll(() => part.evaluate(element => {
+      const bounds = element.getBoundingClientRect()
+      const label = element.tagName === 'DD' ? element.previousElementSibling?.getBoundingClientRect() : null
+      const point = document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2)
+
+      return bounds.left >= 0 && bounds.right <= window.innerWidth + 1 &&
+        bounds.top >= 0 && bounds.bottom <= window.innerHeight + 1 &&
+        (!label || label.top >= 0) && element.scrollWidth <= element.clientWidth + 1 &&
+        !!point && (point === element || element.contains(point))
+    })).toBe(true)
+    const file = `01-completion-reserve-allowance-200-part-${index + 1}.png`
+    const capture = testInfo.outputPath(file)
+    await page.screenshot({ path: capture })
+    zoomCaptures.push({ zoom: 200, file, sha256: createHash('sha256').update(await readFile(capture)).digest('hex') })
+  }
   await setReserveZoom(100)
   await testInfo.attach('completion-reserve-native-evidence', {
     body: JSON.stringify({
       sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
       sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
-      scenario: 'actual-loopback-provider-completion-reserve', reserve: blockedReserve,
+      scenario: 'actual-loopback-provider-completion-reserve', reserve: blockedReserve, reserveGeometry,
       captures: [
         { zoom: 100, file: '01-completion-reserve-allowance.png', sha256: createHash('sha256').update(await readFile(reserveScreenshot)).digest('hex') },
-        { zoom: 200, file: '01-completion-reserve-allowance-200.png', geometry: reserveGeometry, sha256: createHash('sha256').update(await readFile(reserveZoomScreenshot)).digest('hex') }
+        ...zoomCaptures
       ]
     }, null, 2),
     contentType: 'application/json'
