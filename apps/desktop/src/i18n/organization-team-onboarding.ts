@@ -1,6 +1,7 @@
 import type { Locale } from './types'
 
 export interface TeamOnboardingCopy {
+  setupOrganization: string
   title: string
   intro: string
   connectModel: string
@@ -63,6 +64,7 @@ export interface TeamOnboardingCopy {
 
 export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
   en: {
+    setupOrganization: 'Set up organization',
     title: 'Build your starter team',
     intro: 'Connect a model, describe your work, then review your persistent team.',
     connectModel: 'Connect a model',
@@ -128,6 +130,7 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
     inherited: 'Existing model and allowance settings are retained.'
   },
   ja: {
+    setupOrganization: '組織を設定',
     title: '最初のチームを作成',
     intro: 'モデルを接続し、仕事内容を説明して、継続的に活動するチームを確認します。',
     connectModel: 'モデルを接続',
@@ -192,6 +195,7 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
     inherited: '既存のモデルと利用枠の設定は維持されます。'
   },
   zh: {
+    setupOrganization: '设置组织',
     title: '组建你的初始团队',
     intro: '连接模型，描述工作，然后审核你的常驻团队。',
     connectModel: '连接模型',
@@ -252,6 +256,7 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
     inherited: '保留现有的模型和额度设置。'
   },
   'zh-hant': {
+    setupOrganization: '設定組織',
     title: '建立你的初始團隊',
     intro: '連接模型、描述工作，然後檢視你的常駐團隊。',
     connectModel: '連接模型',
@@ -312,6 +317,7 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
     inherited: '保留現有的模型和額度設定。'
   },
   ar: {
+    setupOrganization: 'إعداد المؤسسة',
     title: 'أنشئ فريقك الأول',
     intro: 'اربط نموذجاً، وصف عملك، ثم راجع فريقك الدائم.',
     connectModel: 'ربط نموذج',
@@ -374,6 +380,7 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
     inherited: 'يتم الاحتفاظ بإعدادات النموذج ومخصصات الاستخدام الحالية.'
   },
   ru: {
+    setupOrganization: 'Настроить организацию',
     title: 'Создайте свою первую команду',
     intro: 'Подключите модель, опишите работу и проверьте состав своей постоянной команды.',
     connectModel: 'Подключить модель',

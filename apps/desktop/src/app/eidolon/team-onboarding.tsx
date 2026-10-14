@@ -39,7 +39,7 @@ function readTeamScope() {
 }
 
 export function TeamOnboardingEntry({ adapter }: { adapter: RuntimeOrganizationAdapter }) {
-  const { locale, t } = useI18n()
+  const { locale } = useI18n()
   const copy = teamOnboardingCopy[locale]
   const { client: metadataClient, scope, view } = useOrganizationMetadata()
   const [editingIdentity, setEditingIdentity] = useState(false)
@@ -112,7 +112,7 @@ export function TeamOnboardingEntry({ adapter }: { adapter: RuntimeOrganizationA
         onClick={() => (organizationId ? setOpened(true) : setEditingIdentity(true))}
         ref={trigger}
       >
-        {organizationId ? copy.generate : t.organizationMetadata.edit}
+        {organizationId ? copy.generate : copy.setupOrganization}
       </Button>
       {editingIdentity && (
         <OrganizationOwnerEditor

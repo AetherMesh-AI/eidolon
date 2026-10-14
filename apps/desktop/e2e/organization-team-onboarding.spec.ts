@@ -21,7 +21,7 @@ test('fresh home generates an editable named team and creates it only after expl
   const { page, mock } = fixture
   const navigation = page.getByRole('complementary', { name: 'Eidolon navigation' }).getByRole('navigation', { name: 'Primary', exact: true })
   await navigation.getByRole('link', { name: 'Home', exact: true }).click()
-  await page.locator('.eid-team-entry').getByRole('button', { name: 'Edit organization and owner names', exact: true }).click()
+  await page.locator('.eid-team-entry').getByRole('button', { name: 'Set up organization', exact: true }).click()
   const names = page.getByRole('dialog', { name: 'Organization and owner', exact: true })
   await names.getByLabel('Organization name', { exact: true }).fill('Starter Studio')
   await names.getByLabel('Your display name', { exact: true }).fill('Studio Owner')

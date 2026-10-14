@@ -4,9 +4,10 @@ import { expect, it, vi } from 'vitest'
 import { teamOnboardingCopy } from '@/i18n/organization-team-onboarding'
 import type { Locale } from '@/i18n/types'
 
-import { I18nProvider } from '@/i18n/context'
+import { I18nProvider, useI18n } from '@/i18n/context'
 
-import { TeamOnboardingDialog } from './team-onboarding'
+import { TeamOnboardingDialog, TeamOnboardingEntry } from './team-onboarding'
+import type { RuntimeOrganizationAdapter } from './types'
 import type { TeamOnboardingClient, TeamPreview, TeamSetup } from './team-onboarding-client'
 
 const team = {
@@ -195,3 +196,39 @@ it('keeps blocked readiness explicit after manual creation', async () => {
   expect(screen.queryByText('model_not_configured')).toBeNull()
   expect(h.client.generate).not.toHaveBeenCalled()
 })
+
+vi.mock('./use-organization-metadata', () => ({
+  useOrganizationMetadata: () => ({
+    client: {},
+    scope: { key: 'entry', ownerKey: 'owner', eligible: true, profile: 'default' },
+    view: { descriptor: { state: 'unconfigured', metadata: null } }
+  }),
+  readOrganizationMetadataScope: vi.fn()
+}))
+
+function EntryBesideExistingNamesControl() {
+  const { t } = useI18n()
+  return (
+    <>
+      <button>{t.organizationMetadata.edit}</button>
+      <TeamOnboardingEntry adapter={{} as RuntimeOrganizationAdapter} />
+    </>
+  )
+}
+
+it.each(Object.keys(teamOnboardingCopy) as Locale[])(
+  'gives the starter entry a distinct accessible action in %s',
+  locale => {
+    render(
+      <MemoryRouter>
+        <I18nProvider configClient={null} initialLocale={locale}>
+          <EntryBesideExistingNamesControl />
+        </I18nProvider>
+      </MemoryRouter>
+    )
+    expect(screen.getByRole('button', { name: teamOnboardingCopy[locale].setupOrganization })).toBeTruthy()
+    const buttons = screen.getAllByRole('button')
+    expect(buttons).toHaveLength(2)
+    expect(buttons[0].textContent).not.toBe(buttons[1].textContent)
+  }
+)

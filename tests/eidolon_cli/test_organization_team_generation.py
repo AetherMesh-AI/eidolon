@@ -9,7 +9,7 @@ from eidolon_cli.organization_executor import OrganizationExecutionError
 
 TEAM = {'executive': {'name': 'Ash'}, 'members': []}
 
-@pytest.mark.parametrize('raw', ['{}', '[]', '```json\n{}\n```', '{"executive":{},"executive":{},"members":[]}', '{"executive":NaN,"members":[]}', 'x' * 64001])
+@pytest.mark.parametrize('raw', ['{}', '[]', '```json\n{}\n```', '{"executive":{},"executive":{},"members":[]}', '{"executive":NaN,"members":[]}', pytest.param('x' * 64001, id='oversized-response')])
 def test_invalid_proposal_rejected(raw):
     with pytest.raises(OrganizationExecutionError):
         generation.parse_proposal(raw)
