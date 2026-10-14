@@ -245,6 +245,7 @@ class OrganizationConversationStore:
         staff = self._communication_staff(conn, agent['id'])
         agent.update(provider=staff.provider, model=staff.model)
         agent['identityId'] = agent_identity_view(conn, agent['id'])['identityId']
+        from eidolon_cli.organization_shared_budget import shared_cost_enabled
         budget = budget_view(conn, request['objective_id'], self.settings)
         if mark_read:
             conn.execute('UPDATE internal_messages SET read_at=COALESCE(read_at,?) WHERE id=?', (time.time(), message['id']))
@@ -252,7 +253,7 @@ class OrganizationConversationStore:
                 'agentContext': {'memory': {}, 'recentHistory': [], 'contextSummary': 'Private memory is not shared with internal conversations.'},
                 'toolPolicy': {'tools': [], 'readRoots': [], 'maxToolCalls': 0, 'maxResultChars': 0},
                 'maxOutputTokens': self.settings.max_output_tokens, 'maxContextTokens': self.settings.max_context_tokens,
-                'costBudgetEnabled': budget['configuredCostLimitUsd'] is not None,
+                'costBudgetEnabled': budget['configuredCostLimitUsd'] is not None or shared_cost_enabled(budget),
                 'timeoutSeconds': max(.001, min(self.settings.timeout_seconds, budget['deadlineTimestamp'] - time.time()))}
 
     def _finish_internal_reply(self, conn, request, result):

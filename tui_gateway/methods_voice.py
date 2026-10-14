@@ -436,7 +436,9 @@ def _(rid, params: dict) -> dict:
     """What THIS BUILD enforces (a client withholds unless advertised), sourced from the enforcing
     module, never config: a believed-but-absent capability is worse."""
     from eidolon_cli.active_sessions import PER_SESSION_EXCLUSIVE_SUBMIT
-    return _ok(rid, {"per_session_exclusive_submit": bool(PER_SESSION_EXCLUSIVE_SUBMIT)})
+    from eidolon_cli.organization_shared_allowance_controls import SHARED_ALLOWANCE_CAPABILITY_VERSION
+    return _ok(rid, {"per_session_exclusive_submit": bool(PER_SESSION_EXCLUSIVE_SUBMIT),
+                     "organization_shared_allowance": SHARED_ALLOWANCE_CAPABILITY_VERSION})
 
 
 @method("ping")

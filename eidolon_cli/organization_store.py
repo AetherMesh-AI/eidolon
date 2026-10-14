@@ -116,6 +116,7 @@ ORGANIZATION_SCHEMA = (_SCHEMA + OWNER_POLICY_SCHEMA + ROUTING_SCHEMA + REPLACEM
 class OrganizationStore(OrganizationModelRoutingStore, OrganizationPacingStore, OrganizationDispatchStore, OrganizationPriorityStore, OrganizationReplacementStore, OrganizationOwnerChatStore, OrganizationConversationStore, OrganizationPackageStore, OrganizationOutcomeStore, OrganizationAttentionStore, OrganizationHistoryStore, OrganizationCoordinationStore, OrganizationProjectExecutionStore, OrganizationBudgetStore, OrganizationRequestStore, OrganizationManagementStore, OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
     def __init__(self, path: Path | str, settings: OrganizationSettings | None = None):
         self.path = Path(path)
+        self._shared_state_path = self.path.resolve()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
             # Schema creation is one durable unit: avoid hundreds of separate
@@ -352,11 +353,17 @@ class OrganizationStore(OrganizationModelRoutingStore, OrganizationPacingStore, 
                 if agent is None:
                     continue
                 reason = budget_reason(conn, request["objective_id"], self.settings)
+                if reason is None:
+                    from eidolon_cli.organization_shared_budget import shared_claim_reason
+                    reason = shared_claim_reason(conn, request)
                 if reason:
                     self._pending(conn, request, reason)
                     continue
                 wait = pacing_wait(conn, request, self.settings,
                                    budget_view(conn, request['objective_id'], self.settings))
+                if wait is None:
+                    from eidolon_cli.organization_shared_budget import shared_claim_wait
+                    wait = shared_claim_wait(conn, request)
                 if wait is not None:
                     conn.execute('UPDATE requests SET reason=? WHERE id=?', (str(wait), request['id']))
                     continue
@@ -447,6 +454,7 @@ class OrganizationStore(OrganizationModelRoutingStore, OrganizationPacingStore, 
             if control['amended_scope']:
                 objective['originalDescription'] = objective['description']
                 objective['description'] = control['amended_scope']
+            from eidolon_cli.organization_shared_budget import shared_cost_enabled
             budget = budget_view(conn, request['objective_id'], self.settings)
             owner_inputs = [dict(row) for row in conn.execute('SELECT action,text,created FROM owner_resolutions WHERE objective_id=? ORDER BY created', (request['objective_id'],))]
             task = conn.execute("SELECT * FROM tasks WHERE id=?", (request["task_id"],)).fetchone()
@@ -517,8 +525,8 @@ class OrganizationStore(OrganizationModelRoutingStore, OrganizationPacingStore, 
                     "evidence": evidence, "feedback": task["feedback"] if task else payload.get("feedback", control["summary"]),
                     "ownerInputs": owner_inputs, "maxOutputTokens": self.settings.max_output_tokens,
                     "maxContextTokens": self.settings.max_context_tokens,
-                    **({"budget": budget} if "adaptivePacing" in budget else {}),
-                    "costBudgetEnabled": budget["configuredCostLimitUsd"] is not None,
+                    **({"budget": budget} if "adaptivePacing" in budget or "sharedAllowance" in budget else {}),
+                    "costBudgetEnabled": budget["configuredCostLimitUsd"] is not None or shared_cost_enabled(budget),
                     "toolReceipts": [receipt for item in evidence for receipt in item['toolReceipts']],
                     "toolPolicy": self._tool_policy(conn, request),
                     "staffing": self._staffing_context(),
