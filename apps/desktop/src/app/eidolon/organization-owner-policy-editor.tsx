@@ -20,7 +20,10 @@ import type {
 } from './organization-owner-policy-types'
 
 export type OwnerPolicyTarget =
-  { kind: 'routes' | 'budget' } | { kind: 'assignment'; agentId: string } | { kind: 'observation'; objectiveId: string }
+  | { kind: 'routes' }
+  | { kind: 'budget' }
+  | { kind: 'assignment'; agentId: string }
+  | { kind: 'observation'; objectiveId: string }
 type Candidate = Pick<OwnerPolicyRequest, 'configuration' | 'observation'>
 interface Draft {
   candidate: Candidate

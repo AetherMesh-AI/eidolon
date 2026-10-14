@@ -246,11 +246,20 @@ for (const language of galleryLocales) {
           await routes.getByRole('button', { name: copy.addRoute, exact: true }).click()
         }
 
+        const requestType = routes.getByRole('checkbox', { name: 'work.analyze', exact: true })
+        await requestType.setChecked(false)
+        await expect(requestType).not.toBeChecked()
+
         await captureOwnerPolicy(page, app, [
           { name: 'route-provider', locator: routes.getByLabel(copy.provider, { exact: true }) },
           { name: 'route-model', locator: routes.getByLabel(copy.model, { exact: true }) },
-          { name: 'route-evidence', locator: routes.getByLabel(copy.evidence, { exact: true }) }
+          { name: 'route-evidence', locator: routes.getByLabel(copy.evidence, { exact: true }) },
+          { name: 'request-type-unchecked', locator: requestType }
         ], `routes-${language.locale}-${mode}`, testInfo, { action: 'unsaved-draft', locale: language.locale, mode })
+        await requestType.setChecked(true)
+        await expect(requestType).toBeChecked()
+        await captureOwnerPolicy(page, app, [{ name: 'request-type-checked', locator: requestType }],
+          `routes-checked-${language.locale}-${mode}`, testInfo, { action: 'unsaved-draft', locale: language.locale, mode })
         await routes.getByRole('button', { name: copy.close, exact: true }).click()
       }
 

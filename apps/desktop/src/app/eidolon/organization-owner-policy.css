@@ -1,4 +1,4 @@
-/* Shared controls retain their own chrome; only layout belongs to this surface. */
+/* Reuse shared controls and theme tokens, with scoped owner-editor contrast. */
 .eid-policy-settings { min-height: 0; min-width: 0; overflow: auto; padding: 7px clamp(18px, 2.5vw, 30px) 24px; scroll-padding: 7px; }
 .eid-policy-settings > section + section { margin-top: 24px; }
 .eid-policy-settings :is(p, dd, li), .eid-policy-editor :is(p, dd, li) { overflow-wrap: anywhere; }
@@ -29,7 +29,8 @@
 @media (max-width: 650px) { .eid-policy-fields, .eid-policy-settings dl > div { grid-template-columns: minmax(0, 1fr); } }
 @media (max-height: 600px) { .eid-policy-editor { max-height: calc(100dvh - 16px); } }
 .eid-policy-editor label.eid-policy-check { display: flex; align-items: flex-start; gap: 8px; overflow-wrap: anywhere; }
-.eid-policy-editor .eid-policy-check > [role="checkbox"] { flex: 0 0 auto; margin-top: 2px; }
+.eid-policy-editor .eid-policy-check > [role="checkbox"] { flex: 0 0 auto; margin-top: 2px; border-color: var(--ui-text-secondary); }
+.eid-policy-editor .eid-policy-check > [role="checkbox"]:is([data-state="checked"], [data-state="indeterminate"]) { background-color: var(--dt-primary-solid); color: var(--dt-primary-solid-foreground); }
 .eid-policy-route-order { padding-inline-start: 22px; }
 .eid-policy-route-order li { margin-block: 8px; }
 .eid-policy-route-order li > span { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-inline-start: 8px; }

@@ -35,6 +35,12 @@ export async function captureOwnerPolicy(
 
       return (await desktop.hermesDesktop.zoom.get()).percent
     })).toBe(zoom)
+    // Zoom IPC acknowledgement can precede renderer relayout. Settle the
+    // renderer before choosing scroll coordinates at the new zoom level.
+    await page.evaluate(async () => {
+      await document.fonts.ready
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+    })
 
     for (const [index, target] of targets.entries()) {
       await expect(target.locator).toHaveCount(1)
@@ -52,6 +58,74 @@ export async function captureOwnerPolicy(
       })
 
       await expect.poll(targetIsVisible).toBe(true)
+
+      if (await target.locator.evaluate(element => element.getAttribute('role') === 'checkbox')) {
+        await target.locator.evaluate(async element => {
+          (element as HTMLElement).blur()
+          await Promise.all(element.getAnimations().filter(animation =>
+            Number.isFinite(Number(animation.effect?.getComputedTiming().endTime))
+          ).map(animation => animation.finished.catch(() => undefined)))
+        })
+
+        const contrast = await target.locator.evaluate(element => {
+          const style = getComputedStyle(element)
+          const canvas = document.createElement('canvas')
+          canvas.width = canvas.height = 1
+          const context = canvas.getContext('2d')!
+          const surfaces: string[] = []
+
+          for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+            surfaces.unshift(getComputedStyle(parent).backgroundColor)
+          }
+
+          const paint = (colors: string[]) => {
+            context.fillStyle = '#fff'
+            context.fillRect(0, 0, 1, 1)
+
+            for (const color of colors) {
+              context.fillStyle = color
+              context.fillRect(0, 0, 1, 1)
+            }
+
+            return [...context.getImageData(0, 0, 1, 1).data]
+          }
+
+          const luminance = (color: number[]) => {
+            const linear = color.slice(0, 3).map(channel => {
+              const value = channel / 255
+
+              return value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4
+            })
+
+            return .2126 * linear[0] + .7152 * linear[1] + .0722 * linear[2]
+          }
+
+          const ratio = (a: number[], b: number[]) => {
+            const [low, high] = [luminance(a), luminance(b)].sort((a, b) => a - b)
+
+            return (high + .05) / (low + .05)
+          }
+
+          const background = paint(surfaces)
+          const fill = paint([...surfaces, style.backgroundColor])
+          const boundary = paint([...surfaces, style.backgroundColor, style.borderTopColor])
+          const checked = element.getAttribute('aria-checked') === 'true'
+          const indicator = element.querySelector('[data-slot=checkbox-indicator]')
+          const mark = paint([...surfaces, style.backgroundColor, indicator ? getComputedStyle(indicator).color : style.color])
+
+          return { checked, boundary: ratio(background, boundary), mark: ratio(fill, mark), borderWidth: Number.parseFloat(style.borderTopWidth), indicatorPresent: !!indicator }
+        })
+
+        expect(contrast.borderWidth, `${target.name}: visible checkbox boundary`).toBeGreaterThanOrEqual(1)
+        expect(contrast.boundary, `${target.name}: boundary contrast`).toBeGreaterThanOrEqual(3)
+
+        if (contrast.checked) {
+          expect(contrast.indicatorPresent).toBe(true)
+          expect(contrast.mark, `${target.name}: checked mark contrast`).toBeGreaterThanOrEqual(3)
+        }
+
+        focus.push({ zoom, target: target.name, checkboxContrast: contrast })
+      }
 
       if (await target.locator.evaluate(element => element.matches('input,select,button,[role=checkbox]'))) {
         focus.push({ zoom, ...(await verifyKeyboardFocus(page, target.locator, target.name)) })
