@@ -170,7 +170,13 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
         controllers.delete(controller)
         releaseScope()
 
-        if (current(token)) {reading = undefined; schedule()}
+        // Cleanup belongs to this epoch even if the transport changed without
+        // notifying us. Response authorization above must still reject that scope.
+        if (token === epoch) {
+          reading = undefined
+          resetScope()
+          schedule()
+        }
       }
     })()
 
@@ -219,9 +225,10 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
         controllers.delete(controller)
         releaseScope()
 
-        if (current(token)) {
+        if (token === epoch) {
           pendingWrites--
           mutations.delete(key)
+          resetScope()
 
           if (!pendingWrites) {schedule(0)}
         }
