@@ -1,7 +1,7 @@
 /** Actual Electron → gateway → durable ledger → loopback HTTP provider. */
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 
 import type { Page } from '@playwright/test'
 
@@ -273,7 +273,9 @@ test('requires explicit check replacement, retains its audit, and completes only
     })).toBe(true)
     const file = `01-completion-reserve-allowance-200-part-${index + 1}.png`
     const capture = testInfo.outputPath(file)
-    await page.screenshot({ path: capture })
+    const nativeWindow = await running.fixture.app.browserWindow(page)
+    const nativePng = await nativeWindow.evaluate(async window => (await window.webContents.capturePage()).toPNG().toString('base64'))
+    await writeFile(capture, Buffer.from(nativePng, 'base64'))
     zoomCaptures.push({ zoom: 200, file, sha256: createHash('sha256').update(await readFile(capture)).digest('hex') })
   }
   await setReserveZoom(100)
