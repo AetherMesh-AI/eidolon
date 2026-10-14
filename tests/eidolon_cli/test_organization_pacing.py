@@ -69,6 +69,7 @@ def test_ratio_excludes_protected_headroom_and_real_config_reload_fences_stale_h
     assert pacing(store, objective)['remaining']['modelCalls'] == 1
     assert pacing(store, objective)['protectedRemaining']['modelCalls'] == 5
     settings = OrganizationSettings.from_config({'organization': {**{key: value for key, value in asdict(store.settings).items() if key != 'roster'}, 'model_costs': [],
+        'model_routes': [], 'model_assignments': [],
         'tool_grants': [], 'read_roots': [], 'project_grants': [], 'projects': [],
         'capabilities': list(store.settings.capabilities), 'adaptive_pacing_enabled': True}})
     peer = OrganizationStore(store.path, settings)

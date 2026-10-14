@@ -34,7 +34,7 @@ def _named_entry(requested, config):
             continue
         endpoint = entry.get('api') or entry.get('url') or entry.get('base_url')
         matches.append({'name': name, 'key': key, 'endpoint': endpoint,
-                        'enabled': is_provider_enabled(entry)})
+                        'enabled': is_provider_enabled(entry), 'api_mode': entry.get('api_mode')})
     if len(matches) > 1:
         raise ValueError('The configured provider identity is ambiguous; select one exact enabled entry.')
     if not matches:

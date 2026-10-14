@@ -1,6 +1,7 @@
 import type { OrganizationAttentionPage, OrganizationAttentionQuery, OrganizationAttentionSeen } from './runtime-attention-types'
 import type { DispatchChange, DispatchReceipt, DispatchState } from './runtime-dispatch-types'
 import type { HistoryCounts, HistoryMutation, HistoryPage, HistoryQuery, HistoryState } from './runtime-history-types'
+import type { OrganizationModelAssignment, OrganizationModelDispatch, OrganizationModelRouting } from './runtime-model-routing-types'
 import type { OrganizationOutcomePage, OrganizationOutcomeQuery, OrganizationOutcomeSeen } from './runtime-outcome-types'
 import type { OwnerChatCancel, OwnerChatRead, OwnerChatRenew, OwnerChatSend, OwnerChatThread } from './runtime-owner-chat-types'
 import type { PriorityChange, PriorityReceipt } from './runtime-priority-types'
@@ -135,6 +136,7 @@ export interface OrganizationAgentContext {
 }
 export interface OrganizationAgent {
   id: string
+  modelAssignment?: OrganizationModelAssignment
   identityId?: string
   persistent?: boolean
   createdAt?: string
@@ -360,7 +362,11 @@ export interface OrganizationExecutionAudit {
   requestId: string
   contexts: OrganizationExecutionReport[]
   evidencePasses: OrganizationExecutionReport[]
+  modelDispatches?: OrganizationModelDispatch[]
   modelCalls: {
+    dispatchId?: string | null
+    token?: string
+    pricing?: { policyGeneration: number; inputUsdPerMillion: string | null; outputUsdPerMillion: string | null }
     id: string
     request_id: string
     provider: string
@@ -493,6 +499,7 @@ export interface OrganizationUsage {
   adaptivePacing?: OrganizationAdaptivePacing
 }
 export interface OrganizationRequest {
+  routeDispatch?: OrganizationModelDispatch | null
   id: string
   /** Revision of the blocker content in this exact request projection. */
   attentionRevision?: number
@@ -604,6 +611,7 @@ export interface OrganizationManagement {
   allowedCapabilities: string[]
 }
 export interface OrganizationRuntime {
+  modelRouting?: OrganizationModelRouting
   /** Configuration-only guidance; never authentication or live execution proof. */
   setup?: {
     version: 1

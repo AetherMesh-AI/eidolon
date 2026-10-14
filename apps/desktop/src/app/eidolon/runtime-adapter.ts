@@ -7,6 +7,7 @@ import { type OrganizationAttentionPage, validAttentionPage } from './runtime-at
 import { validCompletionReserve, validReplacementCompletionReserve } from './runtime-completion-reserve-contract'
 import { type DispatchReceipt, validDispatch } from './runtime-dispatch-types'
 import type { HistoryPage } from './runtime-history-types'
+import { validAuditModelRouting } from './runtime-model-routing-contract'
 import { type OrganizationOutcomePage, validOutcomePage } from './runtime-outcome-types'
 import { OwnerChatRenewalRejected, validOwnerChatThread } from './runtime-owner-chat-contract'
 import type { OwnerChatThread } from './runtime-owner-chat-types'
@@ -556,7 +557,7 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
         if (!current(token) || controller.signal.aborted) {throw new Error(translateNow('organizationRuntime.auditScopeChanged'))}
         const validReport = (row: OrganizationExecutionAudit['contexts'][number]) => row && typeof row.attemptToken === 'string' && typeof row.createdAt === 'string' && row.report && typeof row.report === 'object' && !Array.isArray(row.report)
 
-        if (!result || result.requestId !== requestId || !Array.isArray(result.contexts) || !Array.isArray(result.evidencePasses) || !Array.isArray(result.modelCalls) || !result.contexts.every(validReport) || !result.evidencePasses.every(validReport) || result.modelCalls.some(call => !call || call.request_id !== requestId || typeof call.id !== 'string' || typeof call.provider !== 'string' || typeof call.model !== 'string' || typeof call.createdAt !== 'string' || !Number.isFinite(call.input_limit) || !Number.isFinite(call.output_limit) || (call.reserved_cost_usd !== null && typeof call.reserved_cost_usd !== 'string'))) {throw new Error(translateNow('organizationWork.executionAuditInvalid'))}
+        if (!result || result.requestId !== requestId || !Array.isArray(result.contexts) || !Array.isArray(result.evidencePasses) || !Array.isArray(result.modelCalls) || !result.contexts.every(validReport) || !result.evidencePasses.every(validReport) || result.modelCalls.some(call => !call || call.request_id !== requestId || typeof call.id !== 'string' || typeof call.provider !== 'string' || typeof call.model !== 'string' || typeof call.createdAt !== 'string' || !Number.isFinite(call.input_limit) || !Number.isFinite(call.output_limit) || (call.reserved_cost_usd !== null && typeof call.reserved_cost_usd !== 'string')) || !validAuditModelRouting(result)) {throw new Error(translateNow('organizationWork.executionAuditInvalid'))}
 
         return result
       } catch (reason) {throw new Error(organizationErrorMessage(reason))} finally {controllers.delete(controller); releaseScope()}

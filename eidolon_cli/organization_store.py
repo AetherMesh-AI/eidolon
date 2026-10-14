@@ -17,6 +17,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 
+from eidolon_cli.organization_model_routing import ROUTING_SCHEMA, OrganizationModelRoutingStore
 from eidolon_cli.organization_replacement import REPLACEMENT_SCHEMA, OrganizationReplacementStore
 from eidolon_cli.organization_owner_chat import OWNER_CHAT_SCHEMA, OrganizationOwnerChatStore
 from eidolon_cli.organization_conversations import CONVERSATION_SCHEMA, OrganizationConversationStore
@@ -108,10 +109,10 @@ def _text(value, field, limit=10000):
 
 
 # One DDL contract for initialization and non-migrating observation preflight.
-ORGANIZATION_SCHEMA = (_SCHEMA + REPLACEMENT_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA + COORDINATION_SCHEMA + HISTORY_SCHEMA + ATTENTION_SCHEMA + PROJECTS_SCHEMA + OUTCOME_SCHEMA + REGISTRY_SCHEMA + PACKAGE_SCHEMA + CONVERSATION_SCHEMA + OWNER_CHAT_SCHEMA + PRIORITY_SCHEMA + DISPATCH_SCHEMA)
+ORGANIZATION_SCHEMA = (_SCHEMA + ROUTING_SCHEMA + REPLACEMENT_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA + COORDINATION_SCHEMA + HISTORY_SCHEMA + ATTENTION_SCHEMA + PROJECTS_SCHEMA + OUTCOME_SCHEMA + REGISTRY_SCHEMA + PACKAGE_SCHEMA + CONVERSATION_SCHEMA + OWNER_CHAT_SCHEMA + PRIORITY_SCHEMA + DISPATCH_SCHEMA)
 
 
-class OrganizationStore(OrganizationPacingStore, OrganizationDispatchStore, OrganizationPriorityStore, OrganizationReplacementStore, OrganizationOwnerChatStore, OrganizationConversationStore, OrganizationPackageStore, OrganizationOutcomeStore, OrganizationAttentionStore, OrganizationHistoryStore, OrganizationCoordinationStore, OrganizationProjectExecutionStore, OrganizationBudgetStore, OrganizationRequestStore, OrganizationManagementStore, OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
+class OrganizationStore(OrganizationModelRoutingStore, OrganizationPacingStore, OrganizationDispatchStore, OrganizationPriorityStore, OrganizationReplacementStore, OrganizationOwnerChatStore, OrganizationConversationStore, OrganizationPackageStore, OrganizationOutcomeStore, OrganizationAttentionStore, OrganizationHistoryStore, OrganizationCoordinationStore, OrganizationProjectExecutionStore, OrganizationBudgetStore, OrganizationRequestStore, OrganizationManagementStore, OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
     def __init__(self, path: Path | str, settings: OrganizationSettings | None = None):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -303,6 +304,10 @@ class OrganizationStore(OrganizationPacingStore, OrganizationDispatchStore, Orga
             if request["type"] == "request.review" and agent["id"] == author:
                 continue
             candidates.append(agent)
+        from eidolon_cli.organization_model_routing import chain_failures
+        failures = chain_failures(conn, request['id'], self._policy_generation)
+        if failures:
+            candidates = [row for row in candidates if row['id'] == failures[-1]['agentId']]
         candidates = self._question_candidates(conn, request, candidates)
         return candidates, next((a for a in candidates if a["id"] not in busy), None)
 

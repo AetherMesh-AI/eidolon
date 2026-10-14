@@ -412,6 +412,122 @@ captures exactly the displayed reserve. The original evidence and charges remain
 Owner chat, model responses and the member-configuration form cannot change caps or
 completion reserve policy.
 
+### Fixed and Auto model assignments
+
+Model assignments are an opt-in owner policy, separate from persistent agent identity,
+team, memory and permissions. `organization.model_routes` is an allowlist of exact
+existing provider selectors and model names. `organization.model_assignments` binds
+agent IDs to Fixed or Auto routes. The built-in main `executive` must be Fixed;
+other agents, including custom executives, may use either mode. An absent assignment
+keeps the existing inherited provider behavior and is labeled legacy.
+
+A route declares `id`, `provider`, `model`, explicit `reasoning`, `request_types`,
+`evidence_level`, `max_context_tokens` and `max_output_tokens`. Evidence levels are
+owner-declared capability tiers from 1 to 3, not measured model quality. An assignment
+contains `agent_id`, `mode`, ordered `route_ids`, `minimum_evidence` and `max_fallbacks`.
+Auto filters request-type, capability/evidence and complete context/output requirements
+before comparing conservative configured cost. It never reduces the required output
+envelope to make a smaller route appear cheaper. Exact provider/model price ceilings
+come from the existing `organization.model_costs`; unknown prices are not free and
+cannot win an Auto comparison. No model discovery or paid classifier is involved.
+
+New explicit assignments currently support single-send direct chat-completions through
+standard OpenAI or generic custom/named-custom connections. Known OpenRouter, Nous,
+GitHub/Copilot, LM Studio, Ollama and search-backed endpoint signatures are excluded
+from this initial assigned-route path before agent initialization because their
+provider-specific discovery or context behavior is not yet covered by its accounting
+guards. Existing legacy provider connections remain available through their current
+path. Unsupported explicit routes stop before sending rather than falling through to
+another provider. Named configured providers retain their own identity even when they
+share the `custom` adapter. Reasoning, endpoint identity, model, policy generation,
+input/output envelope and captured rates must agree with the actual wire request.
+The resolved endpoint is pinned for an attempt. Editing an external profile provider
+file is not an atomic ledger revocation and does not instantly cancel a prepared
+send. Owned catalogue, assignment and rate changes still fence stale claims through
+the organization policy generation; use the existing stop/cancellation controls when
+a running attempt must be stopped.
+An immutable dispatch is retained with its first reservation and all subsequent calls
+in that attempt link to the same dispatch. Existing token/cost/call caps, completion
+protection, pacing, tools and exact-evidence checks remain authoritative.
+For explicitly assigned routes, provider-invoice cost stays unknown rather than
+triggering live price discovery. The recorded cost is a conservative reservation
+from owner-configured ceilings, not a claim about the provider's final invoice.
+
+Use the profile's owner terminal to inspect and configure the catalogue and assignments:
+
+```text
+python -m eidolon_cli.organization_model_routing_cli show
+python -m eidolon_cli.organization_model_routing_cli configure --file routes.json --expected-generation GENERATION --idempotency-key CHANGE_ID
+```
+
+The JSON file contains `model_routes` and `model_assignments`. Review the current
+policy generation first. Configure existing exact provider/model rate ceilings in the
+profile before enabling Auto. Do not put credentials or endpoints in the routing file.
+For example, this credential-free file assigns the main executive a fixed route and
+an existing worker the cheapest eligible route. Replace the example provider/model
+names with exact existing configured selectors and models, and declare their real
+supported limits and configured price ceilings before applying it:
+
+```json
+{
+  "model_routes": [
+    {
+      "id": "general",
+      "provider": "configured-provider",
+      "model": "configured-general-model",
+      "reasoning": "none",
+      "request_types": ["request.decompose", "request.plan", "work.draft", "work.analyze", "request.review", "request.test_review", "request.integrate", "request.accept"],
+      "evidence_level": 3,
+      "max_context_tokens": 32768,
+      "max_output_tokens": 8000
+    },
+    {
+      "id": "economy",
+      "provider": "configured-provider",
+      "model": "configured-economy-model",
+      "reasoning": "none",
+      "request_types": ["work.draft", "work.analyze"],
+      "evidence_level": 2,
+      "max_context_tokens": 32768,
+      "max_output_tokens": 8000
+    }
+  ],
+  "model_assignments": [
+    {"agent_id": "executive", "mode": "fixed", "route_ids": ["general"], "minimum_evidence": 3, "max_fallbacks": 0},
+    {"agent_id": "worker-1", "mode": "auto", "route_ids": ["general", "economy"], "minimum_evidence": 2, "max_fallbacks": 0}
+  ]
+}
+```
+
+This example does not create agents or provider connections. Route IDs are unique;
+each assignment references existing route IDs and a model-running agent identity.
+The catalogue and assignments each allow at most 64 entries; an assignment allows
+1–16 unique routes. Context windows must be 4,096–2,000,000 tokens and leave more
+than 2,048 tokens beyond the output allowance. Output allowances are 256–16,000.
+Evidence tiers are 1–3. Reasoning must explicitly be `none`, `minimal`, `low`,
+`medium`, `high`, `xhigh`, `max` or `ultra`. The wire encoding is checked
+before dispatch; declaring an effort does not prove that a provider accepts it. A
+provider rejection stops the attempt and does not qualify for automatic fallback. Fallback defaults to zero and is bounded by two and by the number
+of additional configured routes. A route listing a stage does not grant that agent
+permission to execute it. Set `HERMES_HOME` to the intended existing profile before
+running the commands; the command does not create a missing organization ledger.
+
+The desktop initially provides a read-only catalogue/assignment view and a separate
+actual-dispatch audit. A configured Auto label does not prove that a particular request
+has run. Owner chat keeps its separate existing route and one-send ledger; this policy
+does not silently switch owner chats or establish subscription quota enforcement.
+
+Configured fallback is bounded by both assignment and existing request-attempt limits.
+The initial supported failure class is a complete invalid structured JSON response on
+a tool-free attempt, with a proven normal finish and no refusal or tool calls. A fresh
+claim/token is required after the prior provider worker exits. The old reservation
+remains charged. Provider rejection, cancellation, timeouts, unknown outcomes, policy,
+credential or budget denial, tool effects and ordinary semantic review rejection do
+not trigger automatic route changes in this slice. No route cycling, refund or reset
+of the objective deadline is allowed. Automated staffing cannot create an unassigned
+model-running member as an escape from an enabled routing policy; the owner controls
+new route assignments without changing identity or tool authority.
+
 ### Adaptive start pacing
 
 Adaptive pacing is opt-in and objective-local. It slows the admission of new

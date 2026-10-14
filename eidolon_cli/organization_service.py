@@ -374,6 +374,7 @@ class OrganizationService:
                         'recordToolFinish': lambda ident, result, status: self.store.record_tool_finish(record.claim, ident, result, status),
                         'requestToolReceipts': lambda: self.store.request_tool_receipts(record.claim),
                         'reserveModelCall': lambda **values: self._reserve_model_call(record, **values),
+                        'selectModelRoute': lambda **values: self.store.select_model_route(record.claim, **values),
                         'recordContextReceipt': lambda report: self.store.record_context_receipt(record.claim, report),
                         'recordEvidencePass': lambda report: self.store.record_evidence_pass(record.claim, report),
                     })
@@ -427,7 +428,11 @@ class OrganizationService:
                         self.store.fail(record.claim, "Execution interrupted; review outcome before retry", retryable=False)
                     else:
                         try:
-                            self.store.finish(record.claim, record.result)
+                            from eidolon_cli.organization_model_routing_executor import ModelRouteFailure
+                            if isinstance(record.result, ModelRouteFailure):
+                                self.store.finish_model_route_failure(record.claim, record.result)
+                            else:
+                                self.store.finish(record.claim, record.result)
                             self.settings = self.store.settings
                         except ValueError as exc:
                             self.store.fail(record.claim, str(exc)[:2000], retryable=False)
