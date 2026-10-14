@@ -8,6 +8,7 @@ import { type ElectronApplication, expect, type Locator, type Page, type TestInf
 import { verifyKeyboardFocus } from './focus-visibility'
 import { captureCausalOwnerFrame } from './organization-native-owner-frame'
 import { ownerMarkerPosition } from './organization-owner-marker-position'
+import { ownerZoomGeometryMatches } from './organization-owner-zoom'
 
 export interface OwnerPolicyCaptureTarget {
   name: string
@@ -37,8 +38,28 @@ export async function captureOwnerPolicy(
 
       return (await desktop.hermesDesktop.zoom.get()).percent
     })).toBe(zoom)
-    // Zoom IPC acknowledgement can precede renderer relayout. Settle the
-    // renderer before choosing scroll coordinates at the new zoom level.
+    // Main-process zoom acknowledgement alone does not establish renderer layout.
+    const zoomWindow = await app.browserWindow(page)
+    const zoomGeometry = async () => ({
+      native: await zoomWindow.evaluate(native => {
+        const [width, height] = native.getContentSize()
+        return { width, height, factor: native.webContents.getZoomFactor() }
+      }),
+      renderer: await page.evaluate(() => ({ width: innerWidth, height: innerHeight, devicePixelRatio }))
+    })
+    const beforeZoomLayout = await zoomGeometry()
+    let lastZoomLayout = beforeZoomLayout
+    let zoomError: unknown
+    try {
+      await expect.poll(async () => {
+        lastZoomLayout = await zoomGeometry()
+        return ownerZoomGeometryMatches(lastZoomLayout, zoom)
+      }, { timeout: 5_000, message: 'renderer viewport must reflect acknowledged native zoom before scrolling' }).toBe(true)
+    } catch (error) { zoomError = error }
+    await testInfo.attach(`${scenario}-${zoom}-zoom-readiness`, { contentType: 'application/json',
+      body: JSON.stringify({ requestedPercent: zoom, before: beforeZoomLayout, last: lastZoomLayout,
+        error: zoomError ? String(zoomError) : null }) })
+    if (zoomError) throw zoomError
     await page.evaluate(async () => {
       await document.fonts.ready
       await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
@@ -46,7 +67,30 @@ export async function captureOwnerPolicy(
 
     for (const [index, target] of targets.entries()) {
       await expect(target.locator).toHaveCount(1)
-      await target.locator.evaluate(element => element.scrollIntoView({ block: 'center', inline: 'nearest' }))
+      const scrollGeometry = () => target.locator.evaluate(element => {
+        const parents = []
+        for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+          const style = getComputedStyle(parent)
+          if (/auto|scroll|hidden|clip/.test(style.overflowY + style.overflowX)) parents.push({
+            tag: parent.tagName, className: parent.className, overflowX: style.overflowX, overflowY: style.overflowY,
+            rect: parent.getBoundingClientRect().toJSON(), scrollTop: parent.scrollTop, scrollLeft: parent.scrollLeft,
+            clientHeight: parent.clientHeight, scrollHeight: parent.scrollHeight,
+            clientWidth: parent.clientWidth, scrollWidth: parent.scrollWidth })
+        }
+        return { rect: element.getBoundingClientRect().toJSON(), label: element.closest('label')?.getBoundingClientRect().toJSON(), parents,
+          viewport: { width: innerWidth, height: innerHeight, devicePixelRatio } }
+      })
+      const beforeScroll = await scrollGeometry()
+      // Supported Playwright scrolling waits for stable target geometry. Perform
+      // one positioning action, then keep all final visibility/hit-test guards.
+      let scrollError: unknown
+      try { await target.locator.scrollIntoViewIfNeeded({ timeout: 5_000 }) }
+      catch (error) { scrollError = error }
+      await testInfo.attach(`${scenario}-${zoom}-${target.name}-scroll-readiness`, {
+        contentType: 'application/json', body: JSON.stringify({ before: beforeScroll, after: await scrollGeometry(),
+          error: scrollError ? String(scrollError) : null })
+      })
+      if (scrollError) throw scrollError
 
       const targetIsVisible = () => target.locator.evaluate(element => {
         const rect = element.getBoundingClientRect()
@@ -75,7 +119,7 @@ export async function captureOwnerPolicy(
               const style = getComputedStyle(parent)
               parents.push({ tag: parent.tagName, className: parent.className,
                 rect: parent.getBoundingClientRect().toJSON(), clientWidth: parent.clientWidth,
-                scrollWidth: parent.scrollWidth, scrollLeft: parent.scrollLeft, scrollTop: parent.scrollTop,
+                scrollHeight: parent.scrollHeight, clientHeight: parent.clientHeight, scrollWidth: parent.scrollWidth, scrollLeft: parent.scrollLeft, scrollTop: parent.scrollTop,
                 direction: style.direction, overflowX: style.overflowX, overflowY: style.overflowY })
             }
 
