@@ -379,6 +379,8 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
   await page.keyboard.press('Home')
   await expect(page.getByRole('menuitem', { name: 'Overview', exact: true })).toBeFocused()
   await page.keyboard.press('ArrowDown')
+  await expect(page.getByRole('menuitem', { name: 'Organization', exact: true })).toBeFocused()
+  await page.keyboard.press('ArrowDown')
   await expect(page.getByRole('menuitem', { name: 'Model', exact: true })).toBeFocused()
   await page.keyboard.press('ArrowDown')
   await expect(page.getByRole('menuitem', { name: 'Chat', exact: true })).toBeFocused()
