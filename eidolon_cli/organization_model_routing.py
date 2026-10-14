@@ -251,6 +251,12 @@ class OrganizationModelRoutingStore:
             if any(a.agent_id not in known for a in assignments):
                 raise ValueError('Model assignments must identify existing persistent agents')
             updated = replace(self.settings, model_routes=routes, model_assignments=assignments)
+            from eidolon_cli.organization_owner_policy_config import managed_fields, resolve_owner_overrides
+            locked = managed_fields()
+            authoritative = resolve_owner_overrides(conn, self.settings)
+            if set(ROUTING_FIELDS) <= locked or any(getattr(updated, field) != getattr(authoritative, field)
+                                                    for field in set(ROUTING_FIELDS) & locked):
+                raise ValueError('Model routing configuration is managed and cannot be changed here')
             conn.execute('INSERT INTO organization_model_routing_config VALUES (1,?) ON CONFLICT(id) DO UPDATE SET configuration=excluded.configuration', (_json(configuration),))
             self.settings = updated
             self._adopt_policy(conn, resume=True)

@@ -38,7 +38,7 @@ export function readOrganizationMetadataScope(): MetadataScope {
   }
 }
 
-const client = createOrganizationMetadataClient(readOrganizationMetadataScope, () => crypto.randomUUID(), {
+export const organizationMetadataClient = createOrganizationMetadataClient(readOrganizationMetadataScope, () => crypto.randomUUID(), {
   getItem: key => sessionStorage.getItem(key),
   setItem: (key, value) => sessionStorage.setItem(key, value),
   removeItem: key => sessionStorage.removeItem(key)
@@ -57,12 +57,12 @@ export function useOrganizationMetadata() {
   const observationSwitching = useStore($organizationObservationSwitching)
   // The compiler cannot infer dependencies hidden behind store.get().
   const scope = useMemo(readOrganizationMetadataScope, [proofRevision, gateway, route, profile, swap, connection, state, pending, observationEpoch, observationSwitching])
-  const view = useSyncExternalStore(client.subscribe, client.getSnapshot)
+  const view = useSyncExternalStore(organizationMetadataClient.subscribe, organizationMetadataClient.getSnapshot)
   useEffect(() => {
     if (scope.eligible) {
-      void client.read()
+      void organizationMetadataClient.read()
     }
   }, [scope.key, scope.eligible])
 
-  return { client, view, scope }
+  return { client: organizationMetadataClient, view, scope }
 }

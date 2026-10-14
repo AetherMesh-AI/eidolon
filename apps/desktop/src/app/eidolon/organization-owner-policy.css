@@ -1,0 +1,37 @@
+/* Reuse shared controls and theme tokens, with scoped owner-editor contrast. */
+.eid-policy-settings { min-height: 0; min-width: 0; overflow: auto; padding: 7px clamp(18px, 2.5vw, 30px) 24px; scroll-padding: 7px; }
+.eid-policy-settings > section + section { margin-top: 24px; }
+.eid-policy-settings :is(p, dd, li), .eid-policy-editor :is(p, dd, li) { overflow-wrap: anywhere; }
+.eid-policy-settings h3 { font-size: 16px; font-weight: 600; margin-bottom: 10px; }
+.eid-policy-settings dl { display: grid; gap: 8px; margin-block: 12px; }
+.eid-policy-settings dl > div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.eid-policy-settings dt, .eid-policy-source { color: var(--ui-text-secondary); }
+.eid-policy-settings dd { margin: 0; }
+.eid-policy-editor { width: min(760px, calc(100vw - 32px)); max-width: calc(100vw - 32px); max-height: calc(100dvh - 32px); display: flex; flex-direction: column; min-height: 0; }
+.eid-policy-editor form { display: flex; flex-direction: column; min-height: 0; gap: 12px; }
+.eid-policy-scroll { min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 7px; margin: -7px; scroll-padding: 7px; }
+.eid-policy-editor :is(fieldset, section) { display: grid; gap: 12px; min-width: 0; }
+.eid-policy-editor fieldset { border: 0; padding: 0; margin: 0; }
+.eid-policy-editor label { display: grid; gap: 6px; min-width: 0; }
+.eid-policy-editor :is(input, select) { min-width: 0; width: 100%; }
+.eid-policy-fields { display: grid; align-items: start; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.eid-policy-row { margin-block: 12px; min-width: 0; }
+.eid-policy-row > summary { margin-bottom: 12px; cursor: pointer; overflow-wrap: anywhere; }
+.eid-policy-editor .eid-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; flex-shrink: 0; }
+.eid-policy-editor .eid-actions button { white-space: normal; height: auto; min-height: 32px; }
+.eid-policy-review { padding-block: 16px; margin-top: 16px; border-top: 1px solid var(--ui-stroke-tertiary); }
+.eid-policy-editor pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; margin-block: 6px 12px; }
+.eid-policy-changes { min-width: 0; }
+.eid-policy-changes dd { margin: 0; }
+.eid-policy-changes dt { font-weight: 600; }
+.eid-policy-editor :is(button, input, select, summary):focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 3px; transition-property: color, background-color, border-color, box-shadow; }
+.eid-policy-editor :is(button, input, select, summary) { scroll-margin: 7px; }
+@media (max-width: 650px) { .eid-policy-fields, .eid-policy-settings dl > div { grid-template-columns: minmax(0, 1fr); } }
+@media (max-height: 600px) { .eid-policy-editor { max-height: calc(100dvh - 16px); } }
+.eid-policy-editor label.eid-policy-check { display: flex; align-items: flex-start; gap: 8px; overflow-wrap: anywhere; }
+.eid-policy-editor .eid-policy-check > [role="checkbox"] { flex: 0 0 auto; margin-top: 2px; border-color: var(--ui-text-secondary); }
+.eid-policy-editor .eid-policy-check > [role="checkbox"]:is([data-state="checked"], [data-state="indeterminate"]) { background-color: var(--dt-primary-solid); color: var(--dt-primary-solid-foreground); }
+.eid-policy-route-order { padding-inline-start: 22px; }
+.eid-policy-route-order li { margin-block: 8px; }
+.eid-policy-route-order li > span { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-inline-start: 8px; }
+.eid-policy-editor .eid-policy-body { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }

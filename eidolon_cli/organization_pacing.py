@@ -158,20 +158,51 @@ def _timestamp(value, label):
         raise ValueError(f'{label} must be an ISO timestamp with a timezone') from None
 
 
+def validate_observation_input(objective_id, *, remaining_percent, as_of, expires_at,
+                               reset_at=None, expected_revision):
+    from eidolon_cli.organization_store import _text
+    objective_id = _text(objective_id, 'Objective ID', 128)
+    if type(remaining_percent) not in (int, float) or not math.isfinite(remaining_percent) or not 0 <= remaining_percent <= 100:
+        raise ValueError('Remaining percentage must be finite and between 0 and 100')
+    if type(expected_revision) is not int or not 0 <= expected_revision < 1000:
+        raise ValueError('Observation revision must be an integer from 0 to 999')
+    observed, expiry = _timestamp(as_of, 'As-of'), _timestamp(expires_at, 'Expiry')
+    reset = _timestamp(reset_at, 'Reset') if reset_at is not None else None
+    if not observed < expiry <= observed + 604800 or (reset is not None and not observed <= reset <= observed + 604800):
+        raise ValueError('Expiry must follow as-of by at most seven days; optional reset must be within that window')
+    return objective_id, remaining_percent, observed, expiry, reset, expected_revision
+
+
+def validate_observation_current(conn, values):
+    objective_id, _percent, observed, expiry, reset, expected_revision = values
+    now = time.time()
+    if observed > now:
+        raise ValueError('As-of cannot be in the future')
+    if expiry <= now or (reset is not None and reset <= now):
+        raise ValueError('A new observation must be fresh, with expiry and optional reset still in the future')
+    row = conn.execute('SELECT o.cancelled,c.status,coalesce(h.archived,0) AS archived FROM objectives o '
+        'JOIN objective_control c ON c.objective_id=o.id LEFT JOIN objective_history h ON h.objective_id=o.id '
+        'WHERE o.id=?', (objective_id,)).fetchone()
+    if row is None:
+        raise ValueError('Objective not found in this profile')
+    if row['cancelled'] or row['archived'] or row['status'] in ('accepted', 'legacy_completed'):
+        raise ValueError('Only nonterminal, unarchived objectives can receive observations')
+    latest = conn.execute('SELECT revision,as_of FROM organization_budget_observations WHERE objective_id=? '
+                          'ORDER BY revision DESC LIMIT 1', (objective_id,)).fetchone()
+    if expected_revision != (latest['revision'] if latest else 0):
+        raise ValueError('Observation changed; refresh and review the current value')
+    if latest and observed < latest['as_of']:
+        raise ValueError('A replacement observation cannot precede the latest as-of time')
+
+
 class OrganizationPacingStore:
     def record_budget_observation(self, objective_id, *, remaining_percent, as_of, expires_at,
                                   reset_at=None, expected_revision, idempotency_key):
         from eidolon_cli.organization_store import _text
-        objective_id = _text(objective_id, 'Objective ID', 128)
         key = _text(idempotency_key, 'Idempotency key', 128)
-        if type(remaining_percent) not in (int, float) or not math.isfinite(remaining_percent) or not 0 <= remaining_percent <= 100:
-            raise ValueError('Remaining percentage must be finite and between 0 and 100')
-        if type(expected_revision) is not int or not 0 <= expected_revision < 1000:
-            raise ValueError('Observation revision must be an integer from 0 to 999')
-        observed, expiry = _timestamp(as_of, 'As-of'), _timestamp(expires_at, 'Expiry')
-        reset = _timestamp(reset_at, 'Reset') if reset_at is not None else None
-        if not observed < expiry <= observed + 604800 or (reset is not None and not observed <= reset <= observed + 604800):
-            raise ValueError('Expiry must follow as-of by at most seven days; optional reset must be within that window')
+        values = validate_observation_input(objective_id, remaining_percent=remaining_percent,
+            as_of=as_of, expires_at=expires_at, reset_at=reset_at, expected_revision=expected_revision)
+        objective_id, remaining_percent, observed, expiry, reset, expected_revision = values
         with self._write() as conn:
             self._require_current_policy(conn)
             old = conn.execute('SELECT * FROM organization_budget_observations WHERE idempotency_key=?', (key,)).fetchone()
@@ -180,27 +211,10 @@ class OrganizationPacingStore:
                         objective_id, expected_revision + 1, remaining_percent, observed, expiry, reset):
                     raise ValueError('Observation retry key belongs to a different observation')
                 return {'objectiveId': objective_id, 'revision': old['revision'], 'idempotencyKey': key}
-            now = time.time()
-            if observed > now:
-                raise ValueError('As-of cannot be in the future')
-            if expiry <= now or (reset is not None and reset <= now):
-                raise ValueError('A new observation must be fresh, with expiry and optional reset still in the future')
-            row = conn.execute('SELECT o.cancelled,c.status,coalesce(h.archived,0) AS archived FROM objectives o '
-                'JOIN objective_control c ON c.objective_id=o.id LEFT JOIN objective_history h ON h.objective_id=o.id '
-                'WHERE o.id=?', (objective_id,)).fetchone()
-            if row is None:
-                raise ValueError('Objective not found in this profile')
-            if row['cancelled'] or row['archived'] or row['status'] in ('accepted', 'legacy_completed'):
-                raise ValueError('Only nonterminal, unarchived objectives can receive observations')
-            latest = conn.execute('SELECT revision,as_of FROM organization_budget_observations WHERE objective_id=? '
-                                  'ORDER BY revision DESC LIMIT 1', (objective_id,)).fetchone()
-            if expected_revision != (latest['revision'] if latest else 0):
-                raise ValueError('Observation changed; refresh and review the current value')
-            if latest and observed < latest['as_of']:
-                raise ValueError('A replacement observation cannot precede the latest as-of time')
+            validate_observation_current(conn, values)
             revision = expected_revision + 1
             conn.execute('INSERT INTO organization_budget_observations VALUES (?,?,?,?,?,?,?,?,?)',
-                         (objective_id, revision, key, remaining_percent, observed, expiry, reset, 'owner', now))
+                         (objective_id, revision, key, remaining_percent, observed, expiry, reset, 'owner', time.time()))
             self._event(conn, objective_id, f'Owner recorded advisory remaining allowance {remaining_percent:g}% '
                         f'(observation revision {revision}). Objective caps and reservations are unchanged.', 'budget', 'owner')
             return {'objectiveId': objective_id, 'revision': revision, 'idempotencyKey': key}

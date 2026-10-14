@@ -12,6 +12,14 @@ const state = vi.hoisted(() => ({
   organization: null as { snapshot: OrganizationSnapshot; adapter: RuntimeOrganizationAdapter } | null
 }))
 
+vi.mock('./use-organization-owner-policy', () => {
+  // This suite exercises runtime rendering and source authority. The separate
+  // owner-policy suite owns editor reads; an unavailable policy stays read-only.
+  const policy = { scope: { ownerKey: 'unavailable-policy' }, view: { descriptor: null } }
+
+  return { useOrganizationOwnerPolicy: () => policy }
+})
+
 vi.mock('./runtime-provider', () => ({ useRuntimeOrganization: () => state.organization }))
 vi.mock('../contrib/organization-shell', () => ({ OrganizationWorkIndicator: () => <button>Scoped requests</button> }))
 vi.mock('../contrib/panes', () => ({ useTitlebarToolContributions: () => [] }))

@@ -8,6 +8,7 @@ import { codiconIcon } from '@/components/ui/codicon'
 import { Tip } from '@/components/ui/tooltip'
 import { getHermesConfigDefaults, getHermesConfigRecord, saveHermesConfig } from '@/eidolon'
 import { useI18n } from '@/i18n'
+import { ownerPolicyCopy } from '@/i18n/organization-owner-policy'
 import { triggerHaptic } from '@/lib/haptics'
 import {
   Archive,
@@ -34,6 +35,7 @@ import { $localModelsEnabled } from '@/store/local-models-flag'
 import { notifyError } from '@/store/notifications'
 import { $settingsScopeProfile } from '@/store/settings-scope'
 
+import { OwnerPolicySettings } from '../eidolon/organization-owner-policy'
 import { OrganizationScenery } from '../eidolon/scenery'
 import { useRouteEnumParam } from '../hooks/use-route-enum-param'
 import { OverlayIconButton } from '../overlays/overlay-chrome'
@@ -59,6 +61,7 @@ import type { SettingsPageProps, SettingsView as SettingsViewId } from './types'
 
 const SETTINGS_VIEWS: readonly SettingsViewId[] = [
   'overview',
+  'organization',
   ...SECTIONS.map(s => `config:${s.id}` as SettingsViewId),
   'providers',
   'gateway',
@@ -76,7 +79,8 @@ const SETTINGS_VIEWS: readonly SettingsViewId[] = [
 
 export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: SettingsPageProps) {
   const scopeProfile = useStore($settingsScopeProfile)
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
+  const ownerCopy = ownerPolicyCopy[locale]
   const copy = t.settingsWorkspace
   const navigate = useNavigate()
   const { hash, pathname, search } = useLocation()
@@ -177,6 +181,7 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
   const navGroups: OverlayNavGroup[] = useMemo(
     () => [
       { active: activeView === 'overview', icon: Settings2, id: 'overview', label: copy.overview, onSelect: () => setActiveView('overview') },
+      { active: activeView === 'organization', icon: Cpu, id: 'organization', label: ownerCopy.organization, description: ownerCopy.title, onSelect: () => setActiveView('organization') },
       ...SECTIONS.map(s => {
         const view = `config:${s.id}` as SettingsViewId
 
@@ -308,7 +313,7 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
         onSelect: () => setActiveView('about')
       }
     ],
-    [activeView, copy.overview, keysView, providerView, t, setActiveView, openProviderView, openKeysView]
+    [activeView, copy.overview, ownerCopy, keysView, providerView, t, setActiveView, openProviderView, openKeysView]
   )
 
   // Type-to-search: printable keystrokes on the Settings surface (outside any
@@ -383,6 +388,8 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
           'config:appearance': <AppearanceSummary />
         } : undefined}
       />
+    ) : activeView === 'organization' ? (
+      <OwnerPolicySettings />
     ) : activeView === 'config:appearance' ? (
       <AppearanceSettings />
     ) : activeView === 'about' ? (
@@ -437,13 +444,13 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
       <OverlaySplitLayout className="eid-settings-layout">
         <OverlayNav
           footer={navFooter}
-          groups={navGroups.map(group => ({ ...group, description: descriptions[group.id] }))}
+          groups={navGroups.map(group => ({ ...group, description: group.id === 'organization' ? ownerCopy.title : descriptions[group.id] }))}
         />
 
         <OverlayMain className="eid-settings-main px-0 pb-0">
           <header className={activeView === 'overview' ? 'sr-only' : undefined}>
             <h2>{activeLabel}</h2>
-            <p>{descriptions[activeView]}</p>
+            <p>{activeView === 'organization' ? ownerCopy.title : descriptions[activeView]}</p>
           </header>
           <div className={activeView === 'overview' ? 'eid-settings-overview-content' : 'eid-settings-controls'}>{activeSettingsContent}</div>
           <p className="eid-settings-save-note">{copy.saveNote}</p>

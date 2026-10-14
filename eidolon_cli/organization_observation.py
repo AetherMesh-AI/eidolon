@@ -52,7 +52,10 @@ def _required_schema():
 
 
 def _compatible_schema(conn, tables):
+    from eidolon_cli.organization_owner_policy_config import OWNER_POLICY_TABLES
     for name, columns in _required_schema().items():
+        if name in OWNER_POLICY_TABLES:
+            continue  # Optional owner-editor data does not invalidate legacy observation.
         if name not in tables:
             return False
         present = {row[1] for row in conn.execute('PRAGMA table_info("' + name.replace('"', '""') + '")')}

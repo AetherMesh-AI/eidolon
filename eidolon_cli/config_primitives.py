@@ -23,6 +23,22 @@ class InvalidUserConfigError(RuntimeError):
 _CONFIG_LOCK = threading.RLock()
 
 
+def managed_install_system(home):
+    """Inspect the coarse install write lock without loading interactive config."""
+    marker = os.getenv('HERMES_MANAGED', '').strip().lower() or None
+    managed_marker = home / '.managed'
+    if marker is None and managed_marker.exists():
+        try:
+            marker = managed_marker.read_text(encoding='utf-8', errors='replace').strip().lower()
+        except OSError:
+            marker = ''
+    # Homebrew markers no longer make user configuration read-only. Only the
+    # NixOS module wrote an empty marker or the legacy boolean spellings.
+    if marker is None or marker in {'brew', 'homebrew'}:
+        return None
+    return 'nixos' if marker == '' or marker in {'true', '1', 'yes'} else marker
+
+
 def _deep_merge(base: dict, override: dict) -> dict:
     """Recursively merge *override* into *base*: dict-over-dict recurses (so overriding one leaf
     keeps sibling defaults), and ``None`` over a dict section is ignored.

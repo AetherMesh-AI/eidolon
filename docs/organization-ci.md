@@ -182,3 +182,25 @@ attempt. That success does not erase the earlier failure. The observations show
 notification interference; they do not establish why the update notice appeared
 at that time. No assertion, click action, timeout, retry setting, updater behavior,
 or security setting was changed or suppressed to obtain the passing run.
+
+### Owner configuration acceptance
+
+The separate `owner-policy-acceptance` Linux job exercises the actual native
+Settings, agent assignment and objective allowance editors through the served
+profile gateway. It uses the existing deterministic loopback provider, one worker,
+zero retries and the unchanged 35-minute native job ceiling. The protected desktop
+aggregate requires this job as well as standard native and directory acceptance;
+a failure, cancellation or skip cannot produce a successful aggregate.
+
+Evidence includes read-only ledger snapshots proving pure previews leave schema
+and rows unchanged; a deliberately lost post-commit acknowledgement and exact
+idempotent replay; actual assigned-model HTTP execution; and unchanged captured
+limits/reservations after an advisory observation. Native `webContents.capturePage`
+images cover form labels and preview details at 100% and 200% zoom. The owner
+budget/route gallery covers all six locales, including RTL, both actual light and
+dark palettes, and strict keyboard focus/outline contrast. Evidence includes source
+commit/tree, dirty-state flag, RPC receipts and SHA-256 hashes. These images avoid
+Playwright's CSS/device-coordinate crop mismatch under Electron native zoom.
+Backend and real RPC owner-policy tests also run in the Windows ledger/identity
+shard and the full macOS native union. No live provider calls or account changes
+are required by these fixtures.

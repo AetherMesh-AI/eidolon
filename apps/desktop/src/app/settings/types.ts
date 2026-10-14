@@ -6,6 +6,7 @@ import type { EnvVarInfo } from '@/types/eidolon'
 
 export type SettingsView =
   | 'overview'
+  | 'organization'
   | 'about'
   | 'billing'
   | 'connections'

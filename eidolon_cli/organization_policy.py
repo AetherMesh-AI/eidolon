@@ -91,22 +91,18 @@ def persisted_settings(conn):
 def resolve_settings(conn, seed_settings=None):
     """DB-managed membership survives service restarts; security policy does not.
 
-    Only roster and the two owner-editable capacity settings override a startup
-    configuration. Revoking an organization tool grant still makes a retained
+    Roster, capacity and the narrow owner routing/budget overrides survive startup.
+    Administrator-managed routing and budget fields retain source precedence.
+    Revoking an organization tool grant still makes a retained
     member unavailable instead of silently granting it again or erasing history.
     """
     from eidolon_cli.organization_project_registry import resolve_registry
     saved = persisted_settings(conn)
     base = seed_settings or saved or OrganizationSettings()
-    routing = conn.execute('SELECT configuration FROM organization_model_routing_config WHERE id=1').fetchone()
-    if routing is not None:
-        from eidolon_cli.organization_model_routing import parse_model_routes, parse_model_assignments
-        config = json.loads(routing[0])
-        routes = parse_model_routes(config['model_routes'])
-        base = replace(base, model_routes=routes, model_assignments=parse_model_assignments(config['model_assignments'], routes))
+    from eidolon_cli.organization_owner_policy_config import resolve_owner_overrides
     row = conn.execute('SELECT configuration FROM organization_configuration WHERE id=1').fetchone()
     if row is None:
-        return resolve_registry(conn, base)
+        return resolve_registry(conn, resolve_owner_overrides(conn, base))
     override = json.loads(row['configuration'])
     if set(override) != {'roster', 'max_inflight', 'max_members'}:
         raise ValueError('Persisted organization configuration contains unsupported settings')
@@ -115,8 +111,8 @@ def resolve_settings(conn, seed_settings=None):
     grants = list(dict.fromkeys([*raw['tool_grants'],
                                 *(grant for staff in raw['roster'] for grant in staff.get('tool_grants', []))]))
     validated = OrganizationSettings.from_config({'organization': {**raw, 'tool_grants': grants}})
-    return resolve_registry(conn, replace(validated, tool_grants=base.tool_grants,
-        ledger_project_ids=base.ledger_project_ids))
+    return resolve_registry(conn, resolve_owner_overrides(conn, replace(validated, tool_grants=base.tool_grants,
+        ledger_project_ids=base.ledger_project_ids)))
 
 
 class OrganizationPolicyStore:
@@ -183,7 +179,8 @@ class OrganizationPolicyStore:
 
     def _adopt_policy(self, conn, *, exclude_request_id=None, force=False, resume=False):
         from eidolon_cli.organization_project_registry import adopt_registry_status, resolve_registry
-        self.settings = resolve_registry(conn, self.settings)
+        from eidolon_cli.organization_owner_policy_config import resolve_owner_overrides
+        self.settings = resolve_registry(conn, resolve_owner_overrides(conn, self.settings))
         force = adopt_registry_status(conn, self.settings) or force
         if resume and conn.execute('SELECT 1 FROM organization_policy_pause WHERE id=1').fetchone() is not None:
             conn.execute('DELETE FROM organization_policy_pause WHERE id=1')

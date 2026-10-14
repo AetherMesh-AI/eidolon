@@ -10,6 +10,7 @@ import type { OrganizationWorkCopy } from '@/i18n/organization-work'
 import { AgentContext } from './agent-context'
 import { AgentAvatar } from './avatar'
 import { Inspector } from './inspector'
+import { OwnerPolicyEntry } from './organization-owner-policy'
 import { OrganizationConversations } from './runtime-conversations'
 import { OrganizationManagementForm } from './runtime-management-form'
 import { OrganizationManagementHistory } from './runtime-management-history'
@@ -290,7 +291,7 @@ export function Organization({
               <p className="eid-eyebrow">{runtime ? 'Runtime agent · Gateway record' : 'Prototype agent · Not live'}</p>
               <AgentAvatar name={agent.name} />
               <p>{roles[agent.role] || agent.role}</p>
-              {runtime && <AgentModelAssignment agent={agent} />}
+              {runtime && <><AgentModelAssignment agent={agent} /><OwnerPolicyEntry target={{ kind: 'assignment', agentId: agent.id }} /></>}
               <dl>
                 {runtime && (
                   <>
