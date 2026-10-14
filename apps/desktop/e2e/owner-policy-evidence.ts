@@ -7,6 +7,7 @@ import { type ElectronApplication, expect, type Locator, type Page, type TestInf
 
 import { verifyKeyboardFocus } from './focus-visibility'
 import { captureCausalOwnerFrame } from './organization-native-owner-frame'
+import { ownerMarkerPosition } from './organization-owner-marker-position'
 
 export interface OwnerPolicyCaptureTarget {
   name: string
@@ -195,18 +196,7 @@ export async function captureOwnerPolicy(
         viewport: { width: innerWidth, height: innerHeight }
       }))
       const beforeCapture = await focusState()
-      const markerPosition = await page.evaluate(targetRect => {
-        const controls = [...document.querySelectorAll('input,select,button,textarea,a,[role=checkbox],[tabindex]')]
-          .map(element => element.getBoundingClientRect().toJSON())
-        controls.push(targetRect)
-        const candidates = [
-          { left: 4, top: 4 }, { left: innerWidth - 28, top: 4 },
-          { left: 4, top: innerHeight - 12 }, { left: innerWidth - 28, top: innerHeight - 12 }
-        ]
-        return candidates.find(({ left, top }) => left >= 0 && top >= 0 && controls.every(rect =>
-          rect.width === 0 || rect.height === 0 || left + 24 < rect.left - 16 || left > rect.right + 16 ||
-          top + 8 < rect.top - 16 || top > rect.bottom + 16))
-      }, beforeCapture.rect)
+      const markerPosition = await page.evaluate(ownerMarkerPosition, beforeCapture.rect)
       expect(markerPosition, 'an empty viewport corner for the test-only causal marker').toBeTruthy()
       const nonce = randomBytes(9)
       const marker = { id: `owner-frame-${nonce.toString('hex')}`, ...markerPosition!,
