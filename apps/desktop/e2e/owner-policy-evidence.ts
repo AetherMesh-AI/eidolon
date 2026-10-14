@@ -57,7 +57,48 @@ export async function captureOwnerPolicy(
           element.scrollWidth <= element.clientWidth + 1 && !!point && (point === element || element.contains(point))
       })
 
-      await expect.poll(targetIsVisible).toBe(true)
+      const assertVisible = async () => {
+        try {
+          await expect.poll(targetIsVisible).toBe(true)
+        } catch (error) {
+          // Keep the strict guard. Failure diagnostics need native pixels too:
+          // Playwright screenshots can use mismatched bounds at Electron zoom.
+          const geometry = await target.locator.evaluate(element => {
+            const rect = element.getBoundingClientRect()
+            const label = element.closest('label')
+            const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
+            const parents = []
+
+            for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+              const style = getComputedStyle(parent)
+              parents.push({ tag: parent.tagName, className: parent.className,
+                rect: parent.getBoundingClientRect().toJSON(), clientWidth: parent.clientWidth,
+                scrollWidth: parent.scrollWidth, scrollLeft: parent.scrollLeft, scrollTop: parent.scrollTop,
+                direction: style.direction, overflowX: style.overflowX, overflowY: style.overflowY })
+            }
+
+            return { rect: rect.toJSON(), label: label?.getBoundingClientRect().toJSON(),
+              viewport: { width: innerWidth, height: innerHeight, devicePixelRatio },
+              clientWidth: element.clientWidth, scrollWidth: element.scrollWidth,
+              hit: hit ? { tag: hit.tagName, className: hit.className, isTarget: hit === element || element.contains(hit) } : null,
+              parents }
+          })
+          const nativeWindow = await app.browserWindow(page)
+          const encoded = await nativeWindow.evaluate(async native => (await native.webContents.capturePage()).toPNG().toString('base64'))
+          const file = `${scenario}-${zoom}-${index + 1}-visibility-failure.png`
+          const bytes = Buffer.from(encoded, 'base64')
+          await writeFile(testInfo.outputPath(file), bytes)
+          await testInfo.attach(`${scenario}-${zoom}-${target.name}-visibility-failure`, {
+            contentType: 'application/json', body: JSON.stringify({ scenario, zoom, target: target.name,
+              sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+              sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
+              file, sha256: createHash('sha256').update(bytes).digest('hex'), geometry }, null, 2)
+          })
+          throw error
+        }
+      }
+
+      await assertVisible()
 
       if (await target.locator.evaluate(element => element.matches('input,select'))) {
         expect(await target.locator.evaluate(element => element.getBoundingClientRect().height),
@@ -138,12 +179,12 @@ export async function captureOwnerPolicy(
 
       // Layout can precede the native compositor. Settle rendered frames
       // after keyboard scrolling as well as programmatic scrolling.
-      await expect.poll(targetIsVisible).toBe(true)
+      await assertVisible()
       await page.evaluate(async () => {
         await document.fonts.ready
         await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
       })
-      await expect.poll(targetIsVisible).toBe(true)
+      await assertVisible()
 
       const file = `${scenario}-${zoom}-${index + 1}.png`
       const nativeWindow = await app.browserWindow(page)

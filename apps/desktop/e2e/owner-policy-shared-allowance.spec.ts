@@ -10,7 +10,7 @@ import { policyCopy } from './owner-policy-copy'
 import { captureOwnerPolicy } from './owner-policy-evidence'
 import { sharedPolicyCopy } from './owner-policy-shared-allowance-copy'
 import {
-  allowanceLedgers, fillSharedAllowance, initializeAllowanceOrganization,
+  allowanceLedgers, fillSharedAllowance, initializeAllowanceOrganization, initializeEmptyAllowanceProfiles,
   observeAllowanceRpc, openSharedAllowance
 } from './owner-policy-shared-allowance-fixture'
 import { acknowledgeExpectedErrorBanner, expect, test } from './test'
@@ -183,6 +183,8 @@ test('explicit enrollment scopes profile reads and charges owner chats while ord
     await page.reload()
     await waitForAppReady(running.fixture, 60_000, '.eid-workspace-header')
     await initializeAllowanceOrganization(page, 'Root shared owner')
+    await initializeEmptyAllowanceProfiles(sandbox, [profileA, profileB])
+    expect(running.calls).toHaveLength(0)
     for (const profile of [profileA, profileB]) {
       await switchProfile(page, profile)
       await initializeAllowanceOrganization(page, `Member ${profile}`)
