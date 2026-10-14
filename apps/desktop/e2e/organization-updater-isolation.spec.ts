@@ -92,7 +92,12 @@ test('a backend release notification obstructs the header until explicitly dismi
     }
 
     await checkThroughMenu()
-    await expect(page.getByText('The backend is running the latest version.', { exact: true })).toBeVisible()
+    const currentNotice = page.getByRole('status').filter({ has: page.getByText('The backend is running the latest version.', { exact: true }) })
+    await expect(currentNotice).toBeVisible()
+    // Escape closes menus, not notifications. Dismiss the first result before
+    // issuing another menu command through the same header coordinates.
+    await currentNotice.getByRole('button', { name: 'Dismiss notification', exact: true }).click()
+    await expect(currentNotice).toBeHidden()
     await page.keyboard.press('Escape')
     const checksBeforeRelease = remote.updateChecks()
     remote.setUpdateBehind(1)
