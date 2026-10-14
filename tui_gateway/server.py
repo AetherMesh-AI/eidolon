@@ -161,6 +161,7 @@ _DETAIL_MODES = frozenset({"hidden", "collapsed", "expanded"})
 _LONG_HANDLERS = frozenset({
     "session.foreign.list", "session.foreign.preview", "session.foreign.import",
     "organization.descriptor", "organization.saveMetadata", "organization.observe",
+    "organization.teamSetup", "organization.previewTeam", "organization.createTeam", "organization.generateTeam",
     "organization.sharedAllowance", "organization.previewSharedAllowance", "organization.configureSharedAllowance",
     "organization.previewSharedAllowanceObservation", "organization.recordSharedAllowanceObservation",
     "billing.state", "subscription.state", "subscription.preview", "subscription.change",
@@ -3207,6 +3208,7 @@ from . import (  # noqa: E402
     methods_tools as _methods_tools, prompt_turn as _prompt_turn, billing_view as _billing_view,
     methods_projects as _methods_projects, methods_organization as _methods_organization,
     methods_organization_metadata as _methods_organization_metadata,
+    methods_organization_team_setup as _methods_organization_team_setup,
     methods_organization_owner_policy as _methods_organization_owner_policy,
     methods_organization_shared_allowance as _methods_organization_shared_allowance,
     methods_organization_observation as _methods_organization_observation,
@@ -3223,6 +3225,6 @@ for _m in (
     _methods_bot_relay, _prompt_turn, _billing_view, _methods_projects, _methods_session_foreign,
     _methods_session_control, _methods_subagents, _methods_organization, _methods_organization_owner_chat,
     _methods_organization_metadata, _methods_organization_observation, _methods_organization_owner_policy,
-    _methods_organization_shared_allowance):
+    _methods_organization_shared_allowance, _methods_organization_team_setup):
     _m.register(sys.modules[__name__])
 del _m

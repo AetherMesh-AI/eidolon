@@ -24,6 +24,7 @@ import { RuntimeHistoryBrowser, RuntimeHistoryObjectiveDetail } from './runtime-
 import { RuntimeOutcomeInbox } from './runtime-outcomes'
 import { RuntimeRequests } from './runtime-requests'
 import { RuntimeSetup } from './runtime-setup'
+import { TeamOnboardingEntry } from './team-onboarding'
 import { type Objective, objectiveStatusLabels, type OrganizationAdapter, type OrganizationSnapshot, type RuntimeOrganizationAdapter } from './types'
 import { WorkGraph } from './work-graph'
 import { WorkOverview } from './work-overview'
@@ -104,6 +105,7 @@ export function OrganizationWorkspaceView({ adapter }: { adapter: OrganizationAd
   return <main aria-label={list.workspace} className="eidolon eid-workspace">
     <div className="eid-page">
       {adapter.mode === 'prototype' ? <div className="eid-demo-bar"><span>{copy.legacyDemo} · {copy.legacyNote}</span></div> : <RuntimeStatus adapter={adapter} snapshot={snapshot} warningsOnly />}
+      {pathname === '/home' && adapter.mode === 'runtime' && <TeamOnboardingEntry adapter={adapter} key={snapshot.connection?.ownerScope ?? snapshot.connection?.scope} />}
       {pathname === '/home' && <Home adapter={adapter} snapshot={snapshot} />}
       {pathname === '/messages' && <Messages adapter={adapter.mode === 'runtime' ? adapter : undefined} key={snapshot.connection?.ownerScope ?? snapshot.connection?.scope} snapshot={snapshot} />}
       {pathname === '/work' && <WorkOverview snapshot={snapshot} />}

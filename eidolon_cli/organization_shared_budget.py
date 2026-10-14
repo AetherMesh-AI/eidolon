@@ -65,6 +65,8 @@ def _read_scope_pin(conn):
     prior = conn.execute('SELECT binding_json FROM organization_shared_scope_pin WHERE singleton=1').fetchone() if 'organization_shared_scope_pin' in tables else None
     retained = ('organization_shared_call_receipts' in tables and
                 conn.execute('SELECT 1 FROM organization_shared_call_receipts LIMIT 1').fetchone() is not None)
+    retained = retained or ('organization_team_generations' in tables and conn.execute(
+        'SELECT 1 FROM organization_team_generations WHERE shared_receipt IS NOT NULL LIMIT 1').fetchone() is not None)
     if prior is None:
         if retained:
             raise ValueError('Shared allowance scope provenance is missing; no call was sent.')
