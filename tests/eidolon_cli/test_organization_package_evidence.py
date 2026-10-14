@@ -1,6 +1,7 @@
 """Package prerequisites retain exact independent proof before downstream work."""
 import hashlib
 import json
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -13,7 +14,11 @@ from tests.eidolon_cli.test_organization_work_packages import (
 )
 
 
-def test_independent_plan_receipt_survives_upstream_review_completion(tmp_path):
+def test_independent_plan_receipt_survives_upstream_review_completion(tmp_path, monkeypatch):
+    # This manually driven receipt scenario holds a plan while finishing sibling
+    # work without service heartbeats; host speed must not expire that lease.
+    now = time.time()
+    monkeypatch.setattr(time, 'time', lambda: now)
     store, _ = make_store(tmp_path)
     decompose(store)
     plans = [store.claim_next() for _ in range(3)]
