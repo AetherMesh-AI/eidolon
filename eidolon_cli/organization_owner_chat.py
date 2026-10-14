@@ -361,6 +361,17 @@ class OrganizationOwnerChatStore:
             if ((recipient['provider'] and normalize_provider(recipient['provider']) != normalize_provider(selected_provider or provider))
                     or (recipient['model'] and recipient['model'] != model)):
                 raise ValueError('The exact configured member route changed before owner-chat dispatch')
+            from eidolon_cli.organization_shared_budget import (
+                configured_call_cost, record_shared_receipt, reserve_shared_call,
+            )
+            route_provider = str(selected_provider or provider)
+            shared = reserve_shared_call(self, conn, {
+                'kind': 'owner_chat', 'threadId': thread['id'], 'turnId': turn_id,
+                'identityId': thread['identity_id'], 'provider': route_provider, 'model': str(model),
+                'inputLimit': input_limit, 'outputLimit': output_limit,
+                'reservedCostUsd': configured_call_cost(self.settings, route_provider, str(model), input_limit, output_limit),
+            })
+            record_shared_receipt(conn, shared, owner_chat_turn_id=turn_id)
             conn.execute('UPDATE owner_chat_turns SET dispatched=1,provider=?,model=?,selected_provider=? WHERE id=?',
                          (str(provider)[:300], str(model)[:300], str(selected_provider or provider)[:300], turn_id))
 

@@ -1077,7 +1077,7 @@ def _prompt(request: dict, context: dict, kind: str) -> str:
         "objective", "task", "workPackage", "workPackages", "dependencies", "evidence", "toolReceipts", "staffing", "feedback", "ownerInputs", "capabilities", "maxTasks", "maxWorkers", "maxInflight", "agent", "agentContext", "requestContract", "requestOrigin", "requestResponses", "objectiveClarifications", "managementPolicy", "projectPolicy", "projectExecutionHistory", "internalConversations", "messagingDirectory"
     ) if key in context}
     budget = context.get("budget")
-    if isinstance(budget, dict) and "adaptivePacing" in budget:
+    if isinstance(budget, dict) and ("adaptivePacing" in budget or "sharedAllowance" in budget):
         safe_context["budget"] = budget
     safe_context = _continuity_prompt_context(safe_context)
     safe_context["team"] = (context.get("agent") or {}).get("team", "general")

@@ -37,7 +37,9 @@ CREATE TABLE IF NOT EXISTS organization_context_receipts (
  request_id TEXT NOT NULL REFERENCES requests(id), token TEXT NOT NULL,
  report TEXT NOT NULL, created REAL NOT NULL, PRIMARY KEY(request_id,token));
 """
-BUDGET_SCHEMA += COMPLETION_RESERVE_SCHEMA + PACING_SCHEMA
+from eidolon_cli.organization_shared_budget import SHARED_CALL_SCHEMA
+
+BUDGET_SCHEMA += COMPLETION_RESERVE_SCHEMA + PACING_SCHEMA + SHARED_CALL_SCHEMA
 
 
 @dataclass(frozen=True)
@@ -106,6 +108,10 @@ def budget_view(conn, objective_id, settings):
             'legacyUsageUnknown': bool(row['legacy_usage_unknown']),
             'budgetScope': 'Durable admission reservations, including interrupted or unreported calls; never refunded. USD uses only configured exact-route ceilings, not current provider prices or an invoice. The deadline includes time awaiting owner input.'}
     view['completionReserve'] = completion_reserve_view(conn, objective_id, calls, view)
+    from eidolon_cli.organization_shared_budget import shared_projection
+    shared = shared_projection(conn)
+    if shared is not None:
+        view['sharedAllowance'] = shared
     if settings.adaptive_pacing_enabled or conn.execute(
             'SELECT 1 FROM organization_budget_observations WHERE objective_id=? LIMIT 1', (objective_id,)).fetchone():
         view['adaptivePacing'] = pacing_view(conn, objective_id, settings, view)
@@ -185,6 +191,15 @@ class OrganizationBudgetStore:
                 raise wait
             dispatch = self._bind_model_dispatch(conn, request, route_snapshot, provider=provider, model=model,
                 input_limit=input_limit, output_limit=output_limit)
+            from eidolon_cli.organization_shared_budget import reserve_shared_call, record_shared_receipt
+            call_index = conn.execute('SELECT count(*) FROM organization_model_calls WHERE request_id=? AND token=?',
+                                      (request['id'], request['token'])).fetchone()[0] + 1
+            shared = reserve_shared_call(self, conn, {
+                'kind': 'objective', 'objectiveId': request['objective_id'], 'requestId': request['id'],
+                'attemptToken': request['token'], 'callIndex': call_index, 'requestType': request['type'],
+                'provider': provider, 'model': model, 'inputLimit': input_limit, 'outputLimit': output_limit,
+                'reservedCostUsd': format(cost, 'f') if cost is not None else None,
+            })
             ident = 'modelcall_' + uuid.uuid4().hex
             pricing = {'policyGeneration': self._policy_generation,
                        'inputUsdPerMillion': rate.input_usd_per_million if rate else None,
@@ -196,6 +211,7 @@ class OrganizationBudgetStore:
                          (ident, request['type'], classification, COMPLETION_POLICY))
             if dispatch is not None:
                 conn.execute('INSERT INTO organization_model_call_dispatches VALUES (?,?)', (ident, dispatch))
+            record_shared_receipt(conn, shared, model_call_id=ident)
             return ident
 
     def record_context_receipt(self, claim, report):

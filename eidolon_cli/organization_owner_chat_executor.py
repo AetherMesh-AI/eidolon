@@ -157,7 +157,15 @@ def execute(context, cancel):
         agent._organization_output_limit = OUTPUT_TOKENS
         def reserve(**values):
             agent._organization_check()
-            context['reserveModelCall'](**values, selected_provider=kwargs.get('requested_provider') or kwargs['provider'])
+            from eidolon_cli.organization_shared_allowance import SharedAllowanceError
+            from eidolon_cli.organization_pacing import OrganizationPacingDeferred
+            try:
+                context['reserveModelCall'](**values, selected_provider=kwargs.get('requested_provider') or kwargs['provider'])
+            except (SharedAllowanceError, OrganizationPacingDeferred) as exc:
+                # This explicit owner send is blocked before transport. Do not
+                # silently queue/replay it or obscure it as a provider failure.
+                agent._organization_intervention = str(exc)
+                raise OrganizationExecutionError(str(exc)) from exc
 
         agent._organization_reserve = reserve
 

@@ -1078,3 +1078,50 @@ read-only and are checked again when a change is applied.
 
 The CLI remains supported. Shared provider allowance, quota top-ups, learned model
 selection and autonomous provider account management are outside this editor.
+
+### Optional shared installation allowance
+
+Settings → Organization offers a separate shared allowance editor for the root
+installation owner. It enrolls existing initialized organization profiles into
+one owner-declared pool with explicit start/end dates and per-profile allocation
+envelopes. It is off until explicitly configured. Read and preview do not create
+an allowance, initialize organizations, or change credentials. Older gateways
+remain read-only. Exact preview, authority, source version, and immutable intent
+receipts are checked again at apply; an uncertain acknowledgement keeps the same
+intent for reconciliation rather than submitting another change.
+
+The pool covers model calls made by enrolled organization objectives and their
+owner-to-agent conversations. Ordinary external chats, other installations, and
+unmanaged tools are outside its coverage. Enrollment does not prove that profiles
+share a provider billing account. Changing a provider alias or credential does
+not create fresh pool capacity. The existing objective and owner-chat limits
+continue to apply in addition to the shared pool and member allocation.
+
+Each physical send reserves calls, bounded input/output tokens, and configured
+exact-route cost ceilings when a USD cap is present. A durable shared debit
+commits before the profile-local reservation. These are two databases, not one
+atomic transaction: interruption or a failed local commit retains the shared
+debit. Looking up a receipt never permits another send. No refund, automatic
+rollover, or provider invoice inference is performed. A missing or corrupt
+required ledger fails closed. Interrupted first activation may leave a required
+marker without a committed ledger; that condition needs deliberate recovery,
+not an automatic reinitialization that could restore spent capacity.
+
+Shared admission checks both pool and allocation protection. Ordinary work
+cannot spend protected completion capacity; completion work still obeys all hard
+caps. New ordinary stages are spaced by 60 seconds at 30% or less remaining
+ordinary capacity and 300 seconds at 10% or less. This is stage-start spacing,
+not a global in-flight limit. Further calls within the same admitted attempt
+still need individual reservations. Completion stages bypass only the spacing.
+Objective stages wait without consuming a failed attempt; an explicit owner-chat
+send that is paced or exhausted is blocked with its reason and is not silently
+replayed. A manual percentage is advisory and cannot manufacture quota. A stale
+low observation stays conservative; a stated reset time does not refill capacity.
+
+Managers see their own allocation and effective available capacity after shared
+contention, with protection, pacing reason, and defer time. Member contexts do not
+include aggregate totals or sibling identities. The root owner can see aggregate
+figures. Available capacity is a snapshot, not a reservation or guarantee; some
+shared contention can be inferred. Explicit new periods preserve enrollment and
+historical debits. Profile identity changes, moving a shared-aware store, and
+missing evidence require review rather than silently adopting a new pool.

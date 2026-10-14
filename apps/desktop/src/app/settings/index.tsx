@@ -36,6 +36,7 @@ import { notifyError } from '@/store/notifications'
 import { $settingsScopeProfile } from '@/store/settings-scope'
 
 import { OwnerPolicySettings } from '../eidolon/organization-owner-policy'
+import { SharedAllowanceSettings } from '../eidolon/organization-shared-allowance'
 import { OrganizationScenery } from '../eidolon/scenery'
 import { useRouteEnumParam } from '../hooks/use-route-enum-param'
 import { OverlayIconButton } from '../overlays/overlay-chrome'
@@ -389,7 +390,7 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
         } : undefined}
       />
     ) : activeView === 'organization' ? (
-      <OwnerPolicySettings />
+      <div className="eid-organization-settings"><OwnerPolicySettings /><SharedAllowanceSettings /></div>
     ) : activeView === 'config:appearance' ? (
       <AppearanceSettings />
     ) : activeView === 'about' ? (

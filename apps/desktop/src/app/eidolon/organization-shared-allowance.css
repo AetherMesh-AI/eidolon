@@ -1,0 +1,21 @@
+.eid-organization-settings { min-height: 0; min-width: 0; overflow: auto; scroll-padding: 7px; }
+.eid-organization-settings > .eid-policy-settings { overflow: visible; }
+.eid-shared-allowance { min-width: 0; padding: 7px clamp(18px, 2.5vw, 30px) 24px; }
+.eid-shared-allowance h3 { font-size: 16px; font-weight: 600; margin-block: 12px; }
+.eid-shared-allowance :is(p, dd, dt, li) { overflow-wrap: anywhere; }
+.eid-shared-allowance p { margin-block: 10px; }
+.eid-shared-allowance .eid-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.eid-shared-allowance .eid-actions button { white-space: normal; height: auto; min-height: 32px; }
+.eid-allowance-projection { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-block: 12px; }
+.eid-allowance-projection > div { min-width: 0; }
+.eid-allowance-projection dt { color: var(--ui-text-secondary); }
+.eid-allowance-projection dd { margin: 4px 0; }
+.eid-allowance-editor legend { font-weight: 600; margin-block: 12px; }
+.eid-allowance-editor .eid-policy-fields { align-items: start; }
+.eid-allowance-editor .eid-allowance-allocation { margin-top: 20px; }
+@media (max-width: 650px) { .eid-allowance-projection { grid-template-columns: minmax(0, 1fr); } }
+/* Persisted membership is immutable, but its checked state must remain legible. */
+.eid-allowance-editor .eid-policy-check > [role="checkbox"]:disabled { opacity: 1; }
+
+/* JSON syntax stays left-to-right while surrounding translated labels retain their direction. */
+.eid-allowance-editor pre { direction: ltr; unicode-bidi: isolate; text-align: start; }

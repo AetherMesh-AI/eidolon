@@ -204,3 +204,12 @@ Playwright's CSS/device-coordinate crop mismatch under Electron native zoom.
 Backend and real RPC owner-policy tests also run in the Windows ledger/identity
 shard and the full macOS native union. No live provider calls or account changes
 are required by these fixtures.
+
+The owner-policy acceptance job also runs the shared-installation-allowance
+specification. It checks native preview/apply and lost acknowledgement recovery,
+root versus member reads, real loopback objective and owner-agent HTTP sends,
+aggregate/allocation exhaustion before transport, and six-locale two-palette
+100%/200% screenshots. Backend tests cover cross-process conservation, retained
+orphan debits, replay refusal, scope pins, execution fences, explicit periods,
+manual observation pacing, and passive read compatibility. These fixtures never
+activate a user's installation or call a paid provider.
