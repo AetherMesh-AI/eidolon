@@ -75,7 +75,7 @@ jobs:
           EIDOLON_REQUIRE_PROJECT_SANDBOX: '1'
         run: |
           git rev-parse HEAD HEAD^{tree}
-          scripts/run_tests.sh tests/eidolon_cli/test_organization*.py tests/tui_gateway/test_organization*.py tests/gateway/test_organization*.py tests/tools/test_organization*.py tests/scripts/test_organization*.py tests/agent/test_org_skill_namespace.py -j 4
+          scripts/run_tests.sh tests/eidolon_cli/test_organization*.py tests/tui_gateway/test_organization*.py tests/gateway/test_organization*.py tests/tools/test_organization*.py tests/scripts/test_organization*.py tests/agent/test_org_skill_namespace.py tests/agent/test_bounded_context.py -j 4
           .venv/bin/ruff check eidolon_cli/organization*.py tui_gateway/methods_organization*.py
           .venv/bin/python scripts/check_compat_pointers.py
       - name: Verify profile export and consistent recovery backups
@@ -144,6 +144,9 @@ jobs:
             tests/eidolon_cli/test_organization_pacing.py
             tests/eidolon_cli/test_organization_pacing_runtime.py
             tests/eidolon_cli/test_organization_pacing_cli.py
+            tests/eidolon_cli/test_organization_model_routing.py
+            tests/eidolon_cli/test_organization_model_routing_e2e.py
+            tests/agent/test_bounded_context.py
             tests/eidolon_cli/test_organization_artifact_retention.py
             tests/eidolon_cli/test_organization_identity.py
             tests/eidolon_cli/test_organization_metadata.py

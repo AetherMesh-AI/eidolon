@@ -151,6 +151,7 @@ def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
                                        'sha256': p['sha256'], 'createdAt': _iso(p['created']),
                                        'truncated': bool(p['truncated']),
                                        'editProposal': evidence_proposal(conn, p['id'], full=False)} for p in proof]})
+    from eidolon_cli.organization_model_routing import assignment_view, routing_view, latest_dispatch
     agents = []
     configured = {staff.id: staff for staff in configured_staff(settings)}
     staff_states = {row['agent_id']: row for row in conn.execute('SELECT * FROM staff_state')}
@@ -169,6 +170,7 @@ def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
                        'capabilities': accepts, 'requestTypes': accepts,
                        'authority': list(staff.authority) if staff else [], 'scope': staff.scope if staff else '',
                        'managedTeams': list(staff.managed_teams) if staff else [],
+                       **({'modelAssignment': assignment_view(settings, row['id'])} if row['role'] != 'Owner' and not row['id'].startswith('control:') else {}),
                        'lifecycle': lifecycle, 'provider': staff.provider if staff else None,
                        'model': staff.model if staff else None, 'tools': list(staff.tool_grants) if staff else [],
                        'status': 'offline' if disabled else 'reviewing' if running and running['type'] in {'request.review', 'request.test_review', 'request.accept'} else 'executing' if running else 'needs_input' if blocked else 'idle',
@@ -198,6 +200,7 @@ def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
                     'allowedResolutions': resolution_options(conn, r) if resolution_options else allowed_resolutions(conn, r, settings),
                     'reason': r['reason'], 'attempts': r['attempts'], 'leaseExpiresAt': _iso(r['lease']),
                     'requestedRoutes': json.loads(r['payload']).get('routes', []),
+                    'routeDispatch': latest_dispatch(conn, r['id']),
                     'requestedWorkers': json.loads(r['payload']).get('workers'),
                     'toolReceipts': list(reversed(receipt_groups.get(r['id'], []))),
                     'toolReceiptCount': counts.get(r['id'], 0),
@@ -209,7 +212,7 @@ def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
     return {'source': 'runtime', 'objectives': objectives, 'agents': agents, 'tasks': ui_tasks, 'activity': events,
             'conversations': conversations_view(conn, visible), 'knowledge': knowledge, 'decisions': [], 'requests': ui_requests, 'attention': attention_view(conn, objective_id=objective_id),
             'outcomes': outcomes_view(conn, objective_id=objective_id),
-            'runtime': {'history': history_counts(conn), 'state': 'ready', 'capabilities': [*settings.capabilities, 'owner_chat'], 'maxWorkers': settings.max_workers,
+            'runtime': {'modelRouting': routing_view(conn, settings), 'history': history_counts(conn), 'state': 'ready', 'capabilities': [*settings.capabilities, 'owner_chat'], 'maxWorkers': settings.max_workers,
                         'maxInflight': settings.max_inflight, 'rosterCount': len(agents),
                         'workingCount': sum(agent['status'] in {'executing', 'reviewing'} for agent in agents),
                         'scope': 'Writing and analysis of submitted context; configured work.inspect staff may read explicitly granted local text files. Other tools and unsupported requests require intervention.',

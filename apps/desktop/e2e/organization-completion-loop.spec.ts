@@ -16,6 +16,7 @@ import {
   setupCompletionFixture
 } from './organization-completion-fixture'
 import { openOrganizationDisclosure, openOrganizationRequests } from './organization-disclosures'
+import { assertEconomyDispatch, captureRoutingAudit, type NativeRoutingAudit, type NativeRoutingRequest } from './organization-routing-evidence'
 import { expect, test } from './test'
 
 const projectTests = 'Project tests (requires external verification when unavailable)'
@@ -172,7 +173,7 @@ test.afterEach(async ({}, testInfo) => {
 
 // eslint-disable-next-line no-empty-pattern -- actual Electron lifecycle belongs to this spec
 test('requires explicit check replacement, retains its audit, and completes only after fresh independent acceptance', async ({}, testInfo) => {
-  running = await setupCompletionFixture(false, { completionReserve: true, adaptivePacing: true })
+  running = await setupCompletionFixture(false, { completionReserve: true, adaptivePacing: true, modelRouting: true })
   let { page } = running.fixture
   const { stages, providerErrors } = running
   const ownerWrites: RecordedResolution[] = []
@@ -188,6 +189,7 @@ test('requires explicit check replacement, retains its audit, and completes only
       }
     })
   )
+  let routingRequests: NativeRoutingRequest[] = []
   let observedPacing: { enabled: boolean; mode: string; policy: string; scope: string; minIntervalSeconds: number } | undefined
 
   const readReserve = async () => {
@@ -197,13 +199,14 @@ test('requires explicit check replacement, retains its audit, and completes only
       capabilityVersion: number
       state: string
       scope: { kind: string; profile: string }
-      snapshot: { objectives: Array<{ title: string; usage?: { completionReserve?: NativeCompletionReserve; adaptivePacing?: typeof observedPacing } }> }
+      snapshot: { requests: NativeRoutingRequest[]; objectives: Array<{ title: string; usage?: { completionReserve?: NativeCompletionReserve; adaptivePacing?: typeof observedPacing } }> }
     }>(page, runtimeRead!, 'organization.observe')
 
     expect(response.error).toBeUndefined()
     expect(response.result).toMatchObject({ capabilityVersion: 1, state: 'available', scope: { kind: 'served-profile', profile: 'default' } })
     const usage = response.result!.snapshot.objectives.find(objective => objective.title === completionTitle)?.usage
     expect(usage?.completionReserve).toBeDefined()
+    routingRequests = response.result!.snapshot.requests
     observedPacing = usage?.adaptivePacing
     expect(observedPacing).toMatchObject({ enabled: true, policy: 'local-stage-start-v1', scope: 'objective' })
 
@@ -231,6 +234,16 @@ test('requires explicit check replacement, retains its audit, and completes only
   await expect(packages).toContainText('Executive delegation')
   await expect(header).not.toContainText('Completed')
   const blockedReserve = await readReserve()
+  const economyRequest = routingRequests.find(request => request.routeDispatch?.routeId === 'economy')
+  expect(economyRequest).toBeDefined()
+  expect(routingRequests.some(request => request.routeDispatch?.routeId === 'quality' && request.routeDispatch.mode === 'fixed')).toBe(true)
+  expect(stages.filter(stage => stage.agentId === 'worker-1').every(stage => stage.model === 'mock-economy')).toBe(true)
+  expect(stages.some(stage => stage.model === 'mock-ineligible')).toBe(false)
+  const routingResponse = await organizationRequest<NativeRoutingAudit>(page, { ...runtimeRead!, params: { ...runtimeRead!.params, id: economyRequest!.id } }, 'organization.executionAudit')
+  expect(routingResponse.error).toBeUndefined()
+  expect(routingResponse.result).toBeDefined()
+  assertEconomyDispatch(routingResponse.result!, economyRequest!)
+
   expect(blockedReserve).toMatchObject({ version: 1, policy: 'completion-v1', captured: { modelCalls: 6, tokens: 65536, configuredCostUsd: null }, admissionUsageKnown: true, unavailableReason: null })
   expect(blockedReserve.completionReserved.modelCalls).toBeGreaterThan(0)
   expect(blockedReserve.protectedRemaining.modelCalls).toBe(Math.max(0, 6 - blockedReserve.completionReserved.modelCalls!))
@@ -390,6 +403,15 @@ test('requires explicit check replacement, retains its audit, and completes only
     body: JSON.stringify(report, null, 2),
     contentType: 'application/json'
   })
+  await inspector.getByRole('button', { name: 'Close request details', exact: true }).click()
+  await page.getByRole('button', { name: 'Inspect request: work.draft', exact: true }).click()
+  await inspector.getByRole('button', { name: 'Inspect model and evidence audit', exact: true }).click()
+
+  const routingAuditRegion = inspector.getByRole('region', { name: 'Model and evidence audit', exact: true })
+    .getByRole('region', { name: 'Recorded model dispatch: economy', exact: true })
+
+  await expect(routingAuditRegion).toContainText('mock-economy')
+  await captureRoutingAudit(page, running.fixture.app, routingAuditRegion, testInfo, routingResponse.result!)
   await inspector.getByRole('button', { name: 'Close request details', exact: true }).click()
   await blocked.click()
   await inspector.getByRole('combobox', { name: 'Action', exact: true }).selectOption('amend_scope')

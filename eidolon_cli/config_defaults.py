@@ -1731,6 +1731,8 @@ DEFAULT_CONFIG = {
         # Explicit exact-route conservative USD rates only; never inferred.
         "max_cost_usd": None,
         "model_costs": [],
+        "model_routes": [],
+        "model_assignments": [],
         "lease_seconds": 45,
         "timeout_seconds": 180,
         "team": "general",

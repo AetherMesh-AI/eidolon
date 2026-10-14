@@ -2,6 +2,7 @@ import { controlVariants } from '@/components/ui/control'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { useI18n } from '@/i18n/context'
+import { modelRoutingCopy } from '@/i18n/organization-model-routing'
 
 import { leaderRole, memberCapabilities, memberRoles, responseAuthority } from './runtime-management'
 import type { OrganizationManagement, OrganizationMemberConfiguration, OrganizationSnapshot } from './types'
@@ -23,7 +24,7 @@ export function OrganizationMemberFields({
   existing,
   updateMember
 }: OrganizationMemberFieldsProps) {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const copy = t.organizationRoster
   const roles = { Executive: copy.executive, Manager: copy.manager, Worker: copy.worker }
 
@@ -192,6 +193,7 @@ export function OrganizationMemberFields({
           <p className="eid-note">{copy.scopeNote}</p>
         </>
       )}
+      {snapshot.runtime?.modelRouting && <p className="eid-note">{modelRoutingCopy[locale].legacySettings}. {modelRoutingCopy[locale].ownerChatNote}</p>}
       <p className="eid-note">{copy.providerModelNote}</p>
       <label>
         {t.organizationRuntime.provider}

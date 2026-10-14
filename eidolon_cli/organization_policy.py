@@ -38,7 +38,7 @@ _AUTHORITY_FIELDS = ('communication_scope', 'team', 'capabilities', 'roster', 't
                      'max_replans', 'max_stages', 'max_tasks', 'max_owner_resolutions', 'max_output_tokens',
                      'max_members', 'max_request_depth', 'max_requests_per_stage',
                      'max_context_tokens', 'max_model_calls', 'max_total_tokens', 'objective_timeout_seconds',
-                     'max_cost_usd', 'model_costs', 'project_grants', 'max_project_runs', 'projects', *COMPLETION_RESERVE_FIELDS, *PACING_FIELDS)
+                     'max_cost_usd', 'model_costs', 'model_routes', 'model_assignments', 'project_grants', 'max_project_runs', 'projects', *COMPLETION_RESERVE_FIELDS, *PACING_FIELDS)
 
 
 def _fingerprint(settings, fields=_AUTHORITY_FIELDS):
@@ -74,6 +74,9 @@ def persisted_settings(conn):
         values[key] = tuple(values.get(key, ()))
     from eidolon_cli.organization_budget import parse_model_costs
     values['model_costs'] = parse_model_costs(values.get('model_costs', []))
+    from eidolon_cli.organization_model_routing import parse_model_routes, parse_model_assignments
+    values['model_routes'] = parse_model_routes(values.get('model_routes', []))
+    values['model_assignments'] = parse_model_assignments(values.get('model_assignments', []), values['model_routes'])
     from eidolon_cli.organization_project_config import parse_project_grants
     values['project_grants'] = parse_project_grants(values.get('project_grants', []), len(values['read_roots']))
     from eidolon_cli.organization_projects import parse_projects
@@ -95,6 +98,12 @@ def resolve_settings(conn, seed_settings=None):
     from eidolon_cli.organization_project_registry import resolve_registry
     saved = persisted_settings(conn)
     base = seed_settings or saved or OrganizationSettings()
+    routing = conn.execute('SELECT configuration FROM organization_model_routing_config WHERE id=1').fetchone()
+    if routing is not None:
+        from eidolon_cli.organization_model_routing import parse_model_routes, parse_model_assignments
+        config = json.loads(routing[0])
+        routes = parse_model_routes(config['model_routes'])
+        base = replace(base, model_routes=routes, model_assignments=parse_model_assignments(config['model_assignments'], routes))
     row = conn.execute('SELECT configuration FROM organization_configuration WHERE id=1').fetchone()
     if row is None:
         return resolve_registry(conn, base)

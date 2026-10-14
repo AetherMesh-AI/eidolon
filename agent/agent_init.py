@@ -1717,6 +1717,12 @@ def _resolve_context_length(agent, _agent_cfg, base_url):
     agent._custom_providers = _custom_providers
     _merge_custom_provider_extra_body(agent, _custom_providers)
 
+    from agent.bounded_context import explicit_context_window
+    explicit = explicit_context_window(agent)
+    if explicit is not None:
+        agent._config_context_length = explicit
+        return explicit, _custom_providers, explicit, _model_cfg
+
     if _config_context_length is None and _custom_providers:
         with suppress(Exception):
             from eidolon_cli.config import get_custom_provider_context_length
@@ -1890,6 +1896,9 @@ def _build_context_engine(agent, _agent_cfg, cs, _custom_providers, _effective_c
 
 
 def _enforce_minimum_context(agent):
+    from agent.bounded_context import explicit_context_window
+    if explicit_context_window(agent) is not None:
+        return  # Bounded caller admits exact bytes against its explicit window.
     # Reject windows below the 64K floor needed for reliable tool-calling; an explicit
     # positive model.context_length on LM Studio is allowed below the floor.
     _ctx = getattr(agent.context_compressor, "context_length", 0)
@@ -1983,6 +1992,13 @@ def _inject_context_engine_tools(agent):
 
 
 def _configure_ollama_num_ctx(agent, _model_cfg, _config_context_length):
+    from agent.bounded_context import explicit_context_window
+    explicit = explicit_context_window(agent)
+    if explicit is not None:
+        if isinstance(_model_cfg, dict) and _model_cfg.get('ollama_num_ctx') not in (None, explicit):
+            raise ValueError('The profile local-model context override differs from the explicit bounded context')
+        agent._ollama_num_ctx = None
+        return  # No model-loading or metadata POST outside caller admission.
     # Ollama defaults num_ctx to 2048, so detect the max window and send num_ctx per request.
     # model.ollama_num_ctx overrides; model.context_length caps the detected value (VRAM).
     agent._ollama_num_ctx: int | None = None

@@ -153,7 +153,7 @@ class OrganizationBudgetStore:
             self._initialize_budget(conn, row['id'], legacy=True)
         migrate_completion_reserves(conn)
 
-    def reserve_model_call(self, claim, *, provider, model, input_limit, output_limit):
+    def reserve_model_call(self, claim, *, provider, model, input_limit, output_limit, route_snapshot=None):
         from eidolon_cli.organization_store import _text
         provider, model = _text(provider, 'Model provider', 300), _text(model, 'Model route', 300)
         if any(type(value) is not int or not 1 <= value <= 2_000_000 for value in (input_limit, output_limit)):
@@ -183,6 +183,8 @@ class OrganizationBudgetStore:
             wait = pacing_wait(conn, request, self.settings, view, final=True)
             if wait is not None:
                 raise wait
+            dispatch = self._bind_model_dispatch(conn, request, route_snapshot, provider=provider, model=model,
+                input_limit=input_limit, output_limit=output_limit)
             ident = 'modelcall_' + uuid.uuid4().hex
             pricing = {'policyGeneration': self._policy_generation,
                        'inputUsdPerMillion': rate.input_usd_per_million if rate else None,
@@ -192,6 +194,8 @@ class OrganizationBudgetStore:
                           input_limit, output_limit, format(cost, 'f') if cost is not None else None, time.time(), json.dumps(pricing)))
             conn.execute('INSERT INTO organization_model_call_classes VALUES (?,?,?,?)',
                          (ident, request['type'], classification, COMPLETION_POLICY))
+            if dispatch is not None:
+                conn.execute('INSERT INTO organization_model_call_dispatches VALUES (?,?)', (ident, dispatch))
             return ident
 
     def record_context_receipt(self, claim, report):
@@ -252,4 +256,8 @@ class OrganizationBudgetStore:
                         for row in conn.execute('SELECT * FROM organization_context_receipts WHERE request_id=? ORDER BY created', (identifier,))]
             passes = [{'attemptToken': row['token'], 'report': json.loads(row['report']), 'createdAt': _iso(row['created'])}
                       for row in conn.execute('SELECT * FROM organization_evidence_passes WHERE request_id=? ORDER BY created,pass_index', (identifier,))]
-            return {'requestId': identifier, 'modelCalls': calls, 'contexts': contexts, 'evidencePasses': passes}
+            from eidolon_cli.organization_model_routing import public_dispatch
+            dispatches = [public_dispatch(row) for row in conn.execute('SELECT * FROM organization_model_dispatches WHERE request_id=? ORDER BY created', (identifier,))]
+            links = {row['model_call_id']: row['dispatch_id'] for row in conn.execute('SELECT l.* FROM organization_model_call_dispatches l JOIN organization_model_calls c ON c.id=l.model_call_id WHERE c.request_id=?', (identifier,))}
+            failures = [{'requestId': row['request_id'], 'attemptToken': row['token'], 'dispatchId': row['dispatch_id'], **json.loads(row['evidence'])} for row in conn.execute('SELECT * FROM organization_model_route_failures WHERE request_id=? ORDER BY created', (identifier,))]
+            return {'requestId': identifier, 'modelCalls': [{**row, 'dispatchId': links.get(row['id'])} for row in calls], 'contexts': contexts, 'evidencePasses': passes, 'modelDispatches': dispatches, 'modelRouteFailures': failures}

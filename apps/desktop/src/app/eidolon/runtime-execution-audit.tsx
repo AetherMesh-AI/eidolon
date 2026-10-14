@@ -4,8 +4,10 @@ import { Button } from '@/components/ui/button'
 import { Loader } from '@/components/ui/loader'
 import { LogView } from '@/components/ui/log-view'
 import { useI18n } from '@/i18n/context'
+import { modelRoutingCopy } from '@/i18n/organization-model-routing'
 
 import { LocalizedTime } from './localized-time'
+import { RuntimeModelDispatch } from './runtime-model-dispatch'
 import type { OrganizationExecutionAudit, OrganizationRequest, RuntimeOrganizationAdapter } from './types'
 
 interface RuntimeExecutionAuditProps {
@@ -14,8 +16,9 @@ interface RuntimeExecutionAuditProps {
 }
 
 export function RuntimeExecutionAudit({ adapter, request }: RuntimeExecutionAuditProps) {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const copy = t.organizationWork
+  const routingCopy = modelRoutingCopy[locale]
   const [requested, setRequested] = useState(false)
   const [audit, setAudit] = useState<OrganizationExecutionAudit | null>(null)
   const [error, setError] = useState('')
@@ -67,7 +70,7 @@ export function RuntimeExecutionAudit({ adapter, request }: RuntimeExecutionAudi
       )}
       {audit && (
         <>
-          {!audit.contexts.length && !audit.evidencePasses.length && !audit.modelCalls.length && (
+          {!audit.contexts.length && !audit.evidencePasses.length && !audit.modelCalls.length && !audit.modelDispatches?.length && (
             <p>{copy.executionAuditEmpty}</p>
           )}
           {audit.contexts.length > 0 && (
@@ -102,6 +105,12 @@ export function RuntimeExecutionAudit({ adapter, request }: RuntimeExecutionAudi
               </ol>
             </section>
           )}
+          {Boolean(audit.modelDispatches?.length) && (
+            <section aria-label={routingCopy.dispatches}>
+              <h4>{routingCopy.dispatches}</h4>
+              {audit.modelDispatches!.map(dispatch => <RuntimeModelDispatch dispatch={dispatch} key={dispatch.id} />)}
+            </section>
+          )}
           {audit.modelCalls.length > 0 && (
             <section aria-label={copy.modelCallReservations}>
               <h4>{copy.modelCallReservations}</h4>
@@ -112,6 +121,7 @@ export function RuntimeExecutionAudit({ adapter, request }: RuntimeExecutionAudi
                       {call.provider} / {call.model}
                     </p>
                     <p>{call.id}</p>
+                    {(audit.modelDispatches !== undefined || call.dispatchId !== undefined) && <p>{call.dispatchId ? <>{routingCopy.dispatchId}: <bdi>{call.dispatchId}</bdi></> : routingCopy.legacyCall}</p>}
                     <LocalizedTime value={call.createdAt} />
                     <p>
                       {copy.reservedInputOutput}: {call.input_limit} / {call.output_limit}

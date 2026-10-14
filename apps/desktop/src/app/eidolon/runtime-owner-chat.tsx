@@ -11,6 +11,7 @@ import { Loader } from '@/components/ui/loader'
 import { Textarea } from '@/components/ui/textarea'
 import { Tip } from '@/components/ui/tooltip'
 import { useI18n } from '@/i18n/context'
+import { modelRoutingCopy } from '@/i18n/organization-model-routing'
 import type { OrganizationOwnerChatCopy } from '@/i18n/organization-owner-chat'
 import { ArrowUp, MessageCircle } from '@/lib/icons'
 
@@ -124,7 +125,7 @@ function OwnerChatPanel({
 }) {
   const draftKey = JSON.stringify([snapshot.connection?.ownerScope ?? snapshot.connection?.scope, agent.identityId])
   const [sendRevision, setSendRevision] = useState(0)
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const drafts = useStore($ownerChatDrafts)
   const draft = drafts[draftKey]
   const renewalIntents = useStore($ownerChatRenewals)
@@ -260,6 +261,7 @@ function OwnerChatPanel({
 
   const information = <>
     <p className="eid-note">{copy.note}</p>
+    {snapshot.runtime?.modelRouting && <p className="eid-note">{modelRoutingCopy[locale].ownerChatNote}</p>}
     {thread && <>
       <header className="eid-owner-chat-identity">
         <AgentAvatar name={thread.recipient.name} />

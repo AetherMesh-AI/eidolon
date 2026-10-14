@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n/context'
 
 import { LocalizedTime } from './localized-time'
+import { RuntimeModelDispatch } from './runtime-model-dispatch'
 import type { OrganizationManagementProposal, OrganizationRequest, OrganizationSnapshot } from './types'
 
 export const responseDecisions = {
@@ -94,6 +95,7 @@ export function RuntimeRequestContext({
         <dt>{copy.dependencies}</dt>
         <dd>{request.dependencyIds?.join(', ') || copy.notRecorded}</dd>
       </dl>
+      {request.routeDispatch && <RuntimeModelDispatch dispatch={request.routeDispatch} />}
       {task && (
         <section aria-label={copy.taskScope}>
           <h3>{task.title}</h3>

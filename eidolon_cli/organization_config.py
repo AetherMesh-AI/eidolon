@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
 
+from eidolon_cli.organization_model_routing import (OrganizationModelRoute, OrganizationModelAssignment, parse_model_routes, parse_model_assignments)
 from eidolon_cli.organization_roster import OrganizationStaff, parse_roster
 from eidolon_cli.organization_budget import OrganizationModelCost, money, parse_model_costs
 
@@ -45,6 +46,8 @@ class OrganizationSettings:
     pacing_conserve_max_inflight: int = 1
     pacing_critical_max_inflight: int = 1
     model_costs: tuple[OrganizationModelCost, ...] = ()
+    model_routes: tuple[OrganizationModelRoute, ...] = ()
+    model_assignments: tuple[OrganizationModelAssignment, ...] = ()
     lease_seconds: int = 45
     timeout_seconds: int = 180
     team: str = "general"
@@ -99,6 +102,8 @@ class OrganizationSettings:
             raise ValueError("Critical pacing must have a lower threshold, at least the conserve interval, and no more slots")
         values["max_cost_usd"] = money(raw["max_cost_usd"], "organization.max_cost_usd", allow_zero=False) if raw.get("max_cost_usd") is not None else None
         values["model_costs"] = parse_model_costs(raw.get("model_costs", []))
+        values["model_routes"] = parse_model_routes(raw.get("model_routes", []))
+        values["model_assignments"] = parse_model_assignments(raw.get("model_assignments", []), values["model_routes"])
         values["completion_reserve_cost_usd"] = money(raw["completion_reserve_cost_usd"], "organization.completion_reserve_cost_usd") if raw.get("completion_reserve_cost_usd") is not None else None
         if (values["completion_reserve_model_calls"] > values["max_model_calls"]
                 or values["completion_reserve_tokens"] > values["max_total_tokens"]):
@@ -138,6 +143,10 @@ class OrganizationSettings:
         if "roster" in raw:
             from dataclasses import replace
             settings = replace(settings, roster=parse_roster(raw["roster"], settings))
+        from eidolon_cli.organization_roster import configured_staff
+        known = {'executive', 'manager', 'reviewer', 'director', *(staff.id for staff in configured_staff(settings))}
+        if any(row.agent_id not in known for row in settings.model_assignments):
+            raise ValueError('Model assignments must identify configured persistent agents')
         return settings
 
 

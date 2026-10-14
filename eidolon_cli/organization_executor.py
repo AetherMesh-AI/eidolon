@@ -721,6 +721,9 @@ def _runtime_kwargs(context: dict, timeout: float, *, require_exact_provider: bo
     from eidolon_constants import resolve_reasoning_config
 
     cfg = load_config_readonly()
+    if context.get('modelRoute'):
+        from eidolon_cli.organization_model_routing_executor import require_supported_route
+        require_supported_route(context['modelRoute'], cfg)
     if (cfg.get("context") or {}).get("engine", "compressor") not in (None, "", "compressor"):
         raise OrganizationExecutionError(
             "The configured context engine can access material beyond the submitted context; "
@@ -751,7 +754,7 @@ def _runtime_kwargs(context: dict, timeout: float, *, require_exact_provider: bo
         "base_url": runtime.get("base_url"), "api_key": runtime.get("api_key"),
         "api_mode": runtime.get("api_mode"), "credential_pool": runtime.get("credential_pool"),
         "request_overrides": runtime.get("request_overrides"),
-        "reasoning_config": resolve_reasoning_config(cfg, model),
+        "reasoning_config": ({"enabled": False} if context["modelRoute"]["reasoning"] == "none" else {"enabled": True, "effort": context["modelRoute"]["reasoning"]}) if context.get("modelRoute") else resolve_reasoning_config(cfg, model),
         "service_tier": (cfg.get("agent") or {}).get("service_tier"),
         "providers_allowed": routing.get("only"), "providers_ignored": routing.get("ignore"),
         "providers_order": routing.get("order"), "provider_sort": routing.get("sort"),
@@ -995,11 +998,14 @@ class _ToolFreeBoundary:
         return min(float(configured), remaining) if isinstance(configured, (int, float)) else remaining
 
 
-def _create_agent(kwargs: dict, cancel: threading.Event, deadline: float, tool_execution=None, *, boundary=_ToolFreeBoundary):
+def _create_agent(kwargs: dict, cancel: threading.Event, deadline: float, tool_execution=None, *, boundary=_ToolFreeBoundary, route_snapshot=None):
     from run_agent import AIAgent
 
     class OrganizationAgent(boundary, AIAgent):
         def __init__(self, **options):
+            if route_snapshot is not None:
+                from agent.bounded_context import BoundedContextWindow
+                self._bounded_context_window = BoundedContextWindow(route_snapshot['maxContextTokens'])
             self._organization_cancel = cancel
             self._organization_deadline = deadline
             self._organization_intervention = None
@@ -1109,7 +1115,22 @@ A transport ignoring cancellation remains in the scheduler's occupied slot.
         execution = resources.enter_context(tool_execution(context, kind))
         prompt = _prompt(request, context, kind)
         _guard_plugin_integrations(tool_mode=execution is not None)
-        kwargs = _runtime_kwargs(context, timeout)
+        route = None
+        if context.get('selectModelRoute'):
+            from eidolon_cli.organization_evidence import prompt_input_bound
+            system = (_MESSAGE_SYSTEM if kind == 'request.message' else
+                _CONTINUITY_SYSTEM + (EDIT_SYSTEM if kind == 'work.edit' else INSPECT_SYSTEM) if execution is not None else _SYSTEM)
+            route = context['selectModelRoute'](input_bound=prompt_input_bound(prompt, system, getattr(execution, 'schemas', ())))
+        if route is not None:
+            context = {**context, 'modelRoute': route,
+                'agent': {**context.get('agent', {}), 'provider': route['selectedProvider'], 'model': route['model']},
+                'maxContextTokens': route['maxContextTokens'], 'maxOutputTokens': route['maxOutputTokens']}
+        kwargs = (_runtime_kwargs(context, timeout, require_exact_provider=True) if route is not None
+                  else _runtime_kwargs(context, timeout))
+        if route is not None:
+            from eidolon_cli.organization_model_routing_executor import bind_runtime, RoutedBoundary
+            route = bind_runtime(route, kwargs)
+            kwargs['credential_pool'] = None
         if kind == "request.message":
             kwargs["ephemeral_system_prompt"] = _MESSAGE_SYSTEM
         if execution is not None:
@@ -1121,7 +1142,18 @@ A transport ignoring cancellation remains in the scheduler's occupied slot.
             context_report, final_hierarchy_prompt, hierarchical_prompts, parse_read_result,
             require_fits, prompt_input_bound, verify_context_receipt, record_evidence_audit,
         )
-        agent = _create_agent(kwargs, cancel, deadline, execution)
+        def create_agent(tool=None):
+            created = _create_agent(kwargs, cancel, deadline, tool, **({'boundary': RoutedBoundary, 'route_snapshot': route} if route else {}))
+            if route:
+                created._organization_route_snapshot = route
+                created._disable_streaming = True
+                window = getattr(getattr(created, 'context_compressor', None), 'context_length', None)
+                if type(window) is not int or window < route['maxContextTokens']:
+                    created.close()
+                    raise OrganizationExecutionError('The effective model context window is below the assigned exact context ceiling; no model call was sent')
+            return created
+
+        agent = create_agent(execution)
 
         def watch() -> None:
             while not done.wait(min(0.05, max(0.001, deadline - time.monotonic()))):
@@ -1150,7 +1182,14 @@ A transport ignoring cancellation remains in the scheduler's occupied slot.
             agent._organization_prompt = content
             agent._organization_input_limit = input_limit
             agent._organization_output_limit = output_limit
-            agent._organization_reserve = context.get('reserveModelCall')
+            reserve = context.get('reserveModelCall')
+            if route is not None and reserve is not None:
+                def routed_reserve(**values):
+                    values['provider'] = route['selectedProvider']
+                    return reserve(**values, route_snapshot=route)
+                agent._organization_reserve = routed_reserve
+            else:
+                agent._organization_reserve = reserve
             _guard_plugin_integrations(tool_mode=execution is not None)
             agent._organization_check()
             result = agent.run_conversation(user_message=content)
@@ -1177,7 +1216,7 @@ A transport ignoring cancellation remains in the scheduler's occupied slot.
                 if index:
                     previous, agent = agent, None
                     previous.close()
-                    agent = _create_agent(kwargs, cancel, deadline)
+                    agent = create_agent()
                 response = parse_read_result(invoke(read_prompt))
                 retained = {**proof, **response}
                 record_evidence_audit(context, 'recordEvidencePass', retained)
@@ -1209,11 +1248,17 @@ A transport ignoring cancellation remains in the scheduler's occupied slot.
                 return _parse_output(json.dumps(denial), kind, context)
             previous, agent = agent, None
             previous.close()
-            agent = _create_agent(kwargs, cancel, deadline)
+            agent = create_agent()
             prompt = final_prompt
         else:
             record_evidence_audit(context, 'recordContextReceipt', report)
-        parsed = _parse_output(invoke(prompt), kind, context)
+        raw = invoke(prompt)
+        if route is not None:
+            from eidolon_cli.organization_model_routing_executor import invalid_json_failure
+            failure = invalid_json_failure(agent, raw, execution=execution, passes=passes)
+            if failure is not None:
+                return failure
+        parsed = _parse_output(raw, kind, context)
         if parsed.get('approved'):
             verify_context_receipt(context, report, passes, approved=True)
         if execution is not None and not ({"intervention", "requests", "messages"} & parsed.keys()):

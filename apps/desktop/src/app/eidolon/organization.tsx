@@ -3,6 +3,7 @@ import { Link } from 'react-router'
 
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n/context'
+import { modelRoutingCopy } from '@/i18n/organization-model-routing'
 import type { OrganizationRosterCopy } from '@/i18n/organization-roster'
 import type { OrganizationWorkCopy } from '@/i18n/organization-work'
 
@@ -12,6 +13,7 @@ import { Inspector } from './inspector'
 import { OrganizationConversations } from './runtime-conversations'
 import { OrganizationManagementForm } from './runtime-management-form'
 import { OrganizationManagementHistory } from './runtime-management-history'
+import { AgentModelAssignment, ModelAssignmentSummary, RuntimeModelRouting } from './runtime-model-routing'
 import { OrganizationOwnerChat } from './runtime-owner-chat'
 import { OrganizationProjectSetupForm } from './runtime-project-setup'
 import { inheritsProfileModel } from './runtime-setup'
@@ -57,10 +59,11 @@ export function Organization({
   snapshot: OrganizationSnapshot
   adapter?: RuntimeOrganizationAdapter
 }) {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const copy = t.organizationRuntime
   const roster = t.organizationRoster
   const surface = t.organizationSurfaces
+  const routingCopy = modelRoutingCopy[locale]
 
   const roles: Record<string, string> = {
     Owner: roster.owner,
@@ -94,7 +97,7 @@ export function Organization({
   }, [agent])
 
   const agents = snapshot.agents.filter(item =>
-    `${item.name} ${item.role} ${roles[item.role] || ''} ${item.purpose || ''} ${item.team || ''} ${item.provider || ''} ${item.model || ''} ${item.lifecycle || ''} ${item.tools?.join(' ') || ''} ${item.requestTypes?.join(' ') || ''} ${item.responsibilities.join(' ')} ${item.capabilities.join(' ')}`
+    `${item.name} ${item.role} ${roles[item.role] || ''} ${item.purpose || ''} ${item.team || ''} ${item.provider || ''} ${item.model || ''} ${item.modelAssignment ? `${routingCopy[item.modelAssignment.mode]} ${item.modelAssignment.routeIds.join(' ')}` : ''} ${item.lifecycle || ''} ${item.tools?.join(' ') || ''} ${item.requestTypes?.join(' ') || ''} ${item.responsibilities.join(' ')} ${item.capabilities.join(' ')}`
       .toLowerCase()
       .includes(query.toLowerCase())
   )
@@ -153,6 +156,7 @@ export function Organization({
           </details>
         </>
       )}
+      {runtime && <RuntimeModelRouting key={`model-routing:${snapshot.connection?.scope}`} snapshot={snapshot} />}
       {adapter && snapshot.runtime?.management && (
         <Button
           disabled={snapshot.connection?.state !== 'ready'}
@@ -229,6 +233,7 @@ export function Organization({
             </span>
             <span className="eid-agent-assignment">
               {surface.currentAssignment}: {currentAssignment(snapshot, item, roster, t.organizationWork)}
+              {runtime && <ModelAssignmentSummary agent={item} />}
             </span>
             <span className="eid-agent-state">
               <span className={`eid-status eid-status-${item.status}`}>● {item.status}</span>
@@ -285,12 +290,13 @@ export function Organization({
               <p className="eid-eyebrow">{runtime ? 'Runtime agent · Gateway record' : 'Prototype agent · Not live'}</p>
               <AgentAvatar name={agent.name} />
               <p>{roles[agent.role] || agent.role}</p>
+              {runtime && <AgentModelAssignment agent={agent} />}
               <dl>
                 {runtime && (
                   <>
                     <dt>{copy.lifecycle}</dt>
                     <dd>{agent.lifecycle ? copy.lifecycleLabels[agent.lifecycle] : copy.notReported}</dd>
-                    <dt>{copy.provider}</dt>
+                    <dt>{agent.modelAssignment ? routingCopy.legacyProvider : copy.provider}</dt>
                     <dd>{agent.provider || modelFallback(agent)}</dd>
                   </>
                 )}
@@ -307,7 +313,7 @@ export function Organization({
                     .map(item => item.name)
                     .join(', ') || 'None'}
                 </dd>
-                <dt>Model</dt>
+                <dt>{runtime && agent.modelAssignment ? routingCopy.legacyModel : copy.model}</dt>
                 <dd>{agent.model || (runtime ? modelFallback(agent) : unavailable)}</dd>
                 <dt>Context usage / capacity</dt>
                 <dd>

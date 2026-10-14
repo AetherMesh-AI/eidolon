@@ -44,6 +44,8 @@ interface StageContext extends OrganizationEvidenceContext {
 }
 
 interface ProviderPayload {
+  model?: string
+  reasoning_effort?: string
   messages?: Array<{ role: string; content: unknown }>
   tools?: unknown[]
   stream?: boolean
@@ -52,6 +54,8 @@ interface ProviderPayload {
 }
 
 export interface CompletionStage {
+  model?: string
+  reasoningEffort?: string
   projectIds?: string[]
   kind: string
   agentId: string
@@ -119,6 +123,7 @@ function resultFor(kind: string, context: StageContext, taskCount = 1) {
 interface CompletionFixtureOptions {
   completionReserve?: boolean
   adaptivePacing?: boolean
+  modelRouting?: boolean
   projectSelection?: boolean
   linkedQuestion?: boolean
   expiredReplacement?: boolean
@@ -151,6 +156,29 @@ export async function setupCompletionFixture(budgetLimited: boolean, options: Co
   const projectYaml = Object.entries(projectConfig)
     .map(([key, value]) => `\n  ${key}: ${JSON.stringify(value)}`)
     .join('')
+
+  const routingTypes = ['request.decompose', 'request.plan', 'work.draft', 'work.analyze', 'request.review', 'request.test_review', 'request.integrate', 'request.accept']
+
+  const routingConfig = options.modelRouting ? {
+    max_cost_usd: '5',
+    model_routes: [
+      { id: 'ineligible', provider: 'custom', model: 'mock-ineligible', reasoning: 'none', request_types: ['work.draft'], evidence_level: 1, max_context_tokens: 32768, max_output_tokens: 2048 },
+      { id: 'economy', provider: 'custom', model: 'mock-economy', reasoning: 'none', request_types: ['work.draft', 'work.analyze'], evidence_level: 2, max_context_tokens: 32768, max_output_tokens: 2048 },
+      { id: 'quality', provider: 'custom', model: 'mock-quality', reasoning: 'low', request_types: routingTypes, evidence_level: 3, max_context_tokens: 32768, max_output_tokens: 2048 }
+    ],
+    model_assignments: [
+      { agent_id: 'executive', mode: 'fixed', route_ids: ['quality'], minimum_evidence: 3, max_fallbacks: 0 },
+      { agent_id: 'worker-1', mode: 'auto', route_ids: ['ineligible', 'quality', 'economy'], minimum_evidence: 2, max_fallbacks: 0 }
+    ],
+    model_costs: [
+      { provider: 'custom', model: 'mock-ineligible', input_usd_per_million: '0.1', output_usd_per_million: '0.2' },
+      { provider: 'custom', model: 'mock-economy', input_usd_per_million: '1', output_usd_per_million: '2' },
+      { provider: 'custom', model: 'mock-quality', input_usd_per_million: '3', output_usd_per_million: '6' },
+      { provider: 'custom', model: 'mock-model', input_usd_per_million: '2', output_usd_per_million: '4' }
+    ]
+  } : {}
+
+  const routingYaml = Object.entries(routingConfig).map(([key, value]) => `\n  ${key}: ${JSON.stringify(value)}`).join('')
 
   const server = http.createServer((request, response) => {
     const chunks: Buffer[] = []
@@ -187,6 +215,8 @@ export async function setupCompletionFixture(budgetLimited: boolean, options: Co
 
           const outputLimit = payload?.max_completion_tokens ?? payload?.max_tokens
           stages.push({
+            model: payload?.model,
+            reasoningEffort: payload?.reasoning_effort,
             kind,
             projectIds: context.objective.projects?.map(project => project.id),
             agentId: context.agent.id,
@@ -208,6 +238,16 @@ export async function setupCompletionFixture(budgetLimited: boolean, options: Co
 
           if (typeof outputLimit !== 'number' || outputLimit < 1 || outputLimit > 2048) {
             throw new Error('The actual HTTP request omitted or exceeded its configured output ceiling')
+          }
+
+          if (options.modelRouting && context.agent.id === 'executive' &&
+            (payload?.model !== 'mock-quality' || payload?.reasoning_effort !== 'low')) {
+            throw new Error('Fixed executive route or reasoning differs from actual HTTP send')
+          }
+
+          if (options.modelRouting && context.agent.id === 'worker-1' &&
+            (payload?.model !== 'mock-economy' || (payload?.reasoning_effort !== undefined && payload.reasoning_effort !== 'none'))) {
+            throw new Error('Auto must select cheapest eligible route, excluding cheaper insufficient evidence tier')
           }
 
           if (budgetLimited && stages.length > 1) {
@@ -238,7 +278,7 @@ export async function setupCompletionFixture(budgetLimited: boolean, options: Co
                 : resultFor(kind, context, options.exhaustedReplacement && context.objective.description === originalScope ? 3 : 1)
           )
 
-          const identity = { id: `completion-fixture-${stages.length}`, created: 1, model: 'mock-model' }
+          const identity = { id: `completion-fixture-${stages.length}`, created: 1, model: payload?.model ?? 'mock-model' }
           const usage = { prompt_tokens: 30, completion_tokens: 30, total_tokens: 60 }
 
           const reply = () => {
@@ -331,7 +371,7 @@ export async function setupCompletionFixture(budgetLimited: boolean, options: Co
       sandbox.hermesHome,
       providerUrl,
       undefined,
-      `approvals:\n  mode: manual\norganization:\n  max_inflight: 1\n  max_stages: 40\n  max_context_tokens: 32768\n  max_output_tokens: 2048\n  max_model_calls: ${budgetLimited ? 1 : options.exhaustedReplacement ? 8 : 40}${options.expiredReplacement ? "\n  max_open_objectives: 1\n  objective_timeout_seconds: 60" : options.exhaustedReplacement ? "\n  max_open_objectives: 1" : ""}${options.completionReserve ? "\n  completion_reserve_model_calls: 6\n  completion_reserve_tokens: 65536" : ""}${options.adaptivePacing ? "\n  adaptive_pacing_enabled: true\n  pacing_conserve_below_percent: 100\n  pacing_conserve_interval_seconds: 1\n  pacing_critical_interval_seconds: 1" : ""}${projectYaml}`,
+      `approvals:\n  mode: manual\norganization:\n  max_inflight: 1\n  max_stages: 40\n  max_context_tokens: 32768\n  max_output_tokens: 2048\n  max_model_calls: ${budgetLimited ? 1 : options.exhaustedReplacement ? 8 : 40}${options.expiredReplacement ? "\n  max_open_objectives: 1\n  objective_timeout_seconds: 60" : options.exhaustedReplacement ? "\n  max_open_objectives: 1" : ""}${options.completionReserve ? "\n  completion_reserve_model_calls: 6\n  completion_reserve_tokens: 65536" : ""}${options.adaptivePacing ? "\n  adaptive_pacing_enabled: true\n  pacing_conserve_below_percent: 100\n  pacing_conserve_interval_seconds: 1\n  pacing_critical_interval_seconds: 1" : ""}${routingYaml}${projectYaml}`,
       // The agent requires a >=64K model window. The independent organization
       // policy above still admits at most 32K for this scripted scenario.
       128000,

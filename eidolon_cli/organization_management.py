@@ -99,6 +99,10 @@ def _validate_agent_members(proposal, settings, actor):
         if staff.id not in seen:
             continue
         old = current.get(staff.id)
+        if settings.model_assignments and old is None:
+            from eidolon_cli.organization_model_routing import assignment_for
+            if assignment_for(settings, staff.id) is None:
+                raise ValueError('New model-running staff require an owner model assignment while assignment policy is enabled')
         if not _team_allowed(actor, staff.team) or (old and not _team_allowed(actor, old.team)):
             raise ValueError('Staff management is outside the actor managed teams')
         parent = parents.get(staff.manager_id)
