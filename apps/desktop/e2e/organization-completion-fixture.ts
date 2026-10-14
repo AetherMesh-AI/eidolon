@@ -116,6 +116,7 @@ function resultFor(kind: string, context: StageContext, taskCount = 1) {
 }
 
 interface CompletionFixtureOptions {
+  completionReserve?: boolean
   projectSelection?: boolean
   linkedQuestion?: boolean
   expiredReplacement?: boolean
@@ -318,7 +319,7 @@ export async function setupCompletionFixture(budgetLimited: boolean, options: Co
       sandbox.hermesHome,
       providerUrl,
       undefined,
-      `approvals:\n  mode: manual\norganization:\n  max_inflight: 1\n  max_stages: 40\n  max_context_tokens: 32768\n  max_output_tokens: 2048\n  max_model_calls: ${budgetLimited ? 1 : options.exhaustedReplacement ? 8 : 40}${options.expiredReplacement ? "\n  max_open_objectives: 1\n  objective_timeout_seconds: 60" : options.exhaustedReplacement ? "\n  max_open_objectives: 1" : ""}${projectYaml}`,
+      `approvals:\n  mode: manual\norganization:\n  max_inflight: 1\n  max_stages: 40\n  max_context_tokens: 32768\n  max_output_tokens: 2048\n  max_model_calls: ${budgetLimited ? 1 : options.exhaustedReplacement ? 8 : 40}${options.expiredReplacement ? "\n  max_open_objectives: 1\n  objective_timeout_seconds: 60" : options.exhaustedReplacement ? "\n  max_open_objectives: 1" : ""}${options.completionReserve ? "\n  completion_reserve_model_calls: 6\n  completion_reserve_tokens: 65536" : ""}${projectYaml}`,
       // The agent requires a >=64K model window. The independent organization
       // policy above still admits at most 32K for this scripted scenario.
       128000,

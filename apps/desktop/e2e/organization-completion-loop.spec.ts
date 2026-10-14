@@ -1,4 +1,5 @@
 /** Actual Electron → gateway → durable ledger → loopback HTTP provider. */
+import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 
@@ -67,6 +68,23 @@ async function createObjective(page: Page, title: string, requireTests: boolean)
 
   await page.getByRole('button', { name: 'Create objective', exact: true }).click()
   await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
+}
+
+interface NativeReserveAmounts {
+  modelCalls: number | null
+  tokens: number | null
+  configuredCostUsd: string | null
+}
+interface NativeCompletionReserve {
+  version: number
+  policy: string
+  captured: NativeReserveAmounts
+  completionReserved: NativeReserveAmounts
+  protectedRemaining: NativeReserveAmounts
+  ordinaryRemaining: NativeReserveAmounts
+  totalRemaining: NativeReserveAmounts
+  admissionUsageKnown: boolean
+  unavailableReason: string | null
 }
 
 interface RecordedResolution {
@@ -154,19 +172,37 @@ test.afterEach(async ({}, testInfo) => {
 
 // eslint-disable-next-line no-empty-pattern -- actual Electron lifecycle belongs to this spec
 test('requires explicit check replacement, retains its audit, and completes only after fresh independent acceptance', async ({}, testInfo) => {
-  running = await setupCompletionFixture(false)
+  running = await setupCompletionFixture(false, { completionReserve: true })
   let { page } = running.fixture
   const { stages, providerErrors } = running
   const ownerWrites: RecordedResolution[] = []
+  let runtimeRead: RecordedResolution | undefined
   page.on('websocket', socket =>
     socket.on('framesent', frame => {
       const request = JSON.parse(String(frame.payload)) as { method?: string; params: Record<string, unknown> }
+
+      if (request.method === 'organization.snapshot') {runtimeRead = { url: socket.url(), params: {} }}
 
       if (request.method === 'organization.resolve') {
         ownerWrites.push({ url: socket.url(), params: request.params })
       }
     })
   )
+  const readReserve = async () => {
+    expect(runtimeRead).toBeDefined()
+    const response = await organizationRequest<{
+      capabilityVersion: number
+      state: string
+      scope: { kind: string; profile: string }
+      snapshot: { objectives: Array<{ title: string; usage?: { completionReserve?: NativeCompletionReserve } }> }
+    }>(page, runtimeRead!, 'organization.observe')
+    expect(response.error).toBeUndefined()
+    expect(response.result).toMatchObject({ capabilityVersion: 1, state: 'available', scope: { kind: 'served-profile', profile: 'default' } })
+    const usage = response.result!.snapshot.objectives.find(objective => objective.title === completionTitle)?.usage
+    expect(usage?.completionReserve).toBeDefined()
+
+    return usage!.completionReserve!
+  }
   // Observe the real transport established by this reload, including the exact
   // owner write later used to test a lost-response replay.
   await page.reload()
@@ -187,6 +223,53 @@ test('requires explicit check replacement, retains its audit, and completes only
   await expect(packages).toContainText('Responsible manager')
   await expect(packages).toContainText('Executive delegation')
   await expect(header).not.toContainText('Completed')
+  const blockedReserve = await readReserve()
+  expect(blockedReserve).toMatchObject({ version: 1, policy: 'completion-v1', captured: { modelCalls: 6, tokens: 65536, configuredCostUsd: null }, admissionUsageKnown: true, unavailableReason: null })
+  expect(blockedReserve.completionReserved.modelCalls).toBeGreaterThan(0)
+  expect(blockedReserve.protectedRemaining.modelCalls).toBe(Math.max(0, 6 - blockedReserve.completionReserved.modelCalls!))
+  const usageSummary = acceptance.locator('summary').filter({ hasText: /^Execution limits and usage$/ })
+  await usageSummary.click()
+  const reserveRegion = acceptance.getByRole('region', { name: 'Completion reserve', exact: true })
+  await expect(reserveRegion).toBeVisible()
+  const reserveRow = (label: string) => reserveRegion.getByText(label, { exact: true }).locator('xpath=following-sibling::dd[1]')
+  await expect(reserveRow('Owner-configured completion reserve')).toContainText('Model calls: 6')
+  await expect(reserveRow('Owner-configured completion reserve')).toContainText('Reserved tokens: 65,536')
+  await expect(reserveRow('Unspent completion protection')).toContainText(`Model calls: ${blockedReserve.protectedRemaining.modelCalls}`)
+  await expect(reserveRow('Remaining for ordinary work')).toContainText(`Model calls: ${blockedReserve.ordinaryRemaining.modelCalls}`)
+  const setReserveZoom = async (percent: number) => {
+    await page.evaluate(value => {
+      const desktop = window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }
+      desktop.hermesDesktop.zoom.setPercent(value)
+    }, percent)
+    await expect.poll(() => page.evaluate(async () => {
+      const desktop = window as unknown as { hermesDesktop: { zoom: { get(): Promise<{ percent: number }> } } }
+
+      return (await desktop.hermesDesktop.zoom.get()).percent
+    })).toBe(percent)
+  }
+  await setReserveZoom(100)
+  const reserveScreenshot = testInfo.outputPath('01-completion-reserve-allowance.png')
+  await reserveRegion.screenshot({ path: reserveScreenshot })
+  const reserveZoomScreenshot = testInfo.outputPath('01-completion-reserve-allowance-200.png')
+  await setReserveZoom(200)
+  const reserveGeometry = await reserveRegion.evaluate(element => ({ width: element.clientWidth, contentWidth: element.scrollWidth }))
+  expect(reserveGeometry.contentWidth).toBeLessThanOrEqual(reserveGeometry.width + 1)
+  await reserveRegion.screenshot({ path: reserveZoomScreenshot })
+  await setReserveZoom(100)
+  await testInfo.attach('completion-reserve-native-evidence', {
+    body: JSON.stringify({
+      sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+      sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
+      scenario: 'actual-loopback-provider-completion-reserve', reserve: blockedReserve,
+      captures: [
+        { zoom: 100, file: '01-completion-reserve-allowance.png', sha256: createHash('sha256').update(await readFile(reserveScreenshot)).digest('hex') },
+        { zoom: 200, file: '01-completion-reserve-allowance-200.png', geometry: reserveGeometry, sha256: createHash('sha256').update(await readFile(reserveZoomScreenshot)).digest('hex') }
+      ]
+    }, null, 2),
+    contentType: 'application/json'
+  })
+  await usageSummary.click()
+  await header.scrollIntoViewIfNeeded()
   await page.screenshot({ path: testInfo.outputPath('01-unverified-model-approval-blocked.png') })
   await primary(page).getByRole('link', { name: 'Objectives', exact: true }).click()
   await expect(
@@ -250,6 +333,7 @@ test('requires explicit check replacement, retains its audit, and completes only
   await page.reload()
   await expect(blocked).toContainText('Pending intervention', { timeout: 60_000 })
   expect(stages).toHaveLength(4)
+  expect(await readReserve()).toEqual(blockedReserve)
   await blocked.click()
   await inspector.getByRole('combobox', { name: 'Action', exact: true }).selectOption('amend_scope')
   await expect(verification).toHaveValue('keep')
@@ -396,6 +480,10 @@ test('requires explicit check replacement, retains its audit, and completes only
   await page.screenshot({ path: testInfo.outputPath('04-independently-accepted-revised-scope.png') })
   await page.reload()
   await expect(header).toContainText('Completed', { timeout: 60_000 })
+  const completedReserve = await readReserve()
+  expect(completedReserve.captured).toEqual(blockedReserve.captured)
+  expect(completedReserve.completionReserved.modelCalls).toBeGreaterThan(blockedReserve.completionReserved.modelCalls!)
+  expect(completedReserve.protectedRemaining.modelCalls).toBeLessThanOrEqual(blockedReserve.protectedRemaining.modelCalls!)
   await history.locator('summary').click()
   await expect(history).toHaveText(audit, { useInnerText: true })
   expect(stages).toHaveLength(10)

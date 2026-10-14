@@ -66,7 +66,7 @@ export interface ObjectiveReplacementDraft {
   projectIds: string[]
   requiredChecks: OrganizationRequiredCheck[]
   deliveryMode: 'source_project' | 'managed_artifact'
-  allowance: { modelCalls: number; tokens: number; costUsd: string | null; durationSeconds: number; maxReplans: number; maxStages: number; projectRuns: number }
+  allowance: { modelCalls: number; tokens: number; costUsd: string | null; durationSeconds: number; maxReplans: number; maxStages: number; projectRuns: number; completionReserve?: OrganizationCompletionReservePolicy }
 }
 export interface ObjectiveReplacementInput {
   sourceId: string
@@ -422,6 +422,26 @@ export interface OrganizationAcceptance {
   summary: string | null
   deliverableId: string | null
 }
+export interface OrganizationBudgetAmounts {
+  modelCalls: number | null
+  tokens: number | null
+  configuredCostUsd: string | null
+}
+export interface OrganizationCompletionReservePolicy {
+  version: 1
+  policy: 'completion-v1'
+  captured: OrganizationBudgetAmounts & { modelCalls: number; tokens: number }
+}
+export interface OrganizationCompletionReserve extends OrganizationCompletionReservePolicy {
+  requestTypes: string[]
+  completionReserved: OrganizationBudgetAmounts
+  /** Unspent protection can exceed remaining capacity after a hard-cap reduction. */
+  protectedRemaining: OrganizationBudgetAmounts
+  ordinaryRemaining: OrganizationBudgetAmounts
+  totalRemaining: OrganizationBudgetAmounts
+  admissionUsageKnown: boolean
+  unavailableReason: 'legacy-usage-unknown' | 'configured-cost-unknown' | 'classification-unknown' | null
+}
 export interface OrganizationUsage {
   stages: number
   stageLimit: number
@@ -438,6 +458,8 @@ export interface OrganizationUsage {
   configuredCostLimitUsd?: string | null
   legacyUsageUnknown?: boolean
   budgetScope?: string
+  /** Absent on older runtimes; values are admission reservations, never billing. */
+  completionReserve?: OrganizationCompletionReserve
 }
 export interface OrganizationRequest {
   id: string

@@ -347,6 +347,9 @@ organization:
   max_context_tokens: 128000 # 4096–2000000; also bounded by the actual model window
   max_model_calls: 120     # 1–1000 conservative physical-attempt reservations
   max_total_tokens: 8000000 # 4096–1000000000 reserved input + output tokens
+  completion_reserve_model_calls: 0 # 0–1000, within max_model_calls
+  completion_reserve_tokens: 0 # 0–1000000000, within max_total_tokens
+  completion_reserve_cost_usd: null # optional protected part of max_cost_usd
   objective_timeout_seconds: 86400 # 60–604800, includes waiting for owner input
   max_cost_usd: null       # optional explicit configured-cost admission ceiling
   model_costs: []          # exact provider/model and conservative USD rates; no guessed prices
@@ -374,6 +377,32 @@ USD decimal ceilings configured by the owner, not a bundled price catalog.
 A non-null max_cost_usd requires a matching exact route before each send. No
 example monetary rates are supplied because provider charges vary. Counters and
 original objective ceilings survive configuration changes and restarts.
+
+Completion reserves are owner file configuration only. Each new objective captures
+these three values once; existing objectives migrate to zero protection. The reserve
+is part of the hard caps, not an additional allowance or a guarantee of completion.
+Only backend-owned `request.review`, `request.test_review`, `request.integrate` and
+`request.accept` model calls can consume protected headroom. Planning, revisions,
+questions and ordinary work cannot select their own classification. Every physical
+attempt (including unused fallback, interrupted and unknown attempts) stays charged.
+No stage reserve or deadline extension is added.
+
+For each dimension, protected remainder is `max(0, captured - completion reserved)`;
+ordinary headroom is `max(0, effective hard cap - total reserved - protected remainder)`.
+The effective cap remains the minimum of the original and current cap. Configuration
+changes, smaller scopes and retries never release captured protection; lowering a
+cap can leave no admissible call. USD protection requires an explicit USD cap and
+exact-route configured rates; charges retain their original Decimal ceiling rounded
+up to nine decimal places. Unknown historical usage remains unavailable, not zero.
+The versioned `usage.completionReserve` projection distinguishes captured protection,
+completion reservations, protected remainder and ordinary/total headroom. Its
+`unavailableReason` reports unknown legacy usage, cost or call classification.
+
+Replacement previews disclose fresh protection bounded by their inherited minimum
+hard caps. Reserve-policy changes invalidate an unconfirmed preview, and confirmation
+captures exactly the displayed reserve. The original evidence and charges remain.
+Owner chat, model responses and the member-configuration form cannot change caps or
+completion reserve policy.
 
 ## Opt in to real local file inspection
 

@@ -1,6 +1,8 @@
-import { translateNow } from '@/i18n/runtime'
+import { completionReserveCopy } from '@/i18n/organization-completion-reserve'
+import { getRuntimeI18nLocale, translateNow } from '@/i18n/runtime'
 
 import { validAttentionPage } from './runtime-attention-types'
+import { validCompletionReserve } from './runtime-completion-reserve-contract'
 import { normalizeConversations } from './runtime-conversation-contract'
 import { validOutcomePage } from './runtime-outcome-types'
 import { validOrganizationSetup } from './runtime-setup-contract'
@@ -13,6 +15,10 @@ export function validateSnapshot(value: OrganizationSnapshot): OrganizationSnaps
   }
 
   if (!validWorkPackages(value)) {throw new Error(translateNow('organizationWork.packageInvalid'))}
+
+  if (value.objectives.some(objective => objective.usage?.completionReserve !== undefined && !validCompletionReserve(objective.usage.completionReserve))) {
+    throw new Error(completionReserveCopy[getRuntimeI18nLocale()].invalid)
+  }
 
   if (value.attention !== undefined && !validAttentionPage(value.attention)) {
     throw new Error(translateNow('organizationWork.attentionInvalid'))
