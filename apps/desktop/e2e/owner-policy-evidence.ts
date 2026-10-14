@@ -173,9 +173,9 @@ export async function captureOwnerPolicy(
         focus.push({ zoom, target: target.name, checkboxContrast: contrast })
       }
 
-      if (await target.locator.evaluate(element => element.matches('input,select,button,[role=checkbox]'))) {
-        focus.push({ zoom, ...(await verifyKeyboardFocus(page, target.locator, target.name)) })
-      }
+      const keyboardTarget = await target.locator.evaluate(element => element.matches('input,select,button,[role=checkbox]'))
+      const keyboardEvidence = keyboardTarget ? await verifyKeyboardFocus(page, target.locator, target.name) : null
+      if (keyboardEvidence) focus.push({ zoom, ...keyboardEvidence })
 
       // Layout can precede the native compositor. Settle rendered frames
       // after keyboard scrolling as well as programmatic scrolling.
@@ -188,9 +188,72 @@ export async function captureOwnerPolicy(
 
       const file = `${scenario}-${zoom}-${index + 1}.png`
       const nativeWindow = await app.browserWindow(page)
-      const encoded = await nativeWindow.evaluate(async native => (await native.webContents.capturePage()).toPNG().toString('base64'))
-      await writeFile(testInfo.outputPath(file), Buffer.from(encoded, 'base64'))
-      captures.push({ zoom, target: target.name, file, sha256: createHash('sha256').update(await readFile(testInfo.outputPath(file))).digest('hex') })
+      const focusState = () => target.locator.evaluate(element => ({
+        active: document.activeElement === element, visible: element.matches(':focus-visible'),
+        documentFocused: document.hasFocus(), rect: element.getBoundingClientRect().toJSON(),
+        viewport: { width: innerWidth, height: innerHeight }
+      }))
+      const beforeCapture = await focusState()
+      const nativeCapture = await nativeWindow.evaluate(async (native, proof) => {
+        const windowFocused = native.isFocused()
+        const contentsFocused = native.webContents.isFocused()
+        const image = await native.webContents.capturePage()
+        const size = image.getSize()
+        const bitmap = image.toBitmap()
+        const samples: Array<{ side: string; rgb: number[][] }> = []
+        if (proof.keyboard) {
+          const { rect, viewport } = proof.state
+          const { offset, width } = proof.keyboard
+          const sx = size.width / viewport.width
+          const sy = size.height / viewport.height
+          const distance = offset + width / 2
+          const points = [
+            { side: 'left', x: rect.left - distance, y: (rect.top + rect.bottom) / 2, vertical: true },
+            { side: 'right', x: rect.right + distance, y: (rect.top + rect.bottom) / 2, vertical: true },
+            { side: 'top', x: (rect.left + rect.right) / 2, y: rect.top - distance, vertical: false },
+            { side: 'bottom', x: (rect.left + rect.right) / 2, y: rect.bottom + distance, vertical: false }
+          ]
+          for (const point of points) {
+            const rgb = [-1, 0, 1].map(delta => {
+              const x = Math.floor(point.x * sx) + (point.vertical ? 0 : delta)
+              const y = Math.floor(point.y * sy) + (point.vertical ? delta : 0)
+              if (x < 0 || y < 0 || x >= size.width || y >= size.height) return []
+              const index = (y * size.width + x) * 4
+              // NativeImage bitmap is BGRA on the little-endian Linux acceptance runner.
+              return [bitmap[index + 2], bitmap[index + 1], bitmap[index]]
+            })
+            samples.push({ side: point.side, rgb })
+          }
+        }
+        return { encoded: image.toPNG().toString('base64'), size, bitmapBytes: bitmap.length, samples, windowFocused, contentsFocused }
+      }, { state: beforeCapture, keyboard: keyboardEvidence })
+      const afterCapture = await focusState()
+      await writeFile(testInfo.outputPath(file), Buffer.from(nativeCapture.encoded, 'base64'))
+      const sha256 = createHash('sha256').update(await readFile(testInfo.outputPath(file))).digest('hex')
+      captures.push({ zoom, target: target.name, file, sha256 })
+      const { encoded: _encoded, ...paint } = nativeCapture
+      await testInfo.attach(`${scenario}-${zoom}-${target.name}-capture-state`, {
+        contentType: 'application/json', body: JSON.stringify({ file, sha256, beforeCapture, afterCapture,
+          sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+          sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
+          sourceDirty: execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).trim().length > 0,
+          expectedOutline: keyboardEvidence?.outline, ...paint }, null, 2)
+      })
+      expect(nativeCapture.size.width).toBeGreaterThan(0)
+      expect(nativeCapture.size.height).toBeGreaterThan(0)
+      expect(nativeCapture.bitmapBytes).toBe(nativeCapture.size.width * nativeCapture.size.height * 4)
+      if (keyboardEvidence) {
+        // Keep the first native image. A later successful capture cannot erase a missing painted ring.
+        expect(beforeCapture.active && beforeCapture.visible, `${target.name}: focus immediately before capture`).toBe(true)
+        expect(afterCapture.active && afterCapture.visible, `${target.name}: focus immediately after capture`).toBe(true)
+        expect(afterCapture.rect).toEqual(beforeCapture.rect)
+        expect(nativeCapture.samples).toHaveLength(4)
+        for (const sample of nativeCapture.samples) {
+          expect(sample.rgb.some(rgb => rgb.length === 3 && rgb.every((channel, index) =>
+            Math.abs(channel - keyboardEvidence.outline[index]) <= 8)),
+          `${target.name}: painted ${sample.side} keyboard outline in first native capture`).toBe(true)
+        }
+      }
     }
   }
 
