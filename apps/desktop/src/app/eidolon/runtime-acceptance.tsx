@@ -1,7 +1,9 @@
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n/context'
+import { completionReserveCopy } from '@/i18n/organization-completion-reserve'
 
 import { LocalizedTime } from './localized-time'
+import { RuntimeCompletionReserve } from './runtime-completion-reserve'
 import { RuntimeProjectExecution } from './runtime-project-execution'
 import type { Objective } from './types'
 
@@ -12,7 +14,7 @@ export function RuntimeAcceptance({
   objective: Objective
   onOpenEvidence(id: string): void
 }) {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const copy = t.organizationWork
   const acceptance = objective.acceptance
   const usage = objective.usage
@@ -83,9 +85,9 @@ export function RuntimeAcceptance({
             <dd>
               {usage.stages} / {usage.stageLimit}
             </dd>
-            <dt>{copy.tokens}</dt>
+            <dt>{usage.usageComplete ? copy.tokens : completionReserveCopy[locale].incompleteTokens}</dt>
             <dd>
-              {usage.inputTokens} / {usage.outputTokens}
+              {usage.usageComplete ? `${usage.inputTokens} / ${usage.outputTokens}` : `≥ ${usage.inputTokens} / ≥ ${usage.outputTokens}`}
             </dd>
             {usage.modelCalls !== undefined && usage.modelCallLimit !== undefined && (
               <>
@@ -120,6 +122,7 @@ export function RuntimeAcceptance({
               </>
             )}
           </dl>
+          {usage.completionReserve && <RuntimeCompletionReserve costEnabled={usage.configuredCostLimitUsd != null} reserve={usage.completionReserve} />}
           <p className="eid-note">{usage.usageComplete ? copy.usageNote : copy.incompleteUsage}</p>
           {usage.budgetScope && <p className="eid-note">{copy.reservationNote}</p>}
           {usage.configuredCostLimitUsd != null && <p className="eid-note">{copy.configuredCostNote}</p>}

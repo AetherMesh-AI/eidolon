@@ -1715,6 +1715,10 @@ DEFAULT_CONFIG = {
         "max_context_tokens": 128000,
         "max_model_calls": 120,
         "max_total_tokens": 8000000,
+        # Owner-configured protection captured once per new objective, within caps.
+        "completion_reserve_model_calls": 0,
+        "completion_reserve_tokens": 0,
+        "completion_reserve_cost_usd": None,
         "objective_timeout_seconds": 86400,
         # Explicit exact-route conservative USD rates only; never inferred.
         "max_cost_usd": None,

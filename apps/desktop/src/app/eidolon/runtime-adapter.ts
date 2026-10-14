@@ -1,6 +1,8 @@
-import { translateNow } from '@/i18n/runtime'
+import { completionReserveCopy } from '@/i18n/organization-completion-reserve'
+import { getRuntimeI18nLocale, translateNow } from '@/i18n/runtime'
 
 import { type OrganizationAttentionPage, validAttentionPage } from './runtime-attention-types'
+import { validCompletionReserve, validReplacementCompletionReserve } from './runtime-completion-reserve-contract'
 import { type DispatchReceipt, validDispatch } from './runtime-dispatch-types'
 import type { HistoryPage } from './runtime-history-types'
 import { type OrganizationOutcomePage, validOutcomePage } from './runtime-outcome-types'
@@ -591,6 +593,11 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
 
       if (!result || result.sourceId !== id || !Array.isArray(result.reasonCodes) || !result.reasonCodes.length || result.reasonCodes.some(code => !codes.includes(code)) || !result.sourceUsage) {
         throw new Error('Replacement review details are unavailable. Reconnect to an updated organization runtime.')
+      }
+
+      if ((result.sourceUsage.completionReserve !== undefined && !validCompletionReserve(result.sourceUsage.completionReserve)) ||
+          !validReplacementCompletionReserve(result.allowance)) {
+        throw new Error(completionReserveCopy[getRuntimeI18nLocale()].invalid)
       }
 
       return result

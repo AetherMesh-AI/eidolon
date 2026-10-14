@@ -2,6 +2,7 @@
 
 from contextlib import contextmanager
 from dataclasses import dataclass
+from decimal import Decimal
 from pathlib import Path
 
 from eidolon_cli.organization_roster import OrganizationStaff, parse_roster
@@ -33,6 +34,9 @@ class OrganizationSettings:
     max_total_tokens: int = 8000000
     objective_timeout_seconds: int = 86400
     max_cost_usd: str | None = None
+    completion_reserve_model_calls: int = 0
+    completion_reserve_tokens: int = 0
+    completion_reserve_cost_usd: str | None = None
     model_costs: tuple[OrganizationModelCost, ...] = ()
     lease_seconds: int = 45
     timeout_seconds: int = 180
@@ -63,6 +67,7 @@ class OrganizationSettings:
                   "max_owner_resolutions": (1, 24), "max_output_tokens": (256, 16000), "lease_seconds": (15, 300),
                   "timeout_seconds": (30, 600), "max_tool_calls": (1, 20),
                   "max_context_tokens": (4096, 2000000), "max_model_calls": (1, 1000),
+                  "completion_reserve_model_calls": (0, 1000), "completion_reserve_tokens": (0, 1000000000),
                   "max_total_tokens": (4096, 1000000000), "objective_timeout_seconds": (60, 604800),
                   "max_tool_result_chars": (1000, 20000), "max_project_runs": (1, 12)}
         values = {}
@@ -76,6 +81,14 @@ class OrganizationSettings:
             values[key] = value
         values["max_cost_usd"] = money(raw["max_cost_usd"], "organization.max_cost_usd", allow_zero=False) if raw.get("max_cost_usd") is not None else None
         values["model_costs"] = parse_model_costs(raw.get("model_costs", []))
+        values["completion_reserve_cost_usd"] = money(raw["completion_reserve_cost_usd"], "organization.completion_reserve_cost_usd") if raw.get("completion_reserve_cost_usd") is not None else None
+        if (values["completion_reserve_model_calls"] > values["max_model_calls"]
+                or values["completion_reserve_tokens"] > values["max_total_tokens"]):
+            raise ValueError("Completion reserves must fit inside the configured objective hard caps")
+        cost_reserve = values["completion_reserve_cost_usd"]
+        if cost_reserve is not None and (values["max_cost_usd"] is None or not values["model_costs"]
+                or Decimal(cost_reserve) > Decimal(values["max_cost_usd"])):
+            raise ValueError("A completion USD reserve requires an explicit USD hard cap, exact-route rates, and must fit inside that cap")
         if values["max_context_tokens"] <= values["max_output_tokens"] + 2048:
             raise ValueError("organization.max_context_tokens must leave input space beyond output and protocol reserves")
         communication = raw.get("communication_scope", "collaborators")

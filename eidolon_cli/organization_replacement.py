@@ -6,6 +6,7 @@ import hashlib
 import json
 import time
 
+from eidolon_cli.organization_completion_reserve import configured_reserve
 from eidolon_cli.organization_identity import objective_assignment_view
 from eidolon_cli.organization_projects import objective_projects, selected_projects
 
@@ -78,13 +79,14 @@ def replacement_preview(conn, settings, objective_id, resolution_options):
     leaders = [dict(item) for item in conn.execute('SELECT * FROM agents WHERE id IN (?,?) ORDER BY id', tuple(assignment.values()))]
     staff = [dict(item) for item in conn.execute('SELECT * FROM staff_state WHERE agent_id IN (?,?) ORDER BY agent_id', tuple(assignment.values()))]
     history = [dict(item) for item in conn.execute('SELECT * FROM objective_history WHERE objective_id=?', (objective_id,))]
-    version = hashlib.sha256(json.dumps([dict(row), dict(control), budget, assignment, projects, policy, identities, leaders, staff, requests, history], sort_keys=True).encode()).hexdigest()
+    reserve = configured_reserve(settings, model_calls=budget['modelCallLimit'], tokens=budget['tokenLimit'], cost_usd=budget['configuredCostLimitUsd'])
+    version = hashlib.sha256(json.dumps([reserve, dict(row), dict(control), budget, assignment, projects, policy, identities, leaders, staff, requests, history], sort_keys=True).encode()).hexdigest()
     return {'sourceId': objective_id, 'sourceVersion': version, 'reasonCodes': reasons, 'sourceUsage': budget,
             'title': row['title'], 'description': control['amended_scope'] or row['description'],
             'acceptanceCriteria': json.loads(control['criteria']), 'priority': f"P{6-row['priority']}",
             'deliveryMode': control['delivery_mode'], 'requiredChecks': json.loads(control['required_checks']),
             **assignment, 'projectIds': [project['id'] for project in projects],
-            'allowance': {'modelCalls': budget['modelCallLimit'], 'tokens': budget['tokenLimit'],
+            'allowance': {'completionReserve': reserve, 'modelCalls': budget['modelCallLimit'], 'tokens': budget['tokenLimit'],
                           'costUsd': budget['configuredCostLimitUsd'], 'durationSeconds': settings.objective_timeout_seconds,
                           'projectRuns': min(conn.execute('SELECT max_runs FROM project_execution_budgets WHERE objective_id=?', (objective_id,)).fetchone()[0], settings.max_project_runs),
                           'maxReplans': min(control['max_replans'], settings.max_replans),
@@ -127,7 +129,7 @@ class OrganizationReplacementStore:
                 ident = self._create_objective(conn, title, description, draft['priority'],
                     idempotency_key=_id('replacement'), acceptance_criteria=criteria,
                     delivery_mode=draft['deliveryMode'], required_checks=draft['requiredChecks'],
-                    executive_id=draft['executiveId'], manager_id=draft['managerId'], project_ids=draft['projectIds'], project_run_limit=draft['allowance']['projectRuns'])
+                    executive_id=draft['executiveId'], manager_id=draft['managerId'], project_ids=draft['projectIds'], project_run_limit=draft['allowance']['projectRuns'], completion_reserve=draft['allowance']['completionReserve'])
                 allowance = draft['allowance']
                 conn.execute('UPDATE objective_budgets SET max_model_calls=?,max_total_tokens=?,max_cost_usd=? WHERE objective_id=?',
                              (allowance['modelCalls'], allowance['tokens'], allowance['costUsd'], ident))

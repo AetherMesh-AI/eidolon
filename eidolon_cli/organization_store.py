@@ -220,7 +220,7 @@ class OrganizationStore(OrganizationDispatchStore, OrganizationPriorityStore, Or
         with self._connect() as conn:
             return build_snapshot(conn, self.settings, objective_id=ident, resolution_options=self.allowed_owner_resolutions)["objectives"][0]
 
-    def _create_objective(self, conn, title, description=None, priority="normal", *, idempotency_key, acceptance_criteria=None, delivery_mode="source_project", required_checks=None, executive_id=None, manager_id=None, project_ids=None, project_run_limit=None):
+    def _create_objective(self, conn, title, description=None, priority="normal", *, idempotency_key, acceptance_criteria=None, delivery_mode="source_project", required_checks=None, executive_id=None, manager_id=None, project_ids=None, project_run_limit=None, completion_reserve=None):
         title = _text(title, "Title", 500)
         description = _text(description or title, "Description", 30000)
         from eidolon_cli.organization_acceptance import acceptance_criteria as normalize_criteria
@@ -267,7 +267,7 @@ class OrganizationStore(OrganizationDispatchStore, OrganizationPriorityStore, Or
             mode = self._initialize_planning(conn, ident)
             conn.execute("INSERT INTO objective_control(objective_id,criteria,status,round,max_replans,max_stages,delivery_mode,required_checks) VALUES (?,?,'pending',0,?,?,?,?)",
                          (ident, json.dumps(criteria), self.settings.max_replans, self.settings.max_stages, delivery_mode, json.dumps(checks)))
-            self._initialize_budget(conn, ident)
+            self._initialize_budget(conn, ident, completion_reserve=completion_reserve)
             self._queue_objective_planning(conn, ident, level)
             self._event(conn, ident, "Objective accepted. " + ("Executive decomposition" if mode == "executive_packages" else "Legacy manager planning") + " is queued.", "planning")
         return ident

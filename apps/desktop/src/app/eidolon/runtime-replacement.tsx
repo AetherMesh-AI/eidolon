@@ -7,6 +7,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { useI18n } from '@/i18n/context'
 
 import { Inspector } from './inspector'
+import { RuntimeCompletionReserve, RuntimeCompletionReserveAllowance } from './runtime-completion-reserve'
 import type { Objective, ObjectiveReplacementDraft, OrganizationSnapshot, RuntimeOrganizationAdapter } from './types'
 
 function ReplacementReview({
@@ -176,6 +177,7 @@ function ReplacementReview({
               <dt>Original deadline</dt>
               <dd>{draft.sourceUsage.deadlineAt}</dd>
             </dl>
+            {draft.sourceUsage.completionReserve && <RuntimeCompletionReserve costEnabled={draft.sourceUsage.configuredCostLimitUsd != null} reserve={draft.sourceUsage.completionReserve} />}
             <h3>{copy.replacementAllowance}</h3>
             <dl>
               <dt>Model calls</dt>
@@ -184,6 +186,7 @@ function ReplacementReview({
               <dd>{draft.allowance.tokens}</dd>
               <dt>Configured cost ceiling (USD)</dt>
               <dd>{draft.allowance.costUsd ?? 'Not configured'}</dd>
+              {draft.allowance.completionReserve && <RuntimeCompletionReserveAllowance costEnabled={draft.allowance.costUsd != null} reserve={draft.allowance.completionReserve} />}
               <dt>{copy.replacementDeadline}</dt>
               <dd>{draft.allowance.durationSeconds / 3600}</dd>
               <dt>Stages / replans / project runs</dt>

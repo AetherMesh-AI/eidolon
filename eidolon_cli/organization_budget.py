@@ -11,6 +11,12 @@ import json
 import time
 import uuid
 
+from eidolon_cli.organization_completion_reserve import (
+    COMPLETION_POLICY, COMPLETION_REQUEST_TYPES, COMPLETION_RESERVE_SCHEMA,
+    capture_reserve, configured_reserve, completion_reserve_view,
+    migrate_completion_reserves, require_ordinary_headroom,
+)
+
 BUDGET_SCHEMA = """
 CREATE TABLE IF NOT EXISTS objective_budgets (
  objective_id TEXT PRIMARY KEY REFERENCES objectives(id), max_model_calls INTEGER NOT NULL,
@@ -29,6 +35,7 @@ CREATE TABLE IF NOT EXISTS organization_context_receipts (
  request_id TEXT NOT NULL REFERENCES requests(id), token TEXT NOT NULL,
  report TEXT NOT NULL, created REAL NOT NULL, PRIMARY KEY(request_id,token));
 """
+BUDGET_SCHEMA += COMPLETION_RESERVE_SCHEMA
 
 
 @dataclass(frozen=True)
@@ -80,13 +87,15 @@ def budget_view(conn, objective_id, settings):
     row = conn.execute('SELECT * FROM objective_budgets WHERE objective_id=?', (objective_id,)).fetchone()
     if row is None:
         return {}
-    calls = conn.execute('SELECT input_limit,output_limit,reserved_cost_usd FROM organization_model_calls WHERE objective_id=?', (objective_id,)).fetchall()
+    calls = conn.execute('SELECT m.input_limit,m.output_limit,m.reserved_cost_usd,c.classification '
+                         'FROM organization_model_calls m LEFT JOIN organization_model_call_classes c ON c.model_call_id=m.id '
+                         'WHERE m.objective_id=?', (objective_id,)).fetchall()
     cost_limit = _minimum_money(row['max_cost_usd'], settings.max_cost_usd)
     costs_complete = all(call['reserved_cost_usd'] is not None for call in calls) and not row['legacy_usage_unknown']
     cost = sum((Decimal(call['reserved_cost_usd']) for call in calls if call['reserved_cost_usd'] is not None), Decimal(0))
     from eidolon_cli.organization_store import _iso
     deadline = min(row['deadline'], conn.execute('SELECT created FROM objectives WHERE id=?', (objective_id,)).fetchone()[0] + settings.objective_timeout_seconds)
-    return {'modelCalls': len(calls), 'modelCallLimit': min(row['max_model_calls'], settings.max_model_calls),
+    view = {'modelCalls': len(calls), 'modelCallLimit': min(row['max_model_calls'], settings.max_model_calls),
             'reservedTokens': sum(call['input_limit'] + call['output_limit'] for call in calls),
             'tokenLimit': min(row['max_total_tokens'], settings.max_total_tokens),
             'deadlineAt': _iso(deadline), 'deadlineTimestamp': deadline,
@@ -94,6 +103,8 @@ def budget_view(conn, objective_id, settings):
             'configuredCostLimitUsd': format(cost_limit, 'f') if cost_limit is not None else None,
             'legacyUsageUnknown': bool(row['legacy_usage_unknown']),
             'budgetScope': 'Durable admission reservations, including interrupted or unreported calls; never refunded. USD uses only configured exact-route ceilings, not current provider prices or an invoice. The deadline includes time awaiting owner input.'}
+    view['completionReserve'] = completion_reserve_view(conn, objective_id, calls, view)
+    return view
 
 
 def budget_reason(conn, objective_id, settings):
@@ -102,6 +113,8 @@ def budget_reason(conn, objective_id, settings):
         return 'Objective budget is unavailable; reconnect before resuming work.'
     if view['legacyUsageUnknown']:
         return 'Prior model usage is unknown. Retained work remains available; create a separately budgeted objective before authorizing more calls.'
+    if view['completionReserve']['unavailableReason'] == 'classification-unknown':
+        return 'Prior model-call classification is unknown; no additional model call can be authorized.'
     if time.time() >= view['deadlineTimestamp']:
         return 'Objective deadline reached. Automatic execution has stopped; create a revised objective to authorize a new deadline.'
     if view['modelCalls'] >= view['modelCallLimit']:
@@ -117,12 +130,15 @@ def budget_reason(conn, objective_id, settings):
 
 
 class OrganizationBudgetStore:
-    def _initialize_budget(self, conn, objective_id, *, legacy=False):
+    def _initialize_budget(self, conn, objective_id, *, legacy=False, completion_reserve=None):
         created = conn.execute('SELECT created FROM objectives WHERE id=?', (objective_id,)).fetchone()[0]
         unknown = legacy and conn.execute("SELECT 1 FROM objective_usage WHERE objective_id=? AND stage NOT IN ('request.hire','request.apply','request.validate')", (objective_id,)).fetchone() is not None
         conn.execute('INSERT OR IGNORE INTO objective_budgets VALUES (?,?,?,?,?,?)',
                      (objective_id, self.settings.max_model_calls, self.settings.max_total_tokens,
                       created + self.settings.objective_timeout_seconds, self.settings.max_cost_usd, int(unknown)))
+        capture_reserve(conn, objective_id, ({'policy': COMPLETION_POLICY, 'captured': {
+            'modelCalls': 0, 'tokens': 0, 'configuredCostUsd': None}} if legacy else
+            completion_reserve or configured_reserve(self.settings)))
 
     def _migrate_budgets(self, conn):
         # Existing budgets retain their original ceilings and uncertainty. Only
@@ -130,6 +146,7 @@ class OrganizationBudgetStore:
         for row in conn.execute('SELECT o.id FROM objectives o LEFT JOIN objective_budgets b '
                                 'ON b.objective_id=o.id WHERE b.objective_id IS NULL').fetchall():
             self._initialize_budget(conn, row['id'], legacy=True)
+        migrate_completion_reserves(conn)
 
     def reserve_model_call(self, claim, *, provider, model, input_limit, output_limit):
         from eidolon_cli.organization_store import _text
@@ -155,6 +172,9 @@ class OrganizationBudgetStore:
                     raise ValueError('No configured cost ceiling exists for this exact provider/model. No model call was sent; configure both input and output ceilings before retrying.')
                 if Decimal(view['configuredCostReservedUsd']) + cost > Decimal(view['configuredCostLimitUsd']):
                     raise ValueError('The next model call would exceed the objective configured-cost budget; no call was sent.')
+            classification = 'completion' if request['type'] in COMPLETION_REQUEST_TYPES else 'ordinary'
+            if classification == 'ordinary':
+                require_ordinary_headroom(view, input_limit + output_limit, cost)
             ident = 'modelcall_' + uuid.uuid4().hex
             pricing = {'policyGeneration': self._policy_generation,
                        'inputUsdPerMillion': rate.input_usd_per_million if rate else None,
@@ -162,6 +182,8 @@ class OrganizationBudgetStore:
             conn.execute('INSERT INTO organization_model_calls VALUES (?,?,?,?,?,?,?,?,?,?,?)',
                          (ident, request['id'], request['token'], request['objective_id'], provider, model,
                           input_limit, output_limit, format(cost, 'f') if cost is not None else None, time.time(), json.dumps(pricing)))
+            conn.execute('INSERT INTO organization_model_call_classes VALUES (?,?,?,?)',
+                         (ident, request['type'], classification, COMPLETION_POLICY))
             return ident
 
     def record_context_receipt(self, claim, report):
@@ -217,7 +239,7 @@ class OrganizationBudgetStore:
         with self._connect() as conn:
             if conn.execute('SELECT 1 FROM requests WHERE id=?', (identifier,)).fetchone() is None:
                 raise ValueError('Request not found in this profile')
-            calls = [{**dict(row), 'pricing': json.loads(row['pricing']), 'createdAt': _iso(row['created'])} for row in conn.execute('SELECT * FROM organization_model_calls WHERE request_id=? ORDER BY created,id', (identifier,))]
+            calls = [{**dict(row), 'pricing': json.loads(row['pricing']), 'createdAt': _iso(row['created'])} for row in conn.execute('SELECT m.*,c.request_type,c.classification,c.policy AS classification_policy FROM organization_model_calls m LEFT JOIN organization_model_call_classes c ON c.model_call_id=m.id WHERE request_id=? ORDER BY created,id', (identifier,))]
             contexts = [{'attemptToken': row['token'], 'report': json.loads(row['report']), 'createdAt': _iso(row['created'])}
                         for row in conn.execute('SELECT * FROM organization_context_receipts WHERE request_id=? ORDER BY created', (identifier,))]
             passes = [{'attemptToken': row['token'], 'report': json.loads(row['report']), 'createdAt': _iso(row['created'])}

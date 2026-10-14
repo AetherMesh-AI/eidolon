@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter, useLocation } from 'react-router'
 import { expect, it, vi } from 'vitest'
 
@@ -68,7 +68,7 @@ function Location() {
   return <output aria-label="Location">{useLocation().pathname}</output>
 }
 
-function setup() {
+function setup(preview = draft) {
   let resolve!: (objective: Objective) => void
 
   const result = new Promise<Objective>(yes => {
@@ -76,7 +76,7 @@ function setup() {
   })
 
   const replaceObjective = vi.fn(() => result)
-  const previewReplacement = vi.fn().mockResolvedValue(draft)
+  const previewReplacement = vi.fn().mockResolvedValue(preview)
   const adapter = { previewReplacement, replaceObjective } as unknown as RuntimeOrganizationAdapter
 
   const view = render(
@@ -88,6 +88,31 @@ function setup() {
 
   return { view, resolve, previewReplacement, replaceObjective }
 }
+
+it('discloses retained protection and a separate fresh reserve without changing owner consent', async () => {
+  const captured = { modelCalls: 2, tokens: 2048, configuredCostUsd: null }
+  const zero = { modelCalls: 0, tokens: 0, configuredCostUsd: null }
+
+  const retained = { version: 1 as const, policy: 'completion-v1' as const, captured,
+    requestTypes: ['request.review', 'request.test_review', 'request.integrate', 'request.accept'],
+    completionReserved: zero, totalRemaining: zero, ordinaryRemaining: zero, protectedRemaining: captured,
+    admissionUsageKnown: false, unavailableReason: 'configured-cost-unknown' as const }
+
+  const test = setup({ ...draft, sourceUsage: { ...draft.sourceUsage, completionReserve: retained },
+    allowance: { ...draft.allowance, completionReserve: { version: 1, policy: 'completion-v1', captured: { ...captured, modelCalls: 3 } } } })
+
+  fireEvent.click(screen.getByRole('button', { name: 'Review replacement' }))
+  await screen.findByRole('textbox', { name: 'Revised scope' })
+  const protection = screen.getByRole('region', { name: 'Completion reserve' })
+  expect(within(protection).getByText('Owner-configured completion reserve').nextElementSibling?.textContent).toContain('Model calls: 2')
+  expect(within(protection).getByText(/Current hard caps leave less allowance/)).toBeTruthy()
+  const fresh = screen.getAllByText('Owner-configured completion reserve').find(label => !protection.contains(label))!
+  expect(fresh.nextElementSibling?.textContent).toContain('Model calls: 3')
+  expect(fresh.nextElementSibling?.textContent).toContain('Configured USD: Not configured')
+  expect((screen.getByRole('button', { name: 'Cancel original and create replacement' }) as HTMLButtonElement).disabled).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+  expect(test.replaceObjective).not.toHaveBeenCalled()
+})
 
 it('requires fresh consent, preserves editable draft, and submits once across rapid clicks', async () => {
   const test = setup()
