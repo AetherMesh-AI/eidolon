@@ -9,6 +9,7 @@ import { Activity } from './activity'
 import { Inspector } from './inspector'
 import { MetadataSummary } from './objective-metadata'
 import { ObjectiveProgress } from './objective-progress'
+import { OwnerPolicyEntry, OwnerPolicySettingsLink } from './organization-owner-policy'
 import { RuntimeAcceptance } from './runtime-acceptance'
 import { RuntimeArtifact } from './runtime-artifact'
 import { RuntimeCapabilities } from './runtime-capabilities'
@@ -126,7 +127,7 @@ export function RuntimeObjectiveDetail({ objective, adapter, snapshot, historyCo
     <div aria-label={t.organizationHome.detail.workDetails} ref={workRef} role="region" tabIndex={-1}>
     <div aria-label={t.organizationHome.detail.views} className="eid-tabs" role="tablist">{(['work', 'activity', 'artifacts', 'decisions'] as const).map(name => <button aria-selected={tab === name} key={name} onClick={() => setTab(name)} role="tab">{copy[name]}</button>)}</div>
     <section aria-label={copy[tab]} role="tabpanel">
-      {tab === 'work' && <><RuntimeAcceptance objective={objective} onOpenEvidence={setEvidenceId} /><RuntimeWorkPackages objective={objective} snapshot={snapshot} /><WorkGraph objectiveId={objective.id} onOpenEvidence={setEvidenceId} snapshot={snapshot} /></>}
+      {tab === 'work' && <><RuntimeAcceptance objective={objective} onOpenEvidence={setEvidenceId} /><div className="eid-actions"><OwnerPolicyEntry target={{ kind: 'observation', objectiveId: objective.id }} /><OwnerPolicySettingsLink /></div><RuntimeWorkPackages objective={objective} snapshot={snapshot} /><WorkGraph objectiveId={objective.id} onOpenEvidence={setEvidenceId} snapshot={snapshot} /></>}
       {tab === 'activity' && <Activity objectiveId={objective.id} snapshot={snapshot} />}
       {tab === 'artifacts' && <Knowledge adapter={adapter} objectiveId={objective.id} snapshot={snapshot} />}
       {tab === 'decisions' && <><p>{copy.acceptanceNote}</p>{snapshot.decisions?.filter(item => item.objectiveId === objective.id).map(item => <article key={item.id}><h2>{item.title}</h2><Status status={item.status} /><p>{item.summary}</p></article>)}</>}

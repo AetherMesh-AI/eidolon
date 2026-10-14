@@ -260,34 +260,18 @@ _EXTRA_ENV_KEYS = frozenset({
 
 # ---- Managed mode (NixOS declarative config) ----
 
-_MANAGED_TRUE_VALUES = ("true", "1", "yes")
 _NIX_MANAGED_SYSTEMS = {"nixos", "home-manager"}
-# Only the NixOS module ever wrote a bare "true" or an empty marker.
-_LEGACY_MANAGED_SYSTEM = "nixos"
 # Nix store root; identifies `nix run` / `nix profile install` installs (which don't set
 # HERMES_MANAGED). Module-level so tests can patch it without touching /nix/store.
 _NIX_STORE = Path("/nix/store")
-# Homebrew is no longer a supported distribution: these markers fall through to git/unknown
-# detection instead of blocking config writes.
-_IGNORED_MANAGED_VALUES = frozenset({"brew", "homebrew"})
 
 
 def get_managed_system() -> Optional[str]:
     """Return the package manager owning this install, if any.
     Signals: HERMES_MANAGED env var (systemd service) or a ``.managed`` marker file in
     HERMES_HOME (NixOS activation script — interactive shells don't see the service env)."""
-    marker = os.getenv("HERMES_MANAGED", "").strip().lower() or None
-    managed_marker = get_eidolon_home() / ".managed"
-    if marker is None and managed_marker.exists():
-        try:
-            marker = managed_marker.read_text(encoding="utf-8", errors="replace").strip().lower()
-        except OSError:
-            marker = ""
-    if marker is None or marker in _IGNORED_MANAGED_VALUES:
-        return None
-    if marker == "" or marker in _MANAGED_TRUE_VALUES:
-        return _LEGACY_MANAGED_SYSTEM
-    return marker
+    from eidolon_cli.config_primitives import managed_install_system
+    return managed_install_system(get_eidolon_home())
 
 
 def is_managed() -> bool:

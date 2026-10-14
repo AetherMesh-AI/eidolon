@@ -1,6 +1,7 @@
 import { useI18n } from '@/i18n/context'
 import { modelRoutingCopy } from '@/i18n/organization-model-routing'
 
+import { OwnerPolicySettingsLink } from './organization-owner-policy'
 import type { OrganizationAgent, OrganizationSnapshot } from './types'
 
 export function ModelAssignmentSummary({ agent }: { agent: OrganizationAgent }) {
@@ -74,6 +75,7 @@ export function RuntimeModelRouting({ snapshot }: { snapshot: OrganizationSnapsh
       </section>
       <section aria-label={copy.configuration}>
         <h3>{copy.configuration}</h3>
+        <OwnerPolicySettingsLink />
         <p className="eid-note">{copy.configurationNote}</p>
         <p className="eid-note">{copy.profileNote}</p>
         <p className="eid-result-text" dir="ltr"><code>python -m eidolon_cli.organization_model_routing_cli show</code></p>

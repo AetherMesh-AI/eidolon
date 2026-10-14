@@ -1035,3 +1035,46 @@ and executable readiness are separate; submitted work may pause for intervention
 Submitting an objective may incur provider charges. Disconnected snapshots are
 marked stale, with settings shortcuts withheld until the profile is known and
 connected. Older runtimes keep working and show that setup guidance is unavailable.
+
+## Owner model and allowance editors
+
+Settings → Organization → **Models and allowance** exposes the existing bounded
+model-routing, per-objective allowance and pacing policy. Agent details offer
+**Edit model assignment**; objective details offer **Edit reported allowance**.
+The editor requires an explicit versioned owner-policy capability from the served
+profile. Older runtimes remain read-only. Opening an editor or preview does not
+create an organization, migrate a ledger, start work or contact a model provider.
+Set organization/owner names and initialize the organization through the existing
+setup flow first.
+
+Every change is reviewed before Apply: the backend returns the exact changed
+fields, scope, source revision, policy generation and bounded impact notes.
+Apply checks those values again under the ledger writer. Configuration and its
+immutable receipt commit together. Policy changes fence running attempts into owner
+review, including increases or an explicit save that pins an unchanged value as a
+durable owner override. The preview discloses this consequence; exact receipt
+replay does not advance the generation or fence attempts again. A lost acknowledgement retains the original
+intent in the current desktop window's session storage; **Reconcile saved change**
+replays that exact intent and key. Reopening or reconnecting never silently sends a
+new write. Closing a dialog cannot undo a change already accepted by the backend.
+
+The route catalogue uses existing provider/model selectors, declared capabilities,
+context/output envelopes and owner-configured price ceilings. Assignment uses
+catalogue choices and explicit ordering. The built-in executive remains Fixed;
+other model-using agents can use Fixed or Auto. Changing a route does not replace
+agent identity, memory, responsibilities or grants. Unsupported transports remain
+explicit; these controls do not establish credentials or discover provider prices.
+
+Allowance changes preserve captured objective limits: effective limits remain the
+minimum of captured and current ceilings. Raising defaults does not refill an
+existing objective beyond its captured allowance; lowering ceilings can tighten
+it. Raising a previously tighter current ceiling can relax that restriction up
+to the original captured limit. Existing call reservations,
+completion protection and receipts remain intact. Manual remaining percentages
+are timestamped, expiring, objective-local advisory observations. They do not
+claim a shared subscription balance, manufacture token quantities, replenish on a
+reset date or authorize additional spending. Administrator-managed fields remain
+read-only and are checked again when a change is applied.
+
+The CLI remains supported. Shared provider allowance, quota top-ups, learned model
+selection and autonomous provider account management are outside this editor.

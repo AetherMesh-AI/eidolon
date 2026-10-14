@@ -256,7 +256,7 @@ class OrganizationService:
         with self._lock:
             self.store.pause_configuration()
 
-    def refresh_configuration(self):
+    def refresh_configuration(self, *, wake=True):
         """Cancel revoked claims before adopting another host's durable policy."""
         from eidolon_cli.organization_policy import persisted_settings
         with self._lock:
@@ -277,7 +277,8 @@ class OrganizationService:
                 self.store.settings = self.settings = settings
                 self.store._policy_generation = policy['generation']
                 self.store._policy_fingerprint = policy['fingerprint']
-            self._wake.set()
+            if wake:
+                self._wake.set()
             return True
 
     def configure(self, configuration: dict, *, expected_generation: int, idempotency_key: str):

@@ -43,6 +43,7 @@ from eidolon_cli.organization_staffing import STAFF_SCHEMA, OrganizationStaffing
 from eidolon_cli.organization_edits import EDIT_SCHEMA, OrganizationEditStore, evidence_proposal
 from eidolon_cli.organization_project_execution import (PROJECT_EXECUTION_SCHEMA, OrganizationProjectExecutionStore,
     project_execution_artifact, project_execution_view)
+from eidolon_cli.organization_owner_policy_config import OWNER_POLICY_SCHEMA
 from eidolon_cli.organization_policy import POLICY_SCHEMA, OrganizationPolicyStore, resolve_settings
 from eidolon_cli.organization_requests import (REQUEST_SCHEMA, OrganizationRequestStore)
 from eidolon_cli.organization_management import MANAGEMENT_SCHEMA, OrganizationManagementStore
@@ -109,7 +110,7 @@ def _text(value, field, limit=10000):
 
 
 # One DDL contract for initialization and non-migrating observation preflight.
-ORGANIZATION_SCHEMA = (_SCHEMA + ROUTING_SCHEMA + REPLACEMENT_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA + COORDINATION_SCHEMA + HISTORY_SCHEMA + ATTENTION_SCHEMA + PROJECTS_SCHEMA + OUTCOME_SCHEMA + REGISTRY_SCHEMA + PACKAGE_SCHEMA + CONVERSATION_SCHEMA + OWNER_CHAT_SCHEMA + PRIORITY_SCHEMA + DISPATCH_SCHEMA)
+ORGANIZATION_SCHEMA = (_SCHEMA + OWNER_POLICY_SCHEMA + ROUTING_SCHEMA + REPLACEMENT_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA + COORDINATION_SCHEMA + HISTORY_SCHEMA + ATTENTION_SCHEMA + PROJECTS_SCHEMA + OUTCOME_SCHEMA + REGISTRY_SCHEMA + PACKAGE_SCHEMA + CONVERSATION_SCHEMA + OWNER_CHAT_SCHEMA + PRIORITY_SCHEMA + DISPATCH_SCHEMA)
 
 
 class OrganizationStore(OrganizationModelRoutingStore, OrganizationPacingStore, OrganizationDispatchStore, OrganizationPriorityStore, OrganizationReplacementStore, OrganizationOwnerChatStore, OrganizationConversationStore, OrganizationPackageStore, OrganizationOutcomeStore, OrganizationAttentionStore, OrganizationHistoryStore, OrganizationCoordinationStore, OrganizationProjectExecutionStore, OrganizationBudgetStore, OrganizationRequestStore, OrganizationManagementStore, OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):

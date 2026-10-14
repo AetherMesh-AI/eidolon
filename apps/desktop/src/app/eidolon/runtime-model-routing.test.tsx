@@ -91,11 +91,11 @@ it('renders six localized read-only policy and dispatch views with stale state a
     const snapshot = modelRoutingSnapshot()
     snapshot.connection!.state = 'disconnected'
 
-    const view = render(<I18nProvider configClient={null} initialLocale={locale}>
+    const view = render(<MemoryRouter><I18nProvider configClient={null} initialLocale={locale}>
       <RuntimeModelRouting snapshot={snapshot} />
       <AgentModelAssignment agent={snapshot.agents[0]} />
       <RuntimeModelDispatch dispatch={{ ...modelDispatch, mode: 'fixed', pricing: { inputUsdPerMillion: null, outputUsdPerMillion: null } }} />
-    </I18nProvider>)
+    </I18nProvider></MemoryRouter>)
 
     expect(screen.getByText(copy.heading)).toBeTruthy()
     expect(screen.getByText(copy.stale)).toBeTruthy()
