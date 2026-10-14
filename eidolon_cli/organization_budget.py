@@ -17,6 +17,8 @@ from eidolon_cli.organization_completion_reserve import (
     migrate_completion_reserves, require_ordinary_headroom,
 )
 
+from eidolon_cli.organization_pacing import PACING_SCHEMA, pacing_view, pacing_wait
+
 BUDGET_SCHEMA = """
 CREATE TABLE IF NOT EXISTS objective_budgets (
  objective_id TEXT PRIMARY KEY REFERENCES objectives(id), max_model_calls INTEGER NOT NULL,
@@ -35,7 +37,7 @@ CREATE TABLE IF NOT EXISTS organization_context_receipts (
  request_id TEXT NOT NULL REFERENCES requests(id), token TEXT NOT NULL,
  report TEXT NOT NULL, created REAL NOT NULL, PRIMARY KEY(request_id,token));
 """
-BUDGET_SCHEMA += COMPLETION_RESERVE_SCHEMA
+BUDGET_SCHEMA += COMPLETION_RESERVE_SCHEMA + PACING_SCHEMA
 
 
 @dataclass(frozen=True)
@@ -104,6 +106,9 @@ def budget_view(conn, objective_id, settings):
             'legacyUsageUnknown': bool(row['legacy_usage_unknown']),
             'budgetScope': 'Durable admission reservations, including interrupted or unreported calls; never refunded. USD uses only configured exact-route ceilings, not current provider prices or an invoice. The deadline includes time awaiting owner input.'}
     view['completionReserve'] = completion_reserve_view(conn, objective_id, calls, view)
+    if settings.adaptive_pacing_enabled or conn.execute(
+            'SELECT 1 FROM organization_budget_observations WHERE objective_id=? LIMIT 1', (objective_id,)).fetchone():
+        view['adaptivePacing'] = pacing_view(conn, objective_id, settings, view)
     return view
 
 
@@ -175,6 +180,9 @@ class OrganizationBudgetStore:
             classification = 'completion' if request['type'] in COMPLETION_REQUEST_TYPES else 'ordinary'
             if classification == 'ordinary':
                 require_ordinary_headroom(view, input_limit + output_limit, cost)
+            wait = pacing_wait(conn, request, self.settings, view, final=True)
+            if wait is not None:
+                raise wait
             ident = 'modelcall_' + uuid.uuid4().hex
             pricing = {'policyGeneration': self._policy_generation,
                        'inputUsdPerMillion': rate.input_usd_per_million if rate else None,

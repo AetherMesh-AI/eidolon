@@ -23,6 +23,7 @@ from eidolon_cli.organization_conversations import CONVERSATION_SCHEMA, Organiza
 from eidolon_cli.organization_packages import (PACKAGE_SCHEMA, OrganizationPackageStore, package_dependencies_ready, task_package_id)
 from eidolon_cli.organization_dispatch import DISPATCH_SCHEMA, OrganizationDispatchStore
 from eidolon_cli.organization_priority import PRIORITY_SCHEMA, OrganizationPriorityStore
+from eidolon_cli.organization_pacing import OrganizationPacingStore, pacing_wait
 from eidolon_cli.organization_config import OrganizationSettings
 from eidolon_cli.organization_project_registry import REGISTRY_SCHEMA
 from eidolon_cli.organization_projects import (PROJECTS_SCHEMA, selected_projects, objective_projects, task_project, bind_task_project, validate_objective_projects, public_project)
@@ -110,7 +111,7 @@ def _text(value, field, limit=10000):
 ORGANIZATION_SCHEMA = (_SCHEMA + REPLACEMENT_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA + COORDINATION_SCHEMA + HISTORY_SCHEMA + ATTENTION_SCHEMA + PROJECTS_SCHEMA + OUTCOME_SCHEMA + REGISTRY_SCHEMA + PACKAGE_SCHEMA + CONVERSATION_SCHEMA + OWNER_CHAT_SCHEMA + PRIORITY_SCHEMA + DISPATCH_SCHEMA)
 
 
-class OrganizationStore(OrganizationDispatchStore, OrganizationPriorityStore, OrganizationReplacementStore, OrganizationOwnerChatStore, OrganizationConversationStore, OrganizationPackageStore, OrganizationOutcomeStore, OrganizationAttentionStore, OrganizationHistoryStore, OrganizationCoordinationStore, OrganizationProjectExecutionStore, OrganizationBudgetStore, OrganizationRequestStore, OrganizationManagementStore, OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
+class OrganizationStore(OrganizationPacingStore, OrganizationDispatchStore, OrganizationPriorityStore, OrganizationReplacementStore, OrganizationOwnerChatStore, OrganizationConversationStore, OrganizationPackageStore, OrganizationOutcomeStore, OrganizationAttentionStore, OrganizationHistoryStore, OrganizationCoordinationStore, OrganizationProjectExecutionStore, OrganizationBudgetStore, OrganizationRequestStore, OrganizationManagementStore, OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
     def __init__(self, path: Path | str, settings: OrganizationSettings | None = None):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -348,6 +349,11 @@ class OrganizationStore(OrganizationDispatchStore, OrganizationPriorityStore, Or
                 if reason:
                     self._pending(conn, request, reason)
                     continue
+                wait = pacing_wait(conn, request, self.settings,
+                                   budget_view(conn, request['objective_id'], self.settings))
+                if wait is not None:
+                    conn.execute('UPDATE requests SET reason=? WHERE id=?', (str(wait), request['id']))
+                    continue
                 if request["attempts"] >= self.settings.max_attempts:
                     self._pending(conn, request, "Attempt limit reached; automatic execution has stopped.")
                     continue
@@ -505,6 +511,7 @@ class OrganizationStore(OrganizationDispatchStore, OrganizationPriorityStore, Or
                     "evidence": evidence, "feedback": task["feedback"] if task else payload.get("feedback", control["summary"]),
                     "ownerInputs": owner_inputs, "maxOutputTokens": self.settings.max_output_tokens,
                     "maxContextTokens": self.settings.max_context_tokens,
+                    **({"budget": budget} if "adaptivePacing" in budget else {}),
                     "costBudgetEnabled": budget["configuredCostLimitUsd"] is not None,
                     "toolReceipts": [receipt for item in evidence for receipt in item['toolReceipts']],
                     "toolPolicy": self._tool_policy(conn, request),
@@ -539,19 +546,26 @@ class OrganizationStore(OrganizationDispatchStore, OrganizationPriorityStore, Or
                 self._pending(conn, request, reason)
             return True
 
-    def defer(self, claim, reason):
+    def defer(self, claim, reason, *, defer_until=None):
         """Release admission when an occupied OS slot prevented any model call.
 
         Capacity waits are not failed attempts and need no owner intervention.
-        Only the scheduler invokes this before entering an executor.
+        Admission may also defer before the first model call. Never replay an
+        attempt that already reserved a model call or started a tool.
         """
         reason = _text(reason, "Capacity reason", 2000)
         with self._write() as conn:
             request = self._owned(conn, claim)
             if request is None:
                 return False
+            if (conn.execute('SELECT 1 FROM organization_model_calls WHERE request_id=? AND token=?',
+                             (request['id'], request['token'])).fetchone()
+                    or conn.execute('SELECT 1 FROM tool_receipts WHERE request_id=? AND attempt=?',
+                                    (request['id'], request['execution_count'])).fetchone()):
+                self._pending(conn, request, 'An admitted execution cannot be replayed as a pacing wait; review the retained outcome.')
+                return False
             conn.execute("UPDATE requests SET status='queued',reason=?,token=NULL,lease=NULL,agent_id=NULL,attempts=MAX(0,attempts-1),available=? WHERE id=?",
-                         (reason, time.time() + 1, request["id"]))
+                         (reason, time.time() + 1 if defer_until is None else min(time.time() + 1, defer_until), request["id"]))
             conn.execute('DELETE FROM objective_usage WHERE request_id=? AND token=?', (request['id'], request['token']))
             if request["task_id"]:
                 conn.execute("UPDATE tasks SET status='queued' WHERE id=?", (request["task_id"],))

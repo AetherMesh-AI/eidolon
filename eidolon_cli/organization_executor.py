@@ -17,6 +17,9 @@ from contextlib import ExitStack
 from urllib.parse import urlparse
 
 
+from eidolon_cli.organization_pacing import OrganizationPacingDeferred
+
+
 class OrganizationExecutionError(ValueError):
     """An actionable, non-secret reason to park work for intervention."""
 
@@ -860,6 +863,8 @@ class _ToolFreeBoundary:
         return ''
 
     def _organization_reserve_call(self, options, *, attempts=None):
+        if getattr(self, '_organization_pacing_wait', None) is not None:
+            raise self._organization_pacing_wait
         from eidolon_cli.organization_evidence import CONTEXT_RESERVE_TOKENS, contains_exact_prompt, require_fits, wire_input_bound
         expected = getattr(self, '_organization_prompt', None)
         if expected and any(key in options for key in _CONTENT_KEYS) and not contains_exact_prompt(options, expected):
@@ -896,6 +901,10 @@ class _ToolFreeBoundary:
             try:
                 reserve(provider=str(self.provider or ''), model=str(options.get('model') or options.get('modelId') or self.model),
                         input_limit=wire_input_bound(options) + CONTEXT_RESERVE_TOKENS, output_limit=output)
+            except OrganizationPacingDeferred as wait:
+                self._organization_pacing_wait = wait
+                self._organization_intervention = str(wait)
+                raise
             except ValueError as exc:
                 self._organization_intervention = str(exc)
                 raise OrganizationExecutionError(str(exc)) from exc
@@ -1061,6 +1070,9 @@ def _prompt(request: dict, context: dict, kind: str) -> str:
     safe_context = {key: context[key] for key in (
         "objective", "task", "workPackage", "workPackages", "dependencies", "evidence", "toolReceipts", "staffing", "feedback", "ownerInputs", "capabilities", "maxTasks", "maxWorkers", "maxInflight", "agent", "agentContext", "requestContract", "requestOrigin", "requestResponses", "objectiveClarifications", "managementPolicy", "projectPolicy", "projectExecutionHistory", "internalConversations", "messagingDirectory"
     ) if key in context}
+    budget = context.get("budget")
+    if isinstance(budget, dict) and "adaptivePacing" in budget:
+        safe_context["budget"] = budget
     safe_context = _continuity_prompt_context(safe_context)
     safe_context["team"] = (context.get("agent") or {}).get("team", "general")
     from eidolon_cli.organization_tool_executor import public_tool_policy
@@ -1142,6 +1154,8 @@ A transport ignoring cancellation remains in the scheduler's occupied slot.
             _guard_plugin_integrations(tool_mode=execution is not None)
             agent._organization_check()
             result = agent.run_conversation(user_message=content)
+            if getattr(agent, '_organization_pacing_wait', None) is not None:
+                raise agent._organization_pacing_wait
             usage.append((getattr(agent, 'session_prompt_tokens', None), getattr(agent, 'session_completion_tokens', None)))
             if cancel.is_set() or timed_out.is_set() or time.monotonic() >= deadline:
                 raise OrganizationExecutionError("Organization execution was cancelled or timed out; no result was accepted.")
@@ -1210,6 +1224,8 @@ A transport ignoring cancellation remains in the scheduler's occupied slot.
                 (sum(column) if all(type(value) is int and value > 0 for value in column) else None
                  for column in zip(*usage))))
         return parsed
+    except OrganizationPacingDeferred:
+        raise
     except OrganizationExecutionError as exc:
         return {"intervention": str(exc)}
     except InterruptedError:

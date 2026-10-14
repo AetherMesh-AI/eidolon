@@ -1,6 +1,8 @@
+import { adaptivePacingCopy } from '@/i18n/organization-adaptive-pacing'
 import { completionReserveCopy } from '@/i18n/organization-completion-reserve'
 import { getRuntimeI18nLocale, translateNow } from '@/i18n/runtime'
 
+import { validAdaptivePacing } from './runtime-adaptive-pacing-contract'
 import { type OrganizationAttentionPage, validAttentionPage } from './runtime-attention-types'
 import { validCompletionReserve, validReplacementCompletionReserve } from './runtime-completion-reserve-contract'
 import { type DispatchReceipt, validDispatch } from './runtime-dispatch-types'
@@ -598,6 +600,10 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
       if ((result.sourceUsage.completionReserve !== undefined && !validCompletionReserve(result.sourceUsage.completionReserve)) ||
           !validReplacementCompletionReserve(result.allowance)) {
         throw new Error(completionReserveCopy[getRuntimeI18nLocale()].invalid)
+      }
+
+      if (result.sourceUsage.adaptivePacing !== undefined && !validAdaptivePacing(result.sourceUsage.adaptivePacing, result.sourceUsage.completionReserve)) {
+        throw new Error(adaptivePacingCopy[getRuntimeI18nLocale()].invalid)
       }
 
       return result

@@ -10,7 +10,7 @@ import type {
   OrganizationCompletionReservePolicy
 } from './types'
 
-function Amounts({
+export function RuntimeBudgetAmounts({
   value,
   costEnabled,
   captured = false
@@ -63,7 +63,7 @@ export function RuntimeCompletionReserve({
             <Fragment key={key}>
               <dt>{copy[key]}</dt>
               <dd>
-                <Amounts captured={key === 'captured'} costEnabled={costEnabled} value={reserve[key]} />
+                <RuntimeBudgetAmounts captured={key === 'captured'} costEnabled={costEnabled} value={reserve[key]} />
               </dd>
             </Fragment>
           )
@@ -93,7 +93,7 @@ export function RuntimeCompletionReserveAllowance({
     <>
       <dt>{copy.captured}</dt>
       <dd>
-        <Amounts captured costEnabled={costEnabled} value={reserve.captured} />
+        <RuntimeBudgetAmounts captured costEnabled={costEnabled} value={reserve.captured} />
       </dd>
     </>
   )

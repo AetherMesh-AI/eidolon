@@ -80,7 +80,9 @@ def replacement_preview(conn, settings, objective_id, resolution_options):
     staff = [dict(item) for item in conn.execute('SELECT * FROM staff_state WHERE agent_id IN (?,?) ORDER BY agent_id', tuple(assignment.values()))]
     history = [dict(item) for item in conn.execute('SELECT * FROM objective_history WHERE objective_id=?', (objective_id,))]
     reserve = configured_reserve(settings, model_calls=budget['modelCallLimit'], tokens=budget['tokenLimit'], cost_usd=budget['configuredCostLimitUsd'])
-    version = hashlib.sha256(json.dumps([reserve, dict(row), dict(control), budget, assignment, projects, policy, identities, leaders, staff, requests, history], sort_keys=True).encode()).hexdigest()
+    # Advisory scheduling timestamps are not authorization or fresh allowance.
+    authority_budget = {key: value for key, value in budget.items() if key != 'adaptivePacing'}
+    version = hashlib.sha256(json.dumps([reserve, dict(row), dict(control), authority_budget, assignment, projects, policy, identities, leaders, staff, requests, history], sort_keys=True).encode()).hexdigest()
     return {'sourceId': objective_id, 'sourceVersion': version, 'reasonCodes': reasons, 'sourceUsage': budget,
             'title': row['title'], 'description': control['amended_scope'] or row['description'],
             'acceptanceCriteria': json.loads(control['criteria']), 'priority': f"P{6-row['priority']}",

@@ -442,6 +442,35 @@ export interface OrganizationCompletionReserve extends OrganizationCompletionRes
   admissionUsageKnown: boolean
   unavailableReason: 'legacy-usage-unknown' | 'configured-cost-unknown' | 'classification-unknown' | null
 }
+export interface OrganizationPacingObservation {
+  revision: number
+  remainingPercent: number
+  asOf: string
+  expiresAt: string
+  resetAt: string | null
+  status: 'fresh' | 'expired' | 'reset_unconfirmed'
+  source: 'owner_manual'
+  scope: 'objective'
+  advisory: true
+}
+export interface OrganizationAdaptivePacing {
+  version: 1
+  policy: 'local-stage-start-v1'
+  enabled: boolean
+  scope: 'objective'
+  mode: 'off' | 'normal' | 'conserve' | 'critical' | 'unknown'
+  reason: 'disabled' | 'local_headroom' | 'manual_observation' | 'stale_observation' | 'budget_unknown'
+  evaluatedAt: string
+  deferUntil: string | null
+  maxInflight: number
+  minIntervalSeconds: number
+  /** Objective-local pacing signal, never a measured shared provider quota. */
+  remainingPercent: number | null
+  remaining: OrganizationBudgetAmounts
+  protectedRemaining: OrganizationBudgetAmounts
+  observation: OrganizationPacingObservation | null
+  limitation: 'stage_start_only_no_quota_inference'
+}
 export interface OrganizationUsage {
   stages: number
   stageLimit: number
@@ -460,6 +489,8 @@ export interface OrganizationUsage {
   budgetScope?: string
   /** Absent on older runtimes; values are admission reservations, never billing. */
   completionReserve?: OrganizationCompletionReserve
+  /** Absent on older runtimes; the backend alone owns pacing decisions. */
+  adaptivePacing?: OrganizationAdaptivePacing
 }
 export interface OrganizationRequest {
   id: string

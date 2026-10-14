@@ -172,7 +172,7 @@ test.afterEach(async ({}, testInfo) => {
 
 // eslint-disable-next-line no-empty-pattern -- actual Electron lifecycle belongs to this spec
 test('requires explicit check replacement, retains its audit, and completes only after fresh independent acceptance', async ({}, testInfo) => {
-  running = await setupCompletionFixture(false, { completionReserve: true })
+  running = await setupCompletionFixture(false, { completionReserve: true, adaptivePacing: true })
   let { page } = running.fixture
   const { stages, providerErrors } = running
   const ownerWrites: RecordedResolution[] = []
@@ -188,21 +188,28 @@ test('requires explicit check replacement, retains its audit, and completes only
       }
     })
   )
+  let observedPacing: { enabled: boolean; mode: string; policy: string; scope: string; minIntervalSeconds: number } | undefined
+
   const readReserve = async () => {
     expect(runtimeRead).toBeDefined()
+
     const response = await organizationRequest<{
       capabilityVersion: number
       state: string
       scope: { kind: string; profile: string }
-      snapshot: { objectives: Array<{ title: string; usage?: { completionReserve?: NativeCompletionReserve } }> }
+      snapshot: { objectives: Array<{ title: string; usage?: { completionReserve?: NativeCompletionReserve; adaptivePacing?: typeof observedPacing } }> }
     }>(page, runtimeRead!, 'organization.observe')
+
     expect(response.error).toBeUndefined()
     expect(response.result).toMatchObject({ capabilityVersion: 1, state: 'available', scope: { kind: 'served-profile', profile: 'default' } })
     const usage = response.result!.snapshot.objectives.find(objective => objective.title === completionTitle)?.usage
     expect(usage?.completionReserve).toBeDefined()
+    observedPacing = usage?.adaptivePacing
+    expect(observedPacing).toMatchObject({ enabled: true, policy: 'local-stage-start-v1', scope: 'objective' })
 
     return usage!.completionReserve!
   }
+
   // Observe the real transport established by this reload, including the exact
   // owner write later used to test a lost-response replay.
   await page.reload()
@@ -236,6 +243,7 @@ test('requires explicit check replacement, retains its audit, and completes only
   await expect(reserveRow('Owner-configured completion reserve')).toContainText('Reserved tokens: 65,536')
   await expect(reserveRow('Unspent completion protection')).toContainText(`Model calls: ${blockedReserve.protectedRemaining.modelCalls}`)
   await expect(reserveRow('Remaining for ordinary work')).toContainText(`Model calls: ${blockedReserve.ordinaryRemaining.modelCalls}`)
+
   const setReserveZoom = async (percent: number) => {
     await page.evaluate(value => {
       const desktop = window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }
@@ -247,6 +255,7 @@ test('requires explicit check replacement, retains its audit, and completes only
       return (await desktop.hermesDesktop.zoom.get()).percent
     })).toBe(percent)
   }
+
   await setReserveZoom(100)
   const reserveScreenshot = testInfo.outputPath('01-completion-reserve-allowance.png')
   await reserveRegion.screenshot({ path: reserveScreenshot })
@@ -258,6 +267,7 @@ test('requires explicit check replacement, retains its audit, and completes only
   const zoomCaptures: Array<{ zoom: number; file: string; sha256: string }> = []
   const reserveParts = reserveRegion.locator('dd, p')
   await expect(reserveParts).toHaveCount(7)
+
   for (let index = 0; index < await reserveParts.count(); index += 1) {
     const part = reserveParts.nth(index)
     await part.evaluate(element => element.scrollIntoView({ block: 'center', inline: 'nearest' }))
@@ -278,6 +288,7 @@ test('requires explicit check replacement, retains its audit, and completes only
     await writeFile(capture, Buffer.from(nativePng, 'base64'))
     zoomCaptures.push({ zoom: 200, file, sha256: createHash('sha256').update(await readFile(capture)).digest('hex') })
   }
+
   await setReserveZoom(100)
   await testInfo.attach('completion-reserve-native-evidence', {
     body: JSON.stringify({
@@ -288,6 +299,49 @@ test('requires explicit check replacement, retains its audit, and completes only
         { zoom: 100, file: '01-completion-reserve-allowance.png', sha256: createHash('sha256').update(await readFile(reserveScreenshot)).digest('hex') },
         ...zoomCaptures
       ]
+    }, null, 2),
+    contentType: 'application/json'
+  })
+  const pacingRegion = acceptance.getByRole('region', { name: 'Adaptive pacing', exact: true })
+  await expect(pacingRegion).toBeVisible()
+  expect(observedPacing).toMatchObject({ mode: 'conserve', minIntervalSeconds: 1 })
+  await expect(pacingRegion.getByText('Pacing state', { exact: true }).locator('xpath=following-sibling::dd[1]')).toHaveText('Conserve')
+  await expect(pacingRegion.getByText('Minimum start interval (seconds)', { exact: true }).locator('xpath=following-sibling::dd[1]')).toHaveText('1')
+  const pacingCaptures: Array<{ zoom: number; file: string; sha256: string }> = []
+
+  for (const zoom of [100, 200]) {
+    await setReserveZoom(zoom)
+    const parts = pacingRegion.locator('dd, p')
+    await expect(parts).toHaveCount(12)
+
+    for (let index = 0; index < await parts.count(); index += 1) {
+      const part = parts.nth(index)
+      await part.evaluate(element => element.scrollIntoView({ block: 'center', inline: 'nearest' }))
+      await expect.poll(() => part.evaluate(element => {
+        const bounds = element.getBoundingClientRect()
+        const label = element.tagName === 'DD' ? element.previousElementSibling?.getBoundingClientRect() : null
+        const point = document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2)
+
+        return bounds.left >= 0 && bounds.right <= window.innerWidth + 1 &&
+          bounds.top >= 0 && bounds.bottom <= window.innerHeight + 1 &&
+          (!label || label.top >= 0) && element.scrollWidth <= element.clientWidth + 1 &&
+          !!point && (point === element || element.contains(point))
+      })).toBe(true)
+      const file = `01-adaptive-pacing-${zoom}-part-${index + 1}.png`
+      const nativeWindow = await running.fixture.app.browserWindow(page)
+      const nativePng = await nativeWindow.evaluate(async window => (await window.webContents.capturePage()).toPNG().toString('base64'))
+      const capture = testInfo.outputPath(file)
+      await writeFile(capture, Buffer.from(nativePng, 'base64'))
+      pacingCaptures.push({ zoom, file, sha256: createHash('sha256').update(await readFile(capture)).digest('hex') })
+    }
+  }
+
+  await setReserveZoom(100)
+  await testInfo.attach('adaptive-pacing-native-evidence', {
+    body: JSON.stringify({
+      sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+      sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
+      scenario: 'actual-loopback-provider-stage-start-pacing', pacing: observedPacing, captures: pacingCaptures
     }, null, 2),
     contentType: 'application/json'
   })
@@ -531,6 +585,7 @@ test('requires explicit check replacement, retains its audit, and completes only
     await expect(artifact.getByText('Profile: default', { exact: true })).toBeVisible()
     await artifact.getByRole('button', { name: 'Copy deliverable', exact: true }).click()
     expect(await running!.fixture.app.evaluate(({ clipboard }) => clipboard.readText())).toBe(recommendation)
+
     // Native download transport, with only destination selection scripted inside the temporary test output directory.
     for (const cancel of [true, false, false]) {
       const destination = testInfo.outputPath(cancel ? 'cancelled-deliverable.txt' : 'retained-deliverable.txt')
@@ -541,6 +596,7 @@ test('requires explicit check replacement, retains its audit, and completes only
           const filename = item.getFilename()
           item.once('done', (_event, status) => { state.handoffDownload = { state: status, filename } })
           item.setSavePath(destination)
+
           if (cancel) {item.cancel()}
         })
       }, { destination, cancel })
@@ -549,13 +605,17 @@ test('requires explicit check replacement, retains its audit, and completes only
       await expect.poll(() => running!.fixture.app.evaluate(() =>
         (globalThis as typeof globalThis & { handoffDownload?: { state: string } }).handoffDownload?.state
       )).toBe(cancel ? 'cancelled' : 'completed')
+
       const filename = await running!.fixture.app.evaluate(() =>
         (globalThis as typeof globalThis & { handoffDownload?: { filename: string } }).handoffDownload?.filename)
+
       expect(filename).toMatch(/^eidolon-outcome_[a-f0-9]{32}\.txt$/)
+
       if (cancel) {await expect(readFile(destination)).rejects.toMatchObject({ code: 'ENOENT' })} else {
         expect(await readFile(destination)).toEqual(Buffer.from(recommendation, 'utf8'))
       }
     }
+
     await artifact.screenshot({ path: testInfo.outputPath('deliverable-handoff.png') })
     await artifact.getByRole('button', { name: 'Close artifact details', exact: true }).click()
   }
@@ -762,6 +822,7 @@ for (const cause of ['expired', 'exhausted'] as const) {
     page.on('websocket', socket =>
       socket.on('framesent', frame => {
         const request = JSON.parse(String(frame.payload)) as { method?: string; params: Record<string, unknown> }
+
         if (request.method === 'organization.replaceObjective') {
           writes.push({ url: socket.url(), params: request.params })
         }
@@ -790,10 +851,12 @@ for (const cause of ['expired', 'exhausted'] as const) {
         exact: true
       })
     ).toBeVisible()
+
     if (cause === 'exhausted') {
       await expect(form.getByLabel('Original retained usage')).toContainText('8 / 8')
       expect(running.stages).toHaveLength(8)
     }
+
     await form.getByLabel('Original retained usage').scrollIntoViewIfNeeded()
     await page.screenshot({ path: testInfo.outputPath(`${cause}-replacement-usage.png`) })
     await form.getByRole('checkbox').check()
@@ -809,12 +872,14 @@ for (const cause of ['expired', 'exhausted'] as const) {
     running.releasePlan()
     await expect(objectiveHeader(page, replacementTitle)).toContainText('Completed', { timeout: 90_000 })
     expect(writes).toHaveLength(1)
+
     const replay = await organizationRequest<{
       objective: { id: string }
       snapshot: {
         objectives: Array<{ id: string; status: string; replacesObjectiveId?: string; replacementObjectiveId?: string }>
       }
     }>(page, writes[0], 'organization.replaceObjective')
+
     expect(replay.error).toBeUndefined()
     const receipt = replay.result!
     expect(receipt.snapshot.objectives).toHaveLength(2)

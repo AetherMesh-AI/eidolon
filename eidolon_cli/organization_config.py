@@ -37,6 +37,13 @@ class OrganizationSettings:
     completion_reserve_model_calls: int = 0
     completion_reserve_tokens: int = 0
     completion_reserve_cost_usd: str | None = None
+    adaptive_pacing_enabled: bool = False
+    pacing_conserve_below_percent: int = 30
+    pacing_critical_below_percent: int = 10
+    pacing_conserve_interval_seconds: int = 60
+    pacing_critical_interval_seconds: int = 300
+    pacing_conserve_max_inflight: int = 1
+    pacing_critical_max_inflight: int = 1
     model_costs: tuple[OrganizationModelCost, ...] = ()
     lease_seconds: int = 45
     timeout_seconds: int = 180
@@ -66,6 +73,9 @@ class OrganizationSettings:
                   "max_revisions": (0, 3), "max_replans": (0, 3), "max_stages": (4, 300),
                   "max_owner_resolutions": (1, 24), "max_output_tokens": (256, 16000), "lease_seconds": (15, 300),
                   "timeout_seconds": (30, 600), "max_tool_calls": (1, 20),
+                  "pacing_conserve_below_percent": (1, 100), "pacing_critical_below_percent": (1, 100),
+                  "pacing_conserve_interval_seconds": (1, 3600), "pacing_critical_interval_seconds": (1, 3600),
+                  "pacing_conserve_max_inflight": (1, 4), "pacing_critical_max_inflight": (1, 4),
                   "max_context_tokens": (4096, 2000000), "max_model_calls": (1, 1000),
                   "completion_reserve_model_calls": (0, 1000), "completion_reserve_tokens": (0, 1000000000),
                   "max_total_tokens": (4096, 1000000000), "objective_timeout_seconds": (60, 604800),
@@ -79,6 +89,14 @@ class OrganizationSettings:
             if type(value) is not int or not minimum <= value <= maximum:
                 raise ValueError(f"organization.{key} must be between {minimum} and {maximum}")
             values[key] = value
+        enabled = raw.get("adaptive_pacing_enabled", False)
+        if type(enabled) is not bool:
+            raise ValueError("organization.adaptive_pacing_enabled must be a boolean")
+        values["adaptive_pacing_enabled"] = enabled
+        if (values["pacing_critical_below_percent"] > values["pacing_conserve_below_percent"]
+                or values["pacing_critical_interval_seconds"] < values["pacing_conserve_interval_seconds"]
+                or values["pacing_critical_max_inflight"] > values["pacing_conserve_max_inflight"]):
+            raise ValueError("Critical pacing must have a lower threshold, at least the conserve interval, and no more slots")
         values["max_cost_usd"] = money(raw["max_cost_usd"], "organization.max_cost_usd", allow_zero=False) if raw.get("max_cost_usd") is not None else None
         values["model_costs"] = parse_model_costs(raw.get("model_costs", []))
         values["completion_reserve_cost_usd"] = money(raw["completion_reserve_cost_usd"], "organization.completion_reserve_cost_usd") if raw.get("completion_reserve_cost_usd") is not None else None

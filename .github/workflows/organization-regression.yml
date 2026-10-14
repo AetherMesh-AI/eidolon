@@ -141,6 +141,9 @@ jobs:
             tests/eidolon_cli/test_organization_completion_reserve.py
             tests/eidolon_cli/test_organization_completion_reserve_policy.py
             tests/eidolon_cli/test_organization_completion_reserve_e2e.py
+            tests/eidolon_cli/test_organization_pacing.py
+            tests/eidolon_cli/test_organization_pacing_runtime.py
+            tests/eidolon_cli/test_organization_pacing_cli.py
             tests/eidolon_cli/test_organization_artifact_retention.py
             tests/eidolon_cli/test_organization_identity.py
             tests/eidolon_cli/test_organization_metadata.py

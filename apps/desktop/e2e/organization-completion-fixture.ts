@@ -32,6 +32,7 @@ export const recommendation =
   'Retain the release safety gate because the supplied facts identify a regression risk. Project tests were not run.'
 
 interface StageContext extends OrganizationEvidenceContext {
+  budget?: { adaptivePacing?: { enabled: boolean; policy: string; scope: string; limitation: string } }
   objective: {
     title: string
     description: string
@@ -117,6 +118,7 @@ function resultFor(kind: string, context: StageContext, taskCount = 1) {
 
 interface CompletionFixtureOptions {
   completionReserve?: boolean
+  adaptivePacing?: boolean
   projectSelection?: boolean
   linkedQuestion?: boolean
   expiredReplacement?: boolean
@@ -173,6 +175,16 @@ export async function setupCompletionFixture(budgetLimited: boolean, options: Co
 
           const { type: kind } = submitted.request
           const { context } = submitted
+
+          if (options.adaptivePacing && (
+            context.budget?.adaptivePacing?.enabled !== true ||
+            context.budget.adaptivePacing.policy !== 'local-stage-start-v1' ||
+            context.budget.adaptivePacing.scope !== 'objective' ||
+            context.budget.adaptivePacing.limitation !== 'stage_start_only_no_quota_inference'
+          )) {
+            throw new Error('Actual manager/worker context omitted bounded local pacing information')
+          }
+
           const outputLimit = payload?.max_completion_tokens ?? payload?.max_tokens
           stages.push({
             kind,
@@ -319,7 +331,7 @@ export async function setupCompletionFixture(budgetLimited: boolean, options: Co
       sandbox.hermesHome,
       providerUrl,
       undefined,
-      `approvals:\n  mode: manual\norganization:\n  max_inflight: 1\n  max_stages: 40\n  max_context_tokens: 32768\n  max_output_tokens: 2048\n  max_model_calls: ${budgetLimited ? 1 : options.exhaustedReplacement ? 8 : 40}${options.expiredReplacement ? "\n  max_open_objectives: 1\n  objective_timeout_seconds: 60" : options.exhaustedReplacement ? "\n  max_open_objectives: 1" : ""}${options.completionReserve ? "\n  completion_reserve_model_calls: 6\n  completion_reserve_tokens: 65536" : ""}${projectYaml}`,
+      `approvals:\n  mode: manual\norganization:\n  max_inflight: 1\n  max_stages: 40\n  max_context_tokens: 32768\n  max_output_tokens: 2048\n  max_model_calls: ${budgetLimited ? 1 : options.exhaustedReplacement ? 8 : 40}${options.expiredReplacement ? "\n  max_open_objectives: 1\n  objective_timeout_seconds: 60" : options.exhaustedReplacement ? "\n  max_open_objectives: 1" : ""}${options.completionReserve ? "\n  completion_reserve_model_calls: 6\n  completion_reserve_tokens: 65536" : ""}${options.adaptivePacing ? "\n  adaptive_pacing_enabled: true\n  pacing_conserve_below_percent: 100\n  pacing_conserve_interval_seconds: 1\n  pacing_critical_interval_seconds: 1" : ""}${projectYaml}`,
       // The agent requires a >=64K model window. The independent organization
       // policy above still admits at most 32K for this scripted scenario.
       128000,
