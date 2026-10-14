@@ -197,7 +197,22 @@ export async function captureOwnerPolicy(
       const nativeCapture = await nativeWindow.evaluate(async (native, proof) => {
         const windowFocused = native.isFocused()
         const contentsFocused = native.webContents.isFocused()
-        const image = await native.webContents.capturePage()
+        // Renderer RAFs do not prove presentation after zoom/focus changes.
+        // Save the first actual full frame after requesting a native repaint.
+        // There is no ring-based polling, second capture, or successful fallback.
+        let timer: ReturnType<typeof setTimeout> | undefined
+        let presented: { image: Electron.NativeImage; dirtyRect: Electron.Rectangle }
+        try {
+          presented = await new Promise((resolve, reject) => {
+            timer = setTimeout(() => reject(new Error('Native owner-policy repaint did not produce a frame within 5 seconds')), 5_000)
+            native.webContents.beginFrameSubscription(false, (image: Electron.NativeImage, dirtyRect: Electron.Rectangle) => resolve({ image, dirtyRect }))
+            native.webContents.invalidate()
+          })
+        } finally {
+          clearTimeout(timer)
+          native.webContents.endFrameSubscription()
+        }
+        const image = presented.image
         const size = image.getSize()
         const bitmap = image.toBitmap()
         const samples: Array<{ side: string; rgb: number[][] }> = []
@@ -225,7 +240,7 @@ export async function captureOwnerPolicy(
             samples.push({ side: point.side, rgb })
           }
         }
-        return { encoded: image.toPNG().toString('base64'), size, bitmapBytes: bitmap.length, samples, windowFocused, contentsFocused }
+        return { encoded: image.toPNG().toString('base64'), size, bitmapBytes: bitmap.length, dirtyRect: presented.dirtyRect, samples, windowFocused, contentsFocused }
       }, { state: beforeCapture, keyboard: keyboardEvidence })
       const afterCapture = await focusState()
       await writeFile(testInfo.outputPath(file), Buffer.from(nativeCapture.encoded, 'base64'))
@@ -237,7 +252,8 @@ export async function captureOwnerPolicy(
           sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
           sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
           sourceDirty: execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).trim().length > 0,
-          expectedOutline: keyboardEvidence?.outline, ...paint }, null, 2)
+          expectedOutline: keyboardEvidence?.outline, expectedOutlineWidth: keyboardEvidence?.width,
+          expectedOutlineOffset: keyboardEvidence?.offset, ...paint }, null, 2)
       })
       expect(nativeCapture.size.width).toBeGreaterThan(0)
       expect(nativeCapture.size.height).toBeGreaterThan(0)
