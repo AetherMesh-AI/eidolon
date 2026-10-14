@@ -264,9 +264,9 @@ export function SharedAllowanceEditor({
                       <dt>{action === 'configuration' ? copy.title : copy.manual}</dt>
                       <dd>
                         <strong>{common.before}</strong>
-                        <pre>{JSON.stringify(change.before, null, 2)}</pre>
+                        <pre dir="ltr">{JSON.stringify(change.before, null, 2)}</pre>
                         <strong>{common.after}</strong>
-                        <pre>{JSON.stringify(change.after, null, 2)}</pre>
+                        <pre dir="ltr">{JSON.stringify(change.after, null, 2)}</pre>
                       </dd>
                     </div>
                   ))}
@@ -284,7 +284,7 @@ export function SharedAllowanceEditor({
                 <p>
                   {common.generation}: {pending.expectedGeneration}
                 </p>
-                <pre>{JSON.stringify(pending.configuration ?? pending.observation, null, 2)}</pre>
+                <pre dir="ltr">{JSON.stringify(pending.configuration ?? pending.observation, null, 2)}</pre>
               </section>
             )}
             {view.busy && <p role="status">{pending ? common.saving : common.loading}</p>}

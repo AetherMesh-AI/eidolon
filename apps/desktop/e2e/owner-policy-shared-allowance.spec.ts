@@ -370,6 +370,19 @@ for (const language of galleryLocales) {
         await dialog.getByRole('button', { name: common.preview, exact: true }).click()
         const review = dialog.getByRole('region', { name: common.review, exact: true })
         await expect(review).toContainText('native-gallery-period')
+        await expect(review.locator('pre')).toHaveCount(2)
+        for (const json of await review.locator('pre').all()) {
+          await expect(json).toHaveAttribute('dir', 'ltr')
+          await expect(json).toHaveCSS('direction', 'ltr')
+          await expect(json).toHaveCSS('unicode-bidi', 'isolate')
+          expect(await json.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
+        }
+        await expect(page.locator('html')).toHaveAttribute('dir', language.locale === 'ar' ? 'rtl' : 'ltr')
+        await expect(review).toBeFocused()
+        await page.keyboard.press('Control+End')
+        await expect.poll(() => dialog.locator('.eid-policy-scroll').evaluate(element =>
+          element.scrollTop + element.clientHeight >= element.scrollHeight - 2
+        )).toBe(true)
         const pool = dialog.getByRole('group', { name: copy.limits, exact: true })
         const protectedPool = dialog.getByRole('group', { name: copy.protected, exact: true }).first()
         await captureOwnerPolicy(page, app, [
@@ -383,6 +396,7 @@ for (const language of galleryLocales) {
           { name: 'explicit-enrollment-checked', locator: enrollment },
           { name: 'member-allocation-calls', locator: dialog.getByRole('group', { name: copy.allocation, exact: true }).getByLabel(copy.calls, { exact: true }) },
           { name: 'preview-generation', locator: review.locator('p').first() },
+          { name: 'preview-after-json', locator: review.locator('strong').last() },
           { name: 'explicit-apply', locator: dialog.getByRole('button', { name: common.apply, exact: true }) }
         ], `shared-allowance-${language.locale}-${mode}`, testInfo, transport.responses.filter(row => row.method === 'organization.previewSharedAllowance'))
         expect(allowanceLedgers(sandbox)).toEqual(before)

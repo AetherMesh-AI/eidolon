@@ -288,3 +288,25 @@ it('explains how to restore a missing enrolled identity and never offers to remo
   await waitFor(() => expect(h.client.getSnapshot().error).toBe('invalid'))
   expect(h.request).toHaveBeenCalledTimes(1)
 })
+
+
+it.each(['en', 'ar'] as Locale[])('isolates escaped JSON preview syntax from %s labels', async locale => {
+  const h = await allowanceHarness()
+  mount(h, locale)
+  const labels = sharedAllowanceCopy[locale]
+  const controls = ownerPolicyCopy[locale]
+  fireEvent.click(screen.getByRole('button', { name: labels.edit }))
+  const dialog = within(screen.getByRole('dialog', { name: labels.edit }))
+  fireEvent.change(within(dialog.getByRole('group', { name: labels.limits })).getByLabelText(labels.calls), {
+    target: { value: '25' }
+  })
+  fireEvent.click(dialog.getByRole('button', { name: controls.preview }))
+  await waitFor(() => expect(h.client.getSnapshot().preview).not.toBeNull())
+  const region = dialog.getByRole('region', { name: controls.review })
+  const json = [...region.querySelectorAll('pre')]
+  expect(json).toHaveLength(2)
+  expect(json.every(block => block.getAttribute('dir') === 'ltr')).toBe(true)
+  expect(JSON.parse(json[1].textContent!).limits.modelCalls).toBe(25)
+  expect(region.textContent).toContain(controls.after)
+  expect(h.request.mock.calls.some(row => row[0] === 'organization.configureSharedAllowance')).toBe(false)
+})

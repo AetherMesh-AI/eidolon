@@ -16,3 +16,6 @@
 @media (max-width: 650px) { .eid-allowance-projection { grid-template-columns: minmax(0, 1fr); } }
 /* Persisted membership is immutable, but its checked state must remain legible. */
 .eid-allowance-editor .eid-policy-check > [role="checkbox"]:disabled { opacity: 1; }
+
+/* JSON syntax stays left-to-right while surrounding translated labels retain their direction. */
+.eid-allowance-editor pre { direction: ltr; unicode-bidi: isolate; text-align: start; }
