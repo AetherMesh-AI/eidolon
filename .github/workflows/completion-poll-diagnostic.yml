@@ -17,7 +17,7 @@ jobs:
   desktop:
     name: Completion polling diagnostic (Linux)
     runs-on: ubuntu-22.04
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -46,11 +46,11 @@ jobs:
         id: desktop-build
         working-directory: apps/desktop
         run: npm run build
-      - name: Diagnose unchanged completion acceptance case
+      - name: Diagnose unchanged full serial native order
         working-directory: apps/desktop
         env:
           EIDOLON_REQUIRE_PROJECT_SANDBOX: '1'
-        run: xvfb-run -a npx playwright test e2e/organization-completion-loop.spec.ts --grep 'requires explicit check replacement' --workers=1 --retries=0
+        run: xvfb-run -a npx playwright test e2e/organization-*.spec.ts --workers=1 --retries=0
       - name: Retain native evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
