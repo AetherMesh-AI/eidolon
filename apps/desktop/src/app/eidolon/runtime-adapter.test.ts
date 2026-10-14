@@ -19,12 +19,12 @@ export function runtimeSnapshot(title?: string): OrganizationSnapshot {
   }
 }
 
-function harness(request = vi.fn().mockResolvedValue(runtimeSnapshot())) {
+function harness(request = vi.fn().mockResolvedValue(runtimeSnapshot()), observe?: OrganizationGateway['observe']) {
   let scope: OrganizationScope = { key: 'connection-a:default:socket-1', connected: true }
   const listeners = new Set<() => void>()
 
   const gateway: OrganizationGateway = {
-    request,
+    request, observe,
     getScope: () => scope,
     subscribeScope(listener) { listeners.add(listener);
 
@@ -33,7 +33,11 @@ function harness(request = vi.fn().mockResolvedValue(runtimeSnapshot())) {
 
   return {
     adapter: createRuntimeAdapter(gateway), request,
-    change(next: OrganizationScope) {scope = next; listeners.forEach(listener => listener())},
+    change(next: OrganizationScope, notify = true) {
+      scope = next
+
+      if (notify) {listeners.forEach(listener => listener())}
+    },
     listenerCount: () => listeners.size
   }
 }
@@ -84,6 +88,165 @@ describe('runtime organization ownership and recovery', () => {
     expect(h.listenerCount()).toBe(0)
     await vi.advanceTimersByTimeAsync(100000)
     expect(h.request).toHaveBeenCalledTimes(4)
+  })
+
+  it.each(['success', 'failure'].flatMap(outcome =>
+    ['same owner', 'different owner'].flatMap(owner =>
+      ['recover', 'newer read', 'newer result', 'unsubscribe', 'disconnect', 'observation'].map(lifecycle => ({ outcome, owner, lifecycle }))
+    )
+  ))('reconciles silent scope drift after a read $outcome ($owner, $lifecycle)', async ({ outcome, owner, lifecycle }) => {
+    vi.useFakeTimers()
+    const old = deferred<OrganizationSnapshot>()
+    const next = deferred<OrganizationSnapshot>()
+    const observe = vi.fn().mockReturnValueOnce(next.promise).mockRejectedValue(new Error('New scope unavailable'))
+    const h = harness(vi.fn().mockResolvedValueOnce(runtimeSnapshot('Cached A')).mockReturnValueOnce(old.promise).mockReturnValueOnce(next.promise).mockRejectedValue(new Error('New scope unavailable')), observe)
+    const readCount = () => h.request.mock.calls.length + observe.mock.calls.length
+    h.change({ key: 'socket-a', ownerKey: 'owner-a', connected: true })
+    const published: OrganizationSnapshot[] = []
+    const off = h.adapter.subscribe(() => published.push(h.adapter.getSnapshot()))
+
+    try {
+      await settle()
+      expect(h.adapter.getSnapshot().connection?.state).toBe('ready')
+      await vi.advanceTimersByTimeAsync(15_000)
+      expect(readCount()).toBe(2)
+      const newScope = { key: 'socket-b', ownerKey: owner === 'same owner' ? 'owner-a' : 'owner-b', connected: lifecycle !== 'disconnect', observationOnly: lifecycle === 'observation' }
+      h.change(newScope, false)
+
+      if (lifecycle === 'newer read' || lifecycle === 'newer result') {
+        void h.adapter.refresh()
+        await settle()
+        expect(readCount()).toBe(3)
+      }
+
+      if (lifecycle === 'newer result') {next.resolve(runtimeSnapshot('Current B')); await settle()}
+
+      if (lifecycle === 'unsubscribe') {off()}
+
+      if (outcome === 'success') {old.resolve(runtimeSnapshot('Late private A'))} else {old.reject(new Error('Old scope failure'))}
+      await settle()
+      expect(published.every(value => value.objectives.every(objective => objective.id !== 'Late private A'))).toBe(true)
+      expect(h.adapter.getSnapshot().connection?.error).not.toBe('Old scope failure')
+
+      if (lifecycle === 'unsubscribe') {
+        await vi.advanceTimersByTimeAsync(100_000)
+        expect(readCount()).toBe(2)
+        expect(h.listenerCount()).toBe(0)
+
+        return
+      }
+
+      if (lifecycle !== 'newer result') {
+        expect(h.adapter.getSnapshot().connection).toMatchObject({ scope: newScope.key, ownerScope: newScope.ownerKey, state: newScope.connected ? 'connecting' : 'disconnected' })
+        expect(h.adapter.getSnapshot().objectives.map(value => value.id)).toEqual(owner === 'same owner' ? ['Cached A'] : [])
+      }
+
+      if (lifecycle === 'disconnect') {
+        await vi.advanceTimersByTimeAsync(100_000)
+        expect(readCount()).toBe(2)
+        h.change({ ...newScope, connected: true })
+        await settle()
+      } else if (lifecycle === 'recover' || lifecycle === 'observation') {
+        await vi.advanceTimersByTimeAsync(15_000)
+      }
+
+      if (lifecycle !== 'newer result') {
+        expect(readCount()).toBe(3)
+        const firstRefresh = h.adapter.refresh()
+        const secondRefresh = h.adapter.refresh()
+        await vi.advanceTimersByTimeAsync(100_000)
+        expect(readCount()).toBe(3)
+        next.resolve(runtimeSnapshot('Current B'))
+        await Promise.all([firstRefresh, secondRefresh])
+      }
+
+      expect(h.adapter.getSnapshot().objectives.map(value => value.id)).toEqual(['Current B'])
+      expect(h.adapter.getSnapshot().connection).toMatchObject({ scope: newScope.key, state: 'ready' })
+      // Recovery keeps the existing retry budget, including when an obsolete
+      // read settles after the replacement has already published and scheduled.
+      await vi.advanceTimersByTimeAsync(100_000)
+      expect(readCount()).toBe(6)
+      expect(h.adapter.getSnapshot().connection).toMatchObject({ state: 'error', error: 'New scope unavailable' })
+      await vi.advanceTimersByTimeAsync(100_000)
+      expect(readCount()).toBe(6)
+
+      if (lifecycle === 'observation') {
+        expect(h.request).toHaveBeenCalledTimes(2)
+        expect(observe).toHaveBeenCalledTimes(4)
+        expect(observe).toHaveBeenCalledWith(expect.any(AbortSignal))
+      } else {expect(observe).not.toHaveBeenCalled()}
+    } finally {off()}
+  })
+
+  it.each(['success', 'failure'].flatMap(outcome =>
+    ['same owner', 'different owner'].flatMap(owner =>
+      ['recover', 'newer write', 'unsubscribe'].map(lifecycle => ({ outcome, owner, lifecycle }))
+    )
+  ))('releases only its own write accounting after silent scope drift ($outcome, $owner, $lifecycle)', async ({ outcome, owner, lifecycle }) => {
+    vi.useFakeTimers()
+    const old = deferred<OrganizationSnapshot>()
+    const next = deferred<OrganizationSnapshot>()
+    const h = harness(vi.fn().mockResolvedValueOnce(runtimeSnapshot('Cached A')).mockReturnValueOnce(old.promise))
+    h.change({ key: 'socket-a', ownerKey: 'owner-a', connected: true })
+    const published: OrganizationSnapshot[] = []
+    const off = h.adapter.subscribe(() => published.push(h.adapter.getSnapshot()))
+
+    try {
+      await settle()
+      const oldWrite = h.adapter.cancelObjective('shared-id')
+      const rejection = expect(oldWrite).rejects.toThrow(outcome === 'success' ? 'connection or profile changed' : 'Old write failed')
+      await settle()
+      expect(h.request).toHaveBeenCalledTimes(2)
+      const newScope = { key: 'socket-b', ownerKey: owner === 'same owner' ? 'owner-a' : 'owner-b', connected: true }
+      h.change(newScope, false)
+      let newWrite: Promise<void> | undefined
+
+      if (lifecycle === 'newer write') {
+        h.request.mockReturnValueOnce(next.promise)
+        newWrite = h.adapter.cancelObjective('shared-id')
+        await settle()
+        expect(h.request).toHaveBeenCalledTimes(3)
+      }
+
+      h.request.mockResolvedValue(runtimeSnapshot('Current B'))
+
+      if (lifecycle === 'unsubscribe') {off()}
+
+      if (outcome === 'success') {old.resolve(runtimeSnapshot('Late private A'))} else {old.reject(new Error('Old write failed'))}
+      await rejection
+      expect(published.every(value => value.objectives.every(objective => objective.id !== 'Late private A'))).toBe(true)
+
+      if (lifecycle === 'unsubscribe') {
+        await vi.advanceTimersByTimeAsync(100_000)
+        expect(h.request).toHaveBeenCalledTimes(2)
+        expect(h.listenerCount()).toBe(0)
+
+        return
+      }
+
+      expect(h.adapter.getSnapshot().connection).toMatchObject({ scope: newScope.key, ownerScope: newScope.ownerKey, state: 'connecting' })
+      expect(h.adapter.getSnapshot().objectives.map(value => value.id)).toEqual(owner === 'same owner' ? ['Cached A'] : [])
+
+      if (lifecycle === 'newer write') {
+        // An old finalizer must neither unlock polling nor remove a newer
+        // in-flight write with the same mutation key.
+        const repeat = h.adapter.cancelObjective('shared-id')
+        await h.adapter.refresh()
+        await vi.advanceTimersByTimeAsync(100_000)
+        expect(h.request).toHaveBeenCalledTimes(3)
+        next.resolve(runtimeSnapshot('Current B'))
+        await Promise.all([newWrite, repeat])
+      }
+
+      await vi.advanceTimersByTimeAsync(0)
+      expect(h.request).toHaveBeenCalledTimes(lifecycle === 'newer write' ? 4 : 3)
+      expect(h.request.mock.calls.at(-1)?.[0]).toBe('organization.snapshot')
+      expect(h.adapter.getSnapshot().objectives.map(value => value.id)).toEqual(['Current B'])
+      expect(h.adapter.getSnapshot().connection).toMatchObject({ scope: newScope.key, state: 'ready' })
+      // The same key is usable again after its owning write actually settles.
+      await h.adapter.cancelObjective('shared-id')
+      expect(h.request.mock.calls.at(-1)?.[0]).toBe('organization.cancel')
+    } finally {off()}
   })
 
   it('coalesces repeat admission and retains the idempotency key after an uncertain failure without fake work', async () => {
