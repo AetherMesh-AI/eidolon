@@ -139,7 +139,7 @@ export function PetSettings() {
               />
               {/* Fixed-height scroll area so filtering never grows/shrinks the
                   page (no layout thrash); the grid scrolls inside it. */}
-              <div className="mt-3 h-72 overflow-y-auto pr-1">
+              <div className="mt-3 h-72 scroll-p-[7px] overflow-y-auto p-[7px]">
                 {status === 'loading' && pets.length === 0 ? (
                   // First load keeps the grid's shape rather than flashing the
                   // "unreachable" copy before the gallery has even arrived.

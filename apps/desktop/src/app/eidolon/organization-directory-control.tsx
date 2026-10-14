@@ -17,8 +17,9 @@ import { readOrganizationMetadataScope } from './use-organization-metadata'
 /** Production stays inspection-only; the explicit acceptance build tests the actual door. */
 const selectionEnabled = import.meta.env.MODE === 'organization-directory-acceptance'
 
-export function OrganizationDirectoryControl() {
-  const { locale } = useI18n()
+export function OrganizationDirectoryControl({ label, organizationName }: { label?: string; organizationName?: string }) {
+  const { locale, t } = useI18n()
+  const initials = organizationName?.trim().split(/\s+/).slice(0, 2).map(part => Array.from(part)[0]).join('').toLocaleUpperCase(locale)
 
   const eligible = useSyncExternalStore(
     subscribeOrganizationDirectorySource,
@@ -54,7 +55,8 @@ export function OrganizationDirectoryControl() {
   return (
     <>
       <Button
-        aria-label={copy.heading}
+        aria-label={label ? `${label} · ${copy.heading}` : copy.heading}
+        className="eid-workspace-organization-trigger"
         disabled={!eligible}
         onClick={() => {
           if (!runtimeRef.current) {
@@ -75,11 +77,12 @@ export function OrganizationDirectoryControl() {
           }
         }}
         ref={trigger}
-        size="micro"
+        size="lg"
         variant="ghost"
       >
-        <Codicon name="organization" />
-        <span className="eid-workspace-action-label">{copy.heading}</span>
+        <span aria-hidden="true" className="eid-workspace-organization-monogram">{initials || <Codicon name="organization" />}</span>
+        <span className="eid-workspace-organization-copy"><span className="eid-workspace-organization-name" dir="auto">{label ?? copy.heading}</span><small aria-hidden="true">{t.organizationHome.organization}</small></span>
+        <Codicon name="chevron-down" />
       </Button>
       {origin && runtime && (
         <OrganizationDirectorySearch

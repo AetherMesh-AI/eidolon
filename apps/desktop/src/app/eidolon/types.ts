@@ -412,6 +412,9 @@ export interface OrganizationOwnerResolution {
   scopeAmendment?: OrganizationScopeAmendment | null
 }
 export interface OrganizationAcceptance {
+  /** Optional on older runtimes; exact latest review records for this round. */
+  criteriaResults?: { criterion: string; satisfied: boolean; evidenceIds: string[]; reason: string }[]
+  conflicts?: string[]
   status: 'pending' | 'integrating' | 'reviewing' | 'accepted' | 'replanning' | 'blocked' | 'legacy_completed'
   criteria: string[]
   round: number

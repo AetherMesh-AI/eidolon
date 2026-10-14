@@ -4,7 +4,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 
 import { useOverlayRouting } from '../shell/hooks/use-overlay-routing'
 
-import { Home, HomeObjective } from './home'
+import { Home, HomeObjective, HomeRequest } from './home'
 import { homeData } from './home-data'
 import type { OrganizationOutcome } from './runtime-outcome-types'
 import { ownerChatSnapshot } from './runtime-owner-chat.test-support'
@@ -233,10 +233,13 @@ it('returns from Settings to the open originating setup with its unsent draft', 
 it('opens organization evidence from the accepted-results action without creating work', () => {
   const current = { ...snapshot, outcomes: { generation: '1', total: 1, unread: 0, hasMore: false, nextCursor: null, items: [outcome] } }
   const adapter = { mode: 'runtime', getSnapshot: () => current, createObjective: vi.fn() } as unknown as RuntimeOrganizationAdapter
+
   function Location() {
     const location = useLocation()
+
     return <output>{location.pathname + location.search}</output>
   }
+
   render(<MemoryRouter initialEntries={['/home']}><Home adapter={adapter} snapshot={current} /><Location /></MemoryRouter>)
   expect(screen.getByRole('heading', { name: outcome.title })).toBeTruthy()
   fireEvent.click(screen.getByRole('link', { name: 'View deliverables →' }))
@@ -258,5 +261,29 @@ it('summarizes only current scoped work on the primary objective without inventi
   expect(screen.getByRole('link', { name: 'View objective →' }).getAttribute('href')).toBe('/objectives/open')
   view.rerender(<MemoryRouter><HomeObjective compact objective={record} snapshot={state} /></MemoryRouter>)
   expect(screen.queryByRole('list', { name: 'Recorded task states' })).toBeNull()
+  expect(screen.queryByRole('progressbar')).toBeNull()
+  expect(screen.getByRole('link', { name: record.title }).getAttribute('href')).toBe('/objectives/open')
   expect(JSON.stringify(state)).toBe(before)
+})
+
+
+it('shows the recorded question and requester without attributing it to the assigned executor', () => {
+  const value = ownerChatSnapshot()
+  const worker = value.agents[0]
+  value.objectives = [objective]
+
+  const request = {
+    id: 'question', objectiveId: objective.id, requesterId: worker.id, agentId: 'reviewer',
+    type: 'request.question', team: 'Research', priority: 3, status: 'pending_intervention' as const,
+    reason: 'Owner input required', requestedOutcome: 'Which audience should this brief address?', attempts: 1, createdAt: objective.createdAt
+  }
+
+  const view = render(<MemoryRouter><HomeRequest request={request} snapshot={value} /></MemoryRouter>)
+  expect(screen.getByRole('heading', { name: request.requestedOutcome })).toBeTruthy()
+  expect(screen.getByText(request.reason)).toBeTruthy()
+  expect(screen.getByText(worker.name)).toBeTruthy()
+  expect(screen.getByRole('link', { name: /Review request/ }).getAttribute('href')).toBe(`/objectives/${objective.id}`)
+  view.rerender(<MemoryRouter><HomeRequest request={{ ...request, requesterId: undefined, agentId: worker.id }} snapshot={value} /></MemoryRouter>)
+  expect(screen.queryByText(worker.name)).toBeNull()
+  expect(screen.getByText('Not recorded')).toBeTruthy()
 })

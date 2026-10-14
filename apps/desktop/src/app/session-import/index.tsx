@@ -16,6 +16,7 @@ import type { SessionOwnerRoute } from '@/store/session-request-router'
 
 import { OverlayView } from '../overlays/overlay-view'
 import { PanelEmpty } from '../overlays/panel'
+import { WorkspacePageHeading } from '../workspace-page-heading'
 
 import { type ForeignImportResult, type ForeignPage, type ForeignPreview, foreignRequest } from './api'
 
@@ -113,7 +114,7 @@ export function SessionImportView({ owner, onClose, onOpenSession }: SessionImpo
   return (
     <OverlayView
       onClose={onClose}
-      rootClassName="bg-(--ui-bg-elevated)"
+      rootClassName="eid-secondary-surface bg-(--ui-bg-elevated)"
       titlebarActions={
         <Button
           aria-label={t.common.refresh}
@@ -133,9 +134,7 @@ export function SessionImportView({ owner, onClose, onOpenSession }: SessionImpo
       }
     >
       <section aria-label={copy.title} className="session-import flex h-full min-h-0 flex-col">
-        <header className="px-8 pb-6 pt-12">
-          <h1 className="text-3xl font-semibold tracking-tight text-(--ui-text-primary)">{copy.title}</h1>
-          <p className="mt-2 text-sm text-(--ui-text-secondary)">{copy.subtitle}</p>
+        <WorkspacePageHeading className="px-8 pt-12" description={copy.subtitle} title={copy.title}>
           <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-(--ui-text-secondary)">
             <span className="inline-flex items-center gap-2">
               <Codicon name="device-desktop" />
@@ -146,7 +145,7 @@ export function SessionImportView({ owner, onClose, onOpenSession }: SessionImpo
               {copy.destination} {owner.targetProfile ?? owner.profile}
             </span>
           </div>
-        </header>
+        </WorkspacePageHeading>
         <div className="grid min-h-0 flex-1 grid-cols-[minmax(17rem,0.85fr)_minmax(0,1.6fr)] border-t border-(--ui-stroke-tertiary) max-[760px]:grid-cols-1">
           <aside
             className={cn(

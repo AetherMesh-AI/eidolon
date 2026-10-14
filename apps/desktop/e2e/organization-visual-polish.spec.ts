@@ -8,161 +8,9 @@ import { BUILTIN_THEME_LIST } from '../src/themes/presets'
 
 import { type MockBackendFixture, setupMockBackend, waitForAppReady } from './fixtures'
 import { verifyKeyboardFocus } from './focus-visibility'
+import { verifyMemberSearchGeometry } from './organization-message-search'
+import { agents, createdAt, snapshot } from './organization-visual-fixture'
 import { acknowledgeExpectedErrorBanner, expect, test } from './test'
-
-const createdAt = '2026-10-08T09:00:00Z'
-
-const agents = [
-  {
-    id: 'executive',
-    name: 'Avery',
-    role: 'Executive',
-    team: 'Leadership',
-    status: 'reviewing',
-    capabilities: ['request.accept', 'request.decompose'],
-    responsibilities: ['Set direction and accept reviewed outcomes']
-  },
-  {
-    id: 'manager',
-    name: 'Morgan',
-    role: 'Manager',
-    team: 'Product',
-    managerId: 'executive',
-    status: 'working',
-    capabilities: ['request.plan', 'request.integrate'],
-    responsibilities: ['Plan delivery and coordinate specialists']
-  },
-  {
-    id: 'writer',
-    name: 'Robin',
-    role: 'Worker',
-    team: 'Product',
-    managerId: 'manager',
-    status: 'working',
-    capabilities: ['work.draft'],
-    responsibilities: ['Draft clear release documentation']
-  },
-  {
-    id: 'reviewer',
-    name: 'Sage',
-    role: 'Worker',
-    team: 'Quality',
-    managerId: 'manager',
-    status: 'reviewing',
-    capabilities: ['request.review'],
-    responsibilities: ['Review evidence and acceptance criteria']
-  },
-  {
-    id: 'researcher',
-    name: 'Rowan',
-    role: 'Worker',
-    team: 'Research',
-    managerId: 'manager',
-    status: 'idle',
-    capabilities: ['work.analyze'],
-    responsibilities: ['Verify source material and context']
-  }
-].map(agent => ({
-  ...agent,
-  identityId: `fixture-${agent.id}`,
-  persistent: true,
-  lifecycle: 'active',
-  provider: null,
-  model: null,
-  tools: [],
-  summary: 'Synthetic identity for native layout inspection. No provider work is running.'
-}))
-
-const snapshot = {
-  source: 'runtime',
-  runtime: {
-    state: 'idle',
-    profile: 'default',
-    capabilities: ['work.draft', 'work.analyze'],
-    maxWorkers: 2,
-    maxInflight: 2,
-    rosterCount: agents.length,
-    workingCount: 0,
-    scope: 'Synthetic visual fixture. No work, external tools, or provider calls are executed.',
-    setup: {
-      version: 1,
-      provider: { status: 'unchecked', blockers: [], inheritedMembers: agents.length, overriddenMembers: 0 },
-      backgroundOptIn: false
-    }
-  },
-  outcomes: { generation: 'fixture-1', total: 1, unread: 1, hasMore: false, nextCursor: null, items: [{ objectiveId: 'research', revision: 1, seen: false, status: 'accepted', title: 'Document provider boundaries', summary: 'Synthetic reviewed scope and provider boundary summary.', round: 1, deliverableId: 'fixture-deliverable', acceptanceRequestId: 'fixture-accept', evidenceIds: ['fixture-deliverable'], createdAt, updatedAt: createdAt, archived: false }] },
-  objectives: [
-    {
-      id: 'release',
-      title: 'Prepare the autumn release brief',
-      description: 'Bring the launch narrative, verified changes, and review notes into one clear brief.',
-      status: 'active',
-      phase: 'Draft and review',
-      milestone: 'Release context verified',
-      progress: 60,
-      priority: 'P3',
-      priorityRevision: 0,
-      dispatchControl: { paused: false, revision: 0, runningCount: 1 },
-      planningMode: 'executive_packages',
-      acceptance: { status: 'reviewing', round: 1, maxReplans: 2, criteria: ['Brief reflects verified changes'], summary: null, deliverableId: null },
-      workPackages: [
-        { id: 'release-package', objectiveId: 'release', round: 1, managerId: 'manager', title: 'Release documentation', description: 'Draft the narrative from verified changes.', criterionIndexes: [0], projectIds: [], dependencyIds: [], maxTasks: 3, planRequestId: 'fixture-plan', status: 'working', taskIds: ['draft'] },
-        { id: 'evidence-package', objectiveId: 'release', round: 1, managerId: 'manager', title: 'Acceptance evidence', description: 'Review supporting evidence against the brief.', criterionIndexes: [0], projectIds: [], dependencyIds: ['release-package'], maxTasks: 3, planRequestId: 'fixture-evidence-plan', status: 'working', taskIds: ['review'] },
-        { id: 'sources-package', objectiveId: 'release', round: 1, managerId: 'manager', title: 'Source verification', description: 'Check source material and retained context.', criterionIndexes: [0], projectIds: [], dependencyIds: [], maxTasks: 3, planRequestId: 'fixture-sources-plan', status: 'completed', taskIds: ['sources'] }
-      ]
-    },
-    {
-      id: 'navigation',
-      title: 'Review the workspace navigation',
-      description: 'Compare the owner journey across a standard desktop and a narrow window.',
-      status: 'waiting',
-      phase: 'Owner review',
-      milestone: 'Navigation proposal ready',
-      progress: 80
-    },
-    {
-      id: 'research',
-      title: 'Document provider boundaries',
-      description: 'Record the supported runtime responsibilities and evidence requirements.',
-      status: 'completed',
-      phase: 'Complete',
-      milestone: 'Reviewed summary retained',
-      progress: 100,
-      acceptance: { status: 'accepted', round: 1, maxReplans: 2, criteria: ['Boundaries documented'], summary: 'Synthetic reviewed scope and provider boundary summary.', deliverableId: 'fixture-deliverable' }
-    }
-  ].map(objective => ({ ...objective, createdAt, source: 'runtime', ownerId: 'executive', managerId: 'manager' })),
-  agents,
-  tasks: [
-    {
-      id: 'draft',
-      objectiveId: 'release',
-      title: 'Draft the release brief',
-      ownerId: 'writer',
-      managingAgentId: 'manager',
-      assignedById: 'manager',
-      workPackageId: 'release-package',
-      currentRound: true,
-      status: 'working',
-      dependsOn: []
-    },
-    {
-      id: 'review',
-      objectiveId: 'release',
-      title: 'Review the acceptance evidence',
-      ownerId: 'reviewer',
-      managingAgentId: 'manager',
-      workPackageId: 'evidence-package',
-      currentRound: true,
-      status: 'review',
-      dependsOn: ['draft']
-    },
-    { id: 'sources', objectiveId: 'release', title: 'Verify source material', ownerId: 'researcher', managingAgentId: 'manager', workPackageId: 'sources-package', currentRound: true, status: 'completed', dependsOn: [] }
-  ],
-  requests: [{ id: 'fixture-question', objectiveId: 'navigation', type: 'request.question', team: 'Product', priority: 2, status: 'pending_intervention', reason: 'Review the proposed owner journey before the next iteration.', attempts: 0, createdAt }],
-  activity: ['executive', 'manager', 'writer', 'reviewer'].map((agentId, index) => ({ id: `fixture-event-${index}`, agentId, source: 'runtime', kind: 'system', text: ['Synthetic direction recorded for the release brief.', 'Synthetic manager assignment recorded.', 'Synthetic draft prepared for review.', 'Synthetic review evidence recorded.'][index], timestamp: createdAt })),
-  knowledge: [],
-  conversations: []
-}
 
 let fixture: MockBackendFixture | undefined
 
@@ -311,6 +159,11 @@ test('keeps native organization navigation, roster and objective layouts usable 
   }
 
   async function capture(name: string, target = workspace, nativeWindow = false, preserveScroll = false) {
+    // Matched review images are neutral-focus; keyboard checks retain their own evidence.
+    if (name.startsWith('reference-')) {
+      await page.evaluate(() => { if (document.activeElement instanceof HTMLElement) {document.activeElement.blur()} })
+    }
+
     if (!preserveScroll) {
       await target.evaluate(element => { element.scrollTop = 0 })
     }
@@ -479,16 +332,25 @@ test('keeps native organization navigation, roster and objective layouts usable 
       const headerBounds = await page.getByRole('banner', { name: 'Workspace controls', exact: true }).boundingBox()
       expect(Math.abs(bounds!.y - 64), 'Messages content origin matches the reference header').toBeLessThanOrEqual(1)
       expect(Math.abs(headerBounds!.y + headerBounds!.height - bounds!.y)).toBeLessThanOrEqual(1)
-      columnChecks.push({ mode, width, height, columns, workspace: bounds, header: headerBounds, targetWidths })
+      columnChecks.push({ mode, width, height, columns, workspace: bounds, header: headerBounds, targetWidths, memberSearch: await verifyMemberSearchGeometry(page) })
       await expect(page.locator('.eid-message-members').getByRole('heading', { name: 'Messages', exact: true })).toBeVisible()
       focusChecks.push(await verifyKeyboardFocus(page, search, `Messages search ${mode} ${width}x${height}`))
       await expect(page.getByRole('contentinfo', { name: 'System health', exact: true })).toBeInViewport({ ratio: 1 })
       await capture(width === 1536 ? `reference-messages-${mode}` : `messages-selected-short-${mode}`)
+      await search.fill('A long member query that must stay within the existing member column')
+      await verifyMemberSearchGeometry(page)
+      await search.focus()
+      await page.keyboard.press('Tab')
+      await expect(page.getByRole('button', { name: 'Clear search', exact: true })).toBeFocused()
+      await page.keyboard.press('Enter')
+      await expect(search).toHaveValue('')
+      await expect(page.getByRole('region', { name: 'Member conversation', exact: true }).getByRole('heading', { name: 'Robin', exact: true })).toBeVisible()
     }
 
     await resize(1220)
     await capture(`messages-selected-medium-${mode}`)
     await resize(760)
+    await verifyMemberSearchGeometry(page)
     await capture(`messages-selected-narrow-${mode}`)
     // Traverse the context with Tab, then follow the recorded link using Enter.
     await search.fill('Robin')
@@ -497,6 +359,14 @@ test('keeps native organization navigation, roster and objective layouts usable 
     await expect(page.getByRole('button', { name: 'Clear search', exact: true })).toBeFocused()
     await page.keyboard.press('Tab')
     await expect(members.getByRole('button', { name: /Robin/ })).toBeFocused()
+    await page.keyboard.press('Tab')
+    const directoryDetails = page.locator('.eid-message-members .eid-message-directory-details')
+    await expect(directoryDetails.locator('summary')).toBeFocused()
+    await page.keyboard.press('Enter')
+    await expect(directoryDetails).toHaveAttribute('open', '')
+    await expect(directoryDetails).toContainText('Messages do not grant new permissions or renew allowances.')
+    await page.keyboard.press('Enter')
+    await expect(directoryDetails).not.toHaveAttribute('open', '')
     await page.keyboard.press('Tab')
     await expect(page.locator('.eid-message-conversation .eid-owner-chat-actions span[tabindex="0"]')).toBeFocused()
     await page.keyboard.press('Tab')
@@ -518,8 +388,20 @@ test('keeps native organization navigation, roster and objective layouts usable 
     await workspace.evaluate(element => { element.scrollTop = 0 })
     const summary = overview.getByRole('region', { name: 'Progress overview', exact: true })
     const phase = overview.getByRole('region', { name: 'Current phase', exact: true })
+    const lifecycle = phase.getByRole('list', { name: 'Current phase', exact: true })
+    await expect(lifecycle.locator('[aria-current=step]')).toHaveCount(1)
+    await expect(lifecycle.locator('[aria-current=step]')).toHaveText('Execution and review')
     await expect(phase.getByRole('button', { name: 'Pause new dispatch', exact: true })).toBeEnabled()
     await expect(phase.getByRole('combobox', { name: 'New priority', exact: true })).toHaveValue('P3')
+
+    const markers = await lifecycle.locator('li').evaluateAll(items => items.map(item => {
+      const marker = item.querySelector('.eid-lifecycle-marker')!.getBoundingClientRect()
+      const label = item.querySelector('span:last-child')!.getBoundingClientRect()
+
+      return { markerBottom: marker.bottom, labelTop: label.top, markerCenter: marker.x + marker.width / 2, labelCenter: label.x + label.width / 2 }
+    }))
+
+    expect(markers.every(item => item.markerBottom <= item.labelTop && Math.abs(item.markerCenter - item.labelCenter) <= 1)).toBe(true)
     const assignmentCards = overview.locator('.eid-team-work-grid > article')
     await expect(assignmentCards).toHaveCount(3)
 
@@ -535,6 +417,8 @@ test('keeps native organization navigation, roster and objective layouts usable 
 
     expect(Math.abs(geometry.main.x - 222), 'Objective reference left gutter').toBeLessThanOrEqual(10)
     expect(Math.abs(geometry.main.width - 898), 'Objective reference main column').toBeLessThanOrEqual(10)
+    expect(geometry.phase.y, 'lifecycle begins below the compact objective identity row').toBeLessThanOrEqual(220)
+    expect(geometry.cards[0].y, 'assignment cards rise toward the reference progress row').toBeLessThanOrEqual(480)
     expect(geometry.summary.height, 'compact progress retains completion and acceptance context').toBeLessThanOrEqual(190)
     expect(geometry.actions.y + geometry.actions.height, 'real controls precede the progress summary').toBeLessThan(geometry.summary.y)
     expect(geometry.summary.y + geometry.summary.height, 'progress precedes delegated work').toBeLessThan(geometry.cards[0].y)
@@ -547,14 +431,29 @@ test('keeps native organization navigation, roster and objective layouts usable 
       await expect(card).toBeInViewport({ ratio: 1 })
     }
 
-    objectiveChecks.push({ mode, viewport: '1536x961', ...geometry })
     const recordDetails = overview.getByRole('region', { name: 'Objective details', exact: true })
     await expect(recordDetails).toContainText('Avery')
-    await expect(recordDetails).toContainText('Draft and review')
+    await expect(recordDetails).toContainText('Execution and review')
     await expect(recordDetails.locator('time')).toHaveAttribute('datetime', createdAt)
     await expect(recordDetails).toBeInViewport({ ratio: 1 })
     await expect(page.locator('.eid-objective-hero .eid-objective-scenery')).toHaveAttribute('aria-hidden', 'true')
     await capture(`reference-objective-${mode}`)
+    const findings = overview.getByRole('region', { name: 'Recorded review findings', exact: true })
+    await expect(findings.getByRole('region', { name: 'Unresolved conflicts', exact: true })).toContainText('Published launch dates disagree.')
+    await expect(findings.getByText('Unmet criteria · 1', { exact: true })).toBeVisible()
+    await expect(findings.locator('summary')).toBeInViewport({ ratio: 1 })
+    await expect(findings).toBeInViewport({ ratio: 1 })
+    const findingsBounds = await findings.boundingBox()
+    const healthBounds = await page.getByRole('contentinfo', { name: 'System health', exact: true }).boundingBox()
+    expect(findingsBounds!.y + findingsBounds!.height, 'complete review border clears the footer').toBeLessThanOrEqual(healthBounds!.y - 4)
+    objectiveChecks.push({ mode, viewport: '1536x961', ...geometry, reviewFindings: await findings.boundingBox(), reviewDisclosure: await findings.locator('summary').boundingBox() })
+    await findings.locator('summary').click()
+    await expect(findings.getByText('Not met', { exact: true })).toBeVisible()
+    await expect(findings.getByText('fixture-source-a, fixture-source-b', { exact: true })).toBeVisible()
+    await findings.getByText('Two source dates remain unresolved.', { exact: true }).scrollIntoViewIfNeeded()
+    await capture(`objective-review-findings-${mode}`, workspace, false, true)
+    await findings.locator('summary').click()
+
     displayedSnapshot = {
       ...snapshot,
       objectives: snapshot.objectives.map(objective => objective.id !== 'release' || !objective.workPackages ? objective : {
@@ -630,7 +529,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
         await expect(details).not.toHaveAttribute('open', '')
       }
 
-      await expect(phase).toContainText('Draft and review')
+      await expect(phase).toContainText('Execution and review')
       await expect(phase.getByRole('combobox', { name: 'New priority', exact: true })).toHaveValue('P2')
       await expect(overview.getByRole('region', { name: 'Delivery', exact: true })).toContainText('has not been recorded')
     }
@@ -653,6 +552,17 @@ test('keeps native organization navigation, roster and objective layouts usable 
     await capture(`work-overview-wide-${mode}`)
     await resize(760)
     await capture(`work-overview-narrow-${mode}`)
+    await resize(1280, 720)
+    await page.evaluate(() => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(200))
+    await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(2)
+    const workLink = card.getByRole('link', { name: 'View objective →', exact: true })
+    await workLink.scrollIntoViewIfNeeded()
+    focusChecks.push(await verifyKeyboardFocus(page, workLink, `Work overview objective link ${mode} 200 percent`))
+    await expect(workLink).toBeInViewport({ ratio: 1 })
+    expect(await page.locator('.eid-work-overview').evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
+    await capture(`work-overview-200-${mode}`, workspace, true, true)
+    await page.evaluate(() => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(100))
+    await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(1)
     await resize(1220)
     await navigation.getByRole('link', { name: 'Objectives', exact: true }).click()
     await workspace.getByRole('link').filter({ has: page.getByText('Review the workspace navigation', { exact: true }) }).click()
@@ -676,6 +586,8 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await expect(page.locator('#eid-objective')).toBeAttached()
   await expect(page.getByRole('region', { name: 'What’s happening?', exact: true })).toBeVisible()
   await expect(page.getByRole('region', { name: 'What needs me?', exact: true })).toContainText('Review the proposed owner journey')
+  await expect(page.getByRole('region', { name: 'What needs me?', exact: true }).getByRole('heading', { name: 'Review the proposed owner journey before the next iteration.', exact: true })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'What needs me?', exact: true })).toContainText('Requested by: Morgan')
   await expect(page.getByRole('region', { name: 'What’s ready?', exact: true })).toContainText('Synthetic reviewed scope')
   await expect(workspace.locator('.eid-runtime-status')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Open settings', exact: true })).toHaveCount(0)
@@ -740,6 +652,11 @@ test('keeps native organization navigation, roster and objective layouts usable 
 
     if (width === 1536) {
       expect(Math.abs(geometry.cards.bottom - 695), 'Home card bottom approaches the matched reference').toBeLessThanOrEqual(5)
+
+      for (const event of geometry.activityRows) {
+        expect(event.bounds.width, 'activity card keeps the reference width').toBeGreaterThanOrEqual(195)
+        expect(event.bounds.width, 'activity card keeps the reference width').toBeLessThanOrEqual(225)
+      }
     }
 
     const health = await page.getByRole('contentinfo', { name: 'System health', exact: true }).boundingBox()
@@ -880,10 +797,31 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await capture('08-home-wide-light')
   await resize(1536, 961)
   const primaryObjective = workspace.locator('.eid-home-objective-primary').first()
-  await expect(primaryObjective).toContainText('Draft and review')
+  await expect(primaryObjective).toContainText('Execution and review')
   await expect(primaryObjective.getByRole('list', { name: 'Recorded task states', exact: true })).toBeVisible()
   await expect(primaryObjective.getByRole('link', { name: 'View objective →', exact: true })).toBeInViewport({ ratio: 1 })
+  expect(await workspace.locator('.eid-home-panel-body').first().evaluate(element => element.scrollHeight - element.clientHeight), 'primary and compact secondary objectives fit without a nested scrollbar').toBeLessThanOrEqual(1)
   await expect(page.getByRole('contentinfo', { name: 'System health', exact: true })).toBeInViewport({ ratio: 1 })
+
+  const chrome = await page.evaluate(() => {
+    const bounds = (selector: string) => document.querySelector(selector)!.getBoundingClientRect().toJSON()
+
+    return { header: bounds('.eid-workspace-header'), search: bounds('.eid-workspace-search-trigger'),
+      firstNavigation: bounds('.eid-rail nav a'), brand: bounds('.eid-brand'),
+      headerDrag: getComputedStyle(document.querySelector('.eid-workspace-header')!).getPropertyValue('-webkit-app-region'),
+      searchDrag: getComputedStyle(document.querySelector('.eid-workspace-search-trigger')!).getPropertyValue('-webkit-app-region') }
+  })
+
+  expect(chrome.header.y).toBe(0)
+  expect(chrome.header.height).toBe(65)
+  expect(chrome.search.width).toBe(380)
+  expect(Math.abs(chrome.search.x - 887), 'wide search aligns with the reference while clearing native controls').toBeLessThanOrEqual(10)
+  expect(chrome.firstNavigation.y).toBeGreaterThanOrEqual(110)
+  expect(chrome.firstNavigation.y).toBeLessThanOrEqual(118)
+  expect(chrome.headerDrag).toBe('drag')
+  expect(chrome.searchDrag).toBe('no-drag')
+  homeChecks.push({ name: 'reference-shared-chrome', ...chrome })
+  focusChecks.push(await verifyKeyboardFocus(page, page.getByRole('button', { name: 'Search loaded records', exact: true }), 'Shared header search'))
   await capture('reference-home-light')
   await resize(1220)
 
@@ -1208,12 +1146,38 @@ test('keeps workspace controls and loaded-record inspection usable without execu
     await page.keyboard.press('Escape')
     await page.evaluate(() => { location.hash = '/home' })
 
-    for (const [width, height, zoom] of [[1536, 961, 1], [1280, 720, 1], [760, 900, 1], [1280, 720, 2]]) {
+    for (const [width, height, zoom] of [[1536, 961, 1], [1280, 720, 1], [1120, 720, 1], [760, 900, 1], [1280, 720, 2]]) {
       await resize(width, height, zoom)
       await expect(header).toHaveCount(1)
       await expect(page.getByRole('contentinfo', { name: 'System health', exact: true })).toHaveCount(1)
       await expect(header).toBeInViewport({ ratio: 1 })
       expect(await header.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
+
+      const headerGeometry = {
+        header: await header.boundingBox(),
+        search: await header.getByRole('button', { name: 'Search loaded records', exact: true }).boundingBox(),
+        identity: await header.locator('.eid-workspace-organization-trigger').boundingBox(),
+        iconTarget: await header.locator('button[data-size=icon]').boundingBox(),
+        actions: await header.locator('.eid-workspace-actions').boundingBox(),
+        nativeRightInset: await header.evaluate(element => Number.parseFloat(getComputedStyle(element).paddingRight))
+      }
+
+      expect(headerGeometry.iconTarget!.width, 'icon control preserves its minimum hit width').toBeGreaterThanOrEqual(36)
+      expect(headerGeometry.iconTarget!.height, 'icon control preserves its minimum hit height').toBeGreaterThanOrEqual(36)
+
+      if (width >= 1280 && zoom === 1) {
+        expect(headerGeometry.header!.height, 'identity keeps the existing page origin').toBe(65)
+        expect(headerGeometry.search!.width, 'responsive search retains a usable width').toBeGreaterThanOrEqual(160)
+        expect(headerGeometry.search!.width).toBeLessThanOrEqual(380)
+        expect(headerGeometry.search!.x + headerGeometry.search!.width).toBeLessThanOrEqual(headerGeometry.actions!.x)
+        expect(headerGeometry.actions!.x + headerGeometry.actions!.width).toBeLessThanOrEqual(headerGeometry.header!.x + headerGeometry.header!.width - headerGeometry.nativeRightInset + 1)
+        await expect(header.locator('.eid-workspace-organization-copy small')).toBeInViewport({ ratio: 1 })
+      }
+
+      if (width === 1536 && zoom === 1) {
+        expect(headerGeometry.search!.width, 'full reference search width').toBe(380)
+        expect(Math.abs(headerGeometry.search!.x - 887), 'full reference search position with native clearance').toBeLessThanOrEqual(10)
+      }
 
       for (const button of await header.getByRole('button').all()) {
         focusChecks.push(await verifyKeyboardFocus(page, button, `Header ${mode} ${width} ${zoom} ${await button.getAttribute('aria-label')}`))
@@ -1236,7 +1200,7 @@ test('keeps workspace controls and loaded-record inspection usable without execu
       writeFileSync(test.info().outputPath(name), bytes)
       const appearance = await page.locator('html').evaluate(element => ({ theme: element.getAttribute('data-hermes-theme'), dark: element.classList.contains('dark') }))
       expect(appearance).toEqual({ theme: 'nous', dark: mode === 'Dark' })
-      captures.push({ name, width, height, zoom, ...appearance, sha256: createHash('sha256').update(bytes).digest('hex') })
+      captures.push({ name, width, height, zoom, ...appearance, headerGeometry, sha256: createHash('sha256').update(bytes).digest('hex') })
       await test.info().attach(name, { body: bytes, contentType: 'image/png' })
       await page.keyboard.press('Escape')
       await expect(search).toBeHidden()
@@ -1404,11 +1368,14 @@ for (const locale of ['ja', 'ar', 'ru'] as const) {
 
 const translatedSurfaceExpectations = {
   "Ja": {
+    workHeading: "作業の概要", workNote: "現在の目標を追跡し、作業、レビュー、証拠を確認できます。",
+    reviewFindings: "記録されたレビュー所見", reviewUnmet: "未充足",
     objectiveOverview: "目標の概要",
     objectiveSearch: "目標を検索",
     objectiveRecord: "目標の詳細",
     objectivePhase: "実行とレビュー",
     "search": "メンバーを検索",
+    "directoryDetails": "メンバーとの会話について",
     "directoryNote": "このプロファイルの永続メンバーです。選択しても会話は開かず、利用枠も追加されません。",
     "memberContext": "メンバーの背景情報",
     "responsibilities": "担当業務",
@@ -1420,11 +1387,14 @@ const translatedSurfaceExpectations = {
     "findAgent": "エージェントを検索"
   },
   "Zh": {
+    workHeading: "工作概览", workNote: "跟踪当前目标，并查看其工作、审核和证据。",
+    reviewFindings: "已记录的审查结论", reviewUnmet: "未满足",
     objectiveOverview: "目标概览",
     objectiveSearch: "搜索目标",
     objectiveRecord: "目标详情",
     objectivePhase: "执行与审查",
     "search": "搜索成员",
+    "directoryDetails": "关于成员对话",
     "directoryNote": "此配置文件中的持久成员。选择成员不会打开对话或补充其额度。",
     "memberContext": "成员背景",
     "responsibilities": "职责",
@@ -1436,11 +1406,14 @@ const translatedSurfaceExpectations = {
     "findAgent": "查找智能体"
   },
   "ZhHant": {
+    workHeading: "工作概覽", workNote: "追蹤目前目標，並檢視其工作、審查與證據。",
+    reviewFindings: "已記錄的審查結論", reviewUnmet: "未滿足",
     objectiveOverview: "目標概覽",
     objectiveSearch: "搜尋目標",
     objectiveRecord: "目標詳情",
     objectivePhase: "執行與審查",
     "search": "搜尋成員",
+    "directoryDetails": "關於成員對話",
     "directoryNote": "此設定檔中的持久成員。選取成員不會開啟對話或補充其額度。",
     "memberContext": "成員背景",
     "responsibilities": "職責",
@@ -1452,11 +1425,14 @@ const translatedSurfaceExpectations = {
     "findAgent": "尋找代理"
   },
   "Ar": {
+    workHeading: "نظرة عامة على العمل", workNote: "تابع الأهداف الحالية ثم افتح أعمالها ومراجعاتها وأدلتها.",
+    reviewFindings: "نتائج المراجعة المسجلة", reviewUnmet: "غير مستوفى",
     objectiveOverview: "نظرة عامة على الهدف",
     objectiveSearch: "البحث في الأهداف",
     objectiveRecord: "تفاصيل الهدف",
     objectivePhase: "التنفيذ والمراجعة",
     "search": "البحث عن أعضاء",
+    "directoryDetails": "حول محادثات الأعضاء",
     "directoryNote": "أعضاء دائمون في هذا الملف الشخصي. لا يؤدي اختيار عضو إلى فتح محادثته أو تجديد حصتها.",
     "memberContext": "سياق العضو",
     "responsibilities": "المسؤوليات",
@@ -1468,11 +1444,14 @@ const translatedSurfaceExpectations = {
     "findAgent": "البحث عن وكيل"
   },
   "Ru": {
+    workHeading: "Обзор работы", workNote: "Следите за текущими целями и открывайте их работы, проверки и подтверждения.",
+    reviewFindings: "Записанные выводы проверки", reviewUnmet: "Не выполнен",
     objectiveOverview: "Обзор цели",
     objectiveSearch: "Поиск целей",
     objectiveRecord: "Сведения о цели",
     objectivePhase: "Выполнение и проверка",
     "search": "Поиск участников",
+    "directoryDetails": "О диалогах с участниками",
     "directoryNote": "Постоянные участники этого профиля. Выбор участника не открывает диалог и не пополняет его лимит.",
     "memberContext": "Контекст участника",
     "responsibilities": "Обязанности",
@@ -1496,7 +1475,16 @@ for (const [locale, suffix, dark, light] of [
     fixture = await setupMockBackend({ extraDisplayConfig: `  language: ${locale}` })
     const { app, page, mock } = fixture
     const copy = translatedSurfaceExpectations[suffix]
-    const localizedSnapshot = { ...snapshot, objectives: snapshot.objectives.map(objective =>
+
+    const retainedCopy = locale === 'ar'
+      ? { identity: 'هوية دائمة', memory: 'الذاكرة الشخصية', questions: 'الأسئلة المفتوحة', history: 'سجل الهوية الحديث' }
+      : locale === 'ru' ? { identity: 'Постоянная идентичность', memory: 'Личная память', questions: 'Открытые вопросы', history: 'Последняя история участника' } : null
+
+    const localizedSnapshot = { ...snapshot, agents: snapshot.agents.map(agent => ({ ...agent, context: {
+      contextSummary: 'Verify release evidence before accepting the outcome.',
+      memory: { facts: [], decisions: [], lessons: [], openQuestions: ['Which audience should this brief address?'] },
+      recentHistory: []
+    } })), objectives: snapshot.objectives.map(objective =>
       objective.id === 'release' ? { ...objective, phaseCode: 'execution_review', phase: 'Execution and review' } : objective
     ) }
 
@@ -1532,10 +1520,15 @@ for (const [locale, suffix, dark, light] of [
         await page.evaluate(value => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(value * 100), zoom)
         await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(zoom)
 
-        for (const route of ['/organization', '/artifacts?source=organization', '/messages', '/messages?recipient=executive', '/objectives', '/objectives/release']) {
+        for (const route of ['/organization', '/artifacts?source=organization', '/messages', '/messages?recipient=executive', '/work', '/objectives', '/objectives/release']) {
           await page.evaluate(value => { location.hash = value }, route)
 
-          if (route === '/objectives') {
+          if (route === '/work') {
+            await expect(page.getByRole('heading', { name: copy.workHeading, exact: true })).toBeVisible()
+            await expect(page.getByText(copy.workNote, { exact: true })).toBeVisible()
+            await expect(page.locator('.eid-work-overview').getByRole('region', { name: 'Prepare the autumn release brief', exact: true })).toBeVisible()
+            expect(await page.locator('.eid-work-overview').evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
+          } else if (route === '/objectives') {
             const search = page.getByRole('textbox', { name: copy.objectiveSearch, exact: true })
             await expect(search).toBeVisible()
             await search.fill('autumn')
@@ -1566,6 +1559,10 @@ for (const [locale, suffix, dark, light] of [
             await expect(page.locator('.eid-delivery-outcomes').getByRole('heading', { name: 'Document provider boundaries', exact: true })).toBeVisible()
           } else {
             await expect(page.getByRole('textbox', { name: copy.search, exact: true })).toBeVisible()
+            const directoryDetails = page.locator('.eid-message-directory-details > summary')
+            await expect(directoryDetails).toHaveText(copy.directoryDetails)
+            await directoryDetails.focus()
+            await page.keyboard.press('Enter')
             await expect(page.getByText(copy.directoryNote, { exact: true })).toBeVisible()
 
             if (route.includes('recipient')) {
@@ -1573,14 +1570,25 @@ for (const [locale, suffix, dark, light] of [
               await expect(page.locator('.eid-message-members nav button')).toHaveCount(1)
             }
 
+            await directoryDetails.focus()
+            await page.keyboard.press('Enter')
+            await expect(page.locator('.eid-message-directory-details')).not.toHaveAttribute('open', '')
             await page.locator('.eid-message-members nav').getByRole('button', { name: /Avery/ }).click()
             await expect(page.getByRole('region', { name: copy.memberContext, exact: true })).toBeVisible()
             await expect(page.getByRole('heading', { name: copy.responsibilities, exact: true })).toBeVisible()
             await expect(page.getByText(copy.linkedWorkNote, { exact: true })).toBeVisible()
           }
 
-          const focalCopy = route === '/objectives' ? copy.objectiveSearch : route === '/objectives/release' ? copy.objectiveRecord : route === '/organization' ? copy.findAgent : route === '/artifacts?source=organization' ? copy.deliverablesIntroduction : route.includes('recipient') ? copy.executiveMessageNote : copy.linkedWorkNote
+          const focalCopy = route === '/work' ? copy.workNote : route === '/objectives' ? copy.objectiveSearch : route === '/objectives/release' ? copy.objectiveRecord : route === '/organization' ? copy.findAgent : route === '/artifacts?source=organization' ? copy.deliverablesIntroduction : route.includes('recipient') ? copy.executiveMessageNote : copy.linkedWorkNote
           const focal = page.getByText(focalCopy, { exact: true })
+
+          if (route === '/messages?recipient=executive') {
+            const directoryDetails = page.locator('.eid-message-directory-details > summary')
+            await directoryDetails.focus()
+            await page.keyboard.press('Enter')
+            await expect(page.locator('.eid-message-directory-details')).toHaveAttribute('open', '')
+          }
+
           // Center the evidence target with space on both sides. Nearest-edge
           // scrolling can leave a fractional CSS pixel clipped at 200% zoom.
           await focal.evaluate(element => element.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' }))
@@ -1596,11 +1604,52 @@ for (const [locale, suffix, dark, light] of [
           expect(appearance).toEqual({ theme: 'nous', dark: mode === 'dark', dir: locale === 'ar' ? 'rtl' : 'ltr' })
           const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)
           expect(overflow).toBeLessThanOrEqual(1)
+          const memberSearch = route.startsWith('/messages') ? await verifyMemberSearchGeometry(page) : undefined
           const name = `translated-${locale}-${mode}-${route.includes('recipient') ? 'executive' : route.startsWith('/artifacts') ? 'deliverables' : route.slice(1).replaceAll('/', '-')}-${width}-${height}-${zoom}.png`
           const bytes = Buffer.from(await app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
           writeFileSync(test.info().outputPath(name), bytes)
-          captures.push({ name, locale, route, width, height, zoom, ...appearance, overflow, sha256: createHash('sha256').update(bytes).digest('hex') })
+          captures.push({ name, locale, route, width, height, zoom, ...appearance, overflow, memberSearch, sha256: createHash('sha256').update(bytes).digest('hex') })
           await test.info().attach(name, { body: bytes, contentType: 'image/png' })
+
+          if (route === '/objectives/release') {
+            const findings = page.getByRole('region', { name: copy.reviewFindings, exact: true })
+            await expect(findings.getByText('Published launch dates disagree.', { exact: true })).toBeVisible()
+            await findings.locator('summary').click()
+            await expect(findings.getByText(copy.reviewUnmet, { exact: true })).toBeVisible()
+            const reason = findings.getByText('Two source dates remain unresolved.', { exact: true })
+            await reason.scrollIntoViewIfNeeded()
+            await expect(reason).toBeInViewport({ ratio: 1 })
+            await expect(reason).toHaveCSS('direction', 'ltr')
+            expect(await findings.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
+            await page.evaluate(async () => { await document.fonts.ready; await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))) })
+            const reviewName = `review-${locale}-${mode}-${width}-${height}-${zoom}.png`
+            const reviewBytes = Buffer.from(await app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
+            writeFileSync(test.info().outputPath(reviewName), reviewBytes)
+            captures.push({ name: reviewName, locale, route, width, height, zoom, ...appearance, captureMethod: 'electron.capturePage', sha256: createHash('sha256').update(reviewBytes).digest('hex') })
+            await test.info().attach(reviewName, { body: reviewBytes, contentType: 'image/png' })
+            await findings.locator('summary').click()
+          }
+
+          if (retainedCopy && route === '/messages?recipient=executive') {
+            const retained = page.locator('.eid-message-context details')
+            await retained.locator(':scope > summary').click()
+            await expect(retained.getByRole('heading', { name: retainedCopy.identity, exact: true })).toBeVisible()
+            await expect(retained.getByRole('region', { name: retainedCopy.memory, exact: true })).toBeVisible()
+            await expect(retained.getByRole('region', { name: retainedCopy.history, exact: true })).toBeVisible()
+            const questions = retained.getByRole('region', { name: retainedCopy.questions, exact: true })
+            const question = questions.getByText('Which audience should this brief address?', { exact: true })
+            await question.scrollIntoViewIfNeeded()
+            await expect(question).toBeInViewport({ ratio: 1 })
+            await expect(question).toHaveCSS('direction', 'ltr')
+            expect(await questions.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
+            await page.evaluate(async () => { await document.fonts.ready; await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))) })
+            const retainedName = `retained-${locale}-${mode}-${width}-${height}-${zoom}.png`
+            const retainedBytes = Buffer.from(await app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
+            writeFileSync(test.info().outputPath(retainedName), retainedBytes)
+            captures.push({ name: retainedName, locale, route, width, height, zoom, ...appearance, captureMethod: 'electron.capturePage', sha256: createHash('sha256').update(retainedBytes).digest('hex') })
+            await test.info().attach(retainedName, { body: retainedBytes, contentType: 'image/png' })
+            await retained.locator(':scope > summary').click()
+          }
         }
       }
     }

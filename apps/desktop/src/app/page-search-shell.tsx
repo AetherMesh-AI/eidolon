@@ -4,6 +4,8 @@ import { SearchField } from '@/components/ui/search-field'
 import { ResponsiveTabs } from '@/components/ui/tab-dropdown'
 import { cn } from '@/lib/utils'
 
+import { WorkspacePageHeading } from './workspace-page-heading'
+
 // Tabs are data, not nodes: the shell owns their presentation so every page
 // gets the same behavior — a centered TextTab row on wide viewports that
 // collapses into a dropdown when the header can't fit both search and tabs.
@@ -18,6 +20,9 @@ interface PageSearchShellProps extends React.ComponentProps<'section'> {
   children: ReactNode
   /** A parent page already owns the window-titlebar clearance. */
   embedded?: boolean
+  /** Visible title for standalone workspace pages; embedded consumers keep their parent title. */
+  heading?: string
+  description?: string
   tabs?: PageShellTab[]
   activeTab?: string
   onTabChange?: (id: string) => void
@@ -57,6 +62,8 @@ function ShellTabs({
 export function PageSearchShell({
   children,
   embedded = false,
+  heading,
+  description,
   className,
   tabs,
   activeTab,
@@ -75,7 +82,7 @@ export function PageSearchShell({
   return (
     <section
       {...props}
-      className={cn('flex h-full min-w-0 flex-col overflow-hidden bg-(--ui-chat-surface-background)', className)}
+      className={cn('flex h-full min-w-0 flex-col overflow-hidden bg-(--ui-chat-surface-background)', heading && !embedded && 'eid-secondary-surface', className)}
     >
       {/*
         Header lives in the page body, below the window chrome (the shell floats
@@ -93,10 +100,11 @@ export function PageSearchShell({
         (see app-shell.tsx), so window dragging still works here.
       */}
       <div className="shrink-0">
+        {heading && !embedded && <WorkspacePageHeading className="eid-page-search-heading" description={description} title={heading} />}
         {(hasTabs || !searchHidden) && (
           <div
             className={cn(
-              'grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 px-3 pb-2',
+              'eid-page-search-controls grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 px-3 pb-2',
               embedded ? 'pt-2' : 'pt-[calc(var(--titlebar-height)+0.5rem)]'
             )}
           >

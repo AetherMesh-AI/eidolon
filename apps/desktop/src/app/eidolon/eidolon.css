@@ -38,6 +38,8 @@
 .eidolon p { color: var(--text-secondary); }
 .eidolon small { display: block; color: var(--text-secondary); font-size: 11px; }
 .eid-workspace { height: 100%; min-height: 0; overflow: auto; }
+.eid-workspace:has(.eid-runtime-requests, .eid-activity-filters) { scroll-padding: 7px; }
+:is(.eid-runtime-requests, .eid-activity-filters) :is(button, a, input, textarea, select, summary) { scroll-margin: 7px; }
 .eid-page { max-width: 1120px; margin: auto; padding: 28px clamp(20px, 3vw, 44px) 48px; }
 .eid-page-header { display: flex; justify-content: space-between; align-items: start; gap: 24px; margin-bottom: 24px; }
 .eid-eyebrow { font-size: 10px; letter-spacing: .16em; text-transform: uppercase; margin: 0 0 10px; }
@@ -77,6 +79,12 @@
 .eid-toolbar { display: flex; flex-wrap: wrap; gap: 16px; align-items: end; margin-bottom: 24px; }
 .eid-filter { display: flex; flex-direction: column; gap: 6px; font-size: 11px; color: var(--text-secondary); margin-bottom: 16px; }
 .eid-toolbar .eid-filter { margin-bottom: 0; }
+.eid-activity-filters > .eid-filter { flex: 1 1 170px; min-width: 0; max-width: 100%; }
+.eid-activity-filters :is(input, select) { width: 100%; min-width: 0; }
+.eidolon .eid-row.eid-activity-row { text-align: start; }
+.eid-activity-copy { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.eid-activity-copy > :is(strong, small) { display: block; }
+.eid-activity-row time { flex-shrink: 0; }
 .eid-filter input, .eid-filter select { color: var(--text-primary); background: var(--eidolon-surface-1); border: 1px solid var(--eidolon-border); border-radius: 6px; padding: 8px 12px; }
 .eid-list { padding: 0; list-style: none; }
 .eidolon .eid-row { display: flex; width: 100%; text-align: left; justify-content: space-between; align-items: center; gap: 20px; padding: 17px 12px; border: 0; border-bottom: 1px solid var(--eidolon-border-subtle); background: transparent; color: var(--text-primary); }
@@ -572,3 +580,158 @@
 .eid-messages-view .eid-owner-chat-tools > nav { margin-inline-start: auto; }
 .eid-messages-view .eid-owner-chat-tools:has(details[open]) { display: block; }
 .eid-messages-view .eid-owner-chat-tools:has(details[open]) > nav { margin-top: 10px; }
+
+.eid-home-request-context { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.eid-home-request-context .eid-home-record-time { margin-top: 3px; }
+
+.eid-review-findings details > summary { cursor: pointer; padding-block: 6px; }
+.eid-review-findings ol > li { padding-block: 10px; border-top: 1px solid var(--ui-stroke-tertiary); }
+.eid-review-findings ol > li > span { margin-inline-start: 10px; }
+.eid-review-findings :is(strong, small) { overflow-wrap: anywhere; }
+.eid-objective-overview .eid-review-findings { padding: 8px 14px; }
+.eid-objective-overview .eid-review-findings > header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; margin-bottom: 8px; }
+.eid-review-findings > header h2 { margin: 0; font-size: 18px; line-height: 1.25; }
+.eid-review-findings > header p { font-size: 12px; }
+.eid-review-findings > section { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.eid-review-findings > section h3 { margin: 0; font-size: 13px; }
+.eid-review-findings ul { margin: 0; padding-inline-start: 18px; }
+
+/* The member directory owns its full-width search treatment. Keep shared search
+   fields content-sized elsewhere and derive color from the selected theme. */
+.eid-messages-view .eid-message-search { width: 100%; flex: none; border: 1px solid var(--eidolon-border-subtle); border-radius: 8px; padding: 4px 8px; background: var(--eidolon-bg); }
+.eid-messages-view .eid-message-search:focus-within { border-color: var(--ui-accent); }
+.eid-messages-view .eid-message-search input { flex: 1 1 0%; width: 0; field-sizing: fixed; }
+
+/* Home cards keep recorded facts together without changing their action owners. */
+.eid-home-grid .eid-home-record-heading { flex-direction: row; flex-wrap: wrap; align-items: baseline; justify-content: space-between; }
+.eid-home-grid .eid-home-record-heading h3 { flex: 1 1 220px; }
+.eid-home-grid .eid-home-record-heading .eid-status { flex: none; }
+.eid-home-grid .eid-home-objective-primary:first-child,
+.eid-home-grid .eid-home-request,
+.eid-home-grid .eid-home-delivery { padding: 14px; margin-block: 4px 10px; border: 1px solid var(--eidolon-border-subtle); border-radius: 8px; background: var(--eidolon-bg); }
+.eid-home-grid .eid-home-record > p { margin-block: 8px; }
+.eid-home-grid .eid-home-progress { margin-block: 12px; }
+.eid-home-grid .eid-home-objective-facts { gap: 6px; margin-block: 10px; }
+.eid-home-grid .eid-home-objective-facts > p { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.eid-home-grid .eid-home-record .eid-home-action { margin-top: 10px; padding: 6px 12px; border: 1px solid var(--eidolon-border-subtle); border-radius: 6px; background: var(--ui-bg-secondary); }
+.eid-home-grid .eid-home-request-context { margin-bottom: 8px; }
+.eid-home-grid .eid-home-record h3 { margin-bottom: 8px; }
+.eid-home-grid .eid-home-record-time { margin-top: 8px; }
+.eid-home-activity li { border: 1px solid var(--eidolon-border-subtle); }
+
+/* Policy is an explicit disclosure; search and persistent member selection stay primary. */
+.eid-message-directory-details { flex: none; font-size: 12px; }
+.eid-message-directory-details > summary { padding-block: 6px; }
+.eid-message-directory-details p { margin-block: 8px; }
+/* The entry row is compact; secondary details never hide charges or uncertain outcomes. */
+.eid-messages-view .eid-owner-chat-compose-details { margin-bottom: 6px; font-size: 12px; }
+.eid-messages-view .eid-owner-chat-compose-details[open] { padding: 8px; border: 1px solid var(--eidolon-border-subtle); border-radius: 8px; }
+.eid-messages-view .eid-owner-chat-compose-details[open] > summary { margin-bottom: 8px; }
+.eid-messages-view .eid-owner-chat-composer { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+.eid-messages-view .eid-owner-chat-composer textarea { grid-column: 1; grid-row: 1; min-height: 48px; max-height: 140px; resize: vertical; }
+.eid-messages-view .eid-owner-chat-composer > .eid-owner-chat-actions { display: contents; }
+.eid-messages-view .eid-owner-chat-composer > .eid-owner-chat-actions > button { grid-column: 2; grid-row: 1; align-self: stretch; border-radius: 8px; }
+.eid-messages-view .eid-owner-chat-charge { grid-column: 1 / -1; grid-row: 2; margin: 0; }
+.eid-messages-view .eid-message-members nav button { min-height: 88px; gap: 12px; padding: 12px; }
+.eid-messages-view .eid-message-members nav .eid-avatar { width: 48px; height: 48px; font-size: 16px; flex: none; }
+.eid-messages-view .eid-owner-chat-message:has(.eid-owner-chat-message-avatar) { position: relative; padding-inline-start: 44px; }
+.eid-owner-chat-message-avatar { position: absolute; inset-inline-start: 0; top: 2px; }
+.eid-owner-chat-message-avatar .eid-avatar { width: 32px; height: 32px; }
+.eid-messages-view .eid-owner-chat-message > button { font-size: 11px; line-height: 1.4; }
+.eid-messages-view .eid-owner-chat-message-meta { gap: 8px; }
+@media (max-width: 800px) {
+  .eid-messages-view .eid-owner-chat-composer { grid-template-columns: minmax(0, 1fr); }
+  .eid-messages-view .eid-owner-chat-composer > .eid-owner-chat-actions { display: flex; grid-column: 1; grid-row: 2; justify-content: flex-end; }
+  .eid-messages-view .eid-owner-chat-charge { grid-row: 3; }
+}
+
+/* Only the recorded current lifecycle step is marked; no completed history is inferred. */
+.eid-objective-lifecycle { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); list-style: none; padding: 0; margin: 6px 0; gap: 12px; }
+.eid-objective-lifecycle li { position: relative; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; font-size: 11px; line-height: 1.3; overflow-wrap: anywhere; }
+.eid-lifecycle-marker { width: 14px; height: 14px; flex: none; border: 1px solid var(--eidolon-border-strong); border-radius: 50%; background: var(--eidolon-bg); }
+.eid-objective-lifecycle [aria-current=step] { color: var(--ui-text-primary); font-weight: 600; }
+.eid-objective-lifecycle [aria-current=step] .eid-lifecycle-marker { background: var(--ui-accent); box-shadow: 0 0 0 3px var(--eidolon-surface-3); border-color: var(--ui-accent); }
+.eid-objective-overview button, .eid-objective-overview select { min-height: 34px; padding: 6px 10px; border-radius: 6px; }
+.eid-objective-progress-main { gap: 10px; }
+.eid-objective-overview .eid-progress-summary { border-bottom: 0; border-radius: 10px 10px 0 0; margin-bottom: -10px; padding-bottom: 8px; }
+.eid-objective-overview .eid-team-work { border: 1px solid var(--eidolon-border-subtle); border-top: 0; border-radius: 0 0 10px 10px; background: var(--eidolon-surface-1); padding: 0 10px 10px; }
+.eid-objective-overview .eid-team-work > p { margin: 0 4px 6px; }
+.eid-objective-overview .eid-team-work-grid > article { padding: 10px; background: var(--eidolon-bg); }
+.eid-objective-overview .eid-team-work-grid > article > header { margin-bottom: 8px; }
+.eid-team-work-grid > article > p { margin-block: 6px; font-size: 12px; }
+.eid-team-work-grid .eid-progress-tasks { margin-top: 10px; gap: 6px; }
+.eid-team-work-grid .eid-progress-task { padding: 6px 8px; min-height: 50px; gap: 2px 6px; }
+.eid-team-work-grid .eid-progress-task > strong { font-size: 12px; line-height: 1.35; }
+.eid-team-work-grid .eid-progress-task > small { font-size: 10px; line-height: 1.3; }
+@media (max-width: 1100px) {
+  .eid-objective-overview .eid-progress-summary { border-bottom: 1px solid var(--eidolon-border-subtle); border-radius: 10px; margin-bottom: 0; }
+  .eid-objective-overview .eid-team-work { border-top: 1px solid var(--eidolon-border-subtle); border-radius: 10px; padding-top: 10px; }
+}
+
+.eid-objective-overview .eid-progress-summary { padding-block: 8px; }
+.eid-objective-overview .eid-progress-summary h2 { margin-bottom: 4px; }
+.eid-objective-overview .eid-progress-summary header p { font-size: 11px; line-height: 16px; margin: 0; }
+.eid-objective-actions .eid-dispatch-controls > p > small { display: inline; }
+.eid-messages-view .eid-owner-chat-allowance { scroll-margin: 8px; }
+
+@media (min-width: 1101px) {
+  .eid-home-activity ol { grid-template-columns: repeat(4, minmax(0, 225px)); }
+  .eid-home-activity li { display: grid; grid-template-columns: 28px minmax(0, 1fr); align-content: start; gap: 0 8px; padding: 8px; }
+  .eid-home-activity li > .eid-avatar { grid-row: 1 / span 2; }
+  .eid-home-activity li > div { display: contents; }
+  .eid-home-activity li :is(strong, small) { grid-column: 2; }
+  .eid-home-activity li :is(p, time) { grid-column: 1 / -1; }
+  .eid-home-activity li p { margin-block: 6px; }
+}
+
+/* Page finishing: neutral lifecycle tracks describe order, never inferred history. */
+.eid-objective-lifecycle { gap: 0; margin-block: 6px 8px; }
+.eid-objective-lifecycle li > span:last-child { padding-inline: 6px; }
+.eid-objective-lifecycle li:not(:last-child)::after { content: ''; position: absolute; inset-inline-start: calc(50% + 10px); top: 6px; width: calc(100% - 20px); height: 1px; background: var(--ui-stroke-tertiary); }
+.eid-objective-lifecycle .eid-lifecycle-marker { position: relative; z-index: 1; }
+.eid-objective-hero { margin-bottom: 6px; }
+.eid-page:has(> .eid-objective-hero) > .eid-inline { margin-block: 10px; }
+.eid-objective-overview .eid-progress-metrics { gap: 2px; }
+.eid-objective-overview .eid-progress-summary { padding-block: 6px; }
+.eid-objective-overview .eid-team-work > p { margin: 6px 4px 0; font-size: 11px; line-height: 16px; }
+.eid-progress-tasks > .eid-progress-task { grid-template-columns: 16px minmax(0, 1fr) fit-content(40%); }
+.eid-progress-task > .eid-task-state-icon { grid-column: 1; grid-row: 1 / span 2; width: 16px; height: 16px; margin-top: 1px; }
+.eid-progress-task > strong, .eid-progress-task > small { grid-column: 2; }
+.eid-progress-task > .eid-status { grid-column: 3; }
+.eid-progress-task > small + small { grid-column: 2 / -1; }
+.eid-objective-overview .eid-review-findings { padding-block: 6px; }
+.eid-objective-overview .eid-review-findings > header { margin-bottom: 3px; gap: 2px 12px; }
+.eid-review-findings > header p, .eid-review-findings > section { font-size: 12px; line-height: 16px; }
+.eid-review-findings details > summary { padding-block: 2px; font-size: 12px; line-height: 18px; }
+
+.eid-home-objective-label, .eid-home-delivery-label { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.eid-home-objective-label > svg, .eid-home-delivery-label > svg { width: 18px; height: 18px; flex: none; color: var(--ui-accent); }
+.eid-home-objective-label > .eid-status { margin-inline-start: auto; }
+.eid-home-grid .eid-home-record-actions { border-top: 1px solid var(--eidolon-border-subtle); margin-top: 10px; padding-top: 8px; }
+.eid-home-grid .eid-home-record-actions .eid-home-action { display: inline-flex; align-items: center; min-height: 34px; margin: 0; padding-block: 6px; }
+.eid-home-grid .eid-home-objective-primary:first-child { padding: 12px; }
+.eid-home-grid .eid-home-record .eid-home-description { margin-block: 6px; }
+.eid-home-grid .eid-home-objective-facts { margin-block: 6px; gap: 4px; }
+.eid-home-grid .eid-home-progress { margin-block: 8px; }
+.eid-home-panel-body { scrollbar-width: auto; scrollbar-gutter: auto; }
+.eid-home-grid .eid-home-record-compact { padding-block: 8px; }
+.eid-home-request-context > .eid-avatar { width: 34px; height: 34px; flex: none; }
+.eid-home-grid .eid-home-request-context .eid-home-record-time { margin-top: 3px; }
+
+.eid-messages-view .eid-owner-chat-heading .eid-message-recipient > .eid-avatar { width: 56px; height: 56px; font-size: 20px; flex: none; }
+.eid-messages-view .eid-message-members nav { margin-inline: -18px; padding-inline: 0; }
+.eid-messages-view .eid-message-members nav button { padding-inline: 36px; border-radius: 0; }
+.eid-messages-view .eid-message-members nav button:focus-visible { outline-offset: -3px; }
+.eid-messages-view .eid-owner-chat-composer textarea { border-radius: 10px; }
+@media (min-width: 1201px) { .eid-messages-view .eid-messages-layout > .eid-message-conversation { padding-bottom: 10px; } }
+
+/* Work inspection belongs beside progress; lifecycle markers start at the panel top. */
+.eid-page:has(> .eid-objective-hero) > .eid-inline { margin-bottom: 0; }
+.eid-objective-overview { margin-top: 8px; }
+.eid-progress-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px 8px; }
+.eid-objective-overview .eid-progress-heading h2 { margin: 0; }
+.eid-progress-heading > button { flex: none; }
+.eid-objective-overview .eid-progress-summary { padding-block: 8px 6px; margin-bottom: -8px; }
+@media (max-width: 1100px) { .eid-objective-overview .eid-progress-summary { margin-bottom: 0; } }
+
+.eid-home-grid .eid-home-record-compact h3 { margin: 0; }

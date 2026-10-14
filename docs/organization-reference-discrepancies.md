@@ -11,7 +11,57 @@ capture to imitate that viewport. Recheck representative narrow windows and the
 selected alternate theme after changing structure. Archive source commit/tree,
 route/state, viewport, theme and original PNG hash for every iteration.
 
-## Current matched-image audit — PR135 candidate, 2026-10-13
+## Current verified baseline and local spacing correction
+
+PR137 head `989844a0810a5a8965cb2251e04dc85d7f2bc4c0`, tree
+`29a2a0f995f6429d30c3c03677cd546a296d2762`, passed all nine jobs in
+[run 38345446168](https://github.com/AetherMesh-AI/eidolon/actions/runs/38345446168).
+Its 1,541 selected tests and 44 native scenarios passed without retries, skips or
+flaky cases. Artifact 11789817817 has SHA-256
+`218a52067b9fcc5164726913cb227f284ab05daa6dd0a482b68ac43e276fd18c`.
+44 provenance records, 11 reference PNGs, 40 translated objective PNGs, eight
+retained-context PNGs and 20 review PNGs were verified. Actual Settings both
+modes, collapsed/expanded Objective and AR/RU 200% review pixels were inspected.
+
+Instrumented Settings geometry is y174.296875–491.046875, height 316.75px in both
+modes, approximately 120px shorter than the prior capture but about 22px taller
+than the reference. The objective review panel is y825.25–934.671875; its content
+and disclosure fit, but its lower border extends about 1.7px below the footer
+boundary. This is a remaining mismatch, not whole-panel-fit acceptance.
+
+A separate local correction trims only outer/body/disclosure spacing, retaining
+all text, switches, controls, evidence and save owners. Native assertions now
+require the entire review panel to clear the footer by 4px and Settings' first
+row to be at most 300px. These are **unverified targets for the local delta**, not
+measurements from the green baseline. The reviewed remote head stays unchanged.
+The current page-by-page final gate is in
+[the capture inventory](organization-ui-capture-inventory.md#final-acceptance-checklist--2026-10-13).
+
+## Earlier verified candidate — PR137 e0cf, 2026-10-13
+
+Head `e0cf5b265d6163e0ff1cd259ef4c90b34d73b7e3`, tree
+`8a1411179474acb4a1ee195bb12b224760443704`, passed all nine checks in
+[CI 38340709893](https://github.com/AetherMesh-AI/eidolon/actions/runs/38340709893):
+1,532 selected tests and 44 native scenarios, zero skips/flakes/retries.
+Artifact 11787546920 SHA-256
+`c428d022908d1712b4593bf26608a1474d7d8b1e3bf7c0a70e7a75c2cf0eb938`
+was verified against merge `a84a8c3e5738ca6da0e98b60506deaea89aa4829`.
+All 44 provenance records, 40 translated PNGs, 11 reference PNGs and eight
+retained-memory PNGs were checked. Actual Home, Settings and Arabic/Russian
+200% retained-memory captures were inspected.
+
+Home now leads with the pending request and its recorded requester/time.
+Settings' first row ends around y611 instead of y648; all six cards fit the
+1536×961 capture. The reference first row still ends near y474, so this is a
+bounded improvement rather than parity. Retained questions are readable at
+200% after scrolling; the whole expanded page need not fit simultaneously.
+The review-findings work below remains separate and locally unverified in native UI.
+
+Published PR136 main `df5c6b36b5c935f181b792a49be0475cda092792` passed
+all nine postmerge checks in run `38340548982`, including 1,528 selected tests,
+44 native scenarios and the shared-source Home/no-read/no-start regression.
+
+## Earlier matched-image audit — PR135 candidate, 2026-10-13
 
 Originals and native candidate PNGs are all **1536×961**, without resizing.
 Candidate head `54f6202cd136a3ee1ec9f7598cdfd6e0ed6af9cb`, tree
@@ -34,11 +84,13 @@ or full reference parity.
 | Settings | Candidate six-card overview retains real Model/Notifications controls and now collapses context/fallback fields without unmounting them. | First row ends around y648, versus y474 in the reference. Model stretches to notification height; lower destination cards are partly below the viewport. Reference organization-profile and global-save semantics are unsupported. | Rebalance real settings groups and spacing while retaining per-page save owners, all switches and scoped configuration. |
 
 Coordinates above are approximate visual landmarks from the actual pixels, not
-instrumented geometry. The local Messages follow-up adds native geometry evidence
-for recipient/action alignment and transcript reading space; those checks have
-not yet run on hosted Electron. The phase follow-up has local ledger, projection
-and UI regressions but likewise awaits native verification. Neither is included
-in the reviewed PR135 screenshots.
+instrumented geometry. The later Messages follow-up at `638052de` passed native
+geometry checks: the transcript is 482px high and first-message metadata appears
+approximately 93px higher than in PR135. Its phase labels also passed native
+translated coverage. Neither change appears in the reviewed PR135 screenshots.
+The subsequent navigation correction at `ce165df7` passed all nine checks in
+run `38338421694`: 1,528 selected tests and 44 native scenarios with zero
+skips/flakes/retries. Shared-source Home refusal and no-read/no-start checks passed.
 
 The clean organization/search/profile header, single bottom health bar,
 Settings-owned themes, all six languages and narrow/zoomed keyboard reachability
@@ -47,7 +99,7 @@ and a final gallery from one merged build remain unfinished. Unsupported presenc
 groups, voice, attachments and fabricated historical stages must not be added to
 imitate the reference.
 
-Estimate: the next phase/Messages milestone needs roughly 60–120 minutes including
+Historical PR135 estimate (superseded by the current estimate below): the next phase/Messages milestone needs roughly 60–120 minutes including
 hosted native validation once publication can proceed. The remaining complete UI
 pass is approximately three to five implementation/validation cycles, about 4–8
 hours plus independent review. Recent native jobs take 25–35 minutes; translation
@@ -406,7 +458,7 @@ change must be validated with fresh pixels; it does not change directory behavio
 assertion deadlines, retries or production activation.
 
 
-## Runtime phase localization follow-up (local; native verification pending)
+## Runtime phase localization follow-up
 
 The gateway historically emits `phase` as English prose, while older runtimes
 and prototype metadata can contain free text. The additive `phaseCode` projection
@@ -421,4 +473,114 @@ stage history or accepted delivery from task completion. Real-ledger tests cover
 intervention/resume and durable acceptance, including 100% completed tasks before
 final acceptance, plus retained legacy shapes. Native translated fixtures now
 exercise typed phases while keeping English authored titles/descriptions in
-Arabic interfaces; those captures require a later hosted run.
+Arabic interfaces. Prior head `638052de49896544fe55a3fdcf7d2f59e7753172`
+passed this native slice in run `38335277560` (41 standard plus three directory
+cases; zero skips or flaky cases). The later navigation fix at
+`ce165df72400468efaaf25c53fff3c5660efc90e` also passed this native slice in
+run `38338421694`; its exact tested tree is
+`f2a878876024ed31c4000f028df8eb8298d904e3`.
+
+
+## Separate local follow-up after PR136
+
+Not included in PR136 head `ce165df72400468efaaf25c53fff3c5660efc90e`:
+Home presents the pending question as its heading with the recorded requester and
+creation time, rather than implying that the assigned executor asked it. Missing
+requester identity remains explicit. Arabic/Russian identity, memory, history and
+open-question labels are filled in while authored records stay unchanged. The
+compact Settings overview removes a duplicate Notifications heading; all switches
+and existing save owners remain in place. The conversation header now falls back
+to the recorded role when it is unfamiliar, matching directory/context behavior.
+
+Local tests passed (639 across organization, catalog and affected Settings owners).
+PR137 subsequently passed native Home requester and retained-context checks,
+as recorded above. These changes do not establish final reference parity.
+
+Retained authored context and history now choose their own text direction; Arabic
+interface direction no longer determines English memory text. Prepared native
+coverage opens retained memory in Arabic and Russian, checks the unresolved
+question at normal size and 200% zoom, and records new captures. This coverage passed at PR137; earlier PR136 artifacts
+do not certify those later changes.
+
+A separate recovery regression changes the current page intent while activation
+is pending, then rejects activation. Both page preservation and fresh-chat
+recovery pass while the previous machine-bound session remains cleared.
+
+
+## Separate local review-findings follow-up after PR137
+
+The existing snapshot already supplies current-round `criteriaResults` and
+`conflicts`, but the objective UI did not display them. A compact read-only
+section now shows exact unresolved conflicts and a disclosure for criterion
+judgments, reasons and supporting evidence IDs. It does not infer final
+acceptance from task completion, a positive judgment or an artifact ID.
+The labels cover all six catalogs; authored records retain their own direction.
+Older snapshots without these fields show no fabricated review history.
+
+Seven regression cases fail against the preceding overview and pass with the
+section wired in. Thirty focused tests and main/E2E type checks pass. Native
+normal/200% zoom, light/dark and translated captures are prepared but unverified.
+This local follow-up is excluded from PR137's independently cleared candidate.
+The unmet-criteria count and all conflicts stay visible outside the disclosure.
+Only the detailed criterion reasons and evidence IDs are collapsed.
+
+PR137 native geometry places the manager cards at y524.265625 with height
+284.984375, ending at y809.25 in both themes. The reference cards span roughly
+y468–842 and its review strip begins near y858; its task content differs. The new
+section follows the existing cards, but its actual position is not yet measured.
+New native assertions require the collapsed review summary in the 1536×961
+viewport, capture expanded findings, and record review/Settings card geometry.
+The current Settings first row is approximately y174–611 (437px), versus reference
+y179–474 (295px). Those Settings/reference coordinates are pixel estimates; the
+objective candidate card coordinates above are instrumented native geometry.
+
+Current planning estimate after publication is unblocked: 60–120 minutes for this
+slice's hosted native verification, review and postmerge checks. The broader
+remaining visual pass is roughly two to four further cycles, or 3–6 hours plus
+review and authorization delays, with low confidence. No bounded estimate can
+be given for resolution of the merge authorization rejection.
+
+
+## Combined follow-up awaiting hosted verification
+
+The compact Notifications overview keeps all eight switches visible. Each of its
+seven alert-kind explanations now opens through a native keyboard disclosure;
+opening one does not change the preference, and explanations remain available
+when the master notification switch disables the individual switches. Dedicated
+Notifications retains expanded descriptions. The Model owner, drafts, Apply
+button and save boundaries remain unchanged.
+
+The hosted Settings scenario now requires a collapsed first-row height of at most
+340px at 1536×961, compared with the preceding approximately 437px and the
+reference approximately 295px. This is an acceptance target, not a measured
+result. It checks keyboard explanation access, all eight switches and the
+existing narrow/200% paths. Local tests pass: 52 across the affected review,
+progress and Settings owners, plus two focused disclosure cases. Main/E2E type
+checks pass; changed-file lint has zero errors and 14 existing Settings-spec
+formatting warnings.
+
+This work combines the separately retained review-findings and Settings-height
+changes into the existing PR137 draft for new branch verification. Its previous
+exact-head clearance applies only to e0cf5b265d6163e0ff1cd259ef4c90b34d73b7e3
+and is invalid for the combined candidate. The merge approval rejection remains
+unresolved; no merge retry is authorized by this follow-up.
+
+
+## Messages search and remaining coverage follow-up
+
+The 1536×961 populated Messages capture at source `7dfbefb2` still showed a
+content-sized member input where the reference uses the directory width. The
+Messages page now owns a full-width rounded search treatment using existing
+theme tokens, while the shared SearchField remains unchanged. Native geometry
+assertions require the field to fill its member column and its input to fill the
+space beside the search/clear icons, including long queries, narrow views and
+translated normal/200% views. Clearing search retains the selected conversation
+and unsent draft. No chat allowance, filtering semantics or identity routing is
+changed. Local Messages/owner-chat tests pass (18 cases). Native proof is pending.
+
+The next outstanding coverage item is Work Overview: English 200% keyboard access
+and five-language normal/200% captured views are prepared in the existing native
+scenarios. The all-page capture inventory now distinguishes accepted source/CI
+contracts and geometry corrections from remaining visual/copy/gallery work.
+Four earlier interim screenshots were delivered through Library; the final
+all-page gallery from one final merged build remains outstanding.

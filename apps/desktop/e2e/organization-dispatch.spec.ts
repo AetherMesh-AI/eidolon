@@ -5,7 +5,7 @@ import path from 'node:path'
 
 import { buildAppEnv, type MockBackendFixture, setupMockBackend, waitForAppReady } from './fixtures'
 import { verifyKeyboardFocus } from './focus-visibility'
-import { expect, test } from './test'
+import { acknowledgeExpectedErrorBanner, expect, test } from './test'
 
 let fixture: MockBackendFixture | undefined
 const root = path.resolve(import.meta.dirname, '../../..')
@@ -59,7 +59,20 @@ with s._connect() as c:
   await waitForAppReady(fixture)
   await page.evaluate(id => { location.hash = `/objectives/${id}` }, ids[0])
   const form = page.getByRole('region', { name: 'Objective dispatch', exact: true })
-  await expect(form.getByText('New dispatch enabled · Dispatch revision: 0', { exact: true })).toBeVisible()
+
+  async function expectDispatch(state: string, revision: number) {
+    await expect(form.locator(':scope > p').first()).toHaveText(`${state} · Already claimed stages: 0`)
+    const details = form.locator('details')
+    await details.locator('summary').focus()
+    await page.keyboard.press('Enter')
+    await expect(details).toHaveAttribute('open', '')
+    await expect(details.getByText(`Dispatch revision: ${revision}`, { exact: true })).toBeVisible()
+    await details.locator('summary').focus()
+    await page.keyboard.press('Enter')
+    await expect(details).not.toHaveAttribute('open', '')
+  }
+
+  await expectDispatch('New dispatch enabled', 0)
   const phase = page.getByRole('region', { name: 'Current phase', exact: true })
   const pause = phase.getByRole('button', { name: 'Pause new dispatch', exact: true })
   await expect(pause).toBeInViewport({ ratio: 1 })
@@ -68,7 +81,7 @@ with s._connect() as c:
   await page.keyboard.press('Enter')
   await expect(form.getByRole('status')).toHaveText('Dispatch change confirmed · Receipt revision: 1')
   await page.reload()
-  await expect(form.getByText('New dispatch paused · Dispatch revision: 1', { exact: true })).toBeVisible()
+  await expectDispatch('New dispatch paused', 1)
   await expect(form.getByText('Already claimed stages: 0', { exact: true })).toBeVisible()
   await form.getByRole('button', { name: 'Resume dispatch', exact: true }).click()
   await expect(form.getByRole('status')).toHaveText('Dispatch change confirmed · Receipt revision: 2')
@@ -81,8 +94,9 @@ with s._write() as c:
 `)
   const expired = retained()
   await form.getByRole('button', { name: 'Resume dispatch', exact: true }).click()
-  await expect(form.getByRole('alert')).toContainText('Objective deadline reached')
-  await expect(form.getByText('New dispatch paused · Dispatch revision: 3', { exact: true })).toBeVisible()
+  const expectedDeadlineError = 'Objective deadline reached. Automatic execution has stopped; create a revised objective to authorize a new deadline. Retry sends the same change once more. Review the current value before starting a different change.'
+  await expect(form.getByRole('alert')).toHaveText(expectedDeadlineError)
+  await expectDispatch('New dispatch paused', 3)
   expect(retained()).toEqual(expired)
   const states = JSON.parse(run(prelude + `print(json.dumps([s._objective_view(i)['dispatchControl'] for i in ${JSON.stringify(ids)}]))`))
   expect(states).toEqual([{ paused: true, revision: 3, runningCount: 0 }, { paused: false, revision: 0, runningCount: 0 }])
@@ -91,4 +105,8 @@ with s._write() as c:
   await form.scrollIntoViewIfNeeded()
   await page.screenshot({ path: testInfo.outputPath('objective-dispatch-expired.png') })
   await testInfo.attach('dispatch-evidence', { body: JSON.stringify({ sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(), sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { cwd: root, encoding: 'utf8' }).trim(), focus, screenshot: 'objective-pause-keyboard.png', sha256: createHash('sha256').update(capture).digest('hex'), ids, changes, states, originalStatePreserved: true, deniedResumePreservedState: true, providerCalls: 0 }), contentType: 'application/json' })
+  await page.evaluate(() => { location.hash = '/home' })
+  await acknowledgeExpectedErrorBanner(page, expectedDeadlineError)
+  expect(retained()).toEqual(expired)
+  expect(mock.receivedPrompts).toHaveLength(0)
 })

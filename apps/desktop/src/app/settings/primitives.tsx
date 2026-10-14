@@ -176,12 +176,16 @@ export function ListRow({
 export function ToggleRow({
   checked,
   description,
+  collapsibleDescription = false,
+  descriptionPreview,
   disabled,
   label,
   onChange
 }: {
   checked: boolean
   description?: string
+  collapsibleDescription?: boolean
+  descriptionPreview?: string
   disabled?: boolean
   label: string
   onChange: (on: boolean) => void
@@ -190,6 +194,7 @@ export function ToggleRow({
     <ListRow
       action={
         <Switch
+          aria-description={descriptionPreview ? description : undefined}
           aria-label={label}
           checked={checked}
           disabled={disabled}
@@ -199,8 +204,10 @@ export function ToggleRow({
           }}
         />
       }
-      description={description}
-      title={label}
+      description={collapsibleDescription ? undefined : descriptionPreview ?? description}
+      title={collapsibleDescription && description
+        ? <details className="eid-settings-toggle-description"><summary>{label}</summary><p>{description}</p></details>
+        : label}
     />
   )
 }

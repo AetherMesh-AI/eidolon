@@ -71,9 +71,8 @@ export function Messages({
         <section aria-label={messages.members} className="eid-message-members">
           <header className="eid-message-directory-heading">
             <h1>{executiveEntry ? copy.messageOrganization : copy.messages}</h1>
-            <p>{executiveEntry ? copy.executiveMessageNote : copy.messagesNote}</p>
           </header>
-          <SearchField aria-label={messages.search} containerClassName="opacity-100" onChange={setQuery} placeholder={messages.search} value={query} />
+          <SearchField aria-label={messages.search} containerClassName="eid-message-search opacity-100" onChange={setQuery} placeholder={messages.search} value={query} />
           <nav aria-label={copy.chooseAgent}>
             {matches.map(item => (
               <Button
@@ -88,7 +87,7 @@ export function Messages({
             ))}
           </nav>
           {!matches.length && <p role="status">{agents.length ? messages.noMatches : executiveEntry ? copy.noMessageExecutive : copy.noAgents}</p>}
-          <p className="eid-note">{messages.directoryNote}</p>{executiveEntry && !agents.length && <Link to="/organization">{copy.reviewMessageRoster}</Link>}
+          <details className="eid-message-directory-details"><summary>{messages.directoryDetails}</summary><p>{executiveEntry ? copy.executiveMessageNote : copy.messagesNote}</p><p>{messages.directoryNote}</p></details>{executiveEntry && !agents.length && <Link to="/organization">{copy.reviewMessageRoster}</Link>}
         </section>
         <section aria-label={messages.conversation} className="eid-message-conversation">
           {agent ? (

@@ -115,7 +115,9 @@ class OrganizationStore(OrganizationDispatchStore, OrganizationPriorityStore, Or
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
-            conn.executescript(ORGANIZATION_SCHEMA)
+            # Schema creation is one durable unit: avoid hundreds of separate
+            # disk commits on fresh ledgers and roll back a late DDL failure.
+            conn.executescript("BEGIN IMMEDIATE;\n" + ORGANIZATION_SCHEMA + "\nCOMMIT;")
         self.settings = settings or OrganizationSettings()
         with self._write() as conn:
             self.settings = resolve_settings(conn, settings)

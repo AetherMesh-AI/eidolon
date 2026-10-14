@@ -95,7 +95,7 @@ export function KeybindSettings() {
 
   return (
     <SettingsContent>
-      <div className="flex items-center justify-between gap-3 pb-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-3">
         <div className="min-w-0">
           <h2 className="text-sm font-semibold text-foreground">{k.title}</h2>
           <p className="mt-0.5 text-[0.72rem] text-muted-foreground">
@@ -173,7 +173,7 @@ export function KeybindSettings() {
 function CategoryHeader({ label, onToggle, open }: { label: string; onToggle: () => void; open: boolean }) {
   return (
     <button
-      className="group/kbd-cat flex w-fit min-w-0 items-center gap-1 px-2.5 pb-1 pt-3 text-left leading-none"
+      className="group/kbd-cat flex w-fit min-w-0 max-w-full items-center gap-1 px-2.5 pb-1 pt-3 text-start leading-none"
       onClick={onToggle}
       type="button"
     >
@@ -208,7 +208,7 @@ function KeybindRow({ action }: { action: KeybindActionMeta }) {
     .find(Boolean)
 
   return (
-    <div className="group flex items-center gap-2.5 rounded-lg px-2.5 py-1 transition-colors hover:bg-(--chrome-action-hover)">
+    <div className="eid-keybind-row group flex items-center gap-2.5 rounded-lg px-2.5 py-1 transition-colors hover:bg-(--chrome-action-hover)">
       <span className="min-w-0 flex-1 truncate text-[0.82rem] text-foreground/90">{label}</span>
 
       {conflict && (
@@ -221,7 +221,7 @@ function KeybindRow({ action }: { action: KeybindActionMeta }) {
       <Tip label={k.rebind}>
         <button
           aria-label={k.rebind}
-          className="flex shrink-0 items-center gap-1 rounded-lg outline-none"
+          className="eid-keybind-combos flex shrink-0 items-center gap-1 rounded-lg outline-none"
           onClick={() => (capturing ? endCapture() : beginCapture(action.id))}
           type="button"
         >
@@ -263,9 +263,9 @@ function ReadonlyRow({ shortcut }: { shortcut: KeybindReadonly }) {
   const label = k.actions[shortcut.id] ?? shortcut.id
 
   return (
-    <div className="flex items-center gap-2.5 rounded-lg px-2.5 py-1">
+    <div className="eid-keybind-row flex items-center gap-2.5 rounded-lg px-2.5 py-1">
       <span className="min-w-0 flex-1 truncate text-[0.82rem] text-foreground/75">{label}</span>
-      <div className="flex shrink-0 items-center gap-1">
+      <div className="eid-keybind-combos flex shrink-0 items-center gap-1">
         {shortcut.keys.map(key => (
           <KbdCombo combo={key} key={key} />
         ))}

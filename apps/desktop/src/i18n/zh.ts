@@ -1,5 +1,6 @@
 import { defineFieldCopy } from '@/app/settings/field-copy'
 
+import { customEndpointsZh } from './custom-endpoints'
 import { organizationConversationsZh } from './organization-conversations'
 import { organizationFoundationEn } from './organization-foundation'
 import { organizationHomeEn, organizationWorkspaceZh } from './organization-home'
@@ -16,6 +17,7 @@ import { settingsWorkspaceEn } from './settings-workspace'
 import type { Translations } from './types'
 
 export const zh: Translations = {
+  customEndpoints: customEndpointsZh,
   organizationMetadata: organizationMetadataZh,
   organizationOwnerChat: organizationOwnerChatZh,
   organizationConversations: organizationConversationsZh,
@@ -546,7 +548,7 @@ export const zh: Translations = {
       providers: '提供方',
       providerAccounts: '账号',
       providerApiKeys: 'API 密钥',
-      providerCustomEndpoints: '自定义端点',
+      providerCustomEndpoints: customEndpointsZh.heading,
       providerLocalModels: '本地模型',
       gateway: '网关',
       apiKeys: '工具与密钥',
@@ -625,6 +627,16 @@ export const zh: Translations = {
       intro: '原生桌面通知，区别于应用内提示。设置按设备保存，每台电脑各自独立。',
       enableAll: '启用通知',
       enableAllDesc: '关闭后静音下方所有通知。',
+      overviewDescriptions: {
+        enabled: "此设备的系统通知",
+        approval: "批准或拒绝命令",
+        input: "需要回答或密钥",
+        turnDone: "应用在后台时提醒",
+        turnError: "后台轮次错误",
+        backgroundDone: "终端命令已完成",
+        credits: "访问暂停或恢复",
+        plugin: "后台插件提醒"
+      },
       focusedHint: '完成提醒仅在 Eidolon 处于后台时触发。',
       kinds: {
         approval: {

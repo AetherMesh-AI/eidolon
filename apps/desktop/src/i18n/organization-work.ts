@@ -27,6 +27,7 @@ const copy = {
   priorityCurrent: ["Current priority", "現在の優先度", "当前优先级", "目前優先順序"],
   priorityNew: ["New priority", "新しい優先度", "新优先级", "新優先順序"],
   priorityVersion: ["Priority revision", "優先度の版", "优先级版本", "優先順序版本"],
+  priorityExpectedVersion: ['Expected revision for save', '保存で使用する想定版', '保存预期版本', '儲存預期版本'],
   prioritySave: ["Save priority", "優先度を保存", "保存优先级", "儲存優先順序"],
   prioritySaving: ["Saving priority…", "優先度を保存中…", "正在保存优先级…", "正在儲存優先順序…"],
   priorityRetry: ["Retry priority save", "優先度の保存を再試行", "重试保存优先级", "重試儲存優先順序"],

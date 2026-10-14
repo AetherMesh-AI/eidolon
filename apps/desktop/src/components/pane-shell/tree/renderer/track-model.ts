@@ -95,6 +95,9 @@ interface PaneChrome extends PaneSizing {
    *  (artifacts/skills/plugin pages) are not tab-able surfaces. The flag is
    *  live: the workspace contribution re-registers it on route changes. */
   headerVeto?: boolean
+  /** The pane's own header consumes the published native-control corner
+   * insets. Only used when the zone has no visible tab strip. */
+  nativeControlsInHeader?: boolean
   /** Peers this pane exposes through contextual mouse controls. Auto may omit
    *  the strip only when every shown sibling is covered. Explicit Show tabs wins. */
   contextualTabPeers?: readonly string[]

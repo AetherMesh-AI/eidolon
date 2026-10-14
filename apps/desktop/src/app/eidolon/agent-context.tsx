@@ -21,13 +21,13 @@ export function AgentContext({ agent, snapshot }: AgentContextProps) {
     {agent.persistent && <>
       <h3>{copy.persistentIdentity}</h3>
       <dl>
-        <dt>{copy.identityId}</dt><dd>{agent.identityId || agent.id}</dd>
+        <dt>{copy.identityId}</dt><dd><bdi>{agent.identityId || agent.id}</bdi></dd>
         <dt>{copy.createdAt}</dt><dd>{agent.createdAt ? <LocalizedTime value={agent.createdAt} /> : runtimeCopy.notReported}</dd>
       </dl>
     </>}
-    {agent.purpose && <><h3>{copy.purpose}</h3><p>{agent.purpose}</p></>}
+    {agent.purpose && <><h3>{copy.purpose}</h3><p dir="auto">{agent.purpose}</p></>}
     <h3>{copy.contextSummary}</h3>
-    <p>{context?.contextSummary || copy.contextUnavailable}</p>
+    <p dir={context?.contextSummary ? "auto" : undefined}>{context?.contextSummary || copy.contextUnavailable}</p>
     <section aria-label={copy.memory}>
       <h3>{copy.memory}</h3>
       <p className="eid-note">{copy.memoryNote}</p>
@@ -38,7 +38,7 @@ export function AgentContext({ agent, snapshot }: AgentContextProps) {
         </dl>
         {(['facts', 'decisions', 'lessons', 'openQuestions'] as const).map(category => <section aria-label={copy[category]} key={category}>
           <h4>{copy[category]}</h4>
-          {context.memory![category].length ? <ul>{context.memory![category].map((entry, index) => <li className="eid-result-text" key={`${category}-${index}`}>{entry}</li>)}</ul> : <p>{copy.noMemory}</p>}
+          {context.memory![category].length ? <ul>{context.memory![category].map((entry, index) => <li className="eid-result-text" dir="auto" key={`${category}-${index}`}>{entry}</li>)}</ul> : <p>{copy.noMemory}</p>}
         </section>)}
       </> : <p>{copy.contextUnavailable}</p>}
     </section>
@@ -47,9 +47,9 @@ export function AgentContext({ agent, snapshot }: AgentContextProps) {
       <p className="eid-note">{copy.historyNote}</p>
       {context?.recentHistory ? context.recentHistory.length ? <ol className="eid-list">{context.recentHistory.map(entry => <li key={entry.requestId}>
         {snapshot.objectives.some(objective => objective.id === entry.objectiveId)
-          ? <Link to={`/objectives/${entry.objectiveId}`}>{entry.objectiveTitle || entry.objectiveId}</Link>
-          : <strong>{entry.objectiveTitle || entry.objectiveId}</strong>}
-        <p className="eid-result-text">{entry.summary}</p>
+          ? <Link dir="auto" to={`/objectives/${entry.objectiveId}`}>{entry.objectiveTitle || entry.objectiveId}</Link>
+          : <strong dir="auto">{entry.objectiveTitle || entry.objectiveId}</strong>}
+        <p className="eid-result-text" dir="auto">{entry.summary}</p>
         <details>
           <summary>{runtimeCopy.requestId}: {entry.requestId}</summary>
           <dl>

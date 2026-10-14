@@ -1,5 +1,6 @@
 import { defineFieldCopy } from '@/app/settings/field-copy'
 
+import { customEndpointsJa } from './custom-endpoints'
 import { defineLocale } from './define-locale'
 import { organizationConversationsJa } from './organization-conversations'
 import { organizationWorkspaceJa } from './organization-home'
@@ -14,6 +15,7 @@ import { organizationSurfacesJa } from './organization-surfaces'
 import { organizationWorkJa } from './organization-work'
 
 export const ja = defineLocale({
+  customEndpoints: customEndpointsJa,
   organizationMetadata: organizationMetadataJa,
   organizationSurfaces: organizationSurfacesJa,
   organizationHome: { ...organizationOverviewJa, ...organizationExecutiveMessageJa, memberMessages: organizationMemberMessagesJa, workspace: organizationWorkspaceJa, detail: { ...organizationObjectiveDetailJa, ...organizationHomeCountsJa } },
@@ -448,7 +450,7 @@ export const ja = defineLocale({
       providers: 'プロバイダー',
       providerAccounts: 'アカウント',
       providerApiKeys: 'API キー',
-      providerCustomEndpoints: 'カスタムエンドポイント',
+      providerCustomEndpoints: customEndpointsJa.heading,
       providerLocalModels: 'ローカルモデル',
       gateway: 'ゲートウェイ',
       apiKeys: 'ツールとキー',
@@ -466,6 +468,16 @@ export const ja = defineLocale({
       intro: 'アプリ内トーストとは別の、ネイティブのデスクトップ通知です。設定は端末ごとに保存されます。',
       enableAll: '通知を有効にする',
       enableAllDesc: 'オフで以下の通知をすべて無効にします。',
+      overviewDescriptions: {
+        enabled: "端末のOS通知",
+        approval: "コマンドの承認・拒否",
+        input: "質問やシークレットの入力",
+        turnDone: "アプリがバックグラウンド時",
+        turnError: "バックグラウンドのエラー",
+        backgroundDone: "端末コマンドが完了",
+        credits: "利用の停止・再開",
+        plugin: "バックグラウンドのプラグイン通知"
+      },
       focusedHint: '完了通知は Eidolon がバックグラウンドにあるときのみ表示されます。',
       kinds: {
         approval: {

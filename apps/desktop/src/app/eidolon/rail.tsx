@@ -3,13 +3,14 @@ import './eidolon.css'
 import { type ReactNode, useEffect, useRef } from 'react'
 import { NavLink, useLocation } from 'react-router'
 
-import { Codicon } from '@/components/ui/codicon'
-import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Codicon } from '@/components/ui/codicon'
 import { useI18n } from '@/i18n/context'
 import { Command, FolderOpen, LayoutDashboard, MessageCircle, Network, Settings, Users } from '@/lib/icons'
 
 import { appViewForPath } from '../routes'
+
 import { OrganizationMark, OrganizationScenery } from './scenery'
 
 /** Session history and optional plugin destinations keep their original owners. */
@@ -81,7 +82,7 @@ export function OrganizationRail({
             onClick={event => linkAction(event, to)}
             to={to}
           >
-            <Icon aria-hidden="true" size={16} />
+            <Icon aria-hidden="true" size={18} />
             <span>{label}</span>
             {to === '/objectives' && unreadOutcomes > 0 && (
               <Badge aria-label={`${copy.outcomeUnread}: ${unreadOutcomes}`} size="xs" variant="warn">
@@ -97,17 +98,18 @@ export function OrganizationRail({
         ))}
       </nav>
       <div aria-hidden="true" className="eid-rail-decoration"><OrganizationScenery /></div>
-      <details className="eid-rail-more" ref={more} onKeyDown={event => {
+      <details className="eid-rail-more" onKeyDown={event => {
         // React portal events still bubble through the session tree. Their
         // dialogs, and controls that consumed Escape, own that key press.
-        if (event.defaultPrevented || !event.currentTarget.contains(event.target as Node)) return
+        if (event.defaultPrevented || !event.currentTarget.contains(event.target as Node)) {return}
+
         if (event.key === 'Escape' && more.current?.open) {
           event.preventDefault()
           event.stopPropagation()
           more.current.open = false
           moreTrigger.current?.focus()
         }
-      }}>
+      }} ref={more}>
         <summary aria-label={home.workspace.more} ref={moreTrigger} role="button"><Codicon name="ellipsis" /></summary>
         {onOpenProfileChats && <Button onClick={onOpenProfileChats} size="sm" variant="ghost">{home.workspace.profileChats}</Button>}
         <nav aria-label={copy.advanced}>

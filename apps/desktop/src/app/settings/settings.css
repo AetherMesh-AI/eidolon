@@ -37,6 +37,7 @@
 }
 .eid-settings-main {
   padding-top: 0;
+  min-width: 0;
   max-width: none;
 }
 .eid-settings-main > header {
@@ -72,7 +73,9 @@
 }
 .eid-settings-controls .settings-content > div {
   padding-inline: clamp(18px, 2.5vw, 30px);
+  padding-top: 7px;
   padding-bottom: 24px;
+  scroll-padding: 7px;
 }
 .eid-settings-controls .settings-row {
   margin-block: 4px;
@@ -106,7 +109,7 @@
     font-size: 29px;
   }
   .eid-settings-layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);
     gap: 12px;
   }
@@ -128,6 +131,13 @@
   }
 }
 
+/* Keep a shortcut's label and every alternative binding readable at high zoom. */
+@media (max-width: 800px) {
+  .eid-settings-controls .eid-keybind-row { flex-wrap: wrap; }
+  .eid-settings-controls .eid-keybind-row > span:first-child { flex-basis: 100%; white-space: normal; overflow-wrap: anywhere; }
+  .eid-settings-controls .eid-keybind-combos { min-width: 0; max-width: calc(100% - 36px); flex-shrink: 1; flex-wrap: wrap; }
+}
+
 /* Settings now belongs to the keyboard-navigable organization workspace. */
 .eid-settings-page :is(button, a, input, textarea, select, summary):focus-visible {
   outline: 2px solid var(--ui-accent);
@@ -137,7 +147,8 @@
 }
 
 /* Overview cards retain the real Model and Notifications save owners. */
-.eid-settings-overview-content { flex: 1; min-height: 0; overflow: auto; padding: 7px; margin: -7px; }
+.eid-settings-overview-content { flex: 1; min-height: 0; overflow: auto; padding: 7px; margin: -7px; scroll-padding: 7px; }
+.eid-settings-page :is(button, a, input, textarea, select, summary) { scroll-margin: 7px; }
 .eid-settings-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .eid-settings-card { min-width: 0; border: 1px solid var(--ui-stroke-tertiary); border-radius: 10px; background: var(--ui-bg-secondary); padding: 16px; }
 .eid-settings-card > header { display: flex; align-items: flex-start; gap: 12px; }
@@ -191,6 +202,71 @@
 /* Keep the overview's primary controls visible, with every alert kind present.
    Context/fallback fields retain their mounted configuration owner in a disclosure. */
 .eid-settings-cards:not(.eid-settings-model-only) > .eid-settings-card:not(.eid-settings-card-editor) { min-height: 112px; }
-@media (min-width: 1251px) {
-  .eid-settings-cards:not(.eid-settings-model-only) .eid-settings-notification-kinds { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 16px; }
+
+/* Keep every overview switch visible; explain each kind in a keyboard-accessible
+   disclosure instead of letting seven descriptions stretch both first-row cards. */
+.eid-settings-toggle-description > summary { cursor: pointer; }
+.eid-settings-toggle-description > p { margin-top: 4px; font-size: 12px; line-height: 1.35; font-weight: 400; }
+.eid-settings-cards:not(.eid-settings-model-only) .eid-settings-notification-kinds { align-items: start; }
+.eid-settings-cards:not(.eid-settings-model-only) .eid-settings-notification-kinds .settings-row > div { min-height: 30px; }
+
+/* Trim outer rhythm to the matched reference row without shrinking switches,
+   text or editor controls. Dedicated pages retain their original spacing. */
+.eid-settings-cards:not(.eid-settings-model-only) .eid-settings-card-editor { padding-block: 8px; }
+.eid-settings-cards:not(.eid-settings-model-only) .eid-settings-card-body { margin-top: 6px; }
+.eid-settings-cards:not(.eid-settings-model-only) .eid-settings-card-body .settings-content > div { padding-block: 3px; }
+.eid-settings-cards:not(.eid-settings-model-only) :is(.eid-settings-model-advanced, .eid-settings-model-parameters, .eid-settings-notification-sound) > summary { padding-block: 6px; }
+
+/* At high zoom the heading/navigation can exhaust every fixed-height editor.
+   Keep one page scroller so controls and focus rings remain reachable. */
+@media (max-height: 600px) {
+  .eid-settings-page { overflow-y: auto; scroll-padding: 7px; }
+  .eid-settings-page .eid-settings-layout { flex: none; height: auto; overflow: visible; grid-template-rows: auto; }
+  .eid-settings-page .eid-settings-main { overflow: visible; }
+  .eid-settings-page :is(.eid-settings-overview-content, .eid-settings-controls) { flex: none; overflow: visible; }
+  .eid-settings-page .settings-content,
+  .eid-settings-page .settings-content > div { height: auto; overflow: visible; }
+  .eid-settings-page :is(button, input, textarea, select, summary) { scroll-margin: 7px; }
 }
+
+/* A decorative hero and saved summaries give the overview substance without new write owners. */
+.eid-settings-heading { position: relative; isolation: isolate; min-height: 92px; padding-block: 12px 18px; }
+.eid-settings-heading > div { position: relative; }
+.eid-settings-heading h1 { font-size: 40px; font-weight: 600; }
+.eid-settings-scenery { --eidolon-bg: var(--ui-bg-editor); position: absolute; inset-block: 0; inset-inline: auto 0; width: 62%; height: 100%; z-index: -1; pointer-events: none; mask-image: linear-gradient(to right, transparent, black 45%); }
+.eid-settings-layout > aside button[data-tour^="nav-"] { min-height: 56px; padding-block: 6px; }
+.eid-settings-layout > aside small { margin-top: 2px; line-height: 1.25; }
+.eid-settings-cards:not(.eid-settings-model-only) .eid-settings-notification-kinds { grid-template-columns: minmax(0, 1fr); }
+.eid-settings-card-summary { margin-top: 12px; }
+.eid-settings-summary { margin: 0; display: grid; gap: 8px; font-size: 12px; }
+.eid-settings-summary > div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; border-top: 1px solid var(--ui-stroke-tertiary); padding-top: 8px; }
+.eid-settings-summary dt { color: var(--ui-text-secondary); }
+.eid-settings-summary dd { margin: 0; overflow-wrap: anywhere; }
+@media (max-width: 800px) { .eid-settings-heading h1 { font-size: 30px; } .eid-settings-summary > div { grid-template-columns: minmax(0, 1fr); gap: 4px; } }
+
+[dir="rtl"] .eid-settings-scenery { mask-image: linear-gradient(to left, transparent, black 45%); }
+
+/* Eight full-size switches fit the established 300px first-row contract. */
+.eid-settings-cards:not(.eid-settings-model-only) .settings-row:has([role="switch"]) > div { min-height: 24px; padding-block: 2px; }
+.eid-settings-cards:not(.eid-settings-model-only) .eid-settings-notification-kinds .settings-row > div { min-height: 24px; }
+.eid-settings-cards:not(.eid-settings-model-only) .settings-row:has([role="switch"]) > div > div:last-child { display: flex; align-items: center; }
+
+/* Configuration occupies the middle row; shorter summaries form the bottom band. */
+.eid-settings-heading { padding-block: 24px 6px; }
+.eid-settings-layout > aside button[data-tour^="nav-"] { padding-block: 3px; min-height: 56px; }
+/* Preserve one vertical list and its focus outlines inside the compact editor. */
+.eid-settings-cards:not(.eid-settings-model-only) .eid-settings-notification-kinds { display: grid; grid-template-columns: minmax(0, 1fr); max-height: 180px; overflow-y: auto; padding: 7px; margin: -7px; scroll-padding: 7px; }
+.eid-settings-cards:not(.eid-settings-model-only) .eid-settings-notification-kinds [role="switch"] { scroll-margin: 7px; }
+@media (min-width: 1251px) {
+  .eid-settings-cards:not(.eid-settings-model-only) > .eid-settings-card:is([data-section="config:workspace"], [data-section="config:safety"]) { min-height: 275px; }
+}
+.eid-settings-cards:not(.eid-settings-model-only) .settings-row:has([role="switch"]) > div { min-height: 36px; padding-block: 3px; gap: 8px; }
+.eid-settings-cards:not(.eid-settings-model-only) .eid-settings-notification-kinds .settings-row > div { min-height: 36px; }
+.eid-settings-cards:not(.eid-settings-model-only) .settings-row:has([role="switch"]) > div > div:first-child > div + div { margin-top: 1px; font-size: 11px; line-height: 13px; }
+.eid-settings-cards:not(.eid-settings-model-only) > [data-section="providers"],
+.eid-settings-cards:not(.eid-settings-model-only) > [data-section="config:appearance"] { min-height: 0; }
+.eid-settings-cards:not(.eid-settings-model-only) :is([data-section="providers"], [data-section="config:appearance"]) .eid-settings-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.eid-settings-cards:not(.eid-settings-model-only) :is([data-section="providers"], [data-section="config:appearance"]) .eid-settings-summary > div { grid-template-columns: minmax(0, 1fr); gap: 3px; padding-top: 6px; }
+@media (max-width: 800px) { .eid-settings-cards:not(.eid-settings-model-only) .eid-settings-notification-kinds { grid-template-columns: minmax(0, 1fr); } }
+
+.eid-settings-heading h1 { margin-top: 6px; }

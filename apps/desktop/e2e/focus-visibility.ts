@@ -3,10 +3,10 @@ import type { Locator, Page } from '@playwright/test'
 import { expect } from './test'
 
 /** Measure the actual outline against the painted ancestor surfaces in Chromium. */
-export async function verifyKeyboardFocus(page: Page, target: Locator, label: string) {
+export async function verifyKeyboardFocus(page: Page, target: Locator, label: string, approach: 'next' | 'previous' = 'next') {
   await target.focus()
-  await page.keyboard.press('Tab')
-  await page.keyboard.press('Shift+Tab')
+  await page.keyboard.press(approach === 'next' ? 'Tab' : 'Shift+Tab')
+  await page.keyboard.press(approach === 'next' ? 'Shift+Tab' : 'Tab')
   await expect(target).toBeFocused()
   const evidence = await target.evaluate(element => {
     const style = getComputedStyle(element)

@@ -14,6 +14,153 @@ a few alternate Settings themes. The theme regression separately exercises all
 built-in palettes and appearance persistence. Existing mockup references are
 input direction, not rendered evidence and not final gallery substitutes.
 
+## Final acceptance checklist — current candidate
+
+The last fully verified candidate is PR137 head
+`e6e74ff582fbb56a66ab807a851c61adcc776b2e`, tree
+`f7f244c18456fda2e4d527a6a0046a8c474f6ae9`, in
+[run 38472282716](https://github.com/AetherMesh-AI/eidolon/actions/runs/38472282716).
+All nine checks, 1,581 selected component tests and 53 native cases passed with
+zero skips, retries or flakes. Independent source review cleared that exact tree.
+Independent pixel review accepted Settings desktop composition (vertical
+notifications, 275px middle row and compact bottom band). Home, Messages and
+Objective structural acceptance from `a9a43464` stands. Do not reopen those
+layouts as part of remaining-page work.
+
+Ten Settings images from `e6e74ff5` were delivered to Library with successful
+metadata writeback. They include light/dark desktop, narrow, light 200%, and
+JA/AR/RU notification focus at both zoom levels. The accepted composition does
+not excuse the independently confirmed Arabic checked-thumb overflow. The next
+candidate corrects direction-aware movement and adds native containment/state
+checks. The first expanded gallery at `332a1013` failed: all six locales exposed
+the Appearance pet picker's clipped final focus outline; Arabic Tools exposed a
+clipped list outline. English/Arabic checked, unchecked and disabled switch
+captures reached at 100% show contained thumbs, but 200% was not reached and no
+complete gallery pass is claimed. A separate Profiles probe entered CodeMirror,
+where Shift+Tab intentionally indents; the probe now approaches from the previous
+control without altering any outline assertion. Repairs add scroll padding to
+the demonstrated clipping containers. Independent destinations continue collecting
+evidence after a failed assertion, and the case still fails if any assertion failed.
+
+The `fccba238` expansion retained additional dark-mode evidence but still failed.
+Traces confirmed clipped Profiles list controls and the same short-height failure
+across Settings editors, plus normal-height About/provider-key edge clipping.
+The next repair extends the existing page scroller to all Settings sections below
+600px and adds focus clearance to the demonstrated list/editor boundaries.
+Pixel inspection also caught an Activity avatar stretch introduced by the new
+text-column selector; that selector is narrowed and native square-avatar geometry
+is asserted. Fixture corrections use stable expanding-credential locators, seed
+durable history before initial backend reads, and select AetherMesh for actual
+light surfaces because Eidolon's two appearance preferences intentionally remain
+dark. No complete gallery pass is claimed for either failed candidate.
+
+At `71cfd186`, Settings retained 760 captures: ZH passed; the other five cases
+failed only on Keyboard Shortcuts horizontal overflow at 200% in both themes
+(125px in EN/JA/ZH-Hant/AR; 227px in RU). Shortcuts now wrap labels and alternate
+bindings, and the short Settings grid no longer inherits a content minimum width.
+The secondary job reached its unchanged 20-minute deadline after three timed-out
+cases. Its traces exposed a remaining short Profiles list focus clip and a fixture
+mismatch after chat navigation: passive organization observation read the empty
+sandbox instead of the synthetic snapshot. The repair reserves one full list
+control's height, supplies the explicit read-only observation response, and checks
+only the first/last eligible controls without serial metadata reads for hundreds
+of unused catalog controls. All original assertions and deadlines remain.
+These are sampled keyboard checks, not exhaustive tab-order or page-state proof.
+
+Independent source review also found that `SkillsView` consumed but did not
+forward `embedded` to its shell. The parent-owned profile editor now retains its
+heading and chrome. A regression through the real embedded view failed before
+the one-line fix, then passed while preserving local tab state and pinned writes.
+
+At `c26dbc83`, all six Settings cases passed: 780 captures, 1,064 sampled focus
+checks and 1,128 switch-containment checks. Seventeen unchanged PNGs were saved
+to Library for independent review, including Arabic states at both zooms and
+Russian/English shortcuts at 200%. The secondary gallery completed within its
+original deadline with RU passing; the other five cases failed only on the first
+Needs You control's clipped focus outline at 200% in both themes. Request controls
+now receive scroll margin and their workspace scroller receives matching padding.
+Initial composition captures now reset page scroll positions; separate focus
+captures continue to retain the keyboard's actual scrolling. No complete native
+pass or final all-page acceptance is claimed for the superseded candidate.
+
+“Captured” means retained native evidence exists, not final pixel approval.
+Only Home, Messages, Objective Detail and Settings have supplied image references.
+Other destinations require consistent shared design, not an invented reference.
+
+| Surface | Retained evidence / accepted scope | Still outstanding |
+| --- | --- | --- |
+| Home | Structural reference pixels accepted; intake and durable-state regressions retained | Final merged-build gallery and exceptional-state inventory |
+| Messages | Structural reference pixels accepted; directory, conversation, renewal and retained drafts verified | Final gallery and deeper action-copy audit |
+| Objective Detail | Structural reference pixels accepted; review evidence, intervention and accepted outcomes verified | Final before/after intervention and outcome gallery |
+| Work Overview | 26 captures across translated normal/200% and wide/narrow appearances | Shared-design pixel acceptance and final gallery |
+| Objectives | 44 list/outcome captures; search and routing verified | Empty/loading/stale and archived-outcome gallery |
+| Organization | List/grid/inspectors and selected staffing states captured | Secondary forms and locale audit |
+| Deliverables | 26 captures; recorded artifact/evidence inspection and routing verified | Final exact-artifact, empty/loading/error gallery |
+| Settings | Desktop composition accepted; 53 captures cover standard destinations, subviews, breakpoints and selected themes; 48 notification focus checks pass | RTL thumb fix; all-section locale/zoom/focus review; final gallery |
+| System health | Single footer and owned details; ten captures plus state regressions | Complete state/theme/zoom gallery; never infer provider health |
+| Secondary pages | Shared headings and labeled Activity filters prepared; 42 affected component regressions pass | Dedicated hosted six-locale, both-mode, normal/200% gallery not yet verified |
+| History | Existing persistent history behavior preserved | Expanded history and actual synthetic-chat gallery not yet verified |
+
+The next gallery scenarios cover Needs You, Activity, Capabilities (Skills,
+Tools and MCP), Messaging, Execution Profiles, Import history, Legacy history,
+expanded chat history, and 21 Settings destinations/subviews. Separate bounded
+Linux jobs retain the existing native suite's deadlines, assertions and retries.
+Synthetic history setup uses one loopback scripted provider call; page browsing
+must make no additional provider calls. Settings uses zero provider calls.
+
+Final release gates remain:
+
+- [x] Four reference compositions independently accepted within their stated scope.
+- [ ] RTL checked/unchecked/focused/disabled thumb containment verified natively.
+- [ ] Every available requested destination and relevant empty/loading/error state included.
+- [ ] Default dark/light and representative alternate themes inspected.
+- [ ] EN/JA/ZH/ZH-Hant/AR/RU interface copy audited; English fallback explicitly incomplete.
+- [ ] Narrow/short and 200% keyboard paths verified; scrolling distinguished from simultaneous fit.
+- [ ] Existing navigation/draft/identity/intervention/acceptance regressions pass on final source.
+- [ ] Labeled gallery and original screenshots from one final merged build delivered to Library.
+
+The user renewed merge authorization after this candidate: merge only when CI,
+source review and UI review pass for the exact final head, then verify the
+post-merge build. Candidate evidence can be reviewed and delivered first;
+a merged-build gallery cannot be claimed before that verification.
+Real voice, per-agent VMs and live model reliability remain outside this UI scope.
+
+## Authorized follow-on: budget-aware Fixed/Auto routing
+
+Explicitly confirmed by the user and queued after the UI acceptance milestone;
+do not interrupt the current fixes or
+gallery delivery. No implementation is included in this UI candidate.
+
+- Extend durable objective admission accounting in `organization_budget.py` and
+  policy parsing in `organization_policy.py` to project, manager and agent scopes,
+  with atomic concurrent reservations and capacity retained for review.
+- Make provider/model allowlists and configured fallbacks explicit. The root
+  executive stays Fixed; assignment-level Auto proposals may select model and
+  reasoning only within runtime-enforced limits and existing data destinations.
+- Bound retries, context and concurrency at admission/execution. Account for
+  review, rework, integration and tool costs; unknown or interrupted usage must
+  not become a fictitious refund or a measured zero.
+- Show cost/quota evidence and distinguish configured ceilings, measured usage
+  and unknown subscription allowance. Do not invent current subscription quota.
+- Give managers remaining allowance, in-flight reservations, reset/window time,
+  user priorities and completion/review reserve. Proactively reduce concurrency,
+  defer low-priority work and choose cheaper capable allowed models as headroom
+  shrinks, while hard admission guards remain the backstop.
+- Accept manually entered subscription percentages with timestamp, uncertainty
+  and a conservative buffer. An opaque percentage is not an exact token balance;
+  slowing concurrency alone does not reduce total consumption. Where provider
+  metering is unknown, distinguish local enforcement from an externally guaranteed
+  cap. Preserve user priorities, permissions and configured data destinations.
+- Preserve durable agent identity and memory across model changes. Start with
+  deterministic routing rules and evidence-based escalation; learned routing
+  follows measured accepted-task outcomes, not optimistic task completion alone.
+
+The existing reservation seam, executor (`organization_executor.py`), owner-chat
+executor and tool audit accounting are starting points, not proof this feature
+already exists. After UI acceptance, report a repository-grounded sequence and
+regression plan before expanding these contracts. The feature authorizes no new
+paid calls, subscriptions, credentials, provider destinations or security changes.
+
 ## Page coverage
 
 | Surface | Required states | Current slice evidence |
@@ -25,7 +172,7 @@ input direction, not rendered evidence and not final gallery substitutes.
 | Objective Detail | Plan/delegation; execution evidence; review; owner intervention/resume; durable accepted outcome | Native wide/narrow progress/delegation and owner-input captures; functional loops retain acceptance/evidence |
 | Organization | List/grid; persistent agent inspector; leadership/worker relationships | Native visual spec list/grid and inspector dismissal |
 | Deliverables | Accepted outcomes and exact artifact/evidence inspection | Functional native loops; final gallery pending |
-| Settings | All sections below, safely unconfigured where appropriate | Workspace composition and all standard tab/subview capture scenario added; hosted verification and final gallery pending |
+| Settings | All sections below, safely unconfigured where appropriate | Standard tab/subview capture scenario passed at the verified baseline; final all-section pixel review and gallery pending |
 | System health | Bottom bar; details/grants/controls; disconnected, unknown, stale, disabled, degraded, attention, ready | Component state coverage + native bar/details transitions; final labeled captures pending |
 | Tools and configuration | Needs You; Activity; Skills; Messaging; Execution configuration; Import history; Legacy organization | Retained routes; finish gallery and identify any legacy appearance explicitly |
 | History | Expanded history and a synthetic chat | Retained mounted sidebar; final capture pending |

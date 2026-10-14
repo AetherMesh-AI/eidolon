@@ -2,9 +2,30 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { expect, it } from 'vitest'
 
+import { I18nProvider } from '@/i18n/context'
+
 import { createPrototypeAdapter } from '../../../test-fixtures/organization-prototype'
 
 import { Activity } from './activity'
+
+it('keeps authored text direction and scoped filters independent of the interface direction', () => {
+ const adapter = createPrototypeAdapter()
+ adapter.loadDemo()
+ const snapshot = adapter.getSnapshot()
+ const event = snapshot.activity[0]
+ event.text = 'Owner English العربية'
+ event.description = 'تفاصيل كتبها المالك'
+ const before = JSON.stringify(snapshot)
+ render(<I18nProvider configClient={null} initialLocale="ar"><MemoryRouter><Activity objectiveId={event.objectiveId} snapshot={snapshot} /></MemoryRouter></I18nProvider>)
+ const search = screen.getByRole('searchbox', { name: 'Search activity' })
+ fireEvent.change(search, { target: { value: event.text } })
+ const row = screen.getByRole('button', { name: `Inspect event: ${event.text}` })
+ expect(within(row).getByText(event.text).getAttribute('dir')).toBe('auto')
+ fireEvent.click(row)
+ expect(screen.getByText(event.description).getAttribute('dir')).toBe('auto')
+ expect((screen.getByRole('combobox', { name: 'Activity objective' }) as HTMLSelectElement).disabled).toBe(true)
+ expect(JSON.stringify(snapshot)).toBe(before)
+})
 
 it('offers the brief categories with opt-in fictional events and observable details', () => {
  const adapter = createPrototypeAdapter()

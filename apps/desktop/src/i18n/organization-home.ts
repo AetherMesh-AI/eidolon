@@ -1,4 +1,5 @@
 import { organizationPhasesEn } from './organization-phases'
+import { reviewFindingsEn } from './organization-review-findings'
 
 /** Source messages; untranslated locales inherit English through the existing catalog. */
 export const organizationHomeEn = {
@@ -26,6 +27,7 @@ export const organizationHomeEn = {
     members: 'Members',
     search: 'Search members',
     noMatches: 'No members match this search.',
+    directoryDetails: 'About member conversations',
     directoryNote: 'Persistent members in this profile. Selecting a member does not open or renew their conversation.',
     conversation: 'Member conversation',
     selectNote: 'Choose a member, then select Chat to read the retained conversation or send a message.',
@@ -37,6 +39,7 @@ export const organizationHomeEn = {
     retainedContext: 'Identity, memory and history'
   },
   detail: {
+    reviewFindings: reviewFindingsEn,
     phases: organizationPhasesEn,
     tasksLabel: "Tasks",
     resultLabel: "Result",
@@ -50,7 +53,7 @@ export const organizationHomeEn = {
     phase: 'Current phase',
     phaseUnknown: 'Phase not reported',
     taskStates: 'Recorded task states',
-    taskStatus: { completed: 'Completed', working: 'Working', review: 'In review', blocked: 'Blocked', queued: 'Queued', cancelled: 'Cancelled' },
+    taskStatus: { completed: 'Completed', working: 'Working', review: 'In review', blocked: 'Blocked', queued: 'Queued', cancelled: 'Cancelled', unknown: 'Unknown status' },
     noTasks: 'No current tasks recorded in this view.',
     teamWork: 'Delegated work',
     teamNote: 'Current-round manager assignments and their recorded tasks. Earlier rounds remain in the work history.',

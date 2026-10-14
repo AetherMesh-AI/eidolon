@@ -2,10 +2,12 @@ import type { ReactNode } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n/context'
+import { AlertCircle, CheckCircle2, CircleIcon, Clock, Eye, X } from '@/lib/icons'
 
 import { AgentAvatar } from './avatar'
 import { LocalizedTime } from './localized-time'
 import { objectivePhaseLabel } from './objective-phase'
+import { ObjectiveReviewFindings } from './objective-review-findings'
 import { objectiveWorkData } from './objective-work-data'
 import type { Objective, OrganizationSnapshot, OrganizationTask } from './types'
 
@@ -34,14 +36,25 @@ export function ObjectiveProgress({ objective, snapshot, controls, onReviewReque
   const number = new Intl.NumberFormat(locale)
   const agentName = (id?: string | null) => snapshot.agents.find(agent => agent.id === id)?.name || id || t.organizationHome.unassigned
   const progress = objective.progress
+  const lifecycle = ['executive_planning', 'execution_review', 'integration_review', 'accepted'] as const
+  const supportedPhase = objective.source === 'runtime' && lifecycle.some(phase => phase === objective.phaseCode)
+
+  const taskIcons = { completed: CheckCircle2, working: Clock, review: Eye, blocked: AlertCircle, queued: CircleIcon, cancelled: X }
 
   const taskRows = (tasks: OrganizationTask[]) => <ul className="eid-progress-tasks">
-    {tasks.slice(0, 3).map(task => <li className="eid-progress-task" key={task.id}>
-      <strong dir="auto">{task.title}</strong>
-      <span className={`eid-status eid-status-${task.status}`}>{copy.taskStatus[task.status]}</span>
-      <small dir="auto">{agentName(task.assignedAgentId ?? task.ownerId)}</small>
-      {task.coordination?.state === 'waiting' && <small>{task.coordination.reason || copy.dependenciesWaiting}</small>}
-    </li>)}
+    {tasks.slice(0, 3).map(task => {
+      const knownStatus = typeof task.status === 'string' && Object.hasOwn(taskIcons, task.status)
+      const StatusIcon = knownStatus ? taskIcons[task.status] : CircleIcon
+      const status = knownStatus ? task.status : 'unknown'
+
+      return <li className="eid-progress-task" key={task.id}>
+        <StatusIcon aria-hidden="true" className={`eid-task-state-icon eid-status-${status}`} />
+        <strong dir="auto">{task.title}</strong>
+        <span className={`eid-status eid-status-${status}`}>{knownStatus ? copy.taskStatus[task.status] : copy.taskStatus.unknown}</span>
+        <small dir="auto">{agentName(task.assignedAgentId ?? task.ownerId)}</small>
+        {task.coordination?.state === 'waiting' && <small>{task.coordination.reason || copy.dependenciesWaiting}</small>}
+      </li>
+    })}
     {tasks.length > 3 && <li>{copy.moreTasks(tasks.length - 3, number.format(tasks.length - 3))}</li>}
     {!tasks.length && <li>{copy.noTasks}</li>}
   </ul>
@@ -53,15 +66,20 @@ export function ObjectiveProgress({ objective, snapshot, controls, onReviewReque
   }} role="region">
     <div className="eid-objective-progress-main">
       <section aria-label={copy.phase} className="eid-home-panel eid-objective-phase">
-        <div className="eid-objective-phase-heading">
-          <div className="eid-recorded-phase"><span>{copy.phase}</span><strong dir="auto">{objectivePhaseLabel(objective, copy.phases) || copy.phaseUnknown}</strong></div>
-          <Button onClick={onReviewWork} size="micro" variant="secondary">{copy.inspectWork}</Button>
+        <div className={supportedPhase ? 'sr-only' : 'eid-objective-phase-heading'}>
+          <div className="eid-recorded-phase"><span>{copy.phase}</span>{!supportedPhase && <strong dir="auto">{objectivePhaseLabel(objective, copy.phases) || copy.phaseUnknown}</strong>}</div>
         </div>
+        {supportedPhase && <ol aria-label={copy.phase} className="eid-objective-lifecycle">
+          {lifecycle.map(phase => <li aria-current={objective.phaseCode === phase ? 'step' : undefined} key={phase}>
+            <span aria-hidden="true" className="eid-lifecycle-marker" />
+            <span>{copy.phases[phase]}</span>
+          </li>)}
+        </ol>}
         {controls && <div className="eid-objective-actions">{controls}</div>}
         {!controls && objective.dispatchControl?.paused && <p className="eid-home-paused">{t.organizationHome.paused} · {t.organizationHome.running(number.format(objective.dispatchControl.runningCount))}</p>}
       </section>
       <section aria-label={copy.progress} className="eid-home-panel eid-progress-summary">
-        <header><h2>{copy.progress}</h2><p>{copy.progressNote}</p></header>
+        <header><div className="eid-progress-heading"><h2>{copy.progress}</h2><Button onClick={onReviewWork} size="micro" variant="secondary">{copy.inspectWork}</Button></div><p>{copy.progressNote}</p></header>
         <div className="eid-progress-metrics">
         {progress !== undefined && Number.isFinite(progress) ? <div className="eid-home-progress">
           <progress aria-label={copy.progress} max={100} value={progress} />
@@ -72,7 +90,6 @@ export function ObjectiveProgress({ objective, snapshot, controls, onReviewReque
       </section>
       <section aria-label={copy.teamWork} className="eid-team-work">
         <h2 className="sr-only">{copy.teamWork}</h2>
-        <p>{copy.teamNote}</p>
         <div className="eid-team-work-grid">
           {data.groups.map(group => <article className="eid-home-panel" key={group.package.id}>
             <header><div className="eid-team-owner"><AgentAvatar name={agentName(group.package.managerId)} /><div><h3 dir="auto">{group.package.title}</h3><small>{t.organizationRoster.objectiveManager} · <bdi>{agentName(group.package.managerId)}</bdi></small></div></div></header>
@@ -85,7 +102,9 @@ export function ObjectiveProgress({ objective, snapshot, controls, onReviewReque
             {taskRows(data.ungrouped)}
           </article>}
         </div>
+        <p>{copy.teamNote}</p>
       </section>
+      <ObjectiveReviewFindings objective={objective} />
     </div>
     <div aria-label={copy.attentionAndDelivery} className="eid-objective-progress-aside" role="region">
       <section aria-label={copy.needsInput} className="eid-home-panel">

@@ -79,7 +79,7 @@ export function RuntimePriority({ objective, adapter, snapshot }: {
 
   return <section aria-label={copy.priorityHeading} className="eid-priority-controls">
     <h2 className="sr-only">{copy.priorityHeading}</h2>
-    <p>{copy.priorityCurrent}: {objective.priority} · {copy.priorityVersion}: {objective.priorityRevision ?? copy.notRecorded}</p>
+    <p>{copy.priorityCurrent}: {objective.priority}</p>
     {!editable ? <p>{copy.priorityTerminal}</p> : !supported ? <p>{copy.priorityUnavailable}</p> : null}
     {((editable && supported) || (intent && adapter.changePriority)) && <>
       <div className="eid-inline">
@@ -89,8 +89,12 @@ export function RuntimePriority({ objective, adapter, snapshot }: {
         <Button disabled={busy || !current() || (!intent && priority === objective.priority)} onClick={() => void save()} size="micro" variant="secondary">{busy ? copy.prioritySaving : intent ? copy.priorityRetry : copy.prioritySave}</Button>
         <Button disabled={busy || !current()} onClick={review} size="micro" variant="secondary">{copy.priorityReview}</Button>
       </div>
-      <details><summary>{copy.priorityDetails}</summary><p>{copy.priorityVersion}: {revision}</p><p className="eid-note">{copy.prioritySemantics}</p></details>
     </>}
+    <details><summary>{copy.priorityDetails}</summary>
+      <p>{copy.priorityVersion}: {Number.isSafeInteger(objective.priorityRevision) && objective.priorityRevision! >= 0 ? objective.priorityRevision : t.organizationSurfaces.objectiveRecord.notRecorded}</p>
+      {((editable && supported) || intent) && <p>{copy.priorityExpectedVersion}: {intent?.expectedRevision ?? revision}</p>}
+      <p className="eid-note">{copy.prioritySemantics}</p>
+    </details>
     {error && <p role="alert">{error} {copy.priorityUncertain}</p>}
     {message && <p role="status">{message}</p>}
   </section>

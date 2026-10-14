@@ -74,6 +74,15 @@ No branch protection, repository setting, secret, or permission grant is changed
   See [owner chat boundaries](organization-owner-chat.md) and
   [work-package design and rollout](organization-work-packages.md).
 
+- Workspace gallery: two bounded 20-minute Linux jobs cover secondary pages and
+  Settings independently of the existing desktop suite. Each runs six locale
+  scenarios, both appearance modes and normal/200% native zoom, with one worker
+  and zero retries. Evidence records source/tree, screenshot hashes, focus and
+  switch geometry. All organization records are synthetic; history uses one
+  loopback provider turn per scenario and browsing must make no additional calls.
+  Settings scenarios make no provider calls. Existing job limits and assertions
+  are unchanged.
+
 Fast component/type failures stop the desktop job before native installation,
 production build and Electron. The backend and OS guard jobs run independently
 so one failure does not hide other platforms. All runners are standard hosted

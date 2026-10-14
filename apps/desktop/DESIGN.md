@@ -76,6 +76,14 @@ one-off at the call site.
 - **Pages are durable destinations.** Chat, Skills, Messaging, and Artifacts
   remain in shell chrome. Do not hide a distinct product noun inside an
   unrelated page.
+- **Secondary page headings share one hierarchy.** Needs You, Activity, Capabilities,
+  Messaging, Execution Profiles and import/legacy history use `WorkspacePageHeading`.
+  The heading is presentation only; search, forms, saves and navigation stay with
+  their existing owners. Activity filters keep visible labels and authored text
+  chooses its own reading direction.
+- **Switch movement follows reading direction.** Checked thumbs move toward the
+  inline end and remain inside their tracks in LTR and RTL. Disabled controls
+  retain their state and enabled controls keep visible keyboard focus at 200% zoom.
 - **Settings stays in the workspace.** Its descriptive navigation and rounded
   control groups keep the primary rail and single bottom health bar visible.
   Existing page owners retain saves, scope, providers and appearance preferences.
@@ -464,3 +472,45 @@ share a wrapping toolbar. Narrow/zoomed layouts may wrap these controls, while
 allowance, errors, recovery and the composer remain reachable. Authored message
 bodies, names and composer text determine their own direction independently of the
 interface; selection and disclosure never send or renew a conversation.
+
+The compact Messages entry row keeps its send/cancel owner unchanged. Reply and
+allowance details expose the finite budget, explicit renewal confirmation,
+continuation anchor and character limit; collapsing them preserves the draft.
+Provider charges and uncertain send/cancel/renewal outcomes remain outside the
+collapsed content. Member selection/search never opens or renews a conversation.
+
+A supported objective lifecycle marks only its recorded current step. Earlier
+steps are not painted as completed, and intervention, legacy or unknown phase
+codes retain their explicit label instead of being forced into the sequence.
+Revision diagnostics live in disclosures; current dispatch/priority, running
+work, review requirements and errors remain visible.
+
+Settings overview summaries capture their source and profile in both the read
+and cache key, independently of the editor's ambient cache. A source change waits
+for its own first read; late prior-owner results cannot populate the new summary.
+Editor cache writes advance the summary read generation, namespaced by the editor
+cache identity so active and explicit profile counters cannot collide. A pending
+pre-save read cannot swallow the post-save read. Same-owner values remain visible while
+refreshing, and all three cards share that generation without replacing drafts. They
+show a fixed list of non-secret saved
+fields, preserve explicit false/zero values and distinguish missing/error states.
+A configured provider does not establish connection health. The original Model,
+Notifications and destination pages continue to own every write.
+
+Priority details always show the authoritative current revision, including on
+terminal or unsupported records. The expected revision of a draft or exact retry
+is labeled separately; receiving a newer snapshot never rewrites retained intent.
+
+The header's decorative monogram derives only from the saved organization name;
+an unnamed organization uses the neutral organization glyph. Its second line is
+the localized organization label, never an invented connection or activity state.
+Compact widths hide decorative details while retaining complete action names.
+At the 1536px reference viewport, search retains its 380px width and aligns near
+x887. Profile/settings controls share the organization group; attention and owner
+controls remain on the right. The right reservation includes native window
+clearance, and smaller windows may reduce search width before compact reflow.
+Text reflow rules exclude the Settings/Search icon button, which retains its
+36px square hit area at wide, compact and zoomed viewports.
+Wide Home activity cards stay within the 195–225px reference range. Event text
+and timestamps use the full card width below the member identity, without
+inventing extra events or a causal connection between independent records.

@@ -1166,6 +1166,7 @@ function ContribWiringContent({ children }: { children: ReactNode }) {
         style={
           {
             '--titlebar-controls-left': `${controlsPos.left}px`,
+            '--organization-native-top-clearance': !titlebarChrome.isFullscreen && titlebarChrome.darwinMajor > 0 ? '34px' : '0px',
             '--titlebar-controls-top': `${controlsPos.top}px`,
             '--titlebar-controls-y-nudge': titlebarControlsYNudge(titlebarChrome),
             '--titlebar-tools-right': titlebarToolsRight,

@@ -963,6 +963,29 @@ describe('selectConnection', () => {
 })
 
 describe('page-owned source switching', () => {
+  it.each([true, false])('uses the latest page intent while recovering failed activation (%s)', async preservePage => {
+    setConnectionsRegistry(registry)
+    $connection.set({ connectionId: 'local', mode: 'local', profile: 'default' })
+    $activeSessionId.set('previous-runtime')
+    const activation = deferred<void>()
+    let onPage = !preservePage
+    ensureGatewayAgent.mockImplementationOnce(async (_connectionId, _profile, options) => {
+      options?.beforeActivate?.()
+      await activation.promise
+    })
+    const switching = selectConnectionWithOutcome('homelab', { preserveRoute: () => onPage })
+    await vi.waitFor(() => expect(beforeConnectionSwitch).toHaveBeenCalledOnce())
+    onPage = preservePage
+    activation.reject(new Error('Activation failed'))
+    expect(await switching).toMatchObject({ status: 'unchanged', reason: 'failed', resetStarted: true, published: false, phase: 'activation' })
+    expect(recoverActiveSourceAfterFailedGatewaySwitch).toHaveBeenCalledOnce()
+    expect(requestFreshSession).toHaveBeenCalledTimes(preservePage ? 0 : 1)
+    expect($activeSessionId.get()).toBeNull()
+    expect($connection.get()?.connectionId).toBe('local')
+    expect($gatewaySwitching.get()).toBe(false)
+    expect($pendingConnectionId.get()).toBeNull()
+  })
+
   it.each(['success', 'failed-commit', 'same-source'] as const)('preserves the page without bypassing session isolation on %s', async outcome => {
     setConnectionsRegistry(registry)
     $connection.set({ connectionId: 'local', mode: 'local', profile: 'default' })

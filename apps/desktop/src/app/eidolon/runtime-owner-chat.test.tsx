@@ -489,27 +489,50 @@ it('loads exact earlier pages while preserving the latest reply target and fence
   rendered.unmount()
 })
 
-it('keeps workspace limits and drafting available when conversation details are collapsed', async () => {
+it('keeps charges visible and preserves drafts while inspecting workspace allowance details', async () => {
   const { h } = harness()
-  h.adapter.renewOwnerChat = vi.fn()
+  h.thread = { ...h.thread, policyGeneration: 7, budget: { ...h.thread.budget, version: 2 }, renewal: {
+    canRenew: true, maxAdditionalCalls: 3, maxOutstandingCalls: 32, maxCumulativeCalls: 1000000,
+    tokensPerCall: 34816, unavailableReason: null
+  } }
+  h.adapter.renewOwnerChat = vi.fn(async () => { throw new Error('renewal response lost') })
   render(<MemoryRouter><OrganizationOwnerChat adapter={h.adapter} agent={h.snapshot.agents[0]} layout="workspace" snapshot={h.snapshot} /></MemoryRouter>)
   fireEvent.click(screen.getByRole('button', { name: 'Chat' }))
   const message = await screen.findByRole('textbox', { name: 'Message' })
   await waitFor(() => expect((message as HTMLTextAreaElement).disabled).toBe(false))
   const details = screen.getByText('Conversation details').closest('details')!
   expect(details.open).toBe(false)
-  expect(screen.getByText(/Replies remaining: 32/).closest('details')).toBeNull()
+  const composeDetails = screen.getByText('Reply and allowance details').closest('details')!
+  expect(composeDetails.open).toBe(false)
+  fireEvent.click(screen.getByText('Reply and allowance details'))
+  expect(composeDetails.open).toBe(true)
+  expect(screen.getByText(/Replies remaining: 32/).closest('details')).toBe(composeDetails)
+  expect(screen.getByRole('button', { name: 'Replenish allowance' })).toBeTruthy()
   expect(screen.getByText(/may incur usage charges/).closest('details')).toBeNull()
   fireEvent.change(message, { target: { value: 'Retained workspace draft' } })
   fireEvent.click(screen.getByText('Conversation details'))
   expect((message as HTMLTextAreaElement).value).toBe('Retained workspace draft')
   const form = message.closest('form')!
-  expect(form.parentElement?.querySelector('.eid-owner-chat-allowance')?.nextElementSibling).toBe(form)
+  fireEvent.click(screen.getByText('Reply and allowance details'))
+  expect(composeDetails.open).toBe(false)
+  expect(screen.getByRole('textbox', { name: 'Message' })).toBe(message)
+  expect((message as HTMLTextAreaElement).value).toBe('Retained workspace draft')
   expect(form.textContent).toContain('may incur usage charges')
   expect(form.querySelector('.eid-owner-chat-charge')).not.toBeNull()
   expect(screen.getByRole('region', { name: 'Conversation messages' }).getAttribute('tabindex')).toBe('0')
   expect(h.adapter.sendOwnerChat).not.toHaveBeenCalled()
   expect(h.adapter.renewOwnerChat).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByText('Reply and allowance details'))
+  fireEvent.click(screen.getByRole('button', { name: 'Replenish allowance' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm additional allowance' }))
+  await waitFor(() => expect(h.adapter.renewOwnerChat).toHaveBeenCalledOnce())
+  await within(screen.getByRole('dialog')).findByText('renewal response lost')
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }))
+  fireEvent.click(screen.getByText('Reply and allowance details'))
+  expect(composeDetails.open).toBe(false)
+  const uncertain = screen.getByText(/Allowance update is unconfirmed/)
+  expect(uncertain.closest('details')).toBeNull()
+  expect(h.adapter.sendOwnerChat).not.toHaveBeenCalled()
 })
 
 it('returns an uncertain send to A after a colliding B identity without sending or leaking it to B', async () => {

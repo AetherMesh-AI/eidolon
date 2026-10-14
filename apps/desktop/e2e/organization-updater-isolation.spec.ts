@@ -102,8 +102,10 @@ test('a backend release notification obstructs the header until explicitly dismi
     await expect(toast).toBeVisible()
     expect(remote.updateChecks()).toBeGreaterThan(0)
 
-    // Reproduce the failed acceptance geometry without forced clicks or timeouts.
-    const blocked = await switcher.evaluate(element => {
+    // The grouped header places Settings under this toast; the connection
+    // switcher is above it. Verify real interception without forced clicks.
+    const obstructedControl = page.locator('.eid-workspace-header').getByRole('button', { name: 'Settings', exact: true })
+    const blocked = await obstructedControl.evaluate(element => {
       const rect = element.getBoundingClientRect()
       const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)
 
@@ -118,6 +120,7 @@ test('a backend release notification obstructs the header until explicitly dismi
     })
     await toast.getByRole('button', { name: 'Dismiss notification', exact: true }).click()
     await expect(toast).toBeHidden()
+    await obstructedControl.click({ trial: true })
     await switcher.click()
     await expect(page.getByRole('menuitemradio', { name: 'Updater fixture B', exact: true })).toBeVisible()
     await page.keyboard.press('Escape')
@@ -135,7 +138,7 @@ test('a backend release notification obstructs the header until explicitly dismi
         sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
         sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
         backendChecks: remote.updateChecks(), checksBeforeReload, checksBeforeRelease, releaseIntroducedAfterStartup: true, availabilityCheck: 'public Update Eidolon menu command from known-current status', launchMode: 'last-used', restoredSource: 'Updater fixture B', obstructedBeforeDismissal: blocked,
-        dismissal: 'public Dismiss notification button', switcherOpenedAfterDismissal: true,
+        obstructedControl: 'Settings', dismissal: 'public Dismiss notification button', sameControlReceivesPointerAfterDismissal: true, switcherOpenedAfterDismissal: true,
         schedulerStarts: remote.starts(), backendUpdatePosts: remote.updatePosts(), providerCalls: running.calls.length
       })
     })

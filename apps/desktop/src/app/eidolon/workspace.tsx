@@ -8,6 +8,8 @@ import { Loader } from '@/components/ui/loader'
 import { SearchField } from '@/components/ui/search-field'
 import { useI18n } from '@/i18n/context'
 
+import { WorkspacePageHeading } from '../workspace-page-heading'
+
 import { Activity } from './activity'
 import { Home } from './home'
 import { Inspector } from './inspector'
@@ -97,7 +99,7 @@ export function OrganizationWorkspaceView({ adapter }: { adapter: OrganizationAd
   const [query, setQuery] = useState('')
   const objective = snapshot.objectives.find(item => pathname === `/objectives/${item.id}`)
   const list = t.organizationSurfaces.objectives
-  const titles: Record<string, string> = { '/objectives': t.organizationHome.objectives, '/activity': t.organizationHome.activity, '/knowledge': list.knowledge }
+  const titles: Record<string, string> = { '/objectives': t.organizationHome.objectives, '/activity': t.organizationHome.activity, '/requests': copy.needsYou, '/knowledge': list.knowledge }
 
   return <main aria-label={list.workspace} className="eidolon eid-workspace">
     <div className="eid-page">
@@ -105,7 +107,7 @@ export function OrganizationWorkspaceView({ adapter }: { adapter: OrganizationAd
       {pathname === '/home' && <Home adapter={adapter} snapshot={snapshot} />}
       {pathname === '/messages' && <Messages adapter={adapter.mode === 'runtime' ? adapter : undefined} key={snapshot.connection?.ownerScope ?? snapshot.connection?.scope} snapshot={snapshot} />}
       {pathname === '/work' && <WorkOverview snapshot={snapshot} />}
-      {titles[pathname] && <header className="eid-page-header"><div><p className="eid-eyebrow">Eidolon · {t.organizationSurfaces.organization}</p><h1>{titles[pathname]}</h1></div><span className="eid-prototype">{adapter.mode === 'runtime' ? list.runtime : list.localPrototype}</span></header>}
+      {titles[pathname] && <WorkspacePageHeading title={titles[pathname]}><p className="eid-eyebrow">Eidolon · {t.organizationSurfaces.organization} · {adapter.mode === 'runtime' ? list.runtime : list.localPrototype}</p></WorkspacePageHeading>}
       {pathname === '/objectives' && <>{adapter.mode === 'runtime' && snapshot.outcomes && adapter.getOutcomes && <RuntimeOutcomeInbox adapter={adapter} key={snapshot.connection?.ownerScope ?? snapshot.connection?.scope} snapshot={snapshot} />}{snapshot.runtime?.historyLimited && !snapshot.runtime.history && <p className="eid-note">{list.historyNote}</p>}<div className="eid-toolbar"><label className="eid-filter">{list.searchObjectives}<input onChange={event => setQuery(event.target.value)} placeholder={list.findObjective} value={query} /></label><label className="eid-filter">{list.status}<select onChange={event => setFilter(event.target.value)} value={filter}><option value="all">{list.allStatuses}</option>{Object.keys(objectiveStatusLabels).map(key => <option key={key} value={key}>{key === 'active' || key === 'waiting' ? list[key] : t.organizationHome.statuses[key as keyof typeof objectiveStatusLabels]}</option>)}</select></label><Link className="eid-primary" to="/home#eid-home-intake">{t.organizationHome.newObjective}</Link></div><ObjectiveList objectives={snapshot.objectives.filter(item => (filter === 'all' || item.status === filter) && item.title.toLowerCase().includes(query.toLowerCase()))} onClearFilters={filter !== 'all' || query ? () => { setFilter('all'); setQuery('') } : undefined} snapshot={snapshot} />{adapter.mode === 'runtime' && <RuntimeHistoryBrowser adapter={adapter} key={snapshot.connection?.ownerScope ?? snapshot.connection?.scope} snapshot={snapshot} />}</>}
       {pathname.startsWith('/objectives/') && (adapter.mode === 'runtime' ? <RuntimeHistoryObjectiveDetail adapter={adapter} key={`${snapshot.connection?.ownerScope ?? snapshot.connection?.scope}:${pathname}`} objectiveId={objectiveRoute?.params.objectiveId ?? ''} snapshot={snapshot} /> : objective ? <StaticObjectiveDetail key={objective.id} objective={objective} snapshot={snapshot} /> : <div className="eid-empty"><h1>{list.notFound}</h1><p>{list.notFoundNote}</p><Link to="/objectives">{list.backToObjectives}</Link></div>)}
       {pathname === '/requests' && adapter.mode === 'runtime' && <RuntimeRequests adapter={adapter} key={snapshot.connection?.ownerScope ?? snapshot.connection?.scope} snapshot={snapshot} />}

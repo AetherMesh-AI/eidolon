@@ -14,6 +14,14 @@ function LanguageControl() {
   return <button onClick={() => void setLocale('en')}>Use English</button>
 }
 
+it.each(['/activity', '/requests'])('gives secondary organization pages one navigable title (%s)', route => {
+  const snapshot = demoSnapshot()
+  const adapter = { mode: 'prototype' as const, getSnapshot: () => snapshot, subscribe: () => () => undefined }
+  render(<I18nProvider configClient={null} initialLocale="en"><MemoryRouter initialEntries={[route]}><OrganizationWorkspace adapter={adapter} /></MemoryRouter></I18nProvider>)
+  expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
+  expect(screen.getByRole('heading', { level: 1, name: route === '/requests' ? 'Needs You' : 'Organization activity' })).toBeTruthy()
+})
+
 it.each(['en', 'ja', 'zh', 'zh-hant', 'ar', 'ru'] as const)('localizes objective navigation without changing records or filters (%s)', locale => {
   const snapshot = demoSnapshot()
   const source = snapshot.objectives[0]

@@ -20,6 +20,13 @@ it.each(['ja', 'zh', 'zh-hant', 'ar', 'ru'] as const)('supplies localized home, 
     expect(copy.organizationHome.health.states[state]).not.toBe(english.organizationHome.health.states[state])
   }
 
+  for (const key of ['executive', 'manager', 'worker', 'owner', 'memory', 'history', 'openQuestions', 'memoryNote', 'contextUnavailable'] as const) {
+    expect(copy.organizationRoster[key]).not.toBe(english.organizationRoster[key])
+  }
+
+  expect(copy.organizationWork.requester).not.toBe(english.organizationWork.requester)
+  expect(copy.organizationWork.notRecorded).not.toBe(english.organizationWork.notRecorded)
+
   const owner = 'مالك / Avery 佐藤'
   const organization = 'Research & 開発'
   expect(copy.organizationMetadata.savedNames(organization, owner)).toContain(organization)

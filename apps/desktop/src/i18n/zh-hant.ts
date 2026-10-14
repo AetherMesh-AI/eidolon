@@ -1,5 +1,6 @@
 import { defineFieldCopy } from '@/app/settings/field-copy'
 
+import { customEndpointsZhHant } from './custom-endpoints'
 import { defineLocale } from './define-locale'
 import { organizationConversationsZhHant } from './organization-conversations'
 import { organizationWorkspaceZhHant } from './organization-home'
@@ -14,6 +15,7 @@ import { organizationSurfacesZhHant } from './organization-surfaces'
 import { organizationWorkZhHant } from './organization-work'
 
 export const zhHant = defineLocale({
+  customEndpoints: customEndpointsZhHant,
   organizationMetadata: organizationMetadataZhHant,
   organizationSurfaces: organizationSurfacesZhHant,
   organizationHome: { ...organizationOverviewZhHant, ...organizationExecutiveMessageZhHant, memberMessages: organizationMemberMessagesZhHant, workspace: organizationWorkspaceZhHant, detail: { ...organizationObjectiveDetailZhHant, ...organizationHomeCountsZhHant } },
@@ -430,7 +432,7 @@ export const zhHant = defineLocale({
       providers: '提供方',
       providerAccounts: '帳號',
       providerApiKeys: 'API 金鑰',
-      providerCustomEndpoints: '自訂端點',
+      providerCustomEndpoints: customEndpointsZhHant.heading,
       providerLocalModels: '本地模型',
       gateway: '閘道',
       apiKeys: '工具與金鑰',
@@ -448,6 +450,16 @@ export const zhHant = defineLocale({
       intro: '原生桌面通知，與應用程式內提示不同。設定會依裝置保存，每台電腦各自獨立。',
       enableAll: '啟用通知',
       enableAllDesc: '關閉後靜音下方所有通知。',
+      overviewDescriptions: {
+        enabled: "此裝置的系統通知",
+        approval: "核准或拒絕命令",
+        input: "需要回答或密鑰",
+        turnDone: "應用程式在背景時提醒",
+        turnError: "背景回合錯誤",
+        backgroundDone: "終端命令已完成",
+        credits: "存取暫停或恢復",
+        plugin: "背景外掛提醒"
+      },
       focusedHint: '完成提醒僅在 Eidolon 位於背景時觸發。',
       kinds: {
         approval: {

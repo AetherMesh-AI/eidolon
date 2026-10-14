@@ -23,6 +23,7 @@ test.afterEach(async () => {
     const currentReadiness = await fixture.page.evaluate(() => (window as any).__settingsEditorReadiness ?? [])
     await test.info().attach('settings-editor-readiness', { body: JSON.stringify(initialEditorReadiness.length ? initialEditorReadiness : currentReadiness, null, 2), contentType: 'application/json' })
   }
+
   await fixture?.cleanup()
   fixture = undefined
   initialEditorReadiness = []
@@ -35,11 +36,16 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
   const { app, page, mock, sandbox } = fixture
   await app.evaluate(() => {
     const rows: any[] = []
+
     ;(globalThis as any).__settingsConfigRequests = rows
     // Observe real Node HTTP requests without replacing IPC, responses or routing.
     process.getBuiltinModule('diagnostics_channel').channel('http.client.request.start').subscribe(({ request }: any) => {
       const url = new URL(request.path, 'http://127.0.0.1')
-      if (!['/api/config', '/api/config/schema', '/api/model/info', '/api/model/options', '/api/model/auxiliary', '/api/model/moa'].includes(url.pathname)) return
+
+      if (!['/api/config', '/api/config/schema', '/api/model/info', '/api/model/options', '/api/model/auxiliary', '/api/model/moa'].includes(url.pathname)) {
+        return
+      }
+
       const row: any = { path: url.pathname, profile: url.searchParams.get('profile'), method: request.method, startedAt: Date.now() }
       rows.push(row)
       request.once('response', (response: any) => {
@@ -51,18 +57,24 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
   })
   await page.evaluate(() => {
     const rows: object[] = []
+
     ;(window as any).__settingsEditorReadiness = rows
     let previous = ''
+
     const record = () => {
       const root = document.querySelector('.eid-settings-page')
+
       const state = {
         mounted: !!root,
         skeletons: root?.querySelectorAll('[data-slot=skeleton]').length ?? 0,
         applyPresent: [...(root?.querySelectorAll('button') ?? [])].some(button => button.textContent?.trim() === 'Apply')
       }
+
       const key = JSON.stringify(state)
+
       if (key !== previous) { rows.push({ at: Date.now(), ...state }); previous = key }
     }
+
     new MutationObserver(record).observe(document.body, { childList: true, subtree: true })
     record()
   })
@@ -89,6 +101,11 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
   }
 
   async function capture(name: string, nativeWindow = false) {
+    // Matched review images are neutral-focus; keyboard checks retain their own evidence.
+    if (name.startsWith('reference-')) {
+      await page.evaluate(() => { if (document.activeElement instanceof HTMLElement) {document.activeElement.blur()} })
+    }
+
     await expect(settings.locator('[data-slot="skeleton"]')).toHaveCount(0)
     await page.evaluate(async () => {
       await document.fonts.ready
@@ -122,16 +139,26 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
     // Page screenshots crop Electron content at non-default zoom. Retain the
     // full native surface, and verify pixel dimensions rather than trusting DPR.
     const viewport = await page.evaluate(() => ({ width: innerWidth, height: innerHeight, devicePixelRatio }))
+
     const bytes = nativeWindow
       ? Buffer.from(await app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
       : await page.screenshot({ path: test.info().outputPath(`${name}.png`), animations: 'disabled', caret: 'hide' })
+
     const pixelSize = { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) }
+
     if (nativeWindow) {
       expect(pixelSize).toEqual({ width: viewport.width * viewport.devicePixelRatio, height: viewport.height * viewport.devicePixelRatio })
       writeFileSync(test.info().outputPath(`${name}.png`), bytes)
     }
 
+    const overviewCards = name.startsWith('reference-settings-overview')
+      ? await settings.locator('.eid-settings-cards > section').evaluateAll(elements => elements.map(element => ({
+          label: element.getAttribute('aria-label'), ...element.getBoundingClientRect().toJSON()
+        })))
+      : undefined
+
     captures.push({
+      overviewCards,
       name,
       sha256: createHash('sha256').update(bytes).digest('hex'),
       route: page.url(),
@@ -166,8 +193,17 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
   const cards = await settings.locator('.eid-settings-card-editor').evaluateAll(elements => elements.map(element => element.getBoundingClientRect().toJSON()))
   expect(Math.abs(cards[0].top - cards[1].top)).toBeLessThanOrEqual(1)
   expect(cards[1].left).toBeGreaterThan(cards[0].right)
-  // Overview content uses the page scroller, with secondary controls disclosed
-  // explicitly. All notification kinds remain directly reachable.
+  // Reference first-row height is about 295px. Keep the real controls within a
+  // small content allowance, preserving controls and their focus outlines.
+  expect(Math.max(...cards.map(card => card.height))).toBeLessThanOrEqual(300)
+  const middleCards = await settings.locator('.eid-settings-cards > :is([data-section="config:workspace"], [data-section="config:safety"])').evaluateAll(elements => elements.map(element => element.getBoundingClientRect().toJSON()))
+  expect(middleCards).toHaveLength(2)
+  expect(middleCards.every(card => card.height >= 275 && card.height <= 285)).toBe(true)
+  expect(Math.abs(middleCards[0].top - middleCards[1].top)).toBeLessThanOrEqual(1)
+  const bottomCards = await settings.locator('.eid-settings-cards > :is([data-section="providers"], [data-section="config:appearance"])').evaluateAll(elements => elements.map(element => element.getBoundingClientRect().toJSON()))
+  expect(bottomCards.every(card => card.top > middleCards[0].bottom && card.bottom <= 915)).toBe(true)
+  // The page owns overview scrolling, with a bounded notification list preserving
+  // one switch column. Secondary editors retain their native disclosures.
   const advancedModel = settings.locator('.eid-settings-model-advanced')
   await expect(advancedModel).not.toHaveAttribute('open', '')
   const advancedSummary = advancedModel.locator('summary')
@@ -188,19 +224,42 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
   await parameters.locator('summary').focus()
   await page.keyboard.press('Enter')
   await expect(parameters).not.toHaveAttribute('open', '')
+
   const nestedScrollers = await settings.locator('.eid-settings-card-body .settings-content > div').evaluateAll(elements =>
     elements.filter(element => element.scrollHeight > element.clientHeight + 1).length)
+
   expect(nestedScrollers).toBe(0)
   await expect(settings.getByRole('button', { name: 'Open Appearance', exact: true })).toBeInViewport({ ratio: 1 })
   await capture('reference-settings-overview')
   const notifications = settings.locator('.eid-settings-cards').getByRole('region', { name: 'Notifications', exact: true })
   await expect(notifications.getByRole('switch')).toHaveCount(8)
+  await expect(notifications.locator('.eid-settings-toggle-description')).toHaveCount(0)
+  await expect(notifications.getByText('Device-level OS alerts', { exact: true })).toBeVisible()
+  await expect(notifications.getByRole('switch', { name: 'Enable notifications', exact: true })).toHaveAttribute('aria-description', 'OS notifications (not in-app toasts). Per device. Off silences every notification below.')
+  const approvalSwitch = notifications.getByRole('switch', { name: 'Approval needed', exact: true })
+  const beforeApproval = await approvalSwitch.getAttribute('aria-checked')
+  focusChecks.push(await verifyKeyboardFocus(page, notifications.getByRole('switch', { name: 'Enable notifications', exact: true }), 'overview notification scope switch'))
+  focusChecks.push(await verifyKeyboardFocus(page, approvalSwitch, 'overview notification explanation and switch'))
+  await expect(notifications.getByText('Approve or reject a command', { exact: true })).toBeVisible()
+  await expect(approvalSwitch).toHaveAttribute('aria-description', 'A command is waiting for you to approve or reject it.')
+  await expect(approvalSwitch).toHaveAttribute('aria-checked', beforeApproval!)
+  const notificationRows = await notifications.locator('.settings-row:has([role="switch"]) > div').evaluateAll(rows => rows.map(row => row.getBoundingClientRect().height))
+  expect(notificationRows.every(height => height >= 34 && height <= 38)).toBe(true)
+  const switchRects = await notifications.getByRole('switch').evaluateAll(elements => elements.map(element => element.getBoundingClientRect().toJSON()))
+  expect(Math.max(...switchRects.map(rect => rect.right)) - Math.min(...switchRects.map(rect => rect.right))).toBeLessThanOrEqual(1)
+  expect(switchRects.every((rect, index) => index === 0 || rect.top > switchRects[index - 1].bottom)).toBe(true)
+  const notificationList = notifications.locator('.eid-settings-notification-kinds')
+  expect(await notificationList.evaluate(element => element.scrollHeight > element.clientHeight + 1)).toBe(true)
+  focusChecks.push(await verifyKeyboardFocus(page, notifications.getByRole('switch').last(), 'overview final notification kind in scroll list'))
   await expect(notifications.getByRole('switch').last()).toBeInViewport()
   const enabled = notifications.getByRole('switch').first()
   const beforeConfig = readFileSync(configPath, 'utf8')
   const beforeEnabled = await enabled.getAttribute('aria-checked')
   await enabled.click()
   await expect(enabled).toHaveAttribute('aria-checked', beforeEnabled === 'true' ? 'false' : 'true')
+  await expect(approvalSwitch).toBeDisabled()
+  await expect(notifications.getByText('Approve or reject a command', { exact: true })).toBeVisible()
+  await expect(approvalSwitch).toHaveAttribute('aria-description', 'A command is waiting for you to approve or reject it.')
   expect(readFileSync(configPath, 'utf8')).toBe(beforeConfig)
   await enabled.click()
   await expect(enabled).toHaveAttribute('aria-checked', beforeEnabled!)
@@ -392,3 +451,67 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
 
   expect(mock.receivedPrompts).toHaveLength(0)
 })
+
+for (const locale of ['ja', 'ar', 'ru'] as const) {
+  test(`keeps the Settings notification list keyboard reachable in ${locale} at normal and 200 percent zoom`, async () => {
+    fixture = await setupMockBackend({ extraDisplayConfig: `  language: ${locale}` })
+    const { app, page, mock } = fixture
+    await waitForAppReady(fixture)
+    await expect(page.locator('html')).toHaveAttribute('lang', locale)
+    await expect(page.locator('html')).toHaveAttribute('dir', locale === 'ar' ? 'rtl' : 'ltr')
+    await page.evaluate(() => { window.location.hash = '/settings' })
+    const settings = page.locator('.eid-settings-page')
+    const notifications = settings.locator('.eid-settings-cards > [data-section="notifications"]')
+    const switches = notifications.getByRole('switch')
+    await expect(switches).toHaveCount(8)
+    const before = await switches.evaluateAll(elements => elements.map(element => element.getAttribute('aria-checked')))
+    const captures: object[] = []
+    const focusChecks: object[] = []
+    const thumbChecks: object[] = []
+
+    for (const zoom of [100, 200]) {
+      await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1280, 720))
+      await page.evaluate(percent => (window as any).hermesDesktop.zoom.setPercent(percent), zoom)
+      await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(zoom / 100)
+      await switches.first().focus()
+      for (let index = 0; index < 8; index++) {
+        if (index > 0) { await page.keyboard.press('Tab') }
+        const target = switches.nth(index)
+        await expect(target).toBeFocused()
+        await expect(target).toHaveAttribute('aria-description', /\S/)
+        focusChecks.push(await verifyKeyboardFocus(page, target, `notification ${locale} ${zoom} ${index}`))
+        const track = await target.boundingBox()
+        const thumb = await target.locator('[data-slot="switch-thumb"]').boundingBox()
+        expect(track).not.toBeNull()
+        expect(thumb).not.toBeNull()
+        expect(thumb!.x).toBeGreaterThanOrEqual(track!.x)
+        expect(thumb!.x + thumb!.width).toBeLessThanOrEqual(track!.x + track!.width)
+        expect(thumb!.y).toBeGreaterThanOrEqual(track!.y)
+        expect(thumb!.y + thumb!.height).toBeLessThanOrEqual(track!.y + track!.height)
+        thumbChecks.push({ locale, zoom, index, track, thumb })
+        await expect(target).toBeInViewport({ ratio: 1 })
+      }
+      const list = notifications.locator('.eid-settings-notification-kinds')
+      expect(await list.evaluate(element => element.scrollTop)).toBeGreaterThan(0)
+      expect(await settings.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
+      const rects = await switches.evaluateAll(elements => elements.map(element => element.getBoundingClientRect().toJSON()))
+      expect(Math.max(...rects.map(rect => rect.right)) - Math.min(...rects.map(rect => rect.right))).toBeLessThanOrEqual(1)
+      expect(rects.every((rect, index) => index === 0 || rect.top > rects[index - 1].bottom)).toBe(true)
+      expect(await switches.evaluateAll(elements => elements.map(element => element.getAttribute('aria-checked')))).toEqual(before)
+      const viewport = await page.evaluate(() => ({ width: innerWidth, height: innerHeight, devicePixelRatio }))
+      const bytes = Buffer.from(await app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
+      const pixelSize = { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) }
+      expect(pixelSize).toEqual({ width: viewport.width * viewport.devicePixelRatio, height: viewport.height * viewport.devicePixelRatio })
+      const name = `settings-notifications-${locale}-${zoom}.png`
+      writeFileSync(test.info().outputPath(name), bytes)
+      captures.push({ name, locale, zoom, viewport, pixelSize, sha256: createHash('sha256').update(bytes).digest('hex') })
+    }
+    expect(mock.receivedPrompts).toHaveLength(0)
+    writeFileSync(test.info().outputPath('settings-notification-focus-evidence.json'), JSON.stringify({
+      sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+      sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
+      scenario: 'synthetic-settings-notification-keyboard', locale, providerCalls: mock.receivedPrompts.length,
+      captures, focusChecks, thumbChecks
+    }, null, 2))
+  })
+}

@@ -1,8 +1,10 @@
+import { customEndpointsAr } from './custom-endpoints'
 import { defineLocale } from './define-locale'
 import { organizationConversationsAr } from './organization-conversations'
 import { organizationDispatchAr } from './organization-dispatch-copy'
 import { organizationWorkspaceAr } from './organization-home'
 import { organizationHomeCountsAr } from './organization-home-counts'
+import { organizationIdentityAr } from './organization-identity-copy'
 import { organizationExecutiveMessageAr, organizationMemberMessagesAr } from './organization-member-messages'
 import { organizationMetadataAr } from './organization-metadata'
 import { organizationObjectiveDetailAr } from './organization-objective-detail'
@@ -11,8 +13,11 @@ import { organizationOwnerChatAr } from './organization-owner-chat'
 import { organizationSurfacesAr } from './organization-surfaces'
 
 export const ar = defineLocale({
+  customEndpoints: customEndpointsAr,
   organizationMetadata: organizationMetadataAr,
   organizationWork: {
+    requester: 'مقدّم الطلب',
+    notRecorded: 'غير مسجّل',
     ...organizationDispatchAr,
     objectives: 'الأهداف',
     work: 'العمل',
@@ -30,7 +35,7 @@ export const ar = defineLocale({
     observationUnconfigured: 'لم تتم تهيئة تنفيذ المؤسسة.',
     observationUnsupported: 'لا تدعم هذه الخدمة عرض حالة المؤسسة.',
   },
-  organizationRoster: { objectiveExecutive: "المالك التنفيذي", objectiveManager: "المدير المسؤول" },
+  organizationRoster: { ...organizationIdentityAr, objectiveExecutive: "المالك التنفيذي", objectiveManager: "المدير المسؤول" },
   organizationSurfaces: organizationSurfacesAr,
   organizationHome: { ...organizationOverviewAr, ...organizationExecutiveMessageAr, memberMessages: organizationMemberMessagesAr, workspace: organizationWorkspaceAr, detail: { ...organizationObjectiveDetailAr, ...organizationHomeCountsAr } },
   organizationOwnerChat: organizationOwnerChatAr,
@@ -394,6 +399,7 @@ export const ar = defineLocale({
       providers: 'المزودون',
       providerAccounts: 'الحسابات',
       providerApiKeys: 'مفاتيح API',
+      providerCustomEndpoints: customEndpointsAr.heading,
       gateway: 'البوابة',
       apiKeys: 'الأدوات والمفاتيح',
       keysTools: 'الأدوات',
@@ -425,6 +431,16 @@ export const ar = defineLocale({
         'إشعارات سطح المكتب الأصلية، منفصلة عن التنبيهات داخل التطبيق. هذه محلية على الجهاز — كل حاسوب يحتفظ بإعداداته الخاصة.',
       enableAll: 'تفعيل الإشعارات',
       enableAllDesc: 'إيقافه يصمت كل الإشعارات أدناه.',
+      overviewDescriptions: {
+        enabled: "إشعارات نظام هذا الجهاز",
+        approval: "قبول أمر أو رفضه",
+        input: "يلزم جواب أو سر",
+        turnDone: "عندما يعمل التطبيق بالخلفية",
+        turnError: "أخطاء الأدوار في الخلفية",
+        backgroundDone: "اكتمل أمر الطرفية",
+        credits: "تعليق الوصول أو استعادته",
+        plugin: "تنبيهات الإضافات بالخلفية"
+      },
       focusedHint: 'تنبيهات الاكتمال تظهر فقط عندما يكون Eidolon في الخلفية.',
       kinds: {
         approval: {

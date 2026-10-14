@@ -67,6 +67,7 @@ function OwnerChatTranscript({ thread, sendRevision, workspace }: { thread: Owne
               }}
               tabIndex={-1}
             >
+              {workspace && message.role !== 'owner' && <div aria-hidden="true" className="eid-owner-chat-message-avatar"><AgentAvatar name={thread.recipient.name} /></div>}
               <div className="eid-owner-chat-message-meta">
                 <bdi>{message.role === 'owner' ? copy.you : thread.recipient.name}</bdi>
                 <LocalizedTime value={message.createdAt} />
@@ -197,7 +198,7 @@ function OwnerChatPanel({
               {thread.budget.tokensReserved} / {thread.budget.maxTokens}
             </p>
             {!workspace && <p className="eid-note">{copy.budgetNote}</p>}
-            {renewalIntent && busy !== 'renew' && <p role="status">{copy.renewUncertain}</p>}
+            {!workspace && renewalIntent && busy !== 'renew' && <p role="status">{copy.renewUncertain}</p>}
             {thread.renewal && adapter.renewOwnerChat && (
               <Button
                 disabled={!ready || !!busy || inactive || (!renewalIntent && (!verified || !thread.renewal.canRenew))}
@@ -329,6 +330,7 @@ function OwnerChatPanel({
       {draft?.intent && busy !== 'send' && <p role="status">{copy.uncertain}</p>}
       {changed && <p role="status">{copy.changed}</p>}
       {cancelUncertain && <p role="status">{copy.cancelUncertain}</p>}
+      {workspace && renewalIntent && busy !== 'renew' && <p role="status">{copy.renewUncertain}</p>}
       {(!workspace || !error) && recoveryActions}
       {inactive ? (
         <p role="status">{copy.readOnly}</p>
@@ -342,7 +344,12 @@ function OwnerChatPanel({
           event.currentTarget.scrollIntoView({ block: 'center', inline: 'nearest' })
         }
       }}>
-      {workspace && allowance}
+      {workspace && <details className="eid-owner-chat-compose-details">
+        <summary>{copy.composeDetails}</summary>
+        {allowance}
+        {latest && <p className="eid-note eid-owner-chat-reply-context" dir="auto">{copy.replyingTo}: {latest.text.slice(0, 100)}</p>}
+        <p className="eid-note" id={`owner-limit-${agent.identityId}`}>{copy.limits}: {length} / {limit}</p>
+      </details>}
       <form
         aria-label={copy.message}
         className="eid-owner-chat-composer"
@@ -354,12 +361,8 @@ function OwnerChatPanel({
           }
         }}
       >
-        <label htmlFor={`owner-message-${agent.identityId}`}>{copy.message}</label>
-        {latest && (
-          workspace ? <details className="eid-owner-chat-reply-context"><summary>{copy.replyingTo}</summary><p className="eid-note" dir="auto">{latest.text.slice(0, 100)}</p></details> : <p className="eid-note">
-            {copy.replyingTo}: {latest.text.slice(0, 100)}
-          </p>
-        )}
+        <label className={workspace ? 'sr-only' : undefined} htmlFor={`owner-message-${agent.identityId}`}>{copy.message}</label>
+        {!workspace && latest && <p className="eid-note">{copy.replyingTo}: {latest.text.slice(0, 100)}</p>}
         <Textarea
           aria-describedby={`owner-limit-${agent.identityId}`}
           dir="auto"
@@ -385,14 +388,14 @@ function OwnerChatPanel({
           }}
           placeholder={copy.placeholder}
           readOnly={busy === 'send' || !!draft?.intent}
-          rows={workspace ? 2 : 3}
+          rows={workspace ? 1 : 3}
           value={text}
         />
         {workspace && thread && <p className="eid-note eid-owner-chat-charge">{copy.providerUsage}</p>}
         <div className="eid-owner-chat-actions">
-          <span className="eid-note" id={`owner-limit-${agent.identityId}`}>
+          {!workspace && <span className="eid-note" id={`owner-limit-${agent.identityId}`}>
             {copy.limits}: {length} / {limit}
-          </span>
+          </span>}
           {thread?.activeTurnId ? (
             <Button
               disabled={!ready || busy === 'send' || busy === 'cancel'}
@@ -447,8 +450,13 @@ export function OrganizationOwnerChat({
     return null
   }
 
-  const role = agent.role === 'Executive' ? t.organizationRoster.executive
-    : agent.role === 'Manager' ? t.organizationRoster.manager : t.organizationRoster.worker
+  const roles: Record<string, string> = {
+    Executive: t.organizationRoster.executive,
+    Manager: t.organizationRoster.manager,
+    Worker: t.organizationRoster.worker
+  }
+
+  const role = roles[agent.role] ?? agent.role
 
   return (
     <section aria-label={copy.heading} className="eid-owner-chat">

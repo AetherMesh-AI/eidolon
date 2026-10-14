@@ -1,18 +1,22 @@
 .eid-workspace-shell { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; overflow: clip; }
 .eid-workspace-body { flex: 1; min-height: 0; min-width: 0; position: relative; overflow: auto; }
-.eid-workspace-header { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; min-height: 30px; padding: 5px 18px; background: var(--ui-bg-secondary); border-bottom: 1px solid var(--ui-stroke-tertiary); }
+.eid-workspace-header { --eid-header-right-inset: max(18px, var(--titlebar-tools-right, 18px), var(--pane-native-controls-right, 0px)); flex: none; display: grid; grid-template-columns: minmax(410px, 1fr) minmax(160px, 380px) minmax(112px, auto); align-items: center; gap: 16px; min-height: 65px; padding: 10px var(--eid-header-right-inset) 10px max(22px, var(--pane-native-controls-left, 0px)); background: var(--ui-bg-secondary); border-bottom: 1px solid var(--ui-stroke-tertiary); -webkit-app-region: drag; }
+.eid-workspace-header :is(button, a, input, [data-slot=connection-switcher]) { -webkit-app-region: no-drag; }
+.eid-workspace-search-trigger { width: 100%; justify-content: flex-start; min-width: 0; white-space: normal; text-align: start; }
 .eid-workspace-identity, .eid-workspace-actions { display: flex; align-items: center; min-width: 0; gap: 8px; }
 .eid-workspace-identity { flex: 1 1 auto; flex-wrap: wrap; row-gap: 6px; }
-.eid-workspace-actions { flex: 0 0 auto; justify-content: flex-end; }
+/* Keep the wide search near the reference's trailing edge while native controls
+   share the right-side reservation. Long real owner names can still reflow. */
+.eid-workspace-actions { flex: 0 0 auto; justify-content: flex-end; min-width: max(112px, calc(253px - var(--eid-header-right-inset))); }
+.eid-workspace-header .eid-workspace-actions > button[data-size=lg] { padding-inline: 4px; }
+.eid-workspace-header .eid-workspace-profile-trigger { padding-inline: 8px; }
 /* Reflow complete identity labels instead of shrinking them into ambiguous fragments. */
-.eid-workspace-identity > button { flex: 0 1 auto; min-width: 28px; max-width: 100%; height: auto; white-space: normal; }
-.eid-workspace-identity > button > span { min-width: 0; }
-.eid-workspace-identity > button > span { overflow-wrap: anywhere; }
+.eid-workspace-identity > button[data-size=lg], .eid-workspace-actions > button[data-size=lg] { flex: 0 1 auto; min-width: 28px; max-width: 100%; height: auto; white-space: normal; }
+.eid-workspace-identity > button[data-size=lg] > span, .eid-workspace-actions > button[data-size=lg] > span { min-width: 0; }
+.eid-workspace-identity > button[data-size=lg] > span, .eid-workspace-actions > button[data-size=lg] > span { overflow-wrap: anywhere; }
 .eid-workspace-connection { color: var(--ui-text-secondary); font-size: 11px; }
 .eidolon.eid-workspace-header :is(button, a):focus-visible, .eid-workspace-search :is(button, a, input):focus-visible, .eid-owner-editor :is(button, a, input):focus-visible { outline: 3px solid var(--ui-accent); outline-offset: 2px; transition-property: color, background-color, border-color, box-shadow; }
-/* Five-pixel block padding contains the outline; an 18px identity line keeps the single row at 30px. */
-.eidolon.eid-workspace-header { line-height: 18px; }
-.eidolon.eid-workspace-header button { line-height: 18px; padding-block: 0; }
+
 .eid-workspace-search-results { min-height: 0; max-height: 60vh; overflow: auto; padding: 6px; overflow-wrap: anywhere; }
 .eid-workspace-search-results ul { list-style: none; margin: 0; padding: 0; }
 .eid-workspace-search-results li > :is(a, button) { display: flex; flex-direction: column; align-items: flex-start; width: 100%; white-space: normal; height: auto; gap: 3px; margin-block: 6px; }
@@ -32,8 +36,13 @@
   .eid-workspace-body .eid-objective-overview { margin-top: 6px; }
   .eid-workspace-body .eid-home > .eid-home-hero { min-height: 80px; padding-block: 2px; }
 }
-@media (max-width: 900px) {
-  .eid-workspace-header { gap: 6px; padding-inline: 8px; }
+@media (max-width: 1200px) {
+  /* Share the available width across complete labels, rather than letting an
+     auto account column reduce the organization name to a character per line. */
+  .eid-workspace-header { display: flex; flex-wrap: wrap; gap: 6px; min-height: 34px; padding: 5px max(8px, var(--titlebar-tools-right, 8px), var(--pane-native-controls-right, 0px)) 5px max(8px, var(--pane-native-controls-left, 0px)); }
+  .eid-workspace-identity, .eid-workspace-actions { display: contents; min-width: 0; }
+  .eidolon.eid-workspace-header button:not([data-size=icon]) { min-height: 18px; height: auto; line-height: 18px; padding: 0 4px; font-size: 11px; max-width: 100%; }
+  .eid-workspace-search-trigger { width: auto; }
   .eid-workspace-action-label, .eid-workspace-connection { display: none; }
 
 }
@@ -51,5 +60,24 @@
 .eid-owner-editor p { overflow-wrap: anywhere; }
 .eid-owner-editor .eid-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 .eid-workspace-organization-name { max-width: 100%; overflow-wrap: anywhere; }
+.eid-workspace-organization-copy { display: flex; flex-direction: column; align-items: flex-start; text-align: start; gap: 2px; line-height: 16px; }
+.eid-workspace-header .eid-workspace-organization-trigger { padding: 4px 10px; }
+.eid-workspace-organization-copy small { color: var(--ui-text-secondary); font-size: 10px; font-weight: 400; }
+.eid-workspace-organization-name { font-weight: 600; }
+.eid-workspace-organization-monogram { display: grid; place-items: center; flex: none; width: 32px; height: 32px; border-radius: 7px; border: 1px solid var(--ui-stroke-tertiary); background: var(--ui-bg-tertiary); color: var(--ui-text-primary); font-size: 11px; font-weight: 600; }
+.eid-workspace-header button { border-radius: 7px; }
+.eid-workspace-header .eid-workspace-search-trigger { min-height: 36px; }
+@media (max-width: 1200px) {
+  .eid-workspace-organization-copy { display: contents; }
+  .eid-workspace-organization-copy small, .eid-workspace-organization-monogram { display: none; }
+  .eid-workspace-header .eid-workspace-search-trigger { min-height: 18px; }
+}
 
 .eid-owner-editor button { transition-property: color, background-color, border-color, box-shadow; }
+
+/* Registered plugin contributions retain their own strip. The organization
+   header owns dragging when that strip is empty; native controls keep clearance. */
+[data-contrib-shell]:has(.eid-workspace-header) > [data-slot=contrib-titlebar]:not(:has([data-titlebar-contribution])) { display: none; }
+.eid-rail .eid-brand { padding-top: max(31px, var(--organization-native-top-clearance, 0px)); padding-bottom: 18px; -webkit-app-region: drag; }
+.eid-rail nav a { min-height: 44px; }
+.eidolon :is(h1, h2) { font-weight: 600; }

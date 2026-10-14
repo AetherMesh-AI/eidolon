@@ -83,7 +83,20 @@ assert s.snapshot()['objectives']==[]
   await waitForAppReady(fixture)
   await page.evaluate(value => { location.hash = `/objectives/${value}` }, id)
   const form = page.getByRole('region', { name: 'Objective priority', exact: true })
-  await expect(form.getByText('Current priority: P5 · Priority revision: 0', { exact: true })).toBeVisible()
+
+  async function expectPriority(priority: string, revision: number) {
+    await expect(form.getByText(`Current priority: ${priority}`, { exact: true })).toBeVisible()
+    const details = form.locator('details')
+    await details.locator('summary').focus()
+    await page.keyboard.press('Enter')
+    await expect(details).toHaveAttribute('open', '')
+    await expect(details.getByText(`Priority revision: ${revision}`, { exact: true })).toBeVisible()
+    await details.locator('summary').focus()
+    await page.keyboard.press('Enter')
+    await expect(details).not.toHaveAttribute('open', '')
+  }
+
+  await expectPriority('P5', 0)
   expect(changes).toHaveLength(0)
   await form.getByRole('combobox', { name: 'New priority' }).selectOption('P1')
   const phase = page.getByRole('region', { name: 'Current phase', exact: true })
@@ -93,10 +106,10 @@ assert s.snapshot()['objectives']==[]
   const capture = await page.screenshot({ path: testInfo.outputPath('objective-priority-keyboard.png') })
   await page.keyboard.press('Enter')
   await expect(form.getByText('Saved P5 → P1 (revision 1).', { exact: true })).toBeVisible()
-  await expect(form.getByText('Current priority: P1 · Priority revision: 1', { exact: true })).toBeVisible()
+  await expectPriority('P1', 1)
   await page.reload()
   // Reload retains the objective route, whose ready state has no chat composer.
-  await expect(form.getByText('Current priority: P1 · Priority revision: 1', { exact: true })).toBeVisible()
+  await expectPriority('P1', 1)
   await form.getByRole('combobox', { name: 'New priority' }).selectOption('P4')
   await form.getByRole('button', { name: 'Save priority', exact: true }).click()
   await expect(form.getByText('Saved P1 → P4 (revision 2).', { exact: true })).toBeVisible()

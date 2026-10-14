@@ -93,6 +93,49 @@ async function fixture(initialRevision = 0, historyRoute = false, locale: 'en' |
 const select = (priority: string) => fireEvent.change(screen.getByRole('combobox', { name: 'New priority' }), { target: { value: priority } })
 const calls = (request: ReturnType<typeof vi.fn>) => request.mock.calls.filter(call => call[0] === 'organization.changePriority')
 
+it('shows the authoritative revision after an external edit without replacing a retained retry', async () => {
+  const f = await fixture(1)
+  await f.external('P1', 1)
+  f.intercept(async () => { throw new Error('Save outcome unknown') })
+  select('P3')
+  fireEvent.click(screen.getByRole('button', { name: 'Save priority' }))
+  await screen.findByRole('alert')
+  const original = structuredClone(calls(f.request)[0][1])
+  await f.external('P2', 2)
+  expect(screen.getByText('Current priority: P2')).toBeTruthy()
+  fireEvent.click(screen.getByText('Priority details'))
+  expect(screen.getByText('Priority revision: 2')).toBeTruthy()
+  expect(screen.getByText('Expected revision for save: 1')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Retry priority save' }))
+  await waitFor(() => expect(calls(f.request)).toHaveLength(2))
+  expect(calls(f.request).map(call => call[1])).toEqual([original, original])
+  expect(original).toMatchObject({ priority: 'P3', expectedRevision: 1 })
+})
+
+it('keeps current priority revision inspectable on terminal and unsupported read-only records', async () => {
+  const f = await fixture()
+  const snapshot = f.adapter.getSnapshot()
+  f.rendered.unmount()
+
+  for (const state of [
+    { status: 'completed', priorityRevision: 7, supported: true },
+    { status: 'planning', priorityRevision: 8, supported: false },
+    { status: 'planning', priorityRevision: 100, supported: true },
+    { status: 'planning', priorityRevision: undefined, supported: false }
+  ] as const) {
+    const objective = { ...snapshot.objectives[0], priority: 'P2' as const, status: state.status, priorityRevision: state.priorityRevision }
+    const ui = render(<I18nProvider configClient={null} initialLocale="en"><RuntimePriority adapter={{ ...f.adapter, changePriority: state.supported ? f.adapter.changePriority : undefined }} objective={objective} snapshot={snapshot} /></I18nProvider>)
+    expect(screen.getByText('Current priority: P2')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Save priority' })).toBeNull()
+    expect(screen.queryByRole('combobox', { name: 'New priority' })).toBeNull()
+    fireEvent.click(screen.getByText('Priority details'))
+    expect(screen.getByText(`Priority revision: ${state.priorityRevision ?? 'Not recorded'}`)).toBeTruthy()
+    expect(screen.queryByText(/Expected revision for save:/)).toBeNull()
+    expect(calls(f.request)).toHaveLength(0)
+    ui.unmount()
+  }
+})
+
 it('keeps the priority draft and exact recovery beside the reported phase when explanatory details close', async () => {
   const f = await fixture(0, true)
   const phase = screen.getByRole('region', { name: 'Current phase' })

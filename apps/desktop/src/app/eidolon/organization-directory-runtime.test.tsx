@@ -3,6 +3,8 @@ import { atom } from 'nanostores'
 import { StrictMode } from 'react'
 import { beforeEach, expect, it, vi } from 'vitest'
 
+import { I18nProvider } from '@/i18n/context'
+import { organizationDirectoryCopy } from '@/i18n/organization-directory'
 import { $connectionsRegistry, $pendingConnectionId } from '@/store/connections'
 import { $activeGatewayRoute, $gateway } from '@/store/gateway'
 import { $organizationObservationEpoch, $organizationObservationSwitching } from '@/store/organization-observation-mode'
@@ -165,6 +167,27 @@ it('mounts inspection safely in StrictMode, refreshes explicitly and restores re
   expect(screen.getByRole('option')).toBeTruthy()
   expect(request).toHaveBeenCalledTimes(1)
   ui.unmount()
+})
+
+it.each(['en', 'ja', 'zh', 'zh-hant', 'ar', 'ru'] as const)('exposes the authored organization and localized directory action in %s without changing eligibility', async locale => {
+  const label = 'Aether Research · أبحاث'
+  const action = organizationDirectoryCopy[locale].heading
+  const ui = render(<I18nProvider configClient={null} initialLocale={locale}><OrganizationDirectoryControl label={label} organizationName={label} /></I18nProvider>)
+  const trigger = screen.getByRole('button', { name: `${label} · ${action}` }) as HTMLButtonElement
+  expect(trigger.textContent).toContain(label)
+  expect(trigger.querySelector('.eid-workspace-organization-monogram')?.getAttribute('aria-hidden')).toBe('true')
+  expect(trigger.querySelector('.eid-workspace-organization-monogram')?.textContent).toBe('AR')
+  expect(trigger.disabled).toBe(false)
+  fireEvent.click(trigger)
+  expect(screen.getByRole('dialog', { name: action })).toBeTruthy()
+  expect(request).not.toHaveBeenCalled()
+  await act(async () => { $organizationObservationSwitching.set(true) })
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(trigger.disabled).toBe(true)
+  expect(request).not.toHaveBeenCalled()
+  ui.rerender(<I18nProvider configClient={null} initialLocale={locale}><OrganizationDirectoryControl /></I18nProvider>)
+  expect(screen.getByRole('button', { name: action }).querySelector('.eid-workspace-organization-monogram')?.textContent).toBe('')
+  expect(request).not.toHaveBeenCalled()
 })
 
 it('closes inspection and suppresses deferred trigger focus when a source switch begins', async () => {

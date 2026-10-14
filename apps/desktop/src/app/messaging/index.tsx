@@ -424,6 +424,7 @@ export function MessagingView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
   return (
     <PageSearchShell
       {...props}
+      heading={t.sidebar.nav.messaging}
       onSearchChange={setQuery}
       searchHidden={(platforms?.length ?? 0) === 0}
       searchHints={platforms?.slice(0, 5).map(platform => t.common.tryHint(platform.name.toLowerCase()))}
