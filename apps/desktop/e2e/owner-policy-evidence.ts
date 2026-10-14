@@ -197,6 +197,28 @@ export async function captureOwnerPolicy(
       }))
       const beforeCapture = await focusState()
       const markerPosition = await page.evaluate(ownerMarkerPosition, beforeCapture.rect)
+      if (!markerPosition) {
+        const placement = await page.evaluate(() => {
+          const selector = 'input,select,button,textarea,a[href],label,[role=checkbox],[role=button],[role=link],[role=switch],[role=combobox],[role=slider],[contenteditable=true],[tabindex]:not([tabindex="-1"])'
+          return { viewport: { width: innerWidth, height: innerHeight }, controls: [...document.querySelectorAll(selector)]
+            .filter(element => { const style = getComputedStyle(element); return style.display !== 'none' && style.visibility !== 'hidden' })
+            .map(element => ({ tag: element.tagName, role: element.getAttribute('role'), tabindex: element.getAttribute('tabindex'),
+              text: element.textContent?.slice(0, 160), rect: element.getBoundingClientRect().toJSON(),
+              parents: [...(function* () { for (let parent = element.parentElement; parent; parent = parent.parentElement) yield parent })()]
+                .map(parent => ({ tag: parent.tagName, role: parent.getAttribute('role'), rect: parent.getBoundingClientRect().toJSON(),
+                  overflowX: getComputedStyle(parent).overflowX, overflowY: getComputedStyle(parent).overflowY })) })) }
+        })
+        const failureFile = `${scenario}-${zoom}-${index + 1}-marker-placement-failure.png`
+        const encoded = await nativeWindow.evaluate(async native => (await native.webContents.capturePage()).toPNG().toString('base64'))
+        const bytes = Buffer.from(encoded, 'base64')
+        await writeFile(testInfo.outputPath(failureFile), bytes)
+        await testInfo.attach(`${scenario}-${zoom}-${target.name}-marker-placement-failure`, {
+          contentType: 'application/json', body: JSON.stringify({ scenario, zoom, target: target.name, beforeCapture, placement,
+            sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+            sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
+            file: failureFile, sha256: createHash('sha256').update(bytes).digest('hex') }, null, 2)
+        })
+      }
       expect(markerPosition, 'an empty viewport corner for the test-only causal marker').toBeTruthy()
       const nonce = randomBytes(9)
       const marker = { id: `owner-frame-${nonce.toString('hex')}`, ...markerPosition!,
