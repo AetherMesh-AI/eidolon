@@ -20,6 +20,7 @@ from agent.secret_scope import (build_profile_secret_scope, current_secret_scope
 from eidolon_constants import get_eidolon_home, reset_eidolon_home_override, set_eidolon_home_override
 from eidolon_cli.organization_config import OrganizationSettings, from_config
 from eidolon_cli.organization_store import OrganizationStore
+from eidolon_cli.organization_pacing import OrganizationPacingDeferred
 
 logger = logging.getLogger(__name__)
 Executor = Callable[[dict, dict, threading.Event], dict]
@@ -70,6 +71,7 @@ class _Running:
     error: str | None = None
     fenced: bool = False
     deferred: bool = False
+    pacing_wait: OrganizationPacingDeferred | None = None
     execution_slot: _ExecutionLock | None = None
 
 
@@ -337,6 +339,17 @@ class OrganizationService:
             self.store.fail(record.claim, reason, retryable=False)
             record.fenced = True
 
+    def _reserve_model_call(self, record, **values):
+        # Some core runtimes turn boundary exceptions into an intervention or
+        # retry. Latch a zero-call denial so neither path can later send a call.
+        if record.pacing_wait is not None:
+            raise record.pacing_wait
+        try:
+            return self.store.reserve_model_call(record.claim, **values)
+        except OrganizationPacingDeferred as wait:
+            record.pacing_wait = wait
+            raise
+
     def _work(self, record: _Running) -> None:
         try:
             request_id = str(record.claim["id"])
@@ -360,7 +373,7 @@ class OrganizationService:
                         'recordToolStart': lambda call_id, name, args: self.store.record_tool_start(record.claim, call_id, name, args),
                         'recordToolFinish': lambda ident, result, status: self.store.record_tool_finish(record.claim, ident, result, status),
                         'requestToolReceipts': lambda: self.store.request_tool_receipts(record.claim),
-                        'reserveModelCall': lambda **values: self.store.reserve_model_call(record.claim, **values),
+                        'reserveModelCall': lambda **values: self._reserve_model_call(record, **values),
                         'recordContextReceipt': lambda report: self.store.record_context_receipt(record.claim, report),
                         'recordEvidencePass': lambda report: self.store.record_evidence_pass(record.claim, report),
                     })
@@ -380,6 +393,8 @@ class OrganizationService:
                     else:
                         record.result = {} if kind in {'request.hire', 'request.apply', 'request.validate'} else self.executor(
                             record.claim, context, record.cancel)
+        except OrganizationPacingDeferred as wait:
+            record.pacing_wait = wait
         except ValueError as error:
             # The project boundary reports only bounded, sanitized policy errors.
             if record.claim.get("type") in {"request.project_test", "request.source_integrate"}:
@@ -391,6 +406,9 @@ class OrganizationService:
             record.error = "Execution failed unexpectedly; review provider configuration before retrying"
             logger.warning("Organization execution failed for request %s", record.claim.get("id"))
         finally:
+            if record.pacing_wait is not None:
+                record.deferred = True
+                record.error = str(record.pacing_wait)
             if record.execution_slot is not None:
                 record.execution_slot.__exit__()
             self._wake.set()
@@ -402,7 +420,7 @@ class OrganizationService:
             if not record.thread.is_alive():
                 if not record.fenced:
                     if record.deferred:
-                        self.store.defer(record.claim, record.error)
+                        self.store.defer(record.claim, record.error, defer_until=record.pacing_wait.defer_until if record.pacing_wait else None)
                     elif record.error is not None:
                         self.store.fail(record.claim, record.error, retryable=False)
                     elif record.cancel.is_set() or self._stop.is_set():

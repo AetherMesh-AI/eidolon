@@ -1719,6 +1719,14 @@ DEFAULT_CONFIG = {
         "completion_reserve_model_calls": 0,
         "completion_reserve_tokens": 0,
         "completion_reserve_cost_usd": None,
+        # Local stage-start pacing is optional; never infers provider quota.
+        "adaptive_pacing_enabled": False,
+        "pacing_conserve_below_percent": 30,
+        "pacing_critical_below_percent": 10,
+        "pacing_conserve_interval_seconds": 60,
+        "pacing_critical_interval_seconds": 300,
+        "pacing_conserve_max_inflight": 1,
+        "pacing_critical_max_inflight": 1,
         "objective_timeout_seconds": 86400,
         # Explicit exact-route conservative USD rates only; never inferred.
         "max_cost_usd": None,

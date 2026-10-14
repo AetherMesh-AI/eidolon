@@ -350,6 +350,13 @@ organization:
   completion_reserve_model_calls: 0 # 0–1000, within max_model_calls
   completion_reserve_tokens: 0 # 0–1000000000, within max_total_tokens
   completion_reserve_cost_usd: null # optional protected part of max_cost_usd
+  adaptive_pacing_enabled: false # opt-in local model-backed attempt-start pacing
+  pacing_conserve_below_percent: 30
+  pacing_critical_below_percent: 10
+  pacing_conserve_interval_seconds: 60
+  pacing_critical_interval_seconds: 300
+  pacing_conserve_max_inflight: 1
+  pacing_critical_max_inflight: 1
   objective_timeout_seconds: 86400 # 60–604800, includes waiting for owner input
   max_cost_usd: null       # optional explicit configured-cost admission ceiling
   model_costs: []          # exact provider/model and conservative USD rates; no guessed prices
@@ -398,11 +405,54 @@ The versioned `usage.completionReserve` projection distinguishes captured protec
 completion reservations, protected remainder and ordinary/total headroom. Its
 `unavailableReason` reports unknown legacy usage, cost or call classification.
 
+
 Replacement previews disclose fresh protection bounded by their inherited minimum
 hard caps. Reserve-policy changes invalidate an unconfirmed preview, and confirmation
 captures exactly the displayed reserve. The original evidence and charges remain.
 Owner chat, model responses and the member-configuration form cannot change caps or
 completion reserve policy.
+
+### Adaptive start pacing
+
+Adaptive pacing is opt-in and objective-local. It slows the admission of new
+model-backed attempts as conservative ordinary headroom shrinks. Queue eligibility
+and the first physical model reservation enforce the same policy; this is not merely
+a suggestion in a manager prompt. Already admitted attempts may finish their inner
+calls under the existing hard call, token, cost and deadline limits. Pacing does not
+interrupt or replay partial work, refund reservations, change model routes, or add
+allowance. The default leaves existing scheduling behavior unchanged.
+
+The local signal uses ordinary remaining headroom, including durable reservations
+and completion protection. A separately recorded owner percentage is an advisory
+signal for this objective, not measured provider quota or a conversion to tokens.
+Its source, observation time, expiry and optional reported reset remain visible.
+Expiry or passing a reported reset never replenishes hard limits or implies a fresh
+subscription allowance. A stale low signal remains conservative until an explicit
+fresh owner observation replaces it. Other applications, profiles, objectives and devices
+may consume the same provider subscription without this ledger knowing.
+
+Completion and deterministic control stages retain their existing budgets and
+eligibility checks. They can progress while ordinary starts are delayed; the queue
+retains its existing priority aging and dependency ordering. This is not a promise
+that every objective can finish within its allowance. Manager context and the
+read-only usage panel show the pacing reason, earliest ordinary start, effective
+concurrency/interval and local remaining/protected capacity.
+
+An owner can record an observation from the active profile's existing ledger:
+
+```text
+python -m eidolon_cli.organization_pacing_cli show OBJECTIVE_ID
+python -m eidolon_cli.organization_pacing_cli observe OBJECTIVE_ID --remaining-percent 20 --as-of 2026-10-14T07:00:00Z --expires-at 2026-10-14T08:00:00Z --expected-revision 0 --idempotency-key owner-observation-1
+```
+
+Use the actual observation and expiry timestamps; the example is not a live account
+reading. An optional `--reset-at` records an uncertain reported reset without
+scheduling quota renewal. Revisions and retry keys prevent stale or duplicate owner
+writes. No provider login, entitlement probe or model proposal can create this
+observation. Subscription transports remain subject to their existing independent
+readiness and enforcement blockers.
+
+
 
 ## Opt in to real local file inspection
 

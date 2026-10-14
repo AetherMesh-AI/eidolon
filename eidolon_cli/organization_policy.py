@@ -7,6 +7,7 @@ import json
 
 from eidolon_cli.organization_config import OrganizationSettings
 from eidolon_cli.organization_completion_reserve import COMPLETION_RESERVE_FIELDS
+from eidolon_cli.organization_pacing import PACING_FIELDS
 from eidolon_cli.organization_roster import OrganizationStaff
 
 
@@ -37,7 +38,7 @@ _AUTHORITY_FIELDS = ('communication_scope', 'team', 'capabilities', 'roster', 't
                      'max_replans', 'max_stages', 'max_tasks', 'max_owner_resolutions', 'max_output_tokens',
                      'max_members', 'max_request_depth', 'max_requests_per_stage',
                      'max_context_tokens', 'max_model_calls', 'max_total_tokens', 'objective_timeout_seconds',
-                     'max_cost_usd', 'model_costs', 'project_grants', 'max_project_runs', 'projects', *COMPLETION_RESERVE_FIELDS)
+                     'max_cost_usd', 'model_costs', 'project_grants', 'max_project_runs', 'projects', *COMPLETION_RESERVE_FIELDS, *PACING_FIELDS)
 
 
 def _fingerprint(settings, fields=_AUTHORITY_FIELDS):

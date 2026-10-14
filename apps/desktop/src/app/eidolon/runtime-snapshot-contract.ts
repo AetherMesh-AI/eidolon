@@ -1,6 +1,8 @@
+import { adaptivePacingCopy } from '@/i18n/organization-adaptive-pacing'
 import { completionReserveCopy } from '@/i18n/organization-completion-reserve'
 import { getRuntimeI18nLocale, translateNow } from '@/i18n/runtime'
 
+import { validAdaptivePacing } from './runtime-adaptive-pacing-contract'
 import { validAttentionPage } from './runtime-attention-types'
 import { validCompletionReserve } from './runtime-completion-reserve-contract'
 import { normalizeConversations } from './runtime-conversation-contract'
@@ -18,6 +20,10 @@ export function validateSnapshot(value: OrganizationSnapshot): OrganizationSnaps
 
   if (value.objectives.some(objective => objective.usage?.completionReserve !== undefined && !validCompletionReserve(objective.usage.completionReserve))) {
     throw new Error(completionReserveCopy[getRuntimeI18nLocale()].invalid)
+  }
+
+  if (value.objectives.some(objective => objective.usage?.adaptivePacing !== undefined && !validAdaptivePacing(objective.usage.adaptivePacing, objective.usage.completionReserve))) {
+    throw new Error(adaptivePacingCopy[getRuntimeI18nLocale()].invalid)
   }
 
   if (value.attention !== undefined && !validAttentionPage(value.attention)) {

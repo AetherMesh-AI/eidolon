@@ -3,6 +3,7 @@ import { useI18n } from '@/i18n/context'
 import { completionReserveCopy } from '@/i18n/organization-completion-reserve'
 
 import { LocalizedTime } from './localized-time'
+import { RuntimeAdaptivePacing } from './runtime-adaptive-pacing'
 import { RuntimeCompletionReserve } from './runtime-completion-reserve'
 import { RuntimeProjectExecution } from './runtime-project-execution'
 import type { Objective } from './types'
@@ -123,6 +124,7 @@ export function RuntimeAcceptance({
             )}
           </dl>
           {usage.completionReserve && <RuntimeCompletionReserve costEnabled={usage.configuredCostLimitUsd != null} reserve={usage.completionReserve} />}
+          {usage.adaptivePacing && <RuntimeAdaptivePacing costEnabled={usage.configuredCostLimitUsd != null} pacing={usage.adaptivePacing} />}
           <p className="eid-note">{usage.usageComplete ? copy.usageNote : copy.incompleteUsage}</p>
           {usage.budgetScope && <p className="eid-note">{copy.reservationNote}</p>}
           {usage.configuredCostLimitUsd != null && <p className="eid-note">{copy.configuredCostNote}</p>}
