@@ -1,11 +1,12 @@
 /** Native pixels for owner policy forms, with exact source and receipt provenance. */
 import { execFileSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 
 import { type ElectronApplication, expect, type Locator, type Page, type TestInfo } from '@playwright/test'
 
 import { verifyKeyboardFocus } from './focus-visibility'
+import { captureCausalOwnerFrame } from './organization-native-owner-frame'
 
 export interface OwnerPolicyCaptureTarget {
   name: string
@@ -194,72 +195,83 @@ export async function captureOwnerPolicy(
         viewport: { width: innerWidth, height: innerHeight }
       }))
       const beforeCapture = await focusState()
-      const nativeCapture = await nativeWindow.evaluate(async (native, proof) => {
-        const windowFocused = native.isFocused()
-        const contentsFocused = native.webContents.isFocused()
-        // Renderer RAFs do not prove presentation after zoom/focus changes.
-        // Save the first actual full frame after requesting a native repaint.
-        // There is no ring-based polling, second capture, or successful fallback.
-        let timer: ReturnType<typeof setTimeout> | undefined
-        let presented: { image: Electron.NativeImage; dirtyRect: Electron.Rectangle }
-        try {
-          presented = await new Promise((resolve, reject) => {
-            timer = setTimeout(() => reject(new Error('Native owner-policy repaint did not produce a frame within 5 seconds')), 5_000)
-            native.webContents.beginFrameSubscription(false, (image: Electron.NativeImage, dirtyRect: Electron.Rectangle) => resolve({ image, dirtyRect }))
-            native.webContents.invalidate()
-          })
-        } finally {
-          clearTimeout(timer)
-          native.webContents.endFrameSubscription()
-        }
-        const image = presented.image
-        const size = image.getSize()
-        const bitmap = image.toBitmap()
-        const samples: Array<{ side: string; rgb: number[][] }> = []
-        if (proof.keyboard) {
-          const { rect, viewport } = proof.state
-          const { offset, width } = proof.keyboard
-          const sx = size.width / viewport.width
-          const sy = size.height / viewport.height
-          const distance = offset + width / 2
-          const points = [
-            { side: 'left', x: rect.left - distance, y: (rect.top + rect.bottom) / 2, vertical: true },
-            { side: 'right', x: rect.right + distance, y: (rect.top + rect.bottom) / 2, vertical: true },
-            { side: 'top', x: (rect.left + rect.right) / 2, y: rect.top - distance, vertical: false },
-            { side: 'bottom', x: (rect.left + rect.right) / 2, y: rect.bottom + distance, vertical: false }
-          ]
-          for (const point of points) {
-            const rgb = [-1, 0, 1].map(delta => {
-              const x = Math.floor(point.x * sx) + (point.vertical ? 0 : delta)
-              const y = Math.floor(point.y * sy) + (point.vertical ? delta : 0)
-              if (x < 0 || y < 0 || x >= size.width || y >= size.height) return []
-              const index = (y * size.width + x) * 4
-              // NativeImage bitmap is BGRA on the little-endian Linux acceptance runner.
-              return [bitmap[index + 2], bitmap[index + 1], bitmap[index]]
-            })
-            samples.push({ side: point.side, rgb })
-          }
-        }
-        return { encoded: image.toPNG().toString('base64'), size, bitmapBytes: bitmap.length, dirtyRect: presented.dirtyRect, samples, windowFocused, contentsFocused }
-      }, { state: beforeCapture, keyboard: keyboardEvidence })
-      const afterCapture = await focusState()
-      await writeFile(testInfo.outputPath(file), Buffer.from(nativeCapture.encoded, 'base64'))
-      const sha256 = createHash('sha256').update(await readFile(testInfo.outputPath(file))).digest('hex')
-      captures.push({ zoom, target: target.name, file, sha256 })
-      const { encoded: _encoded, ...paint } = nativeCapture
+      const markerPosition = await page.evaluate(targetRect => {
+        const controls = [...document.querySelectorAll('input,select,button,textarea,a,[role=checkbox],[tabindex]')]
+          .map(element => element.getBoundingClientRect().toJSON())
+        controls.push(targetRect)
+        const candidates = [
+          { left: 4, top: 4 }, { left: innerWidth - 28, top: 4 },
+          { left: 4, top: innerHeight - 12 }, { left: innerWidth - 28, top: innerHeight - 12 }
+        ]
+        return candidates.find(({ left, top }) => left >= 0 && top >= 0 && controls.every(rect =>
+          rect.width === 0 || rect.height === 0 || left + 24 < rect.left - 16 || left > rect.right + 16 ||
+          top + 8 < rect.top - 16 || top > rect.bottom + 16))
+      }, beforeCapture.rect)
+      expect(markerPosition, 'an empty viewport corner for the test-only causal marker').toBeTruthy()
+      const nonce = randomBytes(9)
+      const marker = { id: `owner-frame-${nonce.toString('hex')}`, ...markerPosition!,
+        colors: [0, 3, 6].map(offset => [...nonce.subarray(offset, offset + 3)].map(channel => 40 + channel % 180)) }
+      const capture = await nativeWindow.evaluate(captureCausalOwnerFrame, { state: beforeCapture, keyboard: keyboardEvidence, marker })
+      const firstFile = `${scenario}-${zoom}-${index + 1}-first-callback.png`
+      let firstSha256: string | null = null
+      if (capture.first) {
+        const firstBytes = Buffer.from(capture.first.encoded, 'base64')
+        await writeFile(testInfo.outputPath(firstFile), firstBytes)
+        firstSha256 = createHash('sha256').update(firstBytes).digest('hex')
+      }
+      let sha256: string | null = null
+      if (capture.causal) {
+        await writeFile(testInfo.outputPath(file), Buffer.from(capture.causal.encoded, 'base64'))
+        sha256 = createHash('sha256').update(await readFile(testInfo.outputPath(file))).digest('hex')
+        captures.push({ zoom, target: target.name, file, sha256 })
+      }
+      const { encoded: _causalEncoded, ...causalMetadata } = capture.causal ?? {}
+      const { encoded: _firstEncoded, ...firstMetadata } = capture.first ?? {}
+      await testInfo.attach(`${scenario}-${zoom}-${target.name}-frame-provenance`, {
+        contentType: 'application/json', body: JSON.stringify({ error: capture.error, beforeCapture,
+          windowFocused: capture.windowFocused, contentsFocused: capture.contentsFocused,
+          sourceDirty: execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).trim().length > 0,
+          sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+          sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
+          first: capture.first ? { ...firstMetadata, file: firstFile, sha256: firstSha256 } : null,
+          frames: capture.frames, causalSequence: capture.causal?.sequence ?? null,
+          causal: capture.causal ? { ...causalMetadata, file, sha256 } : null,
+          marker: { ...marker, width: 24, height: 8, disclosure: 'Test-only nonce pixels alter this empty viewport corner; cleanup is attempted in finally and failures are reported.' }
+        }, null, 2)
+      })
+      // Preserve both PNGs and capture metadata BEFORE any renderer query or
+      // assertion: a detached/stalled renderer must not erase native evidence.
+      let afterCapture: Awaited<ReturnType<typeof focusState>> | null = null
+      let afterCaptureError: string | null = null
+      let stateTimer: ReturnType<typeof setTimeout> | undefined
+      try {
+        afterCapture = await Promise.race([focusState(), new Promise<never>((_, reject) => {
+          stateTimer = setTimeout(() => reject(new Error('Post-capture focus inspection timed out after 5 seconds')), 5_000)
+        })])
+      } catch (cause) { afterCaptureError = String(cause) }
+      finally { clearTimeout(stateTimer) }
       await testInfo.attach(`${scenario}-${zoom}-${target.name}-capture-state`, {
-        contentType: 'application/json', body: JSON.stringify({ file, sha256, beforeCapture, afterCapture,
+        contentType: 'application/json', body: JSON.stringify({ file, sha256, beforeCapture, afterCapture, afterCaptureError,
+          captureError: capture.error, windowFocused: capture.windowFocused, contentsFocused: capture.contentsFocused,
           sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
           sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
           sourceDirty: execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).trim().length > 0,
           expectedOutline: keyboardEvidence?.outline, expectedOutlineWidth: keyboardEvidence?.width,
-          expectedOutlineOffset: keyboardEvidence?.offset, ...paint }, null, 2)
+          expectedOutlineOffset: keyboardEvidence?.offset, ...causalMetadata }, null, 2)
       })
+      expect(capture.error, 'native frame must contain the post-focus causal marker').toBeNull()
+      expect(capture.causal).not.toBeNull()
+      expect(afterCaptureError).toBeNull()
+      expect(afterCapture).not.toBeNull()
+      if (!capture.causal || !afterCapture) throw new Error('Required native capture or focus evidence unavailable')
+      const nativeCapture = capture.causal
+      expect(afterCapture.rect, 'test-only marker must not change target geometry').toEqual(beforeCapture.rect)
+      expect(afterCapture.viewport).toEqual(beforeCapture.viewport)
       expect(nativeCapture.size.width).toBeGreaterThan(0)
       expect(nativeCapture.size.height).toBeGreaterThan(0)
       expect(nativeCapture.bitmapBytes).toBe(nativeCapture.size.width * nativeCapture.size.height * 4)
       if (keyboardEvidence) {
-        // Keep the first native image. A later successful capture cannot erase a missing painted ring.
+        // Assert the FIRST marker-bearing image, even if its ring is absent. Never retry a failed ring.
         expect(beforeCapture.active && beforeCapture.visible, `${target.name}: focus immediately before capture`).toBe(true)
         expect(afterCapture.active && afterCapture.visible, `${target.name}: focus immediately after capture`).toBe(true)
         expect(afterCapture.rect).toEqual(beforeCapture.rect)
@@ -267,7 +279,7 @@ export async function captureOwnerPolicy(
         for (const sample of nativeCapture.samples) {
           expect(sample.rgb.some(rgb => rgb.length === 3 && rgb.every((channel, index) =>
             Math.abs(channel - keyboardEvidence.outline[index]) <= 8)),
-          `${target.name}: painted ${sample.side} keyboard outline in first native capture`).toBe(true)
+          `${target.name}: painted ${sample.side} keyboard outline in first causal native capture`).toBe(true)
         }
       }
     }
