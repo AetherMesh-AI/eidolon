@@ -222,17 +222,17 @@ jobs:
             *) echo 'Unknown native suite' >&2; exit 1 ;;
           esac
           diagnostic_args=()
-          if [[ '${{ matrix.os }}' == 'windows-latest' && '${{ matrix.suite }}' == 'outcomes-attention' ]]; then
+          if [[ '${{ matrix.os }}' == 'windows-latest' && ( '${{ matrix.suite }}' == 'outcomes-attention' || '${{ matrix.suite }}' == 'ledger-identity' ) ]]; then
             # Retain the 300s file cap and every assertion. Phase timings and
             # live stacks distinguish slow setup from a blocked test operation.
             diagnostic_args=(-vv -s -p scripts.ci.organization_timing --organization-timing-dir=organization-timing -o faulthandler_timeout=30)
           fi
           scripts/run_tests.sh "${native_tests[@]}" -j 3 -- "${diagnostic_args[@]}"
 
-      - name: Retain Windows attention phase timings
-        if: ${{ always() && matrix.os == 'windows-latest' && matrix.suite == 'outcomes-attention' }}
+      - name: Retain Windows ledger and attention phase timings
+        if: ${{ always() && matrix.os == 'windows-latest' && (matrix.suite == 'outcomes-attention' || matrix.suite == 'ledger-identity') }}
         run: |
-          python -c 'import pathlib; files=sorted(pathlib.Path("organization-timing").glob("organization-timing-*.jsonl")); assert files, "Missing attention timing evidence"; [print(p.read_text(encoding="utf-8")) for p in files]'
+          python -c 'import pathlib; files=sorted(pathlib.Path("organization-timing").glob("organization-timing-*.jsonl")); assert files, "Missing native timing evidence"; [print(p.read_text(encoding="utf-8")) for p in files]'
 
   native-windows:
     # Retain the existing check name. This gate cannot succeed if a native
