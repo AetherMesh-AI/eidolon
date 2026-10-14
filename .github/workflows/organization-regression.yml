@@ -312,7 +312,7 @@ jobs:
         run: npx vitest run
       - name: Retain native evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: organization-native-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -364,7 +364,7 @@ jobs:
           EIDOLON_DIRECTORY_RECOVERY_ACCEPTANCE=1 xvfb-run -a npx playwright test e2e/directory-selection.spec.ts e2e/organization-owner-accepted-return.spec.ts e2e/organization-switch-intent.spec.ts --grep 'confirms actual directory|recovers durably accepted owner|returns an uncertain intake' --workers=1 --retries=0 --output directory-test-results --reporter list,json
       - name: Retain directory acceptance evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: organization-directory-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -414,7 +414,7 @@ jobs:
         run: xvfb-run -a npx playwright test e2e/owner-policy-editor.spec.ts e2e/owner-policy-shared-allowance.spec.ts --workers=1 --retries=0 --output owner-policy-test-results --reporter list,json
       - name: Retain owner policy acceptance evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: organization-owner-policy-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -481,7 +481,7 @@ jobs:
         run: xvfb-run -a npx playwright test "e2e/workspace-${GALLERY_GROUP}-gallery.spec.ts" --workers=1 --retries=0
       - name: Retain workspace gallery evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: workspace-gallery-${{ matrix.group }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
