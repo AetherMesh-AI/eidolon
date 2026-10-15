@@ -375,6 +375,7 @@ class OrganizationService:
                         'recordToolFinish': lambda ident, result, status: self.store.record_tool_finish(record.claim, ident, result, status),
                         'requestToolReceipts': lambda: self.store.request_tool_receipts(record.claim),
                         'reserveModelCall': lambda **values: self._reserve_model_call(record, **values),
+                        'recordModelObservation': lambda call_id, **values: self.store.record_model_observation(record.claim, call_id, **values),
                         'selectModelRoute': lambda **values: self.store.select_model_route(record.claim, **values),
                         'recordContextReceipt': lambda report: self.store.record_context_receipt(record.claim, report),
                         'recordEvidencePass': lambda report: self.store.record_evidence_pass(record.claim, report),
@@ -389,6 +390,9 @@ class OrganizationService:
                     if not self.can_dispatch():
                         record.deferred = True
                         record.error = "Host is draining; waiting before dispatch"
+                        return
+                    if not self.store.begin_dispatch(record.claim):
+                        record.error = 'Execution ownership changed before dispatch'
                         return
                     if kind in {'request.project_test', 'request.source_integrate'}:
                         record.result = self.store.run_project_stage(record.claim, record.cancel)
@@ -465,7 +469,7 @@ class OrganizationService:
                 return
             admitted = False
             try:
-                claim = self.store.claim_next()
+                claim = self.store.claim_next(recoverable=True)
                 if claim is None:
                     return
                 if self._stop.is_set() or not self.can_dispatch():
