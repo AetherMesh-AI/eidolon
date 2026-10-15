@@ -57,6 +57,10 @@ def resolve_registry(conn, settings):
             if not isinstance(project, dict) or project.get('id') != row['id']:
                 raise ValueError('Invalid retained identity')
             parsed = parse_projects([*projects, project], settings.read_roots, settings.project_grants)
+            if project['root'] in settings.revoked_root_aliases:
+                projects.append(project)
+                ids.append(row['id'])
+                continue  # Retain history identity without resolving a revoked host path.
             if project['team'] not in teams or binding_hash(parsed[-1], settings) != row['binding_hash']:
                 raise ValueError('Retained binding no longer matches source authority')
             projects.append(project)

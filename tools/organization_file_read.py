@@ -198,7 +198,7 @@ class OrganizationFileReadScope:
     close serialize so a copied context cannot race descriptor reuse on teardown.
     """
 
-    def __init__(self, read_roots: tuple[str, ...], max_result_chars: int, *, resolve_workspace_source=None, allowed_root_aliases=None):
+    def __init__(self, read_roots: tuple[str, ...], max_result_chars: int, *, resolve_workspace_source=None, allowed_root_aliases=None, expected_root_identities=None):
         _require_posix_support()
         if not isinstance(read_roots, tuple) or not read_roots:
             raise OrganizationFileReadError("At least one explicit read root is required.")
@@ -208,7 +208,7 @@ class OrganizationFileReadScope:
             raise OrganizationFileReadError("Managed source resolution requires a trusted callable.")
         aliases = tuple(f"root{index}" for index in range(len(read_roots)))
         if allowed_root_aliases is not None:
-            if (not isinstance(allowed_root_aliases, (list, tuple)) or not allowed_root_aliases
+            if (not isinstance(allowed_root_aliases, (list, tuple))
                     or any(not isinstance(alias, str) or alias not in aliases for alias in allowed_root_aliases)
                     or len(set(allowed_root_aliases)) != len(allowed_root_aliases)):
                 raise OrganizationFileReadError("Read-root alias restriction must select configured roots.")
@@ -226,6 +226,10 @@ class OrganizationFileReadScope:
                 alias = f"root{index}"
                 if alias in aliases:
                     self._roots[alias] = (root, _open_root(root, self._profile_prefixes))
+                    if expected_root_identities and alias in expected_root_identities:
+                        info = os.fstat(self._roots[alias][1])
+                        if (info.st_dev, info.st_ino) != tuple(expected_root_identities[alias]):
+                            raise OrganizationFileReadError("Approved folder identity changed; owner review is required.")
         except OrganizationFileReadError:
             self.close()
             raise
@@ -562,9 +566,9 @@ def get_organization_file_read_scope() -> OrganizationFileReadScope | None:
 
 
 @contextmanager
-def organization_file_read_scope(read_roots: tuple[str, ...], max_result_chars: int, *, resolve_workspace_source=None, allowed_root_aliases=None):
+def organization_file_read_scope(read_roots: tuple[str, ...], max_result_chars: int, *, resolve_workspace_source=None, allowed_root_aliases=None, expected_root_identities=None):
     scope = OrganizationFileReadScope(read_roots, max_result_chars, resolve_workspace_source=resolve_workspace_source,
-                                     allowed_root_aliases=allowed_root_aliases)
+                                     allowed_root_aliases=allowed_root_aliases, expected_root_identities=expected_root_identities)
     token = _active_scope.set(scope)
     try:
         yield scope

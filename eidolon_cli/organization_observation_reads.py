@@ -96,4 +96,6 @@ def read_detail(home, method, params):
         reader = _ReadView(view)
         return project(reader, **{_NAMES.get(key, key): value for key, value in params.items()})
 
-    return read_observation(home, projection=projection)
+    return read_observation(home, projection=projection, archival=method in {
+        'organization.evidence', 'organization.toolReceipts', 'organization.executionAudit',
+        'organization.history', 'organization.historyObjective'})

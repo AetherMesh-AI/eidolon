@@ -249,7 +249,8 @@ def test_managed_validation_requires_actual_retained_receipt(tmp_path):
     assert store.finish(claim,value)
 
 
-def test_typed_source_handoff_rechecks_real_bytes_and_retains_source_digest(tmp_path):
+@pytest.mark.parametrize('root_guard', ['unchanged', 'revoked_unrelated', 'replaced_reviewed'])
+def test_typed_source_handoff_rechecks_real_bytes_and_retains_source_digest(tmp_path,monkeypatch,root_guard):
     from tests.eidolon_cli.test_organization_edits import _setup,_propose,_review
     store,source,objective=_setup(tmp_path)
     bind_test_contract(store,objective['id'],'source_integration')
@@ -264,6 +265,33 @@ def test_typed_source_handoff_rechecks_real_bytes_and_retains_source_digest(tmp_
     with pytest.raises(ValueError,match='changed'):
         store.finish(claim,value)
     source.write_text(output)
+    from dataclasses import replace
+    from tools import organization_file_read as bounded
+    # Model effective reviewed-root settings; registration/revocation persistence
+    # is covered independently by the root-grant and folder-revocation suites.
+    if root_guard == 'revoked_unrelated':
+        revoked=tmp_path/'revoked-unrelated';revoked.mkdir();identity=revoked.stat();revoked.rmdir()
+        store.settings=replace(store.settings,
+            read_roots=(*store.settings.read_roots,str(revoked)),
+            ledger_read_roots=(str(revoked),),
+            ledger_root_identities=((identity.st_dev,identity.st_ino),),
+            revoked_root_aliases=('root1',))
+        original_open=bounded._open_root
+        def open_active_root(root,*args):
+            assert root != str(revoked), 'Acceptance must never open a revoked folder'
+            return original_open(root,*args)
+        monkeypatch.setattr(bounded,'_open_root',open_active_root)
+    elif root_guard == 'replaced_reviewed':
+        root=source.parent;identity=root.stat();content=source.read_bytes()
+        store.settings=replace(store.settings,ledger_read_roots=(str(root),),
+            ledger_root_identities=((identity.st_dev,identity.st_ino),))
+        original_root=root.with_name('original-reviewed-root')
+        root.rename(original_root);root.mkdir();source.write_bytes(content)
+        with pytest.raises(bounded.OrganizationFileReadError,match='identity changed'):
+            store.finish(claim,value)
+        with store._connect() as conn:
+            assert conn.execute('SELECT count(*) FROM objective_contract_acceptances').fetchone()[0] == 0
+        root.rename(root.with_name('replacement-root'));original_root.rename(root)
     assert store.finish(claim,value)
     with store._connect() as conn:
         binding=json.loads(conn.execute('SELECT evidence_bindings FROM objective_contract_acceptances').fetchone()[0])[0]
@@ -288,3 +316,32 @@ def test_typed_project_tests_require_current_independently_reviewed_run(tmp_path
     with pytest.raises(ValueError,match='required kind'):
         store.finish(accept,wrong)
     assert store.finish(accept,value)
+
+
+@pytest.mark.parametrize('criterion', [
+    {'id': 'check', 'text': 'Tests pass', 'kind': 'authorized_check', 'checkKind': 'project_tests'},
+    {'id': 'check', 'text': 'Managed validation passes', 'kind': 'authorized_check', 'checkKind': 'managed_validation'},
+    {'id': 'check', 'text': 'Source is integrated', 'kind': 'source_integration'},
+])
+def test_planning_folder_rejects_implicit_typed_checks_atomically(tmp_path, criterion):
+    from eidolon_cli.organization_config import OrganizationSettings
+    root = tmp_path / 'notes'
+    root.mkdir()
+    settings = OrganizationSettings.from_config({'organization': {'read_roots': [str(root)],
+        'projects': [{'id': 'notes', 'root': 'root0', 'recipe': None, 'team': 'general'}]}})
+    store = OrganizationStore(tmp_path / 'state.db', settings)
+    with pytest.raises(ValueError, match='Planning-only'):
+        store.create_objective('Plan', project_ids=['notes'], delivery_mode='managed_artifact',
+            acceptance_criteria=[criterion], idempotency_key='bad-create')
+    assert store.snapshot()['objectives'] == []
+    store.create_objective('Plan', project_ids=['notes'], delivery_mode='managed_artifact',
+        acceptance_criteria=[{'id': 'deliver', 'text': 'Planning document', 'kind': 'deliverable'}], idempotency_key='plan')
+    claim = store.claim_next()
+    store.finish(claim, {'intervention': 'Please clarify the objective.'})
+    with store._connect() as conn:
+        before = '\n'.join(conn.iterdump())
+    with pytest.raises(ValueError, match='Planning-only'):
+        store.resolve(claim['id'], 'amend_scope', 'Update the requirement.',
+            acceptance_criteria=[criterion], idempotency_key='bad-amend')
+    with store._connect() as conn:
+        assert '\n'.join(conn.iterdump()) == before

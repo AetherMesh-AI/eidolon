@@ -17,7 +17,7 @@ export type OrganizationRequiredCheck = 'project_tests' | 'managed_validation' |
 export interface OrganizationProjectBinding {
   id: string
   root: string
-  recipe: string
+  recipe: string | null
   team: string
   readRoot?: string
 }
@@ -721,6 +721,7 @@ export interface OrganizationProjectSaveInput {
   confirmSave: true
 }
 export interface OrganizationProjectSetup {
+  supportsPlanningFolders?: boolean
   version: 1
   revision: string
   projects: OrganizationProjectBinding[]

@@ -336,7 +336,7 @@ def tool_execution(context: dict, kind: str):
     roots = policy.get("readRoots")
     if not isinstance(roots, list) or not roots or any(not isinstance(root, str) or not root for root in roots):
         raise _error("Inspection requires explicitly configured local read roots.")
-    if "readRootAliases" in policy and not isinstance(policy["readRootAliases"], list):
+    if "readRootAliases" in policy and (not isinstance(policy["readRootAliases"], list) or not policy["readRootAliases"]):
         raise _error("Inspection requires an explicit list of granted read-root aliases.")
     _bounded_int(policy.get("maxToolCalls"), "maxToolCalls", 1, 20)
     _bounded_int(policy.get("maxResultChars"), "maxResultChars", 1000, 20000)
@@ -348,7 +348,8 @@ def tool_execution(context: dict, kind: str):
     from tools.organization_file_read import organization_file_read_scope, OrganizationFileReadError
     try:
         with organization_file_read_scope(tuple(roots), policy["maxResultChars"], resolve_workspace_source=resolver,
-                                          allowed_root_aliases=policy.get("readRootAliases")) as scope:
+                                          allowed_root_aliases=policy.get("readRootAliases"),
+                                          expected_root_identities=policy.get("expectedRootIdentities")) as scope:
             yield OrganizationToolExecution(context, scope)
     except OrganizationFileReadError as exc:
         raise _error(str(exc)) from exc

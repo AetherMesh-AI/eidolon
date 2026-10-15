@@ -144,3 +144,23 @@ def test_owner_capacity_edit_preserves_registration_and_team_removal_is_atomic(p
                                      idempotency_key='revoke-project-team')
     assert dump(profile) == before
     assert [asdict(item) for item in fresh.settings.projects] == [PROJECT]
+
+
+def test_planning_folder_registration_needs_no_recipe_and_survives_reload(profile):
+    import yaml
+    path = profile / 'config.yaml'
+    config = yaml.safe_load(path.read_text())
+    config['organization']['project_grants'] = []
+    path.write_text(yaml.safe_dump(config))
+    original = path.read_bytes()
+    setup = project_setup()
+    assert setup['supportsPlanningFolders'] is True
+    folder = {**PROJECT, 'recipe': None}
+    draft = project_draft(folder, setup['revision'])
+    result = project_save(folder, draft['revision'], 'planning-folder', confirm_save=True)
+    assert result['saved'] is True
+    assert project_setup()['projects'] == [folder]
+    assert services.stop_services()
+    services._services.clear()
+    assert services.get_service().settings.projects[0].recipe is None
+    assert path.read_bytes() == original
