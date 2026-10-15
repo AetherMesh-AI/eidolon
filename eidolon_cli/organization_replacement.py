@@ -147,6 +147,8 @@ class OrganizationReplacementStore:
                     idempotency_key=_id('replacement'), acceptance_criteria=effective,
                     delivery_mode=draft['deliveryMode'], required_checks=draft['requiredChecks'],
                     executive_id=draft['executiveId'], manager_id=draft['managerId'], project_ids=draft['projectIds'], project_run_limit=draft['allowance']['projectRuns'], completion_reserve=draft['allowance']['completionReserve'])
+                from eidolon_cli.organization_goal_allowances import inherit_goal_membership
+                inherit_goal_membership(conn, source_id, ident)
                 allowance = draft['allowance']
                 conn.execute('UPDATE objective_budgets SET max_model_calls=?,max_total_tokens=?,max_cost_usd=? WHERE objective_id=?',
                              (allowance['modelCalls'], allowance['tokens'], allowance['costUsd'], ident))

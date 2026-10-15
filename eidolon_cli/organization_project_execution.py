@@ -425,6 +425,8 @@ class OrganizationProjectExecutionStore:
                     or time.time() >= budget_view(conn, request['objective_id'], self.settings)['deadlineTimestamp']):
                 raise ValueError('Project execution was cancelled or its lease/deadline expired during snapshot preparation')
             control = conn.execute('SELECT round FROM objective_control WHERE objective_id=?', (request['objective_id'],)).fetchone()
+            from eidolon_cli.organization_goal_allowances import require_goal_admission
+            require_goal_admission(conn, request['objective_id'], project_run=True)
             identifier = 'project_run_' + uuid.uuid4().hex
             conn.execute('INSERT INTO project_run_starts VALUES (?,?,?,?,?,?,?,?,?,?,?)',
                 (identifier, request['id'], request['token'], request['objective_id'], control['round'],

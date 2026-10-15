@@ -54,12 +54,13 @@ def _required_schema():
 def _compatible_schema(conn, tables):
     from eidolon_cli.organization_owner_policy_config import OWNER_POLICY_TABLES
     from eidolon_cli.organization_milestones import MILESTONE_TABLES
+    from eidolon_cli.organization_goal_allowances import GOAL_TABLES
     from eidolon_cli.organization_outcome_contracts import CONTRACT_TABLES
-    for optional_tables in (MILESTONE_TABLES, CONTRACT_TABLES):
+    for optional_tables in (MILESTONE_TABLES, CONTRACT_TABLES, GOAL_TABLES):
         if tables & optional_tables and not optional_tables <= tables:
             return False
     for name, columns in _required_schema().items():
-        if any(name in optional and not tables & optional for optional in (MILESTONE_TABLES, CONTRACT_TABLES)):
+        if any(name in optional and not tables & optional for optional in (MILESTONE_TABLES, CONTRACT_TABLES, GOAL_TABLES)):
             continue  # Fully absent optional planning/contract tables support legacy reads.
         if name in OWNER_POLICY_TABLES:
             continue  # Optional owner-editor data does not invalidate legacy observation.
