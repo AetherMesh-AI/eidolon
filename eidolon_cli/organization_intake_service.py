@@ -34,18 +34,21 @@ class IntakeService:
                         'Intake was interrupted. Its charge is retained if dispatch began; no automatic replay.')
 
     def read(self, intake_id):
-        from eidolon_cli.organization_service import _ExecutionLock
-        with self._lock, _ExecutionLock(self.organization.home / 'organization' / 'intake-locks', 'admission') as admitted:
-            if admitted:
-                self._recover_orphans()
-        return self.store.intake_read(intake_id)
+        from eidolon_cli.organization_intake_observation import read_intakes
+        return read_intakes(self.organization.home, intake_id=intake_id)
 
     def recent(self):
+        from eidolon_cli.organization_intake_observation import read_intakes
+        return read_intakes(self.organization.home)
+
+    def recover(self):
+        """Explicit authenticated recovery retains charges and never replays a send."""
         from eidolon_cli.organization_service import _ExecutionLock
         with self._lock, _ExecutionLock(self.organization.home / 'organization' / 'intake-locks', 'admission') as admitted:
-            if admitted:
-                self._recover_orphans()
-        return self.store.recent_intakes()
+            if not admitted:
+                raise ValueError('Another intake admission is active; retry recovery later')
+            self._recover_orphans()
+        return self.recent()
 
     def submit(self, text, *, idempotency_key, owner_priority=None, parent_intake_id=None, force_separate=False):
         from eidolon_cli.organization_service import _ExecutionLock

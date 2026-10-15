@@ -174,3 +174,15 @@ def test_changed_assumptions_require_review_instead_of_exact_link(store):
     second = submit(store, 'second', assumptions=['Use this week.'], duplicateCandidateIds=[first['objectiveId']])
     assert second['status'] == 'needs_review'
     assert len(store.snapshot()['objectives']) == 1
+
+
+def test_passive_linked_history_retains_objective_receipt_without_service(store):
+    from eidolon_cli.organization_intake_observation import read_intakes
+    first = submit(store, 'original-history')
+    linked = submit(store, 'linked-history')
+    assert linked['status'] == 'linked'
+    home = store.path.parent.parent
+    before = store.path.read_bytes()
+    assert read_intakes(home, intake_id=linked['id']) == linked
+    assert read_intakes(home)[0]['objectiveId'] == first['objectiveId']
+    assert store.path.read_bytes() == before

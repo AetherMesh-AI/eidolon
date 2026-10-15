@@ -20,13 +20,25 @@ def _submit(params, service):
 @_organization_method('organization.intake.read', registry=_registry)
 def _read(params, service):
     _organization_params(params, {'intakeId'})
-    return _view(service().intake.read(params.get('intakeId')))
+    from eidolon_constants import get_eidolon_home
+    from eidolon_cli.organization_intake_observation import read_intakes
+    if not params.get('intakeId'):
+        raise ValueError('intakeId is required')
+    return _view(read_intakes(get_eidolon_home(), intake_id=params['intakeId']))
 
 
 @_organization_method('organization.intake.list', registry=_registry)
 def _list(params, service):
     _organization_params(params, set())
-    return _view({'items': [_view(item) for item in service().intake.recent()]})
+    from eidolon_constants import get_eidolon_home
+    from eidolon_cli.organization_intake_observation import read_intakes
+    return _view({'items': [_view(item) for item in read_intakes(get_eidolon_home())]})
+
+
+@_organization_method('organization.intake.recover', registry=_registry)
+def _recover(params, service):
+    _organization_params(params, set())
+    return _view({'items': [_view(item) for item in service().intake.recover()]})
 
 
 @_organization_method('organization.intake.answer', registry=_registry)
