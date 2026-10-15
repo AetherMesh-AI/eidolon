@@ -226,6 +226,8 @@ class OrganizationProjectExecutionStore:
     def _project_grant(self, conn, objective_id, project_id=None):
         from eidolon_cli.organization_acceptance import current_tasks
         project = self._execution_project(conn, objective_id, project_id)
+        if project is not None and project['recipe'] is None:
+            raise ValueError('This folder has no execution recipe. Select an explicit owner-approved recipe before running project tests.')
         from eidolon_cli.organization_projects import task_project
         tasks = [task for task in current_tasks(conn, objective_id)
                  if project is None or (task_project(conn, task['id']) or {}).get('id') == project_id]
