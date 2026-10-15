@@ -61,6 +61,12 @@ def _relative_path(value, *, dot=False):
 
 def normalize_execution_grant(value):
     """Validate config without executing programs or probing host capabilities."""
+    from eidolon_cli.organization_project_node import NodeTestGrant, normalize_node_grant
+    if isinstance(value, NodeTestGrant) or isinstance(value, dict) and value.get('recipe') == 'node_test':
+        return normalize_node_grant(value)
+    from eidolon_cli.organization_project_typescript import TypecheckGrant, normalize_typecheck_grant
+    if isinstance(value, TypecheckGrant) or isinstance(value, dict) and value.get('recipe') == 'typescript_check':
+        return normalize_typecheck_grant(value)
     if isinstance(value, ProjectExecutionGrant):
         value = asdict(value)
     if not isinstance(value, dict) or set(value) - set(ProjectExecutionGrant.__dataclass_fields__):
@@ -413,6 +419,8 @@ def _apply_process_result(receipt, exit_code, output, totals, forced, parent_nam
                    'timed_out': 'Execution exceeded its wall-clock deadline.',
                    'cleanup_failed': 'Execution cleanup did not close its process streams within the bounded deadline.'}
         receipt.update(status='unsupported' if forced == 'cleanup_failed' else forced, reason=reasons[forced])
+        if forced == 'cleanup_failed':
+            receipt['cleanupConfirmed'] = False
         return
     if not isolated:
         receipt.update(status='unsupported', reason='The required OS isolation could not be established; no successful test execution was accepted.')
@@ -446,6 +454,12 @@ Unsupported hosts and failed setup never fall back to host Python execution.
                'sourceWritesPerformed': False, 'limitations': _LIMITATIONS}
     try:
         grant = normalize_execution_grant(grant)
+        if grant.recipe == 'typescript_check':
+            from eidolon_cli.organization_project_typescript import run_typecheck
+            return run_typecheck(files, grant, cancel)
+        if grant.recipe == 'node_test':
+            from eidolon_cli.organization_project_node import run_node_tests
+            return run_node_tests(files, grant, cancel)
         receipt['runner'] = 'eidolon.isolated-' + grant.recipe.replace('_', '-')
         files = _snapshot(files)
         if any(item['path'].split('/')[0] != grant.root for item in files):

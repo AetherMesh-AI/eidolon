@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import json
+import time
 
 from eidolon_cli.organization_executor import OrganizationExecutionError, _ToolFreeBoundary
 from eidolon_cli.organization_provider_route import request_endpoint_identity
@@ -160,6 +161,8 @@ class RoutedBoundary(_ToolFreeBoundary):
 
         class RoutedRequest(_NonStreamRequest):
             def _call(self):
+                started = None
+                response = None
                 try:
                     client = self._make_client('organization_model_route')
                     agent._organization_check(self.api_kwargs)
@@ -167,6 +170,7 @@ class RoutedBoundary(_ToolFreeBoundary):
                     # atomic dispatch + reservation transaction, immediately at send.
                     agent._organization_reserve_call(self.api_kwargs, attempts=1)
                     agent._organization_allow_next_send = False
+                    started = time.monotonic()
                     response = client.chat.completions.create(**self.api_kwargs)
                     self.result['response'] = response
                     choices = getattr(response, 'choices', ())
@@ -192,6 +196,19 @@ class RoutedBoundary(_ToolFreeBoundary):
                     agent._organization_route_error = True
                     self.result['error'] = exc
                 finally:
+                    if started is not None:
+                        from eidolon_cli.organization_routing_observations import provider_usage
+                        callback = getattr(agent, '_organization_record_observation', None)
+                        if callback is not None:
+                            try:
+                                input_tokens, output_tokens = provider_usage(response)
+                                callback(getattr(agent, '_organization_last_call_id', None),
+                                    input_tokens=input_tokens, output_tokens=output_tokens,
+                                    elapsed_seconds=max(0.0, time.monotonic() - started),
+                                    outcome='response' if response is not None else 'error')
+                            except Exception:
+                                # Diagnostics must never retry a paid call or replace its result.
+                                agent._organization_observation_failed = True
                     self.clients.close_once('request_complete' if self.result['response'] is not None else 'request_error_cleanup')
 
         request = RoutedRequest(self, api_kwargs)

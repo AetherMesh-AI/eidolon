@@ -146,6 +146,7 @@ jobs:
             tests/eidolon_cli/test_organization_pacing_cli.py
             tests/eidolon_cli/test_organization_model_routing.py
             tests/eidolon_cli/test_organization_model_routing_e2e.py
+            tests/eidolon_cli/test_organization_routing_observations.py
             tests/eidolon_cli/test_organization_owner_policy.py
             tests/eidolon_cli/test_organization_team_setup.py
             tests/eidolon_cli/test_organization_team_admission.py
@@ -171,6 +172,7 @@ jobs:
             tests/eidolon_cli/test_organization_history.py
             tests/eidolon_cli/test_organization_cross_feature_recovery.py
             tests/eidolon_cli/test_organization_request_recovery.py
+            tests/eidolon_cli/test_organization_selective_recovery.py
             tests/eidolon_cli/test_organization_replacement.py
             tests/eidolon_cli/test_organization_tool_receipts.py
           )
@@ -271,7 +273,10 @@ jobs:
     runs-on: ubuntu-22.04
     # Two metadata editor scenarios add real reload/lost-reply and native layout coverage.
     # Keep per-assertion deadlines and retries unchanged; allow the full serial suite to finish.
-    timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && inputs.full_desktop_suite && 40 || 35 }}
+    # The complete native suite plus artifact finalization exceeded 35 minutes
+    # on hosted runners (postmerge 38763000809 reached 50 passing cases at the cap).
+    # Keep every per-test deadline/assertion and zero-retry setting unchanged.
+    timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && inputs.full_desktop_suite && 50 || 45 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
