@@ -146,6 +146,7 @@ jobs:
             tests/eidolon_cli/test_organization_pacing_cli.py
             tests/eidolon_cli/test_organization_model_routing.py
             tests/eidolon_cli/test_organization_model_routing_e2e.py
+            tests/eidolon_cli/test_organization_routing_observations.py
             tests/eidolon_cli/test_organization_owner_policy.py
             tests/eidolon_cli/test_organization_team_setup.py
             tests/eidolon_cli/test_organization_team_admission.py
@@ -171,6 +172,7 @@ jobs:
             tests/eidolon_cli/test_organization_history.py
             tests/eidolon_cli/test_organization_cross_feature_recovery.py
             tests/eidolon_cli/test_organization_request_recovery.py
+            tests/eidolon_cli/test_organization_selective_recovery.py
             tests/eidolon_cli/test_organization_replacement.py
             tests/eidolon_cli/test_organization_tool_receipts.py
           )

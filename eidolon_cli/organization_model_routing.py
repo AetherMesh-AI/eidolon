@@ -45,6 +45,10 @@ CREATE TRIGGER IF NOT EXISTS {_table}_immutable_delete BEFORE DELETE ON {_table}
 """
 
 
+from eidolon_cli.organization_routing_observations import OBSERVATION_SCHEMA
+ROUTING_SCHEMA += OBSERVATION_SCHEMA
+
+
 @dataclass(frozen=True)
 class OrganizationModelRoute:
     id: str
@@ -221,6 +225,12 @@ def chain_failures(conn, request_id, generation):
 
 
 class OrganizationModelRoutingStore:
+    def record_model_observation(self, claim, call_id, **measurement):
+        from eidolon_cli.organization_routing_observations import persist_observation
+        # Late transport completion remains valid evidence after lease expiry.
+        # Match immutable request/token/call identity, never authorize new work.
+        return persist_observation(self.path, claim, call_id, **measurement)
+
     def model_routing_configuration(self):
         with self._connect() as conn:
             return {**routing_view(conn, self.settings), 'assignments': [asdict(row) for row in self.settings.model_assignments]}
