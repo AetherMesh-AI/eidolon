@@ -53,9 +53,31 @@ with s._write() as c:
     })
     await waitForAppReady(fixture)
     const { page, mock } = fixture
-    await page.evaluate(() => { location.hash = '/command-center' })
+    await page.getByRole('complementary', { name: 'Eidolon navigation', exact: true }).getByRole('link', { name: 'Home', exact: true }).click()
+    await page.getByRole('button', { name: 'Describe a request', exact: true }).click()
     const intake = page.getByRole('region', { name: 'Describe a request', exact: true })
     await expect(intake).toBeVisible()
+
+    if (scenario === 'admit') {
+      for (const percent of [100, 200]) {
+        await page.evaluate(value => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(value), percent)
+        await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(percent / 100)
+
+        if (percent === 100) {
+          await expect(intake.getByRole('button', { name: 'Submit request', exact: true })).toBeInViewport({ ratio: 1 })
+        }
+
+        await intake.getByRole('button', { name: 'Submit request', exact: true }).scrollIntoViewIfNeeded()
+        await expect(intake.getByRole('button', { name: 'Submit request', exact: true })).toBeInViewport({ ratio: 1 })
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true)
+        await page.screenshot({ path: testInfo.outputPath(`intake-entry-${percent}.png`) })
+      }
+
+      await page.evaluate(() => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(100))
+      await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(1)
+      expect(mock.receivedPrompts).toHaveLength(0)
+    }
+
     await intake.getByLabel('Your request', { exact: true }).fill('Prepare a status report')
     await intake.getByLabel('Owner priority (optional)', { exact: true }).selectOption('P2')
     await intake.getByRole('button', { name: 'Submit request', exact: true }).click()
@@ -94,7 +116,8 @@ with sqlite3.connect(p.as_uri()+'?mode=ro',uri=True) as c:
 
     await page.reload()
     await waitForAppReady(fixture)
-    await page.evaluate(() => { location.hash = '/command-center' })
+    await page.getByRole('complementary', { name: 'Eidolon navigation', exact: true }).getByRole('link', { name: 'Home', exact: true }).click()
+    await page.getByRole('button', { name: 'Describe a request', exact: true }).click()
     await intake.getByText('Recent requests', { exact: true }).click()
     await intake.getByRole('button', { name: 'Refresh recent requests', exact: true }).click()
     await intake.getByRole('button', { name: /Prepare a status report/ }).click()

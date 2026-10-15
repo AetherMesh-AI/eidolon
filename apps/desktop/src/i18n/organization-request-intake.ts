@@ -1,6 +1,7 @@
 import type { Locale } from './types'
 
 const messages = {
+  manualSetup: ['Manual setup', '手動設定', '手动设置', '手動設定', 'إعداد يدوي', 'Ручная настройка'],
   linked: [
     'Linked to the existing open objective',
     '既存の未完了目標にリンクしました',
