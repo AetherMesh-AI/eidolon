@@ -48,7 +48,7 @@ export function OrganizationProjectSetupForm({ adapter, snapshot, onClose }: {
   const duplicate = setup?.projects.some(project => project.id === draft.id)
   const occupiedRoot = setup?.projects.some(project => project.root === draft.root)
   const atCapacity = !!setup && setup.projects.length >= 8
-  const compatible = setup?.recipes.some(recipe => setup.roots.includes(recipe.root)) && !!setup?.teams.length
+  const compatible = !!setup?.teams.length && (setup.supportsPlanningFolders ? !!setup.roots.length : setup.recipes.some(recipe => setup.roots.includes(recipe.root)))
 
   const canSave = setup?.storage === 'profile-ledger' && !!adapter.saveProject
   const validated = !!setup && !!generated && generated.revision === setup.revision && sameProjectBinding(generated.project, draft) && validProjectBinding(draft, setup)
@@ -151,10 +151,10 @@ export function OrganizationProjectSetupForm({ adapter, snapshot, onClose }: {
     {error && <div role="alert"><ErrorState description={error} title={copy.projectSetupError} /></div>}
     {setup && <>
       <h3>{copy.projectSetupExisting}</h3>
-      {setup.projects.length ? <ul aria-label={copy.projectSetupExisting}>{setup.projects.map(project => <li key={project.id}>{project.id} · {project.root} · {project.recipe} · {project.team}</li>)}</ul> : <p>{copy.projectSetupEmpty}</p>}
+      {setup.projects.length ? <ul aria-label={copy.projectSetupExisting}>{setup.projects.map(project => <li key={project.id}>{project.id} · {project.root} · {project.recipe ?? copy.projectPlanningOnly} · {project.team}</li>)}</ul> : <p>{copy.projectSetupEmpty}</p>}
       {!!setup.ledgerProjects?.length && <>
         <h3>{copy.projectSaveExisting}</h3>
-        <ul aria-label={copy.projectSaveExisting}>{setup.ledgerProjects.map(project => <li key={project.id}>{project.id} · {project.root} · {project.recipe} · {project.team}</li>)}</ul>
+        <ul aria-label={copy.projectSaveExisting}>{setup.ledgerProjects.map(project => <li key={project.id}>{project.id} · {project.root} · {project.recipe ?? copy.projectPlanningOnly} · {project.team}</li>)}</ul>
       </>}
       {!!setup.registryConflicts?.length && <ul aria-label={copy.projectSaveConflicts}>{setup.registryConflicts.map((reason, index) => <li key={index}>{reason}</li>)}</ul>}
       {setup.repair && <p role="status">{setup.repair}</p>}
@@ -167,17 +167,18 @@ export function OrganizationProjectSetupForm({ adapter, snapshot, onClose }: {
           <label>{copy.projectSetupId}<Input aria-describedby={hintId} aria-invalid={duplicate || undefined} maxLength={64} onChange={event => {setDraft({ ...draft, id: event.target.value }); clearDraft()}} pattern="[a-z][a-z0-9_\-]{0,63}" required value={draft.id} /></label>
           <p className="eid-note" id={hintId}>{copy.projectSetupIdHint}</p>
           {duplicate && <p role="status">{copy.projectSetupDuplicate}</p>}
-          <label>{copy.projectSetupRoot}<select className={controlVariants()} onChange={event => {setDraft({ ...draft, root: event.target.value, recipe: '' }); clearDraft()}} required value={draft.root}>
+          <label>{copy.projectSetupRoot}<select className={controlVariants()} onChange={event => {setDraft({ ...draft, root: event.target.value, recipe: setup.supportsPlanningFolders ? null : '' }); clearDraft()}} required value={draft.root}>
             <option value="">{copy.projectSetupChoose}</option>{setup.roots.map(root => <option disabled={setup.projects.some(project => project.root === root)} key={root} value={root}>{root}{setup.projects.some(project => project.root === root) ? ` · ${copy.projectSetupOccupied}` : ''}</option>)}
           </select></label>
           {occupiedRoot && <p role="status">{copy.projectSetupRootConflict}</p>}
-          <label>{copy.projectSetupRecipe}<select className={controlVariants()} onChange={event => {setDraft({ ...draft, recipe: event.target.value }); clearDraft()}} required value={draft.recipe}>
-            <option value="">{copy.projectSetupChoose}</option>{setup.recipes.filter(recipe => recipe.root === draft.root).map(recipe => <option key={recipe.id} value={recipe.id}>{recipe.id}</option>)}
+          <label>{copy.projectSetupRecipe}<select className={controlVariants()} onChange={event => {setDraft({ ...draft, recipe: event.target.value === '__planning__' ? null : event.target.value }); clearDraft()}} required value={draft.recipe === null ? '__planning__' : draft.recipe}>
+            <option value="">{copy.projectSetupChoose}</option>{setup.supportsPlanningFolders && <option value="__planning__">{copy.projectPlanningOnly}</option>}{setup.recipes.filter(recipe => recipe.root === draft.root).map(recipe => <option key={recipe.id} value={recipe.id}>{recipe.id}</option>)}
           </select></label>
           <label>{copy.projectSetupTeam}<select className={controlVariants()} onChange={event => {setDraft({ ...draft, team: event.target.value }); clearDraft()}} required value={draft.team}>
             <option value="">{copy.projectSetupChoose}</option>{setup.teams.map(team => <option key={team} value={team}>{team}</option>)}
           </select></label>
         </fieldset>
+        {draft.recipe === null && <p className="eid-note" role="status">{copy.projectPlanningNote}</p>}
         <Button disabled={disabled || !validProjectBinding(draft, setup)} type="submit">{saving ? copy.projectSaveSaving : pending ? copy.projectSetupPreparing : copy.projectSetupAdd}</Button>
       </form>
     </>}
@@ -190,7 +191,7 @@ export function OrganizationProjectSetupForm({ adapter, snapshot, onClose }: {
       {saving && <p role="status">{copy.projectSavePendingNote}</p>}
       {reviewing && <ConfirmDialog
         confirmLabel={copy.projectSaveConfirm}
-        description={<>{copy.projectSaveDisclosure}<br />{generated.project.id} · {generated.project.root} · {generated.project.recipe} · {generated.project.team}</>}
+        description={<>{copy.projectSaveDisclosure}<br />{generated.project.id} · {generated.project.root} · {generated.project.recipe ?? copy.projectPlanningOnly} · {generated.project.team}</>}
         dismissOnConfirm
         onClose={() => setReviewing(false)}
         onConfirm={save}

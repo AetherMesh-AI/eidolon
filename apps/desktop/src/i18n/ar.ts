@@ -16,6 +16,9 @@ export const ar = defineLocale({
   customEndpoints: customEndpointsAr,
   organizationMetadata: organizationMetadataAr,
   organizationWork: {
+    projectPlanningDelivery: 'للمجلدات المخصصة للتخطيط، اختر تسليم مخرج مُدار وأزل اختبارات المشروع وفحوص دمج المصدر، أو اضبط وصفة تنفيذ أولاً.',
+    projectPlanningOnly: 'التخطيط والفحص فقط',
+    projectPlanningNote: 'لم يتم تحديد وصفة تنفيذ. يمكن استخدام المجلد للتخطيط والفحص المصرح به؛ يظل التحرير وتشغيل الاختبارات محظورين. لا يلزم Git.',
     requester: 'مقدّم الطلب',
     notRecorded: 'غير مسجّل',
     ...organizationDispatchAr,

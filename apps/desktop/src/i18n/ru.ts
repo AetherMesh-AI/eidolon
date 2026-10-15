@@ -39,6 +39,9 @@ export const ru = defineLocale({
   customEndpoints: customEndpointsRu,
   organizationMetadata: organizationMetadataRu,
   organizationWork: {
+    projectPlanningDelivery: 'Для папок планирования выберите управляемый результат без тестов проекта и интеграции исходников или сначала настройте рецепт выполнения.',
+    projectPlanningOnly: 'Только планирование и проверка',
+    projectPlanningNote: 'Рецепт выполнения не выбран. Папка доступна для планирования и разрешённого чтения; изменения и запуск тестов заблокированы. Git не требуется.',
     requester: 'Инициатор запроса',
     notRecorded: 'Не зафиксировано',
     ...organizationDispatchRu,
