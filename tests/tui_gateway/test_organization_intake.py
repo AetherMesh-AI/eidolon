@@ -73,3 +73,24 @@ def test_recent_rpc_restores_durable_question_without_model_dispatch(monkeypatch
     assert restored['items'][0]['status'] == 'needs_answer'
     assert restored['items'][0]['profile'] == restored['profile']
     assert not services.get_service().store.snapshot()['objectives']
+
+
+def test_cold_reads_never_construct_service_or_recover(monkeypatch):
+    from eidolon_constants import get_eidolon_home
+    from eidolon_cli.organization_store import OrganizationStore
+    home = get_eidolon_home()
+    store = OrganizationStore(home / 'organization' / 'state.db')
+    row, _ = store.begin_intake('Interrupted', idempotency_key='orphan')
+    store.reserve_intake_call(row['id'], provider='fixture', model='small', input_limit=1000, output_limit=1000)
+    before = {str(p.relative_to(home)): p.read_bytes() for p in home.rglob('*') if p.is_file() and not p.name.endswith('-shm') and not (p.name.endswith('-wal') and p.stat().st_size == 0)}
+    monkeypatch.setattr(services, 'get_service', lambda: pytest.fail('passive read constructed service'))
+    monkeypatch.setattr('eidolon_cli.organization_intake_executor.execute', lambda **_: pytest.fail('read dispatched'))
+    assert rpc('organization.intake.list')['items'][0]['status'] == 'pending'
+    assert rpc('organization.intake.read', intakeId=row['id'])['usage']['reservedTokens'] == 2000
+    assert not services._services
+    assert {str(p.relative_to(home)): p.read_bytes() for p in home.rglob('*') if p.is_file() and not p.name.endswith('-shm') and not (p.name.endswith('-wal') and p.stat().st_size == 0)} == before
+
+
+def test_recovery_requires_authenticated_transport():
+    request = {'jsonrpc': '2.0', 'id': 1, 'method': 'organization.intake.recover', 'params': {}}
+    assert gateway.handle_request(request)['error']['code'] == 4001

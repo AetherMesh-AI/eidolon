@@ -114,13 +114,15 @@ def test_essential_answer_creates_one_linked_charged_continuation(tmp_path, monk
     service.stop()
 
 
-def test_read_reconciles_abandoned_pending_without_replaying(tmp_path, monkeypatch):
+def test_explicit_recovery_reconciles_abandoned_pending_without_replaying(tmp_path, monkeypatch):
     store = OrganizationStore(tmp_path / 'organization' / 'state.db')
     first, _ = store.begin_intake('Unsent request', idempotency_key='before')
     second, _ = store.begin_intake('Sent request', idempotency_key='after')
     store.reserve_intake_call(second['id'], provider='test', model='small', input_limit=1000, output_limit=1000)
     service = OrganizationService(store, home=tmp_path)
     monkeypatch.setattr('eidolon_cli.organization_intake_executor.execute', lambda **_: __import__('pytest').fail('replayed'))
+    assert service.intake.read(first['id'])['status'] == 'pending'
+    service.intake.recover()
     assert service.intake.read(first['id'])['status'] == 'failed'
     view = service.intake.read(second['id'])
     assert view['status'] == 'uncertain' and view['usage']['reservedTokens'] == 2000
@@ -157,12 +159,14 @@ def test_dispatch_callback_does_not_hold_intake_running_lock(tmp_path, monkeypat
     service.stop()
 
 
-def test_read_reconciles_crash_between_proposal_and_admission(tmp_path):
+def test_explicit_recovery_reconciles_crash_between_proposal_and_admission(tmp_path):
     store = OrganizationStore(tmp_path / 'organization' / 'state.db')
     first, _ = store.begin_intake('Report', idempotency_key='crash')
     store.reserve_intake_call(first['id'], provider='test', model='small', input_limit=1000, output_limit=1000)
     store.finish_intake(first['id'], output(store.intake_prompt(first['id']))['raw'])
     service = OrganizationService(store, home=tmp_path)
+    assert service.intake.read(first['id'])['status'] == 'proposed'
+    service.intake.recover()
     assert service.intake.read(first['id'])['status'] == 'needs_review'
     assert not store.snapshot()['objectives']
     service.stop()
