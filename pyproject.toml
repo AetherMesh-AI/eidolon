@@ -567,7 +567,7 @@ youtube-transcript-api = false
 include = ["agent", "agent.*", "tools", "tools.*", "eidolon_cli", "eidolon_cli.*", "gateway", "gateway.*", "tui_gateway", "tui_gateway.*", "cron", "cron.*", "acp_adapter", "plugins", "plugins.*", "providers", "providers.*"]
 
 [tool.setuptools.package-data]
-eidolon_cli = ["observability/schemas/*.json", "data/*.json", "local_runtime/*.json", "project_node_runtime/*", "_build_identity.json"]
+eidolon_cli = ["observability/schemas/*.json", "data/*.json", "local_runtime/*.json", "project_node_runtime/*", "project_typescript_runtime/*", "_build_identity.json"]
 # gateway/assets/ ships status_phrases.yaml and the Telegram BotFather
 # screenshot. Without this, sealed venvs (uv2nix) silently lose both —
 # status phrases fall back to the tiny hardcoded set and the Telegram
