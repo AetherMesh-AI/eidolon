@@ -130,6 +130,8 @@ class OrganizationStore(OrganizationModelRoutingStore, OrganizationPacingStore, 
             self._migrate_receipt_executions(conn)
             self._migrate_reservations(conn)
             self._migrate_acceptance(conn)
+            from eidolon_cli.organization_outcome_contracts import migrate_contracts
+            migrate_contracts(conn)
             self._migrate_budgets(conn)
             self._migrate_planning(conn)
             self._migrate_project_execution_budgets(conn)
@@ -191,6 +193,9 @@ class OrganizationStore(OrganizationModelRoutingStore, OrganizationPacingStore, 
     def _request(conn, objective, request_type, team, priority, task=None, payload=None, *, requester_id=None):
         ident = _id("req")
         payload = dict(payload or {})
+        if request_type in {"request.integrate", "request.accept"}:
+            from eidolon_cli.organization_outcome_contracts import bind_contract
+            bind_contract(conn, objective, payload)
         if payload.get('evidenceIds'):
             hashes = {}
             for evidence_id in payload['evidenceIds']:
@@ -232,9 +237,14 @@ class OrganizationStore(OrganizationModelRoutingStore, OrganizationPacingStore, 
         criteria = normalize_criteria(acceptance_criteria, title if description == title else title + '\n\n' + description)
         from eidolon_cli.organization_acceptance import required_checks as normalize_checks
         checks = normalize_checks(required_checks if required_checks is not None else [])
+        from eidolon_cli.organization_outcome_contracts import definitions, required_by, write_contract
+        contract_definitions = definitions(acceptance_criteria, title if description == title else title + '\n\n' + description)
+        checks = list(dict.fromkeys([*checks, *required_by(contract_definitions)]))
         if delivery_mode not in ('managed_artifact', 'source_project'):
             raise ValueError('deliveryMode must be managed_artifact or source_project')
         projects = selected_projects(project_ids, self.settings)
+        if any(item.get('projectId') is not None and item['projectId'] not in {p['id'] for p in projects} for item in contract_definitions):
+            raise ValueError('Criterion projectId must identify an explicitly selected project')
         if self.settings.projects and delivery_mode == 'source_project' and not projects:
             raise ValueError('Source-project objectives must explicitly select configured projectIds')
         key = _text(idempotency_key, "Idempotency key", 128)
@@ -248,6 +258,8 @@ class OrganizationStore(OrganizationModelRoutingStore, OrganizationPacingStore, 
             identity = {'objective': identity, 'executiveId': executive_id, 'managerId': manager_id}
         if projects:
             identity = {'objective': identity, 'projects': projects}
+        if any(not item['legacy'] for item in contract_definitions):
+            identity = {'objective': identity, 'outcomeContract': contract_definitions}
         digest = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
         self._require_current_policy(conn)
         old = conn.execute("SELECT * FROM objectives WHERE idempotency_key=?", (key,)).fetchone()
@@ -272,6 +284,7 @@ class OrganizationStore(OrganizationModelRoutingStore, OrganizationPacingStore, 
             mode = self._initialize_planning(conn, ident)
             conn.execute("INSERT INTO objective_control(objective_id,criteria,status,round,max_replans,max_stages,delivery_mode,required_checks) VALUES (?,?,'pending',0,?,?,?,?)",
                          (ident, json.dumps(criteria), self.settings.max_replans, self.settings.max_stages, delivery_mode, json.dumps(checks)))
+            write_contract(conn, ident, contract_definitions)
             self._initialize_budget(conn, ident, completion_reserve=completion_reserve)
             self._queue_objective_planning(conn, ident, level)
             self._event(conn, ident, "Objective accepted. " + ("Executive decomposition" if mode == "executive_packages" else "Legacy manager planning") + " is queued.", "planning")
@@ -447,6 +460,9 @@ class OrganizationStore(OrganizationModelRoutingStore, OrganizationPacingStore, 
             objective['projects'] = [public_project(project) for project in objective_projects(conn, request['objective_id'])]
             control = conn.execute('SELECT * FROM objective_control WHERE objective_id=?', (request['objective_id'],)).fetchone()
             objective['acceptanceCriteria'] = json.loads(control['criteria'])
+            from eidolon_cli.organization_outcome_contracts import contract_view, human_judgments_view
+            objective['outcomeContract'] = contract_view(conn, request['objective_id'])
+            objective['outcomeHumanJudgments'] = human_judgments_view(conn, request['objective_id'])
             objective['round'] = control['round']
             objective['deliveryMode'] = control['delivery_mode']
             objective['requiredChecks'] = json.loads(control['required_checks'])

@@ -114,6 +114,9 @@ class OrganizationOwnerStore:
         # Preserve legacy receipt identity when both new choices are omitted.
         if checks is not None or criteria is not None:
             identity.append({'requiredChecks': normalized_checks, 'acceptanceCriteria': normalized_criteria if criteria is not None else None})
+        if criteria is not None and any(isinstance(item, dict) for item in criteria):
+            from eidolon_cli.organization_outcome_contracts import definitions
+            identity.append({'typedCriteria': definitions(criteria, body)})
         digest = hashlib.sha256(json.dumps(identity, separators=(',', ':')).encode()).hexdigest()
         return identifier, key, body, ids, digest, normalized_checks, normalized_criteria
 
@@ -171,9 +174,19 @@ class OrganizationOwnerStore:
                 if action == 'amend_scope':
                     from eidolon_cli.organization_acceptance import acceptance_criteria as normalize_criteria
                     criteria = normalize_criteria(criteria, body)
+                    from eidolon_cli.organization_outcome_contracts import definitions, required_by, write_contract
+                    contract_definitions = definitions(acceptance_criteria, body)
+                    if acceptance_criteria is None:
+                        from eidolon_cli.organization_outcome_contracts import contract_view, has_typed
+                        previous_contract = contract_view(conn, request['objective_id'])
+                        if has_typed(previous_contract):
+                            contract_definitions = [{k: v for k, v in item.items() if k != 'revision'} for item in previous_contract['criteria']]
+                            criteria = [item['text'] for item in contract_definitions]
                     before = scope_state(conn, request['objective_id'])
+                    effective_checks = list(dict.fromkeys([*(checks if checks is not None else before['requiredChecks']), *required_by(contract_definitions)]))
                     conn.execute('UPDATE objective_control SET amended_scope=?,criteria=?,required_checks=? WHERE objective_id=?',
-                                 (body, json.dumps(criteria), json.dumps(checks if checks is not None else before['requiredChecks']), request['objective_id']))
+                                 (body, json.dumps(criteria), json.dumps(effective_checks), request['objective_id']))
+                    write_contract(conn, request['objective_id'], contract_definitions)
                 self._replan(conn, request['objective_id'], body)
                 if action == 'amend_scope':
                     amendment = {'inputSha256': digest,
