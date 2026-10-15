@@ -417,14 +417,14 @@ class OrganizationProjectStore:
         if self._automatic_source(conn, request['objective_id']):
             return
         if self._execution_required(conn, request['objective_id']):
-            # Test the reviewed managed bytes before asking the owner to alter
-            # originals. Verified handoff can then preserve that same snapshot.
-            from eidolon_cli.organization_project_execution import project_execution_view
+            # Each required check must verify the exact reviewed snapshot.
+            # An approved compiler receipt cannot stand in for required tests.
             from eidolon_cli.organization_projects import task_project
             project = task_project(conn, request['task_id'])
-            execution = project_execution_view(conn, request['objective_id'],
-                                               project_id=project['id'] if project else None)
-            if execution is None or not execution['review'] or not execution['review']['approved']:
+            try:
+                self.verify_required_project_check_runs(conn, request['objective_id'],
+                                                       project_id=project['id'] if project else None)
+            except ValueError:
                 return
         objective = conn.execute('SELECT delivery_mode,required_checks FROM objective_control WHERE objective_id=?', (request['objective_id'],)).fetchone()
         # Existing databases retain their original explicit source-integration
@@ -559,7 +559,10 @@ class OrganizationProjectStore:
         observations = []
         # The current policy transaction fences concurrent policy revocation. The
         # descriptor readers have per-file byte bounds and refuse links/devices.
-        with organization_file_read_scope(self.settings.read_roots, self.settings.max_tool_result_chars) as scope:
+        from eidolon_cli.organization_root_grants import expected_root_identities, active_root_aliases
+        with organization_file_read_scope(self.settings.read_roots, self.settings.max_tool_result_chars,
+                                          expected_root_identities=expected_root_identities(self.settings),
+                                          allowed_root_aliases=active_root_aliases(self.settings)) as scope:
             for item in manifest:
                 observed = scope.read_exact_source(item['path'])
                 if observed['sha256'] != item['sha256']:
