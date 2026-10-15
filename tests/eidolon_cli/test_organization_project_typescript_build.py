@@ -136,24 +136,33 @@ def test_build_supervisor_handles_stuck_compiler(native,tmp_path,monkeypatch,mod
     from eidolon_cli import organization_project_typescript_build as module
     assets=tmp_path/'runtime';shutil.copytree(module.ASSETS,assets)
     harness=assets/'harness.mjs'
-    harness.write_text(harness.read_text().replace("const frame=", "process.stderr.write('OUTPUTS_PREPARED\\n');while(true){};const frame="))
+    harness.write_text(harness.read_text().replace("const frame=", "fs.writeFileSync('/tmp/build-outputs-prepared','yes');process.stderr.write('OUTPUTS_PREPARED\\n');while(true){};const frame="))
     monkeypatch.setattr(module,'ASSETS',assets)
-    cancel=threading.Event();timer=None
+    cancel=threading.Event();observer=None;stop=threading.Event();prepared=threading.Event()
     original=module._docker
     def observe_start(args,config,budget,limit=1048576):
-        nonlocal timer
+        nonlocal observer
         if args[0]=='start' and mode=='cancel':
-            timer=threading.Timer(3,cancel.set);timer.start()
+            def observe_phase():
+                deadline=time.monotonic()+10
+                while not stop.is_set() and time.monotonic()<deadline:
+                    code,_,_,forced=original(['exec',args[2],'/usr/bin/test','-f','/tmp/build-outputs-prepared'],config,module._Budget(None,2,time.monotonic()))
+                    if code==0 and forced is None:
+                        prepared.set();cancel.set();return
+                    stop.wait(.1)
+            observer=threading.Thread(target=observe_phase,daemon=True);observer.start()
         return original(args,config,budget,limit)
     monkeypatch.setattr(module,'_docker',observe_start)
     start=time.monotonic()
     try:
         result=run_build(snapshot(),replace(grant(),timeout_seconds=8),cancel)
     finally:
-        if timer:timer.cancel()
+        stop.set()
+        if observer:observer.join(timeout=3)
     assert result['status']==('cancelled' if mode=='cancel' else 'timed_out'),result
     assert result['cleanupConfirmed'] is True and result['isolation']['established'] is True
-    assert 'OUTPUTS_PREPARED' in result['stderr']
+    if mode=='cancel':assert prepared.is_set(), 'Cancellation must follow observed completed output preparation'
+    else:assert 'OUTPUTS_PREPARED' in result['stderr']
     assert 'outputs' not in result and 'outputManifestSha256' not in result
     assert time.monotonic()-start<20
 
@@ -171,3 +180,72 @@ def test_actual_supervisor_rejects_damaged_output_transport(native,tmp_path,monk
     result=run_build(snapshot(),grant())
     assert result['status']!='passed',result
     assert result['cleanupConfirmed'] is True and 'outputs' not in result
+
+
+def test_controller_death_after_output_preparation_is_watchdog_bounded(native,tmp_path):
+    # Negative lifecycle fixture: compiler finishes, then fixed harness signals
+    # its exact phase in bounded container scratch and hangs before transport.
+    import json
+    import shutil
+    import subprocess
+    import sys
+    from pathlib import Path
+    from eidolon_cli import organization_project_typescript_build as module
+    assets=tmp_path/'runtime';shutil.copytree(module.ASSETS,assets)
+    harness=assets/'harness.mjs'
+    harness.write_text(harness.read_text().replace('const frame=',"fs.writeFileSync('/tmp/build-outputs-prepared','yes');while(true){};const frame="))
+    marker=tmp_path/'controller.json'
+    program='''import json,sys
+from pathlib import Path
+from eidolon_cli import organization_project_typescript_build as n
+n.ASSETS=Path(sys.argv[3])
+original=n._docker
+def capture(args,config,budget,limit=1048576):
+ if args[:2]==['start','--attach']:
+  record=n._json_command(['inspect',args[2]],config,budget)[0]
+  marker=Path(sys.argv[1]);pending=marker.with_suffix('.pending')
+  pending.write_text(json.dumps({'id':args[2],'config':str(config),'name':record['Name'],'image':record['Image'],'label':record['Config']['Labels']['ai.eidolon.execution']}))
+  pending.replace(marker)
+ return original(args,config,budget,limit)
+n._docker=capture
+n.run_build(json.loads(sys.argv[2]),json.loads(sys.argv[4]))
+'''
+    process=subprocess.Popen([sys.executable,'-c',program,str(marker),json.dumps(snapshot()),str(assets),json.dumps(asdict(replace(grant(),timeout_seconds=10)))],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+    container=None;config=None
+    def docker(*args):
+        return subprocess.run(['/usr/bin/docker','--config',config,'--host','unix:///var/run/docker.sock',*args],capture_output=True,timeout=5,env={'PATH':'/usr/bin:/bin','LANG':'C.UTF-8'})
+    try:
+        deadline=time.monotonic()+15
+        while not marker.exists() and process.poll() is None and time.monotonic()<deadline:time.sleep(.05)
+        assert marker.exists(),'Controller did not reach native start'
+        identity=json.loads(marker.read_text());container=identity['id'];config=identity['config']
+        phase=None
+        while time.monotonic()<deadline:
+            phase=docker('exec',container,'/usr/bin/test','-f','/tmp/build-outputs-prepared')
+            if phase.returncode==0:break
+            time.sleep(.05)
+        assert phase is not None and phase.returncode==0,'Compiler did not reach post-output phase'
+        process.kill();process.wait(timeout=5)
+        deadline=time.monotonic()+15
+        while time.monotonic()<deadline:
+            state=json.loads(docker('inspect',container).stdout)[0]['State']
+            if not state['Running']:break
+            time.sleep(.1)
+        assert state['Running'] is False and state['Pid']==0 and state['ExitCode']==124,state
+    finally:
+        if process.poll() is None:process.kill();process.wait(timeout=5)
+        if container:
+            owned=json.loads(docker('inspect',container).stdout)[0]
+            assert len(container)==64 and all(c in '0123456789abcdef' for c in container)
+            assert owned['Id']==container and owned['Name']==identity['name'] and owned['Image']==identity['image']
+            assert owned['Config']['Labels']['ai.eidolon.execution']==identity['label']
+            assert identity['name']=='/'+identity['label'] and identity['label'].startswith('eidolon-test-')
+            assert docker('rm','--force',container).returncode==0
+            base=Path(config).parent
+            assert base.name.startswith('eidolon-node-') and Path(config).name=='docker'
+            # Killed controller cannot run TemporaryDirectory cleanup. Remove
+            # only its recorded staging directory after confirmed container rm.
+            for root,dirs,_ in os.walk(base):
+                Path(root).chmod(0o700)
+                for directory in dirs:(Path(root)/directory).chmod(0o700)
+            shutil.rmtree(base)
