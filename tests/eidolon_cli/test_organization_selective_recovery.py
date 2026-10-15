@@ -177,8 +177,9 @@ def test_durable_source_success_reconciles_without_republishing(tmp_path, monkey
 
 
 @pytest.mark.linux_only
-@pytest.mark.parametrize('damage', ['missing', 'mismatch', 'cancelled', 'source', 'grant'])
+@pytest.mark.parametrize('damage', ['missing', 'mismatch', 'cancelled', 'source', 'grant', 'revoked_alias'])
 def test_reconcile_only_never_falls_back_to_publication(tmp_path, monkeypatch, damage):
+    from dataclasses import replace
     import threading
     from tests.eidolon_cli.test_organization_project_security import _source_ready
     from eidolon_cli import organization_source_integration as integration
@@ -200,7 +201,6 @@ def test_reconcile_only_never_falls_back_to_publication(tmp_path, monkeypatch, d
     elif damage == 'revoked_alias':
         store = OrganizationStore(store.path, replace(store.settings, revoked_root_aliases=('root0',)))
     elif damage == 'grant':
-        from dataclasses import replace
         store = OrganizationStore(store.path, replace(store.settings,
             tool_grants=tuple(grant for grant in store.settings.tool_grants if grant != 'integrate_source')))
     else:
