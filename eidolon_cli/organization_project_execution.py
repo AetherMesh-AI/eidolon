@@ -84,7 +84,7 @@ def project_execution_artifact(conn, identifier):
                       **({'projectId': _run_project_id(conn, row)} if _run_project_id(conn, row) is not None else {})})
     return {'id': row['id'], 'objectiveId': row['objective_id'], 'taskId': None,
             'kind': 'project_execution', 'content': body, 'sha256': hashlib.sha256(body.encode()).hexdigest(),
-            'summary': f"Project test execution: {record['status']}. Exact snapshot and bounded runtime receipt retained.",
+            'summary': f"Project execution: {record['status']}. Exact snapshot and bounded runtime receipt retained.",
             'toolReceipts': [], 'createdAt': datetime.fromtimestamp(row['finished'], timezone.utc).isoformat(), 'projectExecution': record}
 
 
@@ -155,7 +155,7 @@ def project_execution_view(conn, objective_id, *, full=False, project_id=None):
     return {'id': row['id'], 'requestId': row['request_id'], 'round': row['round'],
             'snapshotSha256': row['snapshot_sha256'], 'status': receipt['status'],
             'receipt': receipt if full else {key: receipt.get(key) for key in (
-                'status', 'exitCode', 'testCount', 'durationSeconds', 'command', 'reason', 'isolation')},
+                'status', 'exitCode', 'testCount', 'checkKind', 'inputCount', 'diagnosticCount', 'durationSeconds', 'command', 'reason', 'isolation')},
             'review': {'approved': bool(review['approved']), 'reviewerId': review['reviewer_id'],
                        'summary': review['summary'], 'requestId': review['request_id']} if review else None,
             'sourceIntegration': integration,
@@ -179,7 +179,7 @@ class OrganizationProjectExecutionStore:
     def _execution_required(self, conn, objective_id):
         checks = json.loads(conn.execute('SELECT required_checks FROM objective_control WHERE objective_id=?',
                                         (objective_id,)).fetchone()[0])
-        return 'project_tests' in checks or self._automatic_source(conn, objective_id)
+        return bool({'project_tests', 'project_typecheck', 'project_build'} & set(checks)) or self._automatic_source(conn, objective_id)
 
     def _execution_projects(self, conn, objective_id):
         from eidolon_cli.organization_projects import validate_objective_projects
@@ -332,7 +332,11 @@ class OrganizationProjectExecutionStore:
         execution = json.loads(row['grant_record'])['execution']
         recipe = execution['recipe']
         isolation, runtime = result.get('isolation', {}), result.get('runtime', {})
-        if recipe == 'node_test':
+        if recipe == 'typescript_check':
+            from eidolon_cli.organization_project_typescript import valid_typecheck_receipt
+            if not valid_typecheck_receipt(result, execution, _runner_files(json.loads(row['snapshot']))):
+                raise ValueError('Required typecheck needs an exact successful compiler receipt and confirmed cleanup')
+        elif recipe == 'node_test':
             from eidolon_cli.organization_project_node import valid_node_receipt
             if not valid_node_receipt(result, execution, _runner_files(json.loads(row['snapshot']))):
                 raise ValueError('Required Node tests need an exact successful isolated receipt and confirmed cleanup')
@@ -393,7 +397,7 @@ class OrganizationProjectExecutionStore:
                         'ON r.run_id=s.id WHERE s.objective_id=?', (request['objective_id'],)):
                     outcome = json.loads(retained['record'])
                     if (outcome.get('status') == 'cleanup_failed' or
-                            outcome.get('runner') == 'eidolon.isolated-node-test' and
+                            outcome.get('runner') in {'eidolon.isolated-node-test', 'eidolon.isolated-typescript-check'} and
                             outcome.get('containerName') and outcome.get('cleanupConfirmed') is not True):
                         raise ValueError('An earlier project container has an unknown cleanup outcome; inspect its retained identity before starting a new objective, not an automatic replay')
                 if self._reusable_project_run(conn, request) is not None:
@@ -483,7 +487,7 @@ class OrganizationProjectExecutionStore:
                                  payload={'evidenceIds': [row['id']], 'runId': row['id'],
                                           **({'projectId': json.loads(request['payload'])['projectId']} if 'projectId' in json.loads(request['payload']) else {})})
             self._pending(conn, conn.execute('SELECT * FROM requests WHERE id=?', (gate,)).fetchone(),
-                          'Project tests did not pass: ' + str(outcome.get('reason') or outcome['status'])[:1200]
+                          'Project check did not pass: ' + str(outcome.get('reason') or outcome['status'])[:1200]
                           + '. Inspect the retained outcome and replan; no source integration was performed.')
             return
         self._verify_project_run(conn, row['id'], review=False)
@@ -530,7 +534,44 @@ class OrganizationProjectExecutionStore:
         row = _latest_run(conn, objective_id, project_id)
         if row is None:
             raise ValueError('Required project tests have not been executed by an authorized runtime; model approval cannot satisfy this check')
-        return self._verify_project_run(conn, row['id'])
+        pair = self._verify_project_run(conn, row['id'])
+        if json.loads(pair[0]['grant_record'])['execution']['recipe'] not in {'node_test', 'python_unittest', 'python_pytest'}:
+            raise ValueError('Compiler evidence cannot satisfy project tests or their source integration prerequisite')
+        return pair
+
+    def verify_required_project_check_runs(self, conn, objective_id, project_id=None):
+        checks = set(json.loads(conn.execute('SELECT required_checks FROM objective_control WHERE objective_id=?',
+                                             (objective_id,)).fetchone()[0]))
+        kinds = checks & {'project_tests', 'project_typecheck', 'project_build'}
+        if self._automatic_source(conn, objective_id):
+            kinds.add('project_tests')
+        pairs = []
+        for kind in sorted(kinds):
+            pairs.extend(self.verify_project_check_runs(conn, objective_id, kind, project_id))
+        return pairs
+
+    def verify_project_check_runs(self, conn, objective_id, check_kind, project_id=None):
+        if check_kind == 'project_tests':
+            return [self.verify_project_tests(conn, objective_id, project_id)] if project_id is not None else self.verify_project_test_runs(conn, objective_id)
+        if check_kind != 'project_typecheck':
+            raise ValueError('Requested project check is unsupported by the authorized runtime')
+        projects = self._execution_projects(conn, objective_id) or [None]
+        if project_id is not None:
+            self._execution_project(conn, objective_id, project_id)
+            projects = [project for project in projects if project and project['id'] == project_id]
+            if not projects:
+                raise ValueError('Requested check project is not selected')
+        verified = []
+        for project in projects:
+            identifier = project['id'] if project else None
+            row = _latest_run(conn, objective_id, identifier)
+            if row is None:
+                raise ValueError('Required project typecheck has no authorized execution receipt')
+            pair = self._verify_project_run(conn, row['id'])
+            if json.loads(pair[0]['grant_record'])['execution']['recipe'] != 'typescript_check':
+                raise ValueError('A different project recipe cannot satisfy the required typecheck')
+            verified.append(pair)
+        return verified
 
     def ensure_source_integration(self, conn, objective_id):
         if not self._automatic_source(conn, objective_id):

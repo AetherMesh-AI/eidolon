@@ -1,4 +1,4 @@
-"""Experimental fixed TypeScript check; production recipe dispatch remains disabled."""
+"""Fixed TypeScript check with explicit owner-configured isolated runtime."""
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 import hashlib
@@ -254,3 +254,39 @@ def run_typecheck(files, grant, cancel=None):
     finally:
         result.update(endedAt=datetime.now(timezone.utc).isoformat(), durationSeconds=round(time.monotonic() - clock, 6))
     return result
+
+
+def valid_typecheck_receipt(result, execution, files):
+    """Bind retained compiler evidence to current trusted runtime, grant and inputs."""
+    try:
+        from eidolon_cli.organization_project_compiler_bundle import INVENTORY_SHA256
+        grant = normalize_typecheck_grant(execution)
+        files = _snapshot(files)
+        isolation, runtime = result.get('isolation'), result.get('runtime')
+        if not isinstance(isolation, dict) or not isinstance(runtime, dict):
+            return False
+        bootstrap = digest({name: hashlib.sha256((ASSETS / name).read_bytes()).hexdigest()
+                            for name in ('supervisor.mjs', 'harness.mjs', 'compiler-inventory.json')})
+        return (all(item['path'].split('/')[0] == grant.root for item in files)
+            and result.get('runner') == 'eidolon.isolated-typescript-check'
+            and result.get('runnerVersion') == 1 and result.get('status') == 'passed'
+            and result.get('checkKind') == 'project_typecheck' and 'testCount' not in result
+            and type(result.get('exitCode')) is int and result['exitCode'] == 0
+            and result.get('cleanupConfirmed') is True and result.get('sourceWritesPerformed') is False
+            and canonical(result.get('grant')) == canonical(asdict(grant))
+            and result.get('snapshotSha256') == snapshot_digest(files)
+            and canonical(result.get('files')) == canonical([{k: item[k] for k in ('path', 'sha256', 'revision')} for item in files])
+            and isolation.get('backend') == 'linux-docker-pinned' and isolation.get('established') is True
+            and isolation.get('sourceReadOnly') is True and isolation.get('runtimeReadOnly') is True
+            and isolation.get('network') == 'none' and isolation.get('processLimit') == 64
+            and isolation.get('supervisorUid') == 0 and isolation.get('workloadUid') == 65534
+            and isolation.get('seccompSha256') == PROFILE_SHA256
+            and runtime.get('image') == IMAGE and runtime.get('architecture') == 'amd64'
+            and runtime.get('seccompSha256') == PROFILE_SHA256 and runtime.get('bootstrapSha256') == bootstrap
+            and runtime.get('compilerInventorySha256') == INVENTORY_SHA256
+            and isinstance(runtime.get('imageId'), str) and re.fullmatch(r'sha256:[0-9a-f]{64}', runtime['imageId']) is not None
+            and isinstance(result.get('containerId'), str) and re.fullmatch(r'[0-9a-f]{64}', result['containerId']) is not None
+            and isinstance(result.get('containerConfigSha256'), str) and re.fullmatch(r'[0-9a-f]{64}', result['containerConfigSha256']) is not None
+            and valid_compiler_outcome(result, files, grant))
+    except (OSError, ValueError, TypeError, KeyError):
+        return False

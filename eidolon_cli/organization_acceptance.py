@@ -163,7 +163,7 @@ class OrganizationAcceptanceStore:
         if proof is not None:
             rows.append(project_validation_artifact(conn, proof['id']))
         if self._execution_required(conn, objective_id):
-            rows.extend(execution for _, execution in self.verify_project_test_runs(conn, objective_id))
+            rows.extend(execution for _, execution in self.verify_required_project_check_runs(conn, objective_id))
         rows.extend(self.current_source_evidences(conn, objective_id))
         return rows
 
