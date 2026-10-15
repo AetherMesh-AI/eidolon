@@ -255,3 +255,14 @@ def test_projection_keeps_one_read_transaction_during_concurrent_commit(tmp_path
     assert read_observation(tmp_path)['snapshot']['objectives'][0]['title'] == original
     monkeypatch.setattr(_ObservationView, '_snapshot', project)
     assert read_observation(tmp_path)['snapshot']['objectives'][0]['title'] == 'New committed title'
+
+
+def test_missing_optional_build_outputs_remains_passive(tmp_path, monkeypatch):
+    store=seed(tmp_path)
+    with sqlite3.connect(store.path) as conn:conn.execute('DROP TABLE project_build_outputs')
+    before=files(tmp_path)
+    forbid_runtime(monkeypatch)
+    assert read_observation(tmp_path)['state'] == 'available'
+    assert files(tmp_path)==before
+    with sqlite3.connect(store.path) as conn:
+        assert conn.execute("SELECT name FROM sqlite_master WHERE name='project_build_outputs'").fetchone() is None

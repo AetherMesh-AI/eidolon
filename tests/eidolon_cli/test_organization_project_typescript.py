@@ -238,7 +238,7 @@ def test_full_compiler_receipt_rejects_changed_runtime_or_outcome(native,field,v
     assert not valid_typecheck_receipt({**native,field:value},asdict(grant()),snapshot())
 
 
-def _typecheck_reviewed_store(tmp_path):
+def _typecheck_reviewed_store(tmp_path, *, execution=None, check_kind="project_typecheck", extra_sources=None):
     import json
     from eidolon_cli.organization_project_config import parse_project_grants
     from eidolon_cli.organization_store import OrganizationStore
@@ -247,11 +247,12 @@ def _typecheck_reviewed_store(tmp_path):
     moved=source.with_name('main.ts');source.rename(moved);source=moved
     (source.parent/'tsconfig.json').write_text('{}')
     original=source.read_bytes()
-    grants=parse_project_grants([{'id':'typecheck','files':['root0/main.ts','root0/tsconfig.json'],'execution':asdict(grant())}],1)
+    for name,content in (extra_sources or {}).items():(source.parent/name).write_text(content)
+    grants=parse_project_grants([{'id':'typecheck','files':['root0/main.ts','root0/tsconfig.json', *['root0/'+name for name in (extra_sources or {})]],'execution':execution or asdict(grant())}],1)
     staff=tuple(replace(member,tool_grants=tuple(dict.fromkeys((*member.tool_grants,'run_tests')))) for member in store.settings.roster)
     store=OrganizationStore(store.path,replace(store.settings,roster=staff,tool_grants=(*store.settings.tool_grants,'run_tests'),project_grants=grants))
     with store._write() as conn:
-        conn.execute("UPDATE objective_control SET delivery_mode='managed_artifact',required_checks=? WHERE objective_id=?",(json.dumps(['project_typecheck']),objective['id']))
+        conn.execute("UPDATE objective_control SET delivery_mode='managed_artifact',required_checks=? WHERE objective_id=?",(json.dumps([check_kind]),objective['id']))
     claim=store.claim_next();data,_=_read(store,claim,path='root0/main.ts')
     assert store.finish(claim,{'summary':'Reviewed TypeScript value change','edit':{'path':'root0/main.ts','baseRevision':data['workspaceRevision'],'baseSha256':data['sourceSha256'],'oldText':'= 1;','newText':'= 2;'}})
     _review(store)
