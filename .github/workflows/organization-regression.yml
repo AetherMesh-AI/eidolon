@@ -147,6 +147,7 @@ jobs:
             tests/eidolon_cli/test_organization_model_routing.py
             tests/eidolon_cli/test_organization_model_routing_e2e.py
             tests/eidolon_cli/test_organization_routing_observations.py
+            tests/eidolon_cli/test_organization_route_benchmarks.py
             tests/eidolon_cli/test_organization_owner_policy.py
             tests/eidolon_cli/test_organization_team_setup.py
             tests/eidolon_cli/test_organization_team_admission.py
@@ -188,6 +189,12 @@ jobs:
           )
           projects_config_tests=(
             tests/eidolon_cli/test_organization_project_registry.py
+            tests/eidolon_cli/test_organization_milestones.py
+            tests/eidolon_cli/test_organization_goal_allowances.py
+            tests/eidolon_cli/test_organization_goal_continuation.py
+            tests/eidolon_cli/test_organization_goal_reauthorization.py
+            tests/tui_gateway/test_organization_milestones.py
+            tests/tui_gateway/test_organization_goals.py
             tests/eidolon_cli/test_organization_project_registry_processes.py
             tests/eidolon_cli/test_organization_project_registry_conflicts.py
             tests/eidolon_cli/test_organization_project_registry_links.py
@@ -243,17 +250,33 @@ jobs:
             *) echo 'Unknown native suite' >&2; exit 1 ;;
           esac
           diagnostic_args=()
+          file_budget_args=()
           if [[ '${{ matrix.os }}' == 'windows-latest' && ( '${{ matrix.suite }}' == 'outcomes-attention' || '${{ matrix.suite }}' == 'ledger-identity' ) ]]; then
-            # Retain the 300s file cap and every assertion. Phase timings and
+            # Retain every assertion. Phase timings and
             # live stacks distinguish slow setup from a blocked test operation.
             diagnostic_args=(-vv -s -p scripts.ci.organization_timing --organization-timing-dir=organization-timing -o faulthandler_timeout=30)
           fi
-          scripts/run_tests.sh "${native_tests[@]}" -j 3 -- "${diagnostic_args[@]}"
+          if [[ '${{ matrix.os }}' == 'windows-latest' ]]; then
+            # 108 real task lifecycles: retained run 38803777266 made continuous
+            # progress but spent 218s in close and 58s in commit before 300s.
+            # Only this file gets 600s; all others keep 300s and concurrency stays 3.
+            file_budget_args=(--file-timeout-override tests/eidolon_cli/test_organization_artifact_retention.py=600)
+          fi
+          scripts/run_tests.sh "${native_tests[@]}" -j 3 "${file_budget_args[@]}" -- "${diagnostic_args[@]}"
 
       - name: Retain Windows ledger and attention phase timings
         if: ${{ always() && matrix.os == 'windows-latest' && (matrix.suite == 'outcomes-attention' || matrix.suite == 'ledger-identity') }}
         run: |
-          python -c 'import pathlib; files=sorted(pathlib.Path("organization-timing").glob("organization-timing-*.jsonl")); assert files, "Missing native timing evidence"; [print(p.read_text(encoding="utf-8")) for p in files]'
+          .venv/Scripts/python.exe -m scripts.ci.organization_timing organization-timing
+
+      - name: Retain sanitized Windows diagnostic files
+        if: ${{ always() && matrix.os == 'windows-latest' && (matrix.suite == 'outcomes-attention' || matrix.suite == 'ledger-identity') }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows-diagnostics-${{ matrix.suite }}
+          path: organization-timing/sanitized/
+          if-no-files-found: error
+          retention-days: 7
 
   native-windows:
     # Retain the existing check name. This gate cannot succeed if a native

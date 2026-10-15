@@ -82,10 +82,12 @@ def replacement_preview(conn, settings, objective_id, resolution_options):
     reserve = configured_reserve(settings, model_calls=budget['modelCallLimit'], tokens=budget['tokenLimit'], cost_usd=budget['configuredCostLimitUsd'])
     # Advisory scheduling timestamps are not authorization or fresh allowance.
     authority_budget = {key: value for key, value in budget.items() if key != 'adaptivePacing'}
-    version = hashlib.sha256(json.dumps([reserve, dict(row), dict(control), authority_budget, assignment, projects, policy, identities, leaders, staff, requests, history], sort_keys=True).encode()).hexdigest()
+    from eidolon_cli.organization_outcome_contracts import contract_view
+    contract = contract_view(conn, objective_id)
+    version = hashlib.sha256(json.dumps([contract, reserve, dict(row), dict(control), authority_budget, assignment, projects, policy, identities, leaders, staff, requests, history], sort_keys=True).encode()).hexdigest()
     return {'sourceId': objective_id, 'sourceVersion': version, 'reasonCodes': reasons, 'sourceUsage': budget,
             'title': row['title'], 'description': control['amended_scope'] or row['description'],
-            'acceptanceCriteria': json.loads(control['criteria']), 'priority': f"P{6-row['priority']}",
+            'acceptanceCriteria': json.loads(control['criteria']), 'outcomeContract': contract, 'priority': f"P{6-row['priority']}",
             'deliveryMode': control['delivery_mode'], 'requiredChecks': json.loads(control['required_checks']),
             **assignment, 'projectIds': [project['id'] for project in projects],
             'allowance': {'completionReserve': reserve, 'modelCalls': budget['modelCallLimit'], 'tokens': budget['tokenLimit'],
@@ -113,9 +115,22 @@ class OrganizationReplacementStore:
         title = _text(title, 'Title', 500)
         description = _text(description, 'Description', 30000)
         criteria = normalize_criteria(acceptance_criteria, description)
-        digest = hashlib.sha256(json.dumps([source_id, source_version, title, description, criteria]).encode()).hexdigest()
         with self._write() as conn:
             self._require_current_policy(conn)
+            from eidolon_cli.organization_outcome_contracts import contract_view, definitions, has_typed
+            source_contract = contract_view(conn, source_id)
+            if acceptance_criteria is not None and any(isinstance(item, dict) for item in acceptance_criteria):
+                effective = acceptance_criteria
+            elif has_typed(source_contract):
+                if len(criteria) != len(source_contract['criteria']):
+                    raise ValueError('Typed replacement requires explicit criteria when changing the criterion count')
+                effective = [text if original['legacy'] else {**{k: v for k, v in original.items() if k not in {'revision', 'legacy'}}, 'text': text}
+                             for text, original in zip(criteria, source_contract['criteria'])]
+            else:
+                effective = criteria
+            normalized = definitions(effective, description)
+            identity_criteria = normalized if any(not item['legacy'] for item in normalized) else criteria
+            digest = hashlib.sha256(json.dumps([source_id, source_version, title, description, identity_criteria], sort_keys=True).encode()).hexdigest()
             previous = conn.execute('SELECT * FROM objective_replacements WHERE source_id=?', (source_id,)).fetchone()
             if previous:
                 if previous['input_hash'] != digest:
@@ -129,9 +144,11 @@ class OrganizationReplacementStore:
                 # Cancellation frees the open-work slot in this same transaction.
                 # Current/history storage ceilings still apply; failure rolls it all back.
                 ident = self._create_objective(conn, title, description, draft['priority'],
-                    idempotency_key=_id('replacement'), acceptance_criteria=criteria,
+                    idempotency_key=_id('replacement'), acceptance_criteria=effective,
                     delivery_mode=draft['deliveryMode'], required_checks=draft['requiredChecks'],
                     executive_id=draft['executiveId'], manager_id=draft['managerId'], project_ids=draft['projectIds'], project_run_limit=draft['allowance']['projectRuns'], completion_reserve=draft['allowance']['completionReserve'])
+                from eidolon_cli.organization_goal_allowances import inherit_goal_membership
+                inherit_goal_membership(conn, source_id, ident)
                 allowance = draft['allowance']
                 conn.execute('UPDATE objective_budgets SET max_model_calls=?,max_total_tokens=?,max_cost_usd=? WHERE objective_id=?',
                              (allowance['modelCalls'], allowance['tokens'], allowance['costUsd'], ident))

@@ -282,9 +282,8 @@ def _objective_routes(conn, objective_id, role):
 
 def _validate_package_scope(conn, package, actor):
     from eidolon_cli.organization_projects import objective_projects
-    teams = {row['team'] for row in conn.execute(
-        'SELECT t.team FROM tasks t JOIN task_work_packages p ON p.task_id=t.id WHERE p.package_id=?',
-        (package['id'],))}
+    from eidolon_cli.organization_packages import package_tasks
+    teams = {row['team'] for row in package_tasks(conn, package['id'])}
     projects = set(json.loads(package['project_ids']))
     teams.update(project['team'] for project in objective_projects(conn, package['objective_id'])
                  if project['id'] in projects)
@@ -323,6 +322,8 @@ def _validate_open_packages(conn, previous_teams, actor=None):
                         'JOIN objectives o ON o.id=p.objective_id '
                         'JOIN objective_control c ON c.objective_id=o.id WHERE o.cancelled=0 '
                         "AND c.status NOT IN ('accepted','legacy_completed') AND p.round=c.round").fetchall()
+    from eidolon_cli.organization_package_repair import open_repaired_packages
+    rows.extend(open_repaired_packages(conn))
     from eidolon_cli.organization_identity import _leader_enabled
     for package in rows:
         manager = conn.execute('SELECT * FROM agents WHERE id=?', (package['manager_id'],)).fetchone()
@@ -349,6 +350,11 @@ def _validate_objective_scope(conn, objective_id, actor):
         'SELECT a.team FROM manager_work_packages p JOIN agents a ON a.id=p.manager_id '
         'JOIN objective_control c ON c.objective_id=p.objective_id WHERE p.objective_id=? AND p.round=c.round',
         (objective_id,)))
+    from eidolon_cli.organization_package_repair import open_repaired_packages
+    for package in open_repaired_packages(conn, objective_id):
+        manager = conn.execute('SELECT team FROM agents WHERE id=?', (package['manager_id'],)).fetchone()
+        if manager:
+            teams.add(manager['team'])
     if any(not _team_allowed(actor, team) for team in teams):
         raise ValueError('Objective work is outside the actor managed teams')
 

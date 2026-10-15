@@ -27,6 +27,7 @@ import * as path from 'node:path'
 import { _electron, type ElectronApplication, type Page } from '@playwright/test'
 
 import { resolveElectronBinary } from './electron-binary'
+import { seedIsolatedModelCatalog } from './isolated-model-catalog'
 import { startMockServer, type MockServerOptions } from './mock-server'
 import { mockProviderConfig } from './mock-provider-config'
 import { installErrorBannerGuard } from './test'
@@ -343,6 +344,8 @@ export interface MockBackendOptions {
   extraConfig?: string
   /** Override the mock model's context window for compression scenarios. */
   modelContextLength?: number
+  /** Visual-only opt-in: real catalog reads use synthetic metadata, without public catalogs. */
+  isolateModelCatalog?: boolean
   /** Populate durable synthetic records before desktop/backend caches first load. */
   beforeLaunch?: (sandbox: Sandbox, mock: Awaited<ReturnType<typeof startMockServer>>) => Promise<void>
 }
@@ -364,16 +367,18 @@ export async function setupMockBackend(options: MockBackendOptions = {}): Promis
 
   // 2. Create sandbox + write config
   const sandbox = createSandbox('mock')
-  writeMockProviderConfig(
-    sandbox.hermesHome,
-    mock.url,
-    options.extraDisplayConfig,
-    options.extraConfig,
-    options.modelContextLength,
-  )
-  writeEnvFile(sandbox.hermesHome)
-
   try {
+    const extraConfig = options.isolateModelCatalog
+      ? seedIsolatedModelCatalog(sandbox.hermesHome, options.extraConfig)
+      : options.extraConfig
+    writeMockProviderConfig(
+      sandbox.hermesHome,
+      mock.url,
+      options.extraDisplayConfig,
+      extraConfig,
+      options.modelContextLength,
+    )
+    writeEnvFile(sandbox.hermesHome)
     await options.beforeLaunch?.(sandbox, mock)
   } catch (error) {
     await mock.close()

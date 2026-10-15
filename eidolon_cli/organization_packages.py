@@ -8,6 +8,8 @@ from __future__ import annotations
 import hashlib
 import json
 
+from eidolon_cli.organization_package_repair import package_row, package_members, repaired_rows, task_repair_package
+
 PACKAGE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS objective_planning (
  objective_id TEXT PRIMARY KEY REFERENCES objectives(id), version INTEGER NOT NULL,
@@ -31,17 +33,20 @@ def planning_mode(conn, objective_id):
 
 def task_package_id(conn, task_id):
     row = conn.execute('SELECT package_id FROM task_work_packages WHERE task_id=?', (task_id,)).fetchone()
-    return row[0] if row else None
+    return row[0] if row else task_repair_package(conn, task_id)
 
 
 def request_package(conn, request):
     if request['type'] == 'request.plan':
         return conn.execute('SELECT * FROM manager_work_packages WHERE plan_request_id=?', (request['id'],)).fetchone()
     identifier = task_package_id(conn, request['task_id']) if request['task_id'] else None
-    return conn.execute('SELECT * FROM manager_work_packages WHERE id=?', (identifier,)).fetchone() if identifier else None
+    return package_row(conn, identifier) if identifier else None
 
 
 def package_tasks(conn, package_id):
+    carried = package_members(conn, package_id)
+    if carried is not None:
+        return carried
     return conn.execute('SELECT t.* FROM tasks t JOIN task_work_packages p ON p.task_id=t.id '
                         'WHERE p.package_id=? ORDER BY t.rowid', (package_id,)).fetchall()
 
@@ -68,12 +73,13 @@ def package_view(conn, row):
             'criterionIndexes': json.loads(row['criterion_indexes']), 'criteria': json.loads(row['criteria_snapshot']), 'projectIds': json.loads(row['project_ids']),
             'dependencyIds': json.loads(row['dependencies']), 'maxTasks': row['max_tasks'],
             'planRequestId': row['plan_request_id'], 'decompositionRequestId': row['decomposition_request_id'],
-            'status': status, 'taskIds': [t['id'] for t in tasks], 'currentRound': current}
+            'status': status, 'taskIds': [t['id'] for t in tasks], 'currentRound': current,
+            **({k: row[k] for k in ('sourcePackageId', 'planDisposition', 'sourcePlanSha256')} if isinstance(row, dict) and 'sourcePackageId' in row else {})}
 
 
 def packages_view(conn, objective_id):
     return [package_view(conn, row) for row in conn.execute(
-        'SELECT * FROM manager_work_packages WHERE objective_id=? ORDER BY round,rowid', (objective_id,))]
+        'SELECT * FROM manager_work_packages WHERE objective_id=? ORDER BY round,rowid', (objective_id,))] + [package_view(conn, row) for row in repaired_rows(conn, objective_id)]
 
 
 def packages_complete(conn, objective_id):
@@ -86,15 +92,18 @@ def packages_complete(conn, objective_id):
 def package_dependency_requests(conn, task_id):
     """Include latent package edges in typed-request cycle detection."""
     identifier = task_package_id(conn, task_id)
-    row = conn.execute('SELECT dependencies FROM manager_work_packages WHERE id=?', (identifier,)).fetchone() if identifier else None
+    row = package_row(conn, identifier) if identifier else None
     if row is None:
         return []
     requests = []
     for dependency in json.loads(row['dependencies']):
+        source = package_row(conn, dependency)
+        if source is None:
+            raise ValueError('Package dependency is missing')
+        members = [t['id'] for t in package_tasks(conn, dependency)]
         requests.extend(item[0] for item in conn.execute(
-            "SELECT r.id FROM requests r WHERE r.status NOT IN ('completed','cancelled') AND "
-            '(r.id=(SELECT plan_request_id FROM manager_work_packages WHERE id=?) OR '
-            'r.task_id IN (SELECT task_id FROM task_work_packages WHERE package_id=?))', (dependency, dependency)))
+            "SELECT id FROM requests WHERE status NOT IN ('completed','cancelled') AND (id=? OR task_id IN (" +
+            ','.join('?' for _ in members) + '))', (source['plan_request_id'], *members)))
     return requests
 
 
@@ -104,7 +113,7 @@ def package_dependencies_ready(conn, request):
     if package is None or request['type'] == 'request.plan':
         return True
     for identifier in json.loads(package['dependencies']):
-        source = conn.execute('SELECT * FROM manager_work_packages WHERE id=?', (identifier,)).fetchone()
+        source = package_row(conn, identifier)
         if source is None or package_view(conn, source)['status'] != 'completed':
             return False
     return True

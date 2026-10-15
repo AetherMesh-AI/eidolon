@@ -46,7 +46,7 @@ def _exact(value, context):
     return text
 
 
-def _native_project_loop(tmp_path, monkeypatch, *, create=False, recipe="python_unittest"):
+def _native_project_loop(tmp_path, monkeypatch, *, create=False, recipe="python_unittest", typed=False):
     from eidolon_cli import config
     from tools import file_tools
 
@@ -169,6 +169,9 @@ def _native_project_loop(tmp_path, monkeypatch, *, create=False, recipe="python_
                               "evidenceIds": evidence_ids, "criteriaResults": [{"criterion": item, "satisfied": True,
                               "evidenceIds": evidence_ids, "reason": "Exact reviewed source, regression assertions, actual isolated run and source branch agree."}
                               for item in context["objective"]["acceptanceCriteria"]], "conflicts": []}
+                if typed and kind == 'request.accept':
+                    for judgment, criterion in zip(output['criteriaResults'], context['objective']['outcomeContract']['criteria']):
+                        judgment.update(criterionId=criterion['id'], criterionRevision=criterion['revision'])
                 self.respond({"role": "assistant", "content": json.dumps(output)}, "stop")
             except Exception as error:
                 errors.append(repr(error))
@@ -208,8 +211,12 @@ def _native_project_loop(tmp_path, monkeypatch, *, create=False, recipe="python_
     monkeypatch.setattr(file_tools, "_get_file_ops", lambda *_: pytest.fail("No model shell or general file backend is authorized"))
     settings = OrganizationSettings.from_config(cfg)
     store = OrganizationStore(home / "organization" / "state.db", settings)
+    criteria = ([{'id': 'tests', 'text': CRITERION, 'kind': 'authorized_check', 'checkKind': 'project_tests'},
+                 {'id': 'source', 'text': 'Exact reviewed source branch', 'kind': 'source_integration'},
+                 {'id': 'managed', 'text': 'Exact managed validation', 'kind': 'authorized_check', 'checkKind': 'managed_validation'}]
+                if typed else [CRITERION])
     objective = store.create_objective("Fix and verify addition", CRITERION, idempotency_key="project-once",
-        acceptance_criteria=[CRITERION], delivery_mode="source_project",
+        acceptance_criteria=criteria, delivery_mode="source_project",
         required_checks=["project_tests", "managed_validation", "source_integration"])
     service = OrganizationService(store, home=home, settings=settings, poll_seconds=0.01)
     try:
@@ -284,7 +291,7 @@ def _native_project_loop(tmp_path, monkeypatch, *, create=False, recipe="python_
         finally:
             assert restarted.stop()
         replay = store.create_objective("Fix and verify addition", CRITERION, idempotency_key="project-once",
-            acceptance_criteria=[CRITERION], delivery_mode="source_project",
+            acceptance_criteria=criteria, delivery_mode="source_project",
             required_checks=["project_tests", "managed_validation", "source_integration"])
         assert replay["id"] == objective["id"] and len(received) == calls
     finally:
@@ -335,3 +342,8 @@ def test_native_macos_recipe_never_falls_back_to_host_python(monkeypatch):
 @pytest.mark.windows_only
 def test_native_windows_recipe_never_falls_back_to_host_python(monkeypatch):
     _unsupported_runner_never_starts_a_child(monkeypatch)
+
+
+@pytest.mark.linux_only
+def test_native_project_typed_outcome_contracts(tmp_path, monkeypatch):
+    _native_project_loop(tmp_path, monkeypatch, typed=True)

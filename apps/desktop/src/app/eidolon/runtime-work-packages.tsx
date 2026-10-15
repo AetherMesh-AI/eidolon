@@ -1,4 +1,5 @@
 import { useI18n } from '@/i18n/context'
+import { selectiveRepairCopy } from '@/i18n/organization-selective-repair'
 
 import type { Objective, OrganizationSnapshot, OrganizationWorkPackage } from './types'
 
@@ -10,7 +11,7 @@ interface RuntimeWorkPackagesProps {
 /** Paint retained delegation records, including cancelled rounds, without
  * deriving objective acceptance or rewriting historical criterion text. */
 export function RuntimeWorkPackages({ objective, snapshot }: RuntimeWorkPackagesProps) {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const copy = t.organizationWork
   const packages = objective.workPackages ?? []
 
@@ -47,6 +48,7 @@ export function RuntimeWorkPackages({ objective, snapshot }: RuntimeWorkPackages
           {item.round}
         </p>
         <p className="eid-result-text">{item.description}</p>
+        {item.planDisposition === 'reused' && <p className="eid-note">{selectiveRepairCopy[locale].plan}: {item.sourcePackageId}. {selectiveRepairCopy[locale].planDetail}</p>}
         <dl>
           <dt>{copy.workPackage}</dt>
           <dd className="eid-result-text">{item.id}</dd>

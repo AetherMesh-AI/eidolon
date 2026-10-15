@@ -132,7 +132,9 @@ def routing_observations(path, *, limit=200):
                     'objectiveRound': row['objective_round'],
                     'qualityAttribution': 'unproven',
                 })
+            from eidolon_cli.organization_routing_readiness import evidence_readiness
             return {'state': 'available', 'observations': observations, 'truncated': len(rows) > limit,
+                    'evidenceReadiness': evidence_readiness(observations, truncated=len(rows) > limit),
                     'shadowRanking': None, 'rankingReason': 'insufficient-comparable-verified-cost-and-quality',
                     'selectionChanged': False,
                     'scope': 'local-routed-call-reservations; observations-are-not-proof-of-physical-send'}

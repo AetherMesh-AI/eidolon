@@ -1,10 +1,12 @@
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n/context'
 import { completionReserveCopy } from '@/i18n/organization-completion-reserve'
+import { outcomeContractCopy } from '@/i18n/organization-outcome-contracts'
 
 import { LocalizedTime } from './localized-time'
 import { RuntimeAdaptivePacing } from './runtime-adaptive-pacing'
 import { RuntimeCompletionReserve } from './runtime-completion-reserve'
+import { validOutcomeContract } from './runtime-outcome-contract-types'
 import { RuntimeProjectExecution } from './runtime-project-execution'
 import type { Objective } from './types'
 
@@ -19,6 +21,8 @@ export function RuntimeAcceptance({
   const copy = t.organizationWork
   const acceptance = objective.acceptance
   const usage = objective.usage
+  const contract = validOutcomeContract(acceptance?.contract) ? acceptance.contract : null
+  const outcomeCopy = outcomeContractCopy[locale]
 
   return (
     <section aria-label={copy.acceptance}>
@@ -34,7 +38,7 @@ export function RuntimeAcceptance({
               <h3>{copy.acceptanceCriteria}</h3>
               <ul>
                 {acceptance.criteria.map((criterion, index) => (
-                  <li key={index}>{criterion}</li>
+                  <li key={index}>{criterion}{contract?.criteria[index] && <span className="eid-note"> · {outcomeCopy[contract.criteria[index].kind]} · {outcomeCopy.revision} {contract.criteria[index].revision}</span>}</li>
                 ))}
               </ul>
             </>

@@ -27,6 +27,10 @@ from eidolon_cli.organization_packages import (PACKAGE_SCHEMA, OrganizationPacka
 from eidolon_cli.organization_dispatch import DISPATCH_SCHEMA, OrganizationDispatchStore
 from eidolon_cli.organization_priority import PRIORITY_SCHEMA, OrganizationPriorityStore
 from eidolon_cli.organization_pacing import OrganizationPacingDeferred, OrganizationPacingStore, pacing_wait
+from eidolon_cli.organization_goal_reauthorization import SCHEMA as GOAL_AUTH_SCHEMA, GoalReauthorizationStore
+from eidolon_cli.organization_goal_continuation import CONTINUATION_SCHEMA, OrganizationGoalContinuationStore
+from eidolon_cli.organization_goal_allowances import GOAL_SCHEMA, OrganizationGoalAllowanceStore, require_goal_admission
+from eidolon_cli.organization_milestones import MILESTONE_SCHEMA, OrganizationMilestoneStore
 from eidolon_cli.organization_config import OrganizationSettings
 from eidolon_cli.organization_project_registry import REGISTRY_SCHEMA
 from eidolon_cli.organization_root_grants import ROOT_GRANT_SCHEMA
@@ -113,10 +117,10 @@ def _text(value, field, limit=10000):
 
 
 # One DDL contract for initialization and non-migrating observation preflight.
-ORGANIZATION_SCHEMA = (_SCHEMA + RECOVERY_SCHEMA + ROOT_GRANT_SCHEMA + TEAM_SETUP_SCHEMA + OWNER_POLICY_SCHEMA + ROUTING_SCHEMA + REPLACEMENT_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA + COORDINATION_SCHEMA + HISTORY_SCHEMA + ATTENTION_SCHEMA + PROJECTS_SCHEMA + OUTCOME_SCHEMA + REGISTRY_SCHEMA + PACKAGE_SCHEMA + CONVERSATION_SCHEMA + OWNER_CHAT_SCHEMA + PRIORITY_SCHEMA + DISPATCH_SCHEMA)
+ORGANIZATION_SCHEMA = (_SCHEMA + CONTINUATION_SCHEMA + GOAL_AUTH_SCHEMA + GOAL_SCHEMA + RECOVERY_SCHEMA + ROOT_GRANT_SCHEMA + MILESTONE_SCHEMA + TEAM_SETUP_SCHEMA + OWNER_POLICY_SCHEMA + ROUTING_SCHEMA + REPLACEMENT_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA + COORDINATION_SCHEMA + HISTORY_SCHEMA + ATTENTION_SCHEMA + PROJECTS_SCHEMA + OUTCOME_SCHEMA + REGISTRY_SCHEMA + PACKAGE_SCHEMA + CONVERSATION_SCHEMA + OWNER_CHAT_SCHEMA + PRIORITY_SCHEMA + DISPATCH_SCHEMA)
 
 
-class OrganizationStore(OrganizationRecoveryStore, OrganizationModelRoutingStore, OrganizationPacingStore, OrganizationDispatchStore, OrganizationPriorityStore, OrganizationReplacementStore, OrganizationOwnerChatStore, OrganizationConversationStore, OrganizationPackageStore, OrganizationOutcomeStore, OrganizationAttentionStore, OrganizationHistoryStore, OrganizationCoordinationStore, OrganizationProjectExecutionStore, OrganizationBudgetStore, OrganizationRequestStore, OrganizationManagementStore, OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
+class OrganizationStore(GoalReauthorizationStore, OrganizationGoalContinuationStore, OrganizationGoalAllowanceStore, OrganizationMilestoneStore, OrganizationRecoveryStore, OrganizationModelRoutingStore, OrganizationPacingStore, OrganizationDispatchStore, OrganizationPriorityStore, OrganizationReplacementStore, OrganizationOwnerChatStore, OrganizationConversationStore, OrganizationPackageStore, OrganizationOutcomeStore, OrganizationAttentionStore, OrganizationHistoryStore, OrganizationCoordinationStore, OrganizationProjectExecutionStore, OrganizationBudgetStore, OrganizationRequestStore, OrganizationManagementStore, OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
     def __init__(self, path: Path | str, settings: OrganizationSettings | None = None):
         self.path = Path(path)
         self._shared_state_path = self.path.resolve()
@@ -132,6 +136,8 @@ class OrganizationStore(OrganizationRecoveryStore, OrganizationModelRoutingStore
             self._migrate_receipt_executions(conn)
             self._migrate_reservations(conn)
             self._migrate_acceptance(conn)
+            from eidolon_cli.organization_outcome_contracts import migrate_contracts
+            migrate_contracts(conn)
             self._migrate_budgets(conn)
             self._migrate_planning(conn)
             self._migrate_project_execution_budgets(conn)
@@ -193,6 +199,9 @@ class OrganizationStore(OrganizationRecoveryStore, OrganizationModelRoutingStore
     def _request(conn, objective, request_type, team, priority, task=None, payload=None, *, requester_id=None):
         ident = _id("req")
         payload = dict(payload or {})
+        if request_type in {"request.integrate", "request.accept"}:
+            from eidolon_cli.organization_outcome_contracts import bind_contract
+            bind_contract(conn, objective, payload)
         if payload.get('evidenceIds'):
             hashes = {}
             for evidence_id in payload['evidenceIds']:
@@ -213,6 +222,9 @@ class OrganizationStore(OrganizationRecoveryStore, OrganizationModelRoutingStore
             payload['evidenceHashes'] = hashes
         conn.execute("INSERT INTO requests(id,objective_id,task_id,type,team,priority,status,created,payload) VALUES (?,?,?,?,?,?,'queued',?,?)",
                      (ident, objective, task, request_type, team, priority, time.time(), json.dumps(payload or {})))
+        if task:
+            from eidolon_cli.organization_selective_repair import inherit_attempts
+            inherit_attempts(conn, ident, task, request_type)
         OrganizationRequestStore._insert_request_contract(conn, ident, requester_id=requester_id)
         return ident
 
@@ -234,9 +246,14 @@ class OrganizationStore(OrganizationRecoveryStore, OrganizationModelRoutingStore
         criteria = normalize_criteria(acceptance_criteria, title if description == title else title + '\n\n' + description)
         from eidolon_cli.organization_acceptance import required_checks as normalize_checks
         checks = normalize_checks(required_checks if required_checks is not None else [])
+        from eidolon_cli.organization_outcome_contracts import definitions, required_by, write_contract
+        contract_definitions = definitions(acceptance_criteria, title if description == title else title + '\n\n' + description)
+        checks = list(dict.fromkeys([*checks, *required_by(contract_definitions)]))
         if delivery_mode not in ('managed_artifact', 'source_project'):
             raise ValueError('deliveryMode must be managed_artifact or source_project')
         projects = selected_projects(project_ids, self.settings)
+        if any(item.get('projectId') is not None and item['projectId'] not in {p['id'] for p in projects} for item in contract_definitions):
+            raise ValueError('Criterion projectId must identify an explicitly selected project')
         if any(project['recipe'] is None for project in projects) and (delivery_mode != 'managed_artifact' or set(checks) & {'project_tests', 'source_integration'}):
             raise ValueError('Planning-only folders require managed artifact delivery without project tests or source integration; approve an execution recipe first')
         from eidolon_cli.organization_acceptance import validate_project_checks
@@ -254,6 +271,8 @@ class OrganizationStore(OrganizationRecoveryStore, OrganizationModelRoutingStore
             identity = {'objective': identity, 'executiveId': executive_id, 'managerId': manager_id}
         if projects:
             identity = {'objective': identity, 'projects': projects}
+        if any(not item['legacy'] for item in contract_definitions):
+            identity = {'objective': identity, 'outcomeContract': contract_definitions}
         digest = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
         self._require_current_policy(conn)
         old = conn.execute("SELECT * FROM objectives WHERE idempotency_key=?", (key,)).fetchone()
@@ -278,6 +297,7 @@ class OrganizationStore(OrganizationRecoveryStore, OrganizationModelRoutingStore
             mode = self._initialize_planning(conn, ident)
             conn.execute("INSERT INTO objective_control(objective_id,criteria,status,round,max_replans,max_stages,delivery_mode,required_checks) VALUES (?,?,'pending',0,?,?,?,?)",
                          (ident, json.dumps(criteria), self.settings.max_replans, self.settings.max_stages, delivery_mode, json.dumps(checks)))
+            write_contract(conn, ident, contract_definitions)
             self._initialize_budget(conn, ident, completion_reserve=completion_reserve)
             self._queue_objective_planning(conn, ident, level)
             self._event(conn, ident, "Objective accepted. " + ("Executive decomposition" if mode == "executive_packages" else "Legacy manager planning") + " is queued.", "planning")
@@ -370,6 +390,11 @@ class OrganizationStore(OrganizationRecoveryStore, OrganizationModelRoutingStore
                         conn.execute('UPDATE requests SET reason=?,available=? WHERE id=?',
                                      (str(exc), exc.defer_until, request['id']))
                         continue
+                if reason is None:
+                    try:
+                        require_goal_admission(conn, request['objective_id'], stage=True)
+                    except ValueError as exc:
+                        reason = str(exc)
                 if reason:
                     self._pending(conn, request, reason)
                     continue
@@ -462,6 +487,9 @@ class OrganizationStore(OrganizationRecoveryStore, OrganizationModelRoutingStore
             objective['projects'] = [public_project(project) for project in objective_projects(conn, request['objective_id'])]
             control = conn.execute('SELECT * FROM objective_control WHERE objective_id=?', (request['objective_id'],)).fetchone()
             objective['acceptanceCriteria'] = json.loads(control['criteria'])
+            from eidolon_cli.organization_outcome_contracts import contract_view, human_judgments_view
+            objective['outcomeContract'] = contract_view(conn, request['objective_id'])
+            objective['outcomeHumanJudgments'] = human_judgments_view(conn, request['objective_id'])
             objective['round'] = control['round']
             objective['deliveryMode'] = control['delivery_mode']
             objective['requiredChecks'] = json.loads(control['required_checks'])
@@ -525,7 +553,7 @@ class OrganizationStore(OrganizationRecoveryStore, OrganizationModelRoutingStore
             package_context = self._package_context(conn, request)
             objective["planningMode"] = package_context["planningMode"]
             max_tasks = conn.execute("SELECT max_tasks FROM objective_planning WHERE objective_id=?", (request["objective_id"],)).fetchone()[0]
-            return {"objective": objective, "task": task, "agent": agent, **package_context,
+            context = {"objective": objective, "task": task, "agent": agent, **package_context,
                     **({'projectExecutionHistory': payload['projectExecutionHistory']}
                        if request['type'] in {'request.plan', 'request.decompose'} and 'projectExecutionHistory' in payload else {}),
                     **self._typed_context(conn, request), **self._internal_context(conn, request),
@@ -549,6 +577,10 @@ class OrganizationStore(OrganizationRecoveryStore, OrganizationModelRoutingStore
                     "capabilities": list(self.settings.capabilities), "maxTasks": min(max_tasks, self.settings.max_tasks),
                     "maxWorkers": self.settings.max_workers, "timeoutSeconds": max(0.001, min(self.settings.timeout_seconds, budget["deadlineTimestamp"] - time.time())),
                     "workers": payload.get("workers")}
+            if mark_read:
+                from eidolon_cli.organization_selective_repair import capture_inputs
+                capture_inputs(self, conn, request, context)
+            return context
 
     @staticmethod
     def _pending(conn, request, reason):
@@ -771,6 +803,8 @@ class OrganizationStore(OrganizationRecoveryStore, OrganizationModelRoutingStore
             raise ValueError("Requested worker count must be an integer from 1 to 64")
         for values, specification in zip(normalized, tasks):
             conn.execute("INSERT INTO tasks(id,objective_id,title,description,type,team,priority,status,dependencies) VALUES (?,?,?,?,?,?,?,?,?)", values)
+            from eidolon_cli.organization_selective_repair import record_specification
+            record_specification(conn, values[0], specification)
             bind_task_project(conn, values[0], specification, self.settings)
             if package is not None:
                 conn.execute('INSERT INTO task_work_packages VALUES (?,?)', (values[0], package['id']))

@@ -8,6 +8,7 @@ import { controlVariants } from '@/components/ui/control'
 import { Textarea } from '@/components/ui/textarea'
 import { useI18n } from '@/i18n/context'
 
+import { outcomeCriteria, OutcomeCriteriaEditor } from './outcome-criteria-editor'
 import {
   $intakeDrafts,
   acknowledgeIntake,
@@ -162,7 +163,7 @@ export function Command({
       ...metadata,
       executiveId: hasOwnership ? executiveId : undefined,
       managerId: hasOwnership ? managerId : undefined,
-      acceptanceCriteria: acceptanceCriteria.length ? acceptanceCriteria : undefined,
+      acceptanceCriteria: acceptanceCriteria.length ? outcomeCriteria(acceptanceCriteria, metadata.acceptanceCriteria) : undefined,
       deliveryMode: metadata.deliveryMode ?? ('source_project' as const)
     }
 
@@ -351,13 +352,14 @@ export function Command({
           <label htmlFor="eid-criteria">{copy.acceptanceCriteria}</label>
           <Textarea
             aria-describedby="eid-criteria-note"
-            disabled={disabled}
+            disabled={disabled || metadata.acceptanceCriteria?.some(c => typeof c !== 'string')}
             id="eid-criteria"
             maxLength={24012}
             onChange={event => setCriteria(event.target.value)}
             rows={3}
             value={criteria}
           />
+          <OutcomeCriteriaEditor definitions={metadata.acceptanceCriteria} disabled={disabled} onChange={acceptanceCriteria => update({ criteria: acceptanceCriteria.map(c => typeof c === 'string' ? c : c.text).join('\n'), metadata: { ...metadata, acceptanceCriteria } })} text={criteria} />
           <p className="eid-note" id="eid-criteria-note">
             {copy.criteriaHint}
           </p>

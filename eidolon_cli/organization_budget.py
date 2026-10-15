@@ -184,6 +184,9 @@ class OrganizationBudgetStore:
                 if Decimal(view['configuredCostReservedUsd']) + cost > Decimal(view['configuredCostLimitUsd']):
                     raise ValueError('The next model call would exceed the objective configured-cost budget; no call was sent.')
             classification = 'completion' if request['type'] in COMPLETION_REQUEST_TYPES else 'ordinary'
+            from eidolon_cli.organization_goal_allowances import require_goal_admission
+            require_goal_admission(conn, request['objective_id'], model_tokens=input_limit+output_limit,
+                                   configured_cost=cost, completion=classification == 'completion')
             if classification == 'ordinary':
                 require_ordinary_headroom(view, input_limit + output_limit, cost)
             wait = pacing_wait(conn, request, self.settings, view, final=True)

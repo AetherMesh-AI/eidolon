@@ -266,3 +266,48 @@ def test_missing_optional_build_outputs_remains_passive(tmp_path, monkeypatch):
     assert files(tmp_path)==before
     with sqlite3.connect(store.path) as conn:
         assert conn.execute("SELECT name FROM sqlite_master WHERE name='project_build_outputs'").fetchone() is None
+
+
+@pytest.mark.parametrize('partial', [False, True])
+def test_legacy_contract_observation_does_not_migrate(tmp_path, monkeypatch, partial):
+    from eidolon_cli.organization_outcome_contracts import CONTRACT_TABLES
+    store = seed(tmp_path)
+    with sqlite3.connect(store.path) as conn:
+        for table in sorted(CONTRACT_TABLES):
+            if partial and table == 'objective_human_judgments':
+                continue
+            conn.execute('DROP TABLE ' + table)
+        before = list(conn.iterdump())
+    forbid_runtime(monkeypatch)
+    result = read_observation(tmp_path)
+    assert result['state'] == ('unsupported' if partial else 'available')
+    if not partial:
+        acceptance = result['snapshot']['objectives'][0]['acceptance']
+        assert acceptance['contract'] is None
+        assert acceptance['humanJudgments'] == []
+    with sqlite3.connect(store.path) as conn:
+        assert list(conn.iterdump()) == before
+
+
+@pytest.mark.parametrize('module,constant', [
+    ('organization_package_repair', 'PACKAGE_REPAIR_TABLES'),
+    ('organization_selective_repair', 'REPAIR_TABLES'),
+    ('organization_milestones', 'MILESTONE_TABLES'),
+    ('organization_outcome_contracts', 'CONTRACT_TABLES'),
+    ('organization_goal_allowances', 'GOAL_TABLES'),
+    ('organization_goal_continuation', 'CONTINUATION_TABLES'),
+])
+@pytest.mark.parametrize('partial', [False, True])
+def test_combined_optional_groups_remain_passive_and_fail_closed(tmp_path, monkeypatch, module, constant, partial):
+    import importlib
+    tables = sorted(getattr(importlib.import_module('eidolon_cli.' + module), constant))
+    assert len(tables) > 1
+    store = seed(tmp_path)
+    with sqlite3.connect(store.path) as conn:
+        for table in tables[:1] if partial else tables:
+            conn.execute('DROP TABLE ' + table)
+        before = list(conn.iterdump())
+    forbid_runtime(monkeypatch)
+    assert read_observation(tmp_path)['state'] == ('unsupported' if partial else 'available')
+    with sqlite3.connect(store.path) as conn:
+        assert list(conn.iterdump()) == before
