@@ -1,8 +1,14 @@
-# Experimental TypeScript check boundary
+# Fixed TypeScript check boundary
 
-This slice is disabled in production recipe dispatch. It provides a separately
-reviewable native test lane for fixed TypeScript type checking. It does not yet
-satisfy a project build or completion criterion.
+The `typescript_check` recipe requires explicit owner opt-in and the trusted
+prerequisites below. It supplies independently reviewed `project_typecheck`
+evidence. Compiler success cannot satisfy `project_tests` or `project_build`.
+Automatic source integration continues to require genuine test evidence.
+
+The current scheduler retains one recipe/latest run per project. Requiring
+both tests and type checking for the same project is unsupported and fails
+closed; changing its grant invalidates earlier evidence rather than combining
+incompatible receipts. Multi-check-per-project scheduling is future work.
 
 ## Trusted prerequisites
 
@@ -48,9 +54,10 @@ a passed test. It does not prove the application's intended behavior.
 
 ## Remaining work
 
-Native proof and independent execution review are required before production
-integration. Typed completion acceptance must validate the exact trusted
-compiler receipt and current project grant/source. Real project dependency
+Native proof and independent review are required before this integration is
+merged. The trusted verifier binds compiler evidence to its current project
+grant/source; the typed completion-contract layer must explicitly use that
+verifier before enabling compiler acceptance criteria. Real project dependency
 support needs separately pinned, verified dependency closures. Build output
 needs bounded supervisor-mediated artifact transfer and byte hashing through
 cleanup; a writable host mount is not an acceptable substitute. Those features

@@ -25,6 +25,10 @@ def describe_execution_recipe(execution):
                 'reason': 'No execution recipe selected. Folder inspection and planning do not require one.'}
     from eidolon_cli.organization_project_runner import normalize_execution_grant
     grant = normalize_execution_grant(execution)
+    if grant.recipe == 'typescript_check':
+        return {'recipe': grant.recipe, 'state': 'runtime_unverified', 'supported': True,
+                'backend': 'linux-docker-pinned', 'checkKind': 'project_typecheck', 'dependencyInstallation': False,
+                'reason': 'Requires explicitly enabled local Linux x86-64 Docker, the pinned image and independently verified TypeScript6.0.3 package. Only fixed typechecking of selected .ts inputs is supported; this does not satisfy project tests or a build.'}
     if grant.recipe == 'node_test':
         return {'recipe': grant.recipe, 'state': 'runtime_unverified', 'supported': True,
                 'backend': 'linux-docker-pinned', 'dependencyInstallation': False,
