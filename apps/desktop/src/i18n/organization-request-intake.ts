@@ -1,6 +1,22 @@
 import type { Locale } from './types'
 
 const messages = {
+  linked: [
+    'Linked to the existing open objective',
+    '既存の未完了目標にリンクしました',
+    '已关联到现有未完成目标',
+    '已連結到現有未完成目標',
+    'تم الربط بالهدف المفتوح الحالي',
+    'Связано с существующей открытой целью'
+  ],
+  forceSeparate: [
+    'Create a separate objective even if this repeats an open request',
+    '未完了の依頼と重複していても別の目標を作成',
+    '即使重复现有请求，也创建单独目标',
+    '即使重複現有請求，也建立獨立目標',
+    'أنشئ هدفاً منفصلاً حتى لو تكرر طلب مفتوح',
+    'Создать отдельную цель, даже если запрос повторяется'
+  ],
   recent: ['Recent requests', '最近の依頼', '最近的请求', '最近的請求', 'الطلبات الأخيرة', 'Недавние запросы'],
   refreshRecent: [
     'Refresh recent requests',

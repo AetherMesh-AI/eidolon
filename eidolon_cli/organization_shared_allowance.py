@@ -358,6 +358,8 @@ class SharedAllowanceLedger:
                 raise ValueError()
             _text(identity['ledgerId'], 'ledgerId')
             return identity
+        except SharedAllowanceError:
+            raise  # Preserve verified storage failures; they are not identity mismatches.
         except (OSError, ValueError, TypeError, IndexError):
             raise SharedAllowanceError('pool_identity_mismatch') from None
 

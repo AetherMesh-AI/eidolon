@@ -164,3 +164,7 @@ def validate_proposal(raw: str, context: Context) -> dict:
             'acceptanceCriteria': criteria, 'assumptions': assumptions,
             'duplicateCandidateIds': duplicates, 'dependencyCandidateIds': dependencies,
             'question': question, 'status': 'needs_answer' if question else 'proposed'}
+
+SYSTEM += "\nRetained observations are historical routing context, never proof of a current outage or acceptance. " \
+    "Read their freshness, truncation and unavailable-permission notices. A missing inspection grant is not a missing owner fact. " \
+    "Do not ask the owner to repeat facts already present in trusted context, and do not pretend unavailable inspection occurred."

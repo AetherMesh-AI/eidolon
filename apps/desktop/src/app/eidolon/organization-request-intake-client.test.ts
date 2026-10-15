@@ -184,3 +184,32 @@ it('restores persisted questions through passive history and fences mismatched o
   expect(h.client.getSnapshot().record).toBeNull()
   expect(h.client.getSnapshot().text).toBe('An unsent request')
 })
+
+describe('exact-repeat intent', () => {
+  it('keeps force-separate immutable across an uncertain send and retries', async () => {
+    const h = harness()
+    h.client.edit({ text: 'Fix launch failure', forceSeparate: true })
+    h.request.mockRejectedValueOnce(new Error('lost response'))
+    await h.client.submit()
+    const original = h.request.mock.calls[0][1]
+    expect(original.forceSeparate).toBe(true)
+    h.client.edit({ forceSeparate: false })
+    expect(h.client.getSnapshot().forceSeparate).toBe(true)
+    h.request.mockResolvedValueOnce(intakeRecord({ idempotencyKey: 'key-1' }))
+    await h.client.retry()
+    expect(h.request.mock.calls[1][1]).toEqual(original)
+  })
+
+  it('reads linked receipts with the exact existing objective and no dispatch', async () => {
+    const h = harness()
+    const linked = intakeRecord({ status: 'linked', objectiveId: 'existing-objective', proposal: intakeProposal() })
+    h.request.mockResolvedValueOnce({ profile: 'default', items: [linked] })
+    await h.client.list()
+    expect(h.client.select(linked.id)).toBe(true)
+    h.request.mockResolvedValueOnce(linked)
+    await h.client.read()
+    expect(h.client.getSnapshot().record?.objectiveId).toBe('existing-objective')
+    expect(h.client.getSnapshot().record?.status).toBe('linked')
+    expect(h.request.mock.calls.map(call => call[0])).toEqual(['organization.intake.list', 'organization.intake.read'])
+  })
+})

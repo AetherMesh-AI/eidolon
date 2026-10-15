@@ -2,7 +2,7 @@ import type { MetadataScope } from './organization-metadata-client'
 
 export type IntakePriority = 'P1' | 'P2' | 'P3' | 'P4' | 'P5'
 export type RequestIntakeStatus =
-  'pending' | 'proposed' | 'admitted' | 'needs_answer' | 'answered' | 'needs_review' | 'failed' | 'uncertain'
+  'pending' | 'proposed' | 'admitted' | 'linked' | 'needs_answer' | 'answered' | 'needs_review' | 'failed' | 'uncertain'
 export interface RequestIntakeProposal {
   snapshotId: string
   routeId: string | null
@@ -48,6 +48,7 @@ export interface RequestIntakeIntent {
   idempotencyKey: string
   intakeId?: string
   ownerPriority?: IntakePriority
+  forceSeparate?: boolean
 }
 export interface RequestIntakeHistory {
   items: RequestIntakeRecord[]
@@ -58,6 +59,7 @@ export interface RequestIntakeView {
   history: RequestIntakeHistory
   text: string
   ownerPriority?: IntakePriority
+  forceSeparate?: boolean
   answer: string
   record: RequestIntakeRecord | null
   intent: RequestIntakeIntent | null

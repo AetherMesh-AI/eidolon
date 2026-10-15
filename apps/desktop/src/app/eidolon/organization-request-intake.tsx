@@ -66,6 +66,16 @@ export function OrganizationRequestIntake({ snapshot }: OrganizationRequestIntak
             </option>
           ))}
         </select>
+        <label htmlFor={`${id}-separate`}>
+          <input
+            checked={Boolean(view.forceSeparate)}
+            disabled={disabled || Boolean(record)}
+            id={`${id}-separate`}
+            onChange={event => client.edit({ forceSeparate: event.target.checked })}
+            type="checkbox"
+          />{' '}
+          {copy.forceSeparate}
+        </label>
         {!record && !intent && (
           <div>
             <Button disabled={disabled || !view.text.trim()} type="submit">
@@ -127,7 +137,7 @@ export function OrganizationRequestIntake({ snapshot }: OrganizationRequestIntak
             {copy.retained}: <bdi>{record.id}</bdi>
           </p>
           {record.reason && <p dir="auto">{record.reason}</p>}
-          {record.status === 'admitted' && record.objectiveId && (
+          {['admitted', 'linked'].includes(record.status) && record.objectiveId && (
             <Link to={`/objectives/${encodeURIComponent(record.objectiveId)}`}>
               {t.organizationFoundation.openObjective}
             </Link>

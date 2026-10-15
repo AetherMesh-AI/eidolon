@@ -2,12 +2,15 @@ import { controlVariants } from '@/components/ui/control'
 import { Textarea } from '@/components/ui/textarea'
 import { useI18n } from '@/i18n/context'
 
+import { outcomeCriteria, OutcomeCriteriaEditor } from './outcome-criteria-editor'
+import type { OutcomeCriterionInput } from './runtime-outcome-contract-types'
 import type { OrganizationRequiredCheck, OrganizationScopeAmendment } from './types'
 
 const checks: OrganizationRequiredCheck[] = ['project_tests', 'managed_validation', 'source_integration']
 
 export interface ScopeAmendmentDraft {
   criteria: string
+  definitions?: (string | OutcomeCriterionInput)[]
   requiredChecks?: OrganizationRequiredCheck[]
 }
 
@@ -20,7 +23,7 @@ export function amendmentCriteria(draft: ScopeAmendmentDraft, response: string) 
   const effective = criteria.length ? criteria : [response.trim()]
 
   return {
-    criteria: criteria.length ? criteria : undefined,
+    criteria: criteria.length ? outcomeCriteria(criteria, draft.definitions) : undefined,
     invalid: effective.length > 12 || effective.some(value => value.length > 2000)
   }
 }
@@ -57,13 +60,14 @@ export function ScopeAmendmentFields({
       <label>
         {copy.acceptanceCriteria}
         <Textarea
-          disabled={disabled}
+          disabled={disabled || draft.definitions?.some(c => typeof c !== 'string')}
           maxLength={24011}
           onChange={event => onChange({ ...draft, criteria: event.target.value })}
           rows={3}
           value={draft.criteria}
         />
       </label>
+      <OutcomeCriteriaEditor definitions={draft.definitions} disabled={disabled} onChange={definitions => onChange({ ...draft, definitions, criteria: definitions.map(c => typeof c === 'string' ? c : c.text).join('\n') })} text={draft.criteria} />
       <p className="eid-note">{copy.amendedCriteriaHint}</p>
       <label>
         {copy.amendmentCheckChoice}

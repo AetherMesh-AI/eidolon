@@ -53,14 +53,29 @@ def _required_schema():
 
 def _compatible_schema(conn, tables):
     from eidolon_cli.organization_owner_policy_config import OWNER_POLICY_TABLES
+    from eidolon_cli.organization_package_repair import PACKAGE_REPAIR_TABLES
+    if tables & PACKAGE_REPAIR_TABLES and not PACKAGE_REPAIR_TABLES <= tables:
+        return False
+    from eidolon_cli.organization_selective_repair import REPAIR_TABLES
+    if tables & REPAIR_TABLES and not REPAIR_TABLES <= tables:
+        return False
+    from eidolon_cli.organization_outcome_contracts import CONTRACT_TABLES
+    if tables & CONTRACT_TABLES and not CONTRACT_TABLES <= tables:
+        return False
     for name, columns in _required_schema().items():
+        if name in PACKAGE_REPAIR_TABLES and not tables & PACKAGE_REPAIR_TABLES:
+            continue
+        if name in REPAIR_TABLES and not tables & REPAIR_TABLES:
+            continue
+        if name in CONTRACT_TABLES and not tables & CONTRACT_TABLES:
+            continue  # Fully absent typed contracts are a supported legacy ledger.
         if name in OWNER_POLICY_TABLES:
             continue  # Optional owner-editor data does not invalidate legacy observation.
         if name in {'organization_root_grants', 'organization_folder_receipts',
                     'organization_root_revocations', 'organization_root_revocation_reviews',
                     'organization_shared_call_receipts', 'organization_shared_scope_pin',
                     'organization_team_setup', 'organization_team_generations', 'organization_route_observations',
-                    'project_build_outputs', 'organization_request_intakes'} and name not in tables:
+                    'organization_project_reconcile_only', 'project_build_outputs', 'organization_scheduler_state', 'organization_scheduler_claims', 'organization_request_intakes', 'organization_intake_options', 'organization_intake_admission_scopes', 'organization_intake_duplicate_links'} and name not in tables:
             continue  # New opt-in audit data must not provision or invalidate an older ledger.
         if name not in tables:
             return False

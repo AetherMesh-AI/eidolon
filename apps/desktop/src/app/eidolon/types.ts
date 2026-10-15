@@ -2,6 +2,7 @@ import type { OrganizationAttentionPage, OrganizationAttentionQuery, Organizatio
 import type { DispatchChange, DispatchReceipt, DispatchState } from './runtime-dispatch-types'
 import type { HistoryCounts, HistoryMutation, HistoryPage, HistoryQuery, HistoryState } from './runtime-history-types'
 import type { OrganizationModelAssignment, OrganizationModelDispatch, OrganizationModelRouting } from './runtime-model-routing-types'
+import type { OutcomeContract, OutcomeCriterionInput, OutcomeJudgment, OutcomeJudgmentInput } from './runtime-outcome-contract-types'
 import type { OrganizationOutcomePage, OrganizationOutcomeQuery, OrganizationOutcomeSeen } from './runtime-outcome-types'
 import type { OwnerChatCancel, OwnerChatRead, OwnerChatRenew, OwnerChatSend, OwnerChatThread } from './runtime-owner-chat-types'
 import type { PriorityChange, PriorityReceipt } from './runtime-priority-types'
@@ -25,7 +26,7 @@ export interface ObjectiveMetadata {
   executiveId?: string
   managerId?: string
   description?: string
-  acceptanceCriteria?: string[]
+  acceptanceCriteria?: (string | OutcomeCriterionInput)[]
   deliveryMode?: 'source_project' | 'managed_artifact'
   requiredChecks?: OrganizationRequiredCheck[]
   priority?: 'low' | 'normal' | 'high' | 'P5' | 'P4' | 'P3' | 'P2' | 'P1'
@@ -37,6 +38,9 @@ export interface ObjectiveMetadata {
 }
 /** Durable executive delegation. Package completion never implies final acceptance. */
 export interface OrganizationWorkPackage {
+  sourcePackageId?: string
+  planDisposition?: 'reused'
+  sourcePlanSha256?: string
   id: string
   objectiveId: string
   round: number
@@ -189,6 +193,8 @@ export interface OrganizationTask {
   }
   historical?: boolean
   currentRound?: boolean
+  originalRound?: number
+  reuse?: { disposition: 'reused'; evidenceId: string; evidenceSha256: string; reviewRequestId: string; inputSha256: string; round: number } | null
 }
 export interface ActivityEvent {
   id: string
@@ -405,7 +411,7 @@ export interface OrganizationResolutionInput {
   text?: string
   evidenceIds?: string[]
   requiredChecks?: OrganizationRequiredCheck[]
-  acceptanceCriteria?: string[]
+  acceptanceCriteria?: (string | OutcomeCriterionInput)[]
   idempotencyKey?: string
 }
 export interface OrganizationOwnerResolution {
@@ -418,6 +424,9 @@ export interface OrganizationOwnerResolution {
   scopeAmendment?: OrganizationScopeAmendment | null
 }
 export interface OrganizationAcceptance {
+  contract?: OutcomeContract | null
+  humanJudgments?: OutcomeJudgment[]
+  deliverableSha256?: string | null
   /** Optional on older runtimes; exact latest review records for this round. */
   criteriaResults?: { criterion: string; satisfied: boolean; evidenceIds: string[]; reason: string }[]
   conflicts?: string[]
@@ -739,6 +748,7 @@ export interface SubmissionReceipt {
 }
 
 export interface RuntimeOrganizationAdapter extends OrganizationReader {
+  recordOutcomeJudgment?(input: OutcomeJudgmentInput): Promise<void>
   setObjectivePaused?(input: DispatchChange): Promise<DispatchReceipt>
   changePriority?(input: PriorityChange): Promise<PriorityReceipt>
   openOwnerChat?(input: { agentId: string; identityId: string }): Promise<OwnerChatThread>

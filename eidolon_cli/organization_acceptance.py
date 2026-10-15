@@ -6,7 +6,13 @@ import json
 import time
 
 
-ACCEPTANCE_SCHEMA = """
+from eidolon_cli.organization_outcome_contracts import SCHEMA as CONTRACT_SCHEMA
+
+from eidolon_cli.organization_selective_repair import SCHEMA as REPAIR_SCHEMA
+
+from eidolon_cli.organization_package_repair import SCHEMA as PACKAGE_REPAIR_SCHEMA
+
+ACCEPTANCE_SCHEMA = CONTRACT_SCHEMA + REPAIR_SCHEMA + PACKAGE_REPAIR_SCHEMA + """
 CREATE TABLE IF NOT EXISTS objective_control (
  objective_id TEXT PRIMARY KEY REFERENCES objectives(id), criteria TEXT NOT NULL,
  status TEXT NOT NULL, round INTEGER NOT NULL DEFAULT 0, max_replans INTEGER NOT NULL,
@@ -36,17 +42,13 @@ CREATE INDEX IF NOT EXISTS objective_acceptance_round_lookup ON objective_accept
 
 
 def acceptance_criteria(value, description):
-    from eidolon_cli.organization_store import _text
-    if value is None:
-        return [description]
-    if not isinstance(value, list) or not 1 <= len(value) <= 12:
-        raise ValueError('Acceptance criteria must contain 1–12 nonempty strings')
-    return [_text(item, 'Acceptance criterion', 2000) for item in value]
+    from eidolon_cli.organization_outcome_contracts import definitions
+    return [item['text'] for item in definitions(value, description)]
 
 
 def required_checks(value):
-    if not isinstance(value, list) or len(value) > 3 or any(item not in ('project_tests', 'managed_validation', 'source_integration') for item in value) or len(set(value)) != len(value):
-        raise ValueError('requiredChecks must select unique project_tests, managed_validation or source_integration')
+    if not isinstance(value, list) or len(value) > 5 or any(item not in ('project_tests', 'managed_validation', 'source_integration', 'project_typecheck', 'project_build') for item in value) or len(set(value)) != len(value):
+        raise ValueError('requiredChecks must select unique project_tests, managed_validation, source_integration, project_typecheck or project_build')
     return value
 
 
@@ -58,9 +60,12 @@ def validate_project_checks(projects, checks):
 
 
 def current_tasks(conn, objective_id):
-    return conn.execute('SELECT t.* FROM tasks t JOIN objective_task_rounds r ON r.task_id=t.id '
+    from eidolon_cli.organization_selective_repair import reused_tasks
+    round_number = conn.execute('SELECT round FROM objective_control WHERE objective_id=?', (objective_id,)).fetchone()[0]
+    rows = conn.execute('SELECT t.* FROM tasks t JOIN objective_task_rounds r ON r.task_id=t.id '
                         'JOIN objective_control c ON c.objective_id=r.objective_id '
                         'WHERE t.objective_id=? AND r.round=c.round ORDER BY t.rowid', (objective_id,)).fetchall()
+    return [*rows, *reused_tasks(conn, objective_id, round_number)]
 
 
 def final_artifact(conn, identifier):
@@ -127,6 +132,9 @@ class OrganizationAcceptanceStore:
                                  (request['id'], 'legacy-attempt-' + str(attempt), row['id'], request['type'], int(request['status'] == 'completed')))
 
     def _current_evidence(self, conn, objective_id):
+        from eidolon_cli.organization_selective_repair import verify_reused
+        round_number = conn.execute('SELECT round FROM objective_control WHERE objective_id=?', (objective_id,)).fetchone()[0]
+        verify_reused(self, conn, objective_id, round_number)
         from eidolon_cli.organization_packages import packages_complete
         if not packages_complete(conn, objective_id):
             raise ValueError('Objective acceptance requires every manager package plan and reviewed task')
@@ -198,6 +206,8 @@ class OrganizationAcceptanceStore:
         payload = json.loads(request['payload'])
         if payload.get('round') != control['round']:
             raise ValueError('Objective acceptance round is stale')
+        from eidolon_cli.organization_outcome_contracts import verify_contract_binding
+        verify_contract_binding(conn, request['objective_id'], payload)
         source = self._current_evidence(conn, request['objective_id'])
         expected = [row['id'] for row in source]
         hashes = {row['id']: row['sha256'] for row in source}
@@ -226,9 +236,13 @@ class OrganizationAcceptanceStore:
                      (ident, request['objective_id'], control['round'], request['id'], request['agent_id'],
                       content, hashlib.sha256(content.encode()).hexdigest(), summary, json.dumps(expected), time.time()))
         conn.execute("UPDATE objective_control SET status='reviewing',deliverable_id=? WHERE objective_id=?", (ident, request['objective_id']))
-        self._request(conn, request['objective_id'], 'request.accept', self._objective_agent(conn, request['objective_id'], 'Executive')['team'], request['priority'],
+        acceptance_id = self._request(conn, request['objective_id'], 'request.accept', self._objective_agent(conn, request['objective_id'], 'Executive')['team'], request['priority'],
                       payload={'evidenceIds': [*expected, ident], 'round': control['round']},
                       requester_id=request['agent_id'])
+        from eidolon_cli.organization_outcome_contracts import human_judgments_ready
+        if not human_judgments_ready(conn, request['objective_id']):
+            pending = conn.execute('SELECT * FROM requests WHERE id=?', (acceptance_id,)).fetchone()
+            self._pending(conn, pending, 'Awaiting explicit human outcome judgment')
 
     def _finish_accept(self, conn, request, result):
         from eidolon_cli.organization_store import _text
@@ -244,6 +258,8 @@ class OrganizationAcceptanceStore:
             raise ValueError('Only the independent executive can accept the objective')
         control = conn.execute('SELECT * FROM objective_control WHERE objective_id=?', (request['objective_id'],)).fetchone()
         validate_acceptance_result(result, json.loads(control['criteria']), expected)
+        from eidolon_cli.organization_outcome_contracts import verify_criteria
+        verify_criteria(self, conn, request, result['criteriaResults'])
         summary = _text(result.get('summary'), 'Acceptance summary', 10000)
         control = conn.execute('SELECT * FROM objective_control WHERE objective_id=?', (request['objective_id'],)).fetchone()
         if approved:
@@ -259,7 +275,7 @@ class OrganizationAcceptanceStore:
             conn.execute("UPDATE objective_control SET status='accepted',summary=? WHERE objective_id=?", (summary, request['objective_id']))
         elif control['round'] < min(control['max_replans'], self.settings.max_replans):
             self._replan(conn, request['objective_id'], summary, completing_request=request['id'],
-                         requester_id=request['agent_id'])
+                         requester_id=request['agent_id'], acceptance_result=result)
         else:
             conn.execute("UPDATE objective_control SET status='blocked',summary=? WHERE objective_id=?", (summary, request['objective_id']))
             ident = self._request(conn, request['objective_id'], 'request.accept', self._objective_agent(conn, request['objective_id'], 'Executive')['team'], request['priority'],
@@ -270,6 +286,10 @@ class OrganizationAcceptanceStore:
             conn.execute('UPDATE requests SET attempts=? WHERE id=?', (self.settings.max_attempts, ident))
 
     def _verify_required_checks(self, conn, objective_id, checks):
+        required_checks(checks)
+        for check in ('project_typecheck', 'project_build'):
+            if check in checks:
+                self.verify_project_check_runs(conn, objective_id, check)
         if 'project_tests' in checks:
             self.verify_project_tests(conn, objective_id)
         # The project module validates current per-path heads across rounds.
@@ -279,11 +299,14 @@ class OrganizationAcceptanceStore:
                                                  require_source='source_integration' in checks,
                                                  require_validation='managed_validation' in checks)
 
-    def _replan(self, conn, objective_id, feedback, *, completing_request=None, requester_id='owner'):
+    def _replan(self, conn, objective_id, feedback, *, completing_request=None, requester_id='owner', acceptance_result=None):
         from eidolon_cli.organization_receipts import fence_receipts
         control = conn.execute('SELECT * FROM objective_control WHERE objective_id=?', (objective_id,)).fetchone()
         if control['round'] >= min(control['max_replans'], self.settings.max_replans):
             raise ValueError('Objective replan limit reached; create a revised objective')
+        from eidolon_cli.organization_selective_repair import plan_repair, record_decision, apply_repair
+        repair = plan_repair(self, conn, objective_id, acceptance_result)
+        record_decision(conn, repair)
         previous = [row['id'] for row in conn.execute(
             'SELECT e.id FROM evidence e JOIN objective_task_rounds r ON r.task_id=e.task_id WHERE r.objective_id=? AND r.round=? '
             'AND e.id=(SELECT latest.id FROM evidence latest WHERE latest.task_id=e.task_id ORDER BY created DESC,id DESC LIMIT 1)',
@@ -305,6 +328,9 @@ class OrganizationAcceptanceStore:
         conn.execute("UPDATE tasks SET status='cancelled' WHERE objective_id=? AND status!='completed'", (objective_id,))
         conn.execute("UPDATE objective_control SET round=round+1,status='replanning',summary=?,deliverable_id=NULL WHERE objective_id=?", (feedback, objective_id))
         objective = conn.execute('SELECT * FROM objectives WHERE id=?', (objective_id,)).fetchone()
+        if repair['mode'] == 'selective':
+            apply_repair(self, conn, repair, feedback)
+            return
         self._queue_objective_planning(conn, objective_id, objective['priority'],
                       payload={'round': control['round'] + 1, 'feedback': feedback, 'evidenceIds': previous,
                                **({'projectExecutionHistory': project_history} if project_history else {})},

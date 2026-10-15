@@ -250,3 +250,28 @@ it('opens an existing persisted clarification from recent requests without resub
   ])
   expect(state.request.mock.calls.some(([method]) => method === 'organization.intake.submit')).toBe(false)
 })
+
+describe('exact-repeat controls', () => {
+  it('shows a linked objective and captures explicit separate intent', async () => {
+    state.request.mockImplementation(async (_method: string, params: Record<string, unknown>) =>
+      intakeRecord({
+        idempotencyKey: String(params.idempotencyKey),
+        status: 'linked',
+        objectiveId: 'existing-objective',
+        proposal: intakeProposal()
+      })
+    )
+    mount()
+    fireEvent.change(screen.getByLabelText(copy.request), { target: { value: 'Fix launch failure' } })
+    fireEvent.click(screen.getByLabelText(copy.forceSeparate))
+    fireEvent.click(screen.getByRole('button', { name: copy.submit }))
+    await flush()
+    expect(state.request.mock.calls[0][1].forceSeparate).toBe(true)
+    expect(screen.getByRole('link').getAttribute('href')).toBe('/objectives/existing-objective')
+    expect(screen.getAllByText(copy.linked).length).toBeGreaterThan(0)
+    expect((screen.getByLabelText(copy.forceSeparate) as HTMLInputElement).disabled).toBe(true)
+    const calls = state.request.mock.calls.length
+    await tick()
+    expect(state.request).toHaveBeenCalledTimes(calls)
+  })
+})

@@ -119,3 +119,37 @@ Contract tests alone do not establish completion. Require ledger/RPC integration
 real temporary-profile admission and interruption tests, scheduler fairness and
 safe-boundary tests, native UI tests, independent review, exact-head CI and
 post-merge checks. Installed-provider acceptance is a separate explicit step.
+
+## Bounded context, exact repeats, and queue ordering
+
+The follow-on intake slice reuses at most four independently reviewed retained
+file observations (a 6,000-byte public projection and 24 candidate receipts).
+Current owner, task/project binding, policy generation, tool grants, artifact and
+result hashes must still match. Excerpts are redacted and alias-addressed. They
+are explicitly historical, possibly truncated, and never establish a current
+outage or an acceptance decision. Their binding digest participates in intake
+stale-context detection. Merely configuring a folder does not grant intake fresh
+filesystem access. Fresh inspection still requires a separately audited worker
+stage; unavailable permission is reported rather than silently opening files.
+
+Exact repeated managed-artifact requests can link to one existing open objective.
+The original intake owner, exact request text, route, assumptions, explicit owner
+priority, inferred effective priority, delivery, projects and criteria must all
+match. Current objective scope must equal the original immutable admission scope,
+including typed contract identity/revision/SHA where present. A changed or closed
+objective, ambiguous originals, semantic similarity, or source-project incident
+without a current source revision does not qualify. A visible linked receipt
+retains the new intake's inference charge and never changes the original work.
+The owner can explicitly request a separate objective; that choice is part of the
+idempotent intent and survives clarification. Dependency suggestions remain
+review-required until an accepted-output dependency admission contract exists.
+
+Queue aging is bounded within routine P3–P5 work. It never promotes routine work
+to urgent P1/P2. A durable profile-local cursor offers eligible routine work a
+claim opportunity after three urgent admissions. Blocked candidates consume no
+opportunity, and all normal dependency, authority, budget, pacing and write gates
+still apply. Claims and their immutable scheduling receipts commit atomically.
+This does not promise 25% of time or tokens: strict P1-before-P2 can still starve
+P2, and unavailable staff or exhausted budgets can prevent progress. Owner
+priority changes affect later claims at existing checkpoints; urgent arrivals
+never cancel live work or release its write reservations.

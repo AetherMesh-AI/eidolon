@@ -276,6 +276,51 @@ def _(params, service):
     return _organization_snapshot(organization)
 
 
+@method("organization.recordOutcomeJudgment")
+def _(rid, params):
+    from pathlib import Path
+    from eidolon_constants import set_eidolon_home_override, reset_eidolon_home_override
+    from eidolon_cli.organization_outcome_contracts import record_human_judgment
+    from eidolon_cli.organization_metadata import read_descriptor
+    from eidolon_cli.organization_service import get_service
+    transport = current_transport()
+    if transport is None or getattr(transport, 'closed', False):
+        return _err(rid, 4001, 'Outcome judgment requires an active owner transport')
+    allowed = {'expectedOrganizationId', 'objectiveId', 'criterionId', 'contractSha256',
+               'deliverableSha256', 'approved', 'reason', 'idempotencyKey', 'confirmed'}
+    if not isinstance(params, dict) or set(params) != allowed:
+        return _err(rid, -32602, 'Unsupported outcome judgment parameters; served profile only')
+    try:
+        home = Path(_eidolon_home).resolve()
+        path = home / 'organization' / 'state.db'
+        if path.resolve() != path:
+            raise ValueError('Outcome judgment is outside the served profile')
+        descriptor = read_descriptor(path)
+        expected = _organization_text(params, 'expectedOrganizationId', 128)
+        if (descriptor.get('metadata') or {}).get('organizationId') != expected:
+            raise ValueError('Outcome judgment organization changed')
+        token = set_eidolon_home_override(home)
+        try:
+            organization = get_service()
+            if organization.store.path.resolve() != path:
+                raise ValueError('Outcome judgment service is outside the served profile')
+            result = record_human_judgment(organization.store,
+                _organization_text(params, 'objectiveId', 128),
+                criterion_id=_organization_text(params, 'criterionId', 64),
+                contract_sha256=params['contractSha256'], deliverable_sha256=params['deliverableSha256'],
+                approved=params['approved'], reason=params['reason'],
+                idempotency_key=params['idempotencyKey'], confirmed=params['confirmed'])
+            organization.start()
+            return _ok(rid, {'judgment': result, 'snapshot': _organization_snapshot(organization)})
+        finally:
+            reset_eidolon_home_override(token)
+    except ValueError as exc:
+        return _err(rid, -32602, str(exc))
+    except Exception:
+        logger.exception('Outcome judgment failed')
+        return _err(rid, 5070, 'Outcome judgment storage is unavailable')
+
+
 @_organization_method("organization.respond")
 def _(params, service):
     _organization_params(params, {"id", "text", "decision", "idempotencyKey"})

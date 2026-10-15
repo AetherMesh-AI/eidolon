@@ -17,7 +17,19 @@ const EMPTY: RequestIntakeView = {
 }
 
 const priorities = ['P1', 'P2', 'P3', 'P4', 'P5']
-const statuses = ['pending', 'proposed', 'admitted', 'needs_answer', 'answered', 'needs_review', 'failed', 'uncertain']
+
+const statuses = [
+  'pending',
+  'proposed',
+  'admitted',
+  'linked',
+  'needs_answer',
+  'answered',
+  'needs_review',
+  'failed',
+  'uncertain'
+]
+
 const text = (value: unknown): value is string => typeof value === 'string' && value.length > 0
 const nullableText = (value: unknown) => value === null || text(value)
 const texts = (value: unknown) => Array.isArray(value) && value.every(text)
@@ -89,8 +101,8 @@ function receipt(value: unknown, profile: string): RequestIntakeRecord {
   }
 
   if (
-    (row.status === 'admitted' && (!row.objectiveId || !proposal)) ||
-    (row.status !== 'admitted' && row.objectiveId !== null) ||
+    (['admitted', 'linked'].includes(row.status) && (!row.objectiveId || !proposal)) ||
+    (!['admitted', 'linked'].includes(row.status) && row.objectiveId !== null) ||
     (['proposed', 'needs_answer', 'answered', 'needs_review'].includes(row.status) && !proposal) ||
     (row.status === 'needs_answer' && !proposal?.question)
   ) {
@@ -317,7 +329,7 @@ export function createRequestIntakeClient(
 
       return true
     },
-    edit(fields: { text?: string; answer?: string; ownerPriority?: IntakePriority }) {
+    edit(fields: { text?: string; answer?: string; ownerPriority?: IntakePriority; forceSeparate?: boolean }) {
       const scope = scopeNow()
       const entry = entryFor(scope)
       const view = entry?.view ?? EMPTY
@@ -349,7 +361,8 @@ export function createRequestIntakeClient(
         {
           text: view.text.trim(),
           idempotencyKey: newKey(),
-          ...(view.ownerPriority ? { ownerPriority: view.ownerPriority } : {})
+          ...(view.ownerPriority ? { ownerPriority: view.ownerPriority } : {}),
+          ...(view.forceSeparate ? { forceSeparate: true } : {})
         },
         (entry?.sequence ?? 0) + 1
       )

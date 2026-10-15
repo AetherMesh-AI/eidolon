@@ -274,6 +274,21 @@ def test_intake_extension_absence_is_legacy_but_malformed_is_unsupported(tmp_pat
         assert bool(present) is malformed
 
 
+@pytest.mark.parametrize('table', ['organization_intake_options', 'organization_intake_admission_scopes', 'organization_intake_duplicate_links'])
+@pytest.mark.parametrize('malformed', [False, True])
+def test_duplicate_receipt_extension_is_passive_and_fails_closed(tmp_path, monkeypatch, table, malformed):
+    store = seed(tmp_path)
+    with sqlite3.connect(store.path) as conn:
+        conn.execute('DROP TABLE ' + table)
+        if malformed:
+            conn.execute('CREATE TABLE ' + table + ' (id TEXT)')
+    before = files(tmp_path)
+    forbid_runtime(monkeypatch)
+    observed = read_observation(tmp_path)
+    assert observed['state'] == ('unsupported' if malformed else 'available')
+    assert files(tmp_path) == before
+
+
 def test_missing_optional_build_outputs_remains_passive(tmp_path, monkeypatch):
     store=seed(tmp_path)
     with sqlite3.connect(store.path) as conn:conn.execute('DROP TABLE project_build_outputs')
@@ -283,3 +298,24 @@ def test_missing_optional_build_outputs_remains_passive(tmp_path, monkeypatch):
     assert files(tmp_path)==before
     with sqlite3.connect(store.path) as conn:
         assert conn.execute("SELECT name FROM sqlite_master WHERE name='project_build_outputs'").fetchone() is None
+
+
+@pytest.mark.parametrize('partial', [False, True])
+def test_legacy_contract_observation_does_not_migrate(tmp_path, monkeypatch, partial):
+    from eidolon_cli.organization_outcome_contracts import CONTRACT_TABLES
+    store = seed(tmp_path)
+    with sqlite3.connect(store.path) as conn:
+        for table in sorted(CONTRACT_TABLES):
+            if partial and table == 'objective_human_judgments':
+                continue
+            conn.execute('DROP TABLE ' + table)
+        before = list(conn.iterdump())
+    forbid_runtime(monkeypatch)
+    result = read_observation(tmp_path)
+    assert result['state'] == ('unsupported' if partial else 'available')
+    if not partial:
+        acceptance = result['snapshot']['objectives'][0]['acceptance']
+        assert acceptance['contract'] is None
+        assert acceptance['humanJudgments'] == []
+    with sqlite3.connect(store.path) as conn:
+        assert list(conn.iterdump()) == before

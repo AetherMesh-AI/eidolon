@@ -203,3 +203,15 @@ it('labels legacy planning without inventing packages and localizes empty delega
   expect(screen.getByText('作業中')).toBeTruthy()
   expect(screen.getAllByText('担当マネージャー')).toHaveLength(value.objectives[0].workPackages!.length)
 })
+
+it('labels a carried manager plan without inventing a new planning request', async () => {
+  const state = snapshot()
+  const item = state.objectives[0].workPackages![0]
+  item.planDisposition = 'reused'
+  item.sourcePackageId = 'original-package'
+  item.sourcePlanSha256 = 'a'.repeat(64)
+  render(<I18nProvider><RuntimeWorkPackages objective={state.objectives[0]} snapshot={state} /></I18nProvider>)
+  expect(await screen.findByText(/Reused manager plan: original-package/)).toBeTruthy()
+  expect(screen.getByText(/No new planning call/)).toBeTruthy()
+  expect(within(screen.getAllByRole('listitem', { name: 'Deliver backend' })[0]).getByText('plan-backend')).toBeTruthy()
+})

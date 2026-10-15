@@ -12,9 +12,9 @@ def _view(value):
 
 @_organization_method('organization.intake.submit', registry=_registry)
 def _submit(params, service):
-    _organization_params(params, {'text', 'idempotencyKey', 'ownerPriority'})
+    _organization_params(params, {'text', 'idempotencyKey', 'ownerPriority', 'forceSeparate'})
     return _view(service().intake.submit(params.get('text'), idempotency_key=params.get('idempotencyKey'),
-                                        owner_priority=params.get('ownerPriority')))
+                                        owner_priority=params.get('ownerPriority'), force_separate=params.get('forceSeparate', False)))
 
 
 @_organization_method('organization.intake.read', registry=_registry)

@@ -10,6 +10,7 @@ import uuid
 
 from eidolon_cli.organization_intake_context import digest, intake_context
 from eidolon_cli.organization_intake_contract import PRIORITIES, _text, validate_proposal
+from eidolon_cli.organization_intake_duplicates import (DUPLICATE_SCHEMA, exact_duplicate, link_duplicate, remember_admission, separate_requested)
 
 INTAKE_SCHEMA = '''
 CREATE TABLE IF NOT EXISTS organization_request_intakes (
@@ -22,7 +23,7 @@ CREATE TABLE IF NOT EXISTS organization_request_intakes (
  input_tokens INTEGER, output_tokens INTEGER, proposal_json TEXT,
  objective_id TEXT UNIQUE REFERENCES objectives(id), reason TEXT, created REAL NOT NULL,
  parent_intake_id TEXT UNIQUE REFERENCES organization_request_intakes(id));
-'''
+''' + DUPLICATE_SCHEMA
 
 
 def _view(row):
@@ -30,7 +31,7 @@ def _view(row):
             'request': row['request_text'], 'status': row['status'], 'parentIntakeId': row['parent_intake_id'],
             'snapshotId': row['snapshot_id'], 'dispatched': bool(row['dispatched']),
             'proposal': json.loads(row['proposal_json']) if row['proposal_json'] else None,
-            'objectiveId': row['objective_id'], 'reason': row['reason'],
+            'objectiveId': row['objective_id'] or (row['linked_objective_id'] if 'linked_objective_id' in row.keys() else None), 'reason': row['reason'],
             'usage': {'provider': row['provider'], 'model': row['model'],
                       'reservedTokens': row['input_limit'] + row['output_limit'],
                       'reservedCostUsd': row['reserved_cost'], 'inputTokens': row['input_tokens'],
@@ -45,7 +46,7 @@ class OrganizationIntakeStore:
             return intake_context(self, conn, owner_priority)[1]
 
     def _intake_row(self, conn, intake_id):
-        row = conn.execute('SELECT * FROM organization_request_intakes WHERE id=?', (intake_id,)).fetchone()
+        row = conn.execute('SELECT i.*,l.objective_id linked_objective_id FROM organization_request_intakes i LEFT JOIN organization_intake_duplicate_links l ON l.intake_id=i.id WHERE i.id=?', (intake_id,)).fetchone()
         owner = conn.execute("SELECT identity_id FROM agent_identity WHERE agent_id='owner'").fetchone()
         if row is None or owner is None or row['owner_identity_id'] != owner[0]:
             raise ValueError('Intake is not available to the current organization owner')
@@ -63,19 +64,21 @@ class OrganizationIntakeStore:
             if owner is None:
                 raise ValueError('Organization owner identity is missing')
             return [_view(row) for row in conn.execute(
-                'SELECT * FROM organization_request_intakes WHERE owner_identity_id=? ORDER BY created DESC,id DESC LIMIT 20',
+                'SELECT i.*,l.objective_id linked_objective_id FROM organization_request_intakes i LEFT JOIN organization_intake_duplicate_links l ON l.intake_id=i.id WHERE i.owner_identity_id=? ORDER BY i.created DESC,i.id DESC LIMIT 20',
                 (owner[0],))]
 
     def intake_read(self, intake_id):
         with self._connect() as conn:
             return _view(self._intake_row(conn, _text(intake_id, 'Intake ID', 128)))
 
-    def begin_intake(self, text, *, idempotency_key, owner_priority=None, parent_intake_id=None):
+    def begin_intake(self, text, *, idempotency_key, owner_priority=None, parent_intake_id=None, force_separate=False):
         text = _text(text, 'Request', 12000)
         key = _text(idempotency_key, 'Idempotency key', 128)
         if owner_priority is not None and owner_priority not in PRIORITIES:
             raise ValueError('Owner priority must be P1–P5')
-        fingerprint = digest([text, owner_priority, parent_intake_id])
+        if type(force_separate) is not bool:
+            raise ValueError('forceSeparate must be a boolean')
+        fingerprint = digest([text, owner_priority, parent_intake_id] + ([True] if force_separate else []))
         with self._write() as conn:
             prior = conn.execute('SELECT * FROM organization_request_intakes WHERE idempotency_key=?', (key,)).fetchone()
             if prior is not None:
@@ -90,6 +93,8 @@ class OrganizationIntakeStore:
                 if owner_priority is not None and owner_priority != parent['owner_priority']:
                     raise ValueError('Clarification cannot silently replace the owner priority')
                 owner_priority = parent['owner_priority']
+                parent_option = conn.execute('SELECT force_separate FROM organization_intake_options WHERE intake_id=?', (parent_intake_id,)).fetchone()
+                force_separate = bool(parent_option[0]) if parent_option is not None else False
                 question = json.loads(parent['proposal_json'])['question']['text']
                 text = _text(parent['request_text'] + '\n\nClarification question: ' + question +
                              '\nOwner answer: ' + text, 'Clarified request', 12000)
@@ -105,6 +110,7 @@ class OrganizationIntakeStore:
                 '(id,idempotency_key,input_hash,owner_identity_id,request_text,owner_priority,snapshot_id,context_json,status,created,parent_intake_id) '
                 "VALUES (?,?,?,?,?,?,?,?, 'pending',?,?)", (ident, key, fingerprint, payload['ownerIdentityId'], text,
                     owner_priority, context.snapshot_id, json.dumps(payload), time.time(), parent_intake_id))
+            conn.execute('INSERT INTO organization_intake_options VALUES (?,?)', (ident, int(force_separate)))
             if parent_intake_id is not None:
                 conn.execute("UPDATE organization_request_intakes SET status='answered' WHERE id=?", (parent_intake_id,))
             return _view(self._intake_row(conn, ident)), True
@@ -113,7 +119,8 @@ class OrganizationIntakeStore:
         with self._connect() as conn:
             row = self._intake_row(conn, intake_id)
             return {'request': row['request_text'], 'evidence': [{'id': 'owner-request',
-                    'text': row['request_text'], 'provenance': 'owner_report_unverified'}],
+                    'text': row['request_text'], 'provenance': 'owner_report_unverified'},
+                    *json.loads(row['context_json']).get('retainedEvidence', {}).get('items', [])],
                     'organization': json.loads(row['context_json'])}
 
     def reserve_intake_call(self, intake_id, *, provider, model, input_limit, output_limit, selected_provider=None):
@@ -167,7 +174,8 @@ class OrganizationIntakeStore:
             result = validate_proposal(raw, context)
             status = result['status']
             if status == 'proposed' and (result['duplicateCandidateIds'] or result['dependencyCandidateIds']):
-                status = 'needs_review'
+                status = 'proposed' if (exact_duplicate(self, conn, row, result) or
+                    (separate_requested(conn, intake_id) and not result['dependencyCandidateIds'])) else 'needs_review'
             usage = usage or {}
             counts = [usage.get(key) for key in ('inputTokens', 'outputTokens')]
             if any(value is not None and (type(value) is not int or value < 0) for value in counts):
@@ -202,7 +210,7 @@ class OrganizationIntakeStore:
     def admit_intake(self, intake_id):
         with self._write() as conn:
             row = self._intake_row(conn, intake_id)
-            if row['status'] == 'admitted':
+            if row['status'] in ('admitted', 'linked'):
                 return _view(row)
             if row['status'] != 'proposed':
                 raise ValueError('Intake requires an answer or review before admission')
@@ -210,6 +218,12 @@ class OrganizationIntakeStore:
             if context.snapshot_id != row['snapshot_id']:
                 raise ValueError('Intake context changed before admission')
             proposal = json.loads(row['proposal_json'])
+            match = exact_duplicate(self, conn, row, proposal)
+            if match is not None:
+                link_duplicate(conn, intake_id, match)
+                return _view(self._intake_row(conn, intake_id))
+            if proposal['dependencyCandidateIds'] or (proposal['duplicateCandidateIds'] and not separate_requested(conn, intake_id)):
+                raise ValueError('Intake duplicate or dependency requires review')
             from eidolon_cli.organization_projects import selected_projects
             projects = selected_projects(proposal['projectIds'], self.settings)
             delivery = proposal['deliveryMode']
@@ -220,5 +234,6 @@ class OrganizationIntakeStore:
                 acceptance_criteria=proposal['acceptanceCriteria'], delivery_mode=delivery,
                 executive_id=proposal['executiveId'], manager_id=proposal['managerId'],
                 project_ids=proposal['projectIds'])
+            remember_admission(conn, intake_id, objective_id)
             conn.execute("UPDATE organization_request_intakes SET status='admitted',objective_id=? WHERE id=?", (objective_id, intake_id))
             return _view(self._intake_row(conn, intake_id))

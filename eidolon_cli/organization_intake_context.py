@@ -47,18 +47,27 @@ def intake_context(store, conn, owner_priority=None):
         'JOIN objective_assignments a ON a.objective_id=o.id '
         "LEFT JOIN objective_history h ON h.objective_id=o.id WHERE o.cancelled=0 AND "
         "coalesce(h.archived,0)=0 AND c.status NOT IN ('accepted','legacy_completed') ORDER BY o.id")]
+    from eidolon_cli.organization_intake_duplicates import objective_scope
+    for item in backlog:
+        item['scopeSha256'] = digest(objective_scope(conn, item['id']))
     # Full bounded intake context, not a silent partial backlog. Provider boundary
     # checks actual prompt size before any reservation or physical send.
     payload = {'ownerIdentityId': owner['identity_id'], 'policyGeneration': store._policy_generation,
                'policyFingerprint': store._policy_fingerprint,
                'routes': descriptions, 'projects': projects, 'backlog': backlog,
                'ownerPriority': owner_priority}
+    from eidolon_cli.organization_intake_evidence import collect_intake_evidence
+    observations = collect_intake_evidence(store, conn)
+    payload['retainedEvidenceBinding'] = observations['private']['sha256']
     snapshot_id = digest(payload)
-    context = Context(snapshot_id, tuple(routes), (Evidence('owner-request'),),
+    retained = tuple(Evidence(item['id'], route_ids=tuple(route.id for route in routes
+                     if item['projectId'] in route.project_ids)) for item in observations['public']['items'])
+    context = Context(snapshot_id, tuple(routes), (Evidence('owner-request'), *retained),
                       tuple(item['id'] for item in backlog), owner_priority)
     # Full private bindings contribute to stale-context detection but never enter
     # model prompts. Only the same public aliases used by ordinary project work
     # cross the inference boundary.
     public = {key: value for key, value in payload.items() if key != 'policyFingerprint'}
     public['projects'] = [public_project(project) for project in projects]
+    public['retainedEvidence'] = observations['public']
     return context, {'snapshotId': snapshot_id, **public}

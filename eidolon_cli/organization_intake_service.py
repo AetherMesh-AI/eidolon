@@ -47,7 +47,7 @@ class IntakeService:
                 self._recover_orphans()
         return self.store.recent_intakes()
 
-    def submit(self, text, *, idempotency_key, owner_priority=None, parent_intake_id=None):
+    def submit(self, text, *, idempotency_key, owner_priority=None, parent_intake_id=None, force_separate=False):
         from eidolon_cli.organization_service import _ExecutionLock
         # Dispatch callbacks may count other services under their admission locks.
         # Never invoke them while holding this service's running-record lock.
@@ -59,7 +59,7 @@ class IntakeService:
             self._recover_orphans()
             if self.organization._stop.is_set():
                 raise ValueError('Organization is stopping; no intake was admitted')
-            intake, created = self.store.begin_intake(text, idempotency_key=idempotency_key, owner_priority=owner_priority, parent_intake_id=parent_intake_id)
+            intake, created = self.store.begin_intake(text, idempotency_key=idempotency_key, owner_priority=owner_priority, parent_intake_id=parent_intake_id, force_separate=force_separate)
             if not created:
                 return intake
             locks = ExitStack()
@@ -103,8 +103,9 @@ class IntakeService:
             if value['status'] == 'proposed':
                 # Existing objective admission owns every project/authority/budget
                 # check. Start scheduling only after its transaction has committed.
-                self.store.admit_intake(record.id)
-                self.organization.start()
+                admitted = self.store.admit_intake(record.id)
+                if admitted['status'] == 'admitted':
+                    self.organization.start()
         except Exception:
             # Provider/internal exception strings may contain endpoint details;
             # persist only a bounded generic user-safe reason.
