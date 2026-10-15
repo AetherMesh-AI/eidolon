@@ -211,3 +211,71 @@ permanent Linux lane requires passing real pytest, failing/empty/incomplete test
 receipts, hostile-environment and forbidden-operation checks, and an independent
 review/source-integration loop. macOS and Windows retain their explicit unsupported
 behavior; there is no host execution fallback.
+
+## Folder-first planning projects
+
+A project can now bind an explicitly configured folder with `recipe: null`.
+The folder may be empty, contain ordinary documents, or contain a repository;
+Git is not required for planning or inspection. One organization can select
+multiple registered projects for an objective. These are independent root
+bindings, not a promise of atomic changes across repositories.
+
+The setup response advertises `supportsPlanningFolders: true`. Updated desktop
+clients offer “Planning and inspection only” when that capability is present;
+older runtimes retain the required-recipe flow. Existing string recipe bindings
+and their fingerprints are unchanged. All four identity keys remain mandatory.
+A missing recipe is explicit `null`, never an unknown recipe, empty string, or an
+inferred command. Exported identities preserve the null and still require owner
+review before activation elsewhere.
+
+Saving the identity grants no new access, starts no provider call, and creates
+no files in the selected folder. Inspection still needs its existing read-tool
+and root grants. An edit task against a planning-only folder is rejected before
+it can be admitted; test execution also requires an exact configured recipe.
+Adding a recipe or rebinding the folder changes the pinned identity, so existing
+objectives must finish or be deliberately replaced rather than silently gaining
+new authority. Registry conflicts and uncertain saves retain their existing
+recovery behavior.
+
+Planning-only identities remove the recipe prerequisite for already authorized
+folders. Fresh folder selection and explicit root-access review are described below.
+
+Planning-only folders require managed-artifact delivery. An empty folder can
+complete a planning objective through independently reviewed `work.draft` or
+`work.analyze` artifacts bound to that project. A `work.inspect` task still needs
+a successful exact file read; listing an empty directory does not satisfy it.
+Project tests and source integration remain unavailable without a recipe. Managed
+validation also requires at least one editable, recipe-backed selected project.
+These requirements are checked at intake, later planning, and owner amendments.
+
+## Register a new folder from the desktop
+
+An authenticated owner can choose an existing empty or non-Git directory in project
+setup. The picker follows the current local or remote backend. Review the exact
+path, project ID, team, assigned root alias and access disclosure, then approve
+registration explicitly. Selecting a folder or preparing its preview grants no
+access. This workflow requires an initialized organization ledger and POSIX
+no-follow directory descriptors; unsupported backends remain unavailable.
+
+Registration atomically records an append-only folder grant, a planning-only
+project identity, a policy generation and an immutable retry receipt. It does not
+edit YAML, enable tools or staff capabilities, configure an execution recipe,
+start providers, or create objectives. Fresh organizations can plan using reviewed
+artifacts; file inspection still needs separately configured read permissions.
+
+Saved root aliases remain pinned to the original source-root prefix. Reordering
+or retargeting that prefix, imposing managed root policy, replacing a directory,
+or introducing overlapping roots fails closed. Directory device/inode identity
+is checked both during setup and on the actual opened read descriptor. Existing
+source-controlled roots retain their earlier behavior. New roots cannot overlap
+or contain another registered root. Up to eight effective roots are supported.
+
+If a registration response is lost, retry the same reviewed request. It returns
+the durable receipt without granting twice, even if later configuration changes.
+Concurrent registration is serialized by the ledger writer; active objectives,
+uncertain team generation and still-unwinding executions prevent new grants.
+
+Folder grants are append-only in this milestone. A per-folder revoke, move or
+rebind interface is not yet available. Existing owner tool/staff controls can
+remove inspection capability, and source or directory drift blocks resolution;
+this is not a complete workspace lifecycle or migration interface.
