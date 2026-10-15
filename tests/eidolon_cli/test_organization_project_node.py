@@ -415,6 +415,24 @@ def test_live_store_dispatch_and_durable_review_gate(native,tmp_path):
     with reopened._connect() as conn:
         with pytest.raises(ValueError):
             reopened.verify_project_tests(conn,objective['id'])
+    payload=json.loads(review['payload'])
+    assert reopened.finish(review,{'approved':True,'summary':'Independent review of actual Node execution and exact selected source','evidenceIds':payload['evidenceIds']})
+    reopened=OrganizationStore(store.path,store.settings)
+    with reopened._connect() as conn:
+        assert reopened.verify_project_tests(conn,objective['id'])[0]['id']==payload['runId']
+    original_settings=reopened.settings
+    current_grant=original_settings.project_grants[0]
+    changed=OrganizationStore(store.path,replace(original_settings,project_grants=(replace(current_grant,
+        execution={**current_grant.execution,'timeout_seconds':21}),)))
+    with changed._connect() as conn:
+        with pytest.raises(ValueError):
+            changed.verify_project_tests(conn,objective['id'])
+    revoked=OrganizationStore(store.path,replace(original_settings,
+        tool_grants=tuple(value for value in original_settings.tool_grants if value!='run_tests')))
+    with revoked._connect() as conn:
+        with pytest.raises(ValueError):
+            revoked.verify_project_tests(conn,objective['id'])
+    reopened=OrganizationStore(store.path,original_settings)
     source.write_text('external source changed')
     with reopened._connect() as conn:
         with pytest.raises(ValueError):
