@@ -122,7 +122,7 @@ def _verify_container(record, name, base, grant, image_id, profile):
             or host.get('LogConfig', {}).get('Type') != 'none' or host.get('RestartPolicy', {}).get('Name') != 'no'
             or host.get('Devices') or host.get('DeviceRequests') or host.get('VolumesFrom') or host.get('PortBindings')
             or host.get('Privileged') or config.get('Tty')):
-        raise _Unsupported('Container runtime identity or privileges changed')
+        raise _Unsupported('Container runtime identity or privileges changed: ' + json.dumps({'imageMatches': record['Image'] == image_id, 'user': config.get('User'), 'entrypoint': config.get('Entrypoint'), 'cmd': config.get('Cmd'), 'healthcheck': config.get('Healthcheck'), 'capAdd': host.get('CapAdd'), 'capDrop': host.get('CapDrop'), 'logType': host.get('LogConfig', {}).get('Type'), 'restart': host.get('RestartPolicy'), 'devices': host.get('Devices'), 'deviceRequests': host.get('DeviceRequests'), 'volumesFrom': host.get('VolumesFrom'), 'portBindings': host.get('PortBindings'), 'tty': config.get('Tty')}, sort_keys=True))
     options = host.get('SecurityOpt', [])
     if 'no-new-privileges=true' not in options or len(options) != 2:
         raise _Unsupported('Container security options do not match')
