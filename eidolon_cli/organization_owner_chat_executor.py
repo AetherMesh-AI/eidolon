@@ -27,14 +27,14 @@ Return exactly one JSON object {"reply":"your reply"}, with nonempty text at mos
 """
 
 
-def readiness_reason(recipient):
+def readiness_reason(recipient, *, config=None):
     """Reject known unsupported configuration without resolving or probing accounts."""
     from eidolon_cli.config import load_config_readonly
     from eidolon_cli.organization_executor import _guard_route
     from eidolon_cli.organization_subscription import APP_SERVER_BLOCKER
     from eidolon_cli.providers import determine_api_mode, host_mandated_api_mode, normalize_provider
     from eidolon_cli.runtime_provider import _resolve_plain_custom_api_mode
-    cfg = load_config_readonly()
+    cfg = load_config_readonly() if config is None else config
     model = cfg.get('model') or {}
     model = model if isinstance(model, dict) else {'default': model}
     raw_provider = str(recipient.get('provider') or model.get('provider') or '').strip().lower()
@@ -46,7 +46,7 @@ def readiness_reason(recipient):
     if provider == 'custom':
         mode = _resolve_plain_custom_api_mode(model if inherited else {}, base_url)
     else:
-        mode = host_mandated_api_mode(base_url) or mode or determine_api_mode(provider, base_url, selected_model)
+        mode = host_mandated_api_mode(base_url) or mode or determine_api_mode(provider, base_url, selected_model, allow_network=False, config=cfg)
     if raw_provider in {'openai', 'openai-api', 'openai-codex'} and model.get('openai_runtime') == 'codex_app_server':
         return APP_SERVER_BLOCKER
     from eidolon_cli.config_providers import get_compatible_custom_providers

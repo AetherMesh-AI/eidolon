@@ -1811,11 +1811,13 @@ def load_config() -> Dict[str, Any]:
     return _load_config_impl(want_deepcopy=True)
 
 
-def load_config_readonly() -> Dict[str, Any]:
+def load_config_readonly(*, initialize_home: bool = True) -> Dict[str, Any]:
     """``load_config()`` without the defensive deepcopy (~half of the 265us cache-hit cost).
     **Mutating the returned dict (or any nested structure) corrupts the in-process cache for
-    every subsequent caller** — only for code paths that never write to the result."""
-    return _load_config_impl(want_deepcopy=False)
+    every subsequent caller** — only for code paths that never write to the result.
+    Passive setup inspectors pass ``initialize_home=False`` to avoid provisioning
+    profile directories or SOUL.md while preserving canonical config resolution."""
+    return _load_config_impl(want_deepcopy=False, initialize_home=initialize_home)
 
 
 def _ensure_dict(parent: Dict[str, Any], key: str) -> Dict[str, Any]:
@@ -1973,9 +1975,10 @@ def _last_known_good_fallback(config_path: Path, path_key: str, cache_sig, exc: 
     return lkg_copy
 
 
-def _load_config_impl(*, want_deepcopy: bool) -> Dict[str, Any]:
+def _load_config_impl(*, want_deepcopy: bool, initialize_home: bool = True) -> Dict[str, Any]:
     with _CONFIG_LOCK:
-        ensure_eidolon_home()
+        if initialize_home:
+            ensure_eidolon_home()
         config_path = get_config_path()
         path_key = str(config_path)
 

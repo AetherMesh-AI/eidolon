@@ -12,6 +12,10 @@ const state = vi.hoisted(() => ({
   organization: null as { snapshot: OrganizationSnapshot; adapter: RuntimeOrganizationAdapter } | null
 }))
 
+// Starter-team metadata/model setup has its own source-authority suite. Keep
+// these runtime/status tests focused on their existing snapshot request contract.
+vi.mock('./team-onboarding', () => ({ TeamOnboardingEntry: () => null }))
+
 vi.mock('./use-organization-owner-policy', () => {
   // This suite exercises runtime rendering and source authority. The separate
   // owner-policy suite owns editor reads; an unavailable policy stays read-only.

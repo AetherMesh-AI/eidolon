@@ -24,6 +24,8 @@ import nodePath from 'node:path'
 export const MOCK_REPLY = 'Hello from the mock inference server! The full boot chain is working.'
 
 export interface MockServerOptions {
+  /** Explicit JSON fixture for the tool-free starter-team proposal path only. */
+  starterTeamReply?: string
   /** Pause the matching stream after its first token for session-switch E2E coverage. */
   holdFirstStreamForPrompt?: string
 /** Pause the first completion whose request JSON contains this text. */
@@ -482,6 +484,11 @@ export function startMockServer(options: MockServerOptions = {}): Promise<MockSe
           const userText = typeof lastUserMsg?.content === 'string' ? lastUserMsg.content : ''
           if (userText) {
             _receivedUserTexts.push(userText)
+          }
+          if (options.starterTeamReply && messages.some(message =>
+            message?.role === 'system' && typeof message.content === 'string' && message.content.includes('EIDOLON_STARTER_TEAM_V1'))) {
+            nonStreamingTextResponse(res, model, options.starterTeamReply)
+            return
           }
           const isInterimTrigger = userText.includes('E2E_INTERIM_TRIGGER')
           const isSidebarTrigger = userText.includes('E2E_SIDEBAR_TRIGGER')

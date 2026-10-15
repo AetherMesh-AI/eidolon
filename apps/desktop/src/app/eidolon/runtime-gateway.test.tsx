@@ -3,6 +3,10 @@ import { useEffect, useState } from 'react'
 import { Link, MemoryRouter, Route, Routes } from 'react-router'
 import { beforeEach, expect, it, vi } from 'vitest'
 
+// Starter-team metadata/model setup has its own source-authority suite. Keep
+// these runtime/status tests focused on their existing snapshot request contract.
+vi.mock('./team-onboarding', () => ({ TeamOnboardingEntry: () => null }))
+
 vi.mock('./use-organization-owner-policy', () => {
   // This suite exercises runtime rendering and source authority. The separate
   // owner-policy suite owns editor reads; an unavailable policy stays read-only.
@@ -49,7 +53,7 @@ vi.mock('@/store/session', async () => {
 vi.mock('@/store/profile', async () => {
   const { atom } = await import('nanostores')
 
-  return { $activeGatewayProfile: atom('default'), $gatewaySwapTarget: atom(null), normalizeProfileKey: (profile: string) => profile.trim() || 'default' }
+  return { $activeGatewayProfile: atom('default'), $gatewaySwapTarget: atom(null), normalizeProfileKey: (profile: string | null | undefined) => (profile ?? '').trim() || 'default' }
 })
 
 import { $activeGatewayRoute, $gateway } from '@/store/gateway'
