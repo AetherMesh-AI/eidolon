@@ -28,7 +28,7 @@ uses host Node as a fallback. macOS/Windows remain unsupported for this backend.
 - Network and IPC are isolated; no network interface reaches another host.
 - Unprivileged test UID with zero capabilities, no-new-privileges, an explicit
   reviewed digest-pinned seccomp profile and private PID/mount/cgroup namespaces.
-  Supervisor/test UID separation remains a blocking design item below.
+  Supervisor/test UID separation is implemented experimentally; native proof remains required.
 - Fixed one-CPU quota plus an overall wall deadline, bounded memory/swap/PIDs,
   bounded writable tmpfs, and bounded captured output. CPU rate is not described
   as an aggregate CPU-seconds guarantee.
@@ -87,8 +87,8 @@ activate the supervisor inspector via SIGUSR1 or access its descriptors. The
 current alternative under review is a minimal trusted root-owned PID 1 retaining
 only SETUID/SETGID to launch tests as UID/GID 65534, with test capabilities zero.
 No project code is imported into that supervisor. Its result pipe and watchdog
-must remain inaccessible to the test UID. This alternative is not approved or
-implemented until independent review and native adversarial proof complete.
+must remain inaccessible to the test UID. This alternative is implemented experimentally, but is not approved for activation
+until independent review and native adversarial proof complete.
 
 Node test events can themselves be forged by hostile tests. File-scoped counts
 prevent accidental empty-file passes, not malicious falsification. Supervisor

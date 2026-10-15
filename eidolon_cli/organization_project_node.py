@@ -113,7 +113,7 @@ def _verify_container(record, name, base, grant, image_id, profile):
         'Memory': grant.memory_mb * 1048576, 'MemorySwap': grant.memory_mb * 1048576, 'Init': False,
         'Runtime': 'runc', 'PublishAllPorts': False}
     if any(host.get(key) != value for key, value in expected.items()):
-        raise _Unsupported('Container isolation configuration does not match its fixed recipe')
+        raise _Unsupported('Container isolation configuration mismatch: ' + json.dumps({key: host.get(key) for key, value in expected.items() if host.get(key) != value}, sort_keys=True))
     if (record['Image'] != image_id or config['User'] != '0:0' or config.get('Labels', {}).get('ai.eidolon.execution') != name
             or config.get('Entrypoint') != ['/usr/local/bin/node']
             or config.get('Cmd') != ['--disable-sigusr1', '/runner/supervisor.mjs']

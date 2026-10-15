@@ -4,6 +4,12 @@ on:
     branches: [main]
     paths:
       - 'eidolon_cli/organization_project_node.py'
+      - 'eidolon_cli/organization_project_runner.py'
+      - 'eidolon_cli/organization_project_validation.py'
+      - 'scripts/run_tests.sh'
+      - 'scripts/run_tests_parallel.py'
+      - 'pyproject.toml'
+      - 'uv.lock'
       - 'eidolon_cli/project_node_runtime/**'
       - 'tests/eidolon_cli/test_organization_project_node.py'
       - '.github/workflows/node-project-experimental.yml'

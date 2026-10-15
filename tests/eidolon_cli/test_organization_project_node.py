@@ -56,7 +56,9 @@ def native():
     if os.environ.get('EIDOLON_REQUIRE_NODE_SANDBOX') != '1':
         pytest.skip('Native Docker execution is not explicitly enabled for this test invocation')
     result = run_node_tests(snapshot(GOOD), GRANT)
-    assert result['status'] == 'passed', result
+    if result['status'] != 'passed':
+        import json
+        pytest.fail(json.dumps(result,sort_keys=True))
     assert result['cleanupConfirmed'] is True
     assert result['isolation']['established'] is True
     return result
@@ -230,3 +232,97 @@ while(true){}
             record=json.loads(docker('inspect',container).stdout)[0]
             assert record['Config']['Labels']['ai.eidolon.execution'].startswith('eidolon-test-')
             assert docker('rm','--force',container).returncode==0
+
+
+def test_live_lost_create_reply_resolves_owned_container(native,monkeypatch):
+    from eidolon_cli import organization_project_node as module
+    original=module._docker
+    created=[]
+    def lose_reply(args,config,budget,limit=1048576):
+        response=original(args,config,budget,limit)
+        if args[0]=='create' and response[0]==0:
+            created.append(response[1]['stdout'].decode().strip())
+            return -9,{'stdout':bytearray(),'stderr':bytearray()}, {'stdout':0,'stderr':0},'timed_out'
+        return response
+    monkeypatch.setattr(module,'_docker',lose_reply)
+    result=run_node_tests(snapshot(GOOD),GRANT)
+    assert created and result['containerId']==created[0]
+    assert result['status']=='timed_out',result
+    assert result['cleanupConfirmed'] is True
+    assert result['isolation']['established'] is False
+
+
+def test_live_start_failure_never_becomes_pass(native,monkeypatch):
+    from eidolon_cli import organization_project_node as module
+    original=module._docker
+    def fail_start(args,config,budget,limit=1048576):
+        if args[0]=='start':
+            return 1,{'stdout':bytearray(),'stderr':bytearray(b'injected start failure')},{'stdout':0,'stderr':22},None
+        return original(args,config,budget,limit)
+    monkeypatch.setattr(module,'_docker',fail_start)
+    result=run_node_tests(snapshot(GOOD),GRANT)
+    assert result['status']=='failed',result
+    assert result['cleanupConfirmed'] is True
+    assert result['isolation']['established'] is False
+
+
+def test_live_compat_socketcall_is_denied_by_profile(native,tmp_path):
+    """Actual x86 compatibility syscall component proof, not a fake adapter pass."""
+    import json
+    import platform
+    import subprocess
+    import uuid
+    from eidolon_cli import organization_project_node as module
+    if platform.machine()!='x86_64':
+        pytest.skip('x86 socketcall compatibility ABI does not apply to this architecture')
+    assembly=tmp_path/'probe.S'
+    assembly.write_text('''.global _start\n.section .text\n_start:\n mov $102,%eax\n mov $1,%ebx\n mov $args,%ecx\n int $0x80\n cmp $-1,%eax\n jne failed\n xor %ebx,%ebx\n jmp done\nfailed:\n mov $1,%ebx\ndone:\n mov $1,%eax\n int $0x80\n.section .data\nargs:\n .long 2,1,0\n''')
+    source=tmp_path/'source';source.mkdir(mode=0o755)
+    (tmp_path/'runner').mkdir(mode=0o755)
+    compiled=subprocess.run(['/usr/bin/gcc','-m32','-nostdlib','-static','-Wl,--build-id=none','-o',str(source/'probe'),str(assembly)],capture_output=True,timeout=10)
+    assert compiled.returncode==0,compiled.stderr.decode()
+    (source/'probe').chmod(0o555)
+    (tmp_path/'seccomp.json').write_bytes((module.ASSETS/'seccomp.json').read_bytes())
+    config=tmp_path/'docker';config.mkdir();(config/'config.json').write_text('{}')
+    name='eidolon-test-'+uuid.uuid4().hex
+    args=module._create_arguments(name,tmp_path,GRANT)[:-2]
+    args=[arg.replace('--entrypoint=/usr/local/bin/node','--entrypoint=/source/probe').replace('--user=0:0','--user=65534:65534') for arg in args if not arg.startswith('--cap-add=')]
+    budget=module._Budget(None,10,time.monotonic())
+    identifier=None
+    try:
+        code,output,_,forced=module._docker(args,config,budget)
+        assert code==0 and forced is None,output
+        identifier=output['stdout'].decode().strip()
+        code,output,_,forced=module._docker(['start','--attach',identifier],config,budget)
+        assert code==0 and forced is None,output
+        state=module._json_command(['inspect',identifier],config,budget)[0]['State']
+        assert state['ExitCode']==0 and state['Running'] is False,state
+    finally:
+        if identifier:
+            code,_,_,forced=module._docker(['rm','--force',identifier],config,module._Budget(None,5,time.monotonic()))
+            assert code==0 and forced is None
+
+
+def test_live_cleanup_failure_cannot_remain_passed(native,monkeypatch,tmp_path):
+    from eidolon_cli import organization_project_node as module
+    original=module._docker
+    def fail_cleanup(args,config,budget,limit=1048576):
+        if args[0]=='rm':
+            return 1,{'stdout':bytearray(),'stderr':bytearray(b'injected cleanup failure')},{'stdout':0,'stderr':24},None
+        return original(args,config,budget,limit)
+    monkeypatch.setattr(module,'_docker',fail_cleanup)
+    result=run_node_tests(snapshot(GOOD),GRANT)
+    monkeypatch.setattr(module,'_docker',original)
+    try:
+        assert result['status']=='cleanup_failed',result
+        assert result['cleanupConfirmed'] is False
+        assert result['isolation']['established'] is True
+    finally:
+        identifier=result.get('containerId')
+        if identifier:
+            config=tmp_path/'docker';config.mkdir();(config/'config.json').write_text('{}')
+            budget=module._Budget(None,5,time.monotonic())
+            record=module._json_command(['inspect',identifier],config,budget)[0]
+            assert record['Config']['Labels']['ai.eidolon.execution']==result['containerName']
+            code,_,_,forced=original(['rm','--force',identifier],config,budget)
+            assert code==0 and forced is None
