@@ -559,9 +559,10 @@ class OrganizationProjectStore:
         observations = []
         # The current policy transaction fences concurrent policy revocation. The
         # descriptor readers have per-file byte bounds and refuse links/devices.
-        from eidolon_cli.organization_root_grants import expected_root_identities
+        from eidolon_cli.organization_root_grants import expected_root_identities, active_root_aliases
         with organization_file_read_scope(self.settings.read_roots, self.settings.max_tool_result_chars,
-                                          expected_root_identities=expected_root_identities(self.settings)) as scope:
+                                          expected_root_identities=expected_root_identities(self.settings),
+                                          allowed_root_aliases=active_root_aliases(self.settings)) as scope:
             for item in manifest:
                 observed = scope.read_exact_source(item['path'])
                 if observed['sha256'] != item['sha256']:

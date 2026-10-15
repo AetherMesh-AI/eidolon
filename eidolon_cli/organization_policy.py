@@ -34,7 +34,7 @@ BEGIN SELECT RAISE(ABORT, 'Request requires a current organization policy'); END
 
 # Startup operational settings can differ between processes. Explicit owner
 # configuration changes still advance the generation, even for concurrency.
-_AUTHORITY_FIELDS = ('communication_scope', 'team', 'capabilities', 'roster', 'tool_grants', 'read_roots', 'max_workers',
+_AUTHORITY_FIELDS = ('communication_scope', 'team', 'capabilities', 'roster', 'tool_grants', 'read_roots', 'revoked_root_aliases', 'max_workers',
                      'max_replans', 'max_stages', 'max_tasks', 'max_owner_resolutions', 'max_output_tokens',
                      'max_members', 'max_request_depth', 'max_requests_per_stage',
                      'max_context_tokens', 'max_model_calls', 'max_total_tokens', 'objective_timeout_seconds',
@@ -71,7 +71,7 @@ def persisted_settings(conn):
             **{key: tuple(staff.get(key, ())) for key in (
                 'capabilities', 'tool_grants', 'responsibilities', 'authority', 'managed_teams')}})
             for staff in values['roster'])
-    for key in ('ledger_project_ids', 'project_registry_conflicts', 'ledger_read_roots'):
+    for key in ('ledger_project_ids', 'project_registry_conflicts', 'ledger_read_roots', 'revoked_root_aliases'):
         values[key] = tuple(values.get(key, ()))
     from eidolon_cli.organization_budget import parse_model_costs
     values['model_costs'] = parse_model_costs(values.get('model_costs', []))
@@ -114,7 +114,7 @@ def resolve_settings(conn, seed_settings=None):
                                 *(grant for staff in raw['roster'] for grant in staff.get('tool_grants', []))]))
     validated = OrganizationSettings.from_config({'organization': {**raw, 'tool_grants': grants}})
     return resolve_registry(conn, resolve_owner_overrides(conn, replace(validated, tool_grants=base.tool_grants,
-        ledger_project_ids=base.ledger_project_ids, ledger_read_roots=base.ledger_read_roots, ledger_root_identities=base.ledger_root_identities)))
+        ledger_project_ids=base.ledger_project_ids, ledger_read_roots=base.ledger_read_roots, ledger_root_identities=base.ledger_root_identities, revoked_root_aliases=base.revoked_root_aliases)))
 
 
 class OrganizationPolicyStore:
@@ -176,7 +176,8 @@ class OrganizationPolicyStore:
 
     @staticmethod
     def _policy_paused(conn):
-        return (conn.execute('SELECT 1 FROM organization_policy_pause WHERE id=1').fetchone() is not None
+        from eidolon_cli.organization_root_grants import pending_revocations
+        return (pending_revocations(conn) or conn.execute('SELECT 1 FROM organization_policy_pause WHERE id=1').fetchone() is not None
                 or conn.execute('SELECT 1 FROM organization_project_registry_conflicts WHERE id=1').fetchone() is not None)
 
     def _adopt_policy(self, conn, *, exclude_request_id=None, force=False, resume=False):
