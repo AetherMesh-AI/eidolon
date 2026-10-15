@@ -14,6 +14,9 @@ const state = vi.hoisted(() => ({
 
 // Starter-team metadata/model setup has its own source-authority suite. Keep
 // these runtime/status tests focused on their existing snapshot request contract.
+// Folder setup has separate owner-scope and native acceptance tests.
+vi.mock('./organization-folder-setup', () => ({ OrganizationFolderSetup: () => null }))
+
 vi.mock('./team-onboarding', () => ({ TeamOnboardingEntry: () => null }))
 
 vi.mock('./use-organization-owner-policy', () => {
