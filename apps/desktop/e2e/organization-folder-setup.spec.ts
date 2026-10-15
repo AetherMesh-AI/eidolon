@@ -113,7 +113,14 @@ OrganizationStore(ledger)
   panel = await openSetup()
   access = panel.getByRole('region', { name: 'Folder access', exact: true })
   await expect(access.getByText('Access revoked', { exact: true })).toBeVisible()
-  await access.getByRole('button', { name: 'Resume unaffected work after review', exact: true }).click()
+  const resume = access.getByRole('button', { name: 'Resume unaffected work after review', exact: true })
+  // A read can observe a live capacity fence during startup. Follow the visible
+  // Refresh instruction; waiting on the old snapshot cannot establish quiescence.
+  await expect.poll(async () => {
+    await access.getByRole('button', { name: 'Refresh folder access', exact: true }).click()
+    return resume.isEnabled()
+  }, { timeout: 30_000 }).toBe(true)
+  await resume.click()
   const review = fixture.page.getByRole('dialog', { name: 'Resume unaffected work after review', exact: true })
   await review.getByRole('button', { name: 'Resume unaffected work after review', exact: true }).click()
   await expect(access.getByText('Revocation reviewed; access remains revoked', { exact: true })).toBeVisible()
