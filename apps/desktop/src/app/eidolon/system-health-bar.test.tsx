@@ -21,6 +21,7 @@ vi.mock('./organization-folder-setup', () => ({ OrganizationFolderSetup: () => n
 vi.mock('./team-onboarding', () => ({ TeamOnboardingEntry: () => null }))
 // Milestone owner reads and writes have separate scope and receipt suites.
 vi.mock('./organization-milestones', () => ({ OrganizationMilestones: () => null }))
+vi.mock('./organization-goals', () => ({ OrganizationGoals: () => null }))
 
 vi.mock('./use-organization-owner-policy', () => {
   // This suite exercises runtime rendering and source authority. The separate
