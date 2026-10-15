@@ -1,6 +1,7 @@
 """Experimental adapter contracts; native successes require the actual container."""
 from dataclasses import asdict, replace
 import hashlib
+import json
 import os
 import threading
 import time
@@ -84,14 +85,15 @@ def test_live_false_successes_rejected(native, content):
 def test_live_esm(native):
     result = run_node_tests(snapshot("import {test} from 'node:test';test('works',()=>{});", 'example.test.mjs'),
                             replace(GRANT, pattern='*.test.mjs'))
-    assert result['status'] == 'passed', result
+    assert result['status'] == 'passed', json.dumps(result)
 
 
 def test_live_supervisor_signal_descriptor_and_source_boundaries(native):
     code = r"""
 const {test}=require('node:test'); const a=require('node:assert/strict'); const fs=require('node:fs');
 test('isolated workload',()=>{
- a.equal(process.getuid(),65534); a.equal(process.getgid(),65534); a.deepEqual(process.getgroups(),[]);
+ a.equal(process.getuid(),65534); a.equal(process.getgid(),65534); a.deepEqual(process.getgroups(),[65534]);
+ a.equal(/^Groups:[ \t]*(.*)$/m.exec(fs.readFileSync('/proc/self/status','utf8'))[1].trim(),'');
  for(const sig of ['SIGUSR1','SIGSTOP','SIGTERM','SIGKILL']) a.throws(()=>process.kill(1,sig));
  for(const path of ['/proc/1/fd/1','/proc/1/mem','/var/run/docker.sock','/root/.ssh/id_rsa']) a.throws(()=>fs.openSync(path,'r+'));
  for(const path of ['/source/root0/example.test.cjs','/runner/supervisor.mjs','/usr/local/bin/node']) a.throws(()=>fs.writeFileSync(path,'bad'));
@@ -99,12 +101,12 @@ test('isolated workload',()=>{
 });
 """
     result = run_node_tests(snapshot(code), GRANT)
-    assert result['status'] == 'passed', result
+    assert result['status'] == 'passed', json.dumps(result)
 
 
 def test_live_minimum_output_budget_runs_a_real_test(native):
     result=run_node_tests(snapshot(GOOD),replace(GRANT,output_bytes=1024))
-    assert result['status']=='passed',result
+    assert result['status']=='passed',json.dumps(result)
     assert result['testCount']==1
 
 
@@ -158,7 +160,7 @@ test('host listeners are unreachable',async()=>{
 });
 """.replace('ENDPOINTS',json.dumps(endpoints))
         result=run_node_tests(snapshot(code),GRANT)
-        assert result['status']=='passed',result
+        assert result['status']=='passed',json.dumps(result)
     finally:
         for server in listeners:
             server.close()
@@ -266,8 +268,9 @@ def test_live_start_failure_never_becomes_pass(native,monkeypatch):
     assert result['isolation']['established'] is False
 
 
-def test_live_compat_socketcall_is_denied_by_profile(native,tmp_path):
-    """Actual x86 compatibility syscall component proof, not a fake adapter pass."""
+@pytest.mark.parametrize('abi',['i386','x32','native','alg','vsock'])
+def test_live_compat_socketcall_is_denied_by_profile(native,tmp_path,abi):
+    """Actual rejection of the x86 compatibility ABI; not a fake adapter pass."""
     import json
     import platform
     import subprocess
@@ -277,9 +280,16 @@ def test_live_compat_socketcall_is_denied_by_profile(native,tmp_path):
         pytest.skip('x86 socketcall compatibility ABI does not apply to this architecture')
     assembly=tmp_path/'probe.S'
     assembly.write_text('''.global _start\n.section .text\n_start:\n mov $102,%eax\n mov $1,%ebx\n mov $args,%ecx\n int $0x80\n cmp $-1,%eax\n jne failed\n xor %ebx,%ebx\n jmp done\nfailed:\n mov $1,%ebx\ndone:\n mov $1,%eax\n int $0x80\n.section .data\nargs:\n .long 2,1,0\n''')
+    if abi=='x32':
+        assembly.write_text('.global _start\n.section .text\n_start:\n mov $0x40000027,%eax\n syscall\n mov $1,%edi\n mov $60,%eax\n syscall\n')
+    if abi=='native':
+        assembly.write_text('.global _start\n.section .text\n_start:\n mov $39,%eax\n syscall\n test %rax,%rax\n jle failed\n xor %edi,%edi\n jmp done\nfailed:\n mov $1,%edi\ndone:\n mov $60,%eax\n syscall\n')
+    if abi in ('alg','vsock'):
+        domain=38 if abi=='alg' else 40
+        assembly.write_text(f'.global _start\n.section .text\n_start:\n mov $41,%eax\n mov ${domain},%edi\n mov $1,%esi\n xor %edx,%edx\n syscall\n cmp $-1,%rax\n jne failed\n xor %edi,%edi\n jmp done\nfailed:\n mov $1,%edi\ndone:\n mov $60,%eax\n syscall\n')
     source=tmp_path/'source';source.mkdir(mode=0o755)
     (tmp_path/'runner').mkdir(mode=0o755)
-    compiled=subprocess.run(['/usr/bin/gcc','-m32','-nostdlib','-static','-Wl,--build-id=none','-o',str(source/'probe'),str(assembly)],capture_output=True,timeout=10)
+    compiled=subprocess.run(['/usr/bin/gcc','-m32' if abi=='i386' else '-m64','-nostdlib','-static','-Wl,--build-id=none','-o',str(source/'probe'),str(assembly)],capture_output=True,timeout=10)
     assert compiled.returncode==0,compiled.stderr.decode()
     (source/'probe').chmod(0o555)
     (tmp_path/'seccomp.json').write_bytes((module.ASSETS/'seccomp.json').read_bytes())
@@ -294,9 +304,10 @@ def test_live_compat_socketcall_is_denied_by_profile(native,tmp_path):
         assert code==0 and forced is None,output
         identifier=output['stdout'].decode().strip()
         code,output,_,forced=module._docker(['start','--attach',identifier],config,budget)
-        assert code==0 and forced is None,output
+        expected=159 if abi in ('i386','x32') else 0
+        assert code==expected and forced is None,(code,output)
         state=module._json_command(['inspect',identifier],config,budget)[0]['State']
-        assert state['ExitCode']==0 and state['Running'] is False,state
+        assert state['ExitCode']==expected and state['Running'] is False and state['OOMKilled'] is False,state
     finally:
         if identifier:
             code,_,_,forced=module._docker(['rm','--force',identifier],config,module._Budget(None,5,time.monotonic()))

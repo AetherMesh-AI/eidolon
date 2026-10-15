@@ -15,10 +15,10 @@ identity. Missing imports fail; omitted dependencies are never inferred.
 The owner must explicitly enable local Docker use in this recipe. There is no
 default daemon probe or automatic permission change. Docker access is powerful:
 the daemon is part of the trusted computing base, outside the project sandbox.
-Only a preinstalled Linux Docker client, local Unix socket, `runc`, cgroup v2 and
+Only a preinstalled Linux x86-64 Docker client, local Unix socket, `runc`, cgroup v2 and
 an already-present, reviewed official Node image pinned by digest are supported.
 The runner never pulls images, installs software, accepts a remote endpoint, or
-uses host Node as a fallback. macOS/Windows remain unsupported for this backend.
+uses host Node as a fallback. ARM64/macOS/Windows remain unsupported for this backend.
 
 ## Isolation and bounds
 

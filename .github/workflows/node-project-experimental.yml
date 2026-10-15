@@ -34,6 +34,9 @@ jobs:
           uv sync --locked --python 3.12 --extra dev --extra slack
       - name: Prepare the exact official runtime for this disposable test runner
         run: |
+          uname -a
+          dpkg-query -W libseccomp2 containerd.io docker-ce runc || true
+          sha256sum eidolon_cli/project_node_runtime/seccomp.json
           docker version
           docker info
           docker pull node@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5

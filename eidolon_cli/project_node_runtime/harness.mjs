@@ -19,6 +19,7 @@ for await (const event of run({files:config.tests,concurrency:1,isolation:'proce
     if (event.data.file) summaries.push(event.data);
     else {if(final) process.exit(203);final=event.data;}
   }
+  if (event.type==='test:fail') process.stderr.write('Test failure: '+String(event.data.name)+'\n'+String(event.data.details?.error?.stack??'')+'\n'+String(event.data.details?.error?.cause?.stack??'')+'\n');
   if (event.type==='test:stdout' || event.type==='test:stderr') process.stderr.write(String(event.data.message));
 }
 const complete=final?.success===true && summaries.length===config.tests.length &&

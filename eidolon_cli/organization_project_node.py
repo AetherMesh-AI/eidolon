@@ -10,6 +10,7 @@ import fnmatch
 import hashlib
 import json
 import os
+import platform
 from pathlib import Path
 import re
 import stat
@@ -26,7 +27,7 @@ from eidolon_cli.organization_project_runner import (
 from eidolon_cli.organization_project_validation import digest
 
 IMAGE = 'node@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5'
-PROFILE_SHA256 = '72d5f75b6d9876f1c9cad2a170a060420c83184a7c4c0022502fbc5c6308ef52'
+PROFILE_SHA256 = '4445461a8780818be1c3c495c01256a86365356d2cd5d58233fe4d7dab0b5a38'
 ASSETS = Path(__file__).with_name('project_node_runtime')
 LIMITATIONS = ('Only exact selected files and the pinned Node runtime are available. No project dependency '
               'installation or package-script dispatch. Tests may execute programs inside the bounded container. '
@@ -155,11 +156,11 @@ def run_node_tests(files, grant, cancel=None):
                  and fnmatch.fnmatchcase(Path(item['path']).name, grant.pattern)]
         if not tests:
             raise ValueError('The exact snapshot contains no selected Node test files')
-        result.update(grant=asdict(grant), snapshotSha256=snapshot_digest(files), files=[{k: f[k] for k in ('path', 'sha256', 'revision')} for f in files])
+        result.update(grant=asdict(grant), selectedTests=tests, snapshotSha256=snapshot_digest(files), files=[{k: f[k] for k in ('path', 'sha256', 'revision')} for f in files])
         budget = _Budget(cancel, grant.timeout_seconds, clock)
         budget.check()
-        if sys.platform != 'linux' or not Path('/usr/bin/docker').is_file() or not Path('/var/run/docker.sock').is_socket():
-            raise _Unsupported('Requires an explicitly enabled preinstalled local Linux Docker runtime; no fallback was run')
+        if sys.platform != 'linux' or platform.machine() not in ('x86_64', 'amd64') or not Path('/usr/bin/docker').is_file() or not Path('/var/run/docker.sock').is_socket():
+            raise _Unsupported('Requires an explicitly enabled preinstalled local Linux x86-64 Docker runtime; no fallback was run')
         program = Path('/usr/bin/docker').stat()
         if program.st_uid != 0 or program.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
             raise _Unsupported('Docker client must be a trusted non-writable system executable')
@@ -172,13 +173,13 @@ def run_node_tests(files, grant, cancel=None):
             config = base / 'docker'; config.mkdir()
             (config / 'config.json').write_text('{}')
             info = _json_command(['info', '--format', '{{json .}}'], config, budget)
-            if info.get('OSType') != 'linux' or info.get('CgroupVersion') != '2':
+            if info.get('OSType') != 'linux' or info.get('CgroupVersion') != '2' or info.get('Architecture') not in ('x86_64', 'amd64'):
                 raise _Unsupported('Local Docker requires Linux cgroup v2 enforcement')
             image = _json_command(['image', 'inspect', grant.runtime_image], config, budget)[0]
-            if grant.runtime_image not in image.get('RepoDigests', []) or image.get('Config', {}).get('Volumes'):
+            if image.get('Architecture') != 'amd64' or grant.runtime_image not in image.get('RepoDigests', []) or image.get('Config', {}).get('Volumes'):
                 raise _Unsupported('Pinned runtime image identity or volume policy does not match')
             assets = {name: (ASSETS / name).read_bytes() for name in ('supervisor.mjs', 'harness.mjs')}
-            result['runtime'] = {'image': grant.runtime_image, 'imageId': image['Id'], 'seccompSha256': PROFILE_SHA256,
+            result['runtime'] = {'image': grant.runtime_image, 'imageId': image['Id'], 'architecture': image['Architecture'], 'seccompSha256': PROFILE_SHA256,
                 'bootstrapSha256': digest({name: hashlib.sha256(data).hexdigest() for name, data in assets.items()})}
             for child in ('source', 'runner'):
                 (base / child).mkdir(mode=0o755)
