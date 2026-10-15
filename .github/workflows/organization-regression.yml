@@ -189,6 +189,7 @@ jobs:
             tests/eidolon_cli/test_organization_project_registry.py
             tests/eidolon_cli/test_organization_milestones.py
             tests/eidolon_cli/test_organization_goal_allowances.py
+            tests/eidolon_cli/test_organization_goal_continuation.py
             tests/tui_gateway/test_organization_milestones.py
             tests/eidolon_cli/test_organization_project_registry_processes.py
             tests/eidolon_cli/test_organization_project_registry_conflicts.py

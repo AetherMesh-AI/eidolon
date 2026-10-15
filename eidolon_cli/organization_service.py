@@ -469,6 +469,9 @@ class OrganizationService:
                 return
             admitted = False
             try:
+                if self._stop.is_set() or not self.can_dispatch():
+                    return
+                self.store.advance_goal_continuation()
                 claim = self.store.claim_next(recoverable=True)
                 if claim is None:
                     return
