@@ -275,7 +275,37 @@ the durable receipt without granting twice, even if later configuration changes.
 Concurrent registration is serialized by the ledger writer; active objectives,
 uncertain team generation and still-unwinding executions prevent new grants.
 
-Folder grants are append-only in this milestone. A per-folder revoke, move or
-rebind interface is not yet available. Existing owner tool/staff controls can
-remove inspection capability, and source or directory drift blocks resolution;
-this is not a complete workspace lifecycle or migration interface.
+Folder grant identities are append-only. The owner revocation interface below
+can deny a grant permanently; move and rebind are not available. Existing owner
+tool/staff controls can also remove inspection capability, and source or directory
+drift blocks resolution. This is not a workspace migration interface.
+
+## Revoke a desktop folder grant
+
+Folder access lists the exact ledger-issued folders independently of live source
+configuration. An authenticated owner reviews the alias and path, then explicitly
+revokes that grant. This works when the folder is missing or replaced, and when
+source configuration is invalid. Administrator-configured roots are outside this
+operation. The immutable grant and its audit receipt remain; aliases are never
+renumbered, reused or automatically rebound.
+
+Successful revocation means its durable tombstone and policy-generation fence
+have committed. New claims and tool starts are denied, active claims are fenced,
+and cached services are asked to cancel. A source publication already holding the
+SQLite writer transaction must finish before that fence can commit. A busy or
+failed revocation does not report success. Revocation cannot undo reads or writes
+that happened before its commit.
+
+The view distinguishes revoked access, executions still stopping, unknown tool
+outcomes and project runs requiring reconciliation. It does not call cancelled
+work successful. An owner may explicitly review the remaining uncertainty and
+resume unaffected work only after execution capacity locks are free, project
+runs have terminal reconciled outcomes and current source configuration validates.
+Unknown read and source-publication receipts remain unknown after acknowledgment.
+A missing project result or unconfirmed process/container cleanup cannot be
+acknowledged away: it requires positive backend shutdown reconciliation, which
+this panel does not provide. Such a run keeps dispatch held; an owner review is
+not evidence that an orphan process stopped. Objectives using the
+revoked root remain unavailable. No action restores its access or rebinds a
+project. Historical artifacts and receipts remain readable from the ledger even
+when the original folder or source configuration is unavailable.

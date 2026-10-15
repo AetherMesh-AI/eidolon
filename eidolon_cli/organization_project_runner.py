@@ -416,6 +416,8 @@ def _apply_process_result(receipt, exit_code, output, totals, forced, parent_nam
                    'timed_out': 'Execution exceeded its wall-clock deadline.',
                    'cleanup_failed': 'Execution cleanup did not close its process streams within the bounded deadline.'}
         receipt.update(status='unsupported' if forced == 'cleanup_failed' else forced, reason=reasons[forced])
+        if forced == 'cleanup_failed':
+            receipt['cleanupConfirmed'] = False
         return
     if not isolated:
         receipt.update(status='unsupported', reason='The required OS isolation could not be established; no successful test execution was accepted.')
