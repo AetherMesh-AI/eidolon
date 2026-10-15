@@ -5,7 +5,7 @@ import json
 
 from eidolon_cli.organization_identity import _leader_enabled
 from eidolon_cli.organization_intake_contract import Context, Evidence, Route
-from eidolon_cli.organization_projects import selected_projects
+from eidolon_cli.organization_projects import public_project, selected_projects
 
 
 def digest(value):
@@ -56,4 +56,9 @@ def intake_context(store, conn, owner_priority=None):
     snapshot_id = digest(payload)
     context = Context(snapshot_id, tuple(routes), (Evidence('owner-request'),),
                       tuple(item['id'] for item in backlog), owner_priority)
-    return context, {'snapshotId': snapshot_id, **payload}
+    # Full private bindings contribute to stale-context detection but never enter
+    # model prompts. Only the same public aliases used by ordinary project work
+    # cross the inference boundary.
+    public = {key: value for key, value in payload.items() if key != 'policyFingerprint'}
+    public['projects'] = [public_project(project) for project in projects]
+    return context, {'snapshotId': snapshot_id, **public}

@@ -201,6 +201,11 @@ def test_configured_source_project_admits_without_expanding_scope(tmp_path):
     intake, _ = store.begin_intake('Fix Eidolon startup', idempotency_key='source')
     prompt = store.intake_prompt(intake['id'])
     assert prompt['organization']['routes'][0]['project_ids'] == ['eidolon']
+    assert prompt['organization']['projects'] == [
+        {'id': 'eidolon', 'root': 'root0', 'recipe': 'source-tests', 'team': 'general'}]
+    wire = json.dumps(prompt)
+    assert str(root) not in wire
+    assert 'readRoot' not in wire and 'recipeSha256' not in wire and 'policyFingerprint' not in wire
     reserve(store, intake)
     store.finish_intake(intake['id'], response(store, intake, deliveryMode='source_project',
         projectIds=['eidolon'], priority='P2', rationale='Reported startup failure needs investigation.'))
