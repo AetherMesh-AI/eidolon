@@ -15,6 +15,8 @@ const state = vi.hoisted(() => ({
 // Starter-team metadata/model setup has its own source-authority suite. Keep
 // these runtime/status tests focused on their existing snapshot request contract.
 vi.mock('./team-onboarding', () => ({ TeamOnboardingEntry: () => null }))
+// Exact owner judgments have a separate metadata and authority test suite.
+vi.mock('./runtime-outcome-judgment', () => ({ RuntimeOutcomeJudgment: () => null }))
 
 vi.mock('./use-organization-owner-policy', () => {
   // This suite exercises runtime rendering and source authority. The separate
