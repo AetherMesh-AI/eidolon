@@ -18,6 +18,18 @@ _LIMITATIONS = (
 )
 
 
+def execution_check_kind(execution):
+    """Normalize first; configuration compatibility is not host readiness."""
+    from eidolon_cli.organization_project_runner import normalize_execution_grant
+    grant = normalize_execution_grant(execution)
+    kinds = {'python_unittest': 'project_tests', 'python_pytest': 'project_tests',
+             'node_test': 'project_tests', 'typescript_check': 'project_typecheck',
+             'typescript_build': 'project_build'}
+    if grant.recipe not in kinds:
+        raise ValueError('Execution recipe has no supported verification kind')
+    return kinds[grant.recipe]
+
+
 def describe_execution_recipe(execution):
     """Configuration-only capabilities; safe to show without opening a project."""
     if execution is None:
@@ -25,8 +37,16 @@ def describe_execution_recipe(execution):
                 'reason': 'No execution recipe selected. Folder inspection and planning do not require one.'}
     from eidolon_cli.organization_project_runner import normalize_execution_grant
     grant = normalize_execution_grant(execution)
+    if grant.recipe == 'typescript_check':
+        return {'recipe': grant.recipe, 'state': 'runtime_unverified', 'supported': True,
+                'backend': 'linux-docker-pinned', 'checkKind': 'project_typecheck', 'dependencyInstallation': False,
+                'reason': 'Requires explicitly enabled local Linux x86-64 Docker, the pinned image and independently verified TypeScript6.0.3 package. Only fixed typechecking of selected .ts inputs is supported; this does not satisfy project tests or a build.'}
+    if grant.recipe == 'node_test':
+        return {'recipe': grant.recipe, 'state': 'runtime_unverified', 'supported': True,
+                'backend': 'linux-docker-pinned', 'checkKind': execution_check_kind(execution), 'dependencyInstallation': False,
+                'reason': 'Requires explicitly enabled local Linux x86-64 Docker, cgroup v2, the exact preinstalled pinned image, and a successful live isolation check. Only selected dependency-free Node tests are supported.'}
     return {'recipe': grant.recipe, 'state': 'runtime_unverified', 'supported': True,
-            'backend': 'linux-bubblewrap-seccomp', 'dependencyInstallation': False,
+            'backend': 'linux-bubblewrap-seccomp', 'checkKind': execution_check_kind(execution), 'dependencyInstallation': False,
             'reason': ('Requires a successful live Linux isolation check and the exact owner-selected files. '
                        + ('Uses only the copied system Python standard library.' if grant.recipe == 'python_unittest'
                           else 'Requires the fixed installed pytest bundle; project dependencies are not installed.'))}
@@ -110,7 +130,14 @@ Multiple package directories are independent candidates, not assumed workspaces.
             entry['kind'] = 'typescript'
             entry['candidates'].append({'recipe': 'typescript_typecheck', 'phase': 'typecheck',
                 'state': 'unsupported', 'reason': 'A trusted pinned compiler and isolated dependency bundle are required.'})
-        entry['blockers'].append('node_isolation_backend_unavailable')
+        if any(candidate['recipe'].startswith('node_package_') for candidate in entry['candidates']):
+            entry['blockers'].append('package_script_adapter_unavailable')
+        builtin_tests = [{key: item[key] for key in ('path', 'sha256', 'revision')} for item in selected if str(PurePosixPath(item['path']).parent) == base
+                         and item['path'].endswith(('.test.cjs', '.test.mjs', '.test.js'))]
+        if builtin_tests:
+            entry['candidates'].append({'recipe': 'node_test', 'phase': 'test', 'state': 'runtime_unverified',
+                'selectedTests': sorted(builtin_tests, key=lambda item: item['path']),
+                'reason': 'Requires an explicit owner grant and supported pinned local Linux x86-64 Docker runtime. Selected files and imports must be sufficient; package scripts are not invoked.'})
         entry['definitionSha256'] = digest(entry)
         projects.append(entry)
     return {'version': 1, 'snapshotSha256': snapshot_digest(selected), 'projects': projects,

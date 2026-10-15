@@ -237,3 +237,47 @@ def test_future_or_cyclic_template_dependency_rejected(tmp_path):
     store,_=setup(tmp_path)
     with pytest.raises(ValueError,match='earlier'):
         approve(store,[template(templateDependencyIds=['two']),template(id='two')])
+
+
+@pytest.mark.parametrize('checks',[['project_typecheck'],['project_build'],['project_tests','project_typecheck']])
+def test_incompatible_recipe_checks_rejected_before_plan_approval(tmp_path,checks):
+    from tests.eidolon_cli.test_organization_projects import configured
+    store,_=setup(tmp_path,configured(tmp_path))
+    with pytest.raises(ValueError,match='recipe|execution kinds'):
+        approve(store,[template(projectIds=['alpha'],requiredChecks=checks)])
+
+
+def test_recipe_check_kind_is_configuration_only_and_normalized():
+    from eidolon_cli.organization_project_recipes import execution_check_kind,describe_execution_recipe
+    assert execution_check_kind({'root':'root0'})=='project_tests'
+    view=describe_execution_recipe({'root':'root0'})
+    assert view['checkKind']=='project_tests' and view['state']=='runtime_unverified'
+    with pytest.raises(ValueError): execution_check_kind({'root':'root0','recipe':'arbitrary_shell'})
+
+
+@pytest.mark.parametrize('delivery,checks',[('source_project',[]),('managed_artifact',['source_integration'])])
+def test_automatic_source_implies_tests_at_preview_and_launch(tmp_path,monkeypatch,delivery,checks):
+    from dataclasses import replace
+    from tests.eidolon_cli.test_organization_projects import configured
+    from eidolon_cli import organization_project_recipes
+    settings=configured(tmp_path)
+    settings=replace(settings,tool_grants=(*settings.tool_grants,'integrate_source'))
+    store,_=setup(tmp_path,settings)
+    item=template(projectIds=['alpha'],deliveryMode=delivery,requiredChecks=checks)
+    approve(store,[item]);enable(store)
+    # Simulate the compiler capability added by the independent recipe slice.
+    monkeypatch.setattr(organization_project_recipes,'execution_check_kind',lambda _: 'project_typecheck')
+    with pytest.raises(ValueError,match='recipe'):
+        store.preview_goal_continuation('goal',templates=[item],deadline_timestamp=int(time.time())+1800)
+    result=store.advance_goal_continuation()
+    assert result['launched'] is None and 'recipe' in result['blocked'][0]['reason']
+    with store._connect() as conn: assert conn.execute('SELECT count(*) FROM objectives').fetchone()[0]==1
+
+
+def test_manual_source_handoff_does_not_require_implicit_tests(tmp_path,monkeypatch):
+    from tests.eidolon_cli.test_organization_projects import configured
+    from eidolon_cli import organization_project_recipes
+    store,_=setup(tmp_path,configured(tmp_path))
+    monkeypatch.setattr(organization_project_recipes,'execution_check_kind',lambda _: 'project_typecheck')
+    approve(store,[template(projectIds=['alpha'],deliveryMode='source_project')]);enable(store)
+    assert store.advance_goal_continuation()['launched'] is not None

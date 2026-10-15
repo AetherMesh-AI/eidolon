@@ -320,6 +320,8 @@ class OrganizationEditStore(OrganizationProjectStore):
 
     def _root_identity(self, path):
         alias, index = _alias_path(path)
+        if alias in self.settings.revoked_root_aliases:
+            raise ValueError('The source folder access was revoked by its owner')
         if index >= len(self.settings.read_roots):
             raise ValueError('The edit source root is no longer configured')
         return alias, _hash(self.settings.read_roots[index])

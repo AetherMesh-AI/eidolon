@@ -48,6 +48,27 @@ def _roots(projects):
     return pins
 
 
+def _check_compatibility(settings,projects,checks,delivery_mode):
+    from eidolon_cli.organization_project_recipes import execution_check_kind
+    checks=set(checks)
+    if 'integrate_source' in settings.tool_grants and (delivery_mode=='source_project' or 'source_integration' in checks):
+        checks.add('project_tests')
+    kinds=set(checks)&{'project_tests','project_typecheck','project_build'}
+    if len(kinds)>1:
+        raise ValueError('A continuation cannot require multiple execution kinds with a single-recipe project model')
+    if kinds:
+        if not projects: raise ValueError('Project checks require explicit selected workspace projects')
+        grants={g.id:g for g in settings.project_grants}
+        for project in projects:
+            grant=grants.get(project['recipe'])
+            if grant is None or execution_check_kind(grant.execution) not in kinds:
+                raise ValueError('Selected workspace recipe cannot satisfy the required continuation check')
+    # Preserve planning-only folder restrictions after that additive capability lands.
+    from eidolon_cli import organization_acceptance
+    validator=getattr(organization_acceptance,'validate_project_checks',None)
+    if validator is not None: validator(projects,checks)
+
+
 def _records(conn):
     present = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")} & CONTINUATION_TABLES
     if not present:
@@ -102,6 +123,7 @@ class OrganizationGoalContinuationStore:
             projects=selected_projects(_ids(item['projectIds'],'projectIds',8),self.settings)
             if self.settings.projects and item['deliveryMode']=='source_project' and not projects:
                 raise ValueError('Source-project continuation requires explicit projects')
+            _check_compatibility(self.settings,projects,checks,item['deliveryMode'])
             if any(d.get('projectId') and d['projectId'] not in {p['id'] for p in projects} for d in defs):
                 raise ValueError('Criterion project must belong to the continuation workspace')
             from eidolon_cli.organization_identity import _leader_enabled
@@ -217,6 +239,7 @@ class OrganizationGoalContinuationStore:
                                 ready=False;break
                         if not ready: continue
                         projects=selected_projects(item['projectIds'],self.settings)
+                        _check_compatibility(self.settings,projects,item['requiredChecks'],item['deliveryMode'])
                         if projects!=item['projects'] or _roots(projects)!=item['rootPins']:
                             raise ValueError('Continuation workspace identity changed')
                         # Rollback all creation if later membership/receipt insertion fails.
