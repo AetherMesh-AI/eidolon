@@ -156,6 +156,7 @@ jobs:
             tests/eidolon_cli/test_organization_shared_allowance_cli.py
             tests/eidolon_cli/test_organization_shared_budget.py
             tests/eidolon_cli/test_organization_shared_runtime.py
+            tests/eidolon_cli/test_organization_shared_contention.py
             tests/tui_gateway/test_organization_shared_allowance.py
             tests/tui_gateway/test_organization_owner_policy.py
             tests/agent/test_bounded_context.py

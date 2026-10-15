@@ -26,7 +26,7 @@ from eidolon_cli.organization_conversations import CONVERSATION_SCHEMA, Organiza
 from eidolon_cli.organization_packages import (PACKAGE_SCHEMA, OrganizationPackageStore, package_dependencies_ready, task_package_id)
 from eidolon_cli.organization_dispatch import DISPATCH_SCHEMA, OrganizationDispatchStore
 from eidolon_cli.organization_priority import PRIORITY_SCHEMA, OrganizationPriorityStore
-from eidolon_cli.organization_pacing import OrganizationPacingStore, pacing_wait
+from eidolon_cli.organization_pacing import OrganizationPacingDeferred, OrganizationPacingStore, pacing_wait
 from eidolon_cli.organization_config import OrganizationSettings
 from eidolon_cli.organization_project_registry import REGISTRY_SCHEMA
 from eidolon_cli.organization_root_grants import ROOT_GRANT_SCHEMA
@@ -362,7 +362,14 @@ class OrganizationStore(OrganizationRecoveryStore, OrganizationModelRoutingStore
                 reason = budget_reason(conn, request["objective_id"], self.settings)
                 if reason is None:
                     from eidolon_cli.organization_shared_budget import shared_claim_reason
-                    reason = shared_claim_reason(conn, request)
+                    try:
+                        reason = shared_claim_reason(conn, request)
+                    except OrganizationPacingDeferred as exc:
+                        # This request has not been claimed or charged. Recheck all
+                        # authority and budgets after a bounded contention delay.
+                        conn.execute('UPDATE requests SET reason=?,available=? WHERE id=?',
+                                     (str(exc), exc.defer_until, request['id']))
+                        continue
                 if reason:
                     self._pending(conn, request, reason)
                     continue
