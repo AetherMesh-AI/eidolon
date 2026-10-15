@@ -1,0 +1,55 @@
+name: Experimental Node isolation
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'eidolon_cli/organization_project_node.py'
+      - 'eidolon_cli/organization_project_runner.py'
+      - 'eidolon_cli/organization_project_validation.py'
+      - 'scripts/run_tests.sh'
+      - 'scripts/run_tests_parallel.py'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - 'eidolon_cli/project_node_runtime/**'
+      - 'tests/eidolon_cli/test_organization_project_node.py'
+      - '.github/workflows/node-project-experimental.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-node:
+    name: Experimental Node native boundary (Linux)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: Install locked Python test dependencies
+        run: |
+          python -m pip install uv==0.12.23
+          uv sync --locked --python 3.12 --extra dev --extra slack
+      - name: Prepare the exact official runtime for this disposable test runner
+        run: |
+          uname -a
+          dpkg-query -W libseccomp2 containerd.io docker-ce runc || true
+          sha256sum eidolon_cli/project_node_runtime/seccomp.json
+          docker version
+          docker info
+          docker pull node@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5
+      - name: Require actual native isolation without host fallback
+        env:
+          EIDOLON_REQUIRE_NODE_SANDBOX: '1'
+        run: |
+          git rev-parse HEAD HEAD^{tree}
+          scripts/run_tests.sh tests/eidolon_cli/test_organization_project_node.py -j 1 --junitxml=node-isolation.xml
+      - name: Retain test evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: experimental-node-isolation
+          path: node-isolation.xml
+          if-no-files-found: warn
