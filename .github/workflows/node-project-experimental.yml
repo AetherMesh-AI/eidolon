@@ -15,6 +15,12 @@ on:
       - 'pyproject.toml'
       - 'uv.lock'
       - 'eidolon_cli/project_node_runtime/**'
+      - 'eidolon_cli/project_typescript_runtime/**'
+      - 'eidolon_cli/organization_project_compiler_bundle.py'
+      - 'eidolon_cli/organization_project_typescript.py'
+      - 'scripts/ci/prepare_typescript_compiler.py'
+      - 'tests/eidolon_cli/test_organization_project_compiler_bundle.py'
+      - 'tests/eidolon_cli/test_organization_project_typescript.py'
       - 'tests/eidolon_cli/test_organization_project_node.py'
       - '.github/workflows/node-project-experimental.yml'
   workflow_dispatch:
@@ -44,16 +50,24 @@ jobs:
           docker version
           docker info
           docker pull node@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5
+      - name: Prepare integrity-pinned compiler without executing package scripts
+        run: PYTHONPATH=. .venv/bin/python scripts/ci/prepare_typescript_compiler.py "$RUNNER_TEMP/typescript-compiler"
       - name: Require actual native isolation without host fallback
         env:
           EIDOLON_REQUIRE_NODE_SANDBOX: '1'
+          EIDOLON_TEST_TYPESCRIPT_BUNDLE: ${{ runner.temp }}/typescript-compiler
         run: |
           git rev-parse HEAD HEAD^{tree}
           scripts/run_tests.sh tests/eidolon_cli/test_organization_project_node.py -j 1 --junitxml=node-isolation.xml
+          scripts/run_tests.sh tests/eidolon_cli/test_organization_project_compiler_bundle.py -j 1 --junitxml=compiler-bundle.xml
+          scripts/run_tests.sh tests/eidolon_cli/test_organization_project_typescript.py -j 1 --junitxml=typescript-isolation.xml
       - name: Retain test evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: experimental-node-isolation
-          path: node-isolation.xml
+          path: |
+            node-isolation.xml
+            compiler-bundle.xml
+            typescript-isolation.xml
           if-no-files-found: warn
