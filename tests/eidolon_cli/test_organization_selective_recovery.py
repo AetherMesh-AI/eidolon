@@ -197,6 +197,8 @@ def test_reconcile_only_never_falls_back_to_publication(tmp_path, monkeypatch, d
         store.cancel(retry['objective_id'])
     elif damage == 'source':
         source.write_text('Changed after recovery', encoding='utf-8')
+    elif damage == 'revoked_alias':
+        store = OrganizationStore(store.path, replace(store.settings, revoked_root_aliases=('root0',)))
     elif damage == 'grant':
         from dataclasses import replace
         store = OrganizationStore(store.path, replace(store.settings,
@@ -280,7 +282,7 @@ def test_durable_project_reconciles_once_without_another_run(tmp_path, monkeypat
 
 
 @pytest.mark.linux_only
-@pytest.mark.parametrize('damage', ['missing', 'digest', 'recipe', 'source', 'grant', 'cancel', 'round'])
+@pytest.mark.parametrize('damage', ['missing', 'digest', 'recipe', 'source', 'grant', 'revoked_alias', 'cancel', 'round'])
 def test_project_reconciliation_fails_closed(tmp_path, monkeypatch, damage):
     import threading
     from dataclasses import replace
@@ -292,6 +294,8 @@ def test_project_reconciliation_fails_closed(tmp_path, monkeypatch, damage):
     assert retry is not None
     if damage == 'source': source.write_text('Changed source')
     elif damage == 'cancel': store.cancel(retry['objective_id'])
+    elif damage == 'revoked_alias':
+        store = OrganizationStore(store.path, replace(store.settings, revoked_root_aliases=('root0',)))
     elif damage == 'grant':
         store = OrganizationStore(store.path, replace(store.settings,
             tool_grants=tuple(g for g in store.settings.tool_grants if g != 'run_tests')))
