@@ -272,3 +272,14 @@ def test_intake_extension_absence_is_legacy_but_malformed_is_unsupported(tmp_pat
     with sqlite3.connect(store.path) as conn:
         present = conn.execute("SELECT name FROM sqlite_master WHERE name='organization_request_intakes'").fetchone()
         assert bool(present) is malformed
+
+
+def test_missing_optional_build_outputs_remains_passive(tmp_path, monkeypatch):
+    store=seed(tmp_path)
+    with sqlite3.connect(store.path) as conn:conn.execute('DROP TABLE project_build_outputs')
+    before=files(tmp_path)
+    forbid_runtime(monkeypatch)
+    assert read_observation(tmp_path)['state'] == 'available'
+    assert files(tmp_path)==before
+    with sqlite3.connect(store.path) as conn:
+        assert conn.execute("SELECT name FROM sqlite_master WHERE name='project_build_outputs'").fetchone() is None

@@ -67,6 +67,9 @@ def normalize_execution_grant(value):
     from eidolon_cli.organization_project_typescript import TypecheckGrant, normalize_typecheck_grant
     if isinstance(value, TypecheckGrant) or isinstance(value, dict) and value.get('recipe') == 'typescript_check':
         return normalize_typecheck_grant(value)
+    from eidolon_cli.organization_project_typescript_build import BuildGrant, normalize_build_grant
+    if isinstance(value, BuildGrant) or isinstance(value, dict) and value.get('recipe') == 'typescript_build':
+        return normalize_build_grant(value)
     if isinstance(value, ProjectExecutionGrant):
         value = asdict(value)
     if not isinstance(value, dict) or set(value) - set(ProjectExecutionGrant.__dataclass_fields__):
@@ -454,6 +457,9 @@ Unsupported hosts and failed setup never fall back to host Python execution.
                'sourceWritesPerformed': False, 'limitations': _LIMITATIONS}
     try:
         grant = normalize_execution_grant(grant)
+        if grant.recipe == 'typescript_build':
+            from eidolon_cli.organization_project_typescript_build import run_build
+            return run_build(files, grant, cancel)
         if grant.recipe == 'typescript_check':
             from eidolon_cli.organization_project_typescript import run_typecheck
             return run_typecheck(files, grant, cancel)
