@@ -81,7 +81,9 @@ test('persists finite owner controls across actual backend restart without dispa
   await goals.getByRole('button', { name: 'Check pending receipt', exact: true }).click()
   await expect(goals.getByRole('button', { name: 'Check pending receipt', exact: true })).toHaveCount(0)
   expect(writes.filter(w => w.method === 'organization.configureGoal')).toHaveLength(1)
+  await milestones.getByRole('button', { name: 'Load milestones', exact: true }).click()
   await acknowledgeExpectedErrorBanner(page, 'Fixture lost goal acknowledgement')
+  await acknowledgeExpectedErrorBanner(page, 'The owner connection changed. Load milestones to open the current organization.')
   await goals.getByLabel('Goal ID', { exact: true }).fill('native-goal')
   for (const number of [1,2]) {
     await goals.getByLabel('Step title', { exact: true }).fill(`Bounded step ${number}`)
@@ -117,6 +119,8 @@ test('persists finite owner controls across actual backend restart without dispa
   await goals.getByRole('button', { name: 'Load goal controls', exact: true }).click()
   await expect(goals.getByRole('alert')).toContainText('Goal organization or owner changed')
   expect(JSON.stringify(running.ledger())).toBe(beforeStale); staleOwner = false
+  await goals.getByRole('button', { name: 'Load goal controls', exact: true }).click()
+  await expect(goals.getByRole('alert')).toHaveCount(0)
   await acknowledgeExpectedErrorBanner(page, 'Goal organization or owner changed')
   const oldPid = running.backendPid(); await running.restart(); page = running.fixture.page
   await expect.poll(() => running!.backendPid()).not.toBe(oldPid)
