@@ -1,0 +1,118 @@
+"""Inert recipe diagnostics for exact selected project snapshots.
+
+Project manifests are untrusted data. Discovery does not execute scripts, import
+packages, install dependencies, probe the host, or grant execution authority.
+A candidate is never an approval or evidence that a complete project was tested.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+from pathlib import PurePosixPath
+
+
+_LIMITATIONS = (
+    'Only explicitly selected snapshot files were inspected; omitted manifests, '
+    'dependencies and tests remain unknown. Detection does not authorize execution '
+    'or establish runtime availability, dependency completeness or correctness.'
+)
+
+
+def describe_execution_recipe(execution):
+    """Configuration-only capabilities; safe to show without opening a project."""
+    if execution is None:
+        return {'recipe': None, 'state': 'not_configured', 'supported': False,
+                'reason': 'No execution recipe selected. Folder inspection and planning do not require one.'}
+    from eidolon_cli.organization_project_runner import normalize_execution_grant
+    grant = normalize_execution_grant(execution)
+    return {'recipe': grant.recipe, 'state': 'runtime_unverified', 'supported': True,
+            'backend': 'linux-bubblewrap-seccomp', 'dependencyInstallation': False,
+            'reason': ('Requires a successful live Linux isolation check and the exact owner-selected files. '
+                       + ('Uses only the copied system Python standard library.' if grant.recipe == 'python_unittest'
+                          else 'Requires the fixed installed pytest bundle; project dependencies are not installed.'))}
+
+
+def _object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError('Duplicate manifest key')
+        result[key] = value
+    return result
+
+
+def _json_object(content):
+    try:
+        value = json.loads(content, object_pairs_hook=_object,
+                           parse_constant=lambda _: (_ for _ in ()).throw(ValueError('Invalid JSON constant')))
+        if not isinstance(value, dict):
+            raise ValueError('Manifest must be an object')
+        return value
+    except (ValueError, RecursionError):
+        return None
+
+
+def inspect_project_recipes(files):
+    """Describe candidates and blockers bound to validated UTF-8 snapshot bytes.
+
+The result intentionally has no runnable command. Even a package script named
+"test" or "build" can execute arbitrary lifecycle hooks and is never dispatched.
+Multiple package directories are independent candidates, not assumed workspaces.
+"""
+    from eidolon_cli.organization_project_runner import _snapshot, snapshot_digest
+    from eidolon_cli.organization_project_validation import digest
+    selected = _snapshot(files)
+    paths = {item['path']: item for item in selected}
+    projects = []
+    for item in selected:
+        path = PurePosixPath(item['path'])
+        if path.name != 'package.json':
+            continue
+        base = str(path.parent)
+        manifest = _json_object(item['content'])
+        entry = {'directory': base, 'manifest': {key: item[key] for key in ('path', 'sha256', 'revision')},
+                 'kind': 'node', 'state': 'unsupported', 'candidates': [], 'blockers': [],
+                 'dependencies': 'unknown', 'lockfiles': [], 'configurationFiles': []}
+        if manifest is None:
+            entry['blockers'].append('invalid_package_manifest')
+            entry['definitionSha256'] = digest(entry)
+            projects.append(entry)
+            continue
+        for name in ('package-lock.json', 'npm-shrinkwrap.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lock', 'bun.lockb'):
+            lock = paths.get(base + '/' + name)
+            if lock:
+                entry['lockfiles'].append({key: lock[key] for key in ('path', 'sha256', 'revision')})
+        dependency_fields = ('dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies')
+        dependency_maps = [manifest.get(name, {}) for name in dependency_fields]
+        if any(not isinstance(value, dict) or any(not isinstance(version, str) for version in value.values())
+               for value in dependency_maps):
+            entry['blockers'].append('invalid_dependency_manifest')
+        else:
+            entry['declaredDependencyCount'] = len(set().union(*(value.keys() for value in dependency_maps)))
+            entry['dependencies'] = 'declared_unverified' if entry['declaredDependencyCount'] else 'none_declared'
+            if entry['declaredDependencyCount']:
+                entry['blockers'].append('project_dependency_bundle_unavailable')
+        scripts = manifest.get('scripts', {})
+        if (not isinstance(scripts, dict) or any(not isinstance(value, str)
+                or any(0xD800 <= ord(char) <= 0xDFFF for char in value) for value in scripts.values())):
+            entry['blockers'].append('invalid_scripts_manifest')
+        else:
+            for phase in ('test', 'build'):
+                if phase in scripts:
+                    entry['candidates'].append({'recipe': 'node_package_' + phase, 'phase': phase,
+                        'state': 'unsupported', 'scriptSha256': hashlib.sha256(scripts[phase].encode()).hexdigest(),
+                        'reason': 'Package scripts and lifecycle hooks require a separately supported isolated adapter; no shell fallback is available.'})
+        # This is a signal, not an inference that a compiler is installed or that
+        # a package's tsconfig can safely be executed with host tooling.
+        if base + '/tsconfig.json' in paths:
+            config = paths[base + '/tsconfig.json']
+            entry['configurationFiles'].append({key: config[key] for key in ('path', 'sha256', 'revision')})
+            entry['kind'] = 'typescript'
+            entry['candidates'].append({'recipe': 'typescript_typecheck', 'phase': 'typecheck',
+                'state': 'unsupported', 'reason': 'A trusted pinned compiler and isolated dependency bundle are required.'})
+        entry['blockers'].append('node_isolation_backend_unavailable')
+        entry['definitionSha256'] = digest(entry)
+        projects.append(entry)
+    return {'version': 1, 'snapshotSha256': snapshot_digest(selected), 'projects': projects,
+            'inspectionOnly': True, 'executionAuthorized': False, 'hostProbed': False,
+            'limitations': _LIMITATIONS}
