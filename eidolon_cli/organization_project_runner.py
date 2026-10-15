@@ -452,6 +452,8 @@ Unsupported hosts and failed setup never fall back to host Python execution.
             raise ValueError('Every selected execution file must belong to the granted root')
         receipt['files'] = [{key: item[key] for key in ('path', 'sha256', 'revision')} for item in files]
         receipt['snapshotSha256'] = snapshot_digest(files)
+        from eidolon_cli.organization_project_recipes import inspect_project_recipes
+        receipt['recipeDiagnostics'] = inspect_project_recipes(files)
         receipt['grant'] = asdict(grant)
         budget = _Budget(cancel, grant.timeout_seconds, clock)
         budget.check()
