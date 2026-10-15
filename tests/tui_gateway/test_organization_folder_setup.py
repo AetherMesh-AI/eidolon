@@ -45,3 +45,24 @@ def test_folder_rpc_rejects_wrong_identity_and_dead_transport(served):
     assert 'error' in result
     result = call('organization.folderSetup', {'expectedOrganizationId': served.identity['organizationId']}, SimpleNamespace(closed=True))
     assert result['error']['code'] == 4001
+
+
+def test_revoke_and_review_remain_served_owner_only(served):
+    assert 'error' not in call('organization.registerProjectFolder',served.apply)
+    descriptor=call('organization.folderAccess',{'expectedOrganizationId':served.identity['organizationId']})['result']
+    params={'expectedOrganizationId':descriptor['organizationId'],'expectedGeneration':descriptor['policyGeneration'],
+            'alias':'root0','grantHash':descriptor['grants'][0]['grantHash'],'confirmed':True,'idempotencyKey':'revoke'}
+    for field in ['home','profile','actorId','ownerId','connectionId']:
+        assert call('organization.revokeProjectFolder',{**params,field:'other'})['error']['code']==-32602
+    assert 'error' in call('organization.revokeProjectFolder',{**params,'confirmed':False})
+    receipt=call('organization.revokeProjectFolder',params)
+    assert 'error' not in receipt,receipt
+    assert call('organization.revokeProjectFolder',params)==receipt
+    view=call('organization.folderAccess',{'expectedOrganizationId':descriptor['organizationId']})['result']
+    review={'expectedOrganizationId':view['organizationId'],'expectedGeneration':view['policyGeneration'],
+            'alias':'root0','grantHash':view['grants'][0]['grantHash'],'confirmed':True,
+            'reviewVersion':view['reviewVersion'],'acknowledgeUncertain':False}
+    result=call('organization.reviewFolderRevocation',review)
+    assert 'error' not in result,result
+    assert call('organization.reviewFolderRevocation',review)==result
+    assert result['result']['scope']['kind']=='served-profile'

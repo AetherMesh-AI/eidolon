@@ -208,7 +208,7 @@ class OrganizationFileReadScope:
             raise OrganizationFileReadError("Managed source resolution requires a trusted callable.")
         aliases = tuple(f"root{index}" for index in range(len(read_roots)))
         if allowed_root_aliases is not None:
-            if (not isinstance(allowed_root_aliases, (list, tuple)) or not allowed_root_aliases
+            if (not isinstance(allowed_root_aliases, (list, tuple))
                     or any(not isinstance(alias, str) or alias not in aliases for alias in allowed_root_aliases)
                     or len(set(allowed_root_aliases)) != len(allowed_root_aliases)):
                 raise OrganizationFileReadError("Read-root alias restriction must select configured roots.")

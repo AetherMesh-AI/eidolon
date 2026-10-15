@@ -11,6 +11,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { useI18n } from '@/i18n/context'
 
 import { Inspector } from './inspector'
+import { OrganizationFolderAccess } from './organization-folder-access'
 import { OrganizationFolderSetup } from './organization-folder-setup'
 import { organizationErrorMessage } from './runtime-adapter'
 import { sameProjectBinding, validProjectBinding } from './runtime-project-setup-contract'
@@ -42,6 +43,7 @@ export function OrganizationProjectSetupForm({ adapter, snapshot, onClose }: {
   const active = useRef(true)
   const order = useRef(0)
   const sending = useRef(false)
+  const [folderConfirmation, setFolderConfirmation] = useState<(() => void) | null>(null)
   const hintId = useId()
   const current = () => active.current && adapter.getSnapshot().connection?.scope === scope
   const unavailable = snapshot.connection?.state !== 'ready' || snapshot.connection?.scope !== scope
@@ -82,6 +84,12 @@ export function OrganizationProjectSetupForm({ adapter, snapshot, onClose }: {
   }, [])
 
   const close = () => {
+    if (folderConfirmation) {
+      folderConfirmation()
+
+      return
+    }
+
     if (reviewing) {
       setReviewing(false)
 
@@ -147,6 +155,7 @@ export function OrganizationProjectSetupForm({ adapter, snapshot, onClose }: {
   }
 
   return <Inspector kind="agent" onClose={close} title={copy.projectSetup}>
+    <OrganizationFolderAccess onChanged={() => { read(); void adapter.refresh() }} onConfirmationChange={cancel => setFolderConfirmation(() => cancel)} />
     <OrganizationFolderSetup onSaved={() => { read(); void adapter.refresh() }} />
     <p className="eid-note">{canSave ? copy.projectSaveNote : copy.projectSetupNote}</p>
     {reading && <Loader label={copy.projectSetupLoading} />}
