@@ -95,6 +95,7 @@ with sqlite3.connect(p.as_uri()+'?mode=ro',uri=True) as c:
     await page.reload()
     await waitForAppReady(fixture)
     await page.evaluate(() => { location.hash = '/command-center' })
+    await intake.getByText('Recent requests', { exact: true }).click()
     await intake.getByRole('button', { name: 'Refresh recent requests', exact: true }).click()
     await intake.getByRole('button', { name: /Prepare a status report/ }).click()
     await expect(intake.getByLabel('Your request', { exact: true })).toHaveValue('Prepare a status report')

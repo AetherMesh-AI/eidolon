@@ -10,12 +10,6 @@ export function useOrganizationRequestIntake() {
   const view = useSyncExternalStore(client.subscribe, client.getSnapshot)
 
   useEffect(() => {
-    if (scope.eligible) {
-      void client.list()
-    }
-  }, [scope.key, scope.eligible])
-
-  useEffect(() => {
     if (
       !scope.eligible ||
       !view.record ||

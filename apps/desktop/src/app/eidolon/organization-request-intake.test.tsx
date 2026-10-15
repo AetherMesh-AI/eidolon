@@ -88,7 +88,7 @@ describe('plain-language request intake', () => {
     const view = mount()
     await tick()
     expect(state.request).not.toHaveBeenCalled()
-    expect(state.history).toHaveBeenCalledWith('organization.intake.list', {})
+    expect(state.history).not.toHaveBeenCalled()
     fireEvent.change(screen.getByLabelText(copy.request), { target: { value: 'Fix launch failure' } })
     fireEvent.change(screen.getByLabelText(copy.priority), { target: { value: 'P1' } })
     fireEvent.click(screen.getByRole('button', { name: copy.submit }))
@@ -225,6 +225,12 @@ it('opens an existing persisted clarification from recent requests without resub
   state.request.mockResolvedValueOnce(question)
   mount()
   await flush()
+  expect(state.history).not.toHaveBeenCalled()
+  const history = screen.getByText(copy.recent).closest('details')!
+  history.open = true
+  fireEvent(history, new Event('toggle'))
+  await flush()
+  expect(state.history).toHaveBeenCalledWith('organization.intake.list', {})
   expect(screen.queryByLabelText(copy.answer)).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: `Persisted owner request · ${copy.needs_answer}` }))
   await flush()
@@ -274,4 +280,26 @@ describe('exact-repeat controls', () => {
     await tick()
     expect(state.request).toHaveBeenCalledTimes(calls)
   })
+})
+
+it('loads history only when opened and never on close or an ineligible scope', async () => {
+  const rendered = mount()
+  await tick()
+  expect(state.history).not.toHaveBeenCalled()
+  const history = screen.getByText(copy.recent).closest('details')!
+  history.open = true
+  fireEvent(history, new Event('toggle'))
+  await flush()
+  expect(state.history).toHaveBeenCalledTimes(1)
+  history.open = false
+  fireEvent(history, new Event('toggle'))
+  await tick()
+  expect(state.history).toHaveBeenCalledTimes(1)
+  state.key = 'different-ineligible-socket'
+  state.ownerKey = 'different-owner'
+  state.eligible = false
+  rendered.rerender(<MemoryRouter><OrganizationRequestIntake snapshot={snapshot} /></MemoryRouter>)
+  await tick()
+  expect(state.history).toHaveBeenCalledTimes(1)
+  expect(screen.queryByText(copy.recent)).toBeNull()
 })
