@@ -103,12 +103,14 @@ class OrganizationService:
                           else self._context.run(build_profile_secret_scope, self.home))
         from eidolon_cli.organization_owner_chat_service import OwnerChatService
         self.owner_chat = OwnerChatService(self)
+        from eidolon_cli.organization_intake_service import IntakeService
+        self.intake = IntakeService(self)
 
     @property
     def active_execution_count(self) -> int:
         """Conservative in-memory count, including cancelled calls unwinding."""
         with self._admission_lock:
-            return len(self._running) + self.owner_chat.active_count
+            return len(self._running) + self.owner_chat.active_count + self.intake.active_count
 
     @property
     def running(self) -> bool:
@@ -314,7 +316,8 @@ class OrganizationService:
         # Persist uncertain work before waiting; SIGKILL may follow the grace.
         started = time.monotonic()
         self.close_admission()
-        persisted = self.owner_chat.stop(timeout)
+        intake_stopped = self.intake.stop(timeout)
+        persisted = self.owner_chat.stop(max(0, timeout - (time.monotonic() - started))) and intake_stopped
         timeout = max(0.0, timeout - (time.monotonic() - started))
         with self._lock:
             self._stop.set()
