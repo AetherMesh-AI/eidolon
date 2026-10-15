@@ -403,8 +403,10 @@ class OrganizationProjectExecutionStore:
                                 'ON r.run_id=s.id WHERE s.request_id=? ORDER BY s.created DESC LIMIT 1',
                                 (request['id'],)).fetchone()
         if previous is not None and previous['record'] is not None and json.loads(previous['record']).get('status') == 'passed':
-            row, _ = self._verify_project_run(conn, previous['id'], review=False)
+            row, artifact = self._verify_project_run(conn, previous['id'], review=False)
+            self._project_reconcile_guard(conn, request, row, artifact)
             return row
+        self._project_reconcile_guard(conn, request)
         return None
 
     @staticmethod
@@ -461,6 +463,7 @@ class OrganizationProjectExecutionStore:
             if row is None:
                 raise ValueError('No authorized project test execution was recorded for this lease')
         artifact = project_execution_artifact(conn, row['id'])
+        self._project_reconcile_guard(conn, request, _run_row(conn, row['id']), artifact)
         if artifact is None:
             raise ValueError('Project run outcome is unknown; it cannot satisfy acceptance')
         outcome = artifact['projectExecution']

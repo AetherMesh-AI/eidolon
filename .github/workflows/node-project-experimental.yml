@@ -6,6 +6,7 @@ on:
       - 'eidolon_cli/organization_project_node.py'
       - 'eidolon_cli/organization_project_runner.py'
       - 'eidolon_cli/organization_project_execution.py'
+      - 'eidolon_cli/organization_recovery.py'
       - 'eidolon_cli/organization_project_config.py'
       - 'eidolon_cli/organization_project_recipes.py'
       - 'eidolon_cli/organization_project_validation.py'
