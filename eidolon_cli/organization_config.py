@@ -60,6 +60,8 @@ class OrganizationSettings:
     projects: tuple = ()
     # Internal provenance, never read from YAML or accepted as owner grants.
     ledger_project_ids: tuple[str, ...] = ()
+    ledger_read_roots: tuple[str, ...] = ()
+    ledger_root_identities: tuple[tuple[int, int], ...] = ()
     project_registry_conflicts: tuple[str, ...] = ()
     max_project_runs: int = 4
     max_tool_calls: int = 8

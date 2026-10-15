@@ -348,7 +348,8 @@ def tool_execution(context: dict, kind: str):
     from tools.organization_file_read import organization_file_read_scope, OrganizationFileReadError
     try:
         with organization_file_read_scope(tuple(roots), policy["maxResultChars"], resolve_workspace_source=resolver,
-                                          allowed_root_aliases=policy.get("readRootAliases")) as scope:
+                                          allowed_root_aliases=policy.get("readRootAliases"),
+                                          expected_root_identities=policy.get("expectedRootIdentities")) as scope:
             yield OrganizationToolExecution(context, scope)
     except OrganizationFileReadError as exc:
         raise _error(str(exc)) from exc

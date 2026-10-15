@@ -11,6 +11,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { useI18n } from '@/i18n/context'
 
 import { Inspector } from './inspector'
+import { OrganizationFolderSetup } from './organization-folder-setup'
 import { organizationErrorMessage } from './runtime-adapter'
 import { sameProjectBinding, validProjectBinding } from './runtime-project-setup-contract'
 import type { OrganizationProjectBinding, OrganizationProjectDraft, OrganizationProjectSetup, OrganizationSnapshot, RuntimeOrganizationAdapter } from './types'
@@ -146,6 +147,7 @@ export function OrganizationProjectSetupForm({ adapter, snapshot, onClose }: {
   }
 
   return <Inspector kind="agent" onClose={close} title={copy.projectSetup}>
+    <OrganizationFolderSetup onSaved={() => { read(); void adapter.refresh() }} />
     <p className="eid-note">{canSave ? copy.projectSaveNote : copy.projectSetupNote}</p>
     {reading && <Loader label={copy.projectSetupLoading} />}
     {error && <div role="alert"><ErrorState description={error} title={copy.projectSetupError} /></div>}
@@ -160,7 +162,7 @@ export function OrganizationProjectSetupForm({ adapter, snapshot, onClose }: {
       {setup.repair && <p role="status">{setup.repair}</p>}
       {setup.blocked && <p role="status">{copy.projectSetupBlocked}</p>}
       {atCapacity && <p role="status">{copy.projectSetupLimit}</p>}
-      {!compatible && <p role="status">{copy.projectSetupMissing}</p>}
+      {!compatible && <p role="status">{setup.supportsPlanningFolders ? copy.folderChoose : copy.projectSetupMissing}</p>}
       <form aria-busy={pending} aria-label={copy.projectSetupAdd} className="eid-resolution-form" onSubmit={event => {event.preventDefault(); prepare()}}>
         <fieldset className="eid-management-fields" disabled={disabled || setup.blocked || !compatible || atCapacity}>
           <legend>{copy.projectSetupAdd}</legend>
