@@ -282,7 +282,9 @@ class OrganizationProjectExecutionStore:
         if set(managed) - set(grant.files):
             raise ValueError('The exact project recipe must include every reviewed changed file before tests or source integration')
         snapshot, total = [], 0
-        with organization_file_read_scope(self.settings.read_roots, self.settings.max_tool_result_chars) as scope:
+        from eidolon_cli.organization_root_grants import expected_root_identities
+        with organization_file_read_scope(self.settings.read_roots, self.settings.max_tool_result_chars,
+                                          expected_root_identities=expected_root_identities(self.settings)) as scope:
             for path in grant.files:
                 baseline = _verify_revision(_revision(conn, objective_id, path, 0)) if path in managed else None
                 created = baseline is not None and not baseline['source_exists']

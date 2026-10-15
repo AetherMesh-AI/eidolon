@@ -1,5 +1,9 @@
 /** Copy for the canonical organization ledger surfaces, kept together across locales. */
 const copy = {
+  folderChoose: ['Choose a new project folder', '新しいプロジェクトフォルダーを選択', '选择新的项目文件夹', '選擇新的專案資料夾'],
+  folderApprove: ['Approve this folder access and save project', 'このフォルダーへのアクセスを承認して保存', '批准此文件夹访问并保存项目', '核准此資料夾存取並儲存專案'],
+  folderRetry: ['Retry the same reviewed registration', '確認済みの同じ登録を再試行', '重试同一已审核注册', '重試同一已審核註冊'],
+  folderAccess: ['This approves the displayed folder as an organization root. Existing bounded read and staff permissions still apply. It does not enable edits, tests, execution recipes or background work.', '表示されたフォルダーを組織のルートとして承認します。既存の読み取り範囲とスタッフの権限が適用されます。編集、テスト、実行レシピ、バックグラウンド処理は有効になりません。', '这将批准所显示的文件夹作为组织根目录。现有的受限读取和成员权限仍然适用，不会启用编辑、测试、执行配方或后台工作。', '這將核准顯示的資料夾作為組織根目錄。現有的受限讀取和成員權限仍然適用，不會啟用編輯、測試、執行配方或背景工作。'],
   observationUnavailable: ['Organization observation is unavailable.', '組織の状態を参照できません。', '无法查看组织状态。', '無法檢視組織狀態。'],
   observationUnconfigured: ['Organization execution is not initialized.', '組織の実行環境は初期化されていません。', '组织执行环境尚未初始化。', '組織執行環境尚未初始化。'],
   observationUnsupported: ['Organization observation is unsupported by this backend.', 'このバックエンドは組織の状態参照に対応していません。', '此后端不支持查看组织状态。', '此後端不支援檢視組織狀態。'],
