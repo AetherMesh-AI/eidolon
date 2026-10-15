@@ -9,13 +9,14 @@ import json
 from pathlib import Path
 
 from eidolon_constants import get_eidolon_home
-from eidolon_cli.organization_store import OrganizationStore
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
     commands.add_parser('show')
+    observations = commands.add_parser('observations')
+    observations.add_argument('--limit', type=int, default=200)
     configure = commands.add_parser('configure')
     configure.add_argument('--file', type=Path, required=True)
     configure.add_argument('--expected-generation', type=int, required=True)
@@ -24,6 +25,11 @@ def main(argv=None):
     home = get_eidolon_home()
     try:
         path = home / 'organization' / 'state.db'
+        if args.command == 'observations':
+            from eidolon_cli.organization_routing_observations import routing_observations
+            print(json.dumps(routing_observations(path, limit=args.limit), sort_keys=True))
+            return 0
+        from eidolon_cli.organization_store import OrganizationStore
         if not path.is_file():
             raise ValueError('No existing organization ledger is available in this profile')
         store = OrganizationStore(path)

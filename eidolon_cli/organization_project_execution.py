@@ -556,6 +556,10 @@ class OrganizationProjectExecutionStore:
             before_publish()
             previous = conn.execute('SELECT * FROM project_source_receipts WHERE request_id=?',
                                     (request['id'],)).fetchone()
+            reconcile = conn.execute('SELECT receipt_sha256 FROM organization_reconcile_only WHERE request_id=?',
+                                     (request['id'],)).fetchone()
+            if reconcile is not None and (previous is None or previous['sha256'] != reconcile['receipt_sha256']):
+                raise ValueError('Recovery requires its exact durable source receipt; publication cannot be repeated')
             if previous is not None:
                 if previous['run_id'] != row['id'] or digest(json.loads(previous['record'])) != previous['sha256']:
                     raise ValueError('The existing source integration receipt conflicts with this exact request')
