@@ -194,7 +194,8 @@ class OrganizationProjectExecutionStore:
     def verify_project_coverage(self, conn, objective_id):
         from eidolon_cli.organization_acceptance import current_tasks
         from eidolon_cli.organization_projects import task_project
-        required = {project['id'] for project in self._execution_projects(conn, objective_id)}
+        projects = self._execution_projects(conn, objective_id)
+        required = {project['id'] for project in projects}
         if not required:
             return
         tasks = [task['id'] for task in current_tasks(conn, objective_id)
@@ -206,6 +207,16 @@ class OrganizationProjectExecutionStore:
             'ON a.proposal_id=p.id JOIN tasks t ON t.id=p.task_id '
             "WHERE p.objective_id=? AND t.status='completed'", (objective_id,)))
         covered = {(task_project(conn, task_id) or {}).get('id') for task_id in tasks}
+        control = conn.execute('SELECT delivery_mode,required_checks FROM objective_control WHERE objective_id=?',
+                               (objective_id,)).fetchone()
+        if control['delivery_mode'] == 'managed_artifact' and not set(json.loads(control['required_checks'])) & {'project_tests', 'source_integration'}:
+            planning = {project['id'] for project in projects if project['recipe'] is None}
+            # Only current-round planning artifacts count. Acceptance still verifies
+            # the independent review and exact evidence hash for every current task.
+            covered.update((task_project(conn, task['id']) or {}).get('id')
+                           for task in current_tasks(conn, objective_id)
+                           if task['status'] == 'completed' and task['type'] in {'work.draft', 'work.analyze'}
+                           and (task_project(conn, task['id']) or {}).get('id') in planning)
         if required - covered:
             raise ValueError('Every selected project requires independently reviewed file work before objective integration')
 
@@ -277,7 +288,9 @@ class OrganizationProjectExecutionStore:
         if set(managed) - set(grant.files):
             raise ValueError('The exact project recipe must include every reviewed changed file before tests or source integration')
         snapshot, total = [], 0
-        with organization_file_read_scope(self.settings.read_roots, self.settings.max_tool_result_chars) as scope:
+        from eidolon_cli.organization_root_grants import expected_root_identities
+        with organization_file_read_scope(self.settings.read_roots, self.settings.max_tool_result_chars,
+                                          expected_root_identities=expected_root_identities(self.settings)) as scope:
             for path in grant.files:
                 baseline = _verify_revision(_revision(conn, objective_id, path, 0)) if path in managed else None
                 created = baseline is not None and not baseline['source_exists']

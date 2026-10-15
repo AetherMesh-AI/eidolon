@@ -47,23 +47,23 @@ test('prepares a bounded project draft with cancel and copy but never activates 
     .getByRole('navigation', { name: 'Primary', exact: true })
 
   await navigation.getByRole('link', { name: 'Organization', exact: true }).click()
-  await page.getByRole('button', { name: 'Set up repositories', exact: true }).click()
+  await page.getByRole('button', { name: 'Set up project folders', exact: true }).click()
   const panel = page.getByRole('complementary', { name: 'Agent details', exact: true })
-  await expect(panel.getByText('No repositories configured', { exact: true })).toBeVisible()
-  await panel.getByRole('textbox', { name: 'Repository ID', exact: true }).fill('abandoned')
+  await expect(panel.getByText('No project folders configured', { exact: true })).toBeVisible()
+  await panel.getByRole('textbox', { name: 'Project ID', exact: true }).fill('abandoned')
   await panel.getByRole('button', { name: 'Cancel changes', exact: true }).click()
   await expect(panel).toHaveCount(0)
   expect(fs.readFileSync(configPath, 'utf8')).toBe(original)
 
-  await page.getByRole('button', { name: 'Set up repositories', exact: true }).click()
-  await expect(panel.getByRole('textbox', { name: 'Repository ID', exact: true })).toHaveValue('')
-  await panel.getByRole('textbox', { name: 'Repository ID', exact: true }).fill('frontend')
+  await page.getByRole('button', { name: 'Set up project folders', exact: true }).click()
+  await expect(panel.getByRole('textbox', { name: 'Project ID', exact: true })).toHaveValue('')
+  await panel.getByRole('textbox', { name: 'Project ID', exact: true }).fill('frontend')
   await panel.getByRole('combobox', { name: 'Configured root', exact: true }).selectOption('root0')
   await panel.getByRole('combobox', { name: 'Execution recipe', exact: true }).selectOption('unit-tests')
   await panel.getByRole('combobox', { name: 'Team', exact: true }).selectOption('general')
-  await panel.getByRole('button', { name: 'Prepare repository configuration', exact: true }).click()
+  await panel.getByRole('button', { name: 'Prepare project folder configuration', exact: true }).click()
   await expect(panel.getByText('Configuration prepared. Nothing has been saved.', { exact: true })).toBeVisible()
-  const output = panel.getByRole('textbox', { name: 'Repository configuration YAML', exact: true })
+  const output = panel.getByRole('textbox', { name: 'Project configuration YAML', exact: true })
   expect(yaml.load(await output.inputValue())).toEqual([
     { id: 'frontend', root: 'root0', recipe: 'unit-tests', team: 'general' }
   ])
@@ -73,11 +73,11 @@ test('prepares a bounded project draft with cancel and copy but never activates 
   await panel.screenshot({ path: test.info().outputPath('project-configuration-draft.png') })
   expect(fs.readFileSync(configPath, 'utf8')).toBe(original)
   expect(mock.receivedPrompts.length).toBe(calls)
-  await panel.getByRole('textbox', { name: 'Repository ID', exact: true }).fill('next-project')
+  await panel.getByRole('textbox', { name: 'Project ID', exact: true }).fill('next-project')
   await expect(output).toHaveCount(0)
   await panel.getByRole('button', { name: 'Refresh setup', exact: true }).click()
-  await expect(panel.getByRole('textbox', { name: 'Repository ID', exact: true })).toHaveValue('next-project')
-  await expect(panel.getByText('No repositories configured', { exact: true })).toBeVisible()
+  await expect(panel.getByRole('textbox', { name: 'Project ID', exact: true })).toHaveValue('next-project')
+  await expect(panel.getByText('No project folders configured', { exact: true })).toBeVisible()
   expect(fs.readFileSync(configPath, 'utf8')).toBe(original)
   expect(mock.receivedPrompts.length).toBe(calls)
 })
@@ -102,7 +102,7 @@ async function openSetup() {
     .getByRole('navigation', { name: 'Primary', exact: true })
 
   await navigation.getByRole('link', { name: 'Organization', exact: true }).click()
-  await page.getByRole('button', { name: 'Set up repositories', exact: true }).click()
+  await page.getByRole('button', { name: 'Set up project folders', exact: true }).click()
 
   return page.getByRole('complementary', { name: 'Agent details', exact: true })
 }
@@ -140,23 +140,23 @@ test('activates a reviewed ledger identity across restart and fails closed on re
   const calls = mock.receivedPrompts.length
   const identity = 'frontend · root0 · unit-tests · general'
   let panel = await openSetup()
-  await panel.getByRole('textbox', { name: 'Repository ID', exact: true }).fill('frontend')
+  await panel.getByRole('textbox', { name: 'Project ID', exact: true }).fill('frontend')
   await panel.getByRole('combobox', { name: 'Configured root', exact: true }).selectOption('root0')
   await panel.getByRole('combobox', { name: 'Execution recipe', exact: true }).selectOption('unit-tests')
   await panel.getByRole('combobox', { name: 'Team', exact: true }).selectOption('general')
-  await panel.getByRole('button', { name: 'Prepare repository configuration', exact: true }).click()
+  await panel.getByRole('button', { name: 'Prepare project folder configuration', exact: true }).click()
   await expect(panel.getByText('Configuration prepared. Nothing has been saved.', { exact: true })).toBeVisible()
-  const output = panel.getByRole('textbox', { name: 'Repository configuration YAML', exact: true })
+  const output = panel.getByRole('textbox', { name: 'Project configuration YAML', exact: true })
   const exported = await output.inputValue()
-  await panel.getByRole('button', { name: 'Review repository activation', exact: true }).click()
-  let review = fixture.page.getByRole('dialog', { name: 'Review repository activation', exact: true })
+  await panel.getByRole('button', { name: 'Review project folder activation', exact: true }).click()
+  let review = fixture.page.getByRole('dialog', { name: 'Review project folder activation', exact: true })
   await expect(review).toContainText('this profile’s organization ledger')
   await expect(review).toContainText('does not edit YAML, add permissions or start work')
 
   for (const key of ['Enter', 'Space']) {
     if (key === 'Space') {
-      await panel.getByRole('button', { name: 'Review repository activation', exact: true }).click()
-      review = fixture.page.getByRole('dialog', { name: 'Review repository activation', exact: true })
+      await panel.getByRole('button', { name: 'Review project folder activation', exact: true }).click()
+      review = fixture.page.getByRole('dialog', { name: 'Review project folder activation', exact: true })
     }
 
     // Real Chromium key activation must activate the focused Cancel button,
@@ -165,19 +165,19 @@ test('activates a reviewed ledger identity across restart and fails closed on re
     await cancel.focus()
     await cancel.press(key)
     await expect(review).toHaveCount(0)
-    await expect(panel.getByText('No repositories configured', { exact: true })).toBeVisible()
+    await expect(panel.getByText('No project folders configured', { exact: true })).toBeVisible()
     expect(fs.readFileSync(configPath, 'utf8')).toBe(original)
     expect(mock.receivedPrompts.length).toBe(calls)
   }
 
-  await panel.getByRole('button', { name: 'Review repository activation', exact: true }).click()
-  review = fixture.page.getByRole('dialog', { name: 'Review repository activation', exact: true })
-  await review.getByRole('button', { name: 'Save and activate repository', exact: true }).click()
+  await panel.getByRole('button', { name: 'Review project folder activation', exact: true }).click()
+  review = fixture.page.getByRole('dialog', { name: 'Review project folder activation', exact: true })
+  await review.getByRole('button', { name: 'Save and activate project folder', exact: true }).click()
   await expect(
-    panel.getByText('Repository saved in this profile’s organization ledger.', { exact: true })
+    panel.getByText('Project saved in this profile’s organization ledger.', { exact: true })
   ).toBeVisible()
   await expect(
-    panel.getByRole('list', { name: 'Configured repositories', exact: true }).getByRole('listitem')
+    panel.getByRole('list', { name: 'Configured project folders', exact: true }).getByRole('listitem')
   ).toHaveText([identity])
   await expect(
     panel.getByRole('list', { name: 'Saved in this profile’s ledger', exact: true }).getByRole('listitem')
@@ -194,7 +194,7 @@ test('activates a reviewed ledger identity across restart and fails closed on re
   await restartFixture()
   panel = await openSetup()
   await expect(
-    panel.getByRole('list', { name: 'Configured repositories', exact: true }).getByRole('listitem')
+    panel.getByRole('list', { name: 'Configured project folders', exact: true }).getByRole('listitem')
   ).toHaveText([identity])
   await expect(
     panel.getByRole('list', { name: 'Saved in this profile’s ledger', exact: true }).getByRole('listitem')
@@ -216,13 +216,13 @@ test('activates a reviewed ledger identity across restart and fails closed on re
   fixture.page = relaunched.page
   await waitForAppReady(fixture, 120_000)
   panel = await openSetup()
-  await expect(panel.getByText('No repositories configured', { exact: true })).toBeVisible()
+  await expect(panel.getByText('No project folders configured', { exact: true })).toBeVisible()
   await expect(
     panel.getByRole('list', { name: 'Saved in this profile’s ledger', exact: true }).getByRole('listitem')
   ).toHaveText([identity])
-  await expect(panel.getByRole('list', { name: 'Repository conflicts', exact: true })).toBeVisible()
+  await expect(panel.getByRole('list', { name: 'Project conflicts', exact: true })).toBeVisible()
   await expect(panel.getByRole('status').filter({ hasText: /restart/i })).toBeVisible()
-  await expect(panel.getByRole('button', { name: 'Prepare repository configuration', exact: true })).toBeDisabled()
+  await expect(panel.getByRole('button', { name: 'Prepare project folder configuration', exact: true })).toBeDisabled()
   expect(fs.readFileSync(configPath, 'utf8')).toBe(revokedYaml)
   expect(mock.receivedPrompts.length).toBe(calls)
   await panel.screenshot({ path: testInfo.outputPath('03-revoked-recipe-retains-inactive-identity.png') })
@@ -238,9 +238,9 @@ test('activates a reviewed ledger identity across restart and fails closed on re
   await waitForAppReady(fixture, 120_000)
   panel = await openSetup()
   await expect(
-    panel.getByRole('list', { name: 'Configured repositories', exact: true }).getByRole('listitem')
+    panel.getByRole('list', { name: 'Configured project folders', exact: true }).getByRole('listitem')
   ).toHaveText([identity])
-  await expect(panel.getByRole('list', { name: 'Repository conflicts', exact: true })).toHaveCount(0)
+  await expect(panel.getByRole('list', { name: 'Project conflicts', exact: true })).toHaveCount(0)
   expect(fs.readFileSync(configPath, 'utf8')).toBe(original)
   expect(mock.receivedPrompts.length).toBe(calls)
   await panel.screenshot({ path: testInfo.outputPath('04-original-grants-recover-one-identity.png') })
