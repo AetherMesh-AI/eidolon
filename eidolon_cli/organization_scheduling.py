@@ -44,7 +44,7 @@ def order_candidates(conn, rows, *, now):
     routine_first = _state(conn) == 3
     def key(row):
         urgent = row['priority'] >= 4
-        return (int(urgent == routine_first), -_score(row, now), row['created'], row['id'])
+        return (int(urgent == routine_first), -_score(row, now), row['created'], -row['priority'], row['id'])
     return sorted(rows, key=key)
 
 

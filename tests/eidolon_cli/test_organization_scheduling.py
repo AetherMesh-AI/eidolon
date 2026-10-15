@@ -165,3 +165,13 @@ def test_real_admission_blockers_never_spend_fairness_credit(installation, block
         assert store.claim_next() is not None
         with store._connect() as conn:
             assert conn.execute('SELECT count(*) FROM organization_scheduler_claims').fetchone()[0] == 1
+
+
+def test_equal_timestamp_aged_routine_tie_preserves_owner_priority(tmp_path):
+    store = OrganizationStore(tmp_path/'state.db')
+    with store._connect() as conn:
+        rows = [dict(id='a-low', priority=2, created=100), dict(id='z-normal', priority=3, created=100)]
+        assert [row['id'] for row in order_candidates(conn, rows, now=401)] == ['z-normal', 'a-low']
+        # Older routine work still wins its bounded aging tie; UUID order does not.
+        rows[0]['created'] = 99
+        assert order_candidates(conn, rows, now=401)[0]['id'] == 'a-low'
