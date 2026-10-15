@@ -18,7 +18,7 @@ from tests.eidolon_cli.test_organization_model_routing import route, configurati
     ('not JSON', 'stop', 2), ('{}', 'stop', 1), ('not JSON', 'length', 1),
     ('AUTH', 'stop', 1), ('UNKNOWN', 'stop', 1),
     ('CANCEL', 'stop', 0), ('STALE', 'stop', 0), ('BUDGET', 'stop', 0),
-    ('REASONING', 'stop', 0), ('CAP', 'stop', 0), ('ENDPOINT', 'stop', 0),
+    ('OBSERVATION_FAIL', 'stop', 1), ('REASONING', 'stop', 0), ('CAP', 'stop', 0), ('ENDPOINT', 'stop', 0),
 ])
 def test_actual_http_fresh_fallback_only_for_complete_invalid_json(tmp_path, monkeypatch, first_content, finish_reason, expected_sends):
     received, endpoints = [], []
@@ -46,7 +46,7 @@ def test_actual_http_fresh_fallback_only_for_complete_invalid_json(tmp_path, mon
             valid = json.dumps({'workPackages': [{'title': 'Inspect facts', 'description': 'Analyze exact supplied facts',
                 'managerId': 'manager', 'criterionIndexes': [0], 'projectIds': [], 'dependsOn': [], 'maxTasks': 1}], 'requiredChecks': []})
             response = {'id': 'loopback-result', 'object': 'chat.completion', 'created': 1, 'model': wire['model'],
-                'choices': [{'index': 0, 'message': {'role': 'assistant', 'content': first_content if len(received) == 1 else valid},
+                'choices': [{'index': 0, 'message': {'role': 'assistant', 'content': ('{}' if first_content == 'OBSERVATION_FAIL' else first_content) if len(received) == 1 else valid},
                              'finish_reason': finish_reason if len(received) == 1 else 'stop'}],
                 'usage': {'prompt_tokens': 10, 'completion_tokens': 5, 'total_tokens': 15}}
             encoded = json.dumps(response).encode()
@@ -85,6 +85,14 @@ def test_actual_http_fresh_fallback_only_for_complete_invalid_json(tmp_path, mon
     store = OrganizationStore(home / 'organization' / 'state.db', OrganizationSettings.from_config(cfg))
     store.create_objective('Retain exact fact: emeralds are green.', idempotency_key='routing')
     service = OrganizationService(store, home=home, poll_seconds=0.02)
+    measurements = []
+    persist = store.record_model_observation
+    def capture_observation(claim, call_id, **values):
+        measurements.append((call_id, values))
+        if first_content == 'OBSERVATION_FAIL':
+            raise OSError('Fixture observation write failure')
+        return persist(claim, call_id, **values)
+    monkeypatch.setattr(store, 'record_model_observation', capture_observation)
     from eidolon_cli.organization_model_routing_executor import RoutedBoundary
     if first_content in {'CANCEL', 'STALE'}:
         original = RoutedBoundary._create_request_openai_client
@@ -136,6 +144,35 @@ def test_actual_http_fresh_fallback_only_for_complete_invalid_json(tmp_path, mon
         assert len(audit['modelRouteFailures']) == (1 if expected_sends == 2 else 0)
         assert terminal['attempts'] == (2 if expected_sends == 2 else 1)
         assert '127.0.0.1' not in json.dumps(audit)
+        from eidolon_cli.organization_routing_observations import routing_observations
+        measured = routing_observations(store.path)['observations']
+        assert len(measured) == expected_sends
+        assert len(measurements) == expected_sends
+        assert {call for call, _ in measurements} == {row['callId'] for row in measured}
+        for _, values in measurements:
+            assert values['elapsed_seconds'] >= 0
+            assert values['outcome'] == ('error' if first_content in {'AUTH', 'UNKNOWN'} else 'response')
+            assert (values['input_tokens'], values['output_tokens']) == ((None, None) if first_content in {'AUTH', 'UNKNOWN'} else (10, 5))
+        for row in measured:
+            assert row['actualCostUsd'] is None
+            if first_content == 'OBSERVATION_FAIL':
+                assert row['latencySeconds'] is None
+                continue
+            if row['transportOutcome'] == 'unobserved':
+                # Another organization writer can win the fail-fast diagnostic
+                # transaction. Transport measurements above still prove collection.
+                assert row['latencySeconds'] is None
+                assert row['providerReportedUsage'] is None
+                continue
+            assert row['latencySeconds'] >= 0
+            assert row['physicalRetries'] == 0
+            if first_content in {'AUTH', 'UNKNOWN'}:
+                assert row['transportOutcome'] == 'error'
+                assert row['providerReportedUsage'] == {'inputTokens': None, 'outputTokens': None}
+            else:
+                assert row['transportOutcome'] == 'response'
+                assert row['providerReportedUsage'] == {'inputTokens': 10, 'outputTokens': 5}
+
     finally:
         assert service.stop(timeout=10)
         server.shutdown()
