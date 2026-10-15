@@ -390,6 +390,9 @@ class OrganizationService:
                         record.deferred = True
                         record.error = "Host is draining; waiting before dispatch"
                         return
+                    if not self.store.begin_dispatch(record.claim):
+                        record.error = 'Execution ownership changed before dispatch'
+                        return
                     if kind in {'request.project_test', 'request.source_integrate'}:
                         record.result = self.store.run_project_stage(record.claim, record.cancel)
                     else:
@@ -465,7 +468,7 @@ class OrganizationService:
                 return
             admitted = False
             try:
-                claim = self.store.claim_next()
+                claim = self.store.claim_next(recoverable=True)
                 if claim is None:
                     return
                 if self._stop.is_set() or not self.can_dispatch():
