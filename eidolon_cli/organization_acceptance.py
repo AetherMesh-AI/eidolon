@@ -6,7 +6,9 @@ import json
 import time
 
 
-ACCEPTANCE_SCHEMA = """
+from eidolon_cli.organization_outcome_contracts import SCHEMA as CONTRACT_SCHEMA
+
+ACCEPTANCE_SCHEMA = CONTRACT_SCHEMA + """
 CREATE TABLE IF NOT EXISTS objective_control (
  objective_id TEXT PRIMARY KEY REFERENCES objectives(id), criteria TEXT NOT NULL,
  status TEXT NOT NULL, round INTEGER NOT NULL DEFAULT 0, max_replans INTEGER NOT NULL,
@@ -36,17 +38,13 @@ CREATE INDEX IF NOT EXISTS objective_acceptance_round_lookup ON objective_accept
 
 
 def acceptance_criteria(value, description):
-    from eidolon_cli.organization_store import _text
-    if value is None:
-        return [description]
-    if not isinstance(value, list) or not 1 <= len(value) <= 12:
-        raise ValueError('Acceptance criteria must contain 1–12 nonempty strings')
-    return [_text(item, 'Acceptance criterion', 2000) for item in value]
+    from eidolon_cli.organization_outcome_contracts import definitions
+    return [item['text'] for item in definitions(value, description)]
 
 
 def required_checks(value):
-    if not isinstance(value, list) or len(value) > 3 or any(item not in ('project_tests', 'managed_validation', 'source_integration') for item in value) or len(set(value)) != len(value):
-        raise ValueError('requiredChecks must select unique project_tests, managed_validation or source_integration')
+    if not isinstance(value, list) or len(value) > 5 or any(item not in ('project_tests', 'managed_validation', 'source_integration', 'project_typecheck', 'project_build') for item in value) or len(set(value)) != len(value):
+        raise ValueError('requiredChecks must select unique project_tests, managed_validation, source_integration, project_typecheck or project_build')
     return value
 
 
@@ -188,6 +186,8 @@ class OrganizationAcceptanceStore:
         payload = json.loads(request['payload'])
         if payload.get('round') != control['round']:
             raise ValueError('Objective acceptance round is stale')
+        from eidolon_cli.organization_outcome_contracts import verify_contract_binding
+        verify_contract_binding(conn, request['objective_id'], payload)
         source = self._current_evidence(conn, request['objective_id'])
         expected = [row['id'] for row in source]
         hashes = {row['id']: row['sha256'] for row in source}
@@ -216,9 +216,13 @@ class OrganizationAcceptanceStore:
                      (ident, request['objective_id'], control['round'], request['id'], request['agent_id'],
                       content, hashlib.sha256(content.encode()).hexdigest(), summary, json.dumps(expected), time.time()))
         conn.execute("UPDATE objective_control SET status='reviewing',deliverable_id=? WHERE objective_id=?", (ident, request['objective_id']))
-        self._request(conn, request['objective_id'], 'request.accept', self._objective_agent(conn, request['objective_id'], 'Executive')['team'], request['priority'],
+        acceptance_id = self._request(conn, request['objective_id'], 'request.accept', self._objective_agent(conn, request['objective_id'], 'Executive')['team'], request['priority'],
                       payload={'evidenceIds': [*expected, ident], 'round': control['round']},
                       requester_id=request['agent_id'])
+        from eidolon_cli.organization_outcome_contracts import human_judgments_ready
+        if not human_judgments_ready(conn, request['objective_id']):
+            pending = conn.execute('SELECT * FROM requests WHERE id=?', (acceptance_id,)).fetchone()
+            self._pending(conn, pending, 'Awaiting explicit human outcome judgment')
 
     def _finish_accept(self, conn, request, result):
         from eidolon_cli.organization_store import _text
@@ -234,6 +238,8 @@ class OrganizationAcceptanceStore:
             raise ValueError('Only the independent executive can accept the objective')
         control = conn.execute('SELECT * FROM objective_control WHERE objective_id=?', (request['objective_id'],)).fetchone()
         validate_acceptance_result(result, json.loads(control['criteria']), expected)
+        from eidolon_cli.organization_outcome_contracts import verify_criteria
+        verify_criteria(self, conn, request, result['criteriaResults'])
         summary = _text(result.get('summary'), 'Acceptance summary', 10000)
         control = conn.execute('SELECT * FROM objective_control WHERE objective_id=?', (request['objective_id'],)).fetchone()
         if approved:
@@ -260,6 +266,11 @@ class OrganizationAcceptanceStore:
             conn.execute('UPDATE requests SET attempts=? WHERE id=?', (self.settings.max_attempts, ident))
 
     def _verify_required_checks(self, conn, objective_id, checks):
+        required_checks(checks)
+        if 'project_build' in checks:
+            raise ValueError('Required compiler check is unsupported; build/typecheck is distinct from project tests')
+        if 'project_typecheck' in checks:
+            self.verify_project_check_runs(conn, objective_id, 'project_typecheck')
         if 'project_tests' in checks:
             self.verify_project_tests(conn, objective_id)
         # The project module validates current per-path heads across rounds.

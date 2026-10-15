@@ -255,3 +255,24 @@ def test_projection_keeps_one_read_transaction_during_concurrent_commit(tmp_path
     assert read_observation(tmp_path)['snapshot']['objectives'][0]['title'] == original
     monkeypatch.setattr(_ObservationView, '_snapshot', project)
     assert read_observation(tmp_path)['snapshot']['objectives'][0]['title'] == 'New committed title'
+
+
+@pytest.mark.parametrize('partial', [False, True])
+def test_legacy_contract_observation_does_not_migrate(tmp_path, monkeypatch, partial):
+    from eidolon_cli.organization_outcome_contracts import CONTRACT_TABLES
+    store = seed(tmp_path)
+    with sqlite3.connect(store.path) as conn:
+        for table in sorted(CONTRACT_TABLES):
+            if partial and table == 'objective_human_judgments':
+                continue
+            conn.execute('DROP TABLE ' + table)
+        before = list(conn.iterdump())
+    forbid_runtime(monkeypatch)
+    result = read_observation(tmp_path)
+    assert result['state'] == ('unsupported' if partial else 'available')
+    if not partial:
+        acceptance = result['snapshot']['objectives'][0]['acceptance']
+        assert acceptance['contract'] is None
+        assert acceptance['humanJudgments'] == []
+    with sqlite3.connect(store.path) as conn:
+        assert list(conn.iterdump()) == before

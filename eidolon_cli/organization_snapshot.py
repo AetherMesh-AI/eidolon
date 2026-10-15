@@ -15,6 +15,7 @@ from eidolon_cli.organization_roster import configured_staff, staff_unavailabili
 from eidolon_cli.organization_identity import agent_identity_view, agent_context_view, task_assignment_view, objective_assignment_view
 from eidolon_cli.organization_edits import evidence_proposal
 from eidolon_cli.organization_acceptance import usage_view
+from eidolon_cli.organization_outcome_contracts import contract_view, human_judgments_view
 from eidolon_cli.organization_owner import allowed_resolutions, scope_amendment_view
 from eidolon_cli.organization_requests import request_contract_view
 from eidolon_cli.organization_project_workspace import project_validation_view
@@ -98,9 +99,10 @@ def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
                            'requiredChecks': json.loads(control['required_checks']),
                            'projectValidation': project_validation_view(conn, row['id'], full=False),
                            'projectExecution': project_execution_view(conn, row['id'], full=False),
-                           'acceptance': {'status': control['status'], 'criteria': json.loads(control['criteria']),
+                           'acceptance': {'contract': contract_view(conn, row['id']), 'humanJudgments': human_judgments_view(conn, row['id']), 'status': control['status'], 'criteria': json.loads(control['criteria']),
                                           'round': control['round'], 'maxReplans': min(control['max_replans'], settings.max_replans),
                                           'summary': control['summary'], 'deliverableId': control['deliverable_id'],
+                                          'deliverableSha256': final['sha256'] if final else None,
                                           'criteriaResults': json.loads(acceptance_review['criteria_results']) if acceptance_review else [],
                                           'conflicts': json.loads(acceptance_review['conflicts']) if acceptance_review else []},
                            'usage': usage, 'ownerResolutions': resolutions,
