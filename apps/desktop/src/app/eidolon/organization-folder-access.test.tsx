@@ -132,6 +132,25 @@ describe('folder access owner controls', () => {
     expect(mutations()).toEqual([])
   })
 
+  it('keeps a stopping snapshot blocked until an explicit fresh clear read', async () => {
+    const value = access(); value.grants[0].revoked = true; value.paused = true; value.executionStillStopping = true
+    backend(value)
+    render(<OrganizationFolderAccess onChanged={state.changed} />)
+    const resume = await screen.findByRole<HTMLButtonElement>('button', { name: copy.resume })
+    expect(resume.disabled).toBe(true)
+    value.executionStillStopping = false
+    fireEvent.click(resume)
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(mutations()).toEqual([])
+    expect(resume.disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: copy.read }))
+    await waitFor(() => expect(screen.getByRole<HTMLButtonElement>('button', { name: copy.resume }).disabled).toBe(false))
+    expect(screen.queryByText(copy.stopping)).toBeNull()
+    expect(value.grants[0].revoked).toBe(true)
+    expect(value.grants[0].reviewed).toBe(false)
+    expect(mutations()).toEqual([])
+  })
+
   it('can inspect a lost revocation result and retries the identical request without a second grant change', async () => {
     const value = backend()
     render(<OrganizationFolderAccess onChanged={state.changed} />)

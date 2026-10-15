@@ -22,6 +22,7 @@ on:
       - 'eidolon_cli/organization_project_typescript.py'
       - 'eidolon_cli/organization_project_typescript_build.py'
       - 'eidolon_cli/organization_project_build_outputs.py'
+      - 'eidolon_cli/organization_project_build_artifacts.py'
       - 'eidolon_cli/project_typescript_build_runtime/**'
       - 'tests/eidolon_cli/test_organization_project_typescript_build.py'
       - 'tests/eidolon_cli/test_organization_project_build_outputs.py'
