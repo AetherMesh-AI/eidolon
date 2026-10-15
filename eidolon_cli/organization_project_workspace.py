@@ -417,14 +417,14 @@ class OrganizationProjectStore:
         if self._automatic_source(conn, request['objective_id']):
             return
         if self._execution_required(conn, request['objective_id']):
-            # Test the reviewed managed bytes before asking the owner to alter
-            # originals. Verified handoff can then preserve that same snapshot.
-            from eidolon_cli.organization_project_execution import project_execution_view
+            # Each required check must verify the exact reviewed snapshot.
+            # An approved compiler receipt cannot stand in for required tests.
             from eidolon_cli.organization_projects import task_project
             project = task_project(conn, request['task_id'])
-            execution = project_execution_view(conn, request['objective_id'],
-                                               project_id=project['id'] if project else None)
-            if execution is None or not execution['review'] or not execution['review']['approved']:
+            try:
+                self.verify_required_project_check_runs(conn, request['objective_id'],
+                                                       project_id=project['id'] if project else None)
+            except ValueError:
                 return
         objective = conn.execute('SELECT delivery_mode,required_checks FROM objective_control WHERE objective_id=?', (request['objective_id'],)).fetchone()
         # Existing databases retain their original explicit source-integration

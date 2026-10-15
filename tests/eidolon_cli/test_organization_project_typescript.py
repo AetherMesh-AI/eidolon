@@ -29,8 +29,9 @@ def test_typecheck_grant_rejects_untrusted_or_unbounded_configuration(change):
     with pytest.raises(ValueError): normalize_typecheck_grant({**asdict(grant()),**change})
 
 
-def test_typecheck_not_in_production_dispatch():
-    with pytest.raises(ValueError): normalize_execution_grant(asdict(grant()))
+def test_typecheck_production_dispatch_requires_exact_opt_in():
+    assert normalize_execution_grant(asdict(grant())) == grant()
+    with pytest.raises(ValueError): normalize_execution_grant({'recipe':'typescript_check'})
 
 
 def test_typecheck_invalid_selection_and_cancel_fail_before_runtime():
@@ -225,3 +226,144 @@ def test_real_compiler_receipt_mutations_rejected_even_with_rehashed_fields(nati
     result['actualInputsSha256']=digest(inputs)
     result['effectiveConfigurationSha256']=digest(result['effectiveConfiguration'])
     assert not valid_compiler_outcome(result,snapshot(),grant())
+
+
+@pytest.mark.parametrize('field,value',[
+ ('cleanupConfirmed',False),('sourceWritesPerformed',True),('checkKind','project_tests'),
+ ('exitCode',False),('testCount',1),('snapshotSha256','0'*64),('containerId','bad'),
+])
+def test_full_compiler_receipt_rejects_changed_runtime_or_outcome(native,field,value):
+    from eidolon_cli.organization_project_typescript import valid_typecheck_receipt
+    assert valid_typecheck_receipt(native,asdict(grant()),snapshot())
+    assert not valid_typecheck_receipt({**native,field:value},asdict(grant()),snapshot())
+
+
+def _typecheck_reviewed_store(tmp_path):
+    import json
+    from eidolon_cli.organization_project_config import parse_project_grants
+    from eidolon_cli.organization_store import OrganizationStore
+    from tests.eidolon_cli.test_organization_edits import _setup,_read,_review
+    store,source,objective=_setup(tmp_path,content='export const value: number = 1;')
+    moved=source.with_name('main.ts');source.rename(moved);source=moved
+    (source.parent/'tsconfig.json').write_text('{}')
+    original=source.read_bytes()
+    grants=parse_project_grants([{'id':'typecheck','files':['root0/main.ts','root0/tsconfig.json'],'execution':asdict(grant())}],1)
+    staff=tuple(replace(member,tool_grants=tuple(dict.fromkeys((*member.tool_grants,'run_tests')))) for member in store.settings.roster)
+    store=OrganizationStore(store.path,replace(store.settings,roster=staff,tool_grants=(*store.settings.tool_grants,'run_tests'),project_grants=grants))
+    with store._write() as conn:
+        conn.execute("UPDATE objective_control SET delivery_mode='managed_artifact',required_checks=? WHERE objective_id=?",(json.dumps(['project_typecheck']),objective['id']))
+    claim=store.claim_next();data,_=_read(store,claim,path='root0/main.ts')
+    assert store.finish(claim,{'summary':'Reviewed TypeScript value change','edit':{'path':'root0/main.ts','baseRevision':data['workspaceRevision'],'baseSha256':data['sourceSha256'],'oldText':'= 1;','newText':'= 2;'}})
+    _review(store)
+    assert store.finish(store.claim_next(),{})
+    assert store.finish(store.claim_next(),{})
+    claim=store.claim_next();assert claim['type']=='request.project_test'
+    return store,source,objective,claim,original
+
+
+def test_real_store_typecheck_review_is_distinct_from_tests_and_survives_reopen(native,tmp_path):
+    import json
+    from eidolon_cli.organization_store import OrganizationStore
+    store,source,objective,claim,original=_typecheck_reviewed_store(tmp_path)
+    with pytest.raises(ValueError):store.finish(claim,{'status':'passed'})
+    store.run_project_stage(claim,threading.Event())
+    with store._connect() as conn:
+        row=conn.execute('SELECT run_id,record FROM project_run_results').fetchone()
+        result=json.loads(row['record']);assert result['status']=='passed',result
+        store._verify_project_run(conn,row['run_id'],review=False)
+    assert store.finish(claim,{})
+    store=OrganizationStore(store.path,store.settings)
+    with store._connect() as conn:
+        with pytest.raises(ValueError):store.verify_project_check_runs(conn,objective['id'],'project_typecheck')
+    review=store.claim_next();payload=json.loads(review['payload'])
+    assert review['type']=='request.test_review'
+    assert store.finish(review,{'approved':True,'summary':'Independent exact TypeScript compiler receipt review','evidenceIds':payload['evidenceIds']})
+    store=OrganizationStore(store.path,store.settings)
+    with store._connect() as conn:
+        pairs=store.verify_project_check_runs(conn,objective['id'],'project_typecheck')
+        assert pairs[0][0]['id']==payload['runId'] and pairs[0][1]['kind']=='project_execution'
+        with pytest.raises(ValueError,match='Compiler evidence'):store.verify_project_tests(conn,objective['id'])
+        with pytest.raises(ValueError):store.verify_project_check_runs(conn,objective['id'],'project_build')
+    assert source.read_bytes()==original
+    with store._write() as conn:
+        conn.execute('SAVEPOINT handoff_control')
+        conn.execute("UPDATE objective_control SET delivery_mode='source_project',required_checks=? WHERE objective_id=?",
+                     (json.dumps(['project_tests','project_typecheck']),objective['id']))
+        with pytest.raises(ValueError,match='Compiler evidence'):
+            store.verify_required_project_check_runs(conn,objective['id'])
+        proposal=conn.execute('SELECT * FROM edit_proposals WHERE objective_id=?',(objective['id'],)).fetchone()
+        request=conn.execute("SELECT * FROM requests WHERE task_id=? AND type='request.validate'",(proposal['task_id'],)).fetchone()
+        store._queue_source_handoff(conn,request,proposal)
+        assert conn.execute("SELECT count(*) FROM requests WHERE objective_id=? AND type='request.merge'",(objective['id'],)).fetchone()[0]==0
+        conn.execute('UPDATE objective_control SET required_checks=? WHERE objective_id=?',
+                     (json.dumps(['project_typecheck']),objective['id']))
+        store._queue_source_handoff(conn,request,proposal)
+        assert conn.execute("SELECT count(*) FROM requests WHERE objective_id=? AND type='request.merge'",(objective['id'],)).fetchone()[0]==1
+        conn.execute('ROLLBACK TO handoff_control')
+        conn.execute('RELEASE handoff_control')
+    settings=store.settings;current=settings.project_grants[0]
+    changed=OrganizationStore(store.path,replace(settings,project_grants=(replace(current,execution={**current.execution,'timeout_seconds':31}),)))
+    with changed._connect() as conn:
+        with pytest.raises(ValueError):changed.verify_project_check_runs(conn,objective['id'],'project_typecheck')
+    revoked=OrganizationStore(store.path,replace(settings,tool_grants=tuple(item for item in settings.tool_grants if item!='run_tests')))
+    with revoked._connect() as conn:
+        with pytest.raises(ValueError):revoked.verify_project_check_runs(conn,objective['id'],'project_typecheck')
+    source.write_text('export const value: number = 99;')
+    with store._connect() as conn:
+        with pytest.raises(ValueError):store.verify_project_check_runs(conn,objective['id'],'project_typecheck')
+
+
+def test_typecheck_stage_schedules_without_host_runtime_probe(tmp_path):
+    store,source,objective,claim,original=_typecheck_reviewed_store(tmp_path)
+    assert claim['type']=='request.project_test'
+    assert source.read_bytes()==original
+    with store._connect() as conn:
+        with pytest.raises(ValueError):store.verify_project_check_runs(conn,objective['id'],'project_typecheck')
+        assert conn.execute('SELECT count(*) FROM project_run_results').fetchone()[0]==0
+
+
+@pytest.mark.parametrize('recipe,kind', [('typescript_check','project_typecheck'), ('node_test','project_tests'), ('python_unittest','project_tests')])
+def test_check_kind_uses_complete_verified_row_not_latest_id_only(monkeypatch,recipe,kind):
+    import json
+    from eidolon_cli import organization_project_execution as module
+    store=module.OrganizationProjectExecutionStore()
+    monkeypatch.setattr(store,'_execution_projects',lambda *args: [])
+    monkeypatch.setattr(store,'_execution_project',lambda *args: None)
+    monkeypatch.setattr(module,'_latest_run',lambda *args: {'id':'run'})
+    pair=({'id':'run','grant_record':json.dumps({'execution':{'recipe':recipe}})}, {'id':'evidence'})
+    monkeypatch.setattr(store,'_verify_project_run',lambda *args:pair)
+    assert store.verify_project_check_runs(None,'objective',kind)==[pair]
+    if recipe=='typescript_check':
+        with pytest.raises(ValueError,match='Compiler evidence'):
+            store.verify_project_tests(None,'objective')
+
+
+@pytest.mark.parametrize('section,field,value',[
+ ('runtime','image','untrusted'),('runtime','imageId','bad'),('runtime','architecture','arm64'),
+ ('runtime','bootstrapSha256','0'*64),('runtime','compilerInventorySha256','0'*64),
+ ('runtime','seccompSha256','0'*64),('isolation','established',False),
+ ('isolation','network','host'),('isolation','sourceReadOnly',False),
+ ('isolation','runtimeReadOnly',False),('isolation','workloadUid',0),
+ ('isolation','seccompSha256','0'*64),('grant','allow_local_docker',False),
+ ('grant','timeout_seconds',31),
+])
+def test_full_compiler_receipt_binds_nested_security_identity(native,section,field,value):
+    import copy
+    from eidolon_cli.organization_project_typescript import valid_typecheck_receipt
+    changed=copy.deepcopy(native);changed[section][field]=value
+    assert not valid_typecheck_receipt(changed,asdict(grant()),snapshot())
+
+
+def test_manual_handoff_requires_kind_verified_receipts(monkeypatch):
+    from eidolon_cli.organization_project_workspace import OrganizationProjectStore
+    from eidolon_cli import organization_projects
+    store=OrganizationProjectStore();observed=[]
+    monkeypatch.setattr(store,'_automatic_source',lambda *args:False,raising=False)
+    monkeypatch.setattr(store,'_execution_required',lambda *args:True,raising=False)
+    monkeypatch.setattr(organization_projects,'task_project',lambda *args:None)
+    def reject(*args,**kwargs):
+        observed.append('typed verification')
+        raise ValueError('Compiler evidence cannot satisfy project tests')
+    monkeypatch.setattr(store,'verify_required_project_check_runs',reject,raising=False)
+    store._queue_source_handoff(None,{'objective_id':'objective','task_id':'task'}, {})
+    assert observed==['typed verification']
