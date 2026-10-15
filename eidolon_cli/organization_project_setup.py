@@ -14,6 +14,11 @@ from eidolon_cli.organization_project_registry import registry_rows
 from eidolon_cli.organization_projects import parse_projects
 
 
+def _canonical_roots(settings):
+    return [root if f'root{index}' in settings.revoked_root_aliases else str(Path(root).resolve())
+            for index, root in enumerate(settings.read_roots)]
+
+
 def _revision(content, settings, conn, *, canonical_roots=None):
     policy = conn.execute('SELECT generation,fingerprint FROM organization_policy WHERE id=1').fetchone() if conn else None
     fingerprint = _fingerprint(asdict(settings))
@@ -21,7 +26,7 @@ def _revision(content, settings, conn, *, canonical_roots=None):
     # Predict only that bootstrap revision; an intervening owner change advances
     # the actual generation and therefore invalidates the draft.
     initial = (1 + int(fingerprint != _fingerprint(asdict(OrganizationSettings()))), fingerprint)
-    roots = canonical_roots if canonical_roots is not None else [str(Path(root).resolve()) for root in settings.read_roots]
+    roots = canonical_roots if canonical_roots is not None else _canonical_roots(settings)
     return hashlib.sha256(content + json.dumps([tuple(policy) if policy else initial, asdict(settings), roots], sort_keys=True).encode()).hexdigest()
 
 
@@ -103,9 +108,10 @@ def _view(content, settings, conn):
         'repair': ("Restore each registered project's approved YAML root, recipe and team, or remove the conflicting YAML identity, then restart this profile's backend to reload its configuration. Exported identities remain available for review."
                    if conflicts else None),
         'version': 1, 'revision': _revision(content, settings, conn),
-        'projects': [asdict(project) for project in settings.projects],
-        'roots': [f'root{index}' for index in range(len(settings.read_roots))],
-        'recipes': [{'id': grant.id, 'root': grant.execution['root']} for grant in settings.project_grants],
+        'projects': [asdict(project) for project in settings.projects if project.root not in settings.revoked_root_aliases],
+        'roots': [f'root{index}' for index in range(len(settings.read_roots)) if f'root{index}' not in settings.revoked_root_aliases],
+        'revokedRoots': list(settings.revoked_root_aliases),
+        'recipes': [{'id': grant.id, 'root': grant.execution['root']} for grant in settings.project_grants if grant.execution['root'] not in settings.revoked_root_aliases],
         'teams': sorted({settings.team, *(member.team for member in settings.roster or ())}),
         'blocked': bool(blockers), 'blockers': blockers,
     }
@@ -117,6 +123,10 @@ def project_setup():
 
 
 def _validate(project, settings, conn):
+    if not isinstance(project, dict):
+        raise ValueError('Project must be an object')
+    if project.get('root') in settings.revoked_root_aliases:
+        raise ValueError('Project folder access was revoked')
     if _managed():
         raise ValueError('Project configuration is managed and cannot be changed here')
     if _blocked(conn):
@@ -182,7 +192,7 @@ def project_save(project, expected_revision, idempotency_key, *, confirm_save=Fa
                 raise ValueError('Wait for organization executions to finish stopping before saving a project')
             content, raw_settings = _source(service.home)
             settings = resolve_settings(conn, raw_settings)
-            canonical_roots = [str(Path(root).resolve()) for root in settings.read_roots]
+            canonical_roots = _canonical_roots(settings)
             if expected_revision != _revision(content, settings, conn, canonical_roots=canonical_roots):
                 raise ValueError('Project configuration changed; refresh setup and review your selection before saving')
             _validate(project, settings, conn)

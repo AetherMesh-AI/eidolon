@@ -260,7 +260,7 @@ class OrganizationProjectExecutionStore:
         roots = {row['path'].split('/')[0] for row in conn.execute(
             'SELECT path FROM workspace_heads WHERE objective_id=?', (objective_id,))}
         grants = [grant for grant in self.settings.project_grants
-                  if not roots or roots == {grant.execution['root']}]
+                  if grant.execution['root'] not in self.settings.revoked_root_aliases and (not roots or roots == {grant.execution['root']})]
         if len(grants) != 1:
             raise ValueError('Configure exactly one matching bounded project_grants recipe for this objective root; no command or file set is inferred')
         return grants[0]
@@ -282,9 +282,10 @@ class OrganizationProjectExecutionStore:
         if set(managed) - set(grant.files):
             raise ValueError('The exact project recipe must include every reviewed changed file before tests or source integration')
         snapshot, total = [], 0
-        from eidolon_cli.organization_root_grants import expected_root_identities
+        from eidolon_cli.organization_root_grants import expected_root_identities, active_root_aliases
         with organization_file_read_scope(self.settings.read_roots, self.settings.max_tool_result_chars,
-                                          expected_root_identities=expected_root_identities(self.settings)) as scope:
+                                          expected_root_identities=expected_root_identities(self.settings),
+                                          allowed_root_aliases=active_root_aliases(self.settings)) as scope:
             for path in grant.files:
                 baseline = _verify_revision(_revision(conn, objective_id, path, 0)) if path in managed else None
                 created = baseline is not None and not baseline['source_exists']
