@@ -61,6 +61,9 @@ def _relative_path(value, *, dot=False):
 
 def normalize_execution_grant(value):
     """Validate config without executing programs or probing host capabilities."""
+    from eidolon_cli.organization_project_node import NodeTestGrant, normalize_node_grant
+    if isinstance(value, NodeTestGrant) or isinstance(value, dict) and value.get('recipe') == 'node_test':
+        return normalize_node_grant(value)
     if isinstance(value, ProjectExecutionGrant):
         value = asdict(value)
     if not isinstance(value, dict) or set(value) - set(ProjectExecutionGrant.__dataclass_fields__):
@@ -446,6 +449,9 @@ Unsupported hosts and failed setup never fall back to host Python execution.
                'sourceWritesPerformed': False, 'limitations': _LIMITATIONS}
     try:
         grant = normalize_execution_grant(grant)
+        if grant.recipe == 'node_test':
+            from eidolon_cli.organization_project_node import run_node_tests
+            return run_node_tests(files, grant, cancel)
         receipt['runner'] = 'eidolon.isolated-' + grant.recipe.replace('_', '-')
         files = _snapshot(files)
         if any(item['path'].split('/')[0] != grant.root for item in files):
