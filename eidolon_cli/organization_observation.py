@@ -60,7 +60,7 @@ def _compatible_schema(conn, tables):
                     'organization_root_revocations', 'organization_root_revocation_reviews',
                     'organization_shared_call_receipts', 'organization_shared_scope_pin',
                     'organization_team_setup', 'organization_team_generations', 'organization_route_observations',
-                    'project_build_outputs'} and name not in tables:
+                    'project_build_outputs', 'organization_project_reconcile_only'} and name not in tables:
             continue  # New opt-in audit data must not provision or invalidate an older ledger.
         if name not in tables:
             return False

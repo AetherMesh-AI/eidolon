@@ -9,6 +9,7 @@ from pathlib import Path
 import shutil
 import sqlite3
 import time
+import threading
 from types import SimpleNamespace
 
 import pytest
@@ -158,8 +159,49 @@ def shared_dump(root):
 
 
 @pytest.mark.parametrize('dimension', ['modelCalls', 'tokens', 'configuredCostUsd'])
-def test_real_stores_conserve_allocation_and_pool_across_objectives_and_profiles(installation, dimension):
+def test_real_stores_conserve_allocation_and_pool_across_objectives_and_profiles(installation, dimension, monkeypatch):
+    # Preserve admission failure evidence from each concurrent worker without
+    # logging paths, identifiers, SQL parameters, prompts, or configuration.
+    diagnostics = threading.local()
+    original_connection = SharedAllowanceLedger._connection
+
+    @contextmanager
+    def traced_connection(ledger, **kwargs):
+        try:
+            with original_connection(ledger, **kwargs) as value:
+                yield value
+        except Exception as exc:
+            chain, seen = [], set()
+            while exc is not None and id(exc) not in seen:
+                seen.add(id(exc))
+                stages = []
+                trace = exc.__traceback__
+                while trace is not None:
+                    stages.append(trace.tb_frame.f_code.co_name)
+                    trace = trace.tb_next
+                chain.append({'type': type(exc).__name__,
+                    'reason': exc.reason if isinstance(exc, SharedAllowanceError) else None,
+                    'sqliteCode': getattr(exc, 'sqlite_errorcode', None),
+                    'stages': stages})
+                exc = exc.__cause__ or exc.__context__
+            diagnostics.errors = getattr(diagnostics, 'errors', []) + [
+                {'write': kwargs.get('write', False), 'chain': chain}]
+            raise
+
+    monkeypatch.setattr(SharedAllowanceLedger, '_connection', traced_connection)
     root = installation
+
+    def missing_claim(scope, index):
+        with scope.store._connect() as conn:
+            requests = [dict(row) for row in conn.execute(
+                'SELECT type,status,reason,attempts FROM requests ORDER BY created')]
+            calls = conn.execute('SELECT count(*) FROM organization_model_calls').fetchone()[0]
+        evidence = {'profile': 'default' if scope is root else 'alpha', 'iteration': index,
+                'requests': requests, 'modelCalls': calls,
+                'storeMatchesHome': scope.store.path == scope.home / 'organization' / 'state.db',
+                'sharedErrors': getattr(diagnostics, 'errors', [])}
+        print('Shared claim diagnostic: ' + json.dumps(evidence, sort_keys=True), flush=True)
+        return evidence
     configure(root, **{'modelCalls': {'calls': 3}, 'tokens': {'tokens': 600},
         'configuredCostUsd': {'cost': '0.3'}}[dimension])
 
@@ -168,10 +210,12 @@ def test_real_stores_conserve_allocation_and_pool_across_objectives_and_profiles
         for index, count in enumerate((2, 1)):
             item = objective(scope, 'objective-' + str(index))
             initial = scope.store.claim_next()
+            assert initial is not None, json.dumps(missing_claim(scope, index), sort_keys=True)
             assert initial['objective_id'] == item['id']
             assert scope.store.fail(initial, 'Fixture queues a trusted completion stage')
             identifier = queue(scope.store, item, 'request.review')
             claim = scope.store.claim_next()
+            assert claim is not None, json.dumps(missing_claim(scope, index), sort_keys=True)
             assert claim['id'] == identifier
             for _ in range(count):
                 reserve(scope.store, claim)

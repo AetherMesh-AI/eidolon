@@ -478,3 +478,37 @@ def test_live_unknown_cleanup_survives_lost_finish_and_blocks_replay(native,tmp_
         assert record['Config']['Labels']['ai.eidolon.execution']==receipt['containerName']
         code,_,_,forced=original(['rm','--force',receipt['containerId']],config,budget)
         assert code==0 and forced is None
+
+
+def test_live_durable_node_receipt_recovers_without_second_execution(native, tmp_path, monkeypatch):
+    from eidolon_cli.organization_store import OrganizationStore
+    from eidolon_cli import organization_project_runner as runner
+    store, source, objective, claim, original = _node_reviewed_store(tmp_path)
+    with store._write() as conn:
+        store._journal_claim(conn, claim['id'], claim['token'])
+    assert store.begin_dispatch(claim)
+    store.run_project_stage(claim, threading.Event())
+    with store._write() as conn:
+        conn.execute('UPDATE requests SET lease=0 WHERE id=?', (claim['id'],))
+    reopened = OrganizationStore(store.path, store.settings)
+    assert reopened.recover_expired() == 1
+    with reopened._write() as conn:
+        conn.execute('UPDATE requests SET available=0 WHERE id=?', (claim['id'],))
+    retry = reopened.claim_next(recoverable=True)
+    assert retry is not None and retry['id'] == claim['id']
+    assert not reopened.finish(claim, {})
+    monkeypatch.setattr(runner, 'run_project_tests', lambda *args, **kwargs:
+                        pytest.fail('Exact retained Node receipt must not execute another container'))
+    assert reopened.begin_dispatch(retry)
+    assert reopened.run_project_stage(retry, threading.Event()) == {}
+    assert reopened.finish(retry, {})
+    review = reopened.claim_next()
+    assert review['type'] == 'request.test_review'
+    payload = json.loads(review['payload'])
+    assert reopened.finish(review, {'approved': True, 'summary': 'Independent review of exact recovered native Node receipt',
+                                    'evidenceIds': payload['evidenceIds']})
+    with reopened._connect() as conn:
+        assert reopened.verify_project_tests(conn, objective['id'])[0]['id'] == payload['runId']
+        assert conn.execute('SELECT count(*) FROM project_run_starts').fetchone()[0] == 1
+        assert conn.execute('SELECT count(*) FROM project_run_results').fetchone()[0] == 1
+    assert source.read_bytes() == original

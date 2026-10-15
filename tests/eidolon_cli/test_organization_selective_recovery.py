@@ -177,8 +177,9 @@ def test_durable_source_success_reconciles_without_republishing(tmp_path, monkey
 
 
 @pytest.mark.linux_only
-@pytest.mark.parametrize('damage', ['missing', 'mismatch', 'cancelled', 'source', 'grant'])
+@pytest.mark.parametrize('damage', ['missing', 'mismatch', 'cancelled', 'source', 'grant', 'revoked_alias'])
 def test_reconcile_only_never_falls_back_to_publication(tmp_path, monkeypatch, damage):
+    from dataclasses import replace
     import threading
     from tests.eidolon_cli.test_organization_project_security import _source_ready
     from eidolon_cli import organization_source_integration as integration
@@ -197,8 +198,9 @@ def test_reconcile_only_never_falls_back_to_publication(tmp_path, monkeypatch, d
         store.cancel(retry['objective_id'])
     elif damage == 'source':
         source.write_text('Changed after recovery', encoding='utf-8')
+    elif damage == 'revoked_alias':
+        store = OrganizationStore(store.path, replace(store.settings, revoked_root_aliases=('root0',)))
     elif damage == 'grant':
-        from dataclasses import replace
         store = OrganizationStore(store.path, replace(store.settings,
             tool_grants=tuple(grant for grant in store.settings.tool_grants if grant != 'integrate_source')))
     else:
@@ -237,3 +239,158 @@ def test_recovery_does_not_reset_stage_budget(tmp_path):
     assert store.claim_next(recoverable=True) is None
     assert status(store, claim)['status'] == 'pending_intervention'
     assert 'stage budget' in status(store, claim)['reason']
+
+
+def _retained_project(tmp_path, monkeypatch, *, attempts=None):
+    """Real ledger and source; injected backend terminal proof, not native execution."""
+    import threading
+    from tests.eidolon_cli.test_organization_project_security import _reviewed_project, _simulated_terminal_result
+    from eidolon_cli import organization_project_runner as runner
+    store, source, objective, _ = _reviewed_project(tmp_path)
+    if attempts is not None:
+        from dataclasses import replace
+        store = OrganizationStore(store.path, replace(store.settings, max_attempts=attempts))
+    claim = store.claim_next(recoverable=True)
+    assert claim['type'] == 'request.project_test'
+    assert store.begin_dispatch(claim)
+    monkeypatch.setattr(runner, 'run_project_tests', lambda files, grant, cancel: _simulated_terminal_result(files))
+    store.run_project_stage(claim, threading.Event())
+    monkeypatch.setattr(runner, 'run_project_tests', lambda *args, **kwargs: pytest.fail('Reconciliation must not execute tests'))
+    return store, source, objective, claim
+
+
+@pytest.mark.linux_only
+def test_durable_project_reconciles_once_without_another_run(tmp_path, monkeypatch):
+    import threading
+    store, _, _, claim = _retained_project(tmp_path, monkeypatch)
+    expire(store, claim)
+    peers = [OrganizationStore(store.path), OrganizationStore(store.path)]
+    with ThreadPoolExecutor(2) as pool:
+        assert sum(pool.map(lambda peer: peer.recover_expired(), peers)) == 1
+    with store._write() as conn:
+        conn.execute('UPDATE requests SET available=0 WHERE id=?', (claim['id'],))
+    retry = store.claim_next(recoverable=True)
+    assert retry['id'] == claim['id'] and not store.finish(claim, {})
+    assert store.begin_dispatch(retry)
+    assert store.run_project_stage(retry, threading.Event()) == {}
+    assert store.finish(retry, {})
+    with store._connect() as conn:
+        assert conn.execute('SELECT count(*) FROM project_run_starts').fetchone()[0] == 1
+        assert conn.execute('SELECT count(*) FROM project_run_results').fetchone()[0] == 1
+        assert conn.execute("SELECT count(*) FROM requests WHERE type='request.test_review'").fetchone()[0] == 1
+        assert conn.execute('SELECT count(*) FROM objective_usage WHERE request_id=?',(claim['id'],)).fetchone()[0] == 2
+
+
+@pytest.mark.linux_only
+@pytest.mark.parametrize('damage', ['missing', 'digest', 'recipe', 'source', 'grant', 'revoked_alias', 'cancel', 'round'])
+def test_project_reconciliation_fails_closed(tmp_path, monkeypatch, damage):
+    import threading
+    from dataclasses import replace
+    store, source, _, claim = _retained_project(tmp_path, monkeypatch)
+    expire(store, claim); assert store.recover_expired() == 1
+    with store._write() as conn:
+        conn.execute('UPDATE requests SET available=0 WHERE id=?', (claim['id'],))
+    retry = store.claim_next(recoverable=True)
+    assert retry is not None
+    if damage == 'source': source.write_text('Changed source')
+    elif damage == 'cancel': store.cancel(retry['objective_id'])
+    elif damage == 'revoked_alias':
+        store = OrganizationStore(store.path, replace(store.settings, revoked_root_aliases=('root0',)))
+    elif damage == 'grant':
+        store = OrganizationStore(store.path, replace(store.settings,
+            tool_grants=tuple(g for g in store.settings.tool_grants if g != 'run_tests')))
+    else:
+        with store._write() as conn:
+            if damage == 'missing':
+                conn.execute('DROP TRIGGER immutable_project_run_results_delete')
+                conn.execute('DELETE FROM project_run_results')
+            elif damage == 'round':
+                conn.execute('UPDATE objective_control SET round=round+1 WHERE objective_id=?',(retry['objective_id'],))
+            else:
+                field = 'artifact_sha256' if damage == 'digest' else 'recipe'
+                conn.execute(f'UPDATE organization_project_reconcile_only SET {field}=?',('bad',))
+    with pytest.raises(ValueError): store.run_project_stage(retry, threading.Event())
+    with store._connect() as conn:
+        assert conn.execute('SELECT count(*) FROM project_run_starts').fetchone()[0] == 1
+
+
+@pytest.mark.linux_only
+def test_second_crash_during_project_reconciliation_keeps_exact_receipt(tmp_path, monkeypatch):
+    import threading
+    store, _, _, claim = _retained_project(tmp_path, monkeypatch, attempts=3)
+    for _ in range(2):
+        expire(store, claim); assert store.recover_expired() == 1
+        with store._write() as conn: conn.execute('UPDATE requests SET available=0 WHERE id=?',(claim['id'],))
+        claim = store.claim_next(recoverable=True)
+        assert claim is not None and store.begin_dispatch(claim)
+        assert store.run_project_stage(claim, threading.Event()) == {}
+    assert store.finish(claim, {})
+    with store._connect() as conn:
+        assert conn.execute('SELECT count(*) FROM project_run_starts').fetchone()[0] == 1
+
+
+@pytest.mark.linux_only
+@pytest.mark.parametrize('damage', ['unknown', 'failed', 'legacy', 'wrong_token', 'cleanup', 'bad_hash'])
+def test_unproven_project_outcomes_are_not_recovered(tmp_path, monkeypatch, damage):
+    import json
+    from eidolon_cli.organization_project_execution import canonical, digest
+    store, _, _, claim = _retained_project(tmp_path, monkeypatch)
+    with store._write() as conn:
+        if damage == 'legacy':
+            conn.execute('DELETE FROM organization_execution_journal WHERE request_id=?',(claim['id'],))
+        elif damage == 'wrong_token':
+            conn.execute('DROP TRIGGER immutable_project_run_starts_update')
+            conn.execute("UPDATE project_run_starts SET token='different-attempt'")
+        elif damage == 'unknown':
+            conn.execute('DROP TRIGGER immutable_project_run_results_delete')
+            conn.execute('DELETE FROM project_run_results')
+        else:
+            conn.execute('DROP TRIGGER immutable_project_run_results_update')
+            record = json.loads(conn.execute('SELECT record FROM project_run_results').fetchone()[0])
+            if damage != 'bad_hash': record['status'] = 'cleanup_failed' if damage == 'cleanup' else 'failed'
+            conn.execute('UPDATE project_run_results SET record=?,sha256=?',
+                         (canonical(record), '0'*64 if damage == 'bad_hash' else digest(record)))
+    expire(store, claim); assert store.recover_expired() == 1
+    assert status(store, claim)['status'] == 'pending_intervention'
+    with store._connect() as conn:
+        assert conn.execute('SELECT count(*) FROM organization_project_reconcile_only').fetchone()[0] == 0
+        assert conn.execute('SELECT count(*) FROM project_run_starts').fetchone()[0] == 1
+
+
+@pytest.mark.parametrize('malformed', [False, True])
+def test_project_reconcile_storage_is_optional_for_passive_legacy_reads(tmp_path, monkeypatch, malformed):
+    from tests.eidolon_cli.test_organization_observation import seed, files, forbid_runtime
+    from eidolon_cli.organization_observation import read_observation
+    store = seed(tmp_path)
+    with store._connect() as conn:
+        conn.execute('DROP TABLE organization_project_reconcile_only')
+        if malformed: conn.execute('CREATE TABLE organization_project_reconcile_only(request_id TEXT)')
+        before = '\n'.join(conn.iterdump())
+    before_files = files(tmp_path)
+    forbid_runtime(monkeypatch)
+    assert read_observation(tmp_path)['state'] == ('unsupported' if malformed else 'available')
+    import sqlite3
+    with sqlite3.connect(store.path) as conn:
+        assert '\n'.join(conn.iterdump()) == before
+    assert files(tmp_path) == before_files
+
+
+@pytest.mark.linux_only
+@pytest.mark.parametrize('recipe', ['typescript_check', 'typescript_build'])
+def test_project_recovery_classifier_excludes_compiler_receipts(tmp_path, monkeypatch, recipe):
+    """Unit classifier boundary, not a claim of native compiler execution."""
+    import json
+    store, _, _, claim = _retained_project(tmp_path, monkeypatch)
+    original = store._reusable_project_run
+    def compiler_kind(conn, request):
+        row = dict(original(conn, request))
+        grant = json.loads(row['grant_record'])
+        grant['execution']['recipe'] = recipe
+        row['grant_record'] = json.dumps(grant)
+        return row
+    monkeypatch.setattr(store, '_reusable_project_run', compiler_kind)
+    expire(store, claim)
+    assert store.recover_expired() == 1
+    assert status(store, claim)['status'] == 'pending_intervention'
+    with store._connect() as conn:
+        assert conn.execute('SELECT count(*) FROM organization_project_reconcile_only').fetchone()[0] == 0

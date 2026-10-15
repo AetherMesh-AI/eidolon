@@ -19,6 +19,9 @@ CREATE TABLE IF NOT EXISTS organization_execution_journal (
  PRIMARY KEY(request_id,token));
 CREATE TABLE IF NOT EXISTS organization_reconcile_only (
  request_id TEXT PRIMARY KEY REFERENCES requests(id), receipt_sha256 TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS organization_project_reconcile_only (
+ request_id TEXT PRIMARY KEY REFERENCES requests(id), run_id TEXT NOT NULL,
+ recipe TEXT NOT NULL, artifact_sha256 TEXT NOT NULL);
 """
 
 
@@ -28,6 +31,17 @@ def input_hash(request):
 
 
 class OrganizationRecoveryStore:
+    def _project_reconcile_guard(self, conn, request, row=None, artifact=None):
+        """A recovered test may only consume its exact retained typed receipt."""
+        marker = conn.execute('SELECT * FROM organization_project_reconcile_only WHERE request_id=?',
+                              (request['id'],)).fetchone()
+        if marker is not None:
+            recipe = json.loads(row['grant_record'])['execution']['recipe'] if row is not None else None
+            if (row is None or artifact is None or row['id'] != marker['run_id']
+                    or recipe != marker['recipe'] or artifact['sha256'] != marker['artifact_sha256']):
+                raise ValueError('Recovery requires its exact durable project receipt; execution cannot be repeated')
+        return marker
+
     def _journal_claim(self, conn, request_id, token):
         request = conn.execute('SELECT * FROM requests WHERE id=?', (request_id,)).fetchone()
         conn.execute('INSERT INTO organization_execution_journal VALUES (?,?,?,?,0)',
@@ -71,16 +85,35 @@ class OrganizationRecoveryStore:
                                       and digest(json.loads(receipt['record'])) == receipt['sha256'])
                 except (TypeError, ValueError):
                     durable_source = False
-        safe = eligible and (not row['dispatched'] or durable_source)
+        durable_project = None
+        if eligible and row['dispatched'] and request['type'] == 'request.project_test':
+            try:
+                # Preflight includes unknown-cleanup blockers and exact grants.
+                if self.project_stage_unavailability(conn, request) is None:
+                    retained = self._reusable_project_run(conn, request)
+                    if retained is not None:
+                        from eidolon_cli.organization_project_execution import project_execution_artifact
+                        artifact = project_execution_artifact(conn, retained['id'])
+                        marker = self._project_reconcile_guard(conn, request, retained, artifact)
+                        recipe = json.loads(retained['grant_record'])['execution']['recipe']
+                        if (recipe in {'python_unittest', 'python_pytest', 'node_test'}
+                                and (retained['token'] == request['token'] or marker is not None)):
+                            durable_project = (retained['id'], recipe, artifact['sha256'])
+            except (ValueError, TypeError, KeyError):
+                durable_project = None
+        safe = eligible and (not row['dispatched'] or durable_source or durable_project is not None)
         # Defense in depth for direct store consumers: any admitted model/tool/
         # project operation overrides even an untouched scheduler marker.
-        if safe and not durable_source:
+        if safe and not durable_source and durable_project is None:
             safe = not any(conn.execute(query, args).fetchone() for query, args in (
                 ('SELECT 1 FROM organization_model_calls WHERE request_id=? AND token=?', (request['id'], request['token'])),
                 ('SELECT 1 FROM tool_receipts WHERE request_id=? AND attempt=?', (request['id'], request['execution_count'])),
                 ('SELECT 1 FROM project_run_starts WHERE request_id=? AND token=?', (request['id'], request['token'])),
             ))
         if safe:
+            if durable_project is not None:
+                conn.execute('INSERT OR IGNORE INTO organization_project_reconcile_only VALUES (?,?,?,?)',
+                             (request['id'], *durable_project))
             if durable_source:
                 conn.execute('INSERT OR IGNORE INTO organization_reconcile_only VALUES (?,?)',
                              (request['id'], receipt['sha256']))
@@ -88,7 +121,7 @@ class OrganizationRecoveryStore:
             # source state, routing and dependencies. Never refund reservations,
             # erase prior attempts or advance the old execution's lease.
             conn.execute("UPDATE requests SET status='queued',token=NULL,lease=NULL,agent_id=NULL,available=?,reason=? WHERE id=?",
-                         (time.time() + 1, 'Reconciling an exact durable source receipt.' if durable_source else 'Recovered a recorded attempt that never reached dispatch.', request['id']))
+                         (time.time() + 1, 'Reconciling an exact durable project receipt.' if durable_source or durable_project is not None else 'Recovered a recorded attempt that never reached dispatch.', request['id']))
             if request['task_id']:
                 conn.execute("UPDATE tasks SET status='queued' WHERE id=?", (request['task_id'],))
             self._event(conn, request['objective_id'], 'Recorded execution recovered; original limits remain in force.', 'planning')
