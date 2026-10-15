@@ -224,7 +224,7 @@ export function persistGalleryEvidence(fixture: GalleryFixture, group: string) {
 export function writeGalleryEvidence(fixture: GalleryFixture, group: string) {
   persistGalleryEvidence(fixture, group)
   expect(fixture.mock.receivedPrompts).toHaveLength(fixture.seedProviderCalls)
-  expect(fixture.methods.every(method => ['organization.descriptor', 'organization.snapshot', 'organization.outcomes', 'organization.attention', 'organization.observe', 'organization.observeRead'].includes(method))).toBe(true)
+  expect(fixture.methods.every(method => ['organization.descriptor', 'organization.snapshot', 'organization.outcomes', 'organization.attention', 'organization.observe', 'organization.observeRead', 'organization.intake.list'].includes(method))).toBe(true)
   expect(fixture.observationReads.every(method => ['organization.outcomes', 'organization.attention'].includes(method))).toBe(true)
   expect(fixture.failures, 'Every destination must pass its original assertions').toEqual([])
 }
