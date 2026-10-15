@@ -318,21 +318,26 @@ class OrganizationProjectExecutionStore:
         execution = json.loads(row['grant_record'])['execution']
         recipe = execution['recipe']
         isolation, runtime = result.get('isolation', {}), result.get('runtime', {})
-        if (result.get('runner') != 'eidolon.isolated-' + recipe.replace('_', '-') or result.get('runnerVersion') != 1
-                or not isinstance(isolation, dict) or isolation.get('established') is not True
-                or isolation.get('backend') != 'linux-bubblewrap-seccomp'
-                or isolation.get('sourceReadOnly') is not True or isolation.get('runtimeReadOnly') is not True
-                or isolation.get('network') != 'none' or isolation.get('processLimit') != 1
-                or isolation.get('seccompInstalled') is not True or isolation.get('namespaceCreationDenied') is not True
-                or not isinstance(runtime, dict)
-                or (runtime.get('stdlibOnly') is not True if recipe == 'python_unittest' else
-                    not valid_pytest_identity(runtime))
-                or any(not isinstance(runtime.get(key), str) or not re.fullmatch(r'[0-9a-f]{64}', runtime[key])
-                       for key in ('executableSha256', 'runtimeSha256'))
-                or result.get('status') != 'passed' or result.get('exitCode') != 0
-                or type(result.get('testCount')) is not int or result['testCount'] < 1
-                or result.get('snapshotSha256') != snapshot_digest(_runner_files(json.loads(row['snapshot'])))):
-            raise ValueError('Required project tests need a real successful nonempty run over the exact snapshot')
+        if recipe == 'node_test':
+            from eidolon_cli.organization_project_node import valid_node_receipt
+            if not valid_node_receipt(result, execution, _runner_files(json.loads(row['snapshot']))):
+                raise ValueError('Required Node tests need an exact successful isolated receipt and confirmed cleanup')
+        else:
+            if (result.get('runner') != 'eidolon.isolated-' + recipe.replace('_', '-') or result.get('runnerVersion') != 1
+                    or not isinstance(isolation, dict) or isolation.get('established') is not True
+                    or isolation.get('backend') != 'linux-bubblewrap-seccomp'
+                    or isolation.get('sourceReadOnly') is not True or isolation.get('runtimeReadOnly') is not True
+                    or isolation.get('network') != 'none' or isolation.get('processLimit') != 1
+                    or isolation.get('seccompInstalled') is not True or isolation.get('namespaceCreationDenied') is not True
+                    or not isinstance(runtime, dict)
+                    or (runtime.get('stdlibOnly') is not True if recipe == 'python_unittest' else
+                        not valid_pytest_identity(runtime))
+                    or any(not isinstance(runtime.get(key), str) or not re.fullmatch(r'[0-9a-f]{64}', runtime[key])
+                           for key in ('executableSha256', 'runtimeSha256'))
+                    or result.get('status') != 'passed' or result.get('exitCode') != 0
+                    or type(result.get('testCount')) is not int or result['testCount'] < 1
+                    or result.get('snapshotSha256') != snapshot_digest(_runner_files(json.loads(row['snapshot'])))):
+                raise ValueError('Required project tests need a real successful nonempty run over the exact snapshot')
         self._verify_current_snapshot(conn, row)
         if review:
             proof = conn.execute('SELECT v.*,q.type,q.status,q.payload FROM project_run_reviews v '

@@ -32,9 +32,10 @@ def test_node_grant_requires_explicit_trusted_bounded_configuration(change):
         normalize_node_grant({**asdict(GRANT), **change})
 
 
-def test_node_experiment_does_not_enable_production_dispatch_or_change_python_grant():
+def test_node_dispatch_requires_opt_in_and_preserves_python_grant():
+    assert normalize_execution_grant(asdict(GRANT)) == GRANT
     with pytest.raises(ValueError):
-        normalize_execution_grant(asdict(GRANT))
+        normalize_execution_grant({'recipe': 'node_test'})
     assert asdict(normalize_execution_grant({})) == asdict(ProjectExecutionGrant())
 
 
@@ -337,3 +338,78 @@ def test_live_cleanup_failure_cannot_remain_passed(native,monkeypatch,tmp_path):
             assert record['Config']['Labels']['ai.eidolon.execution']==result['containerName']
             code,_,_,forced=original(['rm','--force',identifier],config,budget)
             assert code==0 and forced is None
+
+
+def test_node_owner_configuration_is_exact_and_inert():
+    from eidolon_cli.organization_project_config import parse_project_grants
+    from eidolon_cli.organization_project_recipes import describe_execution_recipe
+    value={'id':'node','files':['root0/example.test.cjs'],'execution':asdict(GRANT)}
+    parsed=parse_project_grants([value],1)[0]
+    assert parsed.execution==asdict(GRANT)
+    description=describe_execution_recipe(parsed.execution)
+    assert description['state']=='runtime_unverified'
+    assert description['backend']=='linux-docker-pinned'
+    assert description['dependencyInstallation'] is False
+    for execution in ({'recipe':'node_test'}, {**asdict(GRANT),'allow_local_docker':False},
+                      {**asdict(GRANT),'runtime_image':'node:latest'}, {**asdict(GRANT),'command':'npm test'}):
+        with pytest.raises(ValueError):
+            parse_project_grants([{**value,'execution':execution}],1)
+
+
+def test_live_receipt_binds_runtime_grant_source_and_cleanup(native):
+    import copy
+    from eidolon_cli.organization_project_node import valid_node_receipt
+    assert valid_node_receipt(native,asdict(GRANT),snapshot(GOOD))
+    changes=[('cleanupConfirmed',False),('status','unsupported'),('exitCode',1),('testCount',0),
+             ('snapshotSha256','0'*64),('selectedTests',[]),('files',[]),('grant',{}),
+             ('sourceWritesPerformed',True),('containerId','bad'),('containerConfigSha256','bad')]
+    for key,value in changes:
+        modified=copy.deepcopy(native);modified[key]=value
+        assert not valid_node_receipt(modified,asdict(GRANT),snapshot(GOOD)),key
+    for section,key,value in [('runtime','image','node:latest'),('runtime','bootstrapSha256','0'*64),
+        ('runtime','seccompSha256','0'*64),('runtime','architecture','arm64'),
+        ('isolation','established',False),('isolation','workloadUid',0),('isolation','network','host'),
+        ('isolation','sourceReadOnly',False),('isolation','backend','host')]:
+        modified=copy.deepcopy(native);modified[section][key]=value
+        assert not valid_node_receipt(modified,asdict(GRANT),snapshot(GOOD)),(section,key)
+
+
+def test_live_store_dispatch_and_durable_review_gate(native,tmp_path):
+    from dataclasses import replace
+    from eidolon_cli.organization_project_config import parse_project_grants
+    from eidolon_cli.organization_store import OrganizationStore
+    from tests.eidolon_cli.test_organization_edits import _setup,_propose,_review,PATH
+    store,source,objective=_setup(tmp_path)
+    test_path=source.parent/'example.test.cjs'
+    test_path.write_text("const {test}=require('node:test');const a=require('node:assert/strict');const fs=require('node:fs');test('reviewed value',()=>a.match(fs.readFileSync('example.txt','utf8'),/new value/));")
+    original=source.read_bytes()
+    grants=parse_project_grants([{'id':'node','files':[PATH,'root0/example.test.cjs'],'execution':asdict(GRANT)}],1)
+    staff=tuple(replace(member,tool_grants=tuple(dict.fromkeys((*member.tool_grants,'run_tests')))) for member in store.settings.roster)
+    store=OrganizationStore(store.path,replace(store.settings,roster=staff,tool_grants=(*store.settings.tool_grants,'run_tests'),project_grants=grants))
+    with store._write() as conn:
+        conn.execute("UPDATE objective_control SET delivery_mode='managed_artifact',required_checks=? WHERE objective_id=?",(json.dumps(['project_tests']),objective['id']))
+    _propose(store);_review(store)
+    assert store.finish(store.claim_next(),{})
+    assert store.finish(store.claim_next(),{})
+    claim=store.claim_next();assert claim['type']=='request.project_test'
+    with pytest.raises(ValueError):
+        store.finish(claim,{'status':'passed'})
+    store.run_project_stage(claim,threading.Event())
+    with store._connect() as conn:
+        row=conn.execute('SELECT run_id,record FROM project_run_results').fetchone()
+        outcome=json.loads(row['record'])
+        assert outcome['status']=='passed',outcome
+        assert outcome['cleanupConfirmed'] is True
+        store._verify_project_run(conn,row['run_id'],review=False)
+    assert store.finish(claim,{})
+    reopened=OrganizationStore(store.path,store.settings)
+    assert not reopened.finish(claim,{})
+    review=reopened.claim_next();assert review['type']=='request.test_review'
+    assert source.read_bytes()==original
+    with reopened._connect() as conn:
+        with pytest.raises(ValueError):
+            reopened.verify_project_tests(conn,objective['id'])
+    source.write_text('external source changed')
+    with reopened._connect() as conn:
+        with pytest.raises(ValueError):
+            reopened._verify_project_run(conn,row['run_id'],review=False)

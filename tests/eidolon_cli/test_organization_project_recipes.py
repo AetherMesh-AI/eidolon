@@ -48,7 +48,7 @@ def test_manifests_do_not_execute_scripts_or_mutate_environment(tmp_path, monkey
     assert project['lockfiles'][0]['sha256'] == files[1]['sha256']
     assert {candidate['phase'] for candidate in project['candidates']} == {'test', 'build', 'typecheck'}
     assert all(candidate['state'] == 'unsupported' for candidate in project['candidates'])
-    assert 'node_isolation_backend_unavailable' in project['blockers']
+    assert 'package_script_adapter_unavailable' in project['blockers']
     assert 'project_dependency_bundle_unavailable' in project['blockers']
     assert 'touch ' not in json.dumps(result)
     assert 'curl ' not in json.dumps(result)
