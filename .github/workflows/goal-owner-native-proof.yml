@@ -1,0 +1,67 @@
+name: Goal owner native proof
+on:
+  pull_request:
+    branches: [main, feat/outcome-repair-final-union]
+    paths:
+      - 'apps/desktop/e2e/organization-goal-controls.spec.ts'
+      - 'apps/desktop/e2e/organization-goal-native-fixture.ts'
+      - 'scripts/ci/organization_goal_native_fixture.py'
+      - 'tests/test_organization_goal_native_fixture.py'
+      - '.github/workflows/goal-owner-native-proof.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: goal-native-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+env:
+  CI: 'true'
+  HERMES_TEST_FILE_RETRIES: '0'
+  OPENAI_API_KEY: ''
+  OPENROUTER_API_KEY: ''
+  NOUS_API_KEY: ''
+jobs:
+  owner-controls:
+    name: Goal owner UI and durable controls (Linux)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: Install existing locked Python runtime and tests
+        run: |
+          python -m pip install uv==0.12.23
+          uv sync --locked --python 3.12 --extra dev
+          uv pip install --no-deps pytest-timeout==2.4.0 exceptiongroup==1.3.0 'https://files.pythonhosted.org/packages/6e/c2/61d3e0f47e2b74ef40a68b9e6ad5984f6241a942f7cd3bbfbdbd03861ea9/tomli-2.2.1-py3-none-any.whl#sha256=cb55c73c5f4408779d0cf3eef9f762b9c9f147a77de7b258bef0a5628adc85cc'
+      - name: Verify API-only fixture setup
+        run: scripts/run_tests.sh tests/test_organization_goal_native_fixture.py -j 1
+      - name: Install existing locked desktop dependencies
+        run: npm ci
+      - name: Install existing Electron system dependencies
+        run: sudo apt-get install -y xvfb libgtk-3-0 libnotify4 libnss3 libxss1 libxtst6 xdg-utils libatspi2.0-0 libdrm2 libgbm1 libasound2 fonts-noto-cjk
+      - name: Check types and build desktop
+        working-directory: apps/desktop
+        run: |
+          npm run typecheck
+          npm run build
+      - name: Verify real owner controls with dispatch explicitly disabled
+        working-directory: apps/desktop
+        run: xvfb-run -a npx playwright test e2e/organization-goal-controls.spec.ts --workers=1 --retries=0
+      - name: Retain native proof and failure evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: goal-owner-native-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            apps/desktop/test-results
+            apps/desktop/playwright-report
+          if-no-files-found: warn
+          retention-days: 7
