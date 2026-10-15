@@ -110,9 +110,9 @@ def _readiness(home):
     from eidolon_cli.organization_setup import setup_view
     from eidolon_cli.organization_owner_chat_executor import readiness_reason
     with profile_configuration_scope(home):
-        config = load_config_readonly()
+        config = load_config_readonly(initialize_home=False)
         view = setup_view(config, [{'lifecycle': 'active', 'capabilities': ['request.decompose']}])
-        generation_blocker = readiness_reason({})
+        generation_blocker = readiness_reason({}, config=config)
     model = config.get('model') or {}
     model = model if isinstance(model, dict) else {'default': model}
     blockers = list(view['provider']['blockers'])

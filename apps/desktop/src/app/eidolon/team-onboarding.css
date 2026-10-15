@@ -1,5 +1,9 @@
 .eid-team-entry {
-  margin-block-end: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
 }
 .eid-team-dialog {
   display: flex;

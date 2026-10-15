@@ -105,8 +105,7 @@ export function OrganizationWorkspaceView({ adapter }: { adapter: OrganizationAd
   return <main aria-label={list.workspace} className="eidolon eid-workspace">
     <div className="eid-page">
       {adapter.mode === 'prototype' ? <div className="eid-demo-bar"><span>{copy.legacyDemo} · {copy.legacyNote}</span></div> : <RuntimeStatus adapter={adapter} snapshot={snapshot} warningsOnly />}
-      {pathname === '/home' && adapter.mode === 'runtime' && <TeamOnboardingEntry adapter={adapter} key={snapshot.connection?.ownerScope ?? snapshot.connection?.scope} />}
-      {pathname === '/home' && <Home adapter={adapter} snapshot={snapshot} />}
+      {pathname === '/home' && <Home adapter={adapter} snapshot={snapshot} starterEntry={adapter.mode === 'runtime' && !snapshot.objectives.length && !snapshot.tasks.length && !snapshot.requests?.length ? <TeamOnboardingEntry adapter={adapter} key={snapshot.connection?.ownerScope ?? snapshot.connection?.scope} /> : undefined} />}
       {pathname === '/messages' && <Messages adapter={adapter.mode === 'runtime' ? adapter : undefined} key={snapshot.connection?.ownerScope ?? snapshot.connection?.scope} snapshot={snapshot} />}
       {pathname === '/work' && <WorkOverview snapshot={snapshot} />}
       {titles[pathname] && <WorkspacePageHeading title={titles[pathname]}><p className="eid-eyebrow">Eidolon · {t.organizationSurfaces.organization} · {adapter.mode === 'runtime' ? list.runtime : list.localPrototype}</p></WorkspacePageHeading>}

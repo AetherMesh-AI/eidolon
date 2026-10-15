@@ -50,13 +50,15 @@ export function TeamOnboardingEntry({ adapter }: { adapter: RuntimeOrganizationA
   const [reload, setReload] = useState(0)
   const trigger = useRef<HTMLButtonElement>(null)
   const continueAfterIdentity = useRef(false)
+  const initializeAfterIdentity = useRef(false)
   const organizationId = view.descriptor?.metadata?.organizationId ?? null
   const [client, setClient] = useState<TeamOnboardingClient | null>(null)
   useEffect(() => {
     continueAfterIdentity.current = false
+    initializeAfterIdentity.current = false
     setCompleted(false)
     setEditingIdentity(false)
-  }, [scope.key, scope.ownerKey])
+  }, [scope.key, scope.ownerKey, scope.profile])
   useEffect(() => {
     setOpened(false)
     setSetup(null)
@@ -65,11 +67,20 @@ export function TeamOnboardingEntry({ adapter }: { adapter: RuntimeOrganizationA
     const next = createTeamOnboardingClient(readTeamScope, subscribeOrganizationDirectorySource)
     setClient(next)
     let active = true
-    void adapter
-      .refresh()
-      .then(() => next.setup(organizationId))
+    const load = async () => {
+      if (!next.current()) throw new Error('stale')
+      // Initialization belongs only to an explicitly confirmed first identity save.
+      // Ordinary entry rendering is a read and must never refresh a new owner.
+      if (initializeAfterIdentity.current) {
+        initializeAfterIdentity.current = false
+        await adapter.refresh()
+        if (!next.current()) throw new Error('stale')
+      }
+      return next.setup(organizationId)
+    }
+    void load()
       .then(result => {
-        if (active) {
+        if (active && next.current()) {
           setSetup(result)
           setLoadError(result.state === 'unconfigured' || result.state === 'unsupported')
           if (continueAfterIdentity.current && result.state === 'available') {
@@ -79,14 +90,14 @@ export function TeamOnboardingEntry({ adapter }: { adapter: RuntimeOrganizationA
         }
       })
       .catch(() => {
-        if (active) setLoadError(true)
+        if (active && next.current()) setLoadError(true)
       })
     return () => {
       active = false
       next.dispose()
       setClient(null)
     }
-  }, [scope.key, scope.ownerKey, scope.eligible, organizationId, adapter, reload])
+  }, [scope.key, scope.ownerKey, scope.profile, scope.eligible, organizationId, adapter, reload])
   if (
     (completed && !opened) ||
     !scope.eligible ||
@@ -97,16 +108,23 @@ export function TeamOnboardingEntry({ adapter }: { adapter: RuntimeOrganizationA
     return null
   return (
     <section className="eid-team-entry">
-      <h2>{copy.title}</h2>
       {loadError && (
         <>
           <p role="alert">{copy.unavailable}</p>
-          <Button onClick={() => setReload(value => value + 1)} variant="secondary">
+          <Button
+            onClick={() => {
+              // Retry may resume this owner's explicit initialization intent. Mere
+              // rendering never retries it, and a scope change retires the intent.
+              if (!client?.current()) return
+              initializeAfterIdentity.current = continueAfterIdentity.current
+              setReload(value => value + 1)
+            }}
+            variant="secondary"
+          >
             {copy.retry}
           </Button>
         </>
       )}
-      <p>{copy.intro}</p>
       <Button
         disabled={loadError}
         onClick={() => (organizationId ? setOpened(true) : setEditingIdentity(true))}
@@ -121,8 +139,16 @@ export function TeamOnboardingEntry({ adapter }: { adapter: RuntimeOrganizationA
           onClose={() => setEditingIdentity(false)}
           onReturnFocus={saved => {
             setEditingIdentity(false)
-            if (saved) {
+            const currentScope = readOrganizationMetadataScope()
+            if (
+              saved &&
+              currentScope.eligible &&
+              currentScope.key === scope.key &&
+              currentScope.ownerKey === scope.ownerKey &&
+              currentScope.profile === scope.profile
+            ) {
               continueAfterIdentity.current = true
+              initializeAfterIdentity.current = true
               setReload(value => value + 1)
             } else trigger.current?.focus()
           }}

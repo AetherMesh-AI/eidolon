@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { type ReactNode, useEffect, useRef } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 
 import { Button } from '@/components/ui/button'
@@ -117,7 +117,7 @@ function focusIntake() {
   document.getElementById('eid-objective')?.focus({ preventScroll: true })
 }
 
-export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snapshot: OrganizationSnapshot }) {
+export function Home({ adapter, snapshot, starterEntry }: { adapter: OrganizationAdapter; snapshot: OrganizationSnapshot; starterEntry?: ReactNode }) {
   const { t } = useI18n()
   const copy = t.organizationHome
   const data = homeData(snapshot)
@@ -175,6 +175,7 @@ export function Home({ adapter, snapshot }: { adapter: OrganizationAdapter; snap
         </div>
         {adapter.mode === 'runtime' && (
           <div className="eid-home-actions">
+            {starterEntry}
             <Button disabled={!canChooseRecipient} onClick={() => navigate('/messages?recipient=executive')} variant="default">{copy.messageOrganization}</Button>
             <Button id="eid-home-new-objective" onClick={() => {
               focusIntake()

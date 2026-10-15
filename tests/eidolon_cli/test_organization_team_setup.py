@@ -222,3 +222,181 @@ def test_assignments_for_retired_seed_workers_require_separate_owner_change(prof
     with pytest.raises(ValueError, match='Model assignments must identify configured persistent agents'):
         team.preview_team(profile.home, value)
     assert dump(profile) == before
+
+
+def forbid_setup_side_effects(monkeypatch):
+    """Leave real config/readiness/SQLite reads intact; forbid execution and I/O sends."""
+    import socket
+    from eidolon_cli import runtime_provider, organization_team_generation
+    from tests.eidolon_cli.test_organization_owner_policy import forbid_execution
+    forbid_execution(monkeypatch)
+    def forbidden(*args, **kwargs):
+        raise AssertionError('Passive team setup attempted provider initialization or network access')
+    monkeypatch.setattr(runtime_provider, 'resolve_runtime_provider', forbidden)
+    monkeypatch.setattr(organization_team_generation, '_runtime_kwargs', forbidden)
+    monkeypatch.setattr(organization_team_generation, '_create_agent', forbidden)
+    monkeypatch.setattr(socket.socket, 'connect', forbidden)
+    monkeypatch.setattr(socket, 'create_connection', forbidden)
+
+
+def durable_files(home):
+    # SQLite may maintain transient WAL/SHM bookkeeping even for read-only clients.
+    # Compare actual database/config bytes as well as every other durable file.
+    return {str(path.relative_to(home)): path.read_bytes() for path in home.rglob('*')
+            if path.is_file() and not path.name.endswith(('-wal', '-shm'))}
+
+
+@pytest.mark.parametrize('existing_directory', [False, True])
+def test_unconfigured_team_status_never_creates_home_config_or_state(tmp_path, monkeypatch, existing_directory):
+    import uuid
+    home = tmp_path / 'unopened-profile'
+    if existing_directory:
+        home.mkdir()
+    monkeypatch.setattr(Path, 'home', lambda: tmp_path)
+    monkeypatch.setenv('HERMES_HOME', str(home))
+    token = set_eidolon_home_override(home)
+    forbid_setup_side_effects(monkeypatch)
+    try:
+        organization_id = str(uuid.uuid4())
+        statuses = [team.team_setup(home, organization_id) for _ in range(3)]
+        assert all(status == statuses[0] for status in statuses)
+        assert statuses[0]['state'] == 'unconfigured'
+        assert statuses[0]['reason'] == 'unconfigured'
+        assert home.exists() is existing_directory
+        assert not (home / 'config.yaml').exists()
+        assert not (home / 'organization').exists()
+        assert durable_files(home) == {}
+    finally:
+        reset_eidolon_home_override(token)
+
+
+def test_metadata_only_status_does_not_initialize_execution_tables(tmp_path, monkeypatch):
+    home = tmp_path / '.eidolon'
+    monkeypatch.setattr(Path, 'home', lambda: tmp_path)
+    monkeypatch.setenv('HERMES_HOME', str(home))
+    token = set_eidolon_home_override(home)
+    try:
+        path = home / 'organization' / 'state.db'
+        identity = save_metadata(path, display_name='Names only', owner_display_name='Owner',
+            expected_organization_id=None, expected_revision=None, idempotency_key='metadata')['metadata']
+        before = durable_files(home)
+        with sqlite3.connect(path) as conn:
+            logical_before = list(conn.iterdump())
+        forbid_setup_side_effects(monkeypatch)
+        statuses = [team.team_setup(home, identity['organizationId']) for _ in range(3)]
+        assert all(status == statuses[0] for status in statuses)
+        assert statuses[0]['state'] == 'unconfigured'
+        assert statuses[0]['reason'] == 'execution_not_initialized'
+        assert durable_files(home) == before
+        with sqlite3.connect(path) as conn:
+            assert list(conn.iterdump()) == logical_before
+            assert not conn.execute("SELECT 1 FROM sqlite_master WHERE name IN ('agents','requests','organization_policy')").fetchone()
+        assert not (home / 'config.yaml').exists()
+    finally:
+        reset_eidolon_home_override(token)
+
+
+@pytest.mark.parametrize('config', [
+    {'model': {'default': 'local', 'provider': 'openai'}},
+    {'_config_version': 1, 'model': {'default': 'gpt', 'provider': 'openai-api', 'openai_runtime': 'codex_app_server'}},
+    {'_config_version': 1, 'model': {'default': 'anthropic/claude', 'provider': 'nous'},
+     'nous': {'anthropic_wire': 'native'}},
+])
+def test_repeated_seeded_status_preserves_database_config_and_logical_state(profile, monkeypatch, config):
+    (profile.home / 'config.yaml').write_text(json.dumps(config))
+    before = durable_files(profile.home)
+    logical_before = dump(profile)
+    forbid_setup_side_effects(monkeypatch)
+    statuses = [team.team_setup(profile.home, profile.identity['organizationId']) for _ in range(3)]
+    assert all(status == statuses[0] for status in statuses)
+    assert statuses[0]['state'] == 'available'
+    if config.get('_config_version') == 1:
+        assert statuses[0]['readiness']['status'] == 'blocked'
+    else:
+        assert statuses[0]['readiness']['status'] == 'unchecked'
+    assert durable_files(profile.home) == before
+    assert dump(profile) == logical_before
+
+
+@pytest.mark.parametrize('state', ['absent', 'empty_home', 'metadata_only', 'seeded'])
+def test_cold_import_and_status_are_nonprovisioning(tmp_path, state):
+    """A fresh interpreter must not hide first-import or first-load writes in caches."""
+    import os
+    import subprocess
+    import sys
+    import uuid
+    from contextlib import closing
+    home = tmp_path / '.eidolon'
+    path = home / 'organization' / 'state.db'
+    organization_id = str(uuid.uuid4())
+    if state == 'empty_home':
+        home.mkdir()
+    if state in {'metadata_only', 'seeded'}:
+        identity = save_metadata(path, display_name='Cold profile', owner_display_name='Owner',
+            expected_organization_id=None, expected_revision=None, idempotency_key='metadata')['metadata']
+        organization_id = identity['organizationId']
+        (home / 'config.yaml').write_text(json.dumps({'_config_version': 1,
+            'model': {'provider': 'openai-api', 'default': 'local'}}))
+    if state == 'seeded':
+        OrganizationStore(path)
+    before = durable_files(tmp_path)
+    directories_before = sorted(str(item.relative_to(tmp_path)) for item in tmp_path.rglob('*') if item.is_dir())
+    if path.exists():
+        with closing(sqlite3.connect(path)) as conn:
+            logical_before = list(conn.iterdump())
+    script = '''
+import json
+import sys
+from pathlib import Path
+
+external_attempts = []
+def deny_external(event, args):
+    if event in {'socket.connect', 'subprocess.Popen'}:
+        external_attempts.append(event)
+        raise AssertionError('Passive setup attempted external I/O: ' + event)
+sys.addaudithook(deny_external)
+
+from agent import secret_scope
+from eidolon_cli import runtime_provider
+
+def forbidden(*args, **kwargs):
+    external_attempts.append('execution_or_provider')
+    raise AssertionError('Passive setup initialized execution, credentials or a provider')
+secret_scope.get_secret = forbidden
+runtime_provider.resolve_runtime_provider = forbidden
+from eidolon_cli import organization_service, organization_store
+organization_service.get_service = forbidden
+organization_service.OrganizationService.__init__ = forbidden
+organization_service.OrganizationService.start = forbidden
+organization_store.OrganizationStore.__init__ = forbidden
+from eidolon_cli import organization_team_setup
+home = Path(sys.argv[1])
+values = [organization_team_setup.team_setup(home, sys.argv[2]) for _ in range(2)]
+assert values[0] == values[1]
+assert not external_attempts, external_attempts
+print(json.dumps(values[0]))
+'''
+    env = {**os.environ, 'HOME': str(tmp_path), 'USERPROFILE': str(tmp_path),
+           'HERMES_HOME': str(home), 'PYTHONDONTWRITEBYTECODE': '1'}
+    env.pop('EIDOLON_HOME', None)
+    completed = subprocess.run([sys.executable, '-c', script, str(home), organization_id],
+        cwd=Path(__file__).resolve().parents[2], env=env, capture_output=True, text=True, timeout=30)
+    assert completed.returncode == 0, completed.stderr
+    status = json.loads(completed.stdout.strip().splitlines()[-1])
+    assert status['state'] == ('available' if state == 'seeded' else 'unconfigured')
+    assert durable_files(tmp_path) == before
+    assert sorted(str(item.relative_to(tmp_path)) for item in tmp_path.rglob('*') if item.is_dir()) == directories_before
+    if path.exists():
+        with closing(sqlite3.connect(path)) as conn:
+            assert list(conn.iterdump()) == logical_before
+
+
+def test_passive_config_cache_does_not_skip_later_normal_home_initialization(profile):
+    from eidolon_cli.config import load_config, load_config_readonly
+    soul = profile.home / 'SOUL.md'
+    assert not soul.exists()
+    passive = load_config_readonly(initialize_home=False)
+    assert not soul.exists()
+    assert load_config() == passive
+    assert soul.exists()
+    assert (profile.home / 'sessions').is_dir()

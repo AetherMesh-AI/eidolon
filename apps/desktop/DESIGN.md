@@ -514,3 +514,9 @@ Text reflow rules exclude the Settings/Search icon button, which retains its
 Wide Home activity cards stay within the 195–225px reference range. Event text
 and timestamps use the full card width below the member identity, without
 inventing extra events or a causal connection between independent records.
+
+Starter team setup is a compact action in the existing Home hero, not an extra
+full-height sibling above the overview. Known existing work suppresses this fresh-team
+invitation. Merely displaying the action reads availability; only a verified initial
+identity save may initialize its captured organization before opening setup. Failed
+initialization retries require the explicit Retry action and remain fenced to that owner.

@@ -41,10 +41,15 @@ It does not use unsupported Codex app-server execution or bypass that limitation
 through another provider. A saved team is not evidence of working provider access,
 repository permissions, or a running background organization.
 
+Availability and readiness inspection are passive, including in a cold process: they
+do not create profile files, initialize the ledger, migrate config, or fetch provider
+catalogs. Initial setup is requested only after the explicit identity save; retries
+remain bound to that same owner.
+
 ## Verification
 
 Python tests cover the proposal parser, strict roster validation, scope and receipt
-handling, persistence, and physical localhost HTTP sends. Desktop tests cover the
+handling, persistence, cold-process read-only behavior, and physical localhost HTTP sends. Desktop tests cover the
 scoped client and editable setup state. Native acceptance exercises Home, generation,
 review, explicit creation, and retained names after reload against a local scripted
 provider. No real credentials, paid inference, or user-profile activation is required

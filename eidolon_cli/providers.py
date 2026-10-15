@@ -308,7 +308,7 @@ def host_mandated_api_mode(base_url: str = "") -> Optional[str]:
     return None
 
 
-def nous_api_mode(model: str = "") -> str:
+def nous_api_mode(model: str = "", *, config: Optional[dict] = None) -> str:
     """Wire protocol for a Nous Portal model. Portal serves its ``anthropic/*`` catalog on a native
     Messages route alongside OpenAI-compatible chat/completions for everything else.
 
@@ -324,22 +324,25 @@ def nous_api_mode(model: str = "") -> str:
     if str(model or "").strip().lower().startswith("anthropic/"):
         # ``auto`` starts on chat too: it is safe on every upstream, and ``agent/nous_wire.py``
         # promotes the session to native from the first response when the upstream allows it.
-        return "anthropic_messages" if _nous_anthropic_wire() == "native" else "chat_completions"
+        wire = _nous_anthropic_wire() if config is None else _nous_anthropic_wire(config=config)
+        return "anthropic_messages" if wire == "native" else "chat_completions"
     return "chat_completions"
 
 
-def _nous_anthropic_wire() -> str:
+def _nous_anthropic_wire(*, config: Optional[dict] = None) -> str:
     """``nous.anthropic_wire``: ``"chat"`` (default), ``"native"``, or ``"auto"`` (chat, then per-session
     promotion decided from the first response; see ``agent/nous_wire.py``). Anything else reads as ``chat``."""
     try:
         from eidolon_cli.config import load_config_readonly
-        value = str(((load_config_readonly().get("nous") or {}).get("anthropic_wire")) or "chat").strip().lower()
+        cfg = load_config_readonly() if config is None else config
+        value = str(((cfg.get("nous") or {}).get("anthropic_wire")) or "chat").strip().lower()
     except Exception:
         return "chat"
     return value if value in ("native", "auto") else "chat"
 
 
-def determine_api_mode(provider: str, base_url: str = "", model: str = "") -> str:
+def determine_api_mode(provider: str, base_url: str = "", model: str = "", *,
+                       allow_network: bool = True, config: Optional[dict] = None) -> str:
     """API mode (wire protocol) for a provider/endpoint: host-mandated mode, then Nous dual-wire
     (model-derived — the overlay alone says openai_chat and would pin Claude on the wrong wire),
     then the known provider's transport, then bedrock, else ``chat_completions``."""
@@ -347,8 +350,8 @@ def determine_api_mode(provider: str, base_url: str = "", model: str = "") -> st
     if mandated is not None:
         return mandated
     if (provider or "").strip().lower() in {"nous", "nous-portal", "nousresearch"}:
-        return nous_api_mode(model)
-    pdef = get_provider(provider)
+        return nous_api_mode(model) if config is None else nous_api_mode(model, config=config)
+    pdef = get_provider(provider) if allow_network else get_provider(provider, allow_network=False)
     if pdef is not None:
         return TRANSPORT_TO_API_MODE.get(pdef.transport, "chat_completions")
     if provider == "bedrock":
