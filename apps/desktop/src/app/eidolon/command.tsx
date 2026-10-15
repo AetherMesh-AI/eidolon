@@ -8,6 +8,7 @@ import { controlVariants } from '@/components/ui/control'
 import { Textarea } from '@/components/ui/textarea'
 import { useI18n } from '@/i18n/context'
 
+import { OrganizationRequestIntake } from './organization-request-intake'
 import { outcomeCriteria, OutcomeCriteriaEditor } from './outcome-criteria-editor'
 import {
   $intakeDrafts,
@@ -206,6 +207,7 @@ export function Command({
     <div className="eid-command">
       <Heading>{copy.mainQuestion}</Heading>
       <p className="eid-subtitle">{copy.composerSubtitle}</p>
+      <OrganizationRequestIntake snapshot={snapshot} />
       <form
         aria-busy={submitting}
         className="eid-composer"

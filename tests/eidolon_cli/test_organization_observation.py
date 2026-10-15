@@ -116,7 +116,7 @@ def test_committed_wal_is_observed_not_ignored(tmp_path):
 
 def test_policy_change_and_pause_are_reported_without_adoption(tmp_path):
     store = seed(tmp_path)
-    (tmp_path / 'config.yaml').write_text('organization:\n  max_workers: 3\n')
+    (tmp_path / 'config.yaml').write_text('organization:\n  max_workers: 3\n', encoding='utf-8')
     before = files(tmp_path)
     result = read_observation(tmp_path)['snapshot']
     assert result['runtime']['state'] == 'policy_changed'
@@ -132,7 +132,7 @@ def test_policy_change_and_pause_are_reported_without_adoption(tmp_path):
 
 def test_invalid_configuration_is_not_repaired_or_adopted(tmp_path):
     seed(tmp_path)
-    (tmp_path / 'config.yaml').write_text('organization: [not, a, mapping]\n')
+    (tmp_path / 'config.yaml').write_text('organization: [not, a, mapping]\n', encoding='utf-8')
     before = files(tmp_path)
     with pytest.raises(ObservationError, match='configuration_invalid'):
         read_observation(tmp_path)
@@ -255,6 +255,38 @@ def test_projection_keeps_one_read_transaction_during_concurrent_commit(tmp_path
     assert read_observation(tmp_path)['snapshot']['objectives'][0]['title'] == original
     monkeypatch.setattr(_ObservationView, '_snapshot', project)
     assert read_observation(tmp_path)['snapshot']['objectives'][0]['title'] == 'New committed title'
+
+
+@pytest.mark.parametrize('malformed', [False, True])
+def test_intake_extension_absence_is_legacy_but_malformed_is_unsupported(tmp_path, monkeypatch, malformed):
+    store = seed(tmp_path)
+    with sqlite3.connect(store.path) as conn:
+        conn.execute('DROP TABLE organization_request_intakes')
+        if malformed:
+            conn.execute('CREATE TABLE organization_request_intakes (id TEXT)')
+    before = files(tmp_path)
+    forbid_runtime(monkeypatch)
+    observed = read_observation(tmp_path)
+    assert observed['state'] == ('unsupported' if malformed else 'available')
+    assert files(tmp_path) == before
+    with sqlite3.connect(store.path) as conn:
+        present = conn.execute("SELECT name FROM sqlite_master WHERE name='organization_request_intakes'").fetchone()
+        assert bool(present) is malformed
+
+
+@pytest.mark.parametrize('table', ['organization_intake_options', 'organization_intake_admission_scopes', 'organization_intake_duplicate_links'])
+@pytest.mark.parametrize('malformed', [False, True])
+def test_duplicate_receipt_extension_is_passive_and_fails_closed(tmp_path, monkeypatch, table, malformed):
+    store = seed(tmp_path)
+    with sqlite3.connect(store.path) as conn:
+        conn.execute('DROP TABLE ' + table)
+        if malformed:
+            conn.execute('CREATE TABLE ' + table + ' (id TEXT)')
+    before = files(tmp_path)
+    forbid_runtime(monkeypatch)
+    observed = read_observation(tmp_path)
+    assert observed['state'] == ('unsupported' if malformed else 'available')
+    assert files(tmp_path) == before
 
 
 def test_missing_optional_build_outputs_remains_passive(tmp_path, monkeypatch):
