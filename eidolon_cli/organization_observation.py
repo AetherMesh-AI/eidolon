@@ -53,10 +53,20 @@ def _required_schema():
 
 def _compatible_schema(conn, tables):
     from eidolon_cli.organization_owner_policy_config import OWNER_POLICY_TABLES
+    from eidolon_cli.organization_package_repair import PACKAGE_REPAIR_TABLES
+    if tables & PACKAGE_REPAIR_TABLES and not PACKAGE_REPAIR_TABLES <= tables:
+        return False
+    from eidolon_cli.organization_selective_repair import REPAIR_TABLES
+    if tables & REPAIR_TABLES and not REPAIR_TABLES <= tables:
+        return False
     from eidolon_cli.organization_outcome_contracts import CONTRACT_TABLES
     if tables & CONTRACT_TABLES and not CONTRACT_TABLES <= tables:
         return False
     for name, columns in _required_schema().items():
+        if name in PACKAGE_REPAIR_TABLES and not tables & PACKAGE_REPAIR_TABLES:
+            continue
+        if name in REPAIR_TABLES and not tables & REPAIR_TABLES:
+            continue
         if name in CONTRACT_TABLES and not tables & CONTRACT_TABLES:
             continue  # Fully absent typed contracts are a supported legacy ledger.
         if name in OWNER_POLICY_TABLES:

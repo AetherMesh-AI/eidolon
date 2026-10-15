@@ -8,7 +8,11 @@ import time
 
 from eidolon_cli.organization_outcome_contracts import SCHEMA as CONTRACT_SCHEMA
 
-ACCEPTANCE_SCHEMA = CONTRACT_SCHEMA + """
+from eidolon_cli.organization_selective_repair import SCHEMA as REPAIR_SCHEMA
+
+from eidolon_cli.organization_package_repair import SCHEMA as PACKAGE_REPAIR_SCHEMA
+
+ACCEPTANCE_SCHEMA = CONTRACT_SCHEMA + REPAIR_SCHEMA + PACKAGE_REPAIR_SCHEMA + """
 CREATE TABLE IF NOT EXISTS objective_control (
  objective_id TEXT PRIMARY KEY REFERENCES objectives(id), criteria TEXT NOT NULL,
  status TEXT NOT NULL, round INTEGER NOT NULL DEFAULT 0, max_replans INTEGER NOT NULL,
@@ -56,9 +60,12 @@ def validate_project_checks(projects, checks):
 
 
 def current_tasks(conn, objective_id):
-    return conn.execute('SELECT t.* FROM tasks t JOIN objective_task_rounds r ON r.task_id=t.id '
+    from eidolon_cli.organization_selective_repair import reused_tasks
+    round_number = conn.execute('SELECT round FROM objective_control WHERE objective_id=?', (objective_id,)).fetchone()[0]
+    rows = conn.execute('SELECT t.* FROM tasks t JOIN objective_task_rounds r ON r.task_id=t.id '
                         'JOIN objective_control c ON c.objective_id=r.objective_id '
                         'WHERE t.objective_id=? AND r.round=c.round ORDER BY t.rowid', (objective_id,)).fetchall()
+    return [*rows, *reused_tasks(conn, objective_id, round_number)]
 
 
 def final_artifact(conn, identifier):
@@ -125,6 +132,9 @@ class OrganizationAcceptanceStore:
                                  (request['id'], 'legacy-attempt-' + str(attempt), row['id'], request['type'], int(request['status'] == 'completed')))
 
     def _current_evidence(self, conn, objective_id):
+        from eidolon_cli.organization_selective_repair import verify_reused
+        round_number = conn.execute('SELECT round FROM objective_control WHERE objective_id=?', (objective_id,)).fetchone()[0]
+        verify_reused(self, conn, objective_id, round_number)
         from eidolon_cli.organization_packages import packages_complete
         if not packages_complete(conn, objective_id):
             raise ValueError('Objective acceptance requires every manager package plan and reviewed task')
@@ -265,7 +275,7 @@ class OrganizationAcceptanceStore:
             conn.execute("UPDATE objective_control SET status='accepted',summary=? WHERE objective_id=?", (summary, request['objective_id']))
         elif control['round'] < min(control['max_replans'], self.settings.max_replans):
             self._replan(conn, request['objective_id'], summary, completing_request=request['id'],
-                         requester_id=request['agent_id'])
+                         requester_id=request['agent_id'], acceptance_result=result)
         else:
             conn.execute("UPDATE objective_control SET status='blocked',summary=? WHERE objective_id=?", (summary, request['objective_id']))
             ident = self._request(conn, request['objective_id'], 'request.accept', self._objective_agent(conn, request['objective_id'], 'Executive')['team'], request['priority'],
@@ -289,11 +299,14 @@ class OrganizationAcceptanceStore:
                                                  require_source='source_integration' in checks,
                                                  require_validation='managed_validation' in checks)
 
-    def _replan(self, conn, objective_id, feedback, *, completing_request=None, requester_id='owner'):
+    def _replan(self, conn, objective_id, feedback, *, completing_request=None, requester_id='owner', acceptance_result=None):
         from eidolon_cli.organization_receipts import fence_receipts
         control = conn.execute('SELECT * FROM objective_control WHERE objective_id=?', (objective_id,)).fetchone()
         if control['round'] >= min(control['max_replans'], self.settings.max_replans):
             raise ValueError('Objective replan limit reached; create a revised objective')
+        from eidolon_cli.organization_selective_repair import plan_repair, record_decision, apply_repair
+        repair = plan_repair(self, conn, objective_id, acceptance_result)
+        record_decision(conn, repair)
         previous = [row['id'] for row in conn.execute(
             'SELECT e.id FROM evidence e JOIN objective_task_rounds r ON r.task_id=e.task_id WHERE r.objective_id=? AND r.round=? '
             'AND e.id=(SELECT latest.id FROM evidence latest WHERE latest.task_id=e.task_id ORDER BY created DESC,id DESC LIMIT 1)',
@@ -315,6 +328,9 @@ class OrganizationAcceptanceStore:
         conn.execute("UPDATE tasks SET status='cancelled' WHERE objective_id=? AND status!='completed'", (objective_id,))
         conn.execute("UPDATE objective_control SET round=round+1,status='replanning',summary=?,deliverable_id=NULL WHERE objective_id=?", (feedback, objective_id))
         objective = conn.execute('SELECT * FROM objectives WHERE id=?', (objective_id,)).fetchone()
+        if repair['mode'] == 'selective':
+            apply_repair(self, conn, repair, feedback)
+            return
         self._queue_objective_planning(conn, objective_id, objective['priority'],
                       payload={'round': control['round'] + 1, 'feedback': feedback, 'evidenceIds': previous,
                                **({'projectExecutionHistory': project_history} if project_history else {})},

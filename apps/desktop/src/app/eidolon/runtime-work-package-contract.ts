@@ -22,6 +22,9 @@ function validPackage(value: unknown, objective: Objective): value is Organizati
         Boolean(item[key as keyof OrganizationWorkPackage])
     ) &&
     item.objectiveId === objective.id &&
+    (item.planDisposition === undefined && item.sourcePackageId === undefined && item.sourcePlanSha256 === undefined ||
+      item.planDisposition === 'reused' && typeof item.sourcePackageId === 'string' && item.sourcePackageId.length > 0 && item.sourcePackageId !== item.id &&
+      typeof item.sourcePlanSha256 === 'string' && /^[a-f0-9]{64}$/.test(item.sourcePlanSha256)) &&
     typeof item.description === 'string' &&
     count(item.round) &&
     Array.isArray(item.criterionIndexes) &&

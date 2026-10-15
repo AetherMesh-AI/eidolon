@@ -3,7 +3,8 @@ import json
 from eidolon_cli.organization_dispatch import dispatch_view
 from eidolon_cli.organization_priority import priority_revision
 from eidolon_cli.organization_conversations import conversations_view
-from eidolon_cli.organization_packages import planning_mode, packages_view, task_package_id
+from eidolon_cli.organization_packages import planning_mode, packages_view
+from eidolon_cli.organization_package_repair import projected_task_package
 from eidolon_cli.organization_projects import objective_projects, task_project, public_project
 from eidolon_cli.organization_attention import attention_view
 from eidolon_cli.organization_outcomes import outcomes_view
@@ -52,13 +53,15 @@ def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
     controls = {row['objective_id']: row for row in conn.execute(f'SELECT * FROM objective_control WHERE objective_id IN ({selection})', arguments)}
     rounds = {row['task_id']: row['round'] for row in conn.execute(
         f'SELECT * FROM objective_task_rounds WHERE task_id IN (SELECT id FROM tasks WHERE objective_id IN ({selection}))', arguments)}
+    from eidolon_cli.organization_selective_repair import reuse_view
+    reused = {ident: reuse_view(conn, ident, control['round']) for ident, control in controls.items()}
     from eidolon_cli.organization_replacement import replacement_links, replacement_reasons
     objectives = []
     history_count = 0
     live_references = live_history_references(conn)
     for row in rows:
         control = controls[row['id']]
-        work = [task for task in task_groups.get(row['id'], []) if rounds.get(task['id']) == control['round']]
+        work = [task for task in task_groups.get(row['id'], []) if rounds.get(task['id']) == control['round'] or task['id'] in reused[row['id']]]
         queue = request_groups.get(row['id'], [])
         if row['cancelled']:
             status = 'cancelled'
@@ -137,10 +140,12 @@ def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
         proof = evidence_by_task.get(task['id'], [])
         scope = conn.execute('SELECT paths FROM task_write_scopes WHERE task_id=?', (task['id'],)).fetchone()
         binding = task_project(conn, task['id'])
-        ui_tasks.append({'workPackageId': task_package_id(conn, task['id']), 'projectId': binding['id'] if binding else None, 'writePaths': json.loads(scope['paths']) if scope else None,
+        ui_tasks.append({'workPackageId': projected_task_package(conn, task['id'], task['objective_id'], controls[task['objective_id']]['round']), 'projectId': binding['id'] if binding else None, 'writePaths': json.loads(scope['paths']) if scope else None,
                          'coordination': coordination_view(conn, task['id']), 'id': task['id'], 'objectiveId': task['objective_id'], 'title': task['title'],
-                         'currentRound': rounds.get(task['id']) == controls[task['objective_id']]['round'],
-                         'historical': rounds.get(task['id']) != controls[task['objective_id']]['round'],
+                         'currentRound': rounds.get(task['id']) == controls[task['objective_id']]['round'] or task['id'] in reused[task['objective_id']],
+                         'reuse': reused[task['objective_id']].get(task['id']),
+                         'originalRound': rounds.get(task['id']),
+                         'historical': rounds.get(task['id']) != controls[task['objective_id']]['round'] and task['id'] not in reused[task['objective_id']],
                          'ownerId': task['author_id'] or task_assignment_view(conn, task['id'])['agentId'] or (latest['agent_id'] or '' if latest else ''),
                          'assignedAgentId': task_assignment_view(conn, task['id'])['agentId'],
                          'reviewerId': latest['agent_id'] if latest and latest['type'] == 'request.review' else None,

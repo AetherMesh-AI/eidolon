@@ -121,7 +121,13 @@ function ResolutionForm({
   const resolutions = request.allowedResolutions ?? []
   const [action, setAction] = useState<OrganizationResolutionAction | ''>(resolutions[0]?.action ?? '')
   const [text, setText] = useState('')
-  const [amendment, setAmendment] = useState<ScopeAmendmentDraft>({ criteria: '' })
+
+  const [amendment, setAmendment] = useState<ScopeAmendmentDraft>(() => {
+    const contract = snapshot.objectives.find(o => o.id === request.objectiveId)?.acceptance?.contract
+
+    return { criteria: contract?.criteria.some(c => !c.legacy) ? contract.criteria.map(c => c.text).join('\n') : '', definitions: contract?.criteria.map(c => c.legacy ? c.text : { id: c.id, text: c.text, kind: c.kind, ...(c.checkKind ? { checkKind: c.checkKind } : {}), ...(c.projectId ? { projectId: c.projectId } : {}) }) }
+  })
+
   const [artifactId, setArtifactId] = useState<string | null>(null)
   const [evidenceIds, setEvidenceIds] = useState<string[]>([])
   const [pending, setPending] = useState(false)

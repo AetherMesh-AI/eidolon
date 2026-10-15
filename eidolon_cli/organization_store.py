@@ -218,6 +218,9 @@ class OrganizationStore(OrganizationRecoveryStore, OrganizationModelRoutingStore
             payload['evidenceHashes'] = hashes
         conn.execute("INSERT INTO requests(id,objective_id,task_id,type,team,priority,status,created,payload) VALUES (?,?,?,?,?,?,'queued',?,?)",
                      (ident, objective, task, request_type, team, priority, time.time(), json.dumps(payload or {})))
+        if task:
+            from eidolon_cli.organization_selective_repair import inherit_attempts
+            inherit_attempts(conn, ident, task, request_type)
         OrganizationRequestStore._insert_request_contract(conn, ident, requester_id=requester_id)
         return ident
 
@@ -534,7 +537,7 @@ class OrganizationStore(OrganizationRecoveryStore, OrganizationModelRoutingStore
             package_context = self._package_context(conn, request)
             objective["planningMode"] = package_context["planningMode"]
             max_tasks = conn.execute("SELECT max_tasks FROM objective_planning WHERE objective_id=?", (request["objective_id"],)).fetchone()[0]
-            return {"objective": objective, "task": task, "agent": agent, **package_context,
+            context = {"objective": objective, "task": task, "agent": agent, **package_context,
                     **({'projectExecutionHistory': payload['projectExecutionHistory']}
                        if request['type'] in {'request.plan', 'request.decompose'} and 'projectExecutionHistory' in payload else {}),
                     **self._typed_context(conn, request), **self._internal_context(conn, request),
@@ -558,6 +561,10 @@ class OrganizationStore(OrganizationRecoveryStore, OrganizationModelRoutingStore
                     "capabilities": list(self.settings.capabilities), "maxTasks": min(max_tasks, self.settings.max_tasks),
                     "maxWorkers": self.settings.max_workers, "timeoutSeconds": max(0.001, min(self.settings.timeout_seconds, budget["deadlineTimestamp"] - time.time())),
                     "workers": payload.get("workers")}
+            if mark_read:
+                from eidolon_cli.organization_selective_repair import capture_inputs
+                capture_inputs(self, conn, request, context)
+            return context
 
     @staticmethod
     def _pending(conn, request, reason):
@@ -780,6 +787,8 @@ class OrganizationStore(OrganizationRecoveryStore, OrganizationModelRoutingStore
             raise ValueError("Requested worker count must be an integer from 1 to 64")
         for values, specification in zip(normalized, tasks):
             conn.execute("INSERT INTO tasks(id,objective_id,title,description,type,team,priority,status,dependencies) VALUES (?,?,?,?,?,?,?,?,?)", values)
+            from eidolon_cli.organization_selective_repair import record_specification
+            record_specification(conn, values[0], specification)
             bind_task_project(conn, values[0], specification, self.settings)
             if package is not None:
                 conn.execute('INSERT INTO task_work_packages VALUES (?,?)', (values[0], package['id']))

@@ -19,6 +19,8 @@ vi.mock('./organization-folder-access', () => ({ OrganizationFolderAccess: () =>
 vi.mock('./organization-folder-setup', () => ({ OrganizationFolderSetup: () => null }))
 
 vi.mock('./team-onboarding', () => ({ TeamOnboardingEntry: () => null }))
+// Exact owner judgments have a separate metadata and authority test suite.
+vi.mock('./runtime-outcome-judgment', () => ({ RuntimeOutcomeJudgment: () => null }))
 
 vi.mock('./use-organization-owner-policy', () => {
   // This suite exercises runtime rendering and source authority. The separate

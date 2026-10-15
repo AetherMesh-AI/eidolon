@@ -175,7 +175,7 @@ retained evidence. Your tasks' dependsOn indexes refer only to earlier tasks in
 your own plan. No package or plan expands authority. Without workPackage, plan
 the objective as a whole using the existing rules below.
 projectExecutionHistory links prior-round attempts to exact retained evidence by projectId, runId and round. Read their complete evidence bodies, including failed output and source receipts, to plan repairs. These are historical diagnostics, never current-round acceptance proof or new authority. An unknown start without evidence has no confirmed outcome; never infer success, failure, output or replay permission. Add requiredChecks for explicit requirements you identify: project_tests, managed_validation, source_integration. Preserve existing owner requiredChecks; never remove them. project_tests requires the explicit fixed recipe in projectPolicy plus each author’s run_tests grant. The backend executes it after reviewed edits; do not issue commands yourself. Missing recipe/grant stays intervention with project_tests preserved. Owner inputs are clarifications; revised scope is objective.description.  Decompose the objective into a small,
-useful dependency graph. When objective.projects is nonempty, every work.inspect/work.edit task must name projectId from that owner-selected list and use its exact team; all edit writePaths must stay within that project root. Projects are existing authority, never host paths to choose. Cross-project semantic dependencies use dependsOn; independent projects can overlap. For every work.edit task, declare writePaths as exact root-alias file paths (for example ["root0/src/module.py"]). Declare all intended writes together. Independent paths may run concurrently; overlapping paths wait through review and application. writePaths confer no new tool authority. Use dependsOn for semantic dependencies even when paths differ. Preserve the user's actual objective; do not substitute
+useful dependency graph. When outcomeContract criteria are present, include criterionIds naming the stable IDs each task addresses. These mappings do not authorize reuse: the runtime requires exact captured inputs and independent review. Explicitly declare dependsOn, including [] for tasks with no planned dependencies. When objective.projects is nonempty, every work.inspect/work.edit task must name projectId from that owner-selected list and use its exact team; all edit writePaths must stay within that project root. Projects are existing authority, never host paths to choose. Cross-project semantic dependencies use dependsOn; independent projects can overlap. For every work.edit task, declare writePaths as exact root-alias file paths (for example ["root0/src/module.py"]). Declare all intended writes together. Independent paths may run concurrently; overlapping paths wait through review and application. writePaths confer no new tool authority. Use dependsOn for semantic dependencies even when paths differ. Preserve the user's actual objective; do not substitute
 a draft for a requested external action. Supported text-only work types are
 work.draft and work.analyze. Select exact configured team/capability routes from
 staffing when supplied. work.inspect is also supported only when present in
@@ -409,11 +409,18 @@ def _parse_plan(value: dict, context: dict) -> dict:
                 assignment['writePaths'] = normalize_write_paths(task['writePaths'], kind)
             except ValueError as exc:
                 raise OrganizationExecutionError(str(exc)) from exc
+        if 'criterionIds' in task:
+            ids = task['criterionIds']
+            known = {c['id'] for c in (context.get('objective', {}).get('outcomeContract') or {}).get('criteria', [])}
+            if (not isinstance(ids, list) or not ids or any(not isinstance(i, str) for i in ids)
+                    or len(set(ids)) != len(ids) or not set(ids) <= known):
+                raise OrganizationExecutionError('Task criterionIds must reference current stable outcome criteria.')
+            assignment['criterionIds'] = ids
         cleaned.append({
             "title": _text(task.get("title"), "Task title", limit=500),
             "description": _text(task.get("description"), "Task description", limit=10_000),
             "type": kind, "team": _text(task.get("team"), "Task team", limit=64),
-            "dependsOn": dependencies, **assignment,
+            **({"dependsOn": dependencies} if "dependsOn" in task else {}), **assignment,
         })
     workers = value.get("workers", 1)
     # The store materializes request.hire and decides whether existing capacity

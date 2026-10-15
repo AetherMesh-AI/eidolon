@@ -1,5 +1,6 @@
 import { adaptivePacingCopy } from '@/i18n/organization-adaptive-pacing'
 import { completionReserveCopy } from '@/i18n/organization-completion-reserve'
+import { outcomeContractCopy } from '@/i18n/organization-outcome-contracts'
 import { getRuntimeI18nLocale, translateNow } from '@/i18n/runtime'
 
 import { validAdaptivePacing } from './runtime-adaptive-pacing-contract'
@@ -286,6 +287,17 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
 
   return {
     mode: 'runtime',
+    recordOutcomeJudgment(input) {
+      return mutate<{ judgment: { recorded: boolean; idempotencyKey: string }; snapshot: OrganizationSnapshot }>(
+        `outcome-judgment:${input.idempotencyKey}`, 'organization.recordOutcomeJudgment', { ...input }, value => {
+          if (!value?.judgment || typeof value.judgment.recorded !== 'boolean' || value.judgment.idempotencyKey !== input.idempotencyKey) {
+            throw new Error(outcomeContractCopy[getRuntimeI18nLocale()].unavailable)
+          }
+
+          return value.snapshot
+        }
+      ).then(() => undefined)
+    },
     async openOwnerChat(input) {
       const params = { agentId: input.agentId, identityId: input.identityId }
       const result = await mutate<OwnerChatThread>(`chat-open:${input.identityId}`, 'organization.ownerChat.open', params, () => undefined)
