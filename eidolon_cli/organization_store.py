@@ -235,6 +235,10 @@ class OrganizationStore(OrganizationModelRoutingStore, OrganizationPacingStore, 
         if delivery_mode not in ('managed_artifact', 'source_project'):
             raise ValueError('deliveryMode must be managed_artifact or source_project')
         projects = selected_projects(project_ids, self.settings)
+        if any(project['recipe'] is None for project in projects) and (delivery_mode != 'managed_artifact' or set(checks) & {'project_tests', 'source_integration'}):
+            raise ValueError('Planning-only folders require managed artifact delivery without project tests or source integration; approve an execution recipe first')
+        from eidolon_cli.organization_acceptance import validate_project_checks
+        validate_project_checks(projects, checks)
         if self.settings.projects and delivery_mode == 'source_project' and not projects:
             raise ValueError('Source-project objectives must explicitly select configured projectIds')
         key = _text(idempotency_key, "Idempotency key", 128)
