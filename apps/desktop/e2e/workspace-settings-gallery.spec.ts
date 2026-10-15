@@ -1,10 +1,34 @@
+import { writeFileSync, readdirSync, openSync, closeSync, fstatSync, readSync } from 'node:fs'
+import path from 'node:path'
 import { expect, test } from './test'
 import { captureGallery, checkGalleryDestination, type GalleryFixture, galleryLocales, persistGalleryEvidence, positionGalleryAtStart, resizeGallery, setGalleryAppearance, setupGallery, verifyGalleryControls, verifyNotificationStates, writeGalleryEvidence } from './workspace-gallery-fixture'
 
 let fixture: GalleryFixture | undefined
 test.setTimeout(300_000)
 test.afterEach(async () => {
-  try { if (fixture) { persistGalleryEvidence(fixture, 'settings') } }
+  try { if (fixture) {
+    persistGalleryEvidence(fixture, 'settings')
+    const events = await fixture.app.evaluate(() => (globalThis as any).__settingsHydrationDiagnostic)
+    const logCounts: Record<string, number> = {}
+    const directory = path.join(fixture.sandbox.hermesHome, 'logs')
+    try {
+      for (const name of readdirSync(directory).filter(name => name.endsWith('.log')).slice(0, 12)) {
+        const fd = openSync(path.join(directory, name), 'r')
+        let text = ''
+        try {
+          const size = fstatSync(fd).size
+          const bytes = Buffer.alloc(Math.min(size, 262144))
+          const count = readSync(fd, bytes, 0, bytes.length, Math.max(0, size - bytes.length))
+          text = bytes.subarray(0, count).toString('utf8')
+        } finally { closeSync(fd) }
+        for (const category of ['timeout', 'error', 'backend', 'model/options', 'model/info', 'model/auxiliary', 'model/moa']) {
+          logCounts[category] = (logCounts[category] ?? 0) + text.toLowerCase().split(category).length - 1
+        }
+      }
+    } catch { logCounts.unavailable = 1 }
+    writeFileSync(test.info().outputPath('hydration-timing.json'), JSON.stringify({ locale: fixture.locale, events, logCounts }, null, 2))
+    await fixture.app.context().tracing.stop({ path: test.info().outputPath('browser-trace.zip') })
+  } }
   finally { await fixture?.cleanup(); fixture = undefined }
 })
 

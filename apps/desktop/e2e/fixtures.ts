@@ -303,6 +303,7 @@ export async function launchDesktop(
       // Install only the read-only updater IPC response before main registers
       // handlers or creates any renderer. Post-launch evaluate is too late for
       // the startup poll and does not isolate sibling scenarios/relaunches.
+      '-r', path.join(DESKTOP_ROOT, 'e2e', 'settings-hydration-diagnostic.cjs'),
       '-r', path.join(DESKTOP_ROOT, 'e2e', 'isolated-update-check.cjs'),
       DESKTOP_ROOT, // `electron .` — the `.` is the desktop package dir
       '--disable-gpu',
