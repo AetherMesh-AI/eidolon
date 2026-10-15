@@ -19,6 +19,11 @@ on:
       - 'eidolon_cli/project_typescript_runtime/**'
       - 'eidolon_cli/organization_project_compiler_bundle.py'
       - 'eidolon_cli/organization_project_typescript.py'
+      - 'eidolon_cli/organization_project_typescript_build.py'
+      - 'eidolon_cli/organization_project_build_outputs.py'
+      - 'eidolon_cli/project_typescript_build_runtime/**'
+      - 'tests/eidolon_cli/test_organization_project_typescript_build.py'
+      - 'tests/eidolon_cli/test_organization_project_build_outputs.py'
       - 'scripts/ci/prepare_typescript_compiler.py'
       - 'tests/eidolon_cli/test_organization_project_compiler_bundle.py'
       - 'tests/eidolon_cli/test_organization_project_typescript.py'
@@ -62,6 +67,8 @@ jobs:
           scripts/run_tests.sh tests/eidolon_cli/test_organization_project_node.py -j 1 --junitxml=node-isolation.xml
           scripts/run_tests.sh tests/eidolon_cli/test_organization_project_compiler_bundle.py -j 1 --junitxml=compiler-bundle.xml
           scripts/run_tests.sh tests/eidolon_cli/test_organization_project_typescript.py -j 1 --junitxml=typescript-isolation.xml
+          scripts/run_tests.sh tests/eidolon_cli/test_organization_project_build_outputs.py -j 1 --junitxml=build-output-parser.xml
+          scripts/run_tests.sh tests/eidolon_cli/test_organization_project_typescript_build.py -j 1 --junitxml=typescript-build.xml
       - name: Retain test evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -71,4 +78,6 @@ jobs:
             node-isolation.xml
             compiler-bundle.xml
             typescript-isolation.xml
+            build-output-parser.xml
+            typescript-build.xml
           if-no-files-found: warn
