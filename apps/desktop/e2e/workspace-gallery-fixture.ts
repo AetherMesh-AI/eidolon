@@ -35,7 +35,6 @@ export async function setupGallery(locale: string, seedHistory = false) {
   })
   try {
     const { page } = fixture
-    await fixture.app.context().tracing.start({ screenshots: true, snapshots: true, sources: true })
     await waitForAppReady(fixture)
     const methods: string[] = []
     const observationReads: string[] = []
