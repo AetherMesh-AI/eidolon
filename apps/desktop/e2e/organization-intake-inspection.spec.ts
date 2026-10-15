@@ -209,6 +209,7 @@ with sqlite3.connect(p.as_uri()+'?mode=ro',uri=True) as c:
   await controls.locator('summary').click()
   await controls.getByRole('button', { name: 'Read inspection settings', exact: true }).click()
   await expect(controls.getByRole('checkbox', { name: 'Inspect context for future requests', exact: true })).toBeChecked()
+  await intake.getByText('Recent requests', { exact: true }).click()
   await intake.getByRole('button', { name: 'Refresh recent requests', exact: true }).click()
   await intake.getByRole('button', { name: new RegExp(request) }).click()
   await expect(intake.getByLabel('Your request', { exact: true })).toHaveValue(request)

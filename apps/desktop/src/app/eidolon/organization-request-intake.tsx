@@ -88,7 +88,9 @@ export function OrganizationRequestIntake({ snapshot }: OrganizationRequestIntak
       </form>
       {!eligible && <p role="status">{copy.unavailable}</p>}
       {eligible && (
-        <details className="eid-form-disclosure" open={view.history.items.length > 0 && !record && !intent}>
+        <details className="eid-form-disclosure" onToggle={event => {
+          if (event.currentTarget.open) void client.list()
+        }}>
           <summary>{copy.recent}</summary>
           {view.history.busy && <Loader />}
           {view.history.error && <p role="alert">{copy.historyFailed}</p>}
