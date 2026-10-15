@@ -186,6 +186,7 @@ jobs:
           )
           projects_config_tests=(
             tests/eidolon_cli/test_organization_project_registry.py
+            tests/eidolon_cli/test_organization_milestones.py
             tests/eidolon_cli/test_organization_project_registry_processes.py
             tests/eidolon_cli/test_organization_project_registry_conflicts.py
             tests/eidolon_cli/test_organization_project_registry_links.py
