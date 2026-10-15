@@ -373,3 +373,24 @@ def test_project_reconcile_storage_is_optional_for_passive_legacy_reads(tmp_path
     with sqlite3.connect(store.path) as conn:
         assert '\n'.join(conn.iterdump()) == before
     assert files(tmp_path) == before_files
+
+
+@pytest.mark.linux_only
+@pytest.mark.parametrize('recipe', ['typescript_check', 'typescript_build'])
+def test_project_recovery_classifier_excludes_compiler_receipts(tmp_path, monkeypatch, recipe):
+    """Unit classifier boundary, not a claim of native compiler execution."""
+    import json
+    store, _, _, claim = _retained_project(tmp_path, monkeypatch)
+    original = store._reusable_project_run
+    def compiler_kind(conn, request):
+        row = dict(original(conn, request))
+        grant = json.loads(row['grant_record'])
+        grant['execution']['recipe'] = recipe
+        row['grant_record'] = json.dumps(grant)
+        return row
+    monkeypatch.setattr(store, '_reusable_project_run', compiler_kind)
+    expire(store, claim)
+    assert store.recover_expired() == 1
+    assert status(store, claim)['status'] == 'pending_intervention'
+    with store._connect() as conn:
+        assert conn.execute('SELECT count(*) FROM organization_project_reconcile_only').fetchone()[0] == 0
