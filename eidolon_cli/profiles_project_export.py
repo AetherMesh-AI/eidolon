@@ -42,7 +42,7 @@ def stage_project_registry(profile_home: Path, staged: Path) -> None:
             source = json.loads(raw)
             # An allow-list also prevents future ledger-only fields leaking into exports.
             project = {key: source[key] for key in _PROJECT_FIELDS}
-            if project["id"] != identifier or any(not isinstance(value, str) for value in project.values()):
+            if project["id"] != identifier or any(not isinstance(value, str) and not (key == "recipe" and value is None) for key, value in project.items()):
                 raise ValueError("Invalid project identity")
         except (KeyError, TypeError, ValueError) as exc:
             raise ValueError("Cannot export organization project identities: a registry entry is invalid") from exc
