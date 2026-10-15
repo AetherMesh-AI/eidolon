@@ -4,6 +4,8 @@ from .method_ctx import HandlerRegistry
 _registry=HandlerRegistry()
 _FIELDS={
  'organization.goals':set(),
+ 'organization.previewGoalReauthorization':{'goalId'},
+ 'organization.reauthorizeGoalContinuation':{'goalId','previewSha256','expectedRevision','idempotencyKey','confirmed'},
  'organization.goalReceipt':{'idempotencyKey','receiptKind'},
  'organization.configureGoal':{'goalId','objectiveIds','limits','paused','expectedRevision','idempotencyKey','confirmed'},
  'organization.previewGoalContinuation':{'goalId','templates','deadlineTimestamp'},
@@ -74,7 +76,7 @@ def _method(name):
             try:
                 from eidolon_cli.profiles import get_active_profile_name
                 result={'version':1,'organizationId':identity['organizationId'],'ownerId':identity['owner']['ownerId'],'profile':get_active_profile_name()}
-                if name in ('organization.goals','organization.goalReceipt','organization.previewGoalContinuation'):
+                if name in ('organization.goals','organization.goalReceipt','organization.previewGoalContinuation','organization.previewGoalReauthorization'):
                     with closing(sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=.25)) as conn:
                         conn.row_factory=sqlite3.Row;conn.execute('PRAGMA query_only=ON');conn.execute('BEGIN')
                         from eidolon_cli.organization_goal_allowances import GOAL_TABLES,_present,goal_projection
@@ -96,7 +98,9 @@ def _method(name):
                             with profile_configuration_scope(home): settings,_=load_profile_configuration(home)
                             settings=resolve_settings(conn,settings)
                             view=_ObservationView(path,conn,settings)
-                            if name=='organization.previewGoalContinuation':
+                            if name=='organization.previewGoalReauthorization':
+                                result['preview']=view._reauthorization_preview(conn,params['goalId'])
+                            elif name=='organization.previewGoalContinuation':
                                 result['preview']=view._continuation_preview(conn,params['goalId'],params['templates'],params['deadlineTimestamp'])
                             else:
                                 ids=[r[0] for r in conn.execute('SELECT DISTINCT id FROM organization_goal_revisions ORDER BY id LIMIT 129')] if _present(conn) else []
@@ -118,6 +122,8 @@ def _method(name):
                     common={'idempotency_key':params['idempotencyKey'],'confirmed':True}
                     if name=='organization.configureGoal':
                         receipt=service.store.configure_goal_allowance(params['goalId'],objective_ids=params['objectiveIds'],limits=params['limits'],paused=params['paused'],expected_revision=params['expectedRevision'],**common)
+                    elif name=='organization.reauthorizeGoalContinuation':
+                        receipt=service.store.reauthorize_goal_continuation(params['goalId'],preview_sha256=params['previewSha256'],expected_revision=params['expectedRevision'],**common)
                     elif name=='organization.approveGoalContinuation':
                         receipt=service.store.approve_goal_continuation(params['goalId'],templates=params['templates'],deadline_timestamp=params['deadlineTimestamp'],preview_sha256=params['previewSha256'],**common)
                     else:

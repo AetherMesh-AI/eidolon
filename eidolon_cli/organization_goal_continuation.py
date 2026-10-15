@@ -200,9 +200,11 @@ class OrganizationGoalContinuationStore:
     def _continuation_current(self,conn,plan):
         self._require_current_policy(conn)
         goal=goal_projection(conn,plan['goalId'])
-        if goal['revision']!=plan['goalRevision'] or goal['paused'] or time.time()>=plan['deadlineTimestamp']:
+        from eidolon_cli.organization_goal_reauthorization import effective_authority
+        goal_revision,authority=effective_authority(conn,plan)
+        if goal['revision']!=goal_revision or goal['paused'] or time.time()>=plan['deadlineTimestamp']:
             raise ValueError('Continuation goal changed, paused or expired')
-        if _authority(conn)!=plan['authoritySha256']:
+        if _authority(conn)!=authority:
             raise ValueError('Continuation authority changed')
         if not goal['objectiveIds'] or len(goal['objectiveIds'])>=1024:
             raise ValueError('Continuation goal membership is unavailable or full')

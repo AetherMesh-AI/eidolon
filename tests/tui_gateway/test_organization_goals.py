@@ -69,3 +69,23 @@ def test_pending_template_prerequisite_is_visible_but_does_not_prevent_enable(se
     assert read['templateStates'][1]['blockers']==['template:one']
     assert read['waitingReason']
     with service.store._connect() as conn: assert conn.execute('SELECT count(*) FROM organization_continuation_launches').fetchone()[0]==0
+
+
+def test_owner_reauthorization_is_passive_then_explicit_and_disabled(setup,monkeypatch):
+    service,first,params=setup
+    monkeypatch.setattr('eidolon_cli.organization_config.load_profile_configuration',lambda *args,**kwargs:(service.store.settings,{}))
+    call('organization.configureGoal',allowance(first,params))
+    from tests.eidolon_cli.test_organization_goal_continuation import approve,enable
+    approve(service.store,[template(projectIds=['alpha'])]);enable(service.store)
+    monkeypatch.setattr(services,'get_service',Mock(side_effect=AssertionError('Passive refresh must not start service')))
+    with service.store._connect() as conn: before='\n'.join(conn.iterdump())
+    preview=call('organization.previewGoalReauthorization',dict(params,goalId='goal'))
+    assert 'error' not in preview,preview
+    with service.store._connect() as conn: assert '\n'.join(conn.iterdump())==before
+    monkeypatch.setattr(services,'get_service',lambda:service)
+    intent=dict(params,goalId='goal',previewSha256=preview['result']['preview']['sha256'],expectedRevision=2,idempotencyKey='refresh',confirmed=True)
+    assert 'error' in call('organization.reauthorizeGoalContinuation',{**intent,'confirmed':False})
+    saved=call('organization.reauthorizeGoalContinuation',intent)
+    assert saved['result']['receipt']['enabled'] is False
+    assert call('organization.reauthorizeGoalContinuation',intent)==saved
+    assert service.start.call_count==0

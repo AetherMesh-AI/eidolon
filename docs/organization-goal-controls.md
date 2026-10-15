@@ -14,8 +14,12 @@ remain subject to the existing installation, organization and objective ceilings
 Waiting reasons expose pending exact milestone/template prerequisites and workspace
 identity changes. A waiting dependency does not prevent explicit enablement. The plan
 retains its original finite scope, deadline and launch history. Changed authority or
-workspace identity blocks continuation. Reauthorization of a stale immutable plan is
-not yet available in this first owner-control slice.
+workspace identity blocks continuation. A separate owner preview can refresh budget/policy authorization only when the
+original finite scope, deadline, workspace bindings, dependency revisions and all
+launched objective scope fingerprints remain unchanged. Approval appends an
+authorization revision and disables continuation; enabling is a separate action.
+Changed scope or workspace identity cannot be refreshed through this flow.
+The immutable plan, launch history, membership and lifetime spending remain intact.
 
 An uncertain write keeps its exact arguments and idempotency key. Same-owner receipt
 reconciliation can rebind a new connection epoch. Different owner/profile/organization
@@ -24,3 +28,8 @@ scope clears the previous draft. Passive reads and previews do not provision ser
 
 Tests use synthetic ledger state and mocked transports. No paid provider calls, real
 owner enablement, or installed desktop acceptance are established by those tests.
+
+Local validation must use scripts/run_tests.sh with explicitly named synthetic
+organization test files. Its per-file isolation and clean environment are required.
+Do not run broad provider/authentication directories to validate these controls.
+Broad repository validation belongs to the required hosted regression gates.

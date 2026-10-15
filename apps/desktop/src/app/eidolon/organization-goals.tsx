@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input'
 import { useI18n } from '@/i18n/context'
 import { goalCopy } from '@/i18n/organization-goals'
 
-import { createGoalClient, type GoalAction, type GoalLimits, type GoalTemplate, type GoalView } from './organization-goal-client'
+import { createGoalClient, type GoalAction, type GoalLimits, type GoalReauthorizationPreview, type GoalTemplate, type GoalView } from './organization-goal-client'
 import { organizationMetadataClient, readOrganizationMetadataScope, useOrganizationMetadata } from './use-organization-metadata'
 
 function source() {
@@ -30,6 +30,7 @@ export function OrganizationGoals() {
   const [kind, setKind] = useState('deliverable')
   const [projects, setProjects] = useState<string[]>([])
   const [executive, setExecutive] = useState('executive'); const [manager, setManager] = useState('manager')
+  const [reauthorization, setReauthorization] = useState<GoalReauthorizationPreview | null>(null)
   const [previewHash, setPreviewHash] = useState<string | null>(null)
   const [confirmed, setConfirmed] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState('')
   const [, renderPending] = useState(0)
@@ -41,7 +42,7 @@ export function OrganizationGoals() {
   const plan = view?.plans.find(p => p.goalId === goalId)
   const draft = () => ({ goalId, templates, deadlineTimestamp: limits.deadlineTimestamp })
 
-  const changed = () => { setConfirmed(false); setPreviewHash(null) }
+  const changed = () => { setConfirmed(false); setPreviewHash(null); setReauthorization(null) }
 
   const run = async (fn: () => Promise<void>) => {
     if (inFlight.current) { return }
@@ -54,7 +55,7 @@ export function OrganizationGoals() {
   const write = async (method: GoalAction, args: Record<string, unknown>) => {
     action.current = { method, args: structuredClone(args) }
     await client.write(method, args, confirmed)
-    action.current = null; setConfirmed(false); setPreviewHash(null); setView(await client.read())
+    action.current = null; setReauthorization(null); setConfirmed(false); setPreviewHash(null); setView(await client.read())
   }
 
   const select = (id: string) => {
@@ -108,7 +109,7 @@ export function OrganizationGoals() {
         <Button disabled={!templates.length} onClick={() => void run(async () => { const preview = await client.preview(draft()); setPreviewHash(preview.sha256 as string); setConfirmed(false) })}>{copy.preview}</Button>
         {previewHash && <Button disabled={!confirmed} onClick={() => void run(() => write('organization.approveGoalContinuation', { ...draft(), previewSha256: previewHash }))}>{copy.approve}</Button>}
       </div>}
-      {plan && <div><p>{copy.launched}: {plan.launches.length} / {plan.templates.length}</p><ul>{plan.templateStates.map(s => <li key={s.id}>{s.id}: {s.blockers.join(', ')}</li>)}</ul>{plan.waitingReason && <p role="status">{plan.waitingReason}</p>}
+      {plan && <div><Button onClick={() => void run(async () => { setReauthorization(await client.previewReauthorization(goalId)); setConfirmed(false) })}>{copy.refreshPreview}</Button>{reauthorization && <div><p>{copy.refreshTerms}: {reauthorization.goalRevision} · {copy.calls}: {reauthorization.limits.modelCalls} · {copy.tokens}: {reauthorization.limits.tokens} · {copy.cost}: {reauthorization.limits.costUsd ?? '?'} · {copy.stages}: {reauthorization.limits.stages} · {copy.runs}: {reauthorization.limits.projectRuns} · {copy.deadline}: {new Date(reauthorization.limits.deadlineTimestamp * 1000).toISOString()}</p><p>{copy.reserve}: {reauthorization.limits.completionReserve.modelCalls} / {reauthorization.limits.completionReserve.tokens} / {reauthorization.limits.completionReserve.costUsd ?? '?'}</p><p>{copy.refreshPolicy}: {reauthorization.policy.generation} · {reauthorization.policy.toolGrants.join(', ')}</p><Button disabled={!confirmed} onClick={() => void run(() => write('organization.reauthorizeGoalContinuation', { goalId: reauthorization.goalId, previewSha256: reauthorization.sha256, expectedRevision: reauthorization.revision }))}>{copy.refreshApprove}</Button></div>}<p>{copy.launched}: {plan.launches.length} / {plan.templates.length}</p><ul>{plan.templateStates.map(s => <li key={s.id}>{s.id}: {s.blockers.join(', ')}</li>)}</ul>{plan.waitingReason && <p role="status">{plan.waitingReason}</p>}
         <Button disabled={!confirmed || (!plan.enabled && !plan.canEnable)} onClick={() => void run(() => write('organization.setGoalContinuationEnabled', { goalId, enabled: !plan.enabled, expectedRevision: plan.controlRevision }))}>{plan.enabled ? copy.disable : copy.enable}</Button>
       </div>}
     </fieldset>}

@@ -14,12 +14,14 @@ const nonnegative = (v: unknown) => Number.isSafeInteger(v) && (v as number) >= 
 const money = (v: unknown) => v === null || (typeof v === 'string' && /^\d+(\.\d+)?$/.test(v))
 const deadline = (v: unknown) => nonnegative(v) && (v as number) <= 253402300799
 const identity = (s: OwnerPolicyScope) => JSON.stringify([s.key, s.ownerKey, s.profile, s.eligible, s.organizationId, s.ownerId])
-const actions = { 'organization.configureGoal': 'allowance', 'organization.approveGoalContinuation': 'continuation', 'organization.setGoalContinuationEnabled': 'continuation' } as const
+const actions = { 'organization.reauthorizeGoalContinuation': 'continuation', 'organization.configureGoal': 'allowance', 'organization.approveGoalContinuation': 'continuation', 'organization.setGoalContinuationEnabled': 'continuation' } as const
+export type GoalReauthorizationPreview = { goalId: string; sha256: string; revision: number; goalRevision: number; limits: GoalLimits; policy: { generation: number; fingerprint: string; toolGrants: string[] } }
 export type GoalAction = keyof typeof actions
 
 export function createGoalClient(source: () => OwnerPolicyScope, newKey: () => string = () => crypto.randomUUID()) {
   let captured: OwnerPolicyScope | null = null
   let pending: { method: GoalAction; args: Record<string, unknown>; key: string } | null = null
+  let reauthorization: GoalReauthorizationPreview | null = null
   let busy = false
   let preview: { args: Record<string, unknown>; sha256: string } | null = null
   const current = () => !!captured?.eligible && identity(captured) === identity(source())
@@ -30,6 +32,8 @@ export function createGoalClient(source: () => OwnerPolicyScope, newKey: () => s
 
   const receipt = (r: unknown) => {
     if (!pending || !object(r) || r.goalId !== pending.args.goalId || !Number.isSafeInteger(r.revision)) { return false }
+
+    if (pending.method === 'organization.reauthorizeGoalContinuation') { return r.revision === (pending.args.expectedRevision as number) + 1 && r.enabled === false && r.sha256 === pending.args.previewSha256 && Number.isSafeInteger(r.authorizationRevision) }
 
     if (pending.method === 'organization.approveGoalContinuation') { return r.revision === 1 && r.enabled === false && r.sha256 === pending.args.previewSha256 }
 
@@ -42,7 +46,7 @@ export function createGoalClient(source: () => OwnerPolicyScope, newKey: () => s
     current, pending: () => !!pending,
     async read(): Promise<GoalView> {
       if (busy || pending) { throw new Error('Reconcile the pending goal action first.') }
-      captured = { ...source() }; preview = null; check()
+      captured = { ...source() }; preview = null; reauthorization = null; check()
 
       if (!captured.organizationId || !captured.ownerId) { throw new Error('Organization owner identity is required.') }
       busy = true
@@ -58,6 +62,24 @@ export function createGoalClient(source: () => OwnerPolicyScope, newKey: () => s
           !r.leaders.every(l => object(l) && typeof l.id === 'string' && typeof l.name === 'string' && (l.manager_id === null || typeof l.manager_id === 'string') && ['Executive','Manager'].includes(l.role as string))) { throw new Error('Goal view fields are invalid.') }
 
         return structuredClone(r) as unknown as GoalView
+      } finally { busy = false }
+    },
+    async previewReauthorization(goalId: string) {
+      check();
+
+ if (busy || pending) { throw new Error('A goal action is still pending.') }
+      busy = true; reauthorization = null
+
+      try {
+        const r = await captured!.request<unknown>('organization.previewGoalReauthorization', { ...scope(), goalId }); check()
+
+        if (!bound(r) || !object(r) || !object(r.preview) || !hash(r.preview.sha256) || !object(r.preview.authorization) || r.preview.authorization.goalId !== goalId || !Number.isSafeInteger(r.preview.authorization.controlRevision)) { throw new Error('Goal reauthorization preview is invalid.') }
+        const a = r.preview.authorization
+
+        if (!Number.isSafeInteger(a.goalRevision) || !object(a.goalLimits) || !object(a.goalLimits.completionReserve) || !['modelCalls','tokens','stages','projectRuns'].every(k => nonnegative((a.goalLimits as Record<string, unknown>)[k])) || !deadline(a.goalLimits.deadlineTimestamp) || !money(a.goalLimits.costUsd) || !nonnegative(a.goalLimits.completionReserve.modelCalls) || !nonnegative(a.goalLimits.completionReserve.tokens) || !money(a.goalLimits.completionReserve.costUsd) || !object(a.policy) || !Number.isSafeInteger(a.policy.generation) || typeof a.policy.fingerprint !== 'string' || !Array.isArray(a.policy.toolGrants) || !a.policy.toolGrants.every(t => typeof t === 'string')) { throw new Error('Goal reauthorization terms are invalid.') }
+        reauthorization = { goalId, sha256: r.preview.sha256 as string, revision: a.controlRevision as number, goalRevision: a.goalRevision as number, limits: structuredClone(a.goalLimits) as GoalLimits, policy: structuredClone(a.policy) as GoalReauthorizationPreview['policy'] }
+
+        return structuredClone(reauthorization)
       } finally { busy = false }
     },
     async preview(args: { goalId: string; templates: GoalTemplate[]; deadlineTimestamp: number }) {
@@ -84,6 +106,8 @@ export function createGoalClient(source: () => OwnerPolicyScope, newKey: () => s
       if (pending && (pending.method !== method || JSON.stringify(pending.args) !== JSON.stringify(args))) { throw new Error('Retry only the exact pending action.') }
 
       if (!pending) {
+        if (method === 'organization.reauthorizeGoalContinuation' && (!reauthorization || reauthorization.goalId !== args.goalId || reauthorization.sha256 !== args.previewSha256 || reauthorization.revision !== args.expectedRevision)) { throw new Error('Review a fresh matching reauthorization preview.') }
+
         if (method === 'organization.approveGoalContinuation') {
           const { previewSha256, ...draft } = args
 
@@ -99,7 +123,7 @@ export function createGoalClient(source: () => OwnerPolicyScope, newKey: () => s
         const r = await captured!.request<unknown>(method, { ...scope(), ...structuredClone(pending.args), idempotencyKey: pending.key, confirmed: true }); check()
 
         if (!bound(r) || !object(r) || !receipt(r.receipt)) { throw new Error('Goal receipt is uncertain; reconcile before changing the action.') }
-        pending = null; preview = null
+        pending = null; preview = null; reauthorization = null
 
         return r.receipt
       } finally { busy = false }
@@ -117,7 +141,7 @@ export function createGoalClient(source: () => OwnerPolicyScope, newKey: () => s
         if (identity(next) !== identity(source()) || !bound(r) || !object(r) || !('receipt' in r) || (r.receipt !== null && !receipt(r.receipt))) { throw new Error('Goal receipt scope or identity is invalid.') }
         captured = next
 
-        if (r.receipt !== null) { pending = null; preview = null }
+        if (r.receipt !== null) { pending = null; preview = null; reauthorization = null }
 
         return r.receipt !== null
       } finally { busy = false }

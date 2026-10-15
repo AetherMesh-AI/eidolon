@@ -193,11 +193,14 @@ def verify_criteria(store, conn, request, results):
             if not valid and criterion.get('projectId') is None:
                 from eidolon_cli.organization_project_workspace import final_source_manifest, project_validation_view
                 from tools.organization_file_read import organization_file_read_scope
+                from eidolon_cli.organization_root_grants import expected_root_identities, active_root_aliases
                 store.verify_project_objective_acceptance(conn, request['objective_id'], require_source=True)
                 manifest, _, _, checked = final_source_manifest(conn, request['objective_id'])
                 if not store._verified_final_source(conn, request['objective_id'], manifest, checked):
                     raise ValueError('Typed source integration requires verified source evidence')
-                with organization_file_read_scope(store.settings.read_roots, store.settings.max_tool_result_chars) as scope:
+                with organization_file_read_scope(store.settings.read_roots, store.settings.max_tool_result_chars,
+                        expected_root_identities=expected_root_identities(store.settings),
+                        allowed_root_aliases=active_root_aliases(store.settings)) as scope:
                     for item in manifest:
                         store._verify_root(conn, request['objective_id'], item['path'])
                         if scope.read_exact_source(item['path'])['sha256'] != item['sha256']:

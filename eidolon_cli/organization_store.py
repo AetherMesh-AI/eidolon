@@ -27,6 +27,7 @@ from eidolon_cli.organization_packages import (PACKAGE_SCHEMA, OrganizationPacka
 from eidolon_cli.organization_dispatch import DISPATCH_SCHEMA, OrganizationDispatchStore
 from eidolon_cli.organization_priority import PRIORITY_SCHEMA, OrganizationPriorityStore
 from eidolon_cli.organization_pacing import OrganizationPacingStore, pacing_wait
+from eidolon_cli.organization_goal_reauthorization import SCHEMA as GOAL_AUTH_SCHEMA, GoalReauthorizationStore
 from eidolon_cli.organization_goal_continuation import CONTINUATION_SCHEMA, OrganizationGoalContinuationStore
 from eidolon_cli.organization_goal_allowances import GOAL_SCHEMA, OrganizationGoalAllowanceStore, require_goal_admission
 from eidolon_cli.organization_milestones import MILESTONE_SCHEMA, OrganizationMilestoneStore
@@ -116,10 +117,10 @@ def _text(value, field, limit=10000):
 
 
 # One DDL contract for initialization and non-migrating observation preflight.
-ORGANIZATION_SCHEMA = (_SCHEMA + CONTINUATION_SCHEMA + GOAL_SCHEMA + RECOVERY_SCHEMA + ROOT_GRANT_SCHEMA + MILESTONE_SCHEMA + TEAM_SETUP_SCHEMA + OWNER_POLICY_SCHEMA + ROUTING_SCHEMA + REPLACEMENT_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA + COORDINATION_SCHEMA + HISTORY_SCHEMA + ATTENTION_SCHEMA + PROJECTS_SCHEMA + OUTCOME_SCHEMA + REGISTRY_SCHEMA + PACKAGE_SCHEMA + CONVERSATION_SCHEMA + OWNER_CHAT_SCHEMA + PRIORITY_SCHEMA + DISPATCH_SCHEMA)
+ORGANIZATION_SCHEMA = (_SCHEMA + CONTINUATION_SCHEMA + GOAL_AUTH_SCHEMA + GOAL_SCHEMA + RECOVERY_SCHEMA + ROOT_GRANT_SCHEMA + MILESTONE_SCHEMA + TEAM_SETUP_SCHEMA + OWNER_POLICY_SCHEMA + ROUTING_SCHEMA + REPLACEMENT_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA + COORDINATION_SCHEMA + HISTORY_SCHEMA + ATTENTION_SCHEMA + PROJECTS_SCHEMA + OUTCOME_SCHEMA + REGISTRY_SCHEMA + PACKAGE_SCHEMA + CONVERSATION_SCHEMA + OWNER_CHAT_SCHEMA + PRIORITY_SCHEMA + DISPATCH_SCHEMA)
 
 
-class OrganizationStore(OrganizationGoalContinuationStore, OrganizationGoalAllowanceStore, OrganizationMilestoneStore, OrganizationRecoveryStore, OrganizationModelRoutingStore, OrganizationPacingStore, OrganizationDispatchStore, OrganizationPriorityStore, OrganizationReplacementStore, OrganizationOwnerChatStore, OrganizationConversationStore, OrganizationPackageStore, OrganizationOutcomeStore, OrganizationAttentionStore, OrganizationHistoryStore, OrganizationCoordinationStore, OrganizationProjectExecutionStore, OrganizationBudgetStore, OrganizationRequestStore, OrganizationManagementStore, OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
+class OrganizationStore(GoalReauthorizationStore, OrganizationGoalContinuationStore, OrganizationGoalAllowanceStore, OrganizationMilestoneStore, OrganizationRecoveryStore, OrganizationModelRoutingStore, OrganizationPacingStore, OrganizationDispatchStore, OrganizationPriorityStore, OrganizationReplacementStore, OrganizationOwnerChatStore, OrganizationConversationStore, OrganizationPackageStore, OrganizationOutcomeStore, OrganizationAttentionStore, OrganizationHistoryStore, OrganizationCoordinationStore, OrganizationProjectExecutionStore, OrganizationBudgetStore, OrganizationRequestStore, OrganizationManagementStore, OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
     def __init__(self, path: Path | str, settings: OrganizationSettings | None = None):
         self.path = Path(path)
         self._shared_state_path = self.path.resolve()

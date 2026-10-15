@@ -84,3 +84,18 @@ it('accepts valid allowance values and rejects unsafe reserved children or manag
   request.mockResolvedValue({ ...descriptor(), leaders: [{ id: 'manager', name: 'Manager', role: 'Manager', manager_id: {} }] })
   await expect(client.read()).rejects.toThrow('fields')
 })
+
+it('requires an exact refresh preview and keeps refreshed authorization disabled', async () => {
+  const { client, request } = fixture(); await client.read()
+  const args = { goalId: 'goal', expectedRevision: 2, previewSha256: 'b'.repeat(64) }
+  await expect(client.write('organization.reauthorizeGoalContinuation', args, true)).rejects.toThrow('fresh matching')
+  const limits = { modelCalls: 2, tokens: 10, stages: 2, projectRuns: 0, costUsd: null, deadlineTimestamp: 1800000000, completionReserve: { modelCalls: 0, tokens: 0, costUsd: null } }
+  const policy = { generation: 3, fingerprint: 'policy-fingerprint', toolGrants: ['read_file'] }
+  request.mockResolvedValue({ ...descriptor(), preview: { sha256: args.previewSha256, authorization: { goalId: 'goal', controlRevision: 2, goalRevision: 4, goalLimits: limits, policy } } })
+  expect(await client.previewReauthorization('goal')).toEqual({ goalId: 'goal', revision: 2, sha256: args.previewSha256, goalRevision: 4, limits, policy })
+  await expect(client.write('organization.reauthorizeGoalContinuation', { ...args, expectedRevision: 3 }, true)).rejects.toThrow('fresh matching')
+  request.mockResolvedValue({ ...descriptor(), receipt: { goalId: 'goal', revision: 3, authorizationRevision: 1, sha256: args.previewSha256, enabled: false } })
+  await client.write('organization.reauthorizeGoalContinuation', args, true)
+  expect(request.mock.calls.at(-1)?.[0]).toBe('organization.reauthorizeGoalContinuation')
+  expect(client.pending()).toBe(false)
+})

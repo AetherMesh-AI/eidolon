@@ -2,12 +2,12 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
 
 import { OrganizationGoals } from './organization-goals'
-const mocks = vi.hoisted(() => ({ eligible: true, current: true, pending: false, read: vi.fn(), write: vi.fn(), preview: vi.fn(), reconcile: vi.fn() }))
+const mocks = vi.hoisted(() => ({ eligible: true, current: true, pending: false, read: vi.fn(), write: vi.fn(), preview: vi.fn(), previewReauthorization: vi.fn(), reconcile: vi.fn() }))
 vi.mock('@/i18n/context', () => ({ useI18n: () => ({ locale: 'en' }) }))
 vi.mock('./use-organization-metadata', () => ({ useOrganizationMetadata: () => ({ scope: { eligible: mocks.eligible } }), organizationMetadataClient: { getSnapshot: () => ({ descriptor: { metadata: { organizationId: 'org', owner: { ownerId: 'owner' } } } }) }, readOrganizationMetadataScope: () => ({ eligible: mocks.eligible }) }))
-vi.mock('./organization-goal-client', () => ({ createGoalClient: () => ({ current: () => mocks.current, pending: () => mocks.pending, read: mocks.read, write: mocks.write, preview: mocks.preview, reconcile: mocks.reconcile }) }))
+vi.mock('./organization-goal-client', () => ({ createGoalClient: () => ({ current: () => mocks.current, pending: () => mocks.pending, read: mocks.read, write: mocks.write, preview: mocks.preview, previewReauthorization: mocks.previewReauthorization, reconcile: mocks.reconcile }) }))
 const view = { goals: [], plans: [], objectives: [{ id: 'one', title: 'Existing work' }], projectIds: [], leaders: [] }
-beforeEach(() => { mocks.eligible = true; mocks.current = true; mocks.pending = false; mocks.read.mockReset().mockResolvedValue(view); mocks.write.mockReset().mockResolvedValue({}); mocks.preview.mockReset(); mocks.reconcile.mockReset() })
+beforeEach(() => { mocks.eligible = true; mocks.current = true; mocks.pending = false; mocks.read.mockReset().mockResolvedValue(view); mocks.write.mockReset().mockResolvedValue({}); mocks.preview.mockReset(); mocks.previewReauthorization.mockReset(); mocks.reconcile.mockReset() })
 it('requires explicit review and retains uncertain exact goal action', async () => {
   mocks.write.mockImplementationOnce(() => { mocks.pending = true;
 
@@ -68,4 +68,24 @@ it('approves a reviewed plan disabled and requires a fresh confirmation to enabl
   fireEvent.click(screen.getByText('Enable approved continuation'))
   await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(2))
   expect(mocks.write.mock.calls[1]).toEqual(['organization.setGoalContinuationEnabled', { goalId: 'goal', enabled: true, expectedRevision: 1 }, true])
+})
+
+it('shows exact refreshed allowance terms before separate refresh confirmation', async () => {
+  const limits = { modelCalls: 20, tokens: 100000, costUsd: null, stages: 40, projectRuns: 5, deadlineTimestamp: 1800000000, completionReserve: { modelCalls: 2, tokens: 10000, costUsd: null } }
+  mocks.read.mockResolvedValue({ ...view, goals: [{ id: 'goal', revision: 1, paused: false, objectiveIds: ['one'], limits, reserved: { modelCalls: 0, tokens: 0, costUsd: null } }], plans: [{ goalId: 'goal', enabled: false, canEnable: false, controlRevision: 2, templates: [{}], launches: [], templateStates: [], waitingReason: 'Goal changed' }] })
+  mocks.previewReauthorization.mockResolvedValue({ goalId: 'goal', sha256: 'b'.repeat(64), revision: 2, goalRevision: 9, limits: { ...limits, modelCalls: 777 }, policy: { generation: 4, fingerprint: 'policy', toolGrants: ['read_file'] } })
+  render(<OrganizationGoals />)
+  fireEvent.click(screen.getByText('Load goal controls'))
+  await screen.findByLabelText('Goal ID')
+  fireEvent.change(screen.getByLabelText('Goal ID'), { target: { value: 'goal' } })
+  fireEvent.click(screen.getByLabelText('I reviewed this exact action and its limits.'))
+  fireEvent.click(screen.getByText('Review unchanged-plan authorization'))
+  await screen.findByText(/Reviewed goal revision and current limits: 9/)
+  expect(screen.getByText(/Model-call ceiling: 777/)).toBeTruthy()
+  expect(screen.getByText(/Current policy revision and authorized tools: 4/)).toBeTruthy()
+  expect((screen.getByText('Refresh authorization, keep disabled') as HTMLButtonElement).disabled).toBe(true)
+  fireEvent.click(screen.getByLabelText('I reviewed this exact action and its limits.'))
+  fireEvent.click(screen.getByText('Refresh authorization, keep disabled'))
+  await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1))
+  expect(mocks.write.mock.calls[0]).toEqual(['organization.reauthorizeGoalContinuation', { goalId: 'goal', previewSha256: 'b'.repeat(64), expectedRevision: 2 }, true])
 })
