@@ -4,7 +4,7 @@ import threading
 
 import pytest
 
-from eidolon_cli.organization_outcome_contracts import definitions, write_contract, verify_criteria
+from eidolon_cli.organization_outcome_contracts import contract_view, definitions, write_contract, verify_criteria
 from tests.eidolon_cli.test_organization_project_typescript import native, _typecheck_reviewed_store  # noqa: F401
 
 
@@ -84,5 +84,5 @@ def test_native_typecheck_acceptance_finish_is_exact_and_durable(native, tmp_pat
     with reopened._connect() as conn:
         accepted = conn.execute('SELECT * FROM objective_contract_acceptances WHERE request_id=?', (accept['id'],)).fetchone()
         assert accepted is not None
-        assert accepted['contract_sha256'] == reopened.context(accept)['objective']['outcomeContract']['sha256']
+        assert accepted['contract_sha256'] == contract_view(conn, objective['id'])['sha256']
         reopened._verify_required_checks(conn, objective['id'], ['project_typecheck'])
