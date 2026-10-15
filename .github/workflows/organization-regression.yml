@@ -252,7 +252,16 @@ jobs:
       - name: Retain Windows ledger and attention phase timings
         if: ${{ always() && matrix.os == 'windows-latest' && (matrix.suite == 'outcomes-attention' || matrix.suite == 'ledger-identity') }}
         run: |
-          python -c 'import pathlib; files=sorted(pathlib.Path("organization-timing").glob("organization-timing-*.jsonl")); assert files, "Missing native timing evidence"; [print(p.read_text(encoding="utf-8")) for p in files]'
+          .venv/Scripts/python.exe -m scripts.ci.organization_timing organization-timing
+
+      - name: Retain sanitized Windows diagnostic files
+        if: ${{ always() && matrix.os == 'windows-latest' && (matrix.suite == 'outcomes-attention' || matrix.suite == 'ledger-identity') }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows-diagnostics-${{ matrix.suite }}
+          path: organization-timing/sanitized/
+          if-no-files-found: error
+          retention-days: 7
 
   native-windows:
     # Retain the existing check name. This gate cannot succeed if a native
