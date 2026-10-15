@@ -1,7 +1,6 @@
-"""Experimental fixed Node adapter; not registered as an execution recipe yet.
+"""Fixed Node adapter with explicit owner authorization and bounded isolation.
 
-The production grant parser deliberately cannot select this backend until native
-adversarial verification and independent review have completed. No image pulls,
+The production grant parser requires explicit Docker and pinned-image opt-in. No image pulls,
 software installation, Docker access changes or host execution fallback occur.
 """
 from dataclasses import asdict, dataclass
@@ -138,7 +137,7 @@ def _verify_container(record, name, base, grant, image_id, profile):
 
 
 def run_node_tests(files, grant, cancel=None):
-    """Experimental direct entry point for native verification; not organization dispatch."""
+    """Execute the exact selected snapshot under the explicit owner grant."""
     clock = time.monotonic()
     result = {'runner': 'eidolon.isolated-node-test', 'runnerVersion': 1, 'status': 'blocked',
         'startedAt': datetime.now(timezone.utc).isoformat(), 'exitCode': None, 'testCount': 0, 'skippedCount': 0,
@@ -176,7 +175,7 @@ def run_node_tests(files, grant, cancel=None):
             if info.get('OSType') != 'linux' or info.get('CgroupVersion') != '2' or info.get('Architecture') not in ('x86_64', 'amd64'):
                 raise _Unsupported('Local Docker requires Linux cgroup v2 enforcement')
             image = _json_command(['image', 'inspect', grant.runtime_image], config, budget)[0]
-            if image.get('Architecture') != 'amd64' or grant.runtime_image not in image.get('RepoDigests', []) or image.get('Config', {}).get('Volumes'):
+            if image.get('Os') != 'linux' or image.get('Architecture') != 'amd64' or grant.runtime_image not in image.get('RepoDigests', []) or image.get('Config', {}).get('Volumes'):
                 raise _Unsupported('Pinned runtime image identity or volume policy does not match')
             assets = {name: (ASSETS / name).read_bytes() for name in ('supervisor.mjs', 'harness.mjs')}
             result['runtime'] = {'image': grant.runtime_image, 'imageId': image['Id'], 'architecture': image['Architecture'], 'seccompSha256': PROFILE_SHA256,
@@ -279,3 +278,37 @@ def run_node_tests(files, grant, cancel=None):
     finally:
         result.update(endedAt=datetime.now(timezone.utc).isoformat(), durationSeconds=round(time.monotonic() - clock, 6))
     return result
+
+
+def valid_node_receipt(result, execution, files):
+    """Verify retained backend evidence against the exact current grant and inputs."""
+    try:
+        grant = normalize_node_grant(execution)
+        files = _snapshot(files)
+        root = grant.root + ('/' + grant.test_directory if grant.test_directory != '.' else '')
+        tests = ['/source/' + item['path'] for item in files if str(Path(item['path']).parent) == root
+                 and fnmatch.fnmatchcase(Path(item['path']).name, grant.pattern)]
+        isolation, runtime = result.get('isolation'), result.get('runtime')
+        if not isinstance(isolation, dict) or not isinstance(runtime, dict):
+            return False
+        bootstrap = digest({name: hashlib.sha256((ASSETS / name).read_bytes()).hexdigest()
+                            for name in ('supervisor.mjs', 'harness.mjs')})
+        return (bool(tests) and result.get('runner') == 'eidolon.isolated-node-test'
+            and result.get('runnerVersion') == 1 and result.get('status') == 'passed'
+            and result.get('exitCode') == 0 and type(result.get('testCount')) is int and result['testCount'] > 0
+            and result.get('cleanupConfirmed') is True and result.get('sourceWritesPerformed') is False
+            and result.get('grant') == asdict(grant) and result.get('snapshotSha256') == snapshot_digest(files)
+            and result.get('selectedTests') == tests
+            and result.get('files') == [{k: item[k] for k in ('path', 'sha256', 'revision')} for item in files]
+            and isolation.get('backend') == 'linux-docker-pinned' and isolation.get('established') is True
+            and isolation.get('sourceReadOnly') is True and isolation.get('runtimeReadOnly') is True
+            and isolation.get('network') == 'none' and isolation.get('processLimit') == 64
+            and isolation.get('supervisorUid') == 0 and isolation.get('workloadUid') == 65534
+            and isolation.get('seccompSha256') == PROFILE_SHA256
+            and runtime.get('image') == IMAGE and runtime.get('architecture') == 'amd64'
+            and runtime.get('seccompSha256') == PROFILE_SHA256 and runtime.get('bootstrapSha256') == bootstrap
+            and isinstance(runtime.get('imageId'), str) and re.fullmatch(r'sha256:[0-9a-f]{64}', runtime['imageId']) is not None
+            and isinstance(result.get('containerId'), str) and re.fullmatch(r'[0-9a-f]{64}', result['containerId']) is not None
+            and isinstance(result.get('containerConfigSha256'), str) and re.fullmatch(r'[0-9a-f]{64}', result['containerConfigSha256']) is not None)
+    except (OSError, ValueError, TypeError, KeyError):
+        return False

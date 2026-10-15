@@ -1,7 +1,7 @@
-# Node execution design (not yet enabled)
+# Explicitly authorized Node test execution
 
-This is the proposed next execution adapter, not a runnable grant or a promise of
-host support. The existing Python isolation recipes and grant fingerprints stay
+The fixed Node test adapter requires an explicit owner-configured grant; capability
+reporting alone is not a promise of host support. The existing Python isolation recipes and grant fingerprints stay
 unchanged. Node package inspection remains inert.
 
 ## First useful recipe
@@ -28,7 +28,7 @@ uses host Node as a fallback. ARM64/macOS/Windows remain unsupported for this ba
 - Network and IPC are isolated; no network interface reaches another host.
 - Unprivileged test UID with zero capabilities, no-new-privileges, an explicit
   reviewed digest-pinned seccomp profile and private PID/mount/cgroup namespaces.
-  Supervisor/test UID separation is implemented experimentally; native proof remains required.
+  Supervisor/test UID separation is covered by the mandatory native CI lane.
 - Fixed one-CPU quota plus an overall wall deadline, bounded memory/swap/PIDs,
   bounded writable tmpfs, and bounded captured output. CPU rate is not described
   as an aggregate CPU-seconds guarantee.
@@ -80,18 +80,30 @@ offline. Type checking and builds then use fixed tool entry points and bounded
 output directories; generated artifacts need their own manifest and review.
 General `npm test`/`npm run build` shell execution is not implied by this design.
 
-## Blocking supervisor design review
+## Supervisor trust boundary
 
 The initial same-UID supervisor design is rejected. Node children can potentially
 activate the supervisor inspector via SIGUSR1 or access its descriptors. The
-current alternative under review is a minimal trusted root-owned PID 1 retaining
+implemented boundary is a minimal trusted root-owned PID 1 retaining
 only SETUID/SETGID to launch tests as UID/GID 65534, with test capabilities zero.
 No project code is imported into that supervisor. Its result pipe and watchdog
-must remain inaccessible to the test UID. This alternative is implemented experimentally, but is not approved for activation
-until independent review and native adversarial proof complete.
+must remain inaccessible to the test UID. The native adversarial lane verifies this boundary. Runtime access still requires
+the owner opt-in; installing the application does not enable Docker execution.
 
 Node test events can themselves be forged by hostile tests. File-scoped counts
 prevent accidental empty-file passes, not malicious falsification. Supervisor
 evidence must distinguish kernel isolation/lifecycle observations from those
 untrusted test claims, reject malformed/duplicate framing and independently
 verify final container state. A count is never proof an assertion actually ran.
+
+## Owner configuration and retained evidence
+
+An execution grant selects recipe `node_test`, `allow_local_docker: true`, the
+exact `runtime_image` value
+`node@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5`, a read-root alias, test directory and bounded
+filename pattern. The enclosing project grant lists every source/test file.
+There is no implicit use of an installed daemon. The normal organization backend
+records the immutable start before dispatch and an immutable outcome afterward.
+Success additionally requires confirmed cleanup, matching source/grant/runtime
+identities and the existing independent review. Changed grants, revoked authority,
+source drift and unknown outcomes preserve the existing fail-closed gates.
