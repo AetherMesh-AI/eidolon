@@ -118,7 +118,7 @@ def _verify_container(record, name, base, grant, image_id, profile):
             or config.get('Entrypoint') != ['/usr/local/bin/node']
             or config.get('Cmd') != ['--disable-sigusr1', '/runner/supervisor.mjs']
             or config.get('Healthcheck', {}).get('Test') != ['NONE']
-            or set(host.get('CapAdd') or ()) != {'SETUID', 'SETGID'} or host.get('CapDrop') != ['ALL']
+            or set(host.get('CapAdd') or ()) != {'CAP_SETUID', 'CAP_SETGID'} or host.get('CapDrop') != ['ALL']
             or host.get('LogConfig', {}).get('Type') != 'none' or host.get('RestartPolicy', {}).get('Name') != 'no'
             or host.get('Devices') or host.get('DeviceRequests') or host.get('VolumesFrom') or host.get('PortBindings')
             or host.get('Privileged') or config.get('Tty')):
