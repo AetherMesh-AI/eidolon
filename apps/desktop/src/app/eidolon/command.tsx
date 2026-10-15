@@ -132,6 +132,17 @@ export function Command({
       return
     }
 
+    const selectedProjects = availableProjects.filter(project => metadata.projectIds?.includes(project.id))
+
+    if (selectedProjects.some(project => project.recipe === null) &&
+      ((metadata.deliveryMode ?? 'source_project') !== 'managed_artifact' ||
+        metadata.requiredChecks?.some(check => check === 'project_tests' || check === 'source_integration') ||
+        (selectedProjects.every(project => project.recipe === null) && metadata.requiredChecks?.includes('managed_validation')))) {
+      setError(copy.projectPlanningDelivery)
+
+      return
+    }
+
     const acceptanceCriteria = criteria
       .split('\n')
       .map(value => value.trim())
@@ -310,7 +321,7 @@ export function Command({
                   type="checkbox"
                 />
                 <span>
-                  {project.id} · {project.root} · {project.team}
+                  {project.id} · {project.root} · {project.team}{project.recipe === null ? ` · ${copy.projectPlanningOnly}` : ''}
                 </span>
               </label>
             ))}

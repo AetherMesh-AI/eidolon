@@ -97,6 +97,7 @@ def _view(content, settings, conn):
         blockers.append('registry_conflict')
     return {
         'storage': 'profile-ledger',
+        'supportsPlanningFolders': True,
         'ledgerProjects': [json.loads(row['project']) for row in registry_rows(conn)],
         'registryConflicts': conflicts,
         'repair': ("Restore each registered project's approved YAML root, recipe and team, or remove the conflicting YAML identity, then restart this profile's backend to reload its configuration. Exported identities remain available for review."
