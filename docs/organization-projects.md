@@ -237,9 +237,8 @@ objectives must finish or be deliberately replaced rather than silently gaining
 new authority. Registry conflicts and uncertain saves retain their existing
 recovery behavior.
 
-This first slice removes the recipe prerequisite for already authorized folders.
-Fresh folder selection and reviewed root-access setup without YAML are a separate
-remaining onboarding step; this change does not claim that full flow is shipped.
+Planning-only identities remove the recipe prerequisite for already authorized
+folders. Fresh folder selection and explicit root-access review are described below.
 
 Planning-only folders require managed-artifact delivery. An empty folder can
 complete a planning objective through independently reviewed `work.draft` or
@@ -248,3 +247,35 @@ a successful exact file read; listing an empty directory does not satisfy it.
 Project tests and source integration remain unavailable without a recipe. Managed
 validation also requires at least one editable, recipe-backed selected project.
 These requirements are checked at intake, later planning, and owner amendments.
+
+## Register a new folder from the desktop
+
+An authenticated owner can choose an existing empty or non-Git directory in project
+setup. The picker follows the current local or remote backend. Review the exact
+path, project ID, team, assigned root alias and access disclosure, then approve
+registration explicitly. Selecting a folder or preparing its preview grants no
+access. This workflow requires an initialized organization ledger and POSIX
+no-follow directory descriptors; unsupported backends remain unavailable.
+
+Registration atomically records an append-only folder grant, a planning-only
+project identity, a policy generation and an immutable retry receipt. It does not
+edit YAML, enable tools or staff capabilities, configure an execution recipe,
+start providers, or create objectives. Fresh organizations can plan using reviewed
+artifacts; file inspection still needs separately configured read permissions.
+
+Saved root aliases remain pinned to the original source-root prefix. Reordering
+or retargeting that prefix, imposing managed root policy, replacing a directory,
+or introducing overlapping roots fails closed. Directory device/inode identity
+is checked both during setup and on the actual opened read descriptor. Existing
+source-controlled roots retain their earlier behavior. New roots cannot overlap
+or contain another registered root. Up to eight effective roots are supported.
+
+If a registration response is lost, retry the same reviewed request. It returns
+the durable receipt without granting twice, even if later configuration changes.
+Concurrent registration is serialized by the ledger writer; active objectives,
+uncertain team generation and still-unwinding executions prevent new grants.
+
+Folder grants are append-only in this milestone. A per-folder revoke, move or
+rebind interface is not yet available. Existing owner tool/staff controls can
+remove inspection capability, and source or directory drift blocks resolution;
+this is not a complete workspace lifecycle or migration interface.
