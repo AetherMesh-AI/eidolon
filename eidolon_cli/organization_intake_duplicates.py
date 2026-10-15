@@ -90,6 +90,12 @@ def exact_duplicate(store, conn, intake, proposal):
     matches = []
     for old in candidates:
         original = json.loads(old['proposal_json'])
+        # Fresh source observations are part of the interpretation, even for
+        # managed reports. Changed or newly available context is not a repeat.
+        old_inspection = json.loads(old['context_json']).get('freshInspection') or {}
+        new_inspection = json.loads(intake['context_json']).get('freshInspection') or {}
+        if any(old_inspection.get(key) != new_inspection.get(key) for key in ('status', 'items', 'authoritySha256')):
+            continue
         if old['owner_priority'] != intake['owner_priority']:
             continue
         keys = ('routeId', 'executiveId', 'managerId', 'projectIds', 'deliveryMode', 'effectivePriority', 'acceptanceCriteria', 'assumptions')

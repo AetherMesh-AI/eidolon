@@ -434,7 +434,7 @@ export function createRequestIntakeClient(
           result.idempotencyKey !== previous.idempotencyKey ||
           result.request !== previous.request ||
           result.parentIntakeId !== previous.parentIntakeId ||
-          result.snapshotId !== previous.snapshotId
+          (result.snapshotId !== previous.snapshotId && (previous.dispatched || previous.status !== 'pending'))
         ) {
           throw new Error('Mismatched intake read')
         }

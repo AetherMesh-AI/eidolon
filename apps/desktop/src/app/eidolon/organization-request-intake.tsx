@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { useI18n } from '@/i18n/context'
 import { requestIntakeCopy } from '@/i18n/organization-request-intake'
 
+import { OrganizationIntakeInspectionControls } from './organization-intake-inspection-controls'
 import type { IntakePriority } from './organization-request-intake-types'
 import type { OrganizationSnapshot } from './types'
 import { useOrganizationRequestIntake } from './use-organization-request-intake'
@@ -31,6 +32,7 @@ export function OrganizationRequestIntake({ snapshot }: OrganizationRequestIntak
     <section aria-label={copy.title} className="grid gap-3">
       <h3>{copy.title}</h3>
       <p className="eid-note">{copy.note}</p>
+      <OrganizationIntakeInspectionControls />
       <form
         aria-busy={busy}
         className="grid gap-3"

@@ -96,6 +96,7 @@ class IntakeService:
         try:
             if record.cancel.is_set() or self.organization._stop.is_set():
                 raise ValueError('Organization stopped before intake dispatch')
+            self.store.prepare_intake_inspection(record.id, cancel=record.cancel)
             result = execute(self.store.intake_prompt(record.id), cancel=record.cancel,
                 reserve_model_call=lambda **values: self.store.reserve_intake_call(record.id, **values))
             received = True

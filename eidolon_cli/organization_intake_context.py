@@ -12,7 +12,7 @@ def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, allow_nan=False).encode()).hexdigest()
 
 
-def intake_context(store, conn, owner_priority=None):
+def intake_context(store, conn, owner_priority=None, *, intake_id=None):
     store._require_current_policy(conn)
     rows = conn.execute('SELECT a.*,i.identity_id,i.purpose,i.responsibilities FROM agents a '
                         'JOIN agent_identity i ON i.agent_id=a.id ORDER BY a.id').fetchall()
@@ -59,9 +59,14 @@ def intake_context(store, conn, owner_priority=None):
     from eidolon_cli.organization_intake_evidence import collect_intake_evidence
     observations = collect_intake_evidence(store, conn)
     payload['retainedEvidenceBinding'] = observations['private']['sha256']
+    from eidolon_cli.organization_intake_inspection_store import inspection_projection
+    fresh, fresh_binding = inspection_projection(store, conn, intake_id)
+    payload['freshInspectionBinding'] = fresh_binding
     snapshot_id = digest(payload)
     retained = tuple(Evidence(item['id'], route_ids=tuple(route.id for route in routes
                      if item['projectId'] in route.project_ids)) for item in observations['public']['items'])
+    retained += tuple(Evidence(item['id'], route_ids=tuple(route.id for route in routes
+                      if item['projectId'] in route.project_ids)) for item in fresh['items'])
     context = Context(snapshot_id, tuple(routes), (Evidence('owner-request'), *retained),
                       tuple(item['id'] for item in backlog), owner_priority)
     # Full private bindings contribute to stale-context detection but never enter
@@ -70,4 +75,5 @@ def intake_context(store, conn, owner_priority=None):
     public = {key: value for key, value in payload.items() if key != 'policyFingerprint'}
     public['projects'] = [public_project(project) for project in projects]
     public['retainedEvidence'] = observations['public']
+    public['freshInspection'] = fresh
     return context, {'snapshotId': snapshot_id, **public}

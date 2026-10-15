@@ -94,3 +94,22 @@ def test_cold_reads_never_construct_service_or_recover(monkeypatch):
 def test_recovery_requires_authenticated_transport():
     request = {'jsonrpc': '2.0', 'id': 1, 'method': 'organization.intake.recover', 'params': {}}
     assert gateway.handle_request(request)['error']['code'] == 4001
+
+
+def test_inspection_policy_read_on_empty_profile_never_constructs_service(monkeypatch):
+    from eidolon_constants import get_eidolon_home
+    home = get_eidolon_home()
+    before = {str(p.relative_to(home)): p.read_bytes() for p in home.rglob('*') if p.is_file()}
+    monkeypatch.setattr(services, 'get_service', lambda: pytest.fail('inspection read constructed service'))
+    view = rpc('organization.intake.inspection.read')
+    assert view['enabled'] is False and view['revision'] == 0
+    assert not services._services
+    assert {str(p.relative_to(home)): p.read_bytes() for p in home.rglob('*') if p.is_file()} == before
+
+
+def test_inspection_configuration_requires_owner_transport_and_confirmation():
+    request = {'jsonrpc': '2.0', 'id': 1, 'method': 'organization.intake.inspection.configure',
+        'params': {'expectedOrganizationId': 'synthetic', 'expectedRevision': 0, 'enabled': False,
+                   'workerId': None, 'projectIds': [], 'paths': [], 'confirmed': False, 'idempotencyKey': 'policy'}}
+    assert gateway.handle_request(request)['error']['code'] == 4001
+    assert gateway.dispatch(request)['error']['code'] == -32602

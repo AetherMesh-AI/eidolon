@@ -120,7 +120,8 @@ class OrganizationIntakeStore:
             row = self._intake_row(conn, intake_id)
             return {'request': row['request_text'], 'evidence': [{'id': 'owner-request',
                     'text': row['request_text'], 'provenance': 'owner_report_unverified'},
-                    *json.loads(row['context_json']).get('retainedEvidence', {}).get('items', [])],
+                    *json.loads(row['context_json']).get('retainedEvidence', {}).get('items', []),
+                    *json.loads(row['context_json']).get('freshInspection', {}).get('items', [])],
                     'organization': json.loads(row['context_json'])}
 
     def reserve_intake_call(self, intake_id, *, provider, model, input_limit, output_limit, selected_provider=None):
@@ -131,7 +132,7 @@ class OrganizationIntakeStore:
         model = _text(model, 'Model', 300)
         with self._write() as conn:
             row = self._intake_row(conn, intake_id)
-            context, _ = intake_context(self, conn, row['owner_priority'])
+            context, _ = intake_context(self, conn, row['owner_priority'], intake_id=intake_id)
             if row['status'] != 'pending' or row['dispatched']:
                 raise ValueError('Intake allows exactly one physical provider send')
             if row['snapshot_id'] != context.snapshot_id:
@@ -168,7 +169,7 @@ class OrganizationIntakeStore:
                 return _view(row)
             if not row['dispatched']:
                 raise ValueError('Intake response has no reserved physical send')
-            context, _ = intake_context(self, conn, row['owner_priority'])
+            context, _ = intake_context(self, conn, row['owner_priority'], intake_id=intake_id)
             if context.snapshot_id != row['snapshot_id']:
                 raise ValueError('Intake context changed before response acceptance')
             result = validate_proposal(raw, context)
@@ -214,7 +215,7 @@ class OrganizationIntakeStore:
                 return _view(row)
             if row['status'] != 'proposed':
                 raise ValueError('Intake requires an answer or review before admission')
-            context, _ = intake_context(self, conn, row['owner_priority'])
+            context, _ = intake_context(self, conn, row['owner_priority'], intake_id=intake_id)
             if context.snapshot_id != row['snapshot_id']:
                 raise ValueError('Intake context changed before admission')
             proposal = json.loads(row['proposal_json'])

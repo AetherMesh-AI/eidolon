@@ -213,3 +213,18 @@ describe('exact-repeat intent', () => {
     expect(h.request.mock.calls.map(call => call[0])).toEqual(['organization.intake.list', 'organization.intake.read'])
   })
 })
+
+it('accepts an evidence-bound snapshot before dispatch but rejects later snapshot replacement', async () => {
+  const h = harness()
+  h.client.edit({ text: 'Fix launch failure' })
+  h.request.mockResolvedValueOnce(intakeRecord({ idempotencyKey: 'key-1', dispatched: false }))
+  await h.client.submit()
+  h.request.mockResolvedValueOnce(intakeRecord({ idempotencyKey: 'key-1', snapshotId: 'inspected', dispatched: true }))
+  await h.client.read()
+  expect(h.client.getSnapshot().record?.snapshotId).toBe('inspected')
+  expect(h.client.getSnapshot().error).toBeNull()
+  h.request.mockResolvedValueOnce(intakeRecord({ idempotencyKey: 'key-1', snapshotId: 'replacement', dispatched: true }))
+  await h.client.read()
+  expect(h.client.getSnapshot().record?.snapshotId).toBe('inspected')
+  expect(h.client.getSnapshot().error).toBe('readFailed')
+})

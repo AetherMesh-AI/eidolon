@@ -50,5 +50,23 @@ def _answer(params, service):
                                         parent_intake_id=params['intakeId']))
 
 
+@_organization_method('organization.intake.inspection.read', registry=_registry)
+def _inspection_read(params, service):
+    _organization_params(params, set())
+    from eidolon_constants import get_eidolon_home
+    from eidolon_cli.organization_intake_inspection_store import read_inspection_policy
+    return _view(read_inspection_policy(get_eidolon_home()))
+
+
+@_organization_method('organization.intake.inspection.configure', registry=_registry)
+def _inspection_configure(params, service):
+    _organization_params(params, {'expectedOrganizationId', 'expectedRevision', 'enabled', 'workerId',
+                                  'projectIds', 'paths', 'confirmed', 'idempotencyKey'})
+    return _view(service().store.configure_inspection(
+        expected_organization_id=params.get('expectedOrganizationId'), expected_revision=params.get('expectedRevision'),
+        enabled=params.get('enabled'), worker_id=params.get('workerId'), project_ids=params.get('projectIds'),
+        paths=params.get('paths'), confirmed=params.get('confirmed'), idempotency_key=params.get('idempotencyKey')))
+
+
 def register(server):
     _registry.install(server)
