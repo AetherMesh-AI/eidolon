@@ -22,6 +22,7 @@ export const galleryLocales = [
 export async function setupGallery(locale: string, seedHistory = false) {
   let sessionId: string | undefined
   const fixture = await setupMockBackend({
+    isolateModelCatalog: true,
     extraDisplayConfig: `  language: ${locale}`,
     beforeLaunch: seedHistory ? async (sandbox, mock) => {
       const builder = await RealSessionBuilder.start(sandbox.hermesHome)

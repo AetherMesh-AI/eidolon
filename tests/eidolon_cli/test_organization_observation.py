@@ -276,3 +276,14 @@ def test_legacy_contract_observation_does_not_migrate(tmp_path, monkeypatch, par
         assert acceptance['humanJudgments'] == []
     with sqlite3.connect(store.path) as conn:
         assert list(conn.iterdump()) == before
+
+
+def test_missing_optional_build_outputs_remains_passive(tmp_path, monkeypatch):
+    store=seed(tmp_path)
+    with sqlite3.connect(store.path) as conn:conn.execute('DROP TABLE project_build_outputs')
+    before=files(tmp_path)
+    forbid_runtime(monkeypatch)
+    assert read_observation(tmp_path)['state'] == 'available'
+    assert files(tmp_path)==before
+    with sqlite3.connect(store.path) as conn:
+        assert conn.execute("SELECT name FROM sqlite_master WHERE name='project_build_outputs'").fetchone() is None

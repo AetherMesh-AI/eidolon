@@ -31,6 +31,7 @@ test.afterEach(async () => {
 
 test('keeps all Settings destinations, scoped saves, dismissal and selected appearance in the workspace', async () => {
   fixture = await setupMockBackend({
+    isolateModelCatalog: true,
     extraConfig: '\ncheckpoints:\n  enabled: false\nsettings_fixture_marker: retained\n'
   })
   const { app, page, mock, sandbox } = fixture

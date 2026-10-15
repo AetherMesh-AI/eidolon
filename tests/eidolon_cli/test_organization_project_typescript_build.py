@@ -18,8 +18,9 @@ def grant():
     return BuildGrant(allow_local_docker=True,compiler_directory=os.environ.get('EIDOLON_TEST_TYPESCRIPT_BUNDLE','/not-configured'))
 
 
-def test_build_is_not_enabled_in_production_dispatch():
-    with pytest.raises(ValueError):normalize_execution_grant(asdict(grant()))
+def test_build_dispatch_requires_exact_explicit_grant():
+    assert normalize_execution_grant(asdict(grant()))==grant()
+    with pytest.raises(ValueError):normalize_execution_grant({'recipe':'typescript_build'})
 
 
 def test_invalid_build_selection_or_cancel_never_launches():
@@ -249,3 +250,83 @@ n.run_build(json.loads(sys.argv[2]),json.loads(sys.argv[4]))
                 Path(root).chmod(0o700)
                 for directory in dirs:(Path(root)/directory).chmod(0o700)
             shutil.rmtree(base)
+
+
+def _build_reviewed_store(tmp_path):
+    from tests.eidolon_cli.test_organization_project_typescript import _typecheck_reviewed_store
+    return _typecheck_reviewed_store(tmp_path, execution=asdict(grant()), check_kind='project_build',
+                                     extra_sources={'helper.ts':'export const helper = 3;'})
+
+
+def test_build_stage_schedules_without_probe_and_exposes_no_unexecuted_output(tmp_path):
+    store,source,objective,claim,original=_build_reviewed_store(tmp_path)
+    assert claim['type']=='request.project_test' and source.read_bytes()==original
+    with store._connect() as conn:assert store._owned(conn,claim)
+    with store._connect() as conn:
+        assert conn.execute('SELECT count(*) FROM project_build_outputs').fetchone()[0]==0
+        with pytest.raises(ValueError):store.verify_project_check_runs(conn,objective['id'],'project_build')
+
+
+def test_real_build_outputs_are_atomic_exact_reviewed_versions(native,tmp_path,monkeypatch):
+    import json
+    import sqlite3
+    from eidolon_cli.organization_store import OrganizationStore
+    from eidolon_cli.organization_project_build_artifacts import persist_outputs
+    store,source,objective,claim,original=_build_reviewed_store(tmp_path)
+    store.run_project_stage(claim,threading.Event())
+    with store._connect() as conn:
+        outcome=json.loads(conn.execute('SELECT record FROM project_run_results').fetchone()[0])
+        assert outcome['status']=='passed',outcome
+        assert conn.execute('SELECT count(*) FROM project_build_outputs').fetchone()[0]==0
+    original_request=store._request
+    def fail_review(conn,objective_id,kind,*args,**kwargs):
+        if kind=='request.test_review':raise RuntimeError('Injected transaction interruption')
+        return original_request(conn,objective_id,kind,*args,**kwargs)
+    monkeypatch.setattr(store,'_request',fail_review)
+    with pytest.raises(RuntimeError,match='transaction interruption'):store.finish(claim,{})
+    with store._connect() as conn:
+        assert conn.execute('SELECT count(*) FROM project_build_outputs').fetchone()[0]==0
+    monkeypatch.setattr(store,'_request',original_request)
+    assert store.finish(claim,{})
+    review=store.claim_next();payload=json.loads(review['payload'])
+    assert review['type']=='request.test_review' and len(payload['evidenceIds'])==3
+    artifacts=[store.evidence(identifier) for identifier in payload['evidenceIds']]
+    assert [item['kind'] for item in artifacts]==['project_execution','project_build_output','project_build_output']
+    output=next(item for item in artifacts[1:] if item['buildOutput']['path']=='main.js')
+    assert output['buildOutput']['path']=='main.js'
+    assert output['buildOutput']['content']=='export const value = 2;\n'
+    assert output['buildOutput']['runId']==payload['runId']
+    with pytest.raises(ValueError):store.finish(review,{'approved':True,'summary':'Subset cannot prove complete build','evidenceIds':payload['evidenceIds'][:1]})
+    with store._connect() as conn:
+        with pytest.raises(ValueError):store.verify_project_check_runs(conn,objective['id'],'project_build')
+    assert store.finish(review,{'approved':True,'summary':'Reviewed exact complete compiler outputs and receipt','evidenceIds':payload['evidenceIds']})
+    store=OrganizationStore(store.path,store.settings)
+    with store._write() as conn:
+        pairs=store.verify_project_check_runs(conn,objective['id'],'project_build')
+        assert [artifact['id'] for _,artifact in pairs]==payload['evidenceIds']
+        persist_outputs(conn,pairs[0][0])
+        assert conn.execute('SELECT count(*) FROM project_build_outputs').fetchone()[0]==2
+        with pytest.raises(sqlite3.IntegrityError,match='Immutable'):
+            conn.execute("UPDATE project_build_outputs SET record='changed'")
+        with pytest.raises(ValueError):store.verify_project_tests(conn,objective['id'])
+        with pytest.raises(ValueError):store.verify_project_check_runs(conn,objective['id'],'project_typecheck')
+        conn.execute('SAVEPOINT missing_output')
+        conn.execute('DROP TRIGGER immutable_project_build_outputs_delete')
+        conn.execute('DELETE FROM project_build_outputs WHERE id=?',(payload['evidenceIds'][1],))
+        with pytest.raises(ValueError,match='manifest'):store.verify_project_check_runs(conn,objective['id'],'project_build')
+        conn.execute('ROLLBACK TO missing_output');conn.execute('RELEASE missing_output')
+        from eidolon_cli.organization_project_validation import canonical,digest
+        conn.execute('SAVEPOINT corrupted_output')
+        conn.execute('DROP TRIGGER immutable_project_build_outputs_update')
+        corrupted=dict(output['buildOutput']);corrupted['content']='export const forged = 99;\n'
+        conn.execute('UPDATE project_build_outputs SET record=?,sha256=? WHERE id=?',
+                     (canonical(corrupted),digest(corrupted),output['id']))
+        with pytest.raises(ValueError,match='compiler bytes'):store.verify_project_check_runs(conn,objective['id'],'project_build')
+        conn.execute('ROLLBACK TO corrupted_output');conn.execute('RELEASE corrupted_output')
+    assert source.read_bytes()==original
+    changed=OrganizationStore(store.path,replace(store.settings,project_grants=(replace(store.settings.project_grants[0],execution={**asdict(grant()),'timeout_seconds':31}),)))
+    with changed._connect() as conn:
+        with pytest.raises(ValueError):changed.verify_project_check_runs(conn,objective['id'],'project_build')
+    source.write_text('export const value=99;')
+    with store._connect() as conn:
+        with pytest.raises(ValueError):store.verify_project_check_runs(conn,objective['id'],'project_build')

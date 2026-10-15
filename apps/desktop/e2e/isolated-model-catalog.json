@@ -1,0 +1,28 @@
+{
+  "config": {
+    "model_catalog": {
+      "excluded_providers": ["opencode-free"]
+    }
+  },
+  "manifest": {
+    "version": 1,
+    "providers": {
+      "mock": { "models": [{ "id": "mock-model" }] }
+    }
+  },
+  "registry": {
+    "mock": {
+      "id": "mock",
+      "name": "Mock",
+      "models": {
+        "mock-model": {
+          "id": "mock-model",
+          "name": "Mock model",
+          "tool_call": true,
+          "reasoning": true,
+          "limit": { "context": 4096, "output": 1024 }
+        }
+      }
+    }
+  }
+}
