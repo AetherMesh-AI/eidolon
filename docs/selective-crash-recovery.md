@@ -23,3 +23,22 @@ This is not a general automatic retry facility. Arbitrary tools, provider calls,
 and filesystem operations are not classified as repeatable merely from their
 names or apparently read-only intent. General durable result replay and explicit
 repeatability contracts remain future work.
+
+## Retained successful project tests
+
+A dispatched project-test claim may recover only when its exact persisted backend
+result passes the existing current-grant, source snapshot, runtime identity,
+nonempty successful test, and cleanup verification. This recovery supports the
+fixed Python unittest, Python pytest, and Node test receipt kinds. Compiler/build
+results are not promoted to functional-test proof.
+
+Recovery pins the run ID, recipe, and complete artifact digest in a reconcile-only
+record. Missing or changed records block both dispatch and completion; they never
+fall back to executing tests. Successful reconciliation queues the ordinary
+independent test review once. It does not approve the tests itself. A second crash
+can reconcile the same receipt only within the original attempts, stage, deadline,
+and other budget limits. Original run counts and uncertain costs remain retained.
+
+Offline ledger tests inject clearly labeled terminal backend fixtures to exercise
+these boundaries. They do not establish native sandbox execution; the native
+adapter checks remain independently required.

@@ -138,7 +138,8 @@ def shared_projection(conn, *, internal=False):
             return {'state': 'blocked', 'reason': 'Shared allowance ledger identity changed.', 'scope': 'owner_declared_installation'}
         value = read_member_projection(home, organization_id(conn), required=pin is not None)
     except SharedAllowanceError as exc:
-        return {'state': 'blocked', 'reason': str(exc), 'scope': 'owner_declared_installation'}
+        return {'state': 'blocked', 'reason': str(exc), 'reasonCode': exc.reason,
+                'scope': 'owner_declared_installation'}
     except (OSError, RuntimeError):
         return {'state': 'blocked', 'reason': 'Shared allowance storage is unavailable.', 'scope': 'owner_declared_installation'}
     if value.get('state') != 'ready' or value.get('member') is None:
@@ -190,6 +191,11 @@ def shared_claim_reason(conn, request):
     if not value:
         return None
     if value.get('state') == 'blocked':
+        if value.get('reasonCode') in {'locked', 'organization_identity_locked'}:
+            from eidolon_cli.organization_pacing import OrganizationPacingDeferred
+            raise OrganizationPacingDeferred(
+                'Shared allowance storage is temporarily locked; admission is waiting without a reservation.',
+                time.time() + 1.0)
         return value['reason']
     period = value['period']
     if not _timestamp(period['startsAt'], 'startsAt') <= time.time() < _timestamp(period['endsAt'], 'endsAt'):

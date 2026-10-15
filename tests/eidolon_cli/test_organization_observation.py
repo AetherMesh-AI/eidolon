@@ -287,3 +287,27 @@ def test_legacy_contract_observation_does_not_migrate(tmp_path, monkeypatch, par
         assert acceptance['humanJudgments'] == []
     with sqlite3.connect(store.path) as conn:
         assert list(conn.iterdump()) == before
+
+
+@pytest.mark.parametrize('module,constant', [
+    ('organization_package_repair', 'PACKAGE_REPAIR_TABLES'),
+    ('organization_selective_repair', 'REPAIR_TABLES'),
+    ('organization_milestones', 'MILESTONE_TABLES'),
+    ('organization_outcome_contracts', 'CONTRACT_TABLES'),
+    ('organization_goal_allowances', 'GOAL_TABLES'),
+    ('organization_goal_continuation', 'CONTINUATION_TABLES'),
+])
+@pytest.mark.parametrize('partial', [False, True])
+def test_combined_optional_groups_remain_passive_and_fail_closed(tmp_path, monkeypatch, module, constant, partial):
+    import importlib
+    tables = sorted(getattr(importlib.import_module('eidolon_cli.' + module), constant))
+    assert len(tables) > 1
+    store = seed(tmp_path)
+    with sqlite3.connect(store.path) as conn:
+        for table in tables[:1] if partial else tables:
+            conn.execute('DROP TABLE ' + table)
+        before = list(conn.iterdump())
+    forbid_runtime(monkeypatch)
+    assert read_observation(tmp_path)['state'] == ('unsupported' if partial else 'available')
+    with sqlite3.connect(store.path) as conn:
+        assert list(conn.iterdump()) == before

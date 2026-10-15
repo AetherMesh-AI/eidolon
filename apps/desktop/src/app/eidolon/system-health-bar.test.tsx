@@ -21,6 +21,9 @@ vi.mock('./organization-folder-setup', () => ({ OrganizationFolderSetup: () => n
 vi.mock('./team-onboarding', () => ({ TeamOnboardingEntry: () => null }))
 // Exact owner judgments have a separate metadata and authority test suite.
 vi.mock('./runtime-outcome-judgment', () => ({ RuntimeOutcomeJudgment: () => null }))
+// Milestone owner reads and writes have separate scope and receipt suites.
+vi.mock('./organization-milestones', () => ({ OrganizationMilestones: () => null }))
+vi.mock('./organization-goals', () => ({ OrganizationGoals: () => null }))
 
 vi.mock('./use-organization-owner-policy', () => {
   // This suite exercises runtime rendering and source authority. The separate

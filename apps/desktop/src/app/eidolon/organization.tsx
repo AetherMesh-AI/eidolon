@@ -10,6 +10,8 @@ import type { OrganizationWorkCopy } from '@/i18n/organization-work'
 import { AgentContext } from './agent-context'
 import { AgentAvatar } from './avatar'
 import { Inspector } from './inspector'
+import { OrganizationMilestones } from './organization-milestones'
+import { OrganizationGoals } from './organization-goals'
 import { OwnerPolicyEntry } from './organization-owner-policy'
 import { OrganizationConversations } from './runtime-conversations'
 import { OrganizationManagementForm } from './runtime-management-form'
@@ -157,6 +159,7 @@ export function Organization({
           </details>
         </>
       )}
+      {runtime && <><OrganizationMilestones /><OrganizationGoals /></>}
       {runtime && <RuntimeModelRouting key={`model-routing:${snapshot.connection?.scope}`} snapshot={snapshot} />}
       {adapter && snapshot.runtime?.management && (
         <Button

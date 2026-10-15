@@ -42,6 +42,7 @@ Exit code: 0 if every file's pytest exited 0; 1 otherwise.
 from __future__ import annotations
 
 import argparse
+import math
 import json
 import os
 import re
@@ -301,6 +302,30 @@ def _kill_tree(proc: "subprocess.Popen", pgid: int | None = None) -> None:
         proc.kill()
     except (ProcessLookupError, OSError):
         pass
+
+
+def _parse_file_timeout_override(value: str) -> Tuple[str, float]:
+    """An exact repository-relative file budget; never a glob or directory."""
+    name, separator, raw_seconds = value.rpartition("=")
+    parts = name.split("/")
+    if (not separator or not name.endswith(".py") or "\\" in name or ":" in name or any(char in name for char in "*?[]")
+            or any(part in {"", ".", ".."} for part in parts)):
+        raise argparse.ArgumentTypeError("Use an exact repository-relative file.py=seconds")
+    try:
+        seconds = float(raw_seconds)
+    except ValueError:
+        raise argparse.ArgumentTypeError("File timeout override must be a positive finite number") from None
+    if not math.isfinite(seconds) or seconds <= 0:
+        raise argparse.ArgumentTypeError("File timeout override must be a positive finite number")
+    return name, seconds
+
+
+def _file_timeout_for(file: Path, repo_root: Path, default: float, overrides: dict) -> float:
+    try:
+        name = file.resolve().relative_to(repo_root.resolve()).as_posix()
+    except ValueError:
+        return default
+    return overrides.get(name, default)
 
 
 def _run_one_file(
@@ -811,6 +836,11 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--file-timeout-override", action="append", default=[],
+        type=_parse_file_timeout_override, metavar="FILE=SECONDS",
+        help="Override the wall-clock cap for one exact repository-relative Python file; repeatable. Other files retain --file-timeout.",
+    )
+    parser.add_argument(
         "--file-retries",
         type=int,
         default=int(
@@ -884,7 +914,7 @@ def main() -> int:
     # (``-k=expr``, ``--tb=long``) are self-contained and need no lookahead.
     OUR_FLAGS = {
         "-j", "--jobs", "--paths", "--include-integration",
-        "--file-timeout", "--file-retries", "--slice", "--generate-slices", "--files",
+        "--file-timeout", "--file-timeout-override", "--file-retries", "--slice", "--generate-slices", "--files",
     }
     # pytest short flags that consume the NEXT token as their value.
     PYTEST_VALUE_FLAGS = {"-k", "-m", "-p", "-o", "-c", "-r", "-W"}
@@ -926,6 +956,9 @@ def main() -> int:
         i += 1
 
     args = parser.parse_args(our_args)
+    timeout_overrides = dict(args.file_timeout_override)
+    if len(timeout_overrides) != len(args.file_timeout_override):
+        parser.error("Duplicate file timeout override")
 
     # ── Node-id selectors → file + ``-k`` filter ────────────────────────────
     # This runner is FILE-granular: it spawns one ``pytest <file>`` per test
@@ -1128,7 +1161,7 @@ def main() -> int:
             t0 = time.monotonic()
             fut = pool.submit(
                 _run_one_file, file, pytest_passthrough, repo_root,
-                args.file_timeout, args.file_retries,
+                _file_timeout_for(file, repo_root, args.file_timeout, timeout_overrides), args.file_retries,
             )
             fut.add_done_callback(lambda f, file=file, t0=t0: _on_done(file, t0, f))
             futures.append(fut)

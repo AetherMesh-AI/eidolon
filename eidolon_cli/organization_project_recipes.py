@@ -18,6 +18,18 @@ _LIMITATIONS = (
 )
 
 
+def execution_check_kind(execution):
+    """Normalize first; configuration compatibility is not host readiness."""
+    from eidolon_cli.organization_project_runner import normalize_execution_grant
+    grant = normalize_execution_grant(execution)
+    kinds = {'python_unittest': 'project_tests', 'python_pytest': 'project_tests',
+             'node_test': 'project_tests', 'typescript_check': 'project_typecheck',
+             'typescript_build': 'project_build'}
+    if grant.recipe not in kinds:
+        raise ValueError('Execution recipe has no supported verification kind')
+    return kinds[grant.recipe]
+
+
 def describe_execution_recipe(execution):
     """Configuration-only capabilities; safe to show without opening a project."""
     if execution is None:
@@ -35,10 +47,10 @@ def describe_execution_recipe(execution):
                 'reason': 'Requires explicitly enabled local Linux x86-64 Docker, the pinned image and independently verified TypeScript6.0.3 package. Only fixed typechecking of selected .ts inputs is supported; this does not satisfy project tests or a build.'}
     if grant.recipe == 'node_test':
         return {'recipe': grant.recipe, 'state': 'runtime_unverified', 'supported': True,
-                'backend': 'linux-docker-pinned', 'dependencyInstallation': False,
+                'backend': 'linux-docker-pinned', 'checkKind': execution_check_kind(execution), 'dependencyInstallation': False,
                 'reason': 'Requires explicitly enabled local Linux x86-64 Docker, cgroup v2, the exact preinstalled pinned image, and a successful live isolation check. Only selected dependency-free Node tests are supported.'}
     return {'recipe': grant.recipe, 'state': 'runtime_unverified', 'supported': True,
-            'backend': 'linux-bubblewrap-seccomp', 'dependencyInstallation': False,
+            'backend': 'linux-bubblewrap-seccomp', 'checkKind': execution_check_kind(execution), 'dependencyInstallation': False,
             'reason': ('Requires a successful live Linux isolation check and the exact owner-selected files. '
                        + ('Uses only the copied system Python standard library.' if grant.recipe == 'python_unittest'
                           else 'Requires the fixed installed pytest bundle; project dependencies are not installed.'))}

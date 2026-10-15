@@ -435,8 +435,10 @@ class OrganizationProjectExecutionStore:
                                 'ON r.run_id=s.id WHERE s.request_id=? ORDER BY s.created DESC LIMIT 1',
                                 (request['id'],)).fetchone()
         if previous is not None and previous['record'] is not None and json.loads(previous['record']).get('status') == 'passed':
-            row, _ = self._verify_project_run(conn, previous['id'], review=False)
+            row, artifact = self._verify_project_run(conn, previous['id'], review=False)
+            self._project_reconcile_guard(conn, request, row, artifact)
             return row
+        self._project_reconcile_guard(conn, request)
         return None
 
     @staticmethod
@@ -469,6 +471,8 @@ class OrganizationProjectExecutionStore:
                     or time.time() >= budget_view(conn, request['objective_id'], self.settings)['deadlineTimestamp']):
                 raise ValueError('Project execution was cancelled or its lease/deadline expired during snapshot preparation')
             control = conn.execute('SELECT round FROM objective_control WHERE objective_id=?', (request['objective_id'],)).fetchone()
+            from eidolon_cli.organization_goal_allowances import require_goal_admission
+            require_goal_admission(conn, request['objective_id'], project_run=True)
             identifier = 'project_run_' + uuid.uuid4().hex
             conn.execute('INSERT INTO project_run_starts VALUES (?,?,?,?,?,?,?,?,?,?,?)',
                 (identifier, request['id'], request['token'], request['objective_id'], control['round'],
@@ -493,6 +497,7 @@ class OrganizationProjectExecutionStore:
             if row is None:
                 raise ValueError('No authorized project test execution was recorded for this lease')
         artifact = project_execution_artifact(conn, row['id'])
+        self._project_reconcile_guard(conn, request, _run_row(conn, row['id']), artifact)
         if artifact is None:
             raise ValueError('Project run outcome is unknown; it cannot satisfy acceptance')
         outcome = artifact['projectExecution']

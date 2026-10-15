@@ -3208,6 +3208,8 @@ from . import (  # noqa: E402
     methods_tools as _methods_tools, prompt_turn as _prompt_turn, billing_view as _billing_view,
     methods_projects as _methods_projects, methods_organization as _methods_organization,
     methods_organization_metadata as _methods_organization_metadata,
+    methods_organization_milestones as _methods_organization_milestones,
+    methods_organization_goals as _methods_organization_goals,
     methods_organization_team_setup as _methods_organization_team_setup,
     methods_organization_owner_policy as _methods_organization_owner_policy,
     methods_organization_folder_setup as _methods_organization_folder_setup,
@@ -3225,7 +3227,7 @@ for _m in (
     _methods_config_set, _methods_complete, _methods_tools, _methods_profiles, _methods_images,
     _methods_bot_relay, _prompt_turn, _billing_view, _methods_projects, _methods_session_foreign,
     _methods_session_control, _methods_subagents, _methods_organization, _methods_organization_owner_chat,
-    _methods_organization_metadata, _methods_organization_observation, _methods_organization_owner_policy, _methods_organization_folder_setup,
+    _methods_organization_metadata, _methods_organization_milestones, _methods_organization_goals, _methods_organization_observation, _methods_organization_owner_policy, _methods_organization_folder_setup,
     _methods_organization_shared_allowance, _methods_organization_team_setup):
     _m.register(sys.modules[__name__])
 del _m
