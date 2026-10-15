@@ -17,6 +17,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 
+from eidolon_cli.organization_recovery import RECOVERY_SCHEMA, OrganizationRecoveryStore
 from eidolon_cli.organization_team_schema import TEAM_SETUP_SCHEMA
 from eidolon_cli.organization_model_routing import ROUTING_SCHEMA, OrganizationModelRoutingStore
 from eidolon_cli.organization_replacement import REPLACEMENT_SCHEMA, OrganizationReplacementStore
@@ -28,6 +29,7 @@ from eidolon_cli.organization_priority import PRIORITY_SCHEMA, OrganizationPrior
 from eidolon_cli.organization_pacing import OrganizationPacingStore, pacing_wait
 from eidolon_cli.organization_config import OrganizationSettings
 from eidolon_cli.organization_project_registry import REGISTRY_SCHEMA
+from eidolon_cli.organization_root_grants import ROOT_GRANT_SCHEMA
 from eidolon_cli.organization_projects import (PROJECTS_SCHEMA, selected_projects, objective_projects, task_project, bind_task_project, validate_objective_projects, public_project)
 from eidolon_cli.organization_attention import ATTENTION_SCHEMA, OrganizationAttentionStore
 from eidolon_cli.organization_outcomes import OUTCOME_SCHEMA, OrganizationOutcomeStore
@@ -111,10 +113,10 @@ def _text(value, field, limit=10000):
 
 
 # One DDL contract for initialization and non-migrating observation preflight.
-ORGANIZATION_SCHEMA = (_SCHEMA + TEAM_SETUP_SCHEMA + OWNER_POLICY_SCHEMA + ROUTING_SCHEMA + REPLACEMENT_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA + COORDINATION_SCHEMA + HISTORY_SCHEMA + ATTENTION_SCHEMA + PROJECTS_SCHEMA + OUTCOME_SCHEMA + REGISTRY_SCHEMA + PACKAGE_SCHEMA + CONVERSATION_SCHEMA + OWNER_CHAT_SCHEMA + PRIORITY_SCHEMA + DISPATCH_SCHEMA)
+ORGANIZATION_SCHEMA = (_SCHEMA + RECOVERY_SCHEMA + ROOT_GRANT_SCHEMA + TEAM_SETUP_SCHEMA + OWNER_POLICY_SCHEMA + ROUTING_SCHEMA + REPLACEMENT_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA + COORDINATION_SCHEMA + HISTORY_SCHEMA + ATTENTION_SCHEMA + PROJECTS_SCHEMA + OUTCOME_SCHEMA + REGISTRY_SCHEMA + PACKAGE_SCHEMA + CONVERSATION_SCHEMA + OWNER_CHAT_SCHEMA + PRIORITY_SCHEMA + DISPATCH_SCHEMA)
 
 
-class OrganizationStore(OrganizationModelRoutingStore, OrganizationPacingStore, OrganizationDispatchStore, OrganizationPriorityStore, OrganizationReplacementStore, OrganizationOwnerChatStore, OrganizationConversationStore, OrganizationPackageStore, OrganizationOutcomeStore, OrganizationAttentionStore, OrganizationHistoryStore, OrganizationCoordinationStore, OrganizationProjectExecutionStore, OrganizationBudgetStore, OrganizationRequestStore, OrganizationManagementStore, OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
+class OrganizationStore(OrganizationRecoveryStore, OrganizationModelRoutingStore, OrganizationPacingStore, OrganizationDispatchStore, OrganizationPriorityStore, OrganizationReplacementStore, OrganizationOwnerChatStore, OrganizationConversationStore, OrganizationPackageStore, OrganizationOutcomeStore, OrganizationAttentionStore, OrganizationHistoryStore, OrganizationCoordinationStore, OrganizationProjectExecutionStore, OrganizationBudgetStore, OrganizationRequestStore, OrganizationManagementStore, OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
     def __init__(self, path: Path | str, settings: OrganizationSettings | None = None):
         self.path = Path(path)
         self._shared_state_path = self.path.resolve()
@@ -235,6 +237,10 @@ class OrganizationStore(OrganizationModelRoutingStore, OrganizationPacingStore, 
         if delivery_mode not in ('managed_artifact', 'source_project'):
             raise ValueError('deliveryMode must be managed_artifact or source_project')
         projects = selected_projects(project_ids, self.settings)
+        if any(project['recipe'] is None for project in projects) and (delivery_mode != 'managed_artifact' or set(checks) & {'project_tests', 'source_integration'}):
+            raise ValueError('Planning-only folders require managed artifact delivery without project tests or source integration; approve an execution recipe first')
+        from eidolon_cli.organization_acceptance import validate_project_checks
+        validate_project_checks(projects, checks)
         if self.settings.projects and delivery_mode == 'source_project' and not projects:
             raise ValueError('Source-project objectives must explicitly select configured projectIds')
         key = _text(idempotency_key, "Idempotency key", 128)
@@ -324,7 +330,7 @@ class OrganizationStore(OrganizationModelRoutingStore, OrganizationPacingStore, 
         return all(conn.execute("SELECT status FROM tasks WHERE id=?", (ident,)).fetchone()[0] == "completed"
                    for ident in json.loads(row[0]))
 
-    def claim_next(self):
+    def claim_next(self, *, recoverable=False):
         with self._write() as conn:
             if not self._policy_current(conn):
                 return None
@@ -408,6 +414,8 @@ class OrganizationStore(OrganizationModelRoutingStore, OrganizationPacingStore, 
                              (agent["id"], token, lease, request["id"]))
                 conn.execute('INSERT INTO objective_usage(request_id,token,objective_id,stage) VALUES (?,?,?,?)',
                              (request['id'], token, request['objective_id'], request['type']))
+                if recoverable:
+                    self._journal_claim(conn, request['id'], token)
                 if request["task_id"]:
                     status = "review" if request["type"] == "request.review" else "working"
                     conn.execute("UPDATE tasks SET status=? WHERE id=?", (status, request["task_id"]))
@@ -590,7 +598,7 @@ class OrganizationStore(OrganizationModelRoutingStore, OrganizationPacingStore, 
         with self._write() as conn:
             rows = conn.execute("SELECT * FROM requests WHERE status='running' AND lease<=?", (time.time(),)).fetchall()
             for request in rows:
-                self._pending(conn, request, "Execution lease expired or the backend restarted. Its outcome is unconfirmed; review before retrying.")
+                self._recover_expired(conn, request)
             return len(rows)
 
     def cancel(self, objective_id):

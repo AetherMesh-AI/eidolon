@@ -50,6 +50,13 @@ def required_checks(value):
     return value
 
 
+def validate_project_checks(projects, checks):
+    if any(project['recipe'] is None for project in projects) and set(checks) & {'project_tests', 'source_integration'}:
+        raise ValueError('Planning-only folders cannot require project tests or source integration')
+    if projects and all(project['recipe'] is None for project in projects) and 'managed_validation' in checks:
+        raise ValueError('Planning-only folders cannot require managed validation without an editable project')
+
+
 def current_tasks(conn, objective_id):
     return conn.execute('SELECT t.* FROM tasks t JOIN objective_task_rounds r ON r.task_id=t.id '
                         'JOIN objective_control c ON c.objective_id=r.objective_id '
@@ -99,6 +106,9 @@ class OrganizationAcceptanceStore:
         added = required_checks(additions)
         control = conn.execute('SELECT required_checks FROM objective_control WHERE objective_id=?', (objective_id,)).fetchone()
         checks = list(dict.fromkeys([*json.loads(control['required_checks']), *added]))
+        from eidolon_cli.organization_projects import objective_projects
+        projects = objective_projects(conn, objective_id)
+        validate_project_checks(projects, checks)
         conn.execute('UPDATE objective_control SET required_checks=? WHERE objective_id=?', (json.dumps(checks), objective_id))
 
     def _migrate_acceptance(self, conn):
@@ -153,7 +163,7 @@ class OrganizationAcceptanceStore:
         if proof is not None:
             rows.append(project_validation_artifact(conn, proof['id']))
         if self._execution_required(conn, objective_id):
-            rows.extend(execution for _, execution in self.verify_project_test_runs(conn, objective_id))
+            rows.extend(execution for _, execution in self.verify_required_project_check_runs(conn, objective_id))
         rows.extend(self.current_source_evidences(conn, objective_id))
         return rows
 

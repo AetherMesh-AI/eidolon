@@ -148,3 +148,18 @@ def test_recovery_backups_preserve_committed_project_ledger_wal(
         assert saved.execute("SELECT secret FROM private_ledger").fetchone() == (
             "private policy and request history",)
     assert conn.execute("SELECT count(*) FROM organization_project_registry").fetchone() == (1,)
+
+
+def test_export_keeps_planning_only_recipe_null(tmp_path):
+    from eidolon_cli.profiles_project_export import stage_project_registry
+    home, staged = tmp_path / 'home', tmp_path / 'staged'
+    (home / 'organization').mkdir(parents=True)
+    staged.mkdir()
+    project = {'id': 'notes', 'root': 'root0', 'recipe': None, 'team': 'general'}
+    with sqlite3.connect(home / 'organization' / 'state.db') as conn:
+        conn.execute('CREATE TABLE organization_project_registry (id TEXT, project TEXT)')
+        conn.execute('INSERT INTO organization_project_registry VALUES (?,?)', ('notes', json.dumps(project)))
+    stage_project_registry(home, staged)
+    exported = json.loads((staged / 'organization-projects.json').read_text())
+    assert exported['projects'] == [project]
+    assert exported['requiresOwnerReview'] is True

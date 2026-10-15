@@ -64,7 +64,7 @@ it('submits selected persistent leaders and clears an incompatible manager when 
   expect(screen.queryByRole('option', { name: 'accountservices' })).toBeNull()
 })
 
-it('submits only selected configured repository IDs and keeps a failed submission editable', async () => {
+it('submits only selected configured project folder IDs and keeps a failed submission editable', async () => {
   const projects = [
     { id: 'frontend', root: 'root0', recipe: 'web-tests', team: 'web' },
     { id: 'backend', root: 'root1', recipe: 'api-tests', team: 'api' }
@@ -90,4 +90,20 @@ it('submits only selected configured repository IDs and keeps a failed submissio
   expect(JSON.stringify(params)).not.toContain('/owner/')
   expect(backend).toHaveProperty('checked', true)
   expect(backend).toHaveProperty('disabled', false)
+})
+
+it('requires artifact delivery for planning-only folders before calling admission', async () => {
+  const snapshot: OrganizationSnapshot = { source: 'runtime', objectives: [], agents: [], tasks: [], knowledge: [], activity: [], requests: [], runtime: { capabilities: [], scope: 'Configured projects', state: 'ready', maxWorkers: 2, availableProjects: [{ id: 'notes', root: 'root0', recipe: null, team: 'general' }] } }
+  const request = vi.fn().mockImplementation((method: string) => method === 'organization.create' ? Promise.reject(new Error('Test admission paused')) : Promise.resolve(snapshot))
+  const adapter = createRuntimeAdapter({ request: request as OrganizationGateway['request'], getScope: () => ({ key: 'planning', connected: true }), subscribeScope: () => () => undefined })
+  render(<MemoryRouter initialEntries={['/home']}><OrganizationWorkspace adapter={adapter} /></MemoryRouter>)
+  fireEvent.click(await screen.findByRole('checkbox', { name: /notes/ }))
+  fireEvent.change(screen.getByRole('textbox', { name: 'Objective' }), { target: { value: 'Plan a useful folder layout' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Create objective' }))
+  expect(request.mock.calls.some(call => call[0] === 'organization.create')).toBe(false)
+  expect(screen.getByRole('alert').textContent).toContain('artifact')
+  fireEvent.change(screen.getByRole('combobox', { name: 'Delivery scope' }), { target: { value: 'managed_artifact' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Create objective' }))
+  await screen.findByText('Test admission paused')
+  expect(request.mock.calls.find(call => call[0] === 'organization.create')![1]).toMatchObject({ projectIds: ['notes'], deliveryMode: 'managed_artifact' })
 })
