@@ -211,3 +211,40 @@ permanent Linux lane requires passing real pytest, failing/empty/incomplete test
 receipts, hostile-environment and forbidden-operation checks, and an independent
 review/source-integration loop. macOS and Windows retain their explicit unsupported
 behavior; there is no host execution fallback.
+
+## Folder-first planning projects
+
+A project can now bind an explicitly configured folder with `recipe: null`.
+The folder may be empty, contain ordinary documents, or contain a repository;
+Git is not required for planning or inspection. One organization can select
+multiple registered projects for an objective. These are independent root
+bindings, not a promise of atomic changes across repositories.
+
+The setup response advertises `supportsPlanningFolders: true`. Updated desktop
+clients offer “Planning and inspection only” when that capability is present;
+older runtimes retain the required-recipe flow. Existing string recipe bindings
+and their fingerprints are unchanged. All four identity keys remain mandatory.
+A missing recipe is explicit `null`, never an unknown recipe, empty string, or an
+inferred command. Exported identities preserve the null and still require owner
+review before activation elsewhere.
+
+Saving the identity grants no new access, starts no provider call, and creates
+no files in the selected folder. Inspection still needs its existing read-tool
+and root grants. An edit task against a planning-only folder is rejected before
+it can be admitted; test execution also requires an exact configured recipe.
+Adding a recipe or rebinding the folder changes the pinned identity, so existing
+objectives must finish or be deliberately replaced rather than silently gaining
+new authority. Registry conflicts and uncertain saves retain their existing
+recovery behavior.
+
+This first slice removes the recipe prerequisite for already authorized folders.
+Fresh folder selection and reviewed root-access setup without YAML are a separate
+remaining onboarding step; this change does not claim that full flow is shipped.
+
+Planning-only folders require managed-artifact delivery. An empty folder can
+complete a planning objective through independently reviewed `work.draft` or
+`work.analyze` artifacts bound to that project. A `work.inspect` task still needs
+a successful exact file read; listing an empty directory does not satisfy it.
+Project tests and source integration remain unavailable without a recipe. Managed
+validation also requires at least one editable, recipe-backed selected project.
+These requirements are checked at intake, later planning, and owner amendments.

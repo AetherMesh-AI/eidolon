@@ -172,6 +172,10 @@ class OrganizationOwnerStore:
                     from eidolon_cli.organization_acceptance import acceptance_criteria as normalize_criteria
                     criteria = normalize_criteria(criteria, body)
                     before = scope_state(conn, request['objective_id'])
+                    from eidolon_cli.organization_acceptance import validate_project_checks
+                    from eidolon_cli.organization_projects import objective_projects
+                    validate_project_checks(objective_projects(conn, request['objective_id']),
+                                            checks if checks is not None else before['requiredChecks'])
                     conn.execute('UPDATE objective_control SET amended_scope=?,criteria=?,required_checks=? WHERE objective_id=?',
                                  (body, json.dumps(criteria), json.dumps(checks if checks is not None else before['requiredChecks']), request['objective_id']))
                 self._replan(conn, request['objective_id'], body)

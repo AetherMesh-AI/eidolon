@@ -28,7 +28,7 @@ for _table in ('objective_projects', 'task_projects'):
 class OrganizationProject:
     id: str
     root: str
-    recipe: str
+    recipe: str | None
     team: str
 
 
@@ -44,7 +44,7 @@ def parse_projects(value, roots, grants):
             raise ValueError('Project IDs must be unique canonical names')
         if not isinstance(root, str) or not re.fullmatch(r'root[0-7]', root) or int(root[4:]) >= len(roots) or root in aliases:
             raise ValueError('Projects must bind distinct explicitly configured root aliases')
-        if not isinstance(recipe, str) or not any(grant.id == recipe and grant.execution['root'] == root for grant in grants):
+        if recipe is not None and (not isinstance(recipe, str) or not any(grant.id == recipe and grant.execution['root'] == root for grant in grants)):
             raise ValueError('A project recipe must be an existing exact grant for its root')
         if not isinstance(team, str) or not team.strip() or team != team.strip() or len(team) > 64:
             raise ValueError('A project team must be a nonempty bounded routing name')
@@ -56,13 +56,13 @@ def parse_projects(value, roots, grants):
 
 def _binding(project, settings):
     grant = next((grant for grant in settings.project_grants if grant.id == project.recipe), None)
-    if grant is None or grant.execution['root'] != project.root:
+    if project.recipe is not None and (grant is None or grant.execution['root'] != project.root):
         raise ValueError('Project recipe is no longer explicitly configured for its root')
     index = int(project.root[4:])
     if index >= len(settings.read_roots):
         raise ValueError('Project root is no longer explicitly configured')
     return {**asdict(project), 'readRoot': settings.read_roots[index],
-            'recipeSha256': hashlib.sha256(json.dumps(asdict(grant), sort_keys=True).encode()).hexdigest()}
+            'recipeSha256': hashlib.sha256(json.dumps(asdict(grant), sort_keys=True).encode()).hexdigest() if grant else None}
 
 
 def selected_projects(project_ids, settings):
@@ -113,6 +113,8 @@ def bind_task_project(conn, task_id, specification, settings):
     if task['team'] != binding['team']:
         raise ValueError('Task team must match its owner-approved project team')
     if task['type'] == 'work.edit':
+        if binding['recipe'] is None:
+            raise ValueError('This folder is configured for planning and inspection only; approve an execution recipe before editing')
         paths = specification.get('writePaths')
         if not isinstance(paths, list) or not paths or any(not isinstance(path, str) or path.split('/')[0] != binding['root'] for path in paths):
             raise ValueError('Project edits require exact writePaths confined to their bound project root')
