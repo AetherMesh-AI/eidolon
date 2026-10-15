@@ -336,7 +336,7 @@ def tool_execution(context: dict, kind: str):
     roots = policy.get("readRoots")
     if not isinstance(roots, list) or not roots or any(not isinstance(root, str) or not root for root in roots):
         raise _error("Inspection requires explicitly configured local read roots.")
-    if "readRootAliases" in policy and not isinstance(policy["readRootAliases"], list):
+    if "readRootAliases" in policy and (not isinstance(policy["readRootAliases"], list) or not policy["readRootAliases"]):
         raise _error("Inspection requires an explicit list of granted read-root aliases.")
     _bounded_int(policy.get("maxToolCalls"), "maxToolCalls", 1, 20)
     _bounded_int(policy.get("maxResultChars"), "maxResultChars", 1000, 20000)

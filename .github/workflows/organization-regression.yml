@@ -274,7 +274,10 @@ jobs:
     runs-on: ubuntu-22.04
     # Two metadata editor scenarios add real reload/lost-reply and native layout coverage.
     # Keep per-assertion deadlines and retries unchanged; allow the full serial suite to finish.
-    timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && inputs.full_desktop_suite && 40 || 35 }}
+    # The complete native suite plus artifact finalization exceeded 35 minutes
+    # on hosted runners (postmerge 38763000809 reached 50 passing cases at the cap).
+    # Keep every per-test deadline/assertion and zero-retry setting unchanged.
+    timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && inputs.full_desktop_suite && 50 || 45 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

@@ -75,6 +75,8 @@ def selected_projects(project_ids, settings):
     registry = {project.id: project for project in settings.projects}
     if any(identifier not in registry for identifier in project_ids):
         raise ValueError('projectIds must select only explicitly configured projects')
+    if any(registry[identifier].root in settings.revoked_root_aliases for identifier in project_ids):
+        raise ValueError('Project folder access was revoked by its owner')
     return [_binding(registry[identifier], settings) for identifier in sorted(project_ids)]
 
 
@@ -94,7 +96,7 @@ def validate_objective_projects(conn, objective_id, settings):
     registry = {project.id: project for project in settings.projects}
     for binding in bindings:
         project = registry.get(binding['id'])
-        if project is None or _binding(project, settings) != binding:
+        if project is None or project.root in settings.revoked_root_aliases or _binding(project, settings) != binding:
             raise ValueError('Objective project binding changed or was revoked; restore its exact owner-approved root, recipe and team before continuing')
     return bindings
 

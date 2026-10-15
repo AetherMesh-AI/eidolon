@@ -6,16 +6,20 @@ _registry = HandlerRegistry()
 
 def _folder_method(name, operation):
     allowed = {'expectedOrganizationId'}
-    if operation != 'read':
+    if operation in {'preview', 'apply'}:
         allowed |= {'expectedGeneration', 'sourceRevision', 'candidate' if operation == 'apply' else 'folder'}
     if operation == 'apply':
         allowed |= {'previewVersion', 'idempotencyKey', 'confirmed'}
+    if operation in {'revoke', 'review'}:
+        allowed |= {'expectedGeneration', 'alias', 'grantHash', 'confirmed'}
+        allowed |= {'idempotencyKey'} if operation == 'revoke' else {'reviewVersion', 'acknowledgeUncertain'}
 
     @_registry.method(name)
     def handler(rid, params):
         from pathlib import Path
         from eidolon_cli.organization_owner_policy import OwnerPolicyError
         from eidolon_cli.organization_folder_setup import folder_setup, preview_folder, register_folder
+        from eidolon_cli.organization_folder_revocation import folder_access, revoke_folder, review_revocation
         from eidolon_cli.organization_metadata import MetadataError
         from eidolon_cli.profiles import get_active_profile_name
         from eidolon_constants import set_eidolon_home_override, reset_eidolon_home_override
@@ -34,7 +38,10 @@ def _folder_method(name, operation):
                 profile = get_active_profile_name()
                 operations = {'read': lambda: folder_setup(home, params['expectedOrganizationId']),
                               'preview': lambda: preview_folder(home, params),
-                              'apply': lambda: register_folder(home, params)}
+                              'apply': lambda: register_folder(home, params),
+                              'access': lambda: folder_access(home, params['expectedOrganizationId']),
+                              'revoke': lambda: revoke_folder(home, params),
+                              'review': lambda: review_revocation(home, params)}
                 result = operations[operation]()
             finally:
                 reset_eidolon_home_override(token)
@@ -51,6 +58,9 @@ def _folder_method(name, operation):
 _folder_method('organization.folderSetup', 'read')
 _folder_method('organization.previewProjectFolder', 'preview')
 _folder_method('organization.registerProjectFolder', 'apply')
+_folder_method('organization.folderAccess', 'access')
+_folder_method('organization.revokeProjectFolder', 'revoke')
+_folder_method('organization.reviewFolderRevocation', 'review')
 
 
 def register(server):
