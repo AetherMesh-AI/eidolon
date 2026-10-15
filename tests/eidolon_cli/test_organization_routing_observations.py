@@ -98,3 +98,58 @@ def test_optional_measurement_writer_fails_fast_under_contention(tmp_path):
     item = routing_observations(store.path)['observations'][0]
     assert item['latencySeconds'] is None
     assert item['reservedCostUsd'] is not None
+
+
+def test_readiness_keeps_unknowns_and_counts_only_bounded_sample(tmp_path):
+    store, objective, claim = setup(tmp_path)
+    reserve(store, claim)
+    reserve(store, claim)
+    report = routing_observations(store.path, limit=1)
+    readiness = report['evidenceReadiness']
+    group, = readiness['groups']
+    assert group['sampledReservations'] == group['distinctRequests'] == group['distinctObjectives'] == 1
+    assert group['missingBilledCostSamples'] == group['missingProviderUsageSamples'] == 1
+    assert group['latency'] == dict(sampleCount=0, missingCount=1, minimumSeconds=None,
+                                   medianSeconds=None, maximumSeconds=None)
+    assert group['transportOutcomes'] == dict(response=0, error=0, unobserved=1)
+    assert 'report-window-truncated' in group['blockingEvidence']
+    assert readiness['rankingReady'] is readiness['selectionChanged'] is False
+
+
+def test_readiness_groups_exact_configuration_and_stage_without_quality_scores():
+    from eidolon_cli.organization_routing_readiness import evidence_readiness
+    item = dict(routeId='r', provider='p', model='m', reasoning='low', configurationFingerprint='c',
+                stage='work.inspect', requestId='q', objectiveId='o', latencySeconds=0,
+                providerReportedUsage={'inputTokens': 0, 'outputTokens': 0}, actualCostUsd=None,
+                transportOutcome='response', objectiveAccepted=True, stageCompleted=True)
+    items = [item, {**item, 'latencySeconds': 2, 'transportOutcome': 'error'},
+             {**item, 'configurationFingerprint': 'different'}, {**item, 'stage': 'work.edit'}]
+    report = evidence_readiness(items, truncated=False)
+    assert len(report['groups']) == 3
+    group = next(g for g in report['groups'] if g['sampledReservations'] == 2)
+    assert group['distinctRequests'] == group['distinctObjectives'] == 1
+    assert group['latency'] == dict(sampleCount=2, missingCount=0, minimumSeconds=0,
+                                   medianSeconds=1, maximumSeconds=2)
+    assert group['completeProviderUsageSamples'] == 2
+    assert group['knownBilledCostSamples'] == 0
+    assert group['transportOutcomes'] == dict(response=1, error=1, unobserved=0)
+    assert all(g['rankingReady'] is False for g in report['groups'])
+    assert 'score' not in json.dumps(report).lower()
+
+
+def test_readiness_rejects_malformed_counts_and_never_promotes_full_coverage():
+    from eidolon_cli.organization_routing_readiness import evidence_readiness
+    item = dict(routeId='r', provider='p', model='m', reasoning='low', configurationFingerprint='c',
+                stage='s', requestId='q', objectiveId='o', latencySeconds=float('nan'),
+                providerReportedUsage={'inputTokens': True, 'outputTokens': -1}, actualCostUsd=True,
+                transportOutcome='unobserved')
+    group, = evidence_readiness([item], truncated=False)['groups']
+    assert group['completeProviderUsageSamples'] == group['knownBilledCostSamples'] == 0
+    assert group['latency']['sampleCount'] == 0
+    complete = {**item, 'latencySeconds': 1, 'actualCostUsd': 0,
+                'providerReportedUsage': {'inputTokens': 1, 'outputTokens': 1}}
+    group, = evidence_readiness([complete], truncated=False)['groups']
+    assert group['knownBilledCostSamples'] == 1
+    assert group['rankingReady'] is False
+    assert 'independent-downstream-quality-attribution-unavailable' in group['blockingEvidence']
+    assert evidence_readiness([], truncated=False)['groups'] == []

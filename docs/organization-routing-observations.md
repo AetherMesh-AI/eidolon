@@ -45,3 +45,19 @@ verified outcomes across task difficulty/stage and configuration, account for
 failed/retried work and censored/unknown results, and evaluate a shadow policy
 against the unchanged authorized baseline. Token usage multiplied by a configured
 ceiling is not a provider invoice; this report never labels it actual spending.
+
+## Evidence readiness
+
+The same read-only report includes `evidenceReadiness`: diagnostic groups by exact
+route, provider, model, reasoning, configuration fingerprint and request stage.
+Each group counts sampled reservations, distinct requests/objectives, transport
+outcomes, complete provider-usage samples, and known/missing billed-cost samples.
+Latency summaries show minimum/median/maximum only for measured samples; missing
+samples are counted separately. Zero is retained when genuinely observed.
+
+These are summaries of the bounded recent reservation window, not lifetime totals
+or benchmarks. Truncation is explicit. Multiple calls from one request are not
+independent quality trials. Stage completion and current objective acceptance do
+not generate success rates, scores, or rankings. Every group remains unready for
+ranking until independently verified downstream attribution and comparable task
+difficulty evidence exist; complete measurement coverage alone is insufficient.
