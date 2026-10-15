@@ -213,3 +213,30 @@ def test_concurrent_registration_replays_one_atomic_receipt(folder_profile):
     with sqlite3.connect(p.path) as conn:
         assert conn.execute('SELECT COUNT(*) FROM organization_root_grants').fetchone()[0] == 1
         assert conn.execute('SELECT COUNT(*) FROM organization_folder_receipts').fetchone()[0] == 1
+
+
+def test_new_owner_approved_folder_reaches_first_reviewed_objective_without_yaml(folder_profile):
+    from eidolon_cli.organization_folder_setup import register_folder
+    from eidolon_cli.organization_store import OrganizationStore
+    from tests.eidolon_cli.test_organization_acceptance import _integrate, _decision
+    from tests.eidolon_cli.test_organization_projects import claim_after_decomposition
+    f = folder_profile
+    register_folder(f.home, f.apply)
+    store = OrganizationStore(f.path)
+    project_id = f.apply['candidate']['project']['id']
+    objective = store.create_objective('Plan this empty workspace', project_ids=[project_id],
+                                      delivery_mode='managed_artifact', idempotency_key='first-plan')
+    plan = claim_after_decomposition(store)
+    store.finish(plan, {'tasks': [{'title': 'Plan', 'description': 'Describe the empty workspace organization',
+                                  'type': 'work.draft', 'team': 'general', 'projectId': project_id}]})
+    work = store.claim_next()
+    store.finish(work, {'summary': 'Prepared plan', 'deliverable': 'Create separate notes and reports folders when approved.'})
+    review = store.claim_next()
+    evidence = [item['id'] for item in store.context(review)['evidence']]
+    store.finish(review, {'approved': True, 'summary': 'The planning artifact meets the request.', 'evidenceIds': evidence})
+    acceptance = _integrate(store)
+    store.finish(acceptance, _decision(store, acceptance))
+    assert OrganizationStore(f.path).snapshot()['objectives'][0]['status'] == 'completed'
+    assert objective['projects'][0]['recipe'] is None
+    assert not (f.home / 'config.yaml').exists()
+    assert list(f.root.iterdir()) == []
