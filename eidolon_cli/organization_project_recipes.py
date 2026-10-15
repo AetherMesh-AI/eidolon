@@ -116,11 +116,11 @@ Multiple package directories are independent candidates, not assumed workspaces.
                 'state': 'unsupported', 'reason': 'A trusted pinned compiler and isolated dependency bundle are required.'})
         if any(candidate['recipe'].startswith('node_package_') for candidate in entry['candidates']):
             entry['blockers'].append('package_script_adapter_unavailable')
-        builtin_tests = [item['path'] for item in selected if str(PurePosixPath(item['path']).parent) == base
+        builtin_tests = [{key: item[key] for key in ('path', 'sha256', 'revision')} for item in selected if str(PurePosixPath(item['path']).parent) == base
                          and item['path'].endswith(('.test.cjs', '.test.mjs', '.test.js'))]
         if builtin_tests:
             entry['candidates'].append({'recipe': 'node_test', 'phase': 'test', 'state': 'runtime_unverified',
-                'selectedTests': sorted(builtin_tests),
+                'selectedTests': sorted(builtin_tests, key=lambda item: item['path']),
                 'reason': 'Requires an explicit owner grant and supported pinned local Linux x86-64 Docker runtime. Selected files and imports must be sufficient; package scripts are not invoked.'})
         entry['definitionSha256'] = digest(entry)
         projects.append(entry)

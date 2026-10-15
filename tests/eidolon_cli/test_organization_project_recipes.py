@@ -135,3 +135,14 @@ def test_no_recipe_cannot_borrow_another_configured_project_recipe():
     # Rejection precedes any database lookup, author inspection or grant fallback.
     with pytest.raises(ValueError, match='no execution recipe'):
         UnconfiguredFolder()._project_grant(None, 'objective', 'notes')
+
+
+def test_builtin_node_candidate_definition_binds_selected_test_bytes_and_revision():
+    manifest = file('root0/package.json', '{}')
+    original = file('root0/a.test.cjs', 'first', 1)
+    first = inspect_project_recipes([manifest, original])['projects'][0]
+    candidate = next(row for row in first['candidates'] if row['recipe'] == 'node_test')
+    assert candidate['selectedTests'] == [{key: original[key] for key in ('path', 'sha256', 'revision')}]
+    for changed in (file('root0/a.test.cjs', 'second', 1), file('root0/a.test.cjs', 'first', 2)):
+        second = inspect_project_recipes([manifest, changed])['projects'][0]
+        assert second['definitionSha256'] != first['definitionSha256']

@@ -375,6 +375,13 @@ class OrganizationProjectExecutionStore:
         try:
             self._project_grant(conn, request['objective_id'], json.loads(request['payload']).get('projectId'))
             if request['type'] == 'request.project_test':
+                for retained in conn.execute('SELECT r.record FROM project_run_starts s JOIN project_run_results r '
+                        'ON r.run_id=s.id WHERE s.objective_id=?', (request['objective_id'],)):
+                    outcome = json.loads(retained['record'])
+                    if (outcome.get('status') == 'cleanup_failed' or
+                            outcome.get('runner') == 'eidolon.isolated-node-test' and
+                            outcome.get('containerName') and outcome.get('cleanupConfirmed') is not True):
+                        raise ValueError('An earlier project container has an unknown cleanup outcome; inspect its retained identity before starting a new objective, not an automatic replay')
                 if self._reusable_project_run(conn, request) is not None:
                     return None
                 ceiling = conn.execute('SELECT max_runs FROM project_execution_budgets WHERE objective_id=?',

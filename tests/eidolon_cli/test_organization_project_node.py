@@ -374,7 +374,7 @@ def test_live_receipt_binds_runtime_grant_source_and_cleanup(native):
         assert not valid_node_receipt(modified,asdict(GRANT),snapshot(GOOD)),(section,key)
 
 
-def test_live_store_dispatch_and_durable_review_gate(native,tmp_path):
+def _node_reviewed_store(tmp_path):
     from dataclasses import replace
     from eidolon_cli.organization_project_config import parse_project_grants
     from eidolon_cli.organization_store import OrganizationStore
@@ -392,6 +392,12 @@ def test_live_store_dispatch_and_durable_review_gate(native,tmp_path):
     assert store.finish(store.claim_next(),{})
     assert store.finish(store.claim_next(),{})
     claim=store.claim_next();assert claim['type']=='request.project_test'
+    return store,source,objective,claim,original
+
+
+def test_live_store_dispatch_and_durable_review_gate(native,tmp_path):
+    from eidolon_cli.organization_store import OrganizationStore
+    store,source,objective,claim,original=_node_reviewed_store(tmp_path)
     with pytest.raises(ValueError):
         store.finish(claim,{'status':'passed'})
     store.run_project_stage(claim,threading.Event())
@@ -413,3 +419,44 @@ def test_live_store_dispatch_and_durable_review_gate(native,tmp_path):
     with reopened._connect() as conn:
         with pytest.raises(ValueError):
             reopened._verify_project_run(conn,row['run_id'],review=False)
+
+
+def test_live_unknown_cleanup_survives_lost_finish_and_blocks_replay(native,tmp_path,monkeypatch):
+    from eidolon_cli import organization_project_node as module
+    from eidolon_cli.organization_store import OrganizationStore
+    store,source,objective,claim,original_source=_node_reviewed_store(tmp_path)
+    original=module._docker
+    def fail_cleanup(args,config,budget,limit=1048576):
+        if args[0]=='rm':
+            return 1,{'stdout':bytearray(),'stderr':bytearray(b'injected cleanup failure')},{'stdout':0,'stderr':24},None
+        return original(args,config,budget,limit)
+    monkeypatch.setattr(module,'_docker',fail_cleanup)
+    store.run_project_stage(claim,threading.Event())
+    monkeypatch.setattr(module,'_docker',original)
+    with store._connect() as conn:
+        receipt=json.loads(conn.execute('SELECT record FROM project_run_results').fetchone()[0])
+    try:
+        assert receipt['status']=='cleanup_failed',receipt
+        assert receipt['isolation']['established'] is True
+        # Crash before finish acknowledgement: reopen and recover an expired lease.
+        reopened=OrganizationStore(store.path,store.settings)
+        with reopened._write() as conn:
+            conn.execute('UPDATE requests SET lease=? WHERE id=?',(time.time()-1,claim['id']))
+        assert reopened.recover_expired()==1
+        assert reopened.retry(claim['id'])
+        assert reopened.claim_next() is None
+        with reopened._connect() as conn:
+            row=conn.execute('SELECT status,reason FROM requests WHERE id=?',(claim['id'],)).fetchone()
+            assert row['status']=='pending_intervention'
+            assert 'unknown cleanup outcome' in row['reason']
+            assert conn.execute('SELECT count(*) FROM project_run_starts').fetchone()[0]==1
+            assert conn.execute('SELECT count(*) FROM project_run_results').fetchone()[0]==1
+            assert conn.execute("SELECT count(*) FROM requests WHERE type='request.source_integrate'").fetchone()[0]==0
+        assert source.read_bytes()==original_source
+    finally:
+        config=tmp_path/'cleanup-docker';config.mkdir();(config/'config.json').write_text('{}')
+        budget=module._Budget(None,5,time.monotonic())
+        record=module._json_command(['inspect',receipt['containerId']],config,budget)[0]
+        assert record['Config']['Labels']['ai.eidolon.execution']==receipt['containerName']
+        code,_,_,forced=original(['rm','--force',receipt['containerId']],config,budget)
+        assert code==0 and forced is None
