@@ -33,6 +33,17 @@ No free-form milestone title becomes an additional unverified acceptance claim.
 
 The pure `milestone_projection(connection)` supports old ledgers with all three
 milestone tables absent without migrations. Partial tables fail closed. Normal
-Store initialization creates the optional tables additively. Owner UI/RPC and
-trusted automatic continuation are future integrations; this backend alone does
-not make a new externally callable authority surface.
+Store initialization creates the optional tables additively. The Organization page exposes a bounded owner-only milestone panel. Load current
+milestones, choose existing project-bound objectives and prerequisites, review,
+and explicitly save. Existing milestone edits use expected revision checks. A
+failed or uncertain save keeps its exact intent and idempotency key for retry;
+changing the authenticated owner/socket makes the old panel ineligible. An explicit
+receipt check can recover after reconnection to the same stable owner route,
+profile, organization and owner identity. It never resends a write: a matching
+receipt confirms the save; an absent receipt retains the original intent for an
+explicit retry. Different owner routes cannot recover or replay that intent.
+
+The served-profile RPC accepts no caller-selected profile or actor. Reads use a
+read-only SQLite snapshot without constructing the service. Saving changes only
+planning records and never calls service.start. Trusted automatic continuation
+and a shared multi-objective spending ceiling remain future integrations.
