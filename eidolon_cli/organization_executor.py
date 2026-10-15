@@ -1186,8 +1186,11 @@ A transport ignoring cancellation remains in the scheduler's occupied slot.
             if route is not None and reserve is not None:
                 def routed_reserve(**values):
                     values['provider'] = route['selectedProvider']
-                    return reserve(**values, route_snapshot=route)
+                    call_id = reserve(**values, route_snapshot=route)
+                    agent._organization_last_call_id = call_id
+                    return call_id
                 agent._organization_reserve = routed_reserve
+                agent._organization_record_observation = context.get('recordModelObservation')
             else:
                 agent._organization_reserve = reserve
             _guard_plugin_integrations(tool_mode=execution is not None)
