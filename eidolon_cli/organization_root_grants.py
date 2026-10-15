@@ -93,6 +93,8 @@ def check_new_root(path, settings):
         retained = expected_root_identities(settings).get(f'root{index}')
         if f'root{index}' in settings.revoked_root_aliases:
             other_identity = {'device': retained[0], 'inode': retained[1]} if retained else None
+            if other_identity == identity:
+                raise ValueError('Folder matches a revoked recorded filesystem identity. This may be inode reuse; access cannot be regranted in this interface.')
         else:
             other_identity = directory_identity(current)
         if candidate == other or candidate in other.parents or other in candidate.parents or other_identity == identity:

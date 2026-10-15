@@ -148,7 +148,9 @@ def test_new_grants_append_without_reusing_revoked_identity(folder_profile):
     view=folder_access(p.home,p.identity['organizationId'])
     review_revocation(p.home,{'expectedOrganizationId':view['organizationId'],'expectedGeneration':view['policyGeneration'],
         'alias':'root0','grantHash':view['grants'][0]['grantHash'],'confirmed':True,'reviewVersion':view['reviewVersion'],'acknowledgeUncertain':False})
-    p.root.rmdir();other=p.root.with_name('second');other.mkdir()
+    # Allocate the distinct inode before removing the revoked directory: an
+    # immediate mkdir after rmdir may legitimately reuse its retained inode.
+    other=p.root.with_name('second');other.mkdir();p.root.rmdir()
     view=folder_setup(p.home,p.identity['organizationId']);params={'expectedOrganizationId':view['organizationId'],
         'expectedGeneration':view['policyGeneration'],'sourceRevision':view['sourceRevision'],'folder':{'path':str(other),'projectId':'second','team':'general'}}
     preview=preview_folder(p.home,params)
@@ -235,3 +237,25 @@ def test_unknown_source_effect_can_be_acknowledged_without_success(folder_profil
         assert reviewed['acknowledgeUncertain'] is True
         assert reviewed['activity']['uncertainSourceRequests']==view['uncertainSourceRequests']
     assert folder_access(p.home,p.identity['organizationId'])['uncertainSourceRequests']==view['uncertainSourceRequests']
+
+
+def test_moved_revoked_inode_cannot_be_granted_under_another_alias(folder_profile):
+    from eidolon_cli.organization_root_grants import check_new_root
+    p=folder_profile;register_folder(p.home,p.apply);revoke_folder(p.home,revoke_params(p))
+    moved=p.root.with_name('moved-revoked');p.root.rename(moved)
+    store=OrganizationStore(p.path)
+    with pytest.raises(ValueError,match='revoked recorded filesystem identity'):
+        check_new_root(str(moved),store.settings)
+
+
+def test_reused_inode_remains_conservatively_denied_without_probing_revoked_path(folder_profile,monkeypatch):
+    from eidolon_cli import organization_root_grants as roots
+    p=folder_profile;register_folder(p.home,p.apply);revoke_folder(p.home,revoke_params(p))
+    store=OrganizationStore(p.path);retained=roots.expected_root_identities(store.settings)['root0']
+    other=p.root.with_name('independent');other.mkdir();p.root.rmdir()
+    def reused_identity(path):
+        assert path==str(other), 'Never probe the revoked path'
+        return {'device':retained[0],'inode':retained[1]}
+    monkeypatch.setattr(roots,'directory_identity',reused_identity)
+    with pytest.raises(ValueError,match='may be inode reuse'):
+        roots.check_new_root(str(other),store.settings)

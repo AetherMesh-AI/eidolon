@@ -287,7 +287,11 @@ configuration. An authenticated owner reviews the alias and path, then explicitl
 revokes that grant. This works when the folder is missing or replaced, and when
 source configuration is invalid. Administrator-configured roots are outside this
 operation. The immutable grant and its audit receipt remain; aliases are never
-renumbered, reused or automatically rebound.
+renumbered, reused or automatically rebound. A retained device/inode match is
+conservatively refused even at a different path. Filesystems may reuse inode
+numbers after deletion, so this can refuse an unrelated new directory; it does
+not prove the historical directory survived. The owner sees that explanation,
+and this interface does not override the tombstone or automatically rebind it.
 
 Successful revocation means its durable tombstone and policy-generation fence
 have committed. New claims and tool starts are denied, active claims are fenced,
