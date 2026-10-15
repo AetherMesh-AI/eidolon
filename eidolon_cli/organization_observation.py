@@ -57,6 +57,7 @@ def _compatible_schema(conn, tables):
         if name in OWNER_POLICY_TABLES:
             continue  # Optional owner-editor data does not invalidate legacy observation.
         if name in {'organization_root_grants', 'organization_folder_receipts',
+                    'organization_root_revocations', 'organization_root_revocation_reviews',
                     'organization_shared_call_receipts', 'organization_shared_scope_pin',
                     'organization_team_setup', 'organization_team_generations', 'organization_route_observations',
                     'project_build_outputs'} and name not in tables:
@@ -84,7 +85,7 @@ def _storage_failure(exc):
     raise ObservationError(reason) from None
 
 
-def read_observation(home: Path, *, projection=None):
+def read_observation(home: Path, *, projection=None, archival=False):
     """Observe committed records and compare policy without adopting it.
 
     Use a WAL-aware SQLite read-only connection, not immutable mode. Transient
@@ -112,12 +113,18 @@ def read_observation(home: Path, *, projection=None):
                 return _result('unconfigured', 'execution_not_initialized')
             if not _compatible_schema(conn, tables):
                 return _result('unsupported', 'schema')
-            try:
-                with profile_configuration_scope(home):
-                    settings, _ = load_profile_configuration(home)
-            except Exception:
-                raise ObservationError('configuration_invalid') from None
-            settings = resolve_settings(conn, settings)
+            if archival:
+                from eidolon_cli.organization_policy import persisted_settings
+                settings = persisted_settings(conn)
+                if settings is None:
+                    raise ObservationError('corrupt')
+            else:
+                try:
+                    with profile_configuration_scope(home):
+                        settings, _ = load_profile_configuration(home)
+                except Exception:
+                    raise ObservationError('configuration_invalid') from None
+                settings = resolve_settings(conn, settings)
             view = _ObservationView(path, conn, settings)
             if projection is not None:
                 return {**_result('available'), 'data': projection(view)}
