@@ -8,6 +8,9 @@ on:
       - 'eidolon_cli/organization_project_execution.py'
       - 'eidolon_cli/organization_project_workspace.py'
       - 'eidolon_cli/organization_acceptance.py'
+      - 'eidolon_cli/organization_outcome_contracts.py'
+      - 'tests/eidolon_cli/test_organization_typed_compiler_acceptance.py'
+      - 'tests/eidolon_cli/test_organization_typed_build_acceptance.py'
       - 'eidolon_cli/organization_project_config.py'
       - 'eidolon_cli/organization_project_recipes.py'
       - 'eidolon_cli/organization_project_validation.py'
@@ -70,6 +73,8 @@ jobs:
           scripts/run_tests.sh tests/eidolon_cli/test_organization_project_typescript.py -j 1 --junitxml=typescript-isolation.xml
           scripts/run_tests.sh tests/eidolon_cli/test_organization_project_build_outputs.py -j 1 --junitxml=build-output-parser.xml
           scripts/run_tests.sh tests/eidolon_cli/test_organization_project_typescript_build.py -j 1 --junitxml=typescript-build.xml
+          scripts/run_tests.sh tests/eidolon_cli/test_organization_typed_build_acceptance.py -j 1 --junitxml=typed-build-acceptance.xml
+          scripts/run_tests.sh tests/eidolon_cli/test_organization_typed_compiler_acceptance.py -j 1 --junitxml=typed-compiler-acceptance.xml
       - name: Retain test evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -81,4 +86,6 @@ jobs:
             typescript-isolation.xml
             build-output-parser.xml
             typescript-build.xml
+            typed-build-acceptance.xml
+            typed-compiler-acceptance.xml
           if-no-files-found: warn

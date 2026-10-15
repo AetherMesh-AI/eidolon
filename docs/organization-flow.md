@@ -1125,3 +1125,38 @@ figures. Available capacity is a snapshot, not a reservation or guarantee; some
 shared contention can be inferred. Explicit new periods preserve enrollment and
 historical debits. Profile identity changes, moving a shared-aware store, and
 missing evidence require review rather than silently adopting a new pool.
+
+### Typed outcome contracts
+
+The backend accepts legacy string `acceptanceCriteria` unchanged. A criterion may
+also be an explicit object with `id`, `text`, and `kind`. Supported kinds are
+`deliverable`, `authorized_check`, `source_integration`, and `human_judgment`.
+`authorized_check` also requires `checkKind`; project-bound checks/integration may
+specify a selected `projectId`. Criteria never authorize tools or grant access.
+
+Each objective retains immutable contract revisions and stable criterion IDs with
+per-criterion revisions. Owner scope amendments retain earlier contract history.
+An omitted criteria replacement preserves explicit typed requirements. Legacy
+criteria and historical acceptance records keep their original meaning. Review
+requests bind the contract digest and exact persisted evidence hashes. Typed
+review results must supply the current `criterionId` and `criterionRevision` in
+addition to the existing criterion text, judgment, evidence IDs, and reason.
+
+Deliverable criteria must cite the integrated output. Check and source criteria
+must cite current trusted, independently verified receipts of the required kind,
+not prose claiming a command ran. Missing, failed, superseded, or unsupported
+proof cannot satisfy acceptance. `project_typecheck` and `project_build` are
+recognized distinct requirements but currently fail closed as unsupported;
+neither compiler success nor content validation counts as functional tests.
+
+A `human_judgment` criterion holds final acceptance before another model call.
+The authenticated served-profile `organization.recordOutcomeJudgment` RPC takes
+`expectedOrganizationId`, `objectiveId`, `criterionId`, `contractSha256`,
+`deliverableSha256`, boolean `approved`, `reason`, `idempotencyKey`, and
+`confirmed: true`. It cannot select another profile. The action records an
+immutable decision about those exact bytes and does not itself accept the
+objective. Independent executive acceptance still runs, and cannot override an
+owner rejection. Changed scope or output requires a fresh decision. Snapshot
+acceptance exposes the contract, output digest and current human decisions.
+The desktop criterion editor and judgment controls are a subsequent UI slice;
+backend support alone is not the completed end-user workflow.
