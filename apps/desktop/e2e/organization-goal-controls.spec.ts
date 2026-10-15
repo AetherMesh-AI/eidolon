@@ -94,6 +94,8 @@ test('persists finite owner controls across actual backend restart without dispa
   await goals.getByRole('button', { name: 'Review continuation plan', exact: true }).click()
   const approve = goals.getByRole('button', { name: 'Approve plan, keep disabled', exact: true })
   await expect(approve).toBeDisabled(); await goals.getByLabel(confirmation, { exact: true }).check(); await approve.click()
+  // A click only dispatches the async RPC. Observe its committed projection before reading SQLite.
+  await expect(goals.getByRole('button', { name: 'Enable approved continuation', exact: true })).toBeVisible()
   let state = running.ledger()
   expect(state.organization_continuation_controls.map(row => row.enabled)).toEqual([0])
   expect(state.organization_continuation_plans).toHaveLength(1)
