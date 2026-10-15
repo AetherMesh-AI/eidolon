@@ -147,6 +147,10 @@ jobs:
             tests/eidolon_cli/test_organization_model_routing.py
             tests/eidolon_cli/test_organization_model_routing_e2e.py
             tests/eidolon_cli/test_organization_owner_policy.py
+            tests/eidolon_cli/test_organization_team_setup.py
+            tests/eidolon_cli/test_organization_team_admission.py
+            tests/eidolon_cli/test_organization_team_generation.py
+            tests/tui_gateway/test_organization_team_setup.py
             tests/eidolon_cli/test_organization_shared_allowance.py
             tests/eidolon_cli/test_organization_shared_allowance_cli.py
             tests/eidolon_cli/test_organization_shared_budget.py
@@ -411,7 +415,7 @@ jobs:
         env:
           EIDOLON_REQUIRE_PROJECT_SANDBOX: '1'
           PLAYWRIGHT_JSON_OUTPUT_NAME: owner-policy-report/results.json
-        run: xvfb-run -a npx playwright test e2e/owner-policy-editor.spec.ts e2e/owner-policy-shared-allowance.spec.ts --workers=1 --retries=0 --output owner-policy-test-results --reporter list,json
+        run: xvfb-run -a npx playwright test e2e/owner-policy-editor.spec.ts e2e/owner-policy-shared-allowance.spec.ts e2e/organization-team-onboarding.spec.ts --workers=1 --retries=0 --output owner-policy-test-results --reporter list,json
       - name: Retain owner policy acceptance evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

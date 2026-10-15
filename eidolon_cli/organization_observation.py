@@ -56,7 +56,8 @@ def _compatible_schema(conn, tables):
     for name, columns in _required_schema().items():
         if name in OWNER_POLICY_TABLES:
             continue  # Optional owner-editor data does not invalidate legacy observation.
-        if name in {'organization_shared_call_receipts', 'organization_shared_scope_pin'} and name not in tables:
+        if name in {'organization_shared_call_receipts', 'organization_shared_scope_pin',
+                    'organization_team_setup', 'organization_team_generations'} and name not in tables:
             continue  # New opt-in audit data must not provision or invalidate an older ledger.
         if name not in tables:
             return False

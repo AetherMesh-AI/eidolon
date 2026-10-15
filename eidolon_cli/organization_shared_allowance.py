@@ -217,9 +217,10 @@ def _schema_valid(conn):
 def _payload(value):
     common = {'kind', 'provider', 'model', 'inputLimit', 'outputLimit', 'reservedCostUsd'}
     required = {'objective': {'objectiveId', 'requestId', 'attemptToken', 'callIndex', 'requestType'},
-                'owner_chat': {'threadId', 'turnId', 'identityId'}}
+                'owner_chat': {'threadId', 'turnId', 'identityId'},
+                'team_setup': {'generationId'}}
     if not isinstance(value, dict) or value.get('kind') not in required or set(value) != common | required[value['kind']]:
-        raise ValueError('A physical call requires the exact bounded objective or owner-chat descriptor')
+        raise ValueError('A physical call requires the exact bounded objective, owner-chat or team-setup descriptor')
     result = dict(value)
     for field in set(value) - {'inputLimit', 'outputLimit', 'reservedCostUsd', 'callIndex'}:
         result[field] = _text(value[field], field, 300)
@@ -236,7 +237,7 @@ def _payload(value):
 
 def physical_call_key(binding, payload):
     payload = _payload(payload)
-    fields = ('objectiveId', 'requestId', 'attemptToken', 'callIndex') if payload['kind'] == 'objective' else ('threadId', 'turnId', 'identityId')
+    fields = ('objectiveId', 'requestId', 'attemptToken', 'callIndex') if payload['kind'] == 'objective' else ('generationId',) if payload['kind'] == 'team_setup' else ('threadId', 'turnId', 'identityId')
     return 'sharedcall_' + _hash({'home': binding['home'], 'organizationId': binding['organizationId'],
                                 'kind': payload['kind'], **{key: payload[key] for key in fields}})
 
@@ -540,7 +541,9 @@ class SharedAllowanceLedger:
                 if conn.execute('SELECT generation FROM organization_policy WHERE id=1').fetchone() is None:
                     raise SharedAllowanceError('scope_execution_not_initialized')
                 live = ','.join("'" + status + "'" for status in sorted(LIVE))
-                for table, predicate in (('requests', "status='running'"), ('owner_chat_turns', f'status IN ({live})')):
+                for table, predicate in (('requests', "status='running'"),
+                                         ('owner_chat_turns', f'status IN ({live})'),
+                                         ('organization_team_generations', "status IN ('running','uncertain')")):
                     if table in tables and conn.execute(f'SELECT 1 FROM {table} WHERE {predicate} LIMIT 1').fetchone():
                         raise SharedAllowanceError('scope_execution_active')
                 for directory, keys in (('capacity-locks', [str(index) for index in range(4)]),
@@ -761,7 +764,7 @@ def normalize_observation(value):
 
 def _stage_key(receipt):
     payload = receipt['payload']
-    fields = ('objectiveId', 'requestId', 'attemptToken') if payload['kind'] == 'objective' else ('threadId', 'turnId', 'identityId')
+    fields = ('objectiveId', 'requestId', 'attemptToken') if payload['kind'] == 'objective' else ('generationId',) if payload['kind'] == 'team_setup' else ('threadId', 'turnId', 'identityId')
     return (receipt['profile'], payload['kind'], *(payload[key] for key in fields))
 
 

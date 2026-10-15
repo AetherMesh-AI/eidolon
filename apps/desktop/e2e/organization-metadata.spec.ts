@@ -423,6 +423,8 @@ with sqlite3.connect(sys.argv[1]) as conn:
             method.startsWith('organization.') &&
             ![
               'organization.descriptor',
+              // Read-only starter availability; no preview, generation or creation is permitted.
+              'organization.teamSetup',
               'organization.saveMetadata',
               'organization.snapshot',
               'organization.outcomes'

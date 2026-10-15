@@ -356,6 +356,10 @@ def apply_policy(home, action, params):
         if previous is not None:
             return previous
         policy = _schema(conn)
+        if (action != 'budgetObservation'
+                and conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='organization_team_generations'").fetchone()
+                and conn.execute("SELECT 1 FROM organization_team_generations WHERE status IN ('running','uncertain') LIMIT 1").fetchone()):
+            raise OwnerPolicyError('team_generation_in_progress_or_uncertain')
         preview, settings = _preview(conn, home, action, params, identity, policy)
         from eidolon_cli.organization_policy import persisted_settings
         retained = persisted_settings(conn)
