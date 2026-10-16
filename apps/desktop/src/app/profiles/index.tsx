@@ -340,7 +340,7 @@ function SoulEditor({ profileName }: { profileName: string }) {
       {loading ? (
         <PageLoader className="min-h-44" label={p.loadingSoul} />
       ) : (
-        <div className="profile-soul-editor min-h-48">
+        <div className="profile-soul-editor">
           <CodeEditor
             filePath="SOUL.md"
             framed

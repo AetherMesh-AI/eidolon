@@ -8,6 +8,7 @@ import { SearchField } from '@/components/ui/search-field'
 import { SegmentedControl } from '@/components/ui/segmented-control'
 import { Textarea } from '@/components/ui/textarea'
 import { useI18n } from '@/i18n/context'
+import type { OrganizationWorkCopy } from '@/i18n/organization-work'
 
 import { Inspector } from './inspector'
 import { LocalizedTime } from './localized-time'
@@ -15,6 +16,7 @@ import { RuntimeArtifact } from './runtime-artifact'
 import { RuntimeAttentionInbox } from './runtime-attention'
 import { RuntimeExecutionAudit } from './runtime-execution-audit'
 import { hasCompleteManagementProposal, responseDecisions, RuntimeRequestContext } from './runtime-request-context'
+import { requestTypeLabel } from './runtime-request-display'
 import {
   amendmentCriteria,
   ScopeAmendmentAudit,
@@ -43,7 +45,8 @@ export interface RequestFilters {
 export function filterOrganizationRequests(
   requests: OrganizationRequest[],
   filters: RequestFilters,
-  snapshot: OrganizationSnapshot
+  snapshot: OrganizationSnapshot,
+  copy?: OrganizationWorkCopy
 ) {
   return requests
     .filter(
@@ -52,7 +55,7 @@ export function filterOrganizationRequests(
         (filters.team === 'all' || request.team === filters.team) &&
         (filters.priority === 'all' || String(request.priority) === filters.priority) &&
         (filters.type === 'all' || request.type === filters.type) &&
-        `${request.type} ${request.team} ${request.reason ?? ''} ${request.requestedOutcome ?? ''} ${request.requesterId ?? ''} ${snapshot.objectives.find(item => item.id === request.objectiveId)?.title ?? ''}`
+        `${request.type} ${copy ? requestTypeLabel(request.type, copy) : ''} ${request.team} ${request.reason ?? ''} ${request.requestedOutcome ?? ''} ${request.requesterId ?? ''} ${snapshot.objectives.find(item => item.id === request.objectiveId)?.title ?? ''}`
           .toLowerCase()
           .includes(filters.query.toLowerCase())
     )
@@ -423,7 +426,7 @@ export function RuntimeRequests({
   const busy = useRef(false)
   const terminal = objective?.status === 'completed' || objective?.status === 'cancelled'
   const disconnected = snapshot.connection && snapshot.connection.state !== 'ready'
-  const requests = filterOrganizationRequests(allRequests, filters, snapshot)
+  const requests = filterOrganizationRequests(allRequests, filters, snapshot, copy)
 
   const narrowed =
     filters.team !== 'all' || filters.priority !== 'all' || filters.type !== 'all' || Boolean(filters.query)
@@ -436,10 +439,16 @@ export function RuntimeRequests({
   const priorityLabel = (value: number) => priorities[value - 1] ?? String(value)
 
   const groupLabel = (item: OrganizationRequest) =>
-    groupBy === 'priority' ? priorityLabel(item.priority) : groupBy === 'status' ? copy[item.status] : item[groupBy]
+    groupBy === 'priority'
+      ? priorityLabel(item.priority)
+      : groupBy === 'status'
+        ? copy[item.status]
+        : groupBy === 'type'
+          ? requestTypeLabel(item.type, copy)
+          : item.team
 
   requests.forEach(item => {
-    const key = groupLabel(item)
+    const key = String(item[groupBy])
     groups.set(key, [...(groups.get(key) ?? []), item])
   })
 
@@ -476,7 +485,7 @@ export function RuntimeRequests({
   }
 
   return (
-    <section aria-label="Runtime requests" className="eid-runtime-requests">
+    <section aria-label={copy.requests} className="eid-runtime-requests">
       <div className="eid-toolbar">
         <h2>{copy.requests}</h2>
         {objective && !terminal && (
@@ -486,7 +495,7 @@ export function RuntimeRequests({
             size="sm"
             variant="secondary"
           >
-            {pending === 'cancel' ? 'Cancelling…' : 'Cancel objective'}
+            {pending === 'cancel' ? copy.cancellingObjective : copy.cancelObjective}
           </Button>
         )}
       </div>
@@ -524,7 +533,7 @@ export function RuntimeRequests({
               <option value="all">{copy.all}</option>
               {[...new Set(allRequests.map(item => String(item[field])))].sort().map(value => (
                 <option key={value} value={value}>
-                  {field === 'priority' ? priorityLabel(Number(value)) : value}
+                  {field === 'priority' ? priorityLabel(Number(value)) : field === 'type' ? requestTypeLabel(value, copy) : value}
                 </option>
               ))}
             </select>
@@ -561,25 +570,25 @@ export function RuntimeRequests({
         />
       )}
       {[...groups].map(([group, items]) => (
-        <section aria-label={group} key={group}>
-          <h3>{group}</h3>
+        <section aria-label={groupLabel(items[0])} key={group}>
+          <h3>{groupLabel(items[0])}</h3>
           <ol className="eid-list">
             {items.map(item => (
               <li key={item.id}>
                 <button
-                  aria-label={`${copy.inspectRequest}: ${item.type}`}
+                  aria-label={`${copy.inspectRequest}: ${requestTypeLabel(item.type, copy)}`}
                   className="eid-row"
                   onClick={() => navigation.open(item.id)}
                 >
                   <span>
-                    <strong>{item.type}</strong>
+                    <strong>{requestTypeLabel(item.type, copy)}</strong>
                     {!objective && (
                       <small>
                         {snapshot.objectives.find(value => value.id === item.objectiveId)?.title ?? item.objectiveId}
                       </small>
                     )}
                     <small>
-                      {copy.team}: {item.team} · {copy.priority}: {priorityLabel(item.priority)} · {item.attempts}
+                      {copy.team}: {item.team} · {copy.priority}: {priorityLabel(item.priority)} · {copy.attempts}: {item.attempts}
                     </small>
                     {item.requestedOutcome && <small>{item.requestedOutcome}</small>}
                     {item.reason && (
@@ -620,7 +629,7 @@ export function RuntimeRequests({
                       size="sm"
                       variant="secondary"
                     >
-                      {pending === item.id ? 'Retrying…' : `Retry ${item.type}`}
+                      {pending === item.id ? copy.retryingRequest : copy.retryRequest.replace('{type}', () => requestTypeLabel(item.type, copy))}
                     </Button>
                   ) : null)}
               </li>
@@ -636,24 +645,26 @@ export function RuntimeRequests({
       </>}
       {navigation.trail.map((request, index) => (
         <div hidden={index !== navigation.trail.length - 1} key={request.id}>
-          <Inspector kind="request" onClose={closeRequest} title={request.type}>
+          <Inspector kind="request" onClose={closeRequest} title={requestTypeLabel(request.type, copy)}>
             {index > 0 && (
               <Button onClick={navigation.back} size="sm" variant="secondary">
                 {t.common.back}
               </Button>
             )}
             <dl>
+              <dt>{copy.recordedRequestType}</dt>
+              <dd dir="auto">{request.type}</dd>
               <dt>{copy.status}</dt>
               <dd>{copy[request.status]}</dd>
               <dt>{copy.team}</dt>
               <dd>{request.team}</dd>
               <dt>{copy.priority}</dt>
               <dd>{priorityLabel(request.priority)}</dd>
-              <dt>Claimed by</dt>
+              <dt>{copy.claimedBy}</dt>
               <dd>
                 {request.agentId
                   ? (snapshot.agents.find(agent => agent.id === request.agentId)?.name ?? request.agentId)
-                  : 'No worker claimed this request'}
+                  : copy.noClaimedWorker}
               </dd>
               <dt>{runtimeCopy.routeReason}</dt>
               <dd>{request.reason || runtimeCopy.routeUnknown}</dd>
@@ -669,9 +680,9 @@ export function RuntimeRequests({
                   <dd>{request.requestedRoutes.map(route => `${route.type} → ${route.team}`).join('; ')}</dd>
                 </>
               ) : null}
-              <dt>Request ID</dt>
+              <dt>{copy.requestId}</dt>
               <dd>{request.id}</dd>
-              <dt>Task ID</dt>
+              <dt>{t.organizationRoster.taskId}</dt>
               <dd>{request.taskId || runtimeCopy.notReported}</dd>
             </dl>
             {(request.taskId ||

@@ -27,11 +27,18 @@ export const galleryLocales = [
   { locale: 'ru', dark: 'Тёмная', light: 'Светлая' }
 ] as const
 
-export async function setupGallery(locale: string, seedHistory = false, populated = false) {
+interface ForeignContentFixture {
+  bootstrap?: string
+  blockCapabilityMutations?: boolean
+  emptyHistory?: boolean
+  longPreview?: boolean
+}
+
+export async function setupGallery(locale: string, seedHistory = false, populated = false, foreignContent: ForeignContentFixture = {}) {
   let sessionId: string | undefined
   const fixture = await setupMockBackend({
     isolateModelCatalog: true,
-    bootstrap: populated ? 'workspace-populated-bootstrap.cjs' : undefined,
+    bootstrap: foreignContent.bootstrap ?? (populated ? 'workspace-populated-bootstrap.cjs' : undefined),
     extraDisplayConfig: `  language: ${locale}`,
     beforeLaunch: seedHistory ? async (sandbox, mock) => {
       const builder = await RealSessionBuilder.start(sandbox.hermesHome)
@@ -50,19 +57,25 @@ export async function setupGallery(locale: string, seedHistory = false, populate
     const observationReads: string[] = []
     const state = { snapshot: structuredClone(snapshot), observationError: null as string | null }
     const foreignMethods: string[] = []
+    const capabilityMethods: string[] = []
     state.snapshot.activity[1].text = 'سجل تجريبي للمراجعة · Synthetic record'
     await page.routeWebSocket(/.*/, socket => {
       const server = socket.connectToServer()
       socket.onMessage(message => {
         const request = JSON.parse(message.toString()) as { id?: number; method?: string; params?: { method?: string; id?: string } }
+        if (foreignContent.blockCapabilityMutations && (request.method === 'reload.mcp' || request.method?.startsWith('mcp.servers.'))) {
+          capabilityMethods.push(request.method)
+          socket.send(JSON.stringify({ jsonrpc: '2.0', id: request.id, error: { code: -32000, message: 'Synthetic capabilities are read-only: unexpected MCP action.' } }))
+          return
+        }
         if (request.method?.startsWith('organization.')) { methods.push(request.method) }
         if (populated && request.method?.startsWith('session.foreign.')) {
           foreignMethods.push(request.method)
           const rows = ['preview', 'imported', 'error'].map((id, index) => ({ id: `synthetic-${id}`, source: 'codex', label: 'Codex', title: `Synthetic ${id} conversation`, cwd: '/synthetic/workspace', mtime: 1_700_000_000, turn_count: 2, excerpt: `Synthetic history ${index}; no external work.` }))
           if (request.method === 'session.foreign.list') {
-            socket.send(JSON.stringify({ jsonrpc: '2.0', id: request.id, result: { sessions: rows, next_offset: null, host: 'Synthetic computer', unreadable: 1 } }))
+            socket.send(JSON.stringify({ jsonrpc: '2.0', id: request.id, result: { sessions: foreignContent.emptyHistory ? [] : rows, next_offset: null, host: 'Synthetic computer', unreadable: foreignContent.emptyHistory ? 0 : 1 } }))
           } else if (request.method === 'session.foreign.preview' && request.params?.id !== 'synthetic-error') {
-            socket.send(JSON.stringify({ jsonrpc: '2.0', id: request.id, result: { truncated: false, total: 2, already_imported: request.params?.id === 'synthetic-imported' ? 'synthetic-existing-session' : null, cwd: '/synthetic/workspace', messages: [{ role: 'user', content: 'Synthetic preview. Preserve this selection while resizing.' }, { role: 'assistant', content: 'This is recorded fixture text; no model was called.' }] } }))
+            socket.send(JSON.stringify({ jsonrpc: '2.0', id: request.id, result: { truncated: false, total: 2, already_imported: request.params?.id === 'synthetic-imported' ? 'synthetic-existing-session' : null, cwd: '/synthetic/workspace', messages: [{ role: 'user', content: foreignContent.longPreview ? 'Readable imported message.\n\n' + Array.from({ length: 60 }, (_, index) => `Recorded paragraph ${index + 1}: synthetic history remains readable without a nested scrollbar.`).join('\n\n') : 'Synthetic preview. Preserve this selection while resizing.' }, { role: 'assistant', content: 'This is recorded fixture text; no model was called.' }] } }))
           } else {
             socket.send(JSON.stringify({ jsonrpc: '2.0', id: request.id, error: { code: -32000, message: 'Synthetic preview unavailable; retry is safe.' } }))
           }
@@ -90,7 +103,7 @@ export async function setupGallery(locale: string, seedHistory = false, populate
     const focusChecks: object[] = []
     const thumbChecks: object[] = []
     const failures: { label: string; error: string }[] = []
-    return { ...fixture, locale, sessionId, methods, observationReads, foreignMethods, state, captures, focusChecks, thumbChecks, failures, seedProviderCalls: seedHistory ? 1 : 0 }
+    return { ...fixture, locale, sessionId, methods, observationReads, foreignMethods, capabilityMethods, state, captures, focusChecks, thumbChecks, failures, seedProviderCalls: seedHistory ? 1 : 0 }
   } catch (error) {
     await fixture.cleanup()
     throw error

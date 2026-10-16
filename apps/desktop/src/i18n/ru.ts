@@ -13,6 +13,7 @@ import { organizationObjectiveDetailRu } from './organization-objective-detail'
 import { organizationOverviewRu } from './organization-overview'
 import { organizationOwnerChatRu } from './organization-owner-chat'
 import { organizationSurfacesRu } from './organization-surfaces'
+import { organizationRequestDisplayRu } from './organization-work'
 
 // RU_PLURAL: (count, one, few, many) — русские формы сущ. падежа
 // RU_NOUN: (count, one, few, many) — формы род. множественного
@@ -39,6 +40,7 @@ export const ru = defineLocale({
   customEndpoints: customEndpointsRu,
   organizationMetadata: organizationMetadataRu,
   organizationWork: {
+    ...organizationRequestDisplayRu,
     projectPlanningDelivery: 'Для папок планирования выберите управляемый результат без тестов проекта и интеграции исходников или сначала настройте рецепт выполнения.',
     folderChoose: 'Выбрать новую папку проекта',
     folderApprove: 'Разрешить доступ к папке и сохранить проект',
@@ -2412,6 +2414,18 @@ export const ru = defineLocale({
     }
   },
   artifacts: {
+    waitingForSource: 'Ожидание выбранного источника',
+    safeLoadLimit: count => `Сеансов, превысивших безопасный лимит загрузки истории: ${count}.`,
+    noMatchesTitle: 'Нет подходящих артефактов',
+    noMatchesDesc: 'Попробуйте другой запрос или тип артефактов.',
+    failedLoadDesc: 'Не удалось прочитать артефакты недавних сеансов. Повторите попытку.',
+    partialLoad: 'Индекс артефактов неполон',
+    partialLoadDesc: (failed, total) => `Не удалось прочитать ${failed} из ${total} недавних сеансов.`,
+    profileLoadFailed: count => `Не удалось прочитать профили: ${count}.`,
+    staleResults: 'Показаны ранее проиндексированные элементы недоступных сеансов. Они могут быть устаревшими.',
+    incompleteEmpty: 'В прочитанных сеансах артефактов не найдено. Остальные сеансы пока недоступны.',
+    connectionUnavailable: 'Подключитесь к источнику, чтобы прочитать артефакты его недавних сеансов.',
+    retry: 'Повторить индексацию',
     search: 'Поиск артефактов...',
     refresh: 'Обновить артефакты',
     refreshing: 'Обновление артефактов',
@@ -2421,7 +2435,7 @@ export const ru = defineLocale({
     tabFiles: 'Файлы',
     tabLinks: 'Ссылки',
     noArtifactsTitle: 'Артефакты не найдены',
-    noArtifactsDesc: 'Сгенерированные изображения и файловые результаты появятся здесь по мере их создания в сеансах.',
+    noArtifactsDesc: 'В проиндексированных недавних сеансах не найдено созданных изображений, файлов или ссылок.',
     failedLoad: 'Не удалось загрузить артефакты',
     openFailed: 'Не удалось открыть',
     itemsImage: 'изображения',

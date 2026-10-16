@@ -2,9 +2,16 @@
   display: grid;
   grid-template-columns: 14rem minmax(0, 1fr);
   flex: 1;
-  height: 100%;
   min-height: 0;
   min-width: 0;
+}
+
+.eid-responsive-detail[data-variant='messaging'] {
+  height: 100%;
+}
+
+.eid-responsive-detail[data-variant='capabilities'] {
+  grid-template-columns: minmax(0, var(--md-split, 0.75fr)) minmax(0, 1fr);
 }
 
 .eid-responsive-detail[data-variant='profiles'] {
@@ -68,7 +75,7 @@
   line-height: 1.4;
 }
 
-.eid-responsive-detail[data-compact='true'] .session-import-preview-scroll {
+.eid-responsive-detail[data-compact='true'] .session-import-preview {
   padding: 0.5rem 1rem 1rem;
 }
 
@@ -77,21 +84,38 @@
   padding: 0.75rem 1rem;
 }
 
-/* A short compact overlay may not fit the heading, preview and footer at once.
-   Let the detail scroll rather than shrinking its preview below a full control
-   and focus outline; the preview keeps its mounted scroll region on resize. */
-.eid-responsive-detail[data-compact='true'][data-variant='import'] .eid-responsive-detail-content > main {
+/* Each Import pane has one scroll owner across widths. Header, preview and
+   actions stay in the same flow, so short windows never squeeze the preview. */
+.session-import-list,
+.session-import-detail {
   overflow-y: auto;
+  overscroll-behavior: contain;
   scroll-padding: 7px;
 }
 
-.eid-responsive-detail[data-compact='true'] .session-import-preview-scroll {
-  min-height: 6rem;
-  scroll-padding: 7px;
+.session-import {
+  container: session-import / inline-size;
 }
 
-/* Keep useful editing space without reserving a mostly-empty 192px block
-   ahead of Save in the narrow profile pane. The editor remains mounted. */
-.eid-responsive-detail[data-compact='true'][data-variant='profiles'] .profile-soul-editor {
-  min-height: 8rem;
+@container session-import (max-width: 760px) {
+  .session-import > .eid-workspace-page-heading {
+    padding-inline: 1rem;
+  }
+
+  .session-import-context {
+    margin-top: 0.75rem;
+    gap: 0.5rem 1rem;
+  }
+}
+
+/* CodeEditor's h-full requires a definite containing height. A min-height
+   alone left the frame short while reserving a blank block before Save. */
+.profile-soul-editor {
+  height: clamp(8rem, 28dvh, 16rem);
+  min-height: 0;
+}
+
+.eid-responsive-detail [data-pane]:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: -2px;
 }

@@ -1,5 +1,15 @@
+import { readFileSync } from 'node:fs'
+
 import { acknowledgeExpectedErrorBanner, expect, test } from './test'
 import { captureGallery, type GalleryFixture, persistGalleryEvidence, positionGalleryAtStart, resizeGallery, setupGallery, verifyGalleryControls, writeGalleryEvidence } from './workspace-gallery-fixture'
+
+// Read the exported budget without importing the renderer-only API dependency
+// graph into the composite native-test project. Fail closed if its shape changes.
+const budgetSource = readFileSync(new URL('../src/api/client.ts', import.meta.url), 'utf8')
+const startupBudget = budgetSource.match(/^export const STARTUP_REQUEST_TIMEOUT_MS\s*=\s*(\d(?:[\d_]*\d)?)\s*;?\s*$/m)?.[1]
+if (!startupBudget) { throw new Error('The native journey could not resolve the product startup-read budget') }
+const startupReadTimeout = Number(startupBudget.replaceAll('_', ''))
+if (!Number.isSafeInteger(startupReadTimeout) || startupReadTimeout <= 0) { throw new Error('Invalid product startup-read budget') }
 
 let fixture: GalleryFixture | undefined
 test.setTimeout(240_000)
@@ -59,6 +69,10 @@ test('one owner journey retains recipient, work context, request and deliverable
   await expect(rail.getByRole('link', { name: 'Skills', exact: true })).toBeVisible()
   const settings = page.locator('.eid-settings-page')
   const model = settings.locator('[data-section="config:model"] .eid-settings-card-body')
+  // Model info/options share the product's bounded startup-read contract.
+  // Wait for actual load completion, then require usable controls as before.
+  await expect(model).toBeVisible()
+  await expect(model.locator('[data-slot="model-settings-skeleton"]')).toHaveCount(0, { timeout: startupReadTimeout })
   await expect(model.getByRole('combobox').first()).toBeEnabled()
   await expect(model.locator('[data-slot="skeleton"], [data-slot="model-settings-skeleton"]')).toHaveCount(0)
   await captureGallery(current, 'navigation-settings', settings)
@@ -109,4 +123,63 @@ test('empty workspace pages stay navigable and a failed observation has visible 
   await expect(rail.getByRole('link', { name: 'Home', exact: true })).toHaveAttribute('aria-current', 'page')
   await captureGallery(current, 'observation-recovered', page.locator('.eid-workspace').last())
   writeGalleryEvidence(current, 'navigation-empty-recovery')
+})
+
+test('objective entry and Back preserve owner list context at zoom and narrow widths', async () => {
+  const current = fixture = await setupGallery('en')
+  const { page } = current
+  const workspace = page.locator('.eid-workspace').last()
+  const longTitle = 'Document provider boundaries with reviewed ownership, retained evidence and clear next steps. '.repeat(8).trim()
+  current.state.snapshot.objectives[2].title = longTitle
+  for (const objective of current.state.snapshot.objectives.slice(0, 2)) {
+    objective.description = 'Retained synthetic context for checking list restoration without losing your place. '.repeat(25)
+  }
+  await page.reload()
+  for (const { width, height, zoom } of [
+    { width: 1280, height: 800, zoom: 1 },
+    { width: 1280, height: 800, zoom: 1.25 },
+    { width: 1280, height: 800, zoom: 2 },
+    { width: 400, height: 620, zoom: 1 }
+  ]) {
+    const label = `objective-continuity-${width}-${zoom * 100}`
+    await resizeGallery(current, width, height, zoom)
+    await page.evaluate(() => { location.hash = '/objectives' })
+    const origin = workspace.getByRole('link').filter({ has: page.getByText(longTitle, { exact: true }) })
+    await origin.scrollIntoViewIfNeeded()
+    // Playwright may scroll a tall card again to reach its click point. Record
+    // the actual departure position, the same event the workspace remembers.
+    await origin.evaluate(link => {
+      delete document.documentElement.dataset.continuityDepartureTop
+      link.addEventListener('click', event => {
+        if (event.isTrusted) {
+          document.documentElement.dataset.continuityDepartureTop = String(link.closest('.eid-workspace')!.scrollTop)
+        }
+      }, { once: true })
+    })
+    await origin.click()
+    const originTop = await page.evaluate(() => Number(document.documentElement.dataset.continuityDepartureTop))
+    expect(originTop).toBeGreaterThan(0)
+    await expect(page.getByRole('heading', { level: 1, name: longTitle, exact: true })).toBeInViewport()
+    await expect.poll(() => workspace.evaluate(element => element.scrollTop)).toBe(0)
+    await captureGallery(current, `${label}-entry`, workspace)
+    // An explicit work action owns its own target until the user navigates away.
+    await page.getByRole('button', { name: 'Inspect work and evidence', exact: true }).click()
+    await expect(page.getByRole('region', { name: 'Objective work details', exact: true })).toBeFocused()
+    await page.locator('a.eid-back').click()
+    await expect(page).toHaveURL(/#\/objectives$/)
+    await expect.poll(() => workspace.evaluate(element => element.scrollTop)).toBeCloseTo(originTop, 0)
+    await expect(origin).toBeFocused()
+    await captureGallery(current, `${label}-back`, workspace)
+    current.state.observationError = 'Synthetic continuity observation unavailable.'
+    await page.reload()
+    const status = workspace.locator('.eid-runtime-status').first()
+    await expect(status.getByRole('alert')).toContainText(current.state.observationError)
+    await captureGallery(current, `${label}-error`, workspace)
+    current.state.observationError = null
+    await status.getByRole('button', { name: /Retry/ }).click()
+    await expect(status).toHaveCount(0)
+    await acknowledgeExpectedErrorBanner(page, 'Synthetic continuity observation unavailable.')
+  }
+  expect(current.mock.receivedPrompts).toHaveLength(0)
+  writeGalleryEvidence(current, 'objective-continuity')
 })

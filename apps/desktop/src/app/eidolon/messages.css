@@ -1,0 +1,117 @@
+/* The directory and conversation stay mounted; container width changes only
+   which pane is visible. Keep these overrides scoped to primary Messages. */
+.eid-messages-view .eid-messages-layout.eid-responsive-detail {
+  height: 100%;
+  min-height: 0;
+  grid-template-columns: minmax(220px, 1.06fr) minmax(0, 3.12fr);
+}
+
+.eid-messages-view .eid-messages-layout > .eid-responsive-detail-list {
+  overflow-y: auto;
+  scroll-padding: 7px;
+}
+
+.eid-messages-view .eid-messages-layout > .eid-responsive-detail-content {
+  display: grid;
+  grid-template-columns: minmax(0, 2.12fr) minmax(220px, 1fr);
+  min-height: 0;
+  /* Transcript limits follow the actual pane below the app header, including
+     short windows and zoom, rather than the larger browser viewport. */
+  container-type: size;
+}
+
+.eid-messages-view .eid-messages-layout .eid-owner-chat-scroll {
+  max-height: min(calc(100dvh - 90px), calc(100cqh - 16px));
+}
+
+.eid-messages-view[data-member-selected='false'] .eid-responsive-detail-content {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.eid-messages-view .eid-messages-layout :is(.eid-message-members, .eid-message-conversation, .eid-message-context) {
+  min-width: 0;
+  min-height: 0;
+  padding: 24px 18px;
+  overflow-wrap: anywhere;
+}
+
+.eid-messages-view .eid-messages-layout .eid-message-members {
+  flex: 1 0 auto;
+  grid-row: auto;
+}
+
+.eid-messages-view .eid-messages-layout .eid-message-members nav {
+  flex: none;
+  min-height: 0;
+  max-height: none;
+  overflow: visible;
+}
+
+.eid-messages-view .eid-messages-layout .eid-message-directory-details {
+  margin-top: auto;
+}
+
+.eid-messages-view .eid-messages-layout .eid-message-conversation {
+  height: auto;
+  overflow-y: auto;
+  scroll-padding: 7px;
+}
+
+.eid-messages-view .eid-messages-layout .eid-message-context {
+  grid-column: auto;
+  overflow-y: auto;
+  scroll-padding: 7px;
+}
+
+.eid-messages-view[data-has-members='false'] .eid-messages-layout.eid-responsive-detail {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.eid-messages-view[data-has-members='false'] .eid-responsive-detail-content {
+  display: none;
+}
+
+@media (max-width: 1200px) {
+  .eid-messages-view .eid-messages-layout > .eid-responsive-detail-content {
+    display: flex;
+    overflow-y: auto;
+    scroll-padding: 7px;
+  }
+
+  .eid-messages-view .eid-messages-layout :is(.eid-message-conversation, .eid-message-context) {
+    flex: none;
+    overflow: visible;
+  }
+}
+
+.eid-messages-view .eid-messages-layout[data-compact='true'] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.eid-messages-view .eid-messages-layout[data-compact='true'] > .eid-responsive-detail-content {
+  display: flex;
+  overflow-y: auto;
+  scroll-padding: 7px;
+}
+
+.eid-messages-view .eid-messages-layout[data-compact='true'] :is(.eid-message-conversation, .eid-message-context) {
+  flex: none;
+  overflow: visible;
+}
+
+.eid-messages-view .eid-messages-layout[data-compact='true'] .eid-message-conversation {
+  padding-top: 8px;
+}
+
+.eid-messages-view .eid-messages-layout[data-compact='true'] .eid-message-context {
+  border-inline: 0;
+}
+
+.eid-messages-view .eid-messages-layout[data-compact='true'] .eid-message-members {
+  border-inline: 0;
+}
+
+/* Explicit pane visibility beats the grid/flex layout declarations above. */
+.eid-messages-view .eid-messages-layout > [data-pane][hidden] {
+  display: none;
+}

@@ -135,9 +135,9 @@ export function SessionImportView({ owner, onClose, onOpenSession }: SessionImpo
         </Button>
       }
     >
-      <section aria-label={copy.title} className="session-import flex h-full min-h-0 flex-col">
-        <WorkspacePageHeading className="px-8 pt-12" description={copy.subtitle} title={copy.title}>
-          <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-(--ui-text-secondary)">
+      <section aria-label={copy.title} className="session-import flex min-h-0 flex-1 flex-col">
+        <WorkspacePageHeading className="shrink-0 px-8 pt-12" description={copy.subtitle} title={copy.title}>
+          <div className="session-import-context mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-(--ui-text-secondary)">
             <span className="inline-flex items-center gap-2">
               <Codicon name="device-desktop" />
               {copy.readingFrom} {host ?? copy.connectedComputer}
@@ -154,7 +154,7 @@ export function SessionImportView({ owner, onClose, onOpenSession }: SessionImpo
           onDetailOpenChange={setDetailOpen}
           variant="import"
         >
-          <aside className="flex min-h-0 flex-col bg-(--ui-sidebar-surface-background)">
+          <aside className="session-import-list min-h-0 bg-(--ui-sidebar-surface-background)">
             <div className="session-import-filters flex shrink-0 flex-col gap-5 px-6 pb-4 pt-6">
               <SegmentedControl
                 onChange={value => {
@@ -180,7 +180,7 @@ export function SessionImportView({ owner, onClose, onOpenSession }: SessionImpo
                 />
               )}
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-5">
+            <div className="px-3 pb-5">
               {sessions.isPending && <Loader className="mx-auto my-12" label={copy.scanning} />}
               {sessions.isError && (
                 <ErrorState className="p-5" description={copy.scanHelp} title={copy.scanError}>
@@ -256,7 +256,7 @@ export function SessionImportView({ owner, onClose, onOpenSession }: SessionImpo
               )}
             </div>
           </aside>
-          <main className="flex min-h-0 min-w-0 flex-col">
+          <main className="session-import-detail min-h-0 min-w-0" key={current?.id ?? 'empty'}>
             {!current ? (
               <PanelEmpty description={copy.chooseHelp} icon="comment-discussion" title={copy.choose} />
             ) : (
@@ -267,11 +267,7 @@ export function SessionImportView({ owner, onClose, onOpenSession }: SessionImpo
                     {current.label} · {current.turn_count} {copy.messages}
                   </p>
                 </div>
-                <div
-                  aria-live="polite"
-                  className="session-import-preview-scroll min-h-0 flex-1 overflow-y-auto px-8 pb-8"
-                  key={current.id}
-                >
+                <div aria-live="polite" className="session-import-preview px-8 pb-8">
                   {preview.isPending && <Loader className="mx-auto my-12" label={copy.previewLoading} />}
                   {preview.isError && (
                     <ErrorState description={copy.previewHelp} title={copy.previewError}>

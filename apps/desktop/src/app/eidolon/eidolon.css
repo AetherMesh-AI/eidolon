@@ -399,6 +399,10 @@
 
 .eid-home-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; max-width: 360px; }
 .eid-home-actions > p { flex-basis: 100%; font-size: 12px; }
+/* Setup owns the primary action only while its actual continuation card is present. */
+.eid-home-actions:has(> .eid-team-entry) > .eid-home-request-action { display: none; }
+.eid-home-secondary-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px 12px; flex-basis: 100%; }
+.eid-home-intake { scroll-margin-block-start: 12px; }
 
 /* Home keeps the overview in the window; full intake is an explicit drilldown.
    Its Command remains mounted so closing the disclosure does not discard drafts. */
@@ -724,6 +728,9 @@
 .eid-progress-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px 8px; }
 .eid-objective-overview .eid-progress-heading h2 { margin: 0; }
 .eid-progress-heading > button { flex: none; }
+/* Leave breathing room beyond the 3px outline plus 3px offset. */
+.eid-objective-overview .eid-progress-heading { margin-bottom: 8px; }
+.eid-objective-progress-aside > .eid-home-panel > button { margin-top: 8px; }
 .eid-objective-overview .eid-progress-summary { padding-block: 8px 6px; margin-bottom: -8px; }
 @media (max-width: 1100px) { .eid-objective-overview .eid-progress-summary { margin-bottom: 0; } }
 

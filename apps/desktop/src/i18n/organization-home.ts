@@ -25,6 +25,8 @@ export const organizationHomeEn = {
   noMessageExecutive: 'No active executive with a verified identity is available in this organization. Review its roster before choosing a recipient.',
   reviewMessageRoster: 'Review organization roster',
   memberMessages: {
+    backToMembers: 'Back to members',
+    noRecipients: 'No recipients available',
     members: 'Members',
     search: 'Search members',
     noMatches: 'No members match this search.',

@@ -413,7 +413,7 @@ test('retains owner attention across reloads, answers the requesting worker, and
     .fill('The complete brief addresses the audience supplied by the owner and uses the supplied release facts.')
   await page.getByRole('button', { name: 'Create objective', exact: true }).click()
   await expect(page.getByRole('heading', { name: objectiveTitle, exact: true })).toBeVisible()
-  const questionRow = page.getByRole('button', { name: 'Inspect request: request.question', exact: true })
+  const questionRow = page.getByRole('button', { name: 'Inspect request: Question', exact: true })
   await expect(questionRow).toContainText('Pending intervention', { timeout: 90_000 })
   await openOrganizationRequests(page)
   const inbox = page.getByRole('region', { name: 'Attention inbox', exact: true })

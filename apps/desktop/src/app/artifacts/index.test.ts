@@ -31,6 +31,15 @@ describe('collectArtifactsForSession', () => {
     $connection.set(null)
   })
 
+  it('keeps equal session IDs and paths distinct across profile and source owners', () => {
+    const messages: SessionMessage[] = [{ role: 'assistant', content: 'MEDIA:/outputs/report.pdf' }]
+    const fromA = collectArtifactsForSession(makeSession({ profile: 'a', connection_id: 'source-a' }), messages)
+    const fromB = collectArtifactsForSession(makeSession({ profile: 'b', connection_id: 'source-a' }), messages)
+    const fromOtherSource = collectArtifactsForSession(makeSession({ profile: 'a', connection_id: 'source-b' }), messages)
+    expect(new Set([fromA[0].id, fromB[0].id, fromOtherSource[0].id]).size).toBe(3)
+    expect(fromA[0]).toMatchObject({ profile: 'a', connectionId: 'source-a' })
+  })
+
   it('indexes plain https links from assistant text', () => {
     const artifacts = collectArtifactsForSession(makeSession(), [
       {

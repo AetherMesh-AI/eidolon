@@ -2081,6 +2081,18 @@ export interface Translations {
   }
 
   artifacts: {
+    waitingForSource: string
+    safeLoadLimit: (count: number) => string
+    noMatchesTitle: string
+    noMatchesDesc: string
+    failedLoadDesc: string
+    partialLoad: string
+    partialLoadDesc: (failed: number, total: number) => string
+    profileLoadFailed: (count: number) => string
+    staleResults: string
+    incompleteEmpty: string
+    connectionUnavailable: string
+    retry: string
     search: string
     refresh: string
     refreshing: string

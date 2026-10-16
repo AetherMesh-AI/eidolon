@@ -29,3 +29,39 @@ export function objectiveReturnTarget(params: URLSearchParams, ownerScope?: stri
     ? workspaceReturnTarget(params.get('from')) ?? '/objectives'
     : '/objectives'
 }
+
+export interface WorkspaceScrollPosition {
+  top: number
+  left: number
+  contentHeight: number
+  panels: { key: string; top: number; left: number }[]
+  focusHref: string | null
+}
+
+/** Window-local presentation memory. Owner changes discard positions, never transfer them. */
+export function createWorkspaceScrollMemory() {
+  let owner: string | undefined
+  const positions = new Map<string, WorkspaceScrollPosition>()
+
+  const selectOwner = (next: string | undefined) => {
+    if (owner !== next) { positions.clear(); owner = next }
+  }
+
+  return {
+    save(nextOwner: string | undefined, route: string, position: WorkspaceScrollPosition) {
+      selectOwner(nextOwner)
+
+      if (nextOwner && workspaceReturnTarget(route)) {
+        positions.set(route, position)
+
+        if (positions.size > 50) { positions.delete(positions.keys().next().value!) }
+      }
+    },
+    read(nextOwner: string | undefined, route: string) {
+      selectOwner(nextOwner)
+
+      return nextOwner ? positions.get(route) : undefined
+    },
+    reset(nextOwner: string | undefined) { selectOwner(nextOwner) }
+  }
+}

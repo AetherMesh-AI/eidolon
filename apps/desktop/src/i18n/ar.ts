@@ -11,11 +11,13 @@ import { organizationObjectiveDetailAr } from './organization-objective-detail'
 import { organizationOverviewAr } from './organization-overview'
 import { organizationOwnerChatAr } from './organization-owner-chat'
 import { organizationSurfacesAr } from './organization-surfaces'
+import { organizationRequestDisplayAr } from './organization-work'
 
 export const ar = defineLocale({
   customEndpoints: customEndpointsAr,
   organizationMetadata: organizationMetadataAr,
   organizationWork: {
+    ...organizationRequestDisplayAr,
     projectPlanningDelivery: 'للمجلدات المخصصة للتخطيط، اختر تسليم مخرج مُدار وأزل اختبارات المشروع وفحوص دمج المصدر، أو اضبط وصفة تنفيذ أولاً.',
     folderChoose: 'اختيار مجلد مشروع جديد',
     folderApprove: 'الموافقة على الوصول إلى هذا المجلد وحفظ المشروع',
@@ -1726,6 +1728,18 @@ export const ar = defineLocale({
     createAction: 'إنشاء'
   },
   artifacts: {
+    waitingForSource: 'في انتظار المصدر المحدد',
+    safeLoadLimit: count => `الجلسات التي تتجاوز حد التحميل الآمن للسجل: ${count}.`,
+    noMatchesTitle: 'لا توجد مخرجات مطابقة',
+    noMatchesDesc: 'جرّب بحثًا آخر أو نوعًا آخر من المخرجات.',
+    failedLoadDesc: 'تعذّرت قراءة مخرجات الجلسات الأخيرة. أعد المحاولة للتحقق منها.',
+    partialLoad: 'فهرس المخرجات غير مكتمل',
+    partialLoadDesc: (failed, total) => `تعذّرت قراءة ${failed} من أصل ${total} جلسة حديثة.`,
+    profileLoadFailed: count => `تعذّرت قراءة ${count} من الملفات الشخصية.`,
+    staleResults: 'لا تزال العناصر المفهرسة سابقًا من الجلسات التي تعذّرت قراءتها معروضة، وقد تكون قديمة.',
+    incompleteEmpty: 'لم تُفهرس أي مخرجات من الجلسات التي أمكن قراءتها. لا تزال الجلسات الأخرى غير متاحة.',
+    connectionUnavailable: 'اتصل بمصدر لقراءة مخرجات جلساته الأخيرة.',
+    retry: 'إعادة محاولة الفهرسة',
     search: 'بحث',
     refresh: 'تحديث',
     refreshing: 'جار التحديث...',
@@ -1735,7 +1749,7 @@ export const ar = defineLocale({
     tabFiles: 'الملفات',
     tabLinks: 'الروابط',
     noArtifactsTitle: 'لا توجد عناصر',
-    noArtifactsDesc: 'ستظهر الصور والملفات والروابط من محادثاتك هنا.',
+    noArtifactsDesc: 'لم يُعثر على صور مولّدة أو ملفات أو روابط في الجلسات الأخيرة التي تمت فهرستها.',
     failedLoad: 'فشل تحميل العناصر',
     openFailed: 'فشل الفتح',
     itemsImage: 'صور',

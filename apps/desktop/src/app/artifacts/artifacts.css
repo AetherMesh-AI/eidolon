@@ -1,0 +1,21 @@
+/* The keyboard outline extends 6px beyond recovery controls. */
+.eid-artifact-index,
+.eid-artifact-results { scroll-padding: 7px; }
+.eid-artifact-index :is(button, a, input, select) { scroll-margin: 7px; }
+
+@media (max-width: 800px), (max-height: 600px) {
+  /* A fixed heading left only 13px for recovery at 200% zoom. Give the
+     heading, filters and results one page scroller on compact workspaces. */
+  .eid-deliverables:has(> .eid-session-files) { overflow-y: auto; scroll-padding: 7px; }
+  .eid-deliverables > .eid-session-files { flex: none; }
+  .eid-session-files > section { height: auto; overflow: visible; }
+  .eid-session-files > section > div:last-child { flex: none; overflow: visible; }
+  .eid-session-files .eid-artifact-index { height: auto; min-height: 10rem; overflow: visible; }
+  .eid-session-files .eid-artifact-results { flex: none; overflow: visible; }
+  .eid-deliverables > .eid-deliverables-heading { padding-block: 12px 8px; }
+  .eid-deliverables > .eid-deliverables-heading h1 { margin-bottom: 4px; font-size: 24px; }
+  .eid-deliverables > .eid-deliverables-heading > p { margin-bottom: 8px; font-size: 12px; line-height: 1.35; }
+  .eid-deliverables > .eid-deliverables-heading nav { font-size: 13px; line-height: 1.4; }
+  .eid-deliverables > .eid-deliverables-heading nav a { display: inline-flex; align-items: center; min-height: 24px; }
+  .eid-deliverables > .eid-deliverables-heading > p:last-child { margin-block: 6px 0; font-size: 11px; }
+}

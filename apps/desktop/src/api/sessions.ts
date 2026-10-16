@@ -112,7 +112,8 @@ export async function listAllProfileSessions(
   archived: 'exclude' | 'include' | 'only' = 'exclude',
   order: 'created' | 'recent' = 'recent',
   profile: 'all' | (string & {}) = 'all',
-  filter: SessionSourceFilter = {}
+  filter: SessionSourceFilter = {},
+  requestScope?: ProfileScope
 ): Promise<PaginatedSessions> {
   const sourceParam = filter.source ? `&source=${encodeURIComponent(filter.source)}` : ''
 
@@ -120,8 +121,12 @@ export async function listAllProfileSessions(
     ? `&exclude_sources=${encodeURIComponent(filter.excludeSources.join(','))}`
     : ''
 
+  // Explicit callers pin the route before the first await and stamp returned
+  // rows with that same source, never whichever source is active on completion.
+  const capturedScope = requestScope === undefined ? undefined : capabilityScoped(requestScope)
+
   const result = await hermesApi<PaginatedSessions>({
-    ...profileScoped(),
+    ...(capturedScope ?? profileScoped()),
     path:
       `/api/profiles/sessions?limit=${limit}&offset=0&min_messages=${Math.max(0, minMessages)}` +
       `&archived=${archived}&order=${order}&profile=${encodeURIComponent(profile)}${sourceParam}${excludeParam}`,
@@ -130,7 +135,12 @@ export async function listAllProfileSessions(
 
   return {
     ...result,
-    sessions: pageWindow(stampActiveConnectionOwner(result.sessions), limit),
+    sessions: pageWindow(
+      capturedScope
+        ? stampRowsWithOwningConnection(result.sessions, capturedScope.connectionId)
+        : stampActiveConnectionOwner(result.sessions),
+      limit
+    ),
     offset: 0
   }
 }
@@ -524,7 +534,7 @@ export function getOlderSessionMessages(
 export async function getAllSessionMessages(
   id: string,
   profile?: ProfileScope,
-  options: { maxJsonChars?: number } = {}
+  options: { maxJsonChars?: number; isCurrent?: () => boolean } = {}
 ): Promise<SessionMessagesResponse> {
   const messages: SessionMessage[] = []
   const pageSize = 500
@@ -534,12 +544,21 @@ export async function getAllSessionMessages(
   let resolvedSessionId = id
 
   while (true) {
+    if (options.isCurrent && !options.isCurrent()) {
+      throw new Error('Session transcript load superseded')
+    }
+
     const page = await getSessionMessages(id, profile, {
       limit: pageSize,
       offset,
       order: 'oldest',
       includeCompacted: true
     })
+
+    // A source switch while a page is pending revokes the rest of the scan.
+    if (options.isCurrent && !options.isCurrent()) {
+      throw new Error('Session transcript load superseded')
+    }
 
     resolvedSessionId = page.session_id
     jsonChars += (JSON.stringify(page.messages) ?? '').length

@@ -117,7 +117,7 @@ it('returns to the selected import row and retains preview through compact navig
   row.focus()
   fireEvent.click(row)
   await screen.findByText('Retained preview')
-  const preview = container.querySelector<HTMLElement>('.session-import-preview-scroll')!
+  const preview = container.querySelector<HTMLElement>('.session-import-detail')!
   preview.scrollTop = 60
   fireEvent.click(screen.getByRole('button', { name: 'Back' }))
   expect(window.document.activeElement).toBe(row)
@@ -125,7 +125,43 @@ it('returns to the selected import row and retains preview through compact navig
   fireEvent.click(row)
   resize(1100)
   resize(500)
-  expect(container.querySelector('.session-import-preview-scroll')).toBe(preview)
+  expect(container.querySelector('.session-import-detail')).toBe(preview)
   expect(preview.scrollTop).toBe(60)
+  expect(vi.mocked(foreignRequest).mock.calls.some(([, method]) => method === 'import')).toBe(false)
+})
+
+it('keeps compact filtered and failed previews recoverable through retry without importing', async () => {
+  const resize = observeMasterDetailWidth()
+  let failPreview = true
+  vi.mocked(foreignRequest).mockImplementation(async (_owner, method) => {
+    if (method === 'list') {
+      return { sessions: [session], next_offset: null, host: 'studio', unreadable: 0 }
+    }
+
+    if (failPreview) {
+      throw new Error('Synthetic preview failure')
+    }
+
+    return { messages: [{ role: 'user', content: 'Recovered preview content' }], total: 1, already_imported: null }
+  })
+  const { container, onOpenSession } = mount()
+  const row = await screen.findByRole('button', { name: /Repair imports/ })
+  resize(400)
+  const filter = screen.getByRole('textbox', { name: /Search/i })
+  fireEvent.change(filter, { target: { value: 'no matching history' } })
+  expect(row.isConnected).toBe(false)
+  expect(container.querySelector('.session-import-list')).toBeTruthy()
+  fireEvent.change(filter, { target: { value: '' } })
+  fireEvent.click(screen.getByRole('button', { name: /Repair imports/ }))
+  const retry = await screen.findByRole('button', { name: 'Retry' })
+  expect((screen.getByRole('button', { name: 'Continue in Eidolon' }) as HTMLButtonElement).disabled).toBe(true)
+  const scroller = container.querySelector('.session-import-detail')
+  failPreview = false
+  fireEvent.click(retry)
+  await screen.findByText('Recovered preview content')
+  resize(1100)
+  resize(400)
+  expect(container.querySelector('.session-import-detail')).toBe(scroller)
+  expect(onOpenSession).not.toHaveBeenCalled()
   expect(vi.mocked(foreignRequest).mock.calls.some(([, method]) => method === 'import')).toBe(false)
 })

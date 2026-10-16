@@ -3,7 +3,7 @@ header.eid-workspace-page-heading > h1 { margin: 0; font: 500 36px/1.2 Georgia, 
 header.eid-workspace-page-heading > p { margin: 10px 0 0; color: var(--ui-text-secondary); font-size: 13px; line-height: 1.5; }
 .eid-page-search-heading { padding: 24px 24px 16px; margin-bottom: 0; }
 .eid-page-search-heading + .eid-page-search-controls { padding-top: 0; }
-.eid-secondary-surface :is(button, a, input, textarea, select, summary):focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 3px; transition-property: color, background-color, border-color, box-shadow; }
+.eid-secondary-surface :is(button, a, input, textarea, select, summary):focus-visible { outline: 3px solid var(--ui-accent); outline-offset: 3px; transition-property: color, background-color, border-color, box-shadow; }
 .eid-secondary-surface :is(button, a, input, textarea, select, summary) { scroll-margin: 7px; }
 .eid-secondary-surface .eid-detail-scroll { padding: 7px; scroll-padding: 7px; }
 @media (max-width: 800px) {

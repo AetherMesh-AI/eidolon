@@ -1,5 +1,40 @@
 /** Copy for the canonical organization ledger surfaces, kept together across locales. */
+const requestDisplayCopy = {
+  requestQuestion: ["Question", "質問", "问题", "問題", "سؤال", "Вопрос"],
+  requestDecision: ["Decision", "判断", "决策", "決策", "قرار", "Решение"],
+  requestPermission: ["Permission request", "権限のリクエスト", "权限请求", "權限請求", "طلب إذن", "Запрос разрешения"],
+  requestHire: ["Staffing request", "人員配置のリクエスト", "人员配置请求", "人員配置請求", "طلب تعديل الفريق", "Запрос изменения состава"],
+  requestDecompose: ["Objective delegation", "目標の委任", "目标委派", "目標委派", "تفويض الهدف", "Делегирование цели"],
+  requestPlan: ["Work planning", "作業計画", "工作规划", "工作規劃", "تخطيط العمل", "Планирование работы"],
+  requestReview: ["Work review", "作業のレビュー", "工作审查", "工作審查", "مراجعة العمل", "Проверка работы"],
+  requestTestReview: ["Project execution review", "プロジェクト実行のレビュー", "项目执行审查", "專案執行審查", "مراجعة تنفيذ المشروع", "Проверка выполнения проекта"],
+  requestIntegrate: ["Deliverable integration", "成果物の統合", "交付成果整合", "交付成果整合", "تجميع المخرجات", "Объединение результатов"],
+  requestAccept: ["Final acceptance review", "最終受入レビュー", "最终验收审查", "最終驗收審查", "مراجعة القبول النهائي", "Итоговая приёмочная проверка"],
+  requestMessage: ["Message", "メッセージ", "消息", "訊息", "رسالة", "Сообщение"],
+  requestApply: ["Apply reviewed edits", "レビュー済みの編集を適用", "应用已审查的编辑", "套用已審查的編輯", "تطبيق التعديلات المراجعة", "Применение проверенных правок"],
+  requestValidate: ["Validate applied edits", "適用済みの編集を検証", "验证已应用的编辑", "驗證已套用的編輯", "التحقق من التعديلات المطبّقة", "Проверка применённых правок"],
+  requestValidationFailed: ["Validation issue", "検証の問題", "验证问题", "驗證問題", "مشكلة في التحقق", "Проблема проверки"],
+  requestProjectTest: ["Project execution", "プロジェクト実行", "项目执行", "專案執行", "تنفيذ المشروع", "Выполнение проекта"],
+  requestProjectFailed: ["Project execution issue", "プロジェクト実行の問題", "项目执行问题", "專案執行問題", "مشكلة في تنفيذ المشروع", "Проблема выполнения проекта"],
+  requestSourceIntegrate: ["Source integration", "ソースの統合", "源代码整合", "原始碼整合", "دمج الشيفرة المصدرية", "Интеграция исходного кода"],
+  requestMerge: ["Source handoff", "ソースの引き継ぎ", "源代码交接", "原始碼交接", "تسليم الشيفرة المصدرية", "Передача исходного кода"],
+  workDraft: ["Drafting", "下書き作成", "起草", "草擬", "إعداد مسودة", "Подготовка черновика"],
+  workAnalyze: ["Analysis", "分析", "分析", "分析", "تحليل", "Анализ"],
+  workInspect: ["Source inspection", "ソースの確認", "源代码检查", "原始碼檢查", "فحص الشيفرة المصدرية", "Изучение исходного кода"],
+  workEdit: ["Edit proposal", "編集の提案", "编辑提案", "編輯提案", "اقتراح تعديلات", "Предложение правок"],
+  attempts: ["Attempts", "試行回数", "尝试次数", "嘗試次數", "المحاولات", "Попытки"],
+  retryRequest: ["Retry: {type}", "再試行: {type}", "重试：{type}", "重試：{type}", "إعادة المحاولة: {type}", "Повторить: {type}"],
+  retryingRequest: ["Retrying…", "再試行中…", "正在重试…", "正在重試…", "جارٍ إعادة المحاولة…", "Повторная попытка…"],
+  recordedRequestType: ["Recorded request type", "記録されたリクエスト種別", "已记录的请求类型", "已記錄的請求類型", "نوع الطلب المسجّل", "Записанный тип запроса"],
+  claimedBy: ["Claimed by", "担当者", "领取者", "領取者", "من تولّى الطلب", "Исполнитель запроса"],
+  noClaimedWorker: ["No worker claimed this request", "このリクエストの担当者は未定です", "尚无成员领取此请求", "尚無成員領取此請求", "لم يتولَّ أي عامل هذا الطلب", "Ни один исполнитель не взял этот запрос"],
+  requestId: ["Request ID", "リクエスト ID", "请求 ID", "請求 ID", "معرّف الطلب", "Идентификатор запроса"],
+  cancelObjective: ["Cancel objective", "目標をキャンセル", "取消目标", "取消目標", "إلغاء الهدف", "Отменить цель"],
+  cancellingObjective: ["Cancelling…", "キャンセル中…", "正在取消…", "正在取消…", "جارٍ الإلغاء…", "Отмена…"],
+} as const
+
 const copy = {
+  ...requestDisplayCopy,
   folderChoose: ['Choose a new project folder', '新しいプロジェクトフォルダーを選択', '选择新的项目文件夹', '選擇新的專案資料夾'],
   folderApprove: ['Approve this folder access and save project', 'このフォルダーへのアクセスを承認して保存', '批准此文件夹访问并保存项目', '核准此資料夾存取並儲存專案'],
   folderRetry: ['Retry the same reviewed registration', '確認済みの同じ登録を再試行', '重试同一已审核注册', '重試同一已審核註冊'],
@@ -503,3 +538,9 @@ export const organizationWorkEn = forLocale(0)
 export const organizationWorkJa = forLocale(1)
 export const organizationWorkZh = forLocale(2)
 export const organizationWorkZhHant = forLocale(3)
+
+const requestDisplayForLocale = (index: 4 | 5): Pick<OrganizationWorkCopy, keyof typeof requestDisplayCopy> =>
+  Object.fromEntries(Object.entries(requestDisplayCopy).map(([key, values]) => [key, values[index]])) as Pick<OrganizationWorkCopy, keyof typeof requestDisplayCopy>
+
+export const organizationRequestDisplayAr = requestDisplayForLocale(4)
+export const organizationRequestDisplayRu = requestDisplayForLocale(5)

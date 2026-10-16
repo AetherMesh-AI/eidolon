@@ -71,6 +71,19 @@ class OrganizationIntakeStore:
         with self._connect() as conn:
             return _view(self._intake_row(conn, _text(intake_id, 'Intake ID', 128)))
 
+    def _intake_objective_title(self, conn, row):
+        # Clarification text is execution evidence, not title provenance. Follow
+        # persisted links rather than interpreting delimiter-like owner text.
+        seen = {row['id']}
+        while row['parent_intake_id'] is not None:
+            parent_id = row['parent_intake_id']
+            if parent_id in seen:
+                raise ValueError('Intake clarification lineage contains a cycle')
+            seen.add(parent_id)
+            row = self._intake_row(conn, parent_id)
+        original = row['request_text']
+        return original if len(original) <= 120 else original[:119] + '…'
+
     def begin_intake(self, text, *, idempotency_key, owner_priority=None, parent_intake_id=None, force_separate=False):
         text = _text(text, 'Request', 12000)
         key = _text(idempotency_key, 'Idempotency key', 128)
@@ -242,7 +255,7 @@ class OrganizationIntakeStore:
             delivery = proposal['deliveryMode']
             if delivery == 'source_project' and (not projects or any(p['recipe'] is None for p in projects)):
                 raise ValueError('Requested project changes need an existing approved execution recipe; the outcome was not downgraded to a report')
-            objective_id = self._create_objective(conn, row['request_text'][:500], row['request_text'],
+            objective_id = self._create_objective(conn, self._intake_objective_title(conn, row), row['request_text'],
                 proposal['effectivePriority'], idempotency_key='intake:' + intake_id,
                 acceptance_criteria=proposal['acceptanceCriteria'], delivery_mode=delivery,
                 executive_id=proposal['executiveId'], manager_id=proposal['managerId'],

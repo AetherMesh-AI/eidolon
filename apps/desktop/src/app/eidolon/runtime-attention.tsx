@@ -11,6 +11,7 @@ import { useI18n } from '@/i18n/context'
 import { LocalizedTime } from './localized-time'
 import type { OrganizationAttentionPage } from './runtime-attention-types'
 import { RevisionSeenControl, sameConnection } from './runtime-inbox-seen'
+import { requestTypeLabel } from './runtime-request-display'
 import type { OrganizationSnapshot, RuntimeOrganizationAdapter } from './types'
 
 interface AttentionProps {
@@ -139,14 +140,14 @@ export function RuntimeAttentionInbox({ adapter, snapshot, onInspect }: Attentio
                 const request = requests.get(item.requestId)!
 
                 return (
-                  <li aria-label={`${copy.inspectRequest}: ${request.type}`} key={item.requestId}>
+                  <li aria-label={`${copy.inspectRequest}: ${requestTypeLabel(request.type, copy)}`} key={item.requestId}>
                     <button
-                      aria-label={`${copy.inspectRequest}: ${request.type}`}
+                      aria-label={`${copy.inspectRequest}: ${requestTypeLabel(request.type, copy)}`}
                       className="eid-row"
                       onClick={() => onInspect(item.requestId)}
                     >
                       <span>
-                        <strong>{request.type}</strong>
+                        <strong>{requestTypeLabel(request.type, copy)}</strong>
                         <small>
                           {snapshot.objectives.find(value => value.id === item.objectiveId)?.title ?? item.objectiveId}
                         </small>

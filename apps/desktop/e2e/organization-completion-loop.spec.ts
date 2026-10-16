@@ -220,7 +220,7 @@ test('requires explicit check replacement, retains its audit, and completes only
   await createObjective(page, completionTitle, true)
   const header = objectiveHeader(page, completionTitle)
   const acceptance = page.getByRole('region', { name: 'Final acceptance', exact: true })
-  const blocked = page.getByRole('button', { name: 'Inspect request: request.project_test', exact: true })
+  const blocked = page.getByRole('button', { name: 'Inspect request: Project execution', exact: true })
   await expect(blocked).toContainText('Project execution requires', { timeout: 90_000 })
   await expect(blocked).toContainText('Pending intervention')
   await expect(header).not.toContainText('Completed')
@@ -373,7 +373,7 @@ test('requires explicit check replacement, retains its audit, and completes only
   )
   await openObjective(page, completionTitle)
 
-  await page.getByRole('button', { name: 'Inspect request: request.review', exact: true }).click()
+  await page.getByRole('button', { name: 'Inspect request: Work review', exact: true }).click()
   const inspector = page.getByRole('complementary', { name: 'Request details' })
   await expect(inspector.getByRole('region', { name: 'Model and evidence audit', exact: true })).toHaveCount(0)
   await inspector.getByRole('button', { name: 'Inspect model and evidence audit', exact: true }).click()
@@ -404,7 +404,7 @@ test('requires explicit check replacement, retains its audit, and completes only
     contentType: 'application/json'
   })
   await inspector.getByRole('button', { name: 'Close request details', exact: true }).click()
-  await page.getByRole('button', { name: 'Inspect request: work.draft', exact: true }).click()
+  await page.getByRole('button', { name: 'Inspect request: Drafting', exact: true }).click()
   await inspector.getByRole('button', { name: 'Inspect model and evidence audit', exact: true }).click()
 
   const routingAuditRegion = inspector.getByRole('region', { name: 'Model and evidence audit', exact: true })
@@ -719,7 +719,7 @@ test('retains a visible model-call intervention across full process restart and 
     return details.locator('time').getAttribute('datetime')
   }
 
-  let blocked = page.getByRole('button', { name: 'Inspect request: request.plan', exact: true })
+  let blocked = page.getByRole('button', { name: 'Inspect request: Work planning', exact: true })
   await expect(blocked).toContainText(reason, { timeout: 90_000 })
   const deadline = await assertBlocked()
   expect(deadline).toBeTruthy()
@@ -735,7 +735,7 @@ test('retains a visible model-call intervention across full process restart and 
   await running.restart()
   page = running.fixture.page
   await openObjective(page, budgetTitle)
-  blocked = page.getByRole('button', { name: 'Inspect request: request.plan', exact: true })
+  blocked = page.getByRole('button', { name: 'Inspect request: Work planning', exact: true })
   await expect(blocked).toContainText(reason)
   expect(await assertBlocked()).toBe(deadline)
   await page.screenshot({ path: testInfo.outputPath('02-budget-survives-electron-restart.png') })
@@ -773,7 +773,7 @@ test('recovers an unanswerable linked question through a bounded scope amendment
   const { page } = running.fixture
   const { stages, providerErrors } = running
   await createObjective(page, completionTitle, false)
-  const question = page.getByRole('button', { name: 'Inspect request: request.question', exact: true })
+  const question = page.getByRole('button', { name: 'Inspect request: Question', exact: true })
   await expect(question).toContainText('Pending intervention', { timeout: 90_000 })
   expect(stages.map(stage => stage.kind)).toEqual(['request.decompose', 'request.plan', 'work.draft'])
   await question.click()

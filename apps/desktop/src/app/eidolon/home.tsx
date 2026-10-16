@@ -128,7 +128,7 @@ function focusIntake(mode: 'manual' | 'assisted' = 'manual') {
 
   const field = mode === 'manual' ? document.getElementById('eid-objective') : assisted?.querySelector('textarea')
 
-  ;(field?.closest('form') ?? intake)?.scrollIntoView({ block: 'start' })
+  intake?.scrollIntoView({ block: 'start' })
   const target = field?.matches(':disabled') ? (mode === 'assisted' ? assisted : manual)?.querySelector('summary') : field
   target?.focus({ preventScroll: true })
 }
@@ -141,6 +141,7 @@ export function Home({ adapter, snapshot, starterEntry }: { adapter: Organizatio
   const navigate = useNavigate()
   const canChooseRecipient = snapshot.connection?.state === 'ready' && Boolean(snapshot.connection.ownerScope ?? snapshot.connection.scope)
   const intakeFocused = useRef(false)
+  const intakeTrigger = useRef('eid-home-describe-request')
   // eslint-disable-next-line no-restricted-syntax -- one-shot focus guard for explicit navigation, not mirrored reactive data
   useEffect(() => {
     if (hash !== '#eid-home-intake') {
@@ -160,14 +161,18 @@ export function Home({ adapter, snapshot, starterEntry }: { adapter: Organizatio
       const nextHash = event.currentTarget.open ? '#eid-home-intake' : ''
 
       if (hash !== nextHash) {
-        navigate({ hash: nextHash }, { replace: true })
+        navigate({ search, hash: nextHash }, { replace: true })
       }
 
       if (!event.currentTarget.open) {
-        document.getElementById('eid-home-new-objective')?.focus({ preventScroll: true })
+        const trigger = intakeTrigger.current === 'eid-home-describe-request' && document.querySelector('.eid-home-actions > .eid-team-entry')
+          ? 'eid-home-new-objective' : intakeTrigger.current
+
+        document.getElementById(trigger)?.focus({ preventScroll: true })
       }
     }} open={hash === '#eid-home-intake' || undefined}>
-      <summary>{copy.newObjective}</summary>
+      <summary>{requestIntakeCopy[locale].title}</summary>
+      {adapter.mode === 'runtime' && <details className="eid-home-setup"><summary>{t.organizationRoster.setupTitle} · {snapshot.runtime?.setup?.provider.status === 'warning' ? t.organizationRoster.setupProviderWarning : t.organizationRoster.setupProviderUnchecked}</summary><RuntimeSetup snapshot={snapshot} /></details>}
       {adapter.mode === 'runtime' && (
         <Command
           adapter={adapter}
@@ -176,7 +181,6 @@ export function Home({ adapter, snapshot, starterEntry }: { adapter: Organizatio
           snapshot={snapshot}
         />
       )}
-      {adapter.mode === 'runtime' && <RuntimeSetup snapshot={snapshot} />}
     </details>
   )
 
@@ -192,17 +196,21 @@ export function Home({ adapter, snapshot, starterEntry }: { adapter: Organizatio
         {adapter.mode === 'runtime' && (
           <div className="eid-home-actions">
             {starterEntry}
-            <Button disabled={!canChooseRecipient} onClick={() => navigate('/messages?recipient=executive')} variant={starterEntry ? "secondary" : "default"}>{copy.messageOrganization}</Button>
-            <Button id="eid-home-describe-request" onClick={() => {
+            <Button className="eid-home-request-action" id="eid-home-describe-request" onClick={() => {
+              intakeTrigger.current = 'eid-home-describe-request'
               focusIntake('assisted')
               intakeFocused.current = true
-              navigate({ hash: '#eid-home-intake' }, { replace: true })
-            }} variant="secondary">{requestIntakeCopy[locale].title}</Button>
+              navigate({ search: '?intake=assisted', hash: '#eid-home-intake' }, { replace: true })
+            }} variant="default">{requestIntakeCopy[locale].title}</Button>
+            <div className="eid-home-secondary-actions">
+            <Button disabled={!canChooseRecipient} onClick={() => navigate('/messages?recipient=executive')} variant="text">{copy.messageOrganization}</Button>
             <Button id="eid-home-new-objective" onClick={() => {
+              intakeTrigger.current = 'eid-home-new-objective'
               focusIntake()
               intakeFocused.current = true
-              navigate({ hash: '#eid-home-intake' }, { replace: true })
-            }} variant="secondary">{copy.newObjective}</Button>
+              navigate({ search: '?intake=manual', hash: '#eid-home-intake' }, { replace: true })
+            }} variant="text">{copy.newObjective}</Button>
+            </div>
             {!canChooseRecipient && <p role="status">{copy.messageOrganizationUnavailable}</p>}
           </div>
         )}

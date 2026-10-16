@@ -106,7 +106,7 @@ const details = () => within(screen.getByRole('complementary', { name: 'Request 
 
 it('opens the parent assignment outside queue filters, preserves the response on Back, and closes the full trail', () => {
   const fixture = setup()
-  fireEvent.click(screen.getByRole('button', { name: 'Inspect request: request.question' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Inspect request: Question' }))
   fireEvent.change(details().getByRole('textbox', { name: 'Response' }), {
     target: { value: 'Board and technical leads.' }
   })
@@ -124,7 +124,7 @@ it('opens the parent assignment outside queue filters, preserves the response on
   fireEvent.click(details().getByRole('button', { name: 'Open parent request' }))
   fireEvent.click(details().getByRole('button', { name: 'Close request details' }))
   expect(screen.queryByRole('complementary', { name: 'Request details' })).toBeNull()
-  fireEvent.click(screen.getByRole('button', { name: 'Inspect request: request.question' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Inspect request: Question' }))
   expect(details().getByRole('textbox', { name: 'Response' })).toHaveProperty('value', '')
   fireEvent.click(details().getByRole('button', { name: 'Open parent request' }))
   fireEvent.keyDown(fixture.view.container.ownerDocument, { key: 'Escape' })
@@ -137,7 +137,7 @@ it.each(['removed', 'cross-objective', 'changed-parent', 'profile', 'cycle'])(
   mode => {
     const fixture = setup()
     const initial = fixture.snapshot()
-    fireEvent.click(screen.getByRole('button', { name: 'Inspect request: request.question' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Inspect request: Question' }))
 
     if (mode === 'cycle') {
       fixture.update({
@@ -195,7 +195,7 @@ it.each(['unchanged', 'ancestor', 'back', 'unrelated', 'reopened'])(
           finish = resolve
         })
     )
-    fireEvent.click(screen.getByRole('button', { name: 'Inspect request: request.question' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Inspect request: Question' }))
     fireEvent.change(details().getByRole('textbox', { name: 'Response' }), { target: { value: 'Board audience.' } })
     fireEvent.click(details().getByRole('button', { name: 'Submit response' }))
     expect(fixture.mutation).toHaveBeenCalledTimes(1)
@@ -207,13 +207,13 @@ it.each(['unchanged', 'ancestor', 'back', 'unrelated', 'reopened'])(
       if (mode === 'back') {
         fireEvent.click(details().getByRole('button', { name: 'Back' }))
       } else if (mode === 'unrelated') {
-        fireEvent.click(screen.getByRole('button', { name: 'Inspect request: request.decision' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Inspect request: Decision' }))
         fireEvent.change(details().getByRole('textbox', { name: 'Response' }), {
           target: { value: 'New decision draft.' }
         })
       } else if (mode === 'reopened') {
         fireEvent.click(details().getByRole('button', { name: 'Close request details' }))
-        fireEvent.click(screen.getByRole('button', { name: 'Inspect request: request.question' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Inspect request: Question' }))
         fireEvent.change(details().getByRole('textbox', { name: 'Response' }), {
           target: { value: 'New question draft.' }
         })
@@ -270,7 +270,7 @@ it.each(['unchanged', 'ancestor', 'back', 'unrelated', 'reopened'])(
 
 it('focuses the exact URL request outside queue filters and clears only focus parameters when closed', () => {
   const fixture = setup({ path: '/requests?request=draft&requestOwner=owner-a&from=%2Fwork&originOwner=owner-a&keep=yes' })
-  expect(screen.queryByRole('button', { name: 'Inspect request: work.draft' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Inspect request: Drafting' })).toBeNull()
   expect(details().getByText('Preserve the exact technical appendix.')).toBeTruthy()
   expect(details().queryByRole('textbox', { name: 'Response' })).toBeNull()
   fireEvent.click(details().getByRole('button', { name: 'Close request details' }))
@@ -336,7 +336,7 @@ it('closes URL focus when the owner changes and rejects the old owner token', ()
 
 it('returns from linked objective work to the exact Needs You request', () => {
   const fixture = setup()
-  fireEvent.click(screen.getByRole('button', { name: 'Inspect request: request.question' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Inspect request: Question' }))
   const destination = new URL(details().getByRole('link', { name: 'Open objective' }).getAttribute('href')!, 'https://workspace.invalid')
   expect(destination.pathname).toBe('/objectives/goal')
   expect(destination.searchParams.get('originOwner')).toBe('owner-a')

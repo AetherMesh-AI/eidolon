@@ -1,0 +1,138 @@
+/* Capabilities owns these refinements; shared list/detail navigation owns
+   visibility, focus restoration and the content-width breakpoint. */
+.eid-capabilities-skill-detail {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  scroll-padding: 7px;
+}
+
+.eid-capabilities-skill-detail > main {
+  flex: 1;
+  min-height: 8rem;
+}
+
+.eid-capabilities-detail .row-hover {
+  height: auto;
+  min-height: 2.75rem;
+  padding-block: 0.25rem;
+  content-visibility: visible;
+}
+
+.eid-capabilities-detail .row-hover .truncate {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.eid-capabilities-detail .row-hover > button:first-child {
+  flex-wrap: wrap;
+}
+
+.eid-capabilities-detail .row-hover > button:first-child > span:first-child {
+  flex-basis: 8rem;
+}
+
+.eid-capabilities-detail .eid-detail-scroll,
+.eid-capabilities-detail .eid-mcp-detail {
+  scroll-padding: 7px;
+}
+
+.eid-capabilities-detail .eid-responsive-detail-list > aside {
+  min-width: 0;
+}
+
+.eid-capabilities-detail[data-compact='true'] .eid-responsive-detail-list > aside {
+  border-inline-end: 0;
+}
+
+.eid-capabilities-detail :is(pre, code, h3, p) {
+  overflow-wrap: anywhere;
+}
+
+.eid-capabilities-scope [data-slot='select-value'] {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: start;
+}
+
+.eid-mcp-detail {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.eid-mcp-server-config {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.eid-mcp-server-heading > div.min-w-0 {
+  flex-basis: 10rem;
+}
+
+.eid-mcp-editor {
+  flex: 1 0 12rem;
+  min-height: 12rem;
+}
+
+.eid-mcp-row > button:first-child > span:first-child {
+  flex-basis: auto;
+}
+
+.eid-mcp-row > button:first-child {
+  flex-wrap: nowrap;
+}
+
+.eid-hub-picker {
+  flex: 0 1 auto;
+  min-height: var(--hub-header-height, 2.25rem);
+  max-height: max(50%, calc(100% - 11rem));
+}
+
+.eid-hub-picker[data-open='false'] {
+  flex-shrink: 0;
+  max-height: none;
+}
+
+.eid-hub-body[hidden] {
+  display: none;
+}
+
+.eid-hub-body {
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+/* Native focus scrolling must reveal the whole ring, including when the
+   error action sits below a short viewport's initial scroll position. */
+.eid-capabilities-empty {
+  padding: 7px;
+  scroll-padding: 7px;
+}
+
+/* An expanded browser needs a working viewport, not just a visible heading.
+   When the window cannot fit both panes, scroll their shared workspace rather
+   than squeezing the iframe between its header and explanatory footer. */
+.eid-capabilities-workspace {
+  /* Keep the observed pane width stable when compact navigation hides Hub. */
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  scroll-padding: 7px;
+}
+
+.eid-capabilities-workspace:has(.eid-hub-picker[data-open='true']:not(.hidden)) > .eid-capabilities-content {
+  min-height: 28rem;
+  flex-shrink: 0;
+}
+
+.eid-hub-picker[data-open='true']:not(.hidden) {
+  min-height: calc(var(--hub-header-height, 2.25rem) + 12rem);
+}
+
+.eid-hub-viewport {
+  min-height: 6rem;
+}

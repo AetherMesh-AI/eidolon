@@ -1,13 +1,5 @@
 import { useStore } from '@nanostores/react'
-import {
-  Children,
-  type CSSProperties,
-  type ReactNode,
-  type PointerEvent as ReactPointerEvent,
-  useEffect,
-  useRef,
-  useState
-} from 'react'
+import { Children, type ReactNode, type PointerEvent as ReactPointerEvent, useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
@@ -17,13 +9,9 @@ import { Switch } from '@/components/ui/switch'
 import { Tip } from '@/components/ui/tooltip'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
-import {
-  $paneHeightOverride,
-  $paneState,
-  $paneWidthOverride,
-  setPaneHeightOverride,
-  setPaneWidthOverride
-} from '@/store/panes'
+import { $paneHeightOverride, $paneState, setPaneHeightOverride } from '@/store/panes'
+
+import { MasterDetailSash, useMasterDetailSplit } from './master-detail-split'
 
 // Monospace capability chip (tool name, transport, …). Shared by the Skills
 // and MCP tabs so the pill reads identically everywhere.
@@ -52,11 +40,6 @@ export function ToolChip({ children, title }: { children: ReactNode; title?: str
 // track, so grids without a resize sash render exactly as before.
 export const MASTER_DETAIL_WIDE_COLS = 'sm:grid-cols-[minmax(0,var(--md-split,0.75fr))_minmax(0,1fr)]'
 
-// Column-seam drag clamps: the rail can't shrink below a readable row, the
-// detail keeps enough room for its centered column.
-const SPLIT_MIN_LEFT_PX = 180
-const SPLIT_MIN_RIGHT_PX = 320
-
 // `split="wide"` gives list-heavy pages a rail that shares the page with a
 // sparse detail (skills/tools/mcp); the default 14rem rail suits pages whose
 // detail carries the weight (messaging). A `resizeId` turns the column seam
@@ -75,39 +58,7 @@ export function MasterDetail({
   resizeId?: string
   split?: 'rail' | 'wide'
 }) {
-  const gridRef = useRef<HTMLDivElement>(null)
-  // Unconditional hook (rules of hooks) — the '' atom is inert when no id.
-  const override = useStore($paneWidthOverride(resizeId ?? ''))
-  const [dragging, setDragging] = useState(false)
-
-  const startSplitDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const grid = gridRef.current
-
-    if (!resizeId || !grid || event.button !== 0) {
-      return
-    }
-
-    event.preventDefault()
-    const startX = event.clientX
-    const startWidth = (grid.children[0] as HTMLElement).getBoundingClientRect().width
-    const max = Math.max(SPLIT_MIN_LEFT_PX, grid.getBoundingClientRect().width - SPLIT_MIN_RIGHT_PX)
-    setDragging(true)
-
-    const onMove = (move: globalThis.PointerEvent) => {
-      setPaneWidthOverride(
-        resizeId,
-        Math.round(Math.min(max, Math.max(SPLIT_MIN_LEFT_PX, startWidth + (move.clientX - startX))))
-      )
-    }
-
-    const onUp = () => {
-      window.removeEventListener('pointermove', onMove)
-      setDragging(false)
-    }
-
-    window.addEventListener('pointermove', onMove)
-    window.addEventListener('pointerup', onUp, { once: true })
-  }
+  const { gridRef, splitStyle, dragging, startSplitDrag } = useMasterDetailSplit(resizeId)
 
   // With a sash the detail side gets a relative wrapper so the seam handle can
   // sit on the boundary itself (junction-owned, like the shell's sashes).
@@ -121,24 +72,13 @@ export function MasterDetail({
           split === 'wide' ? MASTER_DETAIL_WIDE_COLS : 'sm:grid-cols-[14rem_minmax(0,1fr)]'
         )}
         ref={gridRef}
-        style={override !== undefined ? ({ '--md-split': `${override}px` } as CSSProperties) : undefined}
+        style={splitStyle}
       >
         {resizeId ? (
           <>
             {list}
             <div className="relative grid min-h-0 min-w-0">
-              <div
-                className="group/vsash absolute inset-y-0 left-0 z-10 hidden w-1 -translate-x-1/2 cursor-col-resize sm:block"
-                onDoubleClick={() => setPaneWidthOverride(resizeId, undefined)}
-                onPointerDown={startSplitDrag}
-              >
-                <div
-                  className={cn(
-                    'absolute inset-y-0 left-1/2 w-px -translate-x-1/2 transition-colors',
-                    dragging ? 'bg-(--ui-stroke-secondary)' : 'group-hover/vsash:bg-(--ui-stroke-secondary)'
-                  )}
-                />
-              </div>
+              <MasterDetailSash dragging={dragging} onPointerDown={startSplitDrag} resizeId={resizeId} />
               {rest}
             </div>
           </>
@@ -155,7 +95,9 @@ export function ListColumn({ children, header }: { children: ReactNode; header?:
   return (
     <aside className="flex min-h-0 flex-col p-2">
       {header}
-      <div className="eid-detail-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]">{children}</div>
+      <div className="eid-detail-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]">
+        {children}
+      </div>
     </aside>
   )
 }

@@ -2,6 +2,10 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { MemoryRouter, useLocation, useNavigate } from 'react-router'
 import { afterEach, expect, it, vi } from 'vitest'
 
+import { TRANSLATIONS } from '@/i18n/catalog'
+import { I18nProvider } from '@/i18n/context'
+import type { Locale } from '@/i18n/types'
+
 import { Messages } from './messages'
 import { ownerChatSnapshot, ownerChatThread } from './runtime-owner-chat.test-support'
 import type { OrganizationAgent, RuntimeOrganizationAdapter } from './types'
@@ -137,7 +141,7 @@ it('organization entry offers explicit executive choice without opening or sendi
   expect(adapter.openOwnerChat).not.toHaveBeenCalled()
   expect(adapter.sendOwnerChat).not.toHaveBeenCalled()
   view.rerender(<MemoryRouter initialEntries={['/messages?recipient=executive']}><Messages adapter={adapter} snapshot={{ ...snapshot, agents: [] }} /></MemoryRouter>)
-  expect(screen.getAllByText(/No active executive with a verified identity is available/)).toHaveLength(2)
+  expect(screen.getByText(/No active executive with a verified identity is available/)).toBeTruthy()
   expect(screen.getByRole('link', { name: 'Review organization roster' }).getAttribute('href')).toBe('/organization')
   expect(screen.queryByRole('button', { name: 'Chat' })).toBeNull()
 })
@@ -218,3 +222,48 @@ it.each([
   render(<MemoryRouter initialEntries={[`/messages?${search}`]}><Messages snapshot={snapshot} /></MemoryRouter>)
   expect(screen.getByRole('button', { name: /Worker 1/ }).getAttribute('aria-pressed')).toBe('false')
 })
+
+
+it.each<Locale>(['en', 'ja', 'zh', 'zh-hant', 'ar', 'ru'])(
+  'distinguishes an empty recipient directory from an unselected or filtered directory in %s',
+  locale => {
+    const snapshot = ownerChatSnapshot()
+    const copy = TRANSLATIONS[locale].organizationHome
+    const mutation = vi.fn()
+
+    const adapter = { mode: 'runtime', openOwnerChat: mutation, sendOwnerChat: mutation, renewOwnerChat: mutation } as unknown as RuntimeOrganizationAdapter
+
+    function Route() {
+      return <output data-testid="route">{useLocation().pathname}</output>
+    }
+
+    const content = (agents: OrganizationAgent[]) => (
+      <I18nProvider configClient={null} initialLocale={locale}>
+        <MemoryRouter initialEntries={['/messages']}>
+          <Route />
+          <Messages adapter={adapter} snapshot={{ ...snapshot, agents }} />
+        </MemoryRouter>
+      </I18nProvider>
+    )
+
+    const view = render(content([]))
+    const conversation = () => within(screen.getByRole('region', { name: copy.memberMessages.conversation }))
+    expect(within(screen.getByRole('region', { name: copy.memberMessages.members })).getByRole('heading', { name: copy.memberMessages.noRecipients })).toBeTruthy()
+    expect(screen.queryByRole('heading', { name: copy.chooseAgent })).toBeNull()
+    expect(screen.getByTestId('route').textContent).toBe('/messages')
+    expect(mutation).not.toHaveBeenCalled()
+    view.rerender(content(snapshot.agents))
+    expect(conversation().getByRole('heading', { name: copy.chooseAgent })).toBeTruthy()
+    expect(screen.queryByRole('link', { name: copy.reviewMessageRoster })).toBeNull()
+    fireEvent.change(screen.getByRole('textbox', { name: copy.memberMessages.search }), { target: { value: 'no matching member' } })
+    expect(screen.getByText(copy.memberMessages.noMatches)).toBeTruthy()
+    expect(conversation().getByRole('heading', { name: copy.chooseAgent })).toBeTruthy()
+    view.rerender(content([{ ...snapshot.agents[0], role: 'Owner' }]))
+    expect(within(screen.getByRole('region', { name: copy.memberMessages.members })).getByRole('heading', { name: copy.memberMessages.noRecipients })).toBeTruthy()
+    const link = within(screen.getByRole('region', { name: copy.memberMessages.members })).getByRole('link', { name: copy.reviewMessageRoster })
+    expect(link.getAttribute('href')).toBe('/organization')
+    fireEvent.click(link)
+    expect(screen.getByTestId('route').textContent).toBe('/organization')
+    expect(mutation).not.toHaveBeenCalled()
+  }
+)

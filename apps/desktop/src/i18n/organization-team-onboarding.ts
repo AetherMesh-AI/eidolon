@@ -5,6 +5,9 @@ export interface TeamOnboardingCopy {
   title: string
   intro: string
   connectModel: string
+  modelSettings: string
+  checkConfiguration: string
+  checkFailed: string
   modelBlocked: string
   modelRequired: string
   jobs: string
@@ -66,8 +69,11 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
   en: {
     setupOrganization: 'Set up organization',
     title: 'Build your starter team',
-    intro: 'Connect a model, describe your work, then review your persistent team.',
+    intro: 'Review model settings, describe your work, then review your persistent team.',
     connectModel: 'Connect a model',
+    modelSettings: 'Model settings',
+    checkConfiguration: 'Check configuration',
+    checkFailed: 'Could not check the model configuration. Try checking again; model execution remains unverified.',
     modelBlocked: 'A usable model is required before your first request. Review model settings.',
     modelRequired: 'Connect a model before generating your team.',
     jobs: 'Jobs to handle',
@@ -132,8 +138,11 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
   ja: {
     setupOrganization: '組織を設定',
     title: '最初のチームを作成',
-    intro: 'モデルを接続し、仕事内容を説明して、継続的に活動するチームを確認します。',
+    intro: 'モデル設定を確認し、仕事内容を説明して、継続的に活動するチームを確認します。',
     connectModel: 'モデルを接続',
+    modelSettings: 'モデル設定',
+    checkConfiguration: '設定を確認',
+    checkFailed: 'モデル設定を確認できませんでした。もう一度確認してください。モデルの実行は未検証です。',
     modelBlocked: '最初の依頼には利用可能なモデルが必要です。モデル設定を確認してください。',
     modelRequired: 'チームを生成する前にモデルを接続してください。',
     jobs: '担当する仕事',
@@ -197,8 +206,11 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
   zh: {
     setupOrganization: '设置组织',
     title: '组建你的初始团队',
-    intro: '连接模型，描述工作，然后审核你的常驻团队。',
+    intro: '检查模型设置，描述工作，然后审核你的常驻团队。',
     connectModel: '连接模型',
+    modelSettings: '模型设置',
+    checkConfiguration: '检查配置',
+    checkFailed: '无法检查模型配置。请重新检查；模型执行仍未验证。',
     modelBlocked: '首次请求前需要可用的模型。请检查模型设置。',
     modelRequired: '请先连接模型，再生成团队。',
     jobs: '需要处理的工作',
@@ -258,8 +270,11 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
   'zh-hant': {
     setupOrganization: '設定組織',
     title: '建立你的初始團隊',
-    intro: '連接模型、描述工作，然後檢視你的常駐團隊。',
+    intro: '檢查模型設定、描述工作，然後檢視你的常駐團隊。',
     connectModel: '連接模型',
+    modelSettings: '模型設定',
+    checkConfiguration: '檢查設定',
+    checkFailed: '無法檢查模型設定。請重新檢查；模型執行仍未驗證。',
     modelBlocked: '首次請求前需要可用的模型。請檢查模型設定。',
     modelRequired: '請先連接模型，再產生團隊。',
     jobs: '需要處理的工作',
@@ -319,8 +334,11 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
   ar: {
     setupOrganization: 'إعداد المؤسسة',
     title: 'أنشئ فريقك الأول',
-    intro: 'اربط نموذجاً، وصف عملك، ثم راجع فريقك الدائم.',
+    intro: 'راجع إعدادات النموذج، وصف عملك، ثم راجع فريقك الدائم.',
     connectModel: 'ربط نموذج',
+    modelSettings: 'إعدادات النموذج',
+    checkConfiguration: 'التحقق من الإعدادات',
+    checkFailed: 'تعذّر التحقق من إعدادات النموذج. حاول التحقق مجدداً؛ تشغيل النموذج لا يزال غير متحقق منه.',
     modelBlocked: 'يلزم نموذج قابل للاستخدام قبل طلبك الأول. راجع إعدادات النموذج.',
     modelRequired: 'اربط نموذجاً قبل توليد فريقك.',
     jobs: 'الأعمال المطلوبة',
@@ -382,8 +400,12 @@ export const teamOnboardingCopy: Record<Locale, TeamOnboardingCopy> = {
   ru: {
     setupOrganization: 'Настроить организацию',
     title: 'Создайте свою первую команду',
-    intro: 'Подключите модель, опишите работу и проверьте состав своей постоянной команды.',
+    intro: 'Проверьте настройки модели, опишите работу и проверьте состав своей постоянной команды.',
     connectModel: 'Подключить модель',
+    modelSettings: 'Настройки модели',
+    checkConfiguration: 'Проверить конфигурацию',
+    checkFailed:
+      'Не удалось проверить конфигурацию модели. Повторите проверку; выполнение запросов моделью остаётся непроверенным.',
     modelBlocked: 'Для первого запроса необходима доступная модель. Проверьте её настройки.',
     modelRequired: 'Подключите модель перед генерацией команды.',
     jobs: 'Предстоящая работа',

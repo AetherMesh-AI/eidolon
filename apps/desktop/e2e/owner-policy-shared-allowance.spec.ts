@@ -87,7 +87,7 @@ test('shared pool preview is pure, lost acknowledgement reconciles once and an o
     await page.getByRole('textbox', { name: 'Acceptance criteria', exact: true }).fill('Retain the release gate using the supplied evidence.')
     await page.getByRole('combobox', { name: 'Delivery scope', exact: true }).selectOption('managed_artifact')
     await page.getByRole('button', { name: 'Create objective', exact: true }).click()
-    const blocked = page.getByRole('button', { name: 'Inspect request: request.plan', exact: true })
+    const blocked = page.getByRole('button', { name: 'Inspect request: Work planning', exact: true })
     await expect(blocked).toContainText('Pending intervention', { timeout: 90_000 })
     await expect(blocked).toContainText('Shared organization allowance pool modelCalls capacity is exhausted')
     expect(running.stages.map(stage => stage.kind)).toEqual(['request.decompose'])
