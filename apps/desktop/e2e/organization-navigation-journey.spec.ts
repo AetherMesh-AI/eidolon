@@ -1,4 +1,4 @@
-import { expect, test } from './test'
+import { acknowledgeExpectedErrorBanner, expect, test } from './test'
 import { captureGallery, type GalleryFixture, persistGalleryEvidence, positionGalleryAtStart, resizeGallery, setupGallery, verifyGalleryControls, writeGalleryEvidence } from './workspace-gallery-fixture'
 
 let fixture: GalleryFixture | undefined
@@ -90,7 +90,8 @@ test('empty workspace pages stay navigable and a failed observation has visible 
     await verifyGalleryControls(current, surface, `empty-${label}`)
   }
   await rail.getByRole('link', { name: 'Home', exact: true }).click()
-  current.state.observationError = 'Synthetic observation unavailable for recovery inspection.'
+  const observationError = 'Synthetic observation unavailable for recovery inspection.'
+  current.state.observationError = observationError
   await page.reload()
   const status = page.locator('.eid-workspace .eid-runtime-status').first()
   await expect(status.getByRole('alert')).toContainText(current.state.observationError)
@@ -98,6 +99,7 @@ test('empty workspace pages stay navigable and a failed observation has visible 
   current.state.observationError = null
   await status.getByRole('button', { name: /Retry/ }).click()
   await expect(status).toHaveCount(0)
+  await acknowledgeExpectedErrorBanner(page, observationError)
   await expect(page.getByRole('button', { name: 'Message organization', exact: true })).toBeEnabled()
   await expect(rail.getByRole('link', { name: 'Home', exact: true })).toHaveAttribute('aria-current', 'page')
   await captureGallery(current, 'observation-recovered', page.locator('.eid-workspace').last())
