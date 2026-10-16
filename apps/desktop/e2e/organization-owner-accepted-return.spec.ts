@@ -11,15 +11,30 @@ import { acknowledgeExpectedErrorBanner, expect, test } from './test'
 
 let running: Awaited<ReturnType<typeof setupOwnerChatFixture>> | undefined
 let remote: Awaited<ReturnType<typeof startOrganizationSwitchGateway>> | undefined
+let observationDiagnostics: Array<Record<string, unknown>> = []
 
 test.setTimeout(240_000)
-test.afterEach(async () => {
+// eslint-disable-next-line no-empty-pattern -- diagnostic attachment uses test info only
+test.afterEach(async ({}, info) => {
   try {
-    await remote?.close()
+    const banners = await running?.fixture.page.evaluate(() =>
+      (window as unknown as { __OWNER_OBSERVATION_DIAGNOSTICS__?: unknown[] }).__OWNER_OBSERVATION_DIAGNOSTICS__ ?? []
+    ).catch(() => [])
+
+    await info.attach('owner-observation-scope-diagnostics', {
+      contentType: 'application/json',
+      body: JSON.stringify({ events: observationDiagnostics, banners: banners ?? [],
+        limitation: 'Existing traffic and DOM facts only; private renderer scope flags are not exposed.' })
+    })
+    observationDiagnostics = []
   } finally {
-    await running?.fixture.cleanup()
-    remote = undefined
-    running = undefined
+    try {
+      await remote?.close()
+    } finally {
+      await running?.fixture.cleanup()
+      remote = undefined
+      running = undefined
+    }
   }
 })
 
@@ -62,14 +77,57 @@ test('recovers durably accepted owner send and renewal after lost acknowledgemen
     { url: remote!.url, token: remote!.token }
   )
 
+  observationDiagnostics = []
+  await page.addInitScript(() => {
+    const events: Array<Record<string, unknown>> = []
+
+    ;(window as unknown as { __OWNER_OBSERVATION_DIAGNOSTICS__?: unknown[] }).__OWNER_OBSERVATION_DIAGNOSTICS__ = events
+
+    const observer = new MutationObserver(() => {
+      if (events.length || !Array.from(document.querySelectorAll('[role="alert"]')).some(item =>
+        item.textContent?.trim() === 'Organization observation is unavailable.')) {return}
+
+      events.push({ time: Date.now(), kind: 'first-observation-banner',
+        onMessagesRoute: location.hash.includes('/messages'),
+        switching: document.querySelector('.eid-workspace-header [data-slot="connection-switcher"]')?.getAttribute('aria-busy') ?? null })
+    })
+
+    const start = () => observer.observe(document.body, { childList: true, subtree: true })
+
+    if (document.body) {start()}
+    else {document.addEventListener('DOMContentLoaded', start, { once: true })}
+  })
+
+  const recordObservation = (event: Record<string, unknown>) => {
+    if (observationDiagnostics.length < 200) {observationDiagnostics.push({ time: Date.now(), ...event })}
+  }
+
   const writes: Array<{ destination: string; method: string; params: Record<string, unknown> }> = []
   const accepted: Array<{ method: string; params: Record<string, unknown>; result: Record<string, unknown> }> = []
   const portB = new URL(dedicated ? dedicated.routes[1].baseUrl : remote!.url).port
   await page.routeWebSocket(/.*/, socket => {
     const server = socket.connectToServer()
     const operations = new Map<number, { method: string; params: Record<string, unknown> }>()
+    const observations = new Map<number, string>()
+    const destination = new URL(socket.url()).port === portB ? 'b' : 'a'
+    recordObservation({ kind: 'socket', destination })
     server.onMessage(message => {
       const reply = JSON.parse(message.toString()) as { id: number; result?: Record<string, unknown>; error?: unknown }
+      const observedMethod = observations.get(reply.id)
+
+      if (observedMethod) {
+        observations.delete(reply.id)
+        const result = reply.result as { state?: unknown; capabilityVersion?: unknown; scope?: { kind?: unknown; profile?: unknown } } | undefined
+        const error = reply.error as { code?: unknown } | undefined
+        const profile = result?.scope?.profile
+        recordObservation({ kind: 'response', destination, method: observedMethod,
+          errorCode: typeof error?.code === 'number' ? error.code : null,
+          state: ['available', 'unconfigured', 'unsupported'].includes(String(result?.state)) ? result?.state : null,
+          capabilityVersion: typeof result?.capabilityVersion === 'number' ? result.capabilityVersion : null,
+          servedProfileScope: result?.scope?.kind === 'served-profile',
+          profile: profile === 'default' || profile === profileA || profile === profileB ? profile : 'other-or-absent' })
+      }
+
       const operation = operations.get(reply.id)
 
       if (operation) {
@@ -93,6 +151,13 @@ test('recovers durably accepted owner send and renewal after lost acknowledgemen
     })
     socket.onMessage(message => {
       const request = JSON.parse(message.toString()) as { id: number; method?: string; params: Record<string, unknown> }
+
+      if (request.method === 'organization.observe' || request.method === 'organization.observeRead') {
+        observations.set(request.id, request.method)
+        recordObservation({ kind: 'request', destination, method: request.method,
+          readMethod: request.method === 'organization.observeRead' &&
+            ['organization.outcomes', 'organization.attention'].includes(String(request.params?.method)) ? request.params.method : null })
+      }
 
       if (request.method === 'organization.ownerChat.send' || request.method === 'organization.ownerChat.renew') {
         const destination = new URL(socket.url()).port === portB ? 'b' : 'a'

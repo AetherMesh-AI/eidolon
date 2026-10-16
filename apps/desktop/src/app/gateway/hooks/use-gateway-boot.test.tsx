@@ -2038,8 +2038,14 @@ it('ignores a superseded primary socket opening after a newer Settings connectio
   desktop.getConnection.mockResolvedValue(first)
   desktop.getGatewayWsUrl.mockResolvedValue(first.wsUrl)
   FakeWebSocket.mode = 'hold'
+  const socketCount = FakeWebSocket.instances.length
   act(() => { desktop.emitBackendExit(); FakeWebSocket.instances[0].drop() })
-  await advanceBackoff()
+  // Observe the dial before advancing the deliberately held socket's timeout.
+  await act(async () => {
+    for (let step = 0; step < 20 && FakeWebSocket.instances.length === socketCount; step++) {
+      await vi.advanceTimersToNextTimerAsync()
+    }
+  })
   const stale = FakeWebSocket.instances.at(-1)!
   expect(stale.readyState).toBe(0)
   desktop.getConnection.mockResolvedValue(latest)

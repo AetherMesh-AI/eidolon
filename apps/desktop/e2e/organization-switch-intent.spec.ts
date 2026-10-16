@@ -354,6 +354,7 @@ s.set_objective_archived(ident,True,expected_revision=0,idempotency_key='switch-
         item =>
           item.method === 'organization.observe' ||
           item.method === 'organization.descriptor' ||
+          item.method === 'organization.intake.list' ||
           item.method === 'organization.observeRead'
       )
   ).toBe(true)

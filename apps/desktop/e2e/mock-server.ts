@@ -24,6 +24,9 @@ import nodePath from 'node:path'
 export const MOCK_REPLY = 'Hello from the mock inference server! The full boot chain is working.'
 
 export interface MockServerOptions {
+  /** Explicit synthetic intake response; production admission and accounting remain real. */
+  requestIntakeReply?: (prompt: string) => string
+
   /** Explicit JSON fixture for the tool-free starter-team proposal path only. */
   starterTeamReply?: string
   /** Pause the matching stream after its first token for session-switch E2E coverage. */
@@ -484,6 +487,12 @@ export function startMockServer(options: MockServerOptions = {}): Promise<MockSe
           const userText = typeof lastUserMsg?.content === 'string' ? lastUserMsg.content : ''
           if (userText) {
             _receivedUserTexts.push(userText)
+          }
+          if (options.requestIntakeReply && messages.some(message =>
+            message?.role === 'system' && typeof message.content === 'string' && message.content.includes('EIDOLON_REQUEST_INTAKE_V1'))) {
+            nonStreamingTextResponse(res, model, options.requestIntakeReply(userText))
+
+            return
           }
           if (options.starterTeamReply && messages.some(message =>
             message?.role === 'system' && typeof message.content === 'string' && message.content.includes('EIDOLON_STARTER_TEAM_V1'))) {

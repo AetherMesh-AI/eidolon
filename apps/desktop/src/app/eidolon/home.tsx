@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router'
 
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n/context'
+import { requestIntakeCopy } from '@/i18n/organization-request-intake'
 import { CheckCircle2, FileText } from '@/lib/icons'
 
 import { AgentAvatar } from './avatar'
@@ -106,19 +107,28 @@ export function HomeRequest({ request, snapshot }: { request: OrganizationReques
   )
 }
 
-function focusIntake() {
+function focusIntake(mode: 'manual' | 'assisted' = 'manual') {
   const intake = document.getElementById('eid-home-intake') as HTMLDetailsElement | null
 
   if (intake) {
     intake.open = true
   }
 
-  intake?.scrollIntoView({ block: 'start' })
-  document.getElementById('eid-objective')?.focus({ preventScroll: true })
+  const manual = document.getElementById('eid-manual-intake') as HTMLDetailsElement | null
+  const assisted = document.getElementById('eid-assisted-intake') as HTMLDetailsElement | null
+
+  if (manual) {manual.open = mode === 'manual'}
+
+  if (assisted) {assisted.open = mode === 'assisted'}
+
+  const field = mode === 'manual' ? document.getElementById('eid-objective') : assisted?.querySelector('textarea')
+
+  ;(field?.closest('form') ?? intake)?.scrollIntoView({ block: 'start' })
+  field?.focus({ preventScroll: true })
 }
 
 export function Home({ adapter, snapshot, starterEntry }: { adapter: OrganizationAdapter; snapshot: OrganizationSnapshot; starterEntry?: ReactNode }) {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const copy = t.organizationHome
   const data = homeData(snapshot)
   const { hash } = useLocation()
@@ -177,6 +187,11 @@ export function Home({ adapter, snapshot, starterEntry }: { adapter: Organizatio
           <div className="eid-home-actions">
             {starterEntry}
             <Button disabled={!canChooseRecipient} onClick={() => navigate('/messages?recipient=executive')} variant="default">{copy.messageOrganization}</Button>
+            <Button id="eid-home-describe-request" onClick={() => {
+              focusIntake('assisted')
+              intakeFocused.current = true
+              navigate({ hash: '#eid-home-intake' }, { replace: true })
+            }} variant="secondary">{requestIntakeCopy[locale].title}</Button>
             <Button id="eid-home-new-objective" onClick={() => {
               focusIntake()
               intakeFocused.current = true

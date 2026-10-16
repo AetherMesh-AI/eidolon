@@ -7,7 +7,9 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { controlVariants } from '@/components/ui/control'
 import { Textarea } from '@/components/ui/textarea'
 import { useI18n } from '@/i18n/context'
+import { requestIntakeCopy } from '@/i18n/organization-request-intake'
 
+import { OrganizationRequestIntake } from './organization-request-intake'
 import { outcomeCriteria, OutcomeCriteriaEditor } from './outcome-criteria-editor'
 import {
   $intakeDrafts,
@@ -29,7 +31,7 @@ export function Command({
   snapshot: OrganizationSnapshot
 }) {
   const Heading = headingLevel === 1 ? 'h1' : 'h2'
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const copy = t.organizationWork
   const roster = t.organizationRoster
   const drafts = useStore($intakeDrafts)
@@ -206,6 +208,12 @@ export function Command({
     <div className="eid-command">
       <Heading>{copy.mainQuestion}</Heading>
       <p className="eid-subtitle">{copy.composerSubtitle}</p>
+      <details className="eid-form-disclosure" id="eid-assisted-intake" name="eid-intake-mode" open>
+        <summary>{requestIntakeCopy[locale].title}</summary>
+        <OrganizationRequestIntake snapshot={snapshot} />
+      </details>
+      <details className="eid-form-disclosure" id="eid-manual-intake" name="eid-intake-mode">
+        <summary>{requestIntakeCopy[locale].manualSetup}</summary>
       <form
         aria-busy={submitting}
         className="eid-composer"
@@ -458,7 +466,6 @@ export function Command({
       <p className="eid-note">
         {copy.intakeRecovery} <Link to="/objectives">{copy.intakeFindExisting}</Link>
       </p>
-      {error && <p role="alert">{error}</p>}
       <div className="eid-inline">
         <Button disabled={disabled || !stored} onClick={() => setDiscarding(true)} variant="text">
           {copy.intakeDiscard}
@@ -469,6 +476,8 @@ export function Command({
           </Button>
         )}
       </div>
+      </details>
+      {error && <p role="alert">{error}</p>}
       <ConfirmDialog
         confirmLabel={copy.intakeDiscard}
         description={stored?.idempotencyKey ? copy.intakeDiscardUnconfirmed : copy.intakeDiscardNote}
