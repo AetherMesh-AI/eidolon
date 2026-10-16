@@ -98,9 +98,16 @@ environment maps, or arbitrary process/network commands. Creation, metadata edit
 revocation, and removal have durable CAS/idempotency receipts and metadata-only audit.
 
 Secure replacement is implemented by the owner bridge and core handle contract.
-The model-facing management tool intentionally does not offer replacement until a
-trusted handle-delivery/provider adapter is available. There is no raw-value agent
-API. Provider-side credential creation is a separate authority and is not implemented.
+An owner may prepare a value for an already-running Worker with the exact entry's
+current replacement grant. A separate model tool accepts only its non-bearer
+handoff reference; the private single-use input remains bound to the exact owner
+connection, Worker generation, live request, entry/version and reviewed grant
+revision. Preparation is not replacement success. Lost acknowledgments use status
+and explicit fenced cancellation, never automatic value replay. See
+[owner-prepared replacement](organization-credential-handoffs.md) for the precise
+lifetime and native-start boundary. There is no raw-value agent API. Provider-side
+credential creation or autonomous rotation requires a separate authorized adapter
+and is not implemented.
 
 The internal broker checks exact tool/destination grants, version, status, and expiry
 when queuing and again immediately before exposing bytes to a trusted adapter. It

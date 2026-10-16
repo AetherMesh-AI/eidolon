@@ -163,6 +163,8 @@ _LONG_HANDLERS = frozenset({
     "organization.descriptor", "organization.saveMetadata", "organization.observe",
     "organization.credentials.cancelOperation", "organization.credentials.catalog", "organization.credentials.configureGrant", "organization.credentials.receipt",
     "organization.credentials.secureInput", "organization.credentials.mutate",
+    "organization.credentials.replacementTargets", "organization.credentials.prepareReplacement",
+    "organization.credentials.replacementStatus", "organization.credentials.cancelReplacement",
     "organization.teamSetup", "organization.previewTeam", "organization.createTeam", "organization.generateTeam",
     "organization.sharedAllowance", "organization.previewSharedAllowance", "organization.configureSharedAllowance",
     "organization.previewSharedAllowanceObservation", "organization.recordSharedAllowanceObservation",
@@ -3211,6 +3213,7 @@ from . import (  # noqa: E402
     methods_projects as _methods_projects, methods_organization as _methods_organization,
     methods_organization_metadata as _methods_organization_metadata,
     methods_organization_credentials as _methods_organization_credentials,
+    methods_organization_credential_handoff as _methods_organization_credential_handoff,
     methods_organization_milestones as _methods_organization_milestones,
     methods_organization_goals as _methods_organization_goals,
     methods_organization_team_setup as _methods_organization_team_setup,
@@ -3232,6 +3235,7 @@ for _m in (
     _methods_bot_relay, _prompt_turn, _billing_view, _methods_projects, _methods_session_foreign,
     _methods_session_control, _methods_subagents, _methods_organization, _methods_organization_owner_chat, _methods_organization_intake,
     _methods_organization_metadata, _methods_organization_milestones, _methods_organization_goals, _methods_organization_observation, _methods_organization_owner_policy, _methods_organization_folder_setup,
-    _methods_organization_shared_allowance, _methods_organization_team_setup, _methods_organization_credentials):
+    _methods_organization_shared_allowance, _methods_organization_team_setup, _methods_organization_credentials,
+    _methods_organization_credential_handoff):
     _m.register(sys.modules[__name__])
 del _m

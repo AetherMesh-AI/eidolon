@@ -180,7 +180,7 @@ def test_real_agent_catalog_and_management_rounds_keep_value_out_of_model(leased
         wire = json.dumps(received)
         assert secret not in wire and secret[:20] not in wire and 'opaque-value' not in wire
         assert {tool['function']['name'] for tool in received[0]['tools']} == {
-            'organization_credential_catalog', 'organization_credential_manage'}
+            'organization_credential_catalog', 'organization_credential_manage', 'organization_credential_replace'}
         assert any(message['role'] == 'tool' for message in received[-1]['messages'])
         assert result['usage'] == {'inputTokens': 90, 'outputTokens': 60}
     finally:
