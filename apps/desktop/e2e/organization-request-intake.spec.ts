@@ -78,7 +78,20 @@ with s._write() as c:
         }
 
         await expect(request).toBeFocused()
+
         await expect(request).toBeInViewport({ ratio: 1 })
+        const fieldFocus = await verifyKeyboardFocus(page, request, `Assisted intake field ${percent}%`)
+        await testInfo.attach(`intake-field-focus-${percent}`, {
+          contentType: 'application/json', body: JSON.stringify(fieldFocus)
+        })
+        const fieldWindow = await fixture.app.browserWindow(page)
+
+        const fieldPng = await fieldWindow.evaluate(async window =>
+          (await window.webContents.capturePage()).toPNG().toString('base64'))
+
+        await testInfo.attach(`intake-field-native-${percent}`, {
+          contentType: 'image/png', body: Buffer.from(fieldPng, 'base64')
+        })
         await request.fill('Prepare a status report')
         await expect(submit).toBeEnabled()
 

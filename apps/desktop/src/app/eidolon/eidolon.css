@@ -403,6 +403,9 @@
 .eid-home-actions:has(> .eid-team-entry) > .eid-home-request-action { display: none; }
 .eid-home-secondary-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px 12px; flex-basis: 100%; }
 .eid-home-intake { scroll-margin-block-start: 12px; }
+/* Leave room for the full keyboard outline when entering intake fields at native zoom. */
+.eid-workspace:has(.eid-home-intake) { scroll-padding: 7px; }
+.eid-home-intake :is(button, a, input, textarea, select, summary) { scroll-margin: 7px; }
 
 /* Home keeps the overview in the window; full intake is an explicit drilldown.
    Its Command remains mounted so closing the disclosure does not discard drafts. */
