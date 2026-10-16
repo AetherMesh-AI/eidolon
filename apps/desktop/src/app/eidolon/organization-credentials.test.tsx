@@ -267,3 +267,16 @@ it.each(['metadata', 'grant', 'createGrant'])('exposes recovery after an uncerta
   expect((screen.getByRole('button', { name: copy.create }) as HTMLButtonElement).disabled).toBe(false)
   expect(h.request.mock.calls.filter(call => ['organization.credentials.mutate', 'organization.credentials.configureGrant'].includes(call[0]))).toHaveLength(1)
 })
+
+it('keeps a populated description field label independent of its existing value', async () => {
+  const h = await credentialsHarness()
+  mount(h)
+  fireEvent.click(screen.getByRole('button', { name: copy.edit }))
+  const dialog = within(screen.getByRole('dialog'))
+  const description = dialog.getByLabelText(copy.description) as HTMLTextAreaElement
+  expect(description.value).toBe(entryFixture().description)
+  expect([...description.labels!].map(label => label.textContent?.trim())).toEqual([copy.description])
+  fireEvent.change(description, { target: { value: 'Updated synthetic description' } })
+  expect([...description.labels!].map(label => label.textContent?.trim())).toEqual([copy.description])
+  expect(h.request.mock.calls).toHaveLength(1)
+})

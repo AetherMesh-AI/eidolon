@@ -72,9 +72,10 @@ export function CredentialMetadataEditor({ entry, client, busy, onClose }: Metad
           </label>)}
         </div>
         <p className="break-words text-sm">{copy.name}: <bdi>{credentialName(candidate)}</bdi></p>
-        <label className="grid gap-1 text-sm" htmlFor={`${id}-description`}>{copy.description}
+        <div className="grid gap-1 text-sm">
+          <label htmlFor={`${id}-description`}>{copy.description}</label>
           <Textarea dir="auto" disabled={busy} id={`${id}-description`} maxLength={1000} onChange={event => setDraft(current => ({ ...current, description: event.target.value }))} required value={draft.description} />
-        </label>
+        </div>
         <fieldset className="grid gap-2" disabled={busy || Boolean(entry)}>
           <legend className="mb-2 text-sm">{copy.kind}</legend>
           <SegmentedControl disabled={busy || Boolean(entry)} onChange={kind => setDraft(current => ({ ...current, kind }))}
