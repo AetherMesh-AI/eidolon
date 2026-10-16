@@ -132,7 +132,14 @@ def test_actual_three_recipe_set_finishes_reviews_accepts_and_reopens(native_bui
             streams = {step['recipe']: retained_runtime_events(conn, step['run_id']) for step in steps}
             receipts = {recipe: next(event['data']['receipt'] for event in stream if event['kind'] == 'receipt')
                         for recipe, stream in streams.items()}
-            set_id = conn.execute('SELECT id FROM prepared_validation_sets').fetchone()[0]
+            set_id, envelope_record = conn.execute('SELECT id,envelope FROM prepared_validation_sets').fetchone()
+            envelope = json.loads(envelope_record)
+            retained_profile = json.loads(conn.execute(
+                "SELECT json_extract(grant_record,'$.profile') FROM prepared_validation_bindings "
+                'WHERE objective_id=? AND project_id=?', (state.objective, 'notes')).fetchone()[0])
+            assert envelope['version'] == retained_profile['version'] == 2
+            assert envelope['contract'] == 'prepared-validation-set-v2'
+            assert envelope['identity']['profileSha256'] == digest(retained_profile)
             source = reconstruct_prepared_snapshot(conn, set_id)
         assert set(receipts) == {'workspace_typescript', 'workspace_vitest_ui', 'workspace_vite_build'}
         for key in ('snapshotSha256', 'profileSha256', 'bundleSha256'):
@@ -169,7 +176,9 @@ def test_actual_three_recipe_set_finishes_reviews_accepts_and_reopens(native_bui
         with measure_native_phase('record_review_context', record_property):
             context = record_complete_context(store, review)
         payload = json.loads(review['payload'])
-        assert payload['executionContract'] == 'prepared-validation-v2'
+        # Dispatch keeps its compatibility discriminator; retained set/profile
+        # identities above carry the independently asserted protocol version.
+        assert payload['executionContract'] == 'prepared-validation-v1'
         assert set(payload['evidenceIds']) == {item['id'] for item in context['evidence']}
         artifacts = [item for item in context['evidence'] if item.get('kind') == 'project_execution']
         assert {item['projectExecution']['checkKind'] for item in artifacts} == {

@@ -5,6 +5,7 @@ import json
 import pytest
 
 from eidolon_cli import organization_prepared_validation_setup as setup
+from eidolon_cli.organization_project_validation import digest
 from tests.eidolon_cli.test_organization_prepared_validation_contract import raw
 from tests.eidolon_cli.test_organization_prepared_validation_setup import (
     confirmed, folder_profile, owner, prepared,  # noqa: F401
@@ -95,6 +96,16 @@ def test_synthetic_three_recipe_set_finishes_reviews_accepts_and_reopens(build_o
     state = setup_running(build_owner, acceptance_criteria=criteria, full_planning=True)
     calls = build_host(monkeypatch, state)
     assert state.store.run_project_stage(state.claim, state.cancel) == {}
+    with state.store._connect() as conn:
+        set_id, envelope_record = conn.execute('SELECT id,envelope FROM prepared_validation_sets').fetchone()
+        envelope = json.loads(envelope_record)
+        retained_profile = json.loads(conn.execute(
+            "SELECT json_extract(grant_record,'$.profile') FROM prepared_validation_bindings "
+            'WHERE objective_id=? AND project_id=?', (state.objective, 'notes')).fetchone()[0])
+        assert envelope['setId'] == set_id
+        assert envelope['version'] == retained_profile['version'] == 2
+        assert envelope['contract'] == 'prepared-validation-set-v2'
+        assert envelope['identity']['profileSha256'] == digest(retained_profile)
     assert [item['recipe'] for item in calls] == ['workspace_typescript', 'workspace_vitest_ui', 'workspace_vite_build']
     assert state.store.finish(state.claim, {})
     review = state.store.claim_next(recoverable=True)
