@@ -4,10 +4,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { $changeEventsAvailable, $cronChangeTick, $sessionsChangeTick } from '@/store/live-sync'
 import { $activeSessionId } from '@/store/session'
 
+import type { GatewayRequester } from '../types'
 import { useBackgroundSync } from './use-background-sync'
 
 const noop = () => undefined
-const requestGateway = async () => ({ sessions: [] })
+// Synthetic RPC boundary: session.active_list reads sessions; config.get has no cwd.
+// The caller-selected generic response type requires this fixture-only cast.
+const requestGateway: GatewayRequester = async <T,>() => ({ sessions: [] }) as T
+const updateSessionState = () => {
+  throw new Error('Unexpected transcript update in session-list refresh test')
+}
 
 function render(activeGatewayProfile: string, activeConnectionId: string, refreshSessions: () => Promise<void>) {
   return renderHook(
@@ -26,7 +32,8 @@ function render(activeGatewayProfile: string, activeConnectionId: string, refres
         refreshHermesConfig: noop,
         refreshMessagingSessions: noop,
         refreshSessions,
-        requestGateway
+        requestGateway,
+        updateSessionState
       })
     },
     { initialProps: { connectionId: activeConnectionId, profile: activeGatewayProfile } }
