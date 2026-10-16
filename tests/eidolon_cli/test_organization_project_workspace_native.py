@@ -37,7 +37,7 @@ def prepared():
              'sourceDirectories': ['apps/desktop/src', 'apps/shared/src']},
             {'id': 'ui-tests', 'recipe': 'workspace_vitest_ui', 'checkKind': 'project_tests',
              'config': 'apps/desktop/vitest.config.ts', 'testFiles': [UI_TEST], 'sourceDirectories': []}],
-        'limits': {'wallSeconds': 600, 'memoryMiB': 4096, 'cpus': 1, 'pids': 64,
+        'limits': {'wallSeconds': 180, 'memoryMiB': 4096, 'cpus': 1, 'pids': 64,
                    'scratchMiB': 256, 'logBytes': 131072}}
     assert len(source.files) > 64 and source.byte_count > 512 * 1024
     return source, base / 'bundle', manifest, profile
@@ -59,6 +59,8 @@ def changed(source, path, suffix):
 
 def test_actual_renderer_typecheck_and_real_ui_share_source_and_bundle(prepared):
     typed = execute(prepared, 'renderer-types')
+    assert typed['cleanupConfirmed'] is True, typed
+    assert typed['status'] == 'passed', typed
     tested = execute(prepared, 'ui-tests')
     for receipt in (typed, tested):
         assert receipt['status'] == 'passed', receipt

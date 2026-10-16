@@ -75,3 +75,34 @@ against the lockfile, but no archive is fetched or authenticated. The returned
 receipt therefore retains `provenanceAuthenticated: false`,
 `executionAuthorized: false`, and `runtimeCompatibilityVerified: false`.
 Real native sandbox acceptance is a separate required gate.
+
+## Reviewed CI renderer policy
+
+The experimental workflow pins the native-file inventory from candidate run
+38829761731, head `bf78a832d21ad5c5a84db10cdfff4834506c1c34`, artifact
+12016587569 (ZIP SHA-256
+`fcf4e01ae14c2fd4574022eaf879f52b2116f197a45c2c53057a1e6575209ed9`).
+The checked-in policy's canonical SHA-256 is
+`93322c453437b9c788f40ec28105f4cd8b0f5317e34456c8f1a58891318b032a`.
+It covers all 69 detected native files in the 92,160-file, 904,208,820-byte
+installation of lockfile SHA-256
+`35c2d26b12dc9e3e3a6690d3f40831826080ab319ed9ab28650e0e41cc4e8fd2`.
+Foreign-platform payloads stay inventoried; their presence does not establish
+platform support. The metadata artifact contains no dependency payload bytes.
+
+The subsequent native lane prepares a new complete bundle from the same exact
+lock, verifies every detected native file against that policy, and exercises the
+reviewed public renderer source fixture. Preparation may use the official npm
+registry; workload execution has no network, installation, or image pull. The
+53 exact execution-only source exceptions are test-fixture data and grant no
+model-context or production secret access. Actual green native receipts are
+required before claiming this bounded renderer/UI runtime works. Whole-project
+Electron builds, full UI-suite capacity, durable multi-step acceptance, and
+unknown-cleanup recovery remain separate acceptance gates.
+
+Native and abuse suites use separate 45-minute jobs with matrix fail-fast off,
+1800-second whole-file caps, zero file retries, and stop on the first failed test.
+The first renderer fixture permits 180 seconds per step; this test policy does
+not establish support for every larger production profile limit. A successful
+and confirmed-clean typecheck is required before the paired UI invocation.
+Any outer timeout is inconclusive failure and cannot authorize replay.

@@ -1,0 +1,350 @@
+{
+  "files": [
+    {
+      "format": "pe",
+      "path": "node_modules/@electron/windows-sign/vendor/signtool.exe",
+      "sha256": "a36f5e81ce208137acc8fa9c00547c020fa10f044583002ccd23799b7f64078e"
+    },
+    {
+      "format": "elf",
+      "path": "node_modules/@esbuild/linux-x64/bin/esbuild",
+      "sha256": "0c6588b092a2c291a72bab90659f3c9e0e25e0fe59c9ac12b4dae4d945e5548c"
+    },
+    {
+      "format": "elf",
+      "path": "node_modules/@rolldown/binding-linux-x64-gnu/rolldown-binding.linux-x64-gnu.node",
+      "sha256": "6ed04c1a6e629f7bd544543d4183ccae80ca51151f3362dff1a7d898b9c20317"
+    },
+    {
+      "format": "elf",
+      "path": "node_modules/@rolldown/binding-linux-x64-musl/rolldown-binding.linux-x64-musl.node",
+      "sha256": "596a815b3c187052a94a8cf4e10f2c54adff4c6c1ed756ea9031661adc933714"
+    },
+    {
+      "format": "wasm",
+      "path": "node_modules/@rolldown/binding-wasm32-wasi/rolldown-binding.wasm32-wasi.wasm",
+      "sha256": "b9ea12c905d6ea7aeafbe0ac3f7a5fb44c0ed0e0a7c644653ee80a213c44066e"
+    },
+    {
+      "format": "wasm",
+      "path": "node_modules/@streamdown/code/node_modules/shiki/dist/onig.wasm",
+      "sha256": "fd885c2d12e5951e59d761ebd4a006e06254b1491fd6f530c92b69fb4d8d77d9"
+    },
+    {
+      "format": "elf",
+      "path": "node_modules/@tailwindcss/oxide-linux-x64-gnu/tailwindcss-oxide.linux-x64-gnu.node",
+      "sha256": "cc1d852b9d8bdca43db28aff578de9628ca54a960e10297a3f100a32bf5a9be3"
+    },
+    {
+      "format": "elf",
+      "path": "node_modules/@tailwindcss/oxide-linux-x64-musl/tailwindcss-oxide.linux-x64-musl.node",
+      "sha256": "40698ff9c08396a28b3666f16730655f05e9227d81d62d9e0f8b6d8284a5208a"
+    },
+    {
+      "format": "elf",
+      "path": "node_modules/@tauri-apps/cli-linux-x64-gnu/cli.linux-x64-gnu.node",
+      "sha256": "b52e631907cdf3a060c755e480c86131eceb573a32006f913508165d6ae2229b"
+    },
+    {
+      "format": "elf",
+      "path": "node_modules/@tauri-apps/cli-linux-x64-musl/cli.linux-x64-musl.node",
+      "sha256": "b0554aeeffbb746d1938cf41baa04ac84e50ff0efb62d9c43f06aaca0c2272eb"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/electron-winstaller/vendor/7z-arm64.dll",
+      "sha256": "c167dbedd388718c70c921eeeac825492733f76107190dc1ba17801c79da879e"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/electron-winstaller/vendor/7z-arm64.exe",
+      "sha256": "65d0dcc70753ff3efd4631ac784d35ea5c22df7bd6fe2265a04382a7043d1512"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/electron-winstaller/vendor/7z-x64.dll",
+      "sha256": "9ed007aa82e440ceb39a6e105bb1d602a9bc59a4946267ba8de2f220aa15bc06"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/electron-winstaller/vendor/7z-x64.exe",
+      "sha256": "c7245e21a7553d9e52d434002a401c77a7ca7d0f245f2311b0ddf16f8f946c6f"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/electron-winstaller/vendor/Microsoft.Deployment.Resources.dll",
+      "sha256": "71d85bb2863f61ca11625e8bee171114047d3f3e95792309e2040f3e139baae3"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/electron-winstaller/vendor/Microsoft.Deployment.WindowsInstaller.dll",
+      "sha256": "ca420fef4909c10e2e95c8c899fa7d009892dddf0b2424870236f1d0676e9165"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/electron-winstaller/vendor/Setup.exe",
+      "sha256": "1e47eb606dad4c5c1568cfb8f4e970e1051ba5806aedb1ff3256284a8280d83b"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/electron-winstaller/vendor/Squirrel-Mono.exe",
+      "sha256": "81591699f7f156dc15f4e188fd132e01369352043511e758513dba59b19ac920"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/electron-winstaller/vendor/Squirrel.com",
+      "sha256": "597374496251a59a75a18159007097317275fd8944883863617a4f051ab8061a"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/electron-winstaller/vendor/Squirrel.exe",
+      "sha256": "76359cd4b0349a83337b941332ad042c90351c2bb0a4628307740324c97984cc"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/electron-winstaller/vendor/StubExecutable.exe",
+      "sha256": "d823e6d954f7e445fbbb5c04e40a39cf248a3621f9eccbafdf3f0f1e7acb11dd"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/electron-winstaller/vendor/SyncReleases.exe",
+      "sha256": "c2a2c78e0912a6576517fc69ffd32793134f1a5b2b066279de3757c76c501548"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/electron-winstaller/vendor/WixNetFxExtension.dll",
+      "sha256": "2edb4170c88c87547b8fb9bbce09e1ea202595331a06bedc3164326b3a84cdcb"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/electron-winstaller/vendor/WriteZipToSetup.exe",
+      "sha256": "9278fe28ac434fde0be3a10788dc13ad92a28940ed70a52f86d9d69435599349"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/electron-winstaller/vendor/candle.exe",
+      "sha256": "310584b7170f81e7c21733628e5d46f28f6a9b900f94368f1b943d6e4bbd3253"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/electron-winstaller/vendor/light.exe",
+      "sha256": "6b441eb98b2771d6cb51de7d3e1b2eaf8c6cd045b4ef7bb1a26f297295d96100"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/electron-winstaller/vendor/nuget.exe",
+      "sha256": "61704f7dbe233980992f2a00ef9baacf64a8b157d688a4a4be6b7a2eaea02828"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/electron-winstaller/vendor/rcedit.exe",
+      "sha256": "e2df7b664db830f159d0dc6b3da8a95442cca175b9577f2d19952646d37ac32f"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/electron-winstaller/vendor/signtool.exe",
+      "sha256": "92a0afe94ccebcd877c3c7b05e80e8ad748f2c64959c431b88e7a7a1e5ce115f"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/electron-winstaller/vendor/wconsole.dll",
+      "sha256": "490e29aa66c82487f79412df651c9e2a34d764fdf0b00b76944b63e9e6b780e3"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/electron-winstaller/vendor/winterop.dll",
+      "sha256": "9dfae44e99488add680ae6f7801283d45898baf48a7486c2a1adf8c105f6941d"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/electron-winstaller/vendor/wix.dll",
+      "sha256": "4b3cf980a840f3e36d98fef3b4d4c302313ac7e2ea3310f5d0d71722853975c7"
+    },
+    {
+      "format": "macho",
+      "path": "node_modules/get-windows/lib/binding/napi-6-darwin-unknown-arm64/node-active-win.node",
+      "sha256": "60c2ef1a5b09cd7abf1d0ec54be68c1c8fb551ab34620f74bc0925aad0487362"
+    },
+    {
+      "format": "macho",
+      "path": "node_modules/get-windows/lib/binding/napi-6-darwin-unknown-x64/node-active-win.node",
+      "sha256": "9fc5a903a84d5511f09dc734aa075f32a286c7c9be967ae700b0cead4cd96e00"
+    },
+    {
+      "format": "macho",
+      "path": "node_modules/get-windows/lib/binding/napi-9-darwin-unknown-arm64/node-get-windows.node",
+      "sha256": "d669edf217ff0b30d3b908351907f24b2077f6f17e094b3e180b28cc54ed3c54"
+    },
+    {
+      "format": "macho",
+      "path": "node_modules/get-windows/main",
+      "sha256": "687d4f4d69428f91fcd576887a34e9a0778756868f705e644cbc48cd76a9d4aa"
+    },
+    {
+      "format": "elf",
+      "path": "node_modules/lightningcss-linux-x64-gnu/lightningcss.linux-x64-gnu.node",
+      "sha256": "2024f99789a601c7438b387117032ba07594cbba9b784064b47cdc60a0972326"
+    },
+    {
+      "format": "elf",
+      "path": "node_modules/lightningcss-linux-x64-musl/lightningcss.linux-x64-musl.node",
+      "sha256": "e2c30fdc3868240af5ad6c8ec0a034848bad9a78f4b0fd32f3a41cd890814b19"
+    },
+    {
+      "format": "macho",
+      "path": "node_modules/node-pty/prebuilds/darwin-arm64/pty.node",
+      "sha256": "e6457d66f45af3facd02920a5b212164e80fe0bb758afe6e6eab1eceeba3fc9a"
+    },
+    {
+      "format": "macho",
+      "path": "node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper",
+      "sha256": "21c589109bca43e287df884f3c34ab888033a83927ea7d273949ac5030583f26"
+    },
+    {
+      "format": "macho",
+      "path": "node_modules/node-pty/prebuilds/darwin-x64/pty.node",
+      "sha256": "edab585d5c5c7bf35143a7a53b7d72652e90723b5f9635dfd55b2333f7069198"
+    },
+    {
+      "format": "macho",
+      "path": "node_modules/node-pty/prebuilds/darwin-x64/spawn-helper",
+      "sha256": "46a4455777c6122d7e71cd706ea4b37b19bedd297684be8b6dabb833ff2a3965"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/node-pty/prebuilds/win32-arm64/conpty.node",
+      "sha256": "25a06916c5cb1a3aac7acc401424d8e6a6a9e8eea441a3604cd657a0619555cd"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/node-pty/prebuilds/win32-arm64/conpty/OpenConsole.exe",
+      "sha256": "b7763ba27e80d5e84f9e60d1368ec2ddb25dfd10283336c0c9f3f252d35cb2f8"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/node-pty/prebuilds/win32-arm64/conpty/conpty.dll",
+      "sha256": "b6cca5f1081111f59e5255eec043d924ebd11a86d09986c0d121b680540b3380"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/node-pty/prebuilds/win32-arm64/conpty_console_list.node",
+      "sha256": "fda76b16afb3bf9a4de085c943b5fb4138ecbeb08e8254c09d5555ea5426bd4e"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/node-pty/prebuilds/win32-arm64/pty.node",
+      "sha256": "eae1266e3c34f4c7b67a756a6ff342b699847deaf29c944b7a6bed190ec61982"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/node-pty/prebuilds/win32-arm64/winpty-agent.exe",
+      "sha256": "9a5f66fbe444728988f51e8099d0d84c515945a1873dbbbec65aec6e07eac50a"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/node-pty/prebuilds/win32-arm64/winpty.dll",
+      "sha256": "0247b4d007fcb8059cc2221ec41d736fa548246ce1e10256c15c96d1ef6f2e9c"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/node-pty/prebuilds/win32-x64/conpty.node",
+      "sha256": "ee8f4e6f4dad71939eecfda11de249400e34bfefe4c8b48af13f3b5476f4035b"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/node-pty/prebuilds/win32-x64/conpty/OpenConsole.exe",
+      "sha256": "d1fe7faa62f9e955e2ac2371f95d7e5513df4d496255097158f979c94782c5fc"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/node-pty/prebuilds/win32-x64/conpty/conpty.dll",
+      "sha256": "7c7430632052ff703540b68371ec43821820aa1335d8e11dfbcd9ff00e9daaed"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/node-pty/prebuilds/win32-x64/conpty_console_list.node",
+      "sha256": "879dd94cfc79f1e263a00077597ae9448a5394b7d193381aaa50d992a1f91090"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/node-pty/prebuilds/win32-x64/pty.node",
+      "sha256": "ae323edd0835ee7b9e18cc96a7b2bb4b8173ff768317d178af2788406feb71ff"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/node-pty/prebuilds/win32-x64/winpty-agent.exe",
+      "sha256": "0c4834a0ab2a4f8c855a2f1db9b21fa6e5fc324ae8e3c82addd53d503d999825"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/node-pty/prebuilds/win32-x64/winpty.dll",
+      "sha256": "e1cb26d868c954ba26817bedf3e4a5744e4ca2030adf51a7156e5ff2fadb881b"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/node-pty/third_party/conpty/1.23.251008001/win10-arm64/OpenConsole.exe",
+      "sha256": "b7763ba27e80d5e84f9e60d1368ec2ddb25dfd10283336c0c9f3f252d35cb2f8"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/node-pty/third_party/conpty/1.23.251008001/win10-arm64/conpty.dll",
+      "sha256": "b6cca5f1081111f59e5255eec043d924ebd11a86d09986c0d121b680540b3380"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/node-pty/third_party/conpty/1.23.251008001/win10-x64/OpenConsole.exe",
+      "sha256": "d1fe7faa62f9e955e2ac2371f95d7e5513df4d496255097158f979c94782c5fc"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/node-pty/third_party/conpty/1.23.251008001/win10-x64/conpty.dll",
+      "sha256": "7c7430632052ff703540b68371ec43821820aa1335d8e11dfbcd9ff00e9daaed"
+    },
+    {
+      "format": "wasm",
+      "path": "node_modules/playwright-core/lib/webp_codec.wasm",
+      "sha256": "164cd9583a3e4d081f767d3b41ff0a730443dc7535fcc5caff83561463384b79"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/rcedit/bin/rcedit-x64.exe",
+      "sha256": "3e7801db1a5edbec91b49a24a094aad776cb4515488ea5a4ca2289c400eade2a"
+    },
+    {
+      "format": "pe",
+      "path": "node_modules/rcedit/bin/rcedit.exe",
+      "sha256": "38fb5e935d7cb58d7a98b4ed8f876c83f5db032bcd0329b0a4de4e4a1de876b6"
+    },
+    {
+      "format": "wasm",
+      "path": "node_modules/shiki/dist/onig.wasm",
+      "sha256": "fd885c2d12e5951e59d761ebd4a006e06254b1491fd6f530c92b69fb4d8d77d9"
+    },
+    {
+      "format": "wasm",
+      "path": "node_modules/three/examples/jsm/libs/ammo.wasm.wasm",
+      "sha256": "16be07b989963bddebfef66eab28a4387536eb37014d9df1531dab380bd96a93"
+    },
+    {
+      "format": "wasm",
+      "path": "node_modules/three/examples/jsm/libs/basis/basis_transcoder.wasm",
+      "sha256": "6cf17dc889352c42e9acf8897107978d127005fe3386c36a0e3845e27967630a"
+    },
+    {
+      "format": "wasm",
+      "path": "node_modules/three/examples/jsm/libs/draco/draco_decoder.wasm",
+      "sha256": "c55a594e8ffd18426d36b27fea9618af3df5e173640a3e56d46f09d76f0574f2"
+    },
+    {
+      "format": "wasm",
+      "path": "node_modules/three/examples/jsm/libs/draco/gltf/draco_decoder.wasm",
+      "sha256": "a680d927bed9cb864ddbd63521868891af2bfbe755092761b4837487618df8ac"
+    },
+    {
+      "format": "wasm",
+      "path": "node_modules/three/examples/jsm/libs/rhino3dm/rhino3dm.wasm",
+      "sha256": "6b2db3e30f39828d53aedcd8d55def981c2ad438747cc2cacd6a2f2d0f77acfc"
+    }
+  ],
+  "schemaVersion": 1
+}

@@ -1,4 +1,4 @@
-name: Prepared workspace candidate inventory
+name: Prepared workspace isolation
 on:
   push:
     branches: ['feat/prepared-project-validation']
@@ -6,14 +6,26 @@ on:
       - '.github/workflows/prepared-project-experimental.yml'
       - 'scripts/organization/prepare_workspace_dependencies.py'
       - 'scripts/organization/record_prepared_npm_install.mjs'
+      - 'eidolon_cli/organization_project_dependency_bundle.py'
+      - 'eidolon_cli/organization_project_snapshot_bundle.py'
+      - 'eidolon_cli/organization_project_validation_profile.py'
+      - 'eidolon_cli/organization_project_workspace_node.py'
+      - 'eidolon_cli/project_workspace_runtime/**'
+      - 'tests/eidolon_cli/test_organization_project_workspace_*.py'
+      - 'tests/eidolon_cli/prepared_workspace_fixture.py'
+      - 'tests/fixtures/prepared-workspace-*.json'
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   prepare-candidate:
-    name: Review dependency inventory only (no workload execution)
+    name: Prepared workspace ${{ matrix.suite }} isolation (Linux)
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [native, abuse]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -64,11 +76,49 @@ jobs:
             --output "$RUNNER_TEMP/prepared-project/candidate" --candidate
           cp "$RUNNER_TEMP/prepared-project/installation/runtime-metadata.json" "$RUNNER_TEMP/prepared-project/candidate/"
           cp "$RUNNER_TEMP/prepared-project/installation/installation-record.json" "$RUNNER_TEMP/prepared-project/candidate/"
+      - name: Build the exact reviewed native-policy bundle
+        run: |
+          .venv/bin/python scripts/organization/prepare_workspace_dependencies.py \
+            --repository "$RUNNER_TEMP/prepared-project/installation" \
+            --output "$RUNNER_TEMP/prepared-project/verified" \
+            --native-policy tests/fixtures/prepared-workspace-native-policy-35c2d26b.json \
+            --runtime-metadata "$RUNNER_TEMP/prepared-project/installation/runtime-metadata.json" \
+            --preparation-record "$RUNNER_TEMP/prepared-project/installation/installation-record.json"
+          .venv/bin/python - <<'PYCODE'
+          import json, os, pathlib
+          from tests.eidolon_cli.prepared_workspace_fixture import _load_renderer_selection
+          _, policy = _load_renderer_selection()
+          output = pathlib.Path(os.environ['RUNNER_TEMP']) / 'prepared-project/verified/execution-only-hashes.json'
+          with output.open('x') as stream:
+              json.dump(policy, stream, sort_keys=True)
+          output.chmod(0o444)
+          PYCODE
+      - name: Exercise actual prepared renderer and selected UI tests offline
+        env:
+          HERMES_PYTHON: .venv/bin/python
+          EIDOLON_REQUIRE_WORKSPACE_SANDBOX: '1'
+          EIDOLON_TEST_WORKSPACE_BUNDLE: ${{ runner.temp }}/prepared-project/verified
+        run: |
+          scripts/run_tests.sh tests/eidolon_cli/test_organization_project_workspace_${{ matrix.suite }}.py \
+            -j 1 --file-timeout 1800 --file-retries 0 -x --junitxml=workspace-${{ matrix.suite }}.xml
+      - name: Retain exact native proof and preparation metadata
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: prepared-workspace-${{ matrix.suite }}-proof
+          path: |
+            workspace-native.xml
+            workspace-abuse.xml
+            ${{ runner.temp }}/prepared-project/verified/manifest.json
+            ${{ runner.temp }}/prepared-project/verified/toolchain.json
+            ${{ runner.temp }}/prepared-project/verified/preparation-record.json
+            ${{ runner.temp }}/prepared-project/verified/receipt.json
+          if-no-files-found: warn
       - name: Retain reviewable metadata only
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: prepared-workspace-candidate
+          name: prepared-workspace-${{ matrix.suite }}-candidate
           path: |
             ${{ runner.temp }}/prepared-project/candidate/candidate.json
             ${{ runner.temp }}/prepared-project/candidate/runtime-metadata.json
