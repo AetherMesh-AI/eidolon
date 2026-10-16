@@ -1124,13 +1124,16 @@ A transport ignoring cancellation remains in the scheduler's occupied slot.
         deadline = time.monotonic() + timeout
         from eidolon_cli.organization_tool_executor import tool_execution, INSPECT_SYSTEM, EDIT_SYSTEM
         execution = resources.enter_context(tool_execution(context, kind))
+        from eidolon_cli.organization_credential_agent import compose_credential_execution, credential_system
+        execution = compose_credential_execution(execution, context)
+        tool_system = credential_system(execution, EDIT_SYSTEM if kind == 'work.edit' else INSPECT_SYSTEM)
         prompt = _prompt(request, context, kind)
         _guard_plugin_integrations(tool_mode=execution is not None)
         route = None
         if context.get('selectModelRoute'):
             from eidolon_cli.organization_evidence import prompt_input_bound
-            system = (_MESSAGE_SYSTEM if kind == 'request.message' else
-                _CONTINUITY_SYSTEM + (EDIT_SYSTEM if kind == 'work.edit' else INSPECT_SYSTEM) if execution is not None else _SYSTEM)
+            system = (_CONTINUITY_SYSTEM + tool_system if execution is not None else
+                _MESSAGE_SYSTEM if kind == 'request.message' else _SYSTEM)
             route = context['selectModelRoute'](input_bound=prompt_input_bound(prompt, system, getattr(execution, 'schemas', ())))
         if route is not None:
             context = {**context, 'modelRoute': route,
@@ -1146,7 +1149,7 @@ A transport ignoring cancellation remains in the scheduler's occupied slot.
             kwargs["ephemeral_system_prompt"] = _MESSAGE_SYSTEM
         if execution is not None:
             kwargs.update(max_iterations=execution.max_calls + 1,
-                          ephemeral_system_prompt=_CONTINUITY_SYSTEM + (EDIT_SYSTEM if kind == "work.edit" else INSPECT_SYSTEM))
+                          ephemeral_system_prompt=_CONTINUITY_SYSTEM + tool_system)
         if cancel.is_set() or time.monotonic() >= deadline:
             raise OrganizationExecutionError("Organization execution was cancelled or timed out during provider setup.")
         from eidolon_cli.organization_evidence import (

@@ -257,16 +257,23 @@ process.stderr.write('CONFIG_IMPORT_BOUNDARY_PROBE_COMPLETE\\n');
     assert 'CONFIG_IMPORT_BOUNDARY_PROBE_COMPLETE' in result['stderr']
 
 
+@pytest.mark.linux_only
 def test_actual_running_workspace_observes_authority_revocation(prepared, monkeypatch):
     import threading
     import time
     import uuid
     from eidolon_cli import organization_project_workspace_node as runtime
+    from tests.eidolon_cli.test_organization_project_workspace_abuse import attach_frames, process_identity
+    from tests.eidolon_cli.test_organization_project_workspace_revocation import (
+        exact_revocation_process, revocation_diagnostic,
+    )
     original_docker = runtime._docker
     revoked = threading.Event()
     observed = threading.Event()
     stop_observing = threading.Event()
-    observers, observation_errors = [], []
+    observers = []
+    evidence = {'topAttempts': 0, 'lastTopCode': None, 'lastTopForced': None, 'lastTopOutput': b'',
+                'errors': [], 'pid': None, 'identity': None, 'callbackSawRevocation': False, 'attach': None}
     marker = 'eidolon-revoke-' + uuid.uuid4().hex[:12]
 
     def observe_workload(container, configuration):
@@ -274,17 +281,19 @@ def test_actual_running_workspace_observes_authority_revocation(prepared, monkey
         try:
             while not stop_observing.is_set() and time.monotonic() < deadline:
                 code, output, _, forced = original_docker(
-                    ['top', container, '-eo', 'uid,args'], configuration,
+                    ['top', container, '-eo', 'pid,uid,args'], configuration,
                     runtime._Budget(None, 2, time.monotonic()), limit=65536)
+                evidence.update(topAttempts=evidence['topAttempts'] + 1, lastTopCode=code,
+                                lastTopForced=forced, lastTopOutput=output['stdout'])
                 if code == 0 and forced is None:
-                    rows = [line.strip().split(maxsplit=1)
-                            for line in output['stdout'].decode('utf-8', 'strict').splitlines()]
-                    if any(row == ['65534', marker] for row in rows):
+                    match = exact_revocation_process(output['stdout'], marker, process_identity)
+                    if match is not None:
+                        evidence['pid'], evidence['identity'] = match
                         observed.set()
                         return
                 stop_observing.wait(0.1)
         except Exception as error:
-            observation_errors.append(type(error).__name__)
+            evidence['errors'].append(type(error).__name__)
         finally:
             # Bound failure cleanup too, but never mistake this for a successful
             # observation: the assertion below requires the actual UID/title.
@@ -296,23 +305,57 @@ def test_actual_running_workspace_observes_authority_revocation(prepared, monkey
                                         args=(arguments[2], configuration), daemon=True)
             observers.append(observer)
             observer.start()
-        return original_docker(arguments, configuration, budget, limit)
+        answer = original_docker(arguments, configuration, budget, limit)
+        if arguments[:2] == ['start', '--attach']:
+            evidence['attach'] = answer
+        return answer
+
+    def authorized():
+        if revoked.is_set() and observed.is_set():
+            evidence['callbackSawRevocation'] = True
+        return not revoked.is_set()
 
     monkeypatch.setattr(runtime, '_docker', observed_docker)
     source, directory, manifest, profile = prepared
-    probe = ("\nit('prepared running revocation probe', async () => {\n"
+    probe = ("\nimport revocationProcess from 'node:process';\n"
+             "import { isMainThread as revocationMainThread } from 'node:worker_threads';\n"
+             "import { readFileSync as revocationRead, writeSync as revocationWrite } from 'node:fs';\n"
+             "import { it as revocationIt } from 'vitest';\n"
+             "revocationWrite(2, 'EIDOLON_REVOCATION_REGISTERED_WORKLOAD_CLAIM\\n');\n"
+             "revocationIt('prepared running revocation probe', async () => {\n"
+             "  revocationWrite(2, 'EIDOLON_REVOCATION_BODY_STARTED_WORKLOAD_CLAIM\\n');\n"
              f"  process.title = '{marker}';\n"
+             "  revocationWrite(2, 'EIDOLON_REVOCATION_TITLE_WORKLOAD_CLAIM ' + JSON.stringify({\n"
+             "    isMainThread: revocationMainThread, sameProcess: process === revocationProcess,\n"
+             "    pid: revocationProcess.pid, uid: revocationProcess.getuid(),\n"
+             "    title: revocationProcess.title.slice(0, 128), globalTitle: String(process.title).slice(0, 128),\n"
+             "    cmdline: revocationRead('/proc/self/cmdline', 'utf8').replaceAll('\\0', ' ').trim().slice(0, 256)\n"
+             "  }) + '\\n');\n"
              "  await new Promise((resolve) => setTimeout(resolve, 120000));\n"
              "}, 150000);\n").encode('utf-8')
     source = changed(source, UI_TEST, probe)
     try:
         result = run_prepared_workspace_step(source, directory, manifest, manifest['toolchain'],
-            profile, 'ui-tests', allow_local_docker=True, check_authorized=lambda: not revoked.is_set())
-        assert observers and observed.is_set(), (observation_errors, result)
-        assert revoked.is_set()
-        assert result['status'] == 'cancelled', result
-        assert result['cleanupConfirmed'] is True
+            profile, 'ui-tests', allow_local_docker=True, check_authorized=authorized)
+        report = revocation_diagnostic(result, evidence)
+        assert observers and observed.is_set(), report
+        assert evidence['errors'] == [] and evidence['callbackSawRevocation'] is True, report
+        assert revoked.is_set() and result['status'] == 'cancelled', report
+        assert result['cleanupConfirmed'] is True and 'outcome' not in result, report
         assert result['snapshotSha256'] == source.snapshot_sha256
+        assert evidence['attach'] is not None, report
+        code, output, totals, forced = evidence['attach']
+        assert code != 0 and forced == 'cancelled', report
+        assert totals['stdout'] <= 1048576 and totals['stderr'] <= profile['limits']['logBytes'], report
+        frames = attach_frames(output['stdout'], forced)
+        assert frames and frames[0]['kind'] == 'isolation', report
+        assert frames[0]['supervisorUid'] == 0 and frames[0]['workloadUid'] == 65534, report
+        assert frames[0]['supervisorCapabilities'] == ['SETUID', 'SETGID'], report
+        assert frames[0]['workloadCapabilities'] == [], report
+        deadline = time.monotonic() + 5
+        while process_identity(evidence['pid']) == evidence['identity']:
+            assert time.monotonic() < deadline, 'Observed revoked workload survived exact container cleanup'
+            time.sleep(0.05)
     finally:
         stop_observing.set()
         revoked.set()

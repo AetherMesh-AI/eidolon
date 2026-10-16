@@ -384,6 +384,11 @@ class OrganizationService:
                         'recordEvidencePass': lambda report: self.store.record_evidence_pass(record.claim, report),
                     })
                     kind = record.claim.get("type", record.claim.get("kind"))
+                    from eidolon_cli.organization_credential_agent import scheduler_capsule
+                    capsule = scheduler_capsule(self.home, self.store, record.claim,
+                        lambda: record.cancel.is_set() or self._stop.is_set())
+                    if capsule is not None:
+                        context['_credentialCapsule'] = capsule
                     if kind == 'work.edit':
                         context['resolveWorkspaceSource'] = lambda path, loader: self.store.capture_workspace_source(record.claim, path, loader)
                     if record.cancel.is_set() or self._stop.is_set():

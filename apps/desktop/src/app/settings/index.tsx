@@ -35,6 +35,7 @@ import { $localModelsEnabled } from '@/store/local-models-flag'
 import { notifyError } from '@/store/notifications'
 import { $settingsScopeProfile } from '@/store/settings-scope'
 
+import { OrganizationCredentialsSettings } from '../eidolon/organization-credentials'
 import { OwnerPolicySettings } from '../eidolon/organization-owner-policy'
 import { SharedAllowanceSettings } from '../eidolon/organization-shared-allowance'
 import { OrganizationScenery } from '../eidolon/scenery'
@@ -390,7 +391,7 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
         } : undefined}
       />
     ) : activeView === 'organization' ? (
-      <div className="eid-organization-settings"><OwnerPolicySettings /><SharedAllowanceSettings /></div>
+      <div className="eid-organization-settings"><OwnerPolicySettings /><SharedAllowanceSettings /><OrganizationCredentialsSettings /></div>
     ) : activeView === 'config:appearance' ? (
       <AppearanceSettings />
     ) : activeView === 'about' ? (

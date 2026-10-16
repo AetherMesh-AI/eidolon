@@ -547,10 +547,13 @@ async def gateway_ws(ws: WebSocket) -> None:
     # The authenticated identity (ticket / internal credential) stamped by
     # _ws_auth_reason becomes the identity authority for privileged RPCs
     # (browser.controller.register). None on the legacy token path.
+    from tui_gateway.organization_credential_transport import secure_local_owner_home
+    from eidolon_cli.web_server import app
     await handle_ws(
         ws,
         auth_identity=getattr(ws, "_hermes_auth_identity", None),
         subprotocol=getattr(ws, "_hermes_ws_subprotocol", None),
+        credential_owner_home=secure_local_owner_home(ws, app),
     )
 
 
