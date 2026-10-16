@@ -62,7 +62,9 @@ def test_actual_renderer_typecheck_and_real_ui_share_source_and_bundle(prepared)
     typed = execute(prepared, 'renderer-types')
     assert typed['cleanupConfirmed'] is True, typed
     assert typed['status'] == 'passed', json.dumps({
-        key: typed.get(key) for key in ('status', 'reason', 'cleanupConfirmed', 'exitCode', 'isolation')
+        **{key: typed.get(key) for key in (
+            'status', 'reason', 'cleanupConfirmed', 'exitCode', 'isolation', 'failureClaim')},
+        'stderr': typed.get('stderr', '')[:8192],
     }, sort_keys=True)
     tested = execute(prepared, 'ui-tests')
     for receipt in (typed, tested):
