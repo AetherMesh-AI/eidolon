@@ -17,12 +17,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        group: [navigation-journey]
+        group: [navigation-journey, visual-polish]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          ref: 7346ee1ce171bd12c76c313c40cb04373830c5f6
+          ref: da8680129f3af63de965082aeaf2e8548ffb28a8
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
