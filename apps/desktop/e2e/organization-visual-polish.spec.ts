@@ -725,6 +725,17 @@ test('keeps native organization navigation, roster and objective layouts usable 
       await expect(control).toBeInViewport({ ratio: 1 })
       await control.click({ trial: true })
     }
+    // Trial clicks hover the icon controls, and keyboard focus also opens their
+    // tooltip. Escape belongs to that top layer before the History disclosure.
+    const gatewayControl = history.getByRole('button', { name: 'Manage gateways…', exact: true })
+    await gatewayControl.hover()
+    const gatewayTip = page.getByRole('tooltip', { name: 'Manage gateways…', exact: true })
+    await expect(gatewayTip).toBeVisible()
+    await expect(gatewayControl).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(gatewayTip).not.toBeVisible()
+    await expect(history).toHaveAttribute('open', '')
+    await expect(gatewayControl).toBeFocused()
     await page.keyboard.press('Escape')
     await expect(history).not.toHaveAttribute('open', '')
     await expect(historyToggle).toBeFocused()
