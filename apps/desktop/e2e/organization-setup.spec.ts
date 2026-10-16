@@ -27,6 +27,9 @@ test('fresh setup guides existing settings and refreshes known blockers without 
 
   await navigation.getByRole('link', { name: 'Home', exact: true }).click()
   await page.getByRole('button', { name: 'New objective', exact: true }).click()
+  const readiness = page.locator('.eid-home-setup > summary')
+  await expect(readiness).toHaveText('Organization setup · Provider execution not checked')
+  await readiness.click()
   const panel = page.getByRole('region', { name: 'Organization setup', exact: true })
   await expect(panel.getByText('Provider execution not checked', { exact: true })).toBeVisible()
   await panel.getByText('Review roster, repository and background configuration', { exact: true }).click()

@@ -1,7 +1,7 @@
 /** A registered URL is shared authority; registration and secret edits never grant observation. */
 import { type MockBackendFixture, setupMockBackend, waitForAppReady } from './fixtures'
 import { startOrganizationSwitchGateway } from './organization-switch-fixture'
-import { expect, test } from './test'
+import { acknowledgeExpectedErrorBanner, expect, test } from './test'
 
 let fixture: MockBackendFixture | undefined
 let remote: Awaited<ReturnType<typeof startOrganizationSwitchGateway>> | undefined
@@ -24,16 +24,25 @@ test('refuses shared URL observation without reading or starting its queued orga
   const { page, app, mock } = fixture
   const before = remote.ledger()
 
-  const id = await page.evaluate(
+  const { id, localLabel } = await page.evaluate(
     async ({ url, token }) => {
       const bridge = (
         window as unknown as {
           hermesDesktop: {
-            connections: { save(input: unknown): Promise<{ ok: boolean; connection: { id: string } }> }
+            connections: {
+              list(): Promise<{ connections: { kind: string; label: string }[] }>
+              save(input: unknown): Promise<{ ok: boolean; connection: { id: string } }>
+            }
             getConnectionFor(input: unknown): Promise<{ sharedRemote?: boolean }>
           }
         }
       ).hermesDesktop
+
+      const locals = (await bridge.connections.list()).connections.filter(connection => connection.kind === 'local')
+
+      if (locals.length !== 1) {
+        throw new Error('Expected one synthetic local source')
+      }
 
       const saved = await bridge.connections.save({
         kind: 'remote',
@@ -53,7 +62,7 @@ test('refuses shared URL observation without reading or starting its queued orga
         throw new Error('Expected real shared URL descriptor')
       }
 
-      return saved.connection.id
+      return { id: saved.connection.id, localLabel: locals[0].label }
     },
     { url: remote.url, token: remote.token }
   )
@@ -74,14 +83,19 @@ test('refuses shared URL observation without reading or starting its queued orga
       })
     }
   )
-  await page.locator('.eid-workspace-header [data-slot="connection-switcher"]').getByRole('button').click()
+  const switcher = page.locator('.eid-workspace-header [data-slot="connection-switcher"]')
+  await expect(switcher.getByRole('button')).toContainText(localLabel)
+  await switcher.getByRole('button').click()
   await page.getByRole('menuitemradio', { name: 'Shared URL fixture' }).click()
   await page
     .getByRole('complementary', { name: 'Eidolon navigation' })
     .getByRole('navigation', { name: 'Primary', exact: true })
     .getByRole('link', { name: 'Home', exact: true })
     .click()
-  await expect(page.getByText('Organization observation is unavailable.', { exact: true })).toBeVisible()
+  const refusal = 'Organization observation is unavailable.'
+  const refusalAlert = page.locator('.eid-workspace .eid-runtime-status').getByRole('alert')
+  await expect(refusalAlert).toHaveText(refusal)
+  await expect(refusalAlert).toBeVisible()
   await expect(page.getByRole('button', { name: 'Organizations', exact: true })).toBeDisabled()
   const hidden = 'synthetic-private-query'
   await page.evaluate(
@@ -124,4 +138,16 @@ test('refuses shared URL observation without reading or starting its queued orga
         'base64'
       )
     })
+
+  // Retire the deliberately refused owner through the real control before
+  // acknowledging its exact alert; unrelated errors remain guarded.
+  await switcher.getByRole('button').click()
+  await page.getByRole('menuitemradio', { name: localLabel, exact: true }).click()
+  await expect(switcher.getByRole('button')).toContainText(localLabel)
+  await expect(switcher).toHaveAttribute('aria-busy', 'false')
+  await acknowledgeExpectedErrorBanner(page, refusal)
+  expect(reads).toEqual([])
+  expect(remote.ledger()).toBe(before)
+  expect(remote.starts()).toBe(0)
+  expect(mock.receivedPrompts).toHaveLength(0)
 })

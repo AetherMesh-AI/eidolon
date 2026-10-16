@@ -54,7 +54,11 @@ with s._write() as c:
     await waitForAppReady(fixture)
     const { page, mock } = fixture
     await page.getByRole('complementary', { name: 'Eidolon navigation', exact: true }).getByRole('link', { name: 'Home', exact: true }).click()
-    await page.getByRole('button', { name: 'Describe a request', exact: true }).click()
+    // The fresh-team continuation owns the hero CTA until setup is complete.
+    // Open the retained intake through the always-discoverable manual entry,
+    // then explicitly choose its assisted disclosure without submitting again.
+    await page.getByRole('button', { name: 'New objective', exact: true }).click()
+    await page.locator('#eid-assisted-intake > summary').filter({ hasText: /^Describe a request$/ }).click()
     const intake = page.getByRole('region', { name: 'Describe a request', exact: true })
     await expect(intake).toBeVisible()
 
@@ -162,7 +166,11 @@ with sqlite3.connect(p.as_uri()+'?mode=ro',uri=True) as c:
     await page.reload()
     await waitForAppReady(fixture)
     await page.getByRole('complementary', { name: 'Eidolon navigation', exact: true }).getByRole('link', { name: 'Home', exact: true }).click()
-    await page.getByRole('button', { name: 'Describe a request', exact: true }).click()
+    // The fresh-team continuation owns the hero CTA until setup is complete.
+    // Open the retained intake through the always-discoverable manual entry,
+    // then explicitly choose its assisted disclosure without submitting again.
+    await page.getByRole('button', { name: 'New objective', exact: true }).click()
+    await page.locator('#eid-assisted-intake > summary').filter({ hasText: /^Describe a request$/ }).click()
     await intake.getByText('Recent requests', { exact: true }).click()
     await intake.getByRole('button', { name: 'Refresh recent requests', exact: true }).click()
     await intake.getByRole('button', { name: /Prepare a status report/ }).click()
