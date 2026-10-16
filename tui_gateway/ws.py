@@ -58,7 +58,6 @@ def _sanitize_ws_text(text: str) -> str:
 # Max seconds a pool-dispatched handler blocks waiting for the loop to flush a WS frame before we
 # give up waiting (the transport is NOT marked dead).
 _WS_WRITE_TIMEOUT_S = 10.0
-_WS_LOG_PAYLOAD_PREVIEW = 240
 
 # Per-token streaming frames are coalesced: buffered and flushed as a batch on a short timer instead
 # of waking the loop once per token (each wakeup competes with the agent turn for the GIL). Keep this
@@ -236,7 +235,8 @@ class _SendFailed(Exception):
     """Raised by handle_ws._reply when a reply could not be written: ends the read loop."""
 
 
-async def handle_ws(ws: Any, *, auth_identity: dict | None = None, subprotocol: str | None = None) -> None:
+async def handle_ws(ws: Any, *, auth_identity: dict | None = None, subprotocol: str | None = None,
+                    credential_owner_home=None) -> None:
     """Run one WebSocket session. Wire-compatible with ``tui_gateway.entry``. *auth_identity* is the server-minted
     ``{user_id, provider}`` recorded at WS-upgrade auth, stored as ``WSTransport.auth_identity`` (the only identity
     authority for browser-controller registration); callers that omit it (harnesses, embedded TUI child) get None."""
@@ -264,6 +264,8 @@ async def handle_ws(ws: Any, *, auth_identity: dict | None = None, subprotocol: 
         _disable_nagle(ws)
         _log.info("ws accepted peer=%s", peer)
         transport = WSTransport(ws, asyncio.get_running_loop(), peer=peer, auth_identity=auth_identity)
+        from tui_gateway.organization_credential_transport import register_owner
+        register_owner(transport, credential_owner_home)
         # resolve_skin() is sync I/O + CPU; pooled so the read loop can drain the frontend's initial RPC burst.
         skin_payload = await asyncio.to_thread(server.resolve_skin)
         # change_events: this backend broadcasts pet/cron/sessions.changed, so clients can demote legacy
@@ -316,7 +318,8 @@ async def handle_ws(ws: Any, *, auth_identity: dict | None = None, subprotocol: 
                 req = json.loads(line)
             except json.JSONDecodeError as exc:
                 parse_errors += 1
-                _log.warning("ws parse error peer=%s index=%d error=%s payload=%r", peer, messages, exc, line[:_WS_LOG_PAYLOAD_PREVIEW])
+                _log.warning("ws parse error peer=%s index=%d error_type=%s characters=%d",
+                             peer, messages, type(exc).__name__, len(line))
                 await _reply(_error(-32700, "parse error", None), "send_failed_after_parse_error",
                              "ws parse-error reply send failed peer=%s", peer)
                 continue
@@ -354,6 +357,8 @@ async def handle_ws(ws: Any, *, auth_identity: dict | None = None, subprotocol: 
                 await asyncio.to_thread(get_browser_control_broker().disconnect_owner, transport)
             except Exception:
                 _log.exception("ws browser-controller disconnect failed peer=%s", peer)
+            from tui_gateway.organization_credential_transport import retire_owner
+            retire_owner(transport)
             transport.close()
             try:
                 await asyncio.to_thread(server._release_wake_for_transport, transport)
