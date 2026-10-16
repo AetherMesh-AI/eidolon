@@ -37,7 +37,11 @@ def secure_local_owner_home(ws, app):
 def register_owner(transport, home):
     if home is not None:
         with _lock:
-            _owners[transport] = Path(home).resolve()
+            _owners[transport] = (Path(home).resolve(), object())
+        # Re-registering the same object is a new connection generation. Never
+        # restore input authority from its retired generation.
+        from eidolon_cli.organization_credential_service import secure_inputs
+        secure_inputs.cancel_transport(transport)
 
 
 def owner_home(transport):
@@ -45,7 +49,19 @@ def owner_home(transport):
         return None
     with _lock:
         try:
-            return _owners.get(transport)
+            registration = _owners.get(transport)
+            return registration[0] if registration else None
+        except TypeError:
+            return None
+
+
+def owner_generation(transport):
+    if transport is None or getattr(transport, 'closed', True):
+        return None
+    with _lock:
+        try:
+            registration = _owners.get(transport)
+            return registration[1] if registration else None
         except TypeError:
             return None
 

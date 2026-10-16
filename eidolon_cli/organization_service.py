@@ -355,6 +355,7 @@ class OrganizationService:
             raise
 
     def _work(self, record: _Running) -> None:
+        capsule = None
         try:
             request_id = str(record.claim["id"])
             with _ExecutionLock(self.home / "organization" / "execution-locks", request_id) as acquired:
@@ -425,12 +426,16 @@ class OrganizationService:
             record.error = "Execution failed unexpectedly; review provider configuration before retrying"
             logger.warning("Organization execution failed for request %s", record.claim.get("id"))
         finally:
-            if record.pacing_wait is not None:
-                record.deferred = True
-                record.error = str(record.pacing_wait)
-            if record.execution_slot is not None:
-                record.execution_slot.__exit__()
-            self._wake.set()
+            try:
+                if capsule is not None:
+                    capsule.retire()
+            finally:
+                if record.pacing_wait is not None:
+                    record.deferred = True
+                    record.error = str(record.pacing_wait)
+                if record.execution_slot is not None:
+                    record.execution_slot.__exit__()
+                self._wake.set()
 
     def _maintain(self) -> None:
         now = time.monotonic()
