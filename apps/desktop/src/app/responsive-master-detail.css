@@ -49,7 +49,9 @@
 
 .eid-responsive-detail-back {
   flex-shrink: 0;
-  padding: 0.25rem 0.75rem;
+  /* The secondary-surface outline extends 5px outside the button. Keep it
+     inside the clipped page body when Back is its first focused control. */
+  padding: 0.5rem 0.75rem;
 }
 
 .eid-responsive-detail[data-compact='true'] .session-import-filters {

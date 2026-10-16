@@ -11,6 +11,10 @@ test.setTimeout(600_000)
 test.afterEach(async () => {
   try {
     if (fixture) {
+      if (test.info().status !== test.info().expectedStatus) {
+        const png = await fixture.app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64'))
+        writeFileSync(test.info().outputPath('responsive-failure-en-native.png'), Buffer.from(png, 'base64'))
+      }
       persistGalleryEvidence(fixture, 'responsive')
       const ipc = await fixture.app.evaluate(() => (globalThis as any).__eidolonWorkspaceFixture)
       writeFileSync(test.info().outputPath('workspace-responsive-native-evidence.json'), JSON.stringify(ipc, null, 2))
