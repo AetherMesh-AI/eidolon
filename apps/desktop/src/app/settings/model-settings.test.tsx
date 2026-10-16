@@ -87,7 +87,7 @@ afterEach(() => {
   profileSwitchHandler = null
 })
 
-async function renderModelSettings(scopeProfile?: string, compactOverview = false) {
+async function renderModelSettings(scopeProfile?: null | string, compactOverview = false) {
   const { ModelSettings } = await import('./model-settings')
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
 
@@ -113,9 +113,12 @@ it('announces catalog loading and exposes a rejected load without showing Apply 
 
   await act(async () => rejectCatalog(new Error('Catalog temporarily unavailable')))
   const failure = await screen.findByRole('alert')
-  expect(failure.textContent).toContain('Catalog temporarily unavailable')
+  expect(failure.textContent).toContain('Could not load models')
+  expect(failure.textContent).not.toContain('Catalog temporarily unavailable')
   expect(screen.queryByRole('status', { name: /loading/i })).toBeNull()
-  expect((screen.getByRole('button', { name: 'Apply' }) as HTMLButtonElement).disabled).toBe(true)
+  expect(screen.queryByRole('button', { name: 'Apply' })).toBeNull()
+  expect(screen.queryByRole('combobox')).toBeNull()
+  expect(screen.getByRole('button', { name: 'Refresh' })).toBeTruthy()
 })
 
 describe('ModelSettings profile scope', () => {
@@ -426,6 +429,7 @@ describe('ModelSettings', () => {
     // Banner present on load, no switch required.
     const warning = await screen.findByText(/still run on/)
     expect(warning).toBeTruthy()
+
     if (compactOverview) {
       const disclosure = view.container.querySelector('.eid-settings-model-advanced') as HTMLDetailsElement
       expect(disclosure.open).toBe(false)
@@ -716,4 +720,139 @@ it('retains real provider, model and auxiliary drafts through overview/detail an
   expect(disclosure.open).toBe(true)
   fireEvent.click(screen.getAllByRole('button', { name: 'Apply' })[1])
   await waitFor(() => expect(setModelAssignment).toHaveBeenCalledWith(expect.objectContaining({ provider: 'nous', model: 'hermes-4-mini' })))
+})
+
+it('retries an unavailable catalog once and never writes configuration', async () => {
+  getGlobalModelOptions.mockRejectedValueOnce(new Error('unavailable'))
+  await renderModelSettings()
+  await screen.findByRole('alert')
+  let resolveCatalog!: (value: unknown) => void
+  getGlobalModelOptions.mockReturnValueOnce(new Promise(resolve => { resolveCatalog = resolve }))
+  const retry = screen.getByRole('button', { name: 'Refresh' })
+  fireEvent.click(retry)
+  fireEvent.click(retry)
+  expect(getGlobalModelOptions).toHaveBeenCalledTimes(2)
+  expect(retry.hasAttribute('disabled')).toBe(true)
+  await act(async () => resolveCatalog({ providers: [{ name: 'Nous', slug: 'nous', models: ['hermes-4'], authenticated: true }] }))
+  await screen.findByRole('button', { name: 'Apply' })
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(setModelAssignment).not.toHaveBeenCalled()
+  expect(saveHermesConfig).not.toHaveBeenCalled()
+  expect(setEnvVar).not.toHaveBeenCalled()
+})
+
+it('retains the last catalog and unsaved selection across a failed refresh and retry', async () => {
+  await renderModelSettings()
+  const model = (await screen.findAllByRole('combobox'))[1]
+  fireEvent.click(model)
+  fireEvent.click(await screen.findByRole('option', { name: 'hermes-4-mini' }))
+  getGlobalModelOptions.mockRejectedValueOnce(new Error('private backend detail'))
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+  expect((await screen.findByRole('alert')).textContent).toContain('Could not load models')
+  expect(screen.queryByText('private backend detail')).toBeNull()
+  expect(model.textContent).toContain('hermes-4-mini')
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+  await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+  expect(model.textContent).toContain('hermes-4-mini')
+  expect(setModelAssignment).not.toHaveBeenCalled()
+  expect(saveHermesConfig).not.toHaveBeenCalled()
+})
+
+it.each(['resolve', 'reject'] as const)('ignores a late %s from the previous connection', async outcome => {
+  const { $connection } = await import('@/store/session')
+  const previous = $connection.get()
+  let resolveOld!: (value: unknown) => void
+  let rejectOld!: (error: Error) => void
+  getGlobalModelOptions.mockReturnValueOnce(new Promise((resolve, reject) => { resolveOld = resolve; rejectOld = reject }))
+  const view = await renderModelSettings()
+
+  try {
+    await act(async () => { $connection.set(previous ? { ...previous } : { baseUrl: 'http://synthetic.test', wsUrl: 'ws://synthetic.test', token: 'synthetic', isFullscreen: false, nativeOverlayWidth: 0, logs: [], windowButtonPosition: null }) })
+    await screen.findByRole('button', { name: 'Apply' })
+    await act(async () => {
+      if (outcome === 'resolve') { resolveOld({ providers: [{ name: 'Foreign', slug: 'foreign', models: ['foreign'], authenticated: true }] }) }
+      else { rejectOld(new Error('old owner failed')) }
+    })
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.getAllByRole('combobox')[0].textContent).toContain('Nous')
+    expect(screen.queryByText('Foreign')).toBeNull()
+    expect(setModelAssignment).not.toHaveBeenCalled()
+  } finally {
+    view.unmount()
+    $connection.set(previous)
+  }
+})
+
+it('retires pending reads on unmount without publishing their failure', async () => {
+  let rejectOld!: (error: Error) => void
+  getGlobalModelInfo.mockReturnValueOnce(new Promise((_, reject) => { rejectOld = reject }))
+  const view = await renderModelSettings()
+  view.unmount()
+  await act(async () => rejectOld(new Error('retired read')))
+  await renderModelSettings()
+  await screen.findByRole('button', { name: 'Apply' })
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(setModelAssignment).not.toHaveBeenCalled()
+})
+
+it('permits retry after a synchronously failed read', async () => {
+  getGlobalModelInfo.mockImplementationOnce(() => { throw new Error('synchronous read failure') })
+  await renderModelSettings()
+  await screen.findByRole('alert')
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+  await screen.findByRole('button', { name: 'Apply' })
+  expect(getGlobalModelInfo).toHaveBeenCalledTimes(2)
+  expect(screen.queryByRole('alert')).toBeNull()
+})
+
+it('clears foreign drafts and ignores a pending old-profile catalog', async () => {
+  const { $activeGatewayProfile } = await import('@/store/profile')
+  const previous = $activeGatewayProfile.get()
+  const view = await renderModelSettings()
+
+  try {
+    const model = (await screen.findAllByRole('combobox'))[1]
+    fireEvent.click(model)
+    fireEvent.click(await screen.findByRole('option', { name: 'hermes-4-mini' }))
+    let rejectOld!: (error: Error) => void
+    getGlobalModelOptions.mockReturnValueOnce(new Promise((_, reject) => { rejectOld = reject }))
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    await act(async () => { $activeGatewayProfile.set('synthetic-other-owner') })
+    await waitFor(() => expect(screen.getAllByRole('combobox')[1].textContent).toContain('hermes-4'))
+    expect(screen.getAllByRole('combobox')[1].textContent).not.toContain('mini')
+    await act(async () => rejectOld(new Error('old profile failure')))
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(getGlobalModelOptions).toHaveBeenCalledTimes(3)
+    expect(setModelAssignment).not.toHaveBeenCalled()
+  } finally {
+    view.unmount()
+    $activeGatewayProfile.set(previous)
+  }
+})
+
+it('keeps explicit primary scope pinned while the ambient profile changes', async () => {
+  const { $activeGatewayProfile } = await import('@/store/profile')
+  const previous = $activeGatewayProfile.get()
+  const view = await renderModelSettings(null)
+
+  try {
+    const model = (await screen.findAllByRole('combobox'))[1]
+    fireEvent.click(model)
+    fireEvent.click(await screen.findByRole('option', { name: 'hermes-4-mini' }))
+    let resolvePrimary!: (value: unknown) => void
+    getGlobalModelOptions.mockReturnValueOnce(new Promise(resolve => { resolvePrimary = resolve }))
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    await act(async () => { $activeGatewayProfile.set('synthetic-ambient-profile') })
+    expect(model.textContent).toContain('hermes-4-mini')
+    expect(getGlobalModelOptions).toHaveBeenCalledTimes(2)
+    await act(async () => resolvePrimary({ providers: [{ name: 'Primary Nous', slug: 'nous', models: ['hermes-4', 'hermes-4-mini'], authenticated: true }] }))
+    expect(screen.getAllByRole('combobox')[0].textContent).toContain('Primary Nous')
+    expect(model.textContent).toContain('hermes-4-mini')
+    expect(getGlobalModelOptions).toHaveBeenLastCalledWith(undefined, null)
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(setModelAssignment).not.toHaveBeenCalled()
+  } finally {
+    view.unmount()
+    $activeGatewayProfile.set(previous)
+  }
 })

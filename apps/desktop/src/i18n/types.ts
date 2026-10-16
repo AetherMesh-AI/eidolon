@@ -478,6 +478,7 @@ export interface Translations {
   }
 
   settings: {
+    readState: { incomplete: string; stale: string; accountsFailed: string }
     closeSettings: string
     exportConfig: string
     importConfig: string

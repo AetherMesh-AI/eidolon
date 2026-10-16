@@ -25,6 +25,12 @@ export function Inspector({
     const token = identity.current
     inspectorStack.push(token)
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const positions: { element: HTMLElement; top: number; left: number }[] = []
+
+    for (let element = opener?.parentElement; element; element = element.parentElement) {
+      positions.push({ element, top: element.scrollTop, left: element.scrollLeft })
+    }
+
     closeRef.current?.focus()
 
     const onKey = (event: KeyboardEvent) => {
@@ -45,7 +51,15 @@ export function Inspector({
       }
 
       if (opener?.isConnected) {
-        opener.focus()
+        // Focusing a tall row can recenter it. Return to the exact owner context
+        // that opened these inline details, including nested scroll containers.
+        opener.focus({ preventScroll: true })
+        positions.forEach(({ element, top, left }) => {
+          if (element.isConnected && element.contains(opener)) {
+            element.scrollTop = top
+            element.scrollLeft = left
+          }
+        })
       }
     }
   }, [])

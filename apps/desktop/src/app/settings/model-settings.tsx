@@ -1,3 +1,4 @@
+import { useStore } from '@nanostores/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
@@ -31,6 +32,8 @@ import { cn } from '@/lib/utils'
 import { setMainModelAssignment } from '@/store/cron-model-impact'
 import { notifyError, readableError } from '@/store/notifications'
 import { startManualLocalEndpoint, startManualOnboarding, startManualProviderOAuth } from '@/store/onboarding'
+import { $activeGatewayProfile, normalizeProfileKey } from '@/store/profile'
+import { $connection } from '@/store/session'
 
 import { hermesConfigCacheWriter, invalidateHermesConfig, useHermesConfigRecord } from '../hooks/use-config-record'
 import { useOnProfileSwitch } from '../hooks/use-on-profile-switch'
@@ -38,6 +41,7 @@ import { useOnProfileSwitch } from '../hooks/use-on-profile-switch'
 import { CONTROL_TEXT } from './constants'
 import { getNested, setNested } from './helpers'
 import { ListRow, Pill, SectionHeading } from './primitives'
+import { SettingsReadStatus } from './settings-read-status'
 import { useDeepLinkHighlight } from './use-deep-link-highlight'
 
 // Skeleton mirror of the Model settings DOM so the page keeps its shape while
@@ -187,14 +191,23 @@ interface ModelSettingsProps {
   onMainModelChanged?: (provider: string, model: string) => void
   /** Shared settings "Applies to" scope: a concrete profile to edit instead of
    *  the app's active one, or undefined to follow the active profile (default).
-   *  Request-shaped on purpose — the API helpers treat `null` as "deliberately
-   *  target the primary/default backend", so this prop never carries null. */
-  scopeProfile?: string
+   *  Explicit null pins the primary/default backend, matching API semantics. */
+  scopeProfile?: null | string
 }
 
 export function ModelSettings({ compactOverview = false, onMainModelChanged, scopeProfile }: ModelSettingsProps) {
   const { t } = useI18n()
   const m = t.settings.model
+  const connection = useStore($connection)
+  const activeProfile = useStore($activeGatewayProfile)
+  const resolvedProfile = normalizeProfileKey(scopeProfile === undefined ? activeProfile : scopeProfile)
+  const owner = useMemo(() => ({ connection, profile: resolvedProfile }), [connection, resolvedProfile])
+  const currentOwner = useRef(owner)
+  currentOwner.current = owner
+  const mounted = useRef(false)
+  const [readOwner, setReadOwner] = useState(owner)
+  const [readFailed, setReadFailed] = useState(false)
+  const readFlight = useRef<{ owner: typeof owner; epoch: number; promise: Promise<void> } | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [skewRestart, setSkewRestart] = useState(false)
@@ -247,67 +260,114 @@ export function ModelSettings({ compactOverview = false, onMainModelChanged, sco
   const refresh = useCallback(
     async ({ replaceSelection = false }: { replaceSelection?: boolean } = {}) => {
       const epoch = profileEpoch.current
+
+      const isCurrent = () => mounted.current && currentOwner.current === owner &&
+        $connection.get() === owner.connection && normalizeProfileKey(scopeProfile === undefined ? $activeGatewayProfile.get() : scopeProfile) === owner.profile &&
+        profileEpoch.current === epoch
+
+      if (!isCurrent()) { return }
+
+      if (readFlight.current?.owner === owner && readFlight.current.epoch === epoch) { return readFlight.current.promise }
+      setReadOwner(owner)
       setLoading(true)
       setError('')
       setSkewRestart(false)
 
-      try {
-        const [modelInfo, modelOptions, auxiliaryModels, moaModels] = await Promise.all([
-          getGlobalModelInfo(scopeProfile),
-          getGlobalModelOptions(undefined, scopeProfile),
-          getAuxiliaryModels(scopeProfile),
-          getMoaModels(scopeProfile).catch(() => null)
-        ])
+      let settled = false
 
-        if (profileEpoch.current !== epoch) {
-          return
+      const promise = (async () => {
+        try {
+          const [modelInfo, modelOptions, auxiliaryModels, moaModels] = await Promise.all([
+            getGlobalModelInfo(scopeProfile),
+            getGlobalModelOptions(undefined, scopeProfile),
+            getAuxiliaryModels(scopeProfile),
+            getMoaModels(scopeProfile).catch(() => null)
+          ])
+
+          if (!isCurrent()) { return }
+
+          setReadFailed(false)
+          setMainModel({ model: modelInfo.model, provider: modelInfo.provider })
+          setProviders(modelOptions.providers || [])
+
+          if (replaceSelection) {
+            setSelectedProvider(modelInfo.provider)
+            setSelectedModel(modelInfo.model)
+          } else {
+            setSelectedProvider(prev => prev || modelInfo.provider)
+            setSelectedModel(prev => prev || modelInfo.model)
+          }
+
+          setAuxiliary(auxiliaryModels)
+          setMoa(moaModels)
+
+          if (moaModels) {
+            setSelectedMoaPreset(prev => (prev && moaModels.presets[prev] ? prev : moaModels.default_preset))
+          }
+
+          // The config record loads via its own shared query; a model switch can
+          // change it server-side (aux slots), so nudge that cache to refetch.
+          void invalidateHermesConfig(scopeProfile)
+        } catch (err) {
+          if (isCurrent()) {
+            setReadFailed(true)
+            setCaughtError(err, m.loadFailed)
+          }
+        } finally {
+          settled = true
+
+          if (isCurrent()) { setLoading(false) }
+
+          if (readFlight.current?.epoch === epoch && readFlight.current.owner === owner) { readFlight.current = null }
         }
+      })()
 
-        setMainModel({ model: modelInfo.model, provider: modelInfo.provider })
-        setProviders(modelOptions.providers || [])
+      if (!settled) { readFlight.current = { owner, epoch, promise } }
 
-        if (replaceSelection) {
-          setSelectedProvider(modelInfo.provider)
-          setSelectedModel(modelInfo.model)
-        } else {
-          setSelectedProvider(prev => prev || modelInfo.provider)
-          setSelectedModel(prev => prev || modelInfo.model)
-        }
-
-        setAuxiliary(auxiliaryModels)
-        setMoa(moaModels)
-
-        if (moaModels) {
-          setSelectedMoaPreset(prev => (prev && moaModels.presets[prev] ? prev : moaModels.default_preset))
-        }
-
-        // The config record loads via its own shared query; a model switch can
-        // change it server-side (aux slots), so nudge that cache to refetch.
-        void invalidateHermesConfig(scopeProfile)
-      } catch (err) {
-        if (profileEpoch.current === epoch) {
-          setCaughtError(err, m.loadFailed)
-        }
-      } finally {
-        if (profileEpoch.current === epoch) {
-          setLoading(false)
-        }
-      }
+      return promise
     },
-    [m.loadFailed, scopeProfile, setCaughtError]
+    [m.loadFailed, owner, scopeProfile, setCaughtError]
   )
 
+  // eslint-disable-next-line no-restricted-syntax -- owner lifecycle invalidates pending reads and drafts, not mirrored atom state
   useEffect(() => {
-    void refresh()
-  }, [refresh])
+    mounted.current = true
+    setMainModel(null)
+    setProviders([])
+    setAuxiliary(null)
+    setMoa(null)
+    setSelectedProvider('')
+    setSelectedModel('')
+    setApiKeyDraft('')
+    setAuxDraft({ model: '', provider: '' })
+    setSelectedMoaPreset('')
+    setNewMoaPresetName('')
+    setEditingAuxTask(null)
+    setSwitchStaleAux([])
+    setReadFailed(false)
+    void refresh({ replaceSelection: true })
+
+    return () => {
+      mounted.current = false
+      profileEpoch.current += 1
+      readFlight.current = null
+    }
+    // Only an owner change retires drafts; translated copy changes do not.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [owner])
 
   // A profile switch swaps the backend under the mounted panel — reload for the
   // new profile (bumping the epoch first so any in-flight A request is discarded).
   useOnProfileSwitch(() => {
+    if (scopeProfile !== undefined || readFlight.current?.owner === owner) { return }
     profileEpoch.current += 1
     // The panel stays mounted across profile switches, so clear the previous
     // profile's draft selection before loading the new profile's source of
     // truth. Ordinary same-profile refreshes still preserve in-progress edits.
+    setMainModel(null)
+    setProviders([])
+    setAuxiliary(null)
+    setMoa(null)
     setSelectedProvider('')
     setSelectedModel('')
     setApiKeyDraft('')
@@ -822,12 +882,20 @@ export function ModelSettings({ compactOverview = false, onMainModelChanged, sco
     }
   }, [m.restartFailed, refresh, scopeProfile, setCaughtError])
 
-  if (loading && !mainModel) {
+  if (readOwner !== owner || loading && !mainModel && !readFailed) {
     return <ModelSettingsSkeleton />
   }
 
+  const readStatus = <>
+    <SettingsReadStatus failed={readFailed} hasData={!!mainModel} loading={loading} onRefresh={() => refresh()} title={skewRestart ? m.restartRequired : m.loadFailed} />
+    {readFailed && skewRestart && <Button disabled={restartingBackend} onClick={() => void recycleStaleBackend()} size="sm" variant="textStrong">{restartingBackend ? m.restartingBackend : m.restartBackend}</Button>}
+  </>
+
+  if (!mainModel && readFailed) { return <div>{readStatus}</div> }
+
   return (
     <div className="grid gap-6">
+      {readStatus}
       <section>
         <p className="mb-3 text-xs text-muted-foreground">{m.appliesDesc}</p>
         <div className="eid-settings-model-picker flex flex-wrap items-center gap-2">
@@ -940,7 +1008,7 @@ export function ModelSettings({ compactOverview = false, onMainModelChanged, sco
             )}
           </div>
         )}
-        {error && (
+        {error && !readFailed && (
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-destructive" role="alert">
             <span>{error}</span>
             {skewRestart && (

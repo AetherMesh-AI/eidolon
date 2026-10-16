@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { MemoryRouter, useNavigate } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { TRANSLATIONS } from '@/i18n'
 import { stubResizeObserver } from '@/test/jsdom'
 
 import { envVar } from './test-utils'
@@ -54,6 +55,17 @@ function DeepLinkButton({ target }: { target: string }) {
 }
 
 describe('KeysSettings', () => {
+  it('shows a safe read error instead of an endless skeleton and recovers only on Refresh', async () => {
+    getEnvVars.mockRejectedValue(new Error('synthetic private read detail'))
+    await renderKeysSettings('tools')
+    expect(await screen.findByRole('alert')).toHaveProperty('textContent', TRANSLATIONS.en.settings.keys.failedLoad)
+    expect(screen.queryByText('synthetic private read detail')).toBeNull()
+    getEnvVars.mockResolvedValue({})
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+    expect(getEnvVars).toHaveBeenCalledTimes(2)
+  })
+
   it('fetches env vars for the active profile (undefined, never null) when unscoped', async () => {
     // #90549 class: getEnvVars(null) targets the primary profile's env store,
     // so a non-default profile's Keys page would read (and edit) the wrong

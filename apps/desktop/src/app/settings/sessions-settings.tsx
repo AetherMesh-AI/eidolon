@@ -17,41 +17,71 @@ import { triggerHaptic } from '@/lib/haptics'
 import { Archive, ArchiveOff, FolderOpen, Loader2, Trash2 } from '@/lib/icons'
 import { confirm } from '@/store/confirm'
 import { notify, notifyError } from '@/store/notifications'
+import { normalizeProfileKey } from '@/store/profile'
 import { applyConfiguredDefaultProjectDir, ensureDefaultWorkspaceCwd, setSessions } from '@/store/session'
 import { untombstoneSessions } from '@/store/session-removal'
 import { forgetSessionUnread } from '@/store/session-unread'
 import type { HermesConfigRecord, SessionInfo } from '@/types/eidolon'
 
 import { EmptyState, ListRow, SectionHeading, SettingsContent, SettingsSkeleton, ToggleRow } from './primitives'
+import { SettingsReadStatus } from './settings-read-status'
 import { useDeepLinkHighlight } from './use-deep-link-highlight'
+import { type SettingsReadScope, useSettingsRead } from './use-settings-read'
 
 const DEFAULT_AUTO_ARCHIVE_DAYS = 3
 
 const ARCHIVED_FETCH_LIMIT = 200
 
+interface ArchiveSnapshot {
+  sessions: SessionInfo[]
+  incompleteProfiles: string[]
+}
+
+const readArchivedSessions = async (scope: SettingsReadScope): Promise<ArchiveSnapshot> => {
+  const result = await listAllProfileSessions(
+    ARCHIVED_FETCH_LIMIT,
+    0,
+    'only',
+    'recent',
+    'all',
+    {},
+    {
+      connectionId: scope.connection?.connectionId,
+      profile: scope.profile
+    }
+  )
+
+  return {
+    sessions: result.sessions,
+    incompleteProfiles: (result.errors ?? []).map(error => normalizeProfileKey(error.profile))
+  }
+}
+
+function reconcileArchives(previous: ArchiveSnapshot | null, next: ArchiveSnapshot): ArchiveSnapshot {
+  const unread = new Set(next.incompleteProfiles)
+  const identity = (session: SessionInfo) => JSON.stringify([normalizeProfileKey(session.profile), session.id])
+  const observed = new Set(next.sessions.map(identity))
+
+  const retained =
+    previous?.sessions.filter(
+      session => unread.has(normalizeProfileKey(session.profile)) && !observed.has(identity(session))
+    ) ?? []
+
+  return { ...next, sessions: [...next.sessions, ...retained] }
+}
+
 export function SessionsSettings() {
   const { t } = useI18n()
   const s = t.settings.sessions
-  const [sessions, setLocalSessions] = useState<SessionInfo[]>([])
-  const [loading, setLoading] = useState(true)
+  const read = useSettingsRead(readArchivedSessions, undefined, { reconcile: reconcileArchives })
+  const sessions = read.data?.sessions ?? []
+  const incomplete = Boolean(read.data?.incompleteProfiles.length)
+  const { isCurrent, setData: setLocalSessions } = read
   const [busyId, setBusyId] = useState<string | null>(null)
 
-  const load = useCallback(async () => {
-    setLoading(true)
-
-    try {
-      const result = await listAllProfileSessions(ARCHIVED_FETCH_LIMIT, 0, 'only')
-      setLocalSessions(result.sessions)
-    } catch (err) {
-      notifyError(err, s.failedLoad)
-    } finally {
-      setLoading(false)
-    }
-  }, [s.failedLoad])
-
   useEffect(() => {
-    void load()
-  }, [load])
+    setBusyId(null)
+  }, [read.owner])
 
   const unarchive = useCallback(
     async (session: SessionInfo) => {
@@ -59,7 +89,12 @@ export function SessionsSettings() {
 
       try {
         await setSessionArchived(session.id, false, session.profile)
-        setLocalSessions(prev => prev.filter(s => s.id !== session.id))
+
+        if (!isCurrent()) {
+          return
+        }
+
+        setLocalSessions(prev => (prev ? { ...prev, sessions: prev.sessions.filter(s => s.id !== session.id) } : null))
         // Surface it again in the sidebar without waiting for a full refresh, and
         // lift any optimistic eviction so the grouped tree shows it again too.
         untombstoneSessions([session.id, session._lineage_root_id])
@@ -67,12 +102,16 @@ export function SessionsSettings() {
         triggerHaptic('selection')
         notify({ durationMs: 2_000, kind: 'success', message: s.restored })
       } catch (err) {
-        notifyError(err, s.unarchiveFailed)
+        if (isCurrent()) {
+          notifyError(err, s.unarchiveFailed)
+        }
       } finally {
-        setBusyId(null)
+        if (isCurrent()) {
+          setBusyId(null)
+        }
       }
     },
-    [s]
+    [isCurrent, s, setLocalSessions]
   )
 
   const remove = useCallback(
@@ -83,7 +122,7 @@ export function SessionsSettings() {
         title: s.deleteConfirm(sessionTitle(session))
       })
 
-      if (!ok) {
+      if (!ok || !isCurrent()) {
         return
       }
 
@@ -91,28 +130,51 @@ export function SessionsSettings() {
 
       try {
         await deleteSession(session.id, session.profile)
+
+        if (!isCurrent()) {
+          return
+        }
+
         // Permanent delete bypasses removeSession, so retire the persisted
         // unread state here too rather than leaving it to rot.
         forgetSessionUnread([session.id, session._lineage_root_id], session.profile)
-        setLocalSessions(prev => prev.filter(s => s.id !== session.id))
+        setLocalSessions(prev => (prev ? { ...prev, sessions: prev.sessions.filter(s => s.id !== session.id) } : null))
         triggerHaptic('warning')
       } catch (err) {
-        notifyError(err, s.deleteFailed)
+        if (isCurrent()) {
+          notifyError(err, s.deleteFailed)
+        }
       } finally {
-        setBusyId(null)
+        if (isCurrent()) {
+          setBusyId(null)
+        }
       }
     },
-    [s]
+    [isCurrent, s, setLocalSessions]
   )
 
   useDeepLinkHighlight({
     elementId: id => `archived-session-${id}`,
     param: 'session',
-    ready: id => !loading && sessions.some(session => session.id === id)
+    ready: id => !read.loading && sessions.some(session => session.id === id)
   })
 
-  if (loading) {
+  if (!read.data && !read.failed) {
     return <SettingsSkeleton sections={[{ rows: 1 }, { heading: true, rows: 4 }]} />
+  }
+
+  if (!read.data) {
+    return (
+      <SettingsContent>
+        <SettingsReadStatus
+          failed
+          hasData={false}
+          loading={read.loading}
+          onRefresh={read.refresh}
+          title={s.failedLoad}
+        />
+      </SettingsContent>
+    )
   }
 
   return (
@@ -120,6 +182,15 @@ export function SessionsSettings() {
       <DefaultProjectDirSetting />
 
       <AutoArchiveSetting />
+
+      <SettingsReadStatus
+        failed={read.failed || incomplete}
+        hasData={sessions.length > 0 || !incomplete}
+        incomplete={incomplete}
+        loading={read.loading}
+        onRefresh={read.refresh}
+        title={s.failedLoad}
+      />
 
       <SectionHeading
         icon={Archive}
@@ -130,7 +201,7 @@ export function SessionsSettings() {
         {s.archivedIntro}
       </p>
 
-      {sessions.length === 0 ? (
+      {sessions.length === 0 && incomplete ? null : sessions.length === 0 ? (
         <EmptyState description={s.emptyArchivedDesc} title={s.emptyArchivedTitle} />
       ) : (
         <div className="grid gap-1">

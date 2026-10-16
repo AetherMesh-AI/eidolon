@@ -14,7 +14,8 @@
     "src/themes/eidolon.ts",
     "src/themes/types.ts",
     "src/app/eidolon/runtime-owner-chat-contract.ts",
-    "src/app/eidolon/runtime-owner-chat-types.ts"
+    "src/app/eidolon/runtime-owner-chat-types.ts",
+    "src/app/eidolon/runtime-attention-types.ts"
   ],
   "exclude": [
     "electron"

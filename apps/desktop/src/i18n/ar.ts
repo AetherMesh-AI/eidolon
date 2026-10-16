@@ -396,6 +396,7 @@ export const ar = defineLocale({
     noResults: 'لا توجد لغة مطابقة'
   },
   settings: {
+    readState: { incomplete: 'تعذرت قراءة بعض الملفات الشخصية. تُعرض المحادثات المؤرشفة المتاحة، وقد تكون الصفوف المحتفظ بها قديمة.', stale: 'تُعرض آخر بيانات تم تحميلها. قد تكون هذه القيم قديمة.', accountsFailed: 'تعذر تحميل الحسابات المتصلة' },
     search: { pill: 'بحث' },
     closeSettings: 'إغلاق الإعدادات',
     exportConfig: 'تصدير الإعدادات',

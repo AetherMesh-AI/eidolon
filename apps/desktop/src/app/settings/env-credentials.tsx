@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import { deleteEnvVar, getEnvVars, revealEnvVar, setEnvVar } from '@/eidolon'
 import { useI18n } from '@/i18n'
@@ -10,6 +10,7 @@ import type { EnvVarInfo } from '@/types/eidolon'
 import { asText, includesQuery, redactedValue, withoutKey } from './helpers'
 import { Pill } from './primitives'
 import type { EnvRowProps } from './types'
+import { useSettingsRead } from './use-settings-read'
 
 // Shared filter used by every credential surface (Providers + Keys pages):
 // category gate first, then a free-text match across key name + description.
@@ -50,7 +51,14 @@ export function useEnvCredentials(profile?: string): UseEnvCredentials {
   const { t } = useI18n()
   const credentials = t.settings.credentials
   const toolsets = t.settings.toolsets
-  const [vars, setVars] = useState<Record<string, EnvVarInfo> | null>(null)
+
+  const read = useSettingsRead(
+    useCallback(() => getEnvVars(profile), [profile]),
+    profile
+  )
+
+  const { data: vars, setData: setVars } = read
+  const [localOwner, setLocalOwner] = useState(read.owner)
   const [edits, setEdits] = useState<Record<string, string>>({})
   const [revealed, setRevealed] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState<string | null>(null)
@@ -66,25 +74,11 @@ export function useEnvCredentials(profile?: string): UseEnvCredentials {
   }, [])
 
   useEffect(() => {
-    let cancelled = false
-
-    setVars(null)
-
-    void (async () => {
-      try {
-        const next = await getEnvVars(profile)
-
-        if (!cancelled) {
-          setVars(next)
-        }
-      } catch (err) {
-        notifyError(err, t.settings.keys.failedLoad)
-      }
-    })()
-
-    return () => void (cancelled = true)
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload per target profile; copy is stable
-  }, [profile])
+    setLocalOwner(read.owner)
+    setEdits({})
+    setRevealed({})
+    setSaving(null)
+  }, [read.owner])
 
   function patchVar(key: string, patch: Partial<Pick<EnvVarInfo, 'is_set' | 'redacted_value'>>) {
     setVars(c => (c ? { ...c, [key]: { ...c[key], ...patch } } : c))
@@ -106,13 +100,22 @@ export function useEnvCredentials(profile?: string): UseEnvCredentials {
 
     try {
       await setEnvVar(key, value, profile)
+
+      if (!read.isCurrent()) {
+        return
+      }
+
       patchVar(key, { is_set: true, redacted_value: redactedValue(value) })
       clearLocalState(key)
       notify({ kind: 'success', title: toolsets.savedTitle, message: toolsets.savedMessage(key) })
     } catch (err) {
-      notifyError(err, toolsets.failedSave(key))
+      if (read.isCurrent()) {
+        notifyError(err, toolsets.failedSave(key))
+      }
     } finally {
-      setSaving(null)
+      if (read.isCurrent()) {
+        setSaving(null)
+      }
     }
   }
 
@@ -130,17 +133,26 @@ export function useEnvCredentials(profile?: string): UseEnvCredentials {
 
     try {
       await setEnvVar(key, trimmed, profile)
+
+      if (!read.isCurrent()) {
+        return { ok: false }
+      }
+
       patchVar(key, { is_set: true, redacted_value: redactedValue(trimmed) })
       clearLocalState(key)
       notify({ kind: 'success', message: toolsets.savedMessage(key), title: toolsets.savedTitle })
 
       return { ok: true }
     } catch (err) {
-      notifyError(err, toolsets.failedSave(key))
+      if (read.isCurrent()) {
+        notifyError(err, toolsets.failedSave(key))
+      }
 
       return { message: err instanceof Error ? err.message : credentials.couldNotSave, ok: false }
     } finally {
-      setSaving(null)
+      if (read.isCurrent()) {
+        setSaving(null)
+      }
     }
   }
 
@@ -149,17 +161,30 @@ export function useEnvCredentials(profile?: string): UseEnvCredentials {
       return
     }
 
+    if (!read.isCurrent()) {
+      return
+    }
+
     setSaving(key)
 
     try {
       await deleteEnvVar(key, profile)
+
+      if (!read.isCurrent()) {
+        return
+      }
+
       patchVar(key, { is_set: false, redacted_value: null })
       clearLocalState(key)
       notify({ kind: 'success', title: toolsets.removedTitle, message: toolsets.removedMessage(key) })
     } catch (err) {
-      notifyError(err, toolsets.failedRemove(key))
+      if (read.isCurrent()) {
+        notifyError(err, toolsets.failedRemove(key))
+      }
     } finally {
-      setSaving(null)
+      if (read.isCurrent()) {
+        setSaving(null)
+      }
     }
   }
 
@@ -172,19 +197,25 @@ export function useEnvCredentials(profile?: string): UseEnvCredentials {
 
     try {
       const result = await revealEnvVar(key, profile)
-      setRevealed(c => ({ ...c, [key]: result.value }))
+
+      if (read.isCurrent()) {
+        setRevealed(c => ({ ...c, [key]: result.value }))
+      }
     } catch (err) {
-      notifyError(err, toolsets.failedReveal(key))
+      if (read.isCurrent()) {
+        notifyError(err, toolsets.failedReveal(key))
+      }
     }
   }
 
   return {
+    read,
     saveValue,
     vars,
     rowProps: {
-      edits,
-      revealed,
-      saving,
+      edits: localOwner === read.owner ? edits : {},
+      revealed: localOwner === read.owner ? revealed : {},
+      saving: localOwner === read.owner ? saving : null,
       setEdits,
       onSave: handleSave,
       onClear: handleClear,
@@ -200,6 +231,7 @@ interface CategoryHeadingProps {
 }
 
 interface UseEnvCredentials {
+  read: ReturnType<typeof useSettingsRead<Record<string, EnvVarInfo>>>
   rowProps: Omit<EnvRowProps, 'varKey' | 'info'>
   saveValue: (key: string, value: string) => Promise<{ message?: string; ok: boolean }>
   vars: Record<string, EnvVarInfo> | null
