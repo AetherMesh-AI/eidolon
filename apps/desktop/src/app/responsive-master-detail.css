@@ -89,3 +89,9 @@
   min-height: 6rem;
   scroll-padding: 7px;
 }
+
+/* Keep useful editing space without reserving a mostly-empty 192px block
+   ahead of Save in the narrow profile pane. The editor remains mounted. */
+.eid-responsive-detail[data-compact='true'][data-variant='profiles'] .profile-soul-editor {
+  min-height: 8rem;
+}

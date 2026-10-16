@@ -57,6 +57,88 @@ async function compactBack(current: GalleryFixture, root: Locator, row: Locator)
   await expect(detail).toBeVisible()
 }
 
+async function compactNavigation(current: GalleryFixture, suffix: string, root: Locator, draft: Locator) {
+  const { page } = current
+  const trigger = page.getByRole('button', { name: 'Navigation', exact: true })
+  const header = page.locator('[data-slot="workspace-header"]')
+  if (await page.evaluate(() => innerWidth >= 640)) {
+    await expect(trigger).toHaveCount(0)
+    await expect(page.getByRole('complementary', { name: 'Eidolon navigation' })).toBeVisible()
+    return
+  }
+  const retainedDraft = await draft.elementHandle()
+  const before = await draft.inputValue()
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false')
+  await keyboardControl(current, trigger, `${suffix} Navigation trigger`)
+  await captureGallery(current, `responsive-navigation-trigger-${suffix}`, header)
+  await page.keyboard.press('Enter')
+  const overlay = page.locator(`#${await trigger.getAttribute('aria-controls')}`)
+  await expect(overlay).toBeVisible()
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true')
+  const selected = overlay.getByRole('link', { name: 'Settings', exact: true })
+  await expect(selected).toHaveAttribute('aria-current', 'page')
+  await expect(selected).toBeFocused()
+  for (const name of ['Home', 'Messages', 'Work Overview', 'Needs You', 'Organization', 'Deliverables', 'Settings']) {
+    await expect(overlay.getByRole('link', { name, exact: true })).toHaveCount(1)
+  }
+  await keyboardControl(current, selected, `${suffix} current navigation destination`)
+  await captureGallery(current, `responsive-navigation-open-${suffix}`, overlay)
+  await page.keyboard.press('Escape')
+  await expect(overlay).toHaveCount(0)
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false')
+  await expect(trigger).toBeFocused()
+  await expect(draft).toHaveValue(before)
+  expect(await retainedDraft!.evaluate(element => element.isConnected)).toBe(true)
+  await trigger.click()
+  const close = overlay.getByRole('button', { name: 'Close', exact: true })
+  await keyboardControl(current, close, `${suffix} navigation Close`)
+  await captureGallery(current, `responsive-navigation-close-focus-${suffix}`, overlay)
+  await page.keyboard.press('Enter')
+  await expect(overlay).toHaveCount(0)
+  await expect(trigger).toBeFocused()
+  await expect(draft).toHaveValue(before)
+  await expect(root.locator('[data-pane="detail"]')).toBeVisible()
+  await captureGallery(current, `responsive-navigation-restored-draft-${suffix}`, root)
+
+  // A mouse-opened rail must navigate by the same named destinations, then
+  // collapse itself without hiding the route or trapping keyboard focus.
+  await trigger.click()
+  await overlay.getByRole('link', { name: 'Work Overview', exact: true }).click()
+  await expect(page).toHaveURL(/#\/work$/)
+  await expect(overlay).toHaveCount(0)
+  await expect(trigger).toBeFocused()
+  await trigger.click()
+  await expect(overlay.getByRole('link', { name: 'Work Overview', exact: true })).toHaveAttribute('aria-current', 'page')
+  await overlay.getByRole('link', { name: 'Objectives', exact: true }).click()
+  await expect(page).toHaveURL(/#\/objectives$/)
+  await expect(overlay).toHaveCount(0)
+  await captureGallery(current, `responsive-navigation-destination-${suffix}`, page.locator('.eid-workspace-body'))
+  await trigger.click()
+  await overlay.getByRole('link', { name: 'Settings', exact: true }).click()
+  await expect(page).toHaveURL(/#\/settings$/)
+  await expect(overlay).toHaveCount(0)
+  await expect(trigger).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(overlay.getByRole('link', { name: 'Settings', exact: true })).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(overlay).toHaveCount(0)
+  await expect(page).toHaveURL(/#\/settings$/)
+  await expect(trigger).toBeFocused()
+  await captureGallery(current, `responsive-navigation-settings-escape-${suffix}`, header)
+}
+
+async function importHeadingClear(root: Locator) {
+  const heading = root.locator('.eid-workspace-page-heading h1')
+  const title = await heading.boundingBox()
+  expect(title).not.toBeNull()
+  for (const control of await root.getByRole('button', { name: /^(Refresh|Close)$/ }).all()) {
+    const box = await control.boundingBox()
+    if (!box) continue
+    const overlaps = title!.x < box.x + box.width && title!.x + title!.width > box.x && title!.y < box.y + box.height && title!.y + title!.height > box.y
+    expect(overlaps, 'Import heading stays clear of Refresh and Close').toBe(false)
+  }
+}
+
 for (const mode of ['dark', 'light'] as const) {
   test(`populated secondary drafts, selected history and critical controls survive responsive layout in ${mode}`, async () => {
     const current = fixture = await setupGallery('en', false, true)
@@ -84,6 +166,7 @@ for (const mode of ['dark', 'light'] as const) {
       await expect(field).toHaveValue('Unsaved synthetic workspace draft')
       await positionGalleryAtStart(root)
       await captureGallery(current, `responsive-messaging-${suffix}`, root)
+      await compactNavigation(current, suffix, root, field)
 
       await page.evaluate(() => { location.hash = '/profiles' })
       root = page.locator('.eid-responsive-detail')
@@ -110,9 +193,11 @@ for (const mode of ['dark', 'light'] as const) {
       await resizeGallery(current, width, height, zoom)
       await expect(editor).toHaveText('# Unsaved synthetic profile draft')
       await keyboardControl(current, root.getByRole('button', { name: 'Save SOUL.md', exact: true }), `${suffix} profile save`, 'next')
+      await captureGallery(current, `responsive-profile-save-focus-${suffix}`, root)
       await compactBack(current, root, profileRow)
       await expect(editor).toHaveText('# Unsaved synthetic profile draft')
       await positionGalleryAtStart(root)
+      if (width === 400) await expect(root.getByRole('button', { name: 'Save SOUL.md', exact: true })).toBeInViewport({ ratio: 1 })
       await captureGallery(current, `responsive-profile-${suffix}`, root)
 
       await page.evaluate(() => { location.hash = '/session-import' })
@@ -126,6 +211,7 @@ for (const mode of ['dark', 'light'] as const) {
         if (state === 'error') {
           await expect(root.locator('[data-pane="detail"]')).toContainText('Preview unavailable')
           await keyboardControl(current, root.getByRole('button', { name: 'Retry', exact: true }), `${suffix} preview retry`)
+          await captureGallery(current, `responsive-import-retry-focus-${suffix}`, root)
           const disabledImport = root.locator('footer button')
           await disabledImport.scrollIntoViewIfNeeded()
           await expect(disabledImport).toBeInViewport({ ratio: 1 })
@@ -133,6 +219,7 @@ for (const mode of ['dark', 'light'] as const) {
         } else {
           await expect(root.locator('[data-pane="detail"]')).toContainText('Preserve this selection while resizing.')
           await keyboardControl(current, root.locator('footer button'), `${suffix} ${state} explicit import/open`)
+          await captureGallery(current, `responsive-import-${state}-footer-focus-${suffix}`, root)
           if (state === 'imported') await expect(root.locator('footer button')).toContainText('Open')
         }
         await resizeGallery(current, 1536, 961)
@@ -140,6 +227,7 @@ for (const mode of ['dark', 'light'] as const) {
         await expect(root.locator('.session-import-preview-heading h2')).toHaveText(`Synthetic ${state} conversation`)
         await compactBack(current, root, row)
         await positionGalleryAtStart(root)
+        await importHeadingClear(page.locator('.eid-secondary-surface'))
         await captureGallery(current, `responsive-import-${state}-${suffix}`, root)
       }
 
@@ -151,6 +239,15 @@ for (const mode of ['dark', 'light'] as const) {
       await keyboardControl(current, first, `${suffix} Settings first control`)
       await captureGallery(current, `responsive-settings-${suffix}`, settings)
     }
+    // 1280px at 200% is exactly the dock breakpoint. Also exercise an actually
+    // collapsed rail at 200%, keeping both sides of the boundary covered.
+    await resizeGallery(current, 1200, 720, 2)
+    await page.evaluate(() => { location.hash = '/messaging' })
+    const compactRoot = page.locator('.eid-responsive-detail')
+    await compactRoot.locator('[data-pane="list"]').getByRole('button').filter({ hasText: 'Synthetic messaging' }).click()
+    const compactDraft = compactRoot.getByLabel('Workspace label', { exact: true })
+    await compactDraft.fill('Retained navigation draft at 200%')
+    await compactNavigation(current, `en-${mode}-1200x720-200`, compactRoot, compactDraft)
     const ipc = await current.app.evaluate(() => (globalThis as any).__eidolonWorkspaceFixture)
     expect(ipc.reads).toContain('/api/messaging/platforms')
     expect(ipc.reads.some((path: string) => path.endsWith('/soul'))).toBe(true)

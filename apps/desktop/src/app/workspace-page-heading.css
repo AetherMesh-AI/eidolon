@@ -26,3 +26,9 @@ header.eid-workspace-page-heading > p { margin: 10px 0 0; color: var(--ui-text-s
   header.eid-workspace-page-heading > p { margin-top: 4px; font-size: 12px; line-height: 1.35; }
   header.eid-page-search-heading { padding-block: 10px 8px; margin-bottom: 0; }
 }
+
+@media (max-width: 800px), (max-height: 600px) {
+  /* Import has Refresh beside Close in the physical-right titlebar. Compact
+     titles share that row, so reserve its controls before wrapping the title. */
+  .session-import > header.eid-workspace-page-heading > h1 { margin-right: 48px; }
+}

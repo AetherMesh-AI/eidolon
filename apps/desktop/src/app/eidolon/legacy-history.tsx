@@ -103,7 +103,7 @@ export function LegacyOrganizationHistory({ storage }: { storage?: Pick<Storage,
   )
 
   return (
-    <main className="eidolon eid-workspace">
+    <main className="eidolon eid-workspace eid-legacy-history">
       <div className="eid-page">
         <WorkspacePageHeading description={copy.legacyNote} title={copy.legacyTitle} />
         {record.raw !== null && (

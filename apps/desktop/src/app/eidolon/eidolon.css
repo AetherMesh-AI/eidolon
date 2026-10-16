@@ -28,7 +28,10 @@
   line-height: 1.55;
 }
 .eidolon *, .eidolon *::before, .eidolon *::after { box-sizing: border-box; }
-.eidolon :is(button, a, input, textarea, select, summary, .eid-home-panel-body, .eid-owner-chat-scroll):focus-visible, .eid-rail:focus-visible { outline: 2px solid var(--aether-400); outline-offset: 3px; }
+/* Keyboard focus must be immediate on every workspace surface, including shared transition-all controls. */
+.eidolon :is(button, a, input, textarea, select, summary, .eid-home-panel-body, .eid-owner-chat-scroll), .eid-rail { transition-property: color, background-color, border-color, box-shadow; }
+/* Three CSS pixels retain at least two after native fractional-zoom rounding. */
+.eidolon :is(button, a, input, textarea, select, summary, .eid-home-panel-body, .eid-owner-chat-scroll):focus-visible, .eid-rail:focus-visible { outline: 3px solid var(--aether-400); outline-offset: 3px; }
 .eidolon a { color: var(--aether-300); text-decoration: none; }
 .eidolon button, .eidolon input, .eidolon textarea, .eidolon select { font: inherit; }
 .eidolon button { cursor: pointer; }
@@ -519,9 +522,6 @@
   .eid-team-work-grid .eid-progress-tasks { margin-top: 12px; }
 }
 
-/* Focus outlines must appear immediately, without transition-all interpolating their width. */
-.eid-page:has(> .eid-objective-hero) button { transition-property: color, background-color, border-color, box-shadow; }
-
 /* Keep the outline at least two CSS pixels after native fractional zoom rounding. */
 .eid-page:has(> .eid-objective-hero) :is(button, a, input, textarea, select, summary):focus-visible { outline-width: 3px; }
 
@@ -753,3 +753,8 @@
 @media (max-height: 600px) {
   .eid-workspace .eid-page:has(> .eid-workspace-page-heading) { padding-top: 6px; }
 }
+
+/* Legacy records share the workspace scroller. Browser keyboard scrolling must
+   reserve the full 2px outline + 3px offset, including the final disclosure. */
+.eid-legacy-history { scroll-padding: 7px; }
+.eid-legacy-history :is(button, summary) { scroll-margin: 7px; }
