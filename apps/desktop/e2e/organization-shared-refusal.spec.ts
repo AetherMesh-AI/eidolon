@@ -20,8 +20,14 @@ test.afterEach(async () => {
 test('refuses shared URL observation without reading or starting its queued organization', async () => {
   fixture = await setupMockBackend({ extraConfig: 'approvals:\n  mode: manual' })
   await waitForAppReady(fixture)
-  remote = await startOrganizationSwitchGateway(fixture.sandbox, fixture.mockUrl)
   const { page, app, mock } = fixture
+
+  // The Electron fixture registers the guard after creating its first page.
+  // Reload before this journey so its init script observes the whole refusal.
+  await page.reload()
+  await waitForAppReady(fixture)
+  expect(await page.evaluate(() => (window as unknown as { __ERROR_BANNER_GUARD__?: string[] }).__ERROR_BANNER_GUARD__)).toEqual([])
+  remote = await startOrganizationSwitchGateway(fixture.sandbox, fixture.mockUrl)
   const before = remote.ledger()
 
   const { id, localLabel } = await page.evaluate(
@@ -96,6 +102,7 @@ test('refuses shared URL observation without reading or starting its queued orga
   const refusalAlert = page.locator('.eid-workspace .eid-runtime-status').getByRole('alert')
   await expect(refusalAlert).toHaveText(refusal)
   await expect(refusalAlert).toBeVisible()
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __ERROR_BANNER_GUARD__?: string[] }).__ERROR_BANNER_GUARD__)).toEqual([refusal])
   await expect(page.getByRole('button', { name: 'Organizations', exact: true })).toBeDisabled()
   const hidden = 'synthetic-private-query'
   await page.evaluate(
