@@ -51,7 +51,7 @@ export function ScopeAmendmentFields({
         {currentChecks.length ? (
           <ul>
             {currentChecks.map(check => (
-              <li key={check}>{check === 'project_typecheck' ? preparedObjectiveCopy[locale].projectTypecheck : copy[check]}</li>
+              <li key={check}>{check === 'project_typecheck' ? preparedObjectiveCopy[locale].projectTypecheck : check === 'project_build' ? preparedObjectiveCopy[locale].projectBuild : copy[check]}</li>
             ))}
           </ul>
         ) : (
@@ -136,7 +136,7 @@ export function ScopeAmendmentAudit({ amendment }: { amendment: OrganizationScop
           {amendment[side].requiredChecks.length ? (
             <ul>
               {amendment[side].requiredChecks.map(check => (
-                <li key={check}>{check === 'project_typecheck' ? preparedObjectiveCopy[locale].projectTypecheck : copy[check]}</li>
+                <li key={check}>{check === 'project_typecheck' ? preparedObjectiveCopy[locale].projectTypecheck : check === 'project_build' ? preparedObjectiveCopy[locale].projectBuild : copy[check]}</li>
               ))}
             </ul>
           ) : (

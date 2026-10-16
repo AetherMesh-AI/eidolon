@@ -21,14 +21,15 @@ from eidolon_cli.organization_project_snapshot_bundle import (
 )
 from eidolon_cli.organization_project_validation import canonical, digest
 from eidolon_cli.organization_project_validation_profile import (
-    normalize_validation_profile, validation_set_identity,
+    normalize_validation_profile, validation_set_identity, validation_step_count,
 )
 
 _CONTRACT = 'prepared-validation-v1'
 _SET = 'prepared-validation-set-v1'
 _MAX_HISTORY = 10_000
 _MAX_INTEGER = 2**63 - 1
-_KINDS = {'workspace_typescript': 'project_typecheck', 'workspace_vitest_ui': 'project_tests'}
+_KINDS = {'workspace_typescript': 'project_typecheck', 'workspace_vitest_ui': 'project_tests',
+          'workspace_vite_build': 'project_build'}
 _CONTRACT_FIELDS = {'version', 'contract', 'organizationId', 'ownerId', 'projectId',
                     'projectBindingSha256', 'revision', 'root', 'source',
                     'dependencies', 'profile', 'runtime'}
@@ -62,8 +63,16 @@ def _hash(value):
     return value
 
 
-def _version(value, name):
-    if type(value['version']) is not int or value['version'] != 1 or value['contract'] != name:
+def versioned_contract_fields(version, name):
+    """Canonical discriminator fields; v1 callers retain their exact old bytes."""
+    validation_step_count({'version': version})
+    return {'version': version, 'contract': f'{name}-v{version}'}
+
+
+def _version(value, name, *, version=None):
+    expected_version = value['version'] if version is None else version
+    expected = versioned_contract_fields(expected_version, name.removesuffix('-v1'))
+    if type(value['version']) is not int or any(value[key] != item for key, item in expected.items()):
         raise ValueError('Unsupported prepared validation contract version')
 
 
@@ -153,12 +162,16 @@ owner consent and current policy remain unverified by this function.
     if dependencies['toolchain']['arch'] != 'x64' or dependencies['toolchain']['libc'] != 'glibc':
         raise ValueError('Pinned prepared runtime requires a Linux x64 glibc toolchain')
     profile = normalize_validation_profile(value['profile'])
+    if profile['version'] != value['version']:
+        raise ValueError('Prepared contract and profile versions differ')
     if (profile['bundleSha256'] != checked['bundleSha256']
             or profile['workspace'] not in checked['manifest']['selectedWorkspaces']):
         raise ValueError('Profile does not match its prepared workspace/bundle')
     if profile['limits']['cpus'] != 1 or profile['limits']['pids'] != 64:
         raise ValueError('Prepared runtime requires exactly one CPU and 64 PIDs')
     required_paths = {'package-lock.json', *(item['path'] for item in checked['manifest']['packageManifests'])}
+    if value['version'] == 2:
+        required_paths.add(profile['workspace'] + '/index.html')
     required_paths.update(step['config'] for step in profile['steps'])
     required_paths.update(path for step in profile['steps'] for path in step['testFiles'])
     if not required_paths <= set(paths):
@@ -169,10 +182,12 @@ owner consent and current policy remain unverified by this function.
             raise ValueError('Source selection omits a required typecheck directory')
     tools = {'typescript': 'node_modules/typescript/lib/typescript.js',
              'vitest': 'node_modules/vitest/dist/node.js'}
+    if value['version'] == 2:
+        tools['vite'] = 'node_modules/vite/dist/node/index.js'
     inventory = {item['path'] for item in checked['manifest']['files']}
     if any(name not in dependencies['toolchain']['tools'] or path not in inventory
            for name, path in tools.items()):
-        raise ValueError('Prepared two-recipe toolchain lacks exact entry points')
+        raise ValueError('Prepared versioned toolchain lacks exact entry points')
     runtime = _exact(value['runtime'], {'backend', 'image', 'allowLocalDocker', 'network', 'credentials'}, 'Runtime')
     if (runtime != {'backend': 'linux-docker-pinned', 'image': IMAGE, 'allowLocalDocker': True,
                     'network': 'none', 'credentials': 'none'} or runtime['allowLocalDocker'] is not True):
@@ -211,7 +226,7 @@ def _envelope_shape(value):
         _hash(item)
     identity = _exact(value['identity'], {'version', 'objectiveId', 'projectId', 'sourceSha256',
         'authoritySha256', 'profileSha256', 'bundleSha256', 'requiredSteps', 'sha256'}, 'Proposed identity')
-    if (type(identity['version']) is not int or identity['version'] != 1
+    if (type(identity['version']) is not int or identity['version'] != value['version']
             or identity['objectiveId'] != value['objectiveId'] or identity['projectId'] != value['projectId']
             or identity['sourceSha256'] != source['snapshotSha256']):
         raise ValueError('Set identity has mixed source/project context')
@@ -220,8 +235,9 @@ def _envelope_shape(value):
     if digest({key: item for key, item in identity.items() if key != 'sha256'}) != identity['sha256']:
         raise ValueError('Proposed identity hash changed')
     steps = value['steps']
-    if type(steps) is not list or len(steps) != 2:
-        raise ValueError('Set requires exactly two step reservations')
+    count = validation_step_count(value)
+    if type(steps) is not list or len(steps) != count:
+        raise ValueError('Set requires every versioned step reservation')
     for step in steps:
         _exact(step, _STEP_FIELDS, 'Set step')
         _id(step['id'])
@@ -229,14 +245,17 @@ def _envelope_shape(value):
         _hash(step['definitionSha256'])
         if type(step['recipe']) is not str or _KINDS.get(step['recipe']) != step['checkKind']:
             raise ValueError('Set step recipe/check kind changed')
-    if any(len({step[key] for step in steps}) != 2 for key in ('id', 'runId', 'recipe')):
+    recipes = set(_KINDS) if value['version'] == 2 else set(_KINDS) - {'workspace_vite_build'}
+    if {step['recipe'] for step in steps} != recipes:
+        raise ValueError('Set recipes differ from its exact versioned requirements')
+    if any(len({step[key] for step in steps}) != count for key in ('id', 'runId', 'recipe')):
         raise ValueError('Set steps and run identities must be distinct')
     if value['setId'] in {step['runId'] for step in steps}:
         raise ValueError('Set and run identity namespaces collide')
     required = [{key: step[key] for key in ('id', 'recipe', 'checkKind', 'definitionSha256')}
                 for step in sorted(steps, key=lambda item: item['id'])]
     if identity['requiredSteps'] != required:
-        raise ValueError('Both step definitions must match the proposed identity')
+        raise ValueError('All step definitions must match the proposed identity')
     return {**value, 'steps': sorted(steps, key=lambda item: item['id'])}
 
 
@@ -263,7 +282,7 @@ def normalize_validation_set_envelope(value, *, profile, organization_id, owner_
         policy_generation=policy_generation, policy_fingerprint=policy_fingerprint)
     identity = validation_set_identity(profile, objective_id=objective_id, project_id=project_id,
         source_sha256=result['source']['snapshotSha256'], authority_sha256=authority)
-    if result['identity'] != identity:
+    if result['version'] != identity['version'] or result['identity'] != identity:
         raise ValueError('Validation set profile/source/bundle/authority identity changed')
     return result
 
@@ -292,10 +311,10 @@ def _history(envelopes, objective_id, project_id):
 
 def plan_validation_reservation(value, *, history, used_units, objective_ceiling,
                                  owner_ceiling, context):
-    """Pure two-unit accounting proposal, never a committed reservation or dispatch.
+    """Pure versioned accounting proposal, never a committed reservation or dispatch.
 
-The future store must serialize history and usage reads with both reservations
-in one transaction. An interrupted step cannot refund either reserved unit.
+The future store must serialize history and usage reads with every reservation
+in one transaction. An interrupted step cannot refund any reserved unit.
 """
     envelope = normalize_validation_set_envelope(value, **context)
     prior = _history(history, envelope['objectiveId'], envelope['projectId'])
@@ -305,18 +324,20 @@ in one transaction. An interrupted step cannot refund either reserved unit.
     used = _integer(used_units, 'Prior charged execution units')
     ceiling = min(_integer(objective_ceiling, 'Objective execution ceiling', 1),
                   _integer(owner_ceiling, 'Owner execution ceiling', 1))
-    if used < 2 * len(prior) or used + 2 > ceiling:
-        raise ValueError('Two-step reservation would erase prior usage or exceed a ceiling')
+    count = validation_step_count(envelope)
+    if used < sum(validation_step_count(item) for item in prior) or used + count > ceiling:
+        raise ValueError('Complete reservation would erase prior usage or exceed a ceiling')
     return {'setId': envelope['setId'], 'generation': envelope['generation'], 'priorUnits': used,
-            'reservedUnits': 2, 'resultingUnits': used + 2, 'effectiveCeiling': ceiling,
+            'reservedUnits': count, 'resultingUnits': used + count, 'effectiveCeiling': ceiling,
             'steps': [{'runId': step['runId'], 'units': 1} for step in envelope['steps']],
             'committed': False, 'executionAuthorized': False}
 
 
 def validation_execution_order(value):
-    """Compiler validation precedes UI tests regardless of arbitrary step IDs."""
+    """Compiler, UI tests, then renderer build regardless of arbitrary step IDs."""
     envelope = _envelope_shape(value)
-    return sorted(envelope['steps'], key=lambda step: step['recipe'] != 'workspace_typescript')
+    order = {recipe: index for index, recipe in enumerate(_KINDS)}
+    return sorted(envelope['steps'], key=lambda step: order[step['recipe']])
 
 
 def _result_reference(value, envelope):
@@ -324,7 +345,7 @@ def _result_reference(value, envelope):
             'recipe', 'checkKind', 'snapshotSha256', 'profileSha256', 'bundleSha256',
             'authoritySha256', 'receiptSha256', 'status', 'cleanupConfirmed', 'stagingCleanupConfirmed'}
     _exact(value, keys, 'Step result reference')
-    _version(value, 'prepared-validation-result-reference-v1')
+    _version(value, 'prepared-validation-result-reference-v1', version=envelope['version'])
     step = next((step for step in envelope['steps'] if step['runId'] == value['runId']), None)
     if step is None:
         raise ValueError('Result reference has an unreserved run identity')
@@ -357,17 +378,18 @@ selected when the newest generation is failed, incomplete, stale or malformed.
     if not history:
         raise ValueError('No validation generation has been reserved')
     envelope = normalize_validation_set_envelope(history[-1], **context)
-    if type(results) is not list or len(results) != 2:
-        raise ValueError('Latest validation requires exactly two result references')
+    count = validation_step_count(envelope)
+    if type(results) is not list or len(results) != count:
+        raise ValueError('Latest validation requires every versioned result reference')
     references = [_result_reference(value, envelope) for value in results]
-    if any(len({item[key] for item in references}) != 2 for key in ('runId', 'receiptSha256')):
+    if any(len({item[key] for item in references}) != count for key in ('runId', 'receiptSha256')):
         raise ValueError('Latest validation repeats a result reference or receipt')
     if type(receipt_hashes) is not dict or set(receipt_hashes) != {item['runId'] for item in references}:
         raise ValueError('Exact retained receipt hashes are missing or extraneous')
     if any(item['receiptSha256'] != _hash(receipt_hashes[item['runId']]) for item in references):
         raise ValueError('Result reference differs from the retained receipt hash')
     references.sort(key=lambda item: item['stepId'])
-    aggregate = {'version': 1, 'contract': 'prepared-validation-aggregate-v1',
+    aggregate = {**versioned_contract_fields(envelope['version'], 'prepared-validation-aggregate'),
                  'setId': envelope['setId'], 'generation': envelope['generation'],
                  'envelopeSha256': digest(envelope), 'results': references}
     aggregate_sha256 = digest(aggregate)
@@ -384,7 +406,7 @@ selected when the newest generation is failed, incomplete, stale or malformed.
     evidence.update(run_evidence)
     _exact(review, {'version', 'contract', 'requestId', 'setId', 'aggregateSha256', 'reviewerId',
                     'requestType', 'status', 'approved', 'evidence'}, 'Whole-set review')
-    _version(review, 'prepared-validation-review-v1')
+    _version(review, 'prepared-validation-review-v1', version=envelope['version'])
     _id(review['requestId'])
     reviewer = _id(review['reviewerId'])
     if (review['approved'] is not True or reviewer in contributors

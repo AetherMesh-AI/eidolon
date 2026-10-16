@@ -137,6 +137,8 @@ class OrganizationStore(GoalReauthorizationStore, OrganizationGoalContinuationSt
         self._shared_state_path = self.path.resolve()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
+            from eidolon_cli.organization_prepared_validation_ledger import migrate_prepared_validation_schema
+            migrate_prepared_validation_schema(conn)
             # Schema creation is one durable unit: avoid hundreds of separate
             # disk commits on fresh ledgers and roll back a late DDL failure.
             conn.executescript("BEGIN IMMEDIATE;\n" + ORGANIZATION_SCHEMA + "\nCOMMIT;")

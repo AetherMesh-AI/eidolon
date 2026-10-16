@@ -21,9 +21,10 @@ import { useOrganizationMetadata } from './use-organization-metadata'
 
 const initialLimits: PreparedValidationLimits = { max_files: 10000, max_file_bytes: 8388608, max_total_bytes: 67108864, max_path_bytes: 512, max_depth: 32 }
 
-const profileExample = JSON.stringify({ version: 1, id: 'renderer', workspace: 'apps/desktop', bundleSha256: '<prepared bundle SHA-256>',
+const profileExample = JSON.stringify({ version: 2, id: 'renderer', workspace: 'apps/desktop', bundleSha256: '<prepared bundle SHA-256>',
   steps: [{ id: 'types', recipe: 'workspace_typescript', checkKind: 'project_typecheck', config: 'apps/desktop/tsconfig.json', testFiles: [], sourceDirectories: ['apps/desktop/src'] },
-    { id: 'ui', recipe: 'workspace_vitest_ui', checkKind: 'project_tests', config: 'apps/desktop/vitest.config.ts', testFiles: ['apps/desktop/src/example.test.tsx'], sourceDirectories: [] }],
+    { id: 'ui', recipe: 'workspace_vitest_ui', checkKind: 'project_tests', config: 'apps/desktop/vitest.config.ts', testFiles: ['apps/desktop/src/example.test.tsx'], sourceDirectories: [] },
+    { id: 'build', recipe: 'workspace_vite_build', checkKind: 'project_build', config: 'apps/desktop/vite.config.ts', testFiles: [], sourceDirectories: [] }],
   limits: { wallSeconds: 300, memoryMiB: 2048, cpus: 1, pids: 64, scratchMiB: 256, logBytes: 65536 } }, null, 2)
 
 /** Setup only: the backend owns byte verification and every later execution decision. */
@@ -65,6 +66,7 @@ export function RuntimePreparedValidationSetup({ onSaved, onConfirmationChange }
   const current = !started.current || client.current()
   const disabled = !eligible || !current || uncertain || !!saved || (busy && client.hasRetainedIntent())
   const project = descriptor?.projects.find(value => value.id === projectId)
+  const consequences = preview?.candidate.contract.version === 2 ? copy.threeConsequences : copy.consequences
 
   const message = (reason: unknown) => reason instanceof PreparedValidationError
     ? reason.code === 'confirm' ? copy.confirmRequired : copy[reason.code]
@@ -236,7 +238,8 @@ export function RuntimePreparedValidationSetup({ onSaved, onConfirmationChange }
           <p className="eid-note break-all">{copy.snapshot}: {preview.candidate.verification.snapshotSha256}</p>
           <p className="eid-note break-all">{copy.candidateHash}: {preview.candidateHash}</p>
           <PreparedValidationReview candidate={preview.candidate} />
-          <p className="eid-note">{copy.consequences}</p>
+          <p className="eid-note">{consequences}</p>
+          {preview.candidate.contract.version === 2 && <p className="eid-note">{copy.buildBoundary}</p>}
           <p className="eid-note">{copy.boundaries}</p>
           <Button disabled={busy || !eligible || !current || (uncertain && retainedAction !== 'save')} onClick={() => { if (uncertain) { void save('save').catch(() => {}) } else { openConfirmation('save') } }} type="button">{uncertain ? copy.retry : copy.save}</Button>
         </section>}
@@ -244,7 +247,7 @@ export function RuntimePreparedValidationSetup({ onSaved, onConfirmationChange }
     </>}
     {saved && current && <p role="status">{saved === 'revoke' ? copy.revoked : copy.saved}</p>}
     <ConfirmDialog confirmLabel={confirming === 'revoke' ? copy.revokeConfirm : copy.confirm}
-      description={confirming === 'revoke' ? `${projectId}: ${copy.revokeNote}` : `${projectId}: ${copy.consequences} ${copy.boundaries}`}
+      description={confirming === 'revoke' ? `${projectId}: ${copy.revokeNote}` : `${projectId}: ${consequences} ${preview?.candidate.contract.version === 2 ? copy.buildBoundary : ''} ${copy.boundaries}`}
       destructive={confirming === 'revoke'} onClose={closeConfirmation} onConfirm={() => { if (confirming) { return save(confirming) } }}
       open={!!confirming && eligible && current && (confirming === 'revoke' || !!preview) && !saved}
       title={confirming === 'revoke' ? copy.revokeTitle : copy.confirmTitle} />

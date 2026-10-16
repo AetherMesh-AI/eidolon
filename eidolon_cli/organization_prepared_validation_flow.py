@@ -22,7 +22,7 @@ def prepared_stage_availability(store, conn, request):
     payload = json.loads(request['payload'])
     if request['type'] != 'request.project_test':
         raise ValueError('Prepared validation does not authorize source publication')
-    require_prepared_authority(store, conn, request['objective_id'], payload['projectId'], execution=True)
+    authority = require_prepared_authority(store, conn, request['objective_id'], payload['projectId'], execution=True)
     if conn.execute('SELECT 1 FROM prepared_validation_sets WHERE request_id=?', (request['id'],)).fetchone():
         raise ValueError('Prepared reservation already exists; automatic replay is prohibited')
     from eidolon_cli.organization_prepared_validation_settlement import prepared_runtime_settlement
@@ -32,14 +32,21 @@ def prepared_stage_availability(store, conn, request):
     ceiling = conn.execute('SELECT max_runs FROM project_execution_budgets WHERE objective_id=?',
                            (request['objective_id'],)).fetchone()
     used = objective_project_reserved_units(conn, request['objective_id'])['totalUnits']
-    if ceiling is None or used + 2 > min(ceiling['max_runs'], store.settings.max_project_runs):
-        raise ValueError('Prepared validation requires two available reserved run units')
+    from eidolon_cli.organization_project_validation_profile import validation_step_count
+    units = validation_step_count(authority['contract']['profile'])
+    if ceiling is None or used + units > min(ceiling['max_runs'], store.settings.max_project_runs):
+        raise ValueError('Prepared validation requires capacity for every mandatory recipe')
 
 
 def _claims_complete_pair(conn, set_id, runs):
     """A cheap routing hint only; the success branch still verifies every proof."""
     from eidolon_cli.organization_prepared_validation_ledger import _bounded_text, _checked_json
-    if len(runs) != 2:
+    from eidolon_cli.organization_prepared_validation_ledger import _run_envelope
+    from eidolon_cli.organization_project_validation_profile import validation_step_count
+    if not runs:
+        return False
+    envelope = _run_envelope(conn, runs[0][0])
+    if envelope['setId'] != set_id or len(runs) != validation_step_count(envelope):
         return False
     for run in runs:
         row = conn.execute(f'SELECT {_bounded_text("record", 8192)},{_bounded_text("sha256", 64)},'
@@ -81,7 +88,7 @@ def finish_prepared_execution(store, conn, request, result):
             payload={'executionContract': EXECUTION_CONTRACT, 'projectId': project_id, 'setId': row['id'],
                      'evidenceIds': [item['id'] for item in failed]})
         store._pending(conn, conn.execute('SELECT * FROM requests WHERE id=?', (gate,)).fetchone(),
-            'Prepared validation did not pass. Both reserved units remain charged; inspect the exact retained outcome before replanning.')
+            'Prepared validation did not pass. All reserved units remain charged; inspect the exact retained outcome before replanning.')
         return
     verified = verify_current_prepared_pair(store, conn, request['objective_id'], project_id, require_review=False)
     if verified['envelope']['setId'] != row['id']:

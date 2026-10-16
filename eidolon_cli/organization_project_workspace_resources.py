@@ -264,7 +264,8 @@ def normalize_runtime_event(value):
             _hash(data[key])
         if type(data['stepId']) is not str or not re.fullmatch(r'[a-z][a-z0-9_-]{0,63}', data['stepId']):
             raise ValueError('Dispatch step ID is invalid')
-        kinds = {'workspace_typescript': 'project_typecheck', 'workspace_vitest_ui': 'project_tests'}
+        kinds = {'workspace_typescript': 'project_typecheck', 'workspace_vitest_ui': 'project_tests',
+                 'workspace_vite_build': 'project_build'}
         if type(data['recipe']) is not str or kinds.get(data['recipe']) != data['checkKind']:
             raise ValueError('Dispatch recipe and check kind do not match')
     if 'runtime' in data:

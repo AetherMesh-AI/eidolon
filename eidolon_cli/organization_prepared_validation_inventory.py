@@ -63,7 +63,7 @@ _FIELDS = (
      'idempotency_key input_hash sequence'),
     ('prepared_validation_sets', _SELECTED,
      'id request_id lease_token objective_id project_id round generation envelope envelope_sha256 '
-     'typecheck_run_id tests_run_id prior_units objective_ceiling owner_ceiling created'),
+     'typecheck_run_id tests_run_id prior_units objective_ceiling owner_ceiling created build_run_id'),
     ('prepared_validation_steps', f'set_id IN ({_SETS})',
      'run_id set_id step_id definition_sha256 recipe check_kind units'),
     ('prepared_validation_snapshots', f'set_id IN ({_SETS})',

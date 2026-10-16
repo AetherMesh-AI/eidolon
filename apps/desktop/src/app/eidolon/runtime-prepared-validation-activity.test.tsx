@@ -5,6 +5,7 @@ import { RuntimePreparedValidationActivity } from './runtime-prepared-validation
 import { preparedValidationActivityCopy } from './runtime-prepared-validation-activity-copy'
 import { validPreparedValidationStatus } from './runtime-prepared-validation-status-contract'
 import type { PreparedValidationSetStatus, PreparedValidationStatus, PreparedValidationStepStatus } from './runtime-prepared-validation-status-types'
+import { preparedStatusObjective } from './runtime-prepared-validation-status.test-fixtures'
 import type { Objective, PreparedValidationReference } from './types'
 
 const copy = preparedValidationActivityCopy.en
@@ -192,4 +193,25 @@ it('treats pair-review presence separately from older review claims and never in
   expect(current.getAllByText(copy.noDispatch)).toHaveLength(2)
   expect(screen.queryByText('Approved', { exact: true })).toBeNull()
   expect(screen.queryByText(copy.passed)).toBeNull()
+})
+
+
+it('shows all three v2 steps and an interrupted build as unverified metadata without output bodies or artifact claims', () => {
+  const item = preparedStatusObjective(1, 1, [2])
+  const set = item.preparedValidation!.current.project0
+  set.state = 'runtime_unverified'
+  set.steps = [step('types', 'workspace_typescript', 'passed'), step('tests', 'workspace_vitest_ui', 'passed'), step('build', 'workspace_vite_build', 'interrupted')]
+  item.preparedValidation!.blockers.entries = set.steps.map(value => ({ setId: set.setId, projectId: set.projectId,
+    generation: set.generation, runId: value.runId, reasons: value.blockerReasons }))
+  expect(validPreparedValidationStatus(item.preparedValidation, item.id, item.preparedValidations!)).toBe(true)
+  const { container } = render(<RuntimePreparedValidationActivity objective={item} />)
+  openCurrentSet()
+  expect(within(currentList()).getByText(copy.workspace_vite_build)).toBeTruthy()
+  expect(within(currentList()).getByText(copy.interrupted)).toBeTruthy()
+  expect(within(currentList()).getByText(copy.noSetReview)).toBeTruthy()
+  expect(count(copy.preparedUnits)).toBe('3')
+  expect(screen.getByText(copy.versionedUnits)).toBeTruthy()
+  expect(screen.getByText(copy.buildBoundary)).toBeTruthy()
+  expect(screen.queryByText('Passed', { exact: true })).toBeNull()
+  expect(container.querySelector('a,button,input,textarea,select')).toBeNull()
 })

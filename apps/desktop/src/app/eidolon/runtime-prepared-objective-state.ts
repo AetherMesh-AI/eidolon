@@ -13,6 +13,7 @@ interface PreparedObjectiveReview {
 }
 export interface PreparedObjectiveSelection {
   requested: boolean
+  buildCheckWasPresent?: boolean
   review?: PreparedObjectiveReview
   busy?: boolean
   reading?: Omit<PreparedObjectiveReview, 'descriptor'>
@@ -33,6 +34,9 @@ export function preparedObjectiveOwnerMatches({ scope, snapshot }: PreparedObjec
 }
 
 function publish(key: string, value: PreparedObjectiveSelection) {
+  const previous = $preparedObjectiveSelections.get()[key]
+
+  if (value.requested && value.buildCheckWasPresent === undefined) { value.buildCheckWasPresent = previous?.buildCheckWasPresent }
   $preparedObjectiveSelections.set({ ...$preparedObjectiveSelections.get(), [key]: value })
 }
 
@@ -42,15 +46,17 @@ function clearReferences(key: string) {
   if (!draft?.metadata.preparedValidations) { return }
   const { preparedValidations: _refs, ...metadata } = draft.metadata
   // A stale live choice must never rewrite the retained submitted intent/key.
-  setIntakeDraft(key, { ...draft, metadata })
+  setIntakeDraft(key, { ...draft, metadata: { ...metadata, requiredChecks: $preparedObjectiveSelections.get()[key]?.buildCheckWasPresent
+    ? metadata.requiredChecks : metadata.requiredChecks?.filter(check => check !== 'project_build') } })
 }
 
 export function setPreparedObjectiveMode(key: string, requested: boolean) {
-  publish(key, { requested, busy: pending.has(key) })
+  const state = $preparedObjectiveSelections.get()[key]
   const draft = $intakeDrafts.get()[key] ?? emptyIntake
   const { preparedValidations: _refs, ...metadata } = draft.metadata
+  publish(key, { requested, busy: pending.has(key), ...(requested ? { buildCheckWasPresent: metadata.requiredChecks?.includes('project_build') ?? false } : {}) })
   setIntakeDraft(key, { ...draft, metadata: requested ? { ...metadata, deliveryMode: 'managed_artifact',
-    requiredChecks: [...new Set([...(metadata.requiredChecks ?? []).filter(check => check !== 'source_integration'), 'project_typecheck', 'project_tests'] as const)] } : { ...metadata, requiredChecks: metadata.requiredChecks?.filter(check => check !== 'project_typecheck') } })
+    requiredChecks: [...new Set([...(metadata.requiredChecks ?? []).filter(check => check !== 'source_integration'), 'project_typecheck', 'project_tests'] as const)] } : { ...metadata, requiredChecks: metadata.requiredChecks?.filter(check => check !== 'project_typecheck' && (check !== 'project_build' || state?.buildCheckWasPresent)) } })
 }
 
 export function discardPreparedObjectiveSelection(key: string) {
@@ -152,11 +158,17 @@ export function selectPreparedObjectiveReference(key: string, reference: Prepare
   const refs = (draft.metadata.preparedValidations ?? []).filter(ref => ref.projectId !== reference.projectId)
 
   if (selected && refs.length < 8) { refs.push(structuredClone(reference)) }
-  setIntakeDraft(key, { ...draft, metadata: { ...draft.metadata, preparedValidations: refs } })
+  const requiresBuild = refs.some(ref => descriptor.projects.find(project => project.id === ref.projectId)?.preparedProfileVersion === 2)
+  const checks = draft.metadata.requiredChecks ?? []
+
+  const requiredChecks = requiresBuild ? [...new Set([...checks, 'project_build'] as const)]
+    : state.buildCheckWasPresent ? checks : checks.filter(check => check !== 'project_build')
+
+  setIntakeDraft(key, { ...draft, metadata: { ...draft.metadata, requiredChecks, preparedValidations: refs } })
 }
 
 /** A requested but stale/partial mode never degrades silently to legacy admission. */
-export function preparedObjectiveSelectionError(key: string, metadata: ObjectiveMetadata, context: PreparedObjectiveContext): 'changed' | 'incomplete' | 'constraints' | 'unsupported' | 'pending' | undefined {
+export function preparedObjectiveSelectionError(key: string, metadata: ObjectiveMetadata, context: PreparedObjectiveContext): 'changed' | 'incomplete' | 'constraints' | 'unsupported' | 'pending' | 'versions' | undefined {
   const state = $preparedObjectiveSelections.get()[key]
 
   if (!state?.requested) { return metadata.preparedValidations?.length ? 'changed' : undefined }
@@ -174,6 +186,11 @@ export function preparedObjectiveSelectionError(key: string, metadata: Objective
     new Set(refs.map(ref => ref.projectId)).size !== refs.length ||
     !refs.every(ref => projects.includes(ref.projectId) && preparedObjectiveProjectMatches(descriptor, ref.projectId, context.snapshot) && descriptor.registrationRefs.some(available => policyEqual(available, ref)))) { return 'incomplete' }
 
+  const versions = new Set(refs.map(ref => descriptor.projects.find(project => project.id === ref.projectId)?.preparedProfileVersion ?? 1))
+
+  if (versions.size !== 1) { return 'versions' }
+
   if (metadata.deliveryMode !== 'managed_artifact' || !metadata.requiredChecks?.includes('project_typecheck') ||
-    !metadata.requiredChecks.includes('project_tests') || metadata.requiredChecks.includes('source_integration')) { return 'constraints' }
+    !metadata.requiredChecks.includes('project_tests') || metadata.requiredChecks.includes('source_integration') ||
+    metadata.requiredChecks.includes('project_build') !== versions.has(2)) { return 'constraints' }
 }

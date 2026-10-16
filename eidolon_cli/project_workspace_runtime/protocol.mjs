@@ -1,6 +1,8 @@
 // Fixed, dependency-free transport and scope checks. Workload results are claims.
 import { StringDecoder } from 'node:string_decoder';
-import { writeSync } from 'node:fs';
+import fs, { writeSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { Socket } from 'node:net';
 import { types } from 'node:util';
@@ -48,6 +50,7 @@ export function writeControlFrameSync(descriptor, data, deadline = Infinity) {
 export const TOOL_ENTRIES = Object.freeze({
   workspace_typescript: 'node_modules/typescript/lib/typescript.js',
   workspace_vitest_ui: 'node_modules/vitest/dist/node.js',
+  workspace_vite_build: 'node_modules/vite/dist/node/index.js',
 });
 export function workloadEnvironment() {
   return { PATH: '/usr/local/bin:/usr/bin:/bin', LANG: 'C.UTF-8', HOME: '/nonexistent',
@@ -147,6 +150,9 @@ export function validateConfig(input) {
   if (input.recipe === 'workspace_typescript') {
     requireValue(configuration.endsWith('.json') && tests.length === 0 && selectedSources.length > 0
       && selectedSources.every(isSource), 'Typecheck requires an actual configuration and source selection');
+  } else if (input.recipe === 'workspace_vite_build') {
+    requireValue(selectedSources.length === 0 && tests.length === 0,
+      'Renderer build uses its exact workspace index.html and authored configuration');
   } else {
     requireValue(selectedSources.length === 0 && tests.length > 0
       && tests.every(value => value.startsWith(workspace + '/src/') && /\.test\.tsx?$/.test(value)),
@@ -207,7 +213,9 @@ export function resultRecord(config, details = {}) {
   return { kind: 'result', status: 'failed', recipe: config.recipe,
     configuration: config.configuration, testCount: 0, skippedCount: 0, failedCount: 0,
     sourceCount: 0, selectedFiles: selectedFiles(config), reportedFiles: [], modules: [],
-    evidenceOrigin: 'workload-claim', toolEntry: config.toolEntry, toolExitCode: null, ...details };
+    evidenceOrigin: 'workload-claim', toolEntry: config.toolEntry, toolExitCode: null,
+    ...(config.recipe === 'workspace_vite_build' ? { outputManifestVersion: 1, outputManifest: [],
+      outputManifestSha256: manifestDigest([]), outputBodiesRetained: false } : {}), ...details };
 }
 
 function absoluteFiles(values, config) {
@@ -256,6 +264,13 @@ export function validateResult(record, config) {
       && record.reportedFiles.every(isSource), 'Invalid typecheck source closure');
     if (record.status === 'passed') requireValue(record.sourceCount > 0 && record.toolExitCode === 0
       && record.selectedFiles.every(path => record.reportedFiles.includes(path)), 'Incomplete typecheck');
+  } else if (config.recipe === 'workspace_vite_build') {
+    requireValue(record.testCount === 0 && record.skippedCount === 0 && record.failedCount === 0
+      && record.sourceCount === 0 && record.modules.length === 0 && record.selectedFiles.length === 0
+      && record.reportedFiles.length === 0 && record.outputManifestVersion === 1
+      && record.outputBodiesRetained === false, 'Invalid renderer build outcome');
+    validateOutputManifest(record.outputManifest, record.outputManifestSha256, record.status === 'passed');
+    if (record.status === 'passed') requireValue(record.toolExitCode === 0, 'Renderer build did not succeed');
   } else {
     requireValue(record.sourceCount === 0 && record.modules.length === record.reportedFiles.length,
       'Incomplete UI module results');
@@ -363,4 +378,179 @@ export function vitestOptions(config, reporter) {
     cache: { dir: '/tmp/vite-cache' }, passWithNoTests: false, allowOnly: false, retry: 0,
     update: false, reporters: [reporter], dangerouslyIgnoreUnhandledErrors: false,
     color: false, clearScreen: false, execArgv: ['--disable-sigusr1'] };
+}
+
+// Version 1 of the renderer metadata claim. These are protocol bounds, not
+// authority to export bytes or proof that workload-controlled collection is honest.
+export const BUILD_OUTPUT_LIMITS = Object.freeze({ files: 1024, fileBytes: 32 * 1048576,
+  totalBytes: 128 * 1048576, manifestBytes: 256 * 1024 });
+export const VITE_BUILD_ROOT = '/tmp/vite-build';
+const byteOrder = (left, right) => Buffer.compare(Buffer.from(left), Buffer.from(right));
+const manifestJson = manifest => JSON.stringify(manifest.map(item => ({
+  bytes: item.bytes, kind: item.kind, path: item.path, sha256: item.sha256,
+})));
+export const manifestDigest = manifest => createHash('sha256').update(manifestJson(manifest)).digest('hex');
+
+function outputPath(value) {
+  relativePath(value);
+  requireValue(value.normalize('NFC') === value && Buffer.from(value).toString('utf8') === value,
+    'Output path is not canonical UTF-8');
+  return value;
+}
+
+export function validateOutputManifest(manifest, sha256, passed = false) {
+  requireValue(Array.isArray(manifest) && manifest.length <= BUILD_OUTPUT_LIMITS.files,
+    'Output manifest exceeds file bound');
+  let bytes = 0, previous = null;
+  const prefixes = new Map(), files = new Set();
+  for (const item of manifest) {
+    requireValue(exact(item, ['path', 'bytes', 'sha256', 'kind'])
+      && integer(item.bytes, 0, BUILD_OUTPUT_LIMITS.fileBytes)
+      && typeof item.sha256 === 'string' && /^[0-9a-f]{64}$/.test(item.sha256)
+      && ['asset', 'chunk'].includes(item.kind), 'Invalid output metadata');
+    outputPath(item.path);
+    requireValue(previous === null || byteOrder(previous, item.path) < 0,
+      'Output metadata must be uniquely byte-sorted');
+    previous = item.path;
+    const components = item.path.split('/');
+    for (let index = 1; index <= components.length; index++) {
+      const prefix = components.slice(0, index).join('/'), alias = prefix.toLowerCase();
+      requireValue(!prefixes.has(alias) || prefixes.get(alias) === prefix, 'Ambiguous output path');
+      requireValue(!files.has(alias), 'Output file collides with a directory');
+      prefixes.set(alias, prefix);
+    }
+    files.add(item.path.toLowerCase());
+    bytes += item.bytes;
+    requireValue(bytes <= BUILD_OUTPUT_LIMITS.totalBytes, 'Output metadata exceeds total byte bound');
+  }
+  requireValue(Buffer.byteLength(manifestJson(manifest)) <= BUILD_OUTPUT_LIMITS.manifestBytes,
+    'Output manifest exceeds metadata bound');
+  requireValue(typeof sha256 === 'string' && /^[0-9a-f]{64}$/.test(sha256)
+    && sha256 === manifestDigest(manifest), 'Output manifest digest disagrees');
+  if (passed) requireValue(manifest.some(item => item.path === 'index.html' && item.kind === 'asset' && item.bytes > 0)
+    && manifest.some(item => item.kind === 'chunk' && item.bytes > 0), 'Renderer output is incomplete');
+  return manifest;
+}
+
+export function collectBuildOutput(directory, result) {
+  const outputs = Array.isArray(result) ? result : [result];
+  requireValue(outputs.length === 1 && Array.isArray(outputs[0]?.output)
+    && outputs[0].output.length > 0 && outputs[0].output.length <= BUILD_OUTPUT_LIMITS.files,
+    'Expected one bounded renderer build result');
+  const emitted = new Map();
+  let entry = false;
+  for (const item of outputs[0].output) {
+    requireValue(item && ['asset', 'chunk'].includes(item.type), 'Unknown emitted output type');
+    outputPath(item.fileName);
+    requireValue(!emitted.has(item.fileName), 'Duplicate emitted output');
+    emitted.set(item.fileName, item.type);
+    if (item.type === 'chunk' && item.isEntry === true) entry = true;
+  }
+  requireValue(entry, 'Renderer build did not report an entry chunk');
+  const root = fs.lstatSync(directory);
+  requireValue(root.isDirectory() && !root.isSymbolicLink() && fs.realpathSync(directory) === directory,
+    'Output root is not an exact real directory');
+  const manifest = [], identities = new Set();
+  let total = 0, visited = 0;
+  const unchanged = (left, right) => ['dev', 'ino', 'size', 'mtimeNs', 'ctimeNs', 'nlink', 'mode']
+    .every(key => left[key] === right[key]);
+  const walk = relative => {
+    const current = relative ? directory + '/' + relative : directory;
+    const before = fs.lstatSync(current, { bigint: true });
+    requireValue(before.isDirectory() && !before.isSymbolicLink() && fs.realpathSync(current) === current,
+      'Output directory is linked or escaped');
+    for (const name of fs.readdirSync(current, { encoding: 'buffer' })) {
+      requireValue(++visited <= 4096 && Buffer.from(name.toString('utf8')).equals(name),
+        'Output tree exceeds inode bound or has invalid UTF-8 names');
+      const value = outputPath((relative ? relative + '/' : '') + name.toString('utf8'));
+      const filename = directory + '/' + value;
+      const observed = fs.lstatSync(filename, { bigint: true });
+      if (observed.isDirectory()) { walk(value); continue; }
+      requireValue(observed.isFile() && !observed.isSymbolicLink() && observed.nlink === 1n
+        && observed.size <= BigInt(BUILD_OUTPUT_LIMITS.fileBytes), 'Output is linked, special or excessive');
+      requireValue(manifest.length < BUILD_OUTPUT_LIMITS.files, 'Output file count exceeded');
+      const identity = observed.dev + ':' + observed.ino;
+      requireValue(!identities.has(identity), 'Output inode was repeated');
+      identities.add(identity);
+      const fd = fs.openSync(filename, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+      let bytes = 0;
+      const hash = createHash('sha256');
+      try {
+        const initial = fs.fstatSync(fd, { bigint: true });
+        requireValue(initial.isFile() && unchanged(initial, observed), 'Output changed before reading');
+        const buffer = Buffer.alloc(64 * 1024);
+        for (;;) {
+          const count = fs.readSync(fd, buffer, 0, buffer.length, null);
+          if (!count) break;
+          bytes += count;
+          total += count;
+          requireValue(bytes <= BUILD_OUTPUT_LIMITS.fileBytes && total <= BUILD_OUTPUT_LIMITS.totalBytes,
+            'Output bytes exceeded bounds');
+          hash.update(buffer.subarray(0, count));
+        }
+        requireValue(BigInt(bytes) === initial.size && unchanged(initial, fs.fstatSync(fd, { bigint: true }))
+          && unchanged(initial, fs.lstatSync(filename, { bigint: true })), 'Output changed during reading');
+      } finally { fs.closeSync(fd); }
+      manifest.push({ path: value, bytes, sha256: hash.digest('hex'), kind: emitted.get(value) ?? 'asset' });
+    }
+    requireValue(unchanged(before, fs.lstatSync(current, { bigint: true })), 'Output directory changed during collection');
+  };
+  walk('');
+  manifest.sort((left, right) => byteOrder(left.path, right.path));
+  requireValue([...emitted.keys()].every(value => manifest.some(item => item.path === value)),
+    'Emitted output is missing from scratch');
+  const sha256 = manifestDigest(manifest);
+  validateOutputManifest(manifest, sha256, true);
+  return { outputManifestVersion: 1, outputManifest: manifest, outputManifestSha256: sha256,
+    outputBodiesRetained: false };
+}
+
+export function validateViteBuildConfig(value, config, environment = false) {
+  const root = absolutePath(config, config.workspace), outDir = VITE_BUILD_ROOT + '/out';
+  const build = value.build, output = build?.rolldownOptions?.output;
+  requireValue(value.root === root && value.mode === 'production' && value.command === 'build'
+    && value.configFile === absolutePath(config, config.configuration) && value.configLoader === 'runner'
+    && value.envFile === false && value.envDir === false
+    && Array.isArray(value.envPrefix) && value.envPrefix.length === 0
+    && exact(value.env, ['BASE_URL', 'MODE', 'DEV', 'PROD'])
+    && value.env.MODE === 'production' && value.env.DEV === false && value.env.PROD === true
+    && value.cacheDir === VITE_BUILD_ROOT + '/cache' && value.isProduction === true
+    && value.devtools?.enabled === false,
+    'Resolved renderer configuration exceeded fixed scope');
+  requireValue(build?.write === true && build.outDir === outDir && build.watch === null
+    && build.ssr === false && build.lib === false && build.emptyOutDir === false
+    && build.copyPublicDir === true && value.input === root + '/index.html'
+    && build.rolldownOptions.input === root + '/index.html'
+    && output && !Array.isArray(output) && output.dir === outDir && !output.file && !output.output,
+    'Resolved renderer build exceeded fixed output scope');
+  requireValue(value.publicDir === '' || (typeof value.publicDir === 'string'
+    && value.publicDir.startsWith(root + '/') && path.resolve(value.publicDir) === value.publicDir),
+    'Renderer public assets must remain within the source workspace');
+  if (environment) requireValue(value.consumer === 'client', 'Renderer environment must be client-only');
+  else requireValue(Object.keys(value.environments).length === 1 && value.environments.client,
+    'Renderer build requires exactly one client environment');
+}
+
+export function viteBuildOptions(config) {
+  const root = absolutePath(config, config.workspace);
+  return { root, configFile: absolutePath(config, config.configuration), configLoader: 'runner',
+    mode: 'production', envFile: false, envDir: false, envPrefix: [], input: root + '/index.html',
+    cacheDir: VITE_BUILD_ROOT + '/cache', clearScreen: false, devtools: false,
+    build: { write: true, watch: null, ssr: false, lib: false, emptyOutDir: false,
+      copyPublicDir: true, outDir: VITE_BUILD_ROOT + '/out',
+      rolldownOptions: { input: root + '/index.html', output: { dir: VITE_BUILD_ROOT + '/out' } } },
+    plugins: [{ name: 'eidolon:fixed-renderer-bounds', enforce: 'post',
+      config(value) {
+        // Vite concatenates arrays and ignores null overrides during merging.
+        // Force these fixed fields after authored hooks, before env resolution.
+        value.envPrefix = [];
+        value.devtools = false;
+        value.build.watch = null;
+        value.input = root + '/index.html';
+        value.build.rolldownOptions.input = root + '/index.html';
+      },
+      configResolved(value) { validateViteBuildConfig(value, config); },
+      buildStart() { validateViteBuildConfig(this.environment.config, config, true); },
+    }],
+  };
 }

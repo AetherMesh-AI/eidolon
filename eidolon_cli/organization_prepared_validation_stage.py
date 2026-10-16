@@ -47,7 +47,7 @@ def new_validation_envelope(context, request_id, generation):
         'policy_generation', 'policy_fingerprint')})
     identity = validation_set_identity(context['profile'], objective_id=context['objective_id'],
         project_id=context['project_id'], source_sha256=context['snapshot_sha256'], authority_sha256=authority)
-    value = {'version': 1, 'contract': 'prepared-validation-set-v1',
+    value = {**contract.versioned_contract_fields(context['profile']['version'], 'prepared-validation-set'),
         'setId': 'prepared_set_' + uuid.uuid4().hex, 'requestId': request_id,
         'objectiveId': context['objective_id'], 'projectId': context['project_id'],
         'round': context['round_number'], 'generation': generation,

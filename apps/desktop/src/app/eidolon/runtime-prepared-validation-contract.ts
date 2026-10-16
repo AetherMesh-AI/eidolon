@@ -75,17 +75,56 @@ export function validPreparedSelection(value: unknown): value is PreparedValidat
   if (new Set(paths).size !== paths.length || paths.some(path => path.startsWith('/') || /[\\:*?[\]{}]/.test(path) || [...path].some(char => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127) || path.split('/').some(part => ['', '.', '..'].includes(part))) ||
     !Object.entries(value.source.executionOnlyHashes).every(([path, hash]) => paths.includes(path) && preparedHash(hash))) { return false }
 
-  const profile = value.profile
+  return validPreparedProfile(value.profile)
+}
 
-  if (!exact(profile, ['version', 'id', 'workspace', 'bundleSha256', 'steps', 'limits']) || profile.version !== 1 || !text(profile.id) || !text(profile.workspace) ||
-    !preparedHash(profile.bundleSha256) || !preparedRecord(profile.limits) || profile.limits.cpus !== 1 || profile.limits.pids !== 64 || !Array.isArray(profile.steps) || profile.steps.length !== 2) { return false }
+const profileId = (value: unknown): value is string => typeof value === 'string' && /^[a-z][a-z0-9_-]{0,63}$/.test(value)
 
-  const kinds: Record<string, string> = { workspace_typescript: 'project_typecheck', workspace_vitest_ui: 'project_tests' }
+const profilePath = (value: unknown): value is string => typeof value === 'string' && value.length > 0 &&
+  new TextEncoder().encode(value).length <= 512 && !value.startsWith('/') && !/[\\:*?[\]{}]/.test(value) &&
+  ![...value].some(char => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127) &&
+  value.split('/').length <= 32 && !value.split('/').some(part => ['', '.', '..'].includes(part))
 
-  return profile.steps.every(step => preparedRecord(step) && exact(step, ['id', 'recipe', 'checkKind', 'config', 'testFiles', 'sourceDirectories']) &&
-    text(step.id) && typeof step.recipe === 'string' && Object.hasOwn(kinds, step.recipe) && step.checkKind === kinds[step.recipe] &&
-    text(step.config) && strings(step.testFiles) && strings(step.sourceDirectories)) &&
-    new Set(profile.steps.map(step => step.recipe)).size === 2 && new Set(profile.steps.map(step => step.id)).size === 2
+/** Versioned recipes only; neither a profile nor a step may introduce a command. */
+export function validPreparedProfile(profile: unknown): boolean {
+  if (!preparedRecord(profile) || !exact(profile, ['version', 'id', 'workspace', 'bundleSha256', 'steps', 'limits']) ||
+    ![1, 2].includes(profile.version as number) || !profileId(profile.id) || !profilePath(profile.workspace) ||
+    !preparedHash(profile.bundleSha256) || !preparedRecord(profile.limits) || !Array.isArray(profile.steps)) { return false }
+
+  const bounds: Record<string, [number, number]> = { wallSeconds: [1, 1800], memoryMiB: [256, 8192], cpus: [1, 1],
+    pids: [64, 64], scratchMiB: [16, 2048], logBytes: [1024, 1048576] }
+
+  const limits = profile.limits
+  const workspace = profile.workspace
+
+  const kinds: Record<string, string> = { workspace_typescript: 'project_typecheck', workspace_vitest_ui: 'project_tests',
+    ...(profile.version === 2 ? { workspace_vite_build: 'project_build' } : {}) }
+
+  const stepCount = Object.keys(kinds).length
+
+  if (!exact(limits, Object.keys(bounds)) || !Object.entries(bounds).every(([key, [min, max]]) => preparedInteger(limits[key], min) && limits[key] <= max) ||
+    profile.steps.length !== stepCount || new TextEncoder().encode(JSON.stringify(profile)).length > 65536) { return false }
+
+  return profile.steps.every(step => {
+    if (!preparedRecord(step) || !exact(step, ['id', 'recipe', 'checkKind', 'config', 'testFiles', 'sourceDirectories']) ||
+      !profileId(step.id) || typeof step.recipe !== 'string' || !Object.hasOwn(kinds, step.recipe) || step.checkKind !== kinds[step.recipe] ||
+      !profilePath(step.config) || !step.config.startsWith(`${workspace}/`) || !Array.isArray(step.testFiles) ||
+      !Array.isArray(step.sourceDirectories) || step.sourceDirectories.length > 8 || !step.sourceDirectories.every(profilePath)) { return false }
+
+    const files = step.testFiles
+    const directories = step.sourceDirectories.map(path => path.toLowerCase()).sort()
+
+    if (new Set(directories).size !== directories.length || directories.some((left, index) => directories.slice(index + 1).some(right => right.startsWith(`${left}/`)))) { return false }
+
+    if (step.recipe === 'workspace_typescript') { return step.config.endsWith('.json') && files.length === 0 && directories.length > 0 }
+
+    if (directories.length) { return false }
+
+    if (step.recipe === 'workspace_vite_build') { return files.length === 0 }
+
+    return files.length >= 1 && files.length <= 512 && files.every(path => profilePath(path) && path.startsWith(`${workspace}/src/`) && /\.test\.tsx?$/.test(path)) &&
+      new Set(files.map(path => path.toLowerCase())).size === files.length
+  }) && new Set(profile.steps.map(step => step.recipe)).size === stepCount && new Set(profile.steps.map(step => step.id)).size === stepCount
 }
 
 export function validatePreparedDescriptor(value: unknown, scope: PreparedValidationScope): PreparedValidationDescriptor {
@@ -97,6 +136,7 @@ export function validatePreparedDescriptor(value: unknown, scope: PreparedValida
     !Array.isArray(value.projects) || value.projects.length > 8 || !value.projects.every(project => preparedRecord(project) && text(project.id) && project.id.length <= 64 && text(project.root) &&
       (project.recipe === null || text(project.recipe)) && text(project.team) && preparedInteger(project.registrationRevision) &&
       (project.registrationHash === null || preparedHash(project.registrationHash)) && typeof project.enabled === 'boolean' && typeof project.rootRevoked === 'boolean' &&
+      (!Object.hasOwn(project, 'preparedProfileVersion') || (project.enabled && [1, 2].includes(project.preparedProfileVersion as number))) &&
       (!project.enabled || (project.registrationRevision > 0 && preparedHash(project.registrationHash)))) ||
     !Array.isArray(value.registrationRefs) || value.registrationRefs.length > 8 || !value.registrationRefs.every(item => preparedRecord(item) && exact(item, ['projectId', 'revision', 'registrationSha256']) && text(item.projectId) && preparedInteger(item.revision, 1) && preparedHash(item.registrationSha256)) ||
     new Set(value.registrationRefs.map(item => item.projectId)).size !== value.registrationRefs.length ||
@@ -119,7 +159,7 @@ export function validPreparedCandidate(value: unknown, selection: PreparedValida
   const contract = value.contract
   const project = descriptor.projects.find(item => item.id === selection.projectId)
 
-  if (!project || !exact(contract, ['version', 'contract', 'organizationId', 'ownerId', 'projectId', 'projectBindingSha256', 'revision', 'root', 'source', 'dependencies', 'profile', 'runtime']) || contract.version !== 1 || contract.contract !== 'prepared-validation-v1' || contract.organizationId !== descriptor.organizationId ||
+  if (!project || !exact(contract, ['version', 'contract', 'organizationId', 'ownerId', 'projectId', 'projectBindingSha256', 'revision', 'root', 'source', 'dependencies', 'profile', 'runtime']) || contract.version !== value.selection.profile.version || contract.contract !== `prepared-validation-v${contract.version}` || contract.organizationId !== descriptor.organizationId ||
     contract.ownerId !== descriptor.ownerId || contract.projectId !== project.id || contract.revision !== project.registrationRevision + 1 || !preparedHash(contract.projectBindingSha256) ||
     !preparedRecord(contract.root) || !exact(contract.root, ['alias', 'device', 'inode']) || contract.root.alias !== project.root || !preparedInteger(contract.root.device) || !preparedInteger(contract.root.inode) ||
     !policyEqual(contract.source, value.selection.source) || !policyEqual(contract.profile, value.selection.profile) || !preparedRecord(contract.dependencies) || !exact(contract.dependencies, ['directory', 'device', 'inode', 'manifest', 'bundleSha256', 'inventorySha256', 'lockfileSha256', 'toolchain']) ||

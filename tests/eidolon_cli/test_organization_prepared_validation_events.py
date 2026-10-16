@@ -220,7 +220,11 @@ def test_tampered_retained_authority_and_envelope_fail_before_any_event(state, s
     if target == 'envelope-hash':
         corrupt(conn, 'sets', 'envelope_sha256', '0' * 64)
     elif target == 'envelope-json':
-        corrupt(conn, 'sets', 'envelope', '{malformed')
+        # The generated identity rejects malformed JSON at the storage boundary.
+        with pytest.raises(sqlite3.OperationalError, match='malformed JSON'):
+            corrupt(conn, 'sets', 'envelope', '{malformed')
+        assert count(state, 'dispatches') == count(state, 'runtime_events') == 0
+        return
     elif target == 'envelope-shape':
         malformed = deepcopy(stream['envelope'])
         malformed['steps'][0]['definitionSha256'] = 'bad'

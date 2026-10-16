@@ -24,7 +24,7 @@ _RUNTIME_TABLE = 'prepared_validation_runtime_events'
 _RESULT_STATUSES = ('passed', 'failed', 'interrupted', 'cleanup_failed', 'unknown')
 _EVENT_KINDS = ('dispatch_planned', 'staging_allocated', 'container_create_planned', 'container_observed',
                 'container_start_planned', 'cleanup_observed', 'receipt')
-_STEP_KINDS = {'workspace_typescript': 'project_typecheck', 'workspace_vitest_ui': 'project_tests'}
+_STEP_KINDS = {'workspace_typescript': 'project_typecheck', 'workspace_vitest_ui': 'project_tests', 'workspace_vite_build': 'project_build'}
 _SET_TEXT = ('id', 'request_id', 'objective_id', 'project_id', 'typecheck_run_id', 'tests_run_id')
 _SET_NUMBERS = ('round', 'generation', 'prior_units', 'objective_ceiling', 'owner_ceiling')
 
@@ -63,6 +63,7 @@ def _pair_schema():
 
 
 def _storage(conn):
+    from eidolon_cli.organization_prepared_validation_ledger import validate_prepared_generated_schema
     expected, base_guards = activity._expected_schema()
     columns, foreign_keys, keys, runtime_guards = _runtime_schema()
     expected = {**expected, _RUNTIME_TABLE: (columns, foreign_keys, keys)}
@@ -75,6 +76,7 @@ def _storage(conn):
         raise ValueError('Temporary objects shadow display dependencies')
     if not any(name.startswith('prepared_validation_') for name in objects):
         return 'absent'
+    validate_prepared_generated_schema(conn)
     if any(objects.get(name) != 'table' for name in expected):
         raise ValueError('Prepared display dependencies are incomplete')
     # Validate shape, not full-data FK scans. Those scans traverse retained file
@@ -175,18 +177,30 @@ def _step(conn, step):
 
 
 def _set_columns():
+    # Scalar step metadata avoids evaluating the JSON-backed virtual column.
+    build = "(SELECT run_id FROM prepared_validation_steps WHERE set_id=prepared_validation_sets.id AND recipe='workspace_vite_build')"
     return ','.join([*(activity._bounded(name, 128) + ' AS ' + name for name in _SET_TEXT),
-        *(_number(name, 0 if name in {'round', 'prior_units'} else 1) + ' AS ' + name for name in _SET_NUMBERS)])
+        *(_number(name, 0 if name in {'round', 'prior_units'} else 1) + ' AS ' + name for name in _SET_NUMBERS),
+        activity._bounded(build, 128) + ' AS build_run_id', build + ' IS NULL AS build_absent'])
 
 
 def _set(conn, row, objective_id):
+    build = row['build_run_id']
+    if (build is None) != bool(row['build_absent']):
+        raise ValueError('Recorded build identity is oversized')
+    if build is not None:
+        contract._id(build)
+    units = 3 if build is not None else 2
+    identities = [row['typecheck_run_id'], row['tests_run_id']] + ([build] if build is not None else [])
+    if len(set(identities)) != units or row['id'] in identities:
+        raise ValueError('Recorded recipe run identities alias')
     for name in _SET_TEXT:
         contract._id(row[name])
     for name in _SET_NUMBERS:
         _integer(row[name], 0 if name in {'round', 'prior_units'} else 1)
     if (row['objective_id'] != objective_id or row['typecheck_run_id'] == row['tests_run_id']
             or row['id'] in {row['typecheck_run_id'], row['tests_run_id']}
-            or row['prior_units'] + 2 > min(row['objective_ceiling'], row['owner_ceiling'])):
+            or row['prior_units'] + units > min(row['objective_ceiling'], row['owner_ceiling'])):
         raise ValueError('Recorded reservation scalar identity changed')
     request = conn.execute(f'SELECT {activity._bounded("objective_id", 128)} FROM requests WHERE id=?', (row['request_id'],)).fetchone()
     binding = conn.execute('SELECT 1 FROM prepared_validation_bindings WHERE objective_id=? AND project_id=?',
@@ -202,17 +216,20 @@ def _set(conn, row, objective_id):
         f'{activity._bounded("step_id", 128)} AS step_id,{activity._bounded("definition_sha256", 64)} AS definition_sha256,'
         f'{_enum("recipe", _STEP_KINDS)} AS recipe,{_enum("check_kind", _STEP_KINDS.values())} AS check_kind,'
         f'{_number("units", 1, 1)} AS units '
-        'FROM prepared_validation_steps WHERE set_id=? LIMIT 3', (row['id'],)).fetchall()
-    if (len(steps) != 2 or {step['run_id'] for step in steps} != {row['typecheck_run_id'], row['tests_run_id']}
-            or {step['recipe'] for step in steps} != set(_STEP_KINDS)
-            or next(step for step in steps if step['recipe'] == 'workspace_typescript')['run_id'] != row['typecheck_run_id']):
-        raise ValueError('Recorded reservation is not an exact two-kind pair')
-    projected = [_step(conn, step) for step in sorted(steps, key=lambda item: item['recipe'] != 'workspace_typescript')]
+        'FROM prepared_validation_steps WHERE set_id=? LIMIT 4', (row['id'],)).fetchall()
+    expected_recipes = list(_STEP_KINDS)[:units]
+    if (len(steps) != units or {step['run_id'] for step in steps} != set(identities)
+            or {step['recipe'] for step in steps} != set(expected_recipes)
+            or any(next(step for step in steps if step['recipe'] == recipe)['run_id'] != run_id
+                   for recipe, run_id in zip(expected_recipes, identities))):
+        raise ValueError('Recorded reservation is not an exact mandatory recipe set')
+    projected = [_step(conn, step) for step in sorted(steps, key=lambda item: expected_recipes.index(item['recipe']))]
     aggregate = conn.execute('SELECT 1 FROM prepared_validation_aggregates WHERE set_id=?', (row['id'],)).fetchone() is not None
     review = conn.execute('SELECT 1 FROM prepared_validation_reviews WHERE set_id=?', (row['id'],)).fetchone() is not None
     pair_review = conn.execute('SELECT 1 FROM prepared_validation_pair_reviews WHERE set_id=?', (row['id'],)).fetchone() is not None
     return {'setId': row['id'], 'requestId': row['request_id'], 'projectId': row['project_id'], 'round': row['round'],
-            'generation': row['generation'], 'reservedUnits': 2, 'snapshotSha256': snapshot[0], 'steps': projected,
+            'generation': row['generation'], 'reservedUnits': units,
+            **({'profileVersion': 2} if units == 3 else {}), 'snapshotSha256': snapshot[0], 'steps': projected,
             'aggregateClaimPresent': aggregate, 'reviewClaimPresent': review, 'pairReviewRecorded': pair_review,
             'state': 'runtime_unverified' if any(step['dispatched'] for step in projected) else 'reserved_undispatched'}
 
@@ -233,8 +250,11 @@ or replace objective_project_reserved_units for authoritative accounting.
             raise ValueError('Objective not found')
         legacy = _count(conn, 'project_run_starts', 'objective_id', objective_id, _MAX_LEGACY_RUNS)
         total, current, history = 0, {}, []
+        v2_count = 0
         if storage == 'present':
             total = _count(conn, 'prepared_validation_sets', 'objective_id', objective_id, _MAX_SETS)
+            v2_count = conn.execute("SELECT count(*) FROM prepared_validation_sets s JOIN prepared_validation_steps p ON p.set_id=s.id WHERE s.objective_id=? AND p.recipe='workspace_vite_build'",
+                                    (objective_id,)).fetchone()[0]
             latest = conn.execute(f'SELECT {activity._bounded("project_id", 128)},{_number("max(generation)", 1)} '
                 'FROM prepared_validation_sets WHERE objective_id=? GROUP BY project_id LIMIT ?',
                 (objective_id, _MAX_PROJECTS + 1)).fetchall()
@@ -256,8 +276,10 @@ or replace objective_project_reserved_units for authoritative accounting.
                 current[project] = selected.get(row['id']) or _set(conn, row, objective_id)
         entries = [{'setId': item['setId'], 'projectId': item['projectId'], 'generation': item['generation'],
                     'runId': step['runId'], 'reasons': step['blockerReasons']} for item in history for step in item['steps']]
-        return activity._flags(objectiveId=objective_id, storageState=storage, legacyUnits=legacy, preparedUnits=2 * total,
-            totalUnits=legacy + 2 * total, totalSets=total, totalHistory=total, current=current, history=history,
+        units = 2 * total + v2_count
+        return activity._flags(**({'contractVersion': 2, 'setCounts': {'v1': total - v2_count, 'v2': v2_count}} if v2_count else {}),
+            objectiveId=objective_id, storageState=storage, legacyUnits=legacy, preparedUnits=units,
+            totalUnits=legacy + units, totalSets=total, totalHistory=total, current=current, history=history,
             historyTruncated=total > len(history), scalarMetadataOnly=True, accountingVerified=False,
-            blockers={'blocked': bool(total), 'totalBlockers': 2 * total, 'entries': entries[:history_limit],
-                      'truncated': 2 * total > min(len(entries), history_limit)})
+            blockers={'blocked': bool(total), 'totalBlockers': units, 'entries': entries[:history_limit],
+                      'truncated': units > min(len(entries), history_limit)})

@@ -143,7 +143,7 @@ def test_shared_ceiling_rejects_complete_pair_atomically_after_legacy_and_prepar
     assert goal_projection(state['conn'], 'shared')['reserved']['projectRuns'] == 3
     before = {table: state['conn'].execute('SELECT count(*) FROM ' + table).fetchone()[0]
               for table in ledger.PREPARED_VALIDATION_TABLES}
-    with pytest.raises(ValueError, match='both prepared execution units'):
+    with pytest.raises(ValueError, match='all prepared execution units'):
         reserve(state, right, proposal(state, right))
     assert before == {table: state['conn'].execute('SELECT count(*) FROM ' + table).fetchone()[0]
                       for table in ledger.PREPARED_VALIDATION_TABLES}

@@ -286,3 +286,33 @@ it('passes the manual selection through the real owner-read client and runtime c
   expect(creates[1][1]).toEqual(creates[0][1])
   expect(request.mock.calls.map(call => call[0])).toEqual(['organization.preparedValidationSetup', 'organization.create', 'organization.create'])
 })
+
+it('reviews a v2 registration explicitly, adds the renderer build, and submits its unchanged reference triple', async () => {
+  const descriptor = availableDescriptor()
+  descriptor.projects[0].preparedProfileVersion = 2
+  const f = fixture(descriptor); select(); await f.review()
+  expect(screen.queryByRole('checkbox', { name: 'Project renderer build check' })).toBeNull()
+  expect(screen.getByText(/Profile v2: TypeScript, UI tests, and renderer build/)).toBeTruthy()
+  fireEvent.click(refChoice())
+  expect(screen.getByRole('checkbox', { name: 'Project renderer build check' })).toHaveProperty('checked', true)
+  expect(screen.getByRole('checkbox', { name: 'Project renderer build check' })).toHaveProperty('disabled', true)
+  fireEvent.click(create()); await screen.findByText('Admission paused')
+  expect(f.submit.mock.calls[0][1]).toMatchObject({ preparedValidations: descriptor.registrationRefs,
+    requiredChecks: ['project_typecheck', 'project_tests', 'project_build'], deliveryMode: 'managed_artifact' })
+})
+
+
+it('removes an introduced v2 build check on deselection and stale-owner reconciliation without silently enabling legacy admission', async () => {
+  const descriptor = availableDescriptor(); descriptor.projects[0].preparedProfileVersion = 2
+  const f = fixture(descriptor); select(); await f.review(); fireEvent.click(refChoice())
+  expect(screen.getByRole('checkbox', { name: 'Project renderer build check' })).toHaveProperty('checked', true)
+  fireEvent.click(refChoice())
+  expect(screen.queryByRole('checkbox', { name: 'Project renderer build check' })).toBeNull()
+  fireEvent.click(create()); expect(f.submit).not.toHaveBeenCalled()
+  fireEvent.click(refChoice())
+  environment.scope = { ...environment.scope!, key: 'changed' }; f.render()
+  await waitFor(() => expect($intakeDrafts.get()[key].metadata.preparedValidations).toBeUndefined())
+  expect(screen.queryByRole('checkbox', { name: 'Project renderer build check' })).toBeNull()
+  expect(enable()).toHaveProperty('checked', true)
+  fireEvent.click(create()); expect(f.submit).not.toHaveBeenCalled()
+})

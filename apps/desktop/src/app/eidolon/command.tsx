@@ -50,6 +50,10 @@ export function Command({
   const hidden = snapshot.connection?.state === 'connecting'
   const draft = hidden ? emptyIntake : (drafts[draftKey] ?? emptyIntake)
   const { criteria, goal, metadata } = draft
+
+  const preparedBuildRequired = preparedRequested && metadata.preparedValidations?.some(reference =>
+    preparedStates[draftKey]?.review?.descriptor.projects.some(project => project.id === reference.projectId && project.preparedProfileVersion === 2))
+
   const stored = hidden ? undefined : drafts[draftKey]
   const error = stored?.error ?? ''
   const submitting = stored?.busy ?? false
@@ -437,11 +441,11 @@ export function Command({
           </summary>
           <fieldset disabled={disabled}>
             <legend>{copy.requiredChecks}</legend>
-            {([...(preparedRequested || metadata.requiredChecks?.includes('project_typecheck') ? ['project_typecheck' as const] : []), 'project_tests', 'managed_validation', 'source_integration'] as const).map(check => (
+            {([...(preparedRequested || metadata.requiredChecks?.includes('project_typecheck') ? ['project_typecheck' as const] : []), ...(metadata.requiredChecks?.includes('project_build') ? ['project_build' as const] : []), 'project_tests', 'managed_validation', 'source_integration'] as const).map(check => (
               <label className="eid-inline" key={check}>
                 <input
                   checked={metadata.requiredChecks?.includes(check) ?? false}
-                  disabled={preparedRequested && (check === 'project_typecheck' || check === 'project_tests' || check === 'source_integration')}
+                  disabled={preparedRequested && (check === 'project_typecheck' || check === 'project_tests' || check === 'source_integration' || (check === 'project_build' && preparedBuildRequired))}
                   onChange={event =>
                     setMetadata({
                       ...metadata,
@@ -452,7 +456,7 @@ export function Command({
                   }
                   type="checkbox"
                 />
-                {check === 'project_typecheck' ? preparedCopy.projectTypecheck : copy[check]}
+                {check === 'project_typecheck' ? preparedCopy.projectTypecheck : check === 'project_build' ? preparedCopy.projectBuild : copy[check]}
               </label>
             ))}
           </fieldset>

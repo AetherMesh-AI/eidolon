@@ -633,10 +633,11 @@ class OrganizationProjectExecutionStore:
             for project in projects:
                 identifier = project['id'] if project else None
                 if has_prepared_binding(conn, objective_id, identifier):
-                    if 'project_build' in kinds:
-                        raise ValueError('Prepared validation does not authorize project builds')
                     from eidolon_cli.organization_prepared_validation_current import verify_current_prepared_pair
                     verified = verify_current_prepared_pair(self, conn, objective_id, identifier)
+                    available = {item[1]['projectExecution']['checkKind'] for item in verified['checks']}
+                    if not kinds <= available:
+                        raise ValueError('Prepared profile does not supply every required check')
                     for kind in per_kind:
                         per_kind[kind].extend(item for item in verified['checks']
                                               if item[1]['projectExecution']['checkKind'] == kind)
@@ -665,11 +666,12 @@ class OrganizationProjectExecutionStore:
             identifier = project['id'] if project else None
             from eidolon_cli.organization_prepared_validation_authority import has_prepared_binding
             if has_prepared_binding(conn, objective_id, identifier):
-                if check_kind != 'project_typecheck':
-                    raise ValueError('Prepared validation does not authorize project builds')
                 from eidolon_cli.organization_prepared_validation_current import verify_current_prepared_pair
                 pair = verify_current_prepared_pair(self, conn, objective_id, identifier)
-                verified.extend(item for item in pair['checks'] if item[1]['projectExecution']['checkKind'] == check_kind)
+                selected = [item for item in pair['checks'] if item[1]['projectExecution']['checkKind'] == check_kind]
+                if not selected:
+                    raise ValueError('Prepared profile does not supply the requested check')
+                verified.extend(selected)
                 continue
             row = _latest_run(conn, objective_id, identifier)
             if row is None:

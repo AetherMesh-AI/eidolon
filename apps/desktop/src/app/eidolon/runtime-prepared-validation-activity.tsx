@@ -39,7 +39,7 @@ function RecordedSet({ set, copy }: { set: PreparedValidationSetStatus; copy: Ac
       </dl>
       <p>{set.aggregateClaimPresent ? copy.aggregateClaim : copy.noAggregateClaim}</p>
       <p>{set.reviewClaimPresent ? copy.reviewClaim : copy.noReviewClaim}</p>
-      <p>{set.pairReviewRecorded ? copy.pairReview : copy.noPairReview}</p>
+      <p>{set.profileVersion === 2 ? (set.pairReviewRecorded ? copy.setReview : copy.noSetReview) : (set.pairReviewRecorded ? copy.pairReview : copy.noPairReview)}</p>
       <ol aria-label={copy.steps}>{set.steps.map(step => <RecordedStep copy={copy} key={step.runId} step={step} />)}</ol>
     </details>
   </li>
@@ -82,7 +82,8 @@ export function RuntimePreparedValidationActivity({ objective }: RuntimePrepared
         <dt>{copy.totalSets}</dt><dd>{status.totalSets}</dd>
         <dt>{copy.totalHistory}</dt><dd>{status.totalHistory}</dd>
       </dl>
-      <p className="eid-note">{copy.twoUnits}</p>
+      <p className="eid-note">{status.contractVersion === 2 ? copy.versionedUnits : copy.twoUnits}</p>
+      {status.contractVersion === 2 && <p className="eid-note">{copy.buildBoundary}</p>}
       <h4>{copy.current}</h4>
       {Object.keys(status.current).length ? <ul aria-label={copy.current}>
         {Object.values(status.current).map(set => <RecordedSet copy={copy} key={set.setId} set={set} />)}

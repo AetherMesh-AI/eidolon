@@ -14,7 +14,7 @@ export const objectiveStatusLabels = {
 } as const
 export type ObjectiveStatus = keyof typeof objectiveStatusLabels
 export type WorkStatus = 'working' | 'active' | 'thinking' | 'executing' | 'reviewing' | 'needs_input' | 'idle' | 'waiting' | 'review' | 'offline'
-export type OrganizationRequiredCheck = 'project_tests' | 'managed_validation' | 'source_integration' | 'project_typecheck'
+export type OrganizationRequiredCheck = 'project_tests' | 'managed_validation' | 'source_integration' | 'project_typecheck' | 'project_build'
 export interface PreparedValidationReference {
   projectId: string
   revision: number

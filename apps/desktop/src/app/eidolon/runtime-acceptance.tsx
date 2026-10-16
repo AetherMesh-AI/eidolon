@@ -53,7 +53,7 @@ export function RuntimeAcceptance({
           <h3>{copy.requiredChecks}</h3>
           <ul>
             {objective.requiredChecks.map(check => (
-              <li key={check}>{check === 'project_typecheck' ? preparedObjectiveCopy[locale].projectTypecheck : copy[check]}</li>
+              <li key={check}>{check === 'project_typecheck' ? preparedObjectiveCopy[locale].projectTypecheck : check === 'project_build' ? preparedObjectiveCopy[locale].projectBuild : copy[check]}</li>
             ))}
           </ul>
         </>
