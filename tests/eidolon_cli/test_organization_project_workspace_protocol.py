@@ -15,14 +15,14 @@ COMMON = r"""
 import assert from 'node:assert/strict';
 const protocol = await import(process.argv[1]);
 const { validateConfig, absolutePath, resultRecord, validateResult, ControlFrames,
-  typescriptArguments, summarizeVitestModules, boundUiProject, vitestOptions,
+  createWorkspaceTypecheckProgram, summarizeVitestModules, boundUiProject, vitestOptions,
   verifyRuntimeToolchain, workloadEnvironment, CONTROL_BYTES } = protocol;
 const toolchain = {platform:'linux', arch:'x64', libc:'glibc', nodeVersion:'22.20.0',
   npmVersion:'10.9.3', nodeAbi:'127', tools:{typescript:'6.0.3',vitest:'4.1.10'}};
 const common = {root:'root0',workspace:'apps/desktop',timeoutMs:60000,
   memoryBytes:1073741824,scratchBytes:67108864,outputBytes:65536,preparedToolchain:toolchain};
 const ts = validateConfig({...common,recipe:'workspace_typescript',configuration:'apps/desktop/tsconfig.json',
-  toolEntry:'node_modules/typescript/bin/tsc',tests:[],
+  toolEntry:'node_modules/typescript/lib/typescript.js',tests:[],
   selectedSources:['apps/shared/src/types.ts','apps/desktop/src/App.tsx']});
 const ui = validateConfig({...common,recipe:'workspace_vitest_ui',configuration:'apps/desktop/vitest.config.ts',
   toolEntry:'node_modules/vitest/dist/node.js',selectedSources:[],tests:['apps/desktop/src/App.test.tsx']});
@@ -54,10 +54,7 @@ assert.deepEqual(workloadEnvironment(),{
   XDG_CACHE_HOME:'/tmp/cache',CI:'1',NO_COLOR:'1',RAYON_NUM_THREADS:'1',UV_THREADPOOL_SIZE:'2'});
 const mutatedEnvironment=workloadEnvironment(); mutatedEnvironment.RAYON_NUM_THREADS='100';
 assert.equal(workloadEnvironment().RAYON_NUM_THREADS,'1');
-const args = typescriptArguments(ts);
-assert.deepEqual(args,['--disable-sigusr1','/source/root0/node_modules/typescript/bin/tsc',
-  '--project','/source/root0/apps/desktop/tsconfig.json','--noEmit','--noCheck','false',
-  '--incremental','false','--pretty','false','--listFiles']);
+assert.throws(()=>validateConfig({...ts,toolEntry:'node_modules/typescript/bin/tsc'}));
 const sources = ts.selectedSources.map(value=>absolutePath(ts,value));
 const typed = resultRecord(ts,{status:'passed',toolExitCode:0,sourceCount:sources.length,
   reportedFiles:sources});
@@ -120,6 +117,62 @@ for(const key of ['platform','arch','libc','nodeVersion','nodeAbi'])
   assert.throws(()=>verifyRuntimeToolchain({...toolchain,[key]:'different'},observed));
 assert.throws(()=>verifyRuntimeToolchain(toolchain,{...observed,glibcVersion:undefined}));
 assert.throws(()=>verifyRuntimeToolchain({...toolchain,libc:'musl'},{...observed,libc:'musl'}));
+""")
+
+
+def test_compiler_api_retains_original_roots_options_and_full_diagnostics():
+    run_protocol(r"""
+const configuration=absolutePath(ts,ts.configuration), selected=protocol.selectedFiles(ts);
+const ambient='/source/root0/apps/desktop/ambient.d.ts';
+const configured='/source/root0/apps/desktop/extra/config-only.ts';
+const parsed={fileNames:[ambient,configured,selected[0]],errors:[],
+  options:{configFilePath:configuration,strict:true,paths:{'@shared':['../shared/src/index.ts']},
+    noEmit:false,noCheck:true,incremental:true}};
+const originalConfigFile={fileName:configuration,parseDiagnostics:[]};
+Object.defineProperty(parsed.options,'configFile',{value:originalConfigFile,writable:true,configurable:true});
+const original=structuredClone(parsed), program={marker:'compiler program'};
+const diagnostics=[{code:2322},{code:9999}];
+let created=0;
+const compiler={sys:{readFile(){},readDirectory(){}},
+  getParsedCommandLineOfConfigFile(path,options,host){
+    assert.equal(path,configuration);
+    assert.deepEqual(options,{noEmit:true,noCheck:false,incremental:false});
+    assert.equal(host.readFile,this.sys.readFile);
+    assert.equal(typeof host.onUnRecoverableConfigFileDiagnostic,'function');
+    return parsed;
+  },
+  createProgram(options){
+    created++;
+    assert.deepEqual(options.rootNames,[ambient,configured,...selected]);
+    assert.deepEqual(options.options,{...parsed.options,noEmit:true,noCheck:false,incremental:false});
+    assert.deepEqual(options.configFileParsingDiagnostics,parsed.errors);
+    assert.equal(options.options.configFilePath,configuration);
+    assert.equal(options.options.configFile,originalConfigFile);
+    assert.deepEqual(Object.getOwnPropertyDescriptor(options.options,'configFile'),
+      Object.getOwnPropertyDescriptor(parsed.options,'configFile'));
+    return program;
+  },
+  getPreEmitDiagnostics(value){assert.equal(value,program);return diagnostics;}};
+assert.deepEqual(createWorkspaceTypecheckProgram(compiler,configuration,selected),{program,diagnostics});
+assert.equal(created,1);assert.deepEqual(parsed,original);
+for(const changed of [{...parsed,errors:[{code:5083}]},
+  {...parsed,projectReferences:[{path:'/source/root0/apps/shared'}]}]) {
+  const rejected={...compiler,getParsedCommandLineOfConfigFile(){return changed;},
+    createProgram(){assert.fail('Rejected configuration must not create a program');}};
+  if(changed.errors.length) assert.deepEqual(createWorkspaceTypecheckProgram(rejected,configuration,selected),
+    {program:null,diagnostics:changed.errors});
+  else assert.throws(()=>createWorkspaceTypecheckProgram(rejected,configuration,selected),/project references/);
+}
+const fatal={code:5083};
+const broken={...compiler,getParsedCommandLineOfConfigFile(_path,_options,host){
+  host.onUnRecoverableConfigFileDiagnostic(fatal);return undefined;},
+  createProgram(){assert.fail('Unrecoverable parsing must not create a program');}};
+assert.deepEqual(createWorkspaceTypecheckProgram(broken,configuration,selected),{program:null,diagnostics:[fatal]});
+const malformed={...compiler,getParsedCommandLineOfConfigFile(){return {...parsed,
+  options:{...parsed.options,configFile:{parseDiagnostics:[{code:1005}]}}};},
+  createProgram(){assert.fail('Malformed JSON must not create a program');}};
+assert.deepEqual(createWorkspaceTypecheckProgram(malformed,configuration,selected),
+  {program:null,diagnostics:[{code:1005}]});
 """)
 
 

@@ -18,8 +18,8 @@ from eidolon_cli.organization_project_snapshot_bundle import (
 )
 
 
-_BASELINE = 'ac63782287cd04fae7fac7aab2385ef524dcb439'
-_FIXTURE_PATH = Path(__file__).resolve().parents[1] / 'fixtures' / 'prepared-workspace-renderer-ac637822.json'
+_BASELINE = '47ea5eae725372eacfefba2956d480b9e829d679'
+_FIXTURE_PATH = Path(__file__).resolve().parents[1] / 'fixtures' / 'prepared-workspace-renderer-47ea5eae.json'
 _SHA256 = re.compile(r'[0-9a-f]{64}')
 _LIMITS = ProjectSnapshotLimits(10_000, 32 * 1024 * 1024, 128 * 1024 * 1024)
 

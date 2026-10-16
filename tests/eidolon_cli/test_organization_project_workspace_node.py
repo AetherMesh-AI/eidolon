@@ -74,7 +74,7 @@ def frame(recipe):
                   'testCount': 0 if is_typecheck else 2, 'skippedCount': 0, 'failedCount': 0,
                   'sourceCount': len(paths) if is_typecheck else 0,
                   'selectedFiles': paths, 'reportedFiles': paths.copy(),
-                  'toolEntry': 'node_modules/typescript/bin/tsc' if is_typecheck else 'node_modules/vitest/dist/node.js',
+                  'toolEntry': 'node_modules/typescript/lib/typescript.js' if is_typecheck else 'node_modules/vitest/dist/node.js',
                   'modules': [] if is_typecheck else [{'path': paths[0], 'passed': 2, 'skipped': 0,
                                                        'failed': 0, 'state': 'passed'}]}
 
@@ -111,6 +111,16 @@ def test_typecheck_requires_all_selected_sources_and_no_unknown_paths():
     result['reportedFiles'] = result['reportedFiles'][:-1]
     result['sourceCount'] -= 1
     assert not runtime._outcome(result, step, source(), 'apps/desktop')
+
+
+def test_typecheck_never_claims_the_old_cli_entry_executed():
+    step, result = frame('workspace_typescript')
+    result['toolEntry'] = 'node_modules/typescript/bin/tsc'
+    assert not runtime._outcome(result, step, source(), 'apps/desktop')
+    checked = {'manifest': {'files': [{'path': result['toolEntry']}],
+                           'toolchain': {'tools': {'typescript': '6.0.3'}}}}
+    with pytest.raises(ValueError, match='entry point'):
+        runtime._tool_entry(step, checked)
 
 
 def test_assembly_only_creates_declared_internal_workspace_links(tmp_path):
@@ -213,7 +223,7 @@ def test_cleanup_removes_only_verified_immutable_id(monkeypatch):
 
 
 @pytest.mark.parametrize('recipe,tool,entry', [
-    ('workspace_typescript', 'typescript', 'node_modules/typescript/bin/tsc'),
+    ('workspace_typescript', 'typescript', 'node_modules/typescript/lib/typescript.js'),
     ('workspace_vitest_ui', 'vitest', 'node_modules/vitest/dist/node.js')])
 def test_active_tool_requires_declared_toolchain_and_exact_entry(recipe, tool, entry):
     checked = {'manifest': {'files': [{'path': entry}], 'toolchain': {'tools': {}}}}

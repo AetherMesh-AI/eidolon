@@ -126,7 +126,7 @@ def test_complete_frame_survives_real_fd3_and_stdout_backpressure(node):
     setup = r"""
 const config=protocol.validateConfig({root:'root0',workspace:'apps/desktop',
   recipe:'workspace_typescript',configuration:'apps/desktop/tsconfig.json',
-  toolEntry:'node_modules/typescript/bin/tsc',tests:[],timeoutMs:60000,
+  toolEntry:'node_modules/typescript/lib/typescript.js',tests:[],timeoutMs:60000,
   memoryBytes:1073741824,scratchBytes:67108864,outputBytes:65536,
   preparedToolchain:{platform:'linux',arch:'x64',libc:'glibc',nodeVersion:'22.20.0',
     npmVersion:'10.9.3',nodeAbi:'127',tools:{typescript:'6.0.3',vitest:'4.1.10'}},

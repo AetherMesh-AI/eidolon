@@ -10,6 +10,11 @@ from eidolon_cli.organization_project_dependency_bundle import normalize_prepare
 from eidolon_cli.organization_project_workspace_node import run_prepared_workspace_step
 
 UI_TEST = 'apps/desktop/src/components/idle-mount.test.tsx'
+SAME_STEM_TESTS = (
+    'apps/desktop/src/app/chat/sidebar/session-actions-menu.test',
+    'apps/desktop/src/app/contrib/hooks/use-background-sync.test',
+    'apps/desktop/src/app/settings/gateway-settings.test',
+)
 
 
 @pytest.fixture(scope='module')
@@ -56,6 +61,55 @@ def changed(source, path, suffix):
                   for item in source.files)
     assert any(item.path == path for item in files)
     return replace(source, files=files)
+
+
+def replaced(source, path, content):
+    assert sum(item.path == path for item in source.files) == 1
+    return replace(source, files=tuple(replace(item, content=content) if item.path == path else item
+                                      for item in source.files))
+
+
+def test_actual_compiler_includes_both_same_stem_test_roots(prepared):
+    result = execute(prepared, 'renderer-types')
+    assert result['status'] == 'passed', json.dumps({
+        'status': result['status'], 'reason': result.get('reason'), 'stderr': result.get('stderr', '')[:8192]})
+    assert result['cleanupConfirmed'] is True and result['isolation']['established'] is True
+    assert result['snapshotSha256'] == prepared[0].snapshot_sha256
+    outcome = result['outcome']
+    assert outcome['toolEntry'] == 'node_modules/typescript/lib/typescript.js'
+    assert outcome['evidenceOrigin'] == 'workload-claim'
+    for stem in SAME_STEM_TESTS:
+        for extension in ('.ts', '.tsx'):
+            path = '/source/root0/' + stem + extension
+            assert path in outcome['selectedFiles'] and path in outcome['reportedFiles']
+
+
+@pytest.mark.parametrize('stem', SAME_STEM_TESTS)
+def test_actual_compiler_rejects_type_error_in_glob_shadowed_sibling(prepared, stem):
+    source = changed(prepared[0], stem + '.tsx',
+                     b'\nconst __eidolon_hidden_type_failure: string = 123;\n')
+    result = execute(prepared, 'renderer-types', source)
+    assert result['status'] == 'failed', result
+    assert result['cleanupConfirmed'] is True and result['isolation']['established'] is True
+    assert result['snapshotSha256'] == source.snapshot_sha256 != prepared[0].snapshot_sha256
+    assert type(result['failureClaim']['toolExitCode']) is int
+    assert result['failureClaim']['toolExitCode'] != 0
+    assert 'TS2322' in result['stderr'] and stem.removeprefix('apps/desktop/') + '.tsx' in result['stderr']
+    assert 'outcome' not in result
+
+
+def test_actual_compiler_rejects_project_references_without_narrowing_them(prepared):
+    path = 'apps/desktop/tsconfig.json'
+    original = next(item.content for item in prepared[0].files if item.path == path)
+    configuration = json.loads(original)
+    configuration['references'] = [{'path': '../shared'}]
+    source = replaced(prepared[0], path, json.dumps(configuration).encode())
+    result = execute(prepared, 'renderer-types', source)
+    assert result['status'] == 'failed', result
+    assert result['cleanupConfirmed'] is True and result['isolation']['established'] is True
+    assert result['snapshotSha256'] == source.snapshot_sha256 != prepared[0].snapshot_sha256
+    assert 'project references are unsupported' in result['stderr']
+    assert 'outcome' not in result
 
 
 def test_actual_renderer_typecheck_and_real_ui_share_source_and_bundle(prepared):
@@ -106,6 +160,20 @@ def test_actual_ui_assertion_failure_cannot_pass(prepared):
     assert result['snapshotSha256'] == source.snapshot_sha256
     assert result['snapshotSha256'] != prepared[0].snapshot_sha256
     assert result['failureClaim']['failedCount'] >= 1
+
+
+def test_actual_ui_runner_requires_authored_esm_filename_binding(prepared):
+    path = 'apps/desktop/vite.config.ts'
+    original = next(item.content for item in prepared[0].files if item.path == path)
+    declaration = b'const __dirname = path.dirname(fileURLToPath(import.meta.url))\n'
+    assert original.count(declaration) == 1, 'Reviewed fixture must include the exact ESM config correction'
+    source = replaced(prepared[0], path, original.replace(declaration, b'', 1))
+    result = execute(prepared, 'ui-tests', source)
+    assert result['status'] == 'failed', result
+    assert result['cleanupConfirmed'] is True and result['isolation']['established'] is True
+    assert result['snapshotSha256'] == source.snapshot_sha256 != prepared[0].snapshot_sha256
+    assert 'ReferenceError' in result['stderr'] and '__dirname is not defined' in result['stderr']
+    assert 'outcome' not in result
 
 
 def test_actual_ui_workload_cannot_write_source_signal_supervisor_or_use_network(prepared):

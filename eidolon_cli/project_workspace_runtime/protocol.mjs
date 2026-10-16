@@ -46,7 +46,7 @@ export function writeControlFrameSync(descriptor, data, deadline = Infinity) {
 }
 
 export const TOOL_ENTRIES = Object.freeze({
-  workspace_typescript: 'node_modules/typescript/bin/tsc',
+  workspace_typescript: 'node_modules/typescript/lib/typescript.js',
   workspace_vitest_ui: 'node_modules/vitest/dist/node.js',
 });
 export function workloadEnvironment() {
@@ -175,10 +175,32 @@ export function formatMissingSelectedSources(config, reportedFiles) {
     + ' missing selected paths (maximum 16 paths / 4096 bytes).\n';
 }
 
-export function typescriptArguments(config) {
-  return ['--disable-sigusr1', absolutePath(config, config.toolEntry), '--project',
-    absolutePath(config, config.configuration), '--noEmit', '--noCheck', 'false',
-    '--incremental', 'false', '--pretty', 'false', '--listFiles'];
+export function createWorkspaceTypecheckProgram(compiler, configuration, selectedRoots) {
+  const enforced = { noEmit: true, noCheck: false, incremental: false }, fatal = [];
+  // Parse at the original configuration path so extends, paths, ambient roots,
+  // and configFilePath retain TypeScript's own resolution semantics.
+  const parsed = compiler.getParsedCommandLineOfConfigFile(configuration, enforced, {
+    ...compiler.sys, onUnRecoverableConfigFileDiagnostic: diagnostic => fatal.push(diagnostic),
+  });
+  const parsingDiagnostics = [...fatal, ...(parsed?.options.configFile?.parseDiagnostics ?? []),
+    ...(parsed?.errors ?? [])];
+  if (!parsed || parsingDiagnostics.length) return { program: null, diagnostics: parsingDiagnostics };
+  requireValue(!parsed.projectReferences?.length,
+    'TypeScript project references are unsupported by this fixed workspace recipe');
+  const options = { ...parsed.options, ...enforced };
+  // TypeScript keeps its original configuration AST on a non-enumerable option.
+  // Retain that metadata for config-origin diagnostics and resolution semantics.
+  const configFile = Object.getOwnPropertyDescriptor(parsed.options, 'configFile');
+  if (configFile) Object.defineProperty(options, 'configFile', configFile);
+  // Config globs can suppress a same-stem .tsx sibling. Preserve every parsed
+  // root and explicitly add the exact authorized selection rather than losing
+  // either the original config scope or the host's source-coverage contract.
+  const program = compiler.createProgram({
+    rootNames: [...new Set([...parsed.fileNames, ...selectedRoots])],
+    options,
+    configFileParsingDiagnostics: parsingDiagnostics,
+  });
+  return { program, diagnostics: compiler.getPreEmitDiagnostics(program) };
 }
 
 export function resultRecord(config, details = {}) {

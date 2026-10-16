@@ -24,9 +24,15 @@ the running process, and records those observations in the isolation frame.
 Only positively identified glibc/x86-64 Linux is supported. npm version is
 preparation metadata, not a claim that an npm runtime was invoked or verified.
 
-The TypeScript recipe calls the inventoried CLI with the actual selected tsconfig,
-`--noEmit --noCheck false --incremental false`, and captures its complete reported
-non-declaration TypeScript source closure. Every selected source must occur.
+The TypeScript recipe imports the inventoried `typescript/lib/typescript.js` API
+in the isolated workload. Its own parser reads the actual selected tsconfig at its
+original path, retaining parsed roots, ambient declarations, aliases, inherited
+options and configuration identity. The compiler program adds every explicitly
+selected root, including same-stem `.ts`/`.tsx` siblings that config globs suppress.
+It forces `noEmit: true`, `noCheck: false`, and `incremental: false`, rejects config
+parse errors and project references, and collects all pre-emit diagnostics and the
+complete reported non-declaration source closure. Every selected source must occur.
+The reported tool entry is the API module, never a claim that `bin/tsc` executed.
 The UI recipe calls the inventoried Vitest 4 programmatic API with the actual
 Vitest configuration, `configLoader: runner`, and its actual inline `ui` project.
 Its extended Vite configuration, setup files, aliases and include patterns are

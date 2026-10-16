@@ -497,6 +497,43 @@ def _write_renderer_selection(path, value):
     path.write_text(json.dumps({**payload, 'selectionSha256': digest}))
 
 
+def test_current_renderer_fixture_metadata_binds_baseline_path_and_selection():
+    from tests.eidolon_cli import prepared_workspace_fixture as fixture
+    value = json.loads(fixture._FIXTURE_PATH.read_text())
+    expected, policy = fixture._load_renderer_selection()
+    assert fixture._FIXTURE_PATH.name == f'prepared-workspace-renderer-{fixture._BASELINE[:8]}.json'
+    assert value['baselineCommit'] == fixture._BASELINE
+    assert expected == {item['path']: item['sha256'] for item in value['files']}
+    assert policy == {item['path']: item['sha256'] for item in value['reviewedExecutionOnlyFiles']}
+    assert all(expected[path] == digest for path, digest in policy.items())
+
+
+def test_current_renderer_fixture_rejects_historical_selection_manifest(monkeypatch):
+    from tests.eidolon_cli import prepared_workspace_fixture as fixture
+    historical = fixture._FIXTURE_PATH.with_name('prepared-workspace-renderer-ac637822.json')
+    value = json.loads(historical.read_text())
+    assert value['baselineCommit'] != fixture._BASELINE
+    monkeypatch.setattr(fixture, '_FIXTURE_PATH', historical)
+    with pytest.raises(ProjectSnapshotError, match='identity is invalid'):
+        fixture._load_renderer_selection()
+
+
+def test_current_renderer_fixture_rejects_historical_policy_before_source_capture(tmp_path, monkeypatch):
+    from tests.eidolon_cli import prepared_workspace_fixture as fixture
+    historical = fixture._FIXTURE_PATH.with_name('prepared-workspace-renderer-ac637822.json')
+    old = json.loads(historical.read_text())
+    historical_policy = {item['path']: item['sha256'] for item in old['reviewedExecutionOnlyFiles']}
+    _, current_policy = fixture._load_renderer_selection()
+    assert historical_policy != current_policy
+
+    def no_capture(*args, **kwargs):
+        raise AssertionError('Historical policy must not capture any source bytes')
+
+    monkeypatch.setattr(fixture, 'capture_project_snapshot', no_capture)
+    with pytest.raises(ProjectSnapshotError, match='exact reviewed'):
+        fixture.capture_renderer_source(tmp_path, historical_policy, lambda: True)
+
+
 def test_renderer_fixture_captures_complete_exact_bytes_without_discovery(source, renderer_selection, monkeypatch):
     import subprocess
     fixture, contents, policy, _ = renderer_selection

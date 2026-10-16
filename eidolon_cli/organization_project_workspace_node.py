@@ -78,7 +78,7 @@ def _safe_log(data):
 
 
 def _tool_entry(step, checked):
-    tool, entry = (('typescript', 'node_modules/typescript/bin/tsc')
+    tool, entry = (('typescript', 'node_modules/typescript/lib/typescript.js')
                    if step['recipe'] == 'workspace_typescript'
                    else ('vitest', 'node_modules/vitest/dist/node.js'))
     entries = {item['path'] for item in checked['manifest']['files']}
@@ -185,7 +185,7 @@ def _outcome(frame, step, source, workspace):
         expected = [prefix + path for path in _selected_sources(source, step)]
         allowed = {prefix + item.path for item in source.files
                    if item.path.endswith(('.ts', '.tsx')) and not item.path.endswith('.d.ts')}
-        return (frame.get('toolEntry') == 'node_modules/typescript/bin/tsc'
+        return (frame.get('toolEntry') == 'node_modules/typescript/lib/typescript.js'
                 and frame['testCount'] == 0 and frame['skippedCount'] == 0
                 and frame['sourceCount'] == len(reported) and frame['sourceCount'] > 0
                 and sorted(selected) == sorted(expected) and set(expected) <= set(reported) <= allowed

@@ -2,12 +2,10 @@
 // Everything observed after GO, including compiler/reporter data, is a claim.
 import fs from 'node:fs';
 import readline from 'node:readline';
-import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
-import { StringDecoder } from 'node:string_decoder';
 import { CONTROL_BYTES, validateConfig, validateWorkloadIdentity, validateResult, absolutePath,
-  selectedFiles, isSource, resultRecord, typescriptArguments, summarizeVitestModules,
+  selectedFiles, isSource, resultRecord, createWorkspaceTypecheckProgram, summarizeVitestModules,
   boundUiProject, vitestOptions, writeControlFrameSync, formatWorkloadError,
   formatMissingSelectedSources } from './protocol.mjs';
 
@@ -48,36 +46,28 @@ function requirePreparedFiles() {
 }
 
 async function typecheck() {
-  const sources = new Set(), prefix = '/source/' + config.root + '/';
-  const child = spawn('/usr/local/bin/node', typescriptArguments(config), {
-    cwd: absolutePath(config, config.workspace), env: process.env, stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  const decoder = new StringDecoder('utf8');
-  let buffer = '', bytes = 0;
-  const line = value => {
-    const text = value.replace(/\r$/, '');
-    if (text.startsWith(prefix) && isSource(text)) sources.add(text);
-    else if (text && !(text.startsWith(prefix) && /\.d\.ts$/.test(text))) process.stderr.write(text + '\n');
-  };
-  child.stdout.on('data', chunk => {
-    bytes += chunk.length;
-    if (bytes > config.outputBytes + CONTROL_BYTES) process.exit(204);
-    buffer += decoder.write(chunk);
-    while (buffer.includes('\n')) {
-      const index = buffer.indexOf('\n'); line(buffer.slice(0, index)); buffer = buffer.slice(index + 1);
-    }
-  });
-  child.stderr.on('data', chunk => process.stderr.write(chunk));
-  const [code, signal] = await new Promise((resolve, reject) => {
-    child.once('error', reject); child.once('close', (code, signal) => resolve([code, signal]));
-  });
-  buffer += decoder.end();
-  if (buffer) line(buffer);
+  const imported = await import(pathToFileURL(absolutePath(config, config.toolEntry)).href);
+  const compiler = imported.default ?? imported;
+  const { program, diagnostics } = createWorkspaceTypecheckProgram(compiler,
+    absolutePath(config, config.configuration), selectedFiles(config));
+  const formatHost = { getCanonicalFileName: path => path,
+    getCurrentDirectory: () => absolutePath(config, config.workspace), getNewLine: () => '\n' };
+  let logBytes = 0;
+  for (const diagnostic of diagnostics) {
+    const data = Buffer.from(compiler.formatDiagnostics([diagnostic], formatHost));
+    if (logBytes + data.length > config.outputBytes) process.exit(204);
+    logBytes += data.length;
+    process.stderr.write(data);
+  }
+  const prefix = '/source/' + config.root + '/';
+  const sources = new Set((program?.getSourceFiles() ?? []).filter(source => !source.isDeclarationFile
+    && source.fileName.startsWith(prefix) && isSource(source.fileName)).map(source => source.fileName));
   const reportedFiles = [...sources].sort();
   const missing = formatMissingSelectedSources(config, sources);
   if (missing) process.stderr.write(missing);
-  return resultRecord(config, { toolExitCode: signal ? null : code, sourceCount: sources.size,
-    reportedFiles, status: !signal && code === 0 && sources.size > 0
+  const toolExitCode = program && diagnostics.length === 0 ? 0 : 1;
+  return resultRecord(config, { toolExitCode, sourceCount: sources.size,
+    reportedFiles, status: toolExitCode === 0 && sources.size > 0
       && selectedFiles(config).every(path => sources.has(path)) ? 'passed' : 'failed' });
 }
 

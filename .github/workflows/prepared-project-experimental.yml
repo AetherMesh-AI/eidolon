@@ -33,7 +33,7 @@ jobs:
       - name: Checkout exact reviewed renderer fixture bytes
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ac63782287cd04fae7fac7aab2385ef524dcb439
+          ref: 47ea5eae725372eacfefba2956d480b9e829d679
           path: .prepared-renderer-fixture
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
@@ -99,6 +99,14 @@ jobs:
               json.dump(policy, stream, sort_keys=True)
           output.chmod(0o444)
           PYCODE
+      - name: Verify real compiler API behavior on synthetic files
+        if: matrix.suite == 'native'
+        env:
+          HERMES_PYTHON: .venv/bin/python
+          EIDOLON_TEST_TYPESCRIPT_BUNDLE: ${{ runner.temp }}/prepared-project/verified/bundle/node_modules/typescript
+        run: |
+          scripts/run_tests.sh tests/eidolon_cli/test_organization_project_workspace_compiler.py \
+            -j 1 --file-timeout 180 --file-retries 0 -x --junitxml=workspace-compiler.xml
       - name: Exercise actual prepared renderer and selected UI tests offline
         env:
           HERMES_PYTHON: .venv/bin/python
@@ -113,6 +121,7 @@ jobs:
         with:
           name: prepared-workspace-${{ matrix.suite }}-proof
           path: |
+            workspace-compiler.xml
             workspace-native.xml
             workspace-abuse.xml
             workspace-capacity.xml
