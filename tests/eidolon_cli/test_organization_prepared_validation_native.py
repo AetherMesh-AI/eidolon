@@ -4,7 +4,7 @@ This uses the separately pinned public renderer fixture, not current-main source
 No provider calls are made. Workload execution itself is never substituted.
 """
 from copy import deepcopy
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager, nullcontext
 from contextvars import ContextVar
 from dataclasses import asdict, replace
 from functools import wraps
@@ -424,7 +424,7 @@ def test_actual_owner_selected_pair_finishes_reviews_and_reopens(native_owner, m
         assert view['registrationRefs']
 
 
-def expire_after_final_native_verification(state, monkeypatch, record_property, *, window_seconds=20):
+def expire_after_final_native_verification(state, monkeypatch, record_property, *, window_seconds=20, renew_preflight=False):
     """Shorten a real budget after preflight, then cross it after final checks."""
     from eidolon_cli import organization_prepared_validation_finish as finish
     from eidolon_cli.organization_prepared_validation_ledger import _charged_units
@@ -433,7 +433,12 @@ def expire_after_final_native_verification(state, monkeypatch, record_property, 
 
     @contextmanager
     def prepare(*args):
-        with original_prepare(*args) as token:
+        with ExitStack() as lifetime:
+            # A real full-bundle preflight can exceed one lease. Exercise ordinary
+            # renewal only until preflight completes, before the negative write.
+            renewal = keep_native_claims_alive(state.store, state.objective, record_property) if renew_preflight else nullcontext()
+            with renewal:
+                token = lifetime.enter_context(original_prepare(*args))
             assert token is not None
             with state.store._write() as conn:
                 request = state.store._owned(conn, state.claim)
@@ -472,12 +477,48 @@ def expire_after_final_native_verification(state, monkeypatch, record_property, 
 
 
 @pytest.mark.linux_only
-def test_final_expiry_negative_fixture_reaches_the_real_commit_fence(owner, monkeypatch, record_property):
+@pytest.mark.parametrize('renew_preflight', [False, True])
+def test_final_expiry_negative_fixture_reaches_the_real_commit_fence(owner, monkeypatch, record_property, renew_preflight):
     from tests.eidolon_cli.test_organization_prepared_validation_stage_runtime import setup_running, host
     state = setup_running(owner)
     host(monkeypatch, state)
     assert state.store.run_project_stage(state.claim, state.cancel) == {}
-    expire_after_final_native_verification(state, monkeypatch, record_property, window_seconds=5)
+    from eidolon_cli import organization_prepared_validation_finish as finish
+    original_prepare, original_finalize = finish.prepare_finish_verification, finish.finalize_finish_verification
+    active, events = [], []
+    @contextmanager
+    def renewal(*args):
+        active.append(True)
+        events.append('start')
+        try:
+            yield
+        finally:
+            active.pop()
+            events.append('stop')
+    @contextmanager
+    def prepare(*args):
+        assert bool(active) is renew_preflight
+        with original_prepare(*args) as token:
+            try:
+                yield token
+            finally:
+                assert not active
+    def finalize(*args):
+        assert not active
+        return original_finalize(*args)
+    original_write = state.store._write
+    @contextmanager
+    def write():
+        assert not active
+        with original_write() as conn:
+            yield conn
+    monkeypatch.setattr(state.store, '_write', write)
+    monkeypatch.setattr(__name__ + '.keep_native_claims_alive', renewal)
+    monkeypatch.setattr(finish, 'prepare_finish_verification', prepare)
+    monkeypatch.setattr(finish, 'finalize_finish_verification', finalize)
+    expire_after_final_native_verification(state, monkeypatch, record_property,
+        window_seconds=5, renew_preflight=renew_preflight)
+    assert events == (['start', 'stop'] if renew_preflight else [])
 
 
 def test_actual_pair_cannot_commit_after_final_authority_expires(native_owner, monkeypatch, record_property):
@@ -489,7 +530,8 @@ def test_actual_pair_cannot_commit_after_final_authority_expires(native_owner, m
     with keep_native_claims_alive(state.store, state.objective, record_property):
         assert state.store.run_project_stage(state.claim, state.cancel) == {}
     # The positive case measures concurrent progress. This separate negative
-    # deliberately holds its transaction across a shortened deadline and never
-    # restarts heartbeat, extends authority, or restores the expired budget.
+    # renews normally during preflight, then stops heartbeat before deliberately
+    # holding its transaction across a shortened deadline. It never extends the
+    # budget or restores the expired authority.
     with measure_native_writes(state.store, monkeypatch, record_property):
-        expire_after_final_native_verification(state, monkeypatch, record_property)
+        expire_after_final_native_verification(state, monkeypatch, record_property, renew_preflight=True)
