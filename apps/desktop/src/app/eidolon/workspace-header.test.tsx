@@ -157,7 +157,7 @@ it('opens the compact navigation with truthful state, preserves drafts and resto
 
   try {
     render(<MemoryRouter initialEntries={['/messaging']}><WorkspaceHeader /><textarea aria-label="Existing draft" defaultValue="Retained draft" /><Location /><NarrowOverlays /></MemoryRouter>)
-    const trigger = screen.getByRole('button', { name: 'Navigation', exact: true })
+    const trigger = screen.getByRole('button', { name: 'Navigation' })
     const draft = screen.getByRole('textbox', { name: 'Existing draft' })
     expect(trigger.getAttribute('aria-expanded')).toBe('false')
 
@@ -166,12 +166,12 @@ it('opens the compact navigation with truthful state, preserves drafts and resto
       fireEvent.click(trigger)
       expect(trigger.getAttribute('aria-expanded')).toBe('true')
       expect(window.document.getElementById(trigger.getAttribute('aria-controls')!)).not.toBeNull()
-      const selected = screen.getByRole('link', { name: 'Settings', exact: true })
+      const selected = screen.getByRole('link', { name: 'Settings' })
       expect(window.document.activeElement).toBe(selected)
       expect(screen.getByRole('textbox', { name: 'Existing draft' })).toBe(draft)
 
       if (dismissal === 'escape') {fireEvent.keyDown(selected, { key: 'Escape' })}
-      else {fireEvent.click(screen.getByRole('button', { name: 'Close', exact: true }))}
+      else {fireEvent.click(screen.getByRole('button', { name: 'Close' }))}
 
       expect(trigger.getAttribute('aria-expanded')).toBe('false')
       expect(screen.queryByRole('complementary', { name: 'Eidolon navigation' })).toBeNull()
@@ -190,14 +190,14 @@ it('opens the compact navigation with truthful state, preserves drafts and resto
 
     trigger.focus()
     fireEvent.click(trigger)
-    fireEvent.click(screen.getByRole('link', { name: 'Home', exact: true }))
+    fireEvent.click(screen.getByRole('link', { name: 'Home' }))
     expect(screen.getByText('/home')).toBeTruthy()
     expect(trigger.getAttribute('aria-expanded')).toBe('false')
     expect(window.document.activeElement).toBe(trigger)
     fireEvent.click(trigger)
-    expect(window.document.activeElement).toBe(screen.getByRole('link', { name: 'Home', exact: true }))
+    expect(window.document.activeElement).toBe(screen.getByRole('link', { name: 'Home' }))
     act(() => $narrowViewport.set(false))
-    expect(screen.queryByRole('button', { name: 'Navigation', exact: true })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Navigation' })).toBeNull()
     expect(screen.queryByRole('complementary', { name: 'Eidolon navigation' })).toBeNull()
     expect($narrowOverlayReveal.get()).toBeNull()
     expect(window.document.activeElement?.isConnected).toBe(true)
@@ -214,7 +214,7 @@ it('dismisses focused compact navigation before its underlying route overlay, wi
 
   try {
     render(<MemoryRouter initialEntries={['/settings']}><WorkspaceHeader /><NarrowOverlays /></MemoryRouter>)
-    const trigger = screen.getByRole('button', { name: 'Navigation', exact: true })
+    const trigger = screen.getByRole('button', { name: 'Navigation' })
     trigger.focus()
     fireEvent.click(trigger)
     fireEvent.click(screen.getByText('History', { selector: 'summary' }))
@@ -240,13 +240,13 @@ it.each(['hidden', 'outside-tree'])('temporarily opens %s navigation without cha
 
   try {
     render(<MemoryRouter initialEntries={['/home']}><WorkspaceHeader /><NarrowOverlays /></MemoryRouter>)
-    const trigger = screen.getByRole('button', { name: 'Navigation', exact: true })
+    const trigger = screen.getByRole('button', { name: 'Navigation' })
     act(() => window.dispatchEvent(new CustomEvent(PANE_TOGGLE_REVEAL_EVENT, { detail: { id: 'chat-sidebar', mode: 'open' } })))
     expect(trigger.getAttribute('aria-expanded')).toBe('false')
     trigger.focus()
     fireEvent.click(trigger)
     expect(trigger.getAttribute('aria-expanded')).toBe('true')
-    expect(window.document.activeElement).toBe(screen.getByRole('link', { name: 'Home', exact: true }))
+    expect(window.document.activeElement).toBe(screen.getByRole('link', { name: 'Home' }))
     fireEvent.keyDown(window.document.activeElement!, { key: 'Escape' })
     expect(trigger.getAttribute('aria-expanded')).toBe('false')
     expect(window.document.activeElement).toBe(trigger)
@@ -264,7 +264,7 @@ it('clears focused-reveal ownership across a breakpoint and leaves Escape alone 
 
   try {
     render(<MemoryRouter initialEntries={['/settings']}><WorkspaceHeader /><NarrowOverlays /></MemoryRouter>)
-    const trigger = screen.getByRole('button', { name: 'Navigation', exact: true })
+    const trigger = screen.getByRole('button', { name: 'Navigation' })
     trigger.focus()
     fireEvent.click(trigger)
     act(() => $narrowViewport.set(false))
@@ -276,7 +276,7 @@ it('clears focused-reveal ownership across a breakpoint and leaves Escape alone 
     const passiveEscape = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true })
     act(() => window.dispatchEvent(passiveEscape))
     expect(passiveEscape.defaultPrevented).toBe(false)
-    expect(screen.getByRole('button', { name: 'Navigation', exact: true }).getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByRole('button', { name: 'Navigation' }).getAttribute('aria-expanded')).toBe('true')
   } finally { cleanup(); releaseRouteOverlay(); dispose(); $narrowViewport.set(false); $layoutTree.set(null) }
 })
 
@@ -288,13 +288,13 @@ it('does not advertise an unregistered navigation pane during teardown', () => {
 
   try {
     render(<MemoryRouter initialEntries={['/home']}><WorkspaceHeader /><NarrowOverlays /></MemoryRouter>)
-    expect(screen.queryByRole('button', { name: 'Navigation', exact: true })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Navigation' })).toBeNull()
     act(() => { dispose = registry.register({ area: 'panes', id: 'sessions', title: 'Eidolon', data: { collapsible: true, placement: 'left' }, render: () => <OrganizationRail sessions={null} /> }) })
-    const trigger = screen.getByRole('button', { name: 'Navigation', exact: true })
+    const trigger = screen.getByRole('button', { name: 'Navigation' })
     trigger.focus()
     fireEvent.click(trigger)
     act(() => { dispose!(); dispose = undefined })
-    expect(screen.queryByRole('button', { name: 'Navigation', exact: true })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Navigation' })).toBeNull()
     expect($narrowOverlayReveal.get()).toBeNull()
     expect(window.document.activeElement?.isConnected).toBe(true)
   } finally { cleanup(); dispose?.(); $narrowViewport.set(false); $layoutTree.set(null) }
