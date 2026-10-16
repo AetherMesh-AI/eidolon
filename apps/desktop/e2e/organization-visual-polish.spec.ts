@@ -610,7 +610,11 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await expect(deliverables.getByRole('link', { name: 'Organization evidence', exact: true })).toHaveAttribute('aria-current', 'page')
   await expect(deliverables.getByRole('link', { name: 'Session files', exact: true })).not.toHaveAttribute('aria-current', 'page')
   await expect(deliverables.locator('.eid-delivery-outcomes').getByRole('heading', { name: 'Document provider boundaries', exact: true })).toBeVisible()
-  await expect(deliverables.locator('.eid-delivery-outcomes').getByRole('link', { name: 'View objective →', exact: true })).toHaveAttribute('href', '#/objectives/research')
+  const objectiveLink = deliverables.locator('.eid-delivery-outcomes').getByRole('link', { name: 'View objective →', exact: true })
+  await expect(objectiveLink).toHaveAttribute('href', '#/objectives/research?' + new URLSearchParams({
+    from: '/artifacts?source=organization',
+    originOwner: JSON.stringify(['local', 'default', null])
+  }).toString())
   const evidenceBytes = Buffer.from(await app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
   writeFileSync(test.info().outputPath('home-accepted-evidence.png'), evidenceBytes)
   await test.info().attach('home-accepted-evidence', { body: evidenceBytes, contentType: 'image/png' })

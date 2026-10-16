@@ -28,6 +28,8 @@
   line-height: 1.55;
 }
 .eidolon *, .eidolon *::before, .eidolon *::after { box-sizing: border-box; }
+/* Keyboard focus must be immediate on every workspace surface, including shared transition-all controls. */
+.eidolon :is(button, a, input, textarea, select, summary, .eid-home-panel-body, .eid-owner-chat-scroll), .eid-rail { transition-property: color, background-color, border-color, box-shadow; }
 .eidolon :is(button, a, input, textarea, select, summary, .eid-home-panel-body, .eid-owner-chat-scroll):focus-visible, .eid-rail:focus-visible { outline: 2px solid var(--aether-400); outline-offset: 3px; }
 .eidolon a { color: var(--aether-300); text-decoration: none; }
 .eidolon button, .eidolon input, .eidolon textarea, .eidolon select { font: inherit; }
@@ -518,9 +520,6 @@
   .eid-team-work-grid .eid-home-panel > header { margin-bottom: 10px; }
   .eid-team-work-grid .eid-progress-tasks { margin-top: 12px; }
 }
-
-/* Focus outlines must appear immediately, without transition-all interpolating their width. */
-.eid-page:has(> .eid-objective-hero) button { transition-property: color, background-color, border-color, box-shadow; }
 
 /* Keep the outline at least two CSS pixels after native fractional zoom rounding. */
 .eid-page:has(> .eid-objective-hero) :is(button, a, input, textarea, select, summary):focus-visible { outline-width: 3px; }
