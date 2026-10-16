@@ -10,6 +10,7 @@ import { useOrganizationCredentials } from './organization-credentials-hook'
 import { credentialsHarness, deferred, entryFixture, identity } from './organization-credentials-test-support'
 
 vi.mock('./organization-credentials-hook', () => ({ useOrganizationCredentials: vi.fn() }))
+vi.mock('./organization-credential-handoff', () => ({ CredentialHandoffPanel: () => null }))
 const copy = organizationCredentialsCopy.en
 type Harness = Awaited<ReturnType<typeof credentialsHarness>>
 beforeEach(() => {

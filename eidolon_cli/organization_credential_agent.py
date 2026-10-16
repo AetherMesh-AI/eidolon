@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 import json
+import threading
+import uuid
 
 from eidolon_cli.organization_credential_security import CredentialError, Principal
 from eidolon_cli.organization_tool_executor import OrganizationToolExecution, _error
@@ -19,15 +21,21 @@ chat, arguments, descriptions, or outputs. You cannot grant access, create provi
 credentials, inject environment variables, or execute credential-bearing commands.
 A stored entry does not prove a provider login or tool integration works. If a secure
 value or unavailable capability is needed, ask the owner through an intervention.
+An owner-prepared replacement can be completed only with its listed handoffId.
+That ID is a reference to exact live authorization, never a value or bearer credential.
 Return one JSON object without commentary or Markdown.
 """
-_NAMES = frozenset({'organization_credential_catalog', 'organization_credential_manage'})
+_NAMES = frozenset({'organization_credential_catalog', 'organization_credential_manage', 'organization_credential_replace'})
 _METADATA = {'type': 'object', 'properties': {
     **{name: {'type': 'string'} for name in ('service', 'label', 'type', 'description')},
     'kind': {'type': 'string', 'enum': ['secret', 'config']},
     'expiresAt': {'type': ['number', 'null']}},
     'required': ['service', 'label', 'type', 'description', 'kind', 'expiresAt'], 'additionalProperties': False}
 _SCHEMAS = [
+    {'type': 'function', 'function': {'name': 'organization_credential_replace',
+        'description': 'Complete one owner-prepared local value replacement for this exact live agent and request. Accepts only a listed handoff reference, never secret text; creates no provider credentials.',
+        'parameters': {'type': 'object', 'properties': {'handoffId': {'type': 'string'}},
+            'required': ['handoffId'], 'additionalProperties': False}}},
     {'type': 'function', 'function': {'name': 'organization_credential_catalog',
         'description': 'List only organization credential metadata permitted for this leased agent. Never returns values or value fingerprints.',
         'parameters': {'type': 'object', 'properties': {}, 'additionalProperties': False}}},
@@ -43,17 +51,32 @@ _SCHEMAS = [
 
 class CredentialAgentCapsule:
     """Trusted object, issued only from the scheduler's authenticated live claim."""
-    def __init__(self, catalog, principal, lease_scope):
+    def __init__(self, catalog, principal, lease_scope, *, request_id):
         self.catalog, self.principal, self.lease_scope = catalog, principal, lease_scope
+        self.request_id, self.generation = request_id, str(uuid.uuid4())
+        self.retired = threading.Event()
+
+    def retire(self):
+        self.retired.set()
+        from eidolon_cli.organization_credential_handoff import handoffs
+        handoffs.retire_capsule(self)
 
     def invoke(self, name, args):
-        with self.lease_scope():
+        from eidolon_cli.organization_credential_handoff import handoffs
+        with self.lease_scope() as lease_guard:
+            if self.retired.is_set():
+                raise CredentialError('lease_invalid')
             if name == 'organization_credential_catalog':
                 if args != {}:
                     raise CredentialError('invalid_parameters')
                 result = self.catalog.discover(self.principal)
                 result['grantedScopes'] = self.catalog.granted_scopes(self.principal)
+                result['replacementHandoffs'] = handoffs.discover(self, lease_guard)
                 return result
+            if name == 'organization_credential_replace':
+                if not isinstance(args, dict) or set(args) != {'handoffId'}:
+                    raise CredentialError('invalid_parameters')
+                return handoffs.replace(self, args['handoffId'], lease_guard)
             if name != 'organization_credential_manage' or not isinstance(args, dict) or set(args) != {
                     'action', 'entryId', 'expectedRevision', 'operationId', 'metadata'}:
                 raise CredentialError('invalid_parameters')
@@ -91,24 +114,29 @@ def scheduler_capsule(home, store, claim, cancelled):
 
     @contextmanager
     def lease_scope():
-        # Serialize with cancellation/policy/lease mutations. No provider or
-        # native vault operation is exposed by this metadata-only capsule.
+        # Lock order: organization lease -> catalog -> short input lock. A
+        # prepared native write holds these fences through its durable receipt.
         with store._write() as conn:
-            request = store._owned(conn, claim)
-            row = conn.execute('SELECT i.identity_id,s.active FROM agent_identity i '
-                "JOIN staff_state s ON s.agent_id=i.agent_id JOIN agents a ON a.id=i.agent_id WHERE i.agent_id=? AND a.role='Worker'", (claim['agent_id'],)).fetchone()
-            if (cancelled() or request is None or request['agent_id'] != claim['agent_id']
-                    or row is None or row['identity_id'] != identity or row['active'] != 1):
-                raise CredentialError('lease_invalid')
-            current = read_descriptor(store.path).get('metadata')
-            if not current or current['organizationId'] != principal.organization_id:
-                raise CredentialError('identity_changed')
-            yield
+            def revalidate():
+                request = store._owned(conn, claim)
+                row = conn.execute('SELECT i.identity_id,s.active FROM agent_identity i '
+                    "JOIN staff_state s ON s.agent_id=i.agent_id JOIN agents a ON a.id=i.agent_id WHERE i.agent_id=? AND a.role='Worker'", (claim['agent_id'],)).fetchone()
+                if (cancelled() or request is None or request['agent_id'] != claim['agent_id']
+                        or row is None or row['identity_id'] != identity or row['active'] != 1):
+                    raise CredentialError('lease_invalid')
+                current = read_descriptor(store.path).get('metadata')
+                if not current or current['organizationId'] != principal.organization_id:
+                    raise CredentialError('identity_changed')
+            revalidate()
+            yield revalidate
 
     with lease_scope():
         if not catalog.granted_scopes(principal):
             return None
-    return CredentialAgentCapsule(catalog, principal, lease_scope)
+    capsule = CredentialAgentCapsule(catalog, principal, lease_scope, request_id=claim['id'])
+    from eidolon_cli.organization_credential_handoff import handoffs
+    handoffs.register(capsule)
+    return capsule
 
 
 class CredentialToolExecution(OrganizationToolExecution):
@@ -160,7 +188,7 @@ class CredentialToolExecution(OrganizationToolExecution):
             result = self._run_one(agent, call, effective_task_id)
             # Catalog mutations have durable idempotent receipts. Do not label
             # a management result as side-effect-free for replay recovery.
-            disposition = None if call.function.name == 'organization_credential_manage' else 'none'
+            disposition = None if call.function.name in {'organization_credential_manage', 'organization_credential_replace'} else 'none'
             messages.append(make_tool_result_message(call.function.name, result, call.id,
                 effect_disposition=disposition))
 

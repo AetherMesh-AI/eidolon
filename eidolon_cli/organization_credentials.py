@@ -282,23 +282,30 @@ class CredentialCatalog:
     def replace_value(self, principal, entry_id, *, expected_revision, operation_id, input_handle, transport):
         self._principal(principal)
         identifier(input_handle, 'input_handle')
+        with self._connection(write=True) as conn:
+            return self._replace_value(conn, principal, entry_id, expected_revision=expected_revision,
+                operation_id=operation_id, input_handle=input_handle, transport=transport)
+
+    def _replace_value(self, conn, principal, entry_id, *, expected_revision, operation_id,
+                       input_handle, transport, guard=None):
+        self._principal(principal)
+        identifier(input_handle, 'input_handle')
         payload = {'action': 'replace_value', 'entryId': entry_id, 'expectedRevision': expected_revision,
                    'inputHandleId': input_handle}  # Random handle identity, not a value fingerprint.
-        with self._connection(write=True) as conn:
-            self._require(conn, principal, 'replace_value', entry_id)
-            prior = self._receipt(conn, principal, operation_id, payload)
-            if prior:
-                return prior
-            row = self._current(conn, entry_id, expected_revision)
-            binding = ValueBinding(self.organization_id, entry_id, row['version'] + 1, principal.actor_id, operation_id)
-            if self.backend.status().state != 'available':
-                raise CredentialError('backend_' + self.backend.status().state)
-            reference = self.inputs.consume(input_handle, binding, transport, lambda value: self.backend.put(binding, value))
-            revision = row['revision'] + 1
-            conn.execute('UPDATE credential_entries SET revision=?,version=?,backend_ref=?,value_binding=?,updated=?,actor=? WHERE id=?',
-                         (revision, binding.version, reference, _json(asdict(binding)), self.clock(), principal.actor_id, entry_id))
-            result = {'entryId': entry_id, 'revision': revision, 'version': binding.version, 'operationId': operation_id, 'action': 'replace_value'}
-            return self._finish(conn, principal, operation_id, 'replace_value', payload, result, entry_id, revision)
+        self._require(conn, principal, 'replace_value', entry_id)
+        prior = self._receipt(conn, principal, operation_id, payload)
+        if prior:
+            return prior
+        row = self._current(conn, entry_id, expected_revision)
+        binding = ValueBinding(self.organization_id, entry_id, row['version'] + 1, principal.actor_id, operation_id)
+        if self.backend.status().state != 'available':
+            raise CredentialError('backend_' + self.backend.status().state)
+        reference = self.inputs.consume(input_handle, binding, transport, lambda value: self.backend.put(binding, value), guard=guard)
+        revision = row['revision'] + 1
+        conn.execute('UPDATE credential_entries SET revision=?,version=?,backend_ref=?,value_binding=?,updated=?,actor=? WHERE id=?',
+                     (revision, binding.version, reference, _json(asdict(binding)), self.clock(), principal.actor_id, entry_id))
+        result = {'entryId': entry_id, 'revision': revision, 'version': binding.version, 'operationId': operation_id, 'action': 'replace_value'}
+        return self._finish(conn, principal, operation_id, 'replace_value', payload, result, entry_id, revision)
 
     def revoke(self, principal, entry_id, *, expected_revision, operation_id, remove=False):
         self._principal(principal)

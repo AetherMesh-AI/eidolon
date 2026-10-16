@@ -10,6 +10,7 @@ import { useI18n } from '@/i18n/context'
 import { organizationCredentialsCopy } from '@/i18n/organization-credentials'
 
 import { LocalizedTime } from './localized-time'
+import { CredentialHandoffPanel } from './organization-credential-handoff'
 import { CredentialCreationGrantEditor } from './organization-credentials-creation-grant'
 import { CredentialMetadataEditor, CredentialValueEditor } from './organization-credentials-editor'
 import { CredentialGrantEditor } from './organization-credentials-grants'
@@ -99,6 +100,7 @@ function CredentialCatalogPanel({ credentials }: { credentials: ReturnType<typeo
         {catalog.grants.length === 0 && <p className="mt-2 text-sm text-muted-foreground">{copy.noGrants}</p>}
       </details>
     </>}
+    <CredentialHandoffPanel credentials={credentials} />
     {target?.kind === 'cancelPending' && <ConfirmDialog
       confirmLabel={copy.cancelPending} description={<><bdi>{target.operationId}</bdi><br />{copy.cancelPendingNote}</>}
       onClose={close} onConfirm={async () => {

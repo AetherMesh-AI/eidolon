@@ -132,7 +132,7 @@ class SecureInputs:
                 item.timer.cancel()
             item.value[:] = b'\0' * len(item.value)
 
-    def submit(self, binding: ValueBinding, transport: object, value: str) -> str:
+    def submit(self, binding: ValueBinding, transport: object, value: str, *, guard=None) -> str:
         if not isinstance(value, str) or not value or len(value) > 65536:
             raise CredentialError('invalid_secure_input')
         try:
@@ -144,6 +144,12 @@ class SecureInputs:
             raise CredentialError('invalid_secure_input')
         with self._lock:
             self._expire()
+            try:
+                if guard is not None:
+                    guard()
+            except Exception:
+                encoded[:] = b'\0' * len(encoded)
+                raise
             if len(self._pending) >= 32:
                 encoded[:] = b'\0' * len(encoded)
                 raise CredentialError('secure_input_capacity')
@@ -158,12 +164,14 @@ class SecureInputs:
         with self._lock:
             self._discard(handle)
 
-    def consume(self, handle, binding, transport, consumer):
+    def consume(self, handle, binding, transport, consumer, *, guard=None):
         with self._lock:
             self._expire()
             item = self._pending.get(handle)
             if item is None or item.binding != binding or item.transport is not transport:
                 raise CredentialError('secure_input_invalid')
+            if guard is not None:
+                guard()
             self._pending.pop(handle)
             item.timer.cancel()
         try:
@@ -180,3 +188,12 @@ class SecureInputs:
             for handle, item in list(self._pending.items()):
                 if item.transport is transport:
                     self._discard(handle)
+
+    def available(self, handle, binding, transport):
+        with self._lock:
+            self._expire()
+            item = self._pending.get(handle)
+            return bool(item and item.binding == binding and item.transport is transport)
+
+    def retire(self, handle):
+        self._retire(handle)
