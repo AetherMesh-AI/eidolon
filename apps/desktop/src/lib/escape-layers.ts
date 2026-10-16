@@ -23,6 +23,8 @@ export const ESCAPE_PRIORITY = {
   layoutEdit: 20,
   zoneEditor: 30,
   overlay: 40,
+  // A rail explicitly opened from the compact header sits above route pages.
+  focusedNarrowOverlay: 45,
   // An in-flight pane drag: Esc means "abort the drag", never ALSO exit edit
   // mode / close the overlay the drag started over. Registered only for the
   // drag's few-hundred-ms lifetime (drag-session.ts).

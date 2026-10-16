@@ -4,8 +4,13 @@ import { useStore } from '@nanostores/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 
+import { PANE_TOGGLE_REVEAL_EVENT } from '@/components/pane-shell'
+import { $narrowOverlayReveal, narrowOverlayId } from '@/components/pane-shell/tree/narrow-overlay-state'
+import { paneChrome } from '@/components/pane-shell/tree/renderer/track-model'
+import { $narrowViewport } from '@/components/pane-shell/tree/store'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
+import { useContributions } from '@/contrib/react/use-contributions'
 import { useI18n } from '@/i18n/context'
 import { openCommandPalettePage } from '@/store/command-palette'
 import { $pendingConnectionId } from '@/store/connections'
@@ -30,6 +35,9 @@ function ownerEditorScope(scope: string, descriptor: MetadataDescriptor | null) 
 export function WorkspaceHeader() {
   const { t } = useI18n()
   const copy = t.organizationHome.workspace
+  const narrow = useStore($narrowViewport)
+  const navigationAvailable = useContributions('panes').some(pane => pane.id === 'sessions' && paneChrome(pane).collapsible)
+  const navigationOpen = useStore($narrowOverlayReveal)?.id === 'sessions'
   const profile = useStore($activeGatewayProfile)
   const pending = useStore($pendingConnectionId)
   const swapping = useStore($gatewaySwapTarget)
@@ -65,6 +73,7 @@ export function WorkspaceHeader() {
 
   return <header aria-label={copy.heading} className="eidolon eid-workspace-header" data-slot="workspace-header">
     <div className="eid-workspace-identity">
+      {narrow && navigationAvailable && <Button aria-controls={narrowOverlayId('sessions')} aria-expanded={navigationOpen} className="eid-workspace-navigation-trigger" onClick={() => window.dispatchEvent(new CustomEvent(PANE_TOGGLE_REVEAL_EVENT, { detail: { id: 'sessions', mode: 'toggle', focus: true } }))} size="lg" variant="outline"><Codicon name="menu" /><span>{copy.navigation}</span></Button>}
       <OrganizationDirectoryControl label={identity.view.descriptor && identity.view.descriptor.state !== 'unsupported' ? saved?.displayName ?? t.organizationMetadata.unnamed : undefined} organizationName={saved?.displayName} />
       {/* The switcher owns registry initialization and change subscriptions, even with one source. */}
       <ConnectionSwitcher compact onConnect={() => navigateToWorkspacePage(navigate, '/settings?tab=connections')} preserveRoute={() => isWorkspacePageRoute(locationRef.current.pathname)} />

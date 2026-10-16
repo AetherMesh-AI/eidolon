@@ -3,6 +3,7 @@ import './eidolon.css'
 import { Fragment, type ReactNode, useEffect, useRef } from 'react'
 import { Link, NavLink, useLocation } from 'react-router'
 
+import { PANE_TOGGLE_REVEAL_EVENT } from '@/components/pane-shell'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n/context'
@@ -69,7 +70,13 @@ export function OrganizationRail({
   }
 
   return (
-    <aside aria-label="Eidolon navigation" className="eidolon eid-rail" tabIndex={0}>
+    <aside aria-label="Eidolon navigation" className="eidolon eid-rail" onClick={event => {
+      // A named destination dismisses the temporary rail without changing its
+      // docked preference. Disclosure buttons and editing controls stay open.
+      if (!event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey && event.target instanceof Element && event.currentTarget.contains(event.target) && event.target.closest('a[href]')) {
+        window.dispatchEvent(new CustomEvent(PANE_TOGGLE_REVEAL_EVENT, { detail: { id: 'sessions', mode: 'close' } }))
+      }
+    }} tabIndex={0}>
       <div className="eid-brand">
         <OrganizationMark />
         Eidolon

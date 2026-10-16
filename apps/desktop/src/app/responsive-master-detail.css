@@ -1,0 +1,97 @@
+.eid-responsive-detail {
+  display: grid;
+  grid-template-columns: 14rem minmax(0, 1fr);
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+}
+
+.eid-responsive-detail[data-variant='profiles'] {
+  grid-template-columns: 13rem minmax(0, 1fr);
+  gap: 1.25rem;
+}
+
+.eid-responsive-detail[data-variant='import'] {
+  grid-template-columns: minmax(17rem, 0.85fr) minmax(0, 1.6fr);
+}
+
+.eid-responsive-detail-list,
+.eid-responsive-detail-content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.eid-responsive-detail-list > *,
+.eid-responsive-detail-content > main {
+  flex: 1;
+  min-height: 0;
+}
+
+.eid-secondary-surface .eid-responsive-detail .eid-panel-list {
+  height: auto;
+  min-height: 0;
+  width: 100%;
+  max-height: none;
+}
+
+.eid-responsive-detail[data-compact='true'] {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+
+.eid-responsive-detail [data-pane][hidden],
+.eid-responsive-detail-back[hidden] {
+  display: none;
+}
+
+.eid-responsive-detail-back {
+  flex-shrink: 0;
+  /* The secondary-surface outline extends 5px outside the button. Keep it
+     inside the clipped page body when Back is its first focused control. */
+  padding: 0.5rem 0.75rem;
+}
+
+.eid-responsive-detail[data-compact='true'] .session-import-filters {
+  gap: 0.75rem;
+  padding: 0.75rem;
+}
+
+.eid-responsive-detail[data-compact='true'] .session-import-preview-heading {
+  padding: 0.5rem 1rem;
+}
+
+.eid-responsive-detail[data-compact='true'] .session-import-preview-heading h2 {
+  font-size: 1rem;
+  line-height: 1.4;
+}
+
+.eid-responsive-detail[data-compact='true'] .session-import-preview-scroll {
+  padding: 0.5rem 1rem 1rem;
+}
+
+.eid-responsive-detail[data-compact='true'] .session-import-footer {
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+}
+
+/* A short compact overlay may not fit the heading, preview and footer at once.
+   Let the detail scroll rather than shrinking its preview below a full control
+   and focus outline; the preview keeps its mounted scroll region on resize. */
+.eid-responsive-detail[data-compact='true'][data-variant='import'] .eid-responsive-detail-content > main {
+  overflow-y: auto;
+  scroll-padding: 7px;
+}
+
+.eid-responsive-detail[data-compact='true'] .session-import-preview-scroll {
+  min-height: 6rem;
+  scroll-padding: 7px;
+}
+
+/* Keep useful editing space without reserving a mostly-empty 192px block
+   ahead of Save in the narrow profile pane. The editor remains mounted. */
+.eid-responsive-detail[data-compact='true'][data-variant='profiles'] .profile-soul-editor {
+  min-height: 8rem;
+}
