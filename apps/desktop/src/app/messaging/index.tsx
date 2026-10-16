@@ -33,8 +33,9 @@ import { runGatewayRestart } from '@/store/system-actions'
 
 import { useRefreshHotkey } from '../hooks/use-refresh-hotkey'
 import { useRouteEnumParam } from '../hooks/use-route-enum-param'
-import { DetailColumn, ListColumn, MasterDetail } from '../master-detail'
+import { DetailColumn, ListColumn } from '../master-detail'
 import { PageSearchShell } from '../page-search-shell'
+import { ResponsiveMasterDetail } from '../responsive-master-detail'
 import { CREDENTIAL_CONTROL_CLASS } from '../settings/credential-key-ui'
 import { ListRow } from '../settings/primitives'
 import { SettingsProfileScope } from '../settings/profile-scope'
@@ -144,6 +145,7 @@ export function MessagingView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
   const [pendingRevoke, setPendingRevoke] = useState<null | PairingUser>(null)
   const [edits, setEdits] = useState<EditMap>({})
   const [query, setQuery] = useState('')
+  const [detailOpen, setDetailOpen] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [saving, setSaving] = useState<string | null>(null)
   const platformIds = useMemo(() => platforms?.map(p => p.id) ?? [], [platforms])
@@ -439,14 +441,17 @@ export function MessagingView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
               single-profile users). */}
           <SettingsProfileScope className="border-b border-(--ui-stroke-secondary) px-3 py-2" />
           <div className="min-h-0 flex-1">
-            <MasterDetail>
+            <ResponsiveMasterDetail detailOpen={detailOpen} onDetailOpenChange={setDetailOpen}>
               <ListColumn>
                 <ul className="space-y-1">
                   {visiblePlatforms.map(platform => (
                     <li key={platform.id}>
                       <PlatformRow
                         active={selected?.id === platform.id}
-                        onSelect={() => setSelectedId(platform.id)}
+                        onSelect={() => {
+                          setSelectedId(platform.id)
+                          setDetailOpen(true)
+                        }}
                         pendingCount={pendingByPlatform[platform.id]?.length ?? 0}
                         platform={platform}
                       />
@@ -491,7 +496,7 @@ export function MessagingView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
                   />
                 )}
               </DetailColumn>
-            </MasterDetail>
+            </ResponsiveMasterDetail>
           </div>
         </div>
       )}

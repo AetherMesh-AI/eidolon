@@ -16,6 +16,7 @@ import type { SessionOwnerRoute } from '@/store/session-request-router'
 
 import { OverlayView } from '../overlays/overlay-view'
 import { PanelEmpty } from '../overlays/panel'
+import { ResponsiveMasterDetail } from '../responsive-master-detail'
 import { WorkspacePageHeading } from '../workspace-page-heading'
 
 import { type ForeignImportResult, type ForeignPage, type ForeignPreview, foreignRequest } from './api'
@@ -33,6 +34,7 @@ export function SessionImportView({ owner, onClose, onOpenSession }: SessionImpo
   const [source, setSource] = useState<'all' | 'claude' | 'codex'>('all')
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<string | null>(null)
+  const [detailOpen, setDetailOpen] = useState(false)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
   const lifetime = useRef<AbortController | null>(null)
@@ -146,18 +148,19 @@ export function SessionImportView({ owner, onClose, onOpenSession }: SessionImpo
             </span>
           </div>
         </WorkspacePageHeading>
-        <div className="grid min-h-0 flex-1 grid-cols-[minmax(17rem,0.85fr)_minmax(0,1.6fr)] border-t border-(--ui-stroke-tertiary) max-[760px]:grid-cols-1">
-          <aside
-            className={cn(
-              'flex min-h-0 flex-col bg-(--ui-sidebar-surface-background)',
-              selected && 'max-[760px]:hidden'
-            )}
-          >
-            <div className="flex flex-col gap-5 px-6 pb-4 pt-6">
+        <ResponsiveMasterDetail
+          className="border-t border-(--ui-stroke-tertiary)"
+          detailOpen={detailOpen}
+          onDetailOpenChange={setDetailOpen}
+          variant="import"
+        >
+          <aside className="flex min-h-0 flex-col bg-(--ui-sidebar-surface-background)">
+            <div className="session-import-filters flex shrink-0 flex-col gap-5 px-6 pb-4 pt-6">
               <SegmentedControl
                 onChange={value => {
                   setSource(value)
                   setSelected(null)
+                  setDetailOpen(false)
                   setError('')
                 }}
                 options={[
@@ -217,6 +220,7 @@ export function SessionImportView({ owner, onClose, onOpenSession }: SessionImpo
                       )}
                       onClick={() => {
                         setSelected(row.id)
+                        setDetailOpen(true)
                         setError('')
                       }}
                       type="button"
@@ -252,23 +256,22 @@ export function SessionImportView({ owner, onClose, onOpenSession }: SessionImpo
               )}
             </div>
           </aside>
-          <main className={cn('flex min-h-0 min-w-0 flex-col', !selected && 'max-[760px]:hidden')}>
+          <main className="flex min-h-0 min-w-0 flex-col">
             {!current ? (
               <PanelEmpty description={copy.chooseHelp} icon="comment-discussion" title={copy.choose} />
             ) : (
               <>
-                <div className="px-8 pb-5 pt-6">
-                  <div className="mb-4 hidden max-[760px]:block">
-                    <Button onClick={() => setSelected(null)} variant="text">
-                      {t.common.back}
-                    </Button>
-                  </div>
+                <div className="session-import-preview-heading shrink-0 px-8 pb-5 pt-6">
                   <h2 className="text-xl font-medium leading-7 tracking-tight">{current.title}</h2>
                   <p className="mt-2 text-xs text-(--ui-text-secondary)">
                     {current.label} · {current.turn_count} {copy.messages}
                   </p>
                 </div>
-                <div aria-live="polite" className="min-h-0 flex-1 overflow-y-auto px-8 pb-8" key={current.id}>
+                <div
+                  aria-live="polite"
+                  className="session-import-preview-scroll min-h-0 flex-1 overflow-y-auto px-8 pb-8"
+                  key={current.id}
+                >
                   {preview.isPending && <Loader className="mx-auto my-12" label={copy.previewLoading} />}
                   {preview.isError && (
                     <ErrorState description={copy.previewHelp} title={copy.previewError}>
@@ -295,7 +298,7 @@ export function SessionImportView({ owner, onClose, onOpenSession }: SessionImpo
                     </div>
                   )}
                 </div>
-                <footer className="flex flex-wrap items-center justify-between gap-4 border-t border-(--ui-stroke-tertiary) px-8 py-5">
+                <footer className="session-import-footer flex shrink-0 flex-wrap items-center justify-between gap-4 border-t border-(--ui-stroke-tertiary) px-8 py-5">
                   <p className="max-w-xs text-xs leading-5 text-(--ui-text-secondary)">
                     {preview.data?.already_imported ? copy.snapshot : copy.copyNotice}
                   </p>
@@ -312,7 +315,7 @@ export function SessionImportView({ owner, onClose, onOpenSession }: SessionImpo
               </>
             )}
           </main>
-        </div>
+        </ResponsiveMasterDetail>
       </section>
     </OverlayView>
   )

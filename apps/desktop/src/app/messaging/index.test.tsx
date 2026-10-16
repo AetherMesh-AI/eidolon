@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { MessagingPlatformInfo } from '@/types/eidolon'
 
+import { observeMasterDetailWidth } from '../responsive-master-detail.test-helpers'
+
 const getMessagingPlatforms = vi.fn()
 const updateMessagingPlatform = vi.fn()
 const getPairing = vi.fn()
@@ -71,6 +73,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  vi.unstubAllGlobals()
   vi.clearAllMocks()
 })
 
@@ -231,4 +234,51 @@ describe('MessagingView pairing', () => {
     })
     expect(getPairing).not.toHaveBeenCalled()
   })
+})
+
+it('retains a messaging draft through compact navigation and only saves on explicit action', async () => {
+  const resize = observeMasterDetailWidth()
+  getMessagingPlatforms.mockResolvedValue({
+    platforms: [
+      platform({
+        env_vars: [
+          {
+            key: 'WORKSPACE_LABEL',
+            prompt: 'Workspace label',
+            description: '',
+            advanced: false,
+            is_password: false,
+            is_set: false,
+            redacted_value: null,
+            required: true,
+            url: null
+          }
+        ]
+      })
+    ]
+  })
+  await renderMessaging()
+  resize(500)
+  const row = screen.getByRole('button', { name: /Microsoft Teams/ })
+  row.focus()
+  fireEvent.click(row)
+  const editor = screen.getByRole('textbox', { name: 'Workspace label' })
+  fireEvent.change(editor, { target: { value: ' My workspace ' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+  expect(window.document.activeElement).toBe(row)
+  fireEvent.click(row)
+  resize(1100)
+  editor.focus()
+  resize(500)
+  expect(screen.getByRole('textbox', { name: 'Workspace label' })).toBe(editor)
+  expect((editor as HTMLInputElement).value).toBe(' My workspace ')
+  expect(updateMessagingPlatform).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: /Save/i }))
+  await waitFor(() =>
+    expect(updateMessagingPlatform).toHaveBeenCalledWith(
+      'teams',
+      { env: { WORKSPACE_LABEL: 'My workspace' } },
+      undefined
+    )
+  )
 })

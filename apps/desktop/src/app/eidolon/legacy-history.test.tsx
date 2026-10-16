@@ -27,3 +27,25 @@ it.each([' { "objectives": [], "agents": [], "tasks": [], "activity": [], "knowl
   URL.createObjectURL = oldCreate
   URL.revokeObjectURL = oldRevoke
 })
+
+
+it('keeps the read-only demo mounted while its disclosure closes and reopens', () => {
+  const storage = { getItem: vi.fn(() => null), setItem: vi.fn(), removeItem: vi.fn() }
+  const view = render(<LegacyOrganizationHistory storage={storage} />)
+  const disclosure = view.container.querySelector('details')!
+  const summary = disclosure.querySelector('summary')!
+  const records = disclosure.querySelector('ol')!
+  expect(disclosure.open).toBe(false)
+  fireEvent.click(summary)
+  expect(disclosure.open).toBe(true)
+  fireEvent.click(summary)
+  expect(disclosure.open).toBe(false)
+  view.rerender(<LegacyOrganizationHistory storage={storage} />)
+  fireEvent.click(summary)
+  expect(disclosure.open).toBe(true)
+  expect(disclosure.querySelector('ol')).toBe(records)
+  expect(storage.getItem).toHaveBeenCalledOnce()
+  expect(storage.setItem).not.toHaveBeenCalled()
+  expect(storage.removeItem).not.toHaveBeenCalled()
+  view.unmount()
+})
