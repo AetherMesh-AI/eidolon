@@ -9,6 +9,7 @@ import { verifyKeyboardFocus } from './focus-visibility'
 import { snapshot } from './organization-visual-fixture'
 import { RealSessionBuilder } from './real-session-builder'
 import { expect, test } from './test'
+import { galleryPaintReadiness } from './workspace-paint-readiness'
 
 export const galleryLocales = [
   { locale: 'en', dark: 'Dark', light: 'Light' },
@@ -39,14 +40,16 @@ export async function setupGallery(locale: string, seedHistory = false) {
     await waitForAppReady(fixture)
     const methods: string[] = []
     const observationReads: string[] = []
-    const state = { snapshot: structuredClone(snapshot) }
+    const state = { snapshot: structuredClone(snapshot), observationError: null as string | null }
     state.snapshot.activity[1].text = 'سجل تجريبي للمراجعة · Synthetic record'
     await page.routeWebSocket(/.*/, socket => {
       const server = socket.connectToServer()
       socket.onMessage(message => {
         const request = JSON.parse(message.toString()) as { id?: number; method?: string; params?: { method?: string } }
         if (request.method?.startsWith('organization.')) { methods.push(request.method) }
-        if (request.method === 'organization.observe') {
+        if ((request.method === 'organization.observe' || request.method === 'organization.snapshot') && state.observationError) {
+          socket.send(JSON.stringify({ jsonrpc: '2.0', id: request.id, error: { code: -32000, message: state.observationError } }))
+        } else if (request.method === 'organization.observe') {
           socket.send(JSON.stringify({ jsonrpc: '2.0', id: request.id, result: { capabilityVersion: 1, state: 'available', scope: { kind: 'served-profile', profile: 'default' }, snapshot: state.snapshot } }))
         } else if (request.method === 'organization.observeRead') {
           observationReads.push(request.params?.method ?? '')
@@ -190,15 +193,45 @@ export async function captureGallery(fixture: GalleryFixture, name: string, scop
   const { page, app } = fixture
   await expect(scope).toBeVisible()
   expect(await scope.evaluate(element => element.scrollWidth - element.clientWidth), name).toBeLessThanOrEqual(1)
-  await page.evaluate(async () => { await document.fonts.ready; await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))) })
+  await page.evaluate(async () => { await document.fonts.ready })
+  // GatewayConnectingOverlay stops intercepting input before its exit opacity
+  // transition finishes. Visibility/hit testing alone can capture the entire
+  // shell through that fading scrim; wait for its real lifecycle to finish.
+  // Recheck both conditions together: a new finite transition may begin as
+  // the overlay leaves. Infinite decorative loaders do not block capture.
+  await expect.poll(() => page.evaluate(galleryPaintReadiness), {
+    message: `${name}: startup overlay and finite visual transitions must settle`, timeout: 5_000
+  }).toEqual({ connectingOverlays: 0, finiteAnimations: 0 })
+  await page.evaluate(async () => { await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))) })
   const viewport = await page.evaluate(() => ({ width: innerWidth, height: innerHeight, devicePixelRatio }))
-  const bytes = Buffer.from(await app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
+  let capturedBase64 = ''
+  let nativeFrameAttempts = 0
+  // DOM readiness does not guarantee Electron's compositor has painted the
+  // native frame yet. Reject uniform frames, then save the exact NativeImage
+  // that passed this check rather than taking a second, unchecked capture.
+  await expect.poll(async () => {
+    nativeFrameAttempts += 1
+    capturedBase64 = await app.evaluate(async ({ BrowserWindow }) => {
+      const frame = await BrowserWindow.getAllWindows()[0].webContents.capturePage()
+      const bitmap = frame.toBitmap()
+      // NativeImage exposes four bytes per pixel. Compare the three color
+      // channels only; platform channel order does not affect uniformity.
+      for (let offset = 4; offset + 3 < bitmap.length; offset += 4) {
+        if (bitmap[offset] !== bitmap[0] || bitmap[offset + 1] !== bitmap[1] || bitmap[offset + 2] !== bitmap[2]) {
+          return frame.toPNG().toString('base64')
+        }
+      }
+      return ''
+    })
+    return capturedBase64.length > 0
+  }, { message: `${name}: native capture must contain painted content`, timeout: 5_000 }).toBe(true)
+  const bytes = Buffer.from(capturedBase64, 'base64')
   const pixelSize = { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) }
   expect(pixelSize).toEqual({ width: viewport.width * viewport.devicePixelRatio, height: viewport.height * viewport.devicePixelRatio })
   writeFileSync(test.info().outputPath(`${name}.png`), bytes)
   fixture.captures.push({ name: `${name}.png`, route: page.url(), locale: fixture.locale, viewport, pixelSize,
     theme: await page.locator('html').getAttribute('data-hermes-theme'), mode: await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme),
-    synthetic: true, sha256: createHash('sha256').update(bytes).digest('hex') })
+    synthetic: true, nativeFrameAttempts, sha256: createHash('sha256').update(bytes).digest('hex') })
 }
 
 /** Initial composition captures start at the page's beginning; focus captures keep actual keyboard scrolling. */

@@ -6,7 +6,7 @@ import { requestIntakeCopy } from '@/i18n/organization-request-intake'
 
 import { OrganizationRequestIntake } from './organization-request-intake'
 import { intakeProposal, intakeRecord } from './organization-request-intake-test-support'
-import type { OrganizationSnapshot } from './types'
+import type { OrganizationSnapshot, RuntimeOrganizationAdapter } from './types'
 
 const state = vi.hoisted(() => ({
   key: 'socket',
@@ -298,8 +298,102 @@ it('loads history only when opened and never on close or an ineligible scope', a
   state.key = 'different-ineligible-socket'
   state.ownerKey = 'different-owner'
   state.eligible = false
-  rendered.rerender(<MemoryRouter><OrganizationRequestIntake snapshot={snapshot} /></MemoryRouter>)
+  rendered.rerender(
+    <MemoryRouter>
+      <OrganizationRequestIntake snapshot={snapshot} />
+    </MemoryRouter>
+  )
   await tick()
   expect(state.history).toHaveBeenCalledTimes(1)
   expect(screen.queryByText(copy.recent)).toBeNull()
+})
+
+it('keeps an admitted objective linked to its owner-scoped Home origin', async () => {
+  state.request.mockImplementation(async (_method: string, params: Record<string, unknown>) =>
+    intakeRecord({
+      idempotencyKey: String(params.idempotencyKey),
+      request: String(params.text),
+      status: 'admitted',
+      objectiveId: 'new-objective',
+      proposal: intakeProposal()
+    })
+  )
+  const scoped = { ...snapshot, connection: { state: 'ready' as const, scope: 'socket', ownerScope: 'owner-home' } }
+  render(
+    <MemoryRouter initialEntries={['/home?intake=assisted#eid-home-intake']}>
+      <OrganizationRequestIntake snapshot={scoped} />
+    </MemoryRouter>
+  )
+  fireEvent.change(screen.getByLabelText(copy.request), { target: { value: 'Prepare the first report' } })
+  fireEvent.click(screen.getByRole('button', { name: copy.submit }))
+  await flush()
+
+  const href = new URL(
+    screen.getByRole('link', { name: 'Open objective' }).getAttribute('href')!,
+    'https://workspace.invalid'
+  )
+
+  expect(href.pathname).toBe('/objectives/new-objective')
+  expect(href.searchParams.get('from')).toBe('/home?intake=assisted')
+  expect(href.searchParams.get('originOwner')).toBe('owner-home')
+})
+
+
+it.each(['admitted', 'linked'] as const)('refreshes the Home snapshot after %s without repeating intake', async status => {
+  state.request.mockImplementation(async (_method: string, params: Record<string, unknown>) =>
+    intakeRecord({ idempotencyKey: String(params.idempotencyKey), request: String(params.text), status, objectiveId: 'new-objective', proposal: intakeProposal() })
+  )
+  let current = { ...snapshot, objectives: [], connection: { state: 'ready' as const, ownerScope: state.ownerKey, scope: state.key } } as OrganizationSnapshot
+
+  const refresh = vi.fn(async () => {
+    // First refresh joins a read already in flight before admission.
+    if (refresh.mock.calls.length === 2) {
+      current = { ...current, objectives: [{ id: 'new-objective' }] as OrganizationSnapshot['objectives'] }
+    }
+  })
+
+  const adapter = { refresh, getSnapshot: () => current } as unknown as RuntimeOrganizationAdapter
+  const rendered = render(<MemoryRouter><OrganizationRequestIntake adapter={adapter} snapshot={current} /></MemoryRouter>)
+  fireEvent.change(screen.getByLabelText(copy.request), { target: { value: 'Prepare the first report' } })
+  fireEvent.click(screen.getByRole('button', { name: copy.submit }))
+  await flush()
+  expect(refresh).toHaveBeenCalledTimes(2)
+  expect(current.objectives[0].id).toBe('new-objective')
+  rendered.rerender(<MemoryRouter><OrganizationRequestIntake adapter={adapter} snapshot={current} /></MemoryRouter>)
+  await tick()
+  expect(refresh).toHaveBeenCalledTimes(2)
+  expect(state.request).toHaveBeenCalledTimes(1)
+})
+
+it('does not refresh a different owner after intake admission', async () => {
+  state.request.mockImplementation(async (_method: string, params: Record<string, unknown>) =>
+    intakeRecord({ idempotencyKey: String(params.idempotencyKey), request: String(params.text), status: 'admitted', objectiveId: 'new-objective', proposal: intakeProposal() })
+  )
+  const refresh = vi.fn()
+  const current: OrganizationSnapshot = { ...snapshot, objectives: [], connection: { state: 'ready', scope: 'another-socket', ownerScope: 'another-owner' } }
+  const adapter = { refresh, getSnapshot: () => current } as unknown as RuntimeOrganizationAdapter
+  render(<MemoryRouter><OrganizationRequestIntake adapter={adapter} snapshot={current} /></MemoryRouter>)
+  fireEvent.change(screen.getByLabelText(copy.request), { target: { value: 'Prepare the first report' } })
+  fireEvent.click(screen.getByRole('button', { name: copy.submit }))
+  await flush()
+  expect(refresh).not.toHaveBeenCalled()
+})
+
+it('does not follow an in-flight admission refresh into another owner', async () => {
+  state.request.mockImplementation(async (_method: string, params: Record<string, unknown>) =>
+    intakeRecord({ idempotencyKey: String(params.idempotencyKey), request: String(params.text), status: 'admitted', objectiveId: 'new-objective', proposal: intakeProposal() })
+  )
+  let current: OrganizationSnapshot = { ...snapshot, objectives: [], connection: { state: 'ready', scope: state.key, ownerScope: state.ownerKey } }
+  let finish!: () => void
+  const refresh = vi.fn(() => new Promise<void>(resolve => { finish = resolve }))
+  const adapter = { refresh, getSnapshot: () => current } as unknown as RuntimeOrganizationAdapter
+
+  render(<MemoryRouter><OrganizationRequestIntake adapter={adapter} snapshot={current} /></MemoryRouter>)
+  fireEvent.change(screen.getByLabelText(copy.request), { target: { value: 'Prepare the first report' } })
+  fireEvent.click(screen.getByRole('button', { name: copy.submit }))
+  await flush()
+  expect(refresh).toHaveBeenCalledTimes(1)
+  current = { ...current, connection: { state: 'ready', scope: 'another-socket', ownerScope: 'another-owner' } }
+  await act(async () => finish())
+  expect(refresh).toHaveBeenCalledTimes(1)
 })

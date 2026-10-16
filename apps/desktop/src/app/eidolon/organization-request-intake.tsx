@@ -1,5 +1,5 @@
-import { useId } from 'react'
-import { Link } from 'react-router'
+import { useEffect, useId, useRef } from 'react'
+import { Link, useLocation } from 'react-router'
 
 import { Button } from '@/components/ui/button'
 import { controlVariants } from '@/components/ui/control'
@@ -11,21 +11,53 @@ import { requestIntakeCopy } from '@/i18n/organization-request-intake'
 
 import { OrganizationIntakeInspectionControls } from './organization-intake-inspection-controls'
 import type { IntakePriority } from './organization-request-intake-types'
-import type { OrganizationSnapshot } from './types'
+import type { OrganizationSnapshot, RuntimeOrganizationAdapter } from './types'
 import { useOrganizationRequestIntake } from './use-organization-request-intake'
+import { objectiveHref } from './workspace-navigation'
 
 interface OrganizationRequestIntakeProps {
   snapshot: OrganizationSnapshot
+  adapter?: RuntimeOrganizationAdapter
 }
 
-export function OrganizationRequestIntake({ snapshot }: OrganizationRequestIntakeProps) {
+export function OrganizationRequestIntake({ snapshot, adapter }: OrganizationRequestIntakeProps) {
+  const location = useLocation()
   const { locale, t } = useI18n()
   const copy = requestIntakeCopy[locale]
-  const { client, view, eligible } = useOrganizationRequestIntake()
+  const { client, view, eligible, scope } = useOrganizationRequestIntake()
   const id = useId()
   const { record, intent, busy, error } = view
   const proposal = record?.proposal
   const disabled = !eligible || busy || Boolean(intent)
+  const refreshedAdmission = useRef<string | null>(null)
+  // Intake receipts and the overview use separate readers. Publish admission to
+  // the overview immediately rather than leaving Home empty until its idle poll.
+  // eslint-disable-next-line no-restricted-syntax -- one-shot admission refresh guard, not mirrored reactive state
+  useEffect(() => {
+    const objectiveId = record?.objectiveId
+    const owner = scope.ownerKey
+    const admission = JSON.stringify([owner, record?.id, objectiveId])
+
+    const isCurrentOwner = () => {
+      const connection = adapter?.getSnapshot().connection
+
+      return Boolean(owner) && (connection?.ownerScope ?? connection?.scope) === owner
+    }
+
+    if (!adapter || !eligible || !objectiveId || !['admitted', 'linked'].includes(record?.status ?? '') || !isCurrentOwner() || refreshedAdmission.current === admission) {
+      return
+    }
+
+    refreshedAdmission.current = admission
+    void adapter.refresh().then(() => {
+      // refresh may have joined a snapshot read started before admission.
+      // One bounded follow-up read closes that race without repeating intake.
+      if (isCurrentOwner() && !adapter.getSnapshot().objectives.some(item => item.id === objectiveId)) {
+        return adapter.refresh()
+      }
+    }).catch(() => { /* The adapter retains its visible read-error/Retry state. */ })
+  }, [adapter, eligible, record, scope.ownerKey])
+
   const agentName = (agentId: string | null) => snapshot.agents.find(agent => agent.id === agentId)?.name ?? agentId
 
   return (
@@ -88,9 +120,12 @@ export function OrganizationRequestIntake({ snapshot }: OrganizationRequestIntak
       </form>
       {!eligible && <p role="status">{copy.unavailable}</p>}
       {eligible && (
-        <details className="eid-form-disclosure" onToggle={event => {
-          if (event.currentTarget.open) void client.list()
-        }}>
+        <details
+          className="eid-form-disclosure"
+          onToggle={event => {
+            if (event.currentTarget.open) {void client.list()}
+          }}
+        >
           <summary>{copy.recent}</summary>
           {view.history.busy && <Loader />}
           {view.history.error && <p role="alert">{copy.historyFailed}</p>}
@@ -141,8 +176,14 @@ export function OrganizationRequestIntake({ snapshot }: OrganizationRequestIntak
             {copy.retained}: <bdi>{record.id}</bdi>
           </p>
           {record.reason && <p dir="auto">{record.reason}</p>}
-          {['admitted', 'linked'].includes(record.status) && record.objectiveId && (
-            <Link to={`/objectives/${encodeURIComponent(record.objectiveId)}`}>
+          {['admitted', 'linked'].includes(record?.status ?? '') && record.objectiveId && (
+            <Link
+              to={objectiveHref(
+                record.objectiveId,
+                location.pathname + location.search,
+                snapshot.connection?.ownerScope ?? snapshot.connection?.scope
+              )}
+            >
               {t.organizationFoundation.openObjective}
             </Link>
           )}
@@ -235,7 +276,7 @@ export function OrganizationRequestIntake({ snapshot }: OrganizationRequestIntak
               </div>
             </form>
           )}
-          {['needs_review', 'uncertain', 'failed'].includes(record.status) && <p>{copy.reviewNote}</p>}
+          {['needs_review', 'uncertain', 'failed'].includes(record?.status ?? '') && <p>{copy.reviewNote}</p>}
           <details className="eid-form-disclosure">
             <summary>{copy.usage}</summary>
             <p>

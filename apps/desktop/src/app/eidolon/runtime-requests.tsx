@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router'
+import { Link, useLocation, useSearchParams } from 'react-router'
 
 import { Button } from '@/components/ui/button'
 import { controlVariants } from '@/components/ui/control'
@@ -30,6 +30,7 @@ import type {
   RuntimeOrganizationAdapter
 } from './types'
 import { useRequestNavigation } from './use-request-navigation'
+import { objectiveHref } from './workspace-navigation'
 
 export interface RequestFilters {
   status: string
@@ -67,6 +68,7 @@ export function OwnerResolutionHistory({
 }) {
   const { t } = useI18n()
   const copy = t.organizationWork
+  const location = useLocation()
 
   const entries = snapshot.objectives
     .filter(item => !objectiveId || item.id === objectiveId)
@@ -94,7 +96,7 @@ export function OwnerResolutionHistory({
                 </p>
               )}
               {entry.scopeAmendment && <ScopeAmendmentAudit amendment={entry.scopeAmendment} />}
-              {!objectiveId && <Link to={`/objectives/${entry.objective.id}`}>{entry.objective.title}</Link>}
+              {!objectiveId && <Link to={objectiveHref(entry.objective.id, `${location.pathname}${location.search}`, snapshot.connection?.ownerScope ?? snapshot.connection?.scope)}>{entry.objective.title}</Link>}
             </li>
           ))}
         </ol>
@@ -384,6 +386,36 @@ export function RuntimeRequests({
     JSON.stringify([snapshot.connection?.ownerScope ?? snapshot.connection?.scope, objective?.id])
   )
 
+  const location = useLocation()
+  const [params, setParams] = useSearchParams()
+  const focusedNavigation = useRef<string | null>(null)
+  const ownerScope = snapshot.connection?.ownerScope ?? snapshot.connection?.scope
+  const focusRequest = params.get('request')
+  const focusOwner = params.get('requestOwner')
+  // eslint-disable-next-line no-restricted-syntax -- consumes explicit navigation intent once; never mirrors runtime state
+  useEffect(() => {
+    if (!focusRequest || !ownerScope || snapshot.connection?.state !== 'ready') {return}
+    const intent = JSON.stringify([location.key, ownerScope, objective?.id, focusRequest])
+
+    if (focusedNavigation.current === intent) {return}
+    focusedNavigation.current = intent
+
+    if (focusOwner === ownerScope && allRequests.some(request => request.id === focusRequest)) {
+      navigation.open(focusRequest)
+    }
+  }, [allRequests, focusOwner, focusRequest, location.key, navigation, objective?.id, ownerScope, snapshot.connection?.state])
+
+  const closeRequest = () => {
+    navigation.close()
+
+    if (focusRequest) {
+      const next = new URLSearchParams(params)
+      next.delete('request')
+      next.delete('requestOwner')
+      setParams(next, { replace: true })
+    }
+  }
+
   const [artifactId, setArtifactId] = useState<string | null>(null)
   const [pending, setPending] = useState<string | null>(null)
   const [error, setError] = useState('')
@@ -604,7 +636,7 @@ export function RuntimeRequests({
       </>}
       {navigation.trail.map((request, index) => (
         <div hidden={index !== navigation.trail.length - 1} key={request.id}>
-          <Inspector kind="request" onClose={navigation.close} title={request.type}>
+          <Inspector kind="request" onClose={closeRequest} title={request.type}>
             {index > 0 && (
               <Button onClick={navigation.back} size="sm" variant="secondary">
                 {t.common.back}
@@ -656,7 +688,14 @@ export function RuntimeRequests({
                 snapshot={snapshot}
               />
             )}
-            <Link to={`/objectives/${request.objectiveId}`}>{copy.openObjective}</Link>
+            {!objective && <Link to={objectiveHref(request.objectiveId, (() => {
+              const origin = new URLSearchParams(params)
+              origin.set('request', request.id)
+
+              if (ownerScope) {origin.set('requestOwner', ownerScope)}
+
+              return `${location.pathname}?${origin}`
+            })(), ownerScope)}>{copy.openObjective}</Link>}
             {request.type === 'request.merge' && <p className="eid-note">{runtimeCopy.edits.mergeNote}</p>}
             {request.status === 'pending_intervention' && !terminal && (
               <ResolutionForm

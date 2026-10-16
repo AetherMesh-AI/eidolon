@@ -1,13 +1,12 @@
 import './eidolon.css'
 
-import { type ReactNode, useEffect, useRef } from 'react'
-import { NavLink, useLocation } from 'react-router'
+import { Fragment, type ReactNode, useEffect, useRef } from 'react'
+import { Link, NavLink, useLocation } from 'react-router'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Codicon } from '@/components/ui/codicon'
 import { useI18n } from '@/i18n/context'
-import { Command, FolderOpen, LayoutDashboard, MessageCircle, Network, Settings, Users } from '@/lib/icons'
+import { Bell, Command, FolderOpen, LayoutDashboard, MessageCircle, Settings, Users } from '@/lib/icons'
 
 import { appViewForPath } from '../routes'
 
@@ -34,32 +33,33 @@ export function OrganizationRail({
   const home = t.organizationHome
   const { pathname } = useLocation()
   const history = useRef<HTMLDetailsElement>(null)
-  const more = useRef<HTMLDetailsElement>(null)
-  const moreTrigger = useRef<HTMLElement>(null)
+  const historyTrigger = useRef<HTMLElement>(null)
   const chat = appViewForPath(pathname) === 'chat'
   useEffect(() => {
-    if (chat && history.current && more.current) { history.current.open = true; more.current.open = true }
+    if (chat && history.current) { history.current.open = true }
   }, [chat, pathname])
 
   const destinations = [
     { to: '/home', label: home.home, icon: Command },
     { to: '/messages', label: home.messages, icon: MessageCircle },
     { to: '/work', label: home.work, icon: LayoutDashboard },
-    { to: '/objectives', label: home.objectives, icon: Network },
+    { to: '/requests', label: copy.needsYou, icon: Bell },
     { to: '/organization', label: home.organization, icon: Users },
-    { to: '/artifacts', label: home.deliverables, icon: FolderOpen },
+    { to: '/artifacts?source=organization', label: home.deliverables, icon: FolderOpen },
     { to: '/settings', label: home.settings, icon: Settings }
   ]
 
-  const advanced = [
-    { to: '/requests', label: copy.needsYou },
-    { to: '/activity', label: copy.activity },
+  const workRoutes = ['/work', '/objectives', '/activity']
+  const settingsRoutes = ['/settings', '/skills', '/messaging', '/profiles']
+
+  const contextual = workRoutes.includes(pathname) || pathname.startsWith('/objectives/') ? [
+    { to: '/objectives', label: home.objectives },
+    { to: '/activity', label: copy.activity }
+  ] : settingsRoutes.includes(pathname) ? [
     { to: '/skills', label: copy.skills },
     { to: '/messaging', label: copy.messaging },
-    { to: '/profiles', label: copy.executionConfig },
-    { to: '/session-import', label: copy.importHistory },
-    { to: '/legacy-organization', label: copy.legacyTitle }
-  ]
+    { to: '/profiles', label: copy.executionConfig }
+  ] : []
 
   const linkAction = (event: React.MouseEvent, to: string) => {
     if (onNavigate && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) {
@@ -76,54 +76,49 @@ export function OrganizationRail({
       </div>
       <nav aria-label="Primary">
         {destinations.map(({ to, label, icon: Icon }) => (
-          <NavLink
+          <Fragment key={to}><Link
+            aria-current={(to === '/work' && (workRoutes.includes(pathname) || pathname.startsWith('/objectives/'))) || (to === '/settings' && settingsRoutes.includes(pathname)) || pathname === to.split('?')[0] ? 'page' : undefined}
             aria-label={label}
-            key={to}
             onClick={event => linkAction(event, to)}
             to={to}
           >
             <Icon aria-hidden="true" size={18} />
             <span>{label}</span>
-            {to === '/objectives' && unreadOutcomes > 0 && (
+            {to === '/work' && unreadOutcomes > 0 && (
               <Badge aria-label={`${copy.outcomeUnread}: ${unreadOutcomes}`} size="xs" variant="warn">
                 {unreadOutcomes}
               </Badge>
             )}
-            {to === '/home' && needsYouCount > 0 && (
+            {to === '/requests' && needsYouCount > 0 && (
               <Badge size="xs" variant="warn">
                 {needsYouCount}
               </Badge>
             )}
-          </NavLink>
+          </Link>
+          {contextual.length > 0 && ((to === '/work' && (workRoutes.includes(pathname) || pathname.startsWith('/objectives/'))) || (to === '/settings' && settingsRoutes.includes(pathname))) && <div aria-label={label} className="eid-rail-context" role="group">
+            {contextual.map(item => <NavLink key={item.to} onClick={event => linkAction(event, item.to)} to={item.to}>{item.label}</NavLink>)}
+          </div>}</Fragment>
         ))}
       </nav>
       <div aria-hidden="true" className="eid-rail-decoration"><OrganizationScenery /></div>
-      <details className="eid-rail-more" onKeyDown={event => {
-        // React portal events still bubble through the session tree. Their
-        // dialogs, and controls that consumed Escape, own that key press.
+      {pluginNav}
+      <details className="eid-rail-history" onKeyDown={event => {
         if (event.defaultPrevented || !event.currentTarget.contains(event.target as Node)) {return}
 
-        if (event.key === 'Escape' && more.current?.open) {
+        if (event.key === 'Escape' && history.current?.open) {
           event.preventDefault()
           event.stopPropagation()
-          more.current.open = false
-          moreTrigger.current?.focus()
+          history.current.open = false
+          historyTrigger.current?.focus()
         }
-      }} ref={more}>
-        <summary aria-label={home.workspace.more} ref={moreTrigger} role="button"><Codicon name="ellipsis" /></summary>
+      }} ref={history}>
+        <summary ref={historyTrigger}>{copy.navigationHistory}</summary>
         {onOpenProfileChats && <Button onClick={onOpenProfileChats} size="sm" variant="ghost">{home.workspace.profileChats}</Button>}
-        <nav aria-label={copy.advanced}>
-          {advanced.map(({ to, label }) => (
-            <NavLink key={to} onClick={event => linkAction(event, to)} to={to}>
-              {label}
-            </NavLink>
-          ))}
+        <nav aria-label={copy.navigationHistory}>
+          <NavLink onClick={event => linkAction(event, '/session-import')} to="/session-import">{copy.importHistory}</NavLink>
+          <NavLink onClick={event => linkAction(event, '/legacy-organization')} to="/legacy-organization">{copy.legacyTitle}</NavLink>
         </nav>
-        {pluginNav}
-        <details className="eid-rail-history" ref={history}>
-          <summary>{copy.navigationHistory}</summary>
-          <div className="eid-session-tree">{sessions}</div>
-        </details>
+        <div className="eid-session-tree">{sessions}</div>
       </details>
     </aside>
   )

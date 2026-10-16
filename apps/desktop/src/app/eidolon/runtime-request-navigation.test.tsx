@@ -1,14 +1,24 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
-import { MemoryRouter } from 'react-router'
+import { MemoryRouter, useLocation, useNavigate } from 'react-router'
 import { expect, it, vi } from 'vitest'
 
 import { RuntimeRequests } from './runtime-requests'
-import type { OrganizationSnapshot, RuntimeOrganizationAdapter } from './types'
+import type { Objective, OrganizationSnapshot, RuntimeOrganizationAdapter } from './types'
 
-function setup() {
+function RouteControls() {
+  const location = useLocation()
+  const navigate = useNavigate()
+
+  return <>
+    <output aria-label="Current route">{location.pathname}{location.search}</output>
+    <button onClick={() => navigate('/requests?request=draft&requestOwner=owner-a')}>Navigate to draft</button>
+  </>
+}
+
+function setup(options: { path?: string; objective?: Objective; connecting?: boolean } = {}) {
   let current: OrganizationSnapshot = {
     source: 'runtime',
-    connection: { state: 'ready', scope: 'socket-a', ownerScope: 'owner-a' },
+    connection: { state: options.connecting ? 'connecting' : 'ready', scope: 'socket-a', ownerScope: 'owner-a' },
     objectives: [],
     agents: [],
     activity: [],
@@ -73,8 +83,9 @@ function setup() {
   }
 
   const tree = () => (
-    <MemoryRouter>
-      <RuntimeRequests adapter={adapter} snapshot={current} />
+    <MemoryRouter initialEntries={[options.path ?? '/requests']}>
+      <RouteControls />
+      <RuntimeRequests adapter={adapter} objective={options.objective} snapshot={current} />
     </MemoryRouter>
   )
 
@@ -255,3 +266,89 @@ it.each(['unchanged', 'ancestor', 'back', 'unrelated', 'reopened'])(
     expect(fixture.mutation).toHaveBeenCalledTimes(1)
   }
 )
+
+
+it('focuses the exact URL request outside queue filters and clears only focus parameters when closed', () => {
+  const fixture = setup({ path: '/requests?request=draft&requestOwner=owner-a&from=%2Fwork&originOwner=owner-a&keep=yes' })
+  expect(screen.queryByRole('button', { name: 'Inspect request: work.draft' })).toBeNull()
+  expect(details().getByText('Preserve the exact technical appendix.')).toBeTruthy()
+  expect(details().queryByRole('textbox', { name: 'Response' })).toBeNull()
+  fireEvent.click(details().getByRole('button', { name: 'Close request details' }))
+  const route = screen.getByLabelText('Current route').textContent!
+  const params = new URLSearchParams(route.split('?')[1])
+  expect(params.has('request')).toBe(false)
+  expect(params.has('requestOwner')).toBe(false)
+  expect(params.get('from')).toBe('/work')
+  expect(params.get('originOwner')).toBe('owner-a')
+  expect(params.get('keep')).toBe('yes')
+  fixture.update({ ...fixture.snapshot() })
+  expect(screen.queryByRole('complementary', { name: 'Request details' })).toBeNull()
+  expect(fixture.mutation).not.toHaveBeenCalled()
+})
+
+it.each([
+  '/requests?request=missing&requestOwner=owner-a',
+  '/requests?request=draft&requestOwner=other-owner',
+  '/requests?request=draft',
+  '/requests?request=&requestOwner=owner-a'
+])('ignores an invalid or unowned request focus: %s', path => {
+  const fixture = setup({ path })
+  expect(screen.queryByRole('complementary', { name: 'Request details' })).toBeNull()
+  expect(fixture.mutation).not.toHaveBeenCalled()
+})
+
+it('rejects URL requests from a different objective', () => {
+  const fixture = setup({
+    path: '/objectives/other-goal?request=draft&requestOwner=owner-a',
+    objective: { id: 'other-goal', title: 'Other goal', description: '', source: 'runtime', status: 'completed', ownerId: 'owner', createdAt: '2026-10-09T00:00:00Z' }
+  })
+
+  expect(screen.queryByRole('complementary', { name: 'Request details' })).toBeNull()
+  expect(fixture.mutation).not.toHaveBeenCalled()
+})
+
+it('does not reopen a consumed URL request when a removed row returns', () => {
+  const fixture = setup({ path: '/requests?request=draft&requestOwner=owner-a' })
+  const initial = fixture.snapshot()
+  expect(details().getByText('Preserve the exact technical appendix.')).toBeTruthy()
+  fixture.update({ ...initial, requests: initial.requests!.filter(row => row.id !== 'draft') })
+  expect(screen.queryByRole('complementary', { name: 'Request details' })).toBeNull()
+  fixture.update(initial)
+  expect(screen.queryByRole('complementary', { name: 'Request details' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Navigate to draft' }))
+  expect(details().getByText('Preserve the exact technical appendix.')).toBeTruthy()
+})
+
+it('waits for an authoritative snapshot before consuming URL focus', () => {
+  const fixture = setup({ path: '/requests?request=draft&requestOwner=owner-a', connecting: true })
+  expect(screen.queryByRole('complementary', { name: 'Request details' })).toBeNull()
+  fixture.update({ ...fixture.snapshot(), connection: { state: 'ready', scope: 'socket-a', ownerScope: 'owner-a' } })
+  expect(details().getByText('Preserve the exact technical appendix.')).toBeTruthy()
+})
+
+it('closes URL focus when the owner changes and rejects the old owner token', () => {
+  const fixture = setup({ path: '/requests?request=draft&requestOwner=owner-a' })
+  fixture.update({ ...fixture.snapshot(), connection: { state: 'ready', scope: 'socket-b', ownerScope: 'owner-b' } })
+  expect(screen.queryByRole('complementary', { name: 'Request details' })).toBeNull()
+  fixture.update({ ...fixture.snapshot() })
+  expect(screen.queryByRole('complementary', { name: 'Request details' })).toBeNull()
+})
+
+it('returns from linked objective work to the exact Needs You request', () => {
+  const fixture = setup()
+  fireEvent.click(screen.getByRole('button', { name: 'Inspect request: request.question' }))
+  const destination = new URL(details().getByRole('link', { name: 'Open objective' }).getAttribute('href')!, 'https://workspace.invalid')
+  expect(destination.pathname).toBe('/objectives/goal')
+  expect(destination.searchParams.get('originOwner')).toBe('owner-a')
+  const origin = new URL(destination.searchParams.get('from')!, 'https://workspace.invalid')
+  expect(origin.pathname).toBe('/requests')
+  expect(origin.searchParams.get('request')).toBe('question')
+  expect(origin.searchParams.get('requestOwner')).toBe('owner-a')
+  expect(fixture.mutation).not.toHaveBeenCalled()
+})
+
+it('does not offer redundant objective navigation that would discard the original return context', () => {
+  setup({ path: '/objectives/goal?from=%2Fhome&originOwner=owner-a&request=question&requestOwner=owner-a', objective: { id: 'goal', title: 'Goal', ownerId: 'executive', description: '', status: 'active', source: 'runtime', createdAt: '2026-10-09T00:00:00Z' } })
+  expect(details().queryByRole('link', { name: 'Open objective' })).toBeNull()
+  expect(screen.getByLabelText('Current route').textContent).toContain('from=%2Fhome&originOwner=owner-a')
+})

@@ -1,4 +1,5 @@
 import { useStore } from '@nanostores/react'
+import { Dialog as DialogPrimitive } from 'radix-ui'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
@@ -50,7 +51,12 @@ export {
   sortProviders
 } from './providers'
 
-import { $gateway, $gatewayTransportRevision, gatewayTransportGeneration, requestGatewayForProfile } from '@/store/gateway'
+import {
+  $gateway,
+  $gatewayTransportRevision,
+  gatewayTransportGeneration,
+  requestGatewayForProfile
+} from '@/store/gateway'
 import { $gatewaySwitching } from '@/store/gateway-switch'
 import { $gatewayState } from '@/store/session'
 import { $sourceSwitchIntent, currentSourceSwitchIntent } from '@/store/source-switch-intent'
@@ -244,13 +250,21 @@ export function DesktopOnboardingOverlay({
     let active = true
 
     if ((enabled || onboarding.requested) && !switching) {
-      void refreshOnboarding({ ...ctx, shouldPublish: () => active &&
-        currentSourceSwitchIntent() === sourceIntent && $gateway.get() === gateway && !$gatewaySwitching.get() &&
-        (!gateway || gatewayTransportGeneration(gateway) === transportGeneration) &&
-        (!enabled || $gatewayState.get() === 'open') })
+      void refreshOnboarding({
+        ...ctx,
+        shouldPublish: () =>
+          active &&
+          currentSourceSwitchIntent() === sourceIntent &&
+          $gateway.get() === gateway &&
+          !$gatewaySwitching.get() &&
+          (!gateway || gatewayTransportGeneration(gateway) === transportGeneration) &&
+          (!enabled || $gatewayState.get() === 'open')
+      })
     }
 
-    return () => { active = false }
+    return () => {
+      active = false
+    }
   }, [ctx, enabled, onboarding.requested, sourceIntent, gateway, transportGeneration, switching])
 
   // When the Providers settings page asked to connect a specific provider, the
@@ -323,58 +337,74 @@ export function DesktopOnboardingOverlay({
   const bare = ready && !showPicker && flow.status === 'confirming_model'
 
   return (
-    <div
-      className={cn(
-        'fixed inset-0 z-(--z-onboarding) flex items-center justify-center bg-(--ui-chat-surface-background) p-6 transition-opacity duration-[520ms] ease-out',
-        // On the bare confirm screen, hold the surface (text-out + hold) so the
-        // per-element exit plays before it dissolves.
-        bare && leaving ? '[transition-delay:660ms]' : '',
-        leaving ? 'pointer-events-none opacity-0' : 'opacity-100'
-      )}
-      // Masks the whole app until onboarding finishes — must stay filled under
-      // window glass or the shell shows through. Contract:
-      // `[data-glass-opaque]` in styles.css.
-      data-glass-opaque=""
-    >
-      <div
-        className={cn(
-          'relative w-full max-w-[45rem] transition-all duration-500 ease-out',
-          bare
-            ? ''
-            : 'overflow-hidden rounded-xl border border-(--stroke-nous) bg-(--ui-chat-bubble-background) shadow-nous',
-          // Bare confirm screen orchestrates its own per-element exit; the
-          // carded states use the simple lift/blur dissolve.
-          leaving && !bare
-            ? '-translate-y-1 scale-[0.985] opacity-0 blur-[2px]'
-            : 'translate-y-0 scale-100 opacity-100 blur-0'
-        )}
+    <DialogPrimitive.Root open>
+      <DialogPrimitive.Content
+        aria-describedby={undefined}
+        asChild
+        onEscapeKeyDown={event => {
+          event.preventDefault()
+
+          if (onboarding.manual) {
+            closeManualOnboarding()
+          }
+        }}
+        onInteractOutside={event => event.preventDefault()}
       >
-        {showPicker || !ready ? <Header /> : null}
-        {onboarding.manual ? (
-          <Button
-            aria-label={t.common.close}
-            className="absolute right-3 top-3 z-10 text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground"
-            onClick={() => closeManualOnboarding()}
-            size="icon-sm"
-            variant="ghost"
-          >
-            <Codicon name="close" size="1rem" />
-          </Button>
-        ) : null}
-        <div className="grid gap-3 p-5">
-          {reason ? <ReasonNotice reason={reason} /> : null}
-          {ready ? (
-            showPicker ? (
-              <Picker ctx={ctx} />
-            ) : (
-              <FlowPanel ctx={ctx} flow={flow} leaving={leaving} onBegin={finalizeOnboarding} />
-            )
-          ) : (
-            <Preparing boot={boot} />
+        <div
+          className={cn(
+            'fixed inset-0 z-(--z-onboarding) flex items-center justify-center bg-(--ui-chat-surface-background) p-6 transition-opacity duration-[520ms] ease-out',
+            // On the bare confirm screen, hold the surface (text-out + hold) so the
+            // per-element exit plays before it dissolves.
+            bare && leaving ? '[transition-delay:660ms]' : '',
+            leaving ? 'pointer-events-none opacity-0' : 'opacity-100'
           )}
+          // Masks the whole app until onboarding finishes — must stay filled under
+          // window glass or the shell shows through. Contract:
+          // `[data-glass-opaque]` in styles.css.
+          data-glass-opaque=""
+        >
+          <DialogPrimitive.Title className="sr-only">{t.onboarding.headerTitle}</DialogPrimitive.Title>
+          <div
+            className={cn(
+              'relative w-full max-w-[45rem] transition-all duration-500 ease-out',
+              bare
+                ? ''
+                : 'overflow-hidden rounded-xl border border-(--stroke-nous) bg-(--ui-chat-bubble-background) shadow-nous',
+              // Bare confirm screen orchestrates its own per-element exit; the
+              // carded states use the simple lift/blur dissolve.
+              leaving && !bare
+                ? '-translate-y-1 scale-[0.985] opacity-0 blur-[2px]'
+                : 'translate-y-0 scale-100 opacity-100 blur-0'
+            )}
+          >
+            {showPicker || !ready ? <Header /> : null}
+            {onboarding.manual ? (
+              <Button
+                aria-label={t.common.close}
+                className="absolute right-3 top-3 z-10 text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground"
+                onClick={() => closeManualOnboarding()}
+                size="icon-sm"
+                variant="ghost"
+              >
+                <Codicon name="close" size="1rem" />
+              </Button>
+            ) : null}
+            <div className="grid gap-3 p-5">
+              {reason ? <ReasonNotice reason={reason} /> : null}
+              {ready ? (
+                showPicker ? (
+                  <Picker ctx={ctx} />
+                ) : (
+                  <FlowPanel ctx={ctx} flow={flow} leaving={leaving} onBegin={finalizeOnboarding} />
+                )
+              ) : (
+                <Preparing boot={boot} />
+              )}
+            </div>
+          </div>
         </div>
-      </div>
-    </div>
+      </DialogPrimitive.Content>
+    </DialogPrimitive.Root>
   )
 }
 

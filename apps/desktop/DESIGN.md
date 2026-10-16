@@ -54,9 +54,11 @@ one-off at the call site.
   Delivery scope and required ownership/repository choices stay visible. Runtime
   errors and recovery remain visible even when capability details are collapsed.
 - **History complements the organization.** The existing Sessions tree stays
-  mounted behind the rail's compact More control; its History disclosure opens
-  on explicit chat navigation. The seven primary destinations remain the default
-  rail. Optional Profile chats and secondary tools are reachable from More;
+  mounted behind the named History disclosure, which opens on explicit chat navigation.
+  Home, Messages, Work, Needs You, Organization, Deliverables and Settings form the
+  primary rail. Work owns Objectives and Activity; Settings owns capabilities,
+  messaging integration and execution profiles. History owns imports and legacy views.
+  Existing deep links remain valid;
   the organization rail suppresses only its default contextual pane strip.
   Explicit Show tabs preferences and customized sibling panes keep mouse tabs.
   Technical

@@ -15,6 +15,7 @@ import { TaskCounts } from './objective-progress'
 import { RuntimeSetup } from './runtime-setup'
 import { OrganizationScenery } from './scenery'
 import type { Objective, OrganizationAdapter, OrganizationRequest, OrganizationSnapshot } from './types'
+import { objectiveHref } from './workspace-navigation'
 
 export function HomeObjective({
   objective,
@@ -25,6 +26,8 @@ export function HomeObjective({
   snapshot: OrganizationSnapshot
   compact?: boolean
 }) {
+  const location = useLocation()
+  const href = objectiveHref(objective.id, location.pathname + location.search, snapshot.connection?.ownerScope ?? snapshot.connection?.scope)
   const { t, locale } = useI18n()
   const copy = t.organizationHome
   const owner = snapshot.agents.find(agent => agent.id === objective.ownerId)
@@ -45,7 +48,7 @@ export function HomeObjective({
       {!compact && <header className="eid-home-objective-label"><FileText aria-hidden="true" /><small>{copy.workspace.kinds.objective}</small><span className={`eid-status eid-status-${objective.status}`}>{status}</span></header>}
       <div className="eid-home-record-heading">
         <h3 dir="auto">
-          <Link to={`/objectives/${encodeURIComponent(objective.id)}`}>{objective.title}</Link>
+          <Link to={href}>{objective.title}</Link>
         </h3>
         {compact && <span className={`eid-status eid-status-${objective.status}`}>{status}</span>}
       </div>
@@ -75,7 +78,7 @@ export function HomeObjective({
         </p>
       )}
       {!compact && (
-        <footer className="eid-home-record-actions"><Link className="eid-home-action" to={`/objectives/${encodeURIComponent(objective.id)}`}>
+        <footer className="eid-home-record-actions"><Link className="eid-home-action" to={href}>
           {copy.viewObjective} →
         </Link></footer>
       )}
@@ -84,6 +87,8 @@ export function HomeObjective({
 }
 
 export function HomeRequest({ request, snapshot }: { request: OrganizationRequest; snapshot: OrganizationSnapshot }) {
+  const location = useLocation()
+  const href = objectiveHref(request.objectiveId, location.pathname + location.search, snapshot.connection?.ownerScope ?? snapshot.connection?.scope, request.id)
   const { t } = useI18n()
   const requester = snapshot.agents.find(agent => agent.id === request.requesterId)
   const objective = snapshot.objectives.find(item => item.id === request.objectiveId)
@@ -100,7 +105,7 @@ export function HomeRequest({ request, snapshot }: { request: OrganizationReques
       <h3 dir="auto">{request.requestedOutcome || request.reason || t.organizationWork.needsYou}</h3>
       {request.requestedOutcome && request.reason && request.reason !== request.requestedOutcome && <p dir="auto">{request.reason}</p>}
       <p className="eid-note" dir="auto">{objective?.title || request.objectiveId}</p>
-      <footer className="eid-home-record-actions"><Link className="eid-home-action" to={`/objectives/${encodeURIComponent(request.objectiveId)}`}>
+      <footer className="eid-home-record-actions"><Link className="eid-home-action" to={href}>
         {t.organizationHome.reviewRequest} →
       </Link></footer>
     </article>
@@ -124,14 +129,15 @@ function focusIntake(mode: 'manual' | 'assisted' = 'manual') {
   const field = mode === 'manual' ? document.getElementById('eid-objective') : assisted?.querySelector('textarea')
 
   ;(field?.closest('form') ?? intake)?.scrollIntoView({ block: 'start' })
-  field?.focus({ preventScroll: true })
+  const target = field?.matches(':disabled') ? (mode === 'assisted' ? assisted : manual)?.querySelector('summary') : field
+  target?.focus({ preventScroll: true })
 }
 
 export function Home({ adapter, snapshot, starterEntry }: { adapter: OrganizationAdapter; snapshot: OrganizationSnapshot; starterEntry?: ReactNode }) {
   const { t, locale } = useI18n()
   const copy = t.organizationHome
   const data = homeData(snapshot)
-  const { hash } = useLocation()
+  const { hash, search } = useLocation()
   const navigate = useNavigate()
   const canChooseRecipient = snapshot.connection?.state === 'ready' && Boolean(snapshot.connection.ownerScope ?? snapshot.connection.scope)
   const intakeFocused = useRef(false)
@@ -144,10 +150,10 @@ export function Home({ adapter, snapshot, starterEntry }: { adapter: Organizatio
     }
 
     if (!intakeFocused.current && snapshot.connection?.state === 'ready') {
-      focusIntake()
+      focusIntake(new URLSearchParams(search).get('intake') === 'assisted' ? 'assisted' : 'manual')
       intakeFocused.current = true
     }
-  }, [hash, snapshot.connection?.state])
+  }, [hash, search, snapshot.connection?.state])
 
   const intake = (
     <details className="eid-home-intake" id="eid-home-intake" onToggle={event => {
@@ -186,7 +192,7 @@ export function Home({ adapter, snapshot, starterEntry }: { adapter: Organizatio
         {adapter.mode === 'runtime' && (
           <div className="eid-home-actions">
             {starterEntry}
-            <Button disabled={!canChooseRecipient} onClick={() => navigate('/messages?recipient=executive')} variant="default">{copy.messageOrganization}</Button>
+            <Button disabled={!canChooseRecipient} onClick={() => navigate('/messages?recipient=executive')} variant={starterEntry ? "secondary" : "default"}>{copy.messageOrganization}</Button>
             <Button id="eid-home-describe-request" onClick={() => {
               focusIntake('assisted')
               intakeFocused.current = true

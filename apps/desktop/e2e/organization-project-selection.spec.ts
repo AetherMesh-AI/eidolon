@@ -7,6 +7,7 @@ import {
   projectSelectionTitle,
   setupCompletionFixture
 } from './organization-completion-fixture'
+import { openOrganizationObjectives } from './organization-disclosures'
 import { expect, test } from './test'
 
 let running: Awaited<ReturnType<typeof setupCompletionFixture>> | undefined
@@ -93,7 +94,7 @@ test('retains both owner-selected repository IDs across reconnect and full nativ
 
   await running.restart()
   page = running.fixture.page
-  await primary(page).getByRole('link', { name: 'Objectives', exact: true }).click()
+  await openOrganizationObjectives(page)
   const objective = page.getByRole('link').filter({ has: page.getByText(projectSelectionTitle, { exact: true }) })
   await expect(objective).toHaveCount(1)
   await objective.click()

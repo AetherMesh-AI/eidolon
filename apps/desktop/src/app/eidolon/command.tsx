@@ -254,7 +254,7 @@ export function Command({
       <p className="eid-subtitle">{copy.composerSubtitle}</p>
       <details className="eid-form-disclosure" id="eid-assisted-intake" name="eid-intake-mode" open>
         <summary>{requestIntakeCopy[locale].title}</summary>
-        <OrganizationRequestIntake snapshot={snapshot} />
+        <OrganizationRequestIntake adapter={adapter} snapshot={snapshot} />
       </details>
       <details className="eid-form-disclosure" id="eid-manual-intake" name="eid-intake-mode">
         <summary>{requestIntakeCopy[locale].manualSetup}</summary>

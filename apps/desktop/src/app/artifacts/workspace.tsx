@@ -1,5 +1,5 @@
 import { useStore } from '@nanostores/react'
-import { Link, useSearchParams } from 'react-router'
+import { Link, useLocation, useSearchParams } from 'react-router'
 
 import { useOrganizationShellCopy } from '@/app/contrib/organization-copy'
 import { LocalizedTime } from '@/app/eidolon/localized-time'
@@ -7,6 +7,7 @@ import { RuntimeCapabilities } from '@/app/eidolon/runtime-capabilities'
 import { RuntimeStatus } from '@/app/eidolon/runtime-detail'
 import { useRuntimeOrganization } from '@/app/eidolon/runtime-provider'
 import { Knowledge } from '@/app/eidolon/workspace'
+import { objectiveHref } from '@/app/eidolon/workspace-navigation'
 import { PAGE_INSET_X } from '@/app/layout-constants'
 import type { SetStatusbarItemGroup } from '@/app/shell/statusbar-controls'
 import { useI18n } from '@/i18n'
@@ -23,6 +24,7 @@ export function ArtifactWorkspace({ setStatusbarItemGroup }: { setStatusbarItemG
   const { t } = useI18n()
   const surface = t.organizationSurfaces
   const [params] = useSearchParams()
+  const location = useLocation()
   const organization = useRuntimeOrganization()
   const connectionId = useStore($activeConnectionId)
   const profile = useStore($activeGatewayProfile)
@@ -76,7 +78,7 @@ export function ArtifactWorkspace({ setStatusbarItemGroup }: { setStatusbarItemG
                       <h3>{item.title}</h3>
                       <p>{item.summary}</p>
                       <LocalizedTime value={item.updatedAt} />
-                      <Link to={`/objectives/${encodeURIComponent(item.objectiveId)}`}>
+                      <Link to={objectiveHref(item.objectiveId, `${location.pathname}${location.search}`, organization.snapshot.connection?.ownerScope ?? organization.snapshot.connection?.scope)}>
                         {t.organizationHome.viewObjective} →
                       </Link>
                     </article>

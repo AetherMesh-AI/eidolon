@@ -28,7 +28,10 @@
   line-height: 1.55;
 }
 .eidolon *, .eidolon *::before, .eidolon *::after { box-sizing: border-box; }
-.eidolon :is(button, a, input, textarea, select, summary, .eid-home-panel-body, .eid-owner-chat-scroll):focus-visible, .eid-rail:focus-visible { outline: 2px solid var(--aether-400); outline-offset: 3px; }
+/* Keyboard focus must be immediate on every workspace surface, including shared transition-all controls. */
+.eidolon :is(button, a, input, textarea, select, summary, .eid-home-panel-body, .eid-owner-chat-scroll), .eid-rail { transition-property: color, background-color, border-color, box-shadow; }
+/* Three CSS pixels retain at least two after native fractional-zoom rounding. */
+.eidolon :is(button, a, input, textarea, select, summary, .eid-home-panel-body, .eid-owner-chat-scroll):focus-visible, .eid-rail:focus-visible { outline: 3px solid var(--aether-400); outline-offset: 3px; }
 .eidolon a { color: var(--aether-300); text-decoration: none; }
 .eidolon button, .eidolon input, .eidolon textarea, .eidolon select { font: inherit; }
 .eidolon button { cursor: pointer; }
@@ -519,9 +522,6 @@
   .eid-team-work-grid .eid-progress-tasks { margin-top: 12px; }
 }
 
-/* Focus outlines must appear immediately, without transition-all interpolating their width. */
-.eid-page:has(> .eid-objective-hero) button { transition-property: color, background-color, border-color, box-shadow; }
-
 /* Keep the outline at least two CSS pixels after native fractional zoom rounding. */
 .eid-page:has(> .eid-objective-hero) :is(button, a, input, textarea, select, summary):focus-visible { outline-width: 3px; }
 
@@ -539,13 +539,6 @@
   .eid-home-activity li { padding-block: 9px; }
   .eid-home-activity li p { margin-block: 8px; }
 }
-
-/* Secondary navigation is available on demand; the default rail is the seven destinations. */
-.eid-rail > .eid-rail-more { margin-top: auto; }
-.eid-rail-more > summary { display: flex; align-items: center; width: fit-content; list-style: none; border-radius: 6px; }
-.eid-rail-more > summary::-webkit-details-marker { display: none; }
-.eid-rail-more > summary:hover { background: var(--eidolon-surface-hover); }
-.eid-rail-more > nav { padding-block: 4px; }
 
 /* Recorded task rows keep title, state and assignee together. Empty/truncated
    list notices remain plain text; grouping and acceptance stay ledger-owned. */
@@ -735,3 +728,16 @@
 @media (max-width: 1100px) { .eid-objective-overview .eid-progress-summary { margin-bottom: 0; } }
 
 .eid-home-grid .eid-home-record-compact h3 { margin: 0; }
+
+/* Secondary destinations have named context; History never remounts its tree. */
+.eid-rail > .eid-rail-history { margin-top: auto; }
+.eid-rail .eid-rail-context { padding-block: 0 12px; padding-inline-start: 18px; }
+
+/* History keeps the canonical sidebar clipped and mounted. Reserve the full
+   3px outline + 3px offset at both ends, including the profile action scroller,
+   instead of allowing keyboard focus to paint through adjacent surfaces. */
+.eid-rail { scroll-padding: 7px; }
+.eid-rail-history :is(button, a, input, summary) { scroll-margin: 7px; }
+.eid-session-tree [data-slot="sidebar-content"] { padding-top: 7px; }
+.eid-session-tree .sidebar-profile-footer { padding-block: 7px; }
+.eid-session-tree [data-slot="profile-rail-scroll"] { padding: 7px; scroll-padding: 7px; }

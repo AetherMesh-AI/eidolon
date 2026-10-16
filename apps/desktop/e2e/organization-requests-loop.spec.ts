@@ -16,7 +16,7 @@ import {
   writeMockProviderConfig
 } from './fixtures'
 import { startMockServer } from './mock-server'
-import { openOrganizationDisclosure, openOrganizationRequests } from './organization-disclosures'
+import { openOrganizationDisclosure, openOrganizationObjectives, openOrganizationRequests } from './organization-disclosures'
 import { exactOrganizationEvidence, type OrganizationEvidenceContext } from './organization-evidence'
 import { organizationPackageProposal } from './organization-package-proposal'
 import { organizationProviderTarget } from './organization-provider-target'
@@ -464,7 +464,7 @@ test('retains owner attention across reloads, answers the requesting worker, and
   if (await inspector.isVisible()) {
     await inspector.getByRole('link', { name: 'Open objective', exact: true }).click()
   } else {
-    await primary.getByRole('link', { name: 'Objectives', exact: true }).click()
+    await openOrganizationObjectives(page)
     await page
       .getByRole('link')
       .filter({ has: page.getByText(objectiveTitle, { exact: true }) })

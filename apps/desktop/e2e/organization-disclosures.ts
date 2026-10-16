@@ -20,11 +20,21 @@ export async function openOrganizationDisclosure(
   await expect(details).toHaveAttribute('open', '')
 }
 
-/** Navigate through the retained operational route in the approved shell. */
+/** Open the Work context before following its Objectives link. */
+export async function openOrganizationObjectives(page: Page) {
+  const navigation = page.getByRole('navigation', { name: 'Primary', exact: true })
+  const objectives = navigation.getByRole('link', { name: 'Objectives', exact: true })
+  if (await objectives.count() === 0) {
+    await navigation.getByRole('link', { name: 'Work Overview', exact: true }).click()
+  }
+  await expect(objectives).toBeVisible()
+  await objectives.click()
+  await expect(page.getByRole('heading', { name: 'Objectives', exact: true })).toBeVisible()
+}
+
+/** Navigate through the primary owner-attention route. */
 export async function openOrganizationRequests(page: Page) {
   const navigation = page.getByRole('complementary', { name: 'Eidolon navigation' })
-  const summary = navigation.getByRole('button', { name: 'More workspace options', exact: true })
-  if ((await summary.locator('..').getAttribute('open')) === null) { await summary.click() }
   await navigation.getByRole('link', { name: 'Needs You', exact: true }).click()
   await expect(page.getByRole('region', { name: 'Attention inbox', exact: true })).toBeVisible()
 }

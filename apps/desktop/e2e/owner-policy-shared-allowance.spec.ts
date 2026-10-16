@@ -312,7 +312,8 @@ test('explicit enrollment scopes profile reads and charges owner chats while ord
     // A depleted organization pool must neither debit it nor disable that separate route.
     const beforeExternal = allowanceLedgers(sandbox, profiles)
     const rail = page.getByRole('complementary', { name: 'Eidolon navigation', exact: true })
-    await rail.getByRole('button', { name: 'More workspace options', exact: true }).click()
+    const history = rail.locator('.eid-rail-history')
+    if (await history.getAttribute('open') === null) await history.locator(':scope > summary').click()
     await rail.getByRole('button', { name: 'Profile chats', exact: true }).click()
     await expect(page.getByRole('tab', { name: 'Profile chats', exact: true })).toHaveAttribute('aria-selected', 'true')
     await page.evaluate(() => {location.hash = '#/'})
