@@ -60,7 +60,9 @@ def changed(source, path, suffix):
 def test_actual_renderer_typecheck_and_real_ui_share_source_and_bundle(prepared):
     typed = execute(prepared, 'renderer-types')
     assert typed['cleanupConfirmed'] is True, typed
-    assert typed['status'] == 'passed', typed
+    assert typed['status'] == 'passed', json.dumps({
+        key: typed.get(key) for key in ('status', 'reason', 'cleanupConfirmed', 'exitCode', 'isolation')
+    }, sort_keys=True)
     tested = execute(prepared, 'ui-tests')
     for receipt in (typed, tested):
         assert receipt['status'] == 'passed', receipt
