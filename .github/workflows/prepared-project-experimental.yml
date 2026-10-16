@@ -1,0 +1,158 @@
+name: Prepared workspace isolation
+on:
+  push:
+    branches: ['main', 'feat/prepared-project-validation']
+    paths:
+      - '.github/workflows/prepared-project-experimental.yml'
+      - 'scripts/run_tests.sh'
+      - 'scripts/run_tests_parallel.py'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - 'tests/conftest.py'
+      - 'tests/eidolon_cli/conftest.py'
+      - 'eidolon_constants.py'
+      - 'scripts/organization/prepare_workspace_dependencies.py'
+      - 'scripts/organization/record_prepared_npm_install.mjs'
+      - 'eidolon_cli/organization_project_dependency_bundle.py'
+      - 'eidolon_cli/organization_project_snapshot_bundle.py'
+      - 'eidolon_cli/organization_project_validation_profile.py'
+      - 'eidolon_cli/organization_project_workspace_node.py'
+      - 'eidolon_cli/organization_project_node.py'
+      - 'eidolon_cli/organization_project_runner.py'
+      - 'eidolon_cli/organization_project_compiler_bundle.py'
+      - 'eidolon_cli/organization_project_validation.py'
+      - 'eidolon_cli/project_node_runtime/seccomp.json'
+      - 'eidolon_cli/project_typescript_runtime/compiler-inventory.json'
+      - 'agent/file_safety.py'
+      - 'agent/redact.py'
+      - 'tools/organization_file_read.py'
+      - 'eidolon_cli/project_workspace_runtime/**'
+      - 'tests/eidolon_cli/test_organization_project_workspace_*.py'
+      - 'tests/eidolon_cli/prepared_workspace_fixture.py'
+      - 'tests/fixtures/prepared-workspace-*.json'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  prepare-candidate:
+    name: Prepared workspace ${{ matrix.suite }} isolation (Linux)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [native, abuse, capacity]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Checkout exact reviewed renderer fixture bytes
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: b79325580a3373ad6f5fac0169e2df03eaeb97a0
+          path: .prepared-renderer-fixture
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: Install locked Python test dependencies
+        run: |
+          python -m pip install uv==0.12.23
+          uv sync --locked --python 3.12 --extra dev --extra slack
+      - name: Record exact source and stage only package manifests
+        run: |
+          git rev-parse HEAD HEAD^{tree}
+          .venv/bin/python - <<'PY'
+          import json, os, pathlib, shutil
+          root = pathlib.Path.cwd() / '.prepared-renderer-fixture'
+          parent = pathlib.Path(os.environ['RUNNER_TEMP']) / 'prepared-project'
+          parent.mkdir(mode=0o700)
+          work = parent / 'installation'
+          work.mkdir(mode=0o700)
+          lock = json.loads((root / 'package-lock.json').read_text())
+          assert lock['lockfileVersion'] == 3
+          for path in lock['packages']:
+              if 'node_modules' in path.split('/'):
+                  continue
+              relative = pathlib.PurePosixPath(path)
+              assert not relative.is_absolute() and '..' not in relative.parts
+              target = work / relative / 'package.json'
+              target.parent.mkdir(parents=True, exist_ok=True)
+              shutil.copyfile(root / relative / 'package.json', target)
+          shutil.copyfile(root / 'package-lock.json', work / 'package-lock.json')
+          PY
+      - name: Prepare from official registry without package lifecycle scripts
+        run: |
+          IMAGE=node@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5
+          docker pull "$IMAGE"
+          docker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --user "$(id -u):$(id -g)" --cpus 2 --memory 4g --pids-limit 128 \
+            --tmpfs /tmp:rw,nosuid,nodev,size=2147483648 \
+            --mount "type=bind,src=$RUNNER_TEMP/prepared-project/installation,dst=/work" \
+            --mount "type=bind,src=$GITHUB_WORKSPACE/scripts/organization/record_prepared_npm_install.mjs,dst=/prepare.mjs,readonly" \
+            --workdir /work --entrypoint /usr/local/bin/node "$IMAGE" /prepare.mjs
+      - name: Inventory bytes without executing installed dependencies
+        run: |
+          .venv/bin/python scripts/organization/prepare_workspace_dependencies.py \
+            --repository "$RUNNER_TEMP/prepared-project/installation" \
+            --output "$RUNNER_TEMP/prepared-project/candidate" --candidate
+          cp "$RUNNER_TEMP/prepared-project/installation/runtime-metadata.json" "$RUNNER_TEMP/prepared-project/candidate/"
+          cp "$RUNNER_TEMP/prepared-project/installation/installation-record.json" "$RUNNER_TEMP/prepared-project/candidate/"
+      - name: Build the exact reviewed native-policy bundle
+        run: |
+          .venv/bin/python scripts/organization/prepare_workspace_dependencies.py \
+            --repository "$RUNNER_TEMP/prepared-project/installation" \
+            --output "$RUNNER_TEMP/prepared-project/verified" \
+            --native-policy "$GITHUB_WORKSPACE/tests/fixtures/prepared-workspace-native-policy-35c2d26b.json" \
+            --runtime-metadata "$RUNNER_TEMP/prepared-project/installation/runtime-metadata.json" \
+            --preparation-record "$RUNNER_TEMP/prepared-project/installation/installation-record.json"
+          .venv/bin/python - <<'PYCODE'
+          import json, os, pathlib
+          from tests.eidolon_cli.prepared_workspace_fixture import _load_renderer_selection
+          _, policy = _load_renderer_selection()
+          output = pathlib.Path(os.environ['RUNNER_TEMP']) / 'prepared-project/verified/execution-only-hashes.json'
+          with output.open('x') as stream:
+              json.dump(policy, stream, sort_keys=True)
+          output.chmod(0o444)
+          PYCODE
+      - name: Verify real compiler API behavior on synthetic files
+        if: matrix.suite == 'native'
+        env:
+          HERMES_PYTHON: .venv/bin/python
+          EIDOLON_TEST_TYPESCRIPT_BUNDLE: ${{ runner.temp }}/prepared-project/verified/bundle/node_modules/typescript
+        run: |
+          scripts/run_tests.sh tests/eidolon_cli/test_organization_project_workspace_compiler.py \
+            -j 1 --file-timeout 180 --file-retries 0 -x --junitxml=workspace-compiler.xml
+      - name: Exercise actual prepared renderer and selected UI tests offline
+        env:
+          HERMES_PYTHON: .venv/bin/python
+          EIDOLON_REQUIRE_WORKSPACE_SANDBOX: '1'
+          EIDOLON_TEST_WORKSPACE_BUNDLE: ${{ runner.temp }}/prepared-project/verified
+        run: |
+          scripts/run_tests.sh tests/eidolon_cli/test_organization_project_workspace_${{ matrix.suite }}.py \
+            -j 1 --file-timeout 1800 --file-retries 0 -x --junitxml=workspace-${{ matrix.suite }}.xml
+      - name: Retain exact native proof and preparation metadata
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: prepared-workspace-${{ matrix.suite }}-proof
+          path: |
+            workspace-compiler.xml
+            workspace-native.xml
+            workspace-abuse.xml
+            workspace-capacity.xml
+            ${{ runner.temp }}/prepared-project/verified/manifest.json
+            ${{ runner.temp }}/prepared-project/verified/toolchain.json
+            ${{ runner.temp }}/prepared-project/verified/preparation-record.json
+            ${{ runner.temp }}/prepared-project/verified/receipt.json
+          if-no-files-found: warn
+      - name: Retain reviewable metadata only
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: prepared-workspace-${{ matrix.suite }}-candidate
+          path: |
+            ${{ runner.temp }}/prepared-project/candidate/candidate.json
+            ${{ runner.temp }}/prepared-project/candidate/runtime-metadata.json
+            ${{ runner.temp }}/prepared-project/candidate/installation-record.json
+          if-no-files-found: warn
