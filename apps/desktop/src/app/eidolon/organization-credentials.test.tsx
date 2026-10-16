@@ -280,3 +280,26 @@ it('keeps a populated description field label independent of its existing value'
   expect([...description.labels!].map(label => label.textContent?.trim())).toEqual([copy.description])
   expect(h.request.mock.calls).toHaveLength(1)
 })
+
+it('keeps cancellation mounted through delayed refresh so its completion cannot close the next editor', async () => {
+  const h = await credentialsHarness()
+  h.request.mockRejectedValueOnce(new Error('Synthetic uncertain revocation'))
+  await h.client.mutate('revoke', entryFixture().id, 3)
+  const operationId = h.client.getSnapshot().intent!.operationId
+  mount(h)
+  const handle = h.request.getMockImplementation()!
+  const refresh = deferred<unknown>()
+  h.request.mockImplementationOnce(handle)
+  h.request.mockImplementationOnce(() => refresh.promise)
+  fireEvent.click(screen.getByRole('button', { name: copy.cancelPending }))
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: copy.cancelPending }))
+  await waitFor(() => expect(h.client.getSnapshot()).toMatchObject({ intent: null, busy: true }))
+  expect(screen.getByRole('dialog', { name: copy.cancelPending })).toBeTruthy()
+  await act(async () => { refresh.resolve(structuredClone(h.data)) })
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull(), { timeout: 2000 })
+  fireEvent.click(screen.getByRole('button', { name: copy.manageGrants }))
+  // Cross the shared confirmation's 600ms completion timer; it must own only its original dialog.
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 700)) })
+  expect(screen.getByRole('dialog', { name: copy.manageGrants })).toBeTruthy()
+  expect(h.request.mock.calls.find(call => call[0] === 'organization.credentials.cancelOperation')?.[1].operationId).toBe(operationId)
+})

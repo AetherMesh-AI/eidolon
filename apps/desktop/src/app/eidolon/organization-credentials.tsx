@@ -99,7 +99,7 @@ function CredentialCatalogPanel({ credentials }: { credentials: ReturnType<typeo
         {catalog.grants.length === 0 && <p className="mt-2 text-sm text-muted-foreground">{copy.noGrants}</p>}
       </details>
     </>}
-    {target?.kind === 'cancelPending' && view.intent?.operationId === target.operationId && <ConfirmDialog
+    {target?.kind === 'cancelPending' && <ConfirmDialog
       confirmLabel={copy.cancelPending} description={<><bdi>{target.operationId}</bdi><br />{copy.cancelPendingNote}</>}
       onClose={close} onConfirm={async () => {
         if (!await client.cancelPending(target.operationId!)) {
