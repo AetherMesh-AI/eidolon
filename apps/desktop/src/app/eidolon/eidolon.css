@@ -732,3 +732,12 @@
 /* Secondary destinations have named context; History never remounts its tree. */
 .eid-rail > .eid-rail-history { margin-top: auto; }
 .eid-rail .eid-rail-context { padding-block: 0 12px; padding-inline-start: 18px; }
+
+/* History keeps the canonical sidebar clipped and mounted. Reserve the full
+   3px outline + 3px offset at both ends, including the profile action scroller,
+   instead of allowing keyboard focus to paint through adjacent surfaces. */
+.eid-rail { scroll-padding: 7px; }
+.eid-rail-history :is(button, a, input, summary) { scroll-margin: 7px; }
+.eid-session-tree [data-slot="sidebar-content"] { padding-top: 7px; }
+.eid-session-tree .sidebar-profile-footer { padding-block: 7px; }
+.eid-session-tree [data-slot="profile-rail-scroll"] { padding: 7px; scroll-padding: 7px; }
