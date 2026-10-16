@@ -134,6 +134,15 @@ def _registry_packages(packages):
                             'registryPackages': [declaration]}, packages, {path})
 
 
+def _bin_parents(path):
+    root = posixpath.dirname(posixpath.dirname(path))
+    parents = bundle._package_paths(root + '/.package-lock.json')
+    roots = ['node_modules', *(value + '/node_modules' for value in WORKSPACES)]
+    if root not in roots and (not parents or root != parents[-1] + '/node_modules'):
+        raise ValueError('npm bin link is outside a contiguous installation root')
+    return parents
+
+
 class Inventory:
     def __init__(self, repository, packages, staging=None):
         self.repository, self.packages, self.staging = repository, packages, staging
@@ -195,8 +204,11 @@ class Inventory:
         if package_data is not None:
             data = bundle._json(bytes(package_data), LIMITS.max_package_manifest_bytes, 'Installed package manifest')
             locked = self.packages.get(package)
-            if not isinstance(locked, dict) or locked.get('link') or data.get('version') != locked.get('version'):
-                raise ValueError('Installed package does not match its exact lock version: ' + package)
+            expected_name = locked.get('name', package.rsplit('node_modules/', 1)[-1]) if isinstance(locked, dict) else None
+            if (not isinstance(locked, dict) or locked.get('link')
+                    or not isinstance(locked.get('version'), str) or data.get('version') != locked['version']
+                    or not isinstance(expected_name, str) or not expected_name or data.get('name') != expected_name):
+                raise ValueError('Installed package does not match its exact lock identity: ' + package)
             self.package_data[package] = data
 
     def _link(self, parent, name, relative, info):
@@ -208,11 +220,13 @@ class Inventory:
         if bundle._identity(info) != bundle._identity(os.stat(name, dir_fd=parent, follow_symlinks=False)):
             raise ValueError('Installed symlink changed during inventory')
         if posixpath.basename(posixpath.dirname(relative)) == '.bin':
+            _bin_parents(relative)
             self.bin_links.append({'path': relative, 'target': resolved})
             return
         locked, workspace = self.packages.get(relative), self.packages.get(resolved)
         if (not isinstance(locked, dict) or locked.get('link') is not True or locked.get('resolved') != resolved
-                or 'node_modules' in resolved.split('/') or not isinstance(workspace, dict) or workspace.get('link')):
+                or 'node_modules' in resolved.split('/') or not isinstance(workspace, dict) or workspace.get('link')
+                or bundle._package_path(relative + '/package.json') != relative):
             raise ValueError('Unexpected installed symlink: ' + relative)
         raw = _read_at(self.repository, resolved + '/package.json', LIMITS.max_package_manifest_bytes)
         data = bundle._json(raw, LIMITS.max_package_manifest_bytes, 'Workspace link manifest')
@@ -285,9 +299,12 @@ class Inventory:
         entries = {item['path'] for item in self.files}
         bundle._path_set([*entries, *(item['path'] for item in self.workspace_links + self.omitted_links + self.bin_links)],
                          LIMITS, 'Installed files and normalized links')
-        for path in entries:
-            package = bundle._package_path(path)
-            if package is not None and package not in self.package_data:
+        installed = {package for path in entries for package in bundle._package_paths(path)}
+        installed.update(package for link in self.workspace_links + self.omitted_links
+                         for package in bundle._package_paths(link['path'] + '/package.json')[:-1])
+        installed.update(package for link in self.bin_links for package in _bin_parents(link['path']))
+        for package in installed:
+            if package not in self.package_data:
                 raise ValueError('Installed package is missing its exact package manifest: ' + package)
         roots = ['node_modules/', *(value + '/node_modules/' for value in WORKSPACES)]
         expected = {path for path, value in self.packages.items() if value.get('link') is True

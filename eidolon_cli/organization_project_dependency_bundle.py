@@ -194,19 +194,38 @@ def _toolchain(value):
     return value
 
 
-def _package_path(path):
-    """Return the innermost npm package directory; no filesystem traversal."""
+def _package_paths(path):
+    """Return every contiguous npm installation boundary, without I/O.
+
+    A package may ship arbitrary ``dist/node_modules`` distribution assets.
+    Only ``package/node_modules/child`` starts another installed package; after
+    entering an ordinary payload directory, all remaining bytes keep that owner.
+    Callers must still require each returned package's exact lockfile record.
+    """
     parts = path.split('/')
-    indexes = [index for index, part in enumerate(parts) if part == 'node_modules']
-    if not indexes:
-        return None
-    index = indexes[-1] + 1
-    if index >= len(parts) or parts[index].startswith('.'):
-        return None
-    end = index + (2 if parts[index].startswith('@') else 1)
-    if end >= len(parts):
-        return None
-    return '/'.join(parts[:end])
+    if 'node_modules' not in parts:
+        return ()
+    index = parts.index('node_modules') + 1
+    packages = []
+    while True:
+        if index >= len(parts):
+            raise ValueError('Dependency file lacks an installed package owner')
+        if parts[index].startswith('.'):
+            if index == len(parts) - 1 and parts[index] == '.package-lock.json':
+                return tuple(packages)
+            raise ValueError('Dependency file lacks an installed package owner')
+        end = index + (2 if parts[index].startswith('@') else 1)
+        if end >= len(parts):
+            raise ValueError('Dependency file lacks an installed package owner')
+        packages.append('/'.join(parts[:end]))
+        if parts[end] != 'node_modules':
+            return tuple(packages)
+        index = end + 1
+
+
+def _package_path(path):
+    packages = _package_paths(path)
+    return packages[-1] if packages else None
 
 
 def _provenance(value, packages, installed):
@@ -322,18 +341,7 @@ A downstream profile must separately prove its selected source/dependency closur
     if sum(item['bytes'] for item in entries) > limits.max_bytes:
         raise ValueError('Dependency inventory exceeds its total byte bound')
     path_set = set(paths)
-    installed = {_package_path(path) for path in paths} - {None}
-    for path in installed:
-        package = packages.get(path)
-        if (not isinstance(package, dict) or package.get('link') or not isinstance(package.get('version'), str)
-                or path + '/package.json' not in path_set):
-            raise ValueError('Installed dependency package is missing from the inventory or lockfile')
-    # V1 tools use only the root installation. Nested/aliased tool resolution is
-    # deliberately not inferred from project configuration or PATH.
-    for name, version in toolchain['tools'].items():
-        path = 'node_modules/' + name
-        if path not in installed or packages[path]['version'] != version:
-            raise ValueError('Required tool is absent from its exact root package path or version')
+    installed = {package for path in paths for package in _package_paths(path)}
     links = value['workspaceLinks']
     if not isinstance(links, list) or len(links) > limits.max_package_manifests:
         raise ValueError('Dependency workspace links exceed their bound')
@@ -347,12 +355,26 @@ A downstream profile must separately prove its selected source/dependency closur
                 or not isinstance(record, dict) or record.get('link') is not True
                 or record.get('resolved') != item['target']):
             raise ValueError('Dependency workspace link differs from the selected lock graph')
+        installed.update(_package_paths(item['path'] + '/package.json')[:-1])
     _path_set([*paths, *(item['path'] for item in links)], limits, 'Dependency files and workspace links')
     selected_links = {path for path, entry in packages.items()
                       if isinstance(entry, dict) and entry.get('link') is True and entry.get('resolved') in selected
                       and any(path.startswith(root) for root in roots)}
     if {item['path'] for item in links} != selected_links:
         raise ValueError('Dependency workspace link mapping is incomplete')
+    for path in installed:
+        package = packages.get(path)
+        if (not isinstance(package, dict) or package.get('link') or not isinstance(package.get('version'), str)
+                or not isinstance(package.get('name', path.rsplit('node_modules/', 1)[-1]), str)
+                or not package.get('name', path.rsplit('node_modules/', 1)[-1])
+                or path + '/package.json' not in path_set):
+            raise ValueError('Installed dependency package is missing from the inventory or lockfile')
+    # V1 tools use only the root installation. Nested/aliased tool resolution is
+    # deliberately not inferred from project configuration or PATH.
+    for name, version in toolchain['tools'].items():
+        path = 'node_modules/' + name
+        if path not in installed or packages[path]['version'] != version:
+            raise ValueError('Required tool is absent from its exact root package path or version')
     normalized = {**value, 'selectedWorkspaces': selected,
                   'packageManifests': sorted(descriptors, key=lambda item: item['path']),
                   'workspaceLinks': sorted(links, key=lambda item: item['path']),
@@ -456,6 +478,8 @@ def _copy_file(source, target, name, item, check, package_identity):
                     raise ValueError('Installed dependency version differs from the exact lockfile')
                 if package_identity['toolName'] is not None and package.get('name') != package_identity['toolName']:
                     raise ValueError('Required tool package name differs from its exact root identity')
+                if package.get('name') != package_identity['packageName']:
+                    raise ValueError('Installed dependency package name differs from its exact lock identity')
             os.fchmod(output, 0o555 if item['mode'] & 0o111 else 0o444)
         finally:
             os.close(output)
@@ -548,6 +572,7 @@ A failed operation removes its private tree or reports cleanup failure as a note
             if item['bytes'] > limits.max_package_manifest_bytes:
                 raise ValueError('Installed package manifest exceeds its byte bound')
             versions[item['path']] = {'version': lock['packages'][package]['version'],
+                                      'packageName': lock['packages'][package].get('name', package.rsplit('node_modules/', 1)[-1]),
                                       'toolName': tool_names.get(package)}
     raw_destination = os.fspath(destination)
     if (not isinstance(raw_destination, str) or not raw_destination.startswith('/')

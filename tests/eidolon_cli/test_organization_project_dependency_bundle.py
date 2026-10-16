@@ -101,6 +101,122 @@ def change_file(prepared, path, data):
     item.update(bytes=len(data), sha256=digest(data))
 
 
+def add_dependency_file(prepared, path, data, kind='file'):
+    target = prepared['source'] / path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(data)
+    target.chmod(0o644)
+    prepared['manifest']['files'].append({'path': path, 'bytes': len(data),
+        'sha256': digest(data), 'mode': 0o644, 'kind': kind})
+
+
+def add_locked_nested_package(prepared):
+    path = 'node_modules/checker/node_modules/@fixture/helper'
+    lock = json.loads(prepared['inputs']['lockfile_bytes'])
+    lock['packages'][path] = {'version': '2.3.4'}
+    prepared['inputs']['lockfile_bytes'] = raw(lock)
+    prepared['manifest']['lockfile']['sha256'] = digest(raw(lock))
+    add_dependency_file(prepared, path + '/package.json', raw({'name': '@fixture/helper', 'version': '2.3.4'}))
+    add_dependency_file(prepared, path + '/index.js', b'// exact nested installation\n')
+    return path
+
+
+@pytest.mark.parametrize('path,owner', [
+    ('node_modules/checker/dist/node_modules/.pnpm/@types_unist@3.0.3/node_modules/@types/unist/index.d.ts',
+     'node_modules/checker'),
+    ('node_modules/checker/dist/node_modules/embedded/package.json', 'node_modules/checker'),
+    ('node_modules/checker/node_modules/@fixture/helper/index.js',
+     'node_modules/checker/node_modules/@fixture/helper'),
+    ('apps/desktop/node_modules/@fixture/helper/dist/node_modules/data/file',
+     'apps/desktop/node_modules/@fixture/helper'),
+])
+def test_package_owner_stops_at_distribution_payload_boundary(path, owner):
+    assert bundle._package_path(path) == owner
+
+
+@pytest.mark.parametrize('path', [
+    'node_modules/unlocked.js', 'node_modules/.cache/file',
+    'node_modules/checker/node_modules/undeclared/node_modules/.package-lock.json',
+    'node_modules/checker/node_modules/undeclared',
+])
+def test_ownerless_files_and_hidden_metadata_cannot_hide_install_boundaries(prepared, path):
+    prepared['manifest']['files'].append({'path': path, 'bytes': 0,
+        'sha256': digest(b''), 'mode': 0o644, 'kind': 'file'})
+    with pytest.raises(ValueError, match='package|Installed dependency'):
+        normalize(prepared)
+
+
+@pytest.mark.parametrize('parent', ['node_modules/checker', 'node_modules/undeclared'])
+def test_workspace_link_install_ancestors_require_exact_package_identities(prepared, parent):
+    link = parent + '/node_modules/@example/shared'
+    prepared['manifest']['workspaceLinks'].append({'path': link, 'target': 'apps/shared'})
+    lock = json.loads(prepared['inputs']['lockfile_bytes'])
+    lock['packages'][link] = {'link': True, 'resolved': 'apps/shared'}
+    prepared['inputs']['lockfile_bytes'] = raw(lock)
+    prepared['manifest']['lockfile']['sha256'] = digest(raw(lock))
+    if parent == 'node_modules/checker':
+        assert {'path': link, 'target': 'apps/shared'} in normalize(prepared)['manifest']['workspaceLinks']
+    else:
+        with pytest.raises(ValueError, match='Installed dependency'):
+            normalize(prepared)
+
+
+@pytest.mark.linux_only
+def test_packaged_node_modules_payload_and_real_nested_install_keep_exact_bytes(prepared, tmp_path):
+    payload = 'node_modules/checker/dist/node_modules/.pnpm/@types_unist@3.0.3/node_modules/@types/unist'
+    data = {payload + '/index.d.ts': b'export interface Point { offset: number; }\n',
+            payload + '/package.json': b'opaque distribution content, not an installed package manifest',
+            payload + '/native.node': b'\x7fELFinert distribution payload',
+            'node_modules/checker/node_modules/.package-lock.json': b'opaque installed-tree metadata'}
+    for path, content in data.items():
+        add_dependency_file(prepared, path, content, 'native' if path.endswith('.node') else 'file')
+    nested = add_locked_nested_package(prepared)
+    receipt = stage(prepared)
+    assert receipt == normalize(prepared)
+    assert {item['path'] for item in receipt['manifest']['files']} == {
+        str(path.relative_to(prepared['destination'])) for path in prepared['destination'].rglob('*') if path.is_file()}
+    for path, content in data.items():
+        assert (prepared['destination'] / path).read_bytes() == content
+    assert (prepared['destination'] / nested / 'package.json').read_bytes() == (
+        prepared['source'] / nested / 'package.json').read_bytes()
+    prepared['destination'] = tmp_path / 'changed-copy'
+    target = prepared['source'] / (payload + '/index.d.ts')
+    target.write_bytes(b'x' * target.stat().st_size)
+    with pytest.raises(ValueError, match='bytes or identity'):
+        stage(prepared)
+    assert_clean(prepared)
+
+
+@pytest.mark.linux_only
+@pytest.mark.parametrize('mutation', ['missing_lock', 'missing_manifest', 'wrong_name', 'wrong_version', 'missing_intermediate'])
+def test_genuine_nested_install_cannot_inherit_outer_identity(prepared, mutation):
+    nested = add_locked_nested_package(prepared)
+    if mutation in ('missing_lock', 'missing_intermediate'):
+        lock = json.loads(prepared['inputs']['lockfile_bytes'])
+        del lock['packages'][nested]
+        if mutation == 'missing_intermediate':
+            child = nested + '/node_modules/child'
+            lock['packages'][child] = {'version': '1.0.0'}
+            for suffix in ('package.json', 'index.js'):
+                path = nested + '/' + suffix
+                (prepared['source'] / path).unlink()
+                prepared['manifest']['files'] = [item for item in prepared['manifest']['files'] if item['path'] != path]
+            add_dependency_file(prepared, child + '/package.json', raw({'name': 'child', 'version': '1.0.0'}))
+        prepared['inputs']['lockfile_bytes'] = raw(lock)
+        prepared['manifest']['lockfile']['sha256'] = digest(raw(lock))
+    elif mutation == 'missing_manifest':
+        prepared['manifest']['files'] = [item for item in prepared['manifest']['files']
+                                         if item['path'] != nested + '/package.json']
+        (prepared['source'] / nested / 'package.json').unlink()
+    else:
+        content = {'name': 'other' if mutation == 'wrong_name' else '@fixture/helper',
+                   'version': '9.9.9' if mutation == 'wrong_version' else '2.3.4'}
+        change_file(prepared, nested + '/package.json', raw(content))
+    with pytest.raises(ValueError, match='Installed dependency'):
+        stage(prepared)
+    assert_clean(prepared)
+
+
 @pytest.mark.linux_only
 def test_copy_binds_complete_bytes_modes_graph_and_never_confers_execution(prepared):
     receipt = stage(prepared)

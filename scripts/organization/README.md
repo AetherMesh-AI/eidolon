@@ -59,6 +59,9 @@ approval to prepare or execute its contents.
 
 Only `apps/desktop` and `apps/shared` are selected. Root dependencies and their
 nested package trees, plus these workspaces' nested installations, are retained.
+Published payload directories such as `dist/node_modules/.pnpm/` stay owned by
+their enclosing locked package and retain every file. Actual nested installed
+packages still require their own exact lock record and package manifest.
 Exact lock-declared links to other workspaces may be omitted and are recorded.
 Selected workspace links become inert mappings for later source assembly.
 Canonical preparation rejects npm bin links because the reviewed installation

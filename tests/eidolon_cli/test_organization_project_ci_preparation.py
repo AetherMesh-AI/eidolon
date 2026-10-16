@@ -82,6 +82,189 @@ def prepare(fixture):
                                native_policy=fixture['native'])
 
 
+@pytest.fixture
+def packaged_node_modules(installed):
+    root = installed['repository']
+    nested = 'node_modules/vite/node_modules/nested-helper'
+    payload = 'node_modules/vitest/dist/node_modules/.pnpm/@types_unist@3.0.3/node_modules/@types/unist'
+    contents = {
+        payload + '/index.d.ts': b'export interface Node { type: string }\n',
+        payload + '/index.d.ts.map': b'{"version":3,"sources":["index.ts"]}',
+        # Published package.json bytes inside dist are not installed identities.
+        payload + '/package.json': b'{"name":"embedded-types","version":"0.0.7"}',
+        payload + '/inert.wasm': b'\0asminert nested native bytes',
+        nested + '/package.json': b'{"name":"nested-helper","version":"1.2.3"}',
+        nested + '/index.js': b'throw new Error("never execute nested package code");\n',
+    }
+    for path, content in contents.items():
+        write(root, path, content)
+    installed['contents'].update(contents)
+    lock = json.loads((root / 'package-lock.json').read_bytes())
+    lock['packages'][nested] = {
+        'version': '1.2.3', 'resolved': 'https://registry.npmjs.org/nested-helper/-/nested-helper-1.2.3.tgz',
+        'integrity': 'sha512-' + 'A' * 86 + '=='}
+    lockfile = bundle._canonical(lock)
+    write(root, 'package-lock.json', lockfile)
+    installed['record']['lockfileSha256'] = bundle._sha(lockfile)
+    installed['native']['files'].append({'path': payload + '/inert.wasm',
+        'sha256': bundle._sha(contents[payload + '/inert.wasm']), 'format': 'wasm'})
+    installed['native']['files'].sort(key=lambda item: item['path'])
+    return installed, nested, payload
+
+
+@pytest.mark.linux_only
+def test_published_node_modules_payloads_are_retained_without_losing_nested_package_identity(packaged_node_modules):
+    installed, nested, payload = packaged_node_modules
+    candidate = preparation.inspect_candidate(installed['repository'], installed['candidate'])
+    assert {item['path'] for item in candidate['files']} == set(installed['contents'])
+    assert candidate['nativePolicyCandidate'] == installed['native']
+    assert sorted(item.name for item in installed['candidate'].iterdir()) == ['candidate.json']
+    result = prepare(installed)
+    manifest = json.loads((installed['output'] / 'manifest.json').read_bytes())
+    assert candidate['inventorySha256'] == result['inventorySha256']
+    registry_paths = {item['path'] for item in manifest['provenance']['registryPackages']}
+    assert nested in registry_paths
+    assert 'node_modules/vitest' in registry_paths
+    assert payload not in registry_paths
+    assert not any('/dist/' in path for path in registry_paths)
+    for path, content in installed['contents'].items():
+        assert (installed['output'] / 'bundle' / path).read_bytes() == content
+
+
+@pytest.mark.linux_only
+@pytest.mark.parametrize('attack', ['unlocked_nested', 'missing_nested_manifest', 'mismatched_nested_manifest', 'mismatched_nested_name',
+                                  'missing_intermediate_lock', 'missing_intermediate_manifest',
+                                  'payload_symlink', 'payload_hardlink', 'payload_native_omitted'])
+def test_published_payload_ownership_preserves_install_and_file_boundaries(packaged_node_modules, tmp_path, attack):
+    installed, nested, payload = packaged_node_modules
+    root = installed['repository']
+
+    def remove_nested_lock():
+        lock = json.loads((root / 'package-lock.json').read_bytes())
+        del lock['packages'][nested]
+        lockfile = bundle._canonical(lock)
+        write(root, 'package-lock.json', lockfile)
+        installed['record']['lockfileSha256'] = bundle._sha(lockfile)
+
+    def remove_intermediate_identity():
+        deeper = nested + '/node_modules/deep-helper'
+        write(root, deeper + '/package.json', b'{"name":"deep-helper","version":"2.0.0"}')
+        lock = json.loads((root / 'package-lock.json').read_bytes())
+        lock['packages'][deeper] = {
+            'version': '2.0.0', 'resolved': 'https://registry.npmjs.org/deep-helper/-/deep-helper-2.0.0.tgz',
+            'integrity': 'sha512-' + 'A' * 86 + '=='}
+        if attack == 'missing_intermediate_lock':
+            del lock['packages'][nested]
+        (root / nested / 'package.json').unlink()
+        (root / nested / 'index.js').unlink()
+        lockfile = bundle._canonical(lock)
+        write(root, 'package-lock.json', lockfile)
+        installed['record']['lockfileSha256'] = bundle._sha(lockfile)
+
+    changes = {
+        'unlocked_nested': remove_nested_lock,
+        'missing_nested_manifest': lambda: (root / nested / 'package.json').unlink(),
+        'mismatched_nested_manifest': lambda: write(root, nested + '/package.json', b'{"version":"9.9.9"}'),
+        'mismatched_nested_name': lambda: write(root, nested + '/package.json', b'{"name":"wrong","version":"1.2.3"}'),
+        'missing_intermediate_lock': remove_intermediate_identity,
+        'missing_intermediate_manifest': remove_intermediate_identity,
+        'payload_symlink': lambda: (root / payload / 'escape').symlink_to('/etc/passwd'),
+        'payload_hardlink': lambda: os.link(root / payload / 'index.d.ts', tmp_path / 'linked-types'),
+        'payload_native_omitted': lambda: installed['native']['files'].pop(),
+    }
+    changes[attack]()
+    with pytest.raises((ValueError, OSError)):
+        prepare(installed)
+    assert not installed['output'].exists()
+    if attack != 'payload_native_omitted':
+        with pytest.raises((ValueError, OSError)):
+            preparation.inspect_candidate(root, installed['candidate'])
+        assert not installed['candidate'].exists()
+
+
+@pytest.mark.linux_only
+@pytest.mark.parametrize('name', [None, '', 0])
+def test_candidate_rejects_malformed_matching_lock_and_manifest_names(installed, name):
+    root = installed['repository']
+    path = 'apps/desktop/node_modules/helper'
+    lock = json.loads((root / 'package-lock.json').read_bytes())
+    lock['packages'][path]['name'] = name
+    write(root, 'package-lock.json', bundle._canonical(lock))
+    write(root, path + '/package.json', bundle._canonical({'name': name, 'version': '1.0.0'}))
+    with pytest.raises(ValueError, match='exact lock identity'):
+        preparation.inspect_candidate(root, installed['candidate'])
+    assert not installed['candidate'].exists()
+
+
+@pytest.mark.linux_only
+@pytest.mark.parametrize('version_fields', [{}, {'version': None}, {'version': 123}])
+def test_candidate_rejects_malformed_matching_lock_and_manifest_versions(installed, version_fields):
+    root = installed['repository']
+    path = 'apps/desktop/node_modules/helper'
+    lock = json.loads((root / 'package-lock.json').read_bytes())
+    del lock['packages'][path]['version']
+    lock['packages'][path].update(version_fields)
+    write(root, 'package-lock.json', bundle._canonical(lock))
+    write(root, path + '/package.json', bundle._canonical({'name': 'helper', **version_fields}))
+    with pytest.raises(ValueError, match='exact lock identity'):
+        preparation.inspect_candidate(root, installed['candidate'])
+    assert not installed['candidate'].exists()
+
+
+@pytest.mark.linux_only
+@pytest.mark.parametrize('kind', ['selected_workspace', 'omitted_workspace', 'bin'])
+@pytest.mark.parametrize('parent', ['declared', 'missing_lock', 'missing_manifest', 'payload'])
+def test_normalized_link_locations_keep_all_installed_parent_identities(installed, kind, parent):
+    root = installed['repository']
+    lock = json.loads((root / 'package-lock.json').read_bytes())
+    ancestor = 'node_modules/typescript/dist' if parent == 'payload' else 'node_modules/container'
+    if parent in {'declared', 'missing_manifest'}:
+        lock['packages'][ancestor] = {
+            'version': '1.0.0', 'resolved': 'https://registry.npmjs.org/container/-/container-1.0.0.tgz',
+            'integrity': 'sha512-' + 'A' * 86 + '=='}
+    if parent == 'declared':
+        write(root, ancestor + '/package.json', b'{"name":"container","version":"1.0.0"}')
+    name, target = {
+        'selected_workspace': ('@example/shared', 'apps/shared'),
+        'omitted_workspace': ('eidolon-tui', 'ui-tui'),
+        'bin': ('.bin/tsc', 'node_modules/typescript/bin/tsc'),
+    }[kind]
+    path = ancestor + '/node_modules/' + name
+    link = root / path
+    link.parent.mkdir(parents=True, exist_ok=True)
+    link.symlink_to(os.path.relpath(root / target, link.parent))
+    if kind != 'bin':
+        lock['packages'][path] = {'link': True, 'resolved': target}
+    lockfile = bundle._canonical(lock)
+    write(root, 'package-lock.json', lockfile)
+    installed['record']['lockfileSha256'] = bundle._sha(lockfile)
+    if parent == 'declared':
+        result = preparation.inspect_candidate(root, installed['candidate'])
+        assert sorted(item.name for item in installed['candidate'].iterdir()) == ['candidate.json']
+        if kind != 'bin':
+            assert prepare(installed)['bundleCreated'] is True
+        else:
+            assert {'path': path, 'target': target} in result['removedBinLinks']
+    else:
+        with pytest.raises(ValueError):
+            preparation.inspect_candidate(root, installed['candidate'])
+        assert not installed['candidate'].exists()
+        with pytest.raises(ValueError):
+            prepare(installed)
+        assert not installed['output'].exists()
+
+
+@pytest.mark.linux_only
+def test_distribution_bin_directory_is_not_a_normalized_npm_shim(installed):
+    root = installed['repository']
+    link = root / 'node_modules/typescript/dist/.bin/tsc'
+    link.parent.mkdir(parents=True)
+    link.symlink_to('../../bin/tsc')
+    with pytest.raises(ValueError, match='contiguous installation root'):
+        preparation.inspect_candidate(root, installed['candidate'])
+    assert not installed['candidate'].exists()
+
+
 @pytest.mark.linux_only
 def test_candidate_is_metadata_only_and_exact_policy_produces_verified_readonly_bundle(installed, tmp_path):
     root = installed['repository']
