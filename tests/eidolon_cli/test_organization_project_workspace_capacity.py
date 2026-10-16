@@ -12,8 +12,10 @@ import os
 from pathlib import Path
 import re
 import stat
+import sys
 import threading
 import time
+from types import SimpleNamespace
 import uuid
 
 import pytest
@@ -29,8 +31,51 @@ WALL_SECONDS = 120
 CLAIM_PREFIX = 'EIDOLON_CAPACITY_WORKLOAD_CLAIM '
 
 
-def diagnostic(result):
-    return {key: result.get(key) for key in ('status', 'reason', 'cleanupConfirmed', 'exitCode', 'isolation')}
+def diagnostic(result, observation=None):
+    """Bounded assertion context, with no source bytes or unrestricted receipts."""
+    def text(value, budget):
+        if not isinstance(value, str):
+            return None
+        value = runtime._safe_log(value.encode('utf-8', 'replace'))
+        while len(encoded := json.dumps(value)) > budget:
+            value = value[:len(value) * budget // len(encoded)]
+        return value
+
+    def count(value):
+        return value if type(value) is int and 0 <= value < 2 ** 63 else None
+
+    def kernel(values):
+        if values is None:
+            return None
+        return {'memoryLimit': count(values['memory.max']), 'swapLimit': count(values['memory.swap.max']),
+                'memoryMaxEvents': count(values['memory.events']['max']),
+                'oomKillEvents': count(values['memory.events']['oom_kill']),
+                'pidLimit': count(values['pids.max']), 'pidCurrent': count(values['pids.current']),
+                'pidMaxEvents': count(values['pids.events']['max'])}
+
+    report = {'status': text(result.get('status'), 64), 'reason': text(result.get('reason'), 512),
+              'cleanupConfirmed': result.get('cleanupConfirmed') is True,
+              'exitCode': count(result.get('exitCode')),
+              'isolationEstablished': result.get('isolation', {}).get('established') is True,
+              'stderrEvidenceOrigin': 'workload-claim', 'stderr': text(result.get('stderr'), 2000)}
+    if observation is not None:
+        state = observation.terminal or {}
+        report.update(kernelEvidenceOrigin='host-cgroup', baseline=kernel(observation.baseline),
+            latest=kernel(observation.latest), peak={key: count(observation.peak[key]) for key in
+                ('memory_max', 'oom_kill', 'pids_max', 'pids_current')},
+            sampleCount=count(observation.sample_count),
+            maxSampleGapMs=count(int(observation.max_sample_gap * 1000)),
+            topCount=count(observation.top_count), maxTopDurationMs=count(int(observation.max_top_duration * 1000)),
+            cgroupUnavailableErrno=count(observation.cgroup_unavailable),
+            observedProcessCount=len(observation.processes),
+            observerErrors=[text(error, 128) for error in observation.errors[:4]],
+            terminal={'status': text(state.get('Status'), 64), 'exitCode': count(state.get('ExitCode')),
+                      'oomKilled': state.get('OOMKilled') is True, 'error': text(state.get('Error'), 256)})
+        if observation.attach is not None:
+            code, _, totals, forced = observation.attach
+            report['attach'] = {'exitCode': count(code), 'forced': text(forced, 64),
+                                'stdoutBytes': count(totals['stdout']), 'stderrBytes': count(totals['stderr'])}
+    return json.dumps(report, sort_keys=True)
 
 
 def counters(data):
@@ -127,6 +172,9 @@ class Observation:
         self.errors, self.processes = [], {}
         self.baseline, self.latest = None, None
         self.peak = {'memory_max': 0, 'oom_kill': 0, 'pids_max': 0, 'pids_current': 0}
+        self.sample_count = self.top_count = 0
+        self.last_sample_at = self.cgroup_unavailable = None
+        self.max_sample_gap = self.max_top_duration = 0.0
         self.identifier = self.name = self.image_id = self.base = self.base_identity = None
         self.attach = self.terminal = None
         self.create_count = self.start_count = self.fault_count = 0
@@ -167,6 +215,11 @@ class Observation:
 
     def sample(self, reader):
         values = reader.read()
+        now = time.monotonic()
+        if self.last_sample_at is not None:
+            self.max_sample_gap = max(self.max_sample_gap, now - self.last_sample_at)
+        self.last_sample_at = now
+        self.sample_count += 1
         if self.baseline is None:
             assert values['memory.max'] == 1024 * 1048576
             assert values['memory.swap.max'] == 0 and values['pids.max'] == 64
@@ -185,9 +238,15 @@ class Observation:
         deadline = time.monotonic() + WALL_SECONDS
         try:
             while not self.stop.is_set() and time.monotonic() < deadline:
-                if time.monotonic() >= next_top:
+                # After memory-workload identity is established, process listings
+                # add no evidence and can block through OOM/cgroup teardown.
+                # PID probes retain listings to independently observe children.
+                if time.monotonic() >= next_top and not (self.resource == 'memory' and self.started.is_set()):
+                    top_started = time.monotonic()
                     code, output, _, forced = self.original(['top', self.identifier, '-eo', 'pid,uid,args'],
                         configuration, runtime._Budget(None, 2, time.monotonic()), limit=65536)
+                    self.top_count += 1
+                    self.max_top_duration = max(self.max_top_duration, time.monotonic() - top_started)
                     next_top = time.monotonic() + 0.1
                     if code == 0 and forced is None:
                         for line in output['stdout'].decode('utf-8', 'strict').splitlines():
@@ -212,6 +271,7 @@ class Observation:
             if reader is not None:
                 self.sample(reader)
         except OSError as error:
+            self.cgroup_unavailable = error.errno
             # Cgroup teardown is expected after exit. Missing counters cannot
             # satisfy the pressure assertions: they require an observed delta.
             if error.errno not in {errno.ENOENT, errno.ENODEV} or self.baseline is None:
@@ -292,6 +352,80 @@ class Observation:
             runtime._cleanup_tree(self.base)
 
 
+def test_memory_counter_sampling_is_not_starved_by_top_after_identification(monkeypatch, tmp_path):
+    now, calls, closed = [0.0], [], []
+    marker = 'eid-cap-test'
+
+    def fake_docker(arguments, *_args, **_kwargs):
+        assert arguments == ['top', 'a' * 64, '-eo', 'pid,uid,args']
+        calls.append(arguments)
+        # A later process listing can outlive the final cgroup event window.
+        now[0] += 0.01 if len(calls) == 1 else 0.5
+        data = f'PID UID COMMAND\n123 65534 {marker}\n'.encode()
+        return 0, {'stdout': data, 'stderr': b''}, {}, None
+
+    class Reader:
+        def __init__(self, pid):
+            assert pid == 123
+
+        def read(self):
+            if now[0] >= 0.2:
+                raise OSError(errno.ENODEV, 'Test cgroup has been torn down')
+            pressure = int(now[0] >= 0.14)
+            return {'memory.max': 1024 * 1048576, 'memory.swap.max': 0,
+                    'memory.events': {'max': pressure, 'oom_kill': pressure},
+                    'pids.max': 64, 'pids.current': 2, 'pids.events': {'max': 0}}
+
+        def close(self):
+            closed.append(True)
+
+    class Stop:
+        def is_set(self):
+            return False
+
+        def wait(self, delay):
+            now[0] += delay
+
+    module = sys.modules[__name__]
+    monkeypatch.setattr(runtime, '_docker', fake_docker)
+    monkeypatch.setattr(module, 'time', SimpleNamespace(monotonic=lambda: now[0]))
+    monkeypatch.setattr(module, 'process_identity', lambda _pid: (65534, 12345))
+    monkeypatch.setattr(module, 'CgroupReader', Reader)
+    observation = Observation(monkeypatch, marker, tmp_path, resource='memory')
+    observation.identifier, observation.stop = 'a' * 64, Stop()
+    observation.observe(tmp_path)
+    assert observation.started.is_set() and observation.processes == {123: (65534, 12345)}
+    assert observation.baseline['memory.events'] == {'max': 0, 'oom_kill': 0}
+    assert observation.peak['memory_max'] == observation.peak['oom_kill'] == 1
+    assert len(calls) == 1 and closed == [True] and observation.errors == []
+    assert observation.sample_count > 1 and observation.max_sample_gap <= 0.026
+    assert observation.top_count == 1 and observation.cgroup_unavailable == errno.ENODEV
+
+
+def test_capacity_failure_diagnostics_are_bounded_redacted_and_observation_only(monkeypatch, tmp_path):
+    monkeypatch.setattr(runtime, '_safe_log', lambda data: data.decode().replace('secret-value', '[REDACTED]'))
+    observation = Observation(monkeypatch, 'marker', tmp_path)
+    observation.baseline = observation.latest = {
+        'memory.max': 1024 * 1048576, 'memory.swap.max': 0,
+        'memory.events': {'max': 3, 'oom_kill': 1},
+        'pids.max': 64, 'pids.current': 2, 'pids.events': {'max': 0}}
+    observation.terminal = {'Status': 'exited', 'ExitCode': 137, 'OOMKilled': True, 'Error': '',
+                            'unrestrictedField': 'do-not-include'}
+    observation.attach = (137, {'stdout': b'do-not-include'}, {'stdout': 200, 'stderr': 300}, None)
+    result = {'status': 'failed', 'reason': 'secret-value ' + '\0\U0001f642' * 10000,
+              'cleanupConfirmed': True, 'exitCode': 137, 'isolation': {'established': True},
+              'stderr': 'secret-value ' + '\0\U0001f642' * 10000, 'source': 'do-not-include'}
+    rendered = diagnostic(result, observation)
+    assert len(rendered.encode()) <= 8192
+    assert 'secret-value' not in rendered and 'do-not-include' not in rendered
+    value = json.loads(rendered)
+    assert value['stderr'].startswith('[REDACTED]') and value['reason'].startswith('[REDACTED]')
+    assert value['kernelEvidenceOrigin'] == 'host-cgroup' and value['stderrEvidenceOrigin'] == 'workload-claim'
+    assert value['baseline']['memoryMaxEvents'] == 3 and value['latest']['oomKillEvents'] == 1
+    assert value['terminal']['oomKilled'] is True and value['attach']['exitCode'] == 137
+    assert value['attach']['stdoutBytes'] == 200 and value['attach']['stderrBytes'] == 300
+
+
 @pytest.mark.parametrize('field', ['id', 'name', 'image', 'label', 'reference'])
 def test_test_finalizer_never_removes_a_different_container_or_staging(monkeypatch, tmp_path, field):
     identifier, name, image_id = 'a' * 64, 'eidolon-workspace-owned', 'sha256:' + 'b' * 64
@@ -351,7 +485,7 @@ def run_probe(prepared, monkeypatch, tmp_path, body, *, resource=None, cleanup_f
         result = runtime.run_prepared_workspace_step(source, directory, manifest, manifest['toolchain'],
             profile, 'ui-tests', allow_local_docker=True, check_authorized=lambda: True)
         observation.stop_observer()
-        report = diagnostic(result)
+        report = diagnostic(result, observation)
         assert observation.started.is_set(), (observation.errors, report)
         assert observation.errors == [], (observation.errors, report)
         assert observation.create_count == observation.start_count == 1
@@ -387,11 +521,12 @@ for (let index = 0; index < 256; index++) {
 }
 throw new Error('Memory pressure did not stop the bounded allocation probe');
 """
-    with run_probe(prepared, monkeypatch, tmp_path, body, resource='memory') as (_, observation, _):
+    with run_probe(prepared, monkeypatch, tmp_path, body, resource='memory') as (result, observation, _):
         before = observation.baseline['memory.events']
-        assert observation.peak['memory_max'] > before['max'], 'No host-observed memory limit event'
+        report = diagnostic(result, observation)
+        assert observation.peak['memory_max'] > before['max'], report
         assert (observation.peak['oom_kill'] > before['oom_kill']
-                or observation.terminal['OOMKilled'] is True), 'No host-observed OOM termination'
+                or observation.terminal['OOMKilled'] is True), report
 
 
 @pytest.mark.linux_only
@@ -412,10 +547,11 @@ capacityAssert.equal(capacityError?.code, 'EAGAIN');
 await new Promise((resolve) => setTimeout(resolve, 2000));
 throw new Error('Expected bounded PID pressure reached');
 """
-    with run_probe(prepared, monkeypatch, tmp_path, body, resource='pids') as (_, observation, _):
-        assert observation.peak['pids_max'] > observation.baseline['pids.events']['max']
-        assert observation.peak['pids_current'] <= 64
-        assert len(observation.processes) > 1, 'No child independently observed before removal'
+    with run_probe(prepared, monkeypatch, tmp_path, body, resource='pids') as (result, observation, _):
+        report = diagnostic(result, observation)
+        assert observation.peak['pids_max'] > observation.baseline['pids.events']['max'], report
+        assert observation.peak['pids_current'] <= 64, report
+        assert len(observation.processes) > 1, report
 
 
 @pytest.mark.linux_only
@@ -464,7 +600,7 @@ try {
 @pytest.mark.parametrize('fault', ['refused', 'lost_acknowledgment'])
 def test_actual_unknown_cleanup_fails_closed_without_second_execution(prepared, monkeypatch, tmp_path, fault):
     with run_probe(prepared, monkeypatch, tmp_path, '', cleanup_fault=fault) as (result, observation, frames):
-        report = diagnostic(result)
+        report = diagnostic(result, observation)
         assert observation.attach[0] == 0 and len(frames) == 2, report
         assert frames[1]['kind'] == 'result' and frames[1]['status'] == 'passed'
         assert frames[1]['evidenceOrigin'] == 'workload-claim'

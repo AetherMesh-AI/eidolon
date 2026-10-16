@@ -508,9 +508,10 @@ def test_current_renderer_fixture_metadata_binds_baseline_path_and_selection():
     assert all(expected[path] == digest for path, digest in policy.items())
 
 
-def test_current_renderer_fixture_rejects_historical_selection_manifest(monkeypatch):
+@pytest.mark.parametrize('baseline', ['ac637822', '47ea5eae'])
+def test_current_renderer_fixture_rejects_historical_selection_manifest(monkeypatch, baseline):
     from tests.eidolon_cli import prepared_workspace_fixture as fixture
-    historical = fixture._FIXTURE_PATH.with_name('prepared-workspace-renderer-ac637822.json')
+    historical = fixture._FIXTURE_PATH.with_name(f'prepared-workspace-renderer-{baseline}.json')
     value = json.loads(historical.read_text())
     assert value['baselineCommit'] != fixture._BASELINE
     monkeypatch.setattr(fixture, '_FIXTURE_PATH', historical)

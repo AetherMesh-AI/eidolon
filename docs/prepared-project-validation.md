@@ -80,13 +80,16 @@ cases are separate proof gates; local skips are not native evidence. A test-owne
 identity-checked cleanup repair does not promote an uncertain execution receipt
 or establish durable scheduler replay protection.
 
-The native workflow checks out the exact `47ea5eae725372eacfefba2956d480b9e829d679`
+The native workflow checks out the exact `b79325580a3373ad6f5fac0169e2df03eaeb97a0`
 renderer fixture separately from the runtime under test. This checkpoint includes
 main `560e77317c86234bcfc52d570dce40d1a37e4246` and the separately reviewed ESM-safe
-Vite configuration correction. Its source and package manifest bytes must still
-match the complete reviewed inventory. The historical `ac637822` fixture remains
-unchanged. Two changed test files have freshly reviewed full-file exception hashes;
-their synthetic secret-shaped lines are unchanged from that historical review.
+Vite configuration correction, plus the generic RPC mock and required typed
+callback correction in the previously shadowed background-sync test. Its two
+profile/backend refresh assertions and response behavior remain unchanged; a
+dedicated native case requires both tests to pass. Source and package manifest
+bytes must still match the complete reviewed inventory. The historical `ac637822`
+and `47ea5eae` fixtures remain unchanged. The 53 reviewed execution-only hashes and
+reasons are unchanged from `47ea5eae`; the corrected test needs no exception.
 This does not claim validation of later main-branch changes. Updating the fixture
 or its execution-only exception policy requires separate review. General authorized
 source edits still need a practical owner-reviewed policy; this fixture's exact

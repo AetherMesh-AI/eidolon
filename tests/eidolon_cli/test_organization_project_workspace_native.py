@@ -10,6 +10,7 @@ from eidolon_cli.organization_project_dependency_bundle import normalize_prepare
 from eidolon_cli.organization_project_workspace_node import run_prepared_workspace_step
 
 UI_TEST = 'apps/desktop/src/components/idle-mount.test.tsx'
+PROFILE_REFRESH_TEST = 'apps/desktop/src/app/contrib/hooks/use-background-sync.test.tsx'
 SAME_STEM_TESTS = (
     'apps/desktop/src/app/chat/sidebar/session-actions-menu.test',
     'apps/desktop/src/app/contrib/hooks/use-background-sync.test',
@@ -134,6 +135,30 @@ def test_actual_renderer_typecheck_and_real_ui_share_source_and_bundle(prepared)
     assert typed['outcome']['sourceCount'] > 64
     assert tested['outcome']['testCount'] > 0
     assert tested['outcome']['reportedFiles'] == ['/source/root0/' + UI_TEST]
+
+
+def test_actual_profile_and_backend_refresh_ui_fixture_passes(prepared):
+    source, directory, manifest, profile = prepared
+    selected_profile = {**profile, 'steps': [
+        {**step, 'testFiles': [PROFILE_REFRESH_TEST]} if step['id'] == 'ui-tests' else step
+        for step in profile['steps']]}
+    result = execute((source, directory, manifest, selected_profile), 'ui-tests')
+    assert result['status'] == 'passed', json.dumps({
+        **{key: result.get(key) for key in (
+            'status', 'reason', 'cleanupConfirmed', 'exitCode', 'isolation', 'failureClaim')},
+        'stderr': result.get('stderr', '')[:8192],
+    }, sort_keys=True)
+    assert result['cleanupConfirmed'] is True and result['isolation']['established'] is True
+    assert result['sourceWritesPerformed'] is False
+    assert result['snapshotSha256'] == source.snapshot_sha256
+    outcome = result['outcome']
+    path = '/source/root0/' + PROFILE_REFRESH_TEST
+    assert outcome['evidenceOrigin'] == 'workload-claim'
+    assert outcome['selectedFiles'] == outcome['reportedFiles'] == [path]
+    assert outcome['testCount'] == 2
+    assert outcome['skippedCount'] == outcome['failedCount'] == 0
+    assert outcome['modules'] == [
+        {'path': path, 'passed': 2, 'skipped': 0, 'failed': 0, 'state': 'passed'}]
 
 
 def test_actual_renderer_type_error_cannot_pass(prepared):
