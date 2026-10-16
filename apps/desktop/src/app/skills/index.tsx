@@ -1,3 +1,5 @@
+import './skills-workspace.css'
+
 import { useStore } from '@nanostores/react'
 import { useQuery } from '@tanstack/react-query'
 import type * as React from 'react'
@@ -53,11 +55,11 @@ import {
   ListStripButton,
   ListStripMenu,
   type ListStripMenuToggle,
-  MasterDetail,
   ToolChip
 } from '../master-detail'
 import { PanelEmpty, PanelPill } from '../overlays/panel'
 import { PageSearchShell } from '../page-search-shell'
+import { ResponsiveMasterDetail } from '../responsive-master-detail'
 import { SETTINGS_ROUTE } from '../routes'
 import { BrowserRealProfilePanel } from '../settings/browser-real-profile-panel'
 import { ComputerUsePanel } from '../settings/computer-use-panel'
@@ -363,6 +365,25 @@ export function SkillsView({
   const skillsSortDesc = useStore($skillsSortDesc)
   const toolsetsSortDesc = useStore($toolsetsSortDesc)
   const [bulkBusy, setBulkBusy] = useState(false)
+  const [skillDetailOpen, setSkillDetailOpen] = useState(false)
+  const [skillsCompact, setSkillsCompact] = useState(false)
+  const workspaceRef = useRef<HTMLDivElement>(null)
+
+  const onSkillsCompactChange = useCallback((compact: boolean) => {
+    // The retained Hub sits below the list/detail root. A resize must keep
+    // its focused browser visible just like a focused list or editor.
+    if (
+      compact &&
+      workspaceRef.current?.contains(document.activeElement) &&
+      document.activeElement?.closest('.eid-hub-picker')
+    ) {
+      setSkillDetailOpen(false)
+    }
+
+    setSkillsCompact(compact)
+  }, [])
+
+  const [toolDetailOpen, setToolDetailOpen] = useState(false)
   const [selectedSkill, setSelectedSkill] = useState<string | null>(null)
   // Catalog selection is separate from installed-skill selection: identifiers
   // (official/<category>/<name>) vs names. Non-null wins the detail pane.
@@ -652,7 +673,7 @@ export function SkillsView({
     const q = query.trim()
 
     return (
-      <div className="flex h-full min-h-0 flex-1">
+      <div className="eid-capabilities-empty flex h-full min-h-0 flex-1 overflow-y-auto">
         <PanelEmpty
           description={q ? t.skills.emptyNothingMatches(q) : t.skills.emptyNoneAvailable(noun)}
           icon="search"
@@ -822,10 +843,10 @@ export function SkillsView({
   // with >1 option; hidden otherwise to avoid clutter.
   const profileScopeSelector =
     scopeOptions.length > 1 ? (
-      <div className="flex items-center gap-2 border-b border-(--ui-stroke-secondary) px-3 py-2">
+      <div className="eid-capabilities-scope flex min-w-0 flex-wrap items-center gap-2 border-b border-(--ui-stroke-secondary) px-3 py-2">
         <span className="text-[0.7rem] font-medium text-(--ui-text-tertiary)">{t.skills.configuringProfile}</span>
         <Select onValueChange={changeScope} value={scopeSelectValue}>
-          <SelectTrigger className="h-7 w-56 text-xs">
+          <SelectTrigger className="h-auto min-h-7 min-w-0 max-w-full text-xs">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -862,10 +883,10 @@ export function SkillsView({
       {/* One shared column: the scope selector sits above whichever tab is
           active, so Skills / Tools / MCP all read and write the SAME selected
           profile. */}
-      <div className="flex h-full flex-col">
+      <div className="eid-capabilities-workspace flex h-full min-h-0 min-w-0 flex-col" ref={workspaceRef}>
         {profileScopeSelector}
-        <div className="flex min-h-0 flex-1 flex-col">
-          <div className={mode === 'skills' ? 'min-h-40 flex-1 overflow-hidden' : 'min-h-0 flex-1'}>
+        <div className="eid-capabilities-content flex min-h-0 flex-1 flex-col">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             {mode === 'mcp' ? (
               // The gateway instance backs ONLY the live `reload.mcp` RPC, and
               // it is the ACTIVE gateway's socket — for a scope pinned to a
@@ -874,29 +895,32 @@ export function SkillsView({
               // apply on that backend's next session).
               <McpTab gateway={crossBackendScope ? null : gateway} key={`mcp-${scopeKey}`} profile={scopeProfile} />
             ) : (skillsFailed || toolsetsFailed) && (!skills || !toolsets) ? (
-              <PanelEmpty
-                action={
-                  <Button onClick={() => void refreshCapabilities()} size="sm">
-                    {t.skills.refresh}
-                  </Button>
-                }
-                description={skillsError instanceof Error ? skillsError.message : undefined}
-                icon="error"
-                title={t.skills.skillsLoadFailed}
-              />
+              <div className="eid-capabilities-empty min-h-0 flex-1 overflow-y-auto">
+                <PanelEmpty
+                  action={
+                    <Button onClick={() => void refreshCapabilities()} size="sm">
+                      {t.skills.refresh}
+                    </Button>
+                  }
+                  description={skillsError instanceof Error ? skillsError.message : undefined}
+                  icon="error"
+                  title={t.skills.skillsLoadFailed}
+                />
+              </div>
             ) : !skills || !toolsets ? (
               <PageLoader label={t.skills.loading} />
             ) : mode === 'skills' ? (
-              // Installed skills on top, the Skills Hub browser underneath —
-              // discovery sits with management. The list region keeps a floor
-              // (min-h-40, on the wrapper above) so a tall hub viewport or a
-              // short window shrinks the HUB, never the list: the sort strip
-              // and "changes apply" footer can no longer be starved to 0px
-              // and painted over by the hub header.
               visibleSkills.length === 0 && visibleOfficial.length === 0 ? (
                 capabilityEmpty('skills')
               ) : (
-                <MasterDetail pane={skillEditorPane} resizeId="capabilities-split" split="wide">
+                <ResponsiveMasterDetail
+                  className="eid-capabilities-detail"
+                  detailOpen={skillDetailOpen}
+                  onCompactChange={onSkillsCompactChange}
+                  onDetailOpenChange={setSkillDetailOpen}
+                  resizeId="capabilities-split"
+                  variant="capabilities"
+                >
                   <ListColumn
                     header={
                       <ListStrip
@@ -927,6 +951,7 @@ export function SkillsView({
                         onSelect={() => {
                           setSelectedSkill(skill.name)
                           setSelectedOfficial(null)
+                          setSkillDetailOpen(true)
                         }}
                         onToggle={enabled => void handleToggleSkill(skill, enabled)}
                         subtitle={skillSubtitle(skill)}
@@ -962,38 +987,50 @@ export function SkillsView({
                           active={activeOfficial?.identifier === skill.identifier}
                           enabled={false}
                           key={skill.identifier}
-                          onSelect={() => setSelectedOfficial(skill.identifier)}
+                          onSelect={() => {
+                            setSelectedOfficial(skill.identifier)
+                            setSkillDetailOpen(true)
+                          }}
                           subtitle={prettyName(skill.category)}
                           title={skill.name}
                         />
                       )
                     })}
                   </ListColumn>
-                  <DetailColumn footer={t.skills.changesApplyNewSessions}>
-                    {activeOfficial ? (
-                      <OfficialSkillDetail
-                        installing={runningInstalls.has(activeOfficial.identifier)}
-                        onInstall={() => handleInstallOfficial(activeOfficial)}
-                        profile={scopeProfile}
-                        skill={activeOfficial}
-                      />
-                    ) : (
-                      activeSkill && (
-                        <SkillDetail
-                          onArchive={() => setArchiveTarget(activeSkill.name)}
-                          onEdit={() => void openSkillEditor(activeSkill.name)}
+                  <div className="eid-capabilities-skill-detail">
+                    <DetailColumn footer={t.skills.changesApplyNewSessions}>
+                      {activeOfficial ? (
+                        <OfficialSkillDetail
+                          installing={runningInstalls.has(activeOfficial.identifier)}
+                          onInstall={() => handleInstallOfficial(activeOfficial)}
                           profile={scopeProfile}
-                          skill={activeSkill}
+                          skill={activeOfficial}
                         />
-                      )
-                    )}
-                  </DetailColumn>
-                </MasterDetail>
+                      ) : (
+                        activeSkill && (
+                          <SkillDetail
+                            onArchive={() => setArchiveTarget(activeSkill.name)}
+                            onEdit={() => void openSkillEditor(activeSkill.name)}
+                            profile={scopeProfile}
+                            skill={activeSkill}
+                          />
+                        )
+                      )}
+                    </DetailColumn>
+                    {skillEditorPane}
+                  </div>
+                </ResponsiveMasterDetail>
               )
             ) : visibleToolsets.length === 0 ? (
               capabilityEmpty('tools')
             ) : (
-              <MasterDetail resizeId="capabilities-split" split="wide">
+              <ResponsiveMasterDetail
+                className="eid-capabilities-detail eid-capabilities-tools-detail"
+                detailOpen={toolDetailOpen}
+                onDetailOpenChange={setToolDetailOpen}
+                resizeId="capabilities-split"
+                variant="capabilities"
+              >
                 <ListColumn
                   header={
                     <ListStrip
@@ -1021,7 +1058,10 @@ export function SkillsView({
                             `${toolNames(toolset).length} tools`
                           )
                         }
-                        onSelect={() => setSelectedToolset(toolset.name)}
+                        onSelect={() => {
+                          setSelectedToolset(toolset.name)
+                          setToolDetailOpen(true)
+                        }}
                         onToggle={checked => void handleToggleToolset(toolset, checked)}
                         subtitle={asText(toolset.description)}
                         title={label}
@@ -1040,7 +1080,7 @@ export function SkillsView({
                     />
                   )}
                 </DetailColumn>
-              </MasterDetail>
+              </ResponsiveMasterDetail>
             )}
           </div>
           {/* Hub picker OUTSIDE the tab ternary: it lazy-mounts the first time
@@ -1050,7 +1090,14 @@ export function SkillsView({
               `profile` prop into each install call, and remounting on scope
               change would reload the whole site for no data benefit. */}
           {hubMounted && (
-            <EmbeddedHubPicker hidden={mode !== 'skills'} installedNames={installedSkillNames} profile={scopeProfile} />
+            <EmbeddedHubPicker
+              hidden={
+                mode !== 'skills' ||
+                (skillsCompact && skillDetailOpen && (visibleSkills.length > 0 || visibleOfficial.length > 0))
+              }
+              installedNames={installedSkillNames}
+              profile={scopeProfile}
+            />
           )}
         </div>
       </div>
@@ -1103,7 +1150,7 @@ function DetailHeader({
   return (
     <header>
       <div className="flex min-h-6 flex-wrap items-center gap-2">
-        <h3 className="min-w-0 truncate text-[0.9375rem] font-semibold tracking-tight">{title}</h3>
+        <h3 className="min-w-0 [overflow-wrap:anywhere] text-[0.9375rem] font-semibold tracking-tight">{title}</h3>
         {pills}
       </div>
       <p className="mt-1 text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">

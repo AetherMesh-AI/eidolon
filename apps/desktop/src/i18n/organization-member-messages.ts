@@ -3,6 +3,8 @@ import type { OrganizationHomeCopy } from './organization-home'
 type MemberMessages = OrganizationHomeCopy['memberMessages']
 
 export const organizationMemberMessagesJa = {
+  backToMembers: 'メンバー一覧に戻る',
+  noRecipients: '利用可能な宛先がありません',
   members: 'メンバー', search: 'メンバーを検索', noMatches: '検索条件に一致するメンバーはいません。',
   directoryDetails: 'メンバーとの会話について',
   directoryNote: 'このプロファイルの永続メンバーです。選択しても会話は開かず、利用枠も追加されません。',
@@ -14,6 +16,8 @@ export const organizationMemberMessagesJa = {
 } satisfies MemberMessages
 
 export const organizationMemberMessagesZh = {
+  backToMembers: '返回成员列表',
+  noRecipients: '没有可用的收件人',
   members: '成员', search: '搜索成员', noMatches: '没有符合搜索条件的成员。',
   directoryDetails: '关于成员对话',
   directoryNote: '此配置文件中的持久成员。选择成员不会打开对话或补充其额度。',
@@ -24,6 +28,8 @@ export const organizationMemberMessagesZh = {
 } satisfies MemberMessages
 
 export const organizationMemberMessagesZhHant = {
+  backToMembers: '返回成員列表',
+  noRecipients: '沒有可用的收件者',
   members: '成員', search: '搜尋成員', noMatches: '沒有符合搜尋條件的成員。',
   directoryDetails: '關於成員對話',
   directoryNote: '此設定檔中的持久成員。選取成員不會開啟對話或補充其額度。',
@@ -34,6 +40,8 @@ export const organizationMemberMessagesZhHant = {
 } satisfies MemberMessages
 
 export const organizationMemberMessagesAr = {
+  backToMembers: 'العودة إلى الأعضاء',
+  noRecipients: 'لا يوجد مستلمون متاحون',
   members: 'الأعضاء', search: 'البحث عن أعضاء', noMatches: 'لا يوجد أعضاء يطابقون هذا البحث.',
   directoryDetails: 'حول محادثات الأعضاء',
   directoryNote: 'أعضاء دائمون في هذا الملف الشخصي. لا يؤدي اختيار عضو إلى فتح محادثته أو تجديد حصتها.',
@@ -44,6 +52,8 @@ export const organizationMemberMessagesAr = {
 } satisfies MemberMessages
 
 export const organizationMemberMessagesRu = {
+  backToMembers: 'Назад к участникам',
+  noRecipients: 'Нет доступных получателей',
   members: 'Участники', search: 'Поиск участников', noMatches: 'Участники по этому запросу не найдены.',
   directoryDetails: 'О диалогах с участниками',
   directoryNote: 'Постоянные участники этого профиля. Выбор участника не открывает диалог и не пополняет его лимит.',

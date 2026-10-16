@@ -13,6 +13,7 @@ export interface ArtifactRecord {
   label: string
   sessionId: string
   profile?: string
+  connectionId?: string
   sessionTitle: string
   timestamp: number
 }
@@ -396,7 +397,7 @@ export function collectArtifactsForSession(session: SessionInfo, messages: Sessi
         return
       }
 
-      const key = `${session.id}:${value}`
+      const key = JSON.stringify([session.connection_id ?? null, session.profile ?? null, session.id, value])
 
       if (found.has(key)) {
         return
@@ -410,6 +411,7 @@ export function collectArtifactsForSession(session: SessionInfo, messages: Sessi
         label: artifactLabel(value),
         sessionId: session.id,
         profile: session.profile,
+        connectionId: session.connection_id,
         sessionTitle: title,
         timestamp: artifactTimestamp(message, session)
       })
@@ -421,7 +423,8 @@ export function collectArtifactsForSession(session: SessionInfo, messages: Sessi
 
 export async function loadArtifactsForSessions(
   sessions: SessionInfo[],
-  loadMessages: (session: SessionInfo) => Promise<SessionMessage[]>
+  loadMessages: (session: SessionInfo) => Promise<SessionMessage[]>,
+  isCurrent: () => boolean = () => true
 ): Promise<ArtifactLoadResult> {
   const artifacts: ArtifactRecord[] = []
   const failures: ArtifactLoadFailure[] = []
@@ -430,10 +433,23 @@ export async function loadArtifactsForSessions(
   // tens of megabytes, so loading the whole page concurrently can exhaust both
   // the Desktop renderer and a remote dashboard backend.
   for (const session of sessions) {
+    if (!isCurrent()) {
+      break
+    }
+
     try {
       const messages = await loadMessages(session)
+
+      if (!isCurrent()) {
+        break
+      }
+
       artifacts.push(...collectArtifactsForSession(session, messages))
     } catch (error) {
+      if (!isCurrent()) {
+        break
+      }
+
       failures.push({ error, session })
     }
   }

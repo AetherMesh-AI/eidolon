@@ -5,6 +5,7 @@ import { useI18n } from '@/i18n/context'
 
 import { LocalizedTime } from './localized-time'
 import { RuntimeModelDispatch } from './runtime-model-dispatch'
+import { requestTypeLabel } from './runtime-request-display'
 import type { OrganizationManagementProposal, OrganizationRequest, OrganizationSnapshot } from './types'
 
 export const responseDecisions = {
@@ -86,7 +87,7 @@ export function RuntimeRequestContext({
         <dd>
           {parent && onParent ? (
             <Button aria-label={copy.openParentRequest} onClick={onParent} size="inline" variant="textStrong">
-              {parentTask?.title || parent.requestedOutcome || parent.type}
+              {parentTask?.title || parent.requestedOutcome || requestTypeLabel(parent.type, copy)}
             </Button>
           ) : (
             request.parentRequestId || copy.notRecorded

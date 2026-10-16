@@ -290,13 +290,13 @@ test('keeps the model budget blocked across process restart and cancellation wit
   const reason = 'Objective model-call budget exhausted. Automatic execution has stopped.'
   // The executive has delegated, but the shared model budget stops manager
   // planning before any task or configured worker activation is admitted.
-  const blocked = () => page.getByRole('button', { name: 'Inspect request: request.plan', exact: true })
+  const blocked = () => page.getByRole('button', { name: 'Inspect request: Work planning', exact: true })
   await expect(blocked()).toContainText(reason, {
     timeout: 90_000
   })
   const assertStopped = async (cancelled = false) => {
     await expect(blocked()).toContainText(cancelled ? 'Cancelled' : reason)
-    await expect(page.getByRole('button', { name: 'Inspect request: work.inspect', exact: true })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Inspect request: Source inspection', exact: true })).toHaveCount(0)
     expect(running!.stages.map(stage => stage.kind)).toEqual(['request.decompose'])
     expect(running!.providerErrors).toEqual([])
     await expect(page.getByRole('region', { name: 'Latest project test execution', exact: true })).toContainText(

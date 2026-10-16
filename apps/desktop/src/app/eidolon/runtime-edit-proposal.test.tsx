@@ -236,9 +236,9 @@ describe('reviewed managed workspace edit evidence', () => {
     await act(() => adapter.refresh())
     expect(await panel.findByText('Applied to managed workspace; source working tree unchanged.')).toBeTruthy()
     expect(panel.getByText('Applied workspace revision').nextElementSibling?.textContent).toBe('2')
-    expect(screen.getByRole('button', { name: 'Inspect request: request.merge' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Inspect request: Source handoff' })).toBeTruthy()
     expect(screen.getByText(/Source merge pending intervention/)).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'Retry request.merge' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Retry: Source handoff' })).toBeNull()
     expect(screen.queryByRole('button', { name: /^(grant|mark.*review|approve|apply|merge)/i })).toBeNull()
     expect(request.mock.calls.every(call => ['organization.snapshot', 'organization.evidence'].includes(call[0]))).toBe(
       true

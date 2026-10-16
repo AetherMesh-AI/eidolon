@@ -224,7 +224,12 @@ for (const mode of ['dark', 'light'] as const) {
       await compactBack(current, root, profileRow)
       await expect(editor).toHaveText('# Unsaved synthetic profile draft')
       await positionGalleryAtStart(root)
-      if (width === 400) await expect(root.getByRole('button', { name: 'Save SOUL.md', exact: true })).toBeInViewport({ ratio: 1 })
+      if (width === 400) {
+        // The bounded editor intentionally scrolls at minimum width. After
+        // resetting composition, prove keyboard access without compressing it.
+        await keyboardControl(current, root.getByRole('button', { name: 'Save SOUL.md', exact: true }), `${suffix} profile save after scroll reset`, 'next')
+        await expect(editor).toHaveText('# Unsaved synthetic profile draft')
+      }
       await captureGallery(current, `responsive-profile-${suffix}`, root)
 
       await page.evaluate(() => { location.hash = '/session-import' })

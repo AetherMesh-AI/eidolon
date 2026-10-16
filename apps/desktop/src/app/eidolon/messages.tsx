@@ -1,6 +1,9 @@
-import { useState } from 'react'
+import './messages.css'
+
+import { useCallback, useState } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router'
 
+import { ResponsiveMasterDetail } from '@/app/responsive-master-detail'
 import { Button } from '@/components/ui/button'
 import { SearchField } from '@/components/ui/search-field'
 import { useI18n } from '@/i18n/context'
@@ -64,11 +67,23 @@ export function Messages({
     ? agents.find(item => item.id === params.get('member') && (item.identityId ?? '') === params.get('identity'))
     : undefined
 
+  // Back changes only presentation. Browser navigation and owner/identity changes
+  // get their own presentation while chat ownership stays with the URL tuple.
+  const selection = JSON.stringify([location.key, scope, params.get('owner'), params.get('member'), params.get('identity')])
+  const [presentation, setPresentation] = useState<{ selection: string; open: boolean } | null>(null)
+  const detailOpen = Boolean(agent) && (presentation?.selection !== selection || presentation.open)
+  const setDetailOpen = useCallback((open: boolean) => setPresentation({ selection, open }), [selection])
   const objectives = agent ? linkedObjectives(agent, snapshot) : []
 
   return (
-    <div className="eid-messages-view">
-      <div className="eid-messages-layout" data-member-selected={Boolean(agent)}>
+    <div className="eid-messages-view" data-has-members={Boolean(agents.length)} data-member-selected={Boolean(agent)}>
+      <ResponsiveMasterDetail
+        backLabel={messages.backToMembers}
+        className="eid-messages-layout"
+        detailOpen={detailOpen}
+        onDetailOpenChange={setDetailOpen}
+        variant="messages"
+      >
         <section aria-label={messages.members} className="eid-message-members">
           <header className="eid-message-directory-heading">
             <h1>{executiveEntry ? copy.messageOrganization : copy.messages}</h1>
@@ -81,6 +96,7 @@ export function Messages({
                 key={item.id}
                 onClick={() => {
                   if (!scope) {return}
+                  setDetailOpen(true)
                   const next = new URLSearchParams(params)
                   next.set('member', item.id)
                   next.set('identity', item.identityId ?? '')
@@ -94,23 +110,29 @@ export function Messages({
               </Button>
             ))}
           </nav>
-          {!matches.length && <p role="status">{agents.length ? messages.noMatches : executiveEntry ? copy.noMessageExecutive : copy.noAgents}</p>}
-          <details className="eid-message-directory-details"><summary>{messages.directoryDetails}</summary><p>{executiveEntry ? copy.executiveMessageNote : copy.messagesNote}</p><p>{messages.directoryNote}</p></details>{executiveEntry && !agents.length && <Link to="/organization">{copy.reviewMessageRoster}</Link>}
+          {!!agents.length && !matches.length && <p role="status">{messages.noMatches}</p>}
+          {!agents.length && <div className="eid-message-empty">
+            <h2>{messages.noRecipients}</h2>
+            <p>{executiveEntry ? copy.noMessageExecutive : copy.noAgents}</p>
+            <Link to="/organization">{copy.reviewMessageRoster}</Link>
+          </div>}
+          <details className="eid-message-directory-details"><summary>{messages.directoryDetails}</summary><p>{executiveEntry ? copy.executiveMessageNote : copy.messagesNote}</p><p>{messages.directoryNote}</p></details>
         </section>
         <section aria-label={messages.conversation} className="eid-message-conversation">
           {agent ? (
-            <>
-              <OrganizationOwnerChat
-                adapter={adapter}
-                agent={agent}
-                key={`${scope}:${agent.identityId ?? agent.id}`}
-                layout="workspace"
-                snapshot={snapshot}
-              />
-            </>
-          ) : (
-            <div className="eid-message-empty"><h2>{copy.chooseAgent}</h2><p>{agents.length ? messages.selectNote : executiveEntry ? copy.noMessageExecutive : copy.noAgents}</p></div>
-          )}
+            <OrganizationOwnerChat
+              adapter={adapter}
+              agent={agent}
+              key={`${scope}:${agent.identityId ?? agent.id}`}
+              layout="workspace"
+              snapshot={snapshot}
+            />
+          ) : agents.length ? (
+            <div className="eid-message-empty">
+              <h2>{copy.chooseAgent}</h2>
+              <p>{messages.selectNote}</p>
+            </div>
+          ) : null}
         </section>
         {agent && <section aria-label={messages.memberContext} className="eid-message-context">
           <header className="eid-message-profile">
@@ -128,7 +150,7 @@ export function Messages({
           </section>
           <details><summary>{messages.retainedContext}</summary><AgentContext agent={agent} snapshot={snapshot} /></details>
         </section>}
-      </div>
+      </ResponsiveMasterDetail>
     </div>
   )
 }

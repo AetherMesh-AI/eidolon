@@ -6,29 +6,37 @@ import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 
+import { MasterDetailSash, useMasterDetailSplit } from './master-detail-split'
+
 interface ResponsiveMasterDetailProps {
+  backLabel?: string
+  resizeId?: string
   children: ReactNode
   className?: string
   detailOpen: boolean
   onDetailOpenChange: (open: boolean) => void
-  variant?: 'messaging' | 'profiles' | 'import'
+  onCompactChange?: (compact: boolean) => void
+  variant?: 'messaging' | 'profiles' | 'import' | 'messages' | 'capabilities'
 }
 
 /** Visibility is presentation state: neither pane is remounted when space changes. */
 export function ResponsiveMasterDetail({
+  backLabel,
   children,
   className,
   detailOpen,
   onDetailOpenChange,
+  onCompactChange,
+  resizeId,
   variant = 'messaging'
 }: ResponsiveMasterDetailProps) {
   const { t } = useI18n()
-  const rootRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const detailRef = useRef<HTMLDivElement>(null)
   const backRef = useRef<HTMLButtonElement>(null)
   const originRef = useRef<HTMLElement | null>(null)
   const [compact, setCompact] = useState(false)
+  const { gridRef: rootRef, splitStyle, dragging, startSplitDrag } = useMasterDetailSplit(resizeId, !compact)
   const [list, ...detail] = Children.toArray(children)
 
   useLayoutEffect(() => {
@@ -55,12 +63,13 @@ export function ResponsiveMasterDetail({
       }
 
       setCompact(narrow)
+      onCompactChange?.(narrow)
     })
 
     observer.observe(root)
 
     return () => observer.disconnect()
-  }, [onDetailOpenChange])
+  }, [onCompactChange, onDetailOpenChange, rootRef])
 
   useLayoutEffect(() => {
     if (!compact) {
@@ -79,13 +88,24 @@ export function ResponsiveMasterDetail({
       backRef.current?.focus({ preventScroll: true })
     } else if (!detailOpen && detailRef.current?.contains(document.activeElement)) {
       const origin = originRef.current
-      const target = origin?.isConnected ? origin : listRef.current
+
+      const selected = listRef.current?.querySelector<HTMLElement>(
+        'button[aria-pressed="true"], button[aria-current="true"], [role="option"][aria-selected="true"]'
+      )
+
+      const target = origin?.isConnected ? origin : (selected ?? listRef.current)
       target?.focus({ preventScroll: true })
     }
   }, [compact, detailOpen])
 
   return (
-    <div className={cn('eid-responsive-detail', className)} data-compact={compact} data-variant={variant} ref={rootRef}>
+    <div
+      className={cn('eid-responsive-detail', className)}
+      data-compact={compact}
+      data-variant={variant}
+      ref={rootRef}
+      style={splitStyle}
+    >
       <div
         className="eid-responsive-detail-list"
         data-pane="list"
@@ -107,16 +127,19 @@ export function ResponsiveMasterDetail({
         {list}
       </div>
       <div
-        className="eid-responsive-detail-content"
+        className="eid-responsive-detail-content relative"
         data-pane="detail"
         hidden={compact && !detailOpen}
         inert={compact && !detailOpen}
         ref={detailRef}
         tabIndex={-1}
       >
+        {resizeId && !compact && (
+          <MasterDetailSash className="block" dragging={dragging} onPointerDown={startSplitDrag} resizeId={resizeId} />
+        )}
         <div className="eid-responsive-detail-back" hidden={!compact}>
           <Button onClick={() => onDetailOpenChange(false)} ref={backRef} variant="text">
-            {t.common.back}
+            {backLabel ?? t.common.back}
           </Button>
         </div>
         {detail}

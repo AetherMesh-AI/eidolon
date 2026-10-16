@@ -250,7 +250,7 @@ it('returns from model setup to the same draft and rechecks readiness exactly on
   try {
     fireEvent.change(screen.getByLabelText('Jobs to handle'), { target: { value: 'Keep my work description' } })
     fireEvent.change(screen.getByLabelText('Goals and outcomes'), { target: { value: 'Keep my outcome' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Connect a model' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Model settings' }))
     expect(screen.queryByRole('dialog', { name: 'Build your starter team' })).toBeNull()
     act(() => closeManualOnboarding())
     await screen.findByRole('dialog', { name: 'Build your starter team' })
@@ -260,6 +260,72 @@ it('returns from model setup to the same draft and rechecks readiness exactly on
     expect(h.client.generate).not.toHaveBeenCalled()
     expect(h.client.create).not.toHaveBeenCalled()
     expect(h.onClose).not.toHaveBeenCalled()
+  } finally {
+    h.view.unmount()
+    act(() => $desktopOnboarding.set(original))
+  }
+})
+
+it.each(Object.keys(teamOnboardingCopy) as Locale[])(
+  'keeps model configuration, execution verification and check failure distinct in %s',
+  async locale => {
+    const original = $desktopOnboarding.get()
+    const copy = teamOnboardingCopy[locale]
+
+    const h = harness(
+      { ...setup, readiness: { ...readiness, status: 'blocked', blockers: ['credential_missing'] } },
+      locale
+    )
+
+    try {
+      expect(screen.getByText(copy.modelRequired)).toBeTruthy()
+      expect(screen.queryByText(copy.readinessUnchecked)).toBeNull()
+      fireEvent.click(screen.getByRole('button', { name: copy.modelSettings }))
+      act(() => closeManualOnboarding())
+      await screen.findByText(copy.readinessUnchecked)
+      expect(screen.queryByText(copy.modelRequired)).toBeNull()
+      expect(screen.queryByRole('button', { name: copy.connectModel })).toBeNull()
+      fireEvent.change(screen.getByLabelText(copy.jobs), { target: { value: 'Retained job' } })
+      fireEvent.change(screen.getByLabelText(copy.goals), { target: { value: 'Retained outcome' } })
+      vi.mocked(h.client.setup).mockRejectedValueOnce(new Error('timeout'))
+      fireEvent.click(screen.getByRole('button', { name: copy.checkConfiguration }))
+      await screen.findByText(copy.checkFailed)
+      expect(screen.getByLabelText(copy.jobs)).toHaveProperty('value', 'Retained job')
+      expect(screen.getByLabelText(copy.goals)).toHaveProperty('value', 'Retained outcome')
+      fireEvent.click(screen.getByRole('button', { name: copy.checkConfiguration }))
+      await waitFor(() => expect(screen.queryByText(copy.checkFailed)).toBeNull())
+      await waitFor(() => expect(h.client.setup).toHaveBeenCalledTimes(3))
+      expect(screen.getByText(copy.readinessUnchecked)).toBeTruthy()
+      expect(h.client.generate).not.toHaveBeenCalled()
+      expect(h.client.create).not.toHaveBeenCalled()
+    } finally {
+      h.view.unmount()
+      act(() => $desktopOnboarding.set(original))
+    }
+  }
+)
+
+it('ignores a model-return check after the dialog is dismissed', async () => {
+  const original = $desktopOnboarding.get()
+  const h = harness()
+  let finish!: (value: TeamSetup) => void
+  vi.mocked(h.client.setup).mockImplementation(
+    () =>
+      new Promise(resolve => {
+        finish = resolve
+      })
+  )
+
+  try {
+    fireEvent.click(screen.getByRole('button', { name: 'Model settings' }))
+    act(() => closeManualOnboarding())
+    await waitFor(() => expect(h.client.setup).toHaveBeenCalledTimes(1))
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    h.view.unmount()
+    await act(async () => finish({ ...setup, readiness: { ...readiness, status: 'blocked' } }))
+    expect(h.onClose).toHaveBeenCalledTimes(1)
+    expect(h.client.generate).not.toHaveBeenCalled()
+    expect(h.onCreated).not.toHaveBeenCalled()
   } finally {
     h.view.unmount()
     act(() => $desktopOnboarding.set(original))

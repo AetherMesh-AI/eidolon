@@ -79,7 +79,7 @@ test('retains both owner-selected repository IDs across reconnect and full nativ
 
   await page.getByRole('button', { name: 'Create objective', exact: true }).click()
   await expect(page.getByRole('heading', { name: projectSelectionTitle, exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Inspect request: request.plan', exact: true })).toContainText(
+  await expect(page.getByRole('button', { name: 'Inspect request: Work planning', exact: true })).toContainText(
     projectSelectionIntervention,
     { timeout: 60_000 }
   )

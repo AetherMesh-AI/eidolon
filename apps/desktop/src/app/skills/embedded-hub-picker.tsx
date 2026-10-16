@@ -1,5 +1,15 @@
+import './skills-workspace.css'
+
 import { useStore } from '@nanostores/react'
-import { memo, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react'
+import {
+  memo,
+  type PointerEvent as ReactPointerEvent,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState
+} from 'react'
 
 import { Button } from '@/components/ui/button'
 import type { ProfileScope } from '@/eidolon'
@@ -79,8 +89,42 @@ export const EmbeddedHubPicker = memo(function EmbeddedHubPicker({
   const heightOverride = useStore($paneHeightOverride(HUB_PANE_ID))
   const height = heightOverride ?? HUB_DEFAULT_PX
   const open = height > HUB_COLLAPSED_PX
+  const [frameMounted, setFrameMounted] = useState(open)
+
+  if (open && !frameMounted) {
+    setFrameMounted(true)
+  }
+
   const [dragging, setDragging] = useState(false)
   const sectionRef = useRef<HTMLElement>(null)
+  const iframeRef = useRef<HTMLIFrameElement>(null)
+  const headerRef = useRef<HTMLDivElement>(null)
+  const bodyId = useId()
+
+  // The header can wrap in a narrow or translated workspace. Reserve its
+  // actual height while letting only the browser viewport yield to the list.
+  useLayoutEffect(() => {
+    const header = headerRef.current
+    const section = sectionRef.current
+
+    if (!header || !section || typeof ResizeObserver === 'undefined') {
+      return
+    }
+
+    const measure = () => {
+      const headerHeight = header.getBoundingClientRect().height
+
+      if (headerHeight > 0) {
+        section.style.setProperty('--hub-header-height', `${headerHeight}px`)
+      }
+    }
+
+    const observer = new ResizeObserver(measure)
+    measure()
+    observer.observe(header)
+
+    return () => observer.disconnect()
+  }, [])
 
   // Top-edge sash: dragging UP grows the hub (shrinking the skills list above,
   // which is the flex-1 sibling). Same gesture as DetailPane / the shell's
@@ -123,12 +167,12 @@ export const EmbeddedHubPicker = memo(function EmbeddedHubPicker({
   // through the same store pipeline the hub rows use, so the action log,
   // optimistic flips, and Skills-list refresh all come for free.
   useEffect(() => {
-    if (!open) {
+    if (!open || hidden) {
       return undefined
     }
 
     const onMessage = (event: MessageEvent) => {
-      if (event.origin !== HUB_ORIGIN) {
+      if (event.origin !== HUB_ORIGIN || event.source !== iframeRef.current?.contentWindow) {
         return
       }
 
@@ -155,7 +199,7 @@ export const EmbeddedHubPicker = memo(function EmbeddedHubPicker({
     window.addEventListener('message', onMessage)
 
     return () => window.removeEventListener('message', onMessage)
-  }, [h, installedNames, open, profile])
+  }, [h, hidden, installedNames, open, profile])
 
   const updateAll = () => {
     notify({ kind: 'success', title: h.updateStarted, message: h.actionLog })
@@ -165,16 +209,11 @@ export const EmbeddedHubPicker = memo(function EmbeddedHubPicker({
   return (
     <section
       className={cn(
-        // Shrinkable (no shrink-0) + overflow-hidden: the picker is a flex
-        // child of the Capabilities column. Before, its fixed-height viewport
-        // made the section's min-content height rigid, so a short window (or a
-        // tall persisted drag height) starved the installed list to 0px and
-        // the list's strip/footer painted straight over this header. Now the
-        // section clips its own content and gives height back to the list;
-        // min-h keeps the header row itself always visible.
-        'relative flex min-h-9 flex-col overflow-hidden border-t border-(--ui-stroke-secondary)',
+        'eid-hub-picker relative flex min-w-0 flex-col overflow-hidden border-t border-(--ui-stroke-secondary)',
         hidden && 'hidden'
       )}
+      data-open={open}
+      inert={hidden}
       ref={sectionRef}
     >
       {/* Top-edge drag sash — pull the whole hub section up/down. */}
@@ -190,60 +229,67 @@ export const EmbeddedHubPicker = memo(function EmbeddedHubPicker({
           )}
         />
       </div>
-      <div className="flex shrink-0 items-center justify-between px-3 py-1.5">
+      <div
+        className="eid-hub-heading flex shrink-0 flex-wrap items-center justify-between gap-x-2 gap-y-1 px-3 py-1.5"
+        ref={headerRef}
+      >
         <span className="text-[0.7rem] font-medium text-(--ui-text-tertiary)">{h.pickerTitle}</span>
-        <div className="flex items-center gap-1">
+        <div className="flex min-w-0 flex-wrap items-center gap-1">
           <Button disabled={updating} onClick={updateAll} size="xs" variant="text">
             {updating && <Loader2 className="size-3 animate-spin" />}
             {updating ? h.updating : h.updateAll}
           </Button>
-          <Button onClick={() => setPaneHeightOverride(HUB_PANE_ID, open ? 0 : undefined)} size="xs" variant="text">
+          <Button
+            aria-controls={bodyId}
+            aria-expanded={open}
+            onClick={() => setPaneHeightOverride(HUB_PANE_ID, open ? 0 : undefined)}
+            size="xs"
+            variant="text"
+          >
             {open ? h.pickerHide : h.pickerBrowse}
           </Button>
         </div>
       </div>
-      {open && (
-        <div className="flex min-h-0 flex-col gap-1 px-3 pb-2">
-          {/* Resizable viewport: height comes from the top-edge drag sash
+      <div className="eid-hub-body flex min-h-0 flex-col gap-1 px-3 pb-2" hidden={!open} id={bodyId} inert={!open}>
+        {/* Resizable viewport: height comes from the top-edge drag sash
               above (persisted; double-click resets). flex-basis instead of a
               hard height so a short window shrinks the hub viewport rather
-              than letting it spill over the list. The iframe is rendered
-              oversized and scaled DOWN (133% × 0.75) so the hub page starts
-              zoomed out — the cross-origin page itself can't be styled, but
-              scaling the frame is ours. */}
-          <div
-            style={{
-              border: '1px solid var(--ui-stroke-secondary)',
-              borderRadius: 8,
-              flex: `0 1 ${height}px`,
-              maxWidth: '100%',
-              minHeight: 0,
-              minWidth: 320,
-              overflow: 'hidden',
-              position: 'relative',
-              width: '100%'
-            }}
-          >
+              than letting it spill over the list. Keep the cross-origin frame
+              at native scale so text, pointer targets and browser zoom share
+              the same coordinates, including after repeated resizes. */}
+        <div
+          className="eid-hub-viewport"
+          style={{
+            border: '1px solid var(--ui-stroke-secondary)',
+            borderRadius: 8,
+            flex: `0 1 ${height}px`,
+            maxWidth: '100%',
+            minWidth: 0,
+            overflow: 'hidden',
+            position: 'relative',
+            width: '100%'
+          }}
+        >
+          {frameMounted && (
             <iframe
+              ref={iframeRef}
               sandbox="allow-scripts allow-same-origin"
               src={HUB_PICKER_URL}
               style={{
                 background: 'transparent',
                 border: 'none',
-                height: '133.34%',
+                height: '100%',
                 // While the sash drags, the cross-origin iframe must not eat
                 // the pointermove stream.
                 pointerEvents: dragging ? 'none' : 'auto',
-                transform: 'scale(0.75)',
-                transformOrigin: 'top left',
-                width: '133.34%'
+                width: '100%'
               }}
               title={h.pickerTitle}
             />
-          </div>
-          <p className="shrink-0 px-1 text-[0.65rem] leading-4 text-(--ui-text-quaternary)">{h.pickerHint}</p>
+          )}
         </div>
-      )}
+        <p className="shrink-0 px-1 text-[0.65rem] leading-4 text-(--ui-text-quaternary)">{h.pickerHint}</p>
+      </div>
     </section>
   )
 })

@@ -138,7 +138,7 @@ export function TeamOnboardingEntry({ adapter }: { adapter: RuntimeOrganizationA
       <div className="eid-team-continuation">
         <strong>{copy.title}</strong>
         <ol className="eid-team-progress">
-          {[copy.setupOrganization, copy.connectModel, copy.review, copy.firstRequest].map((step, index) => (
+          {[copy.setupOrganization, copy.modelSettings, copy.review, copy.firstRequest].map((step, index) => (
             <li
               aria-current={
                 index === (!organizationId ? 0 : setup?.readiness.status === 'blocked' ? 1 : 2) ? 'step' : undefined
@@ -283,7 +283,13 @@ export function TeamOnboardingDialog({
       await action()
     } catch (failure) {
       if (alive.current && token === operation.current) {
-        setError(failure instanceof Error && failure.message === 'stale' ? copy.stale : copy.error)
+        setError(
+          failure instanceof Error && failure.message === 'stale'
+            ? copy.stale
+            : kind === 'check'
+              ? copy.checkFailed
+              : copy.error
+        )
       }
     } finally {
       if (alive.current && token === operation.current) {
@@ -352,7 +358,7 @@ export function TeamOnboardingDialog({
       })
       .catch(() => {
         if (alive.current && token === operation.current) {
-          setError(client.current() ? copy.error : copy.stale)
+          setError(client.current() ? copy.checkFailed : copy.stale)
         }
       })
       .finally(() => {
@@ -361,7 +367,7 @@ export function TeamOnboardingDialog({
           setPending(null)
         }
       })
-  }, [providerSetup.manual, client, setup.organizationId, copy.error, copy.stale])
+  }, [providerSetup.manual, client, setup.organizationId, copy.checkFailed, copy.stale])
   const modelBlocked = setup.readiness.status === 'blocked'
 
   return (
@@ -412,7 +418,7 @@ export function TeamOnboardingDialog({
                   size="sm"
                   variant="secondary"
                 >
-                  {copy.connectModel}
+                  {copy.modelSettings}
                 </Button>
                 <Button
                   disabled={!!pending || unresolvedCreate}
@@ -428,10 +434,10 @@ export function TeamOnboardingDialog({
                   size="sm"
                   variant="text"
                 >
-                  {copy.retry}
+                  {copy.checkConfiguration}
                 </Button>
               </div>
-              {modelBlocked && <p role="status">{copy.modelRequired}</p>}
+              <p role="status">{modelBlocked ? copy.modelRequired : copy.readinessUnchecked}</p>
               {!team ? (
                 <>
                   <fieldset className="eid-team-fields" disabled={modelBlocked}>

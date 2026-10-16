@@ -8,6 +8,7 @@ import { OrganizationWorkspace } from './workspace'
 
 it('keeps every controlled stage filterable and a failed project execution actionable only through backend-owned resolutions', async () => {
   const stages = ['request.project_test', 'request.test_review', 'request.source_integrate', 'request.project_failed']
+  const labels = ['Project execution', 'Project execution review', 'Source integration', 'Project execution issue']
 
   const snapshot: OrganizationSnapshot = {
     source: 'runtime',
@@ -58,17 +59,17 @@ it('keeps every controlled stage filterable and a failed project execution actio
     </MemoryRouter>
   )
 
-  await screen.findByRole('button', { name: 'Inspect request: request.project_failed' })
+  await screen.findByRole('button', { name: 'Inspect request: Project execution issue' })
   expect(screen.getByText('Required isolation is unavailable; no project test success was recorded.')).toBeTruthy()
-  expect(screen.queryByRole('button', { name: 'Inspect request: request.project_test' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Inspect request: Project execution' })).toBeNull()
   fireEvent.change(screen.getByRole('combobox', { name: 'Status' }), { target: { value: 'all' } })
 
-  for (const type of stages) {
-    expect(screen.getByRole('button', { name: `Inspect request: ${type}` })).toBeTruthy()
+  for (const label of labels) {
+    expect(screen.getByRole('button', { name: `Inspect request: ${label}` })).toBeTruthy()
   }
 
   fireEvent.change(screen.getByRole('combobox', { name: 'Type' }), { target: { value: 'request.project_failed' } })
-  expect(screen.queryByRole('button', { name: 'Inspect request: request.test_review' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Inspect request: Project execution review' })).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'Respond to request' }))
   const details = within(screen.getByRole('complementary', { name: 'Request details' }))
   expect(details.getByRole('option', { name: 'Request bounded replan' })).toBeTruthy()

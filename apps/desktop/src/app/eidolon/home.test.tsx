@@ -310,11 +310,11 @@ it('switches compact intake modes through explicit shortcuts while preserving th
     expect(assisted.open).toBe(false)
     const input = screen.getByRole('textbox', { name: 'Objective' })
     fireEvent.change(input, { target: { value: 'Retain my manual work' } })
-    expect(scroll.mock.instances.at(-1)).toBe(input.closest('form'))
+    expect(scroll.mock.instances.at(-1)).toBe(view.container.querySelector('#eid-home-intake'))
     fireEvent.click(screen.getByRole('button', { name: 'Describe a request' }))
     expect(manual.open).toBe(false)
     expect(assisted.open).toBe(true)
-    expect(scroll.mock.instances.at(-1)).toBe(assisted.querySelector('form'))
+    expect(scroll.mock.instances.at(-1)).toBe(view.container.querySelector('#eid-home-intake'))
     fireEvent.click(screen.getByRole('button', { name: 'New objective' }))
     expect(screen.getByRole('textbox', { name: 'Objective' })).toBe(input)
     expect(input).toHaveProperty('value', 'Retain my manual work')
@@ -342,4 +342,70 @@ it('opens and focuses assisted intake after the explicit team-setup continuation
     expect(globalThis.document.activeElement).toBe(assisted.querySelector('summary'))
     expect(adapter.createObjective).not.toHaveBeenCalled()
   } finally { HTMLElement.prototype.scrollIntoView = original }
+})
+
+
+it('makes the first request primary and keeps conversation and manual creation quiet', () => {
+  const current = { ...snapshot, connection: { scope: 'actions', ownerScope: 'actions', state: 'ready' as const } }
+  const adapter = { mode: 'runtime', getSnapshot: () => current } as unknown as RuntimeOrganizationAdapter
+  const view = render(<MemoryRouter><Home adapter={adapter} snapshot={current} starterEntry={<section className="eid-team-entry"><button>Set up organization</button></section>} /></MemoryRouter>)
+  expect(screen.getByRole('button', { name: 'Describe a request' }).getAttribute('data-variant')).toBe('default')
+  expect(screen.getByRole('button', { name: 'Message organization' }).getAttribute('data-variant')).toBe('text')
+  expect(screen.getByRole('button', { name: 'New objective' }).getAttribute('data-variant')).toBe('text')
+  expect(view.container.querySelector('.eid-home-actions > .eid-team-entry')).toBeTruthy()
+  const intake = view.container.querySelector('#eid-home-intake') as HTMLDetailsElement
+  fireEvent(intake, new Event('toggle'))
+  expect(globalThis.document.activeElement).toBe(screen.getByRole('button', { name: 'New objective' }))
+  view.rerender(<MemoryRouter><Home adapter={adapter} snapshot={current} starterEntry={<></>} /></MemoryRouter>)
+  expect(view.container.querySelector('.eid-home-actions > .eid-team-entry')).toBeNull()
+  expect(screen.getByRole('button', { name: 'Describe a request' }).getAttribute('data-variant')).toBe('default')
+})
+
+
+it.each(['unchecked', 'warning'] as const)('shows real %s readiness copy above the request composer', status => {
+  const value = ownerChatSnapshot()
+  const current: OrganizationSnapshot = { ...value, runtime: { ...value.runtime!, setup: { version: 1, provider: { status, blockers: [], inheritedMembers: 1, overriddenMembers: 0 }, backgroundOptIn: false } } }
+  const adapter = { mode: 'runtime', getSnapshot: () => current } as unknown as RuntimeOrganizationAdapter
+  const view = render(<MemoryRouter><Home adapter={adapter} snapshot={current} /></MemoryRouter>)
+  const summary = view.container.querySelector('.eid-home-setup > summary')!
+  expect(summary.textContent).toContain('Organization setup')
+  expect(summary.textContent).toContain(status === 'warning' ? 'Configured transport needs review' : 'Provider execution not checked')
+})
+
+it('retires a queued keyboard reveal when Home changes owner while its summary remains mounted', () => {
+  let frame: FrameRequestCallback | undefined
+
+  const requestFrame = vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => {frame = callback;
+
+ return 1})
+
+  const cancelFrame = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {})
+  const current = { ...snapshot, connection: { scope: 'keyboard-a', ownerScope: 'keyboard-a', state: 'ready' as const } }
+  const adapter = { mode: 'runtime', getSnapshot: () => current } as unknown as RuntimeOrganizationAdapter
+  const tree = (state: OrganizationSnapshot) => <MemoryRouter><main className="eid-workspace"><Home adapter={adapter} snapshot={state} /></main></MemoryRouter>
+  const view = render(tree(current))
+  const workspace = view.container.querySelector<HTMLElement>('main')!
+  const intake = view.container.querySelector<HTMLElement>('#eid-home-intake')!
+  const summary = intake.querySelector('summary')!
+  Object.defineProperty(workspace, 'clientHeight', { value: 325 })
+  workspace.scrollTop = 500
+  vi.spyOn(workspace, 'getBoundingClientRect').mockReturnValue({ top: 47 } as DOMRect)
+  vi.spyOn(summary, 'getBoundingClientRect').mockReturnValue({ top: 40, bottom: 60, height: 20 } as DOMRect)
+
+  try {
+    fireEvent.keyDown(intake, { key: 'Tab' })
+    summary.focus()
+    expect(frame).toBeDefined()
+    const queuedReveal = frame!
+    view.rerender(tree({ ...current, connection: { scope: 'keyboard-b', ownerScope: 'keyboard-b', state: 'ready' } }))
+    expect(summary.isConnected).toBe(true)
+    expect(globalThis.document.activeElement).toBe(summary)
+    expect(cancelFrame).toHaveBeenCalledWith(1)
+    queuedReveal(0)
+    expect(workspace.scrollTop).toBe(500)
+  } finally {
+    view.unmount()
+    requestFrame.mockRestore()
+    cancelFrame.mockRestore()
+  }
 })

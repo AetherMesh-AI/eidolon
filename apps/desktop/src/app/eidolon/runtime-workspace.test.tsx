@@ -75,7 +75,7 @@ it('keeps unsupported work visibly pending with its reason and routes retry/canc
   expect(inspector.getByText('No worker claimed this request')).toBeTruthy()
   expect(inspector.getByText('High')).toBeTruthy()
   fireEvent.keyDown(window.document, { key: 'Escape' })
-  fireEvent.click(screen.getByRole('button', { name: 'Retry work.send' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Retry: work.send' }))
   await waitFor(() => expect(request.mock.calls.some(call => call[0] === 'organization.retry' && call[1].id === 'request-1')).toBe(true))
   await waitFor(() => expect(screen.getByRole('button', { name: 'Cancel objective' })).toHaveProperty('disabled', false))
   const cancelled = { ...initial, objectives: [{ ...initial.objectives[0], status: 'cancelled' as const }], requests: initial.requests.map(item => ({ ...item, status: 'cancelled' as const })) }
@@ -83,7 +83,7 @@ it('keeps unsupported work visibly pending with its reason and routes retry/canc
   fireEvent.click(screen.getByRole('button', { name: 'Cancel objective' }))
   await waitFor(() => expect(adapter.getSnapshot().objectives[0].status).toBe('cancelled'))
   expect(request.mock.calls.some(call => call[0] === 'organization.cancel' && call[1].id === 'objective')).toBe(true)
-  expect(screen.queryByRole('button', { name: 'Retry work.send' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Retry: work.send' })).toBeNull()
   view.unmount()
 })
 
@@ -157,7 +157,7 @@ it.each(['/objectives/objective', '/requests'])('preserves an owner response thr
   })
 
   const view = open(adapter, path)
-  fireEvent.click(await screen.findByRole('button', { name: 'Inspect request: request.question' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Inspect request: Question' }))
   fireEvent.change(screen.getByRole('textbox', { name: 'Response' }), { target: { value: 'Retain this answer for this owner' } })
   act(() => { scope = { ...scope, key: 'socket-b', connected: false }; scopeChanged() })
   expect(screen.getByRole('textbox', { name: 'Response' })).toHaveProperty('value', 'Retain this answer for this owner')
@@ -166,7 +166,7 @@ it.each(['/objectives/objective', '/requests'])('preserves an owner response thr
   await waitFor(() => expect(screen.getByRole('textbox', { name: 'Response' })).toHaveProperty('disabled', false))
   expect(screen.getByRole('textbox', { name: 'Response' })).toHaveProperty('value', 'Retain this answer for this owner')
   act(() => { scope = { key: 'socket-c', ownerKey: 'owner-b', connected: true }; scopeChanged() })
-  fireEvent.click(await screen.findByRole('button', { name: 'Inspect request: request.question' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Inspect request: Question' }))
   expect(screen.getByRole('textbox', { name: 'Response' })).toHaveProperty('value', '')
   view.unmount()
 })

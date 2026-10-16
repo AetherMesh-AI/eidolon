@@ -110,13 +110,13 @@ describe('durable tool execution evidence', () => {
       </MemoryRouter>
     )
 
-    const row = within(await screen.findByRole('button', { name: 'Inspect request: work.inspect' }))
+    const row = within(await screen.findByRole('button', { name: 'Inspect request: Source inspection' }))
     expect(row.getByText(/Routing \/ intervention reason/)).toBeTruthy()
     expect(row.getByText(initial.requests![0].reason!)).toBeTruthy()
     expect(
       row.getByText('Recent tool calls: Completed: 1 · Running: 1 · Blocked: 1 · Failed: 1 · Unknown: 1')
     ).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Inspect request: work.inspect' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Inspect request: Source inspection' }))
     const panel = within(screen.getByRole('complementary', { name: 'Request details' }))
     expect(await panel.findByText('root-1/completed.md')).toBeTruthy()
     expect(panel.getByText('Full file result')).toBeTruthy()
@@ -264,7 +264,7 @@ it('preserves staffing routes and loads omitted request history only on inspecti
     </MemoryRouter>
   )
 
-  const hire = await screen.findByRole('button', { name: 'Inspect request: request.hire' })
+  const hire = await screen.findByRole('button', { name: 'Inspect request: Staffing request' })
   expect(audit).not.toHaveBeenCalled()
   expect(
     within(hire).getByText('Requested worker routes: work.inspect → research; work.draft → editorial')
@@ -277,7 +277,7 @@ it('preserves staffing routes and loads omitted request history only on inspecti
   expect(audit).not.toHaveBeenCalled()
   fireEvent.keyDown(globalThis.document, { key: 'Escape' })
   expect(screen.getByText('Full request audit available · recorded calls: 2')).toBeTruthy()
-  fireEvent.click(screen.getByRole('button', { name: 'Inspect request: work.inspect' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Inspect request: Source inspection' }))
   expect(await screen.findByText('Audit read interrupted')).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Retry tool receipts' }))
   const panel = within(screen.getByRole('complementary', { name: 'Request details' }))

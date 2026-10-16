@@ -8,6 +8,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type * as HermesApi from '@/eidolon'
 import { queryClient } from '@/lib/query-client'
 import type * as HubActions from '@/store/hub-actions'
+import { setPaneHeightOverride } from '@/store/panes'
+
+import { observeMasterDetailWidth } from '../responsive-master-detail.test-helpers'
 
 const getSkills = vi.fn()
 const getToolsets = vi.fn()
@@ -112,6 +115,8 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   vi.clearAllMocks()
+  vi.unstubAllGlobals()
+  setPaneHeightOverride('capabilities-hub', undefined)
   // Shared singleton client — drop cached skills/toolsets so each test refetches.
   queryClient.clear()
 })
@@ -128,7 +133,12 @@ describe('SkillsView toolset management', { timeout: 60_000 }, () => {
     function ParentRoute() {
       const location = useLocation()
 
-      return <output aria-label="Parent route">{location.pathname}{location.search}</output>
+      return (
+        <output aria-label="Parent route">
+          {location.pathname}
+          {location.search}
+        </output>
+      )
     }
 
     await act(async () => {
@@ -147,13 +157,116 @@ describe('SkillsView toolset management', { timeout: 60_000 }, () => {
     expect(screen.queryByRole('heading', { level: 1 })).toBeNull()
     expect(screen.getByTestId('embedded-capabilities').classList.contains('eid-secondary-surface')).toBe(false)
     await waitFor(() => expect(getSkills).toHaveBeenCalledWith('review-bot'))
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Tools/ })) })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Tools/ }))
+    })
     const toggle = await screen.findByRole('switch', { name: 'Turn Web Search toolset off' })
-    await act(async () => { fireEvent.click(toggle) })
+    await act(async () => {
+      fireEvent.click(toggle)
+    })
     await waitFor(() => expect(setToolsetEnabled).toHaveBeenCalledWith('web', false, 'review-bot'))
     expect(screen.getByLabelText('Parent route').textContent).toBe('/profiles?tab=advanced')
     expect(navigateSpy).not.toHaveBeenCalled()
     expect(getProfiles).not.toHaveBeenCalled()
+  })
+
+  it('navigates compact tools without toggling and restores the mounted list scroll and row focus', async () => {
+    const resize = observeMasterDetailWidth()
+    const { container } = await renderSkills()
+    await screen.findByRole('switch', { name: 'Turn Web Search toolset off' })
+    resize(400)
+    const list = container.querySelector<HTMLElement>('[data-pane="list"]')!
+    const detail = container.querySelector<HTMLElement>('[data-pane="detail"]')!
+    expect(detail.closest('.eid-capabilities-tools-detail')).toBeTruthy()
+    const scroll = list.querySelector<HTMLElement>('.eid-detail-scroll')!
+    const row = screen.getByRole('button', { name: /Web Search/ })
+    scroll.scrollTop = 91
+    row.focus()
+    fireEvent.click(row)
+    expect(list.hidden).toBe(true)
+    expect(list.hasAttribute('inert')).toBe(true)
+    expect(detail.hidden).toBe(false)
+    expect(window.document.activeElement).toBe(screen.getByRole('button', { name: 'Back' }))
+    resize(1100)
+    expect(list.hidden).toBe(false)
+    resize(700)
+    expect(detail.hidden).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+    expect(window.document.activeElement).toBe(row)
+    expect(scroll.scrollTop).toBe(91)
+    expect(setToolsetEnabled).not.toHaveBeenCalled()
+    expect(setSkillEnabled).not.toHaveBeenCalled()
+  })
+
+  it('opens a long installed skill and keeps its identity and Hub mounted through compact Back', async () => {
+    const resize = observeMasterDetailWidth()
+    const name = 'fixture-skill-with-a-long-name-and-distinct-final-identity'
+    getSkills.mockResolvedValue([{ name, description: 'Fixture', category: 'research', enabled: true, usage: 0 }])
+    const { SkillsView } = await import('./index')
+    const { installHubSkill } = await import('@/store/hub-actions')
+    let container: HTMLElement
+    await act(async () => {
+      ;({ container } = render(
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter>
+            <SkillsView embedded />
+          </MemoryRouter>
+        </QueryClientProvider>
+      ))
+    })
+    await screen.findByRole('switch', { name })
+    resize(400)
+    const iframe = window.document.querySelector('iframe')
+    const row = screen.getByRole('button', { name: new RegExp(name) })
+    const list = container!.querySelector<HTMLElement>('[data-pane="list"]')!
+    row.focus()
+    fireEvent.click(row)
+    expect(screen.getByRole('heading', { name }).textContent).toBe(name)
+    expect(list.hidden).toBe(true)
+    expect(iframe!.closest('section')!.hasAttribute('inert')).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+    expect(window.document.activeElement).toBe(row)
+    expect(window.document.querySelector('iframe')).toBe(iframe)
+    expect(iframe!.closest('section')!.hasAttribute('inert')).toBe(false)
+    resize(1100)
+    row.focus()
+    fireEvent.click(row)
+    const hubControl = screen.getByRole('button', { expanded: true })
+    hubControl.focus()
+    resize(400)
+    expect(list.hidden).toBe(false)
+    expect(window.document.activeElement).toBe(hubControl)
+    expect(iframe!.closest('section')!.hasAttribute('inert')).toBe(false)
+    expect(setSkillEnabled).not.toHaveBeenCalled()
+    expect(installHubSkill).not.toHaveBeenCalled()
+  })
+
+  it('retains the Hub frame through collapse and rejects picks while hidden', async () => {
+    const { installHubSkill } = await import('@/store/hub-actions')
+    const { EmbeddedHubPicker } = await import('./embedded-hub-picker')
+    const { rerender } = render(<EmbeddedHubPicker installedNames={new Set()} />)
+    const iframe = window.document.querySelector('iframe')!
+    // Native scale preserves legible targets and cross-frame hit coordinates.
+    expect(iframe.style.transform).toBe('')
+    expect(iframe.style.width).toBe('100%')
+    expect(iframe.style.height).toBe('100%')
+    const collapse = screen.getByRole('button', { expanded: true })
+    fireEvent.click(collapse)
+    expect(window.document.querySelector('iframe')).toBe(iframe)
+    expect(iframe.closest('[hidden]')?.hasAttribute('inert')).toBe(true)
+    fireEvent.click(screen.getByRole('button', { expanded: false }))
+    expect(window.document.querySelector('iframe')).toBe(iframe)
+    rerender(<EmbeddedHubPicker hidden installedNames={new Set()} />)
+    await act(async () => {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: { type: 'hermes-skill-pick', name: 'new-skill' },
+          origin: 'https://hermes-agent.nousresearch.com',
+          source: iframe.contentWindow
+        })
+      )
+    })
+    expect(installHubSkill).not.toHaveBeenCalled()
   })
 
   it('renders a switch for each toolset and toggles it off', async () => {
@@ -324,13 +437,14 @@ describe('SkillsView toolset management', { timeout: 60_000 }, () => {
     render(<EmbeddedHubPicker installedNames={new Set(['web-research'])} profile={null} />)
 
     // The picker is expanded by default — the hub iframe is live on mount.
-    expect(document.querySelector('iframe')).toBeTruthy()
+    expect(window.document.querySelector('iframe')).toBeTruthy()
 
     await act(async () => {
       window.dispatchEvent(
         new MessageEvent('message', {
           data: { type: 'hermes-skill-pick', name: 'web-research', identifier: 'web-research' },
-          origin: 'https://hermes-agent.nousresearch.com'
+          origin: 'https://hermes-agent.nousresearch.com',
+          source: window.document.querySelector('iframe')!.contentWindow
         })
       )
     })
@@ -348,7 +462,7 @@ describe('SkillsView toolset management', { timeout: 60_000 }, () => {
     // eagerly mounted hub is exactly the Capabilities lag bug.
     await renderSkills() // ?tab=toolsets
     await screen.findByRole('switch', { name: 'Turn Web Search toolset off' })
-    expect(document.querySelector('iframe')).toBeNull()
+    expect(window.document.querySelector('iframe')).toBeNull()
     cleanup()
 
     // Embedded mode drives tabs through local state (the route hooks are
@@ -364,7 +478,7 @@ describe('SkillsView toolset management', { timeout: 60_000 }, () => {
       )
     })
 
-    const iframe = document.querySelector('iframe')
+    const iframe = window.document.querySelector('iframe')
     expect(iframe).toBeTruthy()
     expect(iframe!.closest('section')!.classList.contains('hidden')).toBe(false)
 
@@ -374,7 +488,7 @@ describe('SkillsView toolset management', { timeout: 60_000 }, () => {
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /Tools/ }))
     })
-    const kept = document.querySelector('iframe')
+    const kept = window.document.querySelector('iframe')
     expect(kept).toBeTruthy()
     expect(kept!.closest('section')!.classList.contains('hidden')).toBe(true)
   })

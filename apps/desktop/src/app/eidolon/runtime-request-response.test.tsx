@@ -92,7 +92,7 @@ it('answers typed questions with durable request provenance, exact evidence, and
     .mockImplementation((method: string) => (method === 'organization.respond' ? pending : Promise.resolve(initial)))
 
   const view = open(request)
-  fireEvent.click(await screen.findByRole('button', { name: 'Inspect request: request.question' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Inspect request: Question' }))
   const inspector = within(screen.getByRole('complementary', { name: 'Request details' }))
   expect(inspector.getByText('Release writer')).toBeTruthy()
   expect(inspector.getByText('Which audience should this brief address?')).toBeTruthy()
@@ -131,7 +131,7 @@ it('answers typed questions with durable request provenance, exact evidence, and
   expect(screen.queryByRole('form', { name: 'Respond to request' })).toBeNull()
   fireEvent.keyDown(globalThis.document, { key: 'Escape' })
   fireEvent.change(screen.getByRole('combobox', { name: 'Status' }), { target: { value: 'all' } })
-  fireEvent.click(screen.getByRole('button', { name: 'Inspect request: request.question' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Inspect request: Question' }))
   expect(screen.getByRole('region', { name: 'Recorded response' }).textContent).toMatch(
     /Release managers and on-call engineers/
   )
@@ -139,9 +139,9 @@ it('answers typed questions with durable request provenance, exact evidence, and
   view.unmount()
 })
 
-it.each(['request.hire', 'request.permission'])(
+it.each([['request.hire', 'Staffing request'], ['request.permission', 'Permission request']])(
   'shows the complete %s proposal and records only the chosen owner decision',
-  async type => {
+  async (type, label) => {
     const proposal = {
       members: [
         {
@@ -176,7 +176,7 @@ it.each(['request.hire', 'request.permission'])(
 
     const request = vi.fn().mockResolvedValue(initial)
     const view = open(request)
-    fireEvent.click(await screen.findByRole('button', { name: `Inspect request: ${type}` }))
+    fireEvent.click(await screen.findByRole('button', { name: `Inspect request: ${label}` }))
     const inspector = within(screen.getByRole('complementary', { name: 'Request details' }))
 
     if (type === 'request.hire') {
@@ -222,7 +222,7 @@ it('blocks hire approval without a full proposal and keeps waiting responses fre
 
   const request = vi.fn().mockResolvedValue(initial)
   const view = open(request)
-  fireEvent.click(await screen.findByRole('button', { name: 'Inspect request: request.hire' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Inspect request: Staffing request' }))
   expect(screen.getByRole('alert').textContent).toMatch(/complete staffing proposal/)
   fireEvent.change(screen.getByRole('textbox', { name: 'Response' }), { target: { value: 'Approved' } })
   expect(screen.getByRole('button', { name: 'Submit response' })).toHaveProperty('disabled', true)
@@ -255,7 +255,7 @@ it('keeps malformed staffing data inspectable and deniable without allowing appr
 
   const request = vi.fn().mockResolvedValue(initial)
   const view = open(request)
-  fireEvent.click(await screen.findByRole('button', { name: 'Inspect request: request.hire' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Inspect request: Staffing request' }))
   const inspector = within(screen.getByRole('complementary', { name: 'Request details' }))
   expect(inspector.getByRole('region', { name: 'Exact staffing proposal' }).textContent).toContain('unexpected')
   fireEvent.change(inspector.getByRole('textbox', { name: 'Response' }), {
@@ -291,7 +291,7 @@ it('shows exact objective leadership and package IDs before staffing approval wi
 
   const request = vi.fn().mockResolvedValue(initial)
   const view = open(request)
-  fireEvent.click(await screen.findByRole('button', { name: 'Inspect request: request.hire' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Inspect request: Staffing request' }))
   const inspector = within(screen.getByRole('complementary', { name: 'Request details' }))
   const preview = within(inspector.getByRole('region', { name: 'Exact staffing proposal' }))
   expect(preview.getByText(`Objective leadership IDs: ${transfer.objectiveIds.join(', ')}`)).toBeTruthy()
@@ -325,12 +325,12 @@ it('does not claim all clear when filters hide another team’s pending interven
   const initial = snapshot()
   initial.requests!.push({ ...initial.requests![0], id: 'done', team: 'engineering', type: 'work.draft', status: 'completed' })
   const view = open(vi.fn().mockResolvedValue(initial))
-  await screen.findByRole('button', { name: 'Inspect request: request.question' })
+  await screen.findByRole('button', { name: 'Inspect request: Question' })
   fireEvent.change(screen.getByRole('combobox', { name: 'Team' }), { target: { value: 'engineering' } })
   expect(screen.queryByText('Nothing needs your input')).toBeNull()
   expect(screen.getByText('No matching requests')).toBeTruthy()
   fireEvent.change(screen.getByRole('combobox', { name: 'Team' }), { target: { value: 'all' } })
-  expect(screen.getByRole('button', { name: 'Inspect request: request.question' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Inspect request: Question' })).toBeTruthy()
   view.unmount()
 })
 
@@ -348,7 +348,7 @@ it('shows exact leadership receipts without disguising a denied question as answ
 
   const view = open(async () => initial)
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Inspect request: request.question' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Inspect request: Question' }))
   const history = within(screen.getByRole('region', { name: 'Question routing history' }))
   expect(history.getByText('manager-a: Cannot answer')).toBeTruthy()
   expect(history.getByText('chief: Denied')).toBeTruthy()

@@ -380,7 +380,7 @@ it('opens the actual selected /requests attention inbox using only captured pass
 
   $gateway.set({ request, connectionState: 'open' } as never)
   const view = render(<MemoryRouter initialEntries={['/requests']}><OrganizationWorkspace /></MemoryRouter>)
-  expect(await screen.findByRole('button', { name: 'Inspect request: work.draft' })).toBeTruthy()
+  expect(await screen.findByRole('button', { name: 'Inspect request: Drafting' })).toBeTruthy()
   expect(request).toHaveBeenCalledWith('organization.observeRead', { method: 'organization.attention', params: { before: undefined, unreadOnly: false, limit: 25 } }, 15000, expect.any(AbortSignal))
   expect(request.mock.calls.every(([method]) => ['organization.observe', 'organization.observeRead'].includes(method))).toBe(true)
   view.unmount()

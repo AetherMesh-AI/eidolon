@@ -20,11 +20,11 @@ function observeWidth() {
   )
 }
 
-function Fixture() {
+function Fixture({ backLabel }: { backLabel?: string }) {
   const [open, setOpen] = useState(false)
 
   return (
-    <ResponsiveMasterDetail detailOpen={open} onDetailOpenChange={setOpen}>
+    <ResponsiveMasterDetail backLabel={backLabel} detailOpen={open} onDetailOpenChange={setOpen}>
       <div>
         <button onClick={() => setOpen(true)}>Choose platform</button>
         <input aria-label="Filter" />
@@ -88,3 +88,51 @@ it('keeps the focused pane visible when resizing a wide workspace', () => {
   expect(container.querySelector<HTMLElement>('[data-pane="list"]')!.hidden).toBe(false)
   expect(window.document.activeElement).toBe(filter)
 })
+
+it('supports a contextual Back label without changing selection or lifecycle', () => {
+  observeWidth()
+  render(<Fixture backLabel="Back to members" />)
+  act(() => resize(400))
+  const row = screen.getByRole('button', { name: 'Choose platform' })
+  row.focus()
+  fireEvent.click(row)
+  const draft = screen.getByRole('textbox', { name: 'Draft' })
+  fireEvent.change(draft, { target: { value: 'Contextual draft' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Back to members' }))
+  expect(window.document.activeElement).toBe(row)
+  fireEvent.click(row)
+  expect(screen.getByRole('textbox', { name: 'Draft' })).toBe(draft)
+  expect((draft as HTMLTextAreaElement).value).toBe('Contextual draft')
+})
+
+it.each(['pressed', 'current'] as const)(
+  'returns deep-linked detail focus to an aria-%s row without a prior click',
+  state => {
+    observeWidth()
+
+    function SelectedFixture() {
+      const [open, setOpen] = useState(true)
+
+      return (
+        <ResponsiveMasterDetail detailOpen={open} onDetailOpenChange={setOpen}>
+          <button
+            aria-pressed={state === 'pressed' ? true : undefined}
+            aria-current={state === 'current' ? true : undefined}
+          >
+            Selected member
+          </button>
+          <main>
+            <input aria-label="Selected draft" />
+          </main>
+        </ResponsiveMasterDetail>
+      )
+    }
+
+    render(<SelectedFixture />)
+    act(() => resize(400))
+    const back = screen.getByRole('button', { name: 'Back' })
+    back.focus()
+    fireEvent.click(back)
+    expect(window.document.activeElement).toBe(screen.getByRole('button', { name: 'Selected member' }))
+  }
+)

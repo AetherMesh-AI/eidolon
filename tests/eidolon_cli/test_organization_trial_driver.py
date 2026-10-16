@@ -1,5 +1,6 @@
 """Semantic trial driver boundaries and nonbillable real-executor continuation."""
 import os
+from pathlib import Path
 import socket
 import sys
 
@@ -7,6 +8,66 @@ import pytest
 
 from scripts.organization_trial_driver import permitted_owner_response, run_trial, synthetic_provider
 from scripts.organization_trial_scenarios import get_scenario
+
+
+def _exception_shape(error):
+    """Metadata only: never format exception messages, locals or provider data."""
+    if error is None:
+        return {"exception": "unavailable"}
+    root = Path(__file__).resolve().parents[2]
+    frames, trace = [], error.__traceback__
+    while trace is not None and len(frames) < 8:
+        path = Path(trace.tb_frame.f_code.co_filename)
+        try:
+            name = str(path.resolve().relative_to(root))
+        except ValueError:
+            name = "external"
+        frames.append({"file": name[:200], "function": trace.tb_frame.f_code.co_name[:80],
+                       "line": trace.tb_lineno})
+        trace = trace.tb_next
+    code = getattr(error, "sqlite_errorcode", None)
+    name = getattr(error, "sqlite_errorname", None)
+    return {"exception": type(error).__name__[:80], "module": type(error).__module__[:80],
+            "sqliteCode": code if type(code) is int else None,
+            "sqliteName": name if isinstance(name, str) and name.startswith("SQLITE_")
+                and name.replace("_", "").isalnum() and len(name) <= 80 else None,
+            "frames": frames}
+
+
+def _capture_service_warning(warning, failures):
+    def capture_warning(message, *args, **kwargs):
+        if message == "Organization execution failed for request %s" and len(failures) < 8:
+            try:
+                failures.append(_exception_shape(sys.exception()))
+            except Exception:
+                failures.append({"exception": "diagnostic_capture_failed"})
+        return warning(message, *args, **kwargs)
+    return capture_warning
+
+
+def test_diagnostic_capture_failure_preserves_original_warning(monkeypatch):
+    calls, failures = [], []
+    def broken_shape(error):
+        raise ValueError("synthetic-secret-metadata-error")
+    monkeypatch.setitem(globals(), "_exception_shape", broken_shape)
+    wrapper = _capture_service_warning(lambda *args, **kwargs: calls.append((args, kwargs)), failures)
+    try:
+        raise RuntimeError("synthetic-private-provider-message")
+    except RuntimeError:
+        wrapper("Organization execution failed for request %s", "synthetic-request")
+    assert failures == [{"exception": "diagnostic_capture_failed"}]
+    assert calls == [(("Organization execution failed for request %s", "synthetic-request"), {})]
+
+
+def test_exception_diagnostics_never_include_error_messages():
+    import json
+    try:
+        raise RuntimeError("synthetic-secret-value-must-not-appear")
+    except RuntimeError as error:
+        result = _exception_shape(error)
+    assert result["exception"] == "RuntimeError"
+    assert "synthetic-secret-value" not in json.dumps(result)
+    assert all(not row["file"].startswith("/") for row in result["frames"])
 
 
 def test_owner_driver_only_answers_predeclared_question_or_genuine_failed_test():
@@ -46,6 +107,10 @@ def test_owner_driver_only_answers_predeclared_question_or_genuine_failed_test()
 ])
 def test_synthetic_trial_uses_real_executor_preserves_history_and_distinguishes_recovery(
         tmp_path, monkeypatch, scenario_id, retention, clarification_mode, first_try):
+    from eidolon_cli import organization_service
+    failures = []
+    warning = organization_service.logger.warning
+    monkeypatch.setattr(organization_service.logger, "warning", _capture_service_warning(warning, failures))
     connect = socket.socket.connect
 
     def loopback_only(sock, address):
@@ -92,7 +157,15 @@ def test_synthetic_trial_uses_real_executor_preserves_history_and_distinguishes_
         # Native isolation is fail-closed. An unsupported host is never a
         # successful trial and must never trigger the failure-repair shortcut.
         assert ((result["projectRuns"] and result["projectRuns"][-1]["projectExecution"]["status"] == "unsupported")
-                or (sys.platform == "win32" and any("POSIX no-follow" in row["reason"] for row in pending))), result
+                or (sys.platform == "win32" and any("POSIX no-follow" in row["reason"] for row in pending))), {
+                    "serviceExceptions": failures,
+                    "pending": [{"type": row.get("type"), "status": row.get("status"),
+                        "unexpectedExecutionFailure": row.get("reason") ==
+                            "Execution failed unexpectedly; review provider configuration before retrying"}
+                        for row in pending[:8]],
+                    "projectRunCount": len(result["projectRuns"]),
+                    "taskSuccess": result["taskSuccess"],
+                }
         assert not result["coverage"]["recovery"]
         assert result["delivered_commit"] is None
         assert result["sourceIntegration"] is None

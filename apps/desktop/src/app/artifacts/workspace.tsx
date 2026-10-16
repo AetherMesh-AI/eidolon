@@ -116,7 +116,7 @@ export function ArtifactWorkspace({ setStatusbarItemGroup }: { setStatusbarItemG
           )}
         </div>
       ) : (
-        <div className="min-h-0 flex-1">
+        <div className="eid-session-files min-h-0 flex-1">
           <ArtifactsView embedded key={`${connectionId}:${profile}`} setStatusbarItemGroup={setStatusbarItemGroup} />
         </div>
       )}

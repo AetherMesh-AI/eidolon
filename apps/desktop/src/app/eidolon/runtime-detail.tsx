@@ -104,7 +104,7 @@ export function RuntimeObjectiveDetail({ objective, adapter, snapshot, historyCo
   const manager = snapshot.agents.find(agent => agent.id === objective.managerId)
 
   return <>
-    <Link className="eid-back" to={returnTo}>← {returnLabels[returnTo.split('?')[0]]}</Link>
+    <Link className="eid-back" state={{ workspaceReturnOwner: snapshot.connection?.ownerScope ?? snapshot.connection?.scope }} to={returnTo}>← {returnLabels[returnTo.split('?')[0]]}</Link>
     <header className="eid-page-header eid-objective-hero"><OrganizationScenery className="eid-objective-scenery" /><div><p className="sr-only">{t.organizationHome.detail.objectiveRuntime}</p><div className="eid-objective-heading"><h1 dir="auto">{objective.title}</h1><Status status={objective.status} /></div><p className="eid-result-text" dir="auto">{objective.description}</p></div></header>
     <div className="eid-inline"><span>{t.organizationRoster.objectiveExecutive} · <bdi>{owner?.name || objective.ownerId || t.organizationHome.unassigned}</bdi></span>{objective.managerId && <span>{t.organizationRoster.objectiveManager} · <bdi>{manager?.name || objective.managerId}</bdi></span>}<Button onClick={() => setInspecting(true)} size="sm" variant="secondary">{t.organizationHome.detail.inspectObjective}</Button></div>
     <ObjectiveProgress controls={<>

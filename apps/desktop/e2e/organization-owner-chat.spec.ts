@@ -129,6 +129,120 @@ test.afterEach(async ({}, testInfo) => {
   }
 })
 
+test('keeps a supported owner-chat draft mounted through compact member navigation without inference', async () => {
+  running = await setupOwnerChatFixture()
+  const { app, page } = running.fixture
+  const actions: Array<{ method: string; params: Record<string, unknown> }> = []
+  page.on('websocket', socket => socket.on('framesent', frame => {
+    const request = JSON.parse(String(frame.payload)) as { method?: string; params: Record<string, unknown> }
+
+    if (request.method && /^organization\.ownerChat\.(open|send|renew|cancel)$/.test(request.method)) {
+      actions.push({ method: request.method, params: request.params })
+    }
+  }))
+  await page.reload()
+
+  async function resize(width: number, height: number, zoom = 1) {
+    await page.evaluate(() => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(100))
+    await app.evaluate(({ BrowserWindow }, size) => {
+      const window = BrowserWindow.getAllWindows()[0]
+      window.unmaximize()
+      window.setMinimumSize(400, 360)
+      window.setContentSize(size.width, size.height)
+      window.focus()
+    }, { width, height })
+    await page.evaluate(value => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(value * 100), zoom)
+    await expect.poll(() => page.evaluate(() => innerWidth)).toBe(Math.round(width / zoom))
+    await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(zoom)
+  }
+
+  await resize(1536, 961)
+  const conversation = await openWorkerChat(page)
+  const composer = conversation.getByRole('textbox', { name: 'Message', exact: true })
+  const originalComposer = await composer.elementHandle()
+  const draft = 'Unsent compact-navigation draft for this exact worker identity.'
+  await composer.fill(draft)
+  await expect.poll(() => actions.filter(action => action.method === 'organization.ownerChat.open').length).toBe(1)
+  expect(actions).toHaveLength(1)
+  expect(running.calls).toHaveLength(0)
+  const selectedRoute = await page.evaluate(() => location.hash)
+  const selectedTuple = new URLSearchParams(selectedRoute.split('?')[1])
+  expect(selectedTuple.get('member')).toBe('worker-1')
+  expect(selectedTuple.get('identity')).toBeTruthy()
+  expect(selectedTuple.get('owner')).toBeTruthy()
+  const initialActions = JSON.stringify(actions)
+  const captures: object[] = []
+
+  async function capture(label: string) {
+    const bytes = Buffer.from(await app.evaluate(async ({ BrowserWindow }) =>
+      (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
+    writeFileSync(test.info().outputPath(`${label}.png`), bytes)
+    await test.info().attach(label, { body: bytes, contentType: 'image/png' })
+    captures.push({ label, sha256: createHash('sha256').update(bytes).digest('hex'),
+      viewport: await page.evaluate(() => ({ width: innerWidth, height: innerHeight, devicePixelRatio })),
+      selectedRoute, ownerChatActions: actions.length, scriptedProviderCalls: running!.calls.length })
+  }
+
+  for (const [width, height, zoom] of [[400, 620, 1], [1280, 720, 2]]) {
+    await composer.focus()
+    await resize(width, height, zoom)
+    const label = `${width}x${height}-${zoom * 100}`
+    const listPane = page.locator('.eid-messages-layout > [data-pane="list"]')
+    const detailPane = page.locator('.eid-messages-layout > [data-pane="detail"]')
+    const back = page.getByRole('button', { name: 'Back to members', exact: true })
+    await expect(listPane).toBeHidden()
+    await expect(listPane).toHaveAttribute('inert', '')
+    await expect(composer).toBeFocused()
+    await expect(composer).toHaveValue(draft)
+    expect(await composer.evaluate((element, original) => element === original, originalComposer)).toBe(true)
+    await composer.scrollIntoViewIfNeeded()
+    await verifyKeyboardFocus(page, composer, `Compact owner-chat composer ${label}`)
+    await expect(conversation.locator('.eid-owner-chat-charge')).toBeVisible()
+    await capture(`compact-owner-chat-draft-${label}`)
+    await back.scrollIntoViewIfNeeded()
+    await verifyKeyboardFocus(page, back, `Compact owner-chat Back ${label}`)
+    const detailScroll = await detailPane.evaluate(element => element.scrollTop)
+    await capture(`compact-owner-chat-back-${label}`)
+    await page.keyboard.press('Enter')
+    await expect(detailPane).toBeHidden()
+    await expect(detailPane).toHaveAttribute('inert', '')
+    await expect(page.getByRole('textbox', { name: 'Message', exact: true })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Send message', exact: true })).toHaveCount(0)
+    const row = page.getByRole('navigation', { name: 'Choose an agent', exact: true }).getByRole('button', { name: /Worker 1/ })
+    await expect(row).toBeFocused()
+    await expect(row).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByRole('textbox', { name: 'Search members', exact: true })).toHaveValue('Worker 1')
+    await expect.poll(() => page.evaluate(() => location.hash)).toBe(selectedRoute)
+    await capture(`compact-owner-chat-members-${label}`)
+    await page.keyboard.press('Enter')
+    await expect(back).toBeFocused()
+    await expect(composer).toHaveValue(draft)
+    expect(await composer.evaluate((element, original) => element === original, originalComposer)).toBe(true)
+    expect(await detailPane.evaluate(element => element.scrollTop)).toBe(detailScroll)
+    await expect.poll(() => page.evaluate(() => location.hash)).toBe(selectedRoute)
+    expect(JSON.stringify(actions)).toBe(initialActions)
+    expect(running.calls).toHaveLength(0)
+    await composer.focus()
+    await resize(1536, 961)
+    await expect(listPane).toBeVisible()
+    await expect(detailPane).toBeVisible()
+    await expect(composer).toBeFocused()
+    expect(await composer.evaluate((element, original) => element === original, originalComposer)).toBe(true)
+    await expect(composer).toHaveValue(draft)
+  }
+
+  expect(actions).toHaveLength(1)
+  expect(actions[0].method).toBe('organization.ownerChat.open')
+  expect(running.calls).toHaveLength(0)
+  expect(running.providerErrors).toEqual([])
+  writeFileSync(test.info().outputPath('compact-owner-chat-evidence.json'), JSON.stringify({
+    sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+    sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
+    scenario: 'supported-authenticated-owner-chat-presentation-only', captures, selectedRoute,
+    ownerChatActions: actions, scriptedProviderCalls: running.calls.length
+  }, null, 2))
+})
+
 test('retains exact worker chat, deduplicates owner send and fences a cancelled late reply', async () => {
   running = await setupOwnerChatFixture()
   const { page } = running.fixture

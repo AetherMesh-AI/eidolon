@@ -1,5 +1,7 @@
+import './artifacts.css'
+
 import type * as React from 'react'
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
 
 import { TitlebarIcon } from '@/app/shell/titlebar-icon'
@@ -7,6 +9,8 @@ import { ZoomableImage } from '@/components/chat/zoomable-image'
 import { PageLoader } from '@/components/page-loader'
 import { Button } from '@/components/ui/button'
 import { CopyButton } from '@/components/ui/copy-button'
+import { EmptyState } from '@/components/ui/empty-state'
+import { ErrorBanner, ErrorState } from '@/components/ui/error-state'
 import {
   Pagination,
   PaginationButton,
@@ -18,7 +22,6 @@ import {
 } from '@/components/ui/pagination'
 import { RowButton } from '@/components/ui/row-button'
 import { Tip } from '@/components/ui/tooltip'
-import { getAllSessionMessages, listAllProfileSessions } from '@/eidolon'
 import { type Translations, useI18n } from '@/i18n'
 import { resolveBrandIcon } from '@/lib/brand-icon'
 import {
@@ -34,7 +37,7 @@ import { downloadGatewayMediaFile, isArtifactFilePath, isRemoteGateway } from '@
 import { normalize } from '@/lib/text'
 import { fmtDayTime } from '@/lib/time'
 import { cn } from '@/lib/utils'
-import { notify, notifyError } from '@/store/notifications'
+import { notifyError } from '@/store/notifications'
 
 import { useRefreshHotkey } from '../hooks/use-refresh-hotkey'
 import { useRouteEnumParam } from '../hooks/use-route-enum-param'
@@ -46,9 +49,9 @@ import {
   ARTIFACT_FILTERS,
   type ArtifactFilter,
   artifactImageSrc,
-  type ArtifactRecord,
-  loadArtifactsForSessions
+  type ArtifactRecord
 } from './artifact-utils'
+import { useArtifactIndex } from './use-artifact-index'
 
 function formatArtifactTime(timestamp: number): string {
   return fmtDayTime.format(new Date(timestamp))
@@ -120,7 +123,25 @@ export function ArtifactsView({
   const { t } = useI18n()
   const a = t.artifacts
   const navigate = useNavigate()
-  const [artifacts, setArtifacts] = useState<ArtifactRecord[] | null>(null)
+  const index = useArtifactIndex()
+  const { artifacts, refresh: refreshArtifacts } = index
+  const refreshing = index.available && index.pending
+  const incomplete = index.failedSessions > 0 || index.failedProfiles > 0
+  const problem = index.failed || incomplete
+  const hasArtifacts = (artifacts?.length ?? 0) > 0
+
+  const issueDetails = (
+    <>
+      {index.failed && <span className="block">{a.failedLoadDesc}</span>}
+      {index.failedSessions > 0 && (
+        <span className="block">{a.partialLoadDesc(index.failedSessions, index.totalSessions)}</span>
+      )}
+      {index.limitedSessions > 0 && <span className="block">{a.safeLoadLimit(index.limitedSessions)}</span>}
+      {index.failedProfiles > 0 && <span className="block">{a.profileLoadFailed(index.failedProfiles)}</span>}
+      {index.retained && <span className="block">{a.staleResults}</span>}
+    </>
+  )
+
   const [query, setQuery] = useState('')
 
   const [kindFilter, setKindFilter] = useRouteEnumParam('tab', ARTIFACT_FILTERS, 'all')
@@ -129,64 +150,11 @@ export function ArtifactsView({
   const [imagePage, setImagePage] = useState(1)
   const [filePage, setFilePage] = useState(1)
 
-  const [refreshing, setRefreshing] = useState(false)
-  const refreshInFlightRef = useRef(false)
-
-  const refreshArtifacts = useCallback(async () => {
-    if (refreshInFlightRef.current) {
-      return
-    }
-
-    refreshInFlightRef.current = true
-    setRefreshing(true)
-
-    try {
-      const sessions = (await listAllProfileSessions(30, 1)).sessions
-
-      const { artifacts: nextArtifacts, failures } = await loadArtifactsForSessions(
-        sessions,
-        async session => (await getAllSessionMessages(session.id, session.profile)).messages
-      )
-
-      if (failures.length > 0) {
-        const safeLimitFailures = failures.filter(({ error }) =>
-          String(error instanceof Error ? error.message : error).includes('safe-load limit')
-        ).length
-
-        const otherFailures = failures.length - safeLimitFailures
-
-        const detail = [
-          safeLimitFailures ? `${safeLimitFailures} exceeded the safe transcript load limit.` : '',
-          otherFailures ? `${otherFailures} could not be read.` : ''
-        ]
-          .filter(Boolean)
-          .join(' ')
-
-        notify({
-          id: 'artifacts-partial-load',
-          kind: 'warning',
-          title: a.failedLoad,
-          message: `Skipped ${failures.length} of ${sessions.length} recent sessions while indexing artifacts.`,
-          detail,
-          durationMs: 10_000
-        })
-      }
-
-      setArtifacts(nextArtifacts.sort((left, right) => right.timestamp - left.timestamp))
-    } catch (err) {
-      notifyError(err, a.failedLoad)
-      setArtifacts([])
-    } finally {
-      refreshInFlightRef.current = false
-      setRefreshing(false)
-    }
-  }, [a])
-
-  useRefreshHotkey(refreshArtifacts)
+  useRefreshHotkey(refreshArtifacts, index.available)
 
   useEffect(() => {
-    void refreshArtifacts()
-  }, [refreshArtifacts])
+    setFailedImageIds(new Set())
+  }, [index.owner])
 
   useEffect(() => {
     setImagePage(1)
@@ -335,7 +303,7 @@ export function ArtifactsView({
           <Button
             aria-label={refreshing ? a.refreshing : a.refresh}
             className="text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground"
-            disabled={refreshing}
+            disabled={refreshing || !index.available}
             onClick={() => void refreshArtifacts()}
             size="icon-titlebar"
             variant="ghost"
@@ -352,64 +320,100 @@ export function ArtifactsView({
         { id: 'link', label: a.tabLinks, meta: artifacts ? counts.link : null }
       ]}
     >
-      {!artifacts ? (
-        <PageLoader label={a.indexing} />
-      ) : visibleArtifacts.length === 0 ? (
-        <div className="grid h-full place-items-center px-6 text-center">
-          <div>
-            <div className="text-sm font-medium">{a.noArtifactsTitle}</div>
-            <div className="mt-1 text-xs text-muted-foreground">{a.noArtifactsDesc}</div>
+      <div className="eid-artifact-index flex h-full min-h-0 flex-col overflow-y-auto">
+        {problem && hasArtifacts && (
+          <div className="shrink-0 px-3 pb-3" role="status">
+            <ErrorBanner>
+              <strong>{index.failed ? a.failedLoad : a.partialLoad}</strong>
+              {issueDetails}
+            </ErrorBanner>
+            <Button
+              disabled={refreshing || !index.available}
+              onClick={() => void refreshArtifacts()}
+              size="sm"
+              variant="textStrong"
+            >
+              {a.retry}
+            </Button>
           </div>
-        </div>
-      ) : (
-        <div className="h-full overflow-y-auto [scrollbar-gutter:stable]">
-          <div className="flex flex-col gap-3 px-3 pb-2">
-            {visibleImageArtifacts.length > 0 && (
-              <section className="flex flex-col">
-                <div className="sticky top-0 z-10 -mx-3 flex h-7 items-center gap-3 overflow-x-auto bg-background px-3">
-                  <ArtifactsPagination
-                    className="ml-auto justify-end px-0"
-                    itemLabel={a.itemsImage}
-                    onPageChange={setImagePage}
-                    page={currentImagePage}
-                    pageSize={24}
-                    total={visibleImageArtifacts.length}
-                  />
+        )}
+        {index.switching ? (
+          <PageLoader label={a.waitingForSource} />
+        ) : !index.available ? (
+          <EmptyState description={a.connectionUnavailable} title={a.failedLoad} />
+        ) : problem && !hasArtifacts ? (
+          <div className="grid min-h-full shrink-0 place-items-center px-3 py-2" role={index.failed ? 'alert' : 'status'}>
+            <ErrorState
+              description={
+                <div className="max-w-prose text-sm text-muted-foreground">
+                  {issueDetails}
+                  {!index.failed && <p>{a.incompleteEmpty}</p>}
                 </div>
-                <div className="grid grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] items-start gap-2 pt-1.5">
-                  {pagedImageArtifacts.map(artifact => (
-                    <ArtifactImageCard
-                      artifact={artifact}
-                      failedImage={failedImageIds.has(artifact.id)}
-                      key={artifact.id}
-                      onImageError={markImageFailed}
-                      onOpenChat={sessionId => openSession(sessionId, navigate)}
+              }
+              title={index.failed ? a.failedLoad : a.partialLoad}
+            >
+              <Button disabled={refreshing} onClick={() => void refreshArtifacts()} variant="textStrong">
+                {a.retry}
+              </Button>
+            </ErrorState>
+          </div>
+        ) : !artifacts || (refreshing && artifacts.length === 0) ? (
+          <PageLoader label={a.indexing} />
+        ) : visibleArtifacts.length === 0 ? (
+          <EmptyState
+            description={hasArtifacts ? a.noMatchesDesc : a.noArtifactsDesc}
+            title={hasArtifacts ? a.noMatchesTitle : a.noArtifactsTitle}
+          />
+        ) : (
+          <div className="eid-artifact-results min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
+            <div className="flex flex-col gap-3 px-3 pb-2">
+              {visibleImageArtifacts.length > 0 && (
+                <section className="flex flex-col">
+                  <div className="sticky top-0 z-10 -mx-3 flex h-7 items-center gap-3 overflow-x-auto bg-background px-3">
+                    <ArtifactsPagination
+                      className="ml-auto justify-end px-0"
+                      itemLabel={a.itemsImage}
+                      onPageChange={setImagePage}
+                      page={currentImagePage}
+                      pageSize={24}
+                      total={visibleImageArtifacts.length}
                     />
-                  ))}
-                </div>
-              </section>
-            )}
+                  </div>
+                  <div className="grid grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] items-start gap-2 pt-1.5">
+                    {pagedImageArtifacts.map(artifact => (
+                      <ArtifactImageCard
+                        artifact={artifact}
+                        failedImage={failedImageIds.has(artifact.id)}
+                        key={artifact.id}
+                        onImageError={markImageFailed}
+                        onOpenChat={sessionId => openSession(sessionId, navigate)}
+                      />
+                    ))}
+                  </div>
+                </section>
+              )}
 
-            {visibleFileArtifacts.length > 0 && (
-              <section className="flex flex-col">
-                <div className="sticky top-0 z-10 -mx-3 flex h-7 items-center gap-3 overflow-x-auto bg-background px-3">
-                  <ArtifactsPagination
-                    className="ml-auto justify-end px-0"
-                    itemLabel={itemsLabel(kindFilter, a)}
-                    onPageChange={setFilePage}
-                    page={currentFilePage}
-                    pageSize={100}
-                    total={visibleFileArtifacts.length}
-                  />
-                </div>
-                <div className="overflow-x-auto rounded-lg border border-(--ui-stroke-tertiary) bg-(--ui-chat-bubble-background)">
-                  <ArtifactTable artifacts={pagedFileArtifacts} ctx={cellCtx} filter={kindFilter} />
-                </div>
-              </section>
-            )}
+              {visibleFileArtifacts.length > 0 && (
+                <section className="flex flex-col">
+                  <div className="sticky top-0 z-10 -mx-3 flex h-7 items-center gap-3 overflow-x-auto bg-background px-3">
+                    <ArtifactsPagination
+                      className="ml-auto justify-end px-0"
+                      itemLabel={itemsLabel(kindFilter, a)}
+                      onPageChange={setFilePage}
+                      page={currentFilePage}
+                      pageSize={100}
+                      total={visibleFileArtifacts.length}
+                    />
+                  </div>
+                  <div className="overflow-x-auto rounded-lg border border-(--ui-stroke-tertiary) bg-(--ui-chat-bubble-background)">
+                    <ArtifactTable artifacts={pagedFileArtifacts} ctx={cellCtx} filter={kindFilter} />
+                  </div>
+                </section>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </PageSearchShell>
   )
 }

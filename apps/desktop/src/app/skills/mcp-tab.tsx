@@ -1,3 +1,5 @@
+import './skills-workspace.css'
+
 import { useStore } from '@nanostores/react'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -46,8 +48,9 @@ import { $activeSessionId } from '@/store/session'
 
 import { hermesConfigCacheWriter, useHermesConfigRecord } from '../hooks/use-config-record'
 import { useOnProfileSwitch } from '../hooks/use-on-profile-switch'
-import { DetailPane, ICON_BUTTON, MASTER_DETAIL_WIDE_COLS } from '../master-detail'
+import { DetailPane, ICON_BUTTON } from '../master-detail'
 import { PanelAddButton, PanelEmpty } from '../overlays/panel'
+import { ResponsiveMasterDetail } from '../responsive-master-detail'
 import { prettyName } from '../settings/helpers'
 import { useDeepLinkHighlight } from '../settings/use-deep-link-highlight'
 
@@ -403,9 +406,10 @@ export function McpTab({ gateway, profile }: { gateway: HermesGateway | null; pr
   const [logSource, setLogSource] = useState<'stdio' | 'agent'>('stdio')
 
   // Selection IS the editor cursor: whichever server block contains it is the
-  // configured server on the left. Cursor outside every block → the list.
+  // server shown above the document. Cursor outside every block → the list.
   const editorApi = useRef<CodeEditorApi | null>(null)
   const [cursor, setCursor] = useState(0)
+  const [detailOpen, setDetailOpen] = useState(false)
   const blocks = useMemo(() => scanServerBlocks(draft), [draft])
 
   const activeBlock = useMemo(
@@ -420,8 +424,13 @@ export function McpTab({ gateway, profile }: { gateway: HermesGateway | null; pr
 
     if (block) {
       // Land just inside the key so the block claims the cursor.
+      // Preserve the row as the Back focus target; revealing the editor is
+      // navigation only and never persists or reloads the server config.
+      const origin = document.activeElement as HTMLElement | null
       editorApi.current?.setCursor(block.from + 1)
+      origin?.focus({ preventScroll: true })
       setCursor(block.from + 1)
+      setDetailOpen(true)
     }
   }
 
@@ -898,6 +907,7 @@ export function McpTab({ gateway, profile }: { gateway: HermesGateway | null; pr
       key = `my-server-${i}`
     }
 
+    setDetailOpen(true)
     const nextDraft = wrapDoc({ ...base, [key]: STARTER_ENTRY })
     setDraft(nextDraft)
     setDirty(true)
@@ -931,6 +941,7 @@ export function McpTab({ gateway, profile }: { gateway: HermesGateway | null; pr
       base = { ...servers }
     }
 
+    setDetailOpen(true)
     let firstKey: null | string = null
 
     for (const entry of entries) {
@@ -1009,8 +1020,8 @@ export function McpTab({ gateway, profile }: { gateway: HermesGateway | null; pr
   // load, and a failed load gets a real retry — never a silent blank pane.
   if (configFailed && !config) {
     return (
-      <div className="flex h-full min-h-0 flex-1 items-center justify-center p-6">
-        <ErrorBanner className="max-w-sm">
+      <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto p-6">
+        <ErrorBanner className="mx-auto max-w-sm shrink-0">
           <span className="flex flex-col gap-2">
             {configError instanceof Error ? configError.message : m.failedLoad}
             <Button className="self-start" onClick={() => void refetchConfig()} size="xs" variant="text">
@@ -1045,10 +1056,94 @@ export function McpTab({ gateway, profile }: { gateway: HermesGateway | null; pr
   const activeEntry = savedEntry ?? draftEntry
 
   return (
-    <div className={cn('grid h-full min-h-0 grid-cols-1', MASTER_DETAIL_WIDE_COLS)}>
-      {/* LEFT: the focused block's server config, or the unified fleet+catalog list. */}
-      <aside className="flex min-h-0 flex-col overflow-hidden border-r border-(--ui-stroke-quaternary)">
-        {selected && activeEntry ? (
+    <ResponsiveMasterDetail
+      className="eid-capabilities-detail eid-mcp-workspace h-full"
+      detailOpen={detailOpen}
+      onDetailOpenChange={setDetailOpen}
+      variant="capabilities"
+    >
+      {/* Keep the fleet mounted so returning to it retains row focus and scroll. */}
+      <aside className="flex min-h-0 min-w-0 flex-col overflow-hidden border-r border-(--ui-stroke-quaternary)">
+        <div className="flex min-h-0 flex-1 flex-col p-2">
+          <div className="eid-detail-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]">
+            {/* ONE coherent column: the configured fleet on top, the
+                  Nous-approved catalog below it. Installed entries live in the
+                  fleet list (with live status), so the catalog section only
+                  offers what's NOT installed yet — no duplicate rows, no tab
+                  flipping to find the install button. */}
+            {/* Geometry mirrors ListStrip (mb-1 h-6 pl-2) so this header
+                  lands on the exact line the sort link occupies in the
+                  Skills/Tools views. */}
+            <div className="mb-1 flex h-6 shrink-0 items-center pl-2 pr-1">
+              <span className="flex-1 text-[0.72rem] font-medium text-(--ui-text-tertiary)">{m.tabServers}</span>
+              <Button onClick={() => setDetailOpen(true)} size="xs" variant="text">
+                mcp.json
+              </Button>
+              <McpImportButton disabled={profilePending} onImport={importServers} />
+            </div>
+            {names.length === 0 ? (
+              <PanelEmpty
+                action={
+                  <Button onClick={addServer} size="sm">
+                    {m.newServer}
+                  </Button>
+                }
+                description={m.emptyDesc}
+                icon="plug"
+                title={m.emptyTitle}
+              />
+            ) : (
+              <>
+                {names.map(serverName => {
+                  const server = servers[serverName]
+                  const status = statusOf(server, probes[serverName])
+                  const cost = costFor(serverName, server)
+
+                  return (
+                    <McpRow
+                      active={selected === serverName}
+                      busy={saving}
+                      enabled={serverEnabled(server)}
+                      key={serverName}
+                      name={serverName}
+                      onProbe={() => void runProbe(serverName)}
+                      onRemove={() => void removeServer(serverName)}
+                      onSelect={() => focusServer(serverName)}
+                      onToggle={checked => void setServerEnabled(serverName, checked)}
+                      status={status}
+                      statusText={statusLine(m, status, probes[serverName], server, cost)}
+                      unused={
+                        serverEnabled(server) &&
+                        status === 'ok' &&
+                        cost.tokens !== null &&
+                        cost.tokens > 0 &&
+                        cost.uses === 0
+                      }
+                    />
+                  )
+                })}
+                <PanelAddButton label={m.newServer} onClick={addServer} />
+              </>
+            )}
+            {(catalogQuery.isLoading || availableCatalog.length > 0) && (
+              <>
+                <div className="mb-1 mt-3 flex h-6 shrink-0 items-center border-t border-(--ui-stroke-quaternary) pl-2 pr-1 pt-2">
+                  <span className="text-[0.72rem] font-medium text-(--ui-text-tertiary)">{m.tabCatalog}</span>
+                </div>
+                <McpCatalog
+                  entries={availableCatalog}
+                  loading={catalogQuery.isLoading}
+                  onInstalled={onCatalogInstalled}
+                  profile={profile}
+                />
+              </>
+            )}
+          </div>
+        </div>
+      </aside>
+
+      <main className="eid-mcp-detail flex min-h-0 min-w-0 flex-col">
+        {selected && activeEntry && (
           <ServerConfig
             authing={authing === selected}
             cost={costFor(selected, activeEntry)}
@@ -1056,7 +1151,6 @@ export function McpTab({ gateway, profile }: { gateway: HermesGateway | null; pr
             entry={activeEntry}
             name={selected}
             onAuthenticate={() => void authenticate(selected)}
-            onBack={() => setCursor(0)}
             onProbe={() => void runProbe(selected)}
             onRemove={() => void removeServer(selected)}
             onToggle={checked => void setServerEnabled(selected, checked)}
@@ -1065,87 +1159,10 @@ export function McpTab({ gateway, profile }: { gateway: HermesGateway | null; pr
             saved={savedEntry !== undefined}
             saving={saving}
           />
-        ) : (
-          <div className="flex min-h-0 flex-1 flex-col p-2">
-            <div className="eid-detail-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]">
-              {/* ONE coherent column: the configured fleet on top, the
-                  Nous-approved catalog below it. Installed entries live in the
-                  fleet list (with live status), so the catalog section only
-                  offers what's NOT installed yet — no duplicate rows, no tab
-                  flipping to find the install button. */}
-              {/* Geometry mirrors ListStrip (mb-1 h-6 pl-2) so this header
-                  lands on the exact line the sort link occupies in the
-                  Skills/Tools views. */}
-              <div className="mb-1 flex h-6 shrink-0 items-center pl-2 pr-1">
-                <span className="flex-1 text-[0.72rem] font-medium text-(--ui-text-tertiary)">{m.tabServers}</span>
-                <McpImportButton disabled={profilePending} onImport={importServers} />
-              </div>
-              {names.length === 0 ? (
-                <PanelEmpty
-                  action={
-                    <Button onClick={addServer} size="sm">
-                      {m.newServer}
-                    </Button>
-                  }
-                  description={m.emptyDesc}
-                  icon="plug"
-                  title={m.emptyTitle}
-                />
-              ) : (
-                <>
-                  {names.map(serverName => {
-                    const server = servers[serverName]
-                    const status = statusOf(server, probes[serverName])
-                    const cost = costFor(serverName, server)
-
-                    return (
-                      <McpRow
-                        active={false}
-                        busy={saving}
-                        enabled={serverEnabled(server)}
-                        key={serverName}
-                        name={serverName}
-                        onProbe={() => void runProbe(serverName)}
-                        onRemove={() => void removeServer(serverName)}
-                        onSelect={() => focusServer(serverName)}
-                        onToggle={checked => void setServerEnabled(serverName, checked)}
-                        status={status}
-                        statusText={statusLine(m, status, probes[serverName], server, cost)}
-                        unused={
-                          serverEnabled(server) &&
-                          status === 'ok' &&
-                          cost.tokens !== null &&
-                          cost.tokens > 0 &&
-                          cost.uses === 0
-                        }
-                      />
-                    )
-                  })}
-                  <PanelAddButton label={m.newServer} onClick={addServer} />
-                </>
-              )}
-              {(catalogQuery.isLoading || availableCatalog.length > 0) && (
-                <>
-                  <div className="mb-1 mt-3 flex h-6 shrink-0 items-center border-t border-(--ui-stroke-quaternary) pl-2 pr-1 pt-2">
-                    <span className="text-[0.72rem] font-medium text-(--ui-text-tertiary)">{m.tabCatalog}</span>
-                  </div>
-                  <McpCatalog
-                    entries={availableCatalog}
-                    loading={catalogQuery.isLoading}
-                    onInstalled={onCatalogInstalled}
-                    profile={profile}
-                  />
-                </>
-              )}
-            </div>
-          </div>
         )}
-      </aside>
-
-      {/* RIGHT: the mcp.json editor, logs hard-pinned below. */}
-      <main className="flex min-h-0 flex-col overflow-hidden">
         <JsonDocumentEditor
           apiRef={editorApi}
+          className="eid-mcp-editor"
           disabled={saving}
           filePath="mcp.json"
           header={
@@ -1196,12 +1213,12 @@ export function McpTab({ gateway, profile }: { gateway: HermesGateway | null; pr
           <McpLogs emptyLabel={m.noOutput} server={selected && savedEntry ? selected : null} source={logSource} />
         </DetailPane>
       </main>
-    </div>
+    </ResponsiveMasterDetail>
   )
 }
 
 // ---------------------------------------------------------------------------
-// Left column: one server's config (mirrors the block under the cursor).
+// Selected server config (mirrors the block under the document cursor).
 // ---------------------------------------------------------------------------
 
 function ServerConfig({
@@ -1211,7 +1228,6 @@ function ServerConfig({
   entry,
   name,
   onAuthenticate,
-  onBack,
   onProbe,
   onRemove,
   onToggle,
@@ -1226,7 +1242,6 @@ function ServerConfig({
   entry: Record<string, unknown>
   name: string
   onAuthenticate: () => void
-  onBack: () => void
   onProbe: () => void
   onRemove: () => void
   onToggle: (checked: boolean) => void
@@ -1257,27 +1272,18 @@ function ServerConfig({
   return (
     // p-2 matches the list view's container so flipping list ⇄ config keeps
     // content anchored at the same origin.
-    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2 [scrollbar-gutter:stable]">
+    <div className="eid-mcp-server-config min-h-0 p-2">
       {/* Geometry cloned from McpRow so nothing jumps when flipping list ⇄
           config: items-start with per-element top margins that reproduce the
           row's h-11 centering exactly (h-5 controls → mt-3, size-6 avatar →
           mt-2.5, h-4 switch → mt-3.5) no matter how tall the text column gets. */}
-      <div className="flex items-start gap-2 pr-1.5">
-        <Tip label={m.allServers}>
-          <Button
-            aria-label={m.allServers}
-            className={cn('mt-3', ICON_BUTTON)}
-            onClick={onBack}
-            size="icon"
-            variant="ghost"
-          >
-            <Codicon name="chevron-left" size="0.8125rem" />
-          </Button>
-        </Tip>
+      <div className="eid-mcp-server-heading flex flex-wrap items-start gap-2 pr-1.5">
         <McpAvatar className="mt-2.5" name={name} status={status} />
         <div className="min-w-0 flex-1 pt-1">
-          <h3 className="min-w-0 truncate text-[0.9375rem] font-semibold tracking-tight">{prettyName(name)}</h3>
-          <p className="mt-0.5 truncate text-[0.68rem] text-(--ui-text-tertiary)">
+          <h3 className="min-w-0 [overflow-wrap:anywhere] text-[0.9375rem] font-semibold tracking-tight">
+            {prettyName(name)}
+          </h3>
+          <p className="mt-0.5 [overflow-wrap:anywhere] text-[0.68rem] text-(--ui-text-tertiary)">
             {typeof entry.url === 'string' ? entry.url : [entry.command, ...((entry.args as string[]) ?? [])].join(' ')}
           </p>
           {summary && <p className="mt-0.5 text-[0.68rem] text-(--ui-text-tertiary)">{summary}</p>}
@@ -1820,12 +1826,14 @@ function McpRow({
   return (
     <div
       className={cn(
-        'group/row row-hover flex h-11 w-full shrink-0 items-center gap-2 rounded-md pl-2 pr-1.5 hover:text-foreground',
+        'eid-mcp-row group/row row-hover flex min-h-11 w-full shrink-0 items-center gap-2 rounded-md pl-2 pr-1.5 hover:text-foreground',
         active ? 'bg-(--ui-row-active-background) text-foreground' : 'text-(--ui-text-secondary)'
       )}
       id={`mcp-server-${name}`}
     >
       <button
+        aria-current={active ? 'true' : undefined}
+        aria-label={prettyName(name)}
         className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
         onClick={onSelect}
         type="button"

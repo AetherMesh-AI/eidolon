@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process'
 import path from 'node:path'
 
 import { buildAppEnv, type MockBackendFixture, setupMockBackend, waitForAppReady } from './fixtures'
+import { verifyKeyboardFocus } from './focus-visibility'
 import { expect, test } from './test'
 
 let fixture: MockBackendFixture | undefined
@@ -54,7 +55,11 @@ with s._write() as c:
     await waitForAppReady(fixture)
     const { page, mock } = fixture
     await page.getByRole('complementary', { name: 'Eidolon navigation', exact: true }).getByRole('link', { name: 'Home', exact: true }).click()
-    await page.getByRole('button', { name: 'Describe a request', exact: true }).click()
+    // The fresh-team continuation owns the hero CTA until setup is complete.
+    // Open the retained intake through the always-discoverable manual entry,
+    // then explicitly choose its assisted disclosure without submitting again.
+    await page.getByRole('button', { name: 'New objective', exact: true }).click()
+    await page.locator('#eid-assisted-intake > summary').filter({ hasText: /^Describe a request$/ }).click()
     const intake = page.getByRole('region', { name: 'Describe a request', exact: true })
     await expect(intake).toBeVisible()
 
@@ -63,12 +68,44 @@ with s._write() as c:
         await page.evaluate(value => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(value), percent)
         await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(percent / 100)
 
-        if (percent === 100) {
-          await expect(intake.getByRole('button', { name: 'Submit request', exact: true })).toBeInViewport({ ratio: 1 })
+        const request = intake.getByLabel('Your request', { exact: true })
+        const submit = intake.getByRole('button', { name: 'Submit request', exact: true })
+
+        // This advanced disclosure follows manual entry. Prove actual keyboard
+        // reachability instead of assuming its native toggle preserves scroll.
+        for (let step = 0; step < 12 && !await request.evaluate(element => element === document.activeElement); step++) {
+          await page.keyboard.press(percent === 100 ? 'Tab' : 'Shift+Tab')
         }
 
-        await intake.getByRole('button', { name: 'Submit request', exact: true }).scrollIntoViewIfNeeded()
-        await expect(intake.getByRole('button', { name: 'Submit request', exact: true })).toBeInViewport({ ratio: 1 })
+        await expect(request).toBeFocused()
+
+        await expect(request).toBeInViewport({ ratio: 1 })
+        const fieldFocus = await verifyKeyboardFocus(page, request, `Assisted intake field ${percent}%`)
+        await testInfo.attach(`intake-field-focus-${percent}`, {
+          contentType: 'application/json', body: JSON.stringify(fieldFocus)
+        })
+        const fieldWindow = await fixture.app.browserWindow(page)
+
+        const fieldPng = await fieldWindow.evaluate(async window =>
+          (await window.webContents.capturePage()).toPNG().toString('base64'))
+
+        await testInfo.attach(`intake-field-native-${percent}`, {
+          contentType: 'image/png', body: Buffer.from(fieldPng, 'base64')
+        })
+        await request.fill('Prepare a status report')
+        await expect(submit).toBeEnabled()
+
+        for (let step = 0; step < 12 && !await submit.evaluate(element => element === document.activeElement); step++) {
+          await page.keyboard.press('Tab')
+        }
+
+        await expect(submit).toBeFocused()
+        await expect(submit).toBeInViewport({ ratio: 1 })
+        const focus = await verifyKeyboardFocus(page, submit, `Assisted intake Submit ${percent}%`)
+        await testInfo.attach(`intake-submit-focus-${percent}`, {
+          contentType: 'application/json', body: JSON.stringify(focus)
+        })
+        await expect(request).toHaveValue('Prepare a status report')
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true)
 
         // A clipped inner scroller can leave the document width unchanged.
@@ -162,7 +199,11 @@ with sqlite3.connect(p.as_uri()+'?mode=ro',uri=True) as c:
     await page.reload()
     await waitForAppReady(fixture)
     await page.getByRole('complementary', { name: 'Eidolon navigation', exact: true }).getByRole('link', { name: 'Home', exact: true }).click()
-    await page.getByRole('button', { name: 'Describe a request', exact: true }).click()
+    // The fresh-team continuation owns the hero CTA until setup is complete.
+    // Open the retained intake through the always-discoverable manual entry,
+    // then explicitly choose its assisted disclosure without submitting again.
+    await page.getByRole('button', { name: 'New objective', exact: true }).click()
+    await page.locator('#eid-assisted-intake > summary').filter({ hasText: /^Describe a request$/ }).click()
     await intake.getByText('Recent requests', { exact: true }).click()
     await intake.getByRole('button', { name: 'Refresh recent requests', exact: true }).click()
     await intake.getByRole('button', { name: /Prepare a status report/ }).click()

@@ -98,7 +98,9 @@ test('keeps native organization navigation, roster and objective layouts usable 
   const historyToggle = history.locator(':scope > summary')
   await expect(historyToggle).toHaveText('History')
   await expect(historyToggle).toBeVisible()
-  if (await history.getAttribute('open') === null) await historyToggle.click()
+  if (await history.getAttribute('open') === null) {
+    await historyToggle.click()
+  }
   await shellRail.getByRole('button', { name: 'Profile chats', exact: true }).click()
   await expect(page.getByRole('tab', { name: 'Profile chats', exact: true })).toHaveAttribute('aria-selected', 'true')
   await page.getByRole('tab', { name: 'Eidolon', exact: true }).click()
@@ -314,7 +316,9 @@ test('keeps native organization navigation, roster and objective layouts usable 
     for (const [width, height] of [[1536, 961], [1280, 720]]) {
       await resize(width, height)
 
-      const columns = await page.locator('.eid-messages-layout > section').evaluateAll(elements => elements.map(element => {
+      // The directory section is scroll content. Its enclosing list pane is
+      // the visible column, including when short windows require scrolling.
+      const columns = await page.locator('.eid-messages-layout > [data-pane="list"], .eid-messages-layout .eid-message-conversation, .eid-messages-layout .eid-message-context').evaluateAll(elements => elements.map(element => {
         const rect = element.getBoundingClientRect()
 
         return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
@@ -334,7 +338,30 @@ test('keeps native organization navigation, roster and objective layouts usable 
       const headerBounds = await page.getByRole('banner', { name: 'Workspace controls', exact: true }).boundingBox()
       expect(Math.abs(bounds!.y - 64), 'Messages content origin matches the reference header').toBeLessThanOrEqual(1)
       expect(Math.abs(headerBounds!.y + headerBounds!.height - bounds!.y)).toBeLessThanOrEqual(1)
-      columnChecks.push({ mode, width, height, columns, workspace: bounds, header: headerBounds, targetWidths, memberSearch: await verifyMemberSearchGeometry(page) })
+      const directoryPane = page.locator('.eid-messages-layout > [data-pane="list"]')
+      const directoryGeometry = await directoryPane.evaluate(element => ({
+        height: element.clientHeight,
+        scrollHeight: element.scrollHeight,
+        width: element.clientWidth,
+        scrollWidth: element.scrollWidth,
+        overflowY: getComputedStyle(element).overflowY
+      }))
+
+      expect(directoryGeometry.overflowY).toBe('auto')
+      expect(directoryGeometry.scrollWidth).toBeLessThanOrEqual(directoryGeometry.width + 1)
+
+      if (height === 720) {
+        expect(directoryGeometry.scrollHeight, 'short directory retains its content in a scrollable pane').toBeGreaterThan(directoryGeometry.height)
+      }
+
+      const workspaceScroll = await workspace.evaluate(element => element.scrollTop)
+      const directorySummary = directoryPane.locator('.eid-message-directory-details > summary')
+
+      focusChecks.push(await verifyKeyboardFocus(page, directorySummary, `Messages directory disclosure ${mode} ${width}x${height}`))
+      await expect(directorySummary).toBeInViewport({ ratio: 1 })
+      expect(await workspace.evaluate(element => element.scrollTop), 'directory focus scrolls its own pane').toBe(workspaceScroll)
+      await directoryPane.evaluate(element => { element.scrollTop = 0 })
+      columnChecks.push({ mode, width, height, columns, workspace: bounds, header: headerBounds, targetWidths, directoryGeometry, memberSearch: await verifyMemberSearchGeometry(page) })
       await expect(page.locator('.eid-message-members').getByRole('heading', { name: 'Messages', exact: true })).toBeVisible()
       focusChecks.push(await verifyKeyboardFocus(page, search, `Messages search ${mode} ${width}x${height}`))
       await expect(page.getByRole('contentinfo', { name: 'System health', exact: true })).toBeInViewport({ ratio: 1 })
@@ -351,16 +378,50 @@ test('keeps native organization navigation, roster and objective layouts usable 
 
     await resize(1220)
     await capture(`messages-selected-medium-${mode}`)
+    const unavailableCall = page.locator('.eid-message-conversation .eid-owner-chat-actions span[tabindex="0"]')
+    await unavailableCall.focus()
     await resize(760)
+    const listPane = page.locator('.eid-messages-layout > [data-pane="list"]')
+    const detailPane = page.locator('.eid-messages-layout > [data-pane="detail"]')
+    const backToMembers = page.getByRole('button', { name: 'Back to members', exact: true })
+    const selectedRoute = await page.evaluate(() => location.hash)
+    const selectedTuple = new URLSearchParams(selectedRoute.split('?')[1])
+    expect(selectedTuple.get('member')).toBe('writer')
+    expect(selectedTuple.get('identity')).toBe('fixture-writer')
+    expect(selectedTuple.get('owner')).toBeTruthy()
+    const retainedChat = await page.locator('.eid-message-conversation .eid-owner-chat').elementHandle()
+    await expect(listPane).toBeHidden()
+    await expect(listPane).toHaveAttribute('inert', '')
+    await expect(page.getByRole('region', { name: 'Member conversation', exact: true }).getByRole('heading', { name: 'Robin', exact: true })).toBeInViewport({ ratio: 1 })
+    await expect(page.getByText('This runtime does not support member chat. Update the runtime to use it.', { exact: true })).toBeVisible()
+    focusChecks.push(await verifyKeyboardFocus(page, backToMembers, `Messages Back to members ${mode} narrow`))
+    await capture(`messages-selected-narrow-${mode}`, workspace, false, true)
+    const detailScroll = await detailPane.evaluate(element => element.scrollTop)
+    await page.keyboard.press('Enter')
+    await expect(detailPane).toBeHidden()
+    await expect(detailPane).toHaveAttribute('inert', '')
+    await expect.poll(() => page.evaluate(() => location.hash)).toBe(selectedRoute)
     await verifyMemberSearchGeometry(page)
-    await capture(`messages-selected-narrow-${mode}`)
-    // Traverse the context with Tab, then follow the recorded link using Enter.
     await search.fill('Robin')
     await search.focus()
     await page.keyboard.press('Tab')
     await expect(page.getByRole('button', { name: 'Clear search', exact: true })).toBeFocused()
     await page.keyboard.press('Tab')
-    await expect(members.getByRole('button', { name: /Robin/ })).toBeFocused()
+    const selectedMember = members.getByRole('button', { name: /Robin/ })
+    await expect(selectedMember).toBeFocused()
+    await page.keyboard.press('Enter')
+    await expect(backToMembers).toBeFocused()
+    await expect(listPane).toBeHidden()
+    await expect.poll(() => page.evaluate(() => location.hash)).toBe(selectedRoute)
+    expect(await retainedChat!.evaluate(node => node === document.querySelector('.eid-message-conversation .eid-owner-chat'))).toBe(true)
+    expect(await detailPane.evaluate(element => element.scrollTop)).toBe(detailScroll)
+    await page.keyboard.press('Enter')
+    await expect(selectedMember).toBeFocused()
+    await expect(search).toHaveValue('Robin')
+    await expect(selectedMember).toHaveAttribute('aria-pressed', 'true')
+    await capture(`messages-members-restored-narrow-${mode}`, workspace, false, true)
+    // The directory's disclosure stays mounted, but Tab cannot enter the inert
+    // conversation until an explicit member choice opens that pane again.
     await page.keyboard.press('Tab')
     const directoryDetails = page.locator('.eid-message-members .eid-message-directory-details')
     await expect(directoryDetails.locator('summary')).toBeFocused()
@@ -369,8 +430,11 @@ test('keeps native organization navigation, roster and objective layouts usable 
     await expect(directoryDetails).toContainText('Messages do not grant new permissions or renew allowances.')
     await page.keyboard.press('Enter')
     await expect(directoryDetails).not.toHaveAttribute('open', '')
+    await selectedMember.focus()
+    await page.keyboard.press('Enter')
+    await expect(backToMembers).toBeFocused()
     await page.keyboard.press('Tab')
-    await expect(page.locator('.eid-message-conversation .eid-owner-chat-actions span[tabindex="0"]')).toBeFocused()
+    await expect(unavailableCall).toBeFocused()
     await page.keyboard.press('Tab')
     await expect(context.getByRole('link', { name: 'Prepare the autumn release brief', exact: true })).toBeFocused()
     await page.keyboard.press('Enter')
@@ -504,6 +568,26 @@ test('keeps native organization navigation, roster and objective layouts usable 
         await control.scrollIntoViewIfNeeded()
         focusChecks.push(await verifyKeyboardFocus(page, control, `Objective ${mode} ${zoom} ${name}`))
         await expect(control).toBeInViewport({ ratio: 1 })
+        const clearance = await control.evaluate((element, followingText) => {
+          const explanation = followingText
+            ? element.closest('.eid-progress-heading')!.nextElementSibling!
+            : element.previousElementSibling!
+          const button = element.getBoundingClientRect()
+          const text = explanation.getBoundingClientRect()
+          const style = getComputedStyle(element)
+          const measuredOutset = Number.parseFloat(style.outlineWidth) + Number.parseFloat(style.outlineOffset)
+          // Fractional native zoom can round a 3px outline to 2.4 CSS px.
+          // Reserve the full intended 3px outline + 3px offset regardless.
+          const designReserve = 6
+          const requiredGap = Math.max(designReserve, measuredOutset)
+          const gap = followingText ? text.top - button.bottom : button.top - text.bottom
+
+          return { button: button.toJSON(), explanation: text.toJSON(), text: explanation.textContent,
+            measuredOutset, designReserve, requiredGap, gap, remainingClearance: gap - requiredGap }
+        }, name === 'Inspect work and evidence')
+        expect(clearance.gap, `${name}: explanatory text clears the full intended focus ring`).toBeGreaterThan(clearance.requiredGap)
+        expect(clearance.remainingClearance, `${name}: positive space remains outside the outline`).toBeGreaterThan(0)
+        objectiveChecks.push({ mode, zoom, action: name, textClearance: clearance })
         await capture(`objective-control-${mode}-${zoom}-${name.split(' ')[0]}-${name.split(' ')[1]}`, workspace, zoom !== 1, true)
       }
 
@@ -725,6 +809,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
       await expect(control).toBeInViewport({ ratio: 1 })
       await control.click({ trial: true })
     }
+    await capture(`history-expanded-footer-${Math.round(zoom * 100)}`, shellRail, true, true)
     // Trial clicks hover the icon controls, and keyboard focus also opens their
     // tooltip. Escape belongs to that top layer before the History disclosure.
     const gatewayControl = history.getByRole('button', { name: 'Manage gateways…', exact: true })
@@ -764,9 +849,26 @@ test('keeps native organization navigation, roster and objective layouts usable 
   // Home puts the overview first; explicit New objective reaches the retained form.
   {
     await page.getByRole('button', { name: 'New objective', exact: true }).click()
-    await expect(page.getByRole('textbox', { name: 'Objective', exact: true })).toBeFocused()
-    await expect(page.getByRole('textbox', { name: 'Objective', exact: true })).toBeInViewport({ ratio: 1 })
-    await expect(page.getByRole('button', { name: 'Create objective', exact: true })).toBeInViewport({ ratio: 1 })
+    const goal = page.getByRole('textbox', { name: 'Objective', exact: true })
+    const create = page.getByRole('button', { name: 'Create objective', exact: true })
+    await expect(page.getByRole('heading', { name: 'What should the organization do?', exact: true })).toBeInViewport({ ratio: 1 })
+    await expect(goal).toBeFocused()
+    await expect(goal).toBeInViewport({ ratio: 1 })
+    await expect(create).toBeDisabled()
+    // Manual setup deliberately continues below the entry viewport. Traverse
+    // its real controls rather than shrinking the form or scrolling by script.
+    await goal.fill('Synthetic keyboard reachability check; do not submit')
+    await expect(create).toBeEnabled()
+    for (let tabs = 0; tabs < 24 && !await create.evaluate(element => element === document.activeElement); tabs++) {
+      await page.keyboard.press('Tab')
+    }
+    await expect(create).toBeFocused()
+    await expect(create).toBeInViewport({ ratio: 1 })
+    focusChecks.push(await verifyKeyboardFocus(page, create, 'Home manual Create objective keyboard continuation'))
+    await capture('home-manual-keyboard-continuation', workspace, true, true)
+    await goal.fill('')
+    await expect(create).toBeDisabled()
+    expect(mock.receivedPrompts).toHaveLength(0)
   }
 
   await navigation.getByRole('link', { name: 'Organization', exact: true }).click()
@@ -1573,6 +1675,7 @@ for (const [locale, suffix, dark, light] of [
         await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(zoom)
 
         for (const route of ['/organization', '/artifacts?source=organization', '/messages', '/messages?recipient=executive', '/work', '/objectives', '/objectives/release']) {
+          let memberSearch: Awaited<ReturnType<typeof verifyMemberSearchGeometry>> | undefined
           await page.evaluate(value => { location.hash = value }, route)
 
           if (route === '/work') {
@@ -1611,6 +1714,7 @@ for (const [locale, suffix, dark, light] of [
             await expect(page.locator('.eid-delivery-outcomes').getByRole('heading', { name: 'Document provider boundaries', exact: true })).toBeVisible()
           } else {
             await expect(page.getByRole('textbox', { name: copy.search, exact: true })).toBeVisible()
+            memberSearch = await verifyMemberSearchGeometry(page)
             const directoryDetails = page.locator('.eid-message-directory-details > summary')
             await expect(directoryDetails).toHaveText(copy.directoryDetails)
             await directoryDetails.focus()
@@ -1635,6 +1739,15 @@ for (const [locale, suffix, dark, light] of [
           const focal = page.getByText(focalCopy, { exact: true })
 
           if (route === '/messages?recipient=executive') {
+            const compactBack = page.locator('.eid-messages-layout .eid-responsive-detail-back button')
+
+            if (await compactBack.isVisible()) {
+              const selectedRoute = await page.evaluate(() => location.hash)
+              await compactBack.click()
+              await expect.poll(() => page.evaluate(() => location.hash)).toBe(selectedRoute)
+              await expect(page.locator('.eid-message-members nav button[aria-pressed="true"]')).toBeFocused()
+            }
+
             const directoryDetails = page.locator('.eid-message-directory-details > summary')
             await directoryDetails.focus()
             await page.keyboard.press('Enter')
@@ -1656,7 +1769,6 @@ for (const [locale, suffix, dark, light] of [
           expect(appearance).toEqual({ theme: 'nous', dark: mode === 'dark', dir: locale === 'ar' ? 'rtl' : 'ltr' })
           const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)
           expect(overflow).toBeLessThanOrEqual(1)
-          const memberSearch = route.startsWith('/messages') ? await verifyMemberSearchGeometry(page) : undefined
           const name = `translated-${locale}-${mode}-${route.includes('recipient') ? 'executive' : route.startsWith('/artifacts') ? 'deliverables' : route.slice(1).replaceAll('/', '-')}-${width}-${height}-${zoom}.png`
           const bytes = Buffer.from(await app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')), 'base64')
           writeFileSync(test.info().outputPath(name), bytes)
@@ -1683,6 +1795,10 @@ for (const [locale, suffix, dark, light] of [
           }
 
           if (retainedCopy && route === '/messages?recipient=executive') {
+            if (await page.locator('.eid-messages-layout > [data-pane="detail"]').isHidden()) {
+              await page.locator('.eid-message-members nav button[aria-pressed="true"]').click()
+            }
+
             const retained = page.locator('.eid-message-context details')
             await retained.locator(':scope > summary').click()
             await expect(retained.getByRole('heading', { name: retainedCopy.identity, exact: true })).toBeVisible()
