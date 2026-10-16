@@ -72,13 +72,13 @@ function SidebarSectionHeader({
   const labelBody = (
     <>
       {icon}
-      <SidebarPanelLabel>{label}</SidebarPanelLabel>
+      <SidebarPanelLabel className="sidebar-section-label">{label}</SidebarPanelLabel>
       {meta && <SidebarSectionMeta>{meta}</SidebarSectionMeta>}
     </>
   )
 
   return (
-    <div className="group/section flex shrink-0 items-center justify-between gap-1 pb-1 pt-1.5">
+    <div className="sidebar-section-heading group/section flex shrink-0 items-center justify-between gap-1 pb-1 pt-1.5">
       {collapsible ? (
         <button
           // min-w-0 lets the label truncate at narrow sidebar widths instead of

@@ -291,6 +291,7 @@ export function findElectron(): string {
  */
 export async function launchDesktop(
   env: Record<string, string>,
+  bootstrap?: string,
 ): Promise<{ app: ElectronApplication; page: Page }> {
   assertDistBuilt()
 
@@ -305,6 +306,7 @@ export async function launchDesktop(
       // handlers or creates any renderer. Post-launch evaluate is too late for
       // the startup poll and does not isolate sibling scenarios/relaunches.
       '-r', path.join(DESKTOP_ROOT, 'e2e', 'isolated-update-check.cjs'),
+      ...(bootstrap ? ['-r', path.join(DESKTOP_ROOT, 'e2e', bootstrap)] : []),
       DESKTOP_ROOT, // `electron .` — the `.` is the desktop package dir
       '--disable-gpu',
       '--no-sandbox',
@@ -346,6 +348,8 @@ export interface MockBackendOptions {
   modelContextLength?: number
   /** Visual-only opt-in: real catalog reads use synthetic metadata, without public catalogs. */
   isolateModelCatalog?: boolean
+  /** Opt-in native test bootstrap; never loaded by packaged or ordinary app launches. */
+  bootstrap?: string
   /** Populate durable synthetic records before desktop/backend caches first load. */
   beforeLaunch?: (sandbox: Sandbox, mock: Awaited<ReturnType<typeof startMockServer>>) => Promise<void>
 }
@@ -388,7 +392,7 @@ export async function setupMockBackend(options: MockBackendOptions = {}): Promis
 
   // 3. Build env + launch
   const env = buildAppEnv(sandbox)
-  const { app, page } = await launchDesktop(env)
+  const { app, page } = await launchDesktop(env, options.bootstrap)
 
   return {
     app,

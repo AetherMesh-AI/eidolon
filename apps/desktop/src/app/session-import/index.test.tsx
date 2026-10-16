@@ -4,6 +4,8 @@ import { afterEach, expect, it, vi } from 'vitest'
 
 import { setSessionOwnerHint } from '@/store/session'
 
+import { observeMasterDetailWidth } from '../responsive-master-detail.test-helpers'
+
 import { type ForeignImportResult, foreignRequest } from './api'
 
 import { SessionImportView } from './index'
@@ -19,6 +21,7 @@ vi.mock('../overlays/overlay-view', () => ({
 
 afterEach(() => {
   cleanup()
+  vi.unstubAllGlobals()
   vi.clearAllMocks()
 })
 
@@ -99,4 +102,30 @@ it('does not navigate when an import finishes after the view has closed', async 
   finish({ session_id: 'existing', already_imported: true })
   await waitFor(() => expect(setSessionOwnerHint).toHaveBeenCalledWith('existing', owner))
   expect(onOpenSession).not.toHaveBeenCalled()
+})
+
+it('returns to the selected import row and retains preview through compact navigation without importing', async () => {
+  const resize = observeMasterDetailWidth()
+  vi.mocked(foreignRequest).mockImplementation(async (_owner, method) =>
+    method === 'list'
+      ? { sessions: [session], next_offset: null, host: 'studio', unreadable: 0 }
+      : { messages: [{ role: 'user', content: 'Retained preview' }], total: 1, already_imported: null }
+  )
+  const { container } = mount()
+  const row = await screen.findByRole('button', { name: /Repair imports/ })
+  resize(500)
+  row.focus()
+  fireEvent.click(row)
+  await screen.findByText('Retained preview')
+  const preview = container.querySelector<HTMLElement>('.session-import-preview-scroll')!
+  preview.scrollTop = 60
+  fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+  expect(window.document.activeElement).toBe(row)
+  expect(row.getAttribute('aria-pressed')).toBe('true')
+  fireEvent.click(row)
+  resize(1100)
+  resize(500)
+  expect(container.querySelector('.session-import-preview-scroll')).toBe(preview)
+  expect(preview.scrollTop).toBe(60)
+  expect(vi.mocked(foreignRequest).mock.calls.some(([, method]) => method === 'import')).toBe(false)
 })

@@ -732,3 +732,24 @@
 /* Secondary destinations have named context; History never remounts its tree. */
 .eid-rail > .eid-rail-history { margin-top: auto; }
 .eid-rail .eid-rail-context { padding-block: 0 12px; padding-inline-start: 18px; }
+
+/* History embeds the canonical sidebar in a narrower rail. Give the words
+   priority over shortcut decoration; no session tree or handler is replaced. */
+.eid-session-tree { min-width: 0; container: eid-history / inline-size; }
+.eid-session-tree .sidebar-navigation-action { height: auto; min-height: 28px; }
+.eid-session-tree .sidebar-navigation-label,
+.eid-session-tree .sidebar-section-label > span:last-child {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+.eid-session-tree .sidebar-section-heading { flex-wrap: wrap; }
+.eid-session-tree .sidebar-section-label { padding-inline-start: 2px; gap: 4px; letter-spacing: .08em; }
+@container eid-history (max-width: 240px) {
+  .eid-session-tree .sidebar-navigation-shortcut { display: none; }
+}
+@media (max-height: 600px) {
+  .eid-workspace .eid-page:has(> .eid-workspace-page-heading) { padding-top: 6px; }
+}
