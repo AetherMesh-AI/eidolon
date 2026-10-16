@@ -6,6 +6,8 @@
  * instead of squeezing it. Event reveals pin; hover reveals follow the mouse.
  */
 
+import './narrow-overlays.css'
+
 import { useStore } from '@nanostores/react'
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 
@@ -224,8 +226,8 @@ export function NarrowOverlays() {
           style={{ width: `min(${(revealed.data as { width?: string } | undefined)?.width ?? '18rem'}, 85vw)` }}
           tabIndex={-1}
         >
-          <div className="flex shrink-0 justify-end p-1">
-            <Button aria-label={t.common.close} className="transition-colors focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-2 focus-visible:outline-(--ui-accent)" onClick={close} size="icon" variant="ghost"><Codicon name="close" /></Button>
+          <div className="flex shrink-0 justify-end p-2">
+            <Button aria-label={t.common.close} className="pane-narrow-overlay-close" onClick={close} size="icon" variant="ghost"><Codicon name="close" /></Button>
           </div>
           {/* Zone-mates share the overlay through the zone's own tab strip
               (SESSIONS | BOTS) — a lone pane keeps the stripless form. */}
