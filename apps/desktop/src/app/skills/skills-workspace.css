@@ -136,3 +136,18 @@
 .eid-hub-viewport {
   min-height: 6rem;
 }
+
+/* Tools has no pinned edit actions. Let its quiet caption share the document
+   scroll so short windows keep enough room to read a wrapped heading. Back
+   remains outside this scroll owner in ResponsiveMasterDetail. */
+.eid-capabilities-tools-detail .eid-responsive-detail-content > main {
+  display: block;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scroll-padding: 7px;
+}
+
+.eid-capabilities-tools-detail .eid-responsive-detail-content > main > .eid-detail-scroll {
+  overflow: visible;
+}

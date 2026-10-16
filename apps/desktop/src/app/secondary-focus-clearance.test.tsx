@@ -64,3 +64,20 @@ it.each(['collapsed', 'hidden'])('retires expanded Hub workspace sizing when %s'
   expect(content.minHeight).toBe('auto')
   expect(content.flexShrink).toBe('1')
 })
+
+it('gives Tools one document scroller with its caption in flow and Back outside', () => {
+  const { container } = render(<><style>{capabilityCss}</style>
+    <div className="eid-capabilities-tools-detail"><div className="eid-responsive-detail-content">
+      <button>Back</button><main><div className="eid-detail-scroll"><h3>Wrapped heading</h3></div><div>Changes apply to new sessions.</div></main>
+    </div></div>
+  </>)
+  const main = container.querySelector('main')!
+  const style = getComputedStyle(main)
+  expect(style.display).toBe('block')
+  expect(style.overflowY).toBe('auto')
+  expect(style.scrollbarGutter).toBe('stable')
+  expect(style.scrollPadding).toBe('7px')
+  expect(getComputedStyle(main.querySelector('.eid-detail-scroll')!).overflow).toBe('visible')
+  expect(main.contains(container.querySelector('button'))).toBe(false)
+  expect(main.lastElementChild?.textContent).toBe('Changes apply to new sessions.')
+})

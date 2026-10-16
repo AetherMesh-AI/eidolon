@@ -177,6 +177,7 @@ describe('SkillsView toolset management', { timeout: 60_000 }, () => {
     resize(400)
     const list = container.querySelector<HTMLElement>('[data-pane="list"]')!
     const detail = container.querySelector<HTMLElement>('[data-pane="detail"]')!
+    expect(detail.closest('.eid-capabilities-tools-detail')).toBeTruthy()
     const scroll = list.querySelector<HTMLElement>('.eid-detail-scroll')!
     const row = screen.getByRole('button', { name: /Web Search/ })
     scroll.scrollTop = 91

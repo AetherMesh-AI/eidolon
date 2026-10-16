@@ -232,6 +232,17 @@ test('Skills and Tools retain long identities, Hub, saved wide split and compact
       }
       assertVerticallyReachable(afterHeadingScroll)
       if (backBounds) assertVerticallyReachable(backBounds)
+      if (tab === 'toolsets') {
+        const caption = root.locator('[data-pane="detail"] main > div').last()
+        await expect(caption).toContainText('Changes apply to new sessions')
+        await caption.scrollIntoViewIfNeeded()
+        const captionBounds = await readVerticalReachability(caption)
+        await test.info().attach(`capability-tools-caption-${label}`, {
+          body: JSON.stringify(captionBounds), contentType: 'application/json'
+        })
+        assertVerticallyReachable(captionBounds)
+        await captureGallery(current, `capability-toolsets-caption-${label}`, root)
+      }
       await backRetains(current, root, row, before, beforeAction)
 
       if ((await root.getAttribute('data-compact')) === 'false' && tab === 'skills' && savedWidth === undefined) {

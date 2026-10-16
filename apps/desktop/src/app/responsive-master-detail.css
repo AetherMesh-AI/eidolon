@@ -100,6 +100,9 @@
 @container session-import (max-width: 760px) {
   .session-import > .eid-workspace-page-heading {
     padding-inline: 1rem;
+    /* Overlay chrome is physically right-aligned in every locale. Keep the
+       original right gutter alongside the h1's reserved Refresh/Close space. */
+    padding-right: 2rem;
   }
 
   .session-import-context {

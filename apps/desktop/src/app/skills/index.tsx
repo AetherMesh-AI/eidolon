@@ -1025,7 +1025,7 @@ export function SkillsView({
               capabilityEmpty('tools')
             ) : (
               <ResponsiveMasterDetail
-                className="eid-capabilities-detail"
+                className="eid-capabilities-detail eid-capabilities-tools-detail"
                 detailOpen={toolDetailOpen}
                 onDetailOpenChange={setToolDetailOpen}
                 resizeId="capabilities-split"
