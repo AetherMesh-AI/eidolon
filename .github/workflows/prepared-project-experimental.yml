@@ -1,5 +1,11 @@
 name: Prepared workspace candidate inventory
 on:
+  push:
+    branches: ['feat/prepared-project-validation']
+    paths:
+      - '.github/workflows/prepared-project-experimental.yml'
+      - 'scripts/organization/prepare_workspace_dependencies.py'
+      - 'scripts/organization/record_prepared_npm_install.mjs'
   workflow_dispatch:
 permissions:
   contents: read
