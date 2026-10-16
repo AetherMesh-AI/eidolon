@@ -1,7 +1,7 @@
 /** Actual native Electron → RPC → scheduler → SQLite → OS runner → source Git branch. */
 import type { Locator, Page } from '@playwright/test'
 
-import { openOrganizationDisclosure, openOrganizationRequests } from './organization-disclosures'
+import { openOrganizationDisclosure, openOrganizationObjectives, openOrganizationRequests } from './organization-disclosures'
 import {
   correctedApp,
   projectCriterion,
@@ -36,7 +36,7 @@ function fact(region: Locator, label: string) {
     .locator('+ dd')
 }
 async function openObjective(page: Page) {
-  await primary(page).getByRole('link', { name: 'Objectives', exact: true }).click()
+  await openOrganizationObjectives(page)
   await page
     .getByRole('link')
     .filter({ has: page.getByText(projectTitle, { exact: true }) })
@@ -246,7 +246,7 @@ test('retains exact native test, independent review and branch receipts, or an h
   if (state === 'completed') {
     await page.getByRole('button', { name: 'Archive objective', exact: true }).click()
     await expect(page.getByRole('button', { name: 'Restore to current history', exact: true })).toBeVisible()
-    await primary(page).getByRole('link', { name: 'Objectives', exact: true }).click()
+    await openOrganizationObjectives(page)
     const outcome = page
       .getByRole('region', { name: 'Outcomes inbox', exact: true })
       .getByRole('listitem', { name: projectTitle, exact: true })
@@ -266,7 +266,7 @@ test('retains exact native test, independent review and branch receipts, or an h
   } else {
     const blockedRequestName = await pending().first().getAttribute('aria-label')
     expect(blockedRequestName).toBeTruthy()
-    await primary(page).getByRole('link', { name: 'Objectives', exact: true }).click()
+    await openOrganizationObjectives(page)
     await expect(
       page.getByRole('region', { name: 'Outcomes inbox', exact: true }).getByText('No outcomes yet', { exact: true })
     ).toBeVisible()

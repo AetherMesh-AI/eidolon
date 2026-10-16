@@ -39,14 +39,16 @@ export async function setupGallery(locale: string, seedHistory = false) {
     await waitForAppReady(fixture)
     const methods: string[] = []
     const observationReads: string[] = []
-    const state = { snapshot: structuredClone(snapshot) }
+    const state = { snapshot: structuredClone(snapshot), observationError: null as string | null }
     state.snapshot.activity[1].text = 'سجل تجريبي للمراجعة · Synthetic record'
     await page.routeWebSocket(/.*/, socket => {
       const server = socket.connectToServer()
       socket.onMessage(message => {
         const request = JSON.parse(message.toString()) as { id?: number; method?: string; params?: { method?: string } }
         if (request.method?.startsWith('organization.')) { methods.push(request.method) }
-        if (request.method === 'organization.observe') {
+        if ((request.method === 'organization.observe' || request.method === 'organization.snapshot') && state.observationError) {
+          socket.send(JSON.stringify({ jsonrpc: '2.0', id: request.id, error: { code: -32000, message: state.observationError } }))
+        } else if (request.method === 'organization.observe') {
           socket.send(JSON.stringify({ jsonrpc: '2.0', id: request.id, result: { capabilityVersion: 1, state: 'available', scope: { kind: 'served-profile', profile: 'default' }, snapshot: state.snapshot } }))
         } else if (request.method === 'organization.observeRead') {
           observationReads.push(request.params?.method ?? '')

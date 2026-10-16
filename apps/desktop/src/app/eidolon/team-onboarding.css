@@ -34,7 +34,7 @@
   gap: 0.375rem;
   min-width: 0;
 }
-.eid-team-fields input:not([type="checkbox"]),
+.eid-team-fields input:not([type='checkbox']),
 .eid-team-fields textarea {
   width: 100%;
 }
@@ -76,4 +76,53 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+.eid-home-hero:has(.eid-team-entry) {
+  flex-wrap: wrap;
+}
+.eid-home-actions:has(.eid-team-entry) {
+  align-items: flex-start;
+  justify-content: flex-start;
+  max-width: none;
+  width: 100%;
+}
+.eid-home-actions .eid-team-entry {
+  width: 100%;
+  justify-content: flex-start;
+  padding: 1rem;
+  border: 1px solid var(--ui-stroke-secondary);
+  border-radius: 0.75rem;
+  background: var(--ui-bg-secondary);
+}
+.eid-team-continuation {
+  flex: 1 1 22rem;
+  min-width: 0;
+}
+.eid-team-progress {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  padding: 0;
+  margin: 0.625rem 0 0;
+  list-style: none;
+  color: var(--ui-text-secondary);
+  font-size: 0.75rem;
+}
+.eid-team-progress li {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+.eid-team-progress li[aria-current] {
+  color: var(--ui-text-primary);
+  font-weight: 600;
+}
+.eid-team-progress span {
+  display: inline-grid;
+  place-items: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 1px solid var(--ui-stroke-secondary);
+  border-radius: 50%;
 }

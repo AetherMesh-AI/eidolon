@@ -282,7 +282,10 @@ it('shows the recorded question and requester without attributing it to the assi
   expect(screen.getByRole('heading', { name: request.requestedOutcome })).toBeTruthy()
   expect(screen.getByText(request.reason)).toBeTruthy()
   expect(screen.getByText(worker.name)).toBeTruthy()
-  expect(screen.getByRole('link', { name: /Review request/ }).getAttribute('href')).toBe(`/objectives/${objective.id}`)
+  const href = new URL(screen.getByRole('link', { name: /Review request/ }).getAttribute('href')!, 'https://workspace.invalid')
+  expect(href.pathname).toBe(`/objectives/${objective.id}`)
+  expect(href.searchParams.get('request')).toBe(request.id)
+  expect(href.searchParams.get('requestOwner')).toBe(value.connection?.ownerScope ?? value.connection?.scope)
   view.rerender(<MemoryRouter><HomeRequest request={{ ...request, requesterId: undefined, agentId: worker.id }} snapshot={value} /></MemoryRouter>)
   expect(screen.queryByText(worker.name)).toBeNull()
   expect(screen.getByText('Not recorded')).toBeTruthy()
@@ -322,4 +325,21 @@ it('switches compact intake modes through explicit shortcuts while preserving th
   } finally {
     HTMLElement.prototype.scrollIntoView = original
   }
+})
+
+it('opens and focuses assisted intake after the explicit team-setup continuation', () => {
+  const original = HTMLElement.prototype.scrollIntoView
+  HTMLElement.prototype.scrollIntoView = vi.fn()
+  const current = { ...snapshot, connection: { scope: 'first-request', ownerScope: 'first-request', state: 'ready' as const } }
+  const adapter = { mode: 'runtime', getSnapshot: () => current, createObjective: vi.fn() } as unknown as RuntimeOrganizationAdapter
+
+  try {
+    const view = render(<MemoryRouter initialEntries={['/home?intake=assisted#eid-home-intake']}><Home adapter={adapter} snapshot={current} /></MemoryRouter>)
+    const assisted = view.container.querySelector('#eid-assisted-intake') as HTMLDetailsElement
+    const manual = view.container.querySelector('#eid-manual-intake') as HTMLDetailsElement
+    expect(assisted.open).toBe(true)
+    expect(manual.open).toBe(false)
+    expect(globalThis.document.activeElement).toBe(assisted.querySelector('summary'))
+    expect(adapter.createObjective).not.toHaveBeenCalled()
+  } finally { HTMLElement.prototype.scrollIntoView = original }
 })

@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { Link } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
 
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -14,6 +14,7 @@ import { LocalizedTime } from './localized-time'
 import { RuntimeObjectiveDetail } from './runtime-detail'
 import type { HistoryPage, HistoryQuery, HistoryState } from './runtime-history-types'
 import type { OrganizationSnapshot, RuntimeOrganizationAdapter } from './types'
+import { objectiveReturnTarget } from './workspace-navigation'
 
 interface HistoryProps {
   adapter: RuntimeOrganizationAdapter
@@ -318,6 +319,9 @@ interface HistoryDetailProps extends HistoryProps {
 export function RuntimeHistoryObjectiveDetail({ adapter, snapshot, objectiveId }: HistoryDetailProps) {
   const { t } = useI18n()
   const copy = t.organizationWork
+  const [params] = useSearchParams()
+  const returnTo = objectiveReturnTarget(params, snapshot.connection?.ownerScope ?? snapshot.connection?.scope)
+  const returnLabels: Record<string, string> = { '/home': t.organizationHome.home, '/work': t.organizationHome.work, '/messages': t.organizationHome.messages, '/requests': copy.needsYou, '/objectives': copy.objectives, '/artifacts': t.organizationHome.deliverables }
   const [retained, setRetained] = useState<OrganizationSnapshot | null>(null)
   const [error, setError] = useState('')
   const [attempt, setAttempt] = useState(0)
@@ -407,8 +411,8 @@ export function RuntimeHistoryObjectiveDetail({ adapter, snapshot, objectiveId }
   return (
     <>
       {!objective && (
-        <Link className="eid-back" to="/objectives">
-          ← {copy.objectives}
+        <Link className="eid-back" to={returnTo}>
+          ← {returnLabels[returnTo.split('?')[0]]}
         </Link>
       )}
       {!ready && snapshot.connection?.state !== 'connecting' && <p role="status">{copy.historyOffline}</p>}

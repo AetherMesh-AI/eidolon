@@ -160,7 +160,7 @@ describe('runtime organization rendering', () => {
     render(<MemoryRouter><OrganizationRail sessions={null} /></MemoryRouter>)
     expect(screen.queryByText(/Organization evidence · current connection and profile/)).toBeNull()
     expect(screen.queryByText(/Organization · Local prototype/)).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'More workspace options' }))
+    fireEvent.click(screen.getByText('History', { selector: 'summary' }))
     expect(screen.getByRole('link', { name: 'Legacy prototype history' }).getAttribute('href')).toBe('/legacy-organization')
   })
 })

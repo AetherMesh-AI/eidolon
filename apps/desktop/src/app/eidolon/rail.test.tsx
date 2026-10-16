@@ -46,7 +46,7 @@ it('preserves the canonical history and its input while expanding navigation and
   )
   const rail = screen.getByRole('complementary', { name: 'Eidolon navigation' })
   const input = screen.getByRole('textbox', { name: 'History filter' })
-  const summary = screen.getByRole('button', { name: 'More workspace options' })
+  const summary = screen.getByText('History', { selector: 'summary' })
   const details = summary.closest('details')!
   fireEvent.change(input, { target: { value: 'Unfinished side chat' } })
 
@@ -73,11 +73,11 @@ it('preserves the canonical history and its input while expanding navigation and
 it('keeps the approved primary destinations in order and retains secondary operational routes', () => {
   const { container } = render(<MemoryRouter><OrganizationRail needsYouCount={3} sessions={<span>History</span>} /></MemoryRouter>)
   const primary = container.querySelector('nav[aria-label="Primary"]')!
-  expect(Array.from(primary.querySelectorAll('a'), item => item.getAttribute('aria-label'))).toEqual(['Home', 'Messages', 'Work Overview', 'Objectives', 'Organization', 'Deliverables', 'Settings'])
+  expect(Array.from(primary.querySelectorAll('a'), item => item.getAttribute('aria-label'))).toEqual(['Home', 'Messages', 'Work Overview', 'Needs You', 'Organization', 'Deliverables', 'Settings'])
   expect(screen.getByRole('link', { name: 'Settings' }).getAttribute('href')).toBe('/settings')
-  fireEvent.click(screen.getByRole('button', { name: 'More workspace options' }))
+  fireEvent.click(screen.getByText('History', { selector: 'summary' }))
   expect(screen.getByRole('link', { name: 'Needs You' }).getAttribute('href')).toBe('/requests')
-  expect(screen.getByRole('link', { name: 'Activity' }).getAttribute('href')).toBe('/activity')
+  expect(screen.queryByRole('link', { name: 'Activity' })).toBeNull()
 })
 
 it('keeps Settings in the primary destination order with one route owner', () => {
@@ -85,7 +85,7 @@ it('keeps Settings in the primary destination order with one route owner', () =>
   render(<MemoryRouter><OrganizationRail onNavigate={onNavigate} sessions={<span>History</span>} /></MemoryRouter>)
   const primary = screen.getByRole('navigation', { name: 'Primary' })
   expect([...primary.querySelectorAll('a')].map(link => link.getAttribute('href'))).toEqual([
-    '/home', '/messages', '/work', '/objectives', '/organization', '/artifacts', '/settings'
+    '/home', '/messages', '/work', '/requests', '/organization', '/artifacts?source=organization', '/settings'
   ])
   expect(screen.getAllByRole('link', { name: 'Settings' })).toHaveLength(1)
   fireEvent.click(screen.getByRole('link', { name: 'Settings' }))
@@ -96,7 +96,7 @@ it('keeps Settings in the primary destination order with one route owner', () =>
 it('keeps secondary features contextual and restores focus after Escape without remounting history', () => {
   const openProfileChats = vi.fn()
   render(<MemoryRouter initialEntries={['/home']}><OrganizationRail onOpenProfileChats={openProfileChats} sessions={<input aria-label="Retained history filter" defaultValue="draft filter" />} /></MemoryRouter>)
-  const trigger = screen.getByRole('button', { name: 'More workspace options' })
+  const trigger = screen.getByText('History', { selector: 'summary' })
   const details = trigger.closest('details')!
   const input = screen.getByLabelText('Retained history filter')
   expect(details.open).toBe(false)
@@ -118,7 +118,7 @@ it('leaves Escape with a portaled session dialog or a nested control that consum
     {createPortal(<input aria-label="Session dialog input" />, document.body)}
     <input aria-label="Nested control" onKeyDown={event => event.preventDefault()} />
   </>} /></MemoryRouter>)
-  const trigger = screen.getByRole('button', { name: 'More workspace options' })
+  const trigger = screen.getByText('History', { selector: 'summary' })
   const details = trigger.closest('details')!
   fireEvent.click(trigger)
   expect(details.open).toBe(true)
@@ -132,4 +132,25 @@ it('leaves Escape with a portaled session dialog or a nested control that consum
   fireEvent.keyDown(nested, { key: 'Escape' })
   expect(details.open).toBe(true)
   expect(document.activeElement).toBe(nested)
+})
+
+it.each(['/work', '/objectives', '/objectives/retained', '/activity'])('keeps Work selected and exposes its destinations at %s', route => {
+  render(<MemoryRouter initialEntries={[route]}><OrganizationRail sessions={null} /></MemoryRouter>)
+  expect(screen.getByRole('link', { name: 'Work Overview' }).getAttribute('aria-current')).toBe('page')
+  expect(screen.getByRole('link', { name: 'Objectives' }).getAttribute('href')).toBe('/objectives')
+  expect(screen.getByRole('link', { name: 'Activity' }).getAttribute('href')).toBe('/activity')
+})
+
+it.each(['/settings', '/skills', '/messaging', '/profiles'])('keeps configuration discoverable in Settings context at %s', route => {
+  render(<MemoryRouter initialEntries={[route]}><OrganizationRail sessions={null} /></MemoryRouter>)
+  expect(screen.getByRole('link', { name: 'Settings' }).getAttribute('aria-current')).toBe('page')
+  expect(screen.getByRole('link', { name: 'Skills' }).getAttribute('href')).toBe('/skills')
+})
+
+it('opens organization deliverables while preserving a distinct Needs You destination', () => {
+  render(<MemoryRouter initialEntries={['/artifacts']}><OrganizationRail needsYouCount={3} sessions={null} /></MemoryRouter>)
+  expect(screen.getByRole('link', { name: 'Deliverables' }).getAttribute('href')).toBe('/artifacts?source=organization')
+  expect(screen.getByRole('link', { name: 'Deliverables' }).getAttribute('aria-current')).toBe('page')
+  expect(screen.getByRole('link', { name: 'Needs You' }).textContent).toContain('3')
+  expect(screen.queryByRole('button', { name: 'More workspace options' })).toBeNull()
 })

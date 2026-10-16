@@ -1,5 +1,6 @@
 import './team-onboarding.css'
 
+import { useStore } from '@nanostores/react'
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 
@@ -9,8 +10,8 @@ import { Loader } from '@/components/ui/loader'
 import { Textarea } from '@/components/ui/textarea'
 import { useI18n } from '@/i18n/context'
 import { teamOnboardingCopy } from '@/i18n/organization-team-onboarding'
-import { startManualOnboarding } from '@/store/onboarding'
 import { $gateway } from '@/store/gateway'
+import { $desktopOnboarding, startManualOnboarding } from '@/store/onboarding'
 
 import { subscribeOrganizationDirectorySource } from './organization-directory-runtime'
 import { OrganizationOwnerEditor } from './organization-owner-editor'
@@ -29,10 +30,14 @@ import { readOrganizationMetadataScope, useOrganizationMetadata } from './use-or
 function readTeamScope() {
   const scope = readOrganizationMetadataScope()
   const gateway = $gateway.get()
+
   return {
     ...scope,
     request: <T,>(method: string, params: Record<string, unknown>): Promise<T> => {
-      if (!gateway) return Promise.reject(new Error('stale'))
+      if (!gateway) {
+        return Promise.reject(new Error('stale'))
+      }
+
       return gateway.request<T>(method, params, method === 'organization.generateTeam' ? 180000 : 15000)
     }
   }
@@ -53,36 +58,52 @@ export function TeamOnboardingEntry({ adapter }: { adapter: RuntimeOrganizationA
   const initializeAfterIdentity = useRef(false)
   const organizationId = view.descriptor?.metadata?.organizationId ?? null
   const [client, setClient] = useState<TeamOnboardingClient | null>(null)
+  // eslint-disable-next-line no-restricted-syntax -- Reset window-owned setup intent when the authenticated owner changes.
   useEffect(() => {
     continueAfterIdentity.current = false
     initializeAfterIdentity.current = false
     setCompleted(false)
     setEditingIdentity(false)
   }, [scope.key, scope.ownerKey, scope.profile])
+  // eslint-disable-next-line no-restricted-syntax -- Own the cancellable setup request and explicit initialization intent.
   useEffect(() => {
     setOpened(false)
     setSetup(null)
     setLoadError(false)
-    if (!scope.eligible || !organizationId) return
+
+    if (!scope.eligible || !organizationId) {
+      return
+    }
+
     const next = createTeamOnboardingClient(readTeamScope, subscribeOrganizationDirectorySource)
     setClient(next)
     let active = true
+
     const load = async () => {
-      if (!next.current()) throw new Error('stale')
+      if (!next.current()) {
+        throw new Error('stale')
+      }
+
       // Initialization belongs only to an explicitly confirmed first identity save.
       // Ordinary entry rendering is a read and must never refresh a new owner.
       if (initializeAfterIdentity.current) {
         initializeAfterIdentity.current = false
         await adapter.refresh()
-        if (!next.current()) throw new Error('stale')
+
+        if (!next.current()) {
+          throw new Error('stale')
+        }
       }
+
       return next.setup(organizationId)
     }
+
     void load()
       .then(result => {
         if (active && next.current()) {
           setSetup(result)
           setLoadError(result.state === 'unconfigured' || result.state === 'unsupported')
+
           if (continueAfterIdentity.current && result.state === 'available') {
             continueAfterIdentity.current = false
             setOpened(true)
@@ -90,24 +111,46 @@ export function TeamOnboardingEntry({ adapter }: { adapter: RuntimeOrganizationA
         }
       })
       .catch(() => {
-        if (active && next.current()) setLoadError(true)
+        if (active && next.current()) {
+          setLoadError(true)
+        }
       })
+
     return () => {
       active = false
       next.dispose()
       setClient(null)
     }
   }, [scope.key, scope.ownerKey, scope.profile, scope.eligible, organizationId, adapter, reload])
+
   if (
     (completed && !opened) ||
     !scope.eligible ||
     !view.descriptor ||
     view.descriptor.state === 'unsupported' ||
     (organizationId && setup?.state !== 'available' && !loadError)
-  )
+  ) {
     return null
+  }
+
   return (
-    <section className="eid-team-entry">
+    <section aria-label={copy.title} className="eid-team-entry">
+      <div className="eid-team-continuation">
+        <strong>{copy.title}</strong>
+        <ol className="eid-team-progress">
+          {[copy.setupOrganization, copy.connectModel, copy.review, copy.firstRequest].map((step, index) => (
+            <li
+              aria-current={
+                index === (!organizationId ? 0 : setup?.readiness.status === 'blocked' ? 1 : 2) ? 'step' : undefined
+              }
+              key={step}
+            >
+              <span aria-hidden="true">{index + 1}</span>
+              {step}
+            </li>
+          ))}
+        </ol>
+      </div>
       {loadError && (
         <>
           <p role="alert">{copy.unavailable}</p>
@@ -115,7 +158,10 @@ export function TeamOnboardingEntry({ adapter }: { adapter: RuntimeOrganizationA
             onClick={() => {
               // Retry may resume this owner's explicit initialization intent. Mere
               // rendering never retries it, and a scope change retires the intent.
-              if (!client?.current()) return
+              if (!client?.current()) {
+                return
+              }
+
               initializeAfterIdentity.current = continueAfterIdentity.current
               setReload(value => value + 1)
             }}
@@ -140,6 +186,7 @@ export function TeamOnboardingEntry({ adapter }: { adapter: RuntimeOrganizationA
           onReturnFocus={saved => {
             setEditingIdentity(false)
             const currentScope = readOrganizationMetadataScope()
+
             if (
               saved &&
               currentScope.eligible &&
@@ -150,7 +197,9 @@ export function TeamOnboardingEntry({ adapter }: { adapter: RuntimeOrganizationA
               continueAfterIdentity.current = true
               initializeAfterIdentity.current = true
               setReload(value => value + 1)
-            } else trigger.current?.focus()
+            } else {
+              trigger.current?.focus()
+            }
           }}
         />
       )}
@@ -189,6 +238,8 @@ export function TeamOnboardingDialog({
   const { locale } = useI18n()
   const copy = teamOnboardingCopy[locale]
   const [setup, setSetup] = useState(initialSetup)
+  const providerSetup = useStore($desktopOnboarding)
+  const returningFromProvider = useRef(false)
   const [jobs, setJobs] = useState('')
   const [goals, setGoals] = useState('')
   const [namingStyle, setNamingStyle] = useState('')
@@ -203,27 +254,37 @@ export function TeamOnboardingDialog({
   const alive = useRef(true)
   const generationIntent = useRef<string | null>(null)
   const intent = useRef<{ version: string; key: string } | null>(null)
+  // eslint-disable-next-line no-restricted-syntax -- Lifecycle cancellation invalidates pending results; this is not mirrored store state.
   useEffect(() => {
     alive.current = true
+
     return () => {
       alive.current = false
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- Invalidate the latest operation on unmount.
       operation.current++
     }
   }, [])
+
   const act = async (kind: NonNullable<typeof pending>, action: () => Promise<void>) => {
     if (busy.current || !client.current()) {
-      if (!client.current()) setError(copy.stale)
+      if (!client.current()) {
+        setError(copy.stale)
+      }
+
       return
     }
+
     busy.current = true
     const token = ++operation.current
     setPending(kind)
     setError('')
+
     try {
       await action()
     } catch (failure) {
-      if (alive.current && token === operation.current)
+      if (alive.current && token === operation.current) {
         setError(failure instanceof Error && failure.message === 'stale' ? copy.stale : copy.error)
+      }
     } finally {
       if (alive.current && token === operation.current) {
         busy.current = false
@@ -231,6 +292,7 @@ export function TeamOnboardingDialog({
       }
     }
   }
+
   const applyPreview = (result: TeamPreview) => {
     if (alive.current) {
       setPreview(result)
@@ -238,33 +300,92 @@ export function TeamOnboardingDialog({
       intent.current = null
     }
   }
+
   const update = (value: TeamDraft) => {
     setTeam(value)
     setPreview(null)
     intent.current = null
   }
+
   const close = () => {
-    if (pending === 'create') return
+    if (pending === 'create') {
+      return
+    }
+
     alive.current = false
     operation.current++
     onClose()
   }
+
+  // Only the explicit model setup round-trip rechecks readiness. Never generate
+  // or reconnect a provider as a side effect of returning to this draft.
+  // eslint-disable-next-line no-restricted-syntax -- A one-shot return latch records the explicit provider round-trip, not provider state.
+  useEffect(() => {
+    if (providerSetup.manual) {
+      returningFromProvider.current = true
+
+      return
+    }
+
+    if (!returningFromProvider.current) {
+      return
+    }
+
+    returningFromProvider.current = false
+
+    if (!client.current()) {
+      setError(copy.stale)
+
+      return
+    }
+
+    const token = ++operation.current
+    busy.current = true
+    setPending('check')
+    setError('')
+    void client
+      .setup(setup.organizationId ?? null)
+      .then(result => {
+        if (alive.current && token === operation.current && client.current()) {
+          setSetup(result)
+        }
+      })
+      .catch(() => {
+        if (alive.current && token === operation.current) {
+          setError(client.current() ? copy.error : copy.stale)
+        }
+      })
+      .finally(() => {
+        if (alive.current && token === operation.current) {
+          busy.current = false
+          setPending(null)
+        }
+      })
+  }, [providerSetup.manual, client, setup.organizationId, copy.error, copy.stale])
   const modelBlocked = setup.readiness.status === 'blocked'
+
   return (
     <Dialog
       onOpenChange={open => {
-        if (!open) close()
+        if (!open) {
+          close()
+        }
       }}
-      open
+      open={!providerSetup.manual}
     >
       <DialogContent
         className="eid-team-dialog"
         onCloseAutoFocus={event => {
           event.preventDefault()
-          onReturnFocus()
+
+          if (!$desktopOnboarding.get().manual) {
+            onReturnFocus()
+          }
         }}
         onEscapeKeyDown={event => {
-          if (pending === 'create') event.preventDefault()
+          if (pending === 'create') {
+            event.preventDefault()
+          }
         }}
       >
         <DialogTitle>{receipt ? copy.ready : copy.title}</DialogTitle>
@@ -277,7 +398,7 @@ export function TeamOnboardingDialog({
                 {receipt.readiness.status === 'blocked' ? copy.modelBlocked : copy.readinessUnchecked}
               </p>
               <Button asChild>
-                <Link onClick={close} to="/home#eid-home-intake">
+                <Link onClick={close} to="/home?intake=assisted#eid-home-intake">
                   {copy.firstRequest}
                 </Link>
               </Button>
@@ -298,7 +419,10 @@ export function TeamOnboardingDialog({
                   onClick={() =>
                     void act('check', async () => {
                       const result = await client.setup(setup.organizationId ?? null)
-                      if (alive.current) setSetup(result)
+
+                      if (alive.current) {
+                        setSetup(result)
+                      }
                     })
                   }
                   size="sm"
@@ -466,6 +590,7 @@ export function TeamOnboardingDialog({
                       setUnresolvedCreate(true)
                       intent.current ??= { version: preview.previewVersion, key: crypto.randomUUID() }
                       const result = await client.create(preview, intent.current.key)
+
                       if (alive.current) {
                         setReceipt(result)
                         setUnresolvedCreate(false)

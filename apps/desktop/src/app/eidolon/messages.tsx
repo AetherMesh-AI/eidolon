@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useSearchParams } from 'react-router'
+import { Link, useLocation, useSearchParams } from 'react-router'
 
 import { Button } from '@/components/ui/button'
 import { SearchField } from '@/components/ui/search-field'
@@ -10,6 +10,7 @@ import { AgentAvatar } from './avatar'
 import { OrganizationOwnerChat } from './runtime-owner-chat'
 import { OrganizationScenery } from './scenery'
 import type { OrganizationAgent, OrganizationSnapshot, RuntimeOrganizationAdapter } from './types'
+import { objectiveHref } from './workspace-navigation'
 
 /** Only recorded ownership, assignment or current package membership links work. */
 function linkedObjectives(agent: OrganizationAgent, snapshot: OrganizationSnapshot) {
@@ -38,9 +39,9 @@ export function Messages({
   const { t } = useI18n()
   const copy = t.organizationHome
   const messages = copy.memberMessages
-  const [params] = useSearchParams()
+  const [params, setParams] = useSearchParams()
+  const location = useLocation()
   const executiveEntry = params.get('recipient') === 'executive'
-  const [selected, setSelected] = useState<{ id: string; identityId?: string; scope?: string } | null>(null)
   const [query, setQuery] = useState('')
   const scope = snapshot.connection?.ownerScope ?? snapshot.connection?.scope
 
@@ -59,8 +60,8 @@ export function Messages({
     [agent.name, agent.role, roles[agent.role], agent.team, agent.purpose].filter(Boolean).join(' ').toLowerCase().includes(query.trim().toLowerCase())
   )
 
-  const agent = selected?.scope === scope
-    ? agents.find(item => item.id === selected?.id && item.identityId === selected.identityId)
+  const agent = scope && params.get('owner') === scope
+    ? agents.find(item => item.id === params.get('member') && (item.identityId ?? '') === params.get('identity'))
     : undefined
 
   const objectives = agent ? linkedObjectives(agent, snapshot) : []
@@ -78,7 +79,14 @@ export function Messages({
               <Button
                 aria-pressed={item.id === agent?.id}
                 key={item.id}
-                onClick={() => setSelected({ id: item.id, identityId: item.identityId, scope })}
+                onClick={() => {
+                  if (!scope) {return}
+                  const next = new URLSearchParams(params)
+                  next.set('member', item.id)
+                  next.set('identity', item.identityId ?? '')
+                  next.set('owner', scope)
+                  setParams(next)
+                }}
                 variant="ghost"
               >
                 <AgentAvatar name={item.name} />
@@ -116,7 +124,7 @@ export function Messages({
           <section aria-label={messages.linkedWork}>
             <h3>{messages.linkedWork}</h3>
             <p className="eid-note">{messages.linkedWorkNote}</p>
-            {objectives.length ? <ul>{objectives.map(objective => <li key={objective.id}><Link dir="auto" to={`/objectives/${objective.id}`}>{objective.title}</Link></li>)}</ul> : <p>{messages.noLinkedWork}</p>}
+            {objectives.length ? <ul>{objectives.map(objective => <li key={objective.id}><Link dir="auto" to={objectiveHref(objective.id, `${location.pathname}${location.search}`, scope)}>{objective.title}</Link></li>)}</ul> : <p>{messages.noLinkedWork}</p>}
           </section>
           <details><summary>{messages.retainedContext}</summary><AgentContext agent={agent} snapshot={snapshot} /></details>
         </section>}

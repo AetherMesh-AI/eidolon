@@ -94,18 +94,20 @@ test('keeps native organization navigation, roster and objective layouts usable 
   const shellRail = page.getByRole('complementary', { name: 'Eidolon navigation', exact: true })
   await expect(shellRail.getByText('Tools and configuration', { exact: true })).toHaveCount(0)
   await expect(shellRail.locator('.eid-rail-footer')).toHaveCount(0)
-  await expect(shellRail.locator('.eid-rail-history > summary')).toBeHidden()
-  await expect(shellRail.getByRole('button', { name: 'More workspace options', exact: true })).toBeVisible()
-  const moreOptions = shellRail.getByRole('button', { name: 'More workspace options', exact: true })
-  await moreOptions.click()
+  const history = shellRail.locator('.eid-rail-history')
+  const historyToggle = history.locator(':scope > summary')
+  await expect(historyToggle).toHaveText('History')
+  await expect(historyToggle).toBeVisible()
+  if (await history.getAttribute('open') === null) await historyToggle.click()
   await shellRail.getByRole('button', { name: 'Profile chats', exact: true }).click()
   await expect(page.getByRole('tab', { name: 'Profile chats', exact: true })).toHaveAttribute('aria-selected', 'true')
   await page.getByRole('tab', { name: 'Eidolon', exact: true }).click()
   await expect(page.getByRole('tab', { name: 'Eidolon', exact: true })).toBeHidden()
   await expect(navigation.getByRole('link', { name: 'Home', exact: true })).toBeVisible()
-  await moreOptions.focus()
+  await historyToggle.focus()
   await page.keyboard.press('Escape')
-  await expect(moreOptions).toBeFocused()
+  await expect(historyToggle).toBeFocused()
+  await expect(history).not.toHaveAttribute('open', '')
   await expect(shellRail.getByRole('button', { name: 'Profile chats', exact: true })).toBeHidden()
 
 
@@ -374,7 +376,15 @@ test('keeps native organization navigation, roster and objective layouts usable 
     await page.keyboard.press('Enter')
     await expect(page.getByRole('region', { name: 'Objective overview', exact: true })).toBeVisible()
     await resize(1220)
-    await navigation.getByRole('link', { name: 'Objectives', exact: true }).click()
+    await openObjectives()
+  }
+
+  async function openObjectives() {
+    const objectives = navigation.getByRole('link', { name: 'Objectives', exact: true })
+    if (await objectives.count() === 0) {
+      await navigation.getByRole('link', { name: 'Work Overview', exact: true }).click()
+    }
+    await objectives.click()
   }
 
   async function inspectObjectiveOverview(mode: string) {
@@ -564,7 +574,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
     await page.evaluate(() => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(100))
     await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(1)
     await resize(1220)
-    await navigation.getByRole('link', { name: 'Objectives', exact: true }).click()
+    await openObjectives()
     await workspace.getByRole('link').filter({ has: page.getByText('Review the workspace navigation', { exact: true }) }).click()
     await expect(page.getByRole('region', { name: 'Needs your input', exact: true })).toContainText('Review the proposed owner journey')
     await capture(`objective-owner-input-${mode}`)
@@ -572,11 +582,11 @@ test('keeps native organization navigation, roster and objective layouts usable 
     await expect(page.getByRole('heading', { name: 'Needs your input', exact: true })).toBeInViewport({ ratio: 1 })
     await capture(`objective-owner-input-narrow-${mode}`)
     await resize(1220)
-    await navigation.getByRole('link', { name: 'Objectives', exact: true }).click()
+    await openObjectives()
     await workspace.getByRole('region', { name: 'Outcomes inbox', exact: true }).getByRole('link').filter({ has: page.getByText('Document provider boundaries', { exact: true }) }).click()
     await expect(page.getByRole('region', { name: 'Delivery', exact: true })).toContainText('Accepted deliverable')
     await capture(`objective-accepted-delivery-${mode}`)
-    await navigation.getByRole('link', { name: 'Objectives', exact: true }).click()
+    await openObjectives()
   }
 
   await resize(1220)
@@ -692,6 +702,29 @@ test('keeps native organization navigation, roster and objective layouts usable 
     await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(zoom)
     await expect(page.getByRole('button', { name: 'Message organization', exact: true })).toBeVisible()
     await expect(page.getByRole('contentinfo', { name: 'System health', exact: true })).toBeInViewport({ ratio: 1 })
+    // Both ends of primary navigation and retained history stay reachable at zoom.
+    for (const label of ['Home', 'Settings']) {
+      const link = navigation.getByRole('link', { name: label, exact: true })
+      await link.scrollIntoViewIfNeeded()
+      focusChecks.push(await verifyKeyboardFocus(page, link, `Navigation ${label} ${zoom}`))
+      await expect(link).toBeInViewport({ ratio: 1 })
+      await link.click({ trial: true })
+    }
+    await historyToggle.scrollIntoViewIfNeeded()
+    await historyToggle.focus()
+    await page.keyboard.press('Enter')
+    await expect(history).toHaveAttribute('open', '')
+    for (const label of ['Profile chats', 'Manage gateways…']) {
+      const control = history.getByRole('button', { name: label, exact: true })
+      await control.scrollIntoViewIfNeeded()
+      focusChecks.push(await verifyKeyboardFocus(page, control, `History ${label} ${zoom}`))
+      await expect(control).toBeInViewport({ ratio: 1 })
+      await control.click({ trial: true })
+    }
+    await page.keyboard.press('Escape')
+    await expect(history).not.toHaveAttribute('open', '')
+    await expect(historyToggle).toBeFocused()
+    await navigation.getByRole('link', { name: 'Home', exact: true }).scrollIntoViewIfNeeded()
     await capture(`home-reflow-${zoom}`, workspace, true)
   }
 
@@ -739,7 +772,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await expect(inspector).toHaveCount(0)
   await expect(agentButton).toBeFocused()
 
-  await navigation.getByRole('link', { name: 'Objectives', exact: true }).click()
+  await openObjectives()
   await expect(page.getByRole('heading', { name: 'Objectives', exact: true })).toBeVisible()
   await expect(
     workspace.getByRole('link').filter({ has: page.getByText('Prepare the autumn release brief', { exact: true }) })
@@ -831,7 +864,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await page.getByRole('button', { name: 'Grid', exact: true }).click()
   await capture('10-roster-grid-wide-light')
   await page.getByRole('button', { name: 'List', exact: true }).click()
-  await navigation.getByRole('link', { name: 'Objectives', exact: true }).click()
+  await openObjectives()
   await expect(page.getByRole('heading', { name: 'Objectives', exact: true })).toBeVisible()
   await capture('11-objectives-wide-light')
   await inspectObjectiveOverview('light')
@@ -869,7 +902,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
   await expect(goal).toHaveValue('Retain this unsubmitted objective across navigation')
   await expect(goal).toBeFocused()
   await capture('16-home-retained-intake')
-  await navigation.getByRole('link', { name: 'Objectives', exact: true }).click()
+  await openObjectives()
   await workspace.getByRole('link', { name: 'New objective', exact: true }).click()
   await expect(page.getByRole('textbox', { name: 'Objective', exact: true })).toBeFocused()
   await expect(page.getByRole('textbox', { name: 'Objective', exact: true })).toHaveValue('Retain this unsubmitted objective across navigation')
@@ -935,6 +968,8 @@ test('keeps native organization navigation, roster and objective layouts usable 
     await navigation.getByRole('link', { name: 'Deliverables', exact: true }).click()
     const deliverables = page.locator('.eid-deliverables')
     await expect(deliverables.getByRole('heading', { name: 'Deliverables', exact: true })).toBeVisible()
+    await expect(deliverables.getByRole('region', { name: 'Accepted outcomes', exact: true })).toBeVisible()
+    await deliverables.getByRole('link', { name: 'Session files', exact: true }).click()
     await capture(`deliverables-session-files-${key}`, deliverables)
     await deliverables.getByRole('link', { name: 'Organization evidence', exact: true }).click()
     await expect(deliverables.getByRole('region', { name: 'Accepted outcomes', exact: true })).toBeVisible()
@@ -1267,7 +1302,9 @@ for (const locale of ['ja', 'ar', 'ru'] as const) {
 
       return result.ok
     })).toBe(true)
-    await expect(page.getByRole('navigation', { name: 'Primary', exact: true }).getByRole('link', { name: copy.objectives, exact: true })).toBeVisible()
+    const primaryRail = page.getByRole('navigation', { name: 'Primary', exact: true })
+    await expect(primaryRail.locator('a[href="#/home"]')).toHaveAttribute('aria-current', 'page')
+    await expect(primaryRail.getByRole('link', { name: copy.objectives, exact: true })).toHaveCount(0)
     const header = page.getByRole('banner', { name: copy.heading, exact: true })
     await expect(header.locator('[data-slot="connection-switcher"]')).toBeVisible()
     const captures: object[] = []

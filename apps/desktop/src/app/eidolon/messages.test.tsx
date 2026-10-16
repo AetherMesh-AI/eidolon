@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { MemoryRouter } from 'react-router'
+import { MemoryRouter, useLocation, useNavigate } from 'react-router'
 import { afterEach, expect, it, vi } from 'vitest'
 
 import { Messages } from './messages'
@@ -185,4 +185,36 @@ it('preserves an unfamiliar retained role instead of inventing a Worker role', (
   const recipient = within(conversation).getByRole('heading', { name: 'Retained specialist' }).closest('.eid-message-recipient')!
   expect(recipient.textContent).toContain('Auditor')
   expect(recipient.textContent).not.toContain('Worker')
+})
+
+it('restores the exact scoped recipient through Back without opening or sending a chat', () => {
+  const snapshot = ownerChatSnapshot()
+  const adapter = { mode: 'runtime', openOwnerChat: vi.fn(), sendOwnerChat: vi.fn() } as unknown as RuntimeOrganizationAdapter
+
+  function Journey() {
+    const navigate = useNavigate()
+    const location = useLocation()
+
+    return <><button onClick={() => navigate('/work')}>Leave messages</button><button onClick={() => navigate(-1)}>Back</button><output>{location.search}</output>{location.pathname === '/messages' && <Messages adapter={adapter} snapshot={snapshot} />}</>
+  }
+
+  render(<MemoryRouter initialEntries={['/messages?recipient=all']}><Journey /></MemoryRouter>)
+  fireEvent.click(screen.getByRole('button', { name: /Worker 1/ }))
+  expect(screen.getByRole('button', { name: /Worker 1/ }).getAttribute('aria-pressed')).toBe('true')
+  expect(screen.getByRole('status').textContent).toContain('recipient=all')
+  fireEvent.click(screen.getByRole('button', { name: 'Leave messages' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+  expect(screen.getByRole('button', { name: /Worker 1/ }).getAttribute('aria-pressed')).toBe('true')
+  expect(adapter.openOwnerChat).not.toHaveBeenCalled()
+  expect(adapter.sendOwnerChat).not.toHaveBeenCalled()
+})
+
+it.each([
+  'owner=other&member=worker&identity=identity-worker',
+  'owner=connection-a%3Adefault&member=worker&identity=replaced',
+  'member=worker&identity=identity-worker'
+])('ignores a recipient URL without matching owner and durable identity: %s', search => {
+  const snapshot = ownerChatSnapshot()
+  render(<MemoryRouter initialEntries={[`/messages?${search}`]}><Messages snapshot={snapshot} /></MemoryRouter>)
+  expect(screen.getByRole('button', { name: /Worker 1/ }).getAttribute('aria-pressed')).toBe('false')
 })

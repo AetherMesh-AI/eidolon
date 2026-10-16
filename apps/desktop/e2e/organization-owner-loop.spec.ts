@@ -215,14 +215,14 @@ test('preserves unsupported work and grants across navigation, dismissal, reload
     await navigation.hover({ position: { x: 8, y: 8 } })
     await page.mouse.wheel(0, -2000)
     await expect.poll(() => navigation.evaluate(rail => rail.scrollTop)).toBe(0)
-    const moreControl = navigation.getByRole('button', { name: 'More workspace options', exact: true })
-    if (await moreControl.locator('..').getAttribute('open') === null) {
+    const historyControl = navigation.locator('.eid-rail-history > summary')
+    if (await historyControl.locator('..').getAttribute('open') === null) {
       await expect(navigation.getByRole('button', { name: 'New project', exact: true })).toBeHidden()
       await expect(navigation.getByRole('button', { name: 'Manage gateways…', exact: true })).toBeHidden()
       expect(await mountedSidebar!.evaluate(node => node.isConnected)).toBe(true)
-      await moreControl.scrollIntoViewIfNeeded()
-      await expect(moreControl).toBeInViewport({ ratio: 1 })
-      await moreControl.click({ trial: true })
+      await historyControl.scrollIntoViewIfNeeded()
+      await expect(historyControl).toBeInViewport({ ratio: 1 })
+      await historyControl.click({ trial: true })
       await capture(name)
       return
     }
@@ -230,7 +230,7 @@ test('preserves unsupported work and grants across navigation, dismissal, reload
       const heading = rail.querySelector('.eid-rail-history > summary')!.getBoundingClientRect()
       const tree = rail.querySelector('.eid-session-tree')!.getBoundingClientRect()
       const sidebar = rail.querySelector('[data-tour="sessions-sidebar"]')!.getBoundingClientRect()
-      const container = rail.querySelector('.eid-rail-more')!.getBoundingClientRect()
+      const container = rail.querySelector('.eid-rail-history')!.getBoundingClientRect()
       return { headingBottom: heading.bottom, treeTop: tree.top, treeBottom: tree.bottom,
         treeLeft: tree.left, treeRight: tree.right, sidebarBottom: sidebar.bottom,
         sidebarLeft: sidebar.left, sidebarRight: sidebar.right, containerBottom: container.bottom,
@@ -265,7 +265,6 @@ test('preserves unsupported work and grants across navigation, dismissal, reload
   await expect(page.getByRole('heading', { name: 'What should the organization do?', exact: true })).toBeVisible()
   await assertNoToolGrants('01-system-health-capabilities')
   await capture('01-command')
-  await navigation.getByRole('button', { name: 'More workspace options', exact: true }).click()
   const historyDisclosure = navigation.locator('.eid-rail-history')
   if (await historyDisclosure.getAttribute('open') !== null) {
     await historyDisclosure.locator(':scope > summary').click()
@@ -279,6 +278,8 @@ test('preserves unsupported work and grants across navigation, dismissal, reload
 
   await primary.getByRole('link', { name: 'Deliverables', exact: true }).click()
   const sources = page.getByRole('navigation', { name: 'Artifact sources' })
+  await expect(sources.getByRole('link', { name: 'Organization evidence' })).toHaveAttribute('aria-current', 'page')
+  await sources.getByRole('link', { name: 'Session files' }).click()
   await expect(sources.getByRole('link', { name: 'Session files' })).toHaveAttribute('aria-current', 'page')
   await sources.getByRole('link', { name: 'Organization evidence' }).click()
   await expect(sources.getByRole('link', { name: 'Organization evidence' })).toHaveAttribute('aria-current', 'page')
@@ -288,7 +289,7 @@ test('preserves unsupported work and grants across navigation, dismissal, reload
   // Seed only a legacy local-storage fixture. It must remain exact and must
   // never be submitted to the runtime ledger merely by opening its history.
   await page.evaluate(({ key, bytes }) => localStorage.setItem(key, bytes), { key: legacyKey, bytes: legacyBytes })
-  const toolsDisclosure = navigation.getByRole('button', { name: 'More workspace options', exact: true })
+  const toolsDisclosure = navigation.locator('.eid-rail-history > summary')
   if ((await toolsDisclosure.locator('..').getAttribute('open')) === null) { await toolsDisclosure.click() }
   await expect(toolsDisclosure.locator('..')).toHaveAttribute('open', '')
   await assertRailLayout('03a-expanded-rail-controls')
@@ -300,9 +301,9 @@ test('preserves unsupported work and grants across navigation, dismissal, reload
   await capture('03-read-only-legacy-history')
   expect(await page.evaluate(key => localStorage.getItem(key), legacyKey)).toBe(legacyBytes)
   expect(stages).toEqual([])
-  await navigation.getByRole('button', { name: 'More workspace options', exact: true }).click()
+  await navigation.locator('.eid-rail-history > summary').click()
   await assertRailLayout('03b-collapsed-history-controls')
-  await navigation.getByRole('button', { name: 'More workspace options', exact: true }).click()
+  await navigation.locator('.eid-rail-history > summary').click()
   await assertRailLayout('03c-reexpanded-history-controls')
 
   await primary.getByRole('link', { name: 'Home', exact: true }).click()

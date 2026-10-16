@@ -1,14 +1,15 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { expect, it, vi } from 'vitest'
-import { teamOnboardingCopy } from '@/i18n/organization-team-onboarding'
-import type { Locale } from '@/i18n/types'
 
 import { I18nProvider, useI18n } from '@/i18n/context'
+import { teamOnboardingCopy } from '@/i18n/organization-team-onboarding'
+import type { Locale } from '@/i18n/types'
+import { $desktopOnboarding, closeManualOnboarding } from '@/store/onboarding'
 
 import { TeamOnboardingDialog, TeamOnboardingEntry } from './team-onboarding'
-import type { RuntimeOrganizationAdapter } from './types'
 import type { TeamOnboardingClient, TeamPreview, TeamSetup } from './team-onboarding-client'
+import type { RuntimeOrganizationAdapter } from './types'
 
 const team = {
   executive: { name: 'Lead', purpose: 'Coordinate', responsibilities: ['Review'] },
@@ -25,6 +26,7 @@ const team = {
     }
   ]
 }
+
 const readiness = {
   status: 'unchecked' as const,
   blockers: [],
@@ -32,6 +34,7 @@ const readiness = {
   modelRouting: 'unchanged' as const,
   backgroundEnabled: false
 }
+
 const setup: TeamSetup = {
   capabilityVersion: 1,
   state: 'available',
@@ -40,6 +43,7 @@ const setup: TeamSetup = {
   presets: [{ id: 'research-writing', name: 'Research', team }],
   readiness
 }
+
 const preview: TeamPreview = {
   capabilityVersion: 1,
   organizationId: 'organization',
@@ -51,6 +55,7 @@ const preview: TeamPreview = {
   readiness,
   warnings: []
 }
+
 function harness(initialSetup = setup, locale: Locale = 'en') {
   const client = {
     current: () => true,
@@ -60,9 +65,11 @@ function harness(initialSetup = setup, locale: Locale = 'en') {
     create: vi.fn().mockResolvedValue({ state: 'created', readiness }),
     dispose: vi.fn()
   } as unknown as TeamOnboardingClient
+
   const onClose = vi.fn(),
     onCreated = vi.fn(),
     onReturnFocus = vi.fn()
+
   const view = render(
     <MemoryRouter>
       <I18nProvider configClient={null} initialLocale={locale}>
@@ -77,8 +84,10 @@ function harness(initialSetup = setup, locale: Locale = 'en') {
       </I18nProvider>
     </MemoryRouter>
   )
+
   return { client, onClose, onCreated, view }
 }
+
 it('requires explicit generation and explicit creation; edits revoke the validated preview', async () => {
   const h = harness()
   expect(h.client.generate).not.toHaveBeenCalled()
@@ -124,7 +133,7 @@ it('cancel during generation ignores its late response and never creates a team'
 it('keeps manual setup usable with blocked model readiness', async () => {
   const h = harness({ ...setup, readiness: { ...readiness, status: 'blocked', blockers: ['credential_missing'] } })
   expect((screen.getByRole('button', { name: /Generate team/ }) as HTMLButtonElement).disabled).toBe(true)
-  fireEvent.click(screen.getByText('Set up manually · Not recommended'))
+  fireEvent.click(screen.getByText('Set up manually'))
   const manual = screen.getByRole('button', { name: 'Start with an empty team' })
   expect(manual.closest('fieldset[disabled]')).toBeNull()
   expect((manual as HTMLButtonElement).disabled).toBe(false)
@@ -152,7 +161,7 @@ it('retries uncertain generation with the same idempotency key', async () => {
 it('retains the exact creation intent and locks edits after an uncertain acknowledgement', async () => {
   const h = harness()
   vi.mocked(h.client.create).mockRejectedValueOnce(new Error('connection lost'))
-  fireEvent.click(screen.getByText('Set up manually · Not recommended'))
+  fireEvent.click(screen.getByText('Set up manually'))
   fireEvent.click(screen.getByRole('button', { name: 'Research and writing' }))
   fireEvent.click(screen.getByRole('button', { name: 'Review changes' }))
   await screen.findByRole('button', { name: 'Create team' })
@@ -187,7 +196,7 @@ it('keeps blocked readiness explicit after manual creation', async () => {
     readiness: { ...readiness, status: 'blocked', blockers: ['model_not_configured'] },
     receipt: { idempotencyKey: 'receipt', previewVersion: 'preview' }
   })
-  fireEvent.click(screen.getByText('Set up manually · Not recommended'))
+  fireEvent.click(screen.getByText('Set up manually'))
   fireEvent.click(screen.getByRole('button', { name: 'Research and writing' }))
   fireEvent.click(screen.getByRole('button', { name: 'Review changes' }))
   await screen.findByRole('button', { name: 'Create team' })
@@ -208,6 +217,7 @@ vi.mock('./use-organization-metadata', () => ({
 
 function EntryBesideExistingNamesControl() {
   const { t } = useI18n()
+
   return (
     <>
       <button>{t.organizationMetadata.edit}</button>
@@ -232,3 +242,26 @@ it.each(Object.keys(teamOnboardingCopy) as Locale[])(
     expect(buttons[0].textContent).not.toBe(buttons[1].textContent)
   }
 )
+
+it('returns from model setup to the same draft and rechecks readiness exactly once', async () => {
+  const original = $desktopOnboarding.get()
+  const h = harness()
+
+  try {
+    fireEvent.change(screen.getByLabelText('Jobs to handle'), { target: { value: 'Keep my work description' } })
+    fireEvent.change(screen.getByLabelText('Goals and outcomes'), { target: { value: 'Keep my outcome' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Connect a model' }))
+    expect(screen.queryByRole('dialog', { name: 'Build your starter team' })).toBeNull()
+    act(() => closeManualOnboarding())
+    await screen.findByRole('dialog', { name: 'Build your starter team' })
+    await waitFor(() => expect(h.client.setup).toHaveBeenCalledTimes(1))
+    expect(screen.getByLabelText('Jobs to handle')).toHaveProperty('value', 'Keep my work description')
+    expect(screen.getByLabelText('Goals and outcomes')).toHaveProperty('value', 'Keep my outcome')
+    expect(h.client.generate).not.toHaveBeenCalled()
+    expect(h.client.create).not.toHaveBeenCalled()
+    expect(h.onClose).not.toHaveBeenCalled()
+  } finally {
+    h.view.unmount()
+    act(() => $desktopOnboarding.set(original))
+  }
+})

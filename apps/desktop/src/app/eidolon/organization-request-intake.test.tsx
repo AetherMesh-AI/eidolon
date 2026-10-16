@@ -298,8 +298,42 @@ it('loads history only when opened and never on close or an ineligible scope', a
   state.key = 'different-ineligible-socket'
   state.ownerKey = 'different-owner'
   state.eligible = false
-  rendered.rerender(<MemoryRouter><OrganizationRequestIntake snapshot={snapshot} /></MemoryRouter>)
+  rendered.rerender(
+    <MemoryRouter>
+      <OrganizationRequestIntake snapshot={snapshot} />
+    </MemoryRouter>
+  )
   await tick()
   expect(state.history).toHaveBeenCalledTimes(1)
   expect(screen.queryByText(copy.recent)).toBeNull()
+})
+
+it('keeps an admitted objective linked to its owner-scoped Home origin', async () => {
+  state.request.mockImplementation(async (_method: string, params: Record<string, unknown>) =>
+    intakeRecord({
+      idempotencyKey: String(params.idempotencyKey),
+      request: String(params.text),
+      status: 'admitted',
+      objectiveId: 'new-objective',
+      proposal: intakeProposal()
+    })
+  )
+  const scoped = { ...snapshot, connection: { state: 'ready' as const, scope: 'socket', ownerScope: 'owner-home' } }
+  render(
+    <MemoryRouter initialEntries={['/home?intake=assisted#eid-home-intake']}>
+      <OrganizationRequestIntake snapshot={scoped} />
+    </MemoryRouter>
+  )
+  fireEvent.change(screen.getByLabelText(copy.request), { target: { value: 'Prepare the first report' } })
+  fireEvent.click(screen.getByRole('button', { name: copy.submit }))
+  await flush()
+
+  const href = new URL(
+    screen.getByRole('link', { name: 'Open objective' }).getAttribute('href')!,
+    'https://workspace.invalid'
+  )
+
+  expect(href.pathname).toBe('/objectives/new-objective')
+  expect(href.searchParams.get('from')).toBe('/home?intake=assisted')
+  expect(href.searchParams.get('originOwner')).toBe('owner-home')
 })

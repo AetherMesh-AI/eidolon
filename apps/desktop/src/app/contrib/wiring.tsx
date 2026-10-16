@@ -885,6 +885,7 @@ function ContribWiringContent({ children }: { children: ReactNode }) {
     activeProfile: normalizeProfileKey(activeGatewayProfile),
     chatOpen,
     hasPreview: Boolean(previewTarget),
+    locationKey: location.key,
     locationPathname: location.pathname,
     navigate,
     profileReady: boot.phase === 'renderer.ready',

@@ -1,5 +1,5 @@
 import { useId } from 'react'
-import { Link } from 'react-router'
+import { Link, useLocation } from 'react-router'
 
 import { Button } from '@/components/ui/button'
 import { controlVariants } from '@/components/ui/control'
@@ -13,12 +13,14 @@ import { OrganizationIntakeInspectionControls } from './organization-intake-insp
 import type { IntakePriority } from './organization-request-intake-types'
 import type { OrganizationSnapshot } from './types'
 import { useOrganizationRequestIntake } from './use-organization-request-intake'
+import { objectiveHref } from './workspace-navigation'
 
 interface OrganizationRequestIntakeProps {
   snapshot: OrganizationSnapshot
 }
 
 export function OrganizationRequestIntake({ snapshot }: OrganizationRequestIntakeProps) {
+  const location = useLocation()
   const { locale, t } = useI18n()
   const copy = requestIntakeCopy[locale]
   const { client, view, eligible } = useOrganizationRequestIntake()
@@ -88,9 +90,12 @@ export function OrganizationRequestIntake({ snapshot }: OrganizationRequestIntak
       </form>
       {!eligible && <p role="status">{copy.unavailable}</p>}
       {eligible && (
-        <details className="eid-form-disclosure" onToggle={event => {
-          if (event.currentTarget.open) void client.list()
-        }}>
+        <details
+          className="eid-form-disclosure"
+          onToggle={event => {
+            if (event.currentTarget.open) {void client.list()}
+          }}
+        >
           <summary>{copy.recent}</summary>
           {view.history.busy && <Loader />}
           {view.history.error && <p role="alert">{copy.historyFailed}</p>}
@@ -142,7 +147,13 @@ export function OrganizationRequestIntake({ snapshot }: OrganizationRequestIntak
           </p>
           {record.reason && <p dir="auto">{record.reason}</p>}
           {['admitted', 'linked'].includes(record.status) && record.objectiveId && (
-            <Link to={`/objectives/${encodeURIComponent(record.objectiveId)}`}>
+            <Link
+              to={objectiveHref(
+                record.objectiveId,
+                location.pathname + location.search,
+                snapshot.connection?.ownerScope ?? snapshot.connection?.scope
+              )}
+            >
               {t.organizationFoundation.openObjective}
             </Link>
           )}

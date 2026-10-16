@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 
 import { closeActiveTab } from '@/app/chat/close-tab'
 import { commandFocusedPreview } from '@/app/chat/right-rail/preview-nav'
+import { isAutomaticHomeStart } from '@/app/eidolon/navigation'
 import { openSession } from '@/app/open-session'
 import { resolveDeepLinkAction } from '@/lib/deeplink-routes'
 import { pathFromHermesDeepLink, resolveHermesOpenPath } from '@/lib/eidolon-open-target'
@@ -37,6 +38,7 @@ interface DesktopIntegrationsParams {
   activeProfile: string
   chatOpen: boolean
   hasPreview: boolean
+  locationKey: string
   locationPathname: string
   navigate: (to: string, options?: { replace?: boolean }) => void
   profileReady: boolean
@@ -58,6 +60,7 @@ interface DesktopIntegrationsParams {
  */
 export function useDesktopIntegrations({
   activeProfile,
+  locationKey,
   locationPathname,
   navigate,
   profileReady,
@@ -105,14 +108,19 @@ export function useDesktopIntegrations({
   // This ref is a one-time lifecycle latch, not a mirror of reactive atom state.
   // eslint-disable-next-line no-restricted-syntax
   useEffect(() => {
+    // Retire startup intent on navigation even while profile boot is pending.
+    const automaticHomeStart = isAutomaticHomeStart(locationPathname, locationKey)
+
     if (!profileReady || isHudWindow() || isBrowserWindow()) {
       return
     }
 
     if (!restoredRef.current) {
       // Only cold-start navigation at the default route is replaceable; a deep
-      // link or hidden-then-shown window keeps its explicit destination.
-      if (locationPathname === NEW_CHAT_ROUTE) {
+      // link or hidden-then-shown window keeps its explicit destination. The
+      // automatic Home chosen before HashRouter mounts is also a default, not
+      // an explicit destination; an intentional Home is never replaceable.
+      if (locationPathname === NEW_CHAT_ROUTE || automaticHomeStart) {
         // display.resume_last_session (#60812): hold the latch until the config
         // record answers, then either restore below or stay on the fresh chat.
         // Remembered ids keep being written either way, so flipping the switch
@@ -185,7 +193,16 @@ export function useDesktopIntegrations({
     } else if (!routedSessionId && !isOverlayView(appViewForPath(locationPathname))) {
       setRememberedRoute(locationPathname, activeProfile)
     }
-  }, [activeProfile, locationPathname, navigate, profileReady, resumeLastSession, routedSessionId, sessions])
+  }, [
+    activeProfile,
+    locationKey,
+    locationPathname,
+    navigate,
+    profileReady,
+    resumeLastSession,
+    routedSessionId,
+    sessions
+  ])
 
   useEffect(() => {
     if (!profileReady || !resumeExhaustedSessionId) {

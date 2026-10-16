@@ -1,4 +1,5 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { HermesGateway } from '@/eidolon'
@@ -294,4 +295,24 @@ describe('manual provider entry publication ownership', () => {
       $gatewayState.set('closed')
     }
   })
+})
+
+
+it('gives manual provider setup keyboard ownership and dismisses only that overlay with Escape', async () => {
+  setProviders([])
+  $desktopOnboarding.set({ ...$desktopOnboarding.get(), manual: true, configured: true })
+  const view = render(<><button>Background action</button><DesktopOnboardingOverlay enabled={false} profile="default" requestGateway={ctx.requestGateway} /></>)
+  const dialog = screen.getByRole('dialog', { name: "Let's get you setup with Eidolon" })
+  await vi.waitFor(() => expect(dialog.contains(globalThis.document.activeElement)).toBe(true))
+  const user = userEvent.setup()
+
+  for (let index = 0; index < 8; index++) {
+    await user.tab()
+    expect(dialog.contains(globalThis.document.activeElement)).toBe(true)
+  }
+
+  fireEvent.keyDown(globalThis.document.activeElement!, { key: 'Escape' })
+  expect($desktopOnboarding.get().manual).toBe(false)
+  expect(screen.queryByRole('dialog')).toBeNull()
+  view.unmount()
 })

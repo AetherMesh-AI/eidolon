@@ -15,7 +15,7 @@ import {
   replacementTitle,
   setupCompletionFixture
 } from './organization-completion-fixture'
-import { openOrganizationDisclosure, openOrganizationRequests } from './organization-disclosures'
+import { openOrganizationDisclosure, openOrganizationObjectives, openOrganizationRequests } from './organization-disclosures'
 import { assertEconomyDispatch, captureRoutingAudit, type NativeRoutingAudit, type NativeRoutingRequest } from './organization-routing-evidence'
 import { expect, test } from './test'
 
@@ -35,7 +35,7 @@ function objectiveHeader(page: Page, title: string) {
 }
 
 async function openObjective(page: Page, title: string) {
-  await primary(page).getByRole('link', { name: 'Objectives', exact: true }).click()
+  await openOrganizationObjectives(page)
   // The real row's accessible name also includes its description and status.
   // Match its exact title child without treating that extra context as absence.
   await page
@@ -361,7 +361,7 @@ test('requires explicit check replacement, retains its audit, and completes only
   await usageSummary.click()
   await header.scrollIntoViewIfNeeded()
   await page.screenshot({ path: testInfo.outputPath('01-unverified-model-approval-blocked.png') })
-  await primary(page).getByRole('link', { name: 'Objectives', exact: true }).click()
+  await openOrganizationObjectives(page)
   await expect(
     page.getByRole('region', { name: 'Outcomes inbox', exact: true }).getByText('No outcomes yet', { exact: true })
   ).toBeVisible()
@@ -591,7 +591,7 @@ test('requires explicit check replacement, retains its audit, and completes only
   const receipt = () => inbox().getByRole('listitem', { name: completionTitle, exact: true })
 
   const openInbox = async () => {
-    await primary(page).getByRole('link', { name: 'Objectives', exact: true }).click()
+    await openOrganizationObjectives(page)
     await expect(receipt()).toContainText('Accepted')
   }
 
@@ -751,7 +751,7 @@ test('retains a visible model-call intervention across full process restart and 
   await page.getByRole('combobox', { name: 'Status', exact: true }).selectOption('cancelled')
   await expect(blocked).toContainText('Cancelled')
   await page.screenshot({ path: testInfo.outputPath('03-cancelled-budget-request-history.png') })
-  await primary(page).getByRole('link', { name: 'Objectives', exact: true }).click()
+  await openOrganizationObjectives(page)
 
   const cancelled = page
     .getByRole('region', { name: 'Outcomes inbox', exact: true })

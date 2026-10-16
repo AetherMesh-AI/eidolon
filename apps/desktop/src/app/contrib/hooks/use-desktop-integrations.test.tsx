@@ -1,6 +1,9 @@
-import { renderHook } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
+import { HashRouter, useLocation, useNavigate } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { initializeOrganizationStart } from '@/app/eidolon/navigation'
+import { routeSessionId } from '@/app/routes'
 import { requestMcpInstallFromDeepLink } from '@/store/mcp-deeplink-install'
 import { _resetLegacyDiscardForTests } from '@/store/session'
 import type * as WindowsStore from '@/store/windows'
@@ -44,6 +47,8 @@ describe('useDesktopIntegrations', () => {
   let navigate: ReturnType<typeof vi.fn<(...args: unknown[]) => void>>
 
   beforeEach(() => {
+    window.history.replaceState(null, '', '/#/')
+    initializeOrganizationStart()
     window.localStorage.clear()
     _resetLegacyDiscardForTests()
     vi.mocked(requestMcpInstallFromDeepLink).mockClear()
@@ -107,6 +112,7 @@ describe('useDesktopIntegrations', () => {
           activeProfile,
           chatOpen: false,
           hasPreview: false,
+          locationKey: 'default',
           locationPathname,
           navigate,
           profileReady,
@@ -130,6 +136,119 @@ describe('useDesktopIntegrations', () => {
       }
     )
   }
+
+  describe('primary-window startup through HashRouter', () => {
+    let navigateDuringBoot: ReturnType<typeof useNavigate>
+    let locationKeyDuringBoot: string
+
+    function boot(hash: string, search = '') {
+      window.history.replaceState(null, '', `/${search}${hash}`)
+      initializeOrganizationStart()
+      const sessions = [session({ id: 'remembered-session', profile: 'default' })]
+
+      return renderHook(
+        ({ ready, resume }: { ready: boolean; resume: boolean | undefined }) => {
+          const location = useLocation()
+          const navigate = useNavigate()
+          navigateDuringBoot = navigate
+          locationKeyDuringBoot = location.key
+          useDesktopIntegrations({
+            activeProfile: 'default',
+            chatOpen: false,
+            hasPreview: false,
+            locationKey: location.key,
+            locationPathname: location.pathname,
+            navigate,
+            profileReady: ready,
+            refreshSessions: () => undefined,
+            resumeExhaustedSessionId: null,
+            resumeLastSession: resume,
+            routedSessionId: routeSessionId(location.pathname),
+            runtimeIdByStoredSessionId: { current: new Map() },
+            sessions
+          })
+
+          return location.pathname
+        },
+        {
+          initialProps: { ready: false, resume: undefined as boolean | undefined },
+          wrapper: ({ children }) => <HashRouter>{children}</HashRouter>
+        }
+      )
+    }
+
+    it('defaults fresh launches to Home, but restores returning launches only after profile and config are ready', async () => {
+      const fresh = boot('')
+      expect(fresh.result.current).toBe('/home')
+      fresh.rerender({ ready: true, resume: true })
+      expect(fresh.result.current).toBe('/home')
+      fresh.unmount()
+
+      for (const remembered of ['/remembered-session', '/work']) {
+        window.localStorage.setItem('hermes.desktop.lastRoute.profile.default', remembered)
+        const returning = boot('')
+        expect(returning.result.current).toBe('/home')
+        returning.rerender({ ready: true, resume: undefined })
+        expect(returning.result.current).toBe('/home')
+        expect(window.localStorage.getItem('hermes.desktop.lastRoute.profile.default')).toBe(remembered)
+        returning.rerender({ ready: true, resume: true })
+        await waitFor(() => expect(returning.result.current).toBe(remembered))
+        returning.unmount()
+      }
+    })
+
+    it('does not resume over an explicit Home choice made while boot is waiting', async () => {
+      for (const intermediate of [null, '/work']) {
+        window.localStorage.setItem('hermes.desktop.lastRoute.profile.default', '/remembered-session')
+        const result = boot('')
+
+        if (intermediate) {
+          await act(async () => navigateDuringBoot(intermediate))
+          expect(result.result.current).toBe(intermediate)
+        }
+
+        await act(async () => navigateDuringBoot('/home'))
+        expect(result.result.current).toBe('/home')
+        result.rerender({ ready: true, resume: true })
+        expect(result.result.current).toBe('/home')
+        expect(window.localStorage.getItem('hermes.desktop.lastRoute.profile.default')).toBe('/home')
+        result.unmount()
+      }
+    })
+
+    it('does not revive startup restore after an explicit same-path Home click and Back while boot waits', async () => {
+      window.localStorage.setItem('hermes.desktop.lastRoute.profile.default', '/remembered-session')
+      const result = boot('')
+      const startupKey = locationKeyDuringBoot
+
+      await act(async () => navigateDuringBoot('/home'))
+      expect(locationKeyDuringBoot).not.toBe(startupKey)
+      expect(result.result.current).toBe('/home')
+
+      await act(async () => navigateDuringBoot(-1))
+      await waitFor(() => expect(locationKeyDuringBoot).toBe(startupKey))
+      result.rerender({ ready: true, resume: true })
+      expect(result.result.current).toBe('/home')
+      expect(window.localStorage.getItem('hermes.desktop.lastRoute.profile.default')).toBe('/home')
+      result.unmount()
+    })
+
+    it('honors explicit destinations, disabled resume, and auxiliary-window startup', () => {
+      for (const [hash, search, resume, expected] of [
+        ['#/home', '', true, '/home'],
+        ['#/explicit-session', '', true, '/explicit-session'],
+        ['#/objectives/launch', '', true, '/objectives/launch'],
+        ['', '', false, '/home'],
+        ['#/explicit-session', '?win=secondary', true, '/explicit-session']
+      ] as const) {
+        window.localStorage.setItem('hermes.desktop.lastRoute.profile.default', '/remembered-session')
+        const result = boot(hash, search)
+        result.rerender({ ready: true, resume })
+        expect(result.result.current).toBe(expected)
+        result.unmount()
+      }
+    })
+  })
 
   describe('profile-ready gate', () => {
     it('does NOT restore before profileReady is true', () => {

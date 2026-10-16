@@ -1,5 +1,5 @@
 import { type ReactNode, useRef, useState } from 'react'
-import { Link } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
 
 import { Button } from '@/components/ui/button'
 import { Loader } from '@/components/ui/loader'
@@ -23,6 +23,7 @@ import { OrganizationScenery } from './scenery'
 import type { Objective, OrganizationSnapshot, RuntimeOrganizationAdapter } from './types'
 import { WorkGraph } from './work-graph'
 import { Knowledge, Status } from './workspace'
+import { objectiveReturnTarget } from './workspace-navigation'
 
 export function RuntimeStatus({
   adapter,
@@ -84,6 +85,9 @@ export function RuntimeStatus({
 export function RuntimeObjectiveDetail({ objective, adapter, snapshot, historyControls }: { objective: Objective; adapter: RuntimeOrganizationAdapter; snapshot: OrganizationSnapshot; historyControls?: ReactNode }) {
   const { t, locale } = useI18n()
   const copy = t.organizationWork
+  const [params] = useSearchParams()
+  const returnTo = objectiveReturnTarget(params, snapshot.connection?.ownerScope ?? snapshot.connection?.scope)
+  const returnLabels: Record<string, string> = { '/home': t.organizationHome.home, '/work': t.organizationHome.work, '/messages': t.organizationHome.messages, '/requests': copy.needsYou, '/objectives': copy.objectives, '/artifacts': t.organizationHome.deliverables }
   const [tab, setTab] = useState<'work' | 'activity' | 'artifacts' | 'decisions'>('work')
   const [inspecting, setInspecting] = useState(false)
   const [evidenceId, setEvidenceId] = useState<string | null>(null)
@@ -100,7 +104,7 @@ export function RuntimeObjectiveDetail({ objective, adapter, snapshot, historyCo
   const manager = snapshot.agents.find(agent => agent.id === objective.managerId)
 
   return <>
-    <Link className="eid-back" to="/objectives">← {copy.objectives}</Link>
+    <Link className="eid-back" to={returnTo}>← {returnLabels[returnTo.split('?')[0]]}</Link>
     <header className="eid-page-header eid-objective-hero"><OrganizationScenery className="eid-objective-scenery" /><div><p className="sr-only">{t.organizationHome.detail.objectiveRuntime}</p><div className="eid-objective-heading"><h1 dir="auto">{objective.title}</h1><Status status={objective.status} /></div><p className="eid-result-text" dir="auto">{objective.description}</p></div></header>
     <div className="eid-inline"><span>{t.organizationRoster.objectiveExecutive} · <bdi>{owner?.name || objective.ownerId || t.organizationHome.unassigned}</bdi></span>{objective.managerId && <span>{t.organizationRoster.objectiveManager} · <bdi>{manager?.name || objective.managerId}</bdi></span>}<Button onClick={() => setInspecting(true)} size="sm" variant="secondary">{t.organizationHome.detail.inspectObjective}</Button></div>
     <ObjectiveProgress controls={<>
