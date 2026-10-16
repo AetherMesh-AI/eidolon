@@ -16,6 +16,10 @@ import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
 import fs from 'fs'
 import { createRequire } from 'module'
+import { fileURLToPath } from 'node:url'
+
+// Keep the authored config valid in Vite's ESM runner as well as its bundler.
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 // `hgui` symlinks a worktree's node_modules to the main checkout. Vite realpaths
 // those before enforcing server.fs.allow, so codicon/font assets resolve outside
