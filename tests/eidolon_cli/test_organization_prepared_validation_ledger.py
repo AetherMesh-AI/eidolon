@@ -263,7 +263,7 @@ def test_all_tables_are_immutable_including_replace_without_recursive_triggers(s
         columns = [row[1] for row in conn.execute('PRAGMA table_info(' + table + ')')]
         statements = {'UPDATE': f'UPDATE {table} SET {columns[0]}={columns[0]}',
                       'DELETE': 'DELETE FROM ' + table,
-                      'REPLACE': f'INSERT OR REPLACE INTO {table} SELECT * FROM {table} LIMIT 1'}
+                      'REPLACE': f'INSERT OR REPLACE INTO {table} (' + ','.join(columns) + ') SELECT ' + ','.join(columns) + f' FROM {table} LIMIT 1'}
         with pytest.raises(sqlite3.IntegrityError, match='immutable|replaced|generation'):
             conn.execute(statements[operation])
     assert not conn.execute('PRAGMA foreign_key_check').fetchall()
@@ -360,7 +360,8 @@ def test_deferred_foreign_keys_require_both_exact_envelope_steps(state):
     conn.execute('DROP TRIGGER ignore_second')
     # A syntactically valid alternative step cannot satisfy the exact envelope.
     conn.execute('BEGIN')
-    start = dict(conn.execute('SELECT * FROM prepared_validation_sets').fetchone())
+    columns = [row[1] for row in conn.execute('PRAGMA table_info(prepared_validation_sets)')]
+    start = dict(conn.execute('SELECT ' + ','.join(columns) + ' FROM prepared_validation_sets').fetchone())
     start.update(id=second['setId'], request_id=second['requestId'], generation=2,
                  envelope=canonical(second), envelope_sha256=digest(second),
                  typecheck_run_id=next(s['runId'] for s in second['steps'] if s['recipe'] == 'workspace_typescript'),
@@ -404,7 +405,8 @@ def test_raw_start_sql_rejects_absent_envelope_binding_fields(state, field):
     reserve(state, obj, first)
     second = proposal(state, obj, 2)
     conn = state['conn']
-    start = dict(conn.execute('SELECT * FROM prepared_validation_sets').fetchone())
+    columns = [row[1] for row in conn.execute('PRAGMA table_info(prepared_validation_sets)')]
+    start = dict(conn.execute('SELECT ' + ','.join(columns) + ' FROM prepared_validation_sets').fetchone())
     start.update(id=second['setId'], request_id=second['requestId'], generation=2,
                  typecheck_run_id=next(s['runId'] for s in second['steps'] if s['recipe'] == 'workspace_typescript'),
                  tests_run_id=next(s['runId'] for s in second['steps'] if s['recipe'] == 'workspace_vitest_ui'))

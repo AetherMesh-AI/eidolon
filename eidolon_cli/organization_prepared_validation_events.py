@@ -86,7 +86,8 @@ def _retain_reference(conn, envelope, step, event):
     status = receipt.get('status')
     if status not in {'passed', 'failed', 'interrupted', 'cleanup_failed', 'unknown'}:
         status = 'unknown'
-    record = {'version': 1, 'contract': 'prepared-validation-result-reference-v1',
+    from eidolon_cli.organization_prepared_validation_contract import versioned_contract_fields
+    record = {**versioned_contract_fields(envelope['version'], 'prepared-validation-result-reference'),
         'setId': envelope['setId'], 'generation': envelope['generation'], 'runId': step['runId'],
         'stepId': step['id'], **{key: step[key] for key in ('definitionSha256', 'recipe', 'checkKind')},
         'snapshotSha256': envelope['source']['snapshotSha256'],

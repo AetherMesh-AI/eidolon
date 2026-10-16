@@ -11,7 +11,9 @@ from eidolon_cli.organization_project_validation import canonical, digest
 
 _HASH = re.compile(r'[0-9a-f]{64}')
 _ID = re.compile(r'[a-z][a-z0-9_-]{0,63}')
-_KINDS = {'workspace_typescript': 'project_typecheck', 'workspace_vitest_ui': 'project_tests'}
+_KINDS = {'workspace_typescript': 'project_typecheck', 'workspace_vitest_ui': 'project_tests',
+          'workspace_vite_build': 'project_build'}
+_RECIPES = {1: tuple(_KINDS)[:2], 2: tuple(_KINDS)}
 
 
 def _hash(value):
@@ -36,12 +38,13 @@ def _exact(value, keys, label):
 
 
 def normalize_validation_profile(value):
-    """Normalize explicit two-recipe scope, without commands or host probing."""
+    """Normalize explicit versioned recipe scope, without commands or host probing."""
     _exact(value, {'version', 'id', 'workspace', 'bundleSha256', 'steps', 'limits'}, 'Profile')
-    if type(value['version']) is not int or value['version'] != 1:
+    if type(value['version']) is not int or value['version'] not in _RECIPES:
         raise ValueError('Unsupported validation profile version')
     if not isinstance(value['id'], str) or not _ID.fullmatch(value['id']):
         raise ValueError('Validation profile ID is invalid')
+    version = value['version']
     workspace, bundle = _path(value['workspace']), _hash(value['bundleSha256'])
     limits = value['limits']
     bounds = {'wallSeconds': (1, 1800), 'memoryMiB': (256, 8192), 'cpus': (1, 4),
@@ -51,15 +54,15 @@ def normalize_validation_profile(value):
         if type(limits[key]) is not int or not low <= limits[key] <= high:
             raise ValueError(f'Profile {key} is outside its bound')
     steps = value['steps']
-    if not isinstance(steps, list) or len(steps) != 2:
-        raise ValueError('Profile requires exactly one typecheck and one UI test step')
+    if not isinstance(steps, list) or len(steps) != len(_RECIPES[version]):
+        raise ValueError('Profile requires the complete exact recipe set for its version')
     result, ids, kinds = [], set(), set()
     for step in steps:
         _exact(step, {'id', 'recipe', 'checkKind', 'config', 'testFiles', 'sourceDirectories'}, 'Step')
         identifier, recipe = step['id'], step['recipe']
         if not isinstance(identifier, str) or not _ID.fullmatch(identifier) or identifier in ids:
             raise ValueError('Step IDs must be valid and unique')
-        if not isinstance(recipe, str) or recipe not in _KINDS or recipe in kinds:
+        if not isinstance(recipe, str) or recipe not in _RECIPES[version] or recipe in kinds:
             raise ValueError('Steps require distinct supported recipes')
         if step['checkKind'] != _KINDS[recipe]:
             raise ValueError('Check kind does not match its exact recipe')
@@ -74,8 +77,8 @@ def normalize_validation_profile(value):
         directories = [_path(path) for path in directories]
         if recipe == 'workspace_typescript' and not directories:
             raise ValueError('Typechecking requires explicit source directory coverage')
-        if recipe == 'workspace_vitest_ui' and directories:
-            raise ValueError('UI tests use exact test files, not source directory selection')
+        if recipe != 'workspace_typescript' and directories:
+            raise ValueError('Only typechecking accepts source directory selection')
         ordered = sorted(path.casefold() for path in directories)
         if len(set(ordered)) != len(ordered) or any(right.startswith(left + '/')
                 for index, left in enumerate(ordered) for right in ordered[index + 1:]):
@@ -83,8 +86,8 @@ def normalize_validation_profile(value):
         files = step['testFiles']
         if not isinstance(files, list):
             raise ValueError('Test selection must be a list')
-        if recipe == 'workspace_typescript' and files:
-            raise ValueError('Typechecking does not accept a test selection')
+        if recipe != 'workspace_vitest_ui' and files:
+            raise ValueError('Only UI tests accept a test selection')
         if recipe == 'workspace_vitest_ui' and not 1 <= len(files) <= 512:
             raise ValueError('UI tests require a nonempty exact bounded file selection')
         selected = []
@@ -99,7 +102,7 @@ def normalize_validation_profile(value):
         kinds.add(recipe)
         result.append({'id': identifier, 'recipe': recipe, 'checkKind': step['checkKind'],
                        'config': config, 'testFiles': sorted(selected), 'sourceDirectories': sorted(directories)})
-    normalized = {'version': 1, 'id': value['id'], 'workspace': workspace, 'bundleSha256': bundle,
+    normalized = {'version': version, 'id': value['id'], 'workspace': workspace, 'bundleSha256': bundle,
                   'steps': sorted(result, key=lambda step: step['id']), 'limits': dict(limits)}
     if len(canonical(normalized).encode('utf-8')) > 65536:
         raise ValueError('Profile exceeds its combined byte bound')
@@ -109,7 +112,7 @@ def normalize_validation_profile(value):
 def describe_validation_profile(value):
     """Configuration only; availability and successful execution remain unknown."""
     normalized = normalize_validation_profile(value)
-    return {'version': 1, 'profileSha256': digest(normalized), 'state': 'runtime_unverified',
+    return {'version': normalized['version'], 'profileSha256': digest(normalized), 'state': 'runtime_unverified',
             'executionAuthorized': False, 'requiredSteps': normalized['steps'],
             'limitation': 'Prepared dependencies and actual native execution remain unverified.'}
 
@@ -121,10 +124,24 @@ def validation_set_identity(value, *, objective_id, project_id, source_sha256, a
         if (not isinstance(identifier, str) or not identifier or len(identifier) > 128
                 or any(ord(char) < 32 or ord(char) == 127 for char in identifier)):
             raise ValueError('Set requires bounded objective and project identities')
-    record = {'version': 1, 'objectiveId': objective_id, 'projectId': project_id,
+    record = {'version': profile['version'], 'objectiveId': objective_id, 'projectId': project_id,
               'sourceSha256': _hash(source_sha256), 'authoritySha256': _hash(authority_sha256),
               'profileSha256': digest(profile), 'bundleSha256': profile['bundleSha256'],
               'requiredSteps': [{'id': step['id'], 'recipe': step['recipe'],
                                  'checkKind': step['checkKind'], 'definitionSha256': digest(step)}
                                 for step in profile['steps']]}
     return {**record, 'sha256': digest(record)}
+
+
+def validation_step_count(value):
+    """Required cardinality for a versioned profile or set envelope."""
+    version = value.get('version') if type(value) is dict else None
+    if type(version) is not int or version not in _RECIPES:
+        raise ValueError('Unsupported validation profile version')
+    return len(_RECIPES[version])
+
+
+def profile_required_checks(value):
+    """Exact required checks in execution order, never an authorization."""
+    profile = normalize_validation_profile(value)
+    return [_KINDS[recipe] for recipe in _RECIPES[profile['version']]]

@@ -7,7 +7,8 @@ import { pathToFileURL } from 'node:url';
 import { CONTROL_BYTES, validateConfig, validateWorkloadIdentity, validateResult, absolutePath,
   selectedFiles, isSource, resultRecord, createWorkspaceTypecheckProgram, summarizeVitestModules,
   boundUiProject, vitestOptions, writeControlFrameSync, formatWorkloadError,
-  formatMissingSelectedSources } from './protocol.mjs';
+  formatMissingSelectedSources, VITE_BUILD_ROOT, viteBuildOptions, validateViteBuildConfig,
+  collectBuildOutput } from './protocol.mjs';
 
 const config = validateConfig(JSON.parse(fs.readFileSync('/runner/config.json', 'utf8')));
 const status = Object.fromEntries(fs.readFileSync('/proc/self/status', 'utf8').split('\n')
@@ -37,7 +38,9 @@ lines.close();
 
 function requirePreparedFiles() {
   const base = '/source/' + config.root + '/';
-  for (const value of [config.configuration, config.toolEntry, ...config.tests, ...config.selectedSources]) {
+  const required = [config.configuration, config.toolEntry, ...config.tests, ...config.selectedSources];
+  if (config.recipe === 'workspace_vite_build') required.push(config.workspace + '/index.html');
+  for (const value of required) {
     const filename = absolutePath(config, value);
     if (!fs.statSync(filename).isFile() || !fs.realpathSync(filename).startsWith(base)) {
       throw new Error('Selected input is absent or escaped the prepared source');
@@ -137,9 +140,28 @@ async function runUiTests() {
     status: started && completed && successful && toolExitCode === 0 ? 'passed' : 'failed' });
 }
 
+async function buildRenderer() {
+  fs.mkdirSync(VITE_BUILD_ROOT, { mode: 0o700 });
+  fs.mkdirSync(VITE_BUILD_ROOT + '/out', { mode: 0o700 });
+  const { createBuilder } = await import(pathToFileURL(absolutePath(config, config.toolEntry)).href);
+  const builder = await createBuilder(viteBuildOptions(config), true);
+  validateViteBuildConfig(builder.config, config);
+  const entries = Object.entries(builder.environments);
+  if (entries.length !== 1 || entries[0][0] !== 'client') throw new Error('Unexpected build environments');
+  const environment = entries[0][1];
+  validateViteBuildConfig(environment.config, config, true);
+  const output = await builder.build(environment);
+  validateViteBuildConfig(builder.config, config);
+  validateViteBuildConfig(environment.config, config, true);
+  const metadata = collectBuildOutput(VITE_BUILD_ROOT + '/out', output);
+  const toolExitCode = process.exitCode === undefined ? 0 : Number(process.exitCode);
+  return resultRecord(config, { ...metadata, toolExitCode, status: toolExitCode === 0 ? 'passed' : 'failed' });
+}
+
 try {
   requirePreparedFiles();
-  const recipes = { workspace_typescript: typecheck, workspace_vitest_ui: runUiTests };
+  const recipes = { workspace_typescript: typecheck, workspace_vitest_ui: runUiTests,
+    workspace_vite_build: buildRenderer };
   const result = validateResult(await recipes[config.recipe](), config);
   emit(result);
   process.exit(result.status === 'passed' ? 0 : 1);

@@ -1,7 +1,7 @@
 name: Prepared workspace isolation
 on:
   push:
-    branches: ['main', 'feat/prepared-project-validation', 'feat/prepared-validation-integration']
+    branches: ['main', 'feat/prepared-project-validation', 'feat/prepared-validation-integration', 'feat/prepared-vite-build-main']
     paths:
       - '.github/workflows/prepared-project-experimental.yml'
       - 'scripts/run_tests.sh'
@@ -34,7 +34,7 @@ on:
       - 'tests/eidolon_cli/test_organization_root_grants.py'
       - 'eidolon_cli/organization_project_snapshot_bundle.py'
       - 'eidolon_cli/organization_project_validation_profile.py'
-      - 'eidolon_cli/organization_project_workspace_node.py'
+      - 'eidolon_cli/organization_project_workspace_*.py'
       - 'eidolon_cli/organization_project_node.py'
       - 'eidolon_cli/organization_project_runner.py'
       - 'eidolon_cli/organization_project_compiler_bundle.py'
@@ -47,6 +47,7 @@ on:
       - 'eidolon_cli/project_workspace_runtime/**'
       - 'tests/eidolon_cli/test_organization_project_workspace_*.py'
       - 'tests/eidolon_cli/prepared_workspace_fixture.py'
+      - 'tests/eidolon_cli/prepared_workspace_build_fixture.py'
       - 'tests/fixtures/prepared-workspace-*.json'
   workflow_dispatch:
 permissions:
@@ -59,7 +60,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [native, abuse, capacity]
+        suite: [native, abuse, capacity, build]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -69,6 +70,13 @@ jobs:
         with:
           ref: b79325580a3373ad6f5fac0169e2df03eaeb97a0
           path: .prepared-renderer-fixture
+          persist-credentials: false
+      - name: Checkout exact reviewed renderer build fixture bytes
+        if: matrix.suite == 'build'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: d825aebce477d79977a1d1c6a62c8a078c5ce502
+          path: .prepared-renderer-build-fixture
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
@@ -151,6 +159,7 @@ jobs:
           scripts/run_tests.sh tests/eidolon_cli/test_organization_prepared_validation_native.py \
             -j 1 --file-timeout 1800 --file-retries 0 -x --junitxml=prepared-lifecycle-native.xml
       - name: Exercise actual prepared renderer and selected UI tests offline
+        if: matrix.suite != 'build'
         env:
           HERMES_PYTHON: .venv/bin/python
           EIDOLON_REQUIRE_WORKSPACE_SANDBOX: '1'
@@ -158,6 +167,17 @@ jobs:
         run: |
           scripts/run_tests.sh tests/eidolon_cli/test_organization_project_workspace_${{ matrix.suite }}.py \
             -j 1 --file-timeout 1800 --file-retries 0 -x --junitxml=workspace-${{ matrix.suite }}.xml
+      - name: Verify actual renderer build and durable three-recipe lifecycle
+        if: matrix.suite == 'build'
+        env:
+          HERMES_PYTHON: .venv/bin/python
+          EIDOLON_REQUIRE_WORKSPACE_SANDBOX: '1'
+          EIDOLON_TEST_WORKSPACE_BUNDLE: ${{ runner.temp }}/prepared-project/verified
+        run: |
+          scripts/run_tests.sh tests/eidolon_cli/test_organization_project_workspace_build_native.py \
+            -j 1 --file-timeout 1800 --file-retries 0 -x --junitxml=workspace-build-native.xml
+          scripts/run_tests.sh tests/eidolon_cli/test_organization_prepared_validation_build_native.py \
+            -j 1 --file-timeout 1800 --file-retries 0 -x --junitxml=prepared-build-lifecycle-native.xml
       - name: Retain exact native proof and preparation metadata
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -169,6 +189,8 @@ jobs:
             workspace-native.xml
             workspace-abuse.xml
             workspace-capacity.xml
+            workspace-build-native.xml
+            prepared-build-lifecycle-native.xml
             ${{ runner.temp }}/prepared-project/verified/manifest.json
             ${{ runner.temp }}/prepared-project/verified/toolchain.json
             ${{ runner.temp }}/prepared-project/verified/preparation-record.json

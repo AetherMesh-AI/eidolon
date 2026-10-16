@@ -207,7 +207,7 @@ def _run(conn, envelope, step, snapshot, grant, *, require_success=True):
                     int(cleanup['containerCleanupConfirmed']), int(cleanup['stagingCleanupConfirmed']))
         if tuple(row) != expected:
             raise ValueError('Prepared cleanup mirror differs from its exact host observation')
-    expected = {'version': 1, 'contract': 'prepared-validation-result-reference-v1',
+    expected = {**contract.versioned_contract_fields(envelope['version'], 'prepared-validation-result-reference'),
         'setId': envelope['setId'], 'generation': envelope['generation'], 'runId': run_id,
         'stepId': step['id'], **{key: step[key] for key in ('definitionSha256', 'recipe', 'checkKind')},
         'snapshotSha256': snapshot.snapshot_sha256,
@@ -229,7 +229,7 @@ def _artifact(envelope, step, receipt, reference, events_sha256):
     # workload output reach model-facing evidence. Source review is separately
     # permission-filtered and supplied by the current-authority callback.
     outcome = receipt['outcome']
-    record = {'version': 1, 'contract': 'prepared-validation-evidence-v1',
+    record = {**contract.versioned_contract_fields(envelope['version'], 'prepared-validation-evidence'),
         'setId': envelope['setId'], 'runId': step['runId'], 'generation': envelope['generation'],
         'projectId': envelope['projectId'], 'round': envelope['round'], 'stepId': step['id'],
         'stepDefinitionSha256': step['definitionSha256'], 'recipe': step['recipe'], 'checkKind': step['checkKind'],
@@ -245,12 +245,17 @@ def _artifact(envelope, step, receipt, reference, events_sha256):
                      'selectedFilesCount': len(outcome['selectedFiles']), 'selectedFilesSha256': digest(outcome['selectedFiles']),
                      'reportedFilesCount': len(outcome['reportedFiles']), 'reportedFilesSha256': digest(outcome['reportedFiles'])},
         'sourceDeliveryAuthorized': False}
+    if step['recipe'] == 'workspace_vite_build':
+        record['buildOutputs'] = {'manifestSha256': outcome['outputManifestSha256'],
+            'fileCount': len(outcome['outputManifest']),
+            'totalBytes': sum(item['bytes'] for item in outcome['outputManifest']),
+            'outputBodiesRetained': False}
     body = canonical(record)
     finished = datetime.fromisoformat(receipt['endedAt']).timestamp()
     row = {'id': step['runId'], 'request_id': envelope['requestId'], 'objective_id': envelope['objectiveId'],
            'project_id': envelope['projectId'], 'round': envelope['round'], 'snapshot_sha256': envelope['source']['snapshotSha256'],
            'result_sha256': digest(record), 'record': body, 'finished': finished,
-           'grant_record': canonical({'executionContract': 'prepared-validation-v1', 'execution': {'recipe': step['recipe']}})}
+           'grant_record': canonical({'executionContract': f"prepared-validation-v{envelope['version']}", 'execution': {'recipe': step['recipe']}})}
     artifact = {'id': step['runId'], 'objectiveId': envelope['objectiveId'], 'taskId': None,
         'kind': 'project_execution', 'content': body, 'sha256': digest(record),
         'summary': 'Prepared validation passed; host receipt verified, workload coverage independently reviewable.',
@@ -262,7 +267,7 @@ def _failure_artifact(conn, envelope, step, receipt, reference, events_sha256):
     # Failure reasons are fixed host categories, never copied diagnostics or
     # workload strings. This is useful replan evidence, never a successful check.
     status = _FAILURE_STATUS[receipt['status']]
-    record = {'version': 1, 'contract': 'prepared-validation-failure-evidence-v1',
+    record = {**contract.versioned_contract_fields(envelope['version'], 'prepared-validation-failure-evidence'),
         'setId': envelope['setId'], 'runId': step['runId'], 'generation': envelope['generation'],
         'projectId': envelope['projectId'], 'round': envelope['round'], 'stepId': step['id'],
         'recipe': step['recipe'], 'checkKind': step['checkKind'],
@@ -356,7 +361,7 @@ def _request(conn, request_id, verified):
 
 
 def _review_identity(verified, request):
-    return {'version': 1, 'contract': 'prepared-validation-pair-review-v1',
+    return {**contract.versioned_contract_fields(verified['envelope']['version'], 'prepared-validation-pair-review'),
         'setId': verified['envelope']['setId'], 'requestId': request['id'], 'reviewerId': request['agent_id'],
         'envelopeSha256': digest(verified['envelope']), 'aggregateSha256': digest(verified['aggregate']),
         'contributorIds': verified['contributorIds'], 'sourceEvidence': verified['sourceEvidence'],

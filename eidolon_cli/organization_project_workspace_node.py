@@ -18,6 +18,7 @@ import tempfile
 import time
 from types import SimpleNamespace
 import uuid
+import unicodedata
 
 from agent.redact import redact_sensitive_text
 
@@ -30,7 +31,7 @@ from eidolon_cli.organization_project_node import (
 )
 from eidolon_cli.organization_project_runner import _Budget, _Cancelled, _Deadline, _Unsupported
 from eidolon_cli.organization_project_snapshot_bundle import ProjectSnapshotBundle
-from eidolon_cli.organization_project_validation import digest
+from eidolon_cli.organization_project_validation import canonical, digest
 from eidolon_cli.organization_project_validation_profile import _path, normalize_validation_profile
 from eidolon_cli import organization_project_workspace_resources as resources
 
@@ -39,6 +40,20 @@ LIMITATIONS = ('Experimental exact prepared workspace execution. No installation
               'Project configuration, dependencies and test reports are untrusted workload code/data. '
               'Successful execution does not prove meaningful or honest assertions; independent review is required. '
               'Only the selected renderer typecheck and exact UI test files are covered.')
+BUILD_LIMITATIONS = ('Experimental exact prepared renderer build validation. No installation, output-body '
+    'retention, artifact export or source publication. Output manifests and configuration/dependency reports '
+    'are untrusted workload-origin claims, not immutable artifact or assertion proof. '
+    'Only the fixed workspace index.html production renderer build is covered; independent review is required.')
+BUILD_OUTPUT_FIELDS = {'outputManifestVersion', 'outputManifest', 'outputManifestSha256', 'outputBodiesRetained'}
+BUILD_OUTPUT_LIMITS = {'files': 1024, 'fileBytes': 32 * 1048576, 'totalBytes': 128 * 1048576,
+                       'manifestBytes': 256 * 1024}
+_TOOL_ENTRIES = {'workspace_typescript': ('typescript', 'node_modules/typescript/lib/typescript.js'),
+                 'workspace_vitest_ui': ('vitest', 'node_modules/vitest/dist/node.js'),
+                 'workspace_vite_build': ('vite', 'node_modules/vite/dist/node/index.js')}
+
+
+def limitations_for_recipe(recipe):
+    return BUILD_LIMITATIONS if recipe == 'workspace_vite_build' else LIMITATIONS
 
 
 def _authority(check_authorized):
@@ -79,9 +94,7 @@ def _safe_log(data):
 
 
 def _tool_entry(step, checked):
-    tool, entry = (('typescript', 'node_modules/typescript/lib/typescript.js')
-                   if step['recipe'] == 'workspace_typescript'
-                   else ('vitest', 'node_modules/vitest/dist/node.js'))
+    tool, entry = _TOOL_ENTRIES[step['recipe']]
     entries = {item['path'] for item in checked['manifest']['files']}
     if entry not in entries or tool not in checked['manifest']['toolchain']['tools']:
         raise ValueError('Exact prepared tool entry point or declared toolchain is absent')
@@ -167,6 +180,54 @@ def _selected_sources(source, step):
             and item.path.endswith(('.ts', '.tsx')) and not item.path.endswith('.d.ts')]
 
 
+def _build_outcome(frame, step, source, workspace):
+    """Validate bounded metadata consistency, never authenticate collected bytes."""
+    fields = {'kind', 'status', 'recipe', 'configuration', 'evidenceOrigin', 'toolExitCode',
+              'testCount', 'skippedCount', 'failedCount', 'sourceCount', 'selectedFiles',
+              'reportedFiles', 'toolEntry', 'modules'} | BUILD_OUTPUT_FIELDS
+    if (set(frame) != fields or frame['toolEntry'] != _TOOL_ENTRIES['workspace_vite_build'][1]
+            or type(frame['outputManifestVersion']) is not int or frame['outputManifestVersion'] != 1
+            or frame['outputBodiesRetained'] is not False
+            or any(frame[key] != 0 for key in ('testCount', 'skippedCount', 'failedCount', 'sourceCount'))
+            or any(frame[key] != [] for key in ('selectedFiles', 'reportedFiles', 'modules'))
+            or step['testFiles'] != [] or step['sourceDirectories'] != []
+            or workspace + '/index.html' not in {item.path for item in source.files}):
+        return False
+    manifest = frame['outputManifest']
+    if type(manifest) is not list or not 1 <= len(manifest) <= BUILD_OUTPUT_LIMITS['files']:
+        return False
+    total, previous, prefixes, files = 0, None, {}, set()
+    for item in manifest:
+        if (type(item) is not dict or set(item) != {'path', 'bytes', 'sha256', 'kind'}
+                or type(item['bytes']) is not int or not 0 <= item['bytes'] <= BUILD_OUTPUT_LIMITS['fileBytes']
+                or type(item['sha256']) is not str or re.fullmatch(r'[0-9a-f]{64}', item['sha256']) is None
+                or item['kind'] not in ('asset', 'chunk')):
+            return False
+        try:
+            value = _path(item['path'])
+            encoded = value.encode('utf-8')
+            if unicodedata.normalize('NFC', value) != value or (previous is not None and previous >= encoded):
+                return False
+        except (ValueError, UnicodeError):
+            return False
+        previous = encoded
+        parts = value.split('/')
+        for index in range(1, len(parts) + 1):
+            prefix = '/'.join(parts[:index])
+            alias = prefix.lower()
+            if (alias in prefixes and prefixes[alias] != prefix) or alias in files:
+                return False
+            prefixes[alias] = prefix
+        files.add(value.lower())
+        total += item['bytes']
+        if total > BUILD_OUTPUT_LIMITS['totalBytes']:
+            return False
+    return (len(canonical(manifest).encode('utf-8')) <= BUILD_OUTPUT_LIMITS['manifestBytes']
+            and frame['outputManifestSha256'] == digest(manifest)
+            and any(item['path'] == 'index.html' and item['kind'] == 'asset' and item['bytes'] > 0 for item in manifest)
+            and any(item['kind'] == 'chunk' and item['bytes'] > 0 for item in manifest))
+
+
 def _outcome(frame, step, source, workspace):
     """Reject incomplete, wrong-scope or malformed workload result claims."""
     if (not isinstance(frame, dict) or frame.get('kind') != 'result'
@@ -180,6 +241,8 @@ def _outcome(frame, step, source, workspace):
             return False
     if frame['failedCount']:
         return False
+    if step['recipe'] == 'workspace_vite_build':
+        return _build_outcome(frame, step, source, workspace)
     prefix = '/source/' + source.root_alias + '/'
     selected = frame.get('selectedFiles')
     reported = frame.get('reportedFiles')
@@ -283,6 +346,7 @@ replace actual owner Docker opt-in or fresh authority checks.
         step = next((item for item in normalized['steps'] if item['id'] == step_id), None)
         if step is None:
             raise ValueError('Requested step is absent from the exact profile')
+        result['limitations'] = limitations_for_recipe(step['recipe'])
         limits = normalized['limits']
         if limits['cpus'] != 1 or limits['pids'] != 64:
             raise _Unsupported('Initial prepared workspace runtime supports exactly one CPU and 64 PIDs')
@@ -292,6 +356,8 @@ replace actual owner Docker opt-in or fresh authority checks.
         budget = _Budget(_AuthorityCancellation(cancel, check_authorized), grant.timeout_seconds, clock)
         budget.check()
         files = {item.path: item.content for item in source.files}
+        if step['recipe'] == 'workspace_vite_build' and normalized['workspace'] + '/index.html' not in files:
+            raise ValueError('Renderer build requires its exact workspace index.html')
         if step['config'] not in files or any(path not in files for path in step['testFiles']):
             raise ValueError('Validation configuration or selected test is missing from the snapshot')
         lockfile = files.get('package-lock.json')

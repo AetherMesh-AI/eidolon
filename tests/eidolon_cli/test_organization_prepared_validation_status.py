@@ -22,7 +22,7 @@ def view(state, envelope, **kwargs):
 def forbid_payload_reads(conn):
     forbidden = {
         'prepared_validation_bindings': {'grant_record', 'binding_record'},
-        'prepared_validation_sets': {'envelope', 'lease_token'},
+        'prepared_validation_sets': {'envelope', 'lease_token', 'build_run_id'},
         'prepared_validation_snapshots': {'manifest', 'limits'},
         'prepared_validation_results': {'record', 'sha256', 'receipt_sha256'},
         'prepared_validation_aggregates': {'record', 'sha256'},

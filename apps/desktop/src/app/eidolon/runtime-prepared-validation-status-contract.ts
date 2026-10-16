@@ -23,7 +23,7 @@ function validReferences(value: unknown): value is PreparedValidationReference[]
 function validStep(value: unknown): value is PreparedValidationStepStatus {
   if (!preparedRecord(value) || !exact(value, ['runId', 'stepId', 'recipe', 'reservedUnits', 'dispatched', 'resourceClaimed', 'resultClaimStatus',
     'cleanupClaimSettled', 'latestCleanupSequence', 'latestRuntimeEventSequence', 'latestRuntimeEventKind', 'blockerReasons']) ||
-    !identifier(value.runId) || !identifier(value.stepId) || !['workspace_typescript', 'workspace_vitest_ui'].includes(value.recipe as string) ||
+    !identifier(value.runId) || !identifier(value.stepId) || !['workspace_typescript', 'workspace_vitest_ui', 'workspace_vite_build'].includes(value.recipe as string) ||
     value.reservedUnits !== 1 || !boolean(value.dispatched) || !boolean(value.resourceClaimed) || !boolean(value.cleanupClaimSettled) ||
     value.resultClaimStatus !== null && !resultKinds.includes(value.resultClaimStatus as string) ||
     value.latestCleanupSequence !== null && !count(value.latestCleanupSequence, 10000, 1) ||
@@ -46,26 +46,42 @@ function validStep(value: unknown): value is PreparedValidationStepStatus {
   return policyEqual(value.blockerReasons, reasons)
 }
 
-function validSet(value: unknown, projects: Set<string>): value is PreparedValidationSetStatus {
-  return preparedRecord(value) && exact(value, ['setId', 'requestId', 'projectId', 'round', 'generation', 'reservedUnits', 'snapshotSha256',
-    'steps', 'aggregateClaimPresent', 'reviewClaimPresent', 'pairReviewRecorded', 'state']) &&
+function validSet(value: unknown, projects: Set<string>, v2Allowed: boolean): value is PreparedValidationSetStatus {
+  if (!preparedRecord(value)) { return false }
+  const v2 = value.profileVersion === 2
+  const stepCount = v2 ? 3 : 2
+
+  return (!Object.hasOwn(value, 'profileVersion') || v2Allowed && v2) &&
+    exact(value, ['setId', 'requestId', 'projectId', 'round', 'generation', 'reservedUnits', 'snapshotSha256',
+      'steps', 'aggregateClaimPresent', 'reviewClaimPresent', 'pairReviewRecorded', 'state', ...(v2 ? ['profileVersion'] : [])]) &&
     identifier(value.setId) && identifier(value.requestId) && typeof value.projectId === 'string' && projects.has(value.projectId) &&
-    preparedInteger(value.round) && preparedInteger(value.generation, 1) && value.reservedUnits === 2 && preparedHash(value.snapshotSha256) &&
-    boolean(value.aggregateClaimPresent) && boolean(value.reviewClaimPresent) && boolean(value.pairReviewRecorded) && Array.isArray(value.steps) && value.steps.length === 2 &&
+    preparedInteger(value.round) && preparedInteger(value.generation, 1) && value.reservedUnits === stepCount && preparedHash(value.snapshotSha256) &&
+    boolean(value.aggregateClaimPresent) && boolean(value.reviewClaimPresent) && boolean(value.pairReviewRecorded) && Array.isArray(value.steps) && value.steps.length === stepCount &&
     value.steps.every(validStep) && value.steps[0].recipe === 'workspace_typescript' && value.steps[1].recipe === 'workspace_vitest_ui' &&
-    new Set([value.setId, ...value.steps.map(step => step.runId)]).size === 3 &&
-    value.steps[0].stepId !== value.steps[1].stepId &&
+    (!v2 || value.steps[2].recipe === 'workspace_vite_build') &&
+    new Set([value.setId, ...value.steps.map(step => step.runId)]).size === stepCount + 1 &&
+    new Set(value.steps.map(step => step.stepId)).size === stepCount &&
     value.state === (value.steps.some(step => step.dispatched) ? 'runtime_unverified' : 'reserved_undispatched')
 }
 
 /** Validate only the bounded display contract, never authenticate the recorded claims. */
 export function validPreparedValidationStatus(value: unknown, objectiveId: string, references: PreparedValidationReference[]): value is PreparedValidationStatus {
-  if (!preparedRecord(value) || !exact(value, ['objectiveId', 'storageState', 'legacyUnits', 'preparedUnits', 'totalUnits', 'totalSets', 'totalHistory',
-    'current', 'history', 'historyTruncated', 'blockers', 'scalarMetadataOnly', ...authorityFlags]) ||
+  if (!preparedRecord(value)) { return false }
+  const v2 = value.contractVersion === 2
+  const counts = value.setCounts
+
+  if (Object.hasOwn(value, 'contractVersion') && !v2 || v2 && (!preparedRecord(counts) || !exact(counts, ['v1', 'v2']) ||
+    !count(counts.v1, 10000) || !count(counts.v2, 10000, 1) || counts.v1 + counts.v2 !== value.totalSets)) { return false }
+
+  const expectedUnits = v2 ? (counts as { v1: number; v2: number }).v1 * 2 + (counts as { v1: number; v2: number }).v2 * 3
+    : (value.totalSets as number) * 2
+
+  if (!exact(value, ['objectiveId', 'storageState', 'legacyUnits', 'preparedUnits', 'totalUnits', 'totalSets', 'totalHistory',
+    'current', 'history', 'historyTruncated', 'blockers', 'scalarMetadataOnly', ...authorityFlags, ...(v2 ? ['contractVersion', 'setCounts'] : [])]) ||
     value.objectiveId !== objectiveId || !identifier(value.objectiveId) || !['absent', 'present'].includes(value.storageState as string) ||
     value.scalarMetadataOnly !== true || authorityFlags.some(key => value[key] !== false) ||
     !count(value.totalSets, 10000) || !count(value.legacyUnits, 10000) || value.totalHistory !== value.totalSets ||
-    value.preparedUnits !== value.totalSets * 2 || value.totalUnits !== value.legacyUnits + value.totalSets * 2 ||
+    value.preparedUnits !== expectedUnits || value.totalUnits !== value.legacyUnits + expectedUnits ||
     !validReferences(references) || references.length === 0 || !preparedRecord(value.current) || Object.keys(value.current).length > 8 ||
     !Array.isArray(value.history) || value.history.length !== Math.min(value.totalSets, 20) || value.historyTruncated !== (value.totalSets > value.history.length) ||
     !preparedRecord(value.blockers)) { return false }
@@ -75,8 +91,8 @@ export function validPreparedValidationStatus(value: unknown, objectiveId: strin
   const current = Object.values(currentByProject)
   const history = value.history
 
-  if (value.storageState === 'absent' && value.totalSets !== 0 || !current.every(item => validSet(item, projects)) ||
-    !history.every(item => validSet(item, projects)) || current.length > value.totalSets ||
+  if (value.storageState === 'absent' && value.totalSets !== 0 || !current.every(item => validSet(item, projects, v2)) ||
+    !history.every(item => validSet(item, projects, v2)) || current.length > value.totalSets ||
     Object.entries(value.current).some(([projectId, item]) => (item as PreparedValidationSetStatus).projectId !== projectId) ||
     new Set(history.map(item => item.setId)).size !== history.length ||
     history.some(item => !Object.hasOwn(currentByProject, item.projectId) || (currentByProject[item.projectId] as PreparedValidationSetStatus).generation < item.generation)) { return false }
@@ -100,17 +116,24 @@ export function validPreparedValidationStatus(value: unknown, objectiveId: strin
 
   if (sets.size > value.totalSets) { return false }
 
+  if (v2) {
+    const visibleV2 = [...sets.values()].filter(set => set.profileVersion === 2).length
+    const declared = counts as { v1: number; v2: number }
+
+    if (visibleV2 > declared.v2 || sets.size - visibleV2 > declared.v1) { return false }
+  }
+
   const expectedEntries = history.flatMap(item => item.steps.map(step => ({ setId: item.setId, projectId: item.projectId,
     generation: item.generation, runId: step.runId, reasons: step.blockerReasons }))).slice(0, 20)
 
   const blockers = value.blockers
 
   return exact(blockers, ['blocked', 'totalBlockers', 'entries', 'truncated']) && blockers.blocked === (value.totalSets > 0) &&
-    blockers.totalBlockers === value.totalSets * 2 && Array.isArray(blockers.entries) && blockers.entries.length <= 20 &&
+    blockers.totalBlockers === expectedUnits && Array.isArray(blockers.entries) && blockers.entries.length <= 20 &&
     blockers.entries.every(entry => preparedRecord(entry) && exact(entry, ['setId', 'projectId', 'generation', 'runId', 'reasons']) &&
       identifier(entry.setId) && identifier(entry.projectId) && identifier(entry.runId) && preparedInteger(entry.generation, 1) && validReasons(entry.reasons)) &&
     policyEqual(blockers.entries, expectedEntries) &&
-    blockers.truncated === (value.totalSets * 2 > expectedEntries.length)
+    blockers.truncated === (expectedUnits > expectedEntries.length)
 }
 
 export function validObjectivePreparedValidation(objective: Objective): boolean {

@@ -97,6 +97,7 @@ def _expected_schema():
 
 
 def _storage(conn):
+    from eidolon_cli.organization_prepared_validation_ledger import validate_prepared_generated_schema
     expected, guards = _expected_schema()
     objects = dict(conn.execute('SELECT name,type FROM main.sqlite_master'))
     shadows = {row[0] for row in conn.execute('SELECT name FROM sqlite_temp_master')}
@@ -106,6 +107,7 @@ def _storage(conn):
     present = {name for name in objects if name.startswith('prepared_validation_')}
     if not present:
         return 'absent'
+    validate_prepared_generated_schema(conn)
     if any(objects.get(name) != 'table' for name in expected):
         raise ValueError('Prepared storage requires every base table')
     for name, (columns, foreign_keys, unique_keys) in expected.items():
@@ -259,7 +261,7 @@ def _set_activity(conn, envelope, grant, binding, history):
             source_evidence=evidence, receipt_hashes={item['runId']: item['receiptSha256'] for item in results},
             context=context, root_authorized=True)
     return {'setId': envelope['setId'], 'requestId': envelope['requestId'], 'projectId': envelope['projectId'],
-            'round': envelope['round'], 'generation': envelope['generation'], 'reservedUnits': 2,
+            'round': envelope['round'], 'generation': envelope['generation'], 'reservedUnits': contract.validation_step_count(envelope),
             'snapshotSha256': envelope['source']['snapshotSha256'], 'steps': steps,
             'aggregateClaimPresent': aggregate is not None, 'reviewClaimPresent': review is not None,
             'state': 'reserved_undispatched' if not any(step['dispatched'] for step in steps) else 'runtime_unverified'}
@@ -269,12 +271,15 @@ def _reservation_identity(conn, envelope, binding):
     if (envelope['ownerGrantSha256'] != binding['ownerGrantSha256']
             or envelope['objectiveBindingSha256'] != digest(binding)):
         raise ValueError('Reservation objective binding changed')
-    row = conn.execute('SELECT typecheck_run_id,tests_run_id,prior_units,objective_ceiling,owner_ceiling '
+    row = conn.execute('SELECT typecheck_run_id,tests_run_id,build_run_id,prior_units,objective_ceiling,owner_ceiling '
                        'FROM prepared_validation_sets WHERE id=?', (envelope['setId'],)).fetchone()
     ordered = contract.validation_execution_order(envelope)
-    if tuple(row[:2]) != tuple(step['runId'] for step in ordered) or any(type(v) is not int for v in row[2:]):
+    expected_ids = tuple(step['runId'] for step in ordered)
+    stored_ids = tuple(row[:3]) if envelope['version'] == 2 else tuple(row[:2])
+    if (stored_ids != expected_ids or envelope['version'] == 1 and row[2] is not None
+            or any(type(v) is not int for v in row[3:])):
         raise ValueError('Set reservation metadata changed')
-    if row[2] < 0 or row[2] + 2 > min(row[3:]):
+    if row[3] < 0 or row[3] + len(ordered) > min(row[4:]):
         raise ValueError('Set accounting metadata changed')
     request = conn.execute('SELECT objective_id FROM requests WHERE id=?', (envelope['requestId'],)).fetchone()
     if request is None or request[0] != envelope['objectiveId']:
@@ -320,8 +325,9 @@ cannot refund already committed units; deep activity readers report that error.
             histories[project_id] = history
         if sum(map(len, histories.values())) != count:
             raise ValueError('Prepared sets are missing a binding')
+    units = sum(contract.validation_step_count(envelope) for history in histories.values() for envelope in history)
     return {'objectiveId': objective_id, 'storageState': storage, 'legacyUnits': legacy,
-            'preparedUnits': 2 * count, 'totalUnits': legacy + 2 * count}, histories
+            'preparedUnits': units, 'totalUnits': legacy + units}, histories
 
 
 def _objective(conn, objective_id, storage):

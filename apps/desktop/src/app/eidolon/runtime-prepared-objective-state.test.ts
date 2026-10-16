@@ -147,3 +147,51 @@ it('requires explicit disable to release a stale requested mode and never alters
   expect(f.error()).toBeUndefined()
   expect($intakeDrafts.get().draft.metadata.preparedValidations).toBeUndefined()
 })
+
+it('adds the v2 build only after explicit selection and clears introduced checks on reread or disable', async () => {
+  const f = fixture(); f.descriptor.projects[0].preparedProfileVersion = 2
+  f.enable(); await f.read()
+  expect($intakeDrafts.get().draft.metadata.requiredChecks).not.toContain('project_build')
+  f.choose()
+  expect(f.error()).toBeUndefined()
+  expect($intakeDrafts.get().draft.metadata.requiredChecks).toContain('project_build')
+  const selected = $intakeDrafts.get().draft
+  setIntakeDraft('draft', { ...selected, metadata: { ...selected.metadata, requiredChecks: ['project_typecheck', 'project_tests'] } })
+  expect(f.error()).toBe('constraints')
+  await f.read()
+  expect($intakeDrafts.get().draft.metadata.preparedValidations).toBeUndefined()
+  expect($intakeDrafts.get().draft.metadata.requiredChecks).not.toContain('project_build')
+  f.choose(); setPreparedObjectiveMode('draft', false)
+  expect($intakeDrafts.get().draft.metadata.requiredChecks).not.toContain('project_build')
+  expect(f.error()).toBeUndefined()
+
+  const draft = $intakeDrafts.get().draft
+  setIntakeDraft('draft', { ...draft, metadata: { ...draft.metadata, requiredChecks: ['project_build'] } })
+  f.enable(); await f.read(); f.choose(); setPreparedObjectiveMode('draft', false)
+  expect($intakeDrafts.get().draft.metadata.requiredChecks).toContain('project_build')
+})
+
+it('fails closed for mixed selected versions, unknown versions, and a disabled late v2 read', async () => {
+  const f = fixture()
+  const v2 = { ...f.descriptor.projects[0], id: 'renderer', preparedProfileVersion: 2 as const }
+  f.descriptor.projects.push(v2)
+  const reference = { ...f.descriptor.registrationRefs[0], projectId: v2.id }
+  f.descriptor.registrationRefs.push(reference)
+  const draft = $intakeDrafts.get().draft
+  setIntakeDraft('draft', { ...draft, metadata: { projectIds: ['desktop', 'renderer'] } })
+  f.enable(); await f.read(); f.choose()
+  selectPreparedObjectiveReference('draft', reference, true, f.context())
+  expect(f.error()).toBe('versions')
+  Object.assign(v2, { preparedProfileVersion: 3 })
+  await f.read()
+  expect($preparedObjectiveSelections.get().draft.review).toBeUndefined()
+  expect($intakeDrafts.get().draft.metadata.preparedValidations).toBeUndefined()
+  Object.assign(v2, { preparedProfileVersion: 2 })
+  const response = deferred<unknown>(); f.request.mockReturnValueOnce(response.promise)
+  const reading = f.read()
+  setPreparedObjectiveMode('draft', false)
+  response.resolve(f.descriptor); await reading
+  expect($preparedObjectiveSelections.get().draft.requested).toBe(false)
+  expect($preparedObjectiveSelections.get().draft.review).toBeUndefined()
+  expect($intakeDrafts.get().draft.metadata.preparedValidations).toBeUndefined()
+})

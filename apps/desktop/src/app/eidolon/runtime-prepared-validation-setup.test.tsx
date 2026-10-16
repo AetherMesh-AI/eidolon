@@ -62,9 +62,9 @@ async function read() {
   fireEvent.change(input(copy.project), { target: { value: 'desktop' } })
 }
 
-async function fill() {
+async function fill(version: 1 | 2 = 1) {
   await read()
-  const selection = preparedSelection()
+  const selection = preparedSelection(version)
 
   for (const [label, value] of [[copy.files, selection.source.files.join('\n')], [copy.exceptions, JSON.stringify(selection.source.executionOnlyHashes)],
     [copy.dependencies, selection.dependencies.directory], [copy.manifest, JSON.stringify(selection.dependencies.manifest)], [copy.profile, JSON.stringify(selection.profile)]]) {
@@ -72,8 +72,8 @@ async function fill() {
   }
 }
 
-async function review() {
-  await fill()
+async function review(version: 1 | 2 = 1) {
+  await fill(version)
   fireEvent.click(screen.getByRole('checkbox', { name: copy.enable }))
   fireEvent.click(button(copy.preview))
   await screen.findByRole('region', { name: copy.review })
@@ -86,11 +86,11 @@ async function confirmSave() {
 }
 
 describe('reviewed prepared-validation setup UI', () => {
-  it('requires existing project, explicit enable, byte preview and final confirmation without starting work', async () => {
+  it.each([1, 2] as const)('requires existing project, explicit enable, byte preview and final confirmation without starting work (v%s)', async version => {
     render(<RuntimePreparedValidationSetup onSaved={state.saved} />)
     expect(state.request).not.toHaveBeenCalled()
     expect(screen.getByText(copy.platform)).toBeTruthy()
-    await fill()
+    await fill(version)
     expect((button(copy.preview) as HTMLButtonElement).disabled).toBe(true)
     await act(async () => fireEvent.submit(input(copy.files).closest('form')!))
     expect(calls('previewPreparedValidation')).toHaveLength(0)
@@ -98,7 +98,9 @@ describe('reviewed prepared-validation setup UI', () => {
     fireEvent.click(button(copy.preview))
     await screen.findByRole('region', { name: copy.review })
     expect(screen.getByText(copy.verified)).toBeTruthy()
-    expect(screen.getByText(copy.consequences)).toBeTruthy()
+    expect(screen.getByText(version === 2 ? copy.threeConsequences : copy.consequences)).toBeTruthy()
+
+    if (version === 2) { expect(screen.getByText(copy.buildBoundary)).toBeTruthy() }
     expect(screen.getByText(copy.boundaries)).toBeTruthy()
     fireEvent.click(button(copy.save))
     const dialog = await screen.findByRole('dialog', { name: copy.confirmTitle })
@@ -110,9 +112,9 @@ describe('reviewed prepared-validation setup UI', () => {
     expect(calls('savePreparedValidation')[0][1]).toMatchObject({ expectedOwnerId: 'owner', confirmed: true, candidate: { enabled: true } })
   })
 
-  it('invalidates a completed review when any input changes', async () => {
+  it.each([1, 2] as const)('invalidates a completed review when any input changes (v%s)', async version => {
     render(<RuntimePreparedValidationSetup onSaved={state.saved} />)
-    await review()
+    await review(version)
     fireEvent.change(input(copy.dependencies), { target: { value: '/prepared/other' } })
     expect(screen.queryByRole('region', { name: copy.review })).toBeNull()
     expect(screen.queryByRole('button', { name: copy.save })).toBeNull()
@@ -152,9 +154,9 @@ describe('reviewed prepared-validation setup UI', () => {
     expect(calls('savePreparedValidation')).toHaveLength(0)
   })
 
-  it('retains the exact save and disables edits after an uncertain outcome, then retries once', async () => {
+  it.each([1, 2] as const)('retains the exact save and disables edits after an uncertain outcome, then retries once (v%s)', async version => {
     render(<RuntimePreparedValidationSetup onSaved={state.saved} />)
-    await review()
+    await review(version)
     state.request.mockRejectedValueOnce(new Error('Lost response'))
     await confirmSave()
     await screen.findByText(copy.uncertain)

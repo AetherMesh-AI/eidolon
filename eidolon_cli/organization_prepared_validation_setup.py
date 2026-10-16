@@ -320,6 +320,7 @@ def _view(conn, home, identity, policy, *, resolve_refs=True):
     projects, registration_refs = [], []
     for project in settings.projects:
         row = latest.get(project.id)
+        profile_version = None
         if row and (row['organization_id'] != identity['organizationId']
                     or row['owner_id'] != identity['owner']['ownerId']):
             raise OwnerPolicyError('identity_conflict')
@@ -329,6 +330,7 @@ def _view(conn, home, identity, policy, *, resolve_refs=True):
                     organization_id=identity['organizationId'], owner_id=identity['owner']['ownerId'],
                     policy_generation=policy['generation'], source_revision=source_revision)
                 if current is not None:
+                    profile_version = current['contract']['profile']['version']
                     registration_refs.append({'projectId': project.id, 'revision': current['revision'],
                                               'registrationSha256': current['registrationSha256']})
             except (OwnerPolicyError, ValueError, OSError):
@@ -336,7 +338,8 @@ def _view(conn, home, identity, policy, *, resolve_refs=True):
         projects.append({**asdict(project), 'registrationRevision': row['revision'] if row else 0,
                          'registrationHash': row['candidate_hash'] if row else None,
                          'enabled': bool(row and row['enabled']),
-                         'rootRevoked': project.root in settings.revoked_root_aliases})
+                         'rootRevoked': project.root in settings.revoked_root_aliases,
+                         **({'preparedProfileVersion': profile_version} if profile_version is not None else {})})
     return {'capabilityVersion': 1, 'organizationId': identity['organizationId'],
             'ownerId': identity['owner']['ownerId'], 'policyGeneration': policy['generation'],
             'sourceRevision': source_revision, 'sidecarRevision': len(rows),
@@ -463,7 +466,8 @@ def _prepare(home, params):
         raise ValueError('Select the lockfile and every exact package manifest') from None
     checked = normalize_prepared_dependency_manifest(manifest, lockfile_bytes=lockfile,
         package_manifests=packages, expected_toolchain=manifest.get('toolchain'), limits=_PREPARATION_LIMITS)
-    contract = {'version': 1, 'contract': 'prepared-validation-v1',
+    version = selection['profile']['version']
+    contract = {'version': version, 'contract': f'prepared-validation-v{version}',
         'organizationId': view['organizationId'], 'ownerId': view['ownerId'],
         'projectId': project['id'], 'projectBindingSha256': legacy_project_binding_sha256(binding),
         'revision': project['registrationRevision'] + 1,

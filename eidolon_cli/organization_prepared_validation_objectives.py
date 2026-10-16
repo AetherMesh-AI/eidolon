@@ -79,15 +79,13 @@ def select_prepared_validations(conn, value, *, projects, settings, delivery_mod
     references = normalize_prepared_selections(value)
     if not references:
         return [], checks
-    if (delivery_mode != 'managed_artifact' or set(checks) & {'source_integration', 'project_build'}):
-        raise ValueError('Prepared validation currently supports reviewed managed artifacts, not source publication or builds')
+    if delivery_mode != 'managed_artifact' or 'source_integration' in checks:
+        raise ValueError('Prepared validation supports reviewed managed artifacts, not source publication')
     registry = {project['id']: project for project in projects}
     if {item['projectId'] for item in references} != set(registry):
         raise ValueError('Every selected project must explicitly bind its prepared validation profile')
     if not {'read_file', 'run_tests'} <= set(settings.tool_grants):
         raise ValueError('Prepared validation requires existing read_file and run_tests authority')
-    if settings.max_project_runs < 2 * len(references):
-        raise ValueError('Prepared validation requires two reserved run units per selected project')
     selected = []
     for reference in references:
         current = _live_registration(conn, reference['projectId'])
@@ -98,7 +96,17 @@ def select_prepared_validations(conn, value, *, projects, settings, delivery_mod
         if grant['projectBindingSha256'] != legacy_project_binding_sha256(registry[reference['projectId']]):
             raise ValueError('Prepared registration differs from the selected project binding')
         selected.append({'reference': reference, 'contract': grant})
-    return selected, list(dict.fromkeys([*checks, 'project_typecheck', 'project_tests']))
+    versions = {item['contract']['profile']['version'] for item in selected}
+    if len(versions) != 1:
+        raise ValueError('One objective cannot mix prepared profile versions with different required checks')
+    required = list(dict.fromkeys(step['checkKind'] for item in selected
+                                 for step in item['contract']['profile']['steps']))
+    if 'project_build' in checks and 'project_build' not in required:
+        raise ValueError('Prepared profile v1 does not authorize a renderer build check')
+    units = sum(len(item['contract']['profile']['steps']) for item in selected)
+    if settings.max_project_runs < units:
+        raise ValueError('Prepared validation requires capacity for every mandatory recipe')
+    return selected, list(dict.fromkeys([*checks, *required]))
 
 
 def bind_selected_prepared_validations(conn, objective_id, selected):
@@ -147,10 +155,17 @@ def validate_selected_prepared_checks(conn, objective_id, projects, checks):
         return
     if len(selected) != len(projects):
         raise ValueError('Prepared objectives require exact profiles for every selected project')
+    from eidolon_cli.organization_project_validation_profile import profile_required_checks
+    profiles = [current_bound_prepared_validation(conn, objective_id, project['id'])['contract']['profile']
+                for project in selected]
+    if len({profile['version'] for profile in profiles}) != 1:
+        raise ValueError('One objective cannot mix prepared profile versions')
+    required = set(profile_required_checks(profiles[0]))
     kinds = set(checks)
-    if not {'project_typecheck', 'project_tests'} <= kinds or kinds & {'source_integration', 'project_build'}:
-        raise ValueError('Prepared scope must preserve both mandatory checks and cannot add source publication or builds')
-    validate_project_checks(projects, [check for check in checks if check not in {'project_typecheck', 'project_tests'}])
+    if (not required <= kinds or 'source_integration' in kinds
+            or 'project_build' in kinds and 'project_build' not in required):
+        raise ValueError('Prepared scope must preserve its mandatory checks and cannot add source publication')
+    validate_project_checks(projects, [check for check in checks if check not in required])
 
 
 def prepared_selection_references(conn, objective_id):

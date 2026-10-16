@@ -84,6 +84,7 @@ export function RuntimePreparedObjectiveSelector({ draftKey, metadata, snapshot,
     {state?.requested && <>
       <p className="eid-note">{copy.boundaries}</p>
       <p className="eid-note">{copy.newOnly}</p>
+      <p className="eid-note">{copy.versionNote}</p>
       <Button disabled={disabled || state.busy || !eligible} onClick={() => void readPreparedObjectiveRegistrations(draftKey, context)} type="button" variant="secondary">
         {descriptor ? copy.refresh : copy.read}
       </Button>
@@ -100,7 +101,7 @@ export function RuntimePreparedObjectiveSelector({ draftKey, metadata, snapshot,
         {refs.map(reference => <label className="eid-inline" key={reference.projectId}>
           <input checked={metadata.preparedValidations?.some(ref => ref.projectId === reference.projectId && ref.revision === reference.revision && ref.registrationSha256 === reference.registrationSha256) ?? false}
             onChange={event => selectPreparedObjectiveReference(draftKey, reference, event.target.checked, context())} type="checkbox" />
-          <span className="min-w-0 break-all">{copy.choose}: {reference.projectId} · {copy.revision}: {reference.revision}<br />{copy.hash}: {reference.registrationSha256}</span>
+          <span className="min-w-0 break-all">{copy.choose}: {reference.projectId} · {copy.revision}: {reference.revision}<br />{copy.hash}: {reference.registrationSha256}<br />{descriptor?.projects.find(project => project.id === reference.projectId)?.preparedProfileVersion === 2 ? copy.v2 : copy.v1}</span>
         </label>)}
         {!metadata.preparedValidations?.length && <p className="eid-note">{copy.none}</p>}
       </fieldset>

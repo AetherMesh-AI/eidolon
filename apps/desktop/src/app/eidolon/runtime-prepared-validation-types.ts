@@ -23,6 +23,7 @@ export interface PreparedValidationProject {
   registrationHash: string | null
   rootRevoked: boolean
   enabled: boolean
+  preparedProfileVersion?: 1 | 2
 }
 export interface PreparedValidationDescriptor {
   capabilityVersion: 1
@@ -38,8 +39,8 @@ export interface PreparedValidationDescriptor {
   scope: { kind: 'served-profile'; profile: string }
 }
 export interface PreparedValidationContract {
-  version: 1
-  contract: 'prepared-validation-v1'
+  version: 1 | 2
+  contract: 'prepared-validation-v1' | 'prepared-validation-v2'
   organizationId: string
   ownerId: string
   projectId: string

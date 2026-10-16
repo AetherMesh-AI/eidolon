@@ -133,7 +133,8 @@ def test_new_generation_is_detected_even_with_missing_steps(retained):
         mutable(conn, 'prepared_validation_sets')
         conn.execute('PRAGMA ignore_check_constraints=ON')
         observed = capture(conn, retained)
-        row = dict(conn.execute('SELECT * FROM prepared_validation_sets LIMIT 1').fetchone())
+        columns = [row[1] for row in conn.execute('PRAGMA table_info(prepared_validation_sets)')]
+        row = dict(conn.execute('SELECT ' + ','.join(columns) + ' FROM prepared_validation_sets LIMIT 1').fetchone())
         row.update(id='new-generation', lease_token='new-lease', generation=row['generation'] + 1,
                    typecheck_run_id='new-types', tests_run_id='new-tests')
         conn.execute('INSERT INTO prepared_validation_sets VALUES (' + ','.join('?' for _ in row) + ')', tuple(row.values()))

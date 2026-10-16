@@ -115,7 +115,7 @@ def _mirrors(conn, envelope, step, identity, events, inspected):
             or receipt['runnerVersion'] != 1 or type(receipt.get('status')) is not str or receipt['status'] not in _TERMINAL_STATUSES):
         raise ValueError('Runtime terminal status is malformed')
     status = receipt['status'] if receipt['status'] in {'passed', 'failed', 'interrupted', 'cleanup_failed', 'unknown'} else 'unknown'
-    expected = {'version': 1, 'contract': 'prepared-validation-result-reference-v1',
+    expected = {**contract.versioned_contract_fields(envelope['version'], 'prepared-validation-result-reference'),
         'setId': envelope['setId'], 'generation': envelope['generation'], 'runId': step['runId'], 'stepId': step['id'],
         **{key: step[key] for key in ('definitionSha256', 'recipe', 'checkKind')},
         'snapshotSha256': envelope['source']['snapshotSha256'],
@@ -211,7 +211,7 @@ Undispatched reservations can be archived after cancellation, with units intact.
                             if len(unsettled) < limit:
                                 unsettled.append({'id': entry['runId'], 'request_id': entry['requestId']})
         return activity._flags(storageState=storage, objectiveId=objective_id, totalSets=total_sets,
-            reservedUnits=2 * total_sets, totalRuns=total_runs, undispatchedRuns=undispatched,
+            reservedUnits=total_runs, totalRuns=total_runs, undispatchedRuns=undispatched,
             resourceBlockerCount=resource_blockers, unconfirmedOutcomeCount=outcome_blockers,
             unsettledRunCount=unsettled_count, entries=entries, entriesTruncated=total_runs > len(entries),
             unsettledRuns=unsettled, unsettledRunsTruncated=unsettled_count > len(unsettled), replayAllowed=False), frozenset(blocked_objectives)

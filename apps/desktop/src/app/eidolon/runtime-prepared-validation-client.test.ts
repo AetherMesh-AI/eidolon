@@ -5,9 +5,9 @@ import { normalizePreparedSelection } from './runtime-prepared-validation-contra
 import type { PreparedValidationIntent, PreparedValidationPreview, PreparedValidationRevokeIntent, PreparedValidationScope, PreparedValidationSelection } from './runtime-prepared-validation-types'
 import { deferred, preparedDescriptor, preparedPreview, preparedRevokeResult, preparedSaveResult, preparedSelection } from './runtime-prepared-validation.test-fixtures'
 
-function harness() {
+function harness(version: 1 | 2 = 1) {
   const descriptor = preparedDescriptor()
-  const selection = preparedSelection()
+  const selection = preparedSelection(version)
 
   const request = vi.fn(async (method: string, params: Record<string, unknown>): Promise<unknown> => {
     if (method === 'organization.preparedValidationSetup') { return descriptor }
@@ -51,8 +51,8 @@ describe('prepared validation owner review contract', () => {
     await expect(h.client.read()).rejects.toMatchObject({ code: 'invalid' })
   })
 
-  it('requires exact preview, explicit enabling and confirmation; preserves legacy and policy binding', async () => {
-    const h = harness()
+  it.each([1, 2] as const)('requires exact preview, explicit enabling and confirmation; preserves legacy and policy binding (v%s)', async version => {
+    const h = harness(version)
     await h.client.read()
     expect(h.request).toHaveBeenCalledExactlyOnceWith('organization.preparedValidationSetup', { expectedOrganizationId: 'org' })
     await expect(h.client.save(true)).rejects.toMatchObject({ code: 'confirm' })
@@ -73,8 +73,8 @@ describe('prepared validation owner review contract', () => {
     await expect(h.client.save(true)).rejects.toMatchObject({ code: 'confirm' })
   })
 
-  it('deep-copies the reviewed intent and retries only that intent after uncertain delivery', async () => {
-    const h = harness()
+  it.each([1, 2] as const)('deep-copies the reviewed intent and retries only that intent after uncertain delivery (v%s)', async version => {
+    const h = harness(version)
     await h.client.read()
     const preview = await h.client.preview(h.selection)
     const expectedCandidate = structuredClone(preview.candidate)
@@ -97,8 +97,8 @@ describe('prepared validation owner review contract', () => {
     expect(h.client.hasRetainedIntent()).toBe(false)
   })
 
-  it('prevents repeated requests and invalidates in-flight and completed previews after edits', async () => {
-    const h = harness(); await h.client.read()
+  it.each([1, 2] as const)('prevents repeated requests and invalidates in-flight and completed previews after edits (v%s)', async version => {
+    const h = harness(version); await h.client.read()
     const waiting = deferred<PreparedValidationPreview>()
     h.request.mockReturnValueOnce(waiting.promise)
     const pending = h.client.preview(h.selection)

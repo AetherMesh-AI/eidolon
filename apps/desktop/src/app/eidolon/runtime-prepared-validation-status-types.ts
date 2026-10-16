@@ -5,7 +5,7 @@ export type PreparedValidationEventKind = 'dispatch_planned' | 'staging_allocate
 export interface PreparedValidationStepStatus {
   runId: string
   stepId: string
-  recipe: 'workspace_typescript' | 'workspace_vitest_ui'
+  recipe: 'workspace_typescript' | 'workspace_vitest_ui' | 'workspace_vite_build'
   reservedUnits: 1
   dispatched: boolean
   resourceClaimed: boolean
@@ -23,9 +23,10 @@ export interface PreparedValidationSetStatus {
   projectId: string
   round: number
   generation: number
-  reservedUnits: 2
+  profileVersion?: 2
+  reservedUnits: 2 | 3
   snapshotSha256: string
-  steps: [PreparedValidationStepStatus, PreparedValidationStepStatus]
+  steps: [PreparedValidationStepStatus, PreparedValidationStepStatus] | [PreparedValidationStepStatus, PreparedValidationStepStatus, PreparedValidationStepStatus]
   aggregateClaimPresent: boolean
   reviewClaimPresent: boolean
   pairReviewRecorded: boolean
@@ -33,6 +34,8 @@ export interface PreparedValidationSetStatus {
 }
 
 export interface PreparedValidationStatus {
+  contractVersion?: 2
+  setCounts?: { v1: number; v2: number }
   objectiveId: string
   storageState: 'absent' | 'present'
   legacyUnits: number

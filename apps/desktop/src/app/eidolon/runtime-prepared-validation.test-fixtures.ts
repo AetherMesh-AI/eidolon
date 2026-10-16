@@ -8,11 +8,11 @@ export function preparedDescriptor(): PreparedValidationDescriptor {
     scope: { kind: 'served-profile', profile: 'default' } }
 }
 
-export function preparedSelection(): PreparedValidationSelection {
-  const toolchain = { platform: 'linux', arch: 'x64', libc: 'glibc', nodeVersion: '24.11.0', npmVersion: '11.17.0', nodeAbi: '137', tools: { typescript: '5.9.3', vitest: '3.2.4' } }
+export function preparedSelection(version: 1 | 2 = 1): PreparedValidationSelection {
+  const toolchain = { platform: 'linux', arch: 'x64', libc: 'glibc', nodeVersion: '24.11.0', npmVersion: '11.17.0', nodeAbi: '137', tools: { typescript: '5.9.3', vitest: '3.2.4', ...(version === 2 ? { vite: '7.1.12' } : {}) } }
 
   return { projectId: 'desktop', enabled: true,
-    source: { files: ['package-lock.json', 'package.json', 'apps/desktop/package.json', 'apps/desktop/tsconfig.json', 'apps/desktop/vitest.config.ts', 'apps/desktop/src/main.test.tsx'],
+    source: { files: ['package-lock.json', 'package.json', 'apps/desktop/package.json', 'apps/desktop/tsconfig.json', 'apps/desktop/vitest.config.ts', 'apps/desktop/src/main.test.tsx', ...(version === 2 ? ['apps/desktop/vite.config.ts', 'apps/desktop/index.html'] : [])],
       limits: { max_files: 1000, max_file_bytes: 8388608, max_total_bytes: 67108864, max_path_bytes: 512, max_depth: 32 }, executionOnlyHashes: { 'apps/desktop/src/main.test.tsx': 'b'.repeat(64) } },
     dependencies: { directory: '/prepared/dependencies', manifest: { schemaVersion: 1, lockfile: { path: 'package-lock.json', sha256: 'c'.repeat(64) },
       packageManifests: [{ path: 'package.json', sha256: 'd'.repeat(64) }, { path: 'apps/desktop/package.json', sha256: 'e'.repeat(64) }],
@@ -20,9 +20,10 @@ export function preparedSelection(): PreparedValidationSelection {
       provenance: { kind: 'owner-supplied', preparationRecordSha256: 'f'.repeat(64), registryPackages: [] },
       files: [{ path: 'node_modules/vitest/dist/node.js', bytes: 40, sha256: '1'.repeat(64), mode: 420, kind: 'file' },
         { path: 'node_modules/typescript/lib/typescript.js', bytes: 60, sha256: '2'.repeat(64), mode: 420, kind: 'file' }] } },
-    profile: { version: 1, id: 'renderer', workspace: 'apps/desktop', bundleSha256: '3'.repeat(64),
+    profile: { version, id: 'renderer', workspace: 'apps/desktop', bundleSha256: '3'.repeat(64),
       steps: [{ id: 'types', recipe: 'workspace_typescript', checkKind: 'project_typecheck', config: 'apps/desktop/tsconfig.json', testFiles: [], sourceDirectories: ['apps/desktop/src'] },
-        { id: 'tests', recipe: 'workspace_vitest_ui', checkKind: 'project_tests', config: 'apps/desktop/vitest.config.ts', testFiles: ['apps/desktop/src/main.test.tsx'], sourceDirectories: [] }],
+        { id: 'tests', recipe: 'workspace_vitest_ui', checkKind: 'project_tests', config: 'apps/desktop/vitest.config.ts', testFiles: ['apps/desktop/src/main.test.tsx'], sourceDirectories: [] },
+        ...(version === 2 ? [{ id: 'build', recipe: 'workspace_vite_build', checkKind: 'project_build', config: 'apps/desktop/vite.config.ts', testFiles: [], sourceDirectories: [] }] : [])],
       limits: { wallSeconds: 300, memoryMiB: 2048, cpus: 1, pids: 64, scratchMiB: 256, logBytes: 65536 } } }
 }
 
@@ -30,7 +31,7 @@ export function preparedCandidate(descriptor: PreparedValidationDescriptor, sele
   const selected = normalizePreparedSelection(selection)
 
   return { enabled: true, selection: selected,
-    contract: { version: 1, contract: 'prepared-validation-v1', organizationId: descriptor.organizationId, ownerId: descriptor.ownerId, projectId: selected.projectId,
+    contract: { version: selected.profile.version as 1 | 2, contract: selected.profile.version === 2 ? 'prepared-validation-v2' : 'prepared-validation-v1', organizationId: descriptor.organizationId, ownerId: descriptor.ownerId, projectId: selected.projectId,
       projectBindingSha256: '4'.repeat(64), revision: descriptor.projects.find(project => project.id === selected.projectId)!.registrationRevision + 1,
       root: { alias: 'root0', device: 1, inode: 2 }, source: selected.source,
       dependencies: { ...selected.dependencies, device: 1, inode: 3, bundleSha256: '3'.repeat(64), inventorySha256: '5'.repeat(64), lockfileSha256: 'c'.repeat(64), toolchain: selected.dependencies.manifest.toolchain as Record<string, unknown> },

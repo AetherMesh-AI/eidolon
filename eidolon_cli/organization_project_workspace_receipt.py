@@ -32,7 +32,8 @@ def validate_prepared_workspace_receipt(value, *, resource_identity, source, pro
 This is consistency validation only. Supplying a candidate's own hash does not
 turn it into authenticated evidence; the caller owns trusted channel provenance.
 """
-    from eidolon_cli.organization_project_workspace_node import LIMITATIONS, _outcome
+    from eidolon_cli.organization_project_workspace_node import (
+        BUILD_OUTPUT_FIELDS, limitations_for_recipe, _outcome)
     value = resources._bounded_json(value)
     resources._exact(value, _SUCCESS_FIELDS, 'Successful prepared receipt')
     receipt_hash = resources._hash(trusted_receipt_sha256)
@@ -51,7 +52,7 @@ turn it into authenticated evidence; the caller owns trusted channel provenance.
     staging = resources.normalize_staging_identity(staging_identity, identity)
     expected = {'runner': 'eidolon.prepared-workspace', 'runnerVersion': 1, 'status': 'passed',
         'exitCode': 0, 'cleanupConfirmed': True, 'stagingCleanupConfirmed': True,
-        'sourceWritesPerformed': False, 'limitations': LIMITATIONS,
+        'sourceWritesPerformed': False, 'limitations': limitations_for_recipe(step['recipe']),
         'resourceIdentity': identity, 'dependencyRootIdentity': dict(zip(('device', 'inode'), dependency_identity)),
         'containerName': resources.container_name(identity), 'containerLabels': resources.container_labels(identity),
         'snapshotSha256': source.snapshot_sha256, 'profileSha256': digest(normalized),
@@ -67,9 +68,10 @@ turn it into authenticated evidence; the caller owns trusted channel provenance.
         raise ValueError('Receipt mixes run/source/profile/bundle/authority/runtime/cleanup identities')
     if normalized['limits']['cpus'] != 1 or normalized['limits']['pids'] != 64:
         raise ValueError('Receipt profile does not match the supported runtime limits')
-    resources._exact(value['outcome'], _OUTCOME_FIELDS, 'Workload outcome claim')
+    fields = _OUTCOME_FIELDS | (BUILD_OUTPUT_FIELDS if step['recipe'] == 'workspace_vite_build' else set())
+    resources._exact(value['outcome'], fields, 'Workload outcome claim')
     if not _outcome(value['outcome'], step, source, normalized['workspace']):
-        raise ValueError('Receipt lacks exact compiler coverage or UI file selection')
+        raise ValueError('Receipt lacks exact compiler coverage, UI selection or renderer output metadata')
     for key in ('stdoutBytes', 'stderrBytes'):
         if type(value[key]) is not int or not 0 <= value[key] <= normalized['limits']['logBytes'] + 1048576:
             raise ValueError('Receipt output counter is invalid')

@@ -182,6 +182,237 @@ for _table in sorted(PREPARED_VALIDATION_TABLES):
             "BEGIN SELECT RAISE(ABORT,'Prepared validation history is immutable'); END;\n")
 
 
+# Keep the original DDL as the exact migration source. Existing grant, envelope,
+# snapshot, result and review encodings are never rewritten during an upgrade.
+PREPARED_VALIDATION_V1_SCHEMA = PREPARED_VALIDATION_SCHEMA
+_BUILD_RUN_EXPRESSION = """CASE WHEN json_extract(envelope,'$.version')=2 THEN
+ CASE WHEN json_extract(envelope,'$.steps[0].recipe')='workspace_vite_build'
+  THEN json_extract(envelope,'$.steps[0].runId')
+ WHEN json_extract(envelope,'$.steps[1].recipe')='workspace_vite_build'
+  THEN json_extract(envelope,'$.steps[1].runId')
+ WHEN json_extract(envelope,'$.steps[2].recipe')='workspace_vite_build'
+  THEN json_extract(envelope,'$.steps[2].runId') END END"""
+_BUILD_RUN_COLUMN = ("build_run_id TEXT GENERATED ALWAYS AS (" + _BUILD_RUN_EXPRESSION + ") VIRTUAL "
+                     "REFERENCES prepared_validation_steps(run_id) DEFERRABLE INITIALLY DEFERRED")
+PREPARED_VALIDATION_SCHEMA = PREPARED_VALIDATION_SCHEMA.replace(
+    " created REAL NOT NULL,\n UNIQUE(request_id,lease_token)",
+    " created REAL NOT NULL,\n " + _BUILD_RUN_COLUMN + ",\n UNIQUE(request_id,lease_token)", 1,
+).replace(
+    "(recipe='workspace_vitest_ui' AND check_kind='project_tests')));",
+    "(recipe='workspace_vitest_ui' AND check_kind='project_tests') OR\n"
+    "       (recipe='workspace_vite_build' AND check_kind='project_build')));", 1,
+).replace(
+    'prepared_validation_step_binding BEFORE INSERT ON prepared_validation_steps\nBEGIN',
+    "prepared_validation_step_binding BEFORE INSERT ON prepared_validation_steps\n"
+    "WHEN NEW.recipe<>'workspace_vite_build'\nBEGIN", 1,
+)
+PREPARED_VALIDATION_SCHEMA += """
+CREATE TRIGGER IF NOT EXISTS prepared_validation_versioned_set BEFORE INSERT ON prepared_validation_sets
+BEGIN
+ SELECT CASE WHEN NOT ((json_type(NEW.envelope,'$.version')='integer'
+  AND ((json_extract(NEW.envelope,'$.version')=1
+   AND json_extract(NEW.envelope,'$.contract')='prepared-validation-set-v1'
+   AND json_array_length(NEW.envelope,'$.steps')=2 AND NEW.build_run_id IS NULL)
+  OR (json_extract(NEW.envelope,'$.version')=2
+   AND json_extract(NEW.envelope,'$.contract')='prepared-validation-set-v2'
+   AND json_array_length(NEW.envelope,'$.steps')=3 AND NEW.build_run_id IS NOT NULL
+   AND typeof(NEW.build_run_id)='text'
+   AND NEW.build_run_id NOT IN (NEW.id,NEW.typecheck_run_id,NEW.tests_run_id)))
+  AND (SELECT count(*) FROM json_each(NEW.envelope,'$.steps')
+       WHERE json_extract(value,'$.recipe')='workspace_typescript'
+       AND json_extract(value,'$.checkKind')='project_typecheck'
+       AND json_extract(value,'$.runId')=NEW.typecheck_run_id)=1
+  AND (SELECT count(*) FROM json_each(NEW.envelope,'$.steps')
+       WHERE json_extract(value,'$.recipe')='workspace_vitest_ui'
+       AND json_extract(value,'$.checkKind')='project_tests'
+       AND json_extract(value,'$.runId')=NEW.tests_run_id)=1
+  AND (SELECT count(*) FROM json_each(NEW.envelope,'$.steps')
+       WHERE json_extract(value,'$.recipe')='workspace_vite_build'
+       AND json_extract(value,'$.checkKind')='project_build'
+       AND json_extract(value,'$.runId')=NEW.build_run_id)=json_extract(NEW.envelope,'$.version')-1
+  AND NEW.id NOT IN (NEW.typecheck_run_id,NEW.tests_run_id)) IS TRUE)
+  THEN RAISE(ABORT,'Prepared set must contain its exact versioned reservations') END;
+ SELECT CASE WHEN NEW.build_run_id IS NOT NULL
+  AND (EXISTS(SELECT 1 FROM project_run_starts WHERE id=NEW.build_run_id)
+    OR EXISTS(SELECT 1 FROM prepared_validation_steps WHERE run_id=NEW.build_run_id)
+    OR EXISTS(SELECT 1 FROM prepared_validation_sets
+              WHERE NEW.build_run_id IN (id,typecheck_run_id,tests_run_id,build_run_id)))
+  THEN RAISE(ABORT,'Prepared build identity must be globally fresh') END;
+ SELECT CASE WHEN EXISTS(SELECT 1 FROM prepared_validation_sets
+   WHERE build_run_id IN (NEW.id,NEW.typecheck_run_id,NEW.tests_run_id,NEW.build_run_id))
+  THEN RAISE(ABORT,'Prepared build identity must be globally fresh') END;
+END;
+CREATE TRIGGER IF NOT EXISTS prepared_validation_build_binding BEFORE INSERT ON prepared_validation_steps
+WHEN NEW.recipe='workspace_vite_build'
+BEGIN
+ SELECT CASE WHEN EXISTS(SELECT 1 FROM prepared_validation_sets WHERE id=NEW.run_id)
+  OR EXISTS(SELECT 1 FROM project_run_starts WHERE id=NEW.run_id)
+  THEN RAISE(ABORT,'Prepared identities must be globally fresh') END;
+ SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM prepared_validation_sets s, json_each(s.envelope,'$.steps') j
+  WHERE s.id=NEW.set_id AND json_extract(s.envelope,'$.version')=2 AND s.build_run_id=NEW.run_id
+  AND json_extract(j.value,'$.runId')=NEW.run_id AND json_extract(j.value,'$.id')=NEW.step_id
+  AND json_extract(j.value,'$.definitionSha256')=NEW.definition_sha256
+  AND json_extract(j.value,'$.recipe')=NEW.recipe AND json_extract(j.value,'$.checkKind')=NEW.check_kind)
+  THEN RAISE(ABORT,'Prepared build reservation must match its exact envelope step') END;
+END;
+"""
+
+
+def _schema_objects(conn):
+    return {row[0]: (row[1], row[2], row[3]) for row in conn.execute(
+        "SELECT name,type,tbl_name,sql FROM main.sqlite_master WHERE sql IS NOT NULL")}
+
+
+def _schema_sql(value):
+    return ' '.join(value.split()).replace('IF NOT EXISTS ', '')
+
+
+def migrate_prepared_validation_schema(conn):
+    """Upgrade only a verified v1 ledger, preserving bytes, rowids and guards.
+
+    Run on an idle organization connection before applying fresh schema DDL.
+    Constraint changes and data copying share one transaction. A failed or
+    interrupted attempt leaves either the complete v1 or the complete v2 schema.
+    """
+    if conn.in_transaction or conn.execute('PRAGMA foreign_keys').fetchone()[0] != 1:
+        raise ValueError('Prepared migration requires an idle foreign-key-enforced connection')
+    objects = _schema_objects(conn)
+    if not any(name.startswith('prepared_validation_') for name in objects):
+        return False
+    if sqlite3.sqlite_version_info < (3, 31, 0):
+        raise ValueError('Prepared v2 requires SQLite generated-column support')
+    with sqlite3.connect(':memory:') as reference:
+        reference.executescript(PREPARED_VALIDATION_V1_SCHEMA)
+        old = _schema_objects(reference)
+    with sqlite3.connect(':memory:') as reference:
+        reference.executescript(PREPARED_VALIDATION_SCHEMA)
+        new = _schema_objects(reference)
+    generated = {row[1] for row in conn.execute('PRAGMA main.table_xinfo(prepared_validation_sets)')}
+    if 'build_run_id' in generated:
+        # A repeated open must not repair a partial or tampered migration.
+        _require_migration_schema(objects, new, migrated=True)
+        return False
+    _require_migration_schema(objects, old)
+    if conn.execute('PRAGMA main.foreign_key_check').fetchone() is not None:
+        raise ValueError('Prepared migration cannot repair orphaned history')
+    step_objects = {name: item for name, item in objects.items()
+                    if item[1] == 'prepared_validation_steps' and item[0] != 'table'}
+    legacy_alter = conn.execute('PRAGMA legacy_alter_table').fetchone()[0]
+    try:
+        conn.execute('PRAGMA foreign_keys=OFF')
+        conn.execute('PRAGMA legacy_alter_table=ON')
+        conn.execute('BEGIN IMMEDIATE')
+        # Recheck after taking the write lock: another opener may have migrated.
+        current = _schema_objects(conn)
+        if current != objects:
+            _require_migration_schema(current, new, migrated=True)
+            conn.rollback()
+            return False
+        conn.execute('ALTER TABLE prepared_validation_sets ADD COLUMN ' + _BUILD_RUN_COLUMN)
+        replacement = 'prepared_validation_steps_v2_migration'
+        conn.execute(new['prepared_validation_steps'][2].replace(
+            'prepared_validation_steps', replacement, 1))
+        conn.execute(f'INSERT INTO {replacement} (rowid,run_id,set_id,step_id,definition_sha256,recipe,check_kind,units) '
+                     'SELECT rowid,* FROM prepared_validation_steps')
+        conn.execute('DROP TABLE prepared_validation_steps')
+        conn.execute(f'ALTER TABLE {replacement} RENAME TO prepared_validation_steps')
+        for name, item in step_objects.items():
+            conn.execute(new[name][2] if name in new else item[2])
+        for name in ('prepared_validation_versioned_set', 'prepared_validation_build_binding'):
+            conn.execute(new[name][2])
+        if conn.execute('PRAGMA main.foreign_key_check').fetchone() is not None:
+            raise ValueError('Prepared migration would leave an orphan')
+        _require_migration_schema(_schema_objects(conn), new, migrated=True)
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.execute(f'PRAGMA legacy_alter_table={legacy_alter}')
+        conn.execute('PRAGMA foreign_keys=ON')
+        if (conn.execute('PRAGMA foreign_keys').fetchone()[0] != 1
+                or conn.execute('PRAGMA legacy_alter_table').fetchone()[0] != legacy_alter):
+            raise ValueError('Prepared migration could not restore connection constraints')
+    return True
+
+
+def _require_migration_schema(objects, expected, *, migrated=False):
+    for name, item in expected.items():
+        actual = objects.get(name)
+        if actual is None or actual[:2] != item[:2]:
+            raise ValueError('Prepared migration requires complete unchanged schema')
+        actual_sql, expected_sql = _schema_sql(actual[2]), _schema_sql(item[2])
+        # ALTER ADD appends the virtual column after the old table constraints.
+        # Compare its exact expression independently and the original v1 DDL.
+        if migrated and name == 'prepared_validation_sets':
+            legacy = PREPARED_VALIDATION_V1_SCHEMA.split(
+                'CREATE TABLE IF NOT EXISTS prepared_validation_sets (', 1)[1].split(';', 1)[0]
+            appended = 'CREATE TABLE prepared_validation_sets (' + legacy[:-1] + ', ' + _BUILD_RUN_COLUMN + ')'
+            if actual_sql in {expected_sql, _schema_sql(appended)}:
+                continue
+        if migrated and name == 'prepared_validation_steps':
+            actual_sql = actual_sql.replace('"prepared_validation_steps"', 'prepared_validation_steps')
+        if actual_sql != expected_sql:
+            raise ValueError('Prepared migration refuses changed schema guards or constraints')
+
+
+def _table_clauses(sql):
+    """Split column/constraint DDL without treating quoted commas as separators."""
+    clauses, start, depth, quote, index = [], 0, 0, None, 0
+    while index < len(sql):
+        char = sql[index]
+        if quote is not None:
+            if char == quote:
+                if index + 1 < len(sql) and sql[index + 1] == quote:
+                    index += 1
+                else:
+                    quote = None
+        elif sql.startswith('--', index):
+            newline = sql.find('\n', index + 2)
+            index = len(sql) if newline < 0 else newline
+        elif sql.startswith('/*', index):
+            end = sql.find('*/', index + 2)
+            if end < 0:
+                raise ValueError('Prepared table DDL comment is incomplete')
+            index = end + 1
+        elif char in "'\"`[":
+            quote = ']' if char == '[' else char
+        elif char == '(':
+            depth += 1
+            if depth == 1:
+                start = index + 1
+        elif char == ')':
+            depth -= 1
+            if depth == 0:
+                clauses.append(sql[start:index].strip())
+        elif char == ',' and depth == 1:
+            clauses.append(sql[start:index].strip())
+            start = index + 1
+        index += 1
+    if quote is not None or depth != 0:
+        raise ValueError('Prepared table DDL is incomplete')
+    return clauses
+
+
+def validate_prepared_generated_schema(conn):
+    """Read-only exact generated expression/FK check, permitting additive columns.
+
+    Accounting's other schema guards independently check stored columns, keys
+    and triggers. Extra columns remain inert; they cannot substitute a decoy
+    expression inside a string literal for this exact generated column clause.
+    """
+    row = conn.execute("SELECT sql FROM main.sqlite_master WHERE type='table' AND name='prepared_validation_sets'").fetchone()
+    if row is None or type(row[0]) is not str:
+        raise ValueError('Prepared generated build reservation table is missing')
+    clauses = [clause for clause in _table_clauses(row[0]) if clause.split()[0] == 'build_run_id']
+    if len(clauses) != 1 or _schema_sql(clauses[0]) != _schema_sql(_BUILD_RUN_COLUMN):
+        raise ValueError('Prepared generated build reservation schema guards changed')
+    column = next((tuple(item) for item in conn.execute('PRAGMA main.table_xinfo(prepared_validation_sets)')
+                   if item[1] == 'build_run_id'), None)
+    if column is None or column[2:] != ('TEXT', 0, None, 0, 2):
+        raise ValueError('Prepared generated build reservation column changed')
+
+
 def _unverified(**values):
     return {**values, 'runtimeReceiptsVerified': False, 'executionAuthorized': False,
             'acceptanceAuthorized': False, 'sourceDeliveryAuthorized': False}
@@ -358,15 +589,15 @@ def _charged_units(conn, objective_id):
     return objective_project_reserved_units(conn, objective_id)['totalUnits']
 
 
-def _require_goal_units(conn, objective_id):
+def _require_goal_units(conn, objective_id, count):
     # Preserve canonical pause, unknown-usage and deadline checks. The unified
     # goal projection already counts every historical legacy/prepared unit;
     # this transaction must have room for the complete new pair, without adding
     # existing prepared reservations a second time.
     require_goal_admission(conn, objective_id, project_run=True)
     goal = goal_for_objective(conn, objective_id)
-    if goal is not None and goal['reserved']['projectRuns'] + 2 > goal['limits']['projectRuns']:
-        raise ValueError('Shared goal cannot reserve both prepared execution units')
+    if goal is not None and goal['reserved']['projectRuns'] + count > goal['limits']['projectRuns']:
+        raise ValueError('Shared goal cannot reserve all prepared execution units')
 
 
 def _reserve_prepared_validation_proposal(conn, value, *, snapshot, context, owner_ceiling, lease_token):
@@ -389,7 +620,7 @@ def _reserve_prepared_validation_proposal(conn, value, *, snapshot, context, own
     plan = contract.plan_validation_reservation(envelope, history=history,
         used_units=_charged_units(conn, envelope['objectiveId']), objective_ceiling=ceiling[0],
         owner_ceiling=owner_ceiling, context=context)
-    _require_goal_units(conn, envelope['objectiveId'])
+    _require_goal_units(conn, envelope['objectiveId'], contract.validation_step_count(envelope))
     ordered = contract.validation_execution_order(envelope)
     conn.execute('INSERT INTO prepared_validation_sets VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
         (envelope['setId'], envelope['requestId'], lease_token, envelope['objectiveId'], envelope['projectId'],
@@ -541,9 +772,9 @@ def _results(conn, envelope):
 
 
 def _aggregate(envelope, results):
-    if len(results) != 2:
-        raise ValueError('Prepared aggregate requires both result claims')
-    return {'version': 1, 'contract': 'prepared-validation-aggregate-v1',
+    if len(results) != contract.validation_step_count(envelope):
+        raise ValueError('Prepared aggregate requires every versioned result claim')
+    return {**contract.versioned_contract_fields(envelope['version'], 'prepared-validation-aggregate'),
             'setId': envelope['setId'], 'generation': envelope['generation'],
             'envelopeSha256': digest(envelope), 'results': sorted(results, key=lambda item: item['stepId'])}
 

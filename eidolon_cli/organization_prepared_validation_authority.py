@@ -47,9 +47,11 @@ def require_prepared_authority(store, conn, objective_id, project_id, *, executi
     control = conn.execute('SELECT delivery_mode,required_checks,round FROM objective_control WHERE objective_id=?',
                            (objective_id,)).fetchone()
     checks = set(json.loads(control['required_checks']))
-    if (control['delivery_mode'] != 'managed_artifact' or checks & {'source_integration', 'project_build'}
-            or not {'project_typecheck', 'project_tests'} <= checks):
-        raise ValueError('Prepared validation requires the complete pair and managed artifact delivery')
+    from eidolon_cli.organization_project_validation_profile import profile_required_checks
+    required = set(profile_required_checks(selected['contract']['profile']))
+    if (control['delivery_mode'] != 'managed_artifact' or 'source_integration' in checks
+            or not required <= checks or 'project_build' in checks and 'project_build' not in required):
+        raise ValueError('Prepared validation requires its complete mandatory set and managed artifact delivery')
     authors = store._project_execution_authors(conn, objective_id, project)
     grant = selected['contract']
     root = project['root']

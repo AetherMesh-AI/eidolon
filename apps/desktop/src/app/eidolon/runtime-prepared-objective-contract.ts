@@ -28,8 +28,8 @@ export function validatePreparedObjectiveMetadata(metadata: ObjectiveMetadata): 
 
   if (metadata.deliveryMode !== 'managed_artifact' || !Array.isArray(checks) ||
     !checks.includes('project_typecheck') || !checks.includes('project_tests') ||
-    checks.some(check => !['project_typecheck', 'project_tests', 'managed_validation'].includes(check))) {
-    throw new Error('Prepared validation requires managed artifact delivery and both TypeScript and UI test checks, without source integration.')
+    checks.some(check => !['project_typecheck', 'project_tests', 'project_build', 'managed_validation'].includes(check))) {
+    throw new Error('Prepared validation requires managed artifact delivery and TypeScript and UI test checks, plus renderer build for v2 registrations, without source integration.')
   }
 
   return references.map(reference => ({ ...reference })).sort((left, right) => left.projectId < right.projectId ? -1 : left.projectId > right.projectId ? 1 : 0)
