@@ -2,10 +2,12 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import type * as Nanostores from 'nanostores'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { deleteProfile } from '@/eidolon'
+import { deleteProfile, updateProfileSoul } from '@/eidolon'
 import { retireLocalProfileGateways } from '@/store/gateway'
 import { refreshProfiles, selectProfile, setActiveProfile } from '@/store/profile'
 import type { ProfileInfo } from '@/types/eidolon'
+
+import { observeMasterDetailWidth } from '../responsive-master-detail.test-helpers'
 
 import { ProfilesView } from './index'
 
@@ -16,7 +18,10 @@ import { ProfilesView } from './index'
 // stranding it on a dead backend. The drift that motivated the fix got in
 // precisely because nothing rendered this view.
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+})
 
 // Real i18n (useI18n falls back to English with no provider), so labels are the
 // actual strings — no brittle key snapshot to maintain here.
@@ -24,7 +29,13 @@ afterEach(cleanup)
 // CodeEditor is CodeMirror; the detail pane's SOUL editor doesn't matter to
 // these behaviors, so stub it out of the jsdom render.
 vi.mock('@/components/chat/code-editor', () => ({
-  CodeEditor: () => null
+  CodeEditor: ({ initialValue, onChange }: { initialValue: string; onChange: (value: string) => void }) => (
+    <textarea
+      aria-label="Profile instructions"
+      defaultValue={initialValue}
+      onChange={event => onChange(event.target.value)}
+    />
+  )
 }))
 
 vi.mock('@/eidolon', () => ({
@@ -168,4 +179,30 @@ describe('ProfilesView', () => {
     expect(selectProfile).not.toHaveBeenCalled()
     expect(setActiveProfile).not.toHaveBeenCalled()
   })
+})
+
+it('preserves the profile editor draft through compact Back and resize without switching or saving', async () => {
+  const resize = observeMasterDetailWidth()
+  vi.mocked(refreshProfiles).mockResolvedValue([makeProfile('default', true)])
+  vi.mocked(updateProfileSoul).mockClear()
+  vi.mocked(selectProfile).mockClear()
+  await renderProfilesView()
+  resize(500)
+  const row = screen.getAllByRole('button', { name: 'default' }).find(button => !button.hasAttribute('aria-haspopup'))!
+  row.focus()
+  fireEvent.click(row)
+  const editor = await screen.findByRole('textbox', { name: 'Profile instructions' })
+  fireEvent.change(editor, { target: { value: 'Keep this unsaved instruction' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+  expect(window.document.activeElement).toBe(row)
+  fireEvent.click(row)
+  resize(1100)
+  editor.focus()
+  resize(500)
+  expect(screen.getByRole('textbox', { name: 'Profile instructions' })).toBe(editor)
+  expect((editor as HTMLTextAreaElement).value).toBe('Keep this unsaved instruction')
+  expect(updateProfileSoul).not.toHaveBeenCalled()
+  expect(selectProfile).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: /Save SOUL/i }))
+  await waitFor(() => expect(updateProfileSoul).toHaveBeenCalledWith('default', 'Keep this unsaved instruction'))
 })

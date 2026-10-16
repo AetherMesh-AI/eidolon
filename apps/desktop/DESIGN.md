@@ -58,6 +58,8 @@ one-off at the call site.
   Home, Messages, Work, Needs You, Organization, Deliverables and Settings form the
   primary rail. Work owns Objectives and Activity; Settings owns capabilities,
   messaging integration and execution profiles. History owns imports and legacy views.
+  History action and section labels wrap in the narrow rail; decorative shortcut
+  chips yield first. The outer rail remains scrollable.
   Existing deep links remain valid;
   the organization rail suppresses only its default contextual pane strip.
   Explicit Show tabs preferences and customized sibling panes keep mouse tabs.
@@ -82,7 +84,12 @@ one-off at the call site.
   Messaging, Execution Profiles and import/legacy history use `WorkspacePageHeading`.
   The heading is presentation only; search, forms, saves and navigation stay with
   their existing owners. Activity filters keep visible labels and authored text
-  chooses its own reading direction.
+  chooses its own reading direction. Short or zoomed windows compact heading
+  spacing without hiding descriptions or actions. Messaging, Execution Profiles
+  and import history use their available container width to switch to a single
+  list/detail pane. Back preserves mounted editors, selection and scroll, makes
+  hidden panes inert and restores focus to the originating row. Existing owners
+  retain save and navigation authority.
 - **Switch movement follows reading direction.** Checked thumbs move toward the
   inline end and remain inside their tracks in LTR and RTL. Disabled controls
   retain their state and enabled controls keep visible keyboard focus at 200% zoom.
@@ -93,6 +100,9 @@ one-off at the call site.
   switches are directly available; secondary model and sound controls use native
   disclosures. Disclosures keep editors mounted and preserve unapplied drafts.
   Invalid auxiliary-assignment warnings remain visible while collapsed.
+  Settings scenery reserves a separate column from copy and yields in a narrow
+  workspace. Short windows retain accessible section headings while the adjacent
+  selector supplies the visible section name.
   Close/Escape returns to the prior route; nested dialogs dismiss first.
 - **Route overlays are short tasks.** Command Center, Cron, Profiles,
   Agents, and Starmap render as `OverlayView` cards and return to the previous

@@ -81,3 +81,10 @@
 .eid-rail .eid-brand { padding-top: max(31px, var(--organization-native-top-clearance, 0px)); padding-bottom: 18px; -webkit-app-region: drag; }
 .eid-rail nav a { min-height: 44px; }
 .eidolon :is(h1, h2) { font-weight: 600; }
+
+/* Keep all banner controls available in short high-zoom windows. Only spacing
+   contracts; identity labels still wrap and their owners stay mounted. */
+@media (max-width: 1200px) and (max-height: 600px) {
+  .eid-workspace-header { row-gap: 2px; padding-block: 3px; }
+  .eid-workspace-header button[data-size=icon] { width: 28px; height: 28px; }
+}

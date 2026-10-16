@@ -19,7 +19,6 @@ import { useRefreshHotkey } from '../hooks/use-refresh-hotkey'
 import {
   Panel,
   PanelAddButton,
-  PanelBody,
   PanelDetail,
   PanelEmpty,
   PanelList,
@@ -29,6 +28,7 @@ import {
   PanelPill,
   PanelSectionLabel
 } from '../overlays/panel'
+import { ResponsiveMasterDetail } from '../responsive-master-detail'
 import { WorkspacePageHeading } from '../workspace-page-heading'
 
 import { CreateProfileDialog } from './create-profile-dialog'
@@ -45,6 +45,7 @@ export function ProfilesView({ onClose }: ProfilesViewProps) {
   const [profiles, setProfiles] = useState<null | ProfileInfo[]>(null)
   const [selectedName, setSelectedName] = useState<null | string>(null)
   const [query, setQuery] = useState('')
+  const [detailOpen, setDetailOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
   const [pendingRename, setPendingRename] = useState<null | ProfileInfo>(null)
   const [pendingDelete, setPendingDelete] = useState<null | ProfileInfo>(null)
@@ -97,6 +98,7 @@ export function ProfilesView({ onClose }: ProfilesViewProps) {
   const selectAndRefresh = useCallback(
     async (name: string) => {
       setSelectedName(name)
+      setDetailOpen(true)
       await refresh()
     },
     [refresh]
@@ -120,7 +122,7 @@ export function ProfilesView({ onClose }: ProfilesViewProps) {
       ) : (
         <>
           <WorkspacePageHeading description={p.count(profiles.length)} title={p.title} />
-          <PanelBody>
+          <ResponsiveMasterDetail detailOpen={detailOpen} onDetailOpenChange={setDetailOpen} variant="profiles">
             <PanelList
               onSearchChange={setQuery}
               searchLabel={p.search}
@@ -146,7 +148,10 @@ export function ProfilesView({ onClose }: ProfilesViewProps) {
                           }
                         ]
                   }
-                  onSelect={() => setSelectedName(profile.name)}
+                  onSelect={() => {
+                    setSelectedName(profile.name)
+                    setDetailOpen(true)
+                  }}
                   profile={profile}
                 />
               ))}
@@ -158,7 +163,7 @@ export function ProfilesView({ onClose }: ProfilesViewProps) {
             ) : (
               <PanelEmpty description={p.selectPrompt} icon="account" />
             )}
-          </PanelBody>
+          </ResponsiveMasterDetail>
         </>
       )}
 
@@ -335,7 +340,7 @@ function SoulEditor({ profileName }: { profileName: string }) {
       {loading ? (
         <PageLoader className="min-h-44" label={p.loadingSoul} />
       ) : (
-        <div className="min-h-48">
+        <div className="profile-soul-editor min-h-48">
           <CodeEditor
             filePath="SOUL.md"
             framed
