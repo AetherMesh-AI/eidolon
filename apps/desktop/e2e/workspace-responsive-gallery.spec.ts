@@ -147,6 +147,33 @@ for (const mode of ['dark', 'light'] as const) {
     for (const { width, height, zoom } of gallerySizes) {
       const suffix = `en-${mode}-${width}x${height}-${zoom * 100}`
       await resizeGallery(current, width, height, zoom)
+      const header = page.locator('[data-slot="workspace-header"]')
+      await expect.poll(() => page.evaluate(() => innerWidth)).toBe(Math.round(width / zoom))
+      const narrow = width / zoom < 640
+      await expect(header).toHaveCount(1)
+      await expect(header.locator('button[data-size="icon"]')).toHaveCount(1)
+      for (const selector of ['.eid-workspace-organization-trigger', '.eid-workspace-profile-trigger', 'button[data-size="icon"]', '.eid-workspace-search-trigger', '.eid-workspace-actions > button[data-size="lg"]']) {
+        const control = header.locator(selector)
+        await expect(control).toHaveCount(1)
+        await expect(control).toBeVisible()
+        await expect(control).toBeEnabled()
+      }
+      const navigation = header.locator('.eid-workspace-navigation-trigger')
+      await expect(navigation).toHaveCount(narrow ? 1 : 0)
+      if (narrow) {
+        await expect(navigation).toHaveAttribute('aria-expanded', 'false')
+        await expect(navigation).toHaveAttribute('aria-controls', /.+/)
+      }
+      // Five core controls plus this fixture's pending-intervention work indicator.
+      await expect(header.getByRole('button')).toHaveCount(narrow ? 7 : 6)
+      for (const icon of await header.locator('button[data-size="icon"]').all()) {
+        const box = await icon.boundingBox()
+        expect(box!.width, 'header icon minimum hit width').toBeGreaterThanOrEqual(36)
+        expect(box!.height, 'header icon minimum hit height').toBeGreaterThanOrEqual(36)
+      }
+      for (const button of await header.getByRole('button').all()) {
+        await keyboardControl(current, button, `${suffix} header ${await button.getAttribute('aria-label')}`)
+      }
       await page.evaluate(() => { location.hash = '/messaging' })
       let root = page.locator('.eid-responsive-detail')
       const messagingRow = root.locator('[data-pane="list"]').getByRole('button').filter({ hasText: 'Synthetic messaging' })
