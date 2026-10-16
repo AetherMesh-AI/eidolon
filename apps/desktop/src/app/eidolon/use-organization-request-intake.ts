@@ -26,5 +26,5 @@ export function useOrganizationRequestIntake() {
     return () => clearTimeout(timer)
   }, [scope.key, scope.eligible, view])
 
-  return { client, view, eligible: scope.eligible }
+  return { client, view, eligible: scope.eligible, scope }
 }
