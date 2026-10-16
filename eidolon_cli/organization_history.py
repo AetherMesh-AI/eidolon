@@ -48,7 +48,7 @@ def history_counts(conn):
             'currentLimit': MAX_CURRENT_OBJECTIVES, 'archiveLimit': MAX_ARCHIVED_OBJECTIVES}
 
 
-def settlement_blocker(conn, objective_id):
+def settlement_blocker(conn, objective_id, *, prepared_projection=None):
     """Indexed local settlement check, independent of the retained archive size."""
     row = conn.execute('SELECT o.cancelled,c.status FROM objectives o '
                        'JOIN objective_control c ON c.objective_id=o.id WHERE o.id=?', (objective_id,)).fetchone()
@@ -67,12 +67,24 @@ def settlement_blocker(conn, objective_id):
                             'ON r.run_id=s.id WHERE s.objective_id=?', (objective_id,)):
         if run['record'] is None or json.loads(run['record']).get('status') in {'running', 'unknown'}:
             return 'An unconfirmed project execution must remain visible for inspection.'
+    from eidolon_cli.organization_prepared_validation_settlement import prepared_runtime_settlement_blocked
+    if prepared_runtime_settlement_blocked(conn, objective_id, projection=prepared_projection):
+        return 'An unconfirmed prepared execution or resource cleanup must remain visible for inspection.'
     return None
+
+
+class _HistoryReferences(dict):
+    # Legacy cross-objective references plus one immutable, read-only page view.
+    # Archive mutations never pass this object to archive_blocker.
+    def __init__(self, prepared_projection):
+        super().__init__()
+        self.prepared_projection = prepared_projection
 
 
 def live_history_references(conn):
     """Resolve only live links once per projection, never once per old objective."""
-    references = {}
+    from eidolon_cli.organization_prepared_validation_settlement import prepared_runtime_settlement_projection
+    references = _HistoryReferences(prepared_runtime_settlement_projection(conn))
     queries = [
         ("SELECT DISTINCT target.objective_id FROM tasks active, json_each(active.dependencies) dependency "
          "JOIN tasks target ON target.id=dependency.value "
@@ -95,7 +107,10 @@ def live_history_references(conn):
 
 def archive_blocker(conn, objective_id, *, live_references=None):
     """Fail closed on unfinished work, unknown tool outcomes and live references."""
-    blocker = settlement_blocker(conn, objective_id)
+    # A caller-supplied projection is only for an existing read page. The archive
+    # mutation calls this with no projection and always performs fresh validation.
+    projection = live_references.prepared_projection if isinstance(live_references, _HistoryReferences) else None
+    blocker = settlement_blocker(conn, objective_id, prepared_projection=projection)
     if blocker:
         return blocker
     # Original rows never move, including same-objective dependency records.

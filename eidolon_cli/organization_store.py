@@ -121,7 +121,14 @@ def _text(value, field, limit=10000):
 
 
 # One DDL contract for initialization and non-migrating observation preflight.
-ORGANIZATION_SCHEMA = (_SCHEMA + OBJECTIVE_DEPENDENCY_SCHEMA + CONTINUATION_SCHEMA + GOAL_AUTH_SCHEMA + GOAL_SCHEMA + MILESTONE_SCHEMA + INTAKE_SCHEMA + INSPECTION_SCHEMA + RECOVERY_SCHEMA + ROOT_GRANT_SCHEMA + TEAM_SETUP_SCHEMA + OWNER_POLICY_SCHEMA + ROUTING_SCHEMA + REPLACEMENT_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA + COORDINATION_SCHEMA + HISTORY_SCHEMA + ATTENTION_SCHEMA + PROJECTS_SCHEMA + OUTCOME_SCHEMA + REGISTRY_SCHEMA + PACKAGE_SCHEMA + CONVERSATION_SCHEMA + OWNER_CHAT_SCHEMA + SCHEDULING_SCHEMA + PRIORITY_SCHEMA + DISPATCH_SCHEMA)
+from eidolon_cli.organization_prepared_validation_ledger import PREPARED_VALIDATION_SCHEMA
+from eidolon_cli.organization_prepared_validation_objectives import PREPARED_OBJECTIVE_SCHEMA
+from eidolon_cli.organization_prepared_validation_events import PREPARED_RUNTIME_SCHEMA
+from eidolon_cli.organization_prepared_validation_stage import SOURCE_PROOF_SCHEMA
+from eidolon_cli.organization_prepared_validation_review_scope import REVIEW_SCOPE_SCHEMA
+from eidolon_cli.organization_prepared_validation_verification import PREPARED_PAIR_REVIEW_SCHEMA
+
+ORGANIZATION_SCHEMA = (_SCHEMA + OBJECTIVE_DEPENDENCY_SCHEMA + CONTINUATION_SCHEMA + GOAL_AUTH_SCHEMA + GOAL_SCHEMA + MILESTONE_SCHEMA + INTAKE_SCHEMA + INSPECTION_SCHEMA + RECOVERY_SCHEMA + ROOT_GRANT_SCHEMA + TEAM_SETUP_SCHEMA + OWNER_POLICY_SCHEMA + ROUTING_SCHEMA + REPLACEMENT_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA + COORDINATION_SCHEMA + HISTORY_SCHEMA + ATTENTION_SCHEMA + PROJECTS_SCHEMA + PREPARED_VALIDATION_SCHEMA + PREPARED_OBJECTIVE_SCHEMA + PREPARED_RUNTIME_SCHEMA + SOURCE_PROOF_SCHEMA + REVIEW_SCOPE_SCHEMA + PREPARED_PAIR_REVIEW_SCHEMA + OUTCOME_SCHEMA + REGISTRY_SCHEMA + PACKAGE_SCHEMA + CONVERSATION_SCHEMA + OWNER_CHAT_SCHEMA + SCHEDULING_SCHEMA + PRIORITY_SCHEMA + DISPATCH_SCHEMA)
 
 
 class OrganizationStore(GoalReauthorizationStore, OrganizationGoalContinuationStore, OrganizationGoalAllowanceStore, OrganizationMilestoneStore, OrganizationIntakeInspectionStore, OrganizationIntakeStore, OrganizationRecoveryStore, OrganizationModelRoutingStore, OrganizationPacingStore, OrganizationDispatchStore, OrganizationPriorityStore, OrganizationReplacementStore, OrganizationOwnerChatStore, OrganizationConversationStore, OrganizationPackageStore, OrganizationOutcomeStore, OrganizationAttentionStore, OrganizationHistoryStore, OrganizationCoordinationStore, OrganizationProjectExecutionStore, OrganizationBudgetStore, OrganizationRequestStore, OrganizationManagementStore, OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
@@ -232,9 +239,9 @@ class OrganizationStore(GoalReauthorizationStore, OrganizationGoalContinuationSt
         OrganizationRequestStore._insert_request_contract(conn, ident, requester_id=requester_id)
         return ident
 
-    def create_objective(self, title, description=None, priority="normal", *, idempotency_key, acceptance_criteria=None, delivery_mode="source_project", required_checks=None, executive_id=None, manager_id=None, project_ids=None):
+    def create_objective(self, title, description=None, priority="normal", *, idempotency_key, acceptance_criteria=None, delivery_mode="source_project", required_checks=None, executive_id=None, manager_id=None, project_ids=None, prepared_validations=None):
         with self._write() as conn:
-            ident = self._create_objective(conn, title, description, priority, idempotency_key=idempotency_key, acceptance_criteria=acceptance_criteria, delivery_mode=delivery_mode, required_checks=required_checks, executive_id=executive_id, manager_id=manager_id, project_ids=project_ids)
+            ident = self._create_objective(conn, title, description, priority, idempotency_key=idempotency_key, acceptance_criteria=acceptance_criteria, delivery_mode=delivery_mode, required_checks=required_checks, executive_id=executive_id, manager_id=manager_id, project_ids=project_ids, prepared_validations=prepared_validations)
         return self._objective_view(ident)
 
     def _objective_view(self, ident):
@@ -243,7 +250,7 @@ class OrganizationStore(GoalReauthorizationStore, OrganizationGoalContinuationSt
         with self._connect() as conn:
             return build_snapshot(conn, self.settings, objective_id=ident, resolution_options=self.allowed_owner_resolutions)["objectives"][0]
 
-    def _create_objective(self, conn, title, description=None, priority="normal", *, idempotency_key, acceptance_criteria=None, delivery_mode="source_project", required_checks=None, executive_id=None, manager_id=None, project_ids=None, project_run_limit=None, completion_reserve=None):
+    def _create_objective(self, conn, title, description=None, priority="normal", *, idempotency_key, acceptance_criteria=None, delivery_mode="source_project", required_checks=None, executive_id=None, manager_id=None, project_ids=None, project_run_limit=None, completion_reserve=None, prepared_validations=None):
         title = _text(title, "Title", 500)
         description = _text(description or title, "Description", 30000)
         from eidolon_cli.organization_acceptance import acceptance_criteria as normalize_criteria
@@ -256,12 +263,17 @@ class OrganizationStore(GoalReauthorizationStore, OrganizationGoalContinuationSt
         if delivery_mode not in ('managed_artifact', 'source_project'):
             raise ValueError('deliveryMode must be managed_artifact or source_project')
         projects = selected_projects(project_ids, self.settings)
+        from eidolon_cli.organization_prepared_validation_objectives import select_prepared_validations
+        prepared, checks = select_prepared_validations(conn, prepared_validations, projects=projects,
+            settings=self.settings, delivery_mode=delivery_mode, checks=checks)
+        if prepared and project_run_limit is not None and project_run_limit < 2 * len(prepared):
+            raise ValueError('Objective ceiling cannot reserve both prepared recipes for every project')
         if any(item.get('projectId') is not None and item['projectId'] not in {p['id'] for p in projects} for item in contract_definitions):
             raise ValueError('Criterion projectId must identify an explicitly selected project')
-        if any(project['recipe'] is None for project in projects) and (delivery_mode != 'managed_artifact' or set(checks) & {'project_tests', 'source_integration'}):
+        if not prepared and any(project['recipe'] is None for project in projects) and (delivery_mode != 'managed_artifact' or set(checks) & {'project_tests', 'source_integration'}):
             raise ValueError('Planning-only folders require managed artifact delivery without project tests or source integration; approve an execution recipe first')
         from eidolon_cli.organization_acceptance import validate_project_checks
-        validate_project_checks(projects, checks)
+        validate_project_checks(projects, [check for check in checks if check not in {'project_tests', 'project_typecheck'}] if prepared else checks)
         if self.settings.projects and delivery_mode == 'source_project' and not projects:
             raise ValueError('Source-project objectives must explicitly select configured projectIds')
         key = _text(idempotency_key, "Idempotency key", 128)
@@ -275,6 +287,8 @@ class OrganizationStore(GoalReauthorizationStore, OrganizationGoalContinuationSt
             identity = {'objective': identity, 'executiveId': executive_id, 'managerId': manager_id}
         if projects:
             identity = {'objective': identity, 'projects': projects}
+        if prepared:
+            identity = {'objective': identity, 'preparedValidations': [item['reference'] for item in prepared]}
         if any(not item['legacy'] for item in contract_definitions):
             identity = {'objective': identity, 'outcomeContract': contract_definitions}
         digest = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
@@ -296,6 +310,9 @@ class OrganizationStore(GoalReauthorizationStore, OrganizationGoalContinuationSt
                          (ident, key, digest, title, description, level, time.time()))
             for project in projects:
                 conn.execute('INSERT INTO objective_projects VALUES (?,?,?)', (ident, project['id'], json.dumps(project, sort_keys=True)))
+            if prepared:
+                from eidolon_cli.organization_prepared_validation_objectives import bind_selected_prepared_validations
+                bind_selected_prepared_validations(conn, ident, prepared)
             conn.execute('INSERT INTO project_execution_budgets VALUES (?,?)', (ident, min(self.settings.max_project_runs, project_run_limit) if project_run_limit is not None else self.settings.max_project_runs))
             self._assign_objective(conn, ident, executive_id, manager_id)
             mode = self._initialize_planning(conn, ident)
@@ -483,116 +500,132 @@ class OrganizationStore(GoalReauthorizationStore, OrganizationGoalContinuationSt
             return True
 
     def context(self, claim, *, mark_read=True):
-        with (self._write() if mark_read else self._connect()) as conn:
-            request = self._owned(conn, claim)
-            if request is None:
-                raise ValueError("Request lease is no longer owned")
-            if request["type"] == "request.message":
-                return self._message_delivery_context(conn, request, mark_read=mark_read)
-            if mark_read:
-                self._read_internal_replies(conn, request)
-            objective = dict(conn.execute("SELECT id,title,description FROM objectives WHERE id=?", (request["objective_id"],)).fetchone())
-            objective.update(objective_assignment_view(conn, request['objective_id']))
-            objective['projects'] = [public_project(project) for project in objective_projects(conn, request['objective_id'])]
-            control = conn.execute('SELECT * FROM objective_control WHERE objective_id=?', (request['objective_id'],)).fetchone()
-            objective['acceptanceCriteria'] = json.loads(control['criteria'])
-            from eidolon_cli.organization_outcome_contracts import contract_view, human_judgments_view
-            objective['outcomeContract'] = contract_view(conn, request['objective_id'])
-            objective['outcomeHumanJudgments'] = human_judgments_view(conn, request['objective_id'])
-            objective['round'] = control['round']
-            objective['deliveryMode'] = control['delivery_mode']
-            objective['requiredChecks'] = json.loads(control['required_checks'])
-            objective['projectValidation'] = project_validation_view(conn, request['objective_id'])
-            objective['projectExecution'] = project_execution_view(conn, request['objective_id'])
-            if control['amended_scope']:
-                objective['originalDescription'] = objective['description']
-                objective['description'] = control['amended_scope']
-            from eidolon_cli.organization_shared_budget import shared_cost_enabled
-            budget = budget_view(conn, request['objective_id'], self.settings)
-            owner_inputs = [dict(row) for row in conn.execute('SELECT action,text,created FROM owner_resolutions WHERE objective_id=? ORDER BY created', (request['objective_id'],))]
-            task = conn.execute("SELECT * FROM tasks WHERE id=?", (request["task_id"],)).fetchone()
-            task = dict(task) if task else None
-            if task:
-                task.update(task_assignment_view(conn, task['id']))
-                task['workPackageId'] = task_package_id(conn, task['id'])
-                scope = conn.execute('SELECT paths FROM task_write_scopes WHERE task_id=?', (task['id'],)).fetchone()
-                binding = task_project(conn, task['id'])
-                task['projectId'] = binding['id'] if binding else None
-                task['project'] = public_project(binding) if binding else None
-                task['writePaths'] = json.loads(scope['paths']) if scope else None
-                task['coordination'] = coordination_view(conn, task['id'])
-            from eidolon_cli.organization_objective_dependencies import accepted_dependency_context
-            accepted_dependencies = accepted_dependency_context(conn, request['objective_id'])
-            dependencies = self._package_dependency_evidence(conn, request)
-            if task:
-                for ident in json.loads(task["dependencies"]):
-                    ev = conn.execute("SELECT * FROM evidence WHERE task_id=? ORDER BY created DESC LIMIT 1", (ident,)).fetchone()
-                    if ev:
-                        dependencies.append({"evidenceId": ev["id"], "taskId": ident, "summary": ev["summary"], "deliverable": ev["content"], "sha256": ev["sha256"],
-                                             "toolReceipts": evidence_receipts(conn, ev['id']),
-                                             'editProposal': evidence_proposal(conn, ev['id'])})
-            payload = json.loads(request["payload"])
-            if task and request["type"] != "request.review":
-                previous = conn.execute("SELECT id FROM evidence WHERE task_id=? ORDER BY created DESC LIMIT 1", (task["id"],)).fetchone()
-                if previous:
-                    payload["evidenceIds"] = [previous[0]]
-            evidence = []
-            for ident in payload.get("evidenceIds", []):
-                row = conn.execute("SELECT * FROM evidence WHERE id=? AND objective_id=?", (ident, request["objective_id"])).fetchone()
-                if row is None:
-                    artifact = final_artifact(conn, ident)
-                    if artifact and artifact['objective_id'] == request['objective_id']:
-                        evidence.append(artifact)
-                    elif artifact is None:
-                        project = project_validation_artifact(conn, ident) or project_execution_artifact(conn, ident)
-                        if project is not None and project['objectiveId'] == request['objective_id']:
-                            evidence.append(project)
-                if row:
-                    evidence.append({**dict(row), 'toolReceipts': evidence_receipts(conn, row['id']),
-                                     'editProposal': evidence_proposal(conn, row['id'])})
-            agent = dict(conn.execute("SELECT id,name,role,team,manager_id AS managerId FROM agents WHERE id=?", (request["agent_id"],)).fetchone())
-            agent.update(agent_identity_view(conn, request['agent_id']))
-            staff = self._staff(agent['id'])
-            if staff:
-                agent.update({'provider': staff.provider, 'model': staff.model, 'scope': staff.scope,
-                              'authority': list(staff.authority), 'managedTeams': list(staff.managed_teams)})
-            organization = {'agents': [
-                {'id': row['id'], 'name': row['name'], 'role': row['role'], 'managerId': row['manager_id'],
-                 'team': row['team'], 'capabilities': json.loads(row['accepts']),
-                 'responsibilities': agent_identity_view(conn, row['id'])['responsibilities']}
-                for row in conn.execute('SELECT * FROM agents ORDER BY id')]}
-            package_context = self._package_context(conn, request)
-            objective["planningMode"] = package_context["planningMode"]
-            max_tasks = conn.execute("SELECT max_tasks FROM objective_planning WHERE objective_id=?", (request["objective_id"],)).fetchone()[0]
-            context = {"objective": objective, "task": task, "agent": agent, **package_context,
-                    "acceptedDependencies": accepted_dependencies,
-                    **({'projectExecutionHistory': payload['projectExecutionHistory']}
-                       if request['type'] in {'request.plan', 'request.decompose'} and 'projectExecutionHistory' in payload else {}),
-                    **self._typed_context(conn, request), **self._internal_context(conn, request),
-                    "agentContext": agent_context_view(conn, request['agent_id']), "dependencies": dependencies,
-                    "organization": organization, "maxInflight": self.settings.max_inflight,
-                    "projectPolicy": {'projects': objective['projects'], 'recipes': [asdict(grant) for grant in self.settings.project_grants],
-                                      'runner': 'Linux bubblewrap; fixed single-process Python unittest or optional pytest; no network or host writes'},
-                    "managementPolicy": {"maxMembers": self.settings.max_members,
-                        "memberCount": len(self._staffing_context()),
-                        "maxRequestDepth": self.settings.max_request_depth,
-                        "maxRequestsPerStage": self.settings.max_requests_per_stage,
-                        "newMemberTools": [], "globalGrantExpansion": False},
-                    "evidence": evidence, "feedback": task["feedback"] if task else payload.get("feedback", control["summary"]),
-                    "ownerInputs": owner_inputs, "maxOutputTokens": self.settings.max_output_tokens,
-                    "maxContextTokens": self.settings.max_context_tokens,
-                    **({"budget": budget} if "adaptivePacing" in budget or "sharedAllowance" in budget else {}),
-                    "costBudgetEnabled": budget["configuredCostLimitUsd"] is not None or shared_cost_enabled(budget),
-                    "toolReceipts": [receipt for item in evidence for receipt in item['toolReceipts']],
-                    "toolPolicy": self._tool_policy(conn, request),
-                    "staffing": self._staffing_context(),
-                    "capabilities": list(self.settings.capabilities), "maxTasks": min(max_tasks, self.settings.max_tasks),
-                    "maxWorkers": self.settings.max_workers, "timeoutSeconds": max(0.001, min(self.settings.timeout_seconds, budget["deadlineTimestamp"] - time.time())),
-                    "workers": payload.get("workers")}
-            if mark_read:
-                from eidolon_cli.organization_selective_repair import capture_inputs
-                capture_inputs(self, conn, request, context)
-            return context
+        from contextlib import nullcontext
+        from eidolon_cli.organization_prepared_validation_finish import (
+            prepare_context_verification, finish_verification_scope, finalize_context_verification)
+        with (prepare_context_verification(self, claim) if mark_read else nullcontext(None)) as prepared:
+            with (self._write() if mark_read else self._connect()) as conn:
+                request = self._owned(conn, claim)
+                if request is None:
+                    raise ValueError("Request lease is no longer owned")
+                with finish_verification_scope(prepared, self, conn, request):
+                    if request["type"] == "request.message":
+                        return self._message_delivery_context(conn, request, mark_read=mark_read)
+                    if mark_read:
+                        self._read_internal_replies(conn, request)
+                    context = self._context_with_connection(conn, claim)
+                    if mark_read:
+                        from eidolon_cli.organization_selective_repair import capture_inputs
+                        capture_inputs(self, conn, request, context)
+                    finalize_context_verification(prepared, self, conn)
+                    return context
+
+    def _context_with_connection(self, conn, claim):
+        """Rebuild the exact context on a caller-owned connection without writes."""
+        request = self._owned(conn, claim)
+        if request is None:
+            raise ValueError("Request lease is no longer owned")
+        if request["type"] == "request.message":
+            return self._message_delivery_context(conn, request, mark_read=False)
+        objective = dict(conn.execute("SELECT id,title,description FROM objectives WHERE id=?", (request["objective_id"],)).fetchone())
+        objective.update(objective_assignment_view(conn, request['objective_id']))
+        objective['projects'] = [public_project(project) for project in objective_projects(conn, request['objective_id'])]
+        control = conn.execute('SELECT * FROM objective_control WHERE objective_id=?', (request['objective_id'],)).fetchone()
+        objective['acceptanceCriteria'] = json.loads(control['criteria'])
+        from eidolon_cli.organization_outcome_contracts import contract_view, human_judgments_view
+        objective['outcomeContract'] = contract_view(conn, request['objective_id'])
+        objective['outcomeHumanJudgments'] = human_judgments_view(conn, request['objective_id'])
+        objective['round'] = control['round']
+        objective['deliveryMode'] = control['delivery_mode']
+        objective['requiredChecks'] = json.loads(control['required_checks'])
+        objective['projectValidation'] = project_validation_view(conn, request['objective_id'])
+        objective['projectExecution'] = project_execution_view(conn, request['objective_id'])
+        if control['amended_scope']:
+            objective['originalDescription'] = objective['description']
+            objective['description'] = control['amended_scope']
+        from eidolon_cli.organization_shared_budget import shared_cost_enabled
+        budget = budget_view(conn, request['objective_id'], self.settings)
+        owner_inputs = [dict(row) for row in conn.execute('SELECT action,text,created FROM owner_resolutions WHERE objective_id=? ORDER BY created', (request['objective_id'],))]
+        task = conn.execute("SELECT * FROM tasks WHERE id=?", (request["task_id"],)).fetchone()
+        task = dict(task) if task else None
+        if task:
+            task.update(task_assignment_view(conn, task['id']))
+            task['workPackageId'] = task_package_id(conn, task['id'])
+            scope = conn.execute('SELECT paths FROM task_write_scopes WHERE task_id=?', (task['id'],)).fetchone()
+            binding = task_project(conn, task['id'])
+            task['projectId'] = binding['id'] if binding else None
+            task['project'] = public_project(binding) if binding else None
+            task['writePaths'] = json.loads(scope['paths']) if scope else None
+            task['coordination'] = coordination_view(conn, task['id'])
+        from eidolon_cli.organization_objective_dependencies import accepted_dependency_context
+        accepted_dependencies = accepted_dependency_context(conn, request['objective_id'])
+        dependencies = self._package_dependency_evidence(conn, request)
+        if task:
+            for ident in json.loads(task["dependencies"]):
+                ev = conn.execute("SELECT * FROM evidence WHERE task_id=? ORDER BY created DESC LIMIT 1", (ident,)).fetchone()
+                if ev:
+                    dependencies.append({"evidenceId": ev["id"], "taskId": ident, "summary": ev["summary"], "deliverable": ev["content"], "sha256": ev["sha256"],
+                                         "toolReceipts": evidence_receipts(conn, ev['id']),
+                                         'editProposal': evidence_proposal(conn, ev['id'])})
+        payload = json.loads(request["payload"])
+        if task and request["type"] != "request.review":
+            previous = conn.execute("SELECT id FROM evidence WHERE task_id=? ORDER BY created DESC LIMIT 1", (task["id"],)).fetchone()
+            if previous:
+                payload["evidenceIds"] = [previous[0]]
+        evidence = []
+        for ident in payload.get("evidenceIds", []):
+            row = conn.execute("SELECT * FROM evidence WHERE id=? AND objective_id=?", (ident, request["objective_id"])).fetchone()
+            if row is None:
+                artifact = final_artifact(conn, ident)
+                if artifact and artifact['objective_id'] == request['objective_id']:
+                    evidence.append(artifact)
+                elif artifact is None:
+                    project = project_validation_artifact(conn, ident) or project_execution_artifact(conn, ident)
+                    if project is not None and project['objectiveId'] == request['objective_id']:
+                        evidence.append(project)
+            if row:
+                evidence.append({**dict(row), 'toolReceipts': evidence_receipts(conn, row['id']),
+                                 'editProposal': evidence_proposal(conn, row['id'])})
+        agent = dict(conn.execute("SELECT id,name,role,team,manager_id AS managerId FROM agents WHERE id=?", (request["agent_id"],)).fetchone())
+        agent.update(agent_identity_view(conn, request['agent_id']))
+        staff = self._staff(agent['id'])
+        if staff:
+            agent.update({'provider': staff.provider, 'model': staff.model, 'scope': staff.scope,
+                          'authority': list(staff.authority), 'managedTeams': list(staff.managed_teams)})
+        organization = {'agents': [
+            {'id': row['id'], 'name': row['name'], 'role': row['role'], 'managerId': row['manager_id'],
+             'team': row['team'], 'capabilities': json.loads(row['accepts']),
+             'responsibilities': agent_identity_view(conn, row['id'])['responsibilities']}
+            for row in conn.execute('SELECT * FROM agents ORDER BY id')]}
+        package_context = self._package_context(conn, request)
+        objective["planningMode"] = package_context["planningMode"]
+        max_tasks = conn.execute("SELECT max_tasks FROM objective_planning WHERE objective_id=?", (request["objective_id"],)).fetchone()[0]
+        context = {"objective": objective, "task": task, "agent": agent, **package_context,
+                "acceptedDependencies": accepted_dependencies,
+                **({'projectExecutionHistory': payload['projectExecutionHistory']}
+                   if request['type'] in {'request.plan', 'request.decompose'} and 'projectExecutionHistory' in payload else {}),
+                **self._typed_context(conn, request), **self._internal_context(conn, request),
+                "agentContext": agent_context_view(conn, request['agent_id']), "dependencies": dependencies,
+                "organization": organization, "maxInflight": self.settings.max_inflight,
+                "projectPolicy": {'projects': objective['projects'], 'recipes': [asdict(grant) for grant in self.settings.project_grants],
+                                  'runner': 'Linux bubblewrap; fixed single-process Python unittest or optional pytest; no network or host writes'},
+                "managementPolicy": {"maxMembers": self.settings.max_members,
+                    "memberCount": len(self._staffing_context()),
+                    "maxRequestDepth": self.settings.max_request_depth,
+                    "maxRequestsPerStage": self.settings.max_requests_per_stage,
+                    "newMemberTools": [], "globalGrantExpansion": False},
+                "evidence": evidence, "feedback": task["feedback"] if task else payload.get("feedback", control["summary"]),
+                "ownerInputs": owner_inputs, "maxOutputTokens": self.settings.max_output_tokens,
+                "maxContextTokens": self.settings.max_context_tokens,
+                **({"budget": budget} if "adaptivePacing" in budget or "sharedAllowance" in budget else {}),
+                "costBudgetEnabled": budget["configuredCostLimitUsd"] is not None or shared_cost_enabled(budget),
+                "toolReceipts": [receipt for item in evidence for receipt in item['toolReceipts']],
+                "toolPolicy": self._tool_policy(conn, request),
+                "staffing": self._staffing_context(),
+                "capabilities": list(self.settings.capabilities), "maxTasks": min(max_tasks, self.settings.max_tasks),
+                "maxWorkers": self.settings.max_workers, "timeoutSeconds": max(0.001, min(self.settings.timeout_seconds, budget["deadlineTimestamp"] - time.time())),
+                "workers": payload.get("workers")}
+        return context
 
     @staticmethod
     def _pending(conn, request, reason):
@@ -719,6 +752,11 @@ class OrganizationStore(GoalReauthorizationStore, OrganizationGoalContinuationSt
             return row is not None
 
     def finish(self, claim, result):
+        from eidolon_cli.organization_prepared_validation_finish import prepare_finish_verification
+        with prepare_finish_verification(self, claim, result) as prepared_token:
+            return self._finish_claim(claim, result, prepared_token)
+
+    def _finish_claim(self, claim, result, prepared_token):
         if not isinstance(result, dict):
             raise ValueError("Agent result must be an object")
         if result.get("intervention"):
@@ -737,13 +775,17 @@ class OrganizationStore(GoalReauthorizationStore, OrganizationGoalContinuationSt
                     self._merge_required_checks(conn, request['objective_id'], result.get('requiredChecks', []))
                 self._pending(conn, request, reason)
                 return True
-        with self._write() as conn:
+        with self._write() as conn, contextlib.ExitStack() as prepared_scope:
             request = self._owned(conn, claim)
             if request is None:
                 return False
             if time.time() >= budget_view(conn, request['objective_id'], self.settings)['deadlineTimestamp']:
                 self._pending(conn, request, 'Objective deadline reached; the result was not accepted.')
                 return False
+            from eidolon_cli.organization_prepared_validation_finish import (
+                finish_verification_scope, finalize_finish_verification,
+            )
+            prepared_scope.enter_context(finish_verification_scope(prepared_token, self, conn, request))
             if request['type'] == 'request.message' and set(result) - {'reply', 'usage'}:
                 raise ValueError('Message delivery may only return one reply; no memory, requests or completion authority')
             self._verify_context_completion(conn, request, result)
@@ -775,6 +817,14 @@ class OrganizationStore(GoalReauthorizationStore, OrganizationGoalContinuationSt
                 handler = handlers.get(request["type"], self._finish_work)
             self._record_usage(conn, request, result)
             handler(conn, request, {key: value for key, value in result.items() if key not in {'usage', 'memory'}})
+            # Prepared source/bundle verification may be long. A successful
+            # handler is still provisional until its original lease/deadline
+            # survives; raising here rolls back completion and acceptance.
+            if conn.execute('SELECT 1 FROM prepared_validation_registration_bindings WHERE objective_id=?',
+                            (request['objective_id'],)).fetchone():
+                if (self._owned(conn, claim) is None
+                        or time.time() >= budget_view(conn, request['objective_id'], self.settings)['deadlineTimestamp']):
+                    raise ValueError('Prepared completion lost its original lease or deadline during verification')
             if request["type"] != "request.message":
                 self._remember_agent_finish(conn, request, result)
             conn.execute("UPDATE requests SET status='completed',token=NULL,lease=NULL,reason=NULL WHERE id=?", (request["id"],))
@@ -785,6 +835,12 @@ class OrganizationStore(GoalReauthorizationStore, OrganizationGoalContinuationSt
             self._resume_message_parent(conn, request)
             self._resume_answered_parent(conn, request)
             self._maybe_integrate(conn, request['objective_id'])
+            finalize_finish_verification(prepared_token, self, conn, request)
+            if conn.execute('SELECT 1 FROM prepared_validation_registration_bindings WHERE objective_id=?',
+                            (request['objective_id'],)).fetchone():
+                if (time.time() >= request['lease']
+                        or time.time() >= budget_view(conn, request['objective_id'], self.settings)['deadlineTimestamp']):
+                    raise ValueError('Prepared completion exceeded its original lease or deadline before commit')
             return True
 
     def _finish_plan(self, conn, request, result):

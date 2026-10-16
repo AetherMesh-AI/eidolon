@@ -16,7 +16,7 @@ function fixture() {
 
   const createObjective = vi.fn().mockRejectedValue(new Error('Admission paused for this test'))
   const refresh = vi.fn().mockResolvedValue(undefined)
-  const adapter = { mode: 'runtime', createObjective, refresh } as unknown as RuntimeOrganizationAdapter
+  const adapter = { mode: 'runtime', getSnapshot: () => snapshot, createObjective, refresh } as unknown as RuntimeOrganizationAdapter
 
   return { snapshot, adapter, createObjective, refresh }
 }

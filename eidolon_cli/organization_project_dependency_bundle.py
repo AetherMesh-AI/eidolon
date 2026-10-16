@@ -423,15 +423,23 @@ def _names(descriptor, expected, check):
 
 
 @contextmanager
-def _regular_descriptor(source, name, item):
-    # O_PATH cannot activate a raced-in device. Reopening the anchored regular
-    # inode through procfs does not resolve the owner's path for a second time.
+def _regular_anchor(source, name, item):
+    # O_PATH cannot activate a raced-in device, including for metadata-only checks.
     anchor = os.open(name, os.O_PATH | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=source)
     try:
         before = os.fstat(anchor)
         if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
                 or before.st_size != item['bytes'] or stat.S_IMODE(before.st_mode) != item['mode']):
             raise ValueError('Dependency file type, links, size or mode does not match')
+        yield anchor, before
+    finally:
+        os.close(anchor)
+
+
+@contextmanager
+def _regular_descriptor(source, name, item):
+    # Reopening the anchored regular inode does not resolve its owner path again.
+    with _regular_anchor(source, name, item) as (anchor, before):
         descriptor = os.open('/proc/self/fd/' + str(anchor), _FILE_FLAGS & ~os.O_NOFOLLOW)
         try:
             if _identity(before) != _identity(os.fstat(descriptor)):
@@ -439,8 +447,6 @@ def _regular_descriptor(source, name, item):
             yield descriptor, before
         finally:
             os.close(descriptor)
-    finally:
-        os.close(anchor)
 
 
 def _copy_file(source, target, name, item, check, package_identity):
@@ -542,19 +548,25 @@ def _cleanup(parent, name, identity):
 
 def copy_verified_dependency_bundle(source, destination, manifest, *, lockfile_bytes,
                                     package_manifests, expected_toolchain, limits=None,
-                                    cancel=None, deadline=None):
+                                    cancel=None, deadline=None, expected_source_identity=None):
     """Reserve a new private directory, copy/hash/seal, then return inert identity.
 
 The caller owns the parent (0700, current UID) and must not expose or use the
 reserved destination until success. No existing path is replaced. Files are
 copied from Linux O_PATH/procfs descriptors; ancestors cannot be links.
 A failed operation removes its private tree or reports cleanup failure as a note.
+When supplied, expected_source_identity is the independently owner-approved
+(device, inode), checked against the opened source before allocating any copy.
 """
     if os.name != 'posix' or not all(hasattr(os, flag) for flag in ('O_PATH', 'O_DIRECTORY', 'O_NOFOLLOW', 'O_CLOEXEC')):
         raise ValueError('Dependency staging requires Linux O_PATH and procfs descriptor reopening')
     if deadline is not None and (type(deadline) not in (int, float) or not math.isfinite(deadline)):
         raise ValueError('Dependency deadline must be a finite monotonic timestamp')
     check = lambda: _checkpoint(cancel, deadline)
+    if expected_source_identity is not None and (
+            type(expected_source_identity) is not tuple or len(expected_source_identity) != 2
+            or any(type(item) is not int or not 0 <= item < 2**64 for item in expected_source_identity)):
+        raise ValueError('Expected dependency root identity requires exact device and inode integers')
     check()
     limits = _limits(limits)
     receipt = normalize_prepared_dependency_manifest(
@@ -586,6 +598,9 @@ A failed operation removes its private tree or reports cleanup failure as a note
             raise ValueError('Dependency staging parent must be caller-private (0700)')
         source_fd = stack.enter_context(_directory(source))
         source_info = os.fstat(source_fd)
+        if (expected_source_identity is not None
+                and (source_info.st_dev, source_info.st_ino) != expected_source_identity):
+            raise ValueError('Opened dependency root differs from its owner-approved identity')
         os.mkdir(destination.name, 0o700, dir_fd=parent)
         reserved = os.stat(destination.name, dir_fd=parent, follow_symlinks=False)
         reserved_identity = (reserved.st_dev, reserved.st_ino)

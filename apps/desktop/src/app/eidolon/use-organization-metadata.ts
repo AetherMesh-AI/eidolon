@@ -12,7 +12,7 @@ import { createOrganizationScopeReader } from './runtime-provider'
 
 const readOwnerScope = createOrganizationScopeReader()
 
-export function readOrganizationMetadataScope(): MetadataScope {
+export function readOrganizationMetadataScope(requestTimeoutMs = 15000): MetadataScope {
   const owner = readOwnerScope()
   const gateway = $gateway.get()
   const connection = $connection.get()
@@ -33,7 +33,7 @@ export function readOrganizationMetadataScope(): MetadataScope {
       }
 
       // Capture the authenticated socket once. No reconnect or retargeting helper.
-      return gateway.request(method, params, 15000)
+      return gateway.request(method, params, requestTimeoutMs)
     }
   }
 }

@@ -333,10 +333,15 @@ def test_check_kind_uses_complete_verified_row_not_latest_id_only(monkeypatch,re
     monkeypatch.setattr(module,'_latest_run',lambda *args: {'id':'run'})
     pair=({'id':'run','grant_record':json.dumps({'execution':{'recipe':recipe}})}, {'id':'evidence'})
     monkeypatch.setattr(store,'_verify_project_run',lambda *args:pair)
-    assert store.verify_project_check_runs(None,'objective',kind)==[pair]
-    if recipe=='typescript_check':
-        with pytest.raises(ValueError,match='Compiler evidence'):
-            store.verify_project_tests(None,'objective')
+    # A real legacy database has no prepared-profile tables. Keep the routing
+    # proof independent of retained rows without replacing live authority reads.
+    import sqlite3
+    from contextlib import closing
+    with closing(sqlite3.connect(':memory:')) as conn:
+        assert store.verify_project_check_runs(conn,'objective',kind)==[pair]
+        if recipe=='typescript_check':
+            with pytest.raises(ValueError,match='Compiler evidence'):
+                store.verify_project_tests(conn,'objective')
 
 
 @pytest.mark.parametrize('section,field,value',[

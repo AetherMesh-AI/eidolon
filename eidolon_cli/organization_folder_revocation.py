@@ -42,7 +42,11 @@ def _activity(conn, home):
             settled = False
         if not settled:
             sources.append({'id': request['id'], 'request_id': request['id']})
-    return {'executionStillStopping': busy, 'uncertainToolReceipts': unknown, 'unsettledProjectRuns': runs, 'uncertainSourceRequests': sources}
+    from eidolon_cli.organization_prepared_validation_settlement import prepared_runtime_settlement
+    prepared = prepared_runtime_settlement(conn)
+    runs.extend(prepared['unsettledRuns'])
+    return {'executionStillStopping': busy, 'uncertainToolReceipts': unknown, 'unsettledProjectRuns': runs,
+            'uncertainSourceRequests': sources, 'preparedRuntime': prepared}
 
 
 def folder_access(home, expected_id):

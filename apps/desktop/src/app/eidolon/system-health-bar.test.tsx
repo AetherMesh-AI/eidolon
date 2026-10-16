@@ -35,7 +35,11 @@ vi.mock('./use-organization-owner-policy', () => {
   return { useOrganizationOwnerPolicy: () => policy }
 })
 
-vi.mock('./runtime-provider', () => ({ useRuntimeOrganization: () => state.organization }))
+vi.mock('./runtime-provider', () => ({
+  useRuntimeOrganization: () => state.organization,
+  // Runtime snapshots do not establish an authenticated owner connection.
+  createOrganizationScopeReader: () => () => ({ key: 'unavailable-owner', ownerKey: 'unavailable-owner', connected: false })
+}))
 vi.mock('../contrib/organization-shell', () => ({ OrganizationWorkIndicator: () => <button>Scoped requests</button> }))
 vi.mock('../contrib/panes', () => ({ useTitlebarToolContributions: () => [] }))
 vi.mock('../shell/titlebar-controls', () => ({

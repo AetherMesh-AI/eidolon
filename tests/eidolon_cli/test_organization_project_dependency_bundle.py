@@ -769,3 +769,26 @@ print(receipt['bundleSha256'])
     result = subprocess.run([sys.executable, '-c', program], input=raw(data), capture_output=True, timeout=20)
     assert result.returncode == 0, result.stderr.decode('utf-8', 'replace')
     assert result.stdout.decode().strip() == normalize(prepared)['bundleSha256']
+
+
+@pytest.mark.linux_only
+def test_owner_approved_dependency_identity_checked_before_destination_allocation(prepared):
+    info = prepared['source'].stat()
+    approved = (info.st_dev, info.st_ino)
+    replacement = prepared['source'].with_name('replacement')
+    import shutil
+    shutil.copytree(prepared['source'], replacement)
+    prepared['source'].rename(prepared['source'].with_name('original'))
+    replacement.rename(prepared['source'])
+    with pytest.raises(ValueError, match='owner-approved identity'):
+        stage(prepared, expected_source_identity=approved)
+    assert not prepared['destination'].exists()
+    current = prepared['source'].stat()
+    assert stage(prepared, expected_source_identity=(current.st_dev, current.st_ino)) == normalize(prepared)
+
+
+@pytest.mark.parametrize('identity', [[], [1, 2], (1,), (True, 2), (1, -1), (1, 2**64)])
+def test_expected_dependency_identity_requires_exact_bounded_tuple(prepared, identity):
+    with pytest.raises(ValueError, match='identity'):
+        stage(prepared, expected_source_identity=identity)
+    assert not prepared['destination'].exists()

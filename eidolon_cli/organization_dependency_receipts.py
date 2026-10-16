@@ -232,6 +232,11 @@ def _receipt(conn, objective_id):
                        'ON o.id=c.objective_id WHERE c.objective_id=?', (objective_id,)).fetchone()
     if row is None or row['cancelled'] or row['status'] != 'accepted':
         return None
+    from eidolon_cli.organization_prepared_validation_objectives import prepared_selection_references
+    if prepared_selection_references(conn, objective_id):
+        # This ledger-only dependency API cannot promise current filesystem
+        # freshness for a prepared source/bundle. Never fall back to old runs.
+        return None
     contract = contract_view(conn, objective_id)
     if not has_typed(contract):
         recorded = conn.execute('SELECT q.payload FROM objective_acceptances a JOIN requests q ON q.id=a.request_id '

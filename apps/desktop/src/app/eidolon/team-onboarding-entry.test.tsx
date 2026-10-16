@@ -13,21 +13,25 @@ const state = vi.hoisted(() => ({
   organizationId: null as string | null,
   setupState: 'available',
   saved: null as null | ((receipt: unknown) => void),
-  clients: [] as { scope: string; setup: ReturnType<typeof vi.fn> }[]
+  clients: [] as { scope: string; setup: ReturnType<typeof vi.fn> }[],
+  request: vi.fn()
 }))
-vi.mock('./use-organization-metadata', () => ({
-  readOrganizationMetadataScope: () => state.scope,
-  useOrganizationMetadata: () => ({
-    client: {},
-    scope: state.scope,
-    view: {
-      descriptor: {
-        state: state.organizationId ? 'ready' : 'unconfigured',
-        metadata: state.organizationId ? { organizationId: state.organizationId } : null
-      }
+vi.mock('./use-organization-metadata', () => {
+  const getSnapshot = () => ({
+    descriptor: {
+      state: state.organizationId ? 'ready' : 'unconfigured',
+      metadata: state.organizationId ? { organizationId: state.organizationId, owner: { ownerId: `${state.organizationId}-owner` } } : null
     }
   })
-}))
+
+  const client = { getSnapshot, subscribe: () => () => {} }
+
+  return {
+    organizationMetadataClient: client,
+    readOrganizationMetadataScope: () => ({ ...state.scope, request: state.request }),
+    useOrganizationMetadata: () => ({ client, scope: state.scope, view: getSnapshot() })
+  }
+})
 vi.mock('./organization-owner-editor', () => ({
   OrganizationOwnerEditor: ({ onReturnFocus }: { onReturnFocus: (receipt: unknown) => void }) => {
     state.saved = onReturnFocus
@@ -69,6 +73,7 @@ beforeEach(() => {
   state.setupState = 'available'
   state.saved = null
   state.clients = []
+  state.request.mockReset()
 })
 function harness(refresh = vi.fn().mockResolvedValue(undefined)) {
   const adapter = { refresh } as unknown as RuntimeOrganizationAdapter
@@ -194,6 +199,8 @@ it('keeps the fresh runtime invitation inside the Home hero without a separate o
   expect(action.closest('.eid-home-hero')).not.toBeNull()
   expect(screen.getByRole('button', { name: 'Message organization' })).toBeTruthy()
   expect(adapter.refresh).not.toHaveBeenCalled()
+  // Rendering the unconfigured owner must not request prepared availability.
+  expect(state.request).not.toHaveBeenCalled()
 })
 
 it('retains explicit initialization recovery when snapshot refresh resolves without creating the schema', async () => {

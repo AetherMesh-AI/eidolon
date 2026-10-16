@@ -157,7 +157,7 @@ def _(params, service):
 
 @_organization_method("organization.create")
 def _(params, service):
-    _organization_params(params, {"title", "description", "priority", "idempotencyKey", "acceptanceCriteria", "deliveryMode", "requiredChecks", "executiveId", "managerId", "projectIds"})
+    _organization_params(params, {"title", "description", "priority", "idempotencyKey", "acceptanceCriteria", "deliveryMode", "requiredChecks", "executiveId", "managerId", "projectIds", "preparedValidations"})
     title = _organization_text(params, "title", 500)
     description = _organization_text(params, "description", 12000, optional=True)
     key = _organization_text(params, "idempotencyKey", 128)
@@ -170,7 +170,7 @@ def _(params, service):
                                                      delivery_mode=params.get("deliveryMode", "source_project"), required_checks=params.get("requiredChecks"),
                                                      executive_id=_organization_text(params, "executiveId", 64, optional=True),
                                                      manager_id=_organization_text(params, "managerId", 64, optional=True),
-                                                     project_ids=params.get("projectIds"))
+                                                     project_ids=params.get("projectIds"), prepared_validations=params.get("preparedValidations"))
     return {"objective": objective, "snapshot": _organization_snapshot(organization)}
 
 

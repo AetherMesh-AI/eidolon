@@ -94,8 +94,10 @@ def goal_projection(conn, goal_id):
     limits = goal['limits']
     used = {'modelCalls': len(calls), 'tokens': sum(row['input_limit'] + row['output_limit'] for row in calls),
             'costUsd': format(cost, 'f') if complete_cost else None}
-    for key, table in [('stages','objective_usage'), ('projectRuns','project_run_starts')]:
-        used[key] = conn.execute(f'SELECT count(*) FROM {table} c JOIN organization_goal_members m ON m.objective_id=c.objective_id WHERE m.goal_id=?', (goal_id,)).fetchone()[0]
+    used['stages'] = conn.execute('SELECT count(*) FROM objective_usage c JOIN organization_goal_members m '
+        'ON m.objective_id=c.objective_id WHERE m.goal_id=?', (goal_id,)).fetchone()[0]
+    from eidolon_cli.organization_prepared_validation_activity import goal_project_reserved_units
+    used['projectRuns'] = goal_project_reserved_units(conn, goal_id)['totalUnits']
     completion_used = {'modelCalls': len(completion), 'tokens': sum(row['input_limit']+row['output_limit'] for row in completion),
                        'costUsd': sum((Decimal(row['reserved_cost_usd']) for row in completion if row['reserved_cost_usd'] is not None), Decimal(0))}
     ordinary = {}

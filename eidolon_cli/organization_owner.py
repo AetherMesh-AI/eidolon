@@ -184,9 +184,9 @@ class OrganizationOwnerStore:
                             criteria = [item['text'] for item in contract_definitions]
                     before = scope_state(conn, request['objective_id'])
                     effective_checks = list(dict.fromkeys([*(checks if checks is not None else before['requiredChecks']), *required_by(contract_definitions)]))
-                    from eidolon_cli.organization_acceptance import validate_project_checks
+                    from eidolon_cli.organization_prepared_validation_objectives import validate_selected_prepared_checks
                     from eidolon_cli.organization_projects import objective_projects
-                    validate_project_checks(objective_projects(conn, request['objective_id']), effective_checks)
+                    validate_selected_prepared_checks(conn, request['objective_id'], objective_projects(conn, request['objective_id']), effective_checks)
                     conn.execute('UPDATE objective_control SET amended_scope=?,criteria=?,required_checks=? WHERE objective_id=?',
                                  (body, json.dumps(criteria), json.dumps(effective_checks), request['objective_id']))
                     write_contract(conn, request['objective_id'], contract_definitions)

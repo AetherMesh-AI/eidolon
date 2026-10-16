@@ -1,4 +1,6 @@
 """Bounded UI projections of the authoritative organization ledger."""
+from eidolon_cli.organization_prepared_validation_objectives import prepared_objective_projection
+
 import json
 from eidolon_cli.organization_dispatch import dispatch_view
 from eidolon_cli.organization_priority import priority_revision
@@ -102,6 +104,7 @@ def build_snapshot(conn, settings, objective_id=None, resolution_options=None):
                            'requiredChecks': json.loads(control['required_checks']),
                            'projectValidation': project_validation_view(conn, row['id'], full=False),
                            'projectExecution': project_execution_view(conn, row['id'], full=False),
+                           **prepared_objective_projection(conn, row['id']),
                            'acceptance': {'contract': contract_view(conn, row['id']), 'humanJudgments': human_judgments_view(conn, row['id']), 'status': control['status'], 'criteria': json.loads(control['criteria']),
                                           'round': control['round'], 'maxReplans': min(control['max_replans'], settings.max_replans),
                                           'summary': control['summary'], 'deliverableId': control['deliverable_id'],

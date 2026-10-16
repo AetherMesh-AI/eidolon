@@ -32,6 +32,7 @@ from eidolon_cli.organization_project_runner import _Budget, _Cancelled, _Deadli
 from eidolon_cli.organization_project_snapshot_bundle import ProjectSnapshotBundle
 from eidolon_cli.organization_project_validation import digest
 from eidolon_cli.organization_project_validation_profile import _path, normalize_validation_profile
+from eidolon_cli import organization_project_workspace_resources as resources
 
 ASSETS = Path(__file__).with_name('project_workspace_runtime')
 LIMITATIONS = ('Experimental exact prepared workspace execution. No installation or source publication. '
@@ -62,11 +63,11 @@ class _AuthorityCancellation:
         return self.revoked
 
 
-def _stage_dependencies(directory, destination, checked, lockfile, manifests, budget):
+def _stage_dependencies(directory, destination, checked, lockfile, manifests, budget, expected_identity=None):
     staged = copy_verified_dependency_bundle(directory, destination, checked['manifest'],
         lockfile_bytes=lockfile, package_manifests=manifests,
         expected_toolchain=checked['manifest']['toolchain'],
-        cancel=budget.cancel, deadline=budget.deadline)
+        cancel=budget.cancel, deadline=budget.deadline, expected_source_identity=expected_identity)
     if any(staged.get(key) != checked[key]
            for key in ('bundleSha256', 'inventorySha256', 'lockfileSha256')):
         raise ValueError('Staged dependency identity differs from the exact bound profile')
@@ -87,7 +88,7 @@ def _tool_entry(step, checked):
     return entry
 
 
-def _cleanup_container(candidate, name, image_id, docker_config):
+def _cleanup_container(candidate, name, image_id, docker_config, identity=None):
     """Only remove the exact labeled container; malformed inspection is uncertain."""
     try:
         cleanup = _Budget(None, 5, time.monotonic())
@@ -102,6 +103,11 @@ def _cleanup_container(candidate, name, image_id, docker_config):
                 or record.get('Name') != '/' + name or record.get('Image') != image_id
                 or not isinstance(labels, dict) or labels.get('ai.eidolon.execution') != name):
             return None, False
+        if re.fullmatch(r'[0-9a-f]{64}', candidate) and identifier != candidate:
+            return None, False
+        if identity is not None:
+            resources.verify_container_identity(record, identity, image_id=image_id,
+                container_id=candidate if re.fullmatch(r'[0-9a-f]{64}', candidate) else None)
         code, _, _, forced = _docker(['rm', '--force', identifier], docker_config, cleanup)
         return identifier, code == 0 and forced is None
     except (ValueError, TypeError, AttributeError, KeyError, IndexError,
@@ -229,25 +235,43 @@ def _failure_summary(frame, step):
 
 def run_prepared_workspace_step(source, dependency_directory, dependency_manifest, expected_toolchain,
                                 profile, step_id, *, allow_local_docker=False, runtime_image=IMAGE,
-                                check_authorized=None, cancel=None):
+                                check_authorized=None, cancel=None, runtime_identity=None,
+                                record_event=None, staging_parent=None, expected_dependency_identity=None):
     """Execute one fixed step; an aggregate successful validation set is separate.
 
 This deliberately is not wired into the organization scheduler yet. Exact
-store receipts and multi-step independent review must land before activation.
+store integration and multi-step independent review must land before activation.
+Durable mode requires all four resource/event/staging/dependency arguments. The
+trusted caller must precommit the supplied resource identity and return True
+from record_event only after durable commit; neither callback nor identity can
+replace actual owner Docker opt-in or fresh authority checks.
 """
     clock = time.monotonic()
     result = {'runner': 'eidolon.prepared-workspace', 'runnerVersion': 1, 'status': 'blocked',
               'startedAt': datetime.now(timezone.utc).isoformat(), 'exitCode': None,
               'isolation': {'backend': 'linux-docker-pinned', 'established': False},
-              'cleanupConfirmed': False, 'sourceWritesPerformed': False,
+              'cleanupConfirmed': False, 'stagingCleanupConfirmed': False, 'sourceWritesPerformed': False,
               'limitations': LIMITATIONS}
     base = None
     created = False
     container = None
+    identity = None
+    staged = None
+    event_started = False
+    durable = any(item is not None for item in
+                  (runtime_identity, record_event, staging_parent, expected_dependency_identity))
     try:
         if allow_local_docker is not True or runtime_image != IMAGE:
             raise ValueError('Owner must explicitly enable the exact pinned local Docker runtime')
         _authority(check_authorized)
+        if durable:
+            identity = resources.normalize_runtime_identity(runtime_identity)
+            expected_dependency_identity = resources.directory_identity(expected_dependency_identity)
+            if not callable(record_event) or staging_parent is None:
+                raise ValueError('Durable runtime requires its event sink and private staging parent')
+            result['resourceIdentity'] = identity
+            result['dependencyRootIdentity'] = dict(zip(('device', 'inode'), expected_dependency_identity))
+            result['containerLabels'] = resources.container_labels(identity)
         if type(source) is not ProjectSnapshotBundle:
             raise ValueError('Workspace execution requires an exact immutable source snapshot')
         source = ProjectSnapshotBundle(source.root_alias, source.root_identity, source.files, source.limits)
@@ -292,7 +316,27 @@ store receipts and multi-step independent review must land before activation.
         if hashlib.sha256(profile_bytes).hexdigest() != PROFILE_SHA256:
             raise _Unsupported('Reviewed seccomp profile is damaged')
         seccomp = json.loads(profile_bytes)
-        base = Path(tempfile.mkdtemp(prefix='eidolon-workspace-'))
+        if durable:
+            intent = resources.staging_intent(staging_parent, identity)
+            result['containerName'] = resources.container_name(identity)
+            resources.commit_runtime_event(record_event, identity, 'dispatch_planned', {
+                'containerName': result['containerName'], 'labels': result['containerLabels'],
+                'image': runtime_image, 'stagingIntent': intent,
+                'dependencyRootIdentity': result['dependencyRootIdentity'],
+                **{key: result[key] for key in ('snapshotSha256', 'profileSha256', 'bundleSha256',
+                    'stepId', 'stepDefinitionSha256', 'recipe', 'checkKind')}})
+            event_started = True
+            _authority(check_authorized)
+            budget.check()
+            staged = resources.allocate_staging(intent, identity)
+            base = Path(staged['path'])
+            result['stagingIdentity'] = staged
+            resources.commit_runtime_event(record_event, identity, 'staging_allocated', {'staging': staged})
+            resources.verify_staging_identity(staged, identity)
+            _authority(check_authorized)
+            budget.check()
+        else:
+            base = Path(tempfile.mkdtemp(prefix='eidolon-workspace-'))
         docker_config = base / 'docker'
         docker_config.mkdir()
         (docker_config / 'config.json').write_text('{}')
@@ -305,7 +349,7 @@ store receipts and multi-step independent review must land before activation.
             raise _Unsupported('Pinned runtime image does not match')
         _authority(check_authorized)
         prepared = base / 'dependencies'
-        _stage_dependencies(dependency_directory, prepared, checked, lockfile, manifests, budget)
+        _stage_dependencies(dependency_directory, prepared, checked, lockfile, manifests, budget, expected_dependency_identity)
         root = _stage_source(base, source, budget)
         _assemble_dependencies(root, prepared, checked['manifest'], budget)
         assets = {name: (ASSETS / name).read_bytes() for name in ('supervisor.mjs', 'harness.mjs', 'protocol.mjs')}
@@ -326,11 +370,22 @@ store receipts and multi-step independent review must land before activation.
         (base / 'runner' / 'config.json').chmod(0o444)
         _authority(check_authorized)
         budget.check()
-        name = 'eidolon-workspace-' + uuid.uuid4().hex
+        name = resources.container_name(identity) if durable else 'eidolon-workspace-' + uuid.uuid4().hex
         result['containerName'] = name
+        arguments = _create_arguments(name, base, grant)
+        if durable:
+            resources.verify_staging_identity(staged, identity)
+            resources.commit_runtime_event(record_event, identity, 'container_create_planned',
+                {'staging': staged, 'runtime': result['runtime']})
+            # Add immutable exact labels before the image/command boundary.
+            arguments[1:1] = [part for key, value in resources.container_labels(identity).items()
+                             if key != 'ai.eidolon.execution' for part in ('--label', key + '=' + value)]
+            _authority(check_authorized)
+            budget.check()
+            resources.verify_staging_identity(staged, identity)
         created = True  # An uncertain create response must retain cleanup uncertainty.
         try:
-            code, output, _, forced = _docker(_create_arguments(name, base, grant), docker_config, budget)
+            code, output, _, forced = _docker(arguments, docker_config, budget)
             if forced == 'cancelled':
                 raise _Cancelled()
             if forced == 'timed_out':
@@ -342,10 +397,21 @@ store receipts and multi-step independent review must land before activation.
                 raise _Unsupported('Container identity is invalid')
             result['containerId'] = container
             record = _json_command(['inspect', container], docker_config, budget)[0]
+            if durable:
+                resources.verify_container_identity(record, identity, image_id=image['Id'], container_id=container)
+                resources.commit_runtime_event(record_event, identity, 'container_observed',
+                    {'containerId': container, 'runtime': result['runtime'], 'staging': staged})
             _verify_container(record, name, base, grant, image['Id'], seccomp)
             result['containerConfigSha256'] = digest({'Config': record['Config'], 'HostConfig': record['HostConfig'], 'Mounts': record['Mounts']})
             namespaces = {key: os.readlink('/proc/self/ns/' + key) for key in ('mnt', 'pid', 'net', 'ipc', 'uts', 'cgroup')}
+            if durable:
+                resources.verify_staging_identity(staged, identity)
+                resources.commit_runtime_event(record_event, identity, 'container_start_planned',
+                    {'containerId': container, 'containerConfigSha256': result['containerConfigSha256']})
             _authority(check_authorized)
+            budget.check()
+            if durable:
+                resources.verify_staging_identity(staged, identity)
             code, output, totals, forced = _docker(['start', '--attach', container], docker_config, budget, grant.output_bytes + 1048576)
             result.update(exitCode=code, stderr=_safe_log(output['stderr']),
                           stdoutBytes=totals['stdout'], stderrBytes=totals['stderr'])
@@ -357,7 +423,9 @@ store receipts and multi-step independent review must land before activation.
             if any(not isinstance(frame, dict) for frame in frames):
                 raise ValueError('Runtime returned malformed control frames')
             proof = frames[0] if frames else {}
-            if (proof.get('kind') == 'isolation' and proof.get('pid') == 1
+            if (proof.get('kind') == 'isolation'
+                    and all(type(proof.get(key)) is int for key in ('pid', 'supervisorUid', 'workloadUid'))
+                    and proof.get('pid') == 1
                     and proof.get('supervisorUid') == 0 and proof.get('workloadUid') == 65534
                     and proof.get('supervisorCapabilities') == ['SETUID', 'SETGID']
                     and proof.get('workloadCapabilities') == []
@@ -376,14 +444,20 @@ store receipts and multi-step independent review must land before activation.
                 if summary is not None:
                     result['failureClaim'] = summary
             if not forced and len(frames) == 2 and result['isolation']['established'] and code == 0:
-                terminal = _json_command(['inspect', container], docker_config, _Budget(None, 5, time.monotonic()))[0]['State']
+                terminal_record = _json_command(['inspect', container], docker_config, _Budget(None, 5, time.monotonic()))[0]
+                if durable:
+                    resources.verify_container_identity(terminal_record, identity, image_id=image['Id'], container_id=container)
+                terminal = terminal_record['State']
                 if (_outcome(frames[1], step, source, normalized['workspace']) and terminal.get('Running') is False
-                        and terminal.get('ExitCode') == 0 and terminal.get('OOMKilled') is False):
+                        and type(terminal.get('ExitCode')) is int and terminal['ExitCode'] == 0
+                        and terminal.get('OOMKilled') is False):
                     result.update(status='passed', outcome=frames[1])
+                    if durable:
+                        result['terminalState'] = {'Running': False, 'ExitCode': 0, 'OOMKilled': False}
             _authority(check_authorized)
         finally:
             candidate = container if container and re.fullmatch(r'[0-9a-f]{64}', container) else name
-            identifier, result['cleanupConfirmed'] = _cleanup_container(candidate, name, image['Id'], docker_config)
+            identifier, result['cleanupConfirmed'] = _cleanup_container(candidate, name, image['Id'], docker_config, identity)
             if identifier is not None:
                 result['containerId'] = identifier
             if not result['cleanupConfirmed']:
@@ -401,11 +475,80 @@ store receipts and multi-step independent review must land before activation.
         if base is not None:
             if not created or result['cleanupConfirmed']:
                 try:
-                    _cleanup_tree(base)
-                except OSError:
+                    if durable:
+                        resources.cleanup_owned_staging(staged, identity)
+                    else:
+                        _cleanup_tree(base)
+                    result['stagingCleanupConfirmed'] = True
+                except (OSError, ValueError):
                     result.update(status='staging_cleanup_failed', stagingCleanupConfirmed=False,
                                   reason='Private source staging cleanup failed', retainedStagingDirectory=str(base))
             else:
                 result['retainedStagingDirectory'] = str(base)
         result.update(endedAt=datetime.now(timezone.utc).isoformat(), durationSeconds=round(time.monotonic() - clock, 6))
+        if durable and event_started:
+            try:
+                resources.commit_runtime_event(record_event, identity, 'cleanup_observed', {
+                    'containerId': result.get('containerId'),
+                    'containerCleanupConfirmed': result['cleanupConfirmed'],
+                    'stagingCleanupConfirmed': result['stagingCleanupConfirmed'], 'staging': staged})
+                resources.commit_runtime_event(record_event, identity, 'receipt',
+                    {'receipt': result, 'receiptSha256': digest(result)})
+            except ValueError:
+                result.update(status='persistence_failed',
+                              reason='Terminal host receipt was not durably committed; no replay is safe')
     return result
+
+
+def cleanup_prepared_workspace_resource(runtime_identity, *, staging_identity, expected_runtime,
+        container_id=None, container_create_attempted=True, container_cleanup_confirmed=False,
+        record_event, allow_local_docker=False):
+    """Reconcile only an already authorized, durably retained owned resource.
+
+The caller must supply a complete trusted event history's exact identities. No
+fresh execution/root authority is required for narrow owned cleanup following
+revocation. No creation, start, PID kill, name-prefix search or replay occurs.
+Unknown disappearance is not proof of cleanup; a prior confirmed host cleanup
+observation can be supplied to finish removing its retained staging tree.
+"""
+    identity = resources.normalize_runtime_identity(runtime_identity)
+    staging = resources.normalize_staging_identity(staging_identity, identity)
+    runtime = resources._runtime(resources._bounded_json(expected_runtime)) if expected_runtime is not None else None
+    if type(container_create_attempted) is not bool or type(container_cleanup_confirmed) is not bool:
+        raise ValueError('Reconciliation requires exact dispatch and cleanup flags')
+    if container_id is not None:
+        resources._hash(container_id)
+    if not container_create_attempted and (container_id is not None or container_cleanup_confirmed):
+        raise ValueError('Unattempted container creation cannot have an observed ID or cleanup proof')
+    if container_cleanup_confirmed and container_id is None:
+        raise ValueError('Prior confirmed cleanup requires its exact retained container ID')
+    if not callable(record_event):
+        raise ValueError('Reconciliation requires the trusted durable event sink')
+    observed_id, container_done, staging_done = container_id, container_cleanup_confirmed, False
+    reason = None
+    try:
+        resources.verify_staging_identity(staging, identity)
+        if container_create_attempted and not container_done:
+            if allow_local_docker is not True or runtime is None:
+                raise ValueError('Owned-container cleanup requires its retained explicit Docker opt-in and image identity')
+            if (sys.platform != 'linux' or platform.machine() not in ('x86_64', 'amd64')
+                    or not Path('/usr/bin/docker').is_file() or not Path('/var/run/docker.sock').is_socket()):
+                raise _Unsupported('Exact Docker cleanup is unavailable; resource remains retained')
+            program = Path('/usr/bin/docker').stat()
+            if program.st_uid != 0 or program.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+                raise _Unsupported('Docker client is not a trusted system executable')
+            name = resources.container_name(identity)
+            found, container_done = _cleanup_container(container_id or name, name, runtime['imageId'],
+                                                        Path(staging['path']) / 'docker', identity)
+            if found is not None:
+                observed_id = found
+        if not container_create_attempted or container_done:
+            staging_done = resources.cleanup_owned_staging(staging, identity)
+    except (OSError, ValueError, _Unsupported) as error:
+        reason = str(error)[:2000]
+    observation = {'containerId': observed_id, 'containerCleanupConfirmed': container_done,
+                   'stagingCleanupConfirmed': staging_done, 'staging': staging}
+    resources.commit_runtime_event(record_event, identity, 'cleanup_observed', observation)
+    return {**observation, 'replayAllowed': False, 'acceptanceAuthorized': False,
+            'state': 'cleanup_confirmed' if staging_done and (not container_create_attempted or container_done)
+                     else 'cleanup_unconfirmed', 'reason': reason}

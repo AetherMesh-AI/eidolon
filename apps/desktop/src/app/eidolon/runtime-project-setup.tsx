@@ -14,6 +14,7 @@ import { Inspector } from './inspector'
 import { OrganizationFolderAccess } from './organization-folder-access'
 import { OrganizationFolderSetup } from './organization-folder-setup'
 import { organizationErrorMessage } from './runtime-adapter'
+import { RuntimePreparedValidationSetup } from './runtime-prepared-validation-setup'
 import { sameProjectBinding, validProjectBinding } from './runtime-project-setup-contract'
 import type { OrganizationProjectBinding, OrganizationProjectDraft, OrganizationProjectSetup, OrganizationSnapshot, RuntimeOrganizationAdapter } from './types'
 
@@ -157,6 +158,7 @@ export function OrganizationProjectSetupForm({ adapter, snapshot, onClose }: {
   return <Inspector kind="agent" onClose={close} title={copy.projectSetup}>
     <OrganizationFolderAccess onChanged={() => { read(); void adapter.refresh() }} onConfirmationChange={cancel => setFolderConfirmation(() => cancel)} />
     <OrganizationFolderSetup onSaved={() => { read(); void adapter.refresh() }} />
+    <RuntimePreparedValidationSetup onConfirmationChange={cancel => setFolderConfirmation(() => cancel)} />
     <p className="eid-note">{canSave ? copy.projectSaveNote : copy.projectSetupNote}</p>
     {reading && <Loader label={copy.projectSetupLoading} />}
     {error && <div role="alert"><ErrorState description={error} title={copy.projectSetupError} /></div>}

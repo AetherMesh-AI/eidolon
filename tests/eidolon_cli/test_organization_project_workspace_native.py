@@ -362,3 +362,130 @@ def test_actual_running_workspace_observes_authority_revocation(prepared, monkey
         for observer in observers:
             observer.join(timeout=5)
             assert not observer.is_alive(), 'Bounded native process observer did not stop'
+
+
+def execute_durable(prepared, tmp_path, step, *, reject_event=None, dependency_identity=None):
+    """Persist a real host event stream with fsync; no candidate self-attestation."""
+    import uuid
+    from eidolon_cli.organization_project_validation import canonical, digest
+    from eidolon_cli.organization_project_workspace_resources import normalize_runtime_event
+    source, directory, manifest, profile = prepared
+    nonce = digest({'nativeFixtureNonce': uuid.uuid4().hex})
+    identity = {'version': 1, 'contract': 'prepared-workspace-resource-v1',
+                'setId': 'native-set-' + nonce[:24], 'runId': 'native-run-' + nonce[:24],
+                'nonce': nonce, 'authoritySha256': digest({'explicitNativeSandboxOptIn': True, 'nonce': nonce})}
+    # Retained independently from the returned value for hosted artifact review.
+    proof_directory = directory.parent / 'durable-runtime-events'
+    proof_directory.mkdir(mode=0o700, exist_ok=True)
+    path = proof_directory / (nonce + '.jsonl')
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    attempted = []
+    def record(event):
+        event = normalize_runtime_event(event)
+        attempted.append(event['kind'])
+        if event['kind'] == reject_event:
+            return False
+        view = memoryview((canonical(event) + '\n').encode('utf-8'))
+        while view:
+            count = os.write(descriptor, view)
+            assert count > 0
+            view = view[count:]
+        os.fsync(descriptor)
+        return True
+    info = directory.stat()
+    try:
+        result = run_prepared_workspace_step(source, directory, manifest, manifest['toolchain'], profile, step,
+            allow_local_docker=True, check_authorized=lambda: True, runtime_identity=identity,
+            record_event=record, staging_parent=tmp_path,
+            expected_dependency_identity=dependency_identity or (info.st_dev, info.st_ino))
+    finally:
+        os.close(descriptor)
+    events = [json.loads(line) for line in path.read_bytes().splitlines()]
+    print('Retained durable native host events:', path.name)
+    return result, events, identity, attempted
+
+
+@pytest.mark.linux_only
+@pytest.mark.parametrize('step_id', ['renderer-types', 'ui-tests'])
+def test_actual_durable_run_retains_exact_host_receipt_and_is_finish_only(prepared, tmp_path, step_id):
+    import hashlib
+    from eidolon_cli import organization_project_workspace_node as runtime
+    from eidolon_cli.organization_project_validation import digest
+    from eidolon_cli.organization_project_workspace_receipt import (
+        inspect_prepared_runtime_history, validate_prepared_workspace_receipt,
+    )
+    result, events, identity, attempted = execute_durable(prepared, tmp_path, step_id)
+    assert result['status'] == 'passed', result
+    assert attempted == ['dispatch_planned', 'staging_allocated', 'container_create_planned',
+                         'container_observed', 'container_start_planned', 'cleanup_observed', 'receipt']
+    assert [event['kind'] for event in events] == attempted
+    observed, started, allocation = events[3]['data'], events[4]['data'], events[1]['data']['staging']
+    retained = events[-1]['data']
+    assert retained['receipt'] == result and retained['receiptSha256'] == digest(result)
+    assert result['cleanupConfirmed'] is result['stagingCleanupConfirmed'] is True
+    assert not Path(allocation['path']).exists()
+    assets = {name: hashlib.sha256((runtime.ASSETS / name).read_bytes()).hexdigest()
+              for name in ('supervisor.mjs', 'harness.mjs', 'protocol.mjs')}
+    assert observed['runtime']['bootstrapSha256'] == digest(assets)
+    source, directory, _, profile = prepared
+    info = directory.stat()
+    context = {'resource_identity': identity, 'source': source, 'profile': profile, 'step_id': step_id,
+               'expected_dependency_identity': (info.st_dev, info.st_ino),
+               'expected_runtime': observed['runtime'], 'staging_identity': allocation,
+               'container_id': observed['containerId'], 'container_config_sha256': started['containerConfigSha256'],
+               'trusted_receipt_sha256': retained['receiptSha256']}
+    verified = validate_prepared_workspace_receipt(retained['receipt'], **context)
+    assert verified['requiresIndependentReview'] is True and verified['acceptanceAuthorized'] is False
+    state = inspect_prepared_runtime_history(events, resource_identity=identity, receipt_context=context)
+    assert state['state'] == 'finish_only' and state['replayAllowed'] is False
+    assert state['containerState'] == state['stagingState'] == 'cleanup_confirmed'
+
+
+@pytest.mark.linux_only
+@pytest.mark.parametrize('phase', ['container_create_planned', 'container_start_planned', 'receipt'])
+def test_actual_durable_sink_failure_blocks_forward_work_and_never_replays(prepared, tmp_path, monkeypatch, phase):
+    from eidolon_cli import organization_project_workspace_node as runtime
+    from eidolon_cli.organization_project_workspace_receipt import inspect_prepared_runtime_history
+    original = runtime._docker
+    calls = []
+    def observe(arguments, *args, **kwargs):
+        calls.append(arguments[:2])
+        return original(arguments, *args, **kwargs)
+    monkeypatch.setattr(runtime, '_docker', observe)
+    result, events, identity, attempted = execute_durable(prepared, tmp_path, 'ui-tests', reject_event=phase)
+    assert phase in attempted
+    assert phase not in [event['kind'] for event in events]
+    assert result['stagingCleanupConfirmed'] is True
+    assert not Path(events[1]['data']['staging']['path']).exists()
+    state = inspect_prepared_runtime_history(events, resource_identity=identity)
+    assert state['replayAllowed'] is False
+    if phase == 'container_create_planned':
+        assert not any(call[0] in {'create', 'start'} for call in calls)
+        assert result['status'] == 'blocked' and result['cleanupConfirmed'] is False
+        assert state['containerState'] == 'not_attempted'
+    elif phase == 'container_start_planned':
+        assert any(call[0] == 'create' for call in calls)
+        assert not any(call[0] == 'start' for call in calls)
+        assert result['status'] == 'blocked' and result['cleanupConfirmed'] is True
+    else:
+        assert ['start', '--attach'] in calls
+        assert result['status'] == 'persistence_failed' and result['cleanupConfirmed'] is True
+        assert state['state'] == 'interrupted' and state['receiptSha256'] is None
+
+
+@pytest.mark.linux_only
+def test_actual_durable_copy_rejects_different_approved_dependency_root_before_create(prepared, tmp_path, monkeypatch):
+    from eidolon_cli import organization_project_workspace_node as runtime
+    original = runtime._docker
+    calls = []
+    def observe(arguments, *args, **kwargs):
+        calls.append(arguments[0])
+        return original(arguments, *args, **kwargs)
+    monkeypatch.setattr(runtime, '_docker', observe)
+    info = prepared[1].stat()
+    result, events, _, _ = execute_durable(prepared, tmp_path, 'ui-tests',
+                                          dependency_identity=(info.st_dev, info.st_ino + 1))
+    assert result['status'] == 'blocked' and 'owner-approved identity' in result['reason']
+    assert result['stagingCleanupConfirmed'] is True
+    assert 'create' not in calls and 'start' not in calls
+    assert 'container_create_planned' not in [event['kind'] for event in events]

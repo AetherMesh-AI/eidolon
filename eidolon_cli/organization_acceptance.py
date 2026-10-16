@@ -113,7 +113,8 @@ class OrganizationAcceptanceStore:
         checks = list(dict.fromkeys([*json.loads(control['required_checks']), *added]))
         from eidolon_cli.organization_projects import objective_projects
         projects = objective_projects(conn, objective_id)
-        validate_project_checks(projects, checks)
+        from eidolon_cli.organization_prepared_validation_objectives import validate_selected_prepared_checks
+        validate_selected_prepared_checks(conn, objective_id, projects, checks)
         conn.execute('UPDATE objective_control SET required_checks=? WHERE objective_id=?', (json.dumps(checks), objective_id))
 
     def _migrate_acceptance(self, conn):
@@ -318,7 +319,7 @@ class OrganizationAcceptanceStore:
         if control['deliverable_id']:
             previous.append(control['deliverable_id'])
         from eidolon_cli.organization_project_execution import replan_project_history
-        project_history = replan_project_history(conn, objective_id, control['round'])
+        project_history = replan_project_history(conn, objective_id, control['round'], completing_request=completing_request)
         previous.extend(identifier for attempt in project_history for identifier in attempt['evidenceIds'])
         for row in conn.execute("SELECT * FROM requests WHERE objective_id=? AND status NOT IN ('completed','cancelled')", (objective_id,)).fetchall():
             if row['id'] == completing_request:

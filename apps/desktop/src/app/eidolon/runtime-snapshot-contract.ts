@@ -12,6 +12,8 @@ import { normalizeConversations } from './runtime-conversation-contract'
 import { validSnapshotModelRouting } from './runtime-model-routing-contract'
 import { validOutcomeContract } from './runtime-outcome-contract-types'
 import { validOutcomePage } from './runtime-outcome-types'
+import { preparedValidationActivityCopy } from './runtime-prepared-validation-activity-copy'
+import { validObjectivePreparedValidation } from './runtime-prepared-validation-status-contract'
 import { validOrganizationSetup } from './runtime-setup-contract'
 import { validWorkPackages } from './runtime-work-package-contract'
 import { validTaskReuse } from './task-reuse-contract'
@@ -23,6 +25,8 @@ export function validateSnapshot(value: OrganizationSnapshot): OrganizationSnaps
   }
 
   for (const objective of value.objectives) {
+    if (!validObjectivePreparedValidation(objective)) { throw new Error(preparedValidationActivityCopy[getRuntimeI18nLocale()].invalid) }
+
     const contract = objective.acceptance?.contract
 
     if (contract != null && (!validOutcomeContract(contract) || contract.objectiveId !== objective.id ||
@@ -38,6 +42,7 @@ export function validateSnapshot(value: OrganizationSnapshot): OrganizationSnaps
       throw new Error(outcomeContractCopy[getRuntimeI18nLocale()].unavailable)
     }
   }
+
   if (value.tasks.some(task => !validTaskReuse(task))) { throw new Error(selectiveRepairCopy[getRuntimeI18nLocale()].invalid) }
 
   if (!validSnapshotModelRouting(value)) {throw new Error(modelRoutingCopy[getRuntimeI18nLocale()].invalid)}
