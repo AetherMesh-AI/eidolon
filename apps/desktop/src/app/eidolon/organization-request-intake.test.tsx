@@ -370,7 +370,7 @@ it('does not refresh a different owner after intake admission', async () => {
     intakeRecord({ idempotencyKey: String(params.idempotencyKey), request: String(params.text), status: 'admitted', objectiveId: 'new-objective', proposal: intakeProposal() })
   )
   const refresh = vi.fn()
-  const current = { ...snapshot, objectives: [], connection: { state: 'ready', ownerScope: 'another-owner' } } as OrganizationSnapshot
+  const current: OrganizationSnapshot = { ...snapshot, objectives: [], connection: { state: 'ready', scope: 'another-socket', ownerScope: 'another-owner' } }
   const adapter = { refresh, getSnapshot: () => current } as unknown as RuntimeOrganizationAdapter
   render(<MemoryRouter><OrganizationRequestIntake adapter={adapter} snapshot={current} /></MemoryRouter>)
   fireEvent.change(screen.getByLabelText(copy.request), { target: { value: 'Prepare the first report' } })
@@ -383,7 +383,7 @@ it('does not follow an in-flight admission refresh into another owner', async ()
   state.request.mockImplementation(async (_method: string, params: Record<string, unknown>) =>
     intakeRecord({ idempotencyKey: String(params.idempotencyKey), request: String(params.text), status: 'admitted', objectiveId: 'new-objective', proposal: intakeProposal() })
   )
-  let current = { ...snapshot, objectives: [], connection: { state: 'ready', ownerScope: state.ownerKey } } as OrganizationSnapshot
+  let current: OrganizationSnapshot = { ...snapshot, objectives: [], connection: { state: 'ready', scope: state.key, ownerScope: state.ownerKey } }
   let finish!: () => void
   const refresh = vi.fn(() => new Promise<void>(resolve => { finish = resolve }))
   const adapter = { refresh, getSnapshot: () => current } as unknown as RuntimeOrganizationAdapter
@@ -393,7 +393,7 @@ it('does not follow an in-flight admission refresh into another owner', async ()
   fireEvent.click(screen.getByRole('button', { name: copy.submit }))
   await flush()
   expect(refresh).toHaveBeenCalledTimes(1)
-  current = { ...current, connection: { state: 'ready', ownerScope: 'another-owner' } }
+  current = { ...current, connection: { state: 'ready', scope: 'another-socket', ownerScope: 'another-owner' } }
   await act(async () => finish())
   expect(refresh).toHaveBeenCalledTimes(1)
 })
