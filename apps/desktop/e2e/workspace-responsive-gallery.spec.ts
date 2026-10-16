@@ -88,9 +88,23 @@ for (const mode of ['dark', 'light'] as const) {
       await page.evaluate(() => { location.hash = '/profiles' })
       root = page.locator('.eid-responsive-detail')
       const profileRow = root.locator('[data-panel-row="default"]').getByRole('button').first()
-      await profileRow.click()
       const editor = root.locator('.cm-content[contenteditable="true"]')
       await expect(editor).toContainText('Synthetic profile')
+      // CodeMirror focuses on mount. Compact layout may correctly preserve that
+      // selected detail, so return through Back before explicitly selecting a row.
+      await expect.poll(() => root.evaluate(element =>
+        element.getAttribute('data-compact') === String(element.getBoundingClientRect().width <= 760)
+      )).toBe(true)
+      const profileBack = root.getByRole('button', { name: 'Back', exact: true })
+      if (await profileBack.isVisible()) {
+        await profileBack.click()
+        await expect(root.locator('[data-pane="detail"]')).toBeHidden()
+        await expect(root.locator('[data-pane="list"]')).toBeFocused()
+      }
+      await expect(profileRow).toBeVisible()
+      await profileRow.focus()
+      await page.keyboard.press('Enter')
+      await expect(editor).toBeVisible()
       await editor.fill('# Unsaved synthetic profile draft')
       await resizeGallery(current, 1536, 961)
       await resizeGallery(current, width, height, zoom)
@@ -112,7 +126,10 @@ for (const mode of ['dark', 'light'] as const) {
         if (state === 'error') {
           await expect(root.locator('[data-pane="detail"]')).toContainText('Preview unavailable')
           await keyboardControl(current, root.getByRole('button', { name: 'Retry', exact: true }), `${suffix} preview retry`)
-          await expect(root.locator('footer button')).toBeDisabled()
+          const disabledImport = root.locator('footer button')
+          await disabledImport.scrollIntoViewIfNeeded()
+          await expect(disabledImport).toBeInViewport({ ratio: 1 })
+          await expect(disabledImport).toBeDisabled()
         } else {
           await expect(root.locator('[data-pane="detail"]')).toContainText('Preserve this selection while resizing.')
           await keyboardControl(current, root.locator('footer button'), `${suffix} ${state} explicit import/open`)
