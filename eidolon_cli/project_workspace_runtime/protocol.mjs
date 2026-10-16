@@ -1,0 +1,238 @@
+// Fixed, dependency-free transport and scope checks. Workload results are claims.
+import { StringDecoder } from 'node:string_decoder';
+
+export const CONTROL_BYTES = 1048576;
+export const TOOL_ENTRIES = Object.freeze({
+  workspace_typescript: 'node_modules/typescript/bin/tsc',
+  workspace_vitest_ui: 'node_modules/vitest/dist/node.js',
+});
+export function workloadEnvironment() {
+  return { PATH: '/usr/local/bin:/usr/bin:/bin', LANG: 'C.UTF-8', HOME: '/nonexistent',
+    TMPDIR: '/tmp', XDG_CACHE_HOME: '/tmp/cache', CI: '1', NO_COLOR: '1',
+    RAYON_NUM_THREADS: '1', UV_THREADPOOL_SIZE: '2' };
+}
+const requireValue = (condition, reason) => { if (!condition) throw new Error(reason); };
+const exact = (value, keys) => value && typeof value === 'object' && !Array.isArray(value)
+  && Object.keys(value).sort().join(',') === [...keys].sort().join(',');
+const integer = (value, low, high = Number.MAX_SAFE_INTEGER) => Number.isSafeInteger(value)
+  && value >= low && value <= high;
+
+export function relativePath(value) {
+  requireValue(typeof value === 'string' && value.length > 0 && Buffer.byteLength(value) <= 512
+    && !/[\\\x00-\x1f\x7f:*?\[\]{}]/.test(value)
+    && value.split('/').length <= 32 && value.split('/').every(part => part && part !== '.' && part !== '..'),
+  'Expected an exact bounded relative path');
+  return value;
+}
+
+export function isSource(value) {
+  return /\.tsx?$/.test(value) && !/\.d\.ts$/.test(value) && !value.split('/').includes('node_modules');
+}
+
+function paths(values, limit) {
+  requireValue(Array.isArray(values) && values.length <= limit, 'Selection exceeds file bound');
+  values.forEach(relativePath);
+  requireValue(new Set(values.map(value => value.toLowerCase())).size === values.length,
+    'Selection contains duplicate or ambiguous paths');
+  return [...values].sort();
+}
+
+export function validateConfig(input) {
+  const required = ['root', 'recipe', 'workspace', 'configuration', 'toolEntry', 'preparedToolchain', 'timeoutMs',
+    'memoryBytes', 'scratchBytes', 'outputBytes', 'tests', 'selectedSources'];
+  requireValue(exact(input, required), 'Configuration requires exact fixed fields');
+  requireValue(/^root(?:0|[1-9][0-9]*)$/.test(input.root), 'Invalid source root');
+  requireValue(Object.hasOwn(TOOL_ENTRIES, input.recipe) && input.toolEntry === TOOL_ENTRIES[input.recipe],
+    'Unsupported recipe or tool entry');
+  requireValue(exact(input.preparedToolchain, ['platform', 'arch', 'libc', 'nodeVersion',
+    'npmVersion', 'nodeAbi', 'tools']), 'Prepared toolchain fields are incomplete');
+  const workspace = relativePath(input.workspace), configuration = relativePath(input.configuration);
+  requireValue(configuration.startsWith(workspace + '/'), 'Configuration is outside workspace');
+  const bounds = { timeoutMs: [1, 1800000], memoryBytes: [256 * 1048576, 8192 * 1048576],
+    scratchBytes: [16 * 1048576, 2048 * 1048576], outputBytes: [1024, 1048576] };
+  for (const [key, [low, high]] of Object.entries(bounds)) {
+    requireValue(integer(input[key], low, high), 'Resource bound is invalid: ' + key);
+  }
+  const tests = paths(input.tests, 512), selectedSources = paths(input.selectedSources, 10000);
+  if (input.recipe === 'workspace_typescript') {
+    requireValue(configuration.endsWith('.json') && tests.length === 0 && selectedSources.length > 0
+      && selectedSources.every(isSource), 'Typecheck requires an actual configuration and source selection');
+  } else {
+    requireValue(selectedSources.length === 0 && tests.length > 0
+      && tests.every(value => value.startsWith(workspace + '/src/') && /\.test\.tsx?$/.test(value)),
+    'UI tests require exact workspace test files');
+  }
+  return Object.freeze({ ...input, tests: Object.freeze(tests), selectedSources: Object.freeze(selectedSources) });
+}
+
+export const absolutePath = (config, value) => '/source/' + config.root + '/' + value;
+export const selectedFiles = config => (config.recipe === 'workspace_typescript'
+  ? config.selectedSources : config.tests).map(value => absolutePath(config, value));
+
+export function typescriptArguments(config) {
+  return ['--disable-sigusr1', absolutePath(config, config.toolEntry), '--project',
+    absolutePath(config, config.configuration), '--noEmit', '--noCheck', 'false',
+    '--incremental', 'false', '--pretty', 'false', '--listFiles'];
+}
+
+export function resultRecord(config, details = {}) {
+  return { kind: 'result', status: 'failed', recipe: config.recipe,
+    configuration: config.configuration, testCount: 0, skippedCount: 0, failedCount: 0,
+    sourceCount: 0, selectedFiles: selectedFiles(config), reportedFiles: [], modules: [],
+    evidenceOrigin: 'workload-claim', toolEntry: config.toolEntry, toolExitCode: null, ...details };
+}
+
+function absoluteFiles(values, config) {
+  requireValue(Array.isArray(values) && values.length <= 10000, 'Invalid reported file list');
+  const prefix = '/source/' + config.root + '/';
+  for (const value of values) {
+    requireValue(typeof value === 'string' && value.startsWith(prefix), 'Reported file escaped source');
+    relativePath(value.slice(prefix.length));
+  }
+  requireValue(new Set(values).size === values.length, 'Duplicate reported file');
+  return values;
+}
+
+const sameSet = (left, right) => left.length === right.length
+  && (() => {
+    const expected = [...right].sort();
+    return [...left].sort().every((value, index) => value === expected[index]);
+  })();
+
+export function verifyRuntimeToolchain(prepared, observed) {
+  requireValue(observed.platform === 'linux' && observed.arch === 'x64'
+    && observed.libc === 'glibc' && typeof observed.glibcVersion === 'string'
+    && /^\d+\.\d+(?:\.\d+)?$/.test(observed.glibcVersion)
+    && ['platform', 'arch', 'libc', 'nodeVersion', 'nodeAbi']
+      .every(key => typeof prepared[key] === 'string' && prepared[key] === observed[key]),
+  'Prepared toolchain does not match the actual pinned runtime');
+  return observed;
+}
+
+export function validateResult(record, config) {
+  requireValue(exact(record, Object.keys(resultRecord(config))) && record.kind === 'result'
+    && ['passed', 'failed'].includes(record.status) && record.recipe === config.recipe
+    && record.configuration === config.configuration && record.toolEntry === config.toolEntry
+    && record.evidenceOrigin === 'workload-claim'
+    && (record.toolExitCode === null || integer(record.toolExitCode, 0, 255)), 'Invalid result identity');
+  for (const key of ['testCount', 'skippedCount', 'failedCount', 'sourceCount']) {
+    requireValue(integer(record[key], 0, 1000000), 'Invalid result count');
+  }
+  absoluteFiles(record.selectedFiles, config);
+  absoluteFiles(record.reportedFiles, config);
+  requireValue(sameSet(record.selectedFiles, selectedFiles(config)), 'Result selection changed');
+  requireValue(Array.isArray(record.modules), 'Invalid module results');
+  if (config.recipe === 'workspace_typescript') {
+    requireValue(record.modules.length === 0 && record.testCount === 0 && record.skippedCount === 0
+      && record.failedCount === 0 && record.sourceCount === record.reportedFiles.length
+      && record.reportedFiles.every(isSource), 'Invalid typecheck source closure');
+    if (record.status === 'passed') requireValue(record.sourceCount > 0 && record.toolExitCode === 0
+      && record.selectedFiles.every(path => record.reportedFiles.includes(path)), 'Incomplete typecheck');
+  } else {
+    requireValue(record.sourceCount === 0 && record.modules.length === record.reportedFiles.length,
+      'Incomplete UI module results');
+    for (const module of record.modules) {
+      requireValue(exact(module, ['path', 'passed', 'skipped', 'failed', 'state'])
+        && ['passed', 'failed', 'skipped', 'pending', 'queued'].includes(module.state)
+        && ['passed', 'skipped', 'failed'].every(key => integer(module[key], 0, 1000000)),
+      'Invalid UI module result');
+    }
+    requireValue(sameSet(record.modules.map(module => module.path), record.reportedFiles)
+      && new Set(record.modules.map(module => module.path)).size === record.modules.length
+      && record.testCount === record.modules.reduce((sum, module) => sum + module.passed, 0)
+      && record.skippedCount === record.modules.reduce((sum, module) => sum + module.skipped, 0)
+      && record.failedCount === record.modules.reduce((sum, module) => sum + module.failed, 0),
+    'UI counts or module identities disagree');
+    if (record.status === 'passed') requireValue(record.testCount > 0 && record.failedCount === 0
+      && record.toolExitCode === 0 && sameSet(record.reportedFiles, record.selectedFiles)
+      && record.modules.every(module => module.state === 'passed' && module.passed > 0),
+    'UI test selection did not complete meaningfully');
+  }
+  return record;
+}
+
+export function validateWorkloadIdentity(status) {
+  requireValue(exact(status, ['Uid', 'Gid', 'Groups', 'NoNewPrivs', 'Seccomp',
+    'CapEff', 'CapPrm', 'CapInh', 'CapAmb'])
+    && ['Uid', 'Gid'].every(key => /^65534\s+65534\s+65534\s+65534$/.test(status[key]))
+    && status.Groups === '' && status.NoNewPrivs === '1' && status.Seccomp === '2'
+    && ['CapEff', 'CapPrm', 'CapInh', 'CapAmb'].every(key => typeof status[key] === 'string'
+      && /^0+$/.test(status[key])), 'Child isolation unavailable');
+}
+
+export class ControlFrames {
+  constructor(config, onReady) {
+    this.config = config;
+    this.onReady = onReady;
+    this.decoder = new StringDecoder('utf8');
+    this.buffer = '';
+    this.bytes = 0;
+    this.ready = false;
+    this.result = null;
+  }
+
+  push(chunk) {
+    this.bytes += chunk.length;
+    requireValue(this.bytes <= CONTROL_BYTES, 'Child control frame limit exceeded');
+    this.buffer += this.decoder.write(chunk);
+    while (this.buffer.includes('\n')) {
+      const index = this.buffer.indexOf('\n'), line = this.buffer.slice(0, index);
+      this.buffer = this.buffer.slice(index + 1);
+      const record = JSON.parse(line);
+      if (!this.ready && exact(record, ['kind', 'status']) && record.kind === 'ready') {
+        validateWorkloadIdentity(record.status);
+        this.ready = true;
+        this.onReady();
+      } else {
+        requireValue(this.ready && !this.result, 'Unexpected child framing');
+        this.result = validateResult(record, this.config);
+      }
+    }
+  }
+
+  finish(code, signal) {
+    requireValue(!this.buffer && !this.decoder.end() && this.ready && this.result
+      && !signal && code === 0 && this.result.status === 'passed', 'Incomplete child result or exit');
+    return this.result;
+  }
+}
+
+export function summarizeVitestModules(modules) {
+  requireValue(Array.isArray(modules) && modules.length <= 512, 'Invalid test module report');
+  return modules.map(module => {
+    requireValue(module.project?.name === 'ui', 'Unexpected test project');
+    const summary = { path: module.moduleId, passed: 0, skipped: 0, failed: 0, state: module.state() };
+    for (const test of module.children.allTests()) {
+      const state = test.result().state;
+      if (state === 'passed') summary.passed += 1;
+      else if (state === 'skipped') summary.skipped += 1;
+      else summary.failed += 1;
+      requireValue(summary.passed + summary.skipped + summary.failed <= 1000000, 'Test count exceeded');
+    }
+    if (!module.ok() || module.errors().length > 0) summary.state = 'failed';
+    return summary;
+  }).sort((left, right) => left.path.localeCompare(right.path));
+}
+
+export function boundUiProject(projects) {
+  requireValue(Array.isArray(projects), 'UI recipe requires explicit inline projects');
+  const selected = projects.filter(project => project && typeof project === 'object'
+    && !Array.isArray(project) && project.test?.name === 'ui');
+  requireValue(selected.length === 1, 'UI recipe requires exactly one inline ui project');
+  const project = selected[0];
+  return [{ ...project, cacheDir: '/tmp/vite-cache/ui', test: { ...project.test,
+    browser: { enabled: false }, api: false, coverage: { enabled: false },
+    cache: { dir: '/tmp/vite-cache/ui' }, pool: 'forks', maxWorkers: 1,
+    fileParallelism: false, maxConcurrency: 1, isolate: true, allowOnly: false,
+    passWithNoTests: false, retry: 0, update: false } }];
+}
+
+export function vitestOptions(config, reporter) {
+  return { root: absolutePath(config, config.workspace), config: absolutePath(config, config.configuration),
+    configLoader: 'runner', project: ['ui'], run: true, watch: false, standalone: false,
+    pool: 'forks', maxWorkers: 1, fileParallelism: false, maxConcurrency: 1, isolate: true,
+    coverage: { enabled: false }, browser: { enabled: false }, ui: false, open: false, api: false,
+    cache: { dir: '/tmp/vite-cache' }, passWithNoTests: false, allowOnly: false, retry: 0,
+    update: false, reporters: [reporter], dangerouslyIgnoreUnhandledErrors: false,
+    color: false, clearScreen: false, execArgv: ['--disable-sigusr1'] };
+}

@@ -1,0 +1,221 @@
+"""Actual prepared-workspace tests; absent opt-in is explicitly skipped."""
+from dataclasses import replace
+import json
+import os
+from pathlib import Path
+
+import pytest
+
+from eidolon_cli.organization_project_dependency_bundle import normalize_prepared_dependency_manifest
+from eidolon_cli.organization_project_workspace_node import run_prepared_workspace_step
+
+UI_TEST = 'apps/desktop/src/components/idle-mount.test.tsx'
+
+
+@pytest.fixture(scope='module')
+def prepared():
+    if os.environ.get('EIDOLON_REQUIRE_WORKSPACE_SANDBOX') != '1':
+        pytest.skip('Actual prepared workspace isolation was not explicitly enabled')
+    directory = os.environ.get('EIDOLON_TEST_WORKSPACE_BUNDLE')
+    assert directory, 'Prepared workspace prerequisite is required, never silently skipped'
+    base = Path(directory)
+    manifest = json.loads((base / 'manifest.json').read_text())
+    from tests.eidolon_cli.prepared_workspace_fixture import capture_renderer_source
+    repository = Path(__file__).resolve().parents[2]
+    hashes = json.loads((base / 'execution-only-hashes.json').read_text())
+    source = capture_renderer_source(repository, hashes, lambda: True)
+    files = {item.path: item.content for item in source.files}
+    checked = normalize_prepared_dependency_manifest(manifest,
+        lockfile_bytes=files['package-lock.json'],
+        package_manifests={item['path']: files[item['path']] for item in manifest['packageManifests']},
+        expected_toolchain=manifest['toolchain'])
+    profile = {'version': 1, 'id': 'renderer-validation', 'workspace': 'apps/desktop',
+        'bundleSha256': checked['bundleSha256'],
+        'steps': [
+            {'id': 'renderer-types', 'recipe': 'workspace_typescript', 'checkKind': 'project_typecheck',
+             'config': 'apps/desktop/tsconfig.json', 'testFiles': [],
+             'sourceDirectories': ['apps/desktop/src', 'apps/shared/src']},
+            {'id': 'ui-tests', 'recipe': 'workspace_vitest_ui', 'checkKind': 'project_tests',
+             'config': 'apps/desktop/vitest.config.ts', 'testFiles': [UI_TEST], 'sourceDirectories': []}],
+        'limits': {'wallSeconds': 600, 'memoryMiB': 4096, 'cpus': 1, 'pids': 64,
+                   'scratchMiB': 256, 'logBytes': 131072}}
+    assert len(source.files) > 64 and source.byte_count > 512 * 1024
+    return source, base / 'bundle', manifest, profile
+
+
+def execute(prepared, step, source=None):
+    original, directory, manifest, profile = prepared
+    return run_prepared_workspace_step(source or original, directory, manifest,
+        manifest['toolchain'], profile, step, allow_local_docker=True,
+        check_authorized=lambda: True)
+
+
+def changed(source, path, suffix):
+    files = tuple(replace(item, content=item.content + suffix) if item.path == path else item
+                  for item in source.files)
+    assert any(item.path == path for item in files)
+    return replace(source, files=files)
+
+
+def test_actual_renderer_typecheck_and_real_ui_share_source_and_bundle(prepared):
+    typed = execute(prepared, 'renderer-types')
+    tested = execute(prepared, 'ui-tests')
+    for receipt in (typed, tested):
+        assert receipt['status'] == 'passed', receipt
+        assert receipt['cleanupConfirmed'] is True
+        assert receipt['isolation']['established'] is True
+        assert receipt['sourceWritesPerformed'] is False
+        assert receipt['snapshotSha256'] == prepared[0].snapshot_sha256
+    for key in ('snapshotSha256', 'bundleSha256', 'profileSha256'):
+        assert typed[key] == tested[key]
+    assert typed['stepDefinitionSha256'] != tested['stepDefinitionSha256']
+    assert typed['outcome']['testCount'] == 0
+    assert typed['outcome']['sourceCount'] > 64
+    assert tested['outcome']['testCount'] > 0
+    assert tested['outcome']['reportedFiles'] == ['/source/root0/' + UI_TEST]
+
+
+def test_actual_renderer_type_error_cannot_pass(prepared):
+    source = changed(prepared[0], 'apps/desktop/src/main.tsx',
+                     b'\nconst __eidolon_type_failure: string = 123;\n')
+    result = execute(prepared, 'renderer-types', source)
+    assert result['status'] == 'failed', result
+    assert result['cleanupConfirmed'] is True
+    assert result['isolation']['established'] is True
+    assert result['snapshotSha256'] == source.snapshot_sha256
+    assert result['snapshotSha256'] != prepared[0].snapshot_sha256
+    assert type(result['failureClaim']['toolExitCode']) is int
+    assert result['failureClaim']['toolExitCode'] != 0
+    assert 'TS2322' in result['stderr']
+
+
+def test_actual_ui_assertion_failure_cannot_pass(prepared):
+    source = changed(prepared[0], UI_TEST,
+                     b"\nit('prepared negative assertion', () => { expect(1).toBe(2) });\n")
+    result = execute(prepared, 'ui-tests', source)
+    assert result['status'] == 'failed', result
+    assert result['cleanupConfirmed'] is True
+    assert result['isolation']['established'] is True
+    assert result['snapshotSha256'] == source.snapshot_sha256
+    assert result['snapshotSha256'] != prepared[0].snapshot_sha256
+    assert result['failureClaim']['failedCount'] >= 1
+
+
+def test_actual_ui_workload_cannot_write_source_signal_supervisor_or_use_network(prepared):
+    probe = b'''
+it('prepared sandbox boundaries', async () => {
+  const fs = await import('node:fs');
+  const net = await import('node:net');
+  expect(() => fs.writeFileSync('/source/root0/apps/desktop/src/probe.txt', 'bad')).toThrow();
+  expect(() => fs.readFileSync('/proc/1/environ')).toThrow();
+  expect(() => process.kill(1, 'SIGUSR1')).toThrow();
+  const blocked = await new Promise<boolean>((resolve) => {
+    const socket = net.createConnection({ host: '1.1.1.1', port: 443 });
+    socket.once('connect', () => { socket.destroy(); resolve(false) });
+    socket.once('error', () => { socket.destroy(); resolve(true) });
+    socket.setTimeout(1500, () => { socket.destroy(); resolve(true) });
+  });
+  expect(blocked).toBe(true);
+});
+'''
+    source = changed(prepared[0], UI_TEST, probe)
+    result = execute(prepared, 'ui-tests', source)
+    assert result['status'] == 'passed', result
+    assert result['cleanupConfirmed'] is True
+    assert result['isolation']['network'] == 'none'
+
+
+def test_actual_project_configuration_import_obeys_sandbox_boundaries(prepared):
+    # Configuration executes in the harness before the Vitest worker. Probe
+    # that separate untrusted-code entry point, not only the UI test process.
+    probe = b'''
+import configProbeAssert from 'node:assert/strict';
+import configProbeFs from 'node:fs';
+import configProbeNet from 'node:net';
+configProbeAssert.equal(process.getuid(), 65534);
+configProbeAssert.throws(() => configProbeFs.writeFileSync(
+  '/source/root0/apps/desktop/src/config-probe.txt', 'bad'));
+configProbeAssert.throws(() => configProbeFs.readFileSync('/proc/1/environ'));
+configProbeAssert.throws(() => process.kill(1, 'SIGUSR1'));
+const configProbeBlocked = await new Promise<boolean>((resolve) => {
+  const socket = configProbeNet.createConnection({ host: '1.1.1.1', port: 443 });
+  socket.once('connect', () => { socket.destroy(); resolve(false) });
+  socket.once('error', () => { socket.destroy(); resolve(true) });
+  socket.setTimeout(1500, () => { socket.destroy(); resolve(true) });
+});
+configProbeAssert.equal(configProbeBlocked, true);
+process.stderr.write('CONFIG_IMPORT_BOUNDARY_PROBE_COMPLETE\\n');
+'''
+    source = changed(prepared[0], 'apps/desktop/vitest.config.ts', probe)
+    result = execute(prepared, 'ui-tests', source)
+    assert result['status'] == 'passed', result
+    assert result['cleanupConfirmed'] is True
+    assert result['isolation']['established'] is True
+    assert result['isolation']['network'] == 'none'
+    assert result['snapshotSha256'] == source.snapshot_sha256
+    assert result['snapshotSha256'] != prepared[0].snapshot_sha256
+    assert 'CONFIG_IMPORT_BOUNDARY_PROBE_COMPLETE' in result['stderr']
+
+
+def test_actual_running_workspace_observes_authority_revocation(prepared, monkeypatch):
+    import threading
+    import time
+    import uuid
+    from eidolon_cli import organization_project_workspace_node as runtime
+    original_docker = runtime._docker
+    revoked = threading.Event()
+    observed = threading.Event()
+    stop_observing = threading.Event()
+    observers, observation_errors = [], []
+    marker = 'eidolon-revoke-' + uuid.uuid4().hex[:12]
+
+    def observe_workload(container, configuration):
+        deadline = time.monotonic() + 90
+        try:
+            while not stop_observing.is_set() and time.monotonic() < deadline:
+                code, output, _, forced = original_docker(
+                    ['top', container, '-eo', 'uid,args'], configuration,
+                    runtime._Budget(None, 2, time.monotonic()), limit=65536)
+                if code == 0 and forced is None:
+                    rows = [line.strip().split(maxsplit=1)
+                            for line in output['stdout'].decode('utf-8', 'strict').splitlines()]
+                    if any(row == ['65534', marker] for row in rows):
+                        observed.set()
+                        return
+                stop_observing.wait(0.1)
+        except Exception as error:
+            observation_errors.append(type(error).__name__)
+        finally:
+            # Bound failure cleanup too, but never mistake this for a successful
+            # observation: the assertion below requires the actual UID/title.
+            revoked.set()
+
+    def observed_docker(arguments, configuration, budget, limit=1048576):
+        if arguments[:2] == ['start', '--attach']:
+            observer = threading.Thread(target=observe_workload,
+                                        args=(arguments[2], configuration), daemon=True)
+            observers.append(observer)
+            observer.start()
+        return original_docker(arguments, configuration, budget, limit)
+
+    monkeypatch.setattr(runtime, '_docker', observed_docker)
+    source, directory, manifest, profile = prepared
+    probe = ("\nit('prepared running revocation probe', async () => {\n"
+             f"  process.title = '{marker}';\n"
+             "  await new Promise((resolve) => setTimeout(resolve, 120000));\n"
+             "}, 150000);\n").encode('utf-8')
+    source = changed(source, UI_TEST, probe)
+    try:
+        result = run_prepared_workspace_step(source, directory, manifest, manifest['toolchain'],
+            profile, 'ui-tests', allow_local_docker=True, check_authorized=lambda: not revoked.is_set())
+        assert observers and observed.is_set(), (observation_errors, result)
+        assert revoked.is_set()
+        assert result['status'] == 'cancelled', result
+        assert result['cleanupConfirmed'] is True
+        assert result['snapshotSha256'] == source.snapshot_sha256
+    finally:
+        stop_observing.set()
+        revoked.set()
+        for observer in observers:
+            observer.join(timeout=5)
+            assert not observer.is_alive(), 'Bounded native process observer did not stop'

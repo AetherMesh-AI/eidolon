@@ -1,0 +1,70 @@
+name: Prepared workspace candidate inventory
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  prepare-candidate:
+    name: Review dependency inventory only (no workload execution)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: Install locked Python test dependencies
+        run: |
+          python -m pip install uv==0.12.23
+          uv sync --locked --python 3.12 --extra dev --extra slack
+      - name: Record exact source and stage only package manifests
+        run: |
+          git rev-parse HEAD HEAD^{tree}
+          .venv/bin/python - <<'PY'
+          import json, os, pathlib, shutil
+          root = pathlib.Path.cwd()
+          parent = pathlib.Path(os.environ['RUNNER_TEMP']) / 'prepared-project'
+          parent.mkdir(mode=0o700)
+          work = parent / 'installation'
+          work.mkdir(mode=0o700)
+          lock = json.loads((root / 'package-lock.json').read_text())
+          assert lock['lockfileVersion'] == 3
+          for path in lock['packages']:
+              if 'node_modules' in path.split('/'):
+                  continue
+              relative = pathlib.PurePosixPath(path)
+              assert not relative.is_absolute() and '..' not in relative.parts
+              target = work / relative / 'package.json'
+              target.parent.mkdir(parents=True, exist_ok=True)
+              shutil.copyfile(root / relative / 'package.json', target)
+          shutil.copyfile(root / 'package-lock.json', work / 'package-lock.json')
+          PY
+      - name: Prepare from official registry without package lifecycle scripts
+        run: |
+          IMAGE=node@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5
+          docker pull "$IMAGE"
+          docker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --user "$(id -u):$(id -g)" --cpus 2 --memory 4g --pids-limit 128 \
+            --tmpfs /tmp:rw,nosuid,nodev,size=2147483648 \
+            --mount "type=bind,src=$RUNNER_TEMP/prepared-project/installation,dst=/work" \
+            --mount "type=bind,src=$GITHUB_WORKSPACE/scripts/organization/record_prepared_npm_install.mjs,dst=/prepare.mjs,readonly" \
+            --workdir /work --entrypoint /usr/local/bin/node "$IMAGE" /prepare.mjs
+      - name: Inventory bytes without executing installed dependencies
+        run: |
+          .venv/bin/python scripts/organization/prepare_workspace_dependencies.py \
+            --repository "$RUNNER_TEMP/prepared-project/installation" \
+            --output "$RUNNER_TEMP/prepared-project/candidate" --candidate
+          cp "$RUNNER_TEMP/prepared-project/installation/runtime-metadata.json" "$RUNNER_TEMP/prepared-project/candidate/"
+          cp "$RUNNER_TEMP/prepared-project/installation/installation-record.json" "$RUNNER_TEMP/prepared-project/candidate/"
+      - name: Retain reviewable metadata only
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: prepared-workspace-candidate
+          path: |
+            ${{ runner.temp }}/prepared-project/candidate/candidate.json
+            ${{ runner.temp }}/prepared-project/candidate/runtime-metadata.json
+            ${{ runner.temp }}/prepared-project/candidate/installation-record.json
+          if-no-files-found: warn
