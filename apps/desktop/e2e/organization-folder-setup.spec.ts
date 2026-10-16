@@ -71,6 +71,28 @@ OrganizationStore(ledger)
     expect(fs.readdirSync(folder)).toEqual([])
     await section.screenshot({ path: test.info().outputPath(`folder-${index}-review.png`) })
     await approve.click()
+    const saved = section.getByRole('status')
+    const refusal = section.getByRole('alert')
+
+    // An idle scheduler can briefly hold the same capacity fence. A refusal is
+    // terminal until the owner explicitly retries the retained reviewed intent.
+    for (let retry = 0; retry < 3; retry += 1) {
+      await expect(saved.or(refusal)).toBeVisible()
+
+      if (await saved.isVisible()) {
+        break
+      }
+
+      await expect(refusal).toHaveText('Organization owner policy: execution_still_stopping')
+      await expect(section.getByText(folder, { exact: true })).toBeVisible()
+      await expect(section.getByText(`${id} · root${index} · general`, { exact: true })).toBeVisible()
+      await expect(panel.getByRole('list', { name: 'Configured project folders', exact: true }).getByRole('listitem')).toHaveCount(index)
+      expect(fs.readFileSync(config, 'utf8')).toBe(before)
+      expect(fs.readdirSync(folder)).toEqual([])
+      expect(fixture.mock.receivedPrompts.length).toBe(calls)
+      await section.getByRole('button', { name: 'Retry the same reviewed registration', exact: true }).click()
+    }
+
     await expect(section.getByRole('status')).toHaveText('Project saved in this profile’s organization ledger.')
     await expect(panel.getByRole('list', { name: 'Configured project folders', exact: true }).getByRole('listitem')).toHaveCount(index + 1)
     expect(fixture.mock.receivedPrompts.length).toBe(calls)
