@@ -7,6 +7,8 @@ import { LocalizedTime } from './localized-time'
 import { RuntimeAdaptivePacing } from './runtime-adaptive-pacing'
 import { RuntimeCompletionReserve } from './runtime-completion-reserve'
 import { validOutcomeContract } from './runtime-outcome-contract-types'
+import { preparedObjectiveCopy } from './runtime-prepared-objective-copy'
+import { RuntimePreparedValidationActivity } from './runtime-prepared-validation-activity'
 import { RuntimeProjectExecution } from './runtime-project-execution'
 import type { Objective } from './types'
 
@@ -51,7 +53,7 @@ export function RuntimeAcceptance({
           <h3>{copy.requiredChecks}</h3>
           <ul>
             {objective.requiredChecks.map(check => (
-              <li key={check}>{copy[check]}</li>
+              <li key={check}>{check === 'project_typecheck' ? preparedObjectiveCopy[locale].projectTypecheck : copy[check]}</li>
             ))}
           </ul>
         </>
@@ -77,7 +79,8 @@ export function RuntimeAcceptance({
           </Button>
         </section>
       )}
-      {(objective.projectExecution || objective.requiredChecks?.includes('project_tests')) && (
+      <RuntimePreparedValidationActivity objective={objective} />
+      {(objective.projectExecution || (!objective.preparedValidations?.length && objective.requiredChecks?.includes('project_tests'))) && (
         objective.projectExecution && 'projects' in objective.projectExecution
           ? objective.projectExecution.projects.map(project => <RuntimeProjectExecution execution={project.execution} key={project.projectId} onOpenEvidence={onOpenEvidence} projectId={project.projectId} />)
           : <RuntimeProjectExecution execution={objective.projectExecution} onOpenEvidence={onOpenEvidence} />

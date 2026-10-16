@@ -54,6 +54,9 @@ def replacement_reasons(usage):
 
 
 def replacement_preview(conn, settings, objective_id, resolution_options):
+    from eidolon_cli.organization_prepared_validation_objectives import prepared_selection_references
+    if prepared_selection_references(conn, objective_id):
+        raise ValueError('Prepared-profile replacement requires a new explicitly reviewed objective selection; automatic profile carry-forward is unsupported')
     row = conn.execute('SELECT * FROM objectives WHERE id=?', (objective_id,)).fetchone()
     if row is None:
         raise ValueError('Objective not found in this profile')

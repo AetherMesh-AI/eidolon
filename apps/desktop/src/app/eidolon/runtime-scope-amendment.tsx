@@ -4,9 +4,10 @@ import { useI18n } from '@/i18n/context'
 
 import { outcomeCriteria, OutcomeCriteriaEditor } from './outcome-criteria-editor'
 import type { OutcomeCriterionInput } from './runtime-outcome-contract-types'
+import { preparedObjectiveCopy } from './runtime-prepared-objective-copy'
 import type { OrganizationRequiredCheck, OrganizationScopeAmendment } from './types'
 
-const checks: OrganizationRequiredCheck[] = ['project_tests', 'managed_validation', 'source_integration']
+const checks = ['project_tests', 'managed_validation', 'source_integration'] as const
 
 export interface ScopeAmendmentDraft {
   criteria: string
@@ -39,7 +40,7 @@ export function ScopeAmendmentFields({
   disabled: boolean
   onChange(draft: ScopeAmendmentDraft): void
 }) {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const copy = t.organizationWork
 
   return (
@@ -50,7 +51,7 @@ export function ScopeAmendmentFields({
         {currentChecks.length ? (
           <ul>
             {currentChecks.map(check => (
-              <li key={check}>{copy[check]}</li>
+              <li key={check}>{check === 'project_typecheck' ? preparedObjectiveCopy[locale].projectTypecheck : copy[check]}</li>
             ))}
           </ul>
         ) : (
@@ -111,7 +112,7 @@ export function ScopeAmendmentFields({
 }
 
 export function ScopeAmendmentAudit({ amendment }: { amendment: OrganizationScopeAmendment }) {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const copy = t.organizationWork
 
   return (
@@ -135,7 +136,7 @@ export function ScopeAmendmentAudit({ amendment }: { amendment: OrganizationScop
           {amendment[side].requiredChecks.length ? (
             <ul>
               {amendment[side].requiredChecks.map(check => (
-                <li key={check}>{copy[check]}</li>
+                <li key={check}>{check === 'project_typecheck' ? preparedObjectiveCopy[locale].projectTypecheck : copy[check]}</li>
               ))}
             </ul>
           ) : (

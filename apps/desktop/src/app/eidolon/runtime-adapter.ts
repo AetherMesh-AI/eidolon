@@ -12,6 +12,7 @@ import { validAuditModelRouting } from './runtime-model-routing-contract'
 import { type OrganizationOutcomePage, validOutcomePage } from './runtime-outcome-types'
 import { OwnerChatRenewalRejected, validOwnerChatThread } from './runtime-owner-chat-contract'
 import type { OwnerChatThread } from './runtime-owner-chat-types'
+import { validatePreparedObjectiveMetadata } from './runtime-prepared-objective-contract'
 import type { PriorityReceipt } from './runtime-priority-types'
 import { validProjectSave, validProjectSetup } from './runtime-project-setup-contract'
 import { validEditProposal } from './runtime-proposal-validation'
@@ -652,9 +653,17 @@ export function createRuntimeAdapter(gateway: OrganizationGateway): RuntimeOrgan
       const title = input.trim()
 
       if (!title) {return Promise.reject(new Error('Describe an objective before submitting.'))}
+      let preparedValidations
+
+      try { preparedValidations = validatePreparedObjectiveMetadata(metadata) }
+      catch (error) { return Promise.reject(error) }
+
       // Only fields the runtime implements cross this boundary. In particular,
       // prototype owner/status/progress edits never authorize runtime work.
-      const params = { title, projectIds: metadata.projectIds, executiveId: metadata.executiveId, managerId: metadata.managerId, description: metadata.description?.trim() || undefined, priority: metadata.priority, acceptanceCriteria: metadata.acceptanceCriteria, deliveryMode: metadata.deliveryMode, requiredChecks: metadata.requiredChecks }
+      const params = { title, projectIds: preparedValidations ? [...metadata.projectIds!] : metadata.projectIds, executiveId: metadata.executiveId, managerId: metadata.managerId, description: metadata.description?.trim() || undefined, priority: metadata.priority, acceptanceCriteria: metadata.acceptanceCriteria, deliveryMode: metadata.deliveryMode,
+        requiredChecks: preparedValidations ? [...metadata.requiredChecks!] : metadata.requiredChecks,
+        ...(preparedValidations ? { preparedValidations } : {}) }
+
       const intent = JSON.stringify([scope.ownerKey ?? scope.key, params])
       const key = idempotencyKey ?? createKeys.get(intent) ?? crypto.randomUUID()
       createKeys.set(intent, key)

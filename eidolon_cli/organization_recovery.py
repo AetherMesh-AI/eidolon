@@ -113,6 +113,14 @@ class OrganizationRecoveryStore:
                 ('SELECT 1 FROM tool_receipts WHERE request_id=? AND attempt=?', (request['id'], request['execution_count'])),
                 ('SELECT 1 FROM project_run_starts WHERE request_id=? AND token=?', (request['id'], request['token'])),
             ))
+        prepared_blocked = False
+        if safe:
+            from eidolon_cli.organization_prepared_validation_settlement import request_has_prepared_reservation
+            try:
+                prepared_blocked = request_has_prepared_reservation(conn, request['id'])
+            except ValueError:
+                prepared_blocked = True  # Unknown storage cannot prove no reservation.
+            safe = not prepared_blocked
         if safe:
             if durable_project is not None:
                 conn.execute('INSERT OR IGNORE INTO organization_project_reconcile_only VALUES (?,?,?,?)',
@@ -129,4 +137,6 @@ class OrganizationRecoveryStore:
                 conn.execute("UPDATE tasks SET status='queued' WHERE id=?", (request['task_id'],))
             self._event(conn, request['objective_id'], 'Recorded execution recovered; original limits remain in force.', 'planning')
         else:
-            self._pending(conn, request, 'Execution lease expired or the backend restarted. Its outcome is unconfirmed; review before retrying.')
+            self._pending(conn, request,
+                'Prepared reservation or malformed prepared history prevents automatic recovery; inspect retained outcomes before retrying.'
+                if prepared_blocked else 'Execution lease expired or the backend restarted. Its outcome is unconfirmed; review before retrying.')

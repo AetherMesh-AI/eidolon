@@ -5,6 +5,7 @@ import type { OrganizationModelAssignment, OrganizationModelDispatch, Organizati
 import type { OutcomeContract, OutcomeCriterionInput, OutcomeJudgment, OutcomeJudgmentInput } from './runtime-outcome-contract-types'
 import type { OrganizationOutcomePage, OrganizationOutcomeQuery, OrganizationOutcomeSeen } from './runtime-outcome-types'
 import type { OwnerChatCancel, OwnerChatRead, OwnerChatRenew, OwnerChatSend, OwnerChatThread } from './runtime-owner-chat-types'
+import type { PreparedValidationStatus } from './runtime-prepared-validation-status-types'
 import type { PriorityChange, PriorityReceipt } from './runtime-priority-types'
 
 export const objectiveStatusLabels = {
@@ -13,7 +14,12 @@ export const objectiveStatusLabels = {
 } as const
 export type ObjectiveStatus = keyof typeof objectiveStatusLabels
 export type WorkStatus = 'working' | 'active' | 'thinking' | 'executing' | 'reviewing' | 'needs_input' | 'idle' | 'waiting' | 'review' | 'offline'
-export type OrganizationRequiredCheck = 'project_tests' | 'managed_validation' | 'source_integration'
+export type OrganizationRequiredCheck = 'project_tests' | 'managed_validation' | 'source_integration' | 'project_typecheck'
+export interface PreparedValidationReference {
+  projectId: string
+  revision: number
+  registrationSha256: string
+}
 export interface OrganizationProjectBinding {
   id: string
   root: string
@@ -23,6 +29,7 @@ export interface OrganizationProjectBinding {
 }
 export interface ObjectiveMetadata {
   projectIds?: string[]
+  preparedValidations?: PreparedValidationReference[]
   executiveId?: string
   managerId?: string
   description?: string
@@ -82,6 +89,7 @@ export interface ObjectiveReplacementInput {
   confirmed: true
 }
 export interface Objective extends ObjectiveMetadata {
+  preparedValidation?: PreparedValidationStatus | null
   /** Optional display code from the runtime; unknown codes retain phase text. */
   phaseCode?: string
   dispatchControl?: DispatchState

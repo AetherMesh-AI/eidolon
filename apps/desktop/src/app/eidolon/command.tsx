@@ -18,6 +18,11 @@ import {
   emptyIntake,
   setIntakeDraft
 } from './runtime-intake-drafts'
+import { validatePreparedObjectiveMetadata } from './runtime-prepared-objective-contract'
+import { preparedObjectiveCopy } from './runtime-prepared-objective-copy'
+import { RuntimePreparedObjectiveSelector } from './runtime-prepared-objective-selector'
+import { $preparedObjectiveSelections, discardPreparedObjectiveSelection, preparedObjectiveSelectionError, reconcilePreparedObjectiveSelection } from './runtime-prepared-objective-state'
+import { readPreparedValidationScope } from './runtime-prepared-validation-scope'
 import { SubmissionCheck } from './runtime-submission-check'
 import type { ObjectiveMetadata, OrganizationSnapshot, RuntimeOrganizationAdapter } from './types'
 
@@ -35,10 +40,13 @@ export function Command({
   const copy = t.organizationWork
   const roster = t.organizationRoster
   const drafts = useStore($intakeDrafts)
+  const preparedStates = useStore($preparedObjectiveSelections)
+  const preparedCopy = preparedObjectiveCopy[locale]
   const localKey = useRef(crypto.randomUUID())
   const owner = snapshot.connection?.ownerScope ?? snapshot.connection?.scope
   const unavailable = snapshot.connection && snapshot.connection.state !== 'ready'
   const draftKey = owner ? JSON.stringify(['intake', owner]) : localKey.current
+  const preparedRequested = preparedStates[draftKey]?.requested ?? false
   const hidden = snapshot.connection?.state === 'connecting'
   const draft = hidden ? emptyIntake : (drafts[draftKey] ?? emptyIntake)
   const { criteria, goal, metadata } = draft
@@ -59,7 +67,16 @@ export function Command({
 
   const setCriteria = (value: string) => update({ criteria: value })
   const setGoal = (value: string) => update({ goal: value })
-  const setMetadata = (value: ObjectiveMetadata) => update({ metadata: value })
+
+  const setMetadata = (value: ObjectiveMetadata) => {
+    if (JSON.stringify(value.projectIds) !== JSON.stringify(metadata.projectIds)) {
+      const { preparedValidations: _refs, ...withoutReferences } = value
+      update({ metadata: withoutReferences })
+    } else {
+      update({ metadata: value })
+    }
+  }
+
   const setError = (value: string) => update({ error: value })
 
   // Ownership selection is a capability of persistent-identity runtimes. Older
@@ -135,11 +152,31 @@ export function Command({
       return
     }
 
+    const preparedContext = { scope: readPreparedValidationScope(), snapshot: adapter.getSnapshot() }
+    const preparedError = preparedObjectiveSelectionError(draftKey, metadata, preparedContext)
+
+    if (preparedError) {
+      reconcilePreparedObjectiveSelection(draftKey, preparedContext)
+      setError(preparedCopy[preparedError])
+
+      return
+    }
+
+    let preparedValidations: ObjectiveMetadata['preparedValidations']
+
+    try {
+      preparedValidations = validatePreparedObjectiveMetadata(metadata)
+    } catch {
+      setError(preparedCopy.constraints)
+
+      return
+    }
+
     const selectedProjects = availableProjects.filter(project => metadata.projectIds?.includes(project.id))
 
     if (selectedProjects.some(project => project.recipe === null) &&
       ((metadata.deliveryMode ?? 'source_project') !== 'managed_artifact' ||
-        metadata.requiredChecks?.some(check => check === 'project_tests' || check === 'source_integration') ||
+        metadata.requiredChecks?.some(check => (check === 'project_tests' && !preparedValidations?.length) || check === 'source_integration') ||
         (selectedProjects.every(project => project.recipe === null) && metadata.requiredChecks?.includes('managed_validation')))) {
       setError(copy.projectPlanningDelivery)
 
@@ -163,6 +200,7 @@ export function Command({
 
     const submitted = {
       ...metadata,
+      ...(preparedValidations ? { preparedValidations } : {}),
       executiveId: hasOwnership ? executiveId : undefined,
       managerId: hasOwnership ? managerId : undefined,
       acceptanceCriteria: acceptanceCriteria.length ? outcomeCriteria(acceptanceCriteria, metadata.acceptanceCriteria) : undefined,
@@ -183,6 +221,8 @@ export function Command({
         }
 
         acknowledgeIntake(draftKey, idempotencyKey, sent)
+
+        if (!$intakeDrafts.get()[draftKey]) { discardPreparedObjectiveSelection(draftKey) }
 
         if (active.current) {
           navigate(`/objectives/${objective.id}`)
@@ -336,6 +376,7 @@ export function Command({
             ))}
           </fieldset>
         )}
+        <RuntimePreparedObjectiveSelector disabled={disabled} draftKey={draftKey} getSnapshot={adapter.getSnapshot} metadata={metadata} snapshot={snapshot} />
         <details className="eid-form-disclosure">
           <summary>
             {copy.addContext}
@@ -376,7 +417,7 @@ export function Command({
           {copy.deliveryMode}
           <select
             className={controlVariants()}
-            disabled={disabled}
+            disabled={disabled || preparedRequested}
             onChange={event =>
               setMetadata({ ...metadata, deliveryMode: event.target.value as ObjectiveMetadata['deliveryMode'] })
             }
@@ -396,10 +437,11 @@ export function Command({
           </summary>
           <fieldset disabled={disabled}>
             <legend>{copy.requiredChecks}</legend>
-            {(['project_tests', 'managed_validation', 'source_integration'] as const).map(check => (
+            {([...(preparedRequested || metadata.requiredChecks?.includes('project_typecheck') ? ['project_typecheck' as const] : []), 'project_tests', 'managed_validation', 'source_integration'] as const).map(check => (
               <label className="eid-inline" key={check}>
                 <input
                   checked={metadata.requiredChecks?.includes(check) ?? false}
+                  disabled={preparedRequested && (check === 'project_typecheck' || check === 'project_tests' || check === 'source_integration')}
                   onChange={event =>
                     setMetadata({
                       ...metadata,
@@ -410,7 +452,7 @@ export function Command({
                   }
                   type="checkbox"
                 />
-                {copy[check]}
+                {check === 'project_typecheck' ? preparedCopy.projectTypecheck : copy[check]}
               </label>
             ))}
           </fieldset>
@@ -487,6 +529,7 @@ export function Command({
         onConfirm={() => {
           if (!$intakeDrafts.get()[draftKey]?.busy && !$intakeDrafts.get()[draftKey]?.checking) {
             discardIntakeDraft(draftKey)
+            discardPreparedObjectiveSelection(draftKey)
           }
         }}
         open={discarding && !unavailable}

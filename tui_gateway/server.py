@@ -3219,6 +3219,7 @@ from . import (  # noqa: E402
     methods_organization_team_setup as _methods_organization_team_setup,
     methods_organization_owner_policy as _methods_organization_owner_policy,
     methods_organization_folder_setup as _methods_organization_folder_setup,
+    methods_organization_prepared_validation as _methods_organization_prepared_validation,
     methods_organization_shared_allowance as _methods_organization_shared_allowance,
     methods_organization_observation as _methods_organization_observation,
     methods_organization_intake as _methods_organization_intake,
@@ -3234,7 +3235,7 @@ for _m in (
     _methods_config_set, _methods_complete, _methods_tools, _methods_profiles, _methods_images,
     _methods_bot_relay, _prompt_turn, _billing_view, _methods_projects, _methods_session_foreign,
     _methods_session_control, _methods_subagents, _methods_organization, _methods_organization_owner_chat, _methods_organization_intake,
-    _methods_organization_metadata, _methods_organization_milestones, _methods_organization_goals, _methods_organization_observation, _methods_organization_owner_policy, _methods_organization_folder_setup,
+    _methods_organization_metadata, _methods_organization_milestones, _methods_organization_goals, _methods_organization_observation, _methods_organization_owner_policy, _methods_organization_folder_setup, _methods_organization_prepared_validation,
     _methods_organization_shared_allowance, _methods_organization_team_setup, _methods_organization_credentials,
     _methods_organization_credential_handoff):
     _m.register(sys.modules[__name__])

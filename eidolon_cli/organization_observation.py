@@ -59,8 +59,10 @@ def _compatible_schema(conn, tables):
     from eidolon_cli.organization_goal_allowances import GOAL_TABLES
     from eidolon_cli.organization_goal_continuation import CONTINUATION_TABLES
     from eidolon_cli.organization_outcome_contracts import CONTRACT_TABLES
+    from eidolon_cli.organization_prepared_validation_ledger import PREPARED_VALIDATION_TABLES
+    prepared_tables = PREPARED_VALIDATION_TABLES | {'prepared_validation_registration_bindings', 'prepared_validation_runtime_events', 'prepared_validation_source_proofs', 'prepared_validation_review_scopes', 'prepared_validation_pair_reviews'}
     optional_groups = (PACKAGE_REPAIR_TABLES, REPAIR_TABLES, MILESTONE_TABLES,
-                       CONTRACT_TABLES, GOAL_TABLES, CONTINUATION_TABLES)
+                       CONTRACT_TABLES, GOAL_TABLES, CONTINUATION_TABLES, prepared_tables)
     for optional_tables in optional_groups:
         if tables & optional_tables and not optional_tables <= tables:
             return False

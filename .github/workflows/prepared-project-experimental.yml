@@ -1,7 +1,7 @@
 name: Prepared workspace isolation
 on:
   push:
-    branches: ['main', 'feat/prepared-project-validation']
+    branches: ['main', 'feat/prepared-project-validation', 'feat/prepared-validation-integration']
     paths:
       - '.github/workflows/prepared-project-experimental.yml'
       - 'scripts/run_tests.sh'
@@ -14,6 +14,24 @@ on:
       - 'scripts/organization/prepare_workspace_dependencies.py'
       - 'scripts/organization/record_prepared_npm_install.mjs'
       - 'eidolon_cli/organization_project_dependency_bundle.py'
+      - 'eidolon_cli/organization_project_dependency_verification.py'
+      - 'eidolon_cli/organization_project_effective_snapshot.py'
+      - 'eidolon_cli/organization_prepared_validation_*.py'
+      - 'eidolon_cli/organization_store.py'
+      - 'eidolon_cli/organization_project_execution.py'
+      - 'eidolon_cli/organization_project_workspace.py'
+      - 'eidolon_cli/organization_acceptance.py'
+      - 'eidolon_cli/organization_outcome_contracts.py'
+      - 'eidolon_cli/organization_observation.py'
+      - 'eidolon_cli/organization_policy.py'
+      - 'eidolon_cli/organization_root_grants.py'
+      - 'eidolon_cli/organization_projects.py'
+      - 'eidolon_cli/organization_project_config.py'
+      - 'eidolon_cli/organization_edits.py'
+      - 'eidolon_cli/organization_roster.py'
+      - 'tests/eidolon_cli/test_organization_prepared_validation_*.py'
+      - 'tests/eidolon_cli/test_organization_project_dependency_*.py'
+      - 'tests/eidolon_cli/test_organization_root_grants.py'
       - 'eidolon_cli/organization_project_snapshot_bundle.py'
       - 'eidolon_cli/organization_project_validation_profile.py'
       - 'eidolon_cli/organization_project_workspace_node.py'
@@ -131,6 +149,15 @@ jobs:
         run: |
           scripts/run_tests.sh tests/eidolon_cli/test_organization_project_workspace_${{ matrix.suite }}.py \
             -j 1 --file-timeout 1800 --file-retries 0 -x --junitxml=workspace-${{ matrix.suite }}.xml
+      - name: Verify owner-selected durable two-recipe lifecycle
+        if: matrix.suite == 'native'
+        env:
+          HERMES_PYTHON: .venv/bin/python
+          EIDOLON_REQUIRE_WORKSPACE_SANDBOX: '1'
+          EIDOLON_TEST_WORKSPACE_BUNDLE: ${{ runner.temp }}/prepared-project/verified
+        run: |
+          scripts/run_tests.sh tests/eidolon_cli/test_organization_prepared_validation_native.py \
+            -j 1 --file-timeout 1800 --file-retries 0 -x --junitxml=prepared-lifecycle-native.xml
       - name: Retain exact native proof and preparation metadata
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -138,6 +165,7 @@ jobs:
           name: prepared-workspace-${{ matrix.suite }}-proof
           path: |
             workspace-compiler.xml
+            prepared-lifecycle-native.xml
             workspace-native.xml
             workspace-abuse.xml
             workspace-capacity.xml

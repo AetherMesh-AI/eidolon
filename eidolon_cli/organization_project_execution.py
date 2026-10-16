@@ -71,6 +71,12 @@ def _run_project_id(conn, row):
 
 
 def project_execution_artifact(conn, identifier):
+    if isinstance(identifier, str) and identifier.startswith('prepared_run_'):
+        from eidolon_cli.organization_prepared_validation_verification import prepared_validation_artifact
+        return prepared_validation_artifact(conn, identifier)
+    if isinstance(identifier, str) and identifier.startswith('prepared_scope_'):
+        from eidolon_cli.organization_prepared_validation_review_scope import review_scope_artifact
+        return review_scope_artifact(conn, identifier)
     if isinstance(identifier, str) and identifier.startswith('project_build_output_'):
         from eidolon_cli.organization_project_build_artifacts import build_output_artifact
         return build_output_artifact(conn, identifier)
@@ -111,7 +117,7 @@ def source_integration_artifact(conn, identifier):
             'toolReceipts': [], 'createdAt': datetime.fromtimestamp(row['created'], timezone.utc).isoformat()}
 
 
-def replan_project_history(conn, objective_id, round_number):
+def replan_project_history(conn, objective_id, round_number, *, completing_request=None):
     """Bind bounded prior attempts to their actual artifacts, never inferred outcomes.
 
     Keep earlier rounds too: an amendment before another run must not erase the
@@ -133,6 +139,8 @@ def replan_project_history(conn, objective_id, round_number):
                         'snapshotSha256': row['snapshot_sha256'], 'evidenceIds': evidence_ids,
                         'review': {'approved': bool(review['approved']), 'reviewerId': review['reviewer_id'],
                                    'summary': review['summary'], 'requestId': review['request_id']} if review else None})
+    from eidolon_cli.organization_prepared_validation_history import prepared_replan_history
+    history.extend(prepared_replan_history(conn, objective_id, round_number, completing_request=completing_request))
     return history
 
 
@@ -229,11 +237,10 @@ class OrganizationProjectExecutionStore:
                 return project
         raise ValueError('Project stage requires an exact owner-bound projectId')
 
-    def _project_grant(self, conn, objective_id, project_id=None):
+    def _project_execution_authors(self, conn, objective_id, project):
+        """Recheck current authority of every retained source contributor."""
         from eidolon_cli.organization_acceptance import current_tasks
-        project = self._execution_project(conn, objective_id, project_id)
-        if project is not None and project['recipe'] is None:
-            raise ValueError('This folder has no execution recipe. Select an explicit owner-approved recipe before running project tests.')
+        project_id = project['id'] if project is not None else None
         from eidolon_cli.organization_projects import task_project
         tasks = [task for task in current_tasks(conn, objective_id)
                  if project is None or (task_project(conn, task['id']) or {}).get('id') == project_id]
@@ -257,6 +264,13 @@ class OrganizationProjectExecutionStore:
             if (staff is None or not staff.enabled or not required.issubset(staff.tool_grants)
                     or self._staff_reason(conn, {'id': author}, authors[author])):
                 raise ValueError('Every project author requires explicit current read_file/run_tests and, for source integration, integrate_source grants')
+        return authors
+
+    def _project_grant(self, conn, objective_id, project_id=None):
+        project = self._execution_project(conn, objective_id, project_id)
+        if project is not None and project['recipe'] is None:
+            raise ValueError('This folder has no execution recipe. Select an explicit owner-approved recipe before running project tests.')
+        self._project_execution_authors(conn, objective_id, project)
         if project is not None:
             grants = [grant for grant in self.settings.project_grants
                       if grant.id == project['recipe'] and grant.execution['root'] == project['root']]
@@ -394,6 +408,12 @@ class OrganizationProjectExecutionStore:
         queued = False
         for project in projects:
             project_id = project['id'] if project else None
+            from eidolon_cli.organization_prepared_validation_authority import has_prepared_binding
+            if has_prepared_binding(conn, objective_id, project_id):
+                from eidolon_cli.organization_prepared_validation_flow import ensure_prepared_execution
+                queued = ensure_prepared_execution(self, conn, objective_id, project_id,
+                    objective['priority'], control['round']) or queued
+                continue
             latest = _latest_run(conn, objective_id, project_id)
             if latest:
                 self._verify_project_run(conn, latest['id'])
@@ -405,6 +425,11 @@ class OrganizationProjectExecutionStore:
 
     def project_stage_unavailability(self, conn, request):
         try:
+            from eidolon_cli.organization_prepared_validation_authority import prepared_request
+            if prepared_request(conn, request):
+                from eidolon_cli.organization_prepared_validation_flow import prepared_stage_availability
+                prepared_stage_availability(self, conn, request)
+                return None
             self._project_grant(conn, request['objective_id'], json.loads(request['payload']).get('projectId'))
             if request['type'] == 'request.project_test':
                 for retained in conn.execute('SELECT r.record FROM project_run_starts s JOIN project_run_results r '
@@ -420,8 +445,8 @@ class OrganizationProjectExecutionStore:
                                        (request['objective_id'],)).fetchone()
                 if ceiling is None:
                     raise ValueError('Project execution budget is missing; restore the objective budget before running')
-                if conn.execute('SELECT count(*) FROM project_run_starts WHERE objective_id=?',
-                                (request['objective_id'],)).fetchone()[0] >= min(ceiling['max_runs'], self.settings.max_project_runs):
+                from eidolon_cli.organization_prepared_validation_activity import objective_project_reserved_units
+                if objective_project_reserved_units(conn, request['objective_id'])['totalUnits'] >= min(ceiling['max_runs'], self.settings.max_project_runs):
                     raise ValueError('Project execution run budget exhausted; retained failed and interrupted runs count toward the limit')
                 if conn.execute('SELECT 1 FROM project_run_starts s LEFT JOIN project_run_results r ON r.run_id=s.id '
                                 'WHERE s.request_id=? AND r.run_id IS NULL', (request['id'],)).fetchone():
@@ -447,6 +472,17 @@ class OrganizationProjectExecutionStore:
             raise ValueError('Only the backend project controller may execute tests or integrate source')
 
     def run_project_stage(self, claim, cancel):
+        from eidolon_cli.organization_prepared_validation_authority import prepared_request
+        with self._connect() as conn:
+            prepared = prepared_request(conn, claim)
+            if prepared:
+                from eidolon_cli.organization_prepared_validation_flow import prepared_stage_availability
+                prepared_stage_availability(self, conn, claim)
+        if prepared:
+            if claim['type'] != 'request.project_test':
+                raise ValueError('Prepared validation does not authorize source publication')
+            from eidolon_cli.organization_prepared_validation_stage import run_prepared_project_stage
+            return run_prepared_project_stage(self, claim, cancel)
         if claim['type'] == 'request.source_integrate':
             return self._run_source_stage(claim, cancel)
         from eidolon_cli.organization_project_runner import run_project_tests
@@ -487,6 +523,10 @@ class OrganizationProjectExecutionStore:
         return {}
 
     def _finish_project_test(self, conn, request, result):
+        from eidolon_cli.organization_prepared_validation_authority import prepared_request
+        if prepared_request(conn, request):
+            from eidolon_cli.organization_prepared_validation_flow import finish_prepared_execution
+            return finish_prepared_execution(self, conn, request, result)
         self._require_project_execution_controller(request)
         if result:
             raise ValueError('Backend project execution accepts no model-provided test result')
@@ -519,6 +559,10 @@ class OrganizationProjectExecutionStore:
                                           **({'projectId': json.loads(request['payload'])['projectId']} if 'projectId' in json.loads(request['payload']) else {})})
 
     def _finish_test_review(self, conn, request, result):
+        from eidolon_cli.organization_prepared_validation_authority import prepared_request
+        if prepared_request(conn, request):
+            from eidolon_cli.organization_prepared_validation_flow import finish_prepared_review
+            return finish_prepared_review(self, conn, request, result)
         from eidolon_cli.organization_store import _text
         payload = json.loads(request['payload'])
         row, artifact = self._verify_project_run(conn, payload.get('runId'), review=False)
@@ -558,6 +602,11 @@ class OrganizationProjectExecutionStore:
         if projects and project_id is None:
             return self.verify_project_test_runs(conn, objective_id)[0]
         self._execution_project(conn, objective_id, project_id)
+        from eidolon_cli.organization_prepared_validation_authority import has_prepared_binding
+        if has_prepared_binding(conn, objective_id, project_id):
+            from eidolon_cli.organization_prepared_validation_current import verify_current_prepared_pair
+            pair = verify_current_prepared_pair(self, conn, objective_id, project_id)
+            return next(item for item in pair['checks'] if item[1]['projectExecution']['checkKind'] == 'project_tests')
         row = _latest_run(conn, objective_id, project_id)
         if row is None:
             raise ValueError('Required project tests have not been executed by an authorized runtime; model approval cannot satisfy this check')
@@ -591,6 +640,14 @@ class OrganizationProjectExecutionStore:
         verified = []
         for project in projects:
             identifier = project['id'] if project else None
+            from eidolon_cli.organization_prepared_validation_authority import has_prepared_binding
+            if has_prepared_binding(conn, objective_id, identifier):
+                if check_kind != 'project_typecheck':
+                    raise ValueError('Prepared validation does not authorize project builds')
+                from eidolon_cli.organization_prepared_validation_current import verify_current_prepared_pair
+                pair = verify_current_prepared_pair(self, conn, objective_id, identifier)
+                verified.extend(item for item in pair['checks'] if item[1]['projectExecution']['checkKind'] == check_kind)
+                continue
             row = _latest_run(conn, objective_id, identifier)
             if row is None:
                 raise ValueError('Required compiler check has no authorized execution receipt')

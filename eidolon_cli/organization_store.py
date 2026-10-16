@@ -121,7 +121,14 @@ def _text(value, field, limit=10000):
 
 
 # One DDL contract for initialization and non-migrating observation preflight.
-ORGANIZATION_SCHEMA = (_SCHEMA + OBJECTIVE_DEPENDENCY_SCHEMA + CONTINUATION_SCHEMA + GOAL_AUTH_SCHEMA + GOAL_SCHEMA + MILESTONE_SCHEMA + INTAKE_SCHEMA + INSPECTION_SCHEMA + RECOVERY_SCHEMA + ROOT_GRANT_SCHEMA + TEAM_SETUP_SCHEMA + OWNER_POLICY_SCHEMA + ROUTING_SCHEMA + REPLACEMENT_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA + COORDINATION_SCHEMA + HISTORY_SCHEMA + ATTENTION_SCHEMA + PROJECTS_SCHEMA + OUTCOME_SCHEMA + REGISTRY_SCHEMA + PACKAGE_SCHEMA + CONVERSATION_SCHEMA + OWNER_CHAT_SCHEMA + SCHEDULING_SCHEMA + PRIORITY_SCHEMA + DISPATCH_SCHEMA)
+from eidolon_cli.organization_prepared_validation_ledger import PREPARED_VALIDATION_SCHEMA
+from eidolon_cli.organization_prepared_validation_objectives import PREPARED_OBJECTIVE_SCHEMA
+from eidolon_cli.organization_prepared_validation_events import PREPARED_RUNTIME_SCHEMA
+from eidolon_cli.organization_prepared_validation_stage import SOURCE_PROOF_SCHEMA
+from eidolon_cli.organization_prepared_validation_review_scope import REVIEW_SCOPE_SCHEMA
+from eidolon_cli.organization_prepared_validation_verification import PREPARED_PAIR_REVIEW_SCHEMA
+
+ORGANIZATION_SCHEMA = (_SCHEMA + OBJECTIVE_DEPENDENCY_SCHEMA + CONTINUATION_SCHEMA + GOAL_AUTH_SCHEMA + GOAL_SCHEMA + MILESTONE_SCHEMA + INTAKE_SCHEMA + INSPECTION_SCHEMA + RECOVERY_SCHEMA + ROOT_GRANT_SCHEMA + TEAM_SETUP_SCHEMA + OWNER_POLICY_SCHEMA + ROUTING_SCHEMA + REPLACEMENT_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA + COORDINATION_SCHEMA + HISTORY_SCHEMA + ATTENTION_SCHEMA + PROJECTS_SCHEMA + PREPARED_VALIDATION_SCHEMA + PREPARED_OBJECTIVE_SCHEMA + PREPARED_RUNTIME_SCHEMA + SOURCE_PROOF_SCHEMA + REVIEW_SCOPE_SCHEMA + PREPARED_PAIR_REVIEW_SCHEMA + OUTCOME_SCHEMA + REGISTRY_SCHEMA + PACKAGE_SCHEMA + CONVERSATION_SCHEMA + OWNER_CHAT_SCHEMA + SCHEDULING_SCHEMA + PRIORITY_SCHEMA + DISPATCH_SCHEMA)
 
 
 class OrganizationStore(GoalReauthorizationStore, OrganizationGoalContinuationStore, OrganizationGoalAllowanceStore, OrganizationMilestoneStore, OrganizationIntakeInspectionStore, OrganizationIntakeStore, OrganizationRecoveryStore, OrganizationModelRoutingStore, OrganizationPacingStore, OrganizationDispatchStore, OrganizationPriorityStore, OrganizationReplacementStore, OrganizationOwnerChatStore, OrganizationConversationStore, OrganizationPackageStore, OrganizationOutcomeStore, OrganizationAttentionStore, OrganizationHistoryStore, OrganizationCoordinationStore, OrganizationProjectExecutionStore, OrganizationBudgetStore, OrganizationRequestStore, OrganizationManagementStore, OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
@@ -232,9 +239,9 @@ class OrganizationStore(GoalReauthorizationStore, OrganizationGoalContinuationSt
         OrganizationRequestStore._insert_request_contract(conn, ident, requester_id=requester_id)
         return ident
 
-    def create_objective(self, title, description=None, priority="normal", *, idempotency_key, acceptance_criteria=None, delivery_mode="source_project", required_checks=None, executive_id=None, manager_id=None, project_ids=None):
+    def create_objective(self, title, description=None, priority="normal", *, idempotency_key, acceptance_criteria=None, delivery_mode="source_project", required_checks=None, executive_id=None, manager_id=None, project_ids=None, prepared_validations=None):
         with self._write() as conn:
-            ident = self._create_objective(conn, title, description, priority, idempotency_key=idempotency_key, acceptance_criteria=acceptance_criteria, delivery_mode=delivery_mode, required_checks=required_checks, executive_id=executive_id, manager_id=manager_id, project_ids=project_ids)
+            ident = self._create_objective(conn, title, description, priority, idempotency_key=idempotency_key, acceptance_criteria=acceptance_criteria, delivery_mode=delivery_mode, required_checks=required_checks, executive_id=executive_id, manager_id=manager_id, project_ids=project_ids, prepared_validations=prepared_validations)
         return self._objective_view(ident)
 
     def _objective_view(self, ident):
@@ -243,7 +250,7 @@ class OrganizationStore(GoalReauthorizationStore, OrganizationGoalContinuationSt
         with self._connect() as conn:
             return build_snapshot(conn, self.settings, objective_id=ident, resolution_options=self.allowed_owner_resolutions)["objectives"][0]
 
-    def _create_objective(self, conn, title, description=None, priority="normal", *, idempotency_key, acceptance_criteria=None, delivery_mode="source_project", required_checks=None, executive_id=None, manager_id=None, project_ids=None, project_run_limit=None, completion_reserve=None):
+    def _create_objective(self, conn, title, description=None, priority="normal", *, idempotency_key, acceptance_criteria=None, delivery_mode="source_project", required_checks=None, executive_id=None, manager_id=None, project_ids=None, project_run_limit=None, completion_reserve=None, prepared_validations=None):
         title = _text(title, "Title", 500)
         description = _text(description or title, "Description", 30000)
         from eidolon_cli.organization_acceptance import acceptance_criteria as normalize_criteria
@@ -256,12 +263,17 @@ class OrganizationStore(GoalReauthorizationStore, OrganizationGoalContinuationSt
         if delivery_mode not in ('managed_artifact', 'source_project'):
             raise ValueError('deliveryMode must be managed_artifact or source_project')
         projects = selected_projects(project_ids, self.settings)
+        from eidolon_cli.organization_prepared_validation_objectives import select_prepared_validations
+        prepared, checks = select_prepared_validations(conn, prepared_validations, projects=projects,
+            settings=self.settings, delivery_mode=delivery_mode, checks=checks)
+        if prepared and project_run_limit is not None and project_run_limit < 2 * len(prepared):
+            raise ValueError('Objective ceiling cannot reserve both prepared recipes for every project')
         if any(item.get('projectId') is not None and item['projectId'] not in {p['id'] for p in projects} for item in contract_definitions):
             raise ValueError('Criterion projectId must identify an explicitly selected project')
-        if any(project['recipe'] is None for project in projects) and (delivery_mode != 'managed_artifact' or set(checks) & {'project_tests', 'source_integration'}):
+        if not prepared and any(project['recipe'] is None for project in projects) and (delivery_mode != 'managed_artifact' or set(checks) & {'project_tests', 'source_integration'}):
             raise ValueError('Planning-only folders require managed artifact delivery without project tests or source integration; approve an execution recipe first')
         from eidolon_cli.organization_acceptance import validate_project_checks
-        validate_project_checks(projects, checks)
+        validate_project_checks(projects, [check for check in checks if check not in {'project_tests', 'project_typecheck'}] if prepared else checks)
         if self.settings.projects and delivery_mode == 'source_project' and not projects:
             raise ValueError('Source-project objectives must explicitly select configured projectIds')
         key = _text(idempotency_key, "Idempotency key", 128)
@@ -275,6 +287,8 @@ class OrganizationStore(GoalReauthorizationStore, OrganizationGoalContinuationSt
             identity = {'objective': identity, 'executiveId': executive_id, 'managerId': manager_id}
         if projects:
             identity = {'objective': identity, 'projects': projects}
+        if prepared:
+            identity = {'objective': identity, 'preparedValidations': [item['reference'] for item in prepared]}
         if any(not item['legacy'] for item in contract_definitions):
             identity = {'objective': identity, 'outcomeContract': contract_definitions}
         digest = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
@@ -296,6 +310,9 @@ class OrganizationStore(GoalReauthorizationStore, OrganizationGoalContinuationSt
                          (ident, key, digest, title, description, level, time.time()))
             for project in projects:
                 conn.execute('INSERT INTO objective_projects VALUES (?,?,?)', (ident, project['id'], json.dumps(project, sort_keys=True)))
+            if prepared:
+                from eidolon_cli.organization_prepared_validation_objectives import bind_selected_prepared_validations
+                bind_selected_prepared_validations(conn, ident, prepared)
             conn.execute('INSERT INTO project_execution_budgets VALUES (?,?)', (ident, min(self.settings.max_project_runs, project_run_limit) if project_run_limit is not None else self.settings.max_project_runs))
             self._assign_objective(conn, ident, executive_id, manager_id)
             mode = self._initialize_planning(conn, ident)
@@ -719,6 +736,11 @@ class OrganizationStore(GoalReauthorizationStore, OrganizationGoalContinuationSt
             return row is not None
 
     def finish(self, claim, result):
+        from eidolon_cli.organization_prepared_validation_finish import prepare_finish_verification
+        with prepare_finish_verification(self, claim, result) as prepared_token:
+            return self._finish_claim(claim, result, prepared_token)
+
+    def _finish_claim(self, claim, result, prepared_token):
         if not isinstance(result, dict):
             raise ValueError("Agent result must be an object")
         if result.get("intervention"):
@@ -737,13 +759,17 @@ class OrganizationStore(GoalReauthorizationStore, OrganizationGoalContinuationSt
                     self._merge_required_checks(conn, request['objective_id'], result.get('requiredChecks', []))
                 self._pending(conn, request, reason)
                 return True
-        with self._write() as conn:
+        with self._write() as conn, contextlib.ExitStack() as prepared_scope:
             request = self._owned(conn, claim)
             if request is None:
                 return False
             if time.time() >= budget_view(conn, request['objective_id'], self.settings)['deadlineTimestamp']:
                 self._pending(conn, request, 'Objective deadline reached; the result was not accepted.')
                 return False
+            from eidolon_cli.organization_prepared_validation_finish import (
+                finish_verification_scope, finalize_finish_verification,
+            )
+            prepared_scope.enter_context(finish_verification_scope(prepared_token, self, conn, request))
             if request['type'] == 'request.message' and set(result) - {'reply', 'usage'}:
                 raise ValueError('Message delivery may only return one reply; no memory, requests or completion authority')
             self._verify_context_completion(conn, request, result)
@@ -775,6 +801,14 @@ class OrganizationStore(GoalReauthorizationStore, OrganizationGoalContinuationSt
                 handler = handlers.get(request["type"], self._finish_work)
             self._record_usage(conn, request, result)
             handler(conn, request, {key: value for key, value in result.items() if key not in {'usage', 'memory'}})
+            # Prepared source/bundle verification may be long. A successful
+            # handler is still provisional until its original lease/deadline
+            # survives; raising here rolls back completion and acceptance.
+            if conn.execute('SELECT 1 FROM prepared_validation_registration_bindings WHERE objective_id=?',
+                            (request['objective_id'],)).fetchone():
+                if (self._owned(conn, claim) is None
+                        or time.time() >= budget_view(conn, request['objective_id'], self.settings)['deadlineTimestamp']):
+                    raise ValueError('Prepared completion lost its original lease or deadline during verification')
             if request["type"] != "request.message":
                 self._remember_agent_finish(conn, request, result)
             conn.execute("UPDATE requests SET status='completed',token=NULL,lease=NULL,reason=NULL WHERE id=?", (request["id"],))
@@ -785,6 +819,12 @@ class OrganizationStore(GoalReauthorizationStore, OrganizationGoalContinuationSt
             self._resume_message_parent(conn, request)
             self._resume_answered_parent(conn, request)
             self._maybe_integrate(conn, request['objective_id'])
+            finalize_finish_verification(prepared_token, self, conn, request)
+            if conn.execute('SELECT 1 FROM prepared_validation_registration_bindings WHERE objective_id=?',
+                            (request['objective_id'],)).fetchone():
+                if (time.time() >= request['lease']
+                        or time.time() >= budget_view(conn, request['objective_id'], self.settings)['deadlineTimestamp']):
+                    raise ValueError('Prepared completion exceeded its original lease or deadline before commit')
             return True
 
     def _finish_plan(self, conn, request, result):
