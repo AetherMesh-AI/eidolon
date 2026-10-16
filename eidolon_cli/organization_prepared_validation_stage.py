@@ -9,6 +9,7 @@ import uuid
 
 from eidolon_cli import organization_prepared_validation_contract as contract
 from eidolon_cli.organization_prepared_validation_authority import require_prepared_authority
+from eidolon_cli.organization_prepared_validation_records import prepare_static_record_scope, bind_static_record_scope
 from eidolon_cli.organization_project_effective_snapshot import capture_effective_project_snapshot
 from eidolon_cli.organization_project_snapshot_bundle import ProjectSnapshotLimits
 from eidolon_cli.organization_project_validation import canonical, digest
@@ -76,7 +77,8 @@ def retain_source_proof(conn, envelope, snapshot):
 def capture_for_claim(store, claim, cancel):
     """Capture outside a write transaction; callers must fence again at reservation."""
     project_id = json.loads(claim['payload']).get('projectId')
-    with store._write() as conn:
+    with (prepare_static_record_scope(store, claim['objective_id'], (project_id,)) as records,
+          store._write() as conn, bind_static_record_scope(records, store, conn)):
         request = store._owned(conn, claim)
         if request is None or cancel.is_set():
             raise ValueError('Prepared source capture requires a current uncancelled lease')
@@ -151,7 +153,8 @@ separate and requires both independently validated durable terminal receipts.
 
     authority, snapshot = capture_for_claim(store, claim, cancel)
     project_id = authority['contract']['projectId']
-    with store._write() as conn:
+    with (prepare_static_record_scope(store, claim['objective_id'], (project_id,)) as records,
+          store._write() as conn, bind_static_record_scope(records, store, conn)):
         request = store._owned(conn, claim)
         if request is None or cancel.is_set():
             raise ValueError('Prepared reservation requires its current uncancelled lease')
@@ -218,7 +221,9 @@ separate and requires both independently validated durable terminal receipts.
         # Cleanup and the terminal observation may outlive cancellation/lease
         # loss; they can only settle the already reserved private invocation.
         cleanup = value['kind'] in {'cleanup_observed', 'receipt'}
-        with store._write() as conn:
+        with (prepare_static_record_scope(store, claim['objective_id'], (project_id,),
+                                         include_current_registration=not cleanup) as records,
+              store._write() as conn, bind_static_record_scope(records, store, conn)):
             reserved = conn.execute('SELECT request_id,lease_token FROM prepared_validation_sets WHERE id=?',
                                     (envelope['setId'],)).fetchone()
             if reserved is None or tuple(reserved) != (claim['id'], claim['token']):
@@ -262,7 +267,8 @@ separate and requires both independently validated durable terminal receipts.
             if inspected['state'] != 'finish_only':
                 return {}  # Finish reports the retained failure; second step stays charged.
     check_authorized(force=True)
-    with store._write() as conn:
+    with (prepare_static_record_scope(store, claim['objective_id'], (project_id,)) as records,
+          store._write() as conn, bind_static_record_scope(records, store, conn)):
         if store._owned(conn, claim) is None or cancel.is_set():
             raise ValueError('Prepared pair lost its live lease before aggregate retention')
         current = require_prepared_authority(store, conn, claim['objective_id'], project_id, execution=True)

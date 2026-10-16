@@ -156,7 +156,7 @@ def test_pair_arriving_after_empty_selected_preflight_cannot_fall_back_under_loc
     after_preflight(monkeypatch, dispatch)
     monkeypatch.setattr(dependency, '_observe_dependency_bundle',
         lambda *a, **kw: pytest.fail('A newly arrived target cannot trigger an uncached finish scan'))
-    with pytest.raises(ValueError, match='no exact target'):
+    with pytest.raises(ValueError, match='no exact target|proof inputs changed'):
         running.store.finish(running.claim, {})
     assert scalar(running, "SELECT status FROM requests WHERE id=?", (running.claim['id'],)) == 'running'
     assert scalar(running, "SELECT count(*) FROM requests WHERE type='request.test_review'") == 0
@@ -175,7 +175,7 @@ def test_context_scope_does_not_promote_unreviewed_pair_or_fall_back(running, mo
                 target = token.targets['notes']
                 envelope = json.loads(target['envelope'])
                 envelope['generation'] += 1
-                with pytest.raises(ValueError, match='no exact target'):
+                with pytest.raises(ValueError, match='no exact target|proof inputs changed'):
                     finish.observed_finish_authority(running.store, conn, envelope, target['snapshot'], require_review=False)
                 with running.store._connect() as other, pytest.raises(ValueError, match='foreign'):
                     current.verify_current_prepared_pair(running.store, other, running.objective, 'notes', require_review=False)

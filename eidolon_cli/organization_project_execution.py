@@ -621,6 +621,29 @@ class OrganizationProjectExecutionStore:
         kinds = checks & {'project_tests', 'project_typecheck', 'project_build'}
         if self._automatic_source(conn, objective_id):
             kinds.add('project_tests')
+        from eidolon_cli.organization_prepared_validation_authority import has_prepared_binding
+        projects = self._execution_projects(conn, objective_id) or [None]
+        if project_id is not None:
+            self._execution_project(conn, objective_id, project_id)
+            projects = [project for project in projects if project and project['id'] == project_id]
+            if not projects:
+                raise ValueError('Requested check project is not selected')
+        if kinds and any(project and has_prepared_binding(conn, objective_id, project['id']) for project in projects):
+            per_kind = {kind: [] for kind in sorted(kinds)}
+            for project in projects:
+                identifier = project['id'] if project else None
+                if has_prepared_binding(conn, objective_id, identifier):
+                    if 'project_build' in kinds:
+                        raise ValueError('Prepared validation does not authorize project builds')
+                    from eidolon_cli.organization_prepared_validation_current import verify_current_prepared_pair
+                    verified = verify_current_prepared_pair(self, conn, objective_id, identifier)
+                    for kind in per_kind:
+                        per_kind[kind].extend(item for item in verified['checks']
+                                              if item[1]['projectExecution']['checkKind'] == kind)
+                else:
+                    for kind in per_kind:
+                        per_kind[kind].extend(self.verify_project_check_runs(conn, objective_id, kind, identifier))
+            return [pair for pairs in per_kind.values() for pair in pairs]
         pairs = []
         for kind in sorted(kinds):
             pairs.extend(self.verify_project_check_runs(conn, objective_id, kind, project_id))

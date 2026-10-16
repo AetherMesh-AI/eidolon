@@ -194,6 +194,12 @@ test('requires two explicit current references and retains exact create intent w
     executiveId: 'executive', managerId: 'manager', deliveryMode: 'managed_artifact', requiredChecks: ['project_typecheck', 'project_tests'],
     preparedValidations: selected, idempotencyKey: expect.any(String) })
   expect(model!.admittedCount).toBe(1)
+  // The actual post-create detail path also reads owner policy. A usable
+  // observation entry proves its configured descriptor passed client validation.
+  await expect(page.getByRole('button', { name: 'Edit reported allowance', exact: true })).toBeEnabled()
+  expect(model!.methods).toContain('organization.ownerPolicy')
+  expect(model!.unexpectedMethods).toEqual([])
+  await expect(page.getByRole('alert')).toHaveCount(0)
 
   const activity = page.getByRole('region', { name: copy.activity, exact: true })
   await expect(activity.getByText(copy.note, { exact: true })).toBeVisible()

@@ -293,7 +293,7 @@ def _payload(verified):
             'evidenceIds': verified['evidenceIds'], 'evidenceHashes': verified['evidenceHashes']}
 
 
-def prepared_validation_artifact(conn, run_id):
+def _uncached_prepared_validation_artifact(conn, run_id):
     """Resolve exact retained evidence without granting live/acceptance authority.
 
 This static lookup is for permission-filtered context builders. Review and
@@ -303,6 +303,10 @@ authority. Older retained artifacts never establish the latest generation.
     if type(run_id) is not str or not run_id.startswith('prepared_run_'):
         return None
     contract._id(run_id)
+    from eidolon_cli.organization_prepared_validation_finish import observed_prepared_artifact
+    observed = observed_prepared_artifact(conn, run_id)
+    if observed is not None:
+        return observed
     with _read_view(conn):
         row = conn.execute(f'SELECT {ledger._bounded_text("set_id", 128)},'
                            f'{ledger._bounded_text("step_id", 64)},{ledger._bounded_text("definition_sha256", 64)},'
@@ -393,6 +397,11 @@ transaction is preserved; otherwise a bounded consistent read view is owned.
 """
     if type(require_review) is not bool or not callable(current_authority):
         raise ValueError('Prepared verification requires explicit current authority and review mode')
+    from eidolon_cli.organization_prepared_validation_finish import observed_finish_pair
+    observed = observed_finish_pair(conn, objective_id, project_id,
+        current_authority=current_authority, require_review=require_review)
+    if observed is not None:
+        return observed
     with _read_view(conn):
         objective_id, project_id = contract._id(objective_id), contract._id(project_id)
         size = conn.execute('SELECT COALESCE(sum(length(CAST(envelope AS BLOB))),0) FROM prepared_validation_sets '
@@ -477,3 +486,8 @@ model's result. Rejection remains immutable and never authorizes acceptance.
          encoded, digest(record), time.time()))
     return {'setId': verified['envelope']['setId'], 'requestId': current['id'],
             'approved': result['approved'], 'reviewSha256': digest(record), 'committed': False}
+
+
+def prepared_validation_artifact(conn, run_id):
+    from eidolon_cli.organization_prepared_validation_finish import retain_prepared_artifact
+    return retain_prepared_artifact(conn, run_id, _uncached_prepared_validation_artifact(conn, run_id))

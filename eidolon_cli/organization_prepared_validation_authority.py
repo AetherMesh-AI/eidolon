@@ -61,6 +61,6 @@ def require_prepared_authority(store, conn, objective_id, project_id, *, executi
         if objective is None or objective['cancelled'] or time.time() >= budget_view(conn, objective_id, store.settings)['deadlineTimestamp']:
             raise ValueError('Prepared execution objective was cancelled or its deadline expired')
     return {**selected, 'project': project, 'contributors': sorted(authors),
-            'round': control['round'], 'ownerGrantSha256': digest(grant),
+            'round': control['round'], 'ownerGrantSha256': selected['binding']['ownerGrantSha256'],
             'objectiveBindingSha256': digest(selected['binding']),
             'policyGeneration': store._policy_generation, 'policyFingerprint': store._policy_fingerprint}

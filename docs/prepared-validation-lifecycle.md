@@ -32,7 +32,13 @@ all selected projects. Ordinary recipe bindings remain unchanged.
   separately verified private copy. Finish performs one full byte preflight
   outside the write transaction. A private, one-operation observation is checked
   against exact request, contract, run, grant, agent and source-lineage identities
-  under the transaction; retained receipt and review proofs still run every time.
+  under the transaction. Strict retained pair proof and its complete typed SQL
+  input inventory come from the same read snapshot before the write. Private
+  one-operation reuse compares exact row values, membership, absence and schema;
+  it never caches review approval. Current owner/grant/agent/request authority and
+  independent review are checked inside the caller transaction. Changes, retries,
+  rollback and mismatched operations invalidate reuse. The read inventory and
+  final transition guards also reject late same-transaction mutations.
   Before commit, selected source bytes and the complete observed dependency
   fingerprint inventory are rechecked. Exceptions, retries and rollback discard
   the observation. Original lease/deadline checks remain after these checks.
@@ -64,6 +70,27 @@ separate strict verifiers. Missing/corrupt required storage fails closed. The
 existing owner schema guard also prevents folder revocation if entire required
 prepared tables are missing; the runtime is fenced by the same malformed storage,
 but a corruption-tolerant deny-only administrative path is not implemented.
+
+## Supported retained-data capacity
+
+Prepared finish has an aggregate 128-MiB raw retained-payload limit and a
+100,000-row inventory limit. SQL inventory row/byte bounds are checked before
+expensive finish proof scans. The aggregate retained raw-payload guard, including
+serialized proofs and source observations, runs after those scans and before
+finish writes; the final guard remains authoritative. These limits do not describe total process memory: decoded objects,
+transient copies and runtime buffers add memory beyond retained raw bytes.
+
+A local reconstruction using the pinned renderer's actual source and dependency
+manifest, with synthetic request/runtime scaffolding, retained about 76.6 MB
+(73.1 MiB) for one full profile. One comparable profile fits this measured boundary.
+Two comparable full-size prepared profiles are currently unsupported together and
+fail closed before finish writes. This does not refund or prevent earlier run
+charges. Smaller combinations still require exact bounds checks; this measurement
+is not full multi-repository readiness or an exact native heap measurement.
+
+Owner registration does not guarantee that a later combined objective will fit.
+Earlier cross-profile admission estimates are not implemented; changed source and
+retained history can affect final capacity. No memory limit is enlarged implicitly.
 
 ## Proof status
 

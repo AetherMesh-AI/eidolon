@@ -5,6 +5,7 @@ No provider calls are made. Workload execution itself is never substituted.
 """
 from copy import deepcopy
 from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import asdict, replace
 import json
 import stat
@@ -135,7 +136,7 @@ def keep_native_claims_alive(store, objective_id, record_property):
                         (objective_id,))]
                 for claim in claims:
                     if store.heartbeat(claim):
-                        renewed.append(True)
+                        renewed.append(time.monotonic())
             except Exception as error:
                 failures.append({'type': type(error).__name__, 'sqliteCode': getattr(error, 'sqlite_errorcode', None),
                                  'sqliteName': getattr(error, 'sqlite_errorname', None)})
@@ -145,7 +146,7 @@ def keep_native_claims_alive(store, objective_id, record_property):
     worker = threading.Thread(target=heartbeat, name='prepared-native-heartbeat', daemon=True)
     worker.start()
     try:
-        yield
+        yield renewed
     finally:
         stop.set()
         worker.join(15)
@@ -157,13 +158,26 @@ def keep_native_claims_alive(store, objective_id, record_property):
         assert renewed, 'Native concurrent heartbeat made no successful write progress'
 
 
+_NATIVE_PHASE = ContextVar('prepared_native_phase', default='unlabelled')
+
+
 @contextmanager
-def measure_native_phase(name, record_property):
+def measure_native_phase(name, record_property, writer_events=None):
+    token = _NATIVE_PHASE.set(name)
     started = time.monotonic()
     try:
         yield
     finally:
-        record_property('phase_' + name + '_seconds', time.monotonic() - started)
+        _NATIVE_PHASE.reset(token)
+        ended = time.monotonic()
+        record_property('phase_' + name + '_seconds', ended - started)
+        if writer_events is not None:
+            progress = sum(started <= event <= ended for event in writer_events)
+            record_property('phase_' + name + '_writer_renewals', progress)
+            # Short phases need no heartbeat cycle. Longer phases must demonstrate
+            # real concurrent writes, rather than borrowing recipe-time renewals.
+            if ended - started >= 3:
+                assert progress, 'Native finish phase prevented concurrent writer progress'
 
 
 @contextmanager
@@ -183,7 +197,7 @@ def measure_native_writes(store, monkeypatch, record_property):
                 wait = started - acquiring
                 yield conn
         finally:
-            writes.append({'thread': threading.current_thread().name,
+            writes.append({'thread': threading.current_thread().name, 'phase': _NATIVE_PHASE.get(),
                            'waitSeconds': wait if wait is not None else time.monotonic() - acquiring,
                            'lockSeconds': time.monotonic() - started if started is not None else None})
 
@@ -225,22 +239,58 @@ def test_native_write_timing_survives_rollback_and_failed_acquisition(monkeypatc
     assert store._write is blocked
 
 
+
+def test_native_phase_labels_reset_after_nested_failures(monkeypatch):
+    recorded = {}
+    @contextmanager
+    def write():
+        yield object()
+    store = SimpleNamespace(_write=write)
+    with measure_native_writes(store, monkeypatch, recorded.__setitem__):
+        with measure_native_phase('outer', recorded.__setitem__):
+            with pytest.raises(ValueError), measure_native_phase('inner', recorded.__setitem__):
+                with store._write():
+                    raise ValueError('synthetic')
+            with store._write():
+                pass
+        with store._write():
+            pass
+    assert [item['phase'] for item in recorded['write_transaction_timings']] == ['inner', 'outer', 'unlabelled']
+    assert recorded['phase_inner_seconds'] >= 0 and recorded['phase_outer_seconds'] >= 0
+
+@pytest.mark.parametrize('events,passes', [([9.0], False), ([11.0], True), ([15.0], False)])
+def test_native_finish_writer_proof_is_phase_local(monkeypatch, events, passes):
+    ticks = iter([10.0, 14.0])
+    monkeypatch.setattr(time, 'monotonic', lambda: next(ticks))
+    recorded = {}
+    if passes:
+        with measure_native_phase('finish', recorded.__setitem__, events):
+            pass
+    else:
+        with pytest.raises(AssertionError, match='concurrent writer progress'):
+            with measure_native_phase('finish', recorded.__setitem__, events):
+                pass
+    assert recorded['phase_finish_writer_renewals'] == int(passes)
+
+
 def test_actual_owner_selected_pair_finishes_reviews_and_reopens(native_owner, monkeypatch, record_property):
     from tests.eidolon_cli.test_organization_prepared_validation_stage_runtime import setup_running
     from tests.eidolon_cli.test_organization_project_workspace_native import UI_TEST
     from eidolon_cli.organization_prepared_validation_current import verify_current_prepared_pair
-    from tests.eidolon_cli.test_organization_prepared_validation_lifecycle import CRITERIA, record_complete_context, finish_acceptance
+    from tests.eidolon_cli.test_organization_prepared_validation_lifecycle import CRITERIA, record_complete_context, acceptance_claim
     state = setup_running(native_owner, read_path=UI_TEST, clear_execution_only=False,
                           acceptance_criteria=CRITERIA, full_planning=True)
     store = state.store
-    with measure_native_writes(store, monkeypatch, record_property), keep_native_claims_alive(store, state.objective, record_property):
+    with measure_native_writes(store, monkeypatch, record_property), keep_native_claims_alive(store, state.objective, record_property) as writer_events:
         with measure_native_phase('execute_pair', record_property):
             assert store.run_project_stage(state.claim, state.cancel) == {}
-        with measure_native_phase('finish_execution', record_property):
+        with measure_native_phase('finish_execution', record_property, writer_events):
             assert store.finish(state.claim, {}) is True
-        review = store.claim_next()
+        with measure_native_phase('claim_review', record_property):
+            review = store.claim_next()
         assert review['type'] == 'request.test_review'
-        context = record_complete_context(store, review)
+        with measure_native_phase('record_review_context', record_property):
+            context = record_complete_context(store, review)
         payload = json.loads(review['payload'])
         assert set(payload['evidenceIds']) == {item['id'] for item in context['evidence']}
         assert len(payload['evidenceIds']) == 4
@@ -249,11 +299,12 @@ def test_actual_owner_selected_pair_finishes_reviews_and_reopens(native_owner, m
         assert len({item['projectExecution']['snapshotSha256'] for item in receipts}) == 1
         assert all(item['projectExecution']['cleanupConfirmed'] for item in receipts)
         # A model may only judge the exact already-retained pair and scoped evidence.
-        with pytest.raises(ValueError):
+        with measure_native_phase('reject_forged_review', record_property), pytest.raises(ValueError):
             store.finish(review, {'approved': True, 'summary': 'Missing mandatory evidence', 'evidenceIds': payload['evidenceIds'][:-1]})
-        assert store.finish(review, {'approved': True,
-            'summary': 'Synthetic independent review of the actual bounded renderer typecheck and selected UI test scope.',
-            'evidenceIds': payload['evidenceIds']}) is True
+        with measure_native_phase('finish_review', record_property, writer_events):
+            assert store.finish(review, {'approved': True,
+                'summary': 'Synthetic independent review of the actual bounded renderer typecheck and selected UI test scope.',
+                'evidenceIds': payload['evidenceIds']}) is True
         # A retained successful pair cannot authorize changed source or dependencies.
         source_path = native_owner.root / UI_TEST
         original = source_path.read_bytes()
@@ -276,7 +327,9 @@ def test_actual_owner_selected_pair_finishes_reviews_and_reopens(native_owner, m
             package.chmod(original_mode | stat.S_IWUSR)
             package.write_bytes(original_package)
             package.chmod(original_mode)
-        finish_acceptance(store)
+        acceptance, acceptance_result = acceptance_claim(store)
+        with measure_native_phase('finish_acceptance', record_property, writer_events):
+            assert store.finish(acceptance, acceptance_result)
         reopened = OrganizationStore(store.path, store.settings)
         with reopened._connect() as conn:
             verified = verify_current_prepared_pair(reopened, conn, state.objective, 'notes')

@@ -500,19 +500,25 @@ class OrganizationStore(GoalReauthorizationStore, OrganizationGoalContinuationSt
             return True
 
     def context(self, claim, *, mark_read=True):
-        with (self._write() if mark_read else self._connect()) as conn:
-            request = self._owned(conn, claim)
-            if request is None:
-                raise ValueError("Request lease is no longer owned")
-            if request["type"] == "request.message":
-                return self._message_delivery_context(conn, request, mark_read=mark_read)
-            if mark_read:
-                self._read_internal_replies(conn, request)
-            context = self._context_with_connection(conn, claim)
-            if mark_read:
-                from eidolon_cli.organization_selective_repair import capture_inputs
-                capture_inputs(self, conn, request, context)
-            return context
+        from contextlib import nullcontext
+        from eidolon_cli.organization_prepared_validation_finish import (
+            prepare_context_verification, finish_verification_scope, finalize_context_verification)
+        with (prepare_context_verification(self, claim) if mark_read else nullcontext(None)) as prepared:
+            with (self._write() if mark_read else self._connect()) as conn:
+                request = self._owned(conn, claim)
+                if request is None:
+                    raise ValueError("Request lease is no longer owned")
+                with finish_verification_scope(prepared, self, conn, request):
+                    if request["type"] == "request.message":
+                        return self._message_delivery_context(conn, request, mark_read=mark_read)
+                    if mark_read:
+                        self._read_internal_replies(conn, request)
+                    context = self._context_with_connection(conn, claim)
+                    if mark_read:
+                        from eidolon_cli.organization_selective_repair import capture_inputs
+                        capture_inputs(self, conn, request, context)
+                    finalize_context_verification(prepared, self, conn)
+                    return context
 
     def _context_with_connection(self, conn, claim):
         """Rebuild the exact context on a caller-owned connection without writes."""

@@ -152,3 +152,14 @@ A selected registration with missing status is shown as unavailable, never as ze
 usage. Malformed optional status, unknown enum values, mismatched objective/project
 identities or excessive history fail snapshot validation. Legacy objectives that
 omit prepared fields keep their original execution view.
+
+## Combined-profile capacity
+
+Saving a profile does not guarantee that every multi-project combination can
+finish. Prepared finish retains at most 128 MiB of raw proof/source/SQL payload
+and 100,000 inventory rows. The measured pinned full renderer profile fits alone;
+two comparable full-size profiles are currently unsupported together. Exact
+finish preflight rejects excess capacity before finish writes, but earlier run
+charges remain spent. See the lifecycle document for the measurement scope and
+memory-amplification limitations. Earlier combined-profile admission diagnostics
+remain an outstanding practical limitation.

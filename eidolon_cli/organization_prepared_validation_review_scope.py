@@ -21,9 +21,13 @@ CREATE TRIGGER IF NOT EXISTS prepared_review_scope_no_delete BEFORE DELETE ON pr
 '''
 
 
-def review_scope_artifact(conn, identifier):
+def _uncached_review_scope_artifact(conn, identifier):
     if not isinstance(identifier, str) or not identifier.startswith('prepared_scope_'):
         return None
+    from eidolon_cli.organization_prepared_validation_finish import observed_prepared_artifact
+    observed = observed_prepared_artifact(conn, identifier)
+    if observed is not None:
+        return observed
     from eidolon_cli.organization_prepared_validation_ledger import _bounded_text
     row = conn.execute(f'SELECT {_bounded_text("id", 128)} AS id,{_bounded_text("set_id", 128)} AS set_id,'
         f'{_bounded_text("objective_id", 128)} AS objective_id,{_bounded_text("content", 100000)} AS content,'
@@ -64,7 +68,7 @@ def review_scope_artifact(conn, identifier):
             or data['source'] != envelope['source']
             or data['profileSha256'] != envelope['identity']['profileSha256']
             or data['bundleSha256'] != envelope['identity']['bundleSha256']
-            or digest(grant) != envelope['ownerGrantSha256']
+            or binding['ownerGrantSha256'] != envelope['ownerGrantSha256']
             or digest(binding) != envelope['objectiveBindingSha256']):
         raise ValueError('Prepared review scope differs from its exact reserved authority')
     expected = {step['config'] for step in grant['profile']['steps']}
@@ -232,3 +236,8 @@ def retain_review_scope(store, conn, envelope, snapshot, authority):
     conn.execute('INSERT INTO prepared_validation_review_scopes VALUES (?,?,?,?,?)',
                  (envelope['setId'], identifier, envelope['objectiveId'], content, digest(value)))
     return {**hashes, identifier: digest(value)}
+
+
+def review_scope_artifact(conn, identifier):
+    from eidolon_cli.organization_prepared_validation_finish import retain_prepared_artifact
+    return retain_prepared_artifact(conn, identifier, _uncached_review_scope_artifact(conn, identifier))

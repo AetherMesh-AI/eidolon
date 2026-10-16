@@ -112,6 +112,43 @@ describe('synthetic prepared-validation native RPC model', () => {
     expect(model.admittedCount).toBe(0)
   })
 
+  it('serves only exact owner policy reads with current identity and admitted objective observations', () => {
+    const model = createPreparedNativeModel()
+    const params = { expectedOrganizationId: PREPARED_NATIVE_ORGANIZATION_ID }
+    const before = read(model, 'organization.ownerPolicy', params)
+    expect(before).toMatchObject({ capabilityVersion: 1, state: 'ready', organizationId: PREPARED_NATIVE_ORGANIZATION_ID,
+      ownerId: PREPARED_NATIVE_OWNER_ID, policyGeneration: 1, managedFields: [], observations: [],
+      capabilities: { modelRouting: true, budgetPolicy: true, budgetObservation: true },
+      scope: { kind: 'served-profile', profile: 'default' } })
+    const objective = create(model).objective
+    const snapshot = read(model, 'organization.snapshot')
+    const current = read(model, 'organization.ownerPolicy', params)
+    expect(current).toEqual({ ...before, observations: [{ objectiveId: objective.id, revision: 0, observation: null }] })
+    expect(read(model, 'organization.snapshot')).toEqual(snapshot)
+    const nextOwner = model.replaceOwner()
+    expect(read(model, 'organization.ownerPolicy', params)).toMatchObject({ ownerId: nextOwner, policyGeneration: 2,
+      observations: current.observations })
+    expect(read(model, 'organization.ownerPolicy', params).sourceRevision).not.toEqual(before.sourceRevision)
+
+    for (const invalid of [{}, { ...params, profile: 'another' }, ...[undefined, null, '', 'bad'].map(expectedOrganizationId => ({ expectedOrganizationId }))]) {
+      expect(model.reply('organization.ownerPolicy', invalid)).toMatchObject({ error: { code: -32602 } })
+    }
+
+    expect(model.reply('organization.ownerPolicy', { expectedOrganizationId: PREPARED_NATIVE_OWNER_ID }))
+      .toMatchObject({ error: { code: 5074 } })
+
+    const mutations = ['previewModelRouting', 'configureModelRouting', 'previewBudgetPolicy', 'configureBudgetPolicy',
+      'previewBudgetObservation', 'recordBudgetObservation'].map(method => `organization.${method}`)
+
+    for (const method of mutations) {
+      expect(model.reply(method, params)).toMatchObject({ error: { code: -32601, message: PREPARED_NATIVE_ERRORS.unexpected } })
+    }
+
+    expect(model.unexpectedMethods).toEqual(mutations)
+    expect(model.admittedCount).toBe(1)
+    expect(model.creates).toHaveLength(1)
+  })
+
   it('admits exactly the selected metadata while retaining project order and canonical references', () => {
     const model = createPreparedNativeModel()
     const params = payload(model)

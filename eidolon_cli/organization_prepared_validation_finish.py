@@ -1,12 +1,14 @@
-"""One-finish observed-byte preflight; retained runtime/review proofs stay uncached.
+"""One-finish strict proof and observed-byte preflight with exact SQL CAS.
 
 Large dependency reads happen before the SQLite write lock. A private one-shot
 scope binds their exact target to fresh SQL authority, then the commit boundary
 rechecks original source bytes and every observed dependency fingerprint. This
 is observed-at-check evidence, never a filesystem lock or an execution grant.
 
-Static JSON validation reuse retains at most 128 MiB of raw UTF-8 grant/candidate
-records across the whole finish. A grant contains one manifest representation;
+The entire retained raw proof/input payload is capped at 128 MiB across the
+operation, including exact source BLOBs, grant/candidate records and serialized
+proof/artifact observations. Equal immutable source and static bodies share
+storage after exact byte comparison. A grant contains one manifest representation;
 a candidate contains two. This is a raw-record capacity limit, not a Python heap
 limit: detached decoding and existing source/dependency observations amplify
 live heap usage, and some observations remain retained for the whole finish.
@@ -25,6 +27,7 @@ from eidolon_cli.organization_project_validation import canonical, digest
 _ACTIVE = ContextVar('prepared_finish_verification', default=None)
 _PREFLIGHT = ContextVar('prepared_finish_static_records', default=None)
 _MAX_STATIC_RECORD_BYTES = 128 * 1024**2
+_MAX_RETAINED_RAW_BYTES = 128 * 1024**2
 _TYPES = {'request.project_test', 'request.test_review', 'request.integrate', 'request.accept'}
 _REQUEST_FIELDS = ('id', 'objective_id', 'task_id', 'type', 'team', 'agent_id', 'token',
                    'attempts', 'execution_count', 'payload')
@@ -43,6 +46,9 @@ class _FinishToken:
     static_bytes: int = 0
     preflight_connection: object = None
     targets: dict = field(default_factory=dict)
+    artifacts: dict = field(default_factory=dict)
+    inventory: object = None
+    inventory_stamp: tuple = ()
     agents: str = ''
     agent_ids: tuple = ()
     connection: object = None
@@ -50,11 +56,18 @@ class _FinishToken:
     alive: bool = True
     entered: bool = False
     finalized: bool = False
+    purpose: str = 'finish'
+    rejection: object = None
+    decision: object = None
+    required_reviews: set = field(default_factory=set)
+    retained_raw_bytes: int = 0
+    claim_policy: int = 0
 
 
 @contextmanager
 def _static_preflight_scope(token, conn):
-    if _PREFLIGHT.get() is not None or _ACTIVE.get() is not None:
+    from eidolon_cli.organization_prepared_validation_records import _SCOPE
+    if _PREFLIGHT.get() is not None or _ACTIVE.get() is not None or _SCOPE.get() is not None:
         raise ValueError('Prepared static observations require a nonnested finish')
     token.preflight_connection = conn
     context = _PREFLIGHT.set(token)
@@ -96,7 +109,8 @@ def observed_finish_static_record(conn, identity, record, sha256):
     """
     token, key = _static_slot(conn, identity)
     if token is None:
-        return None
+        from eidolon_cli.organization_prepared_validation_records import observed_static_record
+        return observed_static_record(conn, identity, record, sha256)
     retained = token.static_records.get(key)
     if retained is None:
         if token.entered:
@@ -112,7 +126,8 @@ def retain_finish_static_record(conn, identity, record, sha256):
     """Called only after the ordinary bounded JSON/hash validator succeeds."""
     token, key = _static_slot(conn, identity)
     if token is None:
-        return
+        from eidolon_cli.organization_prepared_validation_records import retain_static_record
+        return retain_static_record(conn, identity, record, sha256)
     maximum = (80 if identity[0] == 'candidate' else 40) * 1024**2
     size = len(record.encode('utf-8')) if type(record) is str else 0
     if (token.entered or type(record) is not str or not 0 < size <= maximum
@@ -147,9 +162,10 @@ def _operation_binding(conn, objective_id):
         _scalar_bounds(conn, 'objective_control', 'objective_id=?', (objective_id,),
                        {'delivery_mode': 32, 'required_checks': 65536, 'criteria': 1048576, 'amended_scope': 1048576})
         row = conn.execute("SELECT CASE WHEN typeof(round)='integer' THEN round END AS round,"
+            "CASE WHEN typeof(max_replans)='integer' AND max_replans>=0 THEN max_replans END AS max_replans,"
             'delivery_mode,required_checks,criteria,amended_scope FROM objective_control WHERE objective_id=?',
             (objective_id,)).fetchone()
-        if row is None or any(row[key] is None for key in ('round', 'delivery_mode', 'required_checks', 'criteria')):
+        if row is None or any(row[key] is None for key in ('round', 'max_replans', 'delivery_mode', 'required_checks', 'criteria')):
             raise ValueError('Prepared finish objective scope is missing or malformed')
         return canonical({'control': dict(row), 'contract': contract_view(conn, objective_id)})
 
@@ -235,19 +251,25 @@ def _projects(conn, request, result):
 @contextmanager
 def prepare_finish_verification(store, claim, result):
     """Observe before BEGIN IMMEDIATE; always invalidate on early return or failure."""
+    from eidolon_cli.organization_prepared_validation_records import _SCOPE
+    from eidolon_cli.organization_prepared_validation_verification import _read_view
+    if _SCOPE.get() is not None or _PREFLIGHT.get() is not None or _ACTIVE.get() is not None:
+        raise ValueError("Prepared finish requires a nonnested operation")
     token = None
     with ExitStack() as resources:
         try:
             if (not isinstance(result, dict) or result.get('intervention') or 'messages' in result or 'requests' in result):
                 yield None
                 return
-            with store._connect() as conn:
+            with store._connect() as conn, _read_view(conn):
                 request = store._owned(conn, claim)
                 if request is None or request['type'] not in _TYPES:
+                    conn.rollback()
                     yield None
                     return
                 projects = _projects(conn, request, result)
                 if projects is None:
+                    conn.rollback()
                     yield None
                     return
                 # Selected-but-empty is still an exact operation scope. A set
@@ -255,10 +277,17 @@ def prepare_finish_verification(store, claim, result):
                 # never start an uncached byte scan while holding the lock.
                 token = _FinishToken(store, _request_binding(request),
                     _operation_binding(conn, request['objective_id']), {'id': request['id'], 'token': request['token']})
+                token.claim_policy = _claim_policy(conn, request['id'])
                 token.objective_id, token.projects = request['objective_id'], tuple(projects)
+                if request['type'] in {'request.test_review', 'request.accept'} and type(result.get('approved')) is bool:
+                    token.decision = canonical({key: value for key, value in result.items() if key not in {'usage', 'memory'}})
+                    if result['approved'] is False:
+                        token.rejection = token.decision
                 from eidolon_cli.organization_prepared_validation_objectives import prepared_selection_references
                 token.static_projects = tuple(item['projectId'] for item in
                     prepared_selection_references(conn, request['objective_id']))
+                from eidolon_cli.organization_prepared_validation_inventory import check_prepared_inventory_bounds
+                check_prepared_inventory_bounds(conn, token.objective_id, token.static_projects)
                 with _static_preflight_scope(token, conn):
                     from eidolon_cli.organization_prepared_validation_ledger import _binding
                     # Repair history may read another selected project's grant
@@ -275,20 +304,40 @@ def prepare_finish_verification(store, claim, result):
                             token.targets[project] = {'envelope': canonical(envelope), 'snapshot': snapshot,
                                 'observation': observed}
                             return json.loads(observed.value)
-                        # No approval is cached: true/false mode verification remains
-                        # the existing strict transaction-time verifier's obligation.
+                        # Immutable runtime/source proof is checked in this same
+                        # read snapshot. Authority and review approval remain live.
                         verified = verify_latest_prepared_validation_set(conn, request['objective_id'], project,
                             current_authority=observe, require_review=False)
-                        token.targets[project]['proof'] = _proof_binding(verified)
+                        token.targets[project]['proof'] = canonical(verified)
+                        for _, artifact in verified['checks']:
+                            token.artifacts[artifact['id']] = canonical(artifact)
+                        from eidolon_cli.organization_prepared_validation_review_scope import review_scope_artifact
+                        for identifier in verified['sourceEvidence']:
+                            if identifier.startswith('prepared_scope_'):
+                                token.artifacts[identifier] = canonical(review_scope_artifact(conn, identifier))
                         contributors.update(verified['contributorIds'])
+                    if token.rejection is not None:
+                        # Repair may expose other failed/unreviewed generations.
+                        # Prevalidate their static artifacts without promoting them
+                        # to successful pairs or current execution authority.
+                        from eidolon_cli.organization_prepared_validation_history import prepared_replan_history
+                        prepared_replan_history(conn, token.objective_id, json.loads(token.operation)['control']['round'])
                     token.agent_ids = tuple(sorted(contributors))
                     token.agents = _agent_binding(conn, token.agent_ids)
+                    from eidolon_cli.organization_prepared_validation_inventory import capture_prepared_inventory
+                    token.inventory = capture_prepared_inventory(conn, token.objective_id, token.static_projects,
+                        shared_static_records=token.static_records,
+                        shared_source_files={(json.loads(target['envelope'])['setId'], item.path): item.content
+                            for target in token.targets.values() for item in target['snapshot'].files})
+                    _check_retained_capacity(token)
             _check_claim(store, token.claim)
             yield token
         finally:
             if token is not None:
                 token.alive = False
                 token.targets.clear()
+                token.artifacts.clear()
+                token.inventory = None
                 token.static_records.clear()
                 token.static_bytes = 0
                 token.connection = None
@@ -307,7 +356,8 @@ def finish_verification_scope(token, store, conn, request):
         yield
         return
     _require_token(token, store)
-    if token.entered or _ACTIVE.get() is not None or not conn.in_transaction:
+    from eidolon_cli.organization_prepared_validation_records import _SCOPE
+    if token.entered or _ACTIVE.get() is not None or _SCOPE.get() is not None or not conn.in_transaction:
         raise ValueError('Prepared finish observation requires one nonnested transaction scope')
     token.entered = True
     token.connection = conn
@@ -317,14 +367,16 @@ def finish_verification_scope(token, store, conn, request):
             or _operation_binding(conn, request['objective_id']) != token.operation
             or _agent_binding(conn, token.agent_ids) != token.agents):
         raise ValueError('Prepared finish request, contract, round or agent authority changed after preflight')
+    marker = f'prepared_operation_{id(token):x}'
+    conn.execute(f'SAVEPOINT {marker}')
     active = _ACTIVE.set(token)
     try:
-        from eidolon_cli.organization_prepared_validation_current import verify_current_prepared_pair
-        for project, target in token.targets.items():
-            verified = verify_current_prepared_pair(store, conn, request['objective_id'], project, require_review=False)
-            if _proof_binding(verified) != target['proof']:
-                raise ValueError('Prepared finish retained evidence changed after preflight')
+        _require_inventory(token, conn, force=True)
+        for target in token.targets.values():
+            envelope = json.loads(target['envelope'])
+            observed_finish_authority(store, conn, envelope, target['snapshot'], require_review=False)
         yield
+        conn.execute(f'RELEASE SAVEPOINT {marker}')
     finally:
         _ACTIVE.reset(active)
         token.connection = None
@@ -340,8 +392,9 @@ def observed_finish_authority(store, conn, envelope, retained_snapshot, *, requi
     target = token.targets.get(envelope['projectId'])
     if target is None or target['envelope'] != canonical(envelope):
         raise ValueError('Prepared finish observation has no exact target; expensive fallback is forbidden')
+    _require_inventory(token, conn)
     from eidolon_cli.organization_prepared_validation_current import recheck_observed_prepared_authority
-    value = recheck_observed_prepared_authority(store, conn, envelope, retained_snapshot, target['observation'])
+    value = recheck_observed_prepared_authority(store, conn, envelope, retained_snapshot, target['observation'], exact_retained_inputs=True)
     return value
 
 
@@ -351,7 +404,285 @@ def finalize_finish_verification(token, store, conn, original_request):
     _require_token(token, store, conn)
     if _ACTIVE.get() is not token or _request_binding(original_request) != token.request:
         raise ValueError('Prepared finish finalization belongs to another operation')
-    from eidolon_cli.organization_prepared_validation_current import recheck_finish_external_observation
+    _require_inventory(token, conn, force=True)
+    _require_finish_transition(token, conn, original_request)
+    if _agent_binding(conn, token.agent_ids) != token.agents:
+        raise ValueError("Prepared finish agent authority changed during its transaction")
+    from eidolon_cli.organization_prepared_validation_current import (
+        recheck_finish_external_observation, recheck_finish_owner_source,
+    )
     for target in token.targets.values():
         recheck_finish_external_observation(store, target['observation'])
+    _require_inventory(token, conn, force=True)
+    for target in token.targets.values():
+        recheck_finish_owner_source(store, conn, target['observation'])
+    _require_inventory(token, conn, force=True)
+    _require_finish_transition(token, conn, original_request)
+    if _agent_binding(conn, token.agent_ids) != token.agents:
+        raise ValueError('Prepared finish agent authority changed during its final observation')
+    from eidolon_cli.organization_prepared_validation_verification import _verify_review
+    for project in token.required_reviews:
+        _verify_review(conn, json.loads(token.targets[project]['proof']))
     token.finalized = True
+
+
+def _require_inventory(token, conn, *, force=False):
+    """Compare every input after writes; the write lock excludes other writers."""
+    _require_token(token, token.store, conn)
+    if not conn.in_transaction:
+        raise ValueError('Prepared proof reuse requires the original write transaction')
+    from eidolon_cli.organization_prepared_validation_inventory import _connection
+    _connection(conn)  # TEMP shadows and connection-mode changes never use the stamp shortcut.
+    stamp = (conn.total_changes, conn.execute('PRAGMA main.schema_version').fetchone()[0],
+             conn.execute('PRAGMA temp.schema_version').fetchone()[0])
+    if force or stamp != token.inventory_stamp:
+        from eidolon_cli.organization_prepared_validation_inventory import require_prepared_inventory
+        require_prepared_inventory(conn, token.inventory)
+        if token.purpose == 'finish' and token.targets:
+            from eidolon_cli.organization_project_effective_snapshot import _check_history_bounds
+            _check_history_bounds(conn, token.objective_id, lambda: None)
+        token.inventory_stamp = stamp
+
+
+def observed_finish_pair(conn, objective_id, project_id, *, current_authority, require_review):
+    """Reuse one strict immutable proof, with fresh authority and review checks."""
+    token = _ACTIVE.get()
+    if token is None:
+        return None
+    _require_token(token, token.store, conn)
+    target = token.targets.get(project_id)
+    if objective_id != token.objective_id or target is None:
+        raise ValueError('Prepared finish observation has no exact target; expensive fallback is forbidden')
+    _require_inventory(token, conn)
+    verified = json.loads(target['proof'])
+    from eidolon_cli.organization_prepared_validation_verification import _authority, _verify_review
+    value = current_authority(conn, verified['envelope'], target['snapshot'])
+    context, contributors, source_evidence = _authority(value, verified['envelope'])
+    if canonical(value) != target['observation'].value:
+        raise ValueError('Prepared current authority differs from its exact observed context')
+    from eidolon_cli.organization_prepared_validation_verification import _scalar_bounds
+    _scalar_bounds(conn, 'organization_policy', 'id=1', (), {'fingerprint': 64})
+    policy = conn.execute("SELECT CASE WHEN typeof(generation)='integer' THEN generation END,fingerprint "
+                          'FROM organization_policy WHERE id=1').fetchone()
+    round_row = conn.execute("SELECT CASE WHEN typeof(round)='integer' THEN round END FROM objective_control WHERE objective_id=?",
+                             (objective_id,)).fetchone()
+    if (policy is None or tuple(policy) != (context['policy_generation'], context['policy_fingerprint'])
+            or round_row is None or type(round_row[0]) is not int or round_row[0] != context['round_number']):
+        raise ValueError('Prepared current policy or round changed after proof preflight')
+    if contributors != verified['contributorIds'] or source_evidence != verified['sourceEvidence']:
+        raise ValueError('Prepared current proof authority differs from its exact observation')
+    if require_review:
+        _verify_review(conn, verified)
+        verified['independentReviewVerified'] = True
+        token.required_reviews.add(project_id)
+    verified['checks'] = [tuple(pair) for pair in verified['checks']]
+    return verified
+
+
+def observed_prepared_artifact(conn, identifier):
+    """Exact retained artifact projection; this never supplies current authority."""
+    token = _ACTIVE.get()
+    if token is None:
+        return None
+    _require_token(token, token.store, conn)
+    _require_inventory(token, conn)
+    if identifier not in token.artifacts:
+        raise ValueError('Prepared artifact was not observed before the write transaction')
+    return json.loads(token.artifacts[identifier])
+
+
+def retain_prepared_artifact(conn, identifier, artifact):
+    """Retain a normal verified static getter result in its exact read view."""
+    token = _PREFLIGHT.get()
+    if token is None or artifact is None:
+        return artifact
+    _require_token(token, token.store)
+    if conn is not token.preflight_connection:
+        raise ValueError('Prepared artifact observation belongs to a foreign connection')
+    value = canonical(artifact)
+    if identifier in token.artifacts and token.artifacts[identifier] != value:
+        raise ValueError('Prepared artifact changed during its read observation')
+    token.artifacts[identifier] = value
+    return artifact
+
+
+@contextmanager
+def prepare_context_verification(store, claim):
+    """Prevalidate retained context artifacts outside its acknowledgement write."""
+    from eidolon_cli.organization_prepared_validation_records import _SCOPE
+    from eidolon_cli.organization_prepared_validation_verification import _read_view
+    from eidolon_cli.organization_prepared_validation_objectives import prepared_selection_references
+    from eidolon_cli.organization_prepared_validation_inventory import capture_prepared_inventory
+    if _ACTIVE.get() is not None or _PREFLIGHT.get() is not None or _SCOPE.get() is not None:
+        raise ValueError('Prepared context observation requires a nonnested operation')
+    token = None
+    try:
+        with store._connect() as conn, _read_view(conn):
+            request = store._owned(conn, claim)
+            if request is None or request['type'] == 'request.message':
+                conn.rollback()
+                yield None
+                return
+            selected = prepared_selection_references(conn, request['objective_id'])
+            if not selected:
+                conn.rollback()
+                yield None
+                return
+            token = _FinishToken(store, _request_binding(request),
+                _operation_binding(conn, request['objective_id']), dict(claim), purpose='context')
+            token.claim_policy = _claim_policy(conn, request['id'])
+            token.objective_id = request['objective_id']
+            token.projects = token.static_projects = tuple(item['projectId'] for item in selected)
+            from eidolon_cli.organization_prepared_validation_inventory import check_prepared_inventory_bounds
+            check_prepared_inventory_bounds(conn, token.objective_id, token.static_projects)
+            with _static_preflight_scope(token, conn):
+                from eidolon_cli.organization_prepared_validation_ledger import _binding
+                for project in token.static_projects:
+                    _binding(conn, token.objective_id, project)
+                # Rebuild once using ordinary getters. Only their exact artifact
+                # results are retained; prompts, receipts and authorizations are not.
+                store._context_with_connection(conn, claim)
+                token.agent_ids = (request['agent_id'],)
+                token.agents = _agent_binding(conn, token.agent_ids)
+                token.inventory = capture_prepared_inventory(conn, token.objective_id, token.static_projects,
+                    shared_static_records=token.static_records)
+                _check_retained_capacity(token)
+        yield token
+    finally:
+        if token is not None:
+            token.alive = False
+            token.artifacts.clear()
+            token.static_records.clear()
+            token.inventory = None
+            token.connection = None
+
+
+def finalize_context_verification(token, store, conn):
+    if token is None:
+        return
+    _require_token(token, store, conn)
+    if token.purpose != 'context' or _ACTIVE.get() is not token:
+        raise ValueError('Prepared context belongs to another operation')
+    _require_inventory(token, conn, force=True)
+    request = store._owned(conn, token.claim)
+    if (request is None or _request_binding(request) != token.request
+            or _operation_binding(conn, token.objective_id) != token.operation
+            or _agent_binding(conn, token.agent_ids) != token.agents):
+        raise ValueError('Prepared context authority changed during acknowledgement')
+    token.finalized = True
+
+
+def _check_retained_capacity(token):
+    """Bound unique retained raw values, including serialized proof and source.
+
+    Inventory scalars are counted by SQLite. Exact shared strings/BLOBs are not
+    counted a second time. Decoded JSON/object overhead and transient reads are
+    intentionally outside this raw-retention limit, not claimed as a heap bound.
+    """
+    size = token.inventory.raw_bytes
+    seen = {id(value) for table in token.inventory.rows for row in table for kind, value in row
+            if kind in {'text', 'blob'}}
+    def add(value):
+        nonlocal size
+        if id(value) not in seen:
+            seen.add(id(value))
+            size += len(value.encode('utf-8')) if type(value) is str else len(value)
+    for _, raw, hashed in token.static_records.values():
+        add(raw)
+        add(hashed)
+    for value in (token.request, token.operation, token.agents, *token.artifacts.values(),
+                  *(value for value in token.claim.values() if type(value) is str),
+                  *((token.decision,) if token.decision is not None else ())):
+        add(value)
+    for target in token.targets.values():
+        for value in (target['envelope'], target['proof']):
+            add(value)
+        observation = target['observation']
+        # The dependency capability privately retains this small sanitized JSON.
+        size += len(json.dumps(observation.dependency.metadata()).encode('ascii'))
+        for value in (observation.envelope, observation.retained_manifest, observation.authority_identity, observation.value):
+            add(value)
+        for snapshot in (target['snapshot'], observation.fresh.original, observation.fresh.effective):
+            for item in snapshot.files:
+                add(item.content)
+    token.retained_raw_bytes = size
+    if size > _MAX_RETAINED_RAW_BYTES:
+        raise ValueError('Prepared observation exceeds the 128 MiB aggregate retained raw-byte capacity')
+
+
+def _require_finish_transition(token, conn, original_request):
+    from eidolon_cli.organization_prepared_validation_verification import _scalar_bounds
+    _scalar_bounds(conn, 'organization_policy', 'id=1', (), {'fingerprint': 64})
+    if conn.execute("SELECT 1 FROM organization_policy WHERE id=1 AND (typeof(generation)<>'integer' OR generation<1)").fetchone():
+        raise ValueError('Prepared finish current policy is malformed')
+    token.store._require_current_policy(conn)
+    if _claim_policy(conn, original_request['id']) != token.claim_policy:
+        raise ValueError('Prepared finish claim policy changed after preflight')
+    limits = {field: (2 * 1024**2 if field == 'payload' else 128)
+              for field in _REQUEST_FIELDS if field not in {'attempts', 'execution_count'}}
+    _scalar_bounds(conn, 'requests', 'id=?', (original_request['id'],), limits)
+    if conn.execute("SELECT 1 FROM requests WHERE id=? AND (typeof(attempts)<>'integer' OR attempts<0 "
+                    "OR typeof(execution_count)<>'integer' OR execution_count<0 OR typeof(status)<>'text' "
+                    "OR status<>'completed' OR token IS NOT NULL OR lease IS NOT NULL OR reason IS NOT NULL)",
+                    (original_request['id'],)).fetchone():
+        raise ValueError('Prepared finish did not retain its exact permitted request completion')
+    current = conn.execute('SELECT '+','.join(_REQUEST_FIELDS)+',status,lease,reason FROM requests WHERE id=?',
+                           (original_request['id'],)).fetchone()
+    if (current is None or current['status'] != 'completed' or current['token'] is not None
+            or current['lease'] is not None or current['reason'] is not None
+            or _request_binding({**dict(current), 'token': original_request['token']}) != token.request):
+        raise ValueError('Prepared finish did not retain its exact permitted request completion')
+    cancelled = conn.execute("SELECT CASE WHEN typeof(cancelled)='integer' THEN cancelled END FROM objectives WHERE id=?", (token.objective_id,)).fetchone()
+    if cancelled is None or type(cancelled[0]) is not int or cancelled[0] != 0:
+        raise ValueError('Prepared finish objective was cancelled during its transaction')
+    expected = json.loads(token.operation)
+    if token.decision is not None and original_request['type'] == 'request.test_review':
+        from eidolon_cli.organization_prepared_validation_verification import _review_identity, _summary
+        from eidolon_cli.organization_prepared_validation_ledger import _bounded_text, _checked_json
+        result = json.loads(token.decision)
+        project = json.loads(original_request['payload'])['projectId']
+        verified = json.loads(token.targets[project]['proof'])
+        record = {**_review_identity(verified, original_request), 'approved': result['approved'], 'summary': _summary(result['summary'])}
+        retained = conn.execute(f'SELECT {_bounded_text("request_id", 128)},{_bounded_text("reviewer_id", 128)},'
+            f"CASE WHEN typeof(approved)='integer' THEN approved END,{_bounded_text('record', 1000000)},{_bounded_text('sha256', 64)} "
+            'FROM prepared_validation_pair_reviews WHERE set_id=?', (verified['envelope']['setId'],)).fetchone()
+        if (retained is None or tuple(retained[:3]) != (original_request['id'], original_request['agent_id'], int(result['approved']))
+                or type(retained[2]) is not int or canonical(_checked_json(retained[3], retained[4])) != canonical(record)):
+            raise ValueError('Prepared rejection transition lacks its exact independent review')
+        if result['approved'] is False:
+            expected['control']['round'] += int(expected['control']['round'] <
+                min(expected['control']['max_replans'], token.store.settings.max_replans))
+    elif token.decision is not None and original_request['type'] == 'request.accept':
+        from eidolon_cli.organization_prepared_validation_ledger import _bounded_text
+        result = json.loads(token.decision)
+        row = conn.execute(f'SELECT {_bounded_text("objective_id", 128)},'
+            "CASE WHEN typeof(round)='integer' THEN round END,"
+            f"{_bounded_text('agent_id', 128)},CASE WHEN typeof(approved)='integer' THEN approved END,"
+            f'{_bounded_text("summary", 40000)},{_bounded_text("evidence_ids", 2 * 1024**2)},'
+            f'{_bounded_text("criteria_results", 2 * 1024**2)},{_bounded_text("conflicts", 200000)} '
+            'FROM objective_acceptances WHERE request_id=?', (original_request['id'],)).fetchone()
+        if (row is None or tuple(row[:4]) != (token.objective_id, expected['control']['round'], original_request['agent_id'], int(result['approved']))
+                or type(row[1]) is not int or type(row[3]) is not int
+                or row[4] != result['summary'].strip() or any(type(value) is not str for value in row[5:])
+                or sorted(json.loads(row[5])) != sorted(result['evidenceIds'])
+                or canonical(json.loads(row[6])) != canonical(result['criteriaResults'])
+                or canonical(json.loads(row[7])) != canonical(result['conflicts'])):
+            raise ValueError('Prepared executive rejection lacks its exact retained acceptance decision')
+        advances = result['approved'] is False and expected['control']['round'] < min(
+            expected['control']['max_replans'], token.store.settings.max_replans)
+        state = conn.execute(f'SELECT {_bounded_text("status", 32)} FROM objective_control WHERE objective_id=?',
+                             (token.objective_id,)).fetchone()
+        expected_state = 'accepted' if result['approved'] else ('replanning' if advances else 'blocked')
+        if state is None or state[0] != expected_state:
+            raise ValueError('Prepared executive rejection has an unexpected control transition')
+        expected['control']['round'] += int(advances)
+    if _operation_binding(conn, token.objective_id) != canonical(expected):
+        raise ValueError('Prepared finish contract or round changed outside its permitted transition')
+
+
+def _claim_policy(conn, request_id):
+    row = conn.execute("SELECT CASE WHEN typeof(generation)='integer' AND generation>=1 THEN generation END "
+                       'FROM request_policy WHERE request_id=?', (request_id,)).fetchone()
+    if row is None or type(row[0]) is not int:
+        raise ValueError('Prepared finish requires its exact retained claim policy')
+    return row[0]

@@ -178,10 +178,38 @@ export function createPreparedNativeModel() {
       scope: { kind: 'served-profile', profile: 'default' } } }
   }
 
+  function ownerPolicy(params: Record<string, unknown>): PreparedNativeReply {
+    const expectedId = params.expectedOrganizationId
+
+    if (Object.keys(params).length !== 1 || typeof expectedId !== 'string' ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(expectedId)) {
+      return fail(PREPARED_NATIVE_ERRORS.invalid, -32602)
+    }
+
+    if (expectedId !== PREPARED_NATIVE_ORGANIZATION_ID) { return fail(PREPARED_NATIVE_ERRORS.identity, 5074) }
+
+    // The real detail view reads configured policy after create. These finite
+    // synthetic settings neither configure a provider nor permit policy writes.
+    return { result: { capabilityVersion: 1, state: 'ready', organizationId: PREPARED_NATIVE_ORGANIZATION_ID,
+      ownerId, policyGeneration: ownerGeneration, sourceRevision: hash(`synthetic-source:${ownerGeneration}`),
+      managedFields: [], capabilities: { modelRouting: true, budgetPolicy: true, budgetObservation: true },
+      configuration: { model_routes: [], model_assignments: [], model_costs: [],
+        max_model_calls: 20, max_total_tokens: 100000, max_cost_usd: null, objective_timeout_seconds: 3600,
+        max_context_tokens: 32768, max_output_tokens: 8000, completion_reserve_model_calls: 2,
+        completion_reserve_tokens: 8000, completion_reserve_cost_usd: null, adaptive_pacing_enabled: false,
+        pacing_conserve_below_percent: 25, pacing_critical_below_percent: 10,
+        pacing_conserve_interval_seconds: 30, pacing_critical_interval_seconds: 120,
+        pacing_conserve_max_inflight: 2, pacing_critical_max_inflight: 1 },
+      agents: agents().map(({ id, name, role }) => ({ id, name, role })).sort((left, right) => left.id.localeCompare(right.id)),
+      observations: [...receipts.values()].map(({ result }) => ({ objectiveId: result.objective.id, revision: 0, observation: null })),
+      scope: { kind: 'served-profile', profile: 'default' } } }
+  }
+
   const handlers: Record<string, (params: Record<string, unknown>) => PreparedNativeReply> = {
     'organization.descriptor': () => ({ result: metadata() }),
     'organization.snapshot': () => ({ result: snapshot() }),
     'organization.teamSetup': teamSetup,
+    'organization.ownerPolicy': ownerPolicy,
     'organization.preparedValidationSetup': params => params.expectedOrganizationId === PREPARED_NATIVE_ORGANIZATION_ID
       ? { result: descriptor() } : fail(PREPARED_NATIVE_ERRORS.identity),
     'organization.create': create,
