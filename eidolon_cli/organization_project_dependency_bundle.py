@@ -423,15 +423,23 @@ def _names(descriptor, expected, check):
 
 
 @contextmanager
-def _regular_descriptor(source, name, item):
-    # O_PATH cannot activate a raced-in device. Reopening the anchored regular
-    # inode through procfs does not resolve the owner's path for a second time.
+def _regular_anchor(source, name, item):
+    # O_PATH cannot activate a raced-in device, including for metadata-only checks.
     anchor = os.open(name, os.O_PATH | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=source)
     try:
         before = os.fstat(anchor)
         if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
                 or before.st_size != item['bytes'] or stat.S_IMODE(before.st_mode) != item['mode']):
             raise ValueError('Dependency file type, links, size or mode does not match')
+        yield anchor, before
+    finally:
+        os.close(anchor)
+
+
+@contextmanager
+def _regular_descriptor(source, name, item):
+    # Reopening the anchored regular inode does not resolve its owner path again.
+    with _regular_anchor(source, name, item) as (anchor, before):
         descriptor = os.open('/proc/self/fd/' + str(anchor), _FILE_FLAGS & ~os.O_NOFOLLOW)
         try:
             if _identity(before) != _identity(os.fstat(descriptor)):
@@ -439,8 +447,6 @@ def _regular_descriptor(source, name, item):
             yield descriptor, before
         finally:
             os.close(descriptor)
-    finally:
-        os.close(anchor)
 
 
 def _copy_file(source, target, name, item, check, package_identity):

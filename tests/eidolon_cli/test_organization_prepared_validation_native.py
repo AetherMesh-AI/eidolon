@@ -7,6 +7,7 @@ from copy import deepcopy
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import asdict, replace
+from functools import wraps
 import json
 import stat
 import threading
@@ -159,6 +160,7 @@ def keep_native_claims_alive(store, objective_id, record_property):
 
 
 _NATIVE_PHASE = ContextVar('prepared_native_phase', default='unlabelled')
+_NATIVE_WRITE = ContextVar('prepared_native_write', default=False)
 
 
 @contextmanager
@@ -195,7 +197,11 @@ def measure_native_writes(store, monkeypatch, record_property):
             with original_write() as conn:
                 started = time.monotonic()
                 wait = started - acquiring
-                yield conn
+                token = _NATIVE_WRITE.set(True)
+                try:
+                    yield conn
+                finally:
+                    _NATIVE_WRITE.reset(token)
         finally:
             writes.append({'thread': threading.current_thread().name, 'phase': _NATIVE_PHASE.get(),
                            'waitSeconds': wait if wait is not None else time.monotonic() - acquiring,
@@ -209,6 +215,72 @@ def measure_native_writes(store, monkeypatch, record_property):
             record_property('write_transaction_max_seconds', max(
                 (item['lockSeconds'] for item in writes if item['lockSeconds'] is not None), default=0))
             record_property('write_transaction_timings', writes)
+
+
+@contextmanager
+def measure_native_observations(monkeypatch, record_property):
+    """Inclusive aggregate timings; never collect source values or per-file logs."""
+    from eidolon_cli import organization_prepared_validation_current as current
+    from eidolon_cli import organization_prepared_validation_inventory as inventory
+    from eidolon_cli import organization_prepared_validation_setup as setup_module
+    from eidolon_cli import organization_project_dependency_verification as dependencies
+    from eidolon_cli import organization_project_snapshot_bundle as source
+    from eidolon_cli import organization_project_effective_snapshot as effective
+    from eidolon_cli import organization_prepared_validation_ledger as ledger
+    targets = [(current, 'recheck_finish_external_observation'),
+               (current, '_recheck_project_snapshot'),
+               (current, 'recheck_finish_owner_source'),
+               (inventory, 'require_prepared_inventory'),
+               (setup_module, 'check_current_prepared_registration'),
+               (dependencies, '_recheck_dependency_observation'),
+               (source, '_check_no_secrets'),
+               (effective, 'capture_project_snapshot'),
+               (effective, '_check_no_secrets'),
+               (ledger, '_check_no_secrets')]
+    totals = {}
+    def instrument(function, name):
+        @wraps(function)
+        def measured(*args, **kwargs):
+            key = (name, _NATIVE_PHASE.get(), _NATIVE_WRITE.get())
+            started = time.monotonic()
+            try:
+                return function(*args, **kwargs)
+            finally:
+                item = totals.setdefault(key, {'name': name, 'phase': key[1],
+                    'underWrite': key[2], 'calls': 0, 'seconds': 0.0})
+                item['calls'] += 1
+                item['seconds'] += time.monotonic() - started
+        return measured
+    with monkeypatch.context() as patch:
+        for module, name in targets:
+            patch.setattr(module, name, instrument(getattr(module, name), name))
+        try:
+            yield totals
+        finally:
+            record_property('observation_inclusive_timings', list(totals.values()))
+
+
+def test_native_observation_metrics_preserve_failure_and_scope(monkeypatch):
+    from eidolon_cli import organization_prepared_validation_current as current
+    recorded = {}
+    def fail(value):
+        raise ValueError(value)
+    monkeypatch.setattr(current, 'recheck_finish_owner_source', fail)
+    @contextmanager
+    def write():
+        yield object()
+    store = SimpleNamespace(_write=write)
+    with measure_native_observations(monkeypatch, recorded.__setitem__):
+        with measure_native_phase('synthetic', recorded.__setitem__):
+            with measure_native_writes(store, monkeypatch, recorded.__setitem__):
+                with pytest.raises(ValueError, match='synthetic failure'), store._write():
+                    current.recheck_finish_owner_source('synthetic failure')
+        assert _NATIVE_WRITE.get() is False
+    assert current.recheck_finish_owner_source is fail
+    assert recorded['observation_inclusive_timings'] == [{
+        'name': 'recheck_finish_owner_source', 'phase': 'synthetic', 'underWrite': True,
+        'calls': 1, 'seconds': recorded['observation_inclusive_timings'][0]['seconds']}]
+    assert recorded['observation_inclusive_timings'][0]['seconds'] >= 0
 
 
 def test_native_write_timing_survives_rollback_and_failed_acquisition(monkeypatch):
@@ -281,7 +353,7 @@ def test_actual_owner_selected_pair_finishes_reviews_and_reopens(native_owner, m
     state = setup_running(native_owner, read_path=UI_TEST, clear_execution_only=False,
                           acceptance_criteria=CRITERIA, full_planning=True)
     store = state.store
-    with measure_native_writes(store, monkeypatch, record_property), keep_native_claims_alive(store, state.objective, record_property) as writer_events:
+    with measure_native_observations(monkeypatch, record_property), measure_native_writes(store, monkeypatch, record_property), keep_native_claims_alive(store, state.objective, record_property) as writer_events:
         with measure_native_phase('execute_pair', record_property):
             assert store.run_project_stage(state.claim, state.cancel) == {}
         with measure_native_phase('finish_execution', record_property, writer_events):

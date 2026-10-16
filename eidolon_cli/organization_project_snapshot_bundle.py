@@ -302,6 +302,36 @@ def capture_project_snapshot(source, files, *, root_alias, expected_root_identit
     an absolute time.monotonic deadline. Capture requires Linux O_PATH/procfs.
     No runtime, installation, filesystem staging or workspace links are enabled.
     """
+    return _capture_project_snapshot(source, files, root_alias=root_alias,
+        expected_root_identity=expected_root_identity, check_authorized=check_authorized,
+        limits=limits, deadline_monotonic=deadline_monotonic, cancel=cancel,
+        reviewed_execution_only_hashes=reviewed_execution_only_hashes)
+
+
+def _recheck_project_snapshot(source, expected, *, check_authorized, deadline_monotonic, cancel=None):
+    """Match an already classified original source; this grants no classification.
+
+    Trusted callers must bind ``expected`` to their own live classified source
+    observation and its exact limits/exception policy. A constructed or retained
+    bundle alone is not evidence of prior classification. This private matcher
+    only returns freshness, never bytes, a classified snapshot or authority.
+    """
+    if type(expected) is not ProjectSnapshotBundle:
+        raise ProjectSnapshotError('Source recheck requires its original classified snapshot')
+    fresh = _capture_project_snapshot(source, [item.path for item in expected.files],
+        root_alias=expected.root_alias, expected_root_identity=expected.root_identity,
+        check_authorized=check_authorized, limits=expected.limits,
+        deadline_monotonic=deadline_monotonic, cancel=cancel,
+        reviewed_execution_only_hashes={item.path: item.sha256 for item in expected.files if item.execution_only},
+        expected_snapshot=expected)
+    if fresh.manifest() != expected.manifest():
+        raise ProjectSnapshotError('Original source metadata changed after its classified observation')
+    return True
+
+
+def _capture_project_snapshot(source, files, *, root_alias, expected_root_identity,
+                              check_authorized, limits, deadline_monotonic, cancel=None,
+                              reviewed_execution_only_hashes=None, expected_snapshot=None):
     _require_posix_support()
     if sys.platform != 'linux' or not hasattr(os, 'O_PATH'):
         raise ProjectSnapshotError('Project snapshot capture requires Linux O_PATH and proc descriptor reopening')
@@ -341,6 +371,7 @@ def capture_project_snapshot(source, files, *, root_alias, expected_root_identit
         check()
         _check_lexical_path(parts + tuple(path.split('/')), profile_prefixes)
 
+    expected_files = None if expected_snapshot is None else {item.path: item for item in expected_snapshot.files}
     captured, identities, directories, total = [], {}, {}, 0
     try:
         with ExitStack() as opened:
@@ -367,10 +398,12 @@ def capture_project_snapshot(source, files, *, root_alias, expected_root_identit
                     if before.st_size > limits.max_file_bytes or total + before.st_size > limits.max_total_bytes:
                         raise ProjectSnapshotError('Complete selected source exceeds its byte bounds')
                     content, digest = _read_bounded(fd, before.st_size, check, retain=True)
+                    if expected_files is not None and content != expected_files[path].content:
+                        raise ProjectSnapshotError('Original source bytes changed after their classified observation')
                     if path in execution_only:
                         if digest != execution_only[path]:
                             raise ProjectSnapshotError('Reviewed execution-only source hash changed')
-                    else:
+                    elif expected_files is None:
                         _check_no_secrets(content)
                     check()
                     item = ProjectSnapshotFile(path, content, 0o555 if before.st_mode & 0o111 else 0o444,

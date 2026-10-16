@@ -152,10 +152,10 @@ def _walk(descriptor, prefix, expected, children, identities, check, observed, *
         elif hash_bytes:
             observed['files'][relative] = _verify_file(descriptor, name, expected[relative], identities.get(relative), check)
         else:
-            # Reopen through the same no-symlink O_PATH gate. This final metadata
+            # Anchor through the same no-symlink O_PATH gate. This final metadata
             # pass detects an earlier file's later mutation without retaining its
-            # bytes or a descriptor for every inventory entry.
-            with bundle._regular_descriptor(descriptor, name, expected[relative]) as (file_fd, info):
+            # bytes or opening a read descriptor for every inventory entry.
+            with bundle._regular_anchor(descriptor, name, expected[relative]) as (file_fd, info):
                 check()
                 fingerprint = observed['files'].get(relative)
                 if (fingerprint != bundle._identity(info) or fingerprint != bundle._identity(os.fstat(file_fd))

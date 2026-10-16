@@ -40,7 +40,13 @@ all selected projects. Ordinary recipe bindings remain unchanged.
   rollback and mismatched operations invalidate reuse. The read inventory and
   final transition guards also reject late same-transaction mutations.
   Before commit, selected source bytes and the complete observed dependency
-  fingerprint inventory are rechecked. Exceptions, retries and rollback discard
+  fingerprint inventory are rechecked. The final source check retains both byte
+  passes and exact equality to the fully classified preflight original; only
+  repeated secret classification is skipped behind a private one-operation
+  capability bound to the same limits, exceptions and live classifier policy.
+  Dependency metadata uses no-follow O_PATH regular-file anchors without reopening
+  file contents, retaining every path, inode, hardlink and fingerprint check.
+  Exceptions, retries and rollback discard
   the observation. Original lease/deadline checks remain after these checks.
   Native lock-hold and heartbeat measurements are required before calling this
   practical on a large dependency bundle; synthetic scan counts are insufficient.

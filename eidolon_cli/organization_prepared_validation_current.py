@@ -1,18 +1,23 @@
 """Live source/owner/dependency checks for prepared finish, review and acceptance."""
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 import hashlib
 import json
 import time
+import threading
+from weakref import WeakKeyDictionary
 
 from eidolon_cli.organization_prepared_validation_authority import require_prepared_authority
 from eidolon_cli.organization_prepared_validation_stage import validation_context
 from eidolon_cli.organization_project_effective_snapshot import capture_effective_project_snapshot
-from eidolon_cli.organization_project_snapshot_bundle import ProjectSnapshotLimits, capture_project_snapshot
-from eidolon_cli.organization_project_validation import canonical
+from eidolon_cli.organization_project_snapshot_bundle import ProjectSnapshotLimits, _recheck_project_snapshot
+from eidolon_cli.organization_project_validation import canonical, digest
 
 
-@dataclass(frozen=True)
+_SOURCE_OBSERVATIONS = WeakKeyDictionary()
+
+
+@dataclass(frozen=True, eq=False)
 class _AuthorityObservation:
     envelope: str
     retained_manifest: str
@@ -22,6 +27,22 @@ class _AuthorityObservation:
     dependency: object
     value: str
     check_claim: object
+    source_binding: str
+    classifier_policy: tuple
+
+
+def _source_classifier_policy():
+    # Plugin registration atomically replaces these immutable classifier inputs.
+    # Keep their objects, not ids, so replacement cannot reuse an old identity.
+    from agent import redact
+    with redact._registry_lock:
+        return redact._PREFIX_RE, redact._PREFIX_SUBSTRINGS
+
+
+def _require_source_classifier_policy(policy):
+    current = _source_classifier_policy()
+    if any(before is not after for before, after in zip(policy, current)):
+        raise ValueError('Prepared source classifier policy changed after classification')
 
 
 def _checkpoint(store, authority, objective_id, check_claim=None):
@@ -74,6 +95,7 @@ def observe_current_prepared_authority(store, conn, envelope, retained_snapshot,
     authority = require_prepared_authority(store, conn, envelope['objectiveId'], envelope['projectId'])
     grant = authority['contract']
     check = _checkpoint(store, authority, envelope['objectiveId'], check_claim)
+    classifier_policy = _source_classifier_policy()
     with store._connect() as capture_connection:
         fresh = capture_effective_project_snapshot(capture_connection, envelope['objectiveId'], authority['project']['readRoot'],
             grant['source']['files'], root_alias=grant['root']['alias'],
@@ -81,6 +103,7 @@ def observe_current_prepared_authority(store, conn, envelope, retained_snapshot,
             check_authorized=check, limits=ProjectSnapshotLimits(**grant['source']['limits']),
             deadline_monotonic=time.monotonic() + 120,
             reviewed_execution_only_hashes=grant['source']['executionOnlyHashes'])
+    _require_source_classifier_policy(classifier_policy)
     fresh = _share_observed_source(fresh, retained_snapshot)
     from eidolon_cli.organization_project_dependency_verification import _observe_dependency_bundle
     dependencies = grant['dependencies']
@@ -94,8 +117,18 @@ def observe_current_prepared_authority(store, conn, envelope, retained_snapshot,
             expected_bundle_sha256=grant['profile']['bundleSha256'],
             check_authorized=check, deadline=time.monotonic() + 120) as dependency:
         value = _authority_value(store, conn, envelope, authority, fresh, check)
-        yield _AuthorityObservation(canonical(envelope), canonical(retained_snapshot.manifest()),
-            authority, _authority_identity(authority), fresh, dependency, canonical(value), check_claim)
+        _require_source_classifier_policy(classifier_policy)
+        observation = _AuthorityObservation(canonical(envelope), canonical(retained_snapshot.manifest()),
+            authority, _authority_identity(authority), fresh, dependency, canonical(value), check_claim,
+            _classified_source_binding(authority, fresh.original), classifier_policy)
+        # Values never reference the weak key. Issuance occurs only after actual
+        # full source capture/classification, within this one observation scope.
+        _SOURCE_OBSERVATIONS[observation] = (store, threading.get_ident(), fresh.original,
+            observation.source_binding, classifier_policy)
+        try:
+            yield observation
+        finally:
+            _SOURCE_OBSERVATIONS.pop(observation, None)
 
 
 def recheck_observed_prepared_authority(store, conn, envelope, retained_snapshot, observation, *, exact_retained_inputs=False):
@@ -133,19 +166,34 @@ def recheck_finish_external_observation(store, observation):
     """
     if type(observation) is not _AuthorityObservation:
         raise ValueError('Prepared finish requires its original byte observation')
+    state = _SOURCE_OBSERVATIONS.pop(observation, None)  # Consume even failed attempts before any file reads.
+    from eidolon_cli.organization_prepared_validation_finish import _ACTIVE, _require_token
+    token = _ACTIVE.get()
+    if (state is None or state[0] is not store or state[1] != threading.get_ident() or token is None):
+        raise ValueError('Prepared source observation is foreign, expired or already consumed')
+    _require_token(token, store, token.connection)
     authority, envelope = observation.authority, json.loads(observation.envelope)
+    target = token.targets.get(envelope['projectId'])
+    if (target is None or target['observation'] is not observation
+            or state[2] is not observation.fresh.original
+            or state[3] != observation.source_binding
+            or state[4] is not observation.classifier_policy
+            or _classified_source_binding(authority, observation.fresh.original) != state[3]):
+        raise ValueError('Prepared classified original source or policy was replaced')
     check = _checkpoint(store, authority, envelope['objectiveId'], observation.check_claim)
+    _require_source_classifier_policy(state[4])
     check(force=True)
+    _require_source_classifier_policy(state[4])
     original = observation.fresh.original
-    fresh = capture_project_snapshot(authority['project']['readRoot'], [item.path for item in original.files],
-        root_alias=original.root_alias, expected_root_identity=original.root_identity,
-        check_authorized=check, limits=original.limits, deadline_monotonic=time.monotonic() + 120,
-        reviewed_execution_only_hashes={item.path: item.sha256 for item in original.files if item.execution_only})
-    if fresh.manifest() != original.manifest():
-        raise ValueError('Prepared source preimage changed after finish preflight')
+    _recheck_project_snapshot(authority['project']['readRoot'], original,
+        check_authorized=check, deadline_monotonic=time.monotonic() + 120)
+    _require_source_classifier_policy(state[4])
     from eidolon_cli.organization_project_dependency_verification import _recheck_dependency_observation
     _recheck_dependency_observation(observation.dependency, check_authorized=check, deadline=time.monotonic() + 120)
     check(force=True)
+    _require_source_classifier_policy(state[4])
+    if _classified_source_binding(authority, original) != state[3]:
+        raise ValueError('Prepared classified source policy changed during its recheck')
     return True
 
 
@@ -275,3 +323,10 @@ def _share_observed_source(fresh, retained_snapshot):
             files.append(ProjectSnapshotFile(item.path, content, item.mode, item.execution_only))
         return ProjectSnapshotBundle(snapshot.root_alias, snapshot.root_identity, tuple(files), snapshot.limits)
     return EffectiveProjectSnapshot(fresh.objective_id, share(fresh.original), share(fresh.effective), fresh.managed_revisions)
+
+
+def _classified_source_binding(authority, original):
+    """Detach the exact source/exception policy from mutable host dictionaries."""
+    return digest({'root': authority['contract']['root'], 'source': authority['contract']['source'],
+        'readRoot': authority['project']['readRoot'], 'original': original.manifest(),
+        'limits': asdict(original.limits)})

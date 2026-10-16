@@ -600,7 +600,10 @@ def _check_retained_capacity(token):
         observation = target['observation']
         # The dependency capability privately retains this small sanitized JSON.
         size += len(json.dumps(observation.dependency.metadata()).encode('ascii'))
-        for value in (observation.envelope, observation.retained_manifest, observation.authority_identity, observation.value):
+        for value in (observation.envelope, observation.retained_manifest, observation.authority_identity, observation.value, observation.source_binding):
+            add(value)
+        matcher, prefixes = observation.classifier_policy
+        for value in (matcher.pattern, *prefixes):
             add(value)
         for snapshot in (target['snapshot'], observation.fresh.original, observation.fresh.effective):
             for item in snapshot.files:
