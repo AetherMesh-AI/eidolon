@@ -1,15 +1,31 @@
 name: Prepared workspace isolation
 on:
   push:
-    branches: ['feat/prepared-project-validation']
+    branches: ['main', 'feat/prepared-project-validation']
     paths:
       - '.github/workflows/prepared-project-experimental.yml'
+      - 'scripts/run_tests.sh'
+      - 'scripts/run_tests_parallel.py'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - 'tests/conftest.py'
+      - 'tests/eidolon_cli/conftest.py'
+      - 'eidolon_constants.py'
       - 'scripts/organization/prepare_workspace_dependencies.py'
       - 'scripts/organization/record_prepared_npm_install.mjs'
       - 'eidolon_cli/organization_project_dependency_bundle.py'
       - 'eidolon_cli/organization_project_snapshot_bundle.py'
       - 'eidolon_cli/organization_project_validation_profile.py'
       - 'eidolon_cli/organization_project_workspace_node.py'
+      - 'eidolon_cli/organization_project_node.py'
+      - 'eidolon_cli/organization_project_runner.py'
+      - 'eidolon_cli/organization_project_compiler_bundle.py'
+      - 'eidolon_cli/organization_project_validation.py'
+      - 'eidolon_cli/project_node_runtime/seccomp.json'
+      - 'eidolon_cli/project_typescript_runtime/compiler-inventory.json'
+      - 'agent/file_safety.py'
+      - 'agent/redact.py'
+      - 'tools/organization_file_read.py'
       - 'eidolon_cli/project_workspace_runtime/**'
       - 'tests/eidolon_cli/test_organization_project_workspace_*.py'
       - 'tests/eidolon_cli/prepared_workspace_fixture.py'

@@ -94,3 +94,20 @@ This does not claim validation of later main-branch changes. Updating the fixtur
 or its execution-only exception policy requires separate review. General authorized
 source edits still need a practical owner-reviewed policy; this fixture's exact
 public-byte exceptions are not a substitute for real-secret protections.
+
+### Audited native checkpoint
+
+Run `38841986893` tested runtime `f1ddbf8be367c165300eab2261454f05407cedc7`
+against the separately pinned renderer above. Retained artifacts independently
+verify six compiler API cases, thirteen renderer/UI/isolation/revocation cases,
+eighteen abuse cases (eleven native, seven pure) and twenty-five capacity cases
+(six native, nineteen pure) with no failures or skips.
+The three dependency manifests are identical and every selected source hash was
+rechecked. The earlier live-process observation failure remains unexplained; the
+stronger exact PID/UID/start-time and post-cleanup disappearance assertions passed.
+
+The retained preparation receipt does not constitute a durable execution receipt.
+Execution evidence at this stage is retained JUnit, the exact committed assertions
+and job logs. Later main integration requires its own applicable gates. The native
+workflow also runs on main when its actual runtime, source-policy or proof inputs
+change; unrelated application edits do not refresh the pinned renderer baseline.
