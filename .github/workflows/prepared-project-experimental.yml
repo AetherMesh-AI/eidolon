@@ -141,14 +141,6 @@ jobs:
         run: |
           scripts/run_tests.sh tests/eidolon_cli/test_organization_project_workspace_compiler.py \
             -j 1 --file-timeout 180 --file-retries 0 -x --junitxml=workspace-compiler.xml
-      - name: Exercise actual prepared renderer and selected UI tests offline
-        env:
-          HERMES_PYTHON: .venv/bin/python
-          EIDOLON_REQUIRE_WORKSPACE_SANDBOX: '1'
-          EIDOLON_TEST_WORKSPACE_BUNDLE: ${{ runner.temp }}/prepared-project/verified
-        run: |
-          scripts/run_tests.sh tests/eidolon_cli/test_organization_project_workspace_${{ matrix.suite }}.py \
-            -j 1 --file-timeout 1800 --file-retries 0 -x --junitxml=workspace-${{ matrix.suite }}.xml
       - name: Verify owner-selected durable two-recipe lifecycle
         if: matrix.suite == 'native'
         env:
@@ -158,6 +150,14 @@ jobs:
         run: |
           scripts/run_tests.sh tests/eidolon_cli/test_organization_prepared_validation_native.py \
             -j 1 --file-timeout 1800 --file-retries 0 -x --junitxml=prepared-lifecycle-native.xml
+      - name: Exercise actual prepared renderer and selected UI tests offline
+        env:
+          HERMES_PYTHON: .venv/bin/python
+          EIDOLON_REQUIRE_WORKSPACE_SANDBOX: '1'
+          EIDOLON_TEST_WORKSPACE_BUNDLE: ${{ runner.temp }}/prepared-project/verified
+        run: |
+          scripts/run_tests.sh tests/eidolon_cli/test_organization_project_workspace_${{ matrix.suite }}.py \
+            -j 1 --file-timeout 1800 --file-retries 0 -x --junitxml=workspace-${{ matrix.suite }}.xml
       - name: Retain exact native proof and preparation metadata
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
