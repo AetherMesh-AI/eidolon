@@ -424,8 +424,10 @@ pending owner intervention requests, and accepted outcomes with deliverable IDs
 are separate groups. Task completion percentages do not imply final acceptance.
 Missing queues and disconnected snapshots are labeled. Full history stays in the
 existing dedicated views. The intake retains its existing scope-keyed draft and
-submission identity inside a mounted disclosure; explicit New objective opens and
-focuses it. Closing the disclosure preserves its draft. Home overview cards keep
+submission identity inside mounted disclosures. Describe a request opens the primary
+assisted composer; Manual setup is compact until explicitly opened. New objective
+remains the manual shortcut, opening and scrolling its form before focusing it.
+Only one composer mode is expanded at a time; closing either preserves its draft. Home overview cards keep
 long lists internally scrollable at normal desktop sizes; smaller or zoomed
 windows retain accessible page scrolling. Message organization offers an explicit
 choice among the current organization’s active persistent Executives. It does not

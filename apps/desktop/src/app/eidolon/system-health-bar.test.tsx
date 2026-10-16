@@ -19,6 +19,8 @@ vi.mock('./organization-folder-access', () => ({ OrganizationFolderAccess: () =>
 vi.mock('./organization-folder-setup', () => ({ OrganizationFolderSetup: () => null }))
 
 vi.mock('./team-onboarding', () => ({ TeamOnboardingEntry: () => null }))
+// Request intake owns dedicated scope/retry tests; these suites isolate the runtime snapshot contract.
+vi.mock('./organization-request-intake', () => ({ OrganizationRequestIntake: () => null }))
 // Exact owner judgments have a separate metadata and authority test suite.
 vi.mock('./runtime-outcome-judgment', () => ({ RuntimeOutcomeJudgment: () => null }))
 // Milestone owner reads and writes have separate scope and receipt suites.

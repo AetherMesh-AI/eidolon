@@ -287,3 +287,39 @@ it('shows the recorded question and requester without attributing it to the assi
   expect(screen.queryByText(worker.name)).toBeNull()
   expect(screen.getByText('Not recorded')).toBeTruthy()
 })
+
+
+it('switches compact intake modes through explicit shortcuts while preserving the manual draft', () => {
+  const scroll = vi.fn()
+  const original = HTMLElement.prototype.scrollIntoView
+  HTMLElement.prototype.scrollIntoView = scroll
+  const current = { ...snapshot, connection: { scope: 'mode-test', ownerScope: 'mode-test', state: 'ready' as const } }
+  const adapter = { mode: 'runtime', getSnapshot: () => current, createObjective: vi.fn() } as unknown as RuntimeOrganizationAdapter
+
+  try {
+    const view = render(<MemoryRouter><Home adapter={adapter} snapshot={current} /></MemoryRouter>)
+    const assisted = view.container.querySelector('#eid-assisted-intake') as HTMLDetailsElement
+    const manual = view.container.querySelector('#eid-manual-intake') as HTMLDetailsElement
+    expect(assisted.open).toBe(true)
+    expect(manual.open).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'New objective' }))
+    expect(manual.open).toBe(true)
+    expect(assisted.open).toBe(false)
+    const input = screen.getByRole('textbox', { name: 'Objective' })
+    fireEvent.change(input, { target: { value: 'Retain my manual work' } })
+    expect(scroll.mock.instances.at(-1)).toBe(input.closest('form'))
+    fireEvent.click(screen.getByRole('button', { name: 'Describe a request' }))
+    expect(manual.open).toBe(false)
+    expect(assisted.open).toBe(true)
+    expect(scroll.mock.instances.at(-1)).toBe(assisted.querySelector('form'))
+    fireEvent.click(screen.getByRole('button', { name: 'New objective' }))
+    expect(screen.getByRole('textbox', { name: 'Objective' })).toBe(input)
+    expect(input).toHaveProperty('value', 'Retain my manual work')
+    expect(globalThis.document.activeElement).toBe(input)
+    expect(adapter.createObjective).not.toHaveBeenCalled()
+    view.rerender(<MemoryRouter><Home adapter={adapter} snapshot={{ ...current, connection: { ...current.connection, state: 'connecting' } }} /></MemoryRouter>)
+    expect(input).toHaveProperty('disabled', true)
+  } finally {
+    HTMLElement.prototype.scrollIntoView = original
+  }
+})

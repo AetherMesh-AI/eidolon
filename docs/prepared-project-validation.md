@@ -62,3 +62,28 @@ failures block success, and establish isolation/cancellation/cleanup behavior.
 Missing native prerequisites are failures in that lane, never silent skips.
 Only after this boundary is reviewed should the scheduler, durable validation-set
 schema, acceptance and source-delivery hooks be enabled.
+
+### Initial native evidence and retained failures
+
+The immutable dependency preparation succeeded in run `38829761731`. The first
+workload lanes (`38831264226`, diagnostic follow-up `38831801781`) remain failed:
+renderer receipt framing was incomplete near 64 KiB, with cleanup confirmed.
+A local pipe reproduction establishes that an initialized Node stdout can return
+a partial count from a single `writeSync`; complete frames must be written within
+bounded backpressure/deadline handling, never accepted after truncation.
+
+The abuse lane passed 15 cases before the positive scratch-execution probe failed.
+Its observed startup/isolation/cleanup checks passed, but this does not establish
+successful Vitest execution. Retained failures must be replaced by actual passing
+native evidence before support is claimed. Added capacity and uncertain-cleanup
+cases are separate proof gates; local skips are not native evidence. A test-owned
+identity-checked cleanup repair does not promote an uncertain execution receipt
+or establish durable scheduler replay protection.
+
+The native workflow checks out the exact `ac63782287cd04fae7fac7aab2385ef524dcb439`
+renderer fixture separately from the runtime under test. Its source and package
+manifest bytes must still match the complete reviewed inventory. This deliberately
+does not claim validation of later main-branch changes. Updating the fixture or
+its execution-only exception policy requires separate review. General authorized
+source edits still need a practical owner-reviewed policy; this fixture's exact
+public-byte exceptions are not a substitute for real-secret protections.

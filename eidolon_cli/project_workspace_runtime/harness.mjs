@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url';
 import { StringDecoder } from 'node:string_decoder';
 import { CONTROL_BYTES, validateConfig, validateWorkloadIdentity, validateResult, absolutePath,
   selectedFiles, isSource, resultRecord, typescriptArguments, summarizeVitestModules,
-  boundUiProject, vitestOptions } from './protocol.mjs';
+  boundUiProject, vitestOptions, writeControlFrameSync } from './protocol.mjs';
 
 const config = validateConfig(JSON.parse(fs.readFileSync('/runner/config.json', 'utf8')));
 const status = Object.fromEntries(fs.readFileSync('/proc/self/status', 'utf8').split('\n')
@@ -19,11 +19,14 @@ const proof = Object.fromEntries(['Uid', 'Gid', 'Groups', 'NoNewPrivs', 'Seccomp
   'CapEff', 'CapPrm', 'CapInh', 'CapAmb'].map(key => [key, status[key]]));
 validateWorkloadIdentity(proof);
 let controlBytes = 0;
+let controlFailed = false;
 const emit = value => {
+  if (controlFailed) throw new Error('Child control channel already failed');
   const data = Buffer.from(JSON.stringify(value) + '\n');
   controlBytes += data.length;
   if (controlBytes > CONTROL_BYTES) process.exit(203);
-  fs.writeSync(3, data);
+  try { writeControlFrameSync(3, data); }
+  catch (error) { controlFailed = true; throw error; }
 };
 emit({ kind: 'ready', status: proof });
 const lines = readline.createInterface({ input: process.stdin });
@@ -149,6 +152,6 @@ try {
   process.exit(result.status === 'passed' ? 0 : 1);
 } catch (error) {
   process.stderr.write('Workspace recipe failed: ' + String(error?.stack ?? error).slice(0, 8192) + '\n');
-  emit(resultRecord(config));
+  if (!controlFailed) emit(resultRecord(config));
   process.exit(1);
 }

@@ -170,6 +170,9 @@ class OrganizationBudgetStore:
             request = self._owned(conn, claim)
             if request is None:
                 raise ValueError('Request is no longer owned; no model call was admitted')
+            from eidolon_cli.organization_objective_dependencies import objective_dependencies_satisfied, ObjectiveDependencyError
+            if not objective_dependencies_satisfied(conn, request['objective_id']):
+                raise ObjectiveDependencyError('stale_dependency_before_model_call')
             reason = budget_reason(conn, request['objective_id'], self.settings)
             if reason:
                 raise ValueError(reason)

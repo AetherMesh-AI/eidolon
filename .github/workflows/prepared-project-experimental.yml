@@ -25,10 +25,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [native, abuse]
+        suite: [native, abuse, capacity]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          persist-credentials: false
+      - name: Checkout exact reviewed renderer fixture bytes
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ac63782287cd04fae7fac7aab2385ef524dcb439
+          path: .prepared-renderer-fixture
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
@@ -42,7 +48,7 @@ jobs:
           git rev-parse HEAD HEAD^{tree}
           .venv/bin/python - <<'PY'
           import json, os, pathlib, shutil
-          root = pathlib.Path.cwd()
+          root = pathlib.Path.cwd() / '.prepared-renderer-fixture'
           parent = pathlib.Path(os.environ['RUNNER_TEMP']) / 'prepared-project'
           parent.mkdir(mode=0o700)
           work = parent / 'installation'
@@ -109,6 +115,7 @@ jobs:
           path: |
             workspace-native.xml
             workspace-abuse.xml
+            workspace-capacity.xml
             ${{ runner.temp }}/prepared-project/verified/manifest.json
             ${{ runner.temp }}/prepared-project/verified/toolchain.json
             ${{ runner.temp }}/prepared-project/verified/preparation-record.json

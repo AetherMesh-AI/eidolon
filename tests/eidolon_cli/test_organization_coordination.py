@@ -177,12 +177,14 @@ def test_model_scope_is_validated_preserved_and_enforced_at_proposal_boundary(tm
         _parse_output(json.dumps(output), 'request.plan', {})
 
 
-def test_aging_prevents_new_high_priority_requests_starving_an_older_ready_request(tmp_path):
+def test_aging_prevents_new_routine_requests_starving_an_older_ready_request(tmp_path):
     store = OrganizationStore(tmp_path / 'state.db', replace(OrganizationSettings(), max_inflight=1))
     oldest = store.create_objective('Old low priority work', priority='low', idempotency_key='old')
     with store._write() as conn:
         conn.execute('UPDATE requests SET created=? WHERE objective_id=?', (time.time() - 301, oldest['id']))
-    store.create_objective('New high priority work', priority='high', idempotency_key='new')
+    # Aging stays within the routine class. Urgent protection and the bounded
+    # three-urgent admission opportunity are covered in test_organization_scheduling.
+    store.create_objective('New routine work', priority='normal', idempotency_key='new')
     assert store.claim_next()['objective_id'] == oldest['id']
 
 

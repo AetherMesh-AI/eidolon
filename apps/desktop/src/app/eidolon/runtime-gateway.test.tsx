@@ -9,6 +9,8 @@ import { beforeEach, expect, it, vi } from 'vitest'
 vi.mock('./organization-folder-setup', () => ({ OrganizationFolderSetup: () => null }))
 
 vi.mock('./team-onboarding', () => ({ TeamOnboardingEntry: () => null }))
+// Request intake owns dedicated scope/retry tests; these suites isolate the runtime snapshot contract.
+vi.mock('./organization-request-intake', () => ({ OrganizationRequestIntake: () => null }))
 
 vi.mock('./use-organization-owner-policy', () => {
   // This suite exercises runtime rendering and source authority. The separate

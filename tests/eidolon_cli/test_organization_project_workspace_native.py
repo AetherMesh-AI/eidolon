@@ -21,7 +21,8 @@ def prepared():
     base = Path(directory)
     manifest = json.loads((base / 'manifest.json').read_text())
     from tests.eidolon_cli.prepared_workspace_fixture import capture_renderer_source
-    repository = Path(__file__).resolve().parents[2]
+    repository = Path(__file__).resolve().parents[2] / '.prepared-renderer-fixture'
+    assert repository.is_dir(), 'Exact reviewed renderer fixture checkout is required'
     hashes = json.loads((base / 'execution-only-hashes.json').read_text())
     source = capture_renderer_source(repository, hashes, lambda: True)
     files = {item.path: item.content for item in source.files}

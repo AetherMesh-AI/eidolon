@@ -180,11 +180,12 @@ def execute_probe(prepared, monkeypatch, body, *, wall_seconds=120, log_bytes=40
 @pytest.mark.linux_only
 def test_actual_cpu_loop_is_observed_then_stopped_and_removed(prepared, monkeypatch):
     result, code, frames, forced = execute_probe(prepared, monkeypatch, 'while (true) {}', wall_seconds=90)
-    # A host deadline can win the race with PID 1's timeout frame. Either must
-    # terminate the independently observed process, without successful evidence.
+    # A host deadline can win the race with PID 1's exit. The strict writer
+    # does not emit a diagnostic after expiry. Neither path yields an outcome.
     assert result['status'] in {'failed', 'timed_out'}, result
     assert 'outcome' not in result
-    assert forced == 'timed_out' or (code == 124 and frames[-1] == {'kind': 'timeout'})
+    assert forced == 'timed_out' or (forced is None and code == 124
+            and len(frames) == 1 and frames[0]['kind'] == 'isolation')
 
 
 @pytest.mark.linux_only
@@ -246,7 +247,10 @@ abuseAssert.equal(abuseAttempt.status, null);
 process.stderr.write('SCRATCH_DIRECT_EXECUTION_EACCES_WORKLOAD_CLAIM\\n');
 """
     result, code, _, forced = execute_probe(prepared, monkeypatch, body, log_bytes=32768)
-    assert result['status'] == 'passed' and code == 0 and forced is None, result
+    assert result['status'] == 'passed' and code == 0 and forced is None, json.dumps({
+        **{key: result.get(key) for key in ('status', 'reason', 'cleanupConfirmed', 'exitCode', 'isolation')},
+        'stderr': result.get('stderr', '')[:2000],
+    }, sort_keys=True)
     assert result['isolation']['established'] is True
     assert result['outcome']['evidenceOrigin'] == 'workload-claim'
     assert 'SCRATCH_DIRECT_EXECUTION_EACCES_WORKLOAD_CLAIM' in result['stderr']
@@ -271,4 +275,5 @@ def test_actual_detached_descendant_disappears_with_observed_workload(prepared, 
         assert result['status'] == 'cancelled' and forced == 'cancelled', result
     else:
         assert result['status'] in {'failed', 'timed_out'}, result
-        assert forced == 'timed_out' or (code == 124 and frames[-1] == {'kind': 'timeout'})
+        assert forced == 'timed_out' or (forced is None and code == 124
+            and len(frames) == 1 and frames[0]['kind'] == 'isolation')

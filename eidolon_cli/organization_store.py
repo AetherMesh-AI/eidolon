@@ -17,6 +17,8 @@ import time
 import uuid
 from datetime import datetime, timezone
 
+from eidolon_cli.organization_request_intake import INTAKE_SCHEMA, OrganizationIntakeStore
+from eidolon_cli.organization_intake_inspection_store import INSPECTION_SCHEMA, OrganizationIntakeInspectionStore
 from eidolon_cli.organization_recovery import RECOVERY_SCHEMA, OrganizationRecoveryStore
 from eidolon_cli.organization_team_schema import TEAM_SETUP_SCHEMA
 from eidolon_cli.organization_model_routing import ROUTING_SCHEMA, OrganizationModelRoutingStore
@@ -26,6 +28,8 @@ from eidolon_cli.organization_conversations import CONVERSATION_SCHEMA, Organiza
 from eidolon_cli.organization_packages import (PACKAGE_SCHEMA, OrganizationPackageStore, package_dependencies_ready, task_package_id)
 from eidolon_cli.organization_dispatch import DISPATCH_SCHEMA, OrganizationDispatchStore
 from eidolon_cli.organization_priority import PRIORITY_SCHEMA, OrganizationPriorityStore
+from eidolon_cli.organization_objective_dependencies import SCHEMA as OBJECTIVE_DEPENDENCY_SCHEMA, objective_dependencies_satisfied
+from eidolon_cli.organization_scheduling import SCHEDULING_SCHEMA, order_candidates, record_scheduling_claim
 from eidolon_cli.organization_pacing import OrganizationPacingDeferred, OrganizationPacingStore, pacing_wait
 from eidolon_cli.organization_goal_reauthorization import SCHEMA as GOAL_AUTH_SCHEMA, GoalReauthorizationStore
 from eidolon_cli.organization_goal_continuation import CONTINUATION_SCHEMA, OrganizationGoalContinuationStore
@@ -117,10 +121,10 @@ def _text(value, field, limit=10000):
 
 
 # One DDL contract for initialization and non-migrating observation preflight.
-ORGANIZATION_SCHEMA = (_SCHEMA + CONTINUATION_SCHEMA + GOAL_AUTH_SCHEMA + GOAL_SCHEMA + RECOVERY_SCHEMA + ROOT_GRANT_SCHEMA + MILESTONE_SCHEMA + TEAM_SETUP_SCHEMA + OWNER_POLICY_SCHEMA + ROUTING_SCHEMA + REPLACEMENT_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA + COORDINATION_SCHEMA + HISTORY_SCHEMA + ATTENTION_SCHEMA + PROJECTS_SCHEMA + OUTCOME_SCHEMA + REGISTRY_SCHEMA + PACKAGE_SCHEMA + CONVERSATION_SCHEMA + OWNER_CHAT_SCHEMA + PRIORITY_SCHEMA + DISPATCH_SCHEMA)
+ORGANIZATION_SCHEMA = (_SCHEMA + OBJECTIVE_DEPENDENCY_SCHEMA + CONTINUATION_SCHEMA + GOAL_AUTH_SCHEMA + GOAL_SCHEMA + MILESTONE_SCHEMA + INTAKE_SCHEMA + INSPECTION_SCHEMA + RECOVERY_SCHEMA + ROOT_GRANT_SCHEMA + TEAM_SETUP_SCHEMA + OWNER_POLICY_SCHEMA + ROUTING_SCHEMA + REPLACEMENT_SCHEMA + RECEIPT_SCHEMA + STAFF_SCHEMA + EDIT_SCHEMA + POLICY_SCHEMA + ACCEPTANCE_SCHEMA + OWNER_SCHEMA + IDENTITY_SCHEMA + REQUEST_SCHEMA + MANAGEMENT_SCHEMA + BUDGET_SCHEMA + PROJECT_EXECUTION_SCHEMA + COORDINATION_SCHEMA + HISTORY_SCHEMA + ATTENTION_SCHEMA + PROJECTS_SCHEMA + OUTCOME_SCHEMA + REGISTRY_SCHEMA + PACKAGE_SCHEMA + CONVERSATION_SCHEMA + OWNER_CHAT_SCHEMA + SCHEDULING_SCHEMA + PRIORITY_SCHEMA + DISPATCH_SCHEMA)
 
 
-class OrganizationStore(GoalReauthorizationStore, OrganizationGoalContinuationStore, OrganizationGoalAllowanceStore, OrganizationMilestoneStore, OrganizationRecoveryStore, OrganizationModelRoutingStore, OrganizationPacingStore, OrganizationDispatchStore, OrganizationPriorityStore, OrganizationReplacementStore, OrganizationOwnerChatStore, OrganizationConversationStore, OrganizationPackageStore, OrganizationOutcomeStore, OrganizationAttentionStore, OrganizationHistoryStore, OrganizationCoordinationStore, OrganizationProjectExecutionStore, OrganizationBudgetStore, OrganizationRequestStore, OrganizationManagementStore, OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
+class OrganizationStore(GoalReauthorizationStore, OrganizationGoalContinuationStore, OrganizationGoalAllowanceStore, OrganizationMilestoneStore, OrganizationIntakeInspectionStore, OrganizationIntakeStore, OrganizationRecoveryStore, OrganizationModelRoutingStore, OrganizationPacingStore, OrganizationDispatchStore, OrganizationPriorityStore, OrganizationReplacementStore, OrganizationOwnerChatStore, OrganizationConversationStore, OrganizationPackageStore, OrganizationOutcomeStore, OrganizationAttentionStore, OrganizationHistoryStore, OrganizationCoordinationStore, OrganizationProjectExecutionStore, OrganizationBudgetStore, OrganizationRequestStore, OrganizationManagementStore, OrganizationIdentityStore, OrganizationAcceptanceStore, OrganizationOwnerStore, OrganizationStaffingStore, OrganizationReceiptStore, OrganizationEditStore, OrganizationPolicyStore):
     def __init__(self, path: Path | str, settings: OrganizationSettings | None = None):
         self.path = Path(path)
         self._shared_state_path = self.path.resolve()
@@ -342,6 +346,8 @@ class OrganizationStore(GoalReauthorizationStore, OrganizationGoalContinuationSt
 
     @staticmethod
     def _dependencies_ready(conn, request):
+        if not objective_dependencies_satisfied(conn, request["objective_id"]):
+            return False
         if not package_dependencies_ready(conn, request) or not OrganizationRequestStore._request_dependencies_ready(conn, request):
             return False
         if not request["task_id"]:
@@ -362,7 +368,9 @@ class OrganizationStore(GoalReauthorizationStore, OrganizationGoalContinuationSt
                     row['type'] == 'request.hire' and 'managementProposal' in json.loads(row['payload'])
                     for row in running):
                 return None
-            rows = conn.execute("SELECT r.* FROM requests r JOIN objectives o ON o.id=r.objective_id LEFT JOIN objective_dispatch d ON d.objective_id=o.id WHERE r.status='queued' AND o.cancelled=0 AND coalesce(d.paused,0)=0 AND r.available<=? ORDER BY r.priority + CAST(MAX(0, ? - r.created)/60 AS INTEGER) DESC,r.created,r.id", (time.time(), time.time())).fetchall()
+            now = time.time()
+            rows = conn.execute("SELECT r.* FROM requests r JOIN objectives o ON o.id=r.objective_id LEFT JOIN objective_dispatch d ON d.objective_id=o.id WHERE r.status='queued' AND o.cancelled=0 AND coalesce(d.paused,0)=0 AND r.available<=?", (now,)).fetchall()
+            rows = order_candidates(conn, rows, now=now)
             for request in rows:
                 if running and request['type'] == 'request.hire' and 'managementProposal' in json.loads(request['payload']):
                     continue
@@ -453,6 +461,7 @@ class OrganizationStore(GoalReauthorizationStore, OrganizationGoalContinuationSt
                     conn.execute("UPDATE tasks SET status=? WHERE id=?", (status, request["task_id"]))
                 if not request["reason"]:
                     self._event(conn, request["objective_id"], f"{agent['name']} claimed {request['type']}.", "delegation", agent["id"])
+                record_scheduling_claim(conn, request, token, now=now)
                 return dict(conn.execute("SELECT * FROM requests WHERE id=?", (request["id"],)).fetchone())
         return None
 
@@ -512,6 +521,8 @@ class OrganizationStore(GoalReauthorizationStore, OrganizationGoalContinuationSt
                 task['project'] = public_project(binding) if binding else None
                 task['writePaths'] = json.loads(scope['paths']) if scope else None
                 task['coordination'] = coordination_view(conn, task['id'])
+            from eidolon_cli.organization_objective_dependencies import accepted_dependency_context
+            accepted_dependencies = accepted_dependency_context(conn, request['objective_id'])
             dependencies = self._package_dependency_evidence(conn, request)
             if task:
                 for ident in json.loads(task["dependencies"]):
@@ -554,6 +565,7 @@ class OrganizationStore(GoalReauthorizationStore, OrganizationGoalContinuationSt
             objective["planningMode"] = package_context["planningMode"]
             max_tasks = conn.execute("SELECT max_tasks FROM objective_planning WHERE objective_id=?", (request["objective_id"],)).fetchone()[0]
             context = {"objective": objective, "task": task, "agent": agent, **package_context,
+                    "acceptedDependencies": accepted_dependencies,
                     **({'projectExecutionHistory': payload['projectExecutionHistory']}
                        if request['type'] in {'request.plan', 'request.decompose'} and 'projectExecutionHistory' in payload else {}),
                     **self._typed_context(conn, request), **self._internal_context(conn, request),

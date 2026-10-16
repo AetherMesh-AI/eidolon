@@ -2,19 +2,23 @@
 // the outer receipt stream; child control frames remain untrusted claims.
 import fs from 'node:fs';
 import { spawn } from 'node:child_process';
+import { performance } from 'node:perf_hooks';
 import { CONTROL_BYTES, ControlFrames, validateConfig, absolutePath, verifyRuntimeToolchain,
-  workloadEnvironment } from './protocol.mjs';
+  workloadEnvironment, writeControlFrameSync } from './protocol.mjs';
 
 let outputBytes = 0;
+let controlDeadline = Infinity, controlFailed = false;
 function emit(value) {
+  if (controlFailed) throw new Error('Supervisor control channel already failed');
   const frame = Buffer.from(JSON.stringify(value) + '\n');
   outputBytes += frame.length;
   if (outputBytes > CONTROL_BYTES) process.exit(202);
-  fs.writeSync(1, frame);
+  try { writeControlFrameSync(1, frame, controlDeadline); }
+  catch (error) { controlFailed = true; throw error; }
 }
 function fail(reason) {
-  emit({ kind: 'blocked', reason });
-  process.exit(202);
+  try { emit({ kind: 'blocked', reason }); }
+  finally { process.exit(202); }
 }
 
 try {
@@ -56,7 +60,11 @@ try {
   process.setgroups([]);
   // UID 0 deliberately lacks CAP_KILL. Exiting namespace PID 1 lets the kernel
   // terminate the workload and every descendant, including detached children.
-  setTimeout(() => { emit({ kind: 'timeout' }); process.exit(124); }, config.timeoutMs);
+  controlDeadline = performance.now() + config.timeoutMs;
+  setTimeout(() => {
+    try { emit({ kind: 'timeout' }); }
+    finally { process.exit(124); }
+  }, config.timeoutMs);
   process.on('SIGTERM', () => process.exit(125));
   const child = spawn('/usr/local/bin/node', ['--disable-sigusr1', '/runner/harness.mjs'], {
     uid: 65534, gid: 65534, cwd: absolutePath(config, config.workspace),
@@ -83,16 +91,20 @@ try {
   child.stdio[3].on('error', () => fail('Child control channel failed'));
   child.on('error', () => fail('Child launch failed'));
   child.on('close', (code, signal) => {
+    let result, exitCode;
     try {
-      emit(frames.finish(code, signal));
-      process.exit(0);
+      result = frames.finish(code, signal);
+      exitCode = 0;
     } catch {
       // Preserve a structurally valid failure report, but never promote an
       // otherwise-passed claim after an abnormal exit or missing protocol tail.
-      if (frames.result && frames.ready) emit({ ...frames.result, status: 'failed' });
-      else emit({ kind: 'blocked', reason: 'Incomplete child result or exit' });
-      process.exit(1);
+      result = frames.result && frames.ready ? { ...frames.result, status: 'failed' }
+        : { kind: 'blocked', reason: 'Incomplete child result or exit' };
+      exitCode = 1;
     }
+    try { emit(result); }
+    catch { process.exit(202); }
+    process.exit(exitCode);
   });
 } catch {
   fail('Workspace supervisor prerequisites unavailable');

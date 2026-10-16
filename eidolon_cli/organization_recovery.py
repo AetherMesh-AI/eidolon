@@ -53,6 +53,9 @@ class OrganizationRecoveryStore:
             request = self._owned(conn, claim)
             if request is None:
                 return False
+            from eidolon_cli.organization_objective_dependencies import objective_dependencies_satisfied, ObjectiveDependencyError
+            if not objective_dependencies_satisfied(conn, request['objective_id']):
+                raise ObjectiveDependencyError('stale_dependency_before_dispatch')
             row = conn.execute('SELECT * FROM organization_execution_journal WHERE request_id=? AND token=?',
                                (claim['id'], claim['token'])).fetchone()
             if row is None:

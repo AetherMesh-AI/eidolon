@@ -1,7 +1,49 @@
 // Fixed, dependency-free transport and scope checks. Workload results are claims.
 import { StringDecoder } from 'node:string_decoder';
+import { writeSync } from 'node:fs';
+import { performance } from 'node:perf_hooks';
+import { Socket } from 'node:net';
 
 export const CONTROL_BYTES = 1048576;
+const controlClock = performance.now.bind(performance);
+const controlWait = Atomics.wait.bind(Atomics);
+const controlWaitArray = new Int32Array(new SharedArrayBuffer(4));
+let childControlChannel;
+
+export function writeControlFrameSync(descriptor, data, deadline = Infinity) {
+  requireValue([1, 3].includes(descriptor) && Buffer.isBuffer(data)
+    && data.length > 0 && data.length <= CONTROL_BYTES && data[data.length - 1] === 10
+    && typeof deadline === 'number' && !Number.isNaN(deadline), 'Invalid control frame write');
+  // Node inherits fd3 as a blocking socket. Opening its existing handle through
+  // libuv makes it nonblocking; this never creates a network connection. Retain
+  // the wrapper, and use only the checked byte writes below (no stream queue).
+  if (descriptor === 3) childControlChannel ??= new Socket({ fd: 3, readable: false, writable: true });
+  else void process.stdout.isTTY;
+  const stop = Math.min(deadline, controlClock() + 5000);
+  let offset = 0;
+  while (offset < data.length) {
+    requireValue(controlClock() < stop, 'Control frame write deadline exceeded');
+    let retry = false;
+    try {
+      const written = writeSync(descriptor, data, offset, data.length - offset);
+      requireValue(Number.isInteger(written) && written > 0 && written <= data.length - offset,
+        'Control frame write made invalid progress');
+      offset += written;
+    } catch (error) {
+      if (!['EAGAIN', 'EWOULDBLOCK', 'EINTR'].includes(error?.code)) throw error;
+      retry = true;
+    }
+    const remaining = stop - controlClock();
+    requireValue(remaining > 0, 'Control frame write deadline exceeded');
+    if (offset === data.length) return;
+    // stdout is nonblocking once Node initializes process.stdout. A single
+    // write can therefore succeed with only a prefix, or report EAGAIN. Never
+    // exit successfully before all bytes reach the pipe. Bound backpressure by
+    // the supervisor's existing deadline as well as a fixed per-write ceiling.
+    if (retry) controlWait(controlWaitArray, 0, 0, Math.min(1, remaining));
+  }
+}
+
 export const TOOL_ENTRIES = Object.freeze({
   workspace_typescript: 'node_modules/typescript/bin/tsc',
   workspace_vitest_ui: 'node_modules/vitest/dist/node.js',
