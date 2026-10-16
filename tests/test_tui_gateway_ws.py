@@ -272,3 +272,28 @@ def test_ws_transport_preserves_cross_batch_order():
     asyncio.run(scenario())
 
 
+
+
+def test_malformed_frames_never_log_input_payloads(monkeypatch, caplog):
+    secret = 'SYNTHETIC_MALFORMED_PRIVATE_8c24'
+    frames = iter(['{"method":"organization.credentials.secureInput","params":{"value":"' + secret,
+                   secret * 50000])
+    sent = []
+    monkeypatch.setattr(server, '_WS_ORPHAN_REAP_GRACE_S', 0)
+    class FakeWS:
+        async def accept(self):
+            pass
+        async def send_text(self, line):
+            sent.append(json.loads(line))
+        async def receive_text(self):
+            try:
+                return next(frames)
+            except StopIteration:
+                raise ws_mod._WebSocketDisconnect()
+        async def close(self):
+            pass
+    asyncio.run(ws_mod.handle_ws(FakeWS()))
+    errors = [frame['error']['code'] for frame in sent if 'error' in frame]
+    assert errors == [-32700, -32700]
+    assert secret not in caplog.text
+    assert 'characters=' in caplog.text and 'JSONDecodeError' in caplog.text

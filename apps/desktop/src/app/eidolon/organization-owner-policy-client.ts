@@ -25,6 +25,9 @@ const EMPTY: OwnerPolicyView = {
   error: 'unavailable'
 }
 
+// An eligible owner with no read yet is loading, not an unavailable connection.
+const UNREAD: OwnerPolicyView = { ...EMPTY, busy: true, error: null }
+
 const methods = {
   modelRouting: ['organization.previewModelRouting', 'organization.configureModelRouting'],
   budgetPolicy: ['organization.previewBudgetPolicy', 'organization.configureBudgetPolicy'],
@@ -134,7 +137,11 @@ export function createOwnerPolicyClient(
       const scope = readScope()
       const entry = entries.get(scope.ownerKey)
 
-      return eligible(scope) && entry?.key === scope.key ? entry.view : EMPTY
+      if (!eligible(scope)) {
+        return EMPTY
+      }
+
+      return entry?.key === scope.key ? entry.view : UNREAD
     },
     async read() {
       const scope = readScope()

@@ -8,6 +8,7 @@ import { ownerPolicyCopy } from '@/i18n/organization-owner-policy'
 import type { Locale } from '@/i18n/types'
 
 import { OwnerPolicyEntry, OwnerPolicySettings } from './organization-owner-policy'
+import { createOwnerPolicyClient } from './organization-owner-policy-client'
 import { ownerPolicyCandidate, type OwnerPolicyTarget } from './organization-owner-policy-editor'
 import type { OwnerPolicyDescriptor, OwnerPolicyRequest } from './organization-owner-policy-types'
 import { deferred, policyDescriptor, policyHarness, previewResponse, receiptResponse } from './owner-policy-test-support'
@@ -444,4 +445,33 @@ it.each(['settings', 'entry'] as const)('dismisses the %s editor on verified ide
   await act(async () => {await h.client.read()})
   expect(screen.queryByRole('dialog')).toBeNull()
   expect((openBudget().getByLabelText(copy.max_model_calls) as HTMLInputElement).value).toBe('40')
+})
+
+
+it('shows loading before the first eligible owner-policy read, then ready or a genuine RPC failure', async () => {
+  const h = await policyHarness()
+  const client = createOwnerPolicyClient(() => h.scope, h.newKey)
+  h.request.mockClear()
+  mount({ ...h, client })
+  expect(screen.getByRole('status').textContent).toBe(copy.loading)
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(screen.queryByRole('button', { name: copy.editBudget })).toBeNull()
+  expect(h.request).not.toHaveBeenCalled()
+
+  const pending = deferred<OwnerPolicyDescriptor>()
+  h.request.mockReturnValueOnce(pending.promise)
+  let reading!: Promise<void>
+  act(() => { reading = client.read() })
+  expect(screen.getByRole('status').textContent).toBe(copy.loading)
+  expect(screen.queryByRole('alert')).toBeNull()
+  await act(async () => { pending.resolve(h.data); await reading })
+  expect(screen.queryByRole('status')).toBeNull()
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(screen.getByRole('button', { name: copy.editBudget })).toBeTruthy()
+
+  h.request.mockRejectedValueOnce({ code: 5074, data: { reason: 'locked' } })
+  await act(async () => { await client.read() })
+  expect(screen.queryByRole('status')).toBeNull()
+  expect(screen.getByRole('alert').textContent).toBe(copy.unavailable)
+  expect(screen.queryByRole('button', { name: copy.editBudget })).toBeNull()
 })
