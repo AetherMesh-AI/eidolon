@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useRef } from 'react'
+import { type ReactNode, useEffect, useLayoutEffect, useRef } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 
 import { Button } from '@/components/ui/button'
@@ -9,6 +9,7 @@ import { CheckCircle2, FileText } from '@/lib/icons'
 import { AgentAvatar } from './avatar'
 import { Command } from './command'
 import { homeData } from './home-data'
+import { queueHomeKeyboardReveal } from './home-keyboard-focus'
 import { LocalizedTime } from './localized-time'
 import { objectivePhaseLabel } from './objective-phase'
 import { TaskCounts } from './objective-progress'
@@ -137,7 +138,10 @@ export function Home({ adapter, snapshot, starterEntry }: { adapter: Organizatio
   const { t, locale } = useI18n()
   const copy = t.organizationHome
   const data = homeData(snapshot)
-  const { hash, search } = useLocation()
+  const { hash, search, pathname } = useLocation()
+  const cancelKeyboardReveal = useRef<(() => void) | undefined>(undefined)
+  const ownerScope = snapshot.connection?.ownerScope ?? snapshot.connection?.scope
+  useLayoutEffect(() => () => cancelKeyboardReveal.current?.(), [ownerScope, pathname, search, hash])
   const navigate = useNavigate()
   const canChooseRecipient = snapshot.connection?.state === 'ready' && Boolean(snapshot.connection.ownerScope ?? snapshot.connection.scope)
   const intakeFocused = useRef(false)
@@ -157,7 +161,11 @@ export function Home({ adapter, snapshot, starterEntry }: { adapter: Organizatio
   }, [hash, search, snapshot.connection?.state])
 
   const intake = (
-    <details className="eid-home-intake" id="eid-home-intake" onToggle={event => {
+    <details className="eid-home-intake" id="eid-home-intake" onKeyDownCapture={event => {
+      cancelKeyboardReveal.current?.()
+
+      if (event.key === 'Tab') {cancelKeyboardReveal.current = queueHomeKeyboardReveal(event.currentTarget)}
+    }} onToggle={event => {
       const nextHash = event.currentTarget.open ? '#eid-home-intake' : ''
 
       if (hash !== nextHash) {

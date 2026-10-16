@@ -371,3 +371,41 @@ it.each(['unchecked', 'warning'] as const)('shows real %s readiness copy above t
   expect(summary.textContent).toContain('Organization setup')
   expect(summary.textContent).toContain(status === 'warning' ? 'Configured transport needs review' : 'Provider execution not checked')
 })
+
+it('retires a queued keyboard reveal when Home changes owner while its summary remains mounted', () => {
+  let frame: FrameRequestCallback | undefined
+
+  const requestFrame = vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => {frame = callback;
+
+ return 1})
+
+  const cancelFrame = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {})
+  const current = { ...snapshot, connection: { scope: 'keyboard-a', ownerScope: 'keyboard-a', state: 'ready' as const } }
+  const adapter = { mode: 'runtime', getSnapshot: () => current } as unknown as RuntimeOrganizationAdapter
+  const tree = (state: OrganizationSnapshot) => <MemoryRouter><main className="eid-workspace"><Home adapter={adapter} snapshot={state} /></main></MemoryRouter>
+  const view = render(tree(current))
+  const workspace = view.container.querySelector<HTMLElement>('main')!
+  const intake = view.container.querySelector<HTMLElement>('#eid-home-intake')!
+  const summary = intake.querySelector('summary')!
+  Object.defineProperty(workspace, 'clientHeight', { value: 325 })
+  workspace.scrollTop = 500
+  vi.spyOn(workspace, 'getBoundingClientRect').mockReturnValue({ top: 47 } as DOMRect)
+  vi.spyOn(summary, 'getBoundingClientRect').mockReturnValue({ top: 40, bottom: 60, height: 20 } as DOMRect)
+
+  try {
+    fireEvent.keyDown(intake, { key: 'Tab' })
+    summary.focus()
+    expect(frame).toBeDefined()
+    const queuedReveal = frame!
+    view.rerender(tree({ ...current, connection: { scope: 'keyboard-b', ownerScope: 'keyboard-b', state: 'ready' } }))
+    expect(summary.isConnected).toBe(true)
+    expect(globalThis.document.activeElement).toBe(summary)
+    expect(cancelFrame).toHaveBeenCalledWith(1)
+    queuedReveal(0)
+    expect(workspace.scrollTop).toBe(500)
+  } finally {
+    view.unmount()
+    requestFrame.mockRestore()
+    cancelFrame.mockRestore()
+  }
+})
