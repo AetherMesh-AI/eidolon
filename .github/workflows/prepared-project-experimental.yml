@@ -81,7 +81,7 @@ jobs:
           .venv/bin/python scripts/organization/prepare_workspace_dependencies.py \
             --repository "$RUNNER_TEMP/prepared-project/installation" \
             --output "$RUNNER_TEMP/prepared-project/verified" \
-            --native-policy tests/fixtures/prepared-workspace-native-policy-35c2d26b.json \
+            --native-policy "$GITHUB_WORKSPACE/tests/fixtures/prepared-workspace-native-policy-35c2d26b.json" \
             --runtime-metadata "$RUNNER_TEMP/prepared-project/installation/runtime-metadata.json" \
             --preparation-record "$RUNNER_TEMP/prepared-project/installation/installation-record.json"
           .venv/bin/python - <<'PYCODE'
