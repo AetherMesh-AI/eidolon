@@ -1,0 +1,4 @@
+/* Overlay chrome sits outside the workspace/rail focus scopes. Keep this
+   unlayered so the global focus reset cannot suppress its keyboard outline. */
+.pane-narrow-overlay-close { transition-property: color, background-color, border-color, box-shadow; }
+.pane-narrow-overlay-close:focus-visible { outline: 3px solid var(--ui-accent); outline-offset: 2px; }

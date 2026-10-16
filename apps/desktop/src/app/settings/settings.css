@@ -270,3 +270,54 @@
 @media (max-width: 800px) { .eid-settings-cards:not(.eid-settings-model-only) .eid-settings-notification-kinds { grid-template-columns: minmax(0, 1fr); } }
 
 .eid-settings-heading h1 { margin-top: 6px; }
+
+/* Scenery owns a separate column: translated copy must never cross the castle.
+   The container is the available workspace, excluding the persistent rail. */
+.eid-settings-page { container: eid-settings / inline-size; }
+.eid-settings-heading > div { min-width: 0; max-width: 58%; overflow-wrap: anywhere; }
+.eid-settings-scenery { width: 40%; }
+@container eid-settings (max-width: 760px) {
+  .eid-settings-heading > div { max-width: 100%; }
+  .eid-settings-scenery { display: none; }
+  .eid-settings-heading { min-height: 0; gap: 8px; padding-block: 8px; }
+  .eid-settings-heading h1 { font-size: 28px; margin-block: 0 4px; }
+  .eid-settings-heading p { font-size: 12px; line-height: 1.35; }
+}
+@media (max-height: 600px) {
+  .eid-settings-page { padding-block: 6px; }
+  .eid-settings-heading { min-height: 0; padding-block: 4px 8px; }
+  .eid-settings-heading h1 { font-size: 26px; margin-block: 0 4px; }
+  .eid-settings-heading p { font-size: 12px; line-height: 1.35; }
+  .eid-settings-main > header { margin-bottom: 6px; }
+  .eid-settings-main > header p { font-size: 12px; line-height: 1.35; }
+  .eid-settings-controls { padding-block: 8px; }
+  .eid-settings-save-note { margin-top: 6px; font-size: 11px; }
+}
+@media (max-height: 600px) and (width < 1000px) {
+  /* The adjacent section selector supplies the visible name; retain the h2
+     for heading navigation, without spending another line on the same label. */
+  .eid-settings-main > header > h2 { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+  .eid-settings-layout { gap: 6px; }
+}
+
+/* Dedicated editors share the same first-control budget as the overview.
+   In short windows the page title and introduction share a row, and common
+   section/row rhythm contracts before any explanatory text or control does. */
+@media (max-height: 600px) {
+  .eid-settings-heading > div { display: flex; align-items: center; gap: 12px; }
+  .eid-settings-heading h1 { flex: none; margin: 0; }
+  .eid-settings-heading p { min-width: 0; }
+  .eid-settings-page .eid-settings-layout > div { padding-block: 2px; }
+  .eid-settings-controls { padding-block: 4px; }
+  .eid-settings-controls .settings-content > div { padding-top: 4px; }
+  /* SectionHeading is the leading icon/title row in both SettingsSection and
+     the older direct section wrappers. Keep its optional actions and metadata. */
+  .eid-settings-controls :is(.settings-content > div > div, .settings-section) > div:first-child:has(> svg) {
+    padding-top: 0;
+    margin-bottom: 4px;
+    line-height: var(--conversation-line-height);
+  }
+  .eid-settings-controls .settings-section { margin-bottom: 12px; }
+  .eid-settings-controls .settings-row { margin-block: 0; }
+  .eid-settings-controls .settings-row > div { padding-block: 4px; gap: 6px; }
+}

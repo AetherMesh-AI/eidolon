@@ -1337,7 +1337,7 @@ for (const locale of ['ja', 'ar', 'ru'] as const) {
       await expect(header.getByRole('button', { name: copy.settingsSearch, exact: true })).toBeVisible()
       await page.evaluate(() => { location.hash = '/home' })
 
-      for (const [width, height, zoom] of [[1280, 720, 1], [760, 900, 1], [1280, 720, 2]]) {
+      for (const [width, height, zoom] of [[1280, 720, 1], [760, 900, 1], [1280, 720, 1.25], [1280, 720, 2], [760, 900, 2]]) {
         await page.evaluate(() => (window as unknown as { hermesDesktop: { zoom: { setPercent(percent: number): void } } }).hermesDesktop.zoom.setPercent(100))
         await app.evaluate(({ BrowserWindow }, size) => { BrowserWindow.getAllWindows()[0].setContentSize(size.width, size.height) }, { width, height })
         await expect.poll(() => page.evaluate(() => innerWidth)).toBe(width)

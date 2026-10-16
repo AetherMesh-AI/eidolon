@@ -11,6 +11,13 @@ import { RealSessionBuilder } from './real-session-builder'
 import { expect, test } from './test'
 import { galleryPaintReadiness } from './workspace-paint-readiness'
 
+export const gallerySizes = [
+  { width: 1536, height: 961, zoom: 1 },
+  { width: 1280, height: 720, zoom: 1 },
+  { width: 1280, height: 720, zoom: 2 },
+  { width: 400, height: 620, zoom: 1 }
+] as const
+
 export const galleryLocales = [
   { locale: 'en', dark: 'Dark', light: 'Light' },
   { locale: 'ja', dark: 'ダーク', light: 'ライト' },
@@ -20,10 +27,11 @@ export const galleryLocales = [
   { locale: 'ru', dark: 'Тёмная', light: 'Светлая' }
 ] as const
 
-export async function setupGallery(locale: string, seedHistory = false) {
+export async function setupGallery(locale: string, seedHistory = false, populated = false) {
   let sessionId: string | undefined
   const fixture = await setupMockBackend({
     isolateModelCatalog: true,
+    bootstrap: populated ? 'workspace-populated-bootstrap.cjs' : undefined,
     extraDisplayConfig: `  language: ${locale}`,
     beforeLaunch: seedHistory ? async (sandbox, mock) => {
       const builder = await RealSessionBuilder.start(sandbox.hermesHome)
@@ -41,12 +49,25 @@ export async function setupGallery(locale: string, seedHistory = false) {
     const methods: string[] = []
     const observationReads: string[] = []
     const state = { snapshot: structuredClone(snapshot), observationError: null as string | null }
+    const foreignMethods: string[] = []
     state.snapshot.activity[1].text = 'سجل تجريبي للمراجعة · Synthetic record'
     await page.routeWebSocket(/.*/, socket => {
       const server = socket.connectToServer()
       socket.onMessage(message => {
-        const request = JSON.parse(message.toString()) as { id?: number; method?: string; params?: { method?: string } }
+        const request = JSON.parse(message.toString()) as { id?: number; method?: string; params?: { method?: string; id?: string } }
         if (request.method?.startsWith('organization.')) { methods.push(request.method) }
+        if (populated && request.method?.startsWith('session.foreign.')) {
+          foreignMethods.push(request.method)
+          const rows = ['preview', 'imported', 'error'].map((id, index) => ({ id: `synthetic-${id}`, source: 'codex', label: 'Codex', title: `Synthetic ${id} conversation`, cwd: '/synthetic/workspace', mtime: 1_700_000_000, turn_count: 2, excerpt: `Synthetic history ${index}; no external work.` }))
+          if (request.method === 'session.foreign.list') {
+            socket.send(JSON.stringify({ jsonrpc: '2.0', id: request.id, result: { sessions: rows, next_offset: null, host: 'Synthetic computer', unreadable: 1 } }))
+          } else if (request.method === 'session.foreign.preview' && request.params?.id !== 'synthetic-error') {
+            socket.send(JSON.stringify({ jsonrpc: '2.0', id: request.id, result: { truncated: false, total: 2, already_imported: request.params?.id === 'synthetic-imported' ? 'synthetic-existing-session' : null, cwd: '/synthetic/workspace', messages: [{ role: 'user', content: 'Synthetic preview. Preserve this selection while resizing.' }, { role: 'assistant', content: 'This is recorded fixture text; no model was called.' }] } }))
+          } else {
+            socket.send(JSON.stringify({ jsonrpc: '2.0', id: request.id, error: { code: -32000, message: 'Synthetic preview unavailable; retry is safe.' } }))
+          }
+          return
+        }
         if ((request.method === 'organization.observe' || request.method === 'organization.snapshot') && state.observationError) {
           socket.send(JSON.stringify({ jsonrpc: '2.0', id: request.id, error: { code: -32000, message: state.observationError } }))
         } else if (request.method === 'organization.observe') {
@@ -69,7 +90,7 @@ export async function setupGallery(locale: string, seedHistory = false) {
     const focusChecks: object[] = []
     const thumbChecks: object[] = []
     const failures: { label: string; error: string }[] = []
-    return { ...fixture, locale, sessionId, methods, observationReads, state, captures, focusChecks, thumbChecks, failures, seedProviderCalls: seedHistory ? 1 : 0 }
+    return { ...fixture, locale, sessionId, methods, observationReads, foreignMethods, state, captures, focusChecks, thumbChecks, failures, seedProviderCalls: seedHistory ? 1 : 0 }
   } catch (error) {
     await fixture.cleanup()
     throw error
@@ -90,7 +111,7 @@ export async function resizeGallery(fixture: GalleryFixture, width: number, heig
   await fixture.app.evaluate(({ BrowserWindow }, size) => {
     const window = BrowserWindow.getAllWindows()[0]
     window.unmaximize()
-    window.setMinimumSize(600, 600)
+    window.setMinimumSize(400, 620)
     window.setContentSize(size.width, size.height)
   }, { width, height })
   await expect.poll(() => fixture.page.evaluate(() => innerWidth)).toBe(width)
@@ -251,12 +272,13 @@ export function persistGalleryEvidence(fixture: GalleryFixture, group: string) {
     sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
     scenario: `synthetic-workspace-${group}-gallery`, locale: fixture.locale,
     seedProviderCalls: fixture.seedProviderCalls, galleryProviderCalls: fixture.mock.receivedPrompts.length - fixture.seedProviderCalls,
-    organizationMethods: [...new Set(fixture.methods)], observationReads: [...new Set(fixture.observationReads)], captures: fixture.captures, focusChecks: fixture.focusChecks, thumbChecks: fixture.thumbChecks, failures: fixture.failures
+    foreignMethods: fixture.foreignMethods, organizationMethods: [...new Set(fixture.methods)], observationReads: [...new Set(fixture.observationReads)], captures: fixture.captures, focusChecks: fixture.focusChecks, thumbChecks: fixture.thumbChecks, failures: fixture.failures
   }, null, 2))
 }
 
 export function writeGalleryEvidence(fixture: GalleryFixture, group: string) {
   persistGalleryEvidence(fixture, group)
+  expect(fixture.foreignMethods.every(method => ['session.foreign.list', 'session.foreign.preview'].includes(method))).toBe(true)
   expect(fixture.mock.receivedPrompts).toHaveLength(fixture.seedProviderCalls)
   expect(fixture.methods.every(method => ['organization.descriptor', 'organization.snapshot', 'organization.outcomes', 'organization.attention', 'organization.observe', 'organization.observeRead', 'organization.intake.list'].includes(method))).toBe(true)
   expect(fixture.observationReads.every(method => ['organization.outcomes', 'organization.attention'].includes(method))).toBe(true)
