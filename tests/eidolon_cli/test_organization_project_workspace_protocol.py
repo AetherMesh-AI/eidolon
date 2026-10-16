@@ -174,3 +174,87 @@ assert.throws(()=>summarizeVitestModules([{...fakeModule(uiPath,['passed']),proj
 // transport validation must retain its workload-claim label, not certify honesty.
 assert.equal(validateResult({...passed,modules:summaries},ui).evidenceOrigin,'workload-claim');
 """)
+
+
+def test_nested_workload_diagnostics_preserve_causes_without_serializing_objects():
+    run_protocol(r"""
+const {formatWorkloadError}=protocol;
+const leaf=new ReferenceError('__dirname is not defined');
+const root=new AggregateError([new Error('config import failed',{cause:leaf}),
+  new TypeError('second project failure')],'Failed to initialize projects');
+const diagnostic=formatWorkloadError(root);
+assert.match(diagnostic,/Failed to initialize projects/);
+assert.match(diagnostic,/error\.errors\[0\]: Error: config import failed/);
+assert.match(diagnostic,/error\.errors\[0\]\.cause: ReferenceError: __dirname is not defined/);
+assert.match(diagnostic,/second project failure/);
+assert.ok(diagnostic.startsWith('Workspace recipe failed (workload diagnostic):\n'));
+assert.ok(diagnostic.endsWith('\n'));
+let accessed=0;
+const hostile={toString(){accessed++;throw Error('toString called');},
+  toJSON(){accessed++;throw Error('toJSON called');}};
+const getters=new Error('safe message');
+for(const key of ['stack','errors','cause']) Object.defineProperty(getters,key,
+  {get(){accessed++;throw Error('getter called');},configurable:true});
+assert.match(formatWorkloadError(getters),/safe message/);
+assert.match(formatWorkloadError(hostile),/non-Error value omitted/);
+const proxy=new Proxy(new Error('proxied'),{get(){accessed++;throw Error('proxy read');},
+  getOwnPropertyDescriptor(){accessed++;throw Error('proxy descriptor');}});
+assert.match(formatWorkloadError(proxy),/non-Error value omitted/);
+assert.equal(accessed,0);
+const explicitStack=new Error('stack data');
+Object.defineProperty(explicitStack,'stack',{value:'Error: stack data\n    at explicit-file.ts:17'});
+assert.match(formatWorkloadError(explicitStack),/explicit-file.ts:17/);
+""")
+
+
+def test_workload_diagnostics_bound_unicode_depth_entries_and_cycles():
+    run_protocol(r"""
+const {formatWorkloadError}=protocol;
+const cycle=new Error('cyclic');cycle.cause=cycle;
+assert.match(formatWorkloadError(cycle),/cycle omitted/);
+let deep=new Error('MUST_NOT_REACH_DEEP_LEAF');
+for(let index=0;index<20;index++) deep=new Error('depth '+index,{cause:deep});
+const depth=formatWorkloadError(deep);
+assert.match(depth,/nested error depth limit/);
+assert.ok(!depth.includes('MUST_NOT_REACH_DEEP_LEAF'));
+const wide=new AggregateError(Array.from({length:100},(_,index)=>new Error('entry-'+index)),'wide');
+const width=formatWorkloadError(wide);
+assert.match(width,/aggregate error entry limit/);
+assert.match(width,/entry-7/);assert.ok(!width.includes('entry-8'));
+const huge=new AggregateError(Array.from({length:8},()=>new AggregateError(
+  Array.from({length:8},()=>new Error('界😀'.repeat(10000))),'界😀'.repeat(10000))),
+  '界😀'.repeat(10000));
+const bounded=formatWorkloadError(huge);
+assert.ok(Buffer.byteLength(bounded)<=8192 && bounded.length<=8192);
+assert.ok(!bounded.includes('\uFFFD'));
+assert.ok(bounded.endsWith('\n'));
+assert.ok(formatWorkloadError(null).includes('non-Error value omitted'));
+assert.ok(Buffer.byteLength(formatWorkloadError('界'.repeat(10000)))<=8192);
+""")
+
+
+def test_missing_typecheck_selection_diagnostic_lists_only_complete_bounded_paths():
+    run_protocol(r"""
+const {formatMissingSelectedSources,selectedFiles}=protocol;
+const selected=selectedFiles(ts);
+assert.equal(formatMissingSelectedSources(ts,new Set(selected)),'');
+const missing=formatMissingSelectedSources(ts,new Set([selected[0]]));
+assert.match(missing,/1 selected paths absent/);
+assert.ok(missing.includes('  '+selected[1]+'\n'));
+assert.ok(!missing.includes('  '+selected[0]+'\n'));
+for(const suffix of ['short','界'.repeat(140)]) {
+  const many=validateConfig({...ts,selectedSources:Array.from({length:30},
+    (_,index)=>'apps/desktop/src/'+index+'-'+suffix+'.tsx')});
+  const paths=new Set(selectedFiles(many));
+  const diagnostic=formatMissingSelectedSources(many,new Set());
+  const listed=diagnostic.split('\n').filter(line=>line.startsWith('  ')).map(line=>line.slice(2));
+  assert.ok(listed.length>0 && listed.length<=16);
+  assert.ok(listed.every(path=>paths.has(path)));
+  assert.equal(new Set(listed).size,listed.length);
+  assert.ok(Buffer.byteLength(diagnostic)<=4096);
+  assert.ok(!diagnostic.includes('\uFFFD'));
+  assert.ok(diagnostic.includes('Listed '+listed.length+' of 30 missing selected paths'));
+  if(suffix==='short') assert.equal(listed.length,16);
+  else assert.ok(listed.length<16);
+}
+""")

@@ -3,6 +3,7 @@ import { StringDecoder } from 'node:string_decoder';
 import { writeSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import { Socket } from 'node:net';
+import { types } from 'node:util';
 
 export const CONTROL_BYTES = 1048576;
 const controlClock = performance.now.bind(performance);
@@ -59,6 +60,53 @@ const exact = (value, keys) => value && typeof value === 'object' && !Array.isAr
 const integer = (value, low, high = Number.MAX_SAFE_INTEGER) => Number.isSafeInteger(value)
   && value >= low && value <= high;
 
+export function formatWorkloadError(error) {
+  // Diagnostics are workload claims, and host redaction still applies. Read
+  // only native Error data fields: never serialize objects or invoke their
+  // getters/toString (including Node's lazily computed stack accessor).
+  const own = (value, key) => Object.getOwnPropertyDescriptor(value, key)?.value;
+  const clipped = (value, bytes) => new StringDecoder('utf8')
+    .write(Buffer.from(value.slice(0, bytes)).subarray(0, bytes));
+  let remaining = 8191, output = '';
+  const append = value => {
+    const text = clipped(value, remaining);
+    output += text;
+    remaining -= Buffer.byteLength(text);
+  };
+  append('Workspace recipe failed (workload diagnostic):\n');
+  const queue = [{ value: error, label: 'error', depth: 0 }], seen = new Set();
+  for (let index = 0; index < queue.length && index < 16 && remaining > 0; index++) {
+    const { value, label, depth } = queue[index];
+    if (!types.isNativeError(value)) {
+      append(label + ': ' + (typeof value === 'string' ? clipped(value, 512)
+        : '[non-Error value omitted]') + '\n');
+      continue;
+    }
+    if (seen.has(value)) { append(label + ': [cycle omitted]\n'); continue; }
+    seen.add(value);
+    const prototype = Object.getPrototypeOf(value);
+    const name = own(value, 'name') ?? (prototype && !types.isProxy(prototype) ? own(prototype, 'name') : null);
+    const message = own(value, 'message'), stack = own(value, 'stack');
+    append(label + ': ' + (typeof name === 'string' ? clipped(name, 64) : 'Error') + ': '
+      + (typeof message === 'string' ? clipped(message, 512) : '[message unavailable]') + '\n');
+    if (typeof stack === 'string') append(clipped(stack, 512) + '\n');
+    if (depth >= 4) { append('[nested error depth limit]\n'); continue; }
+    const add = (nested, nestedLabel) => {
+      if (queue.length < 16) queue.push({ value: nested, label: nestedLabel, depth: depth + 1 });
+      else append('[nested error entry limit]\n');
+    };
+    const cause = own(value, 'cause');
+    if (cause !== undefined) add(cause, label + '.cause');
+    const errors = own(value, 'errors');
+    if (Array.isArray(errors) && !types.isProxy(errors)) {
+      const length = own(errors, 'length');
+      for (let at = 0; at < Math.min(length, 8); at++) add(own(errors, String(at)), label + '.errors[' + at + ']');
+      if (length > 8) append('[aggregate error entry limit]\n');
+    }
+  }
+  return output + '\n';
+}
+
 export function relativePath(value) {
   requireValue(typeof value === 'string' && value.length > 0 && Buffer.byteLength(value) <= 512
     && !/[\\\x00-\x1f\x7f:*?\[\]{}]/.test(value)
@@ -110,6 +158,22 @@ export function validateConfig(input) {
 export const absolutePath = (config, value) => '/source/' + config.root + '/' + value;
 export const selectedFiles = config => (config.recipe === 'workspace_typescript'
   ? config.selectedSources : config.tests).map(value => absolutePath(config, value));
+
+export function formatMissingSelectedSources(config, reportedFiles) {
+  const missing = selectedFiles(config).filter(path => !reportedFiles.has(path));
+  if (missing.length === 0) return '';
+  let output = 'TypeScript reported source coverage incomplete (workload claim): '
+    + missing.length + ' selected paths absent.\n', shown = 0;
+  for (const path of missing.slice(0, 16)) {
+    const line = '  ' + path + '\n';
+    // Keep paths complete and reserve space for the bounded omission count.
+    if (Buffer.byteLength(output) + Buffer.byteLength(line) + 128 > 4096) break;
+    output += line;
+    shown++;
+  }
+  return output + 'Listed ' + shown + ' of ' + missing.length
+    + ' missing selected paths (maximum 16 paths / 4096 bytes).\n';
+}
 
 export function typescriptArguments(config) {
   return ['--disable-sigusr1', absolutePath(config, config.toolEntry), '--project',

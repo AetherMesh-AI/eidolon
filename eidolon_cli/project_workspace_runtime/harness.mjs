@@ -8,7 +8,8 @@ import { pathToFileURL } from 'node:url';
 import { StringDecoder } from 'node:string_decoder';
 import { CONTROL_BYTES, validateConfig, validateWorkloadIdentity, validateResult, absolutePath,
   selectedFiles, isSource, resultRecord, typescriptArguments, summarizeVitestModules,
-  boundUiProject, vitestOptions, writeControlFrameSync } from './protocol.mjs';
+  boundUiProject, vitestOptions, writeControlFrameSync, formatWorkloadError,
+  formatMissingSelectedSources } from './protocol.mjs';
 
 const config = validateConfig(JSON.parse(fs.readFileSync('/runner/config.json', 'utf8')));
 const status = Object.fromEntries(fs.readFileSync('/proc/self/status', 'utf8').split('\n')
@@ -73,6 +74,8 @@ async function typecheck() {
   buffer += decoder.end();
   if (buffer) line(buffer);
   const reportedFiles = [...sources].sort();
+  const missing = formatMissingSelectedSources(config, sources);
+  if (missing) process.stderr.write(missing);
   return resultRecord(config, { toolExitCode: signal ? null : code, sourceCount: sources.size,
     reportedFiles, status: !signal && code === 0 && sources.size > 0
       && selectedFiles(config).every(path => sources.has(path)) ? 'passed' : 'failed' });
@@ -151,7 +154,7 @@ try {
   emit(result);
   process.exit(result.status === 'passed' ? 0 : 1);
 } catch (error) {
-  process.stderr.write('Workspace recipe failed: ' + String(error?.stack ?? error).slice(0, 8192) + '\n');
+  process.stderr.write(formatWorkloadError(error));
   if (!controlFailed) emit(resultRecord(config));
   process.exit(1);
 }
