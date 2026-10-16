@@ -70,6 +70,51 @@ with s._write() as c:
         await intake.getByRole('button', { name: 'Submit request', exact: true }).scrollIntoViewIfNeeded()
         await expect(intake.getByRole('button', { name: 'Submit request', exact: true })).toBeInViewport({ ratio: 1 })
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true)
+
+        // A clipped inner scroller can leave the document width unchanged.
+        const geometry = await page.locator('.eid-home-hero, #eid-assisted-intake').evaluateAll(regions =>
+          regions.map(region => {
+            // Decorative SVG scenery intentionally uses cropped slice geometry;
+            // the surrounding region and all semantic content must still fit.
+            const elements = [region, ...region.querySelectorAll('*')].filter(element =>
+              element.getClientRects().length > 0 && element.tagName !== 'OPTION' &&
+              !element.closest('svg[aria-hidden="true"]'))
+
+            return elements.map(element => {
+              const rect = element.getBoundingClientRect()
+              let left = 0
+              let right = innerWidth
+
+              for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+                if (getComputedStyle(parent).overflowX !== 'visible') {
+                  const bounds = parent.getBoundingClientRect()
+                  left = Math.max(left, bounds.left + parent.clientLeft)
+                  right = Math.min(right, bounds.left + parent.clientLeft + parent.clientWidth)
+                }
+              }
+
+              return { tag: element.tagName, text: element.textContent?.slice(0, 80),
+                left: rect.left, right: rect.right, availableLeft: left, availableRight: right,
+                clientWidth: element.clientWidth, scrollWidth: element.scrollWidth,
+                fits: rect.left >= left - 1 && rect.right <= right + 1 &&
+                  (element.clientWidth === 0 || element.scrollWidth <= element.clientWidth + 1) }
+            })
+          }))
+
+        await testInfo.attach(`intake-region-geometry-${percent}`, {
+          contentType: 'application/json', body: JSON.stringify(geometry)
+        })
+        // Retain the old capture, but use native pixels to review Electron zoom:
+        // Playwright's page screenshot can crop to CSS-sized capture bounds.
+        const nativeWindow = await fixture.app.browserWindow(page)
+
+        const nativePng = await nativeWindow.evaluate(async window =>
+          (await window.webContents.capturePage()).toPNG().toString('base64'))
+
+        await testInfo.attach(`intake-entry-native-${percent}`, {
+          contentType: 'image/png', body: Buffer.from(nativePng, 'base64')
+        })
+        expect(geometry.flat().filter(element => !element.fits)).toEqual([])
         await page.screenshot({ path: testInfo.outputPath(`intake-entry-${percent}.png`) })
       }
 
