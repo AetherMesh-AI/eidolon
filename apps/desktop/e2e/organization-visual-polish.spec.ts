@@ -718,7 +718,7 @@ test('keeps native organization navigation, roster and objective layouts usable 
     await historyToggle.focus()
     await page.keyboard.press('Enter')
     await expect(history).toHaveAttribute('open', '')
-    for (const label of ['Profile chats', 'Manage gateways…']) {
+    for (const label of ['Profile chats', 'New profile', 'Import profile…', 'Manage profiles…', 'Manage gateways…']) {
       const control = history.getByRole('button', { name: label, exact: true })
       await control.scrollIntoViewIfNeeded()
       focusChecks.push(await verifyKeyboardFocus(page, control, `History ${label} ${zoom}`))

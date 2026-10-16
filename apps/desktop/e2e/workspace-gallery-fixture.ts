@@ -9,6 +9,7 @@ import { verifyKeyboardFocus } from './focus-visibility'
 import { snapshot } from './organization-visual-fixture'
 import { RealSessionBuilder } from './real-session-builder'
 import { expect, test } from './test'
+import { galleryPaintReadiness } from './workspace-paint-readiness'
 
 export const galleryLocales = [
   { locale: 'en', dark: 'Dark', light: 'Light' },
@@ -192,7 +193,16 @@ export async function captureGallery(fixture: GalleryFixture, name: string, scop
   const { page, app } = fixture
   await expect(scope).toBeVisible()
   expect(await scope.evaluate(element => element.scrollWidth - element.clientWidth), name).toBeLessThanOrEqual(1)
-  await page.evaluate(async () => { await document.fonts.ready; await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))) })
+  await page.evaluate(async () => { await document.fonts.ready })
+  // GatewayConnectingOverlay stops intercepting input before its exit opacity
+  // transition finishes. Visibility/hit testing alone can capture the entire
+  // shell through that fading scrim; wait for its real lifecycle to finish.
+  // Recheck both conditions together: a new finite transition may begin as
+  // the overlay leaves. Infinite decorative loaders do not block capture.
+  await expect.poll(() => page.evaluate(galleryPaintReadiness), {
+    message: `${name}: startup overlay and finite visual transitions must settle`, timeout: 5_000
+  }).toEqual({ connectingOverlays: 0, finiteAnimations: 0 })
+  await page.evaluate(async () => { await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))) })
   const viewport = await page.evaluate(() => ({ width: innerWidth, height: innerHeight, devicePixelRatio }))
   let capturedBase64 = ''
   let nativeFrameAttempts = 0

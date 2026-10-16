@@ -462,6 +462,7 @@ export function ProfileRail() {
       ) : (
         <div
           className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          data-slot="profile-rail-scroll"
           ref={scrollRef}
         >
           {/* The active gateway's squares. In fleet mode they sit in the
