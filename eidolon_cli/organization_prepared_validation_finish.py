@@ -199,7 +199,8 @@ def _agent_binding(conn, identifiers):
 
 def _check_claim(store, claim):
     from eidolon_cli.organization_budget import budget_view
-    with store._connect() as conn:
+    from eidolon_cli.organization_prepared_validation_checkpoint import checkpoint_connection
+    with checkpoint_connection(store) as conn:
         request = store._owned(conn, claim)
         if request is None:
             raise ValueError('Prepared finish lost its original lease or deadline during verification')
@@ -411,8 +412,10 @@ def finalize_finish_verification(token, store, conn, original_request):
     from eidolon_cli.organization_prepared_validation_current import (
         recheck_finish_external_observation, recheck_finish_owner_source,
     )
-    for target in token.targets.values():
-        recheck_finish_external_observation(store, target['observation'])
+    from eidolon_cli.organization_prepared_validation_checkpoint import final_checkpoint_reader
+    with final_checkpoint_reader(store, token):
+        for target in token.targets.values():
+            recheck_finish_external_observation(store, target['observation'])
     _require_inventory(token, conn, force=True)
     for target in token.targets.values():
         recheck_finish_owner_source(store, conn, target['observation'])

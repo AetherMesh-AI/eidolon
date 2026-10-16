@@ -49,6 +49,14 @@ all selected projects. Ordinary recipe bindings remain unchanged.
   file contents, retaining every path, inode, hardlink and fingerprint check.
   Exceptions, retries and rollback discard
   the observation. Original lease/deadline checks remain after these checks.
+  During only the final external fence, checkpoints share one separate query-only
+  autocommit reader tied to the active operation, thread, writer and ledger inode.
+  Every checkpoint still reads current policy, registration, contributors and
+  lease/deadline state at the original frequency. No authority verdict is cached.
+  The reader intentionally sees committed pre-transition state while the caller
+  holds its write transaction; final caller-side checks still validate uncommitted
+  review/round changes. Explicit reader transactions, nested scopes, foreign
+  stores and replaced ledgers fail closed. The reader closes on every exit.
   Native lock-hold and heartbeat measurements are required before calling this
   practical on a large dependency bundle; synthetic scan counts are insufficient.
 

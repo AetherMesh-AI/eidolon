@@ -57,7 +57,8 @@ def _checkpoint(store, authority, objective_id, check_claim=None):
         if check_claim is not None:
             check_claim()
         from eidolon_cli.organization_prepared_validation_setup import check_current_prepared_registration
-        with store._connect() as current:
+        from eidolon_cli.organization_prepared_validation_checkpoint import checkpoint_connection
+        with checkpoint_connection(store) as current:
             store._require_current_policy(current)
             check_current_prepared_registration(current, authority['registration'],
                 organization_id=grant['organizationId'], owner_id=grant['ownerId'],
