@@ -121,13 +121,21 @@ def _sidecar_rows(conn):
 
 def _record(conn, row):
     # _sidecar_rows has already checked exact SQL byte bounds for this row.
-    blobs = conn.execute(f'SELECT candidate,receipt FROM {_TABLE} WHERE sequence=?', (row['sequence'],)).fetchone()
-    if type(blobs['candidate']) is not str or type(blobs['receipt']) is not str:
+    blobs = conn.execute(f"SELECT CASE WHEN typeof(candidate)='text' AND length(CAST(candidate AS BLOB))<=83886080 "
+                         "THEN candidate END AS candidate,CASE WHEN typeof(receipt)='text' AND "
+                         f"length(CAST(receipt AS BLOB))<=32768 THEN receipt END AS receipt FROM {_TABLE} WHERE sequence=?",
+                         (row['sequence'],)).fetchone()
+    if blobs is None or type(blobs['candidate']) is not str or type(blobs['receipt']) is not str:
         raise OwnerPolicyError('prepared_registration_corrupt')
-    candidate = _json(blobs['candidate'].encode('utf-8'), _MAX_CANDIDATE_BYTES, 'Retained prepared candidate')
+    from eidolon_cli.organization_prepared_validation_finish import observed_finish_static_record, retain_finish_static_record
+    identity = ('candidate', row['project_id'], row['sequence'])
+    candidate = observed_finish_static_record(conn, identity, blobs['candidate'], row['candidate_hash'])
+    observed = candidate is not None
+    if not observed:
+        candidate = _json(blobs['candidate'].encode('utf-8'), _MAX_CANDIDATE_BYTES, 'Retained prepared candidate')
     receipt = _json(blobs['receipt'].encode('utf-8'), 32768, 'Retained prepared receipt')
     if (type(candidate) is not dict or type(receipt) is not dict
-            or digest(candidate) != row['candidate_hash'] or digest(receipt) != row['receipt_hash']
+            or (not observed and digest(candidate) != row['candidate_hash']) or digest(receipt) != row['receipt_hash']
             or type(candidate.get('enabled')) is not bool or candidate['enabled'] != bool(row['enabled'])
             or receipt.get('sidecarRevision') != row['sequence']
             or receipt.get('previousSidecarRevision') != row['sequence'] - 1
@@ -138,6 +146,8 @@ def _record(conn, row):
             or receipt.get('policyGeneration') != row['policy_generation']
             or receipt.get('idempotencyKey') != row['idempotency_key']):
         raise OwnerPolicyError('prepared_registration_corrupt')
+    if not observed:
+        retain_finish_static_record(conn, identity, blobs['candidate'], row['candidate_hash'])
     if candidate['enabled']:
         contract = candidate.get('contract', {})
         if (type(contract) is not dict or contract.get('revision') != row['revision']

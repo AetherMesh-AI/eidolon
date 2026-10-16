@@ -115,6 +115,12 @@ async function start() {
   }
 
   expect(model.methods.filter(method => method === 'organization.preparedValidationSetup')).toHaveLength(1)
+  // Home also inspects the configured team; reject missing fixture reads before
+  // introducing any deliberate prepared-validation errors.
+  expect(model.methods).toContain('organization.teamSetup')
+  expect(model.unexpectedMethods).toEqual([])
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  expect(await collectErrorBanners(page)).toEqual([])
 
   return { page, selector }
 }

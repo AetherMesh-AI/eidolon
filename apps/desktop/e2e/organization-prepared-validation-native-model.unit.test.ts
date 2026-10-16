@@ -67,6 +67,51 @@ describe('synthetic prepared-validation native RPC model', () => {
     expect(descriptor(createPreparedNativeModel())).toEqual(setup)
   })
 
+  it('answers Home’s read-only team setup with its already configured synthetic roster', () => {
+    const model = createPreparedNativeModel()
+    const before = read(model, 'organization.snapshot')
+    const references = model.currentReferences()
+    const params = { expectedOrganizationId: PREPARED_NATIVE_ORGANIZATION_ID }
+    const setup = read(model, 'organization.teamSetup', params)
+
+    expect(setup).toMatchObject({ capabilityVersion: 1, state: 'configured', organizationId: PREPARED_NATIVE_ORGANIZATION_ID,
+      readiness: { status: 'unchecked', blockers: [], modelRouting: 'unchanged', backgroundEnabled: false },
+      scope: { kind: 'served-profile', profile: 'default' } })
+    expect(setup.sourceRevision).toMatch(/^[a-f0-9]{64}$/)
+    expect(setup.supportAgents).toEqual([{ id: 'manager', name: 'Synthetic Manager', role: 'Manager' }])
+    expect(setup.presets).toEqual([])
+    expect(read(model, 'organization.teamSetup', params)).toEqual(setup)
+    expect(read(model, 'organization.snapshot')).toEqual(before)
+    expect(model.currentReferences()).toEqual(references)
+    expect(model.creates).toEqual([])
+    expect(model.admittedCount).toBe(0)
+    expect(model.unexpectedMethods).toEqual([])
+  })
+
+  it('rejects absent or mismatched team-read identity without permitting team mutations', () => {
+    const model = createPreparedNativeModel()
+
+    for (const params of [{}, { expectedOrganizationId: PREPARED_NATIVE_ORGANIZATION_ID, profile: 'other' }]) {
+      expect(model.reply('organization.teamSetup', params)).toEqual({ error: { code: -32602, message: PREPARED_NATIVE_ERRORS.invalid } })
+    }
+
+    for (const expectedOrganizationId of [undefined, null, PREPARED_NATIVE_OWNER_ID]) {
+      expect(model.reply('organization.teamSetup', { expectedOrganizationId })).toEqual({
+        error: { code: 5076, message: PREPARED_NATIVE_ERRORS.identity }
+      })
+    }
+
+    for (const method of ['organization.generateTeam', 'organization.previewTeam', 'organization.createTeam']) {
+      expect(model.reply(method, { expectedOrganizationId: PREPARED_NATIVE_ORGANIZATION_ID })).toEqual({
+        error: { code: -32601, message: PREPARED_NATIVE_ERRORS.unexpected }
+      })
+    }
+
+    expect(model.unexpectedMethods).toEqual(['organization.generateTeam', 'organization.previewTeam', 'organization.createTeam'])
+    expect(model.creates).toEqual([])
+    expect(model.admittedCount).toBe(0)
+  })
+
   it('admits exactly the selected metadata while retaining project order and canonical references', () => {
     const model = createPreparedNativeModel()
     const params = payload(model)

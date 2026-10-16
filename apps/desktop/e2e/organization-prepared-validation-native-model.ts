@@ -162,9 +162,26 @@ export function createPreparedNativeModel() {
     return { result: structuredClone(result) }
   }
 
+  function teamSetup(params: Record<string, unknown>): PreparedNativeReply {
+    if (Object.keys(params).length !== 1 || !Object.hasOwn(params, 'expectedOrganizationId')) {
+      return fail(PREPARED_NATIVE_ERRORS.invalid, -32602)
+    }
+
+    if (params.expectedOrganizationId !== PREPARED_NATIVE_ORGANIZATION_ID) { return fail(PREPARED_NATIVE_ERRORS.identity) }
+
+    // Home reads availability even with a roster. This fixture represents an
+    // already configured team; the read neither generates nor starts one.
+    return { result: { capabilityVersion: 1, state: 'configured', organizationId: PREPARED_NATIVE_ORGANIZATION_ID,
+      sourceRevision: hash(`synthetic-team:${ownerId}`), presets: [],
+      supportAgents: agents().filter(agent => agent.id === 'manager').map(({ id, name, role }) => ({ id, name, role })),
+      readiness: { status: 'unchecked', blockers: [], modelRouting: 'unchanged', backgroundEnabled: false },
+      scope: { kind: 'served-profile', profile: 'default' } } }
+  }
+
   const handlers: Record<string, (params: Record<string, unknown>) => PreparedNativeReply> = {
     'organization.descriptor': () => ({ result: metadata() }),
     'organization.snapshot': () => ({ result: snapshot() }),
+    'organization.teamSetup': teamSetup,
     'organization.preparedValidationSetup': params => params.expectedOrganizationId === PREPARED_NATIVE_ORGANIZATION_ID
       ? { result: descriptor() } : fail(PREPARED_NATIVE_ERRORS.identity),
     'organization.create': create,

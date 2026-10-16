@@ -123,7 +123,7 @@ def test_native_owner_policy_passes_real_registration_and_planning_without_runti
 def keep_native_claims_alive(store, objective_id, record_property):
     """Exercise ordinary lease renewal; never change lease settings or deadlines."""
     stop = threading.Event()
-    failures, durations = [], []
+    failures, durations, renewed = [], [], []
 
     def heartbeat():
         while not stop.wait(1):
@@ -134,9 +134,11 @@ def keep_native_claims_alive(store, objective_id, record_property):
                         "SELECT * FROM requests WHERE objective_id=? AND status='running' AND token IS NOT NULL",
                         (objective_id,))]
                 for claim in claims:
-                    store.heartbeat(claim)
+                    if store.heartbeat(claim):
+                        renewed.append(True)
             except Exception as error:
-                failures.append(type(error).__name__)
+                failures.append({'type': type(error).__name__, 'sqliteCode': getattr(error, 'sqlite_errorcode', None),
+                                 'sqliteName': getattr(error, 'sqlite_errorname', None)})
             finally:
                 durations.append(time.monotonic() - started)
 
@@ -149,8 +151,78 @@ def keep_native_claims_alive(store, objective_id, record_property):
         worker.join(15)
         record_property('heartbeat_max_seconds', max(durations, default=0))
         record_property('heartbeat_failures', failures)
+        record_property('heartbeat_successful_renewals', len(renewed))
         assert not worker.is_alive(), 'Native heartbeat did not stop within its bounded wait'
         assert not failures, 'Native heartbeat could not retain ordinary request leases'
+        assert renewed, 'Native concurrent heartbeat made no successful write progress'
+
+
+@contextmanager
+def measure_native_phase(name, record_property):
+    started = time.monotonic()
+    try:
+        yield
+    finally:
+        record_property('phase_' + name + '_seconds', time.monotonic() - started)
+
+
+@contextmanager
+def measure_native_writes(store, monkeypatch, record_property):
+    """Retain lock timings even when native finish rolls back or its lease expires."""
+    writes = []
+    original_write = store._write
+
+    @contextmanager
+    def measured_write():
+        started = None
+        acquiring = time.monotonic()
+        wait = None
+        try:
+            with original_write() as conn:
+                started = time.monotonic()
+                wait = started - acquiring
+                yield conn
+        finally:
+            writes.append({'thread': threading.current_thread().name,
+                           'waitSeconds': wait if wait is not None else time.monotonic() - acquiring,
+                           'lockSeconds': time.monotonic() - started if started is not None else None})
+
+    with monkeypatch.context() as patch:
+        patch.setattr(store, '_write', measured_write)
+        try:
+            yield
+        finally:
+            record_property('write_transaction_max_seconds', max(
+                (item['lockSeconds'] for item in writes if item['lockSeconds'] is not None), default=0))
+            record_property('write_transaction_timings', writes)
+
+
+def test_native_write_timing_survives_rollback_and_failed_acquisition(monkeypatch):
+    recorded = {}
+    @contextmanager
+    def write():
+        yield object()
+    store = SimpleNamespace(_write=write)
+    with pytest.raises(ValueError, match='synthetic rollback'):
+        with measure_native_writes(store, monkeypatch, recorded.__setitem__):
+            with store._write():
+                raise ValueError('synthetic rollback')
+    assert len(recorded['write_transaction_timings']) == 1
+    assert recorded['write_transaction_max_seconds'] >= 0
+    assert recorded['write_transaction_timings'][0]['lockSeconds'] is not None
+    assert store._write is write
+    @contextmanager
+    def blocked():
+        raise RuntimeError('synthetic failed acquisition')
+        yield
+    store._write = blocked
+    with pytest.raises(RuntimeError, match='synthetic failed acquisition'):
+        with measure_native_writes(store, monkeypatch, recorded.__setitem__):
+            with store._write():
+                pass
+    assert recorded['write_transaction_timings'][0]['lockSeconds'] is None
+    assert recorded['write_transaction_timings'][0]['waitSeconds'] >= 0
+    assert store._write is blocked
 
 
 def test_actual_owner_selected_pair_finishes_reviews_and_reopens(native_owner, monkeypatch, record_property):
@@ -161,25 +233,11 @@ def test_actual_owner_selected_pair_finishes_reviews_and_reopens(native_owner, m
     state = setup_running(native_owner, read_path=UI_TEST, clear_execution_only=False,
                           acceptance_criteria=CRITERIA, full_planning=True)
     store = state.store
-    writes = []
-    original_write = store._write
-
-    @contextmanager
-    def measured_write():
-        started = None
-        try:
-            with original_write() as conn:
-                started = time.monotonic()
-                yield conn
-        finally:
-            if started is not None:
-                # Include commit/rollback and lock release, excluding acquisition wait.
-                writes.append(time.monotonic() - started)
-
-    monkeypatch.setattr(store, '_write', measured_write)
-    with keep_native_claims_alive(store, state.objective, record_property):
-        assert store.run_project_stage(state.claim, state.cancel) == {}
-        assert store.finish(state.claim, {}) is True
+    with measure_native_writes(store, monkeypatch, record_property), keep_native_claims_alive(store, state.objective, record_property):
+        with measure_native_phase('execute_pair', record_property):
+            assert store.run_project_stage(state.claim, state.cancel) == {}
+        with measure_native_phase('finish_execution', record_property):
+            assert store.finish(state.claim, {}) is True
         review = store.claim_next()
         assert review['type'] == 'request.test_review'
         context = record_complete_context(store, review)
@@ -239,4 +297,74 @@ def test_actual_owner_selected_pair_finishes_reviews_and_reopens(native_owner, m
             source_path.write_bytes(original)
         view = setup.prepared_validation_setup(native_owner.home, native_owner.identity['organizationId'])
         assert view['registrationRefs']
-    record_property('write_transaction_max_seconds', max(writes, default=0))
+
+
+def expire_after_final_native_verification(state, monkeypatch, record_property, *, window_seconds=20):
+    """Shorten a real budget after preflight, then cross it after final checks."""
+    from eidolon_cli import organization_prepared_validation_finish as finish
+    from eidolon_cli.organization_prepared_validation_ledger import _charged_units
+    original_prepare, original_finalize = finish.prepare_finish_verification, finish.finalize_finish_verification
+    boundary = {}
+
+    @contextmanager
+    def prepare(*args):
+        with original_prepare(*args) as token:
+            assert token is not None
+            with state.store._write() as conn:
+                request = state.store._owned(conn, state.claim)
+                assert request is not None
+                prior = conn.execute('SELECT deadline FROM objective_budgets WHERE objective_id=?', (state.objective,)).fetchone()[0]
+                deadline = min(prior, request['lease'] - .01, time.time() + window_seconds)
+                assert deadline > time.time() + .1, 'No original authority window remains for the negative case'
+                conn.execute('UPDATE objective_budgets SET deadline=? WHERE objective_id=?', (deadline, state.objective))
+                boundary['deadline'] = deadline
+            yield token
+
+    def finalize(*args):
+        result = original_finalize(*args)
+        boundary['finalized'] = True
+        wait_limit = time.monotonic() + window_seconds + 1
+        while time.time() <= boundary['deadline']:
+            assert time.monotonic() < wait_limit, 'Wall-clock expiry did not arrive within the monotonic wait cap'
+            time.sleep(min(.02, max(.001, boundary['deadline'] - time.time() + .001)))
+        boundary['crossed'] = True
+        return result
+
+    with monkeypatch.context() as patch:
+        patch.setattr(finish, 'prepare_finish_verification', prepare)
+        patch.setattr(finish, 'finalize_finish_verification', finalize)
+        with pytest.raises(ValueError, match='Prepared completion exceeded its original lease or deadline before commit'):
+            state.store.finish(state.claim, {})
+    record_property('final_authority_expiry_boundary', boundary)
+    assert boundary['finalized'] and boundary['crossed']
+    with state.store._connect() as conn:
+        assert conn.execute('SELECT deadline FROM objective_budgets WHERE objective_id=?', (state.objective,)).fetchone()[0] <= time.time()
+        assert conn.execute('SELECT status FROM requests WHERE id=?', (state.claim['id'],)).fetchone()[0] == 'running'
+        assert conn.execute("SELECT count(*) FROM requests WHERE objective_id=? AND type IN ('request.test_review','request.accept')", (state.objective,)).fetchone()[0] == 0
+        assert conn.execute('SELECT count(*) FROM prepared_validation_pair_reviews').fetchone()[0] == 0
+        assert _charged_units(conn, state.objective) == 2
+        assert conn.execute('SELECT count(*) FROM prepared_validation_steps').fetchone()[0] == 2
+
+
+@pytest.mark.linux_only
+def test_final_expiry_negative_fixture_reaches_the_real_commit_fence(owner, monkeypatch, record_property):
+    from tests.eidolon_cli.test_organization_prepared_validation_stage_runtime import setup_running, host
+    state = setup_running(owner)
+    host(monkeypatch, state)
+    assert state.store.run_project_stage(state.claim, state.cancel) == {}
+    expire_after_final_native_verification(state, monkeypatch, record_property, window_seconds=5)
+
+
+def test_actual_pair_cannot_commit_after_final_authority_expires(native_owner, monkeypatch, record_property):
+    from tests.eidolon_cli.test_organization_prepared_validation_stage_runtime import setup_running
+    from tests.eidolon_cli.test_organization_project_workspace_native import UI_TEST
+    from tests.eidolon_cli.test_organization_prepared_validation_lifecycle import CRITERIA
+    state = setup_running(native_owner, read_path=UI_TEST, clear_execution_only=False,
+                          acceptance_criteria=CRITERIA, full_planning=True)
+    with keep_native_claims_alive(state.store, state.objective, record_property):
+        assert state.store.run_project_stage(state.claim, state.cancel) == {}
+    # The positive case measures concurrent progress. This separate negative
+    # deliberately holds its transaction across a shortened deadline and never
+    # restarts heartbeat, extends authority, or restores the expired budget.
+    with measure_native_writes(state.store, monkeypatch, record_property):
+        expire_after_final_native_verification(state, monkeypatch, record_property)

@@ -508,108 +508,118 @@ class OrganizationStore(GoalReauthorizationStore, OrganizationGoalContinuationSt
                 return self._message_delivery_context(conn, request, mark_read=mark_read)
             if mark_read:
                 self._read_internal_replies(conn, request)
-            objective = dict(conn.execute("SELECT id,title,description FROM objectives WHERE id=?", (request["objective_id"],)).fetchone())
-            objective.update(objective_assignment_view(conn, request['objective_id']))
-            objective['projects'] = [public_project(project) for project in objective_projects(conn, request['objective_id'])]
-            control = conn.execute('SELECT * FROM objective_control WHERE objective_id=?', (request['objective_id'],)).fetchone()
-            objective['acceptanceCriteria'] = json.loads(control['criteria'])
-            from eidolon_cli.organization_outcome_contracts import contract_view, human_judgments_view
-            objective['outcomeContract'] = contract_view(conn, request['objective_id'])
-            objective['outcomeHumanJudgments'] = human_judgments_view(conn, request['objective_id'])
-            objective['round'] = control['round']
-            objective['deliveryMode'] = control['delivery_mode']
-            objective['requiredChecks'] = json.loads(control['required_checks'])
-            objective['projectValidation'] = project_validation_view(conn, request['objective_id'])
-            objective['projectExecution'] = project_execution_view(conn, request['objective_id'])
-            if control['amended_scope']:
-                objective['originalDescription'] = objective['description']
-                objective['description'] = control['amended_scope']
-            from eidolon_cli.organization_shared_budget import shared_cost_enabled
-            budget = budget_view(conn, request['objective_id'], self.settings)
-            owner_inputs = [dict(row) for row in conn.execute('SELECT action,text,created FROM owner_resolutions WHERE objective_id=? ORDER BY created', (request['objective_id'],))]
-            task = conn.execute("SELECT * FROM tasks WHERE id=?", (request["task_id"],)).fetchone()
-            task = dict(task) if task else None
-            if task:
-                task.update(task_assignment_view(conn, task['id']))
-                task['workPackageId'] = task_package_id(conn, task['id'])
-                scope = conn.execute('SELECT paths FROM task_write_scopes WHERE task_id=?', (task['id'],)).fetchone()
-                binding = task_project(conn, task['id'])
-                task['projectId'] = binding['id'] if binding else None
-                task['project'] = public_project(binding) if binding else None
-                task['writePaths'] = json.loads(scope['paths']) if scope else None
-                task['coordination'] = coordination_view(conn, task['id'])
-            from eidolon_cli.organization_objective_dependencies import accepted_dependency_context
-            accepted_dependencies = accepted_dependency_context(conn, request['objective_id'])
-            dependencies = self._package_dependency_evidence(conn, request)
-            if task:
-                for ident in json.loads(task["dependencies"]):
-                    ev = conn.execute("SELECT * FROM evidence WHERE task_id=? ORDER BY created DESC LIMIT 1", (ident,)).fetchone()
-                    if ev:
-                        dependencies.append({"evidenceId": ev["id"], "taskId": ident, "summary": ev["summary"], "deliverable": ev["content"], "sha256": ev["sha256"],
-                                             "toolReceipts": evidence_receipts(conn, ev['id']),
-                                             'editProposal': evidence_proposal(conn, ev['id'])})
-            payload = json.loads(request["payload"])
-            if task and request["type"] != "request.review":
-                previous = conn.execute("SELECT id FROM evidence WHERE task_id=? ORDER BY created DESC LIMIT 1", (task["id"],)).fetchone()
-                if previous:
-                    payload["evidenceIds"] = [previous[0]]
-            evidence = []
-            for ident in payload.get("evidenceIds", []):
-                row = conn.execute("SELECT * FROM evidence WHERE id=? AND objective_id=?", (ident, request["objective_id"])).fetchone()
-                if row is None:
-                    artifact = final_artifact(conn, ident)
-                    if artifact and artifact['objective_id'] == request['objective_id']:
-                        evidence.append(artifact)
-                    elif artifact is None:
-                        project = project_validation_artifact(conn, ident) or project_execution_artifact(conn, ident)
-                        if project is not None and project['objectiveId'] == request['objective_id']:
-                            evidence.append(project)
-                if row:
-                    evidence.append({**dict(row), 'toolReceipts': evidence_receipts(conn, row['id']),
-                                     'editProposal': evidence_proposal(conn, row['id'])})
-            agent = dict(conn.execute("SELECT id,name,role,team,manager_id AS managerId FROM agents WHERE id=?", (request["agent_id"],)).fetchone())
-            agent.update(agent_identity_view(conn, request['agent_id']))
-            staff = self._staff(agent['id'])
-            if staff:
-                agent.update({'provider': staff.provider, 'model': staff.model, 'scope': staff.scope,
-                              'authority': list(staff.authority), 'managedTeams': list(staff.managed_teams)})
-            organization = {'agents': [
-                {'id': row['id'], 'name': row['name'], 'role': row['role'], 'managerId': row['manager_id'],
-                 'team': row['team'], 'capabilities': json.loads(row['accepts']),
-                 'responsibilities': agent_identity_view(conn, row['id'])['responsibilities']}
-                for row in conn.execute('SELECT * FROM agents ORDER BY id')]}
-            package_context = self._package_context(conn, request)
-            objective["planningMode"] = package_context["planningMode"]
-            max_tasks = conn.execute("SELECT max_tasks FROM objective_planning WHERE objective_id=?", (request["objective_id"],)).fetchone()[0]
-            context = {"objective": objective, "task": task, "agent": agent, **package_context,
-                    "acceptedDependencies": accepted_dependencies,
-                    **({'projectExecutionHistory': payload['projectExecutionHistory']}
-                       if request['type'] in {'request.plan', 'request.decompose'} and 'projectExecutionHistory' in payload else {}),
-                    **self._typed_context(conn, request), **self._internal_context(conn, request),
-                    "agentContext": agent_context_view(conn, request['agent_id']), "dependencies": dependencies,
-                    "organization": organization, "maxInflight": self.settings.max_inflight,
-                    "projectPolicy": {'projects': objective['projects'], 'recipes': [asdict(grant) for grant in self.settings.project_grants],
-                                      'runner': 'Linux bubblewrap; fixed single-process Python unittest or optional pytest; no network or host writes'},
-                    "managementPolicy": {"maxMembers": self.settings.max_members,
-                        "memberCount": len(self._staffing_context()),
-                        "maxRequestDepth": self.settings.max_request_depth,
-                        "maxRequestsPerStage": self.settings.max_requests_per_stage,
-                        "newMemberTools": [], "globalGrantExpansion": False},
-                    "evidence": evidence, "feedback": task["feedback"] if task else payload.get("feedback", control["summary"]),
-                    "ownerInputs": owner_inputs, "maxOutputTokens": self.settings.max_output_tokens,
-                    "maxContextTokens": self.settings.max_context_tokens,
-                    **({"budget": budget} if "adaptivePacing" in budget or "sharedAllowance" in budget else {}),
-                    "costBudgetEnabled": budget["configuredCostLimitUsd"] is not None or shared_cost_enabled(budget),
-                    "toolReceipts": [receipt for item in evidence for receipt in item['toolReceipts']],
-                    "toolPolicy": self._tool_policy(conn, request),
-                    "staffing": self._staffing_context(),
-                    "capabilities": list(self.settings.capabilities), "maxTasks": min(max_tasks, self.settings.max_tasks),
-                    "maxWorkers": self.settings.max_workers, "timeoutSeconds": max(0.001, min(self.settings.timeout_seconds, budget["deadlineTimestamp"] - time.time())),
-                    "workers": payload.get("workers")}
+            context = self._context_with_connection(conn, claim)
             if mark_read:
                 from eidolon_cli.organization_selective_repair import capture_inputs
                 capture_inputs(self, conn, request, context)
             return context
+
+    def _context_with_connection(self, conn, claim):
+        """Rebuild the exact context on a caller-owned connection without writes."""
+        request = self._owned(conn, claim)
+        if request is None:
+            raise ValueError("Request lease is no longer owned")
+        if request["type"] == "request.message":
+            return self._message_delivery_context(conn, request, mark_read=False)
+        objective = dict(conn.execute("SELECT id,title,description FROM objectives WHERE id=?", (request["objective_id"],)).fetchone())
+        objective.update(objective_assignment_view(conn, request['objective_id']))
+        objective['projects'] = [public_project(project) for project in objective_projects(conn, request['objective_id'])]
+        control = conn.execute('SELECT * FROM objective_control WHERE objective_id=?', (request['objective_id'],)).fetchone()
+        objective['acceptanceCriteria'] = json.loads(control['criteria'])
+        from eidolon_cli.organization_outcome_contracts import contract_view, human_judgments_view
+        objective['outcomeContract'] = contract_view(conn, request['objective_id'])
+        objective['outcomeHumanJudgments'] = human_judgments_view(conn, request['objective_id'])
+        objective['round'] = control['round']
+        objective['deliveryMode'] = control['delivery_mode']
+        objective['requiredChecks'] = json.loads(control['required_checks'])
+        objective['projectValidation'] = project_validation_view(conn, request['objective_id'])
+        objective['projectExecution'] = project_execution_view(conn, request['objective_id'])
+        if control['amended_scope']:
+            objective['originalDescription'] = objective['description']
+            objective['description'] = control['amended_scope']
+        from eidolon_cli.organization_shared_budget import shared_cost_enabled
+        budget = budget_view(conn, request['objective_id'], self.settings)
+        owner_inputs = [dict(row) for row in conn.execute('SELECT action,text,created FROM owner_resolutions WHERE objective_id=? ORDER BY created', (request['objective_id'],))]
+        task = conn.execute("SELECT * FROM tasks WHERE id=?", (request["task_id"],)).fetchone()
+        task = dict(task) if task else None
+        if task:
+            task.update(task_assignment_view(conn, task['id']))
+            task['workPackageId'] = task_package_id(conn, task['id'])
+            scope = conn.execute('SELECT paths FROM task_write_scopes WHERE task_id=?', (task['id'],)).fetchone()
+            binding = task_project(conn, task['id'])
+            task['projectId'] = binding['id'] if binding else None
+            task['project'] = public_project(binding) if binding else None
+            task['writePaths'] = json.loads(scope['paths']) if scope else None
+            task['coordination'] = coordination_view(conn, task['id'])
+        from eidolon_cli.organization_objective_dependencies import accepted_dependency_context
+        accepted_dependencies = accepted_dependency_context(conn, request['objective_id'])
+        dependencies = self._package_dependency_evidence(conn, request)
+        if task:
+            for ident in json.loads(task["dependencies"]):
+                ev = conn.execute("SELECT * FROM evidence WHERE task_id=? ORDER BY created DESC LIMIT 1", (ident,)).fetchone()
+                if ev:
+                    dependencies.append({"evidenceId": ev["id"], "taskId": ident, "summary": ev["summary"], "deliverable": ev["content"], "sha256": ev["sha256"],
+                                         "toolReceipts": evidence_receipts(conn, ev['id']),
+                                         'editProposal': evidence_proposal(conn, ev['id'])})
+        payload = json.loads(request["payload"])
+        if task and request["type"] != "request.review":
+            previous = conn.execute("SELECT id FROM evidence WHERE task_id=? ORDER BY created DESC LIMIT 1", (task["id"],)).fetchone()
+            if previous:
+                payload["evidenceIds"] = [previous[0]]
+        evidence = []
+        for ident in payload.get("evidenceIds", []):
+            row = conn.execute("SELECT * FROM evidence WHERE id=? AND objective_id=?", (ident, request["objective_id"])).fetchone()
+            if row is None:
+                artifact = final_artifact(conn, ident)
+                if artifact and artifact['objective_id'] == request['objective_id']:
+                    evidence.append(artifact)
+                elif artifact is None:
+                    project = project_validation_artifact(conn, ident) or project_execution_artifact(conn, ident)
+                    if project is not None and project['objectiveId'] == request['objective_id']:
+                        evidence.append(project)
+            if row:
+                evidence.append({**dict(row), 'toolReceipts': evidence_receipts(conn, row['id']),
+                                 'editProposal': evidence_proposal(conn, row['id'])})
+        agent = dict(conn.execute("SELECT id,name,role,team,manager_id AS managerId FROM agents WHERE id=?", (request["agent_id"],)).fetchone())
+        agent.update(agent_identity_view(conn, request['agent_id']))
+        staff = self._staff(agent['id'])
+        if staff:
+            agent.update({'provider': staff.provider, 'model': staff.model, 'scope': staff.scope,
+                          'authority': list(staff.authority), 'managedTeams': list(staff.managed_teams)})
+        organization = {'agents': [
+            {'id': row['id'], 'name': row['name'], 'role': row['role'], 'managerId': row['manager_id'],
+             'team': row['team'], 'capabilities': json.loads(row['accepts']),
+             'responsibilities': agent_identity_view(conn, row['id'])['responsibilities']}
+            for row in conn.execute('SELECT * FROM agents ORDER BY id')]}
+        package_context = self._package_context(conn, request)
+        objective["planningMode"] = package_context["planningMode"]
+        max_tasks = conn.execute("SELECT max_tasks FROM objective_planning WHERE objective_id=?", (request["objective_id"],)).fetchone()[0]
+        context = {"objective": objective, "task": task, "agent": agent, **package_context,
+                "acceptedDependencies": accepted_dependencies,
+                **({'projectExecutionHistory': payload['projectExecutionHistory']}
+                   if request['type'] in {'request.plan', 'request.decompose'} and 'projectExecutionHistory' in payload else {}),
+                **self._typed_context(conn, request), **self._internal_context(conn, request),
+                "agentContext": agent_context_view(conn, request['agent_id']), "dependencies": dependencies,
+                "organization": organization, "maxInflight": self.settings.max_inflight,
+                "projectPolicy": {'projects': objective['projects'], 'recipes': [asdict(grant) for grant in self.settings.project_grants],
+                                  'runner': 'Linux bubblewrap; fixed single-process Python unittest or optional pytest; no network or host writes'},
+                "managementPolicy": {"maxMembers": self.settings.max_members,
+                    "memberCount": len(self._staffing_context()),
+                    "maxRequestDepth": self.settings.max_request_depth,
+                    "maxRequestsPerStage": self.settings.max_requests_per_stage,
+                    "newMemberTools": [], "globalGrantExpansion": False},
+                "evidence": evidence, "feedback": task["feedback"] if task else payload.get("feedback", control["summary"]),
+                "ownerInputs": owner_inputs, "maxOutputTokens": self.settings.max_output_tokens,
+                "maxContextTokens": self.settings.max_context_tokens,
+                **({"budget": budget} if "adaptivePacing" in budget or "sharedAllowance" in budget else {}),
+                "costBudgetEnabled": budget["configuredCostLimitUsd"] is not None or shared_cost_enabled(budget),
+                "toolReceipts": [receipt for item in evidence for receipt in item['toolReceipts']],
+                "toolPolicy": self._tool_policy(conn, request),
+                "staffing": self._staffing_context(),
+                "capabilities": list(self.settings.capabilities), "maxTasks": min(max_tasks, self.settings.max_tasks),
+                "maxWorkers": self.settings.max_workers, "timeoutSeconds": max(0.001, min(self.settings.timeout_seconds, budget["deadlineTimestamp"] - time.time())),
+                "workers": payload.get("workers")}
+        return context
 
     @staticmethod
     def _pending(conn, request, reason):

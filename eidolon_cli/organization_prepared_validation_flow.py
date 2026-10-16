@@ -36,6 +36,28 @@ def prepared_stage_availability(store, conn, request):
         raise ValueError('Prepared validation requires two available reserved run units')
 
 
+def _claims_complete_pair(conn, set_id, runs):
+    """A cheap routing hint only; the success branch still verifies every proof."""
+    from eidolon_cli.organization_prepared_validation_ledger import _bounded_text, _checked_json
+    if len(runs) != 2:
+        return False
+    for run in runs:
+        row = conn.execute(f'SELECT {_bounded_text("record", 8192)},{_bounded_text("sha256", 64)},'
+            f'{_bounded_text("status", 32)},{_bounded_text("receipt_sha256", 64)} '
+            'FROM prepared_validation_results WHERE run_id=?', (run[0],)).fetchone()
+        if row is None or row[2] != 'passed':
+            return False
+        try:
+            claim = _checked_json(row[0], row[1])
+            if (claim['setId'] != set_id or claim['runId'] != run[0] or claim['status'] != 'passed'
+                    or claim['receiptSha256'] != row[3] or claim['cleanupConfirmed'] is not True
+                    or claim['stagingCleanupConfirmed'] is not True):
+                return False
+        except (KeyError, TypeError, ValueError):
+            return False
+    return True
+
+
 def finish_prepared_execution(store, conn, request, result):
     store._require_project_execution_controller(request)
     if result:
@@ -48,7 +70,7 @@ def finish_prepared_execution(store, conn, request, result):
         raise ValueError('No prepared pair was reserved by this exact backend lease')
     runs = list(conn.execute('SELECT run_id FROM prepared_validation_steps WHERE set_id=? ORDER BY step_id', (row['id'],)))
     artifacts = []
-    for run in runs:
+    for run in (() if _claims_complete_pair(conn, row['id'], runs) else runs):
         # An unstarted mandatory step remains charged. Its absence cannot count
         # as success, but a preceding retained failure may be exposed safely.
         if conn.execute('SELECT 1 FROM prepared_validation_results WHERE run_id=?', (run[0],)).fetchone():

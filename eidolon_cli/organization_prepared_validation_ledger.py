@@ -220,10 +220,11 @@ def _checked_json(record, sha256):
     return value
 
 
-def _binding_record(objective_id, grant):
+def _binding_record(objective_id, grant, *, checked_grant_sha256=None):
     return {'version': 1, 'contract': 'prepared-validation-objective-binding-v1',
             'objectiveId': objective_id, 'projectId': grant['projectId'],
-            'projectBindingSha256': grant['projectBindingSha256'], 'ownerGrantSha256': digest(grant)}
+            'projectBindingSha256': grant['projectBindingSha256'],
+            'ownerGrantSha256': digest(grant) if checked_grant_sha256 is None else checked_grant_sha256}
 
 
 def _require_write_transaction(conn):
@@ -262,17 +263,28 @@ def _binding(conn, objective_id, project_id):
     if sizes is None or any(type(size) is not int or not 1 <= size <= limit
                             for size, limit in zip(sizes, (40 * 1024**2, 4096))):
         raise ValueError('Prepared objective sidecar is missing or exceeds its byte bound')
-    row = conn.execute('SELECT grant_record,grant_sha256,binding_record,binding_sha256 '
+    row = conn.execute(f"SELECT CASE WHEN typeof(grant_record)='text' THEN {_bounded_text('grant_record', 40 * 1024**2)} END,"
+                       f"CASE WHEN typeof(grant_sha256)='text' THEN {_bounded_text('grant_sha256', 64)} END,"
+                       f"CASE WHEN typeof(binding_record)='text' THEN {_bounded_text('binding_record', 4096)} END,"
+                       f"CASE WHEN typeof(binding_sha256)='text' THEN {_bounded_text('binding_sha256', 64)} END "
                        'FROM prepared_validation_bindings WHERE objective_id=? AND project_id=?',
                        (objective_id, project_id)).fetchone()
     if row is None:
         raise ValueError('Prepared objective sidecar is missing')
-    grant, binding = _checked_json(row[0], row[1]), _checked_json(row[2], row[3])
-    if binding != _binding_record(objective_id, grant) or grant['projectId'] != project_id:
+    from eidolon_cli.organization_prepared_validation_finish import observed_finish_static_record, retain_finish_static_record
+    identity = ('grant', objective_id, project_id)
+    grant = observed_finish_static_record(conn, identity, row[0], row[1])
+    if grant is None:
+        grant = _checked_json(row[0], row[1])
+        retain_finish_static_record(conn, identity, row[0], row[1])
+    binding = _checked_json(row[2], row[3])
+    if binding != _binding_record(objective_id, grant, checked_grant_sha256=row[1]) or grant['projectId'] != project_id:
         raise ValueError('Prepared objective sidecar has a mixed binding')
-    legacy = conn.execute('SELECT binding FROM objective_projects WHERE objective_id=? AND project_id=?',
+    legacy = conn.execute("SELECT CASE WHEN typeof(binding)='text' AND length(CAST(binding AS BLOB)) BETWEEN 1 AND 65536 "
+                          "THEN binding END AS binding FROM objective_projects WHERE objective_id=? AND project_id=?",
                           (objective_id, project_id)).fetchone()
-    if legacy is None or contract.legacy_project_binding_sha256(json.loads(legacy[0])) != grant['projectBindingSha256']:
+    if (legacy is None or type(legacy[0]) is not str
+            or contract.legacy_project_binding_sha256(json.loads(legacy[0])) != grant['projectBindingSha256']):
         raise ValueError('Retained legacy project binding changed')
     return grant, binding
 
@@ -280,7 +292,7 @@ def _binding(conn, objective_id, project_id):
 def _require_context(conn, context):
     grant, binding = _binding(conn, context['objective_id'], context['project_id'])
     expected = {'profile': grant['profile'], 'organization_id': grant['organizationId'],
-                'owner_id': grant['ownerId'], 'owner_grant_sha256': digest(grant),
+                'owner_id': grant['ownerId'], 'owner_grant_sha256': binding['ownerGrantSha256'],
                 'objective_binding_sha256': digest(binding)}
     row = conn.execute('SELECT round FROM objective_control WHERE objective_id=?',
                        (context['objective_id'],)).fetchone()

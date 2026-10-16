@@ -4,18 +4,27 @@ Large dependency reads happen before the SQLite write lock. A private one-shot
 scope binds their exact target to fresh SQL authority, then the commit boundary
 rechecks original source bytes and every observed dependency fingerprint. This
 is observed-at-check evidence, never a filesystem lock or an execution grant.
+
+Static JSON validation reuse retains at most 128 MiB of raw UTF-8 grant/candidate
+records across the whole finish. A grant contains one manifest representation;
+a candidate contains two. This is a raw-record capacity limit, not a Python heap
+limit: detached decoding and existing source/dependency observations amplify
+live heap usage, and some observations remain retained for the whole finish.
 """
 from contextlib import ExitStack, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 import json
 import math
+import re
 import threading
 import time
 
 from eidolon_cli.organization_project_validation import canonical, digest
 
 _ACTIVE = ContextVar('prepared_finish_verification', default=None)
+_PREFLIGHT = ContextVar('prepared_finish_static_records', default=None)
+_MAX_STATIC_RECORD_BYTES = 128 * 1024**2
 _TYPES = {'request.project_test', 'request.test_review', 'request.integrate', 'request.accept'}
 _REQUEST_FIELDS = ('id', 'objective_id', 'task_id', 'type', 'team', 'agent_id', 'token',
                    'attempts', 'execution_count', 'payload')
@@ -27,6 +36,12 @@ class _FinishToken:
     request: str
     operation: str
     claim: dict
+    objective_id: str = ''
+    projects: tuple = ()
+    static_projects: tuple = ()
+    static_records: dict = field(default_factory=dict)
+    static_bytes: int = 0
+    preflight_connection: object = None
     targets: dict = field(default_factory=dict)
     agents: str = ''
     agent_ids: tuple = ()
@@ -35,6 +50,82 @@ class _FinishToken:
     alive: bool = True
     entered: bool = False
     finalized: bool = False
+
+
+@contextmanager
+def _static_preflight_scope(token, conn):
+    if _PREFLIGHT.get() is not None or _ACTIVE.get() is not None:
+        raise ValueError('Prepared static observations require a nonnested finish')
+    token.preflight_connection = conn
+    context = _PREFLIGHT.set(token)
+    try:
+        yield
+    finally:
+        _PREFLIGHT.reset(context)
+        token.preflight_connection = None
+
+
+def _static_slot(conn, identity):
+    token = _ACTIVE.get() or _PREFLIGHT.get()
+    if token is None:
+        return None, None
+    _require_token(token, token.store)
+    expected = token.connection if token.entered else token.preflight_connection
+    if conn is not expected:
+        raise ValueError('Prepared static observation belongs to a foreign connection')
+    if type(identity) is not tuple or len(identity) != 3:
+        raise ValueError('Prepared static observation has a foreign identity')
+    kind, owner, project = identity
+    if kind == 'candidate':
+        project, sequence = owner, project
+        if type(sequence) is not int or sequence < 1:
+            raise ValueError('Prepared static registration identity is malformed')
+    elif kind != 'grant' or owner != token.objective_id:
+        raise ValueError('Prepared static observation has no selected authority')
+    if project not in token.static_projects or (kind == 'candidate' and project not in token.projects):
+        raise ValueError('Prepared static observation has no exact target for the selected project')
+    return token, (kind, project)
+
+
+def observed_finish_static_record(conn, identity, record, sha256):
+    """Reuse only JSON validation of exact bytes, never an authority/proof verdict.
+
+    Callers retain their SQL type/size fences and re-read the complete record and
+    hash. Fresh detached decoding prevents mutation of one reader's value from
+    affecting any subsequent reader. Only two static records per target qualify.
+    """
+    token, key = _static_slot(conn, identity)
+    if token is None:
+        return None
+    retained = token.static_records.get(key)
+    if retained is None:
+        if token.entered:
+            raise ValueError('Prepared static record was not observed before the write transaction')
+        return None
+    if (type(record) is not str or type(sha256) is not str
+            or retained != (identity, record, sha256)):
+        raise ValueError('Prepared static record bytes or hash changed after preflight')
+    return json.loads(record)
+
+
+def retain_finish_static_record(conn, identity, record, sha256):
+    """Called only after the ordinary bounded JSON/hash validator succeeds."""
+    token, key = _static_slot(conn, identity)
+    if token is None:
+        return
+    maximum = (80 if identity[0] == 'candidate' else 40) * 1024**2
+    size = len(record.encode('utf-8')) if type(record) is str else 0
+    if (token.entered or type(record) is not str or not 0 < size <= maximum
+            or type(sha256) is not str or re.fullmatch(r'[0-9a-f]{64}', sha256) is None):
+        raise ValueError('Prepared static observation requires bounded validated preflight bytes')
+    value = (identity, record, sha256)
+    if key in token.static_records and token.static_records[key] != value:
+        raise ValueError('Prepared static record changed during preflight')
+    if key not in token.static_records:
+        if token.static_bytes + size > _MAX_STATIC_RECORD_BYTES:
+            raise ValueError('Prepared finish static records exceed the 128 MiB aggregate raw-byte capacity')
+        token.static_bytes += size
+    token.static_records[key] = value
 
 
 def _request_binding(request):
@@ -164,30 +255,42 @@ def prepare_finish_verification(store, claim, result):
                 # never start an uncached byte scan while holding the lock.
                 token = _FinishToken(store, _request_binding(request),
                     _operation_binding(conn, request['objective_id']), {'id': request['id'], 'token': request['token']})
-                contributors = {request['agent_id']}
-                from eidolon_cli.organization_prepared_validation_current import observe_current_prepared_authority
-                from eidolon_cli.organization_prepared_validation_verification import verify_latest_prepared_validation_set
-                for project in projects:
-                    def observe(connection, envelope, snapshot):
-                        observed = resources.enter_context(observe_current_prepared_authority(
-                            store, connection, envelope, snapshot, check_claim=lambda: _check_claim(store, token.claim)))
-                        token.targets[project] = {'envelope': canonical(envelope), 'snapshot': snapshot,
-                            'observation': observed}
-                        return json.loads(observed.value)
-                    # No approval is cached: true/false mode verification remains
-                    # the existing strict transaction-time verifier's obligation.
-                    verified = verify_latest_prepared_validation_set(conn, request['objective_id'], project,
-                        current_authority=observe, require_review=False)
-                    token.targets[project]['proof'] = _proof_binding(verified)
-                    contributors.update(verified['contributorIds'])
-                token.agent_ids = tuple(sorted(contributors))
-                token.agents = _agent_binding(conn, token.agent_ids)
+                token.objective_id, token.projects = request['objective_id'], tuple(projects)
+                from eidolon_cli.organization_prepared_validation_objectives import prepared_selection_references
+                token.static_projects = tuple(item['projectId'] for item in
+                    prepared_selection_references(conn, request['objective_id']))
+                with _static_preflight_scope(token, conn):
+                    from eidolon_cli.organization_prepared_validation_ledger import _binding
+                    # Repair history may read another selected project's grant
+                    # without establishing that project's runtime/review success.
+                    for project in token.static_projects:
+                        _binding(conn, request['objective_id'], project)
+                    contributors = {request['agent_id']}
+                    from eidolon_cli.organization_prepared_validation_current import observe_current_prepared_authority
+                    from eidolon_cli.organization_prepared_validation_verification import verify_latest_prepared_validation_set
+                    for project in projects:
+                        def observe(connection, envelope, snapshot):
+                            observed = resources.enter_context(observe_current_prepared_authority(
+                                store, connection, envelope, snapshot, check_claim=lambda: _check_claim(store, token.claim)))
+                            token.targets[project] = {'envelope': canonical(envelope), 'snapshot': snapshot,
+                                'observation': observed}
+                            return json.loads(observed.value)
+                        # No approval is cached: true/false mode verification remains
+                        # the existing strict transaction-time verifier's obligation.
+                        verified = verify_latest_prepared_validation_set(conn, request['objective_id'], project,
+                            current_authority=observe, require_review=False)
+                        token.targets[project]['proof'] = _proof_binding(verified)
+                        contributors.update(verified['contributorIds'])
+                    token.agent_ids = tuple(sorted(contributors))
+                    token.agents = _agent_binding(conn, token.agent_ids)
             _check_claim(store, token.claim)
             yield token
         finally:
             if token is not None:
                 token.alive = False
                 token.targets.clear()
+                token.static_records.clear()
+                token.static_bytes = 0
                 token.connection = None
 
 
