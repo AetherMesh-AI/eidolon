@@ -365,14 +365,28 @@ def _old_environment(ledger, *, live=False):
     import os
     from pathlib import Path
     old = os.environ.get('EIDOLON_OLD_RUNTIME_PATH')
-    if not old:
+    if old is None:
         pytest.skip('Immutable old runtime checkout is supplied by hosted compatibility CI')
+    if not old.strip():
+        pytest.fail('EIDOLON_OLD_RUNTIME_PATH is configured but empty')
     old = Path(old).resolve()
-    assert (old / 'eidolon_cli' / 'organization_team_budget.py').is_file()
+    required = ('organization_team_setup.py', 'organization_team_admission.py',
+                'organization_team_budget.py', 'organization_owner_policy.py',
+                'organization_store.py', 'organization_config.py')
+    if not old.is_dir() or any(not (old / 'eidolon_cli' / name).is_file() for name in required):
+        pytest.fail('EIDOLON_OLD_RUNTIME_PATH is not a complete old runtime checkout')
     params = request(ledger)
     env = {**os.environ, 'PYTHONPATH': str(old), 'HERMES_HOME': str(ledger.home),
            'EIDOLON_OLD_PARAMS': json.dumps(params), 'EIDOLON_OLD_LIVE': '1' if live else '0'}
     return old, env
+
+
+@pytest.mark.parametrize('configured', ['', ' ', 'missing-checkout'])
+def test_configured_invalid_old_runtime_fails_instead_of_skipping(monkeypatch, tmp_path, configured):
+    value = str(tmp_path / configured) if configured == 'missing-checkout' else configured
+    monkeypatch.setenv('EIDOLON_OLD_RUNTIME_PATH', value)
+    with pytest.raises(pytest.fail.Exception, match='EIDOLON_OLD_RUNTIME_PATH'):
+        _old_environment(None)
 
 
 def _assert_old_refusal(result):
