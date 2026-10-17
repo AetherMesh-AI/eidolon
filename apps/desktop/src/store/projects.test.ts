@@ -67,7 +67,10 @@ vi.mock('@/eidolon', () => ({
   getHermesConfig: vi.fn(),
   getProfiles: vi.fn(),
   hermesApi: vi.fn(),
-  setApiRequestProfile: vi.fn(),
+  setApiRequestProfile: vi.fn()
+}))
+
+vi.mock('@/api/request-timeouts', () => ({
   STARTUP_REQUEST_TIMEOUT_MS: 1000
 }))
 

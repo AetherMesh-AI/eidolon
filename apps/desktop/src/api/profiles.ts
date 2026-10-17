@@ -6,7 +6,8 @@ import type {
   ProfilesResponse
 } from '@/types/eidolon'
 
-import { capabilityScoped, hermesApi, type ProfileScope, STARTUP_REQUEST_TIMEOUT_MS } from './client'
+import { capabilityScoped, hermesApi, type ProfileScope } from './client'
+import { STARTUP_REQUEST_TIMEOUT_MS } from './request-timeouts'
 
 export function getProfiles(): Promise<ProfilesResponse> {
   return hermesApi<ProfilesResponse>({
