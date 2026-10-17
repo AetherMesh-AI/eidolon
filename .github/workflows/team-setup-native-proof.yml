@@ -1,0 +1,80 @@
+name: Reviewed team setup native proof
+on:
+  push:
+    branches: [temp/team-setup-native-proof]
+permissions:
+  contents: read
+jobs:
+  team-setup-native:
+    name: Reviewed team setup native proof (Linux)
+    runs-on: ubuntu-22.04
+    # Real owner edits and visual evidence remain independently required.
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: 7e9f411e51992412e3a49ed8a2cbb253327c22bf
+      - name: Verify exact reviewed source
+        run: |
+          test "$(git rev-parse HEAD)" = "7e9f411e51992412e3a49ed8a2cbb253327c22bf"
+          test "$(git rev-parse HEAD^{tree})" = "5490769228686091a7830404628ccbf98738f221"
+          printf '%s\n' '{"source":"7e9f411e51992412e3a49ed8a2cbb253327c22bf","tree":"5490769228686091a7830404628ccbf98738f221"}' > team-setup-source.json
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Install locked Python runtime and test dependencies
+        run: |
+          python -m pip install uv==0.12.23
+          uv sync --locked --python 3.12 --extra dev
+          uv pip install --no-deps pytest-timeout==2.4.0 exceptiongroup==1.3.0 'https://files.pythonhosted.org/packages/6e/c2/61d3e0f47e2b74ef40a68b9e6ad5984f6241a942f7cd3bbfbdbd03861ea9/tomli-2.2.1-py3-none-any.whl#sha256=cb55c73c5f4408779d0cf3eef9f762b9c9f147a77de7b258bef0a5628adc85cc'
+      - name: Install locked desktop dependencies
+        run: npm ci
+      - name: Install required native project isolation
+        run: bash scripts/ci/organization-sandbox.sh
+      - name: Install Electron system dependencies
+        run: |
+          sudo apt-get install -y xvfb libgtk-3-0 libnotify4 libnss3 libxss1 libxtst6 xdg-utils libatspi2.0-0 libdrm2 libgbm1 libasound2 fonts-noto-cjk
+          fc-match --format='%{family}\n' ':lang=ja'
+      - name: Verify renderer and native types
+        working-directory: apps/desktop
+        run: |
+          npx tsc -p tsconfig.json --noEmit
+          npx tsc -p tsconfig.e2e.json --noEmit
+      - name: Verify focused setup components
+        working-directory: apps/desktop
+        run: npx vitest run src/app/eidolon/team-onboarding-client.test.ts src/app/eidolon/team-onboarding.test.tsx --project ui --maxWorkers 1
+      - name: Build desktop
+        id: desktop-build
+        working-directory: apps/desktop
+        run: npm run build
+      - name: Verify setup input review and intentional regeneration
+        working-directory: apps/desktop
+        env:
+          EIDOLON_REQUIRE_PROJECT_SANDBOX: '1'
+          PLAYWRIGHT_JSON_OUTPUT_NAME: team-setup-report/results.json
+        run: xvfb-run -a npx playwright test e2e/organization-team-onboarding.spec.ts e2e/organization-team-input-review.spec.ts --workers=1 --retries=0 --output team-setup-test-results --reporter list,json
+      - name: Retain focused first-run screenshots
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: team-setup-screenshots-${{ github.run_id }}-${{ github.run_attempt }}
+          path: apps/desktop/team-setup-test-results/organization-team-*/**/*.png
+          retention-days: 7
+          if-no-files-found: warn
+      - name: Retain owner policy acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: team-setup-native-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            apps/desktop/team-setup-test-results/
+            apps/desktop/team-setup-report/
+            team-setup-source.json
+          retention-days: 7
+          if-no-files-found: warn
+
