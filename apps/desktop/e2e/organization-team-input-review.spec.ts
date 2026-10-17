@@ -181,7 +181,10 @@ async function captures(
     await expect
       .poll(() => f.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.getZoomFactor()))
       .toBe(zoom)
-    for (const { name, target, context = [] } of points) {
+    for (const { name, target, context = [] } of [
+      { name: 'close', target: dialog.locator('[data-slot=dialog-close-button]') },
+      ...points
+    ]) {
       const tabSteps = await tabTo(f, dialog, target)
       // Measure the ring only after real Tab navigation proved reachability and native scrolling.
       const focus = await verifyKeyboardFocus(f.page, target, `${prefix}-${name}-${width}-${zoom}`)
@@ -336,6 +339,8 @@ for (const locale of ['en'] as const) {
           target: dialog.getByLabel(text.name, { exact: true }).first(),
           context: [dialog.locator('.eid-team-executive > strong')]
         },
+        { name: 'manager-disclosure', target: dialog.locator('.eid-team-member > summary').nth(0) },
+        { name: 'worker-disclosure', target: dialog.locator('.eid-team-member > summary').nth(1) },
         { name: 'create', target: dialog.getByRole('button', { name: text.create, exact: true }) }
       ],
       `full-team-review-${locale}`,

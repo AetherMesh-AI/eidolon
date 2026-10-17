@@ -14,12 +14,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          ref: 7e9f411e51992412e3a49ed8a2cbb253327c22bf
+          ref: 8c79596753c004bae125a60a635c23995f0cf89e
       - name: Verify exact reviewed source
         run: |
-          test "$(git rev-parse HEAD)" = "7e9f411e51992412e3a49ed8a2cbb253327c22bf"
-          test "$(git rev-parse HEAD^{tree})" = "5490769228686091a7830404628ccbf98738f221"
-          printf '%s\n' '{"source":"7e9f411e51992412e3a49ed8a2cbb253327c22bf","tree":"5490769228686091a7830404628ccbf98738f221"}' > team-setup-source.json
+          test "$(git rev-parse HEAD)" = "8c79596753c004bae125a60a635c23995f0cf89e"
+          test "$(git rev-parse HEAD^{tree})" = "8b3bc29c39a18b6dfd16095941bfb82804247544"
+          printf '%s\n' '{"source":"8c79596753c004bae125a60a635c23995f0cf89e","tree":"8b3bc29c39a18b6dfd16095941bfb82804247544"}' > team-setup-source.json
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
