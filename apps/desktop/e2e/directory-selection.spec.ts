@@ -10,6 +10,15 @@ test('confirms actual directory selections, cancels without switching and expose
   const dedicated = await setupDedicatedProfiles()
   const { app, page, mock } = dedicated.fixture
   const captures: string[] = []
+  const selectionDiagnostics: unknown[] = []
+  page.on('console', message => {
+    const prefix = '[organization-selection-diagnostic] '
+    const text = message.text()
+
+    if (text.startsWith(prefix) && text.length < 4096 && selectionDiagnostics.length < 32) {
+      try { selectionDiagnostics.push(JSON.parse(text.slice(prefix.length))) } catch { /* Ignore unrelated malformed output. */ }
+    }
+  })
   const header = page.locator('.eid-workspace-header')
 
   const trigger = header.getByRole('button', {
@@ -194,6 +203,12 @@ with sqlite3.connect(sys.argv[1]) as c:
     await capture('directory-failure-before-cleanup')
     throw error
   } finally {
-    await dedicated.fixture.cleanup()
+    try {
+      await test.info().attach('organization-selection-diagnostic', {
+        contentType: 'application/json', body: JSON.stringify(selectionDiagnostics)
+      })
+    } finally {
+      await dedicated.fixture.cleanup()
+    }
   }
 })

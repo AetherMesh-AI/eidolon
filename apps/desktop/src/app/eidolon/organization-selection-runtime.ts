@@ -87,6 +87,12 @@ export function persistedOrganizationVerifier(
       routeSignature(registeredRoute(connection.connectionId!)) === proof.registryRoute, () => $connection.get())
 
     return () => {
+      console.info('[organization-selection-diagnostic]', JSON.stringify({
+        checkpoint: 'proof-fence', sourceCurrent: Boolean(sourceCurrent()), signalAborted: signal.aborted,
+        intentCurrent: isCurrentSourceSwitchIntent(intent), socketOpen: gateway.connectionState === 'open',
+        generationMatches: gatewayTransportGeneration(gateway) === generation, registryMatches: $connectionsRegistry.get() === registry,
+        hasPending: pending !== null, identityPresent: identity !== null, ownsPending: ownsPendingOrganizationSelection(pending)
+      }))
       if (!current() || !ownsPendingOrganizationSelection(pending)) { return false }
       // The caller owns cancellation/disposal too. Repeat only its pure proof
       // validation, never the pending write, immediately around the reset.
@@ -113,6 +119,17 @@ export async function selectRuntimeOrganizationConnection(connectionId: string, 
     routeSignature(registeredRoute(connectionId)) === proof.registryRoute &&
     proof.connection.connectionId === connectionId && proof.connection.profile === profile
 
+  console.info('[organization-selection-diagnostic]', JSON.stringify({
+    checkpoint: 'completion', status: outcome.status, reason: outcome.reason, phase: outcome.phase ?? null,
+    resetStarted: outcome.resetStarted, published: outcome.published, hasError: Boolean(outcome.error),
+    proofIntent: proof.intent, currentIntent: currentSourceSwitchIntent(), intentCurrent: isCurrentSourceSwitchIntent(proof.intent),
+    gatewayMatches: $gateway.get() === proof.gateway, connectionMatches: $connection.get() === proof.connection,
+    presentationMatches: matchesOrganizationPresentation($connection.get(), proof.connection),
+    socketOpen: proof.gateway.connectionState === 'open', generationMatches: gatewayTransportGeneration(proof.gateway) === proof.generation,
+    registryRouteMatches: routeSignature(registeredRoute(connectionId)) === proof.registryRoute,
+    connectionIdMatches: proof.connection.connectionId === connectionId, profileMatches: proof.connection.profile === profile,
+    hasPending: proof.pending !== null, identityPresent: proof.identity !== null, ownsPending: ownsPendingOrganizationSelection(proof.pending)
+  }))
   if (outcome.status !== 'committed' || !current()) {
     if (ownsPendingOrganizationSelection(proof.pending)) { showOrganizationSelectionRecovery('pending', proof.identity) }
 
