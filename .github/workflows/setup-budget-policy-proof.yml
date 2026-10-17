@@ -14,12 +14,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          ref: 30087114f3c2895993dd132b4f555314bc0e7889
+          ref: 420d1b87338da0906a3490887a9a16823103839b
       - name: Verify exact reviewed source
         run: |
-          test "$(git rev-parse HEAD)" = "30087114f3c2895993dd132b4f555314bc0e7889"
-          test "$(git rev-parse HEAD^{tree})" = "76dea17433e702439073eefa25e7d40d4652ef91"
-          printf '%s\n' '{"source":"30087114f3c2895993dd132b4f555314bc0e7889","tree":"76dea17433e702439073eefa25e7d40d4652ef91"}' > setup-budget-source.json
+          test "$(git rev-parse HEAD)" = "420d1b87338da0906a3490887a9a16823103839b"
+          test "$(git rev-parse HEAD^{tree})" = "f926fce264fe2fb7d9688f4ddf66955c3b7d412b"
+          printf '%s\n' '{"source":"420d1b87338da0906a3490887a9a16823103839b","tree":"f926fce264fe2fb7d9688f4ddf66955c3b7d412b"}' > setup-budget-source.json
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
