@@ -282,6 +282,10 @@ async function capture(fixture: MockBackendFixture, dialog: Locator, target: Loc
 test('two fresh isolated organizations configure their own models and explicitly review and create synthetic teams', async () => {
   test.setTimeout(300_000)
   const sandbox = createSandbox('fresh-team')
+  // Workspace storage rejects symlink ancestors, including /var on macOS.
+  sandbox.root = realpathSync(sandbox.root)
+  sandbox.hermesHome = realpathSync(sandbox.hermesHome)
+  sandbox.userDataDir = realpathSync(sandbox.userDataDir)
   let mock: Awaited<ReturnType<typeof startMockServer>> | undefined
   const observer = path.join(sandbox.root, 'python-guard')
   const evidence = path.join(sandbox.root, 'provider-evidence')
