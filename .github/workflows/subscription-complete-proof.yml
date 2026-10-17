@@ -138,7 +138,7 @@ jobs:
       - name: Verify registered native gateway journey and fail-closed network guards
         run: |
           set -euo pipefail
-          scripts/run_tests.sh tests/tui_gateway/test_subscription_native_journey.py -v --tb=short --junitxml="$GITHUB_WORKSPACE/subscription-native-proof/gateway-junit.xml" 2>&1 | tee subscription-native-proof/gateway.log
+          scripts/run_tests.sh tests/tui_gateway/test_subscription_native_journey.py -vv --tb=long --junitxml="$GITHUB_WORKSPACE/subscription-native-proof/gateway-junit.xml" 2>&1 | tee subscription-native-proof/gateway.log
       - name: Verify subscription and baseline setup components
         working-directory: apps/desktop
         run: |
