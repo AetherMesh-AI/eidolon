@@ -1,0 +1,64 @@
+name: Setup copy native proof
+on:
+  push:
+    branches: [proof/setup-copy-20261017]
+permissions:
+  contents: read
+env:
+  CI: 'true'
+  OPENAI_API_KEY: ''
+  OPENROUTER_API_KEY: ''
+  NOUS_API_KEY: ''
+jobs:
+  setup-copy:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: Install locked dependencies
+        run: |
+          python -m pip install uv==0.12.23
+          uv sync --locked --python 3.12 --extra dev
+          npm ci
+      - name: Verify setup components and types
+        working-directory: apps/desktop
+        run: |
+          npx vitest run src/app/eidolon/team-onboarding.test.tsx src/app/eidolon/team-onboarding-entry.test.tsx src/app/eidolon/team-onboarding-client.test.ts src/app/eidolon/team-setup-budget-editor.test.tsx src/app/eidolon/team-setup-budget-client.test.ts
+          npm run typecheck
+      - name: Install native sandbox and display dependencies
+        run: |
+          bash scripts/ci/organization-sandbox.sh
+          sudo apt-get install -y xvfb libgtk-3-0 libnotify4 libnss3 libxss1 libxtst6 xdg-utils libatspi2.0-0 libdrm2 libgbm1 libasound2 fonts-noto-cjk
+      - name: Record exact source
+        run: |
+          mkdir -p setup-copy-proof
+          git rev-parse HEAD HEAD:apps/desktop/src HEAD:apps/desktop/e2e > setup-copy-proof/source.txt
+          git show -s --format=%P HEAD > setup-copy-proof/parents.txt
+      - name: Build desktop
+        working-directory: apps/desktop
+        run: npm run build
+      - name: Verify setup, disclosures, and recovery without real provider calls
+        working-directory: apps/desktop
+        env:
+          EIDOLON_REQUIRE_PROJECT_SANDBOX: '1'
+        run: xvfb-run -a npx playwright test e2e/organization-team-setup-budget.spec.ts e2e/organization-team-onboarding.spec.ts e2e/organization-fresh-team-setup.spec.ts --workers=1 --retries=0
+      - name: Retain proof and screenshots
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: setup-copy-native-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            setup-copy-proof/
+            apps/desktop/test-results/
+            apps/desktop/playwright-report/
+          retention-days: 7
+          if-no-files-found: error
