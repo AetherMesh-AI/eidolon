@@ -1147,13 +1147,13 @@ class TestGatewaySystemServiceRouting:
         plist_path.write_text("plist\n", encoding="utf-8")
 
         monkeypatch.setattr(gateway_cli, "get_launchd_plist_path", lambda: plist_path)
-        monkeypatch.setattr(
-            gateway_cli,
-            "launchd_restart",
-            lambda: (_ for _ in ()).throw(
-                gateway_cli.subprocess.CalledProcessError(5, ["launchctl", "kickstart", "-k", "gui/501/ai.eidolon.gateway"])
-            ),
-        )
+        def failed_restart(*, for_update):
+            assert for_update is False
+            raise gateway_cli.subprocess.CalledProcessError(
+                5, ["launchctl", "kickstart", "-k", "gui/501/ai.eidolon.gateway"]
+            )
+
+        monkeypatch.setattr(gateway_cli, "launchd_restart", failed_restart)
 
         run_calls = []
         monkeypatch.setattr(gateway_cli, "run_gateway", lambda verbose=0, quiet=False, replace=False: run_calls.append((verbose, quiet, replace)))
