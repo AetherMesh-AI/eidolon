@@ -170,6 +170,13 @@ async function captures(
 ) {
   const evidence: object[] = []
 
+  const scrollportBounds = () => dialog.locator('.eid-team-body').evaluate(element => {
+    const bounds = element.getBoundingClientRect()
+    const top = bounds.top + element.clientTop
+
+    return { top, bottom: top + element.clientHeight, scrollTop: element.scrollTop, height: element.clientHeight }
+  })
+
   for (const [width, height, zoom] of [
     [1280, 900, 1],
     [1280, 900, 2],
@@ -226,8 +233,9 @@ async function captures(
       })
 
       const initialContext = await Promise.all(context.map(description => description.boundingBox()))
+      const initialScrollport = await scrollportBounds()
       await test.info().attach(`${prefix}-${name}-${width}-${zoom}-initial-tab`, {
-        contentType: 'application/json', body: JSON.stringify({ steps: tabSteps, ...immediate, context: initialContext })
+        contentType: 'application/json', body: JSON.stringify({ steps: tabSteps, ...immediate, context: initialContext, scrollport: initialScrollport })
       })
       expect(immediate.clipping, 'original Tab reveals the complete focused outline').toEqual([])
       expect(immediate.visible).toBe(true)
@@ -241,8 +249,9 @@ async function captures(
       // Retain the round-trip checks too; Shift+Tab must preserve the same context.
       const focus = await verifyKeyboardFocus(f.page, target, `${prefix}-${name}-${width}-${zoom}`)
       const roundTripContext = await Promise.all(context.map(description => description.boundingBox()))
+      const roundTripScrollport = await scrollportBounds()
       await test.info().attach(`${prefix}-${name}-${width}-${zoom}-round-trip`, {
-        contentType: 'application/json', body: JSON.stringify({ ...focus, context: roundTripContext })
+        contentType: 'application/json', body: JSON.stringify({ ...focus, context: roundTripContext, scrollport: roundTripScrollport })
       })
       await assertDraft()
 
@@ -315,7 +324,9 @@ async function captures(
         focus,
         immediate,
         initialContext,
+        initialScrollport,
         roundTripContext,
+        roundTripScrollport,
         header,
         tabSteps,
         captureMethod: 'electron.capturePage',

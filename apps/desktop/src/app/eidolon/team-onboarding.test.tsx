@@ -656,8 +656,8 @@ it.each([
 )
 
 it.each([
-  { label: 'Work to delegate', fieldTop: 100, contextTop: 10, expected: 463 },
-  { label: 'What success looks like', fieldTop: 100, contextTop: 10, expected: 463 },
+  { label: 'Work to delegate', fieldTop: 100, contextTop: 10, expected: 462 },
+  { label: 'What success looks like', fieldTop: 100, contextTop: 10, expected: 462 },
   { label: 'Work to delegate', fieldTop: 100, contextTop: -60, expected: 500 },
   { label: 'Work to delegate', fieldTop: 40, contextTop: -100, expected: 486 }
 ])('reveals the $label context only when its union fits ($contextTop)', ({ label, fieldTop, contextTop, expected }) => {
@@ -677,6 +677,40 @@ it.each([
     // The callback is one-shot even if a completed frame is invoked again.
     h.finish()
     expect(h.body.scrollTop).toBe(expected)
+  } finally {
+    h.cleanup()
+  }
+})
+
+it('clears fractional context edges when native scrollTop rounds the one-shot adjustment', () => {
+  const h = keyboardRevealHarness(268)
+  const heading = h.field.parentElement!.querySelector<HTMLElement>('.eid-team-input-heading')!
+  const help = h.field.parentElement!.querySelector<HTMLElement>('.eid-team-note')!
+  let scrollTop = 500
+  Object.defineProperty(h.body, 'scrollTop', {
+    get: () => scrollTop,
+    set: value => { scrollTop = Math.round(value) }
+  })
+  vi.mocked(h.body.getBoundingClientRect).mockReturnValue({ top: 169.5 } as DOMRect)
+
+  const bounds = (top: number, height: number) => ({
+    top: top + 500 - scrollTop, bottom: top + height + 500 - scrollTop, height
+  }) as DOMRect
+
+  vi.mocked(h.field.getBoundingClientRect).mockImplementation(() => bounds(268, 64))
+  vi.spyOn(heading, 'getBoundingClientRect').mockImplementation(() => bounds(160, 24))
+  vi.spyOn(help, 'getBoundingClientRect').mockImplementation(() => bounds(190, 78))
+
+  try {
+    h.start()
+    h.finish()
+    expect(h.body.scrollTop).toBe(490)
+    expect(heading.getBoundingClientRect().top).toBeGreaterThanOrEqual(169.5)
+    expect(h.field.getBoundingClientRect().bottom + 6).toBeLessThanOrEqual(369.5)
+    expect(globalThis.document.activeElement).toBe(h.field)
+    expect(h.field.value).toBe('My retained description')
+    h.finish()
+    expect(h.body.scrollTop).toBe(490)
   } finally {
     h.cleanup()
   }
