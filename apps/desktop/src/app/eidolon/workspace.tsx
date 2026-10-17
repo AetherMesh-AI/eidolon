@@ -1,12 +1,13 @@
 import './eidolon.css'
 
-import { lazy, Suspense, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { lazy, type RefObject, Suspense, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Link, useLocation, useMatch, useNavigationType } from 'react-router'
 
 import { Button } from '@/components/ui/button'
 import { Loader } from '@/components/ui/loader'
 import { SearchField } from '@/components/ui/search-field'
 import { useI18n } from '@/i18n/context'
+import { observationCopy } from '@/i18n/organization-observation'
 
 import { WorkspacePageHeading } from '../workspace-page-heading'
 
@@ -17,6 +18,7 @@ import { Messages } from './messages'
 import { responsibleTeams } from './objective-context'
 import { MetadataSummary } from './objective-metadata'
 import { ObjectiveOverview } from './objective-overview'
+import { observationState } from './observation-state'
 import { Organization } from './organization'
 import { RuntimeArtifact } from './runtime-artifact'
 import { RuntimeStatus } from './runtime-detail'
@@ -28,7 +30,7 @@ import { TeamOnboardingEntry } from './team-onboarding'
 import { type Objective, objectiveStatusLabels, type OrganizationAdapter, type OrganizationSnapshot, type RuntimeOrganizationAdapter } from './types'
 import { WorkGraph } from './work-graph'
 import { WorkOverview } from './work-overview'
-import { createWorkspaceScrollMemory, objectiveHref, objectiveReturnTarget } from './workspace-navigation'
+import { createWorkspaceScrollMemory, objectiveHref, objectiveReturnTarget, type WorkspaceFocusRestoration, WorkspaceFocusRestoreContext } from './workspace-navigation'
 
 const labels = { ...objectiveStatusLabels, pending: 'Pending', approved: 'Approved', rejected: 'Rejected', recorded: 'Recorded' }
 
@@ -50,12 +52,19 @@ function ObjectiveList({ objectives, snapshot, onClearFilters, page, setPage }: 
   const location = useLocation()
   const number = new Intl.NumberFormat(locale)
   const percent = new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 2 })
+  const observation = observationState(snapshot, snapshot.objectives.length)
+  const stateCopy = observationCopy[locale]
+  const retained = observation === 'retained'
   const lastPage = Math.max(0, Math.ceil(objectives.length / 25) - 1)
   const currentPage = Math.min(page, lastPage)
 
-  return objectives.length ? <><div className="eid-list">{objectives.slice(currentPage * 25, (currentPage + 1) * 25).map(objective => <Link className="eid-row" key={objective.id} to={objectiveHref(objective.id, location.pathname + location.search, snapshot.connection?.ownerScope ?? snapshot.connection?.scope)}>
+  if (observation === 'loading' || observation === 'unavailable') {
+    return <div className="eid-empty" role="status"><h2>{stateCopy[observation]}</h2><p>{stateCopy.unknown}</p></div>
+  }
+
+  return <>{retained && <p className="eid-note" role="status">{stateCopy.stale}</p>}{objectives.length ? <><div className="eid-list">{objectives.slice(currentPage * 25, (currentPage + 1) * 25).map(objective => <Link className="eid-row" key={objective.id} to={objectiveHref(objective.id, location.pathname + location.search, snapshot.connection?.ownerScope ?? snapshot.connection?.scope)}>
     <span className="eid-objective-summary"><strong dir="auto">{objective.title}</strong><small dir="auto">{objective.description}</small><small>{objective.progress === undefined ? t.organizationHome.progressUnknown : `${percent.format(objective.progress / 100)}${objective.source === 'runtime' ? '' : ` · ${list.localEstimate}`}`} · <bdi>{objective.milestone || list.noMilestone}</bdi></small><small>{list.responsibleTeam}: <bdi>{responsibleTeams(snapshot, objective, list.unknownTeam)}</bdi></small></span><Status status={objective.status} />
-  </Link>)}</div>{objectives.length > 25 && <nav aria-label={list.objectivePages} className="eid-toolbar"><button className="eid-button" disabled={!currentPage} onClick={() => setPage(currentPage - 1)}>{list.previousPage}</button><span role="status">{list.pageRange(number.format(currentPage * 25 + 1), number.format(Math.min((currentPage + 1) * 25, objectives.length)), number.format(objectives.length))}</span><button className="eid-button" disabled={currentPage === lastPage} onClick={() => setPage(currentPage + 1)}>{list.nextPage}</button></nav>}</> : onClearFilters ? <div className="eid-empty"><h2>{list.noMatches}</h2><p>{list.filterHint}</p><Button onClick={onClearFilters} variant="secondary">{list.clearFilters}</Button></div> : <div className="eid-empty"><h2>{list.noObjectives}</h2><p>{list.noObjectivesNote}</p><Link className="eid-button" to="/home#eid-home-intake">{t.organizationHome.newObjective}</Link></div>
+  </Link>)}</div>{objectives.length > 25 && <nav aria-label={list.objectivePages} className="eid-toolbar"><button className="eid-button" disabled={!currentPage} onClick={() => setPage(currentPage - 1)}>{list.previousPage}</button><span role="status">{list.pageRange(number.format(currentPage * 25 + 1), number.format(Math.min((currentPage + 1) * 25, objectives.length)), number.format(objectives.length))}</span><button className="eid-button" disabled={currentPage === lastPage} onClick={() => setPage(currentPage + 1)}>{list.nextPage}</button></nav>}</> : onClearFilters ? <div className="eid-empty"><h2>{retained ? stateCopy.noMatches : list.noMatches}</h2><p>{list.filterHint}</p><Button onClick={onClearFilters} variant="secondary">{list.clearFilters}</Button></div> : <div className="eid-empty"><h2>{retained ? stateCopy.empty : list.noObjectives}</h2>{!retained && <><p>{list.noObjectivesNote}</p><Link className="eid-button" to="/home#eid-home-intake">{t.organizationHome.newObjective}</Link></>}</div>}</>
 }
 
 
@@ -92,7 +101,7 @@ export function OrganizationWorkspace({ adapter }: { adapter?: OrganizationAdapt
 }
 
 /** Route changes own scroll; snapshot refreshes never do. */
-export function useWorkspaceScroll(location: ReturnType<typeof useLocation>, owner: string | undefined) {
+export function useWorkspaceScroll(location: ReturnType<typeof useLocation>, owner: string | undefined, focusRestoration?: RefObject<WorkspaceFocusRestoration | null>) {
   const element = useRef<HTMLElement>(null)
   const navigationType = useNavigationType()
   const memory = useRef(createWorkspaceScrollMemory())
@@ -116,22 +125,32 @@ export function useWorkspaceScroll(location: ReturnType<typeof useLocation>, own
       Array.from(root.querySelectorAll<HTMLElement>(selector)).map(panel => ({ panel, key: `${selector}:${panel.getAttribute('aria-label') ?? ''}` }))
     )
 
+    // Initial responsive measurement can change wrapping after the parent layout
+    // effect. Restore only after that measured layout is committed.
+    const layoutReady = () => !Array.from(root.querySelectorAll('.eid-responsive-detail[data-layout-ready="false"]'))
+      .some(layout => !layout.closest('[hidden], [inert]'))
+
     if (prior?.pathname !== location.pathname || prior?.owner !== owner) {
       root.scrollTop = 0
       root.scrollLeft = 0
       panels().forEach(({ panel, key }) => {
-        const saved = position?.panels.find(item => item.key === key)
+        const saved = layoutReady() ? position?.panels.find(item => item.key === key) : undefined
         panel.scrollTop = saved?.top ?? 0
         panel.scrollLeft = saved?.left ?? 0
       })
     }
 
+    const focusClaim = position && owner ? { owner, route } : null
+    const focusState: WorkspaceFocusRestoration | null = focusClaim ? { pending: focusClaim, origin: focusClaim } : null
+
+    if (focusRestoration) { focusRestoration.current = focusState }
     let restorationPending = !!position
     let restoreObserver: MutationObserver | undefined
     let restoreResizeObserver: ResizeObserver | undefined
     let restoreDeadline: ReturnType<typeof setTimeout> | undefined
 
     const cancelRestore = () => {
+      if (focusRestoration?.current === focusState && focusState) { focusState.pending = null }
       restorationPending = false
       restoreObserver?.disconnect()
       restoreObserver = undefined
@@ -142,10 +161,11 @@ export function useWorkspaceScroll(location: ReturnType<typeof useLocation>, own
     }
 
     const restore = (allowShorter = false) => {
-      if (!restorationPending || !position || !allowShorter && root.scrollHeight + 1 < position.contentHeight) { return }
+      if (!restorationPending || !position || !layoutReady() || !allowShorter && root.scrollHeight + 1 < position.contentHeight) { return }
 
       const link = position.focusHref ? Array.from(root.querySelectorAll<HTMLAnchorElement>('a[href]'))
-        .find(item => item.getAttribute('href') === position.focusHref) : undefined
+        .find(item => item.getAttribute('href') === position.focusHref &&
+          (!position.focusOrigin || item.getAttribute('data-workspace-origin') === position.focusOrigin)) : undefined
 
       if (position.focusHref && !link || position.panels.some(saved => !panels().some(item => item.key === saved.key))) { return }
       root.scrollTop = position.top
@@ -162,7 +182,7 @@ export function useWorkspaceScroll(location: ReturnType<typeof useLocation>, own
     if (position) {
       // Wait for an asynchronously loaded origin once; user input cancels it.
       restoreObserver = new MutationObserver(() => restore())
-      restoreObserver.observe(root, { childList: true, characterData: true, subtree: true })
+      restoreObserver.observe(root, { childList: true, characterData: true, subtree: true, attributes: true, attributeFilter: ['data-layout-ready'] })
 
       if (typeof ResizeObserver !== 'undefined') {
         restoreResizeObserver = new ResizeObserver(() => restore())
@@ -177,19 +197,25 @@ export function useWorkspaceScroll(location: ReturnType<typeof useLocation>, own
 
     previous.current = { pathname: location.pathname, search: location.search, owner }
     let focusHref = position?.focusHref ?? null
+    let focusOrigin = position?.focusOrigin ?? null
 
     const save = () => memory.current.save(owner, route, {
       top: root.scrollTop,
       left: root.scrollLeft,
       contentHeight: root.scrollHeight,
       panels: panels().map(({ panel, key }) => ({ key, top: panel.scrollTop, left: panel.scrollLeft })),
-      focusHref
+      focusHref,
+      focusOrigin
     })
 
     const captureLink = (event: MouseEvent) => {
       const link = event.target instanceof Element ? event.target.closest('a[href]') : null
 
-      if (link && root.contains(link)) { focusHref = link.getAttribute('href'); save() }
+      if (link && root.contains(link)) {
+        focusHref = link.getAttribute('href')
+        focusOrigin = link.getAttribute('data-workspace-origin')
+        save()
+      }
     }
 
     const document = root.ownerDocument
@@ -202,12 +228,14 @@ export function useWorkspaceScroll(location: ReturnType<typeof useLocation>, own
     return () => {
       cancelRestore()
 
+      if (focusRestoration?.current === focusState) { focusRestoration.current = null }
+
       for (const event of ['pointerdown', 'keydown', 'wheel', 'touchstart']) { document.removeEventListener(event, cancelRestore, true) }
       document.removeEventListener('focusin', cancelRestore, true)
       root.removeEventListener('scroll', save, true)
       root.removeEventListener('click', captureLink, true)
     }
-  }, [location.key, location.pathname, location.search, location.state, navigationType, owner])
+  }, [location.key, location.pathname, location.search, location.state, navigationType, owner, focusRestoration])
 
   return element
 }
@@ -219,7 +247,8 @@ export function OrganizationWorkspaceView({ adapter }: { adapter: OrganizationAd
   const location = useLocation()
   const { pathname } = location
   const owner = snapshot.connection?.ownerScope ?? snapshot.connection?.scope
-  const scrollRoot = useWorkspaceScroll(location, owner)
+  const focusRestoration = useRef<WorkspaceFocusRestoration | null>(null)
+  const scrollRoot = useWorkspaceScroll(location, owner, focusRestoration)
   const objectiveRoute = useMatch('/objectives/:objectiveId')
   const [filterState, setFilterState] = useState({ owner, value: 'all' })
   const [queryState, setQueryState] = useState({ owner, value: '' })
@@ -234,7 +263,7 @@ export function OrganizationWorkspaceView({ adapter }: { adapter: OrganizationAd
   const list = t.organizationSurfaces.objectives
   const titles: Record<string, string> = { '/objectives': t.organizationHome.objectives, '/activity': t.organizationHome.activity, '/requests': copy.needsYou, '/knowledge': list.knowledge }
 
-  return <main aria-label={list.workspace} className="eidolon eid-workspace" ref={scrollRoot}>
+  return <WorkspaceFocusRestoreContext.Provider value={focusRestoration}><main aria-label={list.workspace} className="eidolon eid-workspace" ref={scrollRoot}>
     <div className="eid-page">
       {adapter.mode === 'prototype' ? <div className="eid-demo-bar"><span>{copy.legacyDemo} · {copy.legacyNote}</span></div> : <RuntimeStatus adapter={adapter} snapshot={snapshot} warningsOnly />}
       {pathname === '/home' && <Home adapter={adapter} snapshot={snapshot} starterEntry={adapter.mode === 'runtime' && !snapshot.objectives.length && !snapshot.tasks.length && !snapshot.requests?.length ? <TeamOnboardingEntry adapter={adapter} key={snapshot.connection?.ownerScope ?? snapshot.connection?.scope} /> : undefined} />}
@@ -249,5 +278,5 @@ export function OrganizationWorkspaceView({ adapter }: { adapter: OrganizationAd
       {pathname === '/organization' && <Organization adapter={adapter.mode === 'runtime' ? adapter : undefined} key={snapshot.connection?.ownerScope ?? snapshot.connection?.scope} snapshot={snapshot} />}
       {adapter.mode === 'runtime' && pathname === '/organization' && <RuntimeSetup snapshot={snapshot} />}
     </div>
-  </main>
+  </main></WorkspaceFocusRestoreContext.Provider>
 }

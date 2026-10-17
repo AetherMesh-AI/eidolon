@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { SearchField } from '@/components/ui/search-field'
 import { useI18n } from '@/i18n/context'
 
-import { AgentContext } from './agent-context'
+import { AgentContextDisclosure } from './agent-context'
 import { AgentAvatar } from './avatar'
 import { OrganizationOwnerChat } from './runtime-owner-chat'
 import { OrganizationScenery } from './scenery'
@@ -146,9 +146,9 @@ export function Messages({
           <section aria-label={messages.linkedWork}>
             <h3>{messages.linkedWork}</h3>
             <p className="eid-note">{messages.linkedWorkNote}</p>
-            {objectives.length ? <ul>{objectives.map(objective => <li key={objective.id}><Link dir="auto" to={objectiveHref(objective.id, `${location.pathname}${location.search}`, scope)}>{objective.title}</Link></li>)}</ul> : <p>{messages.noLinkedWork}</p>}
+            {objectives.length ? <ul>{objectives.map(objective => <li key={objective.id}><Link data-workspace-origin={JSON.stringify(['member-work', scope, agent.id, agent.identityId ?? '', objective.id])} dir="auto" to={objectiveHref(objective.id, `${location.pathname}${location.search}`, scope)}>{objective.title}</Link></li>)}</ul> : <p>{messages.noLinkedWork}</p>}
           </section>
-          <details><summary>{messages.retainedContext}</summary><AgentContext agent={agent} snapshot={snapshot} /></details>
+          <AgentContextDisclosure agent={agent} snapshot={snapshot} summary={messages.retainedContext} />
         </section>}
       </ResponsiveMasterDetail>
     </div>

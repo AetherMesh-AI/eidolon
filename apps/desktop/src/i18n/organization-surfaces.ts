@@ -14,7 +14,7 @@ export const organizationSurfacesEn = {
     interrupted: "Organization updates interrupted",
     retry: "Retry connection",
     disconnectedNote: "Reconnect the current profile’s gateway to view and submit work. Running work may continue on the backend.",
-    interruptedNote: "Showing the last received state. Automatic recovery is limited; use Retry connection if updates do not resume."
+    interruptedNote: "Organization updates are unavailable. Automatic recovery is limited; use Retry connection if updates do not resume."
   },
   objectives: {
     noMatches: "No matching objectives",
@@ -85,7 +85,7 @@ export const organizationSurfacesJa = {
     interrupted: "組織の更新が中断されました",
     retry: "接続を再試行",
     disconnectedNote: "現在のプロファイルのゲートウェイに再接続して、作業の確認や依頼を行ってください。実行中の作業はバックエンドで継続している場合があります。",
-    interruptedNote: "最後に受信した状態を表示しています。自動復旧には上限があります。更新が再開しない場合は接続を再試行してください。"
+    interruptedNote: "組織の更新を取得できません。自動復旧には上限があります。更新が再開しない場合は接続を再試行してください。"
   },
   objectives: {
     noMatches: "一致する目標はありません",
@@ -156,7 +156,7 @@ export const organizationSurfacesZh = {
     interrupted: "组织更新已中断",
     retry: "重试连接",
     disconnectedNote: "重新连接当前配置档案的网关以查看和提交工作。正在执行的工作可能仍在后端继续。",
-    interruptedNote: "显示最后收到的状态。自动恢复次数有限；如果更新未恢复，请重试连接。"
+    interruptedNote: "组织更新暂不可用。自动恢复次数有限；如果更新未恢复，请重试连接。"
   },
   objectives: {
     noMatches: "没有匹配的目标",
@@ -227,7 +227,7 @@ export const organizationSurfacesZhHant = {
     interrupted: "組織更新已中斷",
     retry: "重試連線",
     disconnectedNote: "重新連線至目前設定檔的閘道以檢視和提交工作。執行中的工作可能仍在後端繼續。",
-    interruptedNote: "顯示最後收到的狀態。自動復原次數有限；如果更新未恢復，請重試連線。"
+    interruptedNote: "組織更新暫時無法取得。自動復原次數有限；如果更新未恢復，請重試連線。"
   },
   objectives: {
     noMatches: "沒有符合條件的目標",
@@ -298,7 +298,7 @@ export const organizationSurfacesAr = {
     interrupted: "توقفت تحديثات المؤسسة",
     retry: "إعادة محاولة الاتصال",
     disconnectedNote: "أعد الاتصال ببوابة ملف التعريف الحالي لعرض العمل وإرساله. قد يستمر العمل الجاري على الخادم.",
-    interruptedNote: "تُعرض آخر حالة مستلمة. الاسترداد التلقائي محدود؛ استخدم إعادة محاولة الاتصال إذا لم تستأنف التحديثات."
+    interruptedNote: "تحديثات المؤسسة غير متاحة. الاسترداد التلقائي محدود؛ استخدم إعادة محاولة الاتصال إذا لم تستأنف التحديثات."
   },
   objectives: {
     noMatches: "لا توجد أهداف مطابقة",
@@ -369,7 +369,7 @@ export const organizationSurfacesRu = {
     interrupted: "Обновления организации прерваны",
     retry: "Повторить подключение",
     disconnectedNote: "Подключитесь к шлюзу текущего профиля, чтобы просматривать и отправлять работу. Выполнение работы может продолжаться на сервере.",
-    interruptedNote: "Показано последнее полученное состояние. Автоматическое восстановление ограничено; повторите подключение, если обновления не возобновляются."
+    interruptedNote: "Обновления организации недоступны. Автоматическое восстановление ограничено; повторите подключение, если обновления не возобновляются."
   },
   objectives: {
     noMatches: "Нет подходящих целей",

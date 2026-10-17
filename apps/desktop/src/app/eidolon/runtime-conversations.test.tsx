@@ -247,3 +247,21 @@ it('filters exact participants and drops stale selections on scope, agent and th
   )
   expect(screen.queryByRole('complementary', { name: 'Agent details' })).toBeNull()
 })
+
+
+it('keeps selected agent details across same-owner reconnects but discards a previous owner URL', () => {
+  const value = snapshot()
+  value.connection = { ...value.connection!, ownerScope: 'owner-a' }
+  const tree = (next: OrganizationSnapshot) => <MemoryRouter><Organization snapshot={next} /></MemoryRouter>
+  const view = render(tree(value))
+  fireEvent.click(screen.getByRole('button', { name: 'Inspect Current writer' }))
+  const inspector = screen.getByRole('complementary', { name: 'Agent details' })
+  view.rerender(tree({ ...value, connection: { ...value.connection!, scope: 'new-socket', state: 'disconnected' } }))
+  expect(screen.getByRole('complementary', { name: 'Agent details' })).toBe(inspector)
+  view.rerender(tree({ ...value, connection: { ...value.connection!, scope: 'new-socket' } }))
+  expect(screen.getByRole('complementary', { name: 'Agent details' })).toBe(inspector)
+  view.rerender(tree({ ...value, connection: { ...value.connection!, ownerScope: 'owner-b' } }))
+  expect(screen.queryByRole('complementary', { name: 'Agent details' })).toBeNull()
+  view.rerender(tree(value))
+  expect(screen.queryByRole('complementary', { name: 'Agent details' })).toBeNull()
+})

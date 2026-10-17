@@ -645,7 +645,7 @@ export function RuntimeRequests({
       </>}
       {navigation.trail.map((request, index) => (
         <div hidden={index !== navigation.trail.length - 1} key={request.id}>
-          <Inspector kind="request" onClose={closeRequest} title={requestTypeLabel(request.type, copy)}>
+          <Inspector kind="request" onClose={closeRequest} origin={navigation.origins[index]} title={requestTypeLabel(request.type, copy)}>
             {index > 0 && (
               <Button onClick={navigation.back} size="sm" variant="secondary">
                 {t.common.back}

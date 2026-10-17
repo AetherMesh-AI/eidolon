@@ -1,3 +1,4 @@
+import { Tabs } from 'radix-ui'
 import { type ReactNode, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 
@@ -6,7 +7,7 @@ import { Loader } from '@/components/ui/loader'
 import { useI18n } from '@/i18n/context'
 
 import { Activity } from './activity'
-import { Inspector } from './inspector'
+import { captureInspectorOrigin, Inspector, type InspectorOrigin } from './inspector'
 import { MetadataSummary } from './objective-metadata'
 import { ObjectiveProgress } from './objective-progress'
 import { OwnerPolicyEntry, OwnerPolicySettingsLink } from './organization-owner-policy'
@@ -82,17 +83,44 @@ export function RuntimeStatus({
   )
 }
 
-export function RuntimeObjectiveDetail({ objective, adapter, snapshot, historyControls }: { objective: Objective; adapter: RuntimeOrganizationAdapter; snapshot: OrganizationSnapshot; historyControls?: ReactNode }) {
+type RuntimeObjectiveDetailProps = { objective: Objective; adapter: RuntimeOrganizationAdapter; snapshot: OrganizationSnapshot; historyControls?: ReactNode }
+const objectiveTabs = ['work', 'activity', 'artifacts', 'decisions'] as const
+type ObjectiveTab = typeof objectiveTabs[number]
+
+export function RuntimeObjectiveDetail(props: RuntimeObjectiveDetailProps) {
+  const { objective, snapshot } = props
+
+  return <ScopedRuntimeObjectiveDetail key={JSON.stringify([snapshot.connection?.ownerScope ?? snapshot.connection?.scope, objective.id])} {...props} />
+}
+
+function ScopedRuntimeObjectiveDetail({ objective, adapter, snapshot, historyControls }: RuntimeObjectiveDetailProps) {
   const { t, locale } = useI18n()
   const copy = t.organizationWork
   const [params] = useSearchParams()
   const returnTo = objectiveReturnTarget(params, snapshot.connection?.ownerScope ?? snapshot.connection?.scope)
-  const returnLabels: Record<string, string> = { '/home': t.organizationHome.home, '/work': t.organizationHome.work, '/messages': t.organizationHome.messages, '/requests': copy.needsYou, '/objectives': copy.objectives, '/artifacts': t.organizationHome.deliverables }
-  const [tab, setTab] = useState<'work' | 'activity' | 'artifacts' | 'decisions'>('work')
+  const returnLabels: Record<string, string> = { '/home': t.organizationHome.home, '/work': t.organizationHome.work, '/messages': t.organizationHome.messages, '/requests': copy.needsYou, '/objectives': copy.objectives, '/artifacts': t.organizationHome.deliverables, '/activity': t.organizationHome.activity, '/organization': t.organizationSurfaces.organization }
+  const scope = snapshot.connection?.scope
+  const [paneState, setPaneState] = useState<{ scope: typeof scope; tab: ObjectiveTab; visited: Set<ObjectiveTab> }>(() => ({ scope, tab: 'work', visited: new Set(['work']) }))
+  const tab = paneState.scope === scope ? paneState.tab : 'work'
+  const visitedTabs = paneState.scope === scope ? paneState.visited : new Set<ObjectiveTab>(['work'])
+
+  const selectTab = (value: string) => {
+    const next = value as ObjectiveTab
+    setPaneState({ scope, tab: next, visited: visitedTabs.has(next) ? visitedTabs : new Set([...visitedTabs, next]) })
+  }
+
   const [inspecting, setInspecting] = useState(false)
-  const [evidenceId, setEvidenceId] = useState<string | null>(null)
+  const [evidence, setEvidence] = useState<{ id: string; origin: InspectorOrigin | null } | null>(null)
+  const openEvidence = (id: string) => setEvidence({ id, origin: captureInspectorOrigin(globalThis.document.activeElement, { replaceInspector: true }) })
   const requestsRef = useRef<HTMLDivElement>(null)
   const workRef = useRef<HTMLDivElement>(null)
+
+  // Reconnect retires previews and panes without unmounting the owner's response draft.
+  if (paneState.scope !== scope) {
+    setPaneState({ scope, tab: 'work', visited: new Set(['work']) })
+    setInspecting(false)
+    setEvidence(null)
+  }
 
   const reveal = (element: HTMLDivElement | null) => {
     element?.scrollIntoView({ block: 'start' })
@@ -110,14 +138,14 @@ export function RuntimeObjectiveDetail({ objective, adapter, snapshot, historyCo
     <ObjectiveProgress controls={<>
       <RuntimeDispatch adapter={adapter} key={`dispatch:${snapshot.connection?.scope}:${snapshot.connection?.ownerScope}:${objective.id}`} objective={objective} snapshot={snapshot} />
       <RuntimePriority adapter={adapter} key={`${snapshot.connection?.scope}:${snapshot.connection?.ownerScope}:${objective.id}`} objective={objective} snapshot={snapshot} />
-    </>} objective={objective} onReviewRequests={() => reveal(requestsRef.current)} onReviewWork={() => { setTab('work'); reveal(workRef.current) }} snapshot={snapshot} />
+    </>} objective={objective} onReviewRequests={() => reveal(requestsRef.current)} onReviewWork={() => { selectTab('work'); reveal(workRef.current) }} snapshot={snapshot} />
     {inspecting && <Inspector kind="objective" onClose={() => setInspecting(false)} title={objective.title}><MetadataSummary objective={objective} /><RuntimeWorkPackages objective={objective} snapshot={snapshot} /><dl>
       <dt>{t.organizationSurfaces.objectives.status}</dt><dd><Status status={objective.status} /></dd>
       <dt>{t.organizationSurfaces.objectiveRecord.owner}</dt><dd dir="auto">{owner?.name || objective.ownerId || t.organizationHome.unassigned}</dd>
       <dt>{t.organizationHome.detail.tasksLabel}</dt><dd>{new Intl.NumberFormat(locale).format(tasks.length)}</dd>
       <dt>{t.organizationHome.detail.resultLabel}</dt><dd className="eid-result-text" dir="auto">{objective.result || t.organizationHome.detail.noReviewedResult}</dd>
     </dl><p>{t.organizationHome.detail.runtimeNote}</p></Inspector>}
-    {evidenceId && <RuntimeArtifact adapter={adapter} evidenceId={evidenceId} key={evidenceId} onClose={() => setEvidenceId(null)} snapshot={snapshot} title={t.organizationHome.detail.fullEvidence} />}
+    {evidence && <RuntimeArtifact adapter={adapter} evidenceId={evidence.id} key={evidence.id} onClose={() => setEvidence(null)} origin={evidence.origin} snapshot={snapshot} title={t.organizationHome.detail.fullEvidence} />}
     <div aria-label={t.organizationHome.detail.objectiveControls} className="eid-objective-controls" role="region">
     {objective.projects?.length ? <section aria-label={copy.objectiveProjects}>
       <h2>{copy.objectiveProjects}</h2>
@@ -130,13 +158,17 @@ export function RuntimeObjectiveDetail({ objective, adapter, snapshot, historyCo
     <RuntimeRequests adapter={adapter} objective={objective} snapshot={snapshot} />
     </div>
     <div aria-label={t.organizationHome.detail.workDetails} ref={workRef} role="region" tabIndex={-1}>
-    <div aria-label={t.organizationHome.detail.views} className="eid-tabs" role="tablist">{(['work', 'activity', 'artifacts', 'decisions'] as const).map(name => <button aria-selected={tab === name} key={name} onClick={() => setTab(name)} role="tab">{copy[name]}</button>)}</div>
-    <section aria-label={copy[tab]} role="tabpanel">
-      {tab === 'work' && <><RuntimeAcceptance objective={objective} onOpenEvidence={setEvidenceId} /><RuntimeOutcomeJudgment adapter={adapter} objective={objective} /><div className="eid-actions"><OwnerPolicyEntry target={{ kind: 'observation', objectiveId: objective.id }} /><OwnerPolicySettingsLink /></div><RuntimeWorkPackages objective={objective} snapshot={snapshot} /><WorkGraph objectiveId={objective.id} onOpenEvidence={setEvidenceId} snapshot={snapshot} /></>}
-      {tab === 'activity' && <Activity objectiveId={objective.id} snapshot={snapshot} />}
-      {tab === 'artifacts' && <Knowledge adapter={adapter} objectiveId={objective.id} snapshot={snapshot} />}
-      {tab === 'decisions' && <><p>{copy.acceptanceNote}</p>{snapshot.decisions?.filter(item => item.objectiveId === objective.id).map(item => <article key={item.id}><h2>{item.title}</h2><Status status={item.status} /><p>{item.summary}</p></article>)}</>}
-    </section>
+    <Tabs.Root activationMode="manual" dir={locale === 'ar' ? 'rtl' : 'ltr'} key={scope} onValueChange={selectTab} value={tab}>
+    <Tabs.List aria-label={t.organizationHome.detail.views} className="eid-tabs">{objectiveTabs.map(name => <Tabs.Trigger key={name} value={name}>{copy[name]}</Tabs.Trigger>)}</Tabs.List>
+    {objectiveTabs.map(name => <Tabs.Content forceMount hidden={tab !== name} inert={tab !== name} key={name} value={name}>
+      {visitedTabs.has(name) && <>
+      {name === 'work' && <><RuntimeAcceptance objective={objective} onOpenEvidence={openEvidence} /><RuntimeOutcomeJudgment adapter={adapter} objective={objective} /><div className="eid-actions"><OwnerPolicyEntry target={{ kind: 'observation', objectiveId: objective.id }} /><OwnerPolicySettingsLink /></div><RuntimeWorkPackages objective={objective} snapshot={snapshot} /><WorkGraph objectiveId={objective.id} onOpenEvidence={openEvidence} snapshot={snapshot} /></>}
+      {name === 'activity' && <Activity objectiveId={objective.id} snapshot={snapshot} />}
+      {name === 'artifacts' && <Knowledge adapter={adapter} objectiveId={objective.id} snapshot={snapshot} />}
+      {name === 'decisions' && <><p>{copy.acceptanceNote}</p>{snapshot.decisions?.filter(item => item.objectiveId === objective.id).map(item => <article key={item.id}><h2>{item.title}</h2><Status status={item.status} /><p>{item.summary}</p></article>)}</>}
+      </>}
+    </Tabs.Content>)}
+    </Tabs.Root>
     </div>
   </>
 }

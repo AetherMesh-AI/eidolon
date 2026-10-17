@@ -111,8 +111,12 @@ it('opens the parent assignment outside queue filters, preserves the response on
     target: { value: 'Board and technical leads.' }
   })
   const parent = details().getByRole('button', { name: 'Open parent request' })
+  fixture.view.container.scrollTop = 143
+  fixture.view.container.scrollLeft = 7
   parent.focus()
   fireEvent.click(parent)
+  fixture.view.container.scrollTop = 287
+  fixture.view.container.scrollLeft = 19
   expect(screen.getAllByRole('complementary', { name: 'Request details' })).toHaveLength(1)
   expect(details().getByText('Preserve the exact technical appendix.')).toBeTruthy()
   expect(details().queryByRole('textbox', { name: 'Response' })).toBeNull()
@@ -121,6 +125,8 @@ it('opens the parent assignment outside queue filters, preserves the response on
   expect(fixture.view.container.ownerDocument.activeElement).toBe(
     details().getByRole('button', { name: 'Open parent request' })
   )
+  expect(fixture.view.container.scrollTop).toBe(143)
+  expect(fixture.view.container.scrollLeft).toBe(7)
   fireEvent.click(details().getByRole('button', { name: 'Open parent request' }))
   fireEvent.click(details().getByRole('button', { name: 'Close request details' }))
   expect(screen.queryByRole('complementary', { name: 'Request details' })).toBeNull()
