@@ -14,12 +14,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          ref: 7cd7ff897811bef533509fd00f746d4df94b4221
+          ref: 70bcea133ab8b1061c81d5a82b70c69069aceb80
       - name: Verify exact reviewed source
         run: |
-          test "$(git rev-parse HEAD)" = "7cd7ff897811bef533509fd00f746d4df94b4221"
-          test "$(git rev-parse HEAD^{tree})" = "0b3a6572b530a993b65c270e040d327b8db48524"
-          printf '%s\n' '{"source":"7cd7ff897811bef533509fd00f746d4df94b4221","tree":"0b3a6572b530a993b65c270e040d327b8db48524"}' > organization-creation-source.json
+          test "$(git rev-parse HEAD)" = "70bcea133ab8b1061c81d5a82b70c69069aceb80"
+          test "$(git rev-parse HEAD^{tree})" = "6d32e90186e5cd54ae395545e58ab65e73fb0881"
+          printf '%s\n' '{"source":"70bcea133ab8b1061c81d5a82b70c69069aceb80","tree":"6d32e90186e5cd54ae395545e58ab65e73fb0881"}' > organization-creation-source.json
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
