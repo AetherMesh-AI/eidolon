@@ -7,7 +7,7 @@ import { Loader } from '@/components/ui/loader'
 import { useI18n } from '@/i18n/context'
 
 import { Activity } from './activity'
-import { Inspector } from './inspector'
+import { captureInspectorOrigin, Inspector, type InspectorOrigin } from './inspector'
 import { MetadataSummary } from './objective-metadata'
 import { ObjectiveProgress } from './objective-progress'
 import { OwnerPolicyEntry, OwnerPolicySettingsLink } from './organization-owner-policy'
@@ -109,7 +109,8 @@ function ScopedRuntimeObjectiveDetail({ objective, adapter, snapshot, historyCon
   }
 
   const [inspecting, setInspecting] = useState(false)
-  const [evidenceId, setEvidenceId] = useState<string | null>(null)
+  const [evidence, setEvidence] = useState<{ id: string; origin: InspectorOrigin | null } | null>(null)
+  const openEvidence = (id: string) => setEvidence({ id, origin: captureInspectorOrigin(globalThis.document.activeElement, { replaceInspector: true }) })
   const requestsRef = useRef<HTMLDivElement>(null)
   const workRef = useRef<HTMLDivElement>(null)
 
@@ -136,7 +137,7 @@ function ScopedRuntimeObjectiveDetail({ objective, adapter, snapshot, historyCon
       <dt>{t.organizationHome.detail.tasksLabel}</dt><dd>{new Intl.NumberFormat(locale).format(tasks.length)}</dd>
       <dt>{t.organizationHome.detail.resultLabel}</dt><dd className="eid-result-text" dir="auto">{objective.result || t.organizationHome.detail.noReviewedResult}</dd>
     </dl><p>{t.organizationHome.detail.runtimeNote}</p></Inspector>}
-    {evidenceId && <RuntimeArtifact adapter={adapter} evidenceId={evidenceId} key={evidenceId} onClose={() => setEvidenceId(null)} snapshot={snapshot} title={t.organizationHome.detail.fullEvidence} />}
+    {evidence && <RuntimeArtifact adapter={adapter} evidenceId={evidence.id} key={evidence.id} onClose={() => setEvidence(null)} origin={evidence.origin} snapshot={snapshot} title={t.organizationHome.detail.fullEvidence} />}
     <div aria-label={t.organizationHome.detail.objectiveControls} className="eid-objective-controls" role="region">
     {objective.projects?.length ? <section aria-label={copy.objectiveProjects}>
       <h2>{copy.objectiveProjects}</h2>
@@ -153,7 +154,7 @@ function ScopedRuntimeObjectiveDetail({ objective, adapter, snapshot, historyCon
     <Tabs.List aria-label={t.organizationHome.detail.views} className="eid-tabs">{objectiveTabs.map(name => <Tabs.Trigger key={name} value={name}>{copy[name]}</Tabs.Trigger>)}</Tabs.List>
     {objectiveTabs.map(name => <Tabs.Content forceMount hidden={tab !== name} inert={tab !== name} key={name} value={name}>
       {visitedTabs.has(name) && <>
-      {name === 'work' && <><RuntimeAcceptance objective={objective} onOpenEvidence={setEvidenceId} /><RuntimeOutcomeJudgment adapter={adapter} objective={objective} /><div className="eid-actions"><OwnerPolicyEntry target={{ kind: 'observation', objectiveId: objective.id }} /><OwnerPolicySettingsLink /></div><RuntimeWorkPackages objective={objective} snapshot={snapshot} /><WorkGraph objectiveId={objective.id} onOpenEvidence={setEvidenceId} snapshot={snapshot} /></>}
+      {name === 'work' && <><RuntimeAcceptance objective={objective} onOpenEvidence={openEvidence} /><RuntimeOutcomeJudgment adapter={adapter} objective={objective} /><div className="eid-actions"><OwnerPolicyEntry target={{ kind: 'observation', objectiveId: objective.id }} /><OwnerPolicySettingsLink /></div><RuntimeWorkPackages objective={objective} snapshot={snapshot} /><WorkGraph objectiveId={objective.id} onOpenEvidence={openEvidence} snapshot={snapshot} /></>}
       {name === 'activity' && <Activity objectiveId={objective.id} snapshot={snapshot} />}
       {name === 'artifacts' && <Knowledge adapter={adapter} objectiveId={objective.id} snapshot={snapshot} />}
       {name === 'decisions' && <><p>{copy.acceptanceNote}</p>{snapshot.decisions?.filter(item => item.objectiveId === objective.id).map(item => <article key={item.id}><h2>{item.title}</h2><Status status={item.status} /><p>{item.summary}</p></article>)}</>}

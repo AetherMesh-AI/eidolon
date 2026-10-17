@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Loader } from '@/components/ui/loader'
 import { useI18n } from '@/i18n/context'
 
-import { Inspector } from './inspector'
+import { Inspector, type InspectorOrigin } from './inspector'
 import { LocalizedTime } from './localized-time'
 import { RuntimeDeliverableHandoff, verifyDeliverable } from './runtime-deliverable-handoff'
 import { RuntimeEditProposal } from './runtime-edit-proposal'
@@ -16,10 +16,11 @@ interface RuntimeArtifactProps {
   snapshot: OrganizationSnapshot
   evidenceId: string
   title: string
+  origin?: InspectorOrigin | null
   onClose(): void
 }
 
-export function RuntimeArtifact({ adapter, snapshot, evidenceId, title, onClose }: RuntimeArtifactProps) {
+export function RuntimeArtifact({ adapter, snapshot, evidenceId, title, onClose, origin }: RuntimeArtifactProps) {
   const { t } = useI18n()
   const copy = t.organizationRuntime
   const [artifact, setArtifact] = useState<OrganizationArtifact | null>(null)
@@ -74,7 +75,7 @@ export function RuntimeArtifact({ adapter, snapshot, evidenceId, title, onClose 
   const busy = pending || loadedVersion !== evidenceVersion
 
   return (
-    <Inspector kind="artifact" onClose={onClose} title={title}>
+    <Inspector kind="artifact" onClose={onClose} origin={origin} title={title}>
       <Button aria-busy={busy} aria-disabled={busy} onClick={() => {
         if (busy) { return }
         setPending(true)

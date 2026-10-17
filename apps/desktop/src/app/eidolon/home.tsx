@@ -166,6 +166,8 @@ export function Home({ adapter, snapshot, starterEntry }: { adapter: Organizatio
 
       if (event.key === 'Tab') {cancelKeyboardReveal.current = queueHomeKeyboardReveal(event.currentTarget)}
     }} onToggle={event => {
+      // React propagates descendant details toggles through this handler too.
+      if (event.target !== event.currentTarget) { return }
       const nextHash = event.currentTarget.open ? '#eid-home-intake' : ''
 
       if (hash !== nextHash) {

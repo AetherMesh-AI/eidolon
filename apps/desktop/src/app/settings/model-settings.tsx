@@ -891,13 +891,15 @@ export function ModelSettings({ compactOverview = false, onMainModelChanged, sco
     {readFailed && skewRestart && <Button disabled={restartingBackend} onClick={() => void recycleStaleBackend()} size="sm" variant="textStrong">{restartingBackend ? m.restartingBackend : m.restartBackend}</Button>}
   </>
 
-  if (!mainModel && readFailed) { return <div>{readStatus}</div> }
+  if (!mainModel && readFailed) { return <div className="eid-settings-model-toolbar">{readStatus}</div> }
 
   return (
     <div className="grid gap-6">
-      {readStatus}
       <section>
-        <p className="mb-3 text-xs text-muted-foreground">{m.appliesDesc}</p>
+        <div className="eid-settings-model-toolbar">
+          <p className="text-xs text-muted-foreground">{m.appliesDesc}</p>
+          {readStatus}
+        </div>
         <div className="eid-settings-model-picker flex flex-wrap items-center gap-2">
           <Select onValueChange={setSelectedProvider} value={selectedProvider}>
             <SelectTrigger className={cn('min-w-40', CONTROL_TEXT)}>

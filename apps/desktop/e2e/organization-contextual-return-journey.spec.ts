@@ -30,7 +30,6 @@ test.afterEach(async () => {
 
   try {
     persistGalleryEvidence(fixture, 'contextual-return')
-    await test.info().attach('contextual-geometry-diagnostic', { contentType: 'application/json', body: JSON.stringify(await fixture.page.evaluate(() => (window as any).__contextGeometry ?? [])) })
 
     const boundary = await fixture.app.evaluate(() => ({
       reads: (globalThis as any).__eidolonReadFaults.evidence,
@@ -80,78 +79,8 @@ async function setup() {
     }
   }, artifactId)
   await current.page.reload()
-  await installGeometryDiagnostic(current)
 
   return current
-}
-
-/** Temporary read-only diagnosis: geometry reads may affect native timing.
- * Remove before the final uninstrumented proof. No focus/scroll/value writes. */
-async function installGeometryDiagnostic(current: GalleryFixture) {
-  await current.page.evaluate(() => {
-    const records: object[] = []
-
-    ;(window as any).__contextGeometry = records
-
-    const describe = (element: Element | null) => element ? {
-      tag: element.tagName, id: element.id, class: element.className,
-      text: element.textContent?.slice(0, 100), href: element.getAttribute('href')
-    } : null
-
-    const collect = (event: string, extra: object = {}) => {
-      if (records.length >= 900) {records.shift()}
-      const root = document.querySelector<HTMLElement>('.eid-workspace')
-      const rect = root?.getBoundingClientRect()
-      records.push({ event, at: performance.now(), route: location.hash, active: describe(document.activeElement),
-        top: root?.scrollTop, height: root?.scrollHeight, clientHeight: root?.clientHeight,
-        clip: rect && { top: rect.top, bottom: rect.bottom, clientTop: root!.clientTop },
-        panels: Array.from(root?.querySelectorAll<HTMLElement>('.eid-home-panel-body, .eid-message-context, .eid-responsive-detail-content') ?? []).map(panel => ({ label: panel.getAttribute('aria-label'), top: panel.scrollTop, height: panel.scrollHeight, clientHeight: panel.clientHeight })),
-        inspector: !!root?.querySelector('.eid-inspector'),
-        links: Array.from(root?.querySelectorAll<HTMLAnchorElement>('a[href*="objectives/research"]') ?? []).slice(0, 4).map(link => ({
-          ...describe(link), top: link.getBoundingClientRect().top, bottom: link.getBoundingClientRect().bottom
-        })), ...extra })
-    }
-
-    const log = (event: string, extra: () => object = () => ({})) => {
-      try { collect(event, extra()) } catch { /* Diagnostic reads must never affect native behavior. */ }
-    }
-
-    const focus = HTMLElement.prototype.focus
-
-    HTMLElement.prototype.focus = function (...args: Parameters<typeof focus>) {
-      log('focus-call-before', () => ({ target: describe(this), args }))
-      const result = Reflect.apply(focus, this, args)
-      log('focus-call-after', () => ({ target: describe(this) }))
-
-      return result
-    }
-
-    const descriptor = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop')!
-    Object.defineProperty(Element.prototype, 'scrollTop', { ...descriptor, set(this: Element, value: number) {
-      let relevant = false
-
-      try { relevant = this.matches('.eid-workspace, .eid-home-panel-body, .eid-message-context, .eid-responsive-detail-content') } catch { /* Preserve the native setter's own receiver behavior. */ }
-
-      if (relevant) {log('scroll-write-before', () => ({ target: describe(this), value }))}
-      descriptor.set!.call(this, value)
-
-      if (relevant) {log('scroll-write-after', () => ({ target: describe(this), value }))}
-    } })
-
-    for (const name of ['pointerdown', 'click', 'keydown', 'focusin', 'focusout', 'scroll']) {
-      document.addEventListener(name, event => {
-        if (name === 'scroll' && !(event.target instanceof Element && event.target.closest('.eid-workspace'))) {return}
-        log(name, () => ({ target: describe(event.target instanceof Element ? event.target : null), trusted: event.isTrusted, key: event instanceof KeyboardEvent ? event.key : undefined }))
-
-        if (name === 'click' || name === 'keydown') {requestAnimationFrame(() => log(`${name}-next-frame`))}
-      }, true)
-    }
-
-    new MutationObserver(changes => {
-      if (changes.some(change => change.target instanceof Element && change.target.closest('.eid-workspace'))) {log('workspace-mutation', () => ({ changes: changes.length }))}
-    }).observe(document.body, { subtree: true, childList: true })
-    log('diagnostic-installed')
-  })
 }
 
 async function tabTo(target: Locator) {

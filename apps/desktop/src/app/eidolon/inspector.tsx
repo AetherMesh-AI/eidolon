@@ -2,10 +2,37 @@ import { type ReactNode, useContext, useEffect, useRef } from 'react'
 
 import { type WorkspaceFocusRestore, WorkspaceFocusRestoreContext } from './workspace-navigation'
 
-const inspectorStack: { token: symbol; element: HTMLElement }[] = []
+const inspectorStack: { token: symbol; element: HTMLElement; origin: InspectorOrigin | null }[] = []
 
 function available(element: HTMLElement) {
   return element.isConnected && !element.closest('[hidden], [inert]')
+}
+
+/** Capture only at the explicit opening action, before preview insertion can anchor scroll. */
+export interface InspectorOrigin {
+  readonly opener: HTMLElement
+  readonly positions: readonly { readonly element: HTMLElement; readonly top: number; readonly left: number }[]
+}
+
+export function captureInspectorOrigin(opener: Element | null, options?: { replaceInspector: boolean }): InspectorOrigin | null {
+  if (options?.replaceInspector) {
+    const current = inspectorStack.findLast(entry => available(entry.element))
+
+    if (opener && current?.element.parentElement?.contains(opener)) {
+      // The replacement removes its immediate opener. Carry the current
+      // Inspector’s durable origin and original offsets through that handoff.
+      return current.origin && available(current.origin.opener) ? current.origin : null
+    }
+  }
+
+  if (!(opener instanceof HTMLElement) || !available(opener) || opener === opener.ownerDocument.body || opener === opener.ownerDocument.documentElement) { return null }
+  const positions: { element: HTMLElement; top: number; left: number }[] = []
+
+  for (let element = opener.parentElement; element; element = element.parentElement) {
+    positions.push({ element, top: element.scrollTop, left: element.scrollLeft })
+  }
+
+  return { opener, positions }
 }
 
 export type InspectorKind = 'agent' | 'objective' | 'task' | 'artifact' | 'terminal' | 'process' | 'event' | 'request'
@@ -18,6 +45,7 @@ export function Inspector({
   onClose,
   restorationScope,
   focusReturnTarget,
+  origin,
   children
 }: {
   kind: InspectorKind
@@ -26,10 +54,11 @@ export function Inspector({
   /** Let validated origin restoration retain an already focused detail link. */
   restorationScope?: WorkspaceFocusRestore
   focusReturnTarget?: () => HTMLElement | null
+  origin?: InspectorOrigin | null
   children: ReactNode
 }) {
   const pendingRestoration = useContext(WorkspaceFocusRestoreContext)
-  const initialRestoration = useRef({ pendingRestoration, restorationScope })
+  const initialRestoration = useRef({ pendingRestoration, restorationScope, origin })
   const returnTarget = useRef(focusReturnTarget)
   returnTarget.current = focusReturnTarget
   const identity = useRef(Symbol())
@@ -37,17 +66,14 @@ export function Inspector({
   const onCloseRef = useRef(onClose)
   onCloseRef.current = onClose
   useEffect(() => {
-    const { pendingRestoration, restorationScope } = initialRestoration.current
+    const { pendingRestoration, restorationScope, origin } = initialRestoration.current
     const token = identity.current
     const element = closeRef.current!
     const inspector = element.parentElement!
-    inspectorStack.push({ token, element })
-    const opener = available(element) && document.activeElement instanceof HTMLElement ? document.activeElement : null
-    const positions: { element: HTMLElement; top: number; left: number }[] = []
-
-    for (let element = opener?.parentElement; element; element = element.parentElement) {
-      positions.push({ element, top: element.scrollTop, left: element.scrollLeft })
-    }
+    const captured = available(element) ? origin ?? captureInspectorOrigin(document.activeElement) : null
+    inspectorStack.push({ token, element, origin: captured })
+    const opener = captured?.opener ?? null
+    const positions = captured?.positions ?? []
 
     const focused = document.activeElement
 
@@ -80,7 +106,7 @@ export function Inspector({
 
       // A restored inspector has no surviving original opener. Resolve only its
       // exact current row; never move focus away from a newer outside control.
-      if (returnTarget.current && focus !== document.body && !inspector.contains(focus)) { return }
+      if ((returnTarget.current || origin) && focus !== document.body && !inspector.contains(focus)) { return }
 
       const target = returnTarget.current ? returnTarget.current() :
         opener && available(opener) && !inspector.contains(opener) ? opener : null

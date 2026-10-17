@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { createRef } from 'react'
 import { expect, it, vi } from 'vitest'
 
-import { Inspector } from './inspector'
+import { captureInspectorOrigin, Inspector } from './inspector'
 import { type WorkspaceFocusRestoration, WorkspaceFocusRestoreContext } from './workspace-navigation'
 
 it('dismisses contextual details with Escape and restores the opener focus and nested owner scroll offsets', () => {
@@ -164,4 +164,30 @@ it.each([
   expect(globalThis.document.activeElement).toBe(matches ? opener : screen.getByRole('button', { name: 'Close event details' }))
   view.unmount()
   opener.remove()
+})
+
+it('restores explicitly captured nested offsets while rejecting a subsequently hidden opener', () => {
+  const outer = globalThis.document.createElement('section')
+  const inner = globalThis.document.createElement('section')
+  const opener = globalThis.document.createElement('button')
+  inner.append(opener)
+  outer.append(inner)
+  globalThis.document.body.append(outer)
+  outer.scrollTop = 2083
+  inner.scrollTop = 37
+  opener.focus()
+  const origin = captureInspectorOrigin(opener)
+  outer.scrollTop = 2291
+  inner.scrollTop = 70
+  const view = render(<Inspector kind="artifact" onClose={vi.fn()} origin={origin} title="Preview">Details</Inspector>)
+  view.unmount()
+  expect(outer.scrollTop).toBe(2083)
+  expect(inner.scrollTop).toBe(37)
+  const hidden = render(<Inspector kind="artifact" onClose={vi.fn()} origin={origin} title="Preview">Details</Inspector>)
+  inner.hidden = true
+  outer.scrollTop = 2291
+  hidden.unmount()
+  expect(outer.scrollTop).toBe(2291)
+  expect(globalThis.document.activeElement).not.toBe(opener)
+  outer.remove()
 })
