@@ -1,4 +1,5 @@
 import { type ConnectionSwitchOutcome } from '@/store/connections'
+import type { GatewayActivationVerifier } from '@/store/gateway'
 import { selectOrganizationConnection } from '@/store/organization-switch'
 
 import type { DirectorySource, OrganizationDirectory, OrganizationDirectoryEntry } from './organization-directory'
@@ -23,12 +24,14 @@ export function createOrganizationDirectoryActivation({
   directory,
   readSource,
   enabled = () => false,
-  select = selectOrganizationConnection
+  select = selectOrganizationConnection,
+  verifyDestination
 }: {
   directory: OrganizationDirectory
   readSource: () => DirectorySource
   enabled?: () => boolean
   select?: typeof selectOrganizationConnection
+  verifyDestination?: (entry: OrganizationDirectoryEntry) => GatewayActivationVerifier
 }) {
   let prepared: { entry: OrganizationDirectoryEntry; owner: string; scope: string } | null = null
   let busy = false
@@ -40,9 +43,10 @@ export function createOrganizationDirectoryActivation({
       }
 
       const entry = directory.getSnapshot().entries.find(item => item.key === key)
-      const current = readSource().current
+      const source = readSource()
+      const current = source.current
 
-      if (!entry || entry.state === 'unsupported' || !current?.scope.eligible) {
+      if (source.ready === false || !entry || entry.state === 'unsupported' || !current?.scope.eligible) {
         return false
       }
 
@@ -78,6 +82,10 @@ export function createOrganizationDirectoryActivation({
       const live = directory.getSnapshot().entries.find(item => item.key === entry.key)
       const registered = source.connections.find(item => item.id === entry.connectionId)
 
+      if (source.ready === false) {
+        return { status: 'unavailable' }
+      }
+
       if (
         !source.current?.scope.eligible ||
         source.current.scope.key !== scope ||
@@ -101,7 +109,9 @@ export function createOrganizationDirectoryActivation({
       prepared = null
 
       try {
-        const outcome = await select(entry.connectionId, entry.profile)
+        const outcome = verifyDestination
+          ? await select(entry.connectionId, entry.profile, verifyDestination(entry))
+          : await select(entry.connectionId, entry.profile)
 
         if (outcome.status === 'superseded') {
           return { status: 'superseded', outcome }

@@ -21,6 +21,7 @@ import {
   activeGatewayConnectionId,
   ensureGatewayForAgent,
   ensureGatewayForProfile,
+  type GatewayActivationVerifier,
   openGatewayForAgent,
   openGatewayForProfile,
   openSecondaryCount
@@ -639,6 +640,7 @@ export async function openGatewayAgent(connectionId: string, profile: string): P
 // another one steps aside without a destructive wipe. Not consulted on the
 // null-connectionId profile fallthrough.
 export interface EnsureGatewayAgentOptions {
+  verify?: GatewayActivationVerifier
   /** Continue the initiating connection pick rather than claiming a new intent. */
   intent?: SourceSwitchIntent
   beforeActivate?: () => boolean
@@ -679,12 +681,14 @@ function releaseWhenAborted(promise: Promise<void>, signal?: AbortSignal): Promi
 export async function ensureGatewayAgent(
   connectionId: null | string,
   profile: string,
-  { beforeActivate, onPublished, signal, intent = beginSourceSwitchIntent() }: EnsureGatewayAgentOptions = {}
+  { beforeActivate, onPublished, signal, verify, intent = beginSourceSwitchIntent() }: EnsureGatewayAgentOptions = {}
 ): Promise<void> {
   const target = normalizeProfileKey(profile)
   const connection = (connectionId ?? '').trim() || null
 
   if (!connection) {
+    if (verify) { throw new Error('Verified selection requires an explicit connection') }
+
     return ensureGatewayProfile(target, intent)
   }
 
@@ -704,6 +708,23 @@ export async function ensureGatewayAgent(
 
   const activationWork = (async () => {
     if (signal?.aborted) {
+      return
+    }
+
+    if (verify) {
+      await ensureGatewayForAgent(connection, target, {
+        signal, verify, beforeActivate, onPublished,
+        onVerifiedConnection: descriptor => {
+          // The gateway invokes this synchronously on the exact socket it proved.
+          // A separate Desktop lookup could return a different endpoint generation.
+          batch(() => {
+            setConnection(descriptor)
+            setComposerSelectionOwner(connection, target)
+            $activeGatewayProfile.set(target)
+          })
+        }
+      })
+
       return
     }
 

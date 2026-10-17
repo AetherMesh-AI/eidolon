@@ -1865,11 +1865,108 @@ export async function openGatewayForAgent(
   }
 }
 
+/** Organization selection proves the exact dedicated transport before resetting the old owner. */
+export type GatewayActivationVerifier = (gateway: HermesGateway, connection: HermesConnection, signal: AbortSignal) => Promise<void | (() => boolean)>
+
+interface GatewayAgentActivationOptions {
+  signal?: AbortSignal
+  onPublished?: () => void
+  verify?: GatewayActivationVerifier
+  beforeActivate?: () => boolean
+  onVerifiedConnection?: (connection: HermesConnection) => void
+}
+
+async function activateVerifiedAgent(connectionId: null | string, profile: string, options: GatewayAgentActivationOptions): Promise<boolean> {
+  const { verify, beforeActivate, signal, onPublished, onVerifiedConnection } = options
+  const scope = registryBackendScopeKey(connectionId, profile)
+
+  if (!verify || !connectionId || scope === normKey(profile) || scope === PRIMARY_SCOPE || !window.hermesDesktop?.getConnectionFor) {
+    throw new Error('Organization selection requires a dedicated local registry transport')
+  }
+
+  const controller = new AbortController()
+  const abort = () => controller.abort(signal?.reason ?? new Error('Organization selection cancelled'))
+  signal?.addEventListener('abort', abort, { once: true })
+
+  if (signal?.aborted) { abort() }
+  const activationEpoch = beginGatewayActivation()
+  const revision = oauthSourceRevision(connectionId)
+  const authority = captureOAuthRequestAuthority()
+  const entry = g.secondaries.get(scope) ?? createSecondary(profile, connectionId)
+  entry.retained = true
+  entry.wantOpen = true
+  entry.activationLeaseUntil = Date.now() + ACTIVATION_LEASE_MS
+
+  try {
+    if (controller.signal.aborted) { return false }
+
+    if (!isOpen(entry.gateway)) {
+      clearTimer(entry)
+      await withTimeout(openSecondary(entry, 'foreground'), RECONNECT_ATTEMPT_TIMEOUT_MS,
+        'Timed out connecting to the destination organization', error => controller.abort(error))
+    }
+
+    if (controller.signal.aborted || gatewayActivationEpoch() !== activationEpoch) { return false }
+    entry.activationLeaseUntil = Date.now() + ACTIVATION_LEASE_MS
+    const gateway = entry.gateway
+    const connection = entry.openedConnection
+    const generation = gatewayTransportGeneration(gateway)
+
+    const valid = () => {
+      assertOAuthSourceRevision(connectionId, revision)
+      assertOAuthConnectionAuthority(connection, authority)
+
+      return !controller.signal.aborted && gatewayActivationEpoch() === activationEpoch &&
+        g.secondaries.get(scope) === entry && entry.gateway === gateway && entry.wantOpen && isOpen(gateway) &&
+        entry.transportGeneration === generation && entry.connection === connection && entry.openedConnection === connection &&
+        !entry.connectPromise && !entry.pendingConnectionRedial && !entry.reconnecting &&
+        connection?.mode === 'local' && connection.registryScoped === true && connection.connectionId === connectionId &&
+        connection.profile === profile && !connection.sharedPrimary && !connection.sharedRemote
+    }
+
+    if (!valid() || !connection) { throw new Error('Organization transport could not be verified') }
+    let rejectAbort: () => void = () => undefined
+
+    const cancelled = new Promise<never>((_resolve, reject) => {
+      rejectAbort = () => reject(controller.signal.reason ?? new Error('Organization selection cancelled'))
+      controller.signal.addEventListener('abort', rejectAbort, { once: true })
+    })
+
+    let sourceCurrent: void | (() => boolean)
+
+    try {
+      sourceCurrent = await withTimeout(Promise.race([verify(gateway, connection, controller.signal), cancelled]), 15_000,
+        'Timed out verifying the destination organization', error => controller.abort(error))
+    } finally {
+      controller.signal.removeEventListener('abort', rejectAbort)
+    }
+
+    // Nothing may await between this proof fence, the old-view reset and activation.
+    // Reset listeners are synchronous, so they must not invalidate the proof either.
+    const commitCurrent = () => valid() && (!sourceCurrent || sourceCurrent())
+
+    if (!commitCurrent() || (beforeActivate && !beforeActivate()) || !commitCurrent() || !applyActive(scope, activationEpoch)) { return false }
+    publishActiveConnection(connection)
+    onVerifiedConnection?.(connection)
+    onPublished?.()
+
+    return true
+  } finally {
+    controller.abort()
+    signal?.removeEventListener('abort', abort)
+
+    // A cancelled dial can settle after a new owner has leased the same entry.
+    if (gatewayActivationEpoch() === activationEpoch) { entry.activationLeaseUntil = 0 }
+  }
+}
+
 export async function ensureGatewayForAgent(
   connectionId: null | string,
   profile: string,
-  { signal, onPublished }: { signal?: AbortSignal; onPublished?: () => void } = {}
+  options: GatewayAgentActivationOptions = {}
 ): Promise<boolean> {
+  if (options.verify) { return activateVerifiedAgent(connectionId, profile, options) }
+  const { signal, onPublished } = options
   const scope = registryBackendScopeKey(connectionId, profile)
 
   if (scope === normKey(profile) || isPrimaryRegistryRoute(connectionId, profile)) {

@@ -165,6 +165,8 @@ def _openai_http_client_kwargs(base_url: Optional[str], *, async_mode: bool = Fa
 
 
 def _create_openai_client(*, api_key: str, base_url: str, **kwargs: Any) -> Any:
+    from eidolon_cli.profile_isolation import block_auxiliary
+    block_auxiliary()
     if _aux_probe_active():
         # Availability probe: resolved credentials/base_url are the answer.
         return _AuxProbeClientStub(api_key=api_key, base_url=base_url)
@@ -4234,6 +4236,8 @@ def _effective_provider_for_client(client: Any, fallback: str) -> str:
 
 def _to_async_client(sync_client, model: str, is_vision: bool = False):
     """Sync client → async counterpart, preserving Codex routing (``is_vision`` adds the Copilot vision header)."""
+    from eidolon_cli.profile_isolation import block_auxiliary
+    block_auxiliary()
     from openai import AsyncOpenAI
     if isinstance(sync_client, _AuxProbeClientStub):
         return sync_client, model
@@ -4841,6 +4845,8 @@ def resolve_provider_client(
     (full auto-detection chain). ``model=None`` → provider's default aux model. ``raw_codex`` → bare OpenAI
     client for ``responses.stream()`` callers. ``api_mode`` forces "codex_responses"/"chat_completions"/
     "anthropic_messages" instead of auto-detect. Returns (client, resolved_model) or (None, None)."""
+    from eidolon_cli.profile_isolation import block_auxiliary
+    block_auxiliary()
     _validate_proxy_env_urls()
     # Keep the pre-alias name so a custom_providers entry named like a built-in alias
     # (e.g. "kimi" → "kimi-coding") is still reachable via the named-custom branch.
@@ -5092,6 +5098,8 @@ def resolve_vision_provider_client(
     Direct endpoint overrides beat provider selection; explicit providers may force
     experimental backends; auto mode only tries backends known to work.
     """
+    from eidolon_cli.profile_isolation import block_auxiliary
+    block_auxiliary()
     runtime = _normalize_main_runtime(main_runtime)
     requested, resolved_model, resolved_base_url, resolved_api_key, resolved_api_mode = _resolve_task_provider_model(
         "vision", provider, model, base_url, api_key
@@ -5401,6 +5409,8 @@ def _get_cached_client(
     previously occurred in long-running gateways where recycled worker threads created unbounded entries
     (#10200).
     """
+    from eidolon_cli.profile_isolation import block_auxiliary
+    block_auxiliary()
     current_loop = _current_event_loop() if async_mode else None
     runtime = _normalize_main_runtime(main_runtime)
     cache_key = _client_cache_key(
@@ -7004,6 +7014,8 @@ def call_llm(
     latency_info: Optional[Dict[str, int]] = None,
 ) -> Any:
     """Run an auxiliary LLM request, applying the configured task limit."""
+    from eidolon_cli.profile_isolation import block_auxiliary
+    block_auxiliary()
     queue_started_at = time.monotonic()
     semaphore = _acquire_sync_aux_semaphore(task)
     if semaphore is not None:
@@ -7302,6 +7314,8 @@ async def async_call_llm(
     route_info: Optional[Dict[str, str]] = None,
 ) -> Any:
     """Run an asynchronous auxiliary LLM request under the configured limit."""
+    from eidolon_cli.profile_isolation import block_auxiliary
+    block_auxiliary()
     semaphore = _acquire_async_aux_semaphore(task)
     if semaphore is not None:
         await semaphore.acquire()

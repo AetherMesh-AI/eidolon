@@ -440,6 +440,8 @@ def _nonempty_str(value: Any) -> bool:
 
 def _auth_file_path() -> Path:
     path = get_eidolon_home() / "auth.json"
+    from eidolon_cli.profile_isolation import require_owned_auth_path
+    require_owned_auth_path(path)
     # Seat belt: under pytest, refuse to touch the real user's auth store (tests that forgot to
     # monkeypatch HERMES_HOME or escaped the hermetic conftest). In production: one dict lookup.
     if (os.environ.get("PYTEST_CURRENT_TEST")
@@ -455,6 +457,9 @@ def _global_auth_file_path() -> Optional[Path]:
     """Global-root auth.json in profile mode; None when profile and global root are the same dir.
 
     Read-only fallback path, so no pytest seat belt here (it lives on ``_auth_file_path()``)."""
+    from eidolon_cli.profile_isolation import read_isolation
+    if read_isolation() is not None:
+        return None
     try:
         from eidolon_constants import get_default_hermes_root
         global_root = get_default_hermes_root()
@@ -608,6 +613,8 @@ def _auth_store_lock(
     reentrancy tracker and kernel lock. Lock ordering invariant: ``_auth_store_lock`` FIRST (outer),
     ``_nous_shared_store_lock`` SECOND (inner), else deadlock against a concurrent shared import."""
     auth_path = target_path if target_path is not None else _auth_file_path()
+    from eidolon_cli.profile_isolation import require_owned_auth_path
+    require_owned_auth_path(auth_path)
     with _file_lock(
         auth_path.with_suffix(".lock"), _auth_lock_holder_for(auth_path), timeout_seconds,
         "Timed out waiting for auth store lock"):
@@ -620,6 +627,8 @@ def _empty_auth_store() -> Dict[str, Any]:
 
 def _load_auth_store(auth_file: Optional[Path] = None) -> Dict[str, Any]:
     auth_file = auth_file or _auth_file_path()
+    from eidolon_cli.profile_isolation import require_owned_auth_path
+    require_owned_auth_path(auth_file)
     if not auth_file.exists():
         return _empty_auth_store()
     try:
@@ -706,6 +715,8 @@ def _save_auth_store(auth_store: Dict[str, Any], target_path: Optional[Path] = N
     """Atomically persist *auth_store* (0o600, parent tightened to 0o700) to the active store, or to
     an explicit *target_path* (e.g. the global-root write-through for rotating xAI OAuth grants)."""
     auth_file = target_path if target_path is not None else _auth_file_path()
+    from eidolon_cli.profile_isolation import require_owned_auth_path
+    require_owned_auth_path(auth_file)
     # Tighten parent dir to 0o700 so siblings can't traverse to creds. No-op on Windows (POSIX mode bits not
     # enforced); ignore failures. secure_parent_dir refuses to chmod /, top-level dirs, or the eidolon-agent
     # install tree (#25821, #93050).
@@ -1409,6 +1420,10 @@ def resolve_provider(
     1. 3. 4. 5. Provider-specific API keys (GLM, Kimi, MiniMax, ...) -> that provider 7. 8. Error (no
     provider configured) See #29285.
     """
+    from eidolon_cli.profile_isolation import isolated_runtime
+    isolated = isolated_runtime(requested=requested, explicit_api_key=explicit_api_key, explicit_base_url=explicit_base_url)
+    if isolated is not None:
+        return isolated['provider']
     normalized = (requested or "auto").strip().lower()
     normalized = _plugin_aliases().get(normalized, normalized)
 
@@ -1900,6 +1915,14 @@ def get_auth_status(provider_id: Optional[str] = None) -> Dict[str, Any]:
     Azure Foundry) first, then the registry ``auth_type`` so a whole provider class (e.g. every
     external-process ACP backend) gets a real status. Builders are looked up by NAME at call time so
     tests that patch ``eidolon_cli.auth.get_*_auth_status`` still apply."""
+    from eidolon_cli.profile_isolation import read_isolation, profile_secrets, PROVIDER, ENDPOINT
+    if read_isolation() is not None:
+        target = provider_id or PROVIDER
+        configured = target == PROVIDER and has_usable_secret(profile_secrets(get_eidolon_home()).get('OPENAI_API_KEY'))
+        return {'provider': target, 'configured': configured, 'logged_in': configured,
+                'base_url': ENDPOINT if target == PROVIDER else '',
+                'key_source': 'profile-local-env' if configured else '',
+                'isolation_supported': target == PROVIDER}
     target = (provider_id or get_active_provider() or "").strip().lower()
     if not target:
         return {"logged_in": False}
@@ -2006,6 +2029,10 @@ _API_KEY_BASE_URL_RESOLVERS: Dict[str, Callable[[str, str, str], str]] = {
 
 def resolve_api_key_provider_credentials(provider_id: str) -> Dict[str, Any]:
     """Resolve API key and base URL for an API-key provider."""
+    from eidolon_cli.profile_isolation import isolated_runtime
+    isolated = isolated_runtime(requested=provider_id)
+    if isolated is not None:
+        return isolated
     pconfig = PROVIDER_REGISTRY.get(provider_id)
     if not pconfig or pconfig.auth_type != "api_key":
         raise AuthError(

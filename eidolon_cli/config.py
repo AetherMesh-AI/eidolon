@@ -1769,6 +1769,9 @@ def require_readable_config_before_write(config_path: Optional[Path] = None) -> 
     wipe user overrides: an unreadable file (permissions / broken mount) and an unparseable or
     non-mapping root — bare-``except`` loaders treat both as ``{}``, so a subsequent write would
     replace the recoverable file with only the caller's partial dict. Fails closed."""
+    from eidolon_cli.profile_isolation import read_isolation, local_path
+    if read_isolation() is not None:
+        local_path(config_path or get_config_path())
     if config_path is None:
         config_path = get_config_path()
     try:
@@ -2113,6 +2116,9 @@ def save_config(
     raw config before normalisation), so config.yaml is never contaminated with defaults that
     would hide future default changes. ``merge_existing`` deep-merges the on-disk raw config
     under *config* so partial callers cannot drop sections they omitted."""
+    from eidolon_cli.profile_isolation import read_isolation, local_path
+    if read_isolation() is not None:
+        local_path(get_config_path())
     with _CONFIG_LOCK:
         if is_managed():
             managed_error("save configuration")
@@ -2155,6 +2161,9 @@ _env_cache: Optional[Tuple[Tuple[str, Optional[float], Optional[int]], Dict[str,
 def load_env() -> Dict[str, str]:
     """Load ~/.eidolon/.env as a dict (memoised; ``get_env_value()`` runs hundreds of times per
     interactive menu render). Each assignment's value is opaque data for boundary discovery."""
+    from eidolon_cli.profile_isolation import read_isolation, local_path
+    if read_isolation() is not None:
+        local_path(get_env_path())
     global _env_cache
     env_path = get_env_path()
 
@@ -2318,6 +2327,9 @@ def _publish_env_value(key: str, value: Optional[str]) -> None:
     profile-home override), but the in-process mirror historically went straight to ``os.environ``. See
     #77490, #88441.
     """
+    from eidolon_cli.profile_isolation import read_isolation
+    if read_isolation() is not None:
+        return  # Strict profiles are read from their own file; never publish to sibling processes.
     try:
         from agent.secret_scope import current_secret_scope, is_multiplex_active
 
@@ -2357,6 +2369,11 @@ def _managed_source(filename: str):
 def save_env_value(key: str, value: str):
     """Save or update a value in ~/.eidolon/.env (also matching ``export KEY=`` lines, so a save
     never appends a second line that a later delete would resurrect)."""
+    from eidolon_cli.profile_isolation import read_isolation, local_path, require_owned_auth_path
+    if read_isolation() is not None:
+        local_path(get_env_path())
+        local_path(get_config_path())
+        require_owned_auth_path(get_env_path().parent / 'auth.json')
     if _env_write_blocked(key, "set"):
         return
     validate_env_var_name_for_write(key)
@@ -2392,6 +2409,11 @@ def custom_endpoint_key_env(identity: str) -> str:
 
 def remove_env_value(key: str) -> bool:
     """Remove a key from ~/.eidolon/.env and os.environ; True if it was found and removed."""
+    from eidolon_cli.profile_isolation import read_isolation, local_path, require_owned_auth_path
+    if read_isolation() is not None:
+        local_path(get_env_path())
+        local_path(get_config_path())
+        require_owned_auth_path(get_env_path().parent / 'auth.json')
     if _env_write_blocked(key, "remove"):
         return False
     if not _ENV_VAR_NAME_RE.match(key):
@@ -2450,6 +2472,10 @@ def reload_env() -> int:
     """Re-read ~/.eidolon/.env into os.environ; returns count of vars changed.
     Removes deleted vars only when known to Eidolon (OPTIONAL_ENV_VARS and _EXTRA_ENV_KEYS) so
     unrelated environment is never clobbered."""
+    from eidolon_cli.profile_isolation import read_isolation
+    if read_isolation() is not None:
+        invalidate_env_cache()
+        return 0
     env_vars = load_env()
     count = 0
     for key, value in env_vars.items():
@@ -2475,7 +2501,10 @@ def _scoped_environ_get(key: str) -> Optional[str]:
         return _get_secret(key)
     except UnscopedSecretError:
         raise
-    except Exception:
+    except Exception as exc:
+        from eidolon_cli.profile_isolation import ProfileIsolationError
+        if isinstance(exc, ProfileIsolationError):
+            raise
         return os.environ.get(key)
 
 

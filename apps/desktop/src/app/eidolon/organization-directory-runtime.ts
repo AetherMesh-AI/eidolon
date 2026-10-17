@@ -28,6 +28,7 @@ export function createRuntimeOrganizationDirectory() {
       .map(item => ({ id: item.id, label: item.label, endpoint: item.kind === 'remote' ? (item.url ?? '') : null }))
 
     return {
+      ready: Boolean(registry),
       connections,
       current: connection?.connectionId
         ? {
@@ -39,7 +40,12 @@ export function createRuntimeOrganizationDirectory() {
     }
   }
 
-  const directory = createOrganizationDirectory(readSource, subscribeOrganizationDirectorySource)
+  const directory = createOrganizationDirectory(readSource, subscribeOrganizationDirectorySource, {
+    storage: {
+      getItem: key => localStorage.getItem(key),
+      setItem: (key, value) => localStorage.setItem(key, value)
+    }
+  })
 
   return { directory, readSource }
 }

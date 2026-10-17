@@ -1203,6 +1203,9 @@ class PluginManager(PluginLoaderMixin, PluginDispatchMixin, PluginLedgerMixin):
     def discover_and_load(self, force: bool = False) -> None:
         """Scan all plugin sources and load each plugin found; ``force`` unloads first so config
         changes / new bundled backends become visible in long-lived sessions."""
+        from eidolon_cli.profile_isolation import isolate_plugin_manager
+        if isolate_plugin_manager(self):
+            return
         with self._discovery_lock, _plugin_home_scope(self.home_path):
             if self._discovered and not force:
                 return
@@ -1512,17 +1515,21 @@ def get_plugin_manager() -> PluginManager:
     """Return the plugin manager for the active Eidolon profile/home (cached per resolved home; a
     profile switch gets its own manager and plugin submodules)."""
     global _plugin_manager
+    from eidolon_cli.profile_isolation import read_isolation, isolate_plugin_manager
+    isolated = read_isolation() is not None
     current_home = _plugin_home_key()
     with _plugin_managers_lock:
         # Tests/embedders monkeypatch ``_plugin_manager`` directly: adopt a single-slot manager the
         # keyed cache doesn't know about at all.
-        if _plugin_manager is not None and _plugin_manager not in _plugin_managers_by_home.values():
+        if not isolated and _plugin_manager is not None and _plugin_manager not in _plugin_managers_by_home.values():
             _plugin_managers_by_home[current_home] = _plugin_manager
             return _plugin_manager
         manager = _plugin_managers_by_home.get(current_home)
         if manager is None:
             manager = PluginManager(scope_key=hermes_home_key(current_home))
             _plugin_managers_by_home[current_home] = manager
+        if isolated:
+            isolate_plugin_manager(manager)
         _plugin_manager = manager
         return manager
 

@@ -86,6 +86,19 @@ afterEach(() => {
   $ownerChatRenewals.set({})
 })
 
+it('never activates remembered routes while the connection registry is still loading', async () => {
+  const h = await setup()
+  h.source.ready = false
+  expect(h.activation.prepare(h.key)).toBe(false)
+  h.source.ready = true
+  expect(h.activation.prepare(h.key)).toBe(true)
+  h.source.ready = false
+  expect(await h.activation.confirm()).toEqual({ status: 'unavailable' })
+  expect(h.select).not.toHaveBeenCalled()
+  expect(h.request).not.toHaveBeenCalled()
+  h.directory.dispose()
+})
+
 it('has a closed default release gate even after explicit preparation', async () => {
   const h = await setup()
   const closed = createOrganizationDirectoryActivation(h.args)
