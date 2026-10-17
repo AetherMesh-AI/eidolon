@@ -70,11 +70,11 @@ it('rejects older runtimes without issuing an RPC', async () => {
 })
 
 it.each([
-  [], [null], [{ field: 'other', before: null, after: configuration }],
-  [{ field: 'setup_budget', before: {}, after: configuration }],
-  [{ field: 'setup_budget', before: null, after: { ...configuration, improveCallLimit: 3 } }],
-  [{ field: 'setup_budget', before: null, after: configuration, extra: true }]
-])('rejects malformed or contradictory preview changes %#', changes => {
+  { changes: [] }, { changes: [null] }, { changes: [{ field: 'other', before: null, after: configuration }] },
+  { changes: [{ field: 'setup_budget', before: {}, after: configuration }] },
+  { changes: [{ field: 'setup_budget', before: null, after: { ...configuration, improveCallLimit: 3 } }] },
+  { changes: [{ field: 'setup_budget', before: null, after: configuration, extra: true }] }
+])('rejects malformed or contradictory preview changes %#', ({ changes }) => {
   expect(() => validateSetupBudgetPreview({ ...preview, changes }, state, configuration)).toThrow('invalid_setup_budget')
 })
 it('requires active configuration, budget view and durable receipt to agree', () => {
