@@ -121,6 +121,40 @@ it('announces catalog loading and exposes a rejected load without showing Apply 
   expect(screen.getByRole('button', { name: 'Refresh' })).toBeTruthy()
 })
 
+it.each([false, true])('keeps read recovery beside the model explanation without replacing draft controls (overview: %s)', async compactOverview => {
+  await renderModelSettings(undefined, compactOverview)
+  const model = (await screen.findAllByRole('combobox'))[1]
+  const picker = model.closest('.eid-settings-model-picker')!
+  const description = screen.getByText(/Applies to new sessions/)
+  const refresh = screen.getByRole('button', { name: 'Refresh' })
+  const status = refresh.closest<HTMLElement>('[data-settings-read-state]')!
+
+  expect(status.parentElement).toBe(description.parentElement)
+  expect(status.parentElement!.nextElementSibling).toBe(picker)
+  expect(status.closest('section')).toBe(picker.closest('section'))
+  fireEvent.click(model)
+  fireEvent.click(await screen.findByRole('option', { name: 'hermes-4-mini' }))
+  let rejectRefresh!: (reason: Error) => void
+  getGlobalModelOptions.mockReturnValueOnce(new Promise((_, reject) => { rejectRefresh = reject }))
+  fireEvent.click(refresh)
+  expect(status.getAttribute('data-settings-read-state')).toBe('refreshing')
+  expect(refresh).toHaveProperty('disabled', true)
+  await act(async () => rejectRefresh(new Error('synthetic-private-error-detail')))
+  expect(status.getAttribute('data-settings-read-state')).toBe('stale')
+  expect(within(status).getByRole('alert').textContent).toContain('Could not load models')
+  expect(status.textContent).not.toContain('synthetic-private-error-detail')
+  expect(screen.getByRole('button', { name: 'Refresh' })).toBe(refresh)
+  expect(screen.getAllByRole('combobox')[1]).toBe(model)
+  expect(model.textContent).toContain('hermes-4-mini')
+  fireEvent.click(refresh)
+  await waitFor(() => expect(status.getAttribute('data-settings-read-state')).toBe('ready'))
+  expect(status.parentElement).toBe(description.parentElement)
+  expect(screen.getAllByRole('combobox')[1]).toBe(model)
+  expect(model.textContent).toContain('hermes-4-mini')
+
+  for (const write of [setModelAssignment, saveHermesConfig, saveMoaModels, setEnvVar]) { expect(write).not.toHaveBeenCalled() }
+})
+
 describe('ModelSettings profile scope', () => {
   // #90549: the API helpers treat `null` as "deliberately target the
   // primary/default profile". A page following the active profile must pass
