@@ -444,7 +444,26 @@ async function captureDialogKeyboard(
           }
         }
 
+        const shell = element.closest<HTMLElement>('[data-slot="dialog-content"]')!
+        const shellStyle = getComputedStyle(shell)
+        const shellRect = shell.getBoundingClientRect()
+
         return {
+          shell: {
+            transitionProperty: shellStyle.transitionProperty,
+            transitionDuration: shellStyle.transitionDuration,
+            animationName: shellStyle.animationName,
+            animationDuration: shellStyle.animationDuration,
+            rect: { left: shellRect.left, top: shellRect.top, right: shellRect.right, bottom: shellRect.bottom },
+            transitions: shell
+              .getAnimations()
+              .filter(animation => animation instanceof CSSTransition)
+              .map(animation => ({
+                property: (animation as CSSTransition).transitionProperty,
+                state: animation.playState
+              }))
+          },
+          viewport: { width: innerWidth, height: innerHeight },
           ring,
           clipping,
           width: parseFloat(style.outlineWidth),
@@ -461,6 +480,9 @@ async function captureDialogKeyboard(
       expect(immediate.visible).toBe(true)
       expect(immediate.width).toBe(3)
       expect(immediate.offset).toBe(3)
+      expect(immediate.shell.transitionProperty, 'viewport resizing must not interpolate dialog geometry').toBe(
+        'color, background-color, border-color, box-shadow, opacity'
+      )
       const focus = await verifyKeyboardFocus(fixture.page, target, `${prefix}-${name}-${width}-${percent}`)
       await assertDraft()
 
