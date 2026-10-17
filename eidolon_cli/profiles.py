@@ -26,8 +26,12 @@ from eidolon_constants import clear_named_profile_deleted, mark_named_profile_de
 logger = logging.getLogger(__name__)
 
 # Live setup grant envelopes and activation handles are machine/profile-bound, never
-# portable. Budget and usage receipts elsewhere remain inert, exportable audit data.
+# portable. Installation identity and pending attempts must not move to another host
+# either. Budget and usage receipts elsewhere remain inert, exportable audit data.
 _SETUP_SUBSCRIPTION_PRIVATE_ROOT = ".setup-subscription-private"
+_SETUP_SUBSCRIPTION_RESERVED_ROOTS = frozenset({
+    _SETUP_SUBSCRIPTION_PRIVATE_ROOT, ".setup-subscription-installation",
+})
 
 
 def _is_setup_subscription_private_path(path: str | Path) -> bool:
@@ -37,7 +41,7 @@ def _is_setup_subscription_private_path(path: str | Path) -> bool:
     Match at any depth: backups can wrap multiple profiles or external directories.
     """
     return any(
-        part.split(":", 1)[0].rstrip(" .").casefold() == _SETUP_SUBSCRIPTION_PRIVATE_ROOT
+        part.split(":", 1)[0].rstrip(" .").casefold() in _SETUP_SUBSCRIPTION_RESERVED_ROOTS
         for part in str(path).replace("\\", "/").split("/")
     )
 
@@ -809,9 +813,11 @@ def _clone_file(source_dir: Path, profile_dir: Path, relpath: str) -> None:
     """Copy one profile-relative file if it exists. ``.env`` is tightened to owner-only:
     ``copy2`` preserves source mode bits, so a loose source (umask 0o644) would leak."""
     src = source_dir / relpath
-    if not src.exists():
+    if _setup_subscription_copy_excluded(src) or not src.exists():
         return
     dst = profile_dir / relpath
+    if _setup_subscription_copy_excluded(dst):
+        return
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dst)
     if relpath == ".env":
@@ -851,8 +857,14 @@ def _bootstrap_profile_dir(profile_dir: Path, source_dir: Optional[Path]) -> Non
     for relpath in _CLONE_CONFIG_FILES:
         _clone_file(source_dir, profile_dir, relpath)
     source_skills = source_dir / "skills"
-    if source_skills.is_dir():
-        shutil.copytree(source_skills, profile_dir / "skills", symlinks=True, dirs_exist_ok=True)
+    if not _setup_subscription_copy_excluded(source_skills) and source_skills.is_dir():
+        shutil.copytree(
+            source_skills, profile_dir / "skills", symlinks=True, dirs_exist_ok=True,
+            ignore=lambda directory, names: [
+                name for name in names
+                if _setup_subscription_copy_excluded(Path(directory) / name)
+            ],
+        )
     for relpath in _CLONE_SUBDIR_FILES:
         _clone_file(source_dir, profile_dir, relpath)
 

@@ -780,6 +780,425 @@ def test_disconnect_publication_fault_never_cleans_before_confirmed_tombstone(sa
     assert vault.values == {}
 
 
+GRANT_SCOPES = ('chatgpt.tokens.use.direct', 'openid', 'resource.invoke')
+
+
+def grant_fields(**changes):
+    values = dict(access_token='synthetic-access-only', refresh_token='synthetic-refresh-private',
+                  id_token='synthetic-id-private', expires_at=2_000_000_000,
+                  granted_scopes=GRANT_SCOPES, auth_attempt_id='synthetic-auth-attempt', expected_revision=0)
+    values.update(changes)
+    return values
+
+
+def connect_grant(sample, **changes):
+    store, binding, _ = sample
+    store._clock = lambda: 1_900_000_000
+    return store.connect_grant(binding, **grant_fields(**changes))
+
+
+def new_lease(sample, **changes):
+    store, binding, _ = sample
+    values = dict(owner_generation=object(), owner_guard=lambda: True, cancel=threading.Event())
+    values.update(changes)
+    return store.lease_access_token(binding, 1, **values)
+
+
+def test_typed_grant_requires_dedicated_handoff_and_never_writes_tokens_to_disk(sample):
+    store, binding, vault = sample
+    assert connect_grant(sample) == 1
+    for path in store.directory.iterdir():
+        data = path.read_bytes()
+        assert all(value.encode() not in data for value in (
+            'synthetic-access-only', 'synthetic-refresh-private', 'synthetic-id-private'))
+    calls = []
+    for operation in (store.consume, store.refresh):
+        with pytest.raises(StoreError, match='typed_grant_requires_handoff'):
+            operation(binding, 1, lambda value: calls.append(value))
+    assert calls == []
+    assert store.status()['state'] == 'active'
+    assert len(vault.values) == 1
+
+
+def test_typed_grant_cannot_be_injected_through_legacy_connect_or_refresh(sample):
+    store, binding, _ = sample
+    with pytest.raises(StoreError, match='typed_grant_requires_handoff'):
+        store.connect(binding, module._GRANT_PREFIX + b'{}', expected_revision=0)
+    connect(sample)
+    with pytest.raises(StoreError, match='typed_grant_requires_handoff'):
+        store.refresh(binding, 1, lambda value: module._GRANT_PREFIX + b'{}')
+    assert store.status()['state'] == 'refreshing'
+
+
+def test_access_only_lease_runs_outside_lock_once_and_clears_owned_buffer(sample):
+    store, _, _ = sample
+    connect_grant(sample)
+    lease = new_lease(sample)
+    def request(token, cancellation):
+        assert token == 'synthetic-access-only'
+        assert store.status()['state'] == 'active'  # Would fail recursion if locked.
+        assert cancellation.is_set() is False
+        assert not hasattr(cancellation, 'refresh_token')
+        assert not hasattr(cancellation, 'id_token')
+        return {'models': ['synthetic-model']}
+    assert lease.run(request) == {'models': ['synthetic-model']}
+    assert lease._token == bytearray()
+    assert lease.is_set() is True
+    with pytest.raises(StoreError, match='lease_used'):
+        lease.run(lambda *_: pytest.fail('single-use capability'))
+
+
+def test_lease_is_opaque_and_cannot_be_serialized(sample):
+    import pickle
+    connect_grant(sample)
+    lease = new_lease(sample)
+    assert repr(lease) == '<TokenLease server-private>'
+    assert all(value not in repr(lease) for value in ('synthetic-access-only', 'synthetic-refresh-private', 'synthetic-id-private'))
+    with pytest.raises(TypeError, match='cannot be serialized'):
+        pickle.dumps(lease)
+    lease.close()
+
+
+@pytest.mark.parametrize('change', ['owner', 'cancel', 'expiry', 'disconnect'])
+def test_lease_pre_admission_fences_prevent_request(sample, change):
+    store, _, _ = sample
+    connect_grant(sample)
+    generation = object()
+    current = [generation]
+    cancel = threading.Event()
+    lease = new_lease(sample, owner_generation=generation,
+                      owner_guard=lambda: current[0] is generation, cancel=cancel)
+    if change == 'owner':
+        current[0] = object()
+    elif change == 'cancel':
+        cancel.set()
+    elif change == 'expiry':
+        store._clock = lambda: 2_000_000_000
+    else:
+        SubscriptionStore(store.profile, backend=sample[2]).disconnect(expected_revision=1)
+    with pytest.raises(StoreError):
+        lease.run(lambda *_: pytest.fail('preflight must prevent request'))
+    assert lease._token == bytearray()
+    with pytest.raises(StoreError, match='lease_used'):
+        lease.run(lambda *_: pytest.fail('failed admission is consumed'))
+
+
+@pytest.mark.parametrize('change', ['owner', 'cancel', 'expiry', 'disconnect', 'refreshing'])
+def test_lease_late_reply_is_rejected_after_retirement(sample, change):
+    store, _, _ = sample
+    connect_grant(sample)
+    generation, cancel = object(), threading.Event()
+    current = [generation]
+    lease = new_lease(sample, owner_generation=generation,
+                      owner_guard=lambda: current[0] is generation, cancel=cancel)
+    requests = []
+    def request(token, cancellation):
+        requests.append(1)
+        if change == 'owner':
+            current[0] = object()
+        elif change == 'cancel':
+            cancel.set()
+        elif change == 'expiry':
+            store._clock = lambda: 2_000_000_000
+        elif change == 'disconnect':
+            SubscriptionStore(store.profile, backend=sample[2]).disconnect(expected_revision=1)
+        else:
+            # Simulate a durable refresh fence from a future coordinator/process.
+            pending = dict(state(store), phase='refreshing')
+            store._write('current.json', module._json(pending), replace=True)
+        assert cancellation.is_set()
+        return {'models': ['late-result-must-not-escape']}
+    with pytest.raises(StoreError):
+        lease.run(request)
+    assert requests == [1]
+    assert lease._token == bytearray()
+
+
+def test_inflight_request_does_not_block_disconnect_and_late_result_is_discarded(sample):
+    store, _, vault = sample
+    connect_grant(sample)
+    lease = new_lease(sample)
+    started, release, disconnected = threading.Event(), threading.Event(), threading.Event()
+    errors, results, removals = [], [], []
+    def request(token, cancellation):
+        started.set()
+        assert release.wait(10)
+        assert cancellation.is_set()
+        return 'late'
+    def run():
+        try:
+            results.append(lease.run(request))
+        except StoreError as error:
+            errors.append(error.reason)
+    def remove():
+        try:
+            removals.append(SubscriptionStore(store.profile, backend=vault).disconnect(expected_revision=1))
+        finally:
+            disconnected.set()
+    worker = threading.Thread(target=run)
+    remover = threading.Thread(target=remove)
+    worker.start()
+    try:
+        assert started.wait(5)
+        remover.start()
+        # Request remains deliberately blocked. Disconnect must finish first,
+        # rather than passing only because the request eventually times out.
+        assert disconnected.wait(5)
+        assert removals[0]['state'] == 'disconnected'
+    finally:
+        release.set()
+        worker.join(5)
+        if remover.ident is not None:
+            remover.join(5)
+    assert not worker.is_alive() and not remover.is_alive()
+    assert results == [] and len(errors) == 1
+
+
+def test_lease_callback_errors_remain_secret_free(sample):
+    import traceback
+    connect_grant(sample)
+    lease = new_lease(sample)
+    def request(token, cancellation):
+        raise StoreError(token)
+    with pytest.raises(StoreError) as captured:
+        lease.run(request)
+    exposed = str(captured.value) + repr(captured.value) + ''.join(traceback.format_exception(captured.value))
+    assert 'synthetic-access-only' not in exposed
+    assert lease._token == bytearray()
+
+
+@pytest.mark.parametrize('fields', [
+    {'access_token': ''}, {'refresh_token': ''}, {'id_token': ''},
+    {'access_token': 'bad token'}, {'expires_at': True}, {'expires_at': float('nan')},
+    {'granted_scopes': ('openid', 'openid')}, {'auth_attempt_id': 'has spaces'},
+])
+def test_invalid_typed_grants_fail_before_native_put(sample, fields):
+    store, binding, vault = sample
+    with pytest.raises(StoreError):
+        store.connect_grant(binding, **grant_fields(**fields))
+    assert vault.calls == []
+    assert not store.directory.exists()
+
+
+def test_missing_inference_scopes_and_expiry_prevent_lease(sample):
+    store, binding, _ = sample
+    connect_grant(sample, granted_scopes=('openid',))
+    with pytest.raises(StoreError, match='scope_not_authorized'):
+        new_lease(sample)
+    store.disconnect(expected_revision=1)
+    store.connect_grant(binding, **grant_fields(expected_revision=2, expires_at=1_800_000_000))
+    with pytest.raises(StoreError, match='grant_expired'):
+        store.lease_access_token(binding, 3, owner_generation=object(), owner_guard=lambda: True, cancel=threading.Event())
+
+
+def test_exact_authenticated_auth_attempt_reconciliation(sample):
+    store, binding, vault = sample
+    connect_grant(sample)
+    vault.calls.clear()
+    assert store.reconcile_auth_attempt(binding, auth_attempt_id='synthetic-auth-attempt',
+                                        prior_store_revision=0, granted_scopes=GRANT_SCOPES) == 1
+    assert [verb for verb, _ in vault.calls] == ['consume']
+    for changes in ({'auth_attempt_id': 'wrong-attempt'}, {'prior_store_revision': 1},
+                    {'granted_scopes': ('openid',)}):
+        args = dict(auth_attempt_id='synthetic-auth-attempt', prior_store_revision=0, granted_scopes=GRANT_SCOPES)
+        args.update(changes)
+        with pytest.raises(StoreError):
+            store.reconcile_auth_attempt(binding, **args)
+    with pytest.raises(StoreError):
+        store.reconcile_auth_attempt(replace(binding, account_id='other'), auth_attempt_id='synthetic-auth-attempt',
+                                     prior_store_revision=0, granted_scopes=GRANT_SCOPES)
+
+
+def test_typed_grant_authenticates_fixed_issuer(sample):
+    store, binding, _ = sample
+    connect_grant(sample)
+    with store._locked():
+        payload = module._parse_grant(store._decrypt(state(store)), binding)
+    assert payload['issuer'] == 'https://auth.openai.com'
+
+
+@pytest.mark.parametrize('issuer', [None, False, 1, [], {}, '',
+                                    'https://foreign.invalid', 'https://auth.openai.com/',
+                                    'HTTPS://auth.openai.com', 'https://auth.openai.com\n'])
+def test_authenticated_foreign_or_malformed_issuer_refuses_handoff_and_reconciliation(sample, monkeypatch, issuer):
+    store, binding, _ = sample
+    original_connect = store._connect_payload
+
+    def publish_invalid_issuer(binding, secret, revision):
+        payload = json.loads(secret[len(module._GRANT_PREFIX):])
+        payload['issuer'] = issuer
+        # Deliberately publish an authenticated malformed fixture, bypassing the
+        # validated writer only here. Reader must reject even valid ciphertext.
+        return original_connect(binding, module._GRANT_PREFIX + module._json(payload), revision)
+
+    monkeypatch.setattr(store, '_connect_payload', publish_invalid_issuer)
+    connect_grant(sample)
+    assert store.status()['state'] == 'active'
+    with pytest.raises(StoreError, match='invalid_grant'):
+        new_lease(sample)
+    with pytest.raises(StoreError, match='invalid_grant'):
+        store.reconcile_auth_attempt(binding, auth_attempt_id='synthetic-auth-attempt',
+                                     prior_store_revision=0, granted_scopes=GRANT_SCOPES)
+
+
+def test_authenticated_missing_issuer_refuses_handoff_and_reconciliation(sample, monkeypatch):
+    store, binding, _ = sample
+    original_connect = store._connect_payload
+
+    def publish_missing_issuer(binding, secret, revision):
+        payload = json.loads(secret[len(module._GRANT_PREFIX):])
+        del payload['issuer']
+        return original_connect(binding, module._GRANT_PREFIX + module._json(payload), revision)
+
+    monkeypatch.setattr(store, '_connect_payload', publish_missing_issuer)
+    connect_grant(sample)
+    with pytest.raises(StoreError, match='invalid_grant'):
+        new_lease(sample)
+    with pytest.raises(StoreError, match='invalid_grant'):
+        store.reconcile_auth_attempt(binding, auth_attempt_id='synthetic-auth-attempt',
+                                     prior_store_revision=0, granted_scopes=GRANT_SCOPES)
+
+
+def test_uncertain_committed_grant_reconciles_without_republishing_or_exchanging(sample, monkeypatch):
+    store, binding, vault = sample
+    original_write = store._write
+    def uncertain(name, data, **kwargs):
+        original_write(name, data, **kwargs)
+        if name == 'current.json' and json.loads(data)['phase'] == 'active':
+            raise OSError('synthetic post-publication fsync error')
+    monkeypatch.setattr(store, '_write', uncertain)
+    with pytest.raises(StoreError, match='publication_uncertain'):
+        connect_grant(sample)
+    assert store.status()['state'] == 'active'
+    before = list(vault.calls)
+    assert store.reconcile_auth_attempt(binding, auth_attempt_id='synthetic-auth-attempt',
+                                        prior_store_revision=0, granted_scopes=GRANT_SCOPES) == 1
+    assert [verb for verb, _ in vault.calls[len(before):]] == ['consume']
+
+
+def test_reconciliation_requires_authentication_not_status_match(sample):
+    store, binding, _ = sample
+    connect_grant(sample)
+    path = store.directory / (state(store)['target'] + '.enc')
+    value = path.read_bytes()
+    path.write_bytes(value[:-1] + bytes([value[-1] ^ 1]))
+    assert store.status()['state'] == 'active'
+    with pytest.raises(StoreError):
+        store.reconcile_auth_attempt(binding, auth_attempt_id='synthetic-auth-attempt',
+                                     prior_store_revision=0, granted_scopes=GRANT_SCOPES)
+
+
+def test_legacy_payload_cannot_mint_lease_or_reconcile(sample):
+    store, binding, _ = sample
+    connect(sample)
+    with pytest.raises(StoreError, match='invalid_grant'):
+        new_lease(sample)
+    with pytest.raises(StoreError, match='invalid_grant'):
+        store.reconcile_auth_attempt(binding, auth_attempt_id='synthetic-auth-attempt',
+                                     prior_store_revision=0, granted_scopes=GRANT_SCOPES)
+
+
+def test_private_restart_descriptor_never_reads_vault_and_rejects_tombstone(sample):
+    store, binding, vault = sample
+    with pytest.raises(StoreError, match='connection_unavailable'):
+        store.connection_descriptor()
+    connect_grant(sample)
+    vault.calls.clear()
+    restarted = SubscriptionStore(store.profile, backend=vault)
+    assert restarted.connection_descriptor() == (binding, 1)
+    assert vault.calls == []
+    restarted.disconnect(expected_revision=1)
+    with pytest.raises(StoreError, match='connection_unavailable'):
+        restarted.connection_descriptor()
+
+
+
+def test_returning_binding_preserves_only_identity_after_disconnect_restart(sample):
+    store, binding, vault = sample
+    assert store.returning_binding() is None
+    assert not store.directory.exists() and vault.calls == []
+    connect_grant(sample)
+    store.disconnect(expected_revision=1)
+    vault.calls.clear()
+    restarted = SubscriptionStore(store.profile, backend=vault)
+    assert restarted.returning_binding() == binding
+    assert vault.calls == []
+    with pytest.raises(StoreError, match='connection_unavailable'):
+        restarted.connection_descriptor()
+    with pytest.raises(StoreError):
+        restarted.lease_access_token(binding, 2, owner_generation=object(),
+                                     owner_guard=lambda: True, cancel=threading.Event())
+    assert vault.calls == []
+
+
+@pytest.mark.parametrize('corruption', ['lost_pointer', 'scope_anchor', 'profile_locator'])
+def test_private_identity_reads_refuse_corrupt_or_lost_scope_without_vault(sample, corruption):
+    store, _, vault = sample
+    connect_grant(sample)
+    vault.calls.clear()
+    if corruption == 'lost_pointer':
+        (store.directory / 'current.json').unlink()
+    elif corruption == 'scope_anchor':
+        anchor = json.loads((store.directory / 'identity.json').read_bytes())
+        anchor['scope']['organization_id'] = str(uuid.uuid4())
+        store._write('identity.json', module._json(anchor), replace=True)
+    else:
+        current = state(store)
+        current['binding']['profile_locator'] = '/different/profile'
+        anchor = json.loads((store.directory / 'identity.json').read_bytes())
+        anchor['scope']['profile_locator'] = '/different/profile'
+        store._write('identity.json', module._json(anchor), replace=True)
+        store._write('current.json', module._json(current), replace=True)
+    for operation in (store.returning_binding, store.connection_descriptor):
+        with pytest.raises(StoreError):
+            operation()
+    assert vault.calls == []
+
+
+def test_lease_rechecks_owner_and_cancel_after_decryption(sample):
+    store, _, vault = sample
+    connect_grant(sample)
+    cancellation = threading.Event()
+    vault.after_consume = cancellation.set
+    with pytest.raises(StoreError, match='lease_cancelled'):
+        new_lease(sample, cancel=cancellation)
+
+
+@pytest.mark.parametrize('lazy', ['coroutine', 'generator'])
+def test_lease_rejects_deferred_network_work(sample, lazy):
+    connect_grant(sample)
+    lease = new_lease(sample)
+    executed = []
+    async def deferred(token):
+        executed.append(token)
+        return []
+    def generated(token):
+        executed.append(token)
+        yield []
+    with pytest.raises(StoreError, match='invalid_lease_result'):
+        lease.run(lambda token, cancellation: deferred(token) if lazy == 'coroutine' else generated(token))
+    assert executed == []
+    assert lease._token == bytearray()
+
+
+def test_uncommitted_auth_attempt_cannot_reconcile_or_replay_exchange(sample, monkeypatch):
+    store, binding, vault = sample
+    original = store._write
+    def before_publication(name, data, **kwargs):
+        if name == 'current.json' and json.loads(data)['phase'] == 'active':
+            raise OSError('synthetic before-rename publication fault')
+        return original(name, data, **kwargs)
+    monkeypatch.setattr(store, '_write', before_publication)
+    with pytest.raises(StoreError, match='publication_uncertain'):
+        connect_grant(sample)
+    calls = list(vault.calls)
+    with pytest.raises(StoreError):
+        store.reconcile_auth_attempt(binding, auth_attempt_id='synthetic-auth-attempt',
+                                     prior_store_revision=0, granted_scopes=GRANT_SCOPES)
+    assert vault.calls == calls
+    assert state(store)['phase'] == 'disconnected'
+
+
 @pytest.mark.macos_only
 def test_native_darwin_empty_acl_is_accepted_without_permission_changes(tmp_path):
     """Read-only OS proof on a new synthetic path; never inspect user grants."""

@@ -21,12 +21,16 @@ from functools import wraps
 import ctypes
 import errno
 import json
+import inspect
+import math
 import os
 from pathlib import Path
 import platform
 import stat
 import sys
 import threading
+import time
+import weakref
 import uuid
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -40,13 +44,20 @@ MAX_ENVELOPE_BYTES = 64 * 1024
 MAX_SECRET_BYTES = MAX_ENVELOPE_BYTES - 12 - 16
 MAX_METADATA_BYTES = 16 * 1024
 _THREAD_USE = threading.local()
+_LEASES_LOCK = threading.Lock()
+_LEASES = {}
+_GRANT_PREFIX = b'EIDOLON_SETUP_GRANT_V1\n'
+_GRANT_ISSUER = 'https://auth.openai.com'
+_REQUIRED_SCOPES = frozenset({'resource.invoke', 'chatgpt.tokens.use.direct'})
 _ERROR_REASONS = frozenset({
     'authentication_failed', 'backend_unavailable', 'connection_unavailable',
     'corrupt_store', 'disconnect_required', 'filesystem_protection_unavailable',
     'invalid_binding', 'invalid_secret', 'native_reference_mismatch',
     'operation_failed', 'publication_failed', 'publication_uncertain', 'recovery_required', 'recursive_use',
     'revision_exhausted', 'revision_exists', 'scope_denied', 'stale_revision',
-    'unsafe_filesystem', 'value_too_large',
+    'unsafe_filesystem', 'value_too_large', 'invalid_grant', 'grant_expired',
+    'typed_grant_requires_handoff', 'auth_attempt_mismatch', 'lease_used',
+    'lease_cancelled', 'owner_generation_changed', 'scope_not_authorized', 'invalid_lease_result',
 })
 
 
@@ -229,6 +240,165 @@ def _guarded(method):
     return guarded
 
 
+def _is_grant(secret):
+    return isinstance(secret, bytes) and secret.startswith(_GRANT_PREFIX)
+
+
+def _grant_attempt(attempt, prior):
+    if (not isinstance(attempt, str) or not 1 <= len(attempt) <= 128
+            or any(not (33 <= ord(char) <= 126) for char in attempt)
+            or type(prior) is not int or not 0 <= prior < 2**63 - 1):
+        raise StoreError('invalid_grant')
+
+
+def _grant_scopes(scopes):
+    if not isinstance(scopes, (tuple, list, frozenset)) or not 0 <= len(scopes) <= 64:
+        raise StoreError('invalid_grant')
+    if any(not isinstance(scope, str) or not 1 <= len(scope) <= 128
+           or any(not 33 <= ord(char) <= 126 for char in scope) for scope in scopes):
+        raise StoreError('invalid_grant')
+    if len(set(scopes)) != len(scopes):
+        raise StoreError('invalid_grant')
+    return tuple(sorted(scopes))
+
+
+def _parse_grant(secret, binding):
+    if not _is_grant(secret) or len(secret) > MAX_SECRET_BYTES:
+        raise StoreError('invalid_grant')
+    payload = json.loads(secret[len(_GRANT_PREFIX):], object_pairs_hook=_pairs)
+    if (not isinstance(payload, dict) or set(payload) != {
+            'schemaVersion', 'issuer', 'authAttemptId', 'priorStoreRevision', 'verifiedBinding',
+            'grantedScopes', 'expiresAt', 'accessToken', 'refreshToken', 'idToken'}
+            or type(payload['schemaVersion']) is not int or payload['schemaVersion'] != 1
+            or payload['issuer'] != _GRANT_ISSUER
+            or payload['verifiedBinding'] != asdict(binding)):
+        raise StoreError('invalid_grant')
+    _grant_attempt(payload['authAttemptId'], payload['priorStoreRevision'])
+    if (not isinstance(payload['grantedScopes'], list)
+            or tuple(payload['grantedScopes']) != _grant_scopes(payload['grantedScopes'])):
+        raise StoreError('invalid_grant')
+    expiry = payload['expiresAt']
+    if type(expiry) not in {int, float} or not math.isfinite(expiry) or not 0 < expiry < 253402300800:
+        raise StoreError('invalid_grant')
+    for key in ('accessToken', 'refreshToken', 'idToken'):
+        token = payload[key]
+        if (not isinstance(token, str) or not 1 <= len(token) <= 16384
+                or any(not 33 <= ord(char) <= 126 for char in token)):
+            raise StoreError('invalid_grant')
+    return payload
+
+
+class TokenLease:
+    """Server-private, access-token-only, one-admission capability.
+
+    Created only by lease_access_token after authenticated decryption. ``run``
+    deliberately transfers a short-lived access-token copy to a trusted request
+    callback OUTSIDE the store lock. This is the explicit exception to the old
+    opaque consume callback's no-retention contract. Callback must neither retain
+    the token after return nor include it in results/logs/UI. ID/refresh tokens
+    are never stored on the lease. Python cannot erase temporary immutable copies.
+
+    Admission is single-use, including failed/cancelled admissions. Local
+    disconnect invalidates all in-process leases promptly; durable checks also
+    detect another process's retirement. A request admitted before cancellation
+    can already be remote. Cancellation does not prove upstream work stopped;
+    late replies are fenced and rejected, never returned as current results.
+    """
+    def __init__(self, store, binding, revision, generation, guard, cancel, expiry, access_token, scope):
+        self._store, self._binding, self._revision = store, binding, revision
+        self._generation, self._guard, self._cancel = generation, guard, cancel
+        self._expiry, self._scope = expiry, scope
+        self._token = bytearray(access_token, 'ascii')
+        self._mutex = threading.Lock()
+        self._revoked = threading.Event()
+        self._used = False
+
+    def __repr__(self):
+        return '<TokenLease server-private>'
+
+    def __reduce__(self):
+        raise TypeError('Server-private token lease cannot be serialized')
+
+    def _check_locked(self):
+        self._store._fence(self._binding, self._revision)
+        if self._guard() is not True:
+            raise StoreError('owner_generation_changed')
+        if self._revoked.is_set() or self._cancel.is_set():
+            raise StoreError('lease_cancelled')
+        if self._store._clock() >= self._expiry:
+            raise StoreError('grant_expired')
+
+    def is_set(self):
+        """Event-like cancellation query, including current durable fencing.
+
+        Request adapters may poll this outside the store lock; there is no
+        network operation here. An unreadable fence is cancellation, not consent.
+        """
+        if self._revoked.is_set():
+            return True
+        try:
+            with self._store._locked() as exists:
+                if not exists:
+                    raise StoreError('lease_cancelled')
+                self._check_locked()
+            return False
+        except Exception:
+            self.close()
+            return True
+
+    def close(self):
+        self._revoked.set()
+        with self._mutex:
+            self._token[:] = b'\0' * len(self._token)
+            self._token.clear()
+        with _LEASES_LOCK:
+            leases = _LEASES.get(self._scope)
+            if leases is not None:
+                leases.discard(self)
+                if not leases:
+                    _LEASES.pop(self._scope, None)
+
+    @_guarded
+    def run(self, request):
+        with self._mutex:
+            if self._used:
+                raise StoreError('lease_used')
+            self._used = True
+        try:
+            with self._store._locked() as exists:
+                if not exists:
+                    raise StoreError('connection_unavailable')
+                self._check_locked()
+                with self._mutex:
+                    if not self._token:
+                        raise StoreError('lease_cancelled')
+                    token = self._token.decode('ascii')
+            # This explicit handoff runs with NO store lock. Last-moment checks
+            # reduce, but cannot eliminate, the post-admission cancellation race.
+            if self.is_set():
+                raise StoreError('lease_cancelled')
+            result = request(token, self)
+            if inspect.isawaitable(result) or inspect.isgenerator(result) or inspect.isasyncgen(result):
+                # A coroutine/generator would defer work past token ownership and
+                # late-reply fences. Adapters must return completed response data.
+                if inspect.iscoroutine(result) or inspect.isgenerator(result):
+                    result.close()
+                raise StoreError('invalid_lease_result')
+            with self._store._locked() as exists:
+                if not exists:
+                    raise StoreError('connection_unavailable')
+                self._check_locked()
+            return result
+        finally:
+            self.close()
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass
+
+
 class SubscriptionStore:
     """One organization/owner per profile; no cross-organization grant sharing.
 
@@ -242,11 +412,12 @@ class SubscriptionStore:
     ``refreshing`` marker makes any interruption require explicit disconnect and
     reauthorization. Status never touches the vault, reads an envelope or refreshes.
     """
-    def __init__(self, profile_root, *, backend=None):
+    def __init__(self, profile_root, *, backend=None, clock=time.time):
         self.profile = Path(os.path.abspath(os.fspath(profile_root)))
         self.directory = self.profile / PRIVATE_STORE_NAME
         self._backend = backend
         self._synthetic = backend is not None
+        self._clock = clock
 
     def __repr__(self):
         return '<SubscriptionStore>'
@@ -537,8 +708,43 @@ class SubscriptionStore:
             return {'revision': state['revision'], 'state': state['phase'], 'cleanup_pending': bool(pending)}
 
     @_guarded
-    def connect(self, binding, secret, *, expected_revision):
-        """Explicitly consented connection, after the external owner receipt gate."""
+    def returning_binding(self):
+        """Private identity correlation for an explicit returning-owner action.
+
+        A disconnected binding is historical identity, never grant authority or
+        permission to restore a reference. Auth must still require the current
+        owner and explicit consent, then reverify this issued client/account.
+        Missing publication evidence and corrupt scope anchors remain blocking.
+        """
+        with self._locked() as exists:
+            if not exists:
+                return None
+            state = self._state()
+            if state['phase'] == 'absent':
+                return None
+            binding = TrustedBinding(**state['binding'])
+            self._validate(binding)
+            return binding
+
+    @_guarded
+    def connection_descriptor(self):
+        """Server-private restart descriptor; no vault reads and no renderer use.
+
+        Metadata routes an explicit owner action, not proof of grant validity.
+        Actual token use and uncertain-publication reconciliation still require
+        authenticated decryption. Tombstones never reveal a reusable connection.
+        """
+        with self._locked() as exists:
+            if not exists:
+                raise StoreError('connection_unavailable')
+            state = self._state()
+            if state['phase'] not in {'active', 'refreshing'}:
+                raise StoreError('connection_unavailable')
+            binding = TrustedBinding(**state['binding'])
+            self._validate(binding)
+            return binding, state['revision']
+
+    def _connect_payload(self, binding, secret, expected_revision):
         self._validate(binding)
         with self._locked(create=True):
             state = self._state()
@@ -554,6 +760,103 @@ class SubscriptionStore:
             return self._publish(binding, secret, state)
 
     @_guarded
+    def connect(self, binding, secret, *, expected_revision):
+        """Legacy opaque fixture boundary. Typed grants use connect_grant only."""
+        if _is_grant(secret):
+            raise StoreError('typed_grant_requires_handoff')
+        return self._connect_payload(binding, secret, expected_revision)
+
+    @_guarded
+    def connect_grant(self, binding, *, access_token, refresh_token, id_token,
+                      expires_at, granted_scopes, auth_attempt_id, expected_revision):
+        """Publish a verified, explicitly consented grant from the auth coordinator.
+
+        Token verification, owner consent and once-only token exchange precede
+        this call. ID/refresh tokens stay inside the encrypted payload; no API
+        here exposes them. Expiry requires explicit reauthorization in checkpoint2.
+        """
+        self._validate(binding)
+        payload = {
+            'schemaVersion': 1, 'issuer': _GRANT_ISSUER, 'authAttemptId': auth_attempt_id,
+            'priorStoreRevision': expected_revision, 'verifiedBinding': asdict(binding),
+            'grantedScopes': list(_grant_scopes(granted_scopes)), 'expiresAt': expires_at,
+            'accessToken': access_token, 'refreshToken': refresh_token, 'idToken': id_token,
+        }
+        secret = _GRANT_PREFIX + _json(payload)
+        _parse_grant(secret, binding)
+        return self._connect_payload(binding, secret, expected_revision)
+
+    @_guarded
+    def reconcile_auth_attempt(self, binding, *, auth_attempt_id, prior_store_revision, granted_scopes):
+        """Authenticate one exact uncertain publication; never replay exchange.
+
+        Requires the original server-side attempt metadata. A matching status
+        or revision alone is insufficient. No older envelope is ever consulted.
+        The auth coordinator must still fence its current owner generation.
+        """
+        _grant_attempt(auth_attempt_id, prior_store_revision)
+        scopes = _grant_scopes(granted_scopes)
+        with self._locked() as exists:
+            if not exists:
+                raise StoreError('auth_attempt_mismatch')
+            state = self._fence(binding, prior_store_revision + 1)
+            payload = _parse_grant(self._decrypt(state), binding)
+            self._fence(binding, prior_store_revision + 1)
+            if (payload['authAttemptId'] != auth_attempt_id
+                    or payload['priorStoreRevision'] != prior_store_revision
+                    or tuple(payload['grantedScopes']) != scopes):
+                raise StoreError('auth_attempt_mismatch')
+            return state['revision']
+
+    def _lease_scope(self):
+        info = self._check(self.profile, directory=True)
+        return info.st_dev, info.st_ino
+
+    def _retire_leases(self):
+        scope = self._lease_scope()
+        with _LEASES_LOCK:
+            leases = list(_LEASES.get(scope, ()))
+        for lease in leases:
+            lease.close()
+
+    @_guarded
+    def lease_access_token(self, binding, revision, *, owner_generation, owner_guard, cancel):
+        """Explicit server-private handoff; not a consume callback retaining bytes.
+
+        ``owner_guard`` is a bounded, local zero-arg check that closes over the
+        exact transport generation object and home; it must perform no network
+        I/O. The cancellation source is server-owned and exposes is_set().
+        """
+        if (type(owner_generation) is not object or not callable(owner_guard)
+                or not callable(getattr(cancel, 'is_set', None))):
+            raise StoreError('owner_generation_changed')
+        with self._locked() as exists:
+            if not exists:
+                raise StoreError('connection_unavailable')
+            state = self._fence(binding, revision)
+            if owner_guard() is not True:
+                raise StoreError('owner_generation_changed')
+            if cancel.is_set():
+                raise StoreError('lease_cancelled')
+            payload = _parse_grant(self._decrypt(state), binding)
+            self._fence(binding, revision)
+            if owner_guard() is not True:
+                raise StoreError('owner_generation_changed')
+            if cancel.is_set():
+                raise StoreError('lease_cancelled')
+            if payload['priorStoreRevision'] + 1 != revision:
+                raise StoreError('invalid_grant')
+            if not _REQUIRED_SCOPES.issubset(payload['grantedScopes']):
+                raise StoreError('scope_not_authorized')
+            if self._clock() >= payload['expiresAt']:
+                raise StoreError('grant_expired')
+            lease = TokenLease(self, binding, revision, owner_generation, owner_guard,
+                               cancel, payload['expiresAt'], payload['accessToken'], self._lease_scope())
+            with _LEASES_LOCK:
+                _LEASES.setdefault(lease._scope, weakref.WeakSet()).add(lease)
+            return lease
+
+    @_guarded
     def consume(self, binding, revision, consumer):
         """Fenced callback only; do not return or retain secret bytes in consumers."""
         with self._locked() as exists:
@@ -562,6 +865,8 @@ class SubscriptionStore:
             state = self._fence(binding, revision)
             secret = self._decrypt(state)
             self._fence(binding, revision)
+            if _is_grant(secret):
+                raise StoreError('typed_grant_requires_handoff')
             result = consumer(secret)
             self._fence(binding, revision)
             return result
@@ -579,10 +884,15 @@ class SubscriptionStore:
             state = self._fence(binding, revision)
             secret = self._decrypt(state)
             self._fence(binding, revision)
+            if _is_grant(secret):
+                raise StoreError('typed_grant_requires_handoff')
+            self._retire_leases()
             pending = dict(state, phase='refreshing')
             self._write('current.json', _json(pending), replace=True)
             self._fence(binding, revision, phase='refreshing')
             replacement = rotator(secret)
+            if _is_grant(replacement):
+                raise StoreError('typed_grant_requires_handoff')
             self._fence(binding, revision, phase='refreshing')
             return self._publish(binding, replacement, pending)
 
@@ -623,6 +933,7 @@ class SubscriptionStore:
                 return {'revision': 0, 'state': 'absent', 'cleanup_pending': False}
             state = self._state()
             self._cas(state, expected_revision)
+            self._retire_leases()
             if state['phase'] not in {'absent', 'disconnected'}:
                 if state['revision'] + 1 >= 2**63:
                     raise StoreError('revision_exhausted')

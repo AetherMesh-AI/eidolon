@@ -39,6 +39,21 @@ from tui_gateway.transport import (FanoutTransport, StdioTransport, Transport, b
 
 logger = logging.getLogger(__name__)
 
+# Capture installation and process-profile authority before dotenv or request scopes.
+# Invalid layouts disable only the separately scoped setup subscription surface.
+try:
+    from eidolon_constants import get_default_hermes_root, get_process_eidolon_home
+    from eidolon_cli.organization_setup_subscription_host import HostAuthority
+    _setup_subscription_authority = HostAuthority.capture(
+        get_default_hermes_root, get_process_eidolon_home)
+except (OSError, RuntimeError, ValueError):
+    _setup_subscription_authority = None
+
+
+def _subscription_installation_authority():
+    return _setup_subscription_authority
+
+
 _eidolon_home = get_eidolon_home()
 load_hermes_dotenv(hermes_home=_eidolon_home, project_env=Path(__file__).parent.parent / ".env")
 
