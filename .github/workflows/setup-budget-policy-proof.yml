@@ -14,12 +14,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          ref: 347230203fb7c89708f4443834fbe724809a54c8
+          ref: cd5e51ce498837cc3f0c1378ec4df7d4be84bd0e
       - name: Verify exact reviewed source
         run: |
-          test "$(git rev-parse HEAD)" = "347230203fb7c89708f4443834fbe724809a54c8"
-          test "$(git rev-parse HEAD^{tree})" = "b2b0e0b76745d6491ecb719bfa6c3d02de86c4f8"
-          printf '%s\n' '{"source":"347230203fb7c89708f4443834fbe724809a54c8","tree":"b2b0e0b76745d6491ecb719bfa6c3d02de86c4f8"}' > setup-budget-source.json
+          test "$(git rev-parse HEAD)" = "cd5e51ce498837cc3f0c1378ec4df7d4be84bd0e"
+          test "$(git rev-parse HEAD^{tree})" = "a6bbb1bb5f27b40bc5135d0b89ff78635e28f286"
+          printf '%s\n' '{"source":"cd5e51ce498837cc3f0c1378ec4df7d4be84bd0e","tree":"a6bbb1bb5f27b40bc5135d0b89ff78635e28f286"}' > setup-budget-source.json
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
@@ -47,7 +47,7 @@ jobs:
           npx tsc -p tsconfig.e2e.json --noEmit
       - name: Verify reviewed setup policy components
         working-directory: apps/desktop
-        run: npx vitest run src/app/eidolon/team-onboarding-client.test.ts src/app/eidolon/team-setup-budget-client.test.ts src/app/eidolon/team-onboarding.test.tsx src/app/eidolon/team-setup-budget-editor.test.tsx --project ui --maxWorkers 1
+        run: npx vitest run src/app/eidolon/team-onboarding-client.test.ts src/app/eidolon/team-setup-budget-client.test.ts src/app/eidolon/team-onboarding.test.tsx src/app/eidolon/team-setup-budget-editor.test.tsx src/app/eidolon/organization-folder-access-client.test.ts src/app/eidolon/organization-folder-access.test.tsx --project ui --maxWorkers 1
       - name: Build desktop
         id: desktop-build
         working-directory: apps/desktop
@@ -57,7 +57,7 @@ jobs:
         env:
           EIDOLON_REQUIRE_PROJECT_SANDBOX: '1'
           PLAYWRIGHT_JSON_OUTPUT_NAME: setup-budget-report/results.json
-        run: xvfb-run -a npx playwright test e2e/organization-team-input-review.spec.ts --workers=1 --retries=0 --output setup-budget-test-results --reporter list,json
+        run: xvfb-run -a npx playwright test e2e/organization-folder-setup.spec.ts --workers=1 --retries=0 --output setup-budget-test-results --reporter list,json
       - name: Retain focused organization screenshots
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

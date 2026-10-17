@@ -6,19 +6,106 @@ import * as path from 'node:path'
 
 import { buildAppEnv, launchDesktop, type MockBackendFixture, setupMockBackend, waitForAppReady } from './fixtures'
 import { switchPython } from './organization-switch-fixture'
-import { expect, test } from './test'
+import { acknowledgeExpectedErrorBanner, expect, test, type Page } from './test'
 
 let fixture: MockBackendFixture | undefined
 let root: string | undefined
+type ReviewReply = { outcome: 'pending' | 'success' | 'noncommit' | 'unrecognized'; reason?: string }
+const reviewReplies: ReviewReply[] = []
+let reviewOverflow = false
+let stopReviewObservation: (() => Promise<void>) | undefined
 const repo = path.resolve(import.meta.dirname, '../../..')
 test.setTimeout(240_000)
 test.afterEach(async () => {
-  await fixture?.app.close().catch(() => undefined)
-  await fixture?.cleanup()
-  fixture = undefined
-
-  if (root) { fs.rmSync(root, { recursive: true, force: true }); root = undefined }
+  try {
+    await test.info().attach('folder-review-response-kinds', {
+      body: JSON.stringify({ replies: reviewReplies, overflow: reviewOverflow }), contentType: 'application/json'
+    })
+  } finally {
+    await stopReviewObservation?.().catch(() => undefined)
+    stopReviewObservation = undefined
+    try {
+      await fixture?.app.close().catch(() => undefined)
+      await fixture?.cleanup()
+    } finally {
+      fixture = undefined
+      if (root) { fs.rmSync(root, { recursive: true, force: true }); root = undefined }
+    }
+  }
 })
+
+/** Passive protocol observation, including an already-open socket. Never send,
+ * replace or delay an application frame; retain only a bounded reason enum. */
+async function observeReviewReplies(page: Page) {
+  const observer = await page.context().newCDPSession(page)
+  const pending = new Map<string, number>()
+  let pendingRead: { key: string; socket: string; organizationId: string } | undefined
+  let currentRead: { socket: string; organizationId: string; generation: number; reviewVersion: string } | undefined
+  const reasons = new Set(['generation_conflict', 'grant_conflict', 'review_conflict', 'execution_still_stopping',
+    'project_reconciliation_required', 'uncertain_outcome_review_required', 'execution_not_initialized'])
+  const parse = (payload: string) => {
+    try {
+      return JSON.parse(payload) as { id?: unknown; method?: string;
+        params?: { expectedOrganizationId?: unknown; expectedGeneration?: unknown; reviewVersion?: unknown };
+        error?: { code?: unknown; data?: { reason?: unknown } };
+        result?: { capabilityVersion?: unknown; organizationId?: unknown; policyGeneration?: unknown; reviewVersion?: unknown;
+          scope?: { kind?: unknown; profile?: unknown }; accessRevoked?: boolean; reviewed?: boolean }
+      } | null
+    } catch { return null }
+  }
+  observer.on('Network.webSocketFrameSent', ({ requestId, response }) => {
+    if (response.opcode !== 1) { return }
+    const message = parse(response.payloadData)
+
+    if (!message || !['string', 'number'].includes(typeof message.id)) { return }
+    const key = `${requestId}:${typeof message.id}:${message.id}`
+
+    if (message.method === 'organization.folderAccess' && typeof message.params?.expectedOrganizationId === 'string') {
+      pendingRead = { key, socket: requestId, organizationId: message.params.expectedOrganizationId }
+      currentRead = undefined
+      return
+    }
+    if (message.method !== 'organization.reviewFolderRevocation') { return }
+    if (reviewReplies.length >= 3) { reviewOverflow = true; return }
+    if (!currentRead || currentRead.socket !== requestId || currentRead.organizationId !== message.params?.expectedOrganizationId ||
+      currentRead.generation !== message.params.expectedGeneration || currentRead.reviewVersion !== message.params.reviewVersion) {
+      reviewReplies.push({ outcome: 'unrecognized' })
+      return
+    }
+    pending.set(key, reviewReplies.length)
+    reviewReplies.push({ outcome: 'pending' })
+  })
+  observer.on('Network.webSocketFrameReceived', ({ requestId, response }) => {
+    if (response.opcode !== 1) { return }
+    const message = parse(response.payloadData)
+    const key = `${requestId}:${typeof message?.id}:${message?.id}`
+
+    if (pendingRead?.key === key) {
+      const value = message?.result
+
+      if (!message?.error && value?.capabilityVersion === 1 && value.scope?.kind === 'served-profile' && value.scope.profile === 'default' &&
+        value.organizationId === pendingRead.organizationId && typeof value.policyGeneration === 'number' && typeof value.reviewVersion === 'string') {
+        currentRead = { socket: pendingRead.socket, organizationId: pendingRead.organizationId,
+          generation: value.policyGeneration, reviewVersion: value.reviewVersion }
+      }
+      pendingRead = undefined
+      return
+    }
+    const index = pending.get(key)
+
+    if (index === undefined) { return }
+    pending.delete(key)
+    const reason = message?.error?.data?.reason
+
+    if (message?.error?.code === 5074 && typeof reason === 'string' && reasons.has(reason)) {
+      reviewReplies[index] = { outcome: 'noncommit', reason }
+    } else {
+      reviewReplies[index] = { outcome: !message?.error && message?.result?.accessRevoked === true && message.result.reviewed === true ? 'success' : 'unrecognized' }
+    }
+  })
+  await observer.send('Network.enable')
+  stopReviewObservation = () => observer.detach()
+}
 
 async function openSetup() {
   const page = fixture!.page
@@ -131,20 +218,55 @@ OrganizationStore(ledger)
   await fixture.app.close()
   const reopened = await launchDesktop(buildAppEnv(fixture.sandbox))
   fixture.app = reopened.app; fixture.page = reopened.page
+  await observeReviewReplies(fixture.page)
   await waitForAppReady(fixture)
   panel = await openSetup()
   access = panel.getByRole('region', { name: 'Folder access', exact: true })
   await expect(access.getByText('Access revoked', { exact: true })).toBeVisible()
   const resume = access.getByRole('button', { name: 'Resume unaffected work after review', exact: true })
-  // A read can observe a live capacity fence during startup. Follow the visible
-  // Refresh instruction; waiting on the old snapshot cannot establish quiescence.
-  await expect.poll(async () => {
-    await access.getByRole('button', { name: 'Refresh folder access', exact: true }).click()
-    return resume.isEnabled()
-  }, { timeout: 30_000 }).toBe(true)
-  await resume.click()
-  const review = fixture.page.getByRole('dialog', { name: 'Resume unaffected work after review', exact: true })
-  await review.getByRole('button', { name: 'Resume unaffected work after review', exact: true }).click()
+  const revokedGrant = access.getByRole('listitem').filter({ has: fixture.page.getByText(`root0 · ${folders[0]}`, { exact: true }) })
+  const identity = await revokedGrant.locator('details').textContent()
+  expect(identity).toBeTruthy()
+  let expectedConflict: string | undefined
+
+  // A clear read does not reserve the backend's commit fence. Only an observed
+  // definite noncommit response permits another fresh read and owner decision.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await expect.poll(async () => {
+      await access.getByRole('button', { name: 'Refresh folder access', exact: true }).click()
+      return resume.isEnabled()
+    }, { timeout: 30_000 }).toBe(true)
+    await expect(revokedGrant.getByText('Access revoked', { exact: true })).toBeVisible()
+    await expect(revokedGrant.locator('details')).toHaveText(identity!)
+    await expect(access.getByText('New organization dispatch is paused.', { exact: true })).toBeVisible()
+    await expect(access.getByText('Access approved', { exact: true })).toHaveCount(1)
+
+    if (expectedConflict && await fixture.page.evaluate(text =>
+      (window as unknown as { __ERROR_BANNER_GUARD__?: string[] }).__ERROR_BANNER_GUARD__?.includes(text) ?? false, expectedConflict)) {
+      await acknowledgeExpectedErrorBanner(fixture.page, expectedConflict)
+    }
+    expect(reviewReplies).toHaveLength(attempt)
+    await resume.click()
+    const review = fixture.page.getByRole('dialog', { name: 'Resume unaffected work after review', exact: true })
+    await expect(review).toContainText(`root0 · ${folders[0]}`)
+    await review.getByRole('button', { name: 'Resume unaffected work after review', exact: true }).click()
+    await expect.poll(() => reviewReplies[attempt]?.outcome ?? 'pending').not.toBe('pending')
+    expect(reviewOverflow).toBe(false)
+    expect(reviewReplies).toHaveLength(attempt + 1)
+
+    if (reviewReplies[attempt].outcome === 'success') { break }
+    expect(reviewReplies[attempt].outcome).toBe('noncommit')
+    const refusal = access.getByRole('alert')
+    await expect(refusal).toContainText('Folder access changed. Refresh, review the current grant and outcomes, then confirm again.')
+    await expect(access.getByText('Review recorded. Folder access remains revoked. Check current dispatch status below.', { exact: true })).toHaveCount(0)
+    await expect(access.getByRole('button', { name: 'Retry the exact request', exact: true })).toHaveCount(0)
+    await expect(resume).toHaveCount(0)
+    expectedConflict = await refusal.innerText()
+    expect(fs.existsSync(folders[0])).toBe(false)
+    expect(fs.readdirSync(folders[1])).toEqual([])
+    expect(fs.readFileSync(config, 'utf8')).toBe(before)
+    expect(fixture.mock.receivedPrompts.length).toBe(calls)
+  }
   await expect(access.getByText('Revocation reviewed; access remains revoked', { exact: true })).toBeVisible()
   await expect(access.getByText('New organization dispatch is paused.', { exact: true })).toHaveCount(0)
   await expect(panel.getByRole('list', { name: 'Configured project folders', exact: true })).toContainText('research · root1')
