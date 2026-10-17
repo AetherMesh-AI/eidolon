@@ -2,6 +2,8 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 
+import type { Locator } from '@playwright/test'
+
 import { waitForAppReady } from './fixtures'
 import { verifyKeyboardFocus } from './focus-visibility'
 import { expect, test } from './test'
@@ -40,6 +42,50 @@ const draft = JSON.stringify(
   2
 )
 
+/** Select literal offsets across the mounted source chunks, including their newline boundary. */
+async function selectSourceRange(chunks: Locator, from: number, to: number) {
+  await chunks.evaluateAll(
+    (elements, { from, to }) => {
+      const owner = elements[0].ownerDocument
+
+      const boundary = (offset: number): { node: Node; offset: number } => {
+        for (const element of elements) {
+          const length = element.textContent!.length
+
+          if (offset <= length) {
+            const walker = owner.createTreeWalker(element, NodeFilter.SHOW_TEXT)
+            let node = walker.nextNode()
+
+            while (node) {
+              const length = node.textContent!.length
+
+              if (offset <= length) {return { node, offset }}
+              offset -= length
+              node = walker.nextNode()
+            }
+
+            return { node: element, offset: element.childNodes.length }
+          }
+
+          offset -= length + 1
+        }
+
+        throw new Error('Source selection is outside the mounted chunks')
+      }
+
+      const start = boundary(from)
+      const end = boundary(to)
+      const range = owner.createRange()
+      range.setStart(start.node, start.offset)
+      range.setEnd(end.node, end.offset)
+      const selection = owner.getSelection()!
+      selection.removeAllRanges()
+      selection.addRange(range)
+    },
+    { from, to }
+  )
+}
+
 let fixture: GalleryFixture | undefined
 test.setTimeout(300_000)
 test.afterEach(async () => {
@@ -57,7 +103,7 @@ test.afterEach(async () => {
           ipc,
           rpc: fixture.capabilityMethods,
           geometryContext: test.info().title.startsWith('Arabic file source')
-            ? 'Restored sandbox file in one tabbed zone; actual Arabic Source control, 200% and 400px.'
+            ? 'Restored sandbox file in one tabbed zone; actual Arabic Source control, 200% and 400px. Full and partial copy across two mounted chunks, blank lines and terminal newlines; unmounted rows are outside this proof.'
             : 'MCP capability pane; 100%, 200% and 400px. Appearance navigation remounts the route.'
         },
         null,
@@ -83,7 +129,14 @@ for (const mode of ['dark', 'light'] as const) {
 
     const { page, app, sandbox } = current
     const filePath = join(sandbox.root, 'synthetic-direction.md')
-    const source = `# مصدر تجريبي\n\n\`\`\`json\n${draft}\n\`\`\``
+
+    const source = [
+      `# مصدر تجريبي\n\n\`\`\`json\n${draft}\n\`\`\``,
+      ...Array.from({ length: 194 }, (_, index) => `// synthetic row ${index + 1}`),
+      '',
+      ''
+    ].join('\n')
+
     writeFileSync(filePath, source)
     await setGalleryAppearance(current, mode, mode === 'dark' ? 'داكن' : 'فاتح')
     // Settings fronts the workspace and hides its tab strip. Return to chat
@@ -147,9 +200,11 @@ for (const mode of ['dark', 'light'] as const) {
     const sourceButton = root.getByRole('button', { name: 'المصدر', exact: true })
     await expect(sourceButton).toBeVisible({ timeout: 30_000 })
     await sourceButton.click()
-    const code = root.locator('.preview-source-code')
-    await expect(code.locator('pre.shiki')).toHaveCount(1)
-    await expect.poll(() => code.textContent()).toBe(source)
+    const chunks = root.locator('.preview-source-code')
+    await expect(chunks).toHaveCount(2)
+    await expect(chunks.locator('pre.shiki')).toHaveCount(2)
+    const code = chunks.first()
+    await expect.poll(async () => (await chunks.allTextContents()).join('\n')).toBe(source)
     const originalCode = await code.elementHandle()
     const scroller = code.locator('xpath=ancestor::*[@dir="ltr"][1]')
 
@@ -160,7 +215,7 @@ for (const mode of ['dark', 'light'] as const) {
       await expect(sourceButton).toHaveCSS('direction', 'rtl')
       await expect(code).toHaveCSS('direction', 'ltr')
       await expect(scroller).toHaveCSS('direction', 'ltr')
-      await expect.poll(() => code.textContent()).toBe(source)
+      await expect.poll(async () => (await chunks.allTextContents()).join('\n')).toBe(source)
       await scroller.evaluate(element => {
         element.scrollLeft = 0
         element.scrollTop = 0
@@ -172,17 +227,26 @@ for (const mode of ['dark', 'light'] as const) {
       }))
 
       expect(geometry.gutterRight).toBeLessThanOrEqual(geometry.codeLeft + 1)
+      const lastRow = await chunks.first().locator('.line').last().boundingBox()
+      const nextRow = await chunks.nth(1).locator('.line').first().boundingBox()
+      expect(Math.abs(nextRow!.y - lastRow!.y - 20)).toBeLessThanOrEqual(1)
       await code.click({ position: { x: 5, y: 5 } })
-      await code.evaluate(element => {
-        const selection = element.ownerDocument.getSelection()!
-        const range = element.ownerDocument.createRange()
-        range.selectNodeContents(element)
-        selection.removeAllRanges()
-        selection.addRange(range)
-      })
+      await selectSourceRange(chunks, 0, source.length)
       await app.evaluate(({ clipboard }, sentinel) => clipboard.writeText(sentinel), `${label}: awaiting native copy`)
       await page.keyboard.press('Control+c')
       await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toBe(source)
+      const chunkBoundary = source.split('\n').slice(0, 200).join('\n').length
+
+      for (const [from, to] of [
+        [2, source.indexOf('{') + 1],
+        [chunkBoundary - 5, chunkBoundary + 8]
+      ]) {
+        await selectSourceRange(chunks, from, to)
+        await app.evaluate(({ clipboard }, sentinel) => clipboard.writeText(sentinel), `${label}: partial ${from}`)
+        await page.keyboard.press('Control+c')
+        await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toBe(source.slice(from, to))
+      }
+
       await scroller.evaluate(element => {
         element.scrollLeft = element.scrollWidth
       })

@@ -1959,10 +1959,9 @@ body.guest-pointer-lock :is(webview, iframe) {
   opacity: 1;
 }
 
-/* Shiki surfaces in the inline file diff + source preview: strip the theme's
-   own background/margins, and lay each `.line` on its own grid row so the
-   inter-line `\n` text nodes can't double-space full-width rows. Empty lines
-   carry a non-breaking space so blank rows keep their height. */
+/* Shiki surfaces in the inline file diff + source preview share transparent
+   backgrounds. Diff rows use grid items; source keeps native preformatted
+   text flow so selection/copy preserves literal blank lines. */
 [data-slot='file-diff-panel'] .shiki,
 [data-slot='file-diff-panel'] .shiki code,
 .preview-source-code .shiki,
@@ -1971,13 +1970,11 @@ body.guest-pointer-lock :is(webview, iframe) {
   background: transparent !important;
 }
 
-[data-slot='file-diff-panel'] .shiki code,
-.preview-source-code .shiki code {
+[data-slot='file-diff-panel'] .shiki code {
   display: grid;
 }
 
-[data-slot='file-diff-panel'] .shiki code .line:empty::before,
-.preview-source-code .shiki code .line:empty::before {
+[data-slot='file-diff-panel'] .shiki code .line:empty::before {
   content: '\00a0';
 }
 
@@ -1987,18 +1984,18 @@ body.guest-pointer-lock :is(webview, iframe) {
   white-space: pre;
 }
 
-/* Source rows are a fixed editor-height box so source⇄diff toggling never
-   shifts and the gutter stays aligned. */
+/* Literal newlines own source rows. The paired gutter owns the chunk's full
+   height, including trailing/entirely empty lines, without copyable filler. */
 .preview-source-code .shiki code {
-  min-width: max-content;
-}
-
-.preview-source-code .shiki code .line {
   display: block;
-  height: 1.25rem;
+  min-width: max-content;
   padding: 0 0.625rem;
   line-height: 1.25rem;
   white-space: pre;
+}
+
+.preview-source-code .shiki code .line {
+  display: inline;
 }
 
 /* The github-dark token palette reads candy-bright at our small code size.
