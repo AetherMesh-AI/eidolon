@@ -461,7 +461,7 @@ export function PreviewModeSwitcher({
   return (
     // Fixed height so the header is byte-identical between read and edit modes —
     // swapping the trailing controls must never move the body below it.
-    <div className="preview-mode-switcher flex h-9 shrink-0 items-center justify-end gap-3 border-b border-border/40 px-3">
+    <div className="flex h-7 shrink-0 items-center justify-end gap-3 border-b border-border/40 px-3">
       {showModes &&
         modes.map(mode => (
           <button
@@ -533,21 +533,6 @@ function startLineDrag(event: ReactDragEvent<HTMLElement>, filePath: string, { e
   event.dataTransfer.setData(HERMES_PATHS_MIME, JSON.stringify([{ line: start, lineEnd, path: filePath }]))
   event.dataTransfer.setData('text/plain', label)
   event.dataTransfer.effectAllowed = 'copy'
-}
-
-function SourceCodeFallback({ code }: { code: string }) {
-  return (
-    <pre className="shiki" data-source-fallback>
-      <code>
-        {code.split('\n').map((line, index) => (
-          <Fragment key={index}>
-            {index > 0 && '\n'}
-            <span className="line">{line}</span>
-          </Fragment>
-        ))}
-      </code>
-    </pre>
-  )
 }
 
 /** Windowed, Shiki-highlighted source. The gutter's line selection produces a
@@ -633,56 +618,41 @@ export function SourceView({ filePath, language, text }: { filePath?: string; la
   }, [filePath, selection])
 
   return (
-    <div className="h-full overflow-auto" dir="ltr" onScroll={onScroll} ref={scrollerRef}>
+    <div className="h-full overflow-auto" onScroll={onScroll} ref={scrollerRef}>
       <div className="grid min-w-max grid-cols-[auto_minmax(0,1fr)] font-mono text-[0.7rem] leading-relaxed">
         {beforeRows > 0 && <div aria-hidden className="col-span-2" style={{ height: beforeRows * SOURCE_LINE_PX }} />}
-        {visibleChunks.map(chunk => {
-          const code = chunk !== lastChunk ? `${chunk.text}\n` : chunk.text
-          const effectiveLanguage = language || 'text'
+        {visibleChunks.map(chunk => (
+          <Fragment key={chunk.start}>
+            <div className="select-none text-right text-muted-foreground/55">
+              {chunk.lines.map((_lineText, offset) => {
+                const line = chunk.start + offset + 1
+                const selected = inSelection(line)
 
-          return (
-            <Fragment key={chunk.start}>
-              <div className="select-none text-right text-muted-foreground/55">
-                {chunk.lines.map((_lineText, offset) => {
-                  const line = chunk.start + offset + 1
-                  const selected = inSelection(line)
-
-                  return (
-                    <div
-                      className={cn(
-                        'h-5 w-9 pr-2 leading-5 tabular-nums transition-colors',
-                        filePath && 'cursor-pointer',
-                        selected
-                          ? 'bg-amber-200/45 text-amber-900 dark:bg-amber-300/20 dark:text-amber-100'
-                          : filePath && 'hover:text-foreground'
-                      )}
-                      draggable={Boolean(filePath)}
-                      key={line}
-                      onClick={event => handleLineClick(event, line)}
-                      onDragStart={event => handleDragStart(event, line)}
-                      title={filePath ? t.preview.sourceLineTitle : undefined}
-                    >
-                      {line}
-                    </div>
-                  )
-                })}
-              </div>
-              <div
-                className="preview-source-code min-w-0 [&_pre]:m-0"
-                data-selectable-text="true"
-                data-source-continuation={chunk !== lastChunk ? 'true' : undefined}
-              >
-                <ShikiHighlighter
-                  code={code}
-                  fallback={<SourceCodeFallback code={code} />}
-                  key={JSON.stringify([effectiveLanguage, code])}
-                  language={effectiveLanguage}
-                  theme={SHIKI_THEME}
-                />
-              </div>
-            </Fragment>
-          )
-        })}
+                return (
+                  <div
+                    className={cn(
+                      'h-5 w-9 pr-2 leading-5 tabular-nums transition-colors',
+                      filePath && 'cursor-pointer',
+                      selected
+                        ? 'bg-amber-200/45 text-amber-900 dark:bg-amber-300/20 dark:text-amber-100'
+                        : filePath && 'hover:text-foreground'
+                    )}
+                    draggable={Boolean(filePath)}
+                    key={line}
+                    onClick={event => handleLineClick(event, line)}
+                    onDragStart={event => handleDragStart(event, line)}
+                    title={filePath ? t.preview.sourceLineTitle : undefined}
+                  >
+                    {line}
+                  </div>
+                )
+              })}
+            </div>
+            <div className="preview-source-code min-w-0 [&_pre]:m-0" data-selectable-text="true">
+              <ShikiHighlighter code={chunk.text} language={language || 'text'} theme={SHIKI_THEME} />
+            </div>
+          </Fragment>
+        ))}
         {afterRows > 0 && <div aria-hidden className="col-span-2" style={{ height: afterRows * SOURCE_LINE_PX }} />}
       </div>
     </div>

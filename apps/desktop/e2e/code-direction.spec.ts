@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
@@ -106,7 +107,9 @@ test.afterEach(async () => {
         {
           ipc,
           rpc: fixture.capabilityMethods,
-          geometryContext: test.info().title.startsWith('Arabic file source')
+          geometryContext: test.info().title.includes('baseline window diagnostic')
+            ? 'Diagnostic only: baseline source window at 200%, recording raw DOM and native clipboard against unchanged original-source bytes. Not a supported-scope acceptance gate.'
+            : test.info().title.startsWith('Arabic file source')
             ? 'Restored sandbox files in one tabbed zone; exact LF/non-ASCII full and partial copy, real chunk delimiters, terminal cases, 200% and 400px. CRLF is an explicitly existing normalized-display diagnostic, not raw-byte fidelity. Native geometry waits for completed highlighting; the loading/error fallback is covered by component behavior tests. CRLF stays raw in that fallback until Shiki normalizes its completed display.'
             : test.info().title.startsWith('Arabic preview controls')
               ? 'Independent preview header focus and unsaved Edit/Cancel proof at 200% and 400px; never Save.'
@@ -321,7 +324,11 @@ for (const mode of ['dark', 'light'] as const) {
           ranges.push([chunkBoundary, chunkBoundary + 1], [chunkBoundary - 2, Math.min(displayText.length, chunkBoundary + 2)])
         }
 
-        for (const [from, to] of ranges) {
+        for (const [proposedFrom, proposedTo] of ranges) {
+          // These fixtures use precomposed text and single-codepoint emoji.
+          // Keep partial selections outside surrogate pairs, as a user would.
+          const from = proposedFrom > 0 && displayText.codePointAt(proposedFrom - 1)! > 0xffff ? proposedFrom - 1 : proposedFrom
+          const to = proposedTo < displayText.length && displayText.codePointAt(proposedTo - 1)! > 0xffff ? proposedTo + 1 : proposedTo
           await selectSourceRange(chunks, from, to)
           await app.evaluate(({ clipboard }, sentinel) => clipboard.writeText(sentinel), `${label}: copy ${from}-${to}`)
           await page.keyboard.press('Control+c')
@@ -428,6 +435,58 @@ for (const mode of ['dark', 'light'] as const) {
 
     await test.info().attach('mounted-source-window-geometry', { body: JSON.stringify(windows), contentType: 'application/json' })
     expect(readFileSync(samples[0].path, 'utf8')).toBe(text)
+  })
+
+  test(`Arabic file source baseline window diagnostic in ${mode}`, async () => {
+    const text = `${Array.from({ length: 1201 }, (_, index) => index % 200 === 199 ? '' : `// صف ${index + 1}: café 🧪`).join('\n')}\n`
+    const { current, root, samples } = await setupSourceGallery(mode, [{ name: 'windowed', text }])
+    const { page, app } = current
+    await page.locator(`[data-tree-tab=${JSON.stringify(`preview-tile:file:${samples[0].path}`)}]`).click()
+    await root.getByRole('button', { name: 'المصدر', exact: true }).click()
+    const chunks = root.locator('.preview-source-code:visible')
+    // Base 822 predates the source scroller's explicit LTR direction.
+    const scroller = chunks.first().locator('xpath=../..')
+    await resizeGallery(current, 1280, 720, 2)
+    await scroller.evaluate(element => { element.scrollTop = 0 })
+    const mountedBounds = () => chunks.evaluateAll(elements => ({
+      start: Number(elements[0].previousElementSibling!.firstElementChild!.textContent) - 1,
+      end: Number(elements.at(-1)!.previousElementSibling!.lastElementChild!.textContent)
+    }))
+    await expect.poll(mountedBounds).toEqual({ start: 0, end: 600 })
+    await expect(chunks.getByTestId('shiki-container')).toHaveCount(await chunks.count())
+    await expect.poll(() => chunks.evaluateAll(elements => elements.every(element =>
+      element.querySelector('pre.shiki code .line') !== null
+    ))).toBe(true)
+    const bounds = await mountedBounds()
+    const lines = text.split('\n')
+    const expected = lines.slice(bounds.start, bounds.end).join('\n') + (bounds.end < lines.length ? '\n' : '')
+    const rawChunks = await chunks.allTextContents()
+    const rawDom = rawChunks.join('')
+    const layout = await chunks.evaluateAll(elements => elements.map(element => {
+      const code = element.querySelector('pre.shiki code')!.getBoundingClientRect()
+      const gutter = element.previousElementSibling!.getBoundingClientRect()
+
+      return { codeHeight: code.height, gutterHeight: gutter.height, codeY: code.y, gutterY: gutter.y }
+    }))
+    await scroller.click({ position: { x: 100, y: 10 } })
+    await selectSourceRange(chunks, 0, rawDom.length)
+    const sentinel = 'awaiting diagnostic mounted source copy'
+    await app.evaluate(({ clipboard }, value) => clipboard.writeText(value), sentinel)
+    await page.keyboard.press('Control+c')
+    await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).not.toBe(sentinel)
+    const actual = await app.evaluate(({ clipboard }) => clipboard.readText())
+    const trailingLf = (value: string) => value.match(/\n*$/)![0].length
+    writeFileSync(test.info().outputPath('baseline-window-diagnostic.json'), JSON.stringify({
+      purpose: 'Diagnostic only; bind this run to base 822 plus the spec-only delta before calling it baseline evidence.',
+      sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+      sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
+      mode, width: 1280, zoom: 2, bounds, layout, rawChunks, rawDom, expected, actual,
+      rawDomMatchesSource: rawDom === expected,
+      trailingLf: { expected: trailingLf(expected), actual: trailingLf(actual) },
+      rawDiskUnchanged: readFileSync(samples[0].path, 'utf8') === text
+    }, null, 2))
+    // Preserve the exact native clipboard contract despite the known baseline DOM mismatch.
+    await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toBe(expected)
   })
 
   test(`Arabic preview controls keep focus and unsaved edits in ${mode}`, async () => {
