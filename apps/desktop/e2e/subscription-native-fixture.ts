@@ -47,6 +47,167 @@ export interface SubscriptionEvent extends Row {
   physicalNetworkSend: false
 }
 
+// Python's test-only trace has an independent closed schema. Revalidate at
+// artifact export so even malformed evidence cannot copy arbitrary strings.
+function boundaryDiagnostic(rows: Row[]) {
+  const stages = new Set([
+    'observer',
+    'gateway_rpc',
+    'team_rpc',
+    'gateway_dispatch',
+    'gateway_context',
+    'gateway_service',
+    'owner_scope',
+    'owner_guard',
+    'setup_guard',
+    'catalog_load',
+    'catalog_guard',
+    'catalog_descriptor',
+    'auth_status',
+    'auth_guard',
+    'auth_descriptor',
+    'auth_lease',
+    'auth_lease_guard',
+    'store_lock',
+    'store_status',
+    'store_descriptor',
+    'store_grant',
+    'store_decrypt',
+    'store_fence',
+    'store_lease',
+    'lease_fence',
+    'lease_run',
+    'lease_run_nonblocking',
+    'lease_send_gate',
+    'catalog_http',
+    'catalog_http_send',
+    'inference_transport',
+    'admission_send_gate',
+    'acl_descriptor',
+    'darwin_acl',
+    'filesystem_check'
+  ])
+
+  const events = new Set(['enter', 'exception', 'returned_false', 'overflow', 'installed', 'existing_trace'])
+
+  const classes = new Set([
+    'BlockingIOError',
+    'OSError',
+    'ValueError',
+    'TypeError',
+    'AssertionError',
+    'KeyError',
+    'FileNotFoundError',
+    'TimeoutError',
+    'OperationalError',
+    'OwnerPolicyError',
+    'BoundaryError',
+    'CatalogError',
+    'AuthError',
+    'StoreError',
+    'HttpError',
+    'TransportError'
+  ])
+
+  const reasons = new Set([
+    'connection_unavailable',
+    'recursive_use',
+    'unsafe_filesystem',
+    'filesystem_protection_unavailable',
+    'backend_unavailable',
+    'corrupt_store',
+    'recovery_required',
+    'storage_recovery_required',
+    'operation_failed',
+    'stale_revision',
+    'stale_owner',
+    'stale_attempt',
+    'setup_unavailable',
+    'owner_generation_changed',
+    'lease_cancelled',
+    'lease_used',
+    'grant_expired',
+    'invalid_grant',
+    'invalid_binding',
+    'scope_denied',
+    'scope_not_authorized',
+    'invalid_lease_result',
+    'invalid_request',
+    'request_failed',
+    'locked',
+    'corrupt',
+    'unreadable',
+    'source_conflict',
+    'identity_conflict',
+    'unconfigured',
+    'cancelled',
+    'stale_binding',
+    'accounting_failed',
+    'admission_denied',
+    'connect_failed',
+    'incomplete_stream',
+    'invalid_headers',
+    'resource_limit',
+    'access_denied',
+    'attempt_expired',
+    'attempt_pending',
+    'auth_attempt_mismatch',
+    'authentication_failed',
+    'browser_unavailable',
+    'disconnect_required',
+    'exchange_failed',
+    'insufficient_scope',
+    'invalid_callback',
+    'invalid_identity',
+    'invalid_secret',
+    'native_reference_mismatch',
+    'operation_history_exhausted',
+    'operation_mismatch',
+    'publication_failed',
+    'publication_uncertain',
+    'reauthorization_required',
+    'refresh_pending',
+    'refresh_uncertain',
+    'revision_conflict',
+    'revision_exhausted',
+    'revision_exists',
+    'ticket_conflict',
+    'ticket_retired',
+    'ticket_sequence_exhausted',
+    'transition_pending',
+    'typed_grant_requires_handoff',
+    'value_too_large'
+  ])
+
+  const known = (value: unknown, allowed: Set<string>) =>
+    typeof value === 'string' && allowed.has(value) ? value : 'other'
+
+  const count = (value: unknown, maximum: number) =>
+    Number.isInteger(value) && Number(value) >= 0 && Number(value) <= maximum ? value : null
+
+  return rows.slice(-128).map(value => {
+    const row = value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+
+    return {
+      sequence: count(row.sequence, 2 ** 31 - 1),
+      stage: known(row.stage, stages),
+      event: known(row.event, events),
+      lane: count(row.lane, 32),
+      line: count(row.line, 10000),
+      errorClass: known(row.errorClass, classes),
+      reason: known(row.reason, reasons),
+      existingThreadsCovered: row.existingThreadsCovered === true,
+      holders: Array.isArray(row.holders)
+        ? row.holders.slice(0, 8).map(value => {
+            const holder = value && typeof value === 'object' ? (value as Row) : {}
+
+            return { lane: count(holder.lane, 32), stage: known(holder.stage, stages) }
+          })
+        : []
+    }
+  })
+}
+
 // Observe production WS traffic without replacing, intercepting or replaying it.
 // Only this fixed schema survives; payloads and comparison digests never leave
 // the observer. Subscribe before owner actions, including on a socket opened at boot.
@@ -443,6 +604,7 @@ export async function setupNativeSubscription(options: { legacy?: boolean; uncer
         return {
           version: 1,
           rpc: rpcObserver!.read(),
+          boundaries: boundaryDiagnostic(records('subscription-boundaries')),
           eventCounts: Object.fromEntries(
             [
               'installed',

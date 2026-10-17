@@ -4,6 +4,7 @@ No production constructor, owner gate, store, listener, auth verifier, catalog,
 policy, admission or sender is replaced. Never install outside disposable tests.
 The private RSA key and vault values are synthetic and live only in this process.
 """
+from collections import deque
 from contextlib import closing
 import hashlib
 import http.client
@@ -12,10 +13,12 @@ import ipaddress
 import json
 from pathlib import Path
 import sqlite3
+import sys
 import socket
 import threading
 import time
 import traceback
+from types import CodeType, FunctionType
 from urllib.parse import parse_qs, urlencode, urlsplit
 import uuid
 import webbrowser
@@ -115,6 +118,221 @@ class Vault:
             self.values.pop(reference, None)
 
 
+class BoundaryDiagnostics:
+    """Bounded test-only observation. Never inspect frame locals or stringify errors."""
+    _STAGES = {
+        'tui_gateway.methods_organization_setup_subscription': {
+            '_method.<locals>.handler': 'gateway_rpc',
+            'dispatch': 'gateway_dispatch', '_context': 'gateway_context', '_service': 'gateway_service',
+            '_durable_scope': 'owner_scope', '_context.<locals>.guard': 'owner_guard',
+            '_context.<locals>.setup_guard': 'setup_guard'},
+        'tui_gateway.methods_organization_team_setup': {'_team_method.<locals>.handler': 'team_rpc'},
+        'eidolon_cli.organization_setup_subscription_catalog': {
+            'SubscriptionCatalog.load': 'catalog_load', 'SubscriptionCatalog._guard': 'catalog_guard',
+            'SubscriptionCatalog._descriptor': 'catalog_descriptor'},
+        'eidolon_cli.organization_setup_subscription_auth': {
+            'SubscriptionAuthService.status': 'auth_status', 'SubscriptionAuthService._guard': 'auth_guard',
+            'SubscriptionAuthService.current_descriptor': 'auth_descriptor',
+            'SubscriptionAuthService.lease_access_current': 'auth_lease',
+            'SubscriptionAuthService._lease_guard': 'auth_lease_guard'},
+        'eidolon_cli.organization_setup_subscription_store': {
+            'SubscriptionStore._locked': 'store_lock', 'SubscriptionStore.status': 'store_status',
+            '_checked_acl_descriptor': 'acl_descriptor', '_check_darwin_acl': 'darwin_acl',
+            'SubscriptionStore._check': 'filesystem_check',
+            'SubscriptionStore.connection_descriptor': 'store_descriptor',
+            'SubscriptionStore.grant_descriptor': 'store_grant', 'SubscriptionStore._decrypt': 'store_decrypt',
+            'SubscriptionStore._fence': 'store_fence', 'SubscriptionStore.lease_access_token': 'store_lease',
+            'TokenLease._check_locked': 'lease_fence', 'TokenLease.run': 'lease_run',
+            'TokenLease.run_nonblocking': 'lease_run_nonblocking',
+            'TokenLease.try_send_allowed': 'lease_send_gate'},
+        'eidolon_cli.organization_setup_subscription_http': {
+            'request': 'catalog_http', 'request.<locals>.GuardedConnection.send': 'catalog_http_send'},
+        'eidolon_cli.organization_setup_subscription_transport': {'send_once': 'inference_transport'},
+        'eidolon_cli.organization_setup_subscription_admission': {
+            '_Admission.try_send_allowed': 'admission_send_gate'},
+    }
+    _ENTRIES = {'gateway_dispatch', 'catalog_load', 'auth_status', 'auth_descriptor', 'auth_lease',
+                'store_status', 'store_grant', 'store_lease', 'lease_run', 'lease_run_nonblocking',
+                'catalog_http', 'catalog_http_send', 'inference_transport'}
+    _ERRORS = {'builtins': {'BlockingIOError', 'OSError', 'ValueError', 'TypeError', 'AssertionError',
+                              'KeyError', 'FileNotFoundError', 'TimeoutError'},
+        'sqlite3': {'OperationalError'},
+        'eidolon_cli.organization_owner_policy': {'OwnerPolicyError'},
+        'tui_gateway.methods_organization_setup_subscription': {'BoundaryError'},
+        'eidolon_cli.organization_setup_subscription_catalog': {'CatalogError'},
+        'eidolon_cli.organization_setup_subscription_auth': {'AuthError'},
+        'eidolon_cli.organization_setup_subscription_store': {'StoreError'},
+        'eidolon_cli.organization_setup_subscription_http': {'HttpError'},
+        'eidolon_cli.organization_setup_subscription_transport': {'TransportError'}}
+    _REASONS = frozenset({'connection_unavailable', 'recursive_use', 'unsafe_filesystem',
+        'filesystem_protection_unavailable', 'backend_unavailable', 'corrupt_store', 'recovery_required',
+        'storage_recovery_required', 'operation_failed', 'stale_revision', 'stale_owner', 'stale_attempt',
+        'setup_unavailable', 'owner_generation_changed', 'lease_cancelled', 'lease_used', 'grant_expired',
+        'invalid_grant', 'invalid_binding', 'scope_denied', 'scope_not_authorized', 'invalid_lease_result',
+        'invalid_request', 'request_failed', 'locked', 'corrupt', 'unreadable', 'source_conflict',
+        'identity_conflict', 'unconfigured', 'cancelled', 'stale_binding', 'accounting_failed',
+        'admission_denied', 'connect_failed', 'incomplete_stream', 'invalid_headers', 'resource_limit',
+                'access_denied', 'attempt_expired', 'attempt_pending', 'auth_attempt_mismatch',
+        'authentication_failed', 'browser_unavailable', 'disconnect_required', 'exchange_failed',
+        'insufficient_scope', 'invalid_callback', 'invalid_identity', 'invalid_secret',
+        'native_reference_mismatch', 'operation_history_exhausted', 'operation_mismatch', 'publication_failed',
+        'publication_uncertain', 'reauthorization_required', 'refresh_pending', 'refresh_uncertain',
+        'revision_conflict', 'revision_exhausted', 'revision_exists', 'ticket_conflict', 'ticket_retired',
+        'ticket_sequence_exhausted', 'transition_pending', 'typed_grant_requires_handoff', 'value_too_large'})
+
+    def __init__(self, evidence):
+        self.path = Path(evidence) / 'subscription-boundaries.jsonl'
+        self.lock = threading.Lock()
+        self.flush_lock = threading.Lock()
+        self.lanes, self.holders = {}, {}
+        self.codes = {}
+        self.count = 0
+        self.rows = deque(maxlen=512)
+        self.enabled = False
+        self.old_main = sys.gettrace()
+        self.old_threads = threading.gettrace()
+
+    def stage(self, frame):
+        code = frame.f_code
+        module_name = frame.f_globals.get('__name__')
+        label = self._STAGES.get(module_name, {}).get(code.co_qualname)
+        if label is None:
+            return None
+        if code in self.codes:
+            return self.codes[code]
+        # Match the exact loaded function (including nested code and wrappers),
+        # not merely a same-named frame. Imports may occur after installation.
+        module = sys.modules.get(module_name)
+        target = vars(module).get(code.co_qualname.split('.')[0]) if module else None
+        if isinstance(target, type):
+            target = vars(target).get(code.co_qualname.split('.')[1])
+        candidates = []
+        for _ in range(8):
+            if not isinstance(target, FunctionType):
+                break
+            candidates.append(target.__code__)
+            target = vars(target).get('__wrapped__')
+        for _ in range(128):
+            if not candidates:
+                break
+            candidate = candidates.pop()
+            if candidate is code:
+                if len(self.codes) < 128:
+                    self.codes[code] = label
+                return label
+            candidates.extend(value for value in candidate.co_consts if isinstance(value, CodeType))
+        return None
+
+    def emit(self, value):
+        # Critical-frame callbacks touch bounded memory only, never the filesystem.
+        with self.lock:
+            self.count = min(self.count + 1, 2**31 - 1)
+            self.rows.append({'sequence': self.count, **value})
+
+    def flush(self):
+        # Called only after the outer RPC handler has released its locks, or at
+        # fixture installation/teardown. Never from a store/lease/send frame.
+        with self.flush_lock:
+            with self.lock:
+                rows = list(self.rows)
+                if self.count > 512:
+                    rows.insert(0, {'sequence': 0, 'stage': 'observer', 'event': 'overflow'})
+            try:
+                self.path.write_text(''.join(json.dumps(row, sort_keys=True) + '\n' for row in rows), encoding='utf-8')
+            except OSError:
+                pass  # Diagnostic persistence must not change a production outcome.
+
+    def trace(self, frame, event, arg):
+        try:
+            return self._trace(frame, event, arg)
+        except Exception:
+            # Observer failure or shutdown must never change the observed outcome.
+            return None
+
+    def _trace(self, frame, event, arg):
+        if not self.enabled:
+            return None
+        stage = self.stage(frame)
+        if stage is None:
+            return None
+        frame.f_trace_lines = False
+        frame.f_trace_opcodes = False
+        lane_key = threading.get_ident()
+        with self.lock:
+            if lane_key not in self.lanes and len(self.lanes) < 32:
+                self.lanes[lane_key] = len(self.lanes) + 1
+            lane = self.lanes.get(lane_key, 0)
+        value = {'lane': lane, 'stage': stage, 'line': frame.f_lineno}
+        # Generator return(True) is the acquired-lock yield; final return(None)
+        # occurs after its finally releases flock. Only fixed caller labels live
+        # in memory, never a retained frame, local value, path or identifier.
+        if stage == 'store_lock' and event == 'return':
+            if arg is True and lane:
+                parent = frame.f_back
+                owner = 'other'
+                for _ in range(10):
+                    if parent is None:
+                        break
+                    label = self.stage(parent)
+                    if label is not None and label != 'store_lock':
+                        owner = label
+                        break
+                    parent = parent.f_back
+                with self.lock:
+                    self.holders[lane_key] = {'lane': lane, 'stage': owner}
+            elif arg is None:
+                with self.lock:
+                    self.holders.pop(lane_key, None)
+        if event == 'return' and stage in {'gateway_rpc', 'team_rpc'}:
+            self.flush()
+        if event == 'call' and stage in self._ENTRIES:
+            self.emit({**value, 'event': 'enter'})
+        elif event == 'exception':
+            error = arg[1]
+            kind = type(error)
+            if kind in {StopIteration, GeneratorExit}:
+                return self.trace
+            recognized = (kind.__name__ in self._ERRORS.get(kind.__module__, set())
+                and vars(sys.modules[kind.__module__]).get(kind.__name__) is kind)
+            reason = vars(error).get('reason') if recognized else None
+            if reason is None and recognized and kind.__name__ == 'TransportError':
+                reason = vars(error).get('code')
+            with self.lock:
+                holders = list(self.holders.values())[:8]
+            self.emit({**value, 'event': 'exception',
+                'errorClass': kind.__name__ if recognized else 'other',
+                'reason': reason if type(reason) is str and reason in self._REASONS else 'other',
+                'holders': holders})
+        elif event == 'return' and arg is False:
+            with self.lock:
+                holders = list(self.holders.values())[:8]
+            self.emit({**value, 'event': 'returned_false', 'holders': holders})
+        return self.trace
+
+    def install(self):
+        if self.old_main is not None or self.old_threads is not None:
+            self.emit({'stage': 'observer', 'event': 'existing_trace'})
+            self.flush()
+            return
+        self.emit({'stage': 'observer', 'event': 'installed',
+                   'existingThreadsCovered': hasattr(threading, 'settrace_all_threads')})
+        self.flush()  # Precreate evidence before tracing any production frame.
+        self.enabled = True
+        threading.settrace(self.trace)
+        if hasattr(threading, 'settrace_all_threads'):
+            threading.settrace_all_threads(self.trace)
+        sys.settrace(self.trace)
+
+    def close(self):
+        if self.enabled:
+            threading.settrace(self.old_threads)
+            if hasattr(threading, 'settrace_all_threads'):
+                threading.settrace_all_threads(self.old_threads)
+            sys.settrace(self.old_main)
+            self.enabled = False
+        self.flush()
+
+
 class SyntheticEdges:
     def __init__(self, home, *, evidence=None, mode='complete'):
         self.home = Path(home).resolve(strict=True)
@@ -126,6 +344,7 @@ class SyntheticEdges:
         self.key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
         self.lock = threading.Lock()
         self.restores = []
+        self.boundary_diagnostics = BoundaryDiagnostics(self.evidence) if self.evidence else None
 
     def record(self, kind, **detail):
         value = {'kind': kind, 'physicalNetworkSend': False, **detail}
@@ -164,6 +383,8 @@ class SyntheticEdges:
             connection.sock = SyntheticSocket(edges, connection.host)
         self.patch(http.client.HTTPSConnection, 'connect', connect)
         self.install_network_guards()
+        if self.boundary_diagnostics is not None:
+            self.boundary_diagnostics.install()
         self.record('installed', nativeStoreMode='production', platform=__import__('sys').platform)
         return self
 
@@ -229,6 +450,8 @@ class SyntheticEdges:
             self.patch(socket.socket, 'sendmsg', sendmsg)
 
     def close(self):
+        if self.boundary_diagnostics is not None:
+            self.boundary_diagnostics.close()
         for obj, name, original in reversed(self.restores):
             setattr(obj, name, original)
         self.restores.clear()

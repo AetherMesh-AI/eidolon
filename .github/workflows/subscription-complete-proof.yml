@@ -30,7 +30,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 02d41ebb5c75c80480b6cd7004e9a97c9636faf4
+          ref: 9f7c7d0b9e554d2a3748552cd35616f852f434be
           path: source
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -43,8 +43,8 @@ jobs:
           python-version: '3.12'
       - name: Verify exact source and old runtime
         run: |
-          test "$(git rev-parse HEAD)" = 02d41ebb5c75c80480b6cd7004e9a97c9636faf4
-          test "$(git rev-parse HEAD^{tree})" = ad052d3cf07bcaf5e6f3df821d881489965210f2
+          test "$(git rev-parse HEAD)" = 9f7c7d0b9e554d2a3748552cd35616f852f434be
+          test "$(git rev-parse HEAD^{tree})" = 5b56e0a1e49211107f4ff8f015eb00b2322411bc
           test "$(git -C ../old-runtime rev-parse HEAD)" = 43a84a77f094084ce8eb8dc2e99fdd679fb9d065
           test "$(git -C ../old-runtime rev-parse HEAD^{tree})" = 719349cb69ed9fb7bbc2e6aeabb1ffabc8e08e3b
           python -c "import platform; print(platform.system(), platform.machine())"
@@ -56,7 +56,7 @@ jobs:
       - name: Canonical synthetic vertical and API regressions
         run: |
           set -o pipefail
-          scripts/run_tests.sh -j 2 tests/eidolon_cli/test_organization_setup_subscription_http.py tests/eidolon_cli/test_organization_setup_subscription_catalog.py tests/eidolon_cli/test_organization_setup_subscription_refresh.py tests/eidolon_cli/test_organization_setup_subscription_revocation.py tests/eidolon_cli/test_organization_setup_subscription_auth.py tests/eidolon_cli/test_organization_setup_subscription_policy.py tests/eidolon_cli/test_organization_setup_subscription_policy_integration.py tests/eidolon_cli/test_organization_setup_subscription_transport.py tests/eidolon_cli/test_organization_setup_subscription_usage.py tests/eidolon_cli/test_organization_setup_subscription_admission.py tests/eidolon_cli/test_organization_team_subscription_generation.py tests/eidolon_cli/test_organization_team_admission.py tests/eidolon_cli/test_organization_team_budget.py tests/eidolon_cli/test_organization_team_generation.py tests/eidolon_cli/test_organization_team_setup.py tests/eidolon_cli/test_organization_owner_policy.py tests/tui_gateway/test_organization_setup_subscription.py tests/tui_gateway/test_organization_setup_subscription_flow.py tests/tui_gateway/test_organization_setup_subscription_preflight.py tests/eidolon_cli/test_organization_setup_subscription_catalog_passive.py tests/tui_gateway/test_organization_setup_subscription_readiness.py tests/eidolon_cli/test_organization_subscription_races.py tests/tui_gateway/test_subscription_native_journey.py -- -vv -o faulthandler_timeout=30 2>&1 | tee backend-tests.log
+          scripts/run_tests.sh -j 2 tests/eidolon_cli/test_organization_setup_subscription_http.py tests/eidolon_cli/test_organization_setup_subscription_catalog.py tests/eidolon_cli/test_organization_setup_subscription_refresh.py tests/eidolon_cli/test_organization_setup_subscription_revocation.py tests/eidolon_cli/test_organization_setup_subscription_auth.py tests/eidolon_cli/test_organization_setup_subscription_policy.py tests/eidolon_cli/test_organization_setup_subscription_policy_integration.py tests/eidolon_cli/test_organization_setup_subscription_transport.py tests/eidolon_cli/test_organization_setup_subscription_usage.py tests/eidolon_cli/test_organization_setup_subscription_admission.py tests/eidolon_cli/test_organization_team_subscription_generation.py tests/eidolon_cli/test_organization_team_admission.py tests/eidolon_cli/test_organization_team_budget.py tests/eidolon_cli/test_organization_team_generation.py tests/eidolon_cli/test_organization_team_setup.py tests/eidolon_cli/test_organization_owner_policy.py tests/tui_gateway/test_organization_setup_subscription.py tests/tui_gateway/test_organization_setup_subscription_flow.py tests/tui_gateway/test_organization_setup_subscription_preflight.py tests/eidolon_cli/test_organization_setup_subscription_catalog_passive.py tests/tui_gateway/test_organization_setup_subscription_readiness.py tests/eidolon_cli/test_organization_subscription_races.py tests/eidolon_cli/test_subscription_native_diagnostics.py tests/tui_gateway/test_subscription_native_journey.py -- -vv -o faulthandler_timeout=30 2>&1 | tee backend-tests.log
       - name: Protected store and host regressions
         run: |
           set -o pipefail
@@ -75,7 +75,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  # Insert this job under jobs: after replacing 02d41ebb5c75c80480b6cd7004e9a97c9636faf4 and ad052d3cf07bcaf5e6f3df821d881489965210f2 with
+  # Insert this job under jobs: after replacing 9f7c7d0b9e554d2a3748552cd35616f852f434be and 5b56e0a1e49211107f4ff8f015eb00b2322411bc with
   # the immutable source commit and its root tree. No workflow/branch publication.
   # Native display strategy: launch Electron directly on the hosted macOS session.
   # https://www.electronjs.org/docs/latest/tutorial/testing-on-headless-ci
@@ -95,13 +95,13 @@ jobs:
       OPENROUTER_API_KEY: ''
       NOUS_API_KEY: ''
       ANTHROPIC_API_KEY: ''
-      SUBSCRIPTION_PROOF_SHA: '02d41ebb5c75c80480b6cd7004e9a97c9636faf4'
-      SUBSCRIPTION_PROOF_TREE: 'ad052d3cf07bcaf5e6f3df821d881489965210f2'
+      SUBSCRIPTION_PROOF_SHA: '9f7c7d0b9e554d2a3748552cd35616f852f434be'
+      SUBSCRIPTION_PROOF_TREE: '5b56e0a1e49211107f4ff8f015eb00b2322411bc'
       PYTHONDONTWRITEBYTECODE: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 02d41ebb5c75c80480b6cd7004e9a97c9636faf4
+          ref: 9f7c7d0b9e554d2a3748552cd35616f852f434be
           persist-credentials: false
       - name: Verify immutable source and actual macOS host
         run: |
