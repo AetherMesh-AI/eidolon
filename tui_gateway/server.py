@@ -165,7 +165,7 @@ _LONG_HANDLERS = frozenset({
     "organization.credentials.secureInput", "organization.credentials.mutate",
     "organization.credentials.replacementTargets", "organization.credentials.prepareReplacement",
     "organization.credentials.replacementStatus", "organization.credentials.cancelReplacement",
-    "organization.teamSetup", "organization.previewTeam", "organization.createTeam", "organization.generateTeam",
+    "organization.teamSetup", "organization.previewTeam", "organization.createTeam", "organization.generateTeam", "organization.improveTeamInput",
     "organization.sharedAllowance", "organization.previewSharedAllowance", "organization.configureSharedAllowance",
     "organization.previewSharedAllowanceObservation", "organization.recordSharedAllowanceObservation",
     "billing.state", "subscription.state", "subscription.preview", "subscription.change",

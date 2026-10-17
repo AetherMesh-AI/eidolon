@@ -1,15 +1,14 @@
 import './team-onboarding.css'
 
 import { useStore } from '@nanostores/react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { Link } from 'react-router'
 
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { Loader } from '@/components/ui/loader'
-import { Textarea } from '@/components/ui/textarea'
 import { useI18n } from '@/i18n/context'
-import { teamOnboardingCopy } from '@/i18n/organization-team-onboarding'
+import { teamOnboardingCopy, type TeamOnboardingCopy } from '@/i18n/organization-team-onboarding'
 import { $gateway } from '@/store/gateway'
 import { $desktopOnboarding, startManualOnboarding } from '@/store/onboarding'
 
@@ -20,10 +19,12 @@ import {
   type TeamDraft,
   type TeamOnboardingClient,
   type TeamPreview,
+  type TeamReadiness,
   type TeamReceipt,
   type TeamSetup
 } from './team-onboarding-client'
 import { TeamOnboardingEditor } from './team-onboarding-editor'
+import { type TeamInputReview, TeamOnboardingInputs, type TeamSetupInputs } from './team-onboarding-inputs'
 import type { RuntimeOrganizationAdapter } from './types'
 import { readOrganizationMetadataScope, useOrganizationMetadata } from './use-organization-metadata'
 
@@ -38,9 +39,31 @@ function readTeamScope() {
         return Promise.reject(new Error('stale'))
       }
 
-      return gateway.request<T>(method, params, method === 'organization.generateTeam' ? 180000 : 15000)
+      return gateway.request<T>(
+        method,
+        params,
+        ['organization.generateTeam', 'organization.improveTeamInput'].includes(method) ? 180000 : 15000
+      )
     }
   }
+}
+
+function readinessMessage(readiness: TeamReadiness, copy: TeamOnboardingCopy, saved = false) {
+  if (readiness.status !== 'blocked') {
+    return copy.readinessUnchecked
+  }
+
+  const reasons: [string, string][] = [
+    ['model_not_configured', saved ? copy.modelBlocked : copy.modelMissing],
+    ['subscription_generation_unsupported', copy.subscriptionUnsupported],
+    ['codex_app_server', copy.appServerUnsupported],
+    ['generation_route_unsupported', copy.generationUnsupported]
+  ]
+
+  return (
+    reasons.find(([reason]) => readiness.blockers.includes(reason))?.[1] ??
+    (saved ? copy.modelBlocked : copy.modelRequired)
+  )
 }
 
 export function TeamOnboardingEntry({ adapter }: { adapter: RuntimeOrganizationAdapter }) {
@@ -220,39 +243,54 @@ export function TeamOnboardingEntry({ adapter }: { adapter: RuntimeOrganizationA
   )
 }
 
-export function TeamOnboardingDialog({
-  client,
-  setup: initialSetup,
-  profile,
-  onClose,
-  onCreated,
-  onReturnFocus
-}: {
+interface TeamGenerationIntent {
+  key: string
+  setup: TeamSetup
+  inputs: TeamSetupInputs
+  revision: number
+}
+
+interface TeamOnboardingDialogProps {
   client: TeamOnboardingClient
   setup: TeamSetup
   profile: string
   onClose: () => void
   onCreated: () => void
   onReturnFocus: () => void
-}) {
+}
+
+function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreated }: TeamOnboardingDialogProps) {
   const { locale } = useI18n()
   const copy = teamOnboardingCopy[locale]
   const [setup, setSetup] = useState(initialSetup)
   const providerSetup = useStore($desktopOnboarding)
   const returningFromProvider = useRef(false)
-  const [jobs, setJobs] = useState('')
-  const [goals, setGoals] = useState('')
-  const [namingStyle, setNamingStyle] = useState('')
+  const [inputs, setInputs] = useState<TeamSetupInputs>({ jobs: '', goals: '', namingStyle: '' })
+
+  const [suggestion, setSuggestion] = useState<(TeamInputReview & { revision: number; sourceRevision: string }) | null>(
+    null
+  )
+
+  const inputRevision = useRef(0)
+  const draftRevision = useRef(0)
+  const improvementIntents = useRef<Partial<Record<'jobs' | 'goals', { fingerprint: string; key: string }>>>({})
   const [team, setTeam] = useState<TeamDraft | null>(null)
   const [preview, setPreview] = useState<TeamPreview | null>(null)
   const [receipt, setReceipt] = useState<TeamReceipt | null>(null)
-  const [pending, setPending] = useState<'generate' | 'preview' | 'create' | 'check' | null>(null)
+
+  const [pending, setPending] = useState<'generate' | 'regenerate' | 'improve' | 'preview' | 'create' | 'check' | null>(
+    null
+  )
+
   const [error, setError] = useState('')
   const [unresolvedCreate, setUnresolvedCreate] = useState(false)
+  const [hasGenerated, setHasGenerated] = useState(false)
+  const [allowanceUnverified, setAllowanceUnverified] = useState(false)
+  const regenerationIntent = useRef<TeamGenerationIntent | null>(null)
   const operation = useRef(0)
   const busy = useRef(false)
   const alive = useRef(true)
-  const generationIntent = useRef<string | null>(null)
+  const generationIntent = useRef<TeamGenerationIntent | null>(null)
   const intent = useRef<{ version: string; key: string } | null>(null)
   // eslint-disable-next-line no-restricted-syntax -- Lifecycle cancellation invalidates pending results; this is not mirrored store state.
   useEffect(() => {
@@ -290,6 +328,21 @@ export function TeamOnboardingDialog({
               ? copy.checkFailed
               : copy.error
         )
+
+        if (['generate', 'regenerate', 'improve'].includes(kind) && client.current()) {
+          setAllowanceUnverified(true)
+
+          try {
+            const result = await client.setup(setup.organizationId ?? null)
+
+            if (alive.current && token === operation.current && client.current()) {
+              setSetup(result)
+              setAllowanceUnverified(false)
+            }
+          } catch {
+            // Keep the original error and require a successful passive check before new spend.
+          }
+        }
       }
     } finally {
       if (alive.current && token === operation.current) {
@@ -300,17 +353,157 @@ export function TeamOnboardingDialog({
   }
 
   const applyPreview = (result: TeamPreview) => {
+    if (result.organizationId !== setup.organizationId || result.sourceRevision !== setup.sourceRevision) {
+      throw new Error('stale')
+    }
+
     if (alive.current) {
       setPreview(result)
       setTeam(result.team)
+
+      if (result.generationAllowance) {
+        setSetup(current => ({ ...current, generationAllowance: result.generationAllowance }))
+        setAllowanceUnverified(false)
+      }
+
       intent.current = null
     }
   }
 
   const update = (value: TeamDraft) => {
+    draftRevision.current++
     setTeam(value)
     setPreview(null)
     intent.current = null
+  }
+
+  const changeInput = (field: keyof TeamSetupInputs, value: string) => {
+    inputRevision.current++
+    draftRevision.current++
+    setInputs(current => ({ ...current, [field]: value }))
+    setSuggestion(null)
+    generationIntent.current = null
+  }
+
+  const allowanceBlocked =
+    allowanceUnverified || (!!setup.generationAllowance && setup.generationAllowance.status !== 'available')
+
+  const improvementFingerprint = (field: 'jobs' | 'goals') =>
+    JSON.stringify({ ...inputs, sourceRevision: setup.sourceRevision, field })
+
+  const canImprove = (field: 'jobs' | 'goals') =>
+    !allowanceBlocked || improvementIntents.current[field]?.fingerprint === improvementFingerprint(field)
+
+  const improve = (field: 'jobs' | 'goals') => {
+    if (
+      busy.current ||
+      setup.readiness.status === 'blocked' ||
+      setup.inputImprovementVersion !== 1 ||
+      !inputs[field].trim() ||
+      !canImprove(field)
+    ) {
+      return
+    }
+
+    const revision = inputRevision.current
+    const fingerprint = improvementFingerprint(field)
+
+    if (improvementIntents.current[field]?.fingerprint !== fingerprint) {
+      improvementIntents.current[field] = { fingerprint, key: crypto.randomUUID() }
+    }
+
+    const idempotencyKey = improvementIntents.current[field]!.key
+    setSuggestion(null)
+    void act('improve', async () => {
+      const result = await client.improve(setup, { ...inputs, field, idempotencyKey })
+
+      if (alive.current && client.current() && revision === inputRevision.current) {
+        setSuggestion({ ...result, original: inputs[field], revision })
+
+        if (result.generationAllowance) {
+          setSetup(current => ({ ...current, generationAllowance: result.generationAllowance }))
+          setAllowanceUnverified(false)
+        }
+      }
+    })
+  }
+
+  const generate = (replace = false) => {
+    if (busy.current || setup.readiness.status === 'blocked') {
+      return
+    }
+
+    if (replace && !regenerationIntent.current) {
+      if (allowanceUnverified || setup.generationAllowance?.status !== 'available') {
+        return
+      }
+
+      regenerationIntent.current = {
+        key: crypto.randomUUID(),
+        setup,
+        inputs: { ...inputs },
+        revision: draftRevision.current
+      }
+    }
+
+    if (!replace && allowanceBlocked && !generationIntent.current) {
+      return
+    }
+
+    const request = replace
+      ? regenerationIntent.current!
+      : (generationIntent.current ??= {
+          key: crypto.randomUUID(),
+          setup,
+          inputs: { ...inputs },
+          revision: draftRevision.current
+        })
+
+    void act(replace ? 'regenerate' : 'generate', async () => {
+      const result = await client.generate(request.setup, { ...request.inputs, idempotencyKey: request.key })
+
+      if (alive.current && client.current()) {
+        if (request.revision !== draftRevision.current) {
+          if (result.generationAllowance) {
+            setSetup(current => ({ ...current, generationAllowance: result.generationAllowance }))
+            setAllowanceUnverified(false)
+          }
+
+          if (replace) {
+            regenerationIntent.current = null
+          }
+
+          setError(copy.previousDraftPreserved)
+
+          return
+        }
+
+        applyPreview(result)
+        setHasGenerated(true)
+        generationIntent.current = request
+        regenerationIntent.current = null
+      }
+    })
+  }
+
+  const applySuggestion = () => {
+    if (!suggestion || busy.current || !client.current()) {
+      if (!client.current()) {
+        setError(copy.stale)
+      }
+
+      return false
+    }
+
+    if (suggestion.revision !== inputRevision.current || suggestion.sourceRevision !== setup.sourceRevision) {
+      setSuggestion(null)
+
+      return false
+    }
+
+    changeInput(suggestion.field, suggestion.suggestion)
+
+    return true
   }
 
   const close = () => {
@@ -354,6 +547,7 @@ export function TeamOnboardingDialog({
       .then(result => {
         if (alive.current && token === operation.current && client.current()) {
           setSetup(result)
+          setAllowanceUnverified(false)
         }
       })
       .catch(() => {
@@ -369,6 +563,109 @@ export function TeamOnboardingDialog({
       })
   }, [providerSetup.manual, client, setup.organizationId, copy.checkFailed, copy.stale])
   const modelBlocked = setup.readiness.status === 'blocked'
+
+  return {
+    copy,
+    setup,
+    providerSetup,
+    inputs,
+    team,
+    preview,
+    receipt,
+    pending,
+    error,
+    unresolvedCreate,
+    hasGenerated,
+    allowanceUnverified,
+    modelBlocked,
+    close,
+    update,
+    changeInput,
+    improve,
+    generate,
+    applySuggestion,
+    canGenerate: !allowanceBlocked || !!generationIntent.current,
+    canImprove: { jobs: canImprove('jobs'), goals: canImprove('goals') },
+    canRegenerate:
+      !modelBlocked &&
+      (!!regenerationIntent.current || (!allowanceUnverified && setup.generationAllowance?.status === 'available')),
+    regenerationPending: !!regenerationIntent.current,
+    suggestion: suggestion?.sourceRevision === setup.sourceRevision ? suggestion : null,
+    discardSuggestion: () => setSuggestion(null),
+    editSuggestion: (value: string) => setSuggestion(current => (current ? { ...current, suggestion: value } : null)),
+    back: () => {
+      setTeam(null)
+      setPreview(null)
+    },
+    check: () =>
+      void act('check', async () => {
+        const result = await client.setup(setup.organizationId ?? null)
+
+        if (alive.current) {
+          setSetup(result)
+          setAllowanceUnverified(false)
+        }
+      }),
+    validate: () => {
+      if (team) {
+        void act('preview', async () => applyPreview(await client.preview(setup, team)))
+      }
+    },
+    create: () => {
+      if (preview) {
+        void act('create', async () => {
+          setUnresolvedCreate(true)
+          intent.current ??= { version: preview.previewVersion, key: crypto.randomUUID() }
+          const result = await client.create(preview, intent.current.key)
+
+          if (alive.current) {
+            setReceipt(result)
+            setUnresolvedCreate(false)
+            onCreated()
+          }
+        })
+      }
+    }
+  }
+}
+
+export function TeamOnboardingDialog(props: TeamOnboardingDialogProps) {
+  const { profile, onReturnFocus } = props
+
+  const {
+    copy,
+    setup,
+    providerSetup,
+    inputs,
+    team,
+    preview,
+    receipt,
+    pending,
+    error,
+    unresolvedCreate,
+    hasGenerated,
+    allowanceUnverified,
+    modelBlocked,
+    close,
+    update,
+    changeInput,
+    improve,
+    generate,
+    applySuggestion,
+    canGenerate,
+    canImprove,
+    canRegenerate,
+    regenerationPending,
+    suggestion,
+    discardSuggestion,
+    editSuggestion,
+    back,
+    check,
+    validate,
+    create
+  } = useTeamOnboardingDraft(props)
+
+  const readinessId = useId()
 
   return (
     <Dialog
@@ -400,9 +697,7 @@ export function TeamOnboardingDialog({
           {receipt ? (
             <>
               <p className="eid-team-note">{copy.inherited}</p>
-              <p role="status">
-                {receipt.readiness.status === 'blocked' ? copy.modelBlocked : copy.readinessUnchecked}
-              </p>
+              <p role="status">{readinessMessage(receipt.readiness, copy, true)}</p>
               <Button asChild>
                 <Link onClick={close} to="/home?intake=assisted#eid-home-intake">
                   {copy.firstRequest}
@@ -420,85 +715,48 @@ export function TeamOnboardingDialog({
                 >
                   {copy.modelSettings}
                 </Button>
-                <Button
-                  disabled={!!pending || unresolvedCreate}
-                  onClick={() =>
-                    void act('check', async () => {
-                      const result = await client.setup(setup.organizationId ?? null)
-
-                      if (alive.current) {
-                        setSetup(result)
-                      }
-                    })
-                  }
-                  size="sm"
-                  variant="text"
-                >
+                <Button disabled={!!pending || unresolvedCreate} onClick={check} size="sm" variant="text">
                   {copy.checkConfiguration}
                 </Button>
               </div>
-              <p role="status">{modelBlocked ? copy.modelRequired : copy.readinessUnchecked}</p>
+              <div id={readinessId} role="status">
+                <p>{readinessMessage(setup.readiness, copy)}</p>
+                {(setup.generationAllowance || allowanceUnverified) && (
+                  <p className="eid-team-note">
+                    {allowanceUnverified
+                      ? copy.allowanceBlocked
+                      : {
+                          available: copy.allowanceAvailable.replace(
+                            '{count}',
+                            String(setup.generationAllowance!.remainingCalls)
+                          ),
+                          exhausted: copy.allowanceExhausted,
+                          running: copy.allowanceRunning,
+                          uncertain: copy.allowanceUncertain,
+                          blocked: copy.allowanceBlocked
+                        }[setup.generationAllowance!.status]}
+                  </p>
+                )}
+              </div>
               {!team ? (
                 <>
-                  <fieldset className="eid-team-fields" disabled={modelBlocked}>
-                    <label>
-                      {copy.jobs}
-                      <Textarea
-                        disabled={!!pending || unresolvedCreate}
-                        maxLength={4000}
-                        onChange={event => {
-                          setJobs(event.target.value)
-                          generationIntent.current = null
-                        }}
-                        placeholder={copy.description}
-                        value={jobs}
-                      />
-                    </label>
-                    <label>
-                      {copy.goals}
-                      <Textarea
-                        disabled={!!pending || unresolvedCreate}
-                        maxLength={4000}
-                        onChange={event => {
-                          setGoals(event.target.value)
-                          generationIntent.current = null
-                        }}
-                        value={goals}
-                      />
-                    </label>
-                    <label>
-                      {copy.namingStyle}
-                      <Textarea
-                        disabled={!!pending || unresolvedCreate}
-                        maxLength={500}
-                        onChange={event => {
-                          setNamingStyle(event.target.value)
-                          generationIntent.current = null
-                        }}
-                        value={namingStyle}
-                      />
-                    </label>
-                    <p className="eid-team-note">
-                      {copy.generationCost} {copy.generationCancel}
-                    </p>
-                    <Button
-                      disabled={!!pending || modelBlocked || !jobs.trim() || !goals.trim()}
-                      onClick={() =>
-                        void act('generate', async () =>
-                          applyPreview(
-                            await client.generate(setup, {
-                              jobs,
-                              goals,
-                              namingStyle,
-                              idempotencyKey: (generationIntent.current ??= crypto.randomUUID())
-                            })
-                          )
-                        )
-                      }
-                    >
-                      {copy.generate}
-                    </Button>
-                  </fieldset>
+                  <TeamOnboardingInputs
+                    canGenerate={canGenerate}
+                    canImprove={canImprove}
+                    copy={copy}
+                    disabled={!!pending || unresolvedCreate}
+                    improvementSupported={setup.inputImprovementVersion === 1}
+                    inputs={inputs}
+                    modelBlocked={modelBlocked}
+                    onApply={applySuggestion}
+                    onChange={changeInput}
+                    onDiscard={discardSuggestion}
+                    onGenerate={() => generate()}
+                    onImprove={improve}
+                    onSuggestionChange={editSuggestion}
+                    readinessId={readinessId}
+                    review={suggestion}
+                  />
                   <details>
                     <summary>{copy.manual}</summary>
                     <Button
@@ -527,12 +785,31 @@ export function TeamOnboardingDialog({
                   </details>
                 </>
               ) : (
-                <TeamOnboardingEditor
-                  copy={copy}
-                  disabled={!!pending || unresolvedCreate}
-                  onChange={update}
-                  team={team}
-                />
+                <>
+                  <p className="eid-team-note">{copy.reviewCoverage}</p>
+                  {hasGenerated && (
+                    <div>
+                      <p className="eid-team-note" id={`${readinessId}-regenerate`}>
+                        {copy.regenerateHelp}
+                      </p>
+                      <Button
+                        aria-describedby={`${readinessId} ${readinessId}-regenerate`}
+                        disabled={!!pending || unresolvedCreate || !canRegenerate}
+                        onClick={() => generate(true)}
+                        size="sm"
+                        variant="secondary"
+                      >
+                        {regenerationPending ? copy.retryRegeneration : copy.regenerate}
+                      </Button>
+                    </div>
+                  )}
+                  <TeamOnboardingEditor
+                    copy={copy}
+                    disabled={!!pending || unresolvedCreate}
+                    onChange={update}
+                    team={team}
+                  />
+                </>
               )}
               <p className="eid-team-note">{copy.authority}</p>
               {preview && (
@@ -560,7 +837,15 @@ export function TeamOnboardingDialog({
           )}
           {pending && (
             <Loader
-              label={pending === 'generate' ? copy.generating : pending === 'create' ? copy.creating : copy.checking}
+              label={
+                pending === 'improve'
+                  ? copy.improving
+                  : pending === 'generate' || pending === 'regenerate'
+                    ? copy.generating
+                    : pending === 'create'
+                      ? copy.creating
+                      : copy.checking
+              }
             />
           )}
           {error && <p role="alert">{error}</p>}
@@ -571,40 +856,15 @@ export function TeamOnboardingDialog({
           </Button>
           {team && !receipt && (
             <>
-              <Button
-                disabled={!!pending || unresolvedCreate}
-                onClick={() => {
-                  setTeam(null)
-                  setPreview(null)
-                }}
-                variant="secondary"
-              >
+              <Button disabled={!!pending || unresolvedCreate} onClick={back} variant="secondary">
                 {copy.back}
               </Button>
               {!preview ? (
-                <Button
-                  disabled={!!pending || unresolvedCreate}
-                  onClick={() => void act('preview', async () => applyPreview(await client.preview(setup, team)))}
-                >
+                <Button disabled={!!pending || unresolvedCreate} onClick={validate}>
                   {copy.validate}
                 </Button>
               ) : (
-                <Button
-                  disabled={!!pending}
-                  onClick={() =>
-                    void act('create', async () => {
-                      setUnresolvedCreate(true)
-                      intent.current ??= { version: preview.previewVersion, key: crypto.randomUUID() }
-                      const result = await client.create(preview, intent.current.key)
-
-                      if (alive.current) {
-                        setReceipt(result)
-                        setUnresolvedCreate(false)
-                        onCreated()
-                      }
-                    })
-                  }
-                >
+                <Button disabled={!!pending} onClick={create}>
                   {copy.create}
                 </Button>
               )}

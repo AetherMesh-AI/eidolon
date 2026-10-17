@@ -71,6 +71,32 @@
   font-size: 0.8125rem;
   overflow-wrap: anywhere;
 }
+.eid-team-input,
+.eid-team-suggestion {
+  display: grid;
+  gap: 0.375rem;
+  min-width: 0;
+}
+.eid-team-input-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.375rem 0.75rem;
+}
+.eid-team-suggestion {
+  margin-block: 0.5rem;
+  padding-block: 0.75rem;
+  border-block: 1px solid var(--ui-stroke-tertiary);
+}
+.eid-team-suggestion ul {
+  padding-inline-start: 1.25rem;
+}
+.eid-team-original,
+.eid-team-suggestion li {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 
 .eid-team-fields .eid-team-capability {
   display: flex;

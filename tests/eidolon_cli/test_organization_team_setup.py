@@ -400,3 +400,85 @@ def test_passive_config_cache_does_not_skip_later_normal_home_initialization(pro
     assert load_config() == passive
     assert soul.exists()
     assert (profile.home / 'sessions').is_dir()
+
+
+@pytest.mark.parametrize('model,expected', [
+    ({'provider': 'openai-codex', 'default': 'gpt'}, {'subscription_generation_unsupported'}),
+    ({'provider': ' OPENAI-CODEX ', 'default': 'gpt'}, {'subscription_generation_unsupported'}),
+    ({'provider': 'openai-codex', 'default': 'gpt', 'openai_runtime': 'codex_app_server'},
+     {'subscription_generation_unsupported', 'codex_app_server'}),
+    ({'provider': 'openai-api', 'default': 'gpt', 'openai_runtime': 'codex_app_server'}, {'codex_app_server'}),
+    ({'provider': 'openai', 'default': 'gpt', 'openai_runtime': 'codex_app_server'}, {'codex_app_server'}),
+    ({'provider': 'anthropic', 'default': 'claude'}, set()),
+    ({'provider': 'openai-api', 'default': 'gpt', 'openai_runtime': ' CODEX_APP_SERVER '}, {'codex_app_server'}),
+    ({'provider': 'openai', 'default': 'gpt', 'openai_runtime': ' CODEX_APP_SERVER '}, {'codex_app_server'}),
+])
+def test_generation_readiness_explains_configured_route_without_account_probe(profile, monkeypatch, model, expected):
+    (profile.home / 'config.yaml').write_text(json.dumps({'model': model}))
+    before = durable_files(profile.home)
+    forbid_setup_side_effects(monkeypatch)
+    from eidolon_cli import auth, runtime_provider
+    def forbidden_credentials(*args, **kwargs):
+        raise AssertionError('Readiness must not inspect account credentials')
+    monkeypatch.setattr(auth, '_load_auth_store', forbidden_credentials)
+    monkeypatch.setattr(auth, '_load_global_auth_store', forbidden_credentials)
+    monkeypatch.setattr(runtime_provider, '_get_secret', forbidden_credentials)
+    readiness = team.team_setup(profile.home, profile.identity['organizationId'])['readiness']
+    assert readiness['status'] == 'blocked'
+    assert set(readiness['blockers']) == expected | {'generation_route_unsupported'}
+    assert durable_files(profile.home) == before
+
+
+def test_generation_readiness_refreshes_after_selected_route_changes(profile, monkeypatch):
+    forbid_setup_side_effects(monkeypatch)
+    config = profile.home / 'config.yaml'
+    config.write_text(json.dumps({'model': {'provider': 'openai-codex', 'default': 'gpt'}}))
+    blocked = team.team_setup(profile.home, profile.identity['organizationId'])['readiness']
+    assert 'subscription_generation_unsupported' in blocked['blockers']
+    config.write_text(json.dumps({'model': {'provider': 'openai', 'default': 'local'}}))
+    refreshed = team.team_setup(profile.home, profile.identity['organizationId'])['readiness']
+    assert refreshed['status'] == 'unchecked'
+    assert refreshed['blockers'] == []
+    # A compatible selected route is not a successful credential/account probe.
+    assert refreshed['status'] != 'ready'
+
+
+@pytest.mark.parametrize('provider,expected', [
+    ('openai', {'generation_route_unsupported'}),
+    ('openai-codex', {'generation_route_unsupported', 'subscription_generation_unsupported', 'codex_app_server'}),
+])
+def test_custom_provider_names_do_not_imply_subscription_or_app_server(profile, monkeypatch, provider, expected):
+    (profile.home / 'config.yaml').write_text(json.dumps({
+        'model': {'provider': provider, 'default': 'custom-model', 'openai_runtime': 'codex_app_server'},
+        'providers': {provider: {'base_url': 'https://example.invalid/v1', 'api_mode': 'chat_completions'}},
+    }))
+    forbid_setup_side_effects(monkeypatch)
+    readiness = team.team_setup(profile.home, profile.identity['organizationId'])['readiness']
+    # Keep the current execution guard; a name collision is not proof of which
+    # effective transport or account execution would resolve.
+    assert readiness['status'] == 'blocked'
+    assert set(readiness['blockers']) == expected
+
+
+@pytest.mark.parametrize('rows,limit,cost,completing,expected', [
+    ([], 120000, None, None, {'status': 'available', 'remainingCalls': 3}),
+    ([('a', 'running', 0, 0, None)], 120000, None, None, {'status': 'running', 'remainingCalls': 3}),
+    ([('a', 'uncertain', 1, 100, None)], 120000, None, None, {'status': 'uncertain', 'remainingCalls': 2}),
+    ([('a', 'running', 1, 100, None)], 120000, None, 'a', {'status': 'available', 'remainingCalls': 2}),
+    ([('a', 'completed', 1, 100, None)], 100, None, None, {'status': 'exhausted', 'remainingCalls': 2}),
+    ([('a', 'failed', 1, 100, None)], 120000, '1', None, {'status': 'blocked', 'remainingCalls': 2}),
+    ([('a', 'failed', 1, 100, '1')], 120000, '1', None, {'status': 'exhausted', 'remainingCalls': 2}),
+    ([('a', 'completed', 1, None, None)], 120000, None, None, {'status': 'blocked', 'remainingCalls': 2}),
+    ([(str(i), 'failed', 1, 100, None) for i in range(3)], 120000, None, None,
+     {'status': 'exhausted', 'remainingCalls': 0}),
+])
+def test_passive_generation_allowance_retains_uncertain_and_failed_charges(rows, limit, cost, completing, expected):
+    with sqlite3.connect(':memory:') as conn:
+        conn.row_factory = sqlite3.Row
+        conn.execute('CREATE TABLE organization_team_generations '
+                     '(idempotency_key TEXT,status TEXT,dispatched INTEGER,reserved_tokens INTEGER,reserved_cost TEXT)')
+        conn.executemany('INSERT INTO organization_team_generations VALUES (?,?,?,?,?)', rows)
+        settings = SimpleNamespace(max_model_calls=3, max_total_tokens=limit, max_cost_usd=cost)
+        before = list(conn.iterdump())
+        assert team._generation_allowance(conn, settings, completing_key=completing) == expected
+        assert list(conn.iterdump()) == before

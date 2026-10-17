@@ -285,3 +285,115 @@ def test_shared_enrollment_racing_real_generation_cannot_change_scope(installati
         assert pending.result(timeout=10)['previewVersion']
     assert len(sends) == 1
     assert rows(root)[0]['shared_receipt'] is not None
+
+
+def improvement_request(profile, key='improve', field='jobs'):
+    return {**request(profile, key), 'field': field,
+            'goals' if field == 'jobs' else 'jobs': ''}
+
+
+def fake_improver(monkeypatch, *, outcome=None, reserve=True):
+    sends = []
+    def improve(home, field, jobs, goals, naming, *, reserve_model_call, cancel=None):
+        if reserve:
+            reserve_model_call(provider='fixture', model='fixture', input_limit=100, output_limit=100)
+        sends.append((field, jobs, goals, naming))
+        return outcome() if outcome else {'suggestion': 'Clarify the desired deliverables.', 'assumptions': []}
+    monkeypatch.setattr(generation, 'improve', improve)
+    return sends
+
+
+def test_improvement_is_review_only_and_shares_generation_allowance_and_idempotency(profile, monkeypatch):
+    generated = fake_provider(monkeypatch)
+    improved = fake_improver(monkeypatch)
+    before = params(profile)
+    config_before = (profile.home / 'config.yaml').read_bytes()
+    value = improvement_request(profile)
+    result = admission.improve_team_input(profile.home, value)
+    assert result == {'capabilityVersion': 1, 'organizationId': value['expectedOrganizationId'],
+        'sourceRevision': value['sourceRevision'], 'field': 'jobs',
+        'suggestion': 'Clarify the desired deliverables.', 'assumptions': [],
+        'generationAllowance': {'status': 'available', 'remainingCalls': 2}}
+    after = dump(profile)
+    assert admission.improve_team_input(profile.home, value) == result
+    assert dump(profile) == after
+    assert (profile.home / 'config.yaml').read_bytes() == config_before
+    assert params(profile) == before
+    with pytest.raises(OwnerPolicyError, match='idempotency_conflict'):
+        admission.generate_team(profile.home, request(profile, 'improve'))
+    with pytest.raises(OwnerPolicyError, match='idempotency_conflict'):
+        admission.improve_team_input(profile.home, {**value, 'field': 'goals', 'goals': 'Changed'})
+    admission.generate_team(profile.home, request(profile, 'generate'))
+    admission.improve_team_input(profile.home, improvement_request(profile, 'other', 'goals'))
+    with pytest.raises(ValueError, match='allowance'):
+        admission.generate_team(profile.home, request(profile, 'fourth'))
+    assert len(generated) == 1 and len(improved) == 2
+    assert sum(row['reserved_tokens'] for row in rows(profile)) == 600
+    replay = admission.improve_team_input(profile.home, value)
+    assert replay['generationAllowance'] == {'status': 'exhausted', 'remainingCalls': 0}
+    assert {key: item for key, item in replay.items() if key != 'generationAllowance'} == {
+        key: item for key, item in result.items() if key != 'generationAllowance'}
+    assert json.loads(rows(profile)[0]['result_json']) == result
+    with sqlite3.connect(profile.path) as conn:
+        assert conn.execute('SELECT count(*) FROM organization_team_setup').fetchone()[0] == 0
+        assert conn.execute('SELECT count(*) FROM objectives').fetchone()[0] == 0
+
+
+def test_legacy_completed_generation_receipt_remains_replayable(profile, monkeypatch):
+    sends = fake_provider(monkeypatch)
+    value = request(profile)
+    result = admission.generate_team(profile.home, value)
+    legacy = {key: item for key, item in result.items() if key != 'generationAllowance'}
+    with sqlite3.connect(profile.path) as conn:
+        conn.execute('UPDATE organization_team_generations SET input_hash=?,result_json=?',
+                     (admission._hash(value), json.dumps(legacy)))
+    assert admission.generate_team(profile.home, value) == result
+    assert len(sends) == 1
+
+
+@pytest.mark.parametrize('outcome', ['uncertain', 'malformed', 'stale', 'unreserved'])
+def test_improvement_failures_retain_debit_and_never_replay(profile, monkeypatch, outcome):
+    def fail():
+        if outcome == 'uncertain':
+            raise InterruptedError('Disconnected after send')
+        if outcome == 'malformed':
+            raise generation.TeamInputRejected('Malformed complete response')
+        if outcome == 'stale':
+            (profile.home / 'config.yaml').write_text('{"model":{"default":"changed"}}')
+        return {'suggestion': 'Suggested wording', 'assumptions': []}
+    sends = fake_improver(monkeypatch, outcome=fail, reserve=outcome != 'unreserved')
+    value = improvement_request(profile)
+    with pytest.raises((InterruptedError, generation.TeamInputRejected, OwnerPolicyError, ValueError)):
+        admission.improve_team_input(profile.home, value)
+    row = rows(profile)[0]
+    assert row['status'] == ('uncertain' if outcome == 'uncertain' else 'failed')
+    assert row['reserved_tokens'] == (0 if outcome == 'unreserved' else 200)
+    with pytest.raises(OwnerPolicyError, match='uncertain|failed'):
+        admission.improve_team_input(profile.home, value)
+    if outcome == 'uncertain':
+        with pytest.raises(OwnerPolicyError, match='uncertain'):
+            admission.generate_team(profile.home, request(profile, 'other'))
+    assert len(sends) == 1
+
+
+def test_completed_improvement_cannot_replay_after_team_creation(profile, monkeypatch):
+    sends = fake_improver(monkeypatch)
+    value = improvement_request(profile)
+    admission.improve_team_input(profile.home, value)
+    team.create_team(profile.home, confirmed(profile))
+    with pytest.raises(OwnerPolicyError, match='source_conflict'):
+        admission.improve_team_input(profile.home, value)
+    assert len(sends) == 1
+
+
+def test_improvement_and_generation_share_real_budget_ledger(installation, monkeypatch):
+    root = installation
+    configure(root, calls=1, tokens=1000)
+    root.path, root.identity = root.store.path, root.metadata
+    improved = fake_improver(monkeypatch)
+    generated = fake_provider(monkeypatch)
+    admission.improve_team_input(root.home, improvement_request(root))
+    assert json.loads(rows(root)[0]['shared_receipt'])['payload']['kind'] == 'team_setup'
+    with pytest.raises(ValueError):
+        admission.generate_team(root.home, request(root, 'second'))
+    assert len(improved) == 1 and not generated

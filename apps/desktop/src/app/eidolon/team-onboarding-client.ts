@@ -21,7 +21,13 @@ export interface TeamReadiness {
   modelRouting: 'unchanged'
   backgroundEnabled: boolean
 }
+export interface TeamGenerationAllowance {
+  status: 'available' | 'exhausted' | 'running' | 'uncertain' | 'blocked'
+  remainingCalls: number
+}
 export interface TeamSetup {
+  generationAllowance?: TeamGenerationAllowance
+  inputImprovementVersion?: 1
   capabilityVersion: 1
   state: 'available' | 'configured' | 'unconfigured' | 'unsupported'
   organizationId?: string
@@ -30,7 +36,17 @@ export interface TeamSetup {
   presets: { id: string; name: string; team: TeamDraft }[]
   readiness: TeamReadiness
 }
+export interface TeamInputSuggestion {
+  generationAllowance?: TeamGenerationAllowance
+  capabilityVersion: 1
+  organizationId: string
+  sourceRevision: string
+  field: 'jobs' | 'goals'
+  suggestion: string
+  assumptions: string[]
+}
 export interface TeamPreview {
+  generationAllowance?: TeamGenerationAllowance
   capabilityVersion: 1
   organizationId: string
   sourceRevision: string
@@ -50,6 +66,21 @@ export interface TeamReceipt {
   receipt: { idempotencyKey: string; previewVersion: string }
 }
 
+function validateGenerationAllowance(value: unknown) {
+  if (value === undefined) {return}
+
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {throw new Error('invalid_allowance')}
+  const allowance = value as Record<string, unknown>
+
+  if (
+    typeof allowance.status !== 'string' ||
+    !['available', 'exhausted', 'running', 'uncertain', 'blocked'].includes(allowance.status) ||
+    !Number.isInteger(allowance.remainingCalls) ||
+    Number(allowance.remainingCalls) < 0 || Number(allowance.remainingCalls) > 3 ||
+    (allowance.status === 'available' && allowance.remainingCalls === 0)
+  ) {throw new Error('invalid_allowance')}
+}
+
 /** One captured authenticated socket; stale results never authorize a later write. */
 export function createTeamOnboardingClient(
   readScope: () => MetadataScope,
@@ -59,8 +90,10 @@ export function createTeamOnboardingClient(
   let invalid = !origin.eligible
   let disposed = false
   let busy = false
+
   const current = () => {
     const next = readScope()
+
     return (
       !disposed &&
       !invalid &&
@@ -70,21 +103,32 @@ export function createTeamOnboardingClient(
       next.profile === origin.profile
     )
   }
+
   const stop = subscribe(() => {
-    if (!current()) invalid = true
+    if (!current()) {invalid = true}
   })
+
   async function request<T>(method: string, params: Record<string, unknown>): Promise<T> {
-    if (!current()) throw new Error('stale')
-    if (busy) throw new Error('busy')
+    if (!current()) {throw new Error('stale')}
+
+    if (busy) {throw new Error('busy')}
     busy = true
+
     try {
       const response = await origin.request<T>(method, params)
-      if (!current()) throw new Error('stale')
+
+      if (!current()) {throw new Error('stale')}
+
+      if (response && typeof response === 'object' && 'generationAllowance' in response) {
+        validateGenerationAllowance(response.generationAllowance)
+      }
+
       return response
     } finally {
       busy = false
     }
   }
+
   return {
     current,
     setup: (organizationId: string | null) =>
@@ -95,6 +139,55 @@ export function createTeamOnboardingClient(
         sourceRevision: setup.sourceRevision,
         ...input
       }),
+    improve: async (
+      setup: TeamSetup,
+      input: { field: 'jobs' | 'goals'; jobs: string; goals: string; namingStyle: string; idempotencyKey: string }
+    ): Promise<TeamInputSuggestion> => {
+      if (setup.inputImprovementVersion !== 1) {throw new Error('unsupported')}
+      const organizationId = setup.organizationId
+      const sourceRevision = setup.sourceRevision
+      const field = input.field
+
+      const value = await request<unknown>('organization.improveTeamInput', {
+        expectedOrganizationId: organizationId,
+        sourceRevision,
+        ...input
+      })
+
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {throw new Error('invalid_suggestion')}
+      const result = value as Record<string, unknown>
+
+      const validText = (text: unknown, maximum: number): text is string =>
+        typeof text === 'string' &&
+        !!text.trim() &&
+        text.length <= maximum &&
+        !Array.from(text).some(char => char.charCodeAt(0) < 32 && !'\n\r\t'.includes(char))
+
+      if (
+        result.capabilityVersion !== 1 ||
+        result.organizationId !== organizationId ||
+        result.sourceRevision !== sourceRevision ||
+        result.field !== field ||
+        !validText(result.suggestion, 4000) ||
+        !Array.isArray(result.assumptions) ||
+        result.assumptions.length > 5 ||
+        !result.assumptions.every(item => validText(item, 300))
+      ) {
+        throw new Error('invalid_suggestion')
+      }
+
+      const allowance = result.generationAllowance
+
+      return {
+        ...(allowance === undefined ? {} : { generationAllowance: allowance as TeamGenerationAllowance }),
+        capabilityVersion: 1,
+        organizationId: result.organizationId as string,
+        sourceRevision: result.sourceRevision as string,
+        field,
+        suggestion: result.suggestion,
+        assumptions: result.assumptions
+      }
+    },
     preview: (setup: TeamSetup, team: TeamDraft) =>
       request<TeamPreview>('organization.previewTeam', {
         expectedOrganizationId: setup.organizationId,
@@ -116,4 +209,5 @@ export function createTeamOnboardingClient(
     }
   }
 }
+
 export type TeamOnboardingClient = ReturnType<typeof createTeamOnboardingClient>
