@@ -109,6 +109,8 @@ def _readiness(home):
     from eidolon_cli.config import load_config_readonly
     from eidolon_cli.organization_setup import setup_view
     from eidolon_cli.organization_owner_chat_executor import readiness_reason
+    from eidolon_cli.providers import normalize_provider, custom_provider_aliases
+    from eidolon_cli.config_providers import get_compatible_custom_providers
     with profile_configuration_scope(home):
         config = load_config_readonly(initialize_home=False)
         view = setup_view(config, [{'lifecycle': 'active', 'capabilities': ['request.decompose']}])
@@ -116,12 +118,58 @@ def _readiness(home):
     model = config.get('model') or {}
     model = model if isinstance(model, dict) else {'default': model}
     blockers = list(view['provider']['blockers'])
-    if generation_blocker:
+    # Configuration-only capability diagnostics: these do not inspect login
+    # state or imply that credentials are missing, valid, or authorized.
+    raw_provider = str(model.get('provider') or '').strip().lower()
+    custom_route = raw_provider == 'openai' and any(raw_provider in custom_provider_aliases(
+        entry.get('name', ''), entry.get('provider_key', ''))
+        for entry in get_compatible_custom_providers(config))
+    # User-defined aliases can shadow built-ins; canonical built-ins still win.
+    app_server = (not custom_route and raw_provider in {'openai', 'openai-api', 'openai-codex'}
+                  and str(model.get('openai_runtime') or '').strip().lower() == 'codex_app_server')
+    if generation_blocker or app_server:
+        if normalize_provider(raw_provider) == 'openai-codex':
+            blockers.append('subscription_generation_unsupported')
+        if app_server and 'codex_app_server' not in blockers:
+            blockers.append('codex_app_server')
+        # Retain the broad code for older clients while newer clients explain
+        # the specific route limitation instead of asking users to log in again.
         blockers.append('generation_route_unsupported')
     if not model.get('default'):
         blockers.append('model_not_configured')
     return {'status': 'blocked' if blockers else 'unchecked', 'blockers': blockers,
             'modelRouting': 'unchanged', 'backgroundEnabled': view['backgroundOptIn']}
+
+
+def _generation_allowance(conn, settings, *, completing_key=None):
+    """Passive local setup allowance; exact route/shared admission still wins."""
+    from decimal import Decimal, InvalidOperation
+    rows = conn.execute('SELECT idempotency_key,status,dispatched,reserved_tokens,reserved_cost '
+                        'FROM organization_team_generations').fetchall()
+    sent = [row for row in rows if row['dispatched']]
+    remaining = max(0, min(3, settings.max_model_calls) - len(sent))
+    status = 'available'
+    pending = [row['status'] for row in rows if row['idempotency_key'] != completing_key]
+    if 'uncertain' in pending:
+        status = 'uncertain'
+    elif 'running' in pending:
+        status = 'running'
+    elif not remaining:
+        status = 'exhausted'
+    elif any(type(row['reserved_tokens']) is not int or row['reserved_tokens'] < 0 for row in sent):
+        status = 'blocked'
+    elif sum(row['reserved_tokens'] for row in sent) >= min(120000, settings.max_total_tokens):
+        status = 'exhausted'
+    elif settings.max_cost_usd is not None:
+        try:
+            costs = [Decimal(row['reserved_cost']) for row in sent]
+            if any(not value.is_finite() or value < 0 for value in costs):
+                status = 'blocked'
+            elif sum(costs, Decimal(0)) >= Decimal(settings.max_cost_usd):
+                status = 'exhausted'
+        except (TypeError, ValueError, InvalidOperation):
+            status = 'blocked'
+    return {'status': status, 'remainingCalls': remaining}
 
 
 def _support(conn):
@@ -144,13 +192,13 @@ def _current(conn, home, expected_id):
 
 def team_setup(home, expected_id):
     _uuid(expected_id, 'expectedOrganizationId')
-    base = {'capabilityVersion': 1, 'presets': presets(), 'readiness': _readiness(home), 'supportAgents': []}
+    base = {'capabilityVersion': 1, 'inputImprovementVersion': 1, 'presets': presets(), 'readiness': _readiness(home), 'supportAgents': []}
     try:
         with _connection(home) as conn:
             identity, policy, settings, revision = _current(conn, home, expected_id)
             return {**base, 'state': 'available' if _fresh(conn, settings) else 'configured',
                     'organizationId': identity['organizationId'], 'sourceRevision': revision,
-                    'supportAgents': _support(conn)}
+                    'supportAgents': _support(conn), 'generationAllowance': _generation_allowance(conn, settings)}
     except OwnerPolicyError as exc:
         if exc.reason not in {'unconfigured', 'identity_required', 'execution_not_initialized', 'unsupported'}:
             raise
@@ -186,7 +234,8 @@ def _preview(conn, home, params):
         # identities. Disclose that contract without granting catalogue routes.
         readiness['warnings'] = ['new_member_routes_unassigned']
     return ({'capabilityVersion': 1, **core, 'previewVersion': _hash(core),
-             'readiness': readiness, 'warnings': list(_WARNINGS)}, policy, settings)
+             'readiness': readiness, 'generationAllowance': _generation_allowance(conn, settings),
+             'warnings': list(_WARNINGS)}, policy, settings)
 
 
 def preview_team(home, params):
@@ -231,4 +280,9 @@ def create_team(home, params):
 
 def generate_team(home, params, *, cancel=None):
     from eidolon_cli.organization_team_admission import generate_team as run
+    return run(home, params, cancel=cancel)
+
+
+def improve_team_input(home, params, *, cancel=None):
+    from eidolon_cli.organization_team_admission import improve_team_input as run
     return run(home, params, cancel=cancel)

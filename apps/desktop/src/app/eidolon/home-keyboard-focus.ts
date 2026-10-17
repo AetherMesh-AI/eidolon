@@ -1,5 +1,10 @@
-/** One-shot completion of native Tab scrolling, including the control's outline. */
+/** Home keeps resolving its workspace after native focus, as before. */
 export function queueHomeKeyboardReveal(intake: HTMLElement): () => void {
+  return queueKeyboardReveal(intake)
+}
+
+/** One-shot completion of native Tab scrolling, including the control's outline. */
+export function queueKeyboardReveal(intake: HTMLElement, scroller?: HTMLElement): () => void {
   const document = intake.ownerDocument
   const window = document.defaultView
 
@@ -41,9 +46,9 @@ export function queueHomeKeyboardReveal(intake: HTMLElement): () => void {
     cancel()
 
     if (!active || !active.matches('button, a, input, textarea, select, summary')) {return}
-    const workspace = intake.closest<HTMLElement>('.eid-workspace')
+    const workspace = scroller ?? intake.closest<HTMLElement>('.eid-workspace')
 
-    if (!workspace) {return}
+    if (!workspace || !workspace.isConnected || !workspace.contains(active)) {return}
     const style = window.getComputedStyle(active)
 
     const outline = Math.max(0, Number.parseFloat(style.outlineWidth) || 0) +

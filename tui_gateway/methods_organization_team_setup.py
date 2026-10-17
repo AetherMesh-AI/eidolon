@@ -29,14 +29,20 @@ def _team_method(name, operation, fields):
                 from agent.secret_scope import (build_profile_secret_scope, set_secret_scope, reset_secret_scope)
                 secret_token = set_secret_scope(build_profile_secret_scope(home))
                 try:
-                    if operation == 'generate_team':
+                    if operation in {'generate_team', 'improve_team_input'}:
                         class TransportCancellation:
                             def is_set(self):
                                 return bool(getattr(transport, 'closed', False))
-                        result = setup.generate_team(home, params, cancel=TransportCancellation())
+                        result = getattr(setup, operation)(home, params, cancel=TransportCancellation())
                     else:
                         result = getattr(setup, operation)(home,
                             params['expectedOrganizationId'] if operation == 'team_setup' else params)
+                    if operation == 'improve_team_input' and (
+                            getattr(transport, 'closed', False)
+                            or Path(_eidolon_home).resolve() != home
+                            or path.resolve() != path
+                            or get_active_profile_name() != profile):
+                        return _err(rid, 4001, 'Team setup is outside the active served profile')
                 finally:
                     reset_secret_scope(secret_token)
             finally:
@@ -55,6 +61,7 @@ _team_method('teamSetup', 'team_setup', set())
 _team_method('previewTeam', 'preview_team', {'sourceRevision', 'team'})
 _team_method('createTeam', 'create_team', {'sourceRevision', 'team', 'previewVersion', 'idempotencyKey', 'confirmed'})
 _team_method('generateTeam', 'generate_team', {'sourceRevision', 'jobs', 'goals', 'namingStyle', 'idempotencyKey'})
+_team_method('improveTeamInput', 'improve_team_input', {'sourceRevision', 'field', 'jobs', 'goals', 'namingStyle', 'idempotencyKey'})
 
 
 def register(server):
