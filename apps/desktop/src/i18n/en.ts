@@ -557,6 +557,7 @@ export const en: Translations = {
   },
 
   settings: {
+    readState: { incomplete: 'Some profiles could not be read. Available archives are shown; retained rows may be out of date.', stale: 'Showing the last loaded data. These values may be out of date.', accountsFailed: 'Could not load connected accounts' },
     closeSettings: 'Close settings',
     exportConfig: 'Export config',
     importConfig: 'Import config',

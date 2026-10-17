@@ -537,6 +537,7 @@ export const zh: Translations = {
   },
 
   settings: {
+    readState: { incomplete: '部分个人资料无法读取。正在显示可用的归档，保留的条目可能已过时。', stale: '正在显示上次加载的数据，这些值可能已过时。', accountsFailed: '无法加载已连接的账户' },
     closeSettings: '关闭设置',
     exportConfig: '导出配置',
     importConfig: '导入配置',

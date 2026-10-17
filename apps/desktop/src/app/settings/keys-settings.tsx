@@ -9,6 +9,7 @@ import { useEnvCredentials } from './env-credentials'
 import { asText } from './helpers'
 import { SettingsContent, SettingsSkeleton } from './primitives'
 import { SettingsProfileScope } from './profile-scope'
+import { SettingsReadStatus } from './settings-read-status'
 import { useDeepLinkHighlight } from './use-deep-link-highlight'
 
 // Sub-views surfaced as sidebar subnav under Tools & Keys (see settings/index.tsx).
@@ -39,7 +40,7 @@ export function KeysSettings({ view }: KeysSettingsProps) {
   // path — request-shaped so the API helpers never see a primary-targeting
   // null).
   const scopeProfile = useStore($settingsRequestProfile)
-  const { rowProps, vars } = useEnvCredentials(scopeProfile)
+  const { read, rowProps, vars } = useEnvCredentials(scopeProfile)
   const [openKey, setOpenKey] = useState<null | string>(null)
 
   useEffect(() => {
@@ -77,14 +78,21 @@ export function KeysSettings({ view }: KeysSettingsProps) {
     ready: deepLinkReady
   })
 
-  if (!vars) {
+  if (!vars && !read.failed) {
     return <SettingsSkeleton sections={[{ rows: 5 }]} />
   }
 
   return (
     <SettingsContent>
       <SettingsProfileScope className="mb-5" />
-      {entries.length > 0 ? (
+      <SettingsReadStatus
+        failed={read.failed}
+        hasData={vars !== null}
+        loading={read.loading}
+        onRefresh={read.refresh}
+        title={t.settings.keys.failedLoad}
+      />
+      {vars === null ? null : entries.length > 0 ? (
         <div className="grid gap-2">
           {entries.map(([key, info]) => {
             const label = credentialRowLabel(key, info)

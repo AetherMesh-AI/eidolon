@@ -439,6 +439,7 @@ export const ja = defineLocale({
   },
 
   settings: {
+    readState: { incomplete: '一部のプロファイルを読み込めませんでした。取得できたアーカイブを表示しています。保持された行は最新でない可能性があります。', stale: '最後に読み込んだデータを表示しています。最新ではない可能性があります。', accountsFailed: '接続済みアカウントを読み込めませんでした' },
     closeSettings: '設定を閉じる',
     exportConfig: '設定を書き出す',
     importConfig: '設定を読み込む',

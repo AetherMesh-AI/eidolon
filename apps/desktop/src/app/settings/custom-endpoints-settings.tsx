@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -10,7 +10,7 @@ import {
   saveCustomEndpoint,
   validateCustomEndpoint
 } from '@/eidolon'
-import { translateNow, useI18n } from '@/i18n'
+import { useI18n } from '@/i18n'
 import { triggerHaptic } from '@/lib/haptics'
 import { Check, Globe, Loader2, Plus, Save, Trash2, Zap } from '@/lib/icons'
 import { cn } from '@/lib/utils'
@@ -19,6 +19,8 @@ import { notify, notifyError } from '@/store/notifications'
 import type { CustomEndpoint, CustomEndpointUpdate } from '@/types/eidolon'
 
 import { EmptyState, Pill, SectionHeading, SettingsContent, SettingsSkeleton } from './primitives'
+import { SettingsReadStatus } from './settings-read-status'
+import { useSettingsRead } from './use-settings-read'
 
 interface CustomEndpointsSettingsProps {
   onConfigSaved?: () => void
@@ -76,61 +78,59 @@ function toPayload(form: EndpointForm, models?: string[]): CustomEndpointUpdate 
   }
 }
 
+// These helpers intentionally follow the active profile, not the Settings override.
+const readEndpoints = async () => (await getCustomEndpoints()).endpoints
+
 export function CustomEndpointsSettings({ onConfigSaved, onMainModelChanged }: CustomEndpointsSettingsProps) {
   const { t } = useI18n()
   const m = t.customEndpoints
-  const [loading, setLoading] = useState(true)
+  const read = useSettingsRead(readEndpoints)
+  const { data: endpoints, setData: setEndpoints } = read
+  const initializedOwner = useRef(read.owner)
+  const initialized = useRef(false)
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
   const [activating, setActivating] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
-  const [endpoints, setEndpoints] = useState<CustomEndpoint[]>([])
   const [form, setForm] = useState<EndpointForm>(EMPTY_FORM)
   const [discoveredModels, setDiscoveredModels] = useState<string[]>([])
 
-  async function refresh() {
-    const data = await getCustomEndpoints()
-    setEndpoints(data.endpoints)
-  }
-
+  // eslint-disable-next-line no-restricted-syntax -- local draft initialization token; routing is checked synchronously by the read hook
   useEffect(() => {
-    let cancelled = false
+    initializedOwner.current = read.owner
+    initialized.current = false
+    setForm(EMPTY_FORM)
+    setDiscoveredModels([])
+    setSaving(false)
+    setTesting(false)
+    setActivating(null)
+    setDeleting(null)
+  }, [read.owner])
 
-    async function load() {
-      try {
-        const data = await getCustomEndpoints()
-
-        if (cancelled) {
-          return
-        }
-
-        setEndpoints(data.endpoints)
-        const current = data.endpoints.find(endpoint => endpoint.is_current) ?? data.endpoints[0]
-
-        if (current) {
-          setForm(formFromEndpoint(current))
-          setDiscoveredModels(current.models)
-        }
-      } catch (err) {
-        notifyError(err, translateNow('customEndpoints.loadFailed'))
-      } finally {
-        if (!cancelled) {
-          setLoading(false)
-        }
-      }
+  // eslint-disable-next-line no-restricted-syntax -- initialize each owner's form once; retries must preserve the draft
+  useEffect(() => {
+    if (!endpoints || initialized.current || initializedOwner.current !== read.owner) {
+      return
     }
 
-    void load()
+    initialized.current = true
+    const current = endpoints.find(endpoint => endpoint.is_current) ?? endpoints[0]
 
-    return () => {
-      cancelled = true
+    if (current) {
+      setForm(formFromEndpoint(current))
+      setDiscoveredModels(current.models)
     }
-  }, [])
+  }, [endpoints, read.owner])
 
   async function handleSave() {
     try {
       setSaving(true)
       const response = await saveCustomEndpoint(toPayload(form, discoveredModels))
+
+      if (!read.isCurrent()) {
+        return
+      }
+
       setEndpoints(response.endpoints)
       const saved = response.endpoints.find(endpoint => endpoint.id === response.id)
 
@@ -147,9 +147,13 @@ export function CustomEndpointsSettings({ onConfigSaved, onMainModelChanged }: C
       onConfigSaved?.()
       notify({ kind: 'success', message: m.saved })
     } catch (err) {
-      notifyError(err, m.saveFailed)
+      if (read.isCurrent()) {
+        notifyError(err, m.saveFailed)
+      }
     } finally {
-      setSaving(false)
+      if (read.isCurrent()) {
+        setSaving(false)
+      }
     }
   }
 
@@ -157,6 +161,11 @@ export function CustomEndpointsSettings({ onConfigSaved, onMainModelChanged }: C
     try {
       setTesting(true)
       const response = await validateCustomEndpoint(toPayload(form))
+
+      if (!read.isCurrent()) {
+        return
+      }
+
       setDiscoveredModels(response.models)
 
       if (response.ok) {
@@ -177,9 +186,13 @@ export function CustomEndpointsSettings({ onConfigSaved, onMainModelChanged }: C
         })
       }
     } catch (err) {
-      notifyError(err, m.validationFailed)
+      if (read.isCurrent()) {
+        notifyError(err, m.validationFailed)
+      }
     } finally {
-      setTesting(false)
+      if (read.isCurrent()) {
+        setTesting(false)
+      }
     }
   }
 
@@ -187,14 +200,28 @@ export function CustomEndpointsSettings({ onConfigSaved, onMainModelChanged }: C
     try {
       setActivating(endpoint.id)
       const response = await activateCustomEndpoint(endpoint.id)
-      await refresh()
+
+      if (!read.isCurrent()) {
+        return
+      }
+
+      await read.refresh()
+
+      if (!read.isCurrent()) {
+        return
+      }
+
       onConfigSaved?.()
       onMainModelChanged?.(response.provider, response.model)
       triggerHaptic('success')
     } catch (err) {
-      notifyError(err, m.activationFailed)
+      if (read.isCurrent()) {
+        notifyError(err, m.activationFailed)
+      }
     } finally {
-      setActivating(null)
+      if (read.isCurrent()) {
+        setActivating(null)
+      }
     }
   }
 
@@ -203,9 +230,18 @@ export function CustomEndpointsSettings({ onConfigSaved, onMainModelChanged }: C
       return
     }
 
+    if (!read.isCurrent()) {
+      return
+    }
+
     try {
       setDeleting(endpoint.id)
       const response = await deleteCustomEndpoint(endpoint.id)
+
+      if (!read.isCurrent()) {
+        return
+      }
+
       setEndpoints(response.endpoints)
 
       if (form.id === endpoint.id) {
@@ -216,14 +252,32 @@ export function CustomEndpointsSettings({ onConfigSaved, onMainModelChanged }: C
       onConfigSaved?.()
       triggerHaptic('success')
     } catch (err) {
-      notifyError(err, m.deleteFailed)
+      if (read.isCurrent()) {
+        notifyError(err, m.deleteFailed)
+      }
     } finally {
-      setDeleting(null)
+      if (read.isCurrent()) {
+        setDeleting(null)
+      }
     }
   }
 
-  if (loading) {
+  if (!endpoints && !read.failed) {
     return <SettingsSkeleton sections={[{ heading: true, rows: 3 }]} />
+  }
+
+  if (!endpoints) {
+    return (
+      <SettingsContent>
+        <SettingsReadStatus
+          failed
+          hasData={false}
+          loading={read.loading}
+          onRefresh={read.refresh}
+          title={m.loadFailed}
+        />
+      </SettingsContent>
+    )
   }
 
   const allModelOptions = Array.from(new Set([...discoveredModels, form.model].filter(Boolean)))
@@ -231,6 +285,13 @@ export function CustomEndpointsSettings({ onConfigSaved, onMainModelChanged }: C
 
   return (
     <SettingsContent>
+      <SettingsReadStatus
+        failed={read.failed}
+        hasData
+        loading={read.loading}
+        onRefresh={read.refresh}
+        title={m.loadFailed}
+      />
       <div className="eid-custom-endpoints space-y-6">
         <section>
           <SectionHeading icon={Globe} meta={`${endpoints.length}`} title={m.heading} />

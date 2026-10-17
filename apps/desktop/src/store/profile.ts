@@ -1,7 +1,8 @@
 import { LOCAL_CONNECTION_ID } from '@aethermesh/shared'
 import { atom, batch, computed } from 'nanostores'
 
-import { getProfiles, hermesApi, setApiRequestProfile, STARTUP_REQUEST_TIMEOUT_MS } from '@/eidolon'
+import { STARTUP_REQUEST_TIMEOUT_MS } from '@/api/request-timeouts'
+import { getProfiles, hermesApi, setApiRequestProfile } from '@/eidolon'
 import type { HermesConnection } from '@/global'
 import { invalidateProfileScopedQueries } from '@/lib/query-client'
 import {

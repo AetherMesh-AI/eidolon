@@ -4,6 +4,8 @@ import { createHash } from 'node:crypto'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { STARTUP_REQUEST_TIMEOUT_MS } from '../src/api/request-timeouts'
+
 import { type MockBackendFixture, setupMockBackend, waitForAppReady } from './fixtures'
 import { verifyKeyboardFocus } from './focus-visibility'
 import { expect, test } from './test'
@@ -188,7 +190,14 @@ test('keeps all Settings destinations, scoped saves, dismissal and selected appe
 
   await resize(1536, 961)
   await expect(settings.locator('.eid-settings-cards > section')).toHaveCount(6)
-  await expect(settings.getByRole('button', { name: 'Apply', exact: true })).toBeVisible()
+  const initialModel = settings.locator('[data-section="config:model"] .eid-settings-card-body')
+  // Model info/options use the product's startup-read budget. A terminal error
+  // still fails the usable-editor assertions below instead of passing as loaded.
+  await expect(initialModel).toBeVisible()
+  await expect(initialModel.getByRole('button', { name: 'Apply', exact: true })).toBeVisible({ timeout: STARTUP_REQUEST_TIMEOUT_MS })
+  await expect(initialModel.locator('[data-slot="model-settings-skeleton"]')).toHaveCount(0)
+  await expect(initialModel.getByRole('combobox').first()).toBeEnabled()
+  await expect(initialModel.getByRole('button', { name: 'Apply', exact: true })).toBeEnabled()
   // Preserve the initial readiness timeline before appearance tests reload the renderer.
   initialEditorReadiness = await page.evaluate(() => (window as any).__settingsEditorReadiness ?? [])
   const cards = await settings.locator('.eid-settings-card-editor').evaluateAll(elements => elements.map(element => element.getBoundingClientRect().toJSON()))

@@ -1,15 +1,7 @@
-import { readFileSync } from 'node:fs'
+import { STARTUP_REQUEST_TIMEOUT_MS } from '../src/api/request-timeouts'
 
 import { acknowledgeExpectedErrorBanner, expect, test } from './test'
 import { captureGallery, type GalleryFixture, persistGalleryEvidence, positionGalleryAtStart, resizeGallery, setupGallery, verifyGalleryControls, writeGalleryEvidence } from './workspace-gallery-fixture'
-
-// Read the exported budget without importing the renderer-only API dependency
-// graph into the composite native-test project. Fail closed if its shape changes.
-const budgetSource = readFileSync(new URL('../src/api/client.ts', import.meta.url), 'utf8')
-const startupBudget = budgetSource.match(/^export const STARTUP_REQUEST_TIMEOUT_MS\s*=\s*(\d(?:[\d_]*\d)?)\s*;?\s*$/m)?.[1]
-if (!startupBudget) { throw new Error('The native journey could not resolve the product startup-read budget') }
-const startupReadTimeout = Number(startupBudget.replaceAll('_', ''))
-if (!Number.isSafeInteger(startupReadTimeout) || startupReadTimeout <= 0) { throw new Error('Invalid product startup-read budget') }
 
 let fixture: GalleryFixture | undefined
 test.setTimeout(240_000)
@@ -72,7 +64,7 @@ test('one owner journey retains recipient, work context, request and deliverable
   // Model info/options share the product's bounded startup-read contract.
   // Wait for actual load completion, then require usable controls as before.
   await expect(model).toBeVisible()
-  await expect(model.locator('[data-slot="model-settings-skeleton"]')).toHaveCount(0, { timeout: startupReadTimeout })
+  await expect(model.locator('[data-slot="model-settings-skeleton"]')).toHaveCount(0, { timeout: STARTUP_REQUEST_TIMEOUT_MS })
   await expect(model.getByRole('combobox').first()).toBeEnabled()
   await expect(model.locator('[data-slot="skeleton"], [data-slot="model-settings-skeleton"]')).toHaveCount(0)
   await captureGallery(current, 'navigation-settings', settings)

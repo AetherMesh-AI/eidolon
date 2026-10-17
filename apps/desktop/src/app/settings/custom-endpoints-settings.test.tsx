@@ -1,8 +1,11 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { atom } from 'nanostores'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 import { I18nProvider, TRANSLATIONS, useI18n } from '@/i18n'
 import type { Locale } from '@/i18n'
+import { $activeGatewayProfile } from '@/store/profile'
+import { $settingsScopeOverride } from '@/store/settings-scope'
 
 import { CustomEndpointsSettings } from './custom-endpoints-settings'
 
@@ -13,16 +16,76 @@ const api = vi.hoisted(() => ({
 
 const confirm = vi.hoisted(() => vi.fn())
 vi.mock('@/eidolon', () => api)
+vi.mock('@/store/profile', () => ({ $activeGatewayProfile: atom('alpha'), normalizeProfileKey: (name?: string) => name || 'default' }))
+vi.mock('@/store/session', () => ({ $connection: atom({ connectionId: 'synthetic-a' }) }))
 vi.mock('@/lib/haptics', () => ({ triggerHaptic: vi.fn() }))
 vi.mock('@/store/confirm', () => ({ confirm }))
 vi.mock('@/store/notifications', () => ({ notify: vi.fn(), notifyError: vi.fn() }))
 
 beforeEach(() => {
+  $activeGatewayProfile.set('alpha')
+  $settingsScopeOverride.set(null)
   api.getCustomEndpoints.mockResolvedValue({ endpoints: [] })
   api.saveCustomEndpoint.mockResolvedValue({ endpoints: [], id: 'local-provider' })
   confirm.mockResolvedValue(false)
 })
+
+it('retains an endpoint draft through failed and deduplicated successful same-owner refreshes', async () => {
+  render(<I18nProvider configClient={null}><CustomEndpointsSettings /></I18nProvider>)
+  const field = await screen.findByLabelText('Name', { exact: true })
+  fireEvent.change(field, { target: { value: 'Keep this synthetic draft' } })
+  api.getCustomEndpoints.mockRejectedValueOnce(new Error('private synthetic refresh detail'))
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+  await screen.findByRole('alert')
+  expect(field).toHaveProperty('value', 'Keep this synthetic draft')
+  expect(screen.getByText(TRANSLATIONS.en.settings.readState.stale)).toBeTruthy()
+  let complete!: (value: { endpoints: [] }) => void
+  api.getCustomEndpoints.mockReturnValueOnce(new Promise(resolve => { complete = resolve }))
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+  expect(api.getCustomEndpoints).toHaveBeenCalledTimes(3)
+  await act(async () => { complete({ endpoints: [] }) })
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(screen.getByLabelText('Name', { exact: true })).toBe(field)
+  expect(field).toHaveProperty('value', 'Keep this synthetic draft')
+  expect(api.saveCustomEndpoint).not.toHaveBeenCalled()
+  expect(api.validateCustomEndpoint).not.toHaveBeenCalled()
+  expect(api.activateCustomEndpoint).not.toHaveBeenCalled()
+  expect(api.deleteCustomEndpoint).not.toHaveBeenCalled()
+})
+
+it('follows the active profile rather than the Settings override and never shows old-owner endpoint drafts or late errors', async () => {
+  render(<I18nProvider configClient={null}><CustomEndpointsSettings /></I18nProvider>)
+  const field = await screen.findByLabelText('Name', { exact: true })
+  fireEvent.change(field, { target: { value: 'Only for owner A' } })
+  act(() => { $settingsScopeOverride.set('settings-only') })
+  expect(api.getCustomEndpoints).toHaveBeenCalledTimes(1)
+  let rejectOld!: (error: Error) => void
+  api.getCustomEndpoints.mockReturnValueOnce(new Promise((_, reject) => { rejectOld = reject }))
+    .mockResolvedValueOnce({ endpoints: [] })
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+  act(() => { $activeGatewayProfile.set('beta') })
+  await waitFor(() => expect(screen.getByLabelText('Name', { exact: true })).toHaveProperty('value', ''))
+  await act(async () => { rejectOld(new Error('private old-owner detail')) })
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(api.getCustomEndpoints).toHaveBeenCalledTimes(3)
+  expect(api.getCustomEndpoints.mock.calls.every(args => args.length === 0)).toBe(true)
+})
 afterEach(() => { cleanup(); vi.clearAllMocks() })
+
+it('keeps a failed endpoint read distinct from an empty endpoint list or add form', async () => {
+  api.getCustomEndpoints.mockRejectedValue(new Error('synthetic private read detail'))
+  render(<I18nProvider configClient={null}><CustomEndpointsSettings /></I18nProvider>)
+  expect(await screen.findByRole('alert')).toBeTruthy()
+  expect(screen.queryByText(TRANSLATIONS.en.customEndpoints.emptyHeading)).toBeNull()
+  expect(screen.queryByLabelText(TRANSLATIONS.en.customEndpoints.name, { exact: true })).toBeNull()
+  expect(screen.queryByText('synthetic private read detail')).toBeNull()
+  api.getCustomEndpoints.mockResolvedValue({ endpoints: [] })
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+  await screen.findByText(TRANSLATIONS.en.customEndpoints.emptyHeading)
+  expect(api.getCustomEndpoints).toHaveBeenCalledTimes(2)
+  expect(api.saveCustomEndpoint).not.toHaveBeenCalled()
+})
 
 function SwitchLocale() {
   const { setLocale } = useI18n()

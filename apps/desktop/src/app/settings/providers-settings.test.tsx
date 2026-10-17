@@ -3,7 +3,9 @@ import { atom } from 'nanostores'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ConfirmHost } from '@/components/confirm-host'
+import { TRANSLATIONS } from '@/i18n'
 import { $confirmRequest } from '@/store/confirm'
+import { $activeGatewayProfile } from '@/store/profile'
 import type { EnvVarInfo, OAuthProvider } from '@/types/eidolon'
 
 const listOAuthProviders = vi.fn()
@@ -74,6 +76,7 @@ function keyVar(patch: Partial<EnvVarInfo> = {}): EnvVarInfo {
 }
 
 beforeEach(() => {
+  $activeGatewayProfile.set('alpha')
   onboarding.set({ manual: false })
   getEnvVars.mockResolvedValue({})
   disconnectOAuthProvider.mockResolvedValue({ ok: true, provider: 'nous' })
@@ -107,6 +110,33 @@ async function renderProvidersSettings() {
 }
 
 describe('ProvidersSettings', () => {
+  it('keeps failed account metadata distinct from disconnected accounts and retries without starting authentication', async () => {
+    listOAuthProviders.mockRejectedValueOnce(new Error('private synthetic OAuth detail'))
+    getEnvVars.mockRejectedValueOnce(new Error('unrelated credential read failure'))
+    await renderProvidersSettings()
+    expect(await screen.findByRole('alert')).toHaveProperty('textContent', TRANSLATIONS.en.settings.readState.accountsFailed)
+    expect(screen.queryByText('Nous Portal')).toBeNull()
+    expect(screen.queryByText('private synthetic OAuth detail')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    await screen.findByText('Nous Portal')
+    expect(startManualProviderOAuth).not.toHaveBeenCalled()
+    expect(disconnectOAuthProvider).not.toHaveBeenCalled()
+    expect(listOAuthProviders).toHaveBeenCalledTimes(2)
+  })
+
+  it('ignores late account metadata failures after the active profile changes', async () => {
+    let rejectOld!: (error: Error) => void
+    listOAuthProviders.mockReturnValueOnce(new Promise((_, reject) => { rejectOld = reject }))
+      .mockResolvedValueOnce({ providers: [provider('minimax-oauth', true)] })
+    await renderProvidersSettings()
+    act(() => { $activeGatewayProfile.set('beta') })
+    await screen.findByText('MiniMax')
+    await act(async () => { rejectOld(new Error('old private OAuth detail')) })
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.queryByText('Nous Portal')).toBeNull()
+    expect(startManualProviderOAuth).not.toHaveBeenCalled()
+  })
+
   it('keeps the network preview inert while real disconnected providers remain available', async () => {
     listOAuthProviders.mockResolvedValue({ providers: [provider('nous', false)] })
     await renderProvidersSettings()

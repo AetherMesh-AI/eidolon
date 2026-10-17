@@ -10,11 +10,13 @@
   "include": [
     "e2e",
     "playwright.config.ts",
+    "src/api/request-timeouts.ts",
     "src/themes/presets.ts",
     "src/themes/eidolon.ts",
     "src/themes/types.ts",
     "src/app/eidolon/runtime-owner-chat-contract.ts",
-    "src/app/eidolon/runtime-owner-chat-types.ts"
+    "src/app/eidolon/runtime-owner-chat-types.ts",
+    "src/app/eidolon/runtime-attention-types.ts"
   ],
   "exclude": [
     "electron"

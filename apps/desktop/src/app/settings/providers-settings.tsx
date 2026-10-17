@@ -1,6 +1,6 @@
 import { useStore } from '@nanostores/react'
 import type { ReactNode } from 'react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 
 import { runInTerminal } from '@/app/right-sidebar/store'
 import {
@@ -34,6 +34,8 @@ import { providerGroup, providerMeta, providerPriority } from './helpers'
 import { LocalModelsSettings } from './local-models-settings'
 import { SettingsContent, SettingsSkeleton } from './primitives'
 import { SettingsProfileScope } from './profile-scope'
+import { SettingsReadStatus } from './settings-read-status'
+import { useSettingsRead } from './use-settings-read'
 
 // The embedded terminal (and thus the "run disconnect command" path) only
 // exists in the Electron desktop shell, not the web dashboard.
@@ -346,8 +348,7 @@ export function ProvidersSettings({
 }: ProvidersSettingsProps) {
   const { t } = useI18n()
   const scopeProfile = useStore($settingsRequestProfile)
-  const { rowProps, vars } = useEnvCredentials(scopeProfile)
-  const [oauthProviders, setOauthProviders] = useState<OAuthProvider[]>([])
+  const { read, rowProps, vars } = useEnvCredentials(scopeProfile)
   const [openProvider, setOpenProvider] = useState<null | string>(null)
   const [disconnecting, setDisconnecting] = useState<null | string>(null)
   // Free-text filter for the API-keys view (provider name / env-var key / desc).
@@ -357,33 +358,13 @@ export function ProvidersSettings({
   // they launched from this page — otherwise the cards keep their stale status.
   const onboardingActive = useStore($desktopOnboarding).manual
 
-  const refreshOAuthProviders = useCallback(async () => {
-    // OAuth providers are best-effort — a failure here just hides the panel.
-    const { providers } = await listOAuthProviders(scopeProfile)
-    setOauthProviders(providers)
-  }, [scopeProfile])
+  const oauthRead = useSettingsRead(
+    useCallback(async () => (await listOAuthProviders(scopeProfile)).providers, [scopeProfile]),
+    scopeProfile,
+    { enabled: !onboardingActive }
+  )
 
-  useEffect(() => {
-    let cancelled = false
-
-    void (async () => {
-      if (onboardingActive) {
-        return
-      }
-
-      try {
-        const { providers } = await listOAuthProviders(scopeProfile)
-
-        if (!cancelled) {
-          setOauthProviders(providers)
-        }
-      } catch {
-        // Ignore — the OAuth panel just won't render.
-      }
-    })()
-
-    return () => void (cancelled = true)
-  }, [onboardingActive, scopeProfile])
+  const refreshOAuthProviders = oauthRead.refresh
 
   // External (CLI-managed) providers can't be cleared via the API by design —
   // Hermes never deletes creds another tool owns behind a silent API call.
@@ -449,13 +430,13 @@ export function ProvidersSettings({
     }
   }
 
-  if (!vars) {
+  if (view === 'keys' && !vars && !read.failed) {
     return <SettingsSkeleton search sections={[{ rows: 6 }]} />
   }
 
   const showApiKeys = view === 'keys'
 
-  const keyGroups = buildProviderKeyGroups(vars)
+  const keyGroups = buildProviderKeyGroups(vars ?? {})
 
   if (showApiKeys) {
     const q = normalize(keyQuery)
@@ -471,8 +452,15 @@ export function ProvidersSettings({
     return (
       <SettingsContent>
         <SettingsProfileScope className="mb-5" />
+        <SettingsReadStatus
+          failed={read.failed}
+          hasData={vars !== null}
+          loading={read.loading}
+          onRefresh={read.refresh}
+          title={t.settings.keys.failedLoad}
+        />
         <LocalEndpointRow onOpen={reason => startManualLocalEndpoint(reason, scopeProfile)} />
-        {keyGroups.length > 0 ? (
+        {vars === null ? null : keyGroups.length > 0 ? (
           <div className="grid gap-3">
             <SearchField
               aria-label={t.settings.providers.searchKeys}
@@ -518,18 +506,31 @@ export function ProvidersSettings({
     return $localModelsEnabled.get() ? <LocalModelsSettings /> : null
   }
 
+  if (!oauthRead.data && !oauthRead.failed) {
+    return <SettingsSkeleton sections={[{ rows: 6 }]} />
+  }
+
   return (
     <SettingsContent>
       <SettingsProfileScope className="mb-5" />
-      <OAuthPicker
-        disconnecting={disconnecting}
-        onDisconnect={provider => void handleDisconnect(provider)}
-        onTerminalDisconnect={provider => void handleTerminalDisconnect(provider)}
-        onWantApiKey={() => onViewChange('keys')}
-        onWantLocalModels={() => onViewChange('local')}
-        profile={scopeProfile}
-        providers={oauthProviders}
+      <SettingsReadStatus
+        failed={oauthRead.failed}
+        hasData={oauthRead.data !== null}
+        loading={oauthRead.loading}
+        onRefresh={oauthRead.refresh}
+        title={t.settings.readState.accountsFailed}
       />
+      {oauthRead.data && (
+        <OAuthPicker
+          disconnecting={disconnecting}
+          onDisconnect={provider => void handleDisconnect(provider)}
+          onTerminalDisconnect={provider => void handleTerminalDisconnect(provider)}
+          onWantApiKey={() => onViewChange('keys')}
+          onWantLocalModels={() => onViewChange('local')}
+          profile={scopeProfile}
+          providers={oauthRead.data}
+        />
+      )}
     </SettingsContent>
   )
 }

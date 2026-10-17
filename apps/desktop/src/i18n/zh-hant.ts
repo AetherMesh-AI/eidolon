@@ -421,6 +421,7 @@ export const zhHant = defineLocale({
   },
 
   settings: {
+    readState: { incomplete: '部分設定檔無法讀取。正在顯示可用的封存項目，保留的項目可能已過時。', stale: '正在顯示上次載入的資料，這些值可能已過時。', accountsFailed: '無法載入已連線的帳戶' },
     closeSettings: '關閉設定',
     exportConfig: '匯出設定',
     importConfig: '匯入設定',

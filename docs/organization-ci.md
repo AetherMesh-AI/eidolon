@@ -74,14 +74,24 @@ No branch protection, repository setting, secret, or permission grant is changed
   See [owner chat boundaries](organization-owner-chat.md) and
   [work-package design and rollout](organization-work-packages.md).
 
-- Workspace gallery: two bounded 20-minute Linux jobs cover secondary pages and
-  Settings independently of the existing desktop suite. Each runs six locale
-  scenarios, both appearance modes and normal/200% native zoom, with one worker
-  and zero retries. Evidence records source/tree, screenshot hashes, focus and
-  switch geometry. All organization records are synthetic; history uses one
-  loopback provider turn per scenario and browsing must make no additional calls.
-  Settings scenarios make no provider calls. Existing job limits and assertions
-  are unchanged.
+- Workspace gallery: four independent 20-minute Linux groups cover secondary
+  pages, Settings, responsive navigation and read recovery. Secondary and Settings
+  each run six locale scenarios in both appearance modes; responsive navigation
+  has two appearance scenarios. Read recovery runs seven Settings/Model scenarios
+  and three session-attachment scenarios together, covering loading, failed reads,
+  scoped Retry and retained drafts/owner context across narrow screens and native
+  zoom. All groups use one worker and zero retries. The organization native glob
+  separately covers current-attention and legacy-request recovery without repeating
+  them here. Five explicit read-recovery helper files join the desktop unit gate.
+  Evidence records source/tree, screenshot hashes, focus and geometry; compact
+  artifacts include English captures, Model/attachment captures and boundary
+  receipts, while full artifacts retain every locale. All organization records
+  are synthetic; secondary history uses one loopback provider turn per scenario
+  and browsing must make no additional calls. Settings and read-recovery scenarios
+  make no provider calls. Gallery checks remain separate from the retained desktop
+  aggregate. Existing job limits and assertions are unchanged; the fourth group
+  adds a maximum of 20 runner-minutes; combined duration remains to be verified
+  by normal CI.
 
 Fast component/type failures stop the desktop job before native installation,
 production build and Electron. The backend and OS guard jobs run independently
