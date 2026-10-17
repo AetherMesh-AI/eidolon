@@ -187,3 +187,30 @@ def test_improvement_cannot_publish_into_changed_transport_scope(served, monkeyp
         return {'suggestion': 'Suggested wording', 'assumptions': []}
     monkeypatch.setattr(generation, 'improve', improve)
     assert call('improveTeamInput', improvement_request(served), transport)['error']['code'] == 4001
+
+
+def test_setup_budget_rpc_requires_exact_review_and_keeps_team_fresh(served):
+    identity = {'expectedOrganizationId': served.identity['organizationId']}
+    before = dump(served)
+    state = call('setupBudgetPolicy', identity)['result']
+    assert state['configuration'] is None
+    assert state['suggestedConfiguration']['totalCallLimit'] == 7
+    assert dump(served) == before
+    value = {**identity, 'expectedGeneration': state['policyGeneration'],
+             'sourceRevision': state['sourceRevision'], 'configuration': state['suggestedConfiguration']}
+    assert call('previewSetupBudget', {**value, 'profile': 'sibling'})['error']['code'] == -32602
+    preview = call('previewSetupBudget', value)['result']
+    assert dump(served) == before
+    apply = {**value, 'previewVersion': preview['previewVersion'], 'idempotencyKey': 'rpc-budget', 'confirmed': True}
+    assert call('applySetupBudget', {**apply, 'confirmed': False})['error']['code'] == -32602
+    applied = call('applySetupBudget', apply)
+    assert applied['result']['receipt']['action'] == 'setupBudget'
+    assert call('applySetupBudget', apply) == applied
+    current = call('teamSetup', identity)['result']
+    assert current['state'] == 'available'
+    assert current['generationAllowance']['remainingCalls'] == 7
+    state = call('setupBudgetPolicy', identity)['result']
+    assert state['latestReceipt'] == applied['result']['receipt']
+    with sqlite3.connect(served.path) as conn:
+        assert conn.execute('SELECT count(*) FROM requests').fetchone()[0] == 0
+        assert conn.execute('SELECT count(*) FROM organization_team_generations').fetchone()[0] == 0

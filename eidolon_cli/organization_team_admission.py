@@ -9,7 +9,7 @@ from eidolon_cli.organization_roster import _text
 from eidolon_cli.organization_team_setup import _current, _fresh, _preview
 
 
-def _reserve(home, params, *, provider, model, input_limit, output_limit, selected_provider=None):
+def _reserve(home, params, *, provider, model, input_limit, output_limit, selected_provider=None, operation='generateTeam'):
     if (type(input_limit) is not int or type(output_limit) is not int
             or not 0 < input_limit <= 32768 or not 0 < output_limit <= 8000):
         raise ValueError('Team generation exceeds its bounded input/output allowance')
@@ -22,8 +22,17 @@ def _reserve(home, params, *, provider, model, input_limit, output_limit, select
         if not row or row['status'] != 'running' or row['dispatched']:
             raise ValueError('A team generation permits exactly one physical provider send')
         previous = conn.execute('SELECT reserved_tokens,reserved_cost FROM organization_team_generations WHERE dispatched=1').fetchall()
+        from eidolon_cli.organization_team_budget import budget_view, read_policy, operation_for
+        budget = budget_view(conn, settings, completing_key=key)
+        if read_policy(conn) is not None and operation_for(conn, key) != operation:
+            raise OwnerPolicyError('setup_budget_operation_conflict')
+        bucket = {'generateTeam': 'generationCalls', 'improveTeamInput': 'improveCalls'}.get(operation)
+        if bucket is None:
+            raise OwnerPolicyError('setup_budget_operation_conflict')
+        if budget['policyVersion'] == 2 and (budget['status'] != 'available' or budget['remaining'][bucket] <= 0):
+            raise OwnerPolicyError('setup_budget_exhausted_or_blocked')
         tokens = input_limit + output_limit
-        if (len(previous) >= min(3, settings.max_model_calls)
+        if (len(previous) >= budget['limits']['totalCalls']
                 or sum(item['reserved_tokens'] for item in previous) + tokens > min(120000, settings.max_total_tokens)
                 or tokens > settings.max_context_tokens or output_limit > settings.max_output_tokens):
             raise ValueError('Starter generation allowance is exhausted or exceeds the configured token limits; use a manual team')
@@ -103,7 +112,7 @@ def _infer(home, params, key, operation, invoke, finish):
     reservation_params = {**params, 'idempotencyKey': key}
     from eidolon_cli.organization_team_generation import TeamInputRejected, TeamProposalRejected
     with _connection(home, write=True) as conn:
-        _, _, settings, revision = _current(conn, home, params['expectedOrganizationId'])
+        _, policy, settings, revision = _current(conn, home, params['expectedOrganizationId'])
         prior = conn.execute('SELECT * FROM organization_team_generations WHERE idempotency_key=?', (key,)).fetchone()
         if prior:
             if prior['organization_id'] != params['expectedOrganizationId'] or prior['input_hash'] not in accepted_digests:
@@ -123,9 +132,11 @@ def _infer(home, params, key, operation, invoke, finish):
         conn.execute('INSERT INTO organization_team_generations '
             '(idempotency_key,organization_id,input_hash,source_revision,status,created) VALUES (?,?,?,?,?,?)',
             (key, params['expectedOrganizationId'], digest, revision, 'running', time.time()))
+        from eidolon_cli.organization_team_budget import record_operation
+        record_operation(conn, key, params['expectedOrganizationId'], operation, policy['generation'])
     received = False
     try:
-        response = invoke(lambda **values: _reserve(home, reservation_params, **values))
+        response = invoke(lambda **values: _reserve(home, reservation_params, operation=operation, **values))
         received = True
         with _connection(home, write=True) as conn:
             row = conn.execute('SELECT dispatched FROM organization_team_generations WHERE idempotency_key=?', (key,)).fetchone()

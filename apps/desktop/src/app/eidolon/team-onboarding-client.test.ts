@@ -223,3 +223,25 @@ it('retains authoritative shared allowance on suggestions without counting attem
   const { client } = improvementClient({ ...suggestion, generationAllowance })
   await expect(client.improve(improvementSetup, improvementInput)).resolves.toEqual({ ...suggestion, generationAllowance })
 })
+
+it('accepts explicitly versioned split allowance while preserving operation-specific counters', async () => {
+  const generationAllowance = {
+    policyVersion: 2, status: 'available', remainingCalls: 7,
+    remainingByOperation: { improveTeamInput: 4, generateTeam: 3 }
+  }
+
+  const { client } = improvementClient({ ...suggestion, generationAllowance })
+  await expect(client.improve(improvementSetup, improvementInput)).resolves.toEqual({ ...suggestion, generationAllowance })
+})
+
+it.each([
+  { policyVersion: 2, status: 'available', remainingCalls: 7 },
+  { policyVersion: 3, status: 'available', remainingCalls: 7, remainingByOperation: { improveTeamInput: 4, generateTeam: 3 } },
+  { policyVersion: 2, status: 'available', remainingCalls: 7, remainingByOperation: { improveTeamInput: 8, generateTeam: 3 } },
+  { policyVersion: 2, status: 'available', remainingCalls: 7, remainingByOperation: { improveTeamInput: true, generateTeam: 3 } },
+  { policyVersion: 2, status: 'available', remainingCalls: 7, remainingByOperation: { improveTeamInput: 4, generateTeam: 3, legacy: 0 } },
+  { status: 'available', remainingCalls: 3, remainingByOperation: { improveTeamInput: 3, generateTeam: 3 } }
+])('rejects malformed split allowance %#', async generationAllowance => {
+  const { client } = improvementClient({ ...suggestion, generationAllowance })
+  await expect(client.improve(improvementSetup, improvementInput)).rejects.toThrow('invalid_allowance')
+})
