@@ -429,7 +429,7 @@ export function Organization({
               {snapshot.activity
                 .filter(item => item.agentId === agent.id)
                 .map(item => (
-                  <p key={item.id}>{item.text}</p>
+                  <p className="eid-result-text" key={item.id}>{item.text}</p>
                 ))}
             </>
           )}
