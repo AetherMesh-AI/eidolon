@@ -154,9 +154,14 @@ export function TeamSetupSubscription(props: TeamSetupSubscriptionProps) {
           )}
           {state.catalog && (
             <>
-              <label>
-                {copy.model}
-                <select disabled={disabled} onChange={event => state.choose(event.target.value)} value={state.model}>
+              <div className="grid min-w-0 gap-1.5">
+                <label htmlFor={`${id}-model`}>{copy.model}</label>
+                <select
+                  disabled={disabled}
+                  id={`${id}-model`}
+                  onChange={event => state.choose(event.target.value)}
+                  value={state.model}
+                >
                   <option value="">{copy.choose}</option>
                   {state.catalog.models.map(model => (
                     <option key={model.slug} value={model.slug}>
@@ -164,7 +169,7 @@ export function TeamSetupSubscription(props: TeamSetupSubscriptionProps) {
                     </option>
                   ))}
                 </select>
-              </label>
+              </div>
               {!state.catalog.models.length && <p role="status">{copy.noModels}</p>}
               <fieldset className="eid-team-fields" disabled={disabled}>
                 {(['improveCallLimit', 'generationCallLimit', 'totalCallLimit', 'requestTimeoutSeconds'] as const).map(
