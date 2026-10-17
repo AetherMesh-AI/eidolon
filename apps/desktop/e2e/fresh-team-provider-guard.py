@@ -12,6 +12,46 @@ import os
 from pathlib import Path
 import socket
 import sqlite3
+import sys
+import time
+
+
+def seed_offline_metadata(home):
+    """Seed only unknown display metadata in a disposable home, before boot.
+
+    Reasoning hydration requires a nonempty map; an unlisted sentinel with a
+    null value makes no capability claim about any selectable model. The real
+    endpoint metadata reader accepts an empty fresh memo as unknown pricing.
+    No configuration, credential, authorization or accounting file is touched.
+    """
+    home = Path(home).resolve(strict=True)
+    now = time.time()
+    sentinel = {'synthetic-offline-metadata-sentinel-never-selected': None}
+    payloads = {
+        'reasoning_caps.json': {url: {'ts': now, 'caps': sentinel} for url in (
+            'https://openrouter.ai/api/v1/models',
+            'https://inference-api.nousresearch.com/v1/models')},
+        'endpoint_model_metadata.json': {'https://api.openai.com/v1': {'at': now, 'models': {}}},
+    }
+    cache = home / 'cache'
+    cache.mkdir(exist_ok=True)
+    receipts = []
+    for name, payload in payloads.items():
+        target = cache / name
+        if target.exists() or target.is_symlink():
+            raise AssertionError('Metadata must be seeded before first activation')
+        data = (json.dumps(payload, sort_keys=True) + '\n').encode()
+        target.write_bytes(data)
+        receipts.append({'path': str(target), 'sha256': hashlib.sha256(data).hexdigest()})
+    return {'home': str(home), 'seededAt': now, 'source': 'synthetic-unknown-metadata',
+            'prices': 'unknown', 'realModelCapabilities': 'unknown', 'caches': receipts}
+
+
+if __name__ == '__main__':
+    if len(sys.argv) != 3 or sys.argv[1] != '--seed-metadata':
+        raise SystemExit('Use --seed-metadata with one disposable home')
+    print(json.dumps(seed_offline_metadata(sys.argv[2])))
+    raise SystemExit(0)
 
 import httpx
 import psutil
@@ -112,6 +152,11 @@ def _request_reservation(body):
             'outputLimit': max(caps), 'reservedTokens': total}
 
 
+def _fixture_installation_complete(marker):
+    return all(marker.get(name) is True for name in (
+        'sync', 'async', 'socket', 'dns', 'updateAvailability', 'displayPricingPrewarm'))
+
+
 def _synthetic_response(request):
     """Only a verified, explicitly armed, already-reserved setup call is mocked."""
     if str(request.url) != CANONICAL_URL or request.method != 'POST':
@@ -123,6 +168,8 @@ def _synthetic_response(request):
         if expected['home'] != str(home) or home.parent != ROOT_HOME / 'profiles':
             raise ValueError('home')
         marker = json.loads((GUARD_ROOT / ('installed-' + str(PID) + '.json')).read_text())
+        if not _fixture_installation_complete(marker):
+            raise ValueError('incomplete-fixture-installation')
         entries = json.loads((ROOT_HOME / 'spawn-ledger.json').read_text())
         matches = [entry for entry in entries if _fixture_identity_matches(
             marker, entry, _fixture_live_identity(PID), expected)]
@@ -289,6 +336,7 @@ socket.getnameinfo = _guarded_getnameinfo
 # precede CLI boot: the real checker can spawn git as well as use urllib, so a
 # Python socket guard alone cannot isolate that unrelated background service.
 import eidolon_cli.banner as _banner
+import eidolon_cli.inventory as _inventory
 
 
 def _isolated_update_check(*args, **kwargs):
@@ -300,9 +348,27 @@ def _isolated_update_check(*args, **kwargs):
 
 
 _banner.check_for_updates = _isolated_update_check
+
+
+def _isolated_pricing_prewarm(rows, *, current_provider='', current_base_url=''):
+    # Only background display-price enrichment is suppressed. The real picker
+    # still applies cached-only pricing (unknown stays unknown), and actual
+    # auth, runtime resolution, usage lookup and reservations are not replaced.
+    from eidolon_constants import get_eidolon_home
+    _record(GUARD_ROOT / ('metadata-' + str(PID) + '.jsonl'), {
+        'pid': PID, 'kind': 'display-pricing-prewarm',
+        'home': str(get_eidolon_home().resolve()),
+        'providerSlugs': sorted({str(row.get('slug') or '').lower() for row in rows}),
+        'currentProvider': current_provider, 'outcome': 'kept-unknown',
+        'physicalNetworkSend': False,
+    })
+    return None
+
+
+_inventory._prewarm_pricing_async = _isolated_pricing_prewarm
 _marker = GUARD_ROOT / ('installed-' + str(PID) + '.json')
 _pending = _marker.with_suffix('.pending')
 _pending.write_text(json.dumps({'bootstrapHome': str(Path(os.environ['HERMES_HOME']).resolve()),
     'pid': PID, 'create_time': STARTED, 'sync': True, 'async': True, 'socket': True, 'dns': True,
-    'updateAvailability': True}))
+    'updateAvailability': True, 'displayPricingPrewarm': True}))
 _pending.replace(_marker)

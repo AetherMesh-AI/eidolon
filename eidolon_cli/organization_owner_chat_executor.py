@@ -34,6 +34,20 @@ def readiness_reason(recipient, *, config=None):
     from eidolon_cli.organization_subscription import APP_SERVER_BLOCKER
     from eidolon_cli.providers import determine_api_mode, host_mandated_api_mode, normalize_provider
     from eidolon_cli.runtime_provider import _resolve_plain_custom_api_mode
+    from eidolon_cli.profile_isolation import isolated_route, ProfileIsolationError
+    try:
+        isolated = isolated_route(requested=recipient.get('provider'), target_model=recipient.get('model'))
+        if isolated is not None:
+            # Exact owner/setup routing cannot opt into generic auto discovery.
+            # Supplied config is only a legacy snapshot, never strict authority.
+            if recipient.get('provider') not in (None, '', isolated['provider']):
+                return 'This workspace supports only its own OpenAI API credentials'
+            _guard_route(isolated, isolated['model'])
+            return None
+    except (ProfileIsolationError, OrganizationExecutionError) as exc:
+        return str(exc)
+    except Exception:
+        return 'The isolated workspace route could not be verified.'
     cfg = load_config_readonly() if config is None else config
     model = cfg.get('model') or {}
     model = model if isinstance(model, dict) else {'default': model}

@@ -11,6 +11,7 @@ import shutil
 import socket
 import sqlite3
 import subprocess
+import time
 from types import SimpleNamespace
 
 import httpx
@@ -138,7 +139,9 @@ def guarded(tmp_path, monkeypatch):
     monkeypatch.setattr(httpx.HTTPTransport, 'handle_request', no_physical)
     monkeypatch.setattr(httpx.AsyncHTTPTransport, 'handle_async_request', no_physical)
     import eidolon_cli.banner as banner
+    import eidolon_cli.inventory as inventory
     monkeypatch.setattr(banner, 'check_for_updates', banner.check_for_updates)
+    monkeypatch.setattr(inventory, '_prewarm_pricing_async', inventory._prewarm_pricing_async)
     spec = importlib.util.spec_from_file_location('fresh_team_guard', HELPER)
     guard = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(guard)
@@ -260,14 +263,165 @@ def test_update_availability_is_locally_scripted_before_cli_boot(guarded):
     assert all(row['physicalNetworkSend'] is False for row in rows)
 
 
+def test_metadata_seed_only_populates_current_unknown_caches(guarded):
+    guard, expected, *_ = guarded
+    home = Path(expected['home'])
+    before = {str(path.relative_to(home)): path.read_bytes() for path in home.rglob('*') if path.is_file()}
+    started = time.time()
+    receipt = guard.seed_offline_metadata(home)
+    assert started <= receipt['seededAt'] <= time.time()
+    assert receipt['home'] == str(home.resolve())
+    assert receipt['prices'] == receipt['realModelCapabilities'] == 'unknown'
+    for relative, value in before.items():
+        assert (home / relative).read_bytes() == value
+    caps = json.loads((home / 'cache/reasoning_caps.json').read_text())
+    assert set(caps) == {'https://openrouter.ai/api/v1/models', 'https://inference-api.nousresearch.com/v1/models'}
+    for entry in caps.values():
+        assert entry == {'ts': receipt['seededAt'], 'caps': {'synthetic-offline-metadata-sentinel-never-selected': None}}
+    assert json.loads((home / 'cache/endpoint_model_metadata.json').read_text()) == {
+        'https://api.openai.com/v1': {'at': receipt['seededAt'], 'models': {}}}
+    assert set(str(path.relative_to(home)) for path in home.rglob('*') if path.is_file()) == set(before) | {
+        'cache/reasoning_caps.json', 'cache/endpoint_model_metadata.json'}
+    for row in receipt['caches']:
+        assert hashlib.sha256(Path(row['path']).read_bytes()).hexdigest() == row['sha256']
+    with pytest.raises(AssertionError, match='before first activation'):
+        guard.seed_offline_metadata(home)
+
+
+def test_cold_metadata_inventory_and_real_readiness_before_and_after_setup(guarded, monkeypatch):
+    from agent import credential_pool, model_metadata, models_dev, usage_pricing
+    from eidolon_cli import auth, config, inventory, model_catalog, models, models_pricing
+    from eidolon_cli import organization_workspaces, profile_isolation
+    from eidolon_cli.organization_metadata import save_metadata
+    from eidolon_cli.organization_owner_chat_executor import readiness_reason
+    from eidolon_cli.runtime_provider import resolve_runtime_provider
+    from eidolon_constants import set_eidolon_home_override, reset_eidolon_home_override
+
+    guard, _, _, _, _, physical = guarded
+    root = guard.GUARD_ROOT.parent / 'cold-metadata-origin'
+    root.mkdir()
+    monkeypatch.setenv('HERMES_HOME', str(root))
+    monkeypatch.setenv('HOME', str(root))
+    monkeypatch.setattr(Path, 'home', lambda: root)
+    # Match the native sandbox: no ambient provider keys or alternative endpoints.
+    for provider in auth.PROVIDER_REGISTRY.values():
+        for name in (*getattr(provider, 'api_key_env_vars', ()), getattr(provider, 'base_url_env_var', '')):
+            if name:
+                monkeypatch.delenv(name, raising=False)
+    # Exercise real cold-cache warm-up decisions, not the production pytest skip.
+    monkeypatch.delenv('PYTEST_CURRENT_TEST', raising=False)
+    fixture = json.loads((HELPER.parent / 'isolated-model-catalog.json').read_text())
+
+    def seed(home):
+        (home / 'cache').mkdir(exist_ok=True)
+        (home / 'models_dev_cache.json').write_text(json.dumps(fixture['registry']))
+        (home / 'cache/model_catalog.json').write_text(json.dumps(fixture['manifest']))
+        return guard.seed_offline_metadata(home)
+
+    def cold():
+        for module, fields in (
+            (models_dev, {'_models_dev_cache': {}, '_models_dev_cache_time': 0, '_models_dev_retry_after': 0}),
+            (model_catalog, {'_catalog_cache': None, '_catalog_cache_source_mtime': 0}),
+            (model_metadata, {'_endpoint_model_metadata_cache': {}, '_endpoint_model_metadata_cache_time': {}}),
+            (models_pricing, {'_pricing_cache': {}, '_pricing_cache_retry_after': {}, '_pricing_provider_cache_keys': {}}),
+        ):
+            for name, value in fields.items():
+                monkeypatch.setattr(module, name, value)
+        for prefix in ('openrouter', 'nous'):
+            for suffix, value in (('reasoning_caps_cache', None), ('reasoning_caps_failed_at', None),
+                                  ('caps_disk_checked', False), ('caps_warm_started', False)):
+                monkeypatch.setattr(models, '_' + prefix + '_' + suffix, value)
+
+    (root / 'config.yaml').write_text(json.dumps({'model': {'provider': '', 'default': ''}, **fixture['config']}))
+    (root / '.env').write_text('')
+    root_seed = seed(root)
+    root_before = {name: (root / name).read_bytes() for name in ('config.yaml', '.env')}
+    token = set_eidolon_home_override(root)
+    try:
+        metadata = save_metadata(root / 'organization/state.db', display_name='Synthetic origin',
+            owner_display_name='Synthetic owner', expected_organization_id=None, expected_revision=None,
+            idempotency_key='metadata-origin')['metadata']
+        receipt = organization_workspaces.create_workspace(root, {
+            'capabilityVersion': 1, 'expectedOrganizationId': metadata['organizationId'],
+            'expectedOwnerId': metadata['owner']['ownerId'], 'idempotencyKey': 'metadata-fresh',
+            'displayName': 'Fresh metadata workspace', 'ownerDisplayName': 'Fresh owner'})
+        cold()
+        inventory.build_model_options_payload(inventory.load_picker_context(), include_unconfigured=True)
+    finally:
+        reset_eidolon_home_override(token)
+    home = root / 'profiles' / receipt['profile']
+    before = json.loads((home / 'config.yaml').read_text())
+    assert before['model'] == {'provider': '', 'default': ''}
+    assert (home / '.env').read_text() == ''
+    (home / 'config.yaml').write_text(json.dumps({**before, **fixture['config']}))
+    owned_seed = seed(home)
+    assert root_seed['home'] != owned_seed['home']
+    marker = (home / '.organization-isolation.json').read_bytes()
+    token = set_eidolon_home_override(home)
+    try:
+        for stage in ('blank', 'key-only', 'configured'):
+            if stage == 'key-only':
+                from eidolon_cli.credential_lifecycle import save_provider_env_credential
+                save_provider_env_credential('OPENAI_API_KEY', 'synthetic-own-metadata-key-never-real')
+            if stage == 'configured':
+                configured = config.load_config()
+                configured['model'] = {'provider': 'openai-api', 'default': 'synthetic-studio-one'}
+                config.save_config(configured)
+            cold()
+            payload = inventory.build_model_options_payload(inventory.load_picker_context(), include_unconfigured=True)
+            # The built-in MoA preset is a virtual configuration row, not an
+            # authenticated physical provider or an allowed isolated route.
+            physical_rows = [row for row in payload['providers'] if row['slug'] != 'moa']
+            assert not any(row.get('authenticated') for row in physical_rows)
+            assert not any(row.get('pricing') for row in payload['providers'])
+            assert all(row.get('models') == (['synthetic-studio-one'] if stage == 'configured'
+                and row['slug'] == 'openai-api' else []) for row in physical_rows)
+            assert not os.environ.get('OPENAI_API_KEY')
+            assert not credential_pool.load_pool('openai-api').has_credentials()
+            if stage != 'configured':
+                with pytest.raises(profile_isolation.ProfileIsolationError, match='Select OpenAI API'):
+                    resolve_runtime_provider(requested='openai-api')
+                assert config.load_config_readonly()['model']['default'] == ''
+            else:
+                runtime = resolve_runtime_provider(requested='openai-api')
+                assert runtime['api_key'] == 'synthetic-own-metadata-key-never-real'
+                assert runtime['base_url'] == 'https://api.openai.com/v1'
+                assert runtime['source'] == 'profile-local-env'
+                assert readiness_reason({}) is None
+            assert model_metadata.get_model_context_length('synthetic-studio-one', provider='openai-api',
+                base_url='https://api.openai.com/v1') == model_metadata.DEFAULT_FALLBACK_CONTEXT
+            assert usage_pricing.get_pricing_entry('synthetic-studio-one', provider='openai-api',
+                base_url='https://api.openai.com/v1', api_key='synthetic-own-metadata-key-never-real') is None
+            assert models_pricing._pricing_cache == {}
+            assert not guard.ATTEMPTS.exists()
+            assert not guard.SENDS.exists()
+            assert physical == []
+            assert (home / '.organization-isolation.json').read_bytes() == marker
+        rows = [json.loads(line) for line in (guard.GUARD_ROOT / ('metadata-' + str(guard.PID) + '.jsonl')).read_text().splitlines()]
+        assert [row['home'] for row in rows] == [str(root.resolve()), *([str(home.resolve())] * 3)]
+        assert all(row['providerSlugs'] and 'openai-api' in row['providerSlugs'] for row in rows)
+        assert all(row['outcome'] == 'kept-unknown' and row['physicalNetworkSend'] is False for row in rows)
+        assert all((root / name).read_bytes() == value for name, value in root_before.items())
+    finally:
+        reset_eidolon_home_override(token)
+        import eidolon_logging
+        eidolon_logging._reset_queued_handlers()
+        shutil.rmtree(root)
+
+
 @pytest.mark.parametrize('change', ['missing-permit', 'foreign-home', 'foreign-owner', 'closed', 'pid',
     'restart', 'ledger-home', 'unconfigured-model', 'foreign-key', 'wrong-model', 'tools', 'wrong-inputs',
     'missing-reservation', 'unreserved', 'wrong-key', 'wrong-revision', 'wrong-hash', 'premature-team', 'hidden-work',
-    'ceiling-not-charge', 'wrong-output-policy'])
+    'ceiling-not-charge', 'wrong-output-policy', 'incomplete-installation'])
 def test_invalid_send_fails_before_any_response_or_network(guarded, change):
     guard, expected, permit, path, make_request, physical = guarded
     request = make_request()
-    if change == 'missing-permit':
+    if change == 'incomplete-installation':
+        marker_path = guard.GUARD_ROOT / ('installed-' + str(guard.PID) + '.json')
+        marker = json.loads(marker_path.read_text())
+        marker['displayPricingPrewarm'] = False
+        marker_path.write_text(json.dumps(marker))
+    elif change == 'missing-permit':
         permit.unlink()
     elif change in {'foreign-home', 'foreign-owner', 'closed', 'pid', 'restart'}:
         key, value = {'foreign-home': ('home', str(path.parent)), 'foreign-owner': ('ownerId', 'other'),

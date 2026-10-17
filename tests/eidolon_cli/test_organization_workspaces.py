@@ -118,6 +118,132 @@ def configure(home, key='workspace-owned-synthetic-key'):
         save_env_value('OPENAI_API_KEY', key)
 
 
+def test_ui_shaped_isolated_readiness_is_passive_and_matches_owned_runtime(origin, monkeypatch):
+    from agent import secret_scope, credential_pool
+    from eidolon_cli import auth, config, runtime_provider
+    from eidolon_cli.organization_owner_chat_executor import readiness_reason
+    from eidolon_cli.organization_team_setup import _readiness
+    home, _ = create(origin)
+    with scope(home):
+        # Exact ordinary model-dialog shape; no hidden api_mode or key grant.
+        config.save_config({'model': {'provider': 'openai-api', 'default': 'ui-selected-model'}})
+    before = files(home)
+    accesses = []
+    def forbidden(*args, **kwargs):
+        accesses.append(True)
+        raise AssertionError('Passive readiness cannot inspect credentials or resolve runtime')
+    readonly = config.load_config_readonly
+    initialized = []
+    def read_only(**kwargs):
+        initialized.append(kwargs)
+        return readonly(**kwargs)
+    with monkeypatch.context() as patch, scope(home):
+        patch.setattr(isolation, 'profile_secrets', forbidden)
+        patch.setattr(secret_scope, 'load_env_file', forbidden)
+        patch.setattr(auth, '_load_auth_store', forbidden)
+        patch.setattr(credential_pool, 'load_pool', forbidden)
+        patch.setattr(runtime_provider, 'resolve_runtime_provider', forbidden)
+        patch.setattr(config, 'load_config_readonly', read_only)
+        route = isolation.isolated_route()
+        assert route == {'provider': 'openai-api', 'requested_provider': 'openai-api',
+            'model': 'ui-selected-model', 'api_mode': 'chat_completions', 'base_url': isolation.ENDPOINT,
+            'request_overrides': None}
+        assert readiness_reason({}) is None
+        assert readiness_reason({}, config={'model': {'provider': 'anthropic', 'default': 'forged'}}) is None
+        readiness = _readiness(home)
+        assert readiness['status'] == 'unchecked' and readiness['blockers'] == []
+    assert accesses == [] and initialized and all(call == {'initialize_home': False} for call in initialized)
+    assert files(home) == before
+    with scope(home):
+        with pytest.raises(isolation.ProfileIsolationError, match='Add an OpenAI API key'):
+            isolation.isolated_runtime()
+        config.save_env_value('OPENAI_API_KEY', 'owned-ui-synthetic-key')
+        runtime = runtime_provider.resolve_runtime_provider(requested='openai-api')
+        assert runtime == {'provider': 'openai-api', 'requested_provider': 'openai-api',
+            'model': 'ui-selected-model', 'api_mode': 'chat_completions', 'base_url': isolation.ENDPOINT,
+            'api_key': 'owned-ui-synthetic-key', 'source': 'profile-local-env'}
+        safe = config.load_config()
+        safe['model']['request_overrides'] = {'temperature': 0.25}
+        config.save_config(safe)
+        assert readiness_reason({}) is None
+        assert isolation.isolated_runtime() == runtime  # no newly forwarded overrides
+
+
+@pytest.mark.parametrize('recipient,allowed', [
+    ({}, True), ({'provider': 'openai-api', 'model': 'own-recipient-model'}, True),
+    ({'provider': 'openai'}, False), ({'provider': 'auto'}, False), ({'provider': 'anthropic'}, False),
+    ({'model': ''}, False), ({'model': 0}, False), ({'model': {}}, False), ({'model': 'x' * 301}, False),
+    ({'model': 'search-api-preview'}, False), ({'model': 'provider/model:online'}, False),
+])
+def test_isolated_readiness_validates_recipient_against_actual_route(origin, recipient, allowed):
+    from eidolon_cli.organization_owner_chat_executor import readiness_reason
+    home, _ = create(origin)
+    configure(home)
+    with scope(home):
+        reason = readiness_reason(recipient, config={'model': {'provider': 'mock', 'default': 'forged'}})
+        assert (reason is None) is allowed
+        if allowed:
+            route = isolation.isolated_route(requested=recipient.get('provider'), target_model=recipient.get('model'))
+            runtime = isolation.isolated_runtime(requested=recipient.get('provider'), target_model=recipient.get('model'))
+            assert route['model'] == runtime['model'] == recipient.get('model', 'workspace-test-model')
+
+
+@pytest.mark.parametrize('change', ['provider', 'empty-model', 'oversized-model', 'endpoint', 'api-mode',
+    'inline-key', 'headers', 'app-server', 'disabled', 'tools', 'search', 'missing-marker', 'bad-marker',
+    'bad-config', 'managed-provider', 'managed-app-server', 'managed-disabled'])
+def test_isolated_readiness_cannot_be_overridden_by_supplied_config(origin, monkeypatch, change):
+    from copy import deepcopy
+    from eidolon_cli import config
+    from eidolon_cli.organization_owner_chat_executor import readiness_reason
+    from eidolon_cli.organization_subscription import APP_SERVER_BLOCKER
+    home, _ = create(origin)
+    configure(home)
+    with scope(home):
+        cfg = config.load_config()
+        modifications = {
+            'provider': {'provider': 'openrouter'}, 'empty-model': {'default': ''},
+            'oversized-model': {'default': 'x' * 301},
+            'endpoint': {'base_url': 'https://private-fixture.invalid/v1'},
+            'api-mode': {'api_mode': 'codex_responses'}, 'inline-key': {'api_key': 'private-fixture-key'},
+            'headers': {'default_headers': {'X-Private': 'private-fixture-value'}},
+            'app-server': {'openai_runtime': 'codex_app_server'},
+            'tools': {'request_overrides': {'tools': [{'type': 'web_search'}]}},
+            'search': {'default': 'search-api-preview'},
+        }
+        if change in modifications:
+            cfg['model'].update(modifications[change])
+            config.save_config(cfg)
+        elif change == 'disabled':
+            cfg['providers'] = {'openai-api': {'enabled': False}}
+            config.save_config(cfg)
+        elif change == 'missing-marker':
+            (home / isolation.MARKER).unlink()
+        elif change == 'bad-marker':
+            (home / isolation.MARKER).write_text('{private-fixture-invalid')
+        elif change == 'bad-config':
+            (home / 'config.yaml').write_text('[private-fixture-invalid')
+        else:
+            effective = deepcopy(cfg)
+            if change == 'managed-provider':
+                effective['model']['provider'] = 'openrouter'
+            elif change == 'managed-app-server':
+                effective['model']['openai_runtime'] = 'codex_app_server'
+            else:
+                effective['providers'] = {'openai-api': {'enabled': False}}
+            monkeypatch.setattr(config, 'load_config_readonly', lambda **kwargs: effective)
+        before = files(home)
+        for supplied in (None, {'model': {'provider': 'openai-api', 'default': 'forged', 'api_mode': 'chat_completions'}}):
+            reason = readiness_reason({}, config=supplied)
+            assert reason is not None
+            assert 'private-fixture' not in reason and str(home) not in reason
+            if change in {'app-server', 'managed-app-server'}:
+                assert reason == APP_SERVER_BLOCKER
+        assert files(home) == before
+        if change not in {'tools', 'search'}:  # organization boundary adds these atop the isolated route
+            with pytest.raises(isolation.ProfileIsolationError):
+                isolation.isolated_runtime()
+
+
 def test_fresh_independent_ledgers_no_inheritance_and_exact_replay(origin):
     source = files(origin.home)
     home_a, first = create(origin)

@@ -40,6 +40,46 @@ const models = ['synthetic-studio-one', 'synthetic-studio-two']
 const keys = ['synthetic-fresh-team-key-one-never-real', 'synthetic-fresh-team-key-two-never-real']
 const names = ['Isolated Studio One', 'Isolated Studio Two']
 
+function seedUnknownMetadata(home: string) {
+  const helper = path.join(import.meta.dirname, 'fresh-team-provider-guard.py')
+
+  const preserved = ['config.yaml', '.env', '.organization-isolation.json']
+    .filter(name => existsSync(path.join(home, name)))
+    .map(name => ({ name, bytes: readFileSync(path.join(home, name)) }))
+
+  const before = Date.now() / 1000
+
+  const receipt = JSON.parse(
+    execFileSync(switchPython, [helper, '--seed-metadata', home], {
+      cwd: root,
+      encoding: 'utf8',
+      env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' }
+    })
+  ) as { home: string; seededAt: number; source: string; prices: string; realModelCapabilities: string }
+
+  expect(receipt.home).toBe(realpathSync(home))
+  expect(receipt.seededAt).toBeGreaterThanOrEqual(before)
+  expect(receipt.seededAt).toBeLessThanOrEqual(Date.now() / 1000)
+  expect(receipt).toMatchObject({
+    source: 'synthetic-unknown-metadata',
+    prices: 'unknown',
+    realModelCapabilities: 'unknown'
+  })
+
+  for (const file of preserved) {
+    expect(readFileSync(path.join(home, file.name))).toEqual(file.bytes)
+  }
+
+  return {
+    ...receipt,
+    helperSha256: createHash('sha256').update(readFileSync(helper)).digest('hex'),
+    preserved: preserved.map(file => ({
+      name: file.name,
+      sha256: createHash('sha256').update(file.bytes).digest('hex')
+    }))
+  }
+}
+
 // launchDesktop loads this sandbox file with -r before the real main module.
 // No first-window/page.route gap: each session is guarded before it can load
 // renderer resources. The one source-declared cosmetic CSS URL is fulfilled
@@ -329,7 +369,7 @@ for entry in json.loads((guard.ROOT_HOME/'spawn-ledger.json').read_text()):
  path=guard.GUARD_ROOT/('installed-'+str(entry['pid'])+'.json')
  if not path.exists():continue
  marker=json.loads(path.read_text())
- if marker.get('socket') is not True or marker.get('dns') is not True or marker.get('updateAvailability') is not True:continue
+ if not guard._fixture_installation_complete(marker):continue
  if guard._fixture_identity_matches(marker,entry,guard._fixture_live_identity(entry['pid']),expected):
   matches.append({**expected,'pid':entry['pid'],'create_time':entry['create_time']})
 print(json.dumps(matches))
@@ -365,6 +405,7 @@ print(json.dumps(matches))
     )
     writeMockProviderConfig(sandbox.hermesHome, mock.url, undefined, seedIsolatedModelCatalog(sandbox.hermesHome))
     writeEnvFile(sandbox.hermesHome)
+    catalogSeeds.push({ checkpoint: 'root-before-first-renderer', metadata: seedUnknownMetadata(sandbox.hermesHome) })
     const bootstrap = path.join(sandbox.root, 'electron-network-guard.cjs')
     writeFileSync(bootstrap, electronNetworkGuard)
     launch = await launchDesktop(env, path.relative(import.meta.dirname, bootstrap))
@@ -523,7 +564,7 @@ print(json.dumps(matches))
       expect(receipts).toHaveLength(index + 1)
       const receipt = receipts[index]
       const home = path.join(sandbox.hermesHome, 'profiles', receipt.profile)
-      // These two synthetic read-catalog caches must exist before this fresh
+      // All synthetic read-catalog caches must exist before this fresh
       // gateway starts. They do not configure a provider, model or credential.
       const configPath = path.join(home, 'config.yaml')
       const configBefore = readFileSync(configPath)
@@ -563,6 +604,7 @@ print(json.dumps(matches))
         unchangedNonCatalogConfiguration: true,
         unchangedEnv: true,
         unchangedIsolation: true,
+        metadata: seedUnknownMetadata(home),
         caches: ['models_dev_cache.json', 'cache/model_catalog.json'].map(relativePath => ({
           path: path.join(home, relativePath),
           sha256: createHash('sha256')
@@ -814,6 +856,7 @@ print(json.dumps(matches))
         browserAttempts: browserAttempts(),
         localFontFulfillments: records('browser-fonts-'),
         backgroundAvailability: records('background-'),
+        metadataEnrichment: records('metadata-'),
         browserInstallation: records('browser-installed-'),
         browserWindows: records('browser-windows-'),
         realProviderCalls: 0,
@@ -837,6 +880,7 @@ print(json.dumps(matches))
           browserAttempts: browserAttempts(),
           localFontFulfillments: records('browser-fonts-'),
           backgroundAvailability: records('background-'),
+          metadataEnrichment: records('metadata-'),
           browserInstallation: records('browser-installed-'),
           browserWindows: records('browser-windows-')
         })

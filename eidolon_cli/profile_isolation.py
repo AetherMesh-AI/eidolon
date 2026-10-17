@@ -148,8 +148,14 @@ def profile_secrets(home: Path) -> dict[str, str]:
     return load_env_file(local_path(Path(home) / '.env'))
 
 
-def isolated_runtime(*, requested=None, explicit_api_key=None, explicit_base_url=None,
-                     target_model=None, home: Path | None = None) -> dict | None:
+def isolated_route(*, requested=None, explicit_base_url=None,
+                   target_model=None, home: Path | None = None) -> dict | None:
+    """Credential-free effective route for a durably published strict workspace.
+
+    Read actual owned configuration even when a caller already has a config
+    snapshot. ``request_overrides`` is inspection-only diagnostic metadata: do
+    not serialize, mutate or forward it into the runtime request.
+    """
     from eidolon_constants import get_eidolon_home, set_eidolon_home_override, reset_eidolon_home_override
     home = Path(home or get_eidolon_home()).absolute()
     if verify_isolation(home) is None:
@@ -157,42 +163,65 @@ def isolated_runtime(*, requested=None, explicit_api_key=None, explicit_base_url
     # Exact local declarations prove that this profile opted in; effective config
     # still governs runtime behavior and must agree, including managed overlays.
     from eidolon_cli.config import read_user_config_raw, load_config_readonly, is_provider_enabled
-    raw = read_user_config_raw(local_path(home / 'config.yaml')).get('model')
     token = set_eidolon_home_override(home)
     try:
-        configuration = load_config_readonly()
+        raw = read_user_config_raw(local_path(home / 'config.yaml')).get('model')
+        configuration = load_config_readonly(initialize_home=False)
         effective = configuration.get('model')
         providers = configuration.get('providers')
         block = providers.get(PROVIDER) if isinstance(providers, dict) else None
         if isinstance(block, dict) and not is_provider_enabled(block):
             raise ProfileIsolationError('OpenAI API is disabled in this workspace configuration')
+    except ProfileIsolationError:
+        raise
+    except Exception as exc:
+        raise ProfileIsolationError('Workspace model configuration is unavailable') from exc
     finally:
         reset_eidolon_home_override(token)
     if (not isinstance(raw, dict) or raw.get('provider') != PROVIDER
-            or not isinstance(raw.get('default'), str) or not raw['default'].strip()
+            or not isinstance(raw.get('default'), str) or not raw['default'].strip() or len(raw['default']) > 300
             or not isinstance(effective, dict) or effective.get('provider') != PROVIDER
             or effective.get('default') != raw['default']):
         raise ProfileIsolationError('Select OpenAI API and a model in this workspace’s settings first')
     if requested not in (None, '', 'auto', PROVIDER):
         raise ProfileIsolationError('This workspace supports only its own OpenAI API credentials')
     for config in (raw, effective):
+        if str(config.get('openai_runtime') or '').strip().lower() == 'codex_app_server':
+            from eidolon_cli.organization_subscription import APP_SERVER_BLOCKER
+            raise ProfileIsolationError(APP_SERVER_BLOCKER)
         if (config.get('base_url') not in (None, '', ENDPOINT, ENDPOINT + '/')
                 or config.get('api_mode') not in (None, '', 'chat_completions')
                 or any(config.get(key) for key in ('api_key', 'api', 'default_headers'))):
             raise ProfileIsolationError('This workspace requires a direct OpenAI API route without inline credentials or headers')
+    if explicit_base_url not in (None, '', ENDPOINT, ENDPOINT + '/'):
+        raise ProfileIsolationError('Explicit credentials or endpoint do not belong to this workspace')
+    model = raw['default'] if target_model is None else target_model
+    if not isinstance(model, str) or not model.strip() or len(model) > 300:
+        raise ProfileIsolationError('A bounded model name is required')
+    return {'provider': PROVIDER, 'requested_provider': PROVIDER, 'model': model.strip(),
+            'api_mode': 'chat_completions', 'base_url': ENDPOINT,
+            'request_overrides': effective.get('request_overrides')}
+
+
+def isolated_runtime(*, requested=None, explicit_api_key=None, explicit_base_url=None,
+                     target_model=None, home: Path | None = None) -> dict | None:
+    from eidolon_constants import get_eidolon_home
+    home = Path(home or get_eidolon_home()).absolute()
+    route = isolated_route(requested=requested, explicit_base_url=explicit_base_url,
+                           target_model=target_model, home=home)
+    if route is None:
+        return None
     secrets = profile_secrets(home)
     key = secrets.get('OPENAI_API_KEY', '').strip()
     from eidolon_cli.auth import has_usable_secret
     if (not has_usable_secret(key) or '${' in key or any(ord(c) < 32 for c in key)
             or secrets.get('OPENAI_BASE_URL') not in (None, '', ENDPOINT, ENDPOINT + '/')):
         raise ProfileIsolationError('Add an OpenAI API key in this workspace’s Keys settings first')
-    if (explicit_api_key not in (None, '', key)
-            or explicit_base_url not in (None, '', ENDPOINT, ENDPOINT + '/')):
+    if explicit_api_key not in (None, '', key):
         raise ProfileIsolationError('Explicit credentials or endpoint do not belong to this workspace')
-    model = target_model or raw['default']
-    if not isinstance(model, str) or not model.strip() or len(model) > 300:
-        raise ProfileIsolationError('A bounded model name is required')
-    return {'provider': PROVIDER, 'requested_provider': PROVIDER, 'model': model.strip(),
+    # Keep the exact runtime shape; inspection-only overrides never become
+    # newly forwarded provider request options through this shared helper.
+    return {'provider': PROVIDER, 'requested_provider': PROVIDER, 'model': route['model'],
             'api_mode': 'chat_completions', 'api_key': key, 'base_url': ENDPOINT,
             'source': 'profile-local-env'}
 
