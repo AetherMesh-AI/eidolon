@@ -14,12 +14,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          ref: 48a65703fd97b83fa5e281340d58a93dd1b5dd56
+          ref: 2f1b5f7c8b19256a3f13c2d3626b3c1e68cb73ec
       - name: Verify exact reviewed source
         run: |
-          test "$(git rev-parse HEAD)" = "48a65703fd97b83fa5e281340d58a93dd1b5dd56"
-          test "$(git rev-parse HEAD^{tree})" = "b628c279a89e8f6269ff0e1ae6a03ca7068d34a0"
-          printf '%s\n' '{"source":"48a65703fd97b83fa5e281340d58a93dd1b5dd56","tree":"b628c279a89e8f6269ff0e1ae6a03ca7068d34a0"}' > overview-observation-source.json
+          test "$(git rev-parse HEAD)" = "2f1b5f7c8b19256a3f13c2d3626b3c1e68cb73ec"
+          test "$(git rev-parse HEAD^{tree})" = "22ec8acdab8c2a562b9c912dd6749477867e7ea6"
+          printf '%s\n' '{"source":"2f1b5f7c8b19256a3f13c2d3626b3c1e68cb73ec","tree":"22ec8acdab8c2a562b9c912dd6749477867e7ea6"}' > overview-observation-source.json
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'

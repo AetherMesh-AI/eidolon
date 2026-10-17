@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import { MemoryRouter } from 'react-router'
@@ -24,6 +28,34 @@ import { OrganizationWorkspace } from './workspace'
 afterEach(() => { cleanup(); $intakeDrafts.set({}); $ownerChatDrafts.set({}); vi.unstubAllGlobals() })
 const routes = ['/home', '/work', '/messages', '/activity'] as const
 type Route = typeof routes[number]
+
+it.each(['ltr', 'rtl'])('reserves complete Retry outlines in Messages without padding its ready layout (%s)', dir => {
+  const stylesheet = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'eidolon.css'), 'utf8')
+  const { container } = render(<><style>{stylesheet}</style>
+    <main className="eidolon eid-workspace" data-testid="messages-error" dir={dir}><div className="eid-page">
+      <div className="eid-runtime-status"><button>Retry connection</button></div><section className="eid-messages-view" />
+    </div></main>
+    <main className="eidolon eid-workspace" data-testid="messages-ready" dir={dir}><div className="eid-page"><section className="eid-messages-view" /></div></main>
+    <main className="eidolon eid-workspace" data-testid="other-error" dir={dir}><div className="eid-page">
+      <div className="eid-runtime-status"><button>Retry connection</button></div><section />
+    </div></main>
+  </>)
+  const error = container.querySelector('[data-testid=messages-error]')!
+  const status = getComputedStyle(error.querySelector('.eid-runtime-status')!)
+  // Native evidence measured a 3px outline plus 3px offset at the scroll edge.
+  for (const value of [status.paddingTop, status.paddingLeft, status.paddingRight]) {
+    expect(parseFloat(value)).toBeGreaterThan(6)
+  }
+  for (const id of ['messages-error', 'other-error']) {
+    const workspace = container.querySelector(`[data-testid=${id}]`)!
+    expect(parseFloat(getComputedStyle(workspace).scrollPadding)).toBeGreaterThan(6)
+    expect(parseFloat(getComputedStyle(workspace.querySelector('button')!).scrollMargin)).toBeGreaterThan(6)
+  }
+  const ready = container.querySelector('[data-testid=messages-ready]')!
+  expect(getComputedStyle(ready.querySelector('.eid-page')!).padding).toBe('0px')
+  expect(parseFloat(getComputedStyle(ready).scrollPadding) || 0).toBe(0)
+  expect(parseFloat(getComputedStyle(container.querySelector('[data-testid=other-error] .eid-runtime-status')!).paddingTop) || 0).toBe(0)
+})
 
 function empty(state: OrganizationConnection['state'] = 'ready'): OrganizationSnapshot {
   return { ...ownerChatSnapshot(), agents: [], connection: { scope: 'socket-a', ownerScope: 'owner-a', state }, outcomes: { generation: 'empty', total: 0, unread: 0, hasMore: false, nextCursor: null, items: [] } }
