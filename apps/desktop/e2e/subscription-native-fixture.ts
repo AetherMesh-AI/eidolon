@@ -107,7 +107,8 @@ export async function setupNativeSubscription(options: { legacy?: boolean; uncer
       sandbox.hermesHome,
       mock.url,
       undefined,
-      seedIsolatedModelCatalog(sandbox.hermesHome),
+      // Disable the unrelated passive update daemon before any Python gateway import.
+      seedIsolatedModelCatalog(sandbox.hermesHome, 'updates:\n  check: false\n'),
       128000
     )
     writeEnvFile(sandbox.hermesHome)
