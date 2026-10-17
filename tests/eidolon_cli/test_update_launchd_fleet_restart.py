@@ -661,12 +661,25 @@ class TestWaitForLaunchdServicePid:
 
 
 class TestIncompleteWarningMentionsLaunchctl:
+    @pytest.mark.linux_only
     def test_launchd_labels_get_launchctl_hint(self, capsys):
         _warn_incomplete_gateway_fleet_restart(["ai.eidolon.gateway-merit-ops"])
         out = capsys.readouterr().out
         assert "Update incomplete" in out
         assert "launchctl kickstart -k" in out
+        assert "eidolon gateway status" in out
 
+    @pytest.mark.macos_only
+    def test_native_launchd_recovery_handles_deregistered_service(self, capsys):
+        _warn_incomplete_gateway_fleet_restart(["ai.eidolon.gateway-merit-ops"])
+        out = capsys.readouterr().out
+        assert "Update incomplete" in out
+        assert "ai.eidolon.gateway-merit-ops" in out
+        assert "launchctl bootstrap" in out
+        assert "eidolon gateway status" in out
+        assert "systemctl" not in out
+
+    @pytest.mark.linux_only
     def test_systemd_units_keep_systemctl_hint(self, capsys):
         _warn_incomplete_gateway_fleet_restart(["eidolon-gateway-coder"])
         out = capsys.readouterr().out
