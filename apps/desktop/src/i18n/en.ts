@@ -3491,6 +3491,8 @@ export const en: Translations = {
     popOut: 'Pop out',
     linkHint: '⌘/Ctrl-click for preview pane',
     sourceLineTitle: 'Click to select · shift-click to extend · drag to composer',
+    copySource: 'Copy source',
+    copyLoadedSource: 'Copy loaded source only',
     source: 'SOURCE',
     renderedPreview: 'PREVIEW',
     diff: 'DIFF',

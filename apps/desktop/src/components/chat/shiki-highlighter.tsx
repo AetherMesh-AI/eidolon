@@ -47,9 +47,9 @@ const ShikiBlock = lazy(() => import('./shiki-block'))
 /** Suspends on first use and renders the code as plain preformatted text
  *  until the shiki chunk arrives. Highlighted output is cached by
  *  (theme, language, code), so revisits never re-tokenize (#95595). */
-export const LazyShiki: FC<CachedShikiBlockProps> = ({ language, code, theme, colorReplacements }) => (
-  <Suspense fallback={<PlainCode code={code} />}>
-    <ShikiBlock code={code} colorReplacements={colorReplacements} language={language} theme={theme} />
+export const LazyShiki: FC<CachedShikiBlockProps> = ({ language, code, theme, colorReplacements, fallback }) => (
+  <Suspense fallback={fallback !== undefined ? fallback : <PlainCode code={code} />}>
+    <ShikiBlock code={code} colorReplacements={colorReplacements} fallback={fallback} language={language} theme={theme} />
   </Suspense>
 )
 

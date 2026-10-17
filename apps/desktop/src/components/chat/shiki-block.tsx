@@ -18,7 +18,7 @@
  * misses are debounced so a streaming block settles before the heavy work
  * starts.
  */
-import { useEffect, useMemo, useState } from 'react'
+import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import { bundledLanguages, getSingletonHighlighter } from 'shiki'
 import type { BundledLanguage, BundledTheme, Highlighter } from 'shiki'
 import { createOnigurumaEngine } from 'shiki/engine/oniguruma'
@@ -40,6 +40,8 @@ export interface CachedShikiBlockProps {
   theme?: { dark: string; light: string }
   /** Color replacements; defaults to none (the chat passes its own). */
   colorReplacements?: Record<string, Record<string, string>>
+  /** Caller-owned plain rendering for loading, debounce and highlight failure. */
+  fallback?: ReactNode
 }
 
 function isLoadableLanguage(language: string): boolean {
@@ -113,9 +115,10 @@ function plainTextHtml(code: string): string {
   return `<pre class="shiki" style="background-color:transparent;margin:0"><code>${escapeHtml(code)}</code></pre>`
 }
 
-export default function CachedShikiBlock({ language, code, theme, colorReplacements }: CachedShikiBlockProps) {
+export default function CachedShikiBlock({ language, code, theme, colorReplacements, fallback }: CachedShikiBlockProps) {
   const themeConfig = theme ?? SHIKI_THEME
   const replacements = colorReplacements ?? NO_COLOR_REPLACEMENTS
+  const hasFallback = fallback !== undefined
 
   const cacheKey = useMemo(
     () => highlightCacheKey(highlightScope(themeConfig, replacements), language, code),
@@ -153,7 +156,7 @@ export default function CachedShikiBlock({ language, code, theme, colorReplaceme
           }
 
           console.error('shiki highlight failed; rendering plain code', error)
-          setHtml(plainTextHtml(code))
+          setHtml(hasFallback ? null : plainTextHtml(code))
         })
     }, HIGHLIGHT_DELAY_MS)
 
@@ -161,12 +164,12 @@ export default function CachedShikiBlock({ language, code, theme, colorReplaceme
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [cacheKey, code, language, replacements, themeConfig])
+  }, [cacheKey, code, hasFallback, language, replacements, themeConfig])
 
   if (html === null) {
-    // Nothing to paint yet (miss, debounce pending). Matches react-shiki's
-    // own empty render while the highlight is in flight.
-    return null
+    // Default callers retain react-shiki's empty pending render. SourceView
+    // provides faithful line boxes while the highlight is pending or failed.
+    return hasFallback ? fallback : null
   }
 
   return <div className="rs-root not-prose" dangerouslySetInnerHTML={{ __html: html }} data-testid="shiki-container" />
