@@ -180,7 +180,7 @@ jobs:
             -j 1 --file-timeout 1800 --file-retries 0 -x --junitxml=prepared-build-lifecycle-native.xml
       - name: Retain exact native proof and preparation metadata
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: prepared-workspace-${{ matrix.suite }}-proof
           path: |
@@ -198,7 +198,7 @@ jobs:
           if-no-files-found: warn
       - name: Retain reviewable metadata only
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: prepared-workspace-${{ matrix.suite }}-candidate
           path: |
