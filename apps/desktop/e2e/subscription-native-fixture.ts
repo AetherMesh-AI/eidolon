@@ -367,6 +367,44 @@ async function observeSubscriptionRpc(page: Page) {
   const pending = new Map<string, { row: Row; organization?: string; source?: string; field: string }>()
   let dropped = 0
   let malformed = 0
+  let closed = false
+  type CompletionWaiter = {
+    method: string
+    key?: string
+    socket?: string
+    completed: boolean
+    cancelled: boolean
+    resolve: (row: Row) => void
+    reject: (error: Error) => void
+    cancel: (error: Error) => void
+    timer: ReturnType<typeof setTimeout>
+  }
+  let completionWaiter: CompletionWaiter | undefined
+
+  const cancel = (waiter: CompletionWaiter, error: Error) => {
+    if (completionWaiter !== waiter || waiter.cancelled) {
+      return
+    }
+
+    waiter.cancelled = true
+    clearTimeout(waiter.timer)
+    waiter.reject(error)
+    waiter.cancel(error)
+  }
+
+  const rejectCorrelation = (key?: string) => {
+    if (completionWaiter && (key === undefined || completionWaiter.key === key)) {
+      cancel(completionWaiter, new Error('subscription_operation_correlation_lost'))
+    }
+  }
+
+  const complete = (key: string, row: Row) => {
+    if (completionWaiter?.key === key && !completionWaiter.completed && !completionWaiter.cancelled) {
+      completionWaiter.completed = true
+      completionWaiter.resolve(structuredClone(row))
+    }
+  }
+
   const session = await page.context().newCDPSession(page)
 
   const receive = (
@@ -376,7 +414,15 @@ async function observeSubscriptionRpc(page: Page) {
       response: { opcode: number; payloadData: string }
     }
   ) => {
+    if (closed) {
+      return
+    }
+
     if (event.response.opcode !== 1 || event.response.payloadData.length > 1_048_576) {
+      if (direction === 'received' && completionWaiter?.socket === event.requestId) {
+        rejectCorrelation()
+      }
+
       return
     }
 
@@ -399,8 +445,19 @@ async function observeSubscriptionRpc(page: Page) {
         rpc.push(row)
 
         if (rpc.length > 64) {
-          rpc.shift()
+          const removed = rpc.shift()
+
+          if (completionWaiter?.key && pending.get(completionWaiter.key)?.row === removed) {
+            rejectCorrelation()
+          }
+
           dropped++
+        }
+
+        const alreadyPending = pending.has(key)
+
+        if (alreadyPending) {
+          rejectCorrelation(key)
         }
 
         pending.set(key, {
@@ -410,8 +467,15 @@ async function observeSubscriptionRpc(page: Page) {
           field: choice(params.field, ['jobs', 'goals'])
         })
 
+        if (completionWaiter?.method === frame.method && completionWaiter.key === undefined && !alreadyPending) {
+          completionWaiter.key = key
+          completionWaiter.socket = event.requestId
+        }
+
         if (pending.size > 128) {
-          pending.delete(pending.keys().next().value!)
+          const evicted = pending.keys().next().value!
+          pending.delete(evicted)
+          rejectCorrelation(evicted)
           dropped++
         }
 
@@ -426,6 +490,13 @@ async function observeSubscriptionRpc(page: Page) {
 
       pending.delete(key)
 
+      if (Object.hasOwn(frame, 'result') === Object.hasOwn(frame, 'error')) {
+        malformed++
+        rejectCorrelation(key)
+
+        return
+      }
+
       if (frame.error !== undefined) {
         const error = object(frame.error)
         const reason = object(error.data).reason
@@ -438,6 +509,7 @@ async function observeSubscriptionRpc(page: Page) {
               : 'other',
           reason: typeof reason === 'string' && reasons.has(reason) ? reason : 'other'
         })
+        complete(key, expected.row)
 
         return
       }
@@ -492,9 +564,14 @@ async function observeSubscriptionRpc(page: Page) {
                 ) && usage.totalTokens === Number(usage.inputTokens) + Number(usage.outputTokens)
         }
       })
+      complete(key, expected.row)
     } catch {
       // Never retain parser text, payload bytes or arbitrary exception details.
       malformed++
+
+      if (direction === 'received' && completionWaiter?.socket === event.requestId) {
+        rejectCorrelation()
+      }
     }
   }
 
@@ -503,6 +580,56 @@ async function observeSubscriptionRpc(page: Page) {
   await session.send('Network.enable')
 
   return {
+    performOperation: async (
+      method: 'organization.improveTeamInput' | 'organization.generateTeam',
+      action: () => Promise<unknown>
+    ): Promise<Row> => {
+      if (
+        closed ||
+        completionWaiter ||
+        !['organization.improveTeamInput', 'organization.generateTeam'].includes(method)
+      ) {
+        throw new Error('subscription_operation_wait_unavailable')
+      }
+
+      let waiter!: CompletionWaiter
+      let rejectCancellation!: (error: Error) => void
+
+      const cancellation = new Promise<never>((_resolve, reject) => {
+        rejectCancellation = reject
+      })
+
+      const completion = new Promise<Row>((resolve, reject) => {
+        waiter = {
+          method,
+          completed: false,
+          cancelled: false,
+          resolve,
+          reject,
+          cancel: rejectCancellation,
+          // Match readTeamScope's existing renderer deadline; the 120s policy is
+          // inside this RPC's preflight/accounting envelope. No request retry.
+          timer: setTimeout(() => cancel(waiter, new Error('subscription_operation_timeout')), 180_000)
+        }
+        completionWaiter = waiter
+      })
+
+      // A timeout/cleanup may occur while the single click is still settling.
+      void completion.catch(() => undefined)
+      void cancellation.catch(() => undefined)
+
+      try {
+        const [, completed] = await Promise.race([Promise.all([action(), completion]), cancellation])
+
+        return completed
+      } finally {
+        cancel(waiter, new Error('subscription_operation_cancelled'))
+
+        if (completionWaiter === waiter) {
+          completionWaiter = undefined
+        }
+      }
+    },
     read: () => ({
       enabled: true,
       dropped,
@@ -511,6 +638,12 @@ async function observeSubscriptionRpc(page: Page) {
       rpc: structuredClone(rpc)
     }),
     close: async () => {
+      closed = true
+
+      if (completionWaiter) {
+        cancel(completionWaiter, new Error('subscription_operation_cancelled'))
+      }
+
       pending.clear()
       await session.detach().catch(() => undefined)
     }
@@ -666,6 +799,8 @@ export async function setupNativeSubscription(options: { legacy?: boolean; uncer
     return {
       ...fixture,
       evidence,
+      performOperation: (method: 'improveTeamInput' | 'generateTeam', action: () => Promise<unknown>) =>
+        rpcObserver!.performOperation(`organization.${method}`, action),
       diagnostic: () => {
         const rows = events()
         const windows = records('browser-windows')

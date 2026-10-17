@@ -22,7 +22,8 @@ test.afterEach(async () => {
   try {
     if (fixture && test.info().status !== test.info().expectedStatus) {
       await test.info().attach('subscription-failure-diagnostic', {
-        contentType: 'application/json', body: JSON.stringify(fixture.diagnostic(), null, 2)
+        contentType: 'application/json',
+        body: JSON.stringify(fixture.diagnostic(), null, 2)
       })
     }
   } finally {
@@ -33,6 +34,19 @@ test.afterEach(async () => {
     }
   }
 })
+
+async function completeInference(
+  button: Locator,
+  method: 'improveTeamInput' | 'generateTeam',
+  expected: 'result' | 'unavailable' = 'result'
+) {
+  const completed = await fixture!.performOperation(method, () => button.click())
+  expect(completed).toMatchObject(
+    expected === 'result'
+      ? { method: `organization.${method}`, phase: 'result' }
+      : { method: `organization.${method}`, phase: 'error', code: 5076, reason: 'unavailable' }
+  )
+}
 
 async function openSetup(legacy: boolean) {
   const { page } = fixture!
@@ -132,7 +146,10 @@ test.describe('host-native subscription setup', () => {
       fixture = await setupNativeSubscription({ legacy })
       const dialog = await openSetup(legacy)
       const before = await activate(dialog, legacy)
-      await dialog.getByRole('button', { name: 'Improve work description', exact: true }).click()
+      await completeInference(
+        dialog.getByRole('button', { name: 'Improve work description', exact: true }),
+        'improveTeamInput'
+      )
       const suggestion = dialog.getByRole('region', { name: 'Review suggested wording', exact: true })
       await expect(suggestion.getByLabel('Suggested text', { exact: true })).toHaveValue(suggestedJobs)
       await expect(dialog.getByLabel('Work to delegate', { exact: true })).toHaveValue(jobs)
@@ -145,13 +162,19 @@ test.describe('host-native subscription setup', () => {
       )
       await expect(dialog.getByLabel('Work to delegate', { exact: true })).toBeFocused()
       fixture.assertQuiet(1)
-      await dialog.getByRole('button', { name: 'Improve success description', exact: true }).click()
+      await completeInference(
+        dialog.getByRole('button', { name: 'Improve success description', exact: true }),
+        'improveTeamInput'
+      )
       await expect(suggestion.getByLabel('Suggested text', { exact: true })).toHaveValue(suggestedGoals)
       await expect(dialog.getByLabel('What success looks like', { exact: true })).toHaveValue(goals)
       await suggestion.getByRole('button', { name: 'Discard suggestion', exact: true }).click()
       await expect(dialog.getByLabel('What success looks like', { exact: true })).toHaveValue(goals)
       fixture.assertQuiet(2)
-      await dialog.getByRole('button', { name: 'Generate team · Recommended', exact: true }).click()
+      await completeInference(
+        dialog.getByRole('button', { name: 'Generate team · Recommended', exact: true }),
+        'generateTeam'
+      )
       await expect(dialog.getByLabel('Name', { exact: true }).first()).toHaveValue('Ash', { timeout: 30_000 })
       fixture.assertQuiet(3)
       expect(fixture.snapshot().teams).toEqual([])
@@ -173,8 +196,9 @@ test.describe('host-native subscription setup', () => {
       expect(after.dispatches).toHaveLength(3)
       expect(Object.values(after.counts).every(count => count === 0)).toBe(true)
 
-      if (legacy)
-        {expect(after.generations.find(row => row.idempotency_key === 'synthetic-legacy')).toEqual(before.generations[0])}
+      if (legacy) {
+        expect(after.generations.find(row => row.idempotency_key === 'synthetic-legacy')).toEqual(before.generations[0])
+      }
 
       expect(
         fixture
@@ -209,18 +233,32 @@ test.describe('host-native subscription setup', () => {
       const beforeHead = JSON.parse(readFileSync(headPath, 'utf8')).body
       expect(beforeHead.phase).toBe('active')
       const eventsBeforeSettings = fixture.events()
-      await fixture.page.getByRole('complementary', { name: 'Eidolon navigation' })
-        .getByRole('link', { name: 'Settings', exact: true }).click()
+      await fixture.page
+        .getByRole('complementary', { name: 'Eidolon navigation' })
+        .getByRole('link', { name: 'Settings', exact: true })
+        .click()
       const settings = fixture.page.locator('.eid-settings-page')
       await settings.getByRole('button', { name: 'Organization', exact: true }).click()
       const management = settings.getByRole('region', { name: 'ChatGPT setup connection', exact: true })
       await expect(management.getByText('Setup connection saved', { exact: true })).toBeVisible()
-      await expect(management.getByText('Reconnect is unavailable after the team is created or organization work has begun. You can still check, recover or disconnect this setup-only connection here.', { exact: true })).toBeVisible()
+      await expect(
+        management.getByText(
+          'Reconnect is unavailable after the team is created or organization work has begun. You can still check, recover or disconnect this setup-only connection here.',
+          { exact: true }
+        )
+      ).toBeVisible()
       await expect(management.getByRole('link', { name: 'Open team setup on Home', exact: true })).toHaveCount(0)
       await expect(management.getByRole('checkbox')).toHaveCount(0)
       await expect(management.getByRole('combobox')).toHaveCount(0)
 
-      for (const name of ['Continue with ChatGPT', 'Load account models', 'Review setup policy', 'Apply reviewed policy', 'Generate team · Recommended', 'Improve work description']) {
+      for (const name of [
+        'Continue with ChatGPT',
+        'Load account models',
+        'Review setup policy',
+        'Apply reviewed policy',
+        'Generate team · Recommended',
+        'Improve work description'
+      ]) {
         await expect(management.getByRole('button', { name, exact: true })).toHaveCount(0)
       }
 
@@ -229,7 +267,12 @@ test.describe('host-native subscription setup', () => {
       fixture.assertQuiet(3)
       await management.getByRole('button', { name: 'Disconnect setup connection', exact: true }).click()
       await expect(management.getByText('Setup connection disconnected locally', { exact: true })).toBeVisible()
-      await expect(management.getByText('Local access is retired. Remote revocation is not confirmed; usage already in progress may continue.', { exact: true })).toBeVisible()
+      await expect(
+        management.getByText(
+          'Local access is retired. Remote revocation is not confirmed; usage already in progress may continue.',
+          { exact: true }
+        )
+      ).toBeVisible()
       const retiredHead = JSON.parse(readFileSync(headPath, 'utf8')).body
       expect(retiredHead.phase).toBe('disconnected')
       expect(retiredHead.target).toBeNull()
@@ -237,10 +280,15 @@ test.describe('host-native subscription setup', () => {
       const afterDisconnect = fixture.snapshot()
       expect(afterDisconnect).toEqual(after)
       expect(fixture.hasPrivateStore()).toBe(true)
-      expect(fixture.events().filter(row => ['consent', 'oauth-exchange', 'models', 'responses'].includes(row.kind)))
-        .toEqual(eventsBeforeSettings.filter(row => ['consent', 'oauth-exchange', 'models', 'responses'].includes(row.kind)))
+      expect(
+        fixture.events().filter(row => ['consent', 'oauth-exchange', 'models', 'responses'].includes(row.kind))
+      ).toEqual(
+        eventsBeforeSettings.filter(row => ['consent', 'oauth-exchange', 'models', 'responses'].includes(row.kind))
+      )
       fixture.assertQuiet(3)
-      await test.info().attach('subscription-settings-disconnected', { contentType: 'image/png', body: await management.screenshot() })
+      await test
+        .info()
+        .attach('subscription-settings-disconnected', { contentType: 'image/png', body: await management.screenshot() })
       await test.info().attach('subscription-native-proof', {
         contentType: 'application/json',
         body: JSON.stringify({
@@ -251,7 +299,11 @@ test.describe('host-native subscription setup', () => {
           before,
           after,
           afterDisconnect,
-          localRetirement: { phase: retiredHead.phase, revision: retiredHead.revision, hasTarget: retiredHead.target !== null }
+          localRetirement: {
+            phase: retiredHead.phase,
+            revision: retiredHead.revision,
+            hasTarget: retiredHead.target !== null
+          }
         })
       })
     })
@@ -262,8 +314,23 @@ test.describe('host-native subscription setup', () => {
     fixture = await setupNativeSubscription({ uncertain: true })
     const dialog = await openSetup(false)
     await activate(dialog, false)
-    await dialog.getByRole('button', { name: 'Improve work description', exact: true }).click()
-    await expect.poll(() => fixture!.snapshot().generations[0]?.status).toBe('uncertain')
+    await completeInference(
+      dialog.getByRole('button', { name: 'Improve work description', exact: true }),
+      'improveTeamInput',
+      'unavailable'
+    )
+    await expect(dialog.getByRole('alert')).toHaveText(
+      'Could not confirm setup. Retry the same action to check its outcome.'
+    )
+    // act() refreshes setup after the error before clearing busy: allow its
+    // existing 15s read RPC envelope plus the normal 5s UI assertion budget.
+    await expect(dialog.getByRole('button', { name: 'Check configuration', exact: true })).toBeEnabled({
+      timeout: 20_000
+    })
+    await expect(dialog.getByRole('button', { name: 'Generate team · Recommended', exact: true })).toBeDisabled()
+    await expect(dialog.getByRole('button', { name: 'Improve work description', exact: true })).toBeDisabled()
+    await expect(dialog.getByRole('button', { name: 'Improve success description', exact: true })).toBeDisabled()
+    expect(fixture!.snapshot().generations[0]?.status).toBe('uncertain')
     fixture.assertQuiet(1)
     const after = fixture.snapshot()
     expect(after.generations[0].dispatched).toBe(1)

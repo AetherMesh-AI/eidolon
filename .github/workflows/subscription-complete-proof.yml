@@ -30,7 +30,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 402b61c83881a50a6b9bd505adee905f6f38dcaa
+          ref: 90bde56278af00bd5326cad3caf580a8885080e6
           path: source
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -43,8 +43,8 @@ jobs:
           python-version: '3.12'
       - name: Verify exact source and old runtime
         run: |
-          test "$(git rev-parse HEAD)" = 402b61c83881a50a6b9bd505adee905f6f38dcaa
-          test "$(git rev-parse HEAD^{tree})" = b850973633d24761b20e45a684984546e6faba8d
+          test "$(git rev-parse HEAD)" = 90bde56278af00bd5326cad3caf580a8885080e6
+          test "$(git rev-parse HEAD^{tree})" = d6659d38143cb4095474cd4c9886a835f3e335a0
           test "$(git -C ../old-runtime rev-parse HEAD)" = 43a84a77f094084ce8eb8dc2e99fdd679fb9d065
           test "$(git -C ../old-runtime rev-parse HEAD^{tree})" = 719349cb69ed9fb7bbc2e6aeabb1ffabc8e08e3b
           python -c "import platform; print(platform.system(), platform.machine())"
@@ -75,7 +75,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  # Insert this job under jobs: after replacing 402b61c83881a50a6b9bd505adee905f6f38dcaa and b850973633d24761b20e45a684984546e6faba8d with
+  # Insert this job under jobs: after replacing 90bde56278af00bd5326cad3caf580a8885080e6 and d6659d38143cb4095474cd4c9886a835f3e335a0 with
   # the immutable source commit and its root tree. No workflow/branch publication.
   # Native display strategy: launch Electron directly on the hosted macOS session.
   # https://www.electronjs.org/docs/latest/tutorial/testing-on-headless-ci
@@ -95,13 +95,13 @@ jobs:
       OPENROUTER_API_KEY: ''
       NOUS_API_KEY: ''
       ANTHROPIC_API_KEY: ''
-      SUBSCRIPTION_PROOF_SHA: '402b61c83881a50a6b9bd505adee905f6f38dcaa'
-      SUBSCRIPTION_PROOF_TREE: 'b850973633d24761b20e45a684984546e6faba8d'
+      SUBSCRIPTION_PROOF_SHA: '90bde56278af00bd5326cad3caf580a8885080e6'
+      SUBSCRIPTION_PROOF_TREE: 'd6659d38143cb4095474cd4c9886a835f3e335a0'
       PYTHONDONTWRITEBYTECODE: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 402b61c83881a50a6b9bd505adee905f6f38dcaa
+          ref: 90bde56278af00bd5326cad3caf580a8885080e6
           persist-credentials: false
       - name: Verify immutable source and actual macOS host
         run: |
@@ -143,6 +143,7 @@ jobs:
         working-directory: apps/desktop
         run: |
           set -euo pipefail
+          node --test e2e/subscription-native-observer.test.cjs 2>&1 | tee ../../subscription-native-proof/observer-tests.log
           npx vitest run src/app/eidolon/organization-setup-connection-client.test.ts src/app/eidolon/organization-setup-connection.test.tsx src/app/eidolon/team-setup-subscription.test.tsx src/app/eidolon/team-setup-subscription-client.test.ts src/app/eidolon/team-onboarding-subscription.test.tsx src/app/eidolon/team-onboarding.test.tsx src/app/eidolon/team-onboarding-entry.test.tsx src/app/eidolon/team-onboarding-client.test.ts src/app/eidolon/team-setup-budget-editor.test.tsx src/app/eidolon/team-setup-budget-client.test.ts 2>&1 | tee ../../subscription-native-proof/components.log
       - name: Verify desktop types
         working-directory: apps/desktop

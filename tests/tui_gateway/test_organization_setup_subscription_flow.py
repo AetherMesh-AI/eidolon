@@ -222,6 +222,7 @@ def test_subscription_rpc_classification_follows_real_ledger_cleanup(
         activated, monkeypatch, improve, outcome, reason):
     from dataclasses import replace
     from eidolon_cli import organization_setup_subscription_admission as admission
+    from eidolon_cli.organization_owner_policy import _connection
     from tests.eidolon_cli.test_organization_setup_subscription_admission import request, state
     from tests.eidolon_cli.test_organization_setup_subscription_transport import install, wire, event, response
 
@@ -252,7 +253,8 @@ def test_subscription_rpc_classification_follows_real_ledger_cleanup(
     def after_cleanup(rid, code, message, data=None):
         if data == {'reason': reason}:
             assert cleanup == ['persisted', 'released']
-            assert state(ledger)[0]['status'] == 'failed'
+            with _connection(ledger.home) as conn:
+                assert conn.execute('SELECT status FROM organization_team_generations').fetchone()['status'] == 'failed'
         return original_error(rid, code, message, data)
     monkeypatch.setattr(server, '_err', after_cleanup)
     value = request(ledger, improve=improve)

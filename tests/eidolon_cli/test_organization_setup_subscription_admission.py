@@ -1,4 +1,5 @@
 """Real policy/ledger/lease/sender integration, synthetic vault and TLS only."""
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 import json
 import os
@@ -12,11 +13,17 @@ from eidolon_cli import organization_setup_subscription_admission as admission
 from eidolon_cli import organization_team_admission as team_admission
 from eidolon_cli import organization_team_budget as budget
 from eidolon_cli import organization_team_setup as team
-from eidolon_cli.organization_owner_policy import OwnerPolicyError
+from eidolon_cli.organization_owner_policy import OwnerPolicyError, _connection
 from eidolon_cli.organization_setup_subscription_store import SubscriptionStore
 from tui_gateway import methods_organization_setup_subscription as gateway
 from tests.eidolon_cli.test_organization_setup_subscription_policy_integration import ledger, apply
 from tests.eidolon_cli.test_organization_setup_subscription_transport import Vault, install, wire, event, response
+
+
+def _preflight_revision(ledger):
+    # RPC preflight runs on a worker; the fixture connection belongs to its creator.
+    with _connection(ledger.home) as conn:
+        return team._current(conn, ledger.home, ledger.identity['organizationId'])[3]
 
 
 @pytest.fixture
@@ -40,7 +47,7 @@ def activated(ledger, monkeypatch):
     def preflight(transport, home, candidate, *, inference=False):
         assert transport is ledger.transport and home == ledger.home
         assert candidate['authorizationEpoch'] == epoch
-        revision = team._current(ledger.conn, ledger.home, ledger.identity['organizationId'])[3]
+        revision = _preflight_revision(ledger)
         catalog = {**ledger.evidence.catalog_evidence, 'sourceRevision': revision}
         lease = store.lease_access_token(binding, 1, owner_generation=ledger.generation,
             owner_guard=ledger.evidence.cheap_guard, cancel=threading.Event()) if inference else None
@@ -66,6 +73,14 @@ def infer(ledger, value):
 
 def state(ledger):
     return [dict(row) for row in ledger.conn.execute('SELECT * FROM organization_team_generations ORDER BY idempotency_key')]
+
+
+def test_preflight_revision_uses_calling_thread_connection_without_mutation(ledger):
+    expected = team._current(ledger.conn, ledger.home, ledger.identity['organizationId'])[3]
+    before = list(ledger.conn.iterdump())
+    with ThreadPoolExecutor(max_workers=1) as worker:
+        assert worker.submit(_preflight_revision, ledger).result(timeout=10) == expected
+    assert list(ledger.conn.iterdump()) == before
 
 
 @pytest.mark.macos_only
