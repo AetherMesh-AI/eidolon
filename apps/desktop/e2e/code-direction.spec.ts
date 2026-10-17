@@ -86,6 +86,18 @@ for (const mode of ['dark', 'light'] as const) {
     const source = `# مصدر تجريبي\n\n\`\`\`json\n${draft}\n\`\`\``
     writeFileSync(filePath, source)
     await setGalleryAppearance(current, mode, mode === 'dark' ? 'داكن' : 'فاتح')
+    // Settings fronts the workspace and hides its tab strip. Return to chat
+    // before seeding the layout, and wait for its normal navigation persistence
+    // so reloading cannot restore a previously remembered full-page route.
+    await page.evaluate(() => {
+      location.hash = '/'
+    })
+    await expect.poll(() => page.evaluate(() => location.hash)).toBe('#/')
+    await waitForAppReady(current)
+    await expect(page.locator('textarea:visible, [contenteditable="true"]:visible').first()).toBeVisible()
+    await expect
+      .poll(() => page.evaluate(() => localStorage.getItem('hermes.desktop.lastRoute.profile.default')))
+      .toBe('/')
     // Restore a supported preview tab in an isolated, single-zone layout.
     // The real native file reader, mode switcher and SourceView own rendering.
     const paneId = `preview-tile:file:${filePath}`
@@ -125,7 +137,12 @@ for (const mode of ['dark', 'light'] as const) {
     )
     await page.reload()
     await waitForAppReady(current, 60_000, '[data-tree-group="code-direction-source"]')
-    await page.locator(`[data-tree-tab=${JSON.stringify(paneId)}]`).click()
+    await expect.poll(() => page.evaluate(() => location.hash)).toBe('#/')
+    // Fresh-draft startup fronts chat once; let it settle before selecting the file.
+    await expect(page.locator('textarea:visible, [contenteditable="true"]:visible').first()).toBeVisible()
+    const fileTab = page.locator(`[data-tree-tab=${JSON.stringify(paneId)}]`)
+    await expect(fileTab).toBeVisible()
+    await fileTab.click()
     const root = page.locator('[data-tree-group="code-direction-source"]')
     const sourceButton = root.getByRole('button', { name: 'المصدر', exact: true })
     await expect(sourceButton).toBeVisible({ timeout: 30_000 })
