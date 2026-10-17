@@ -1,8 +1,9 @@
-"""Owner-only setup connection adapter; deliberately not registered by the server.
+"""Local-owner setup connection, catalog and preflight adapter.
 
-This surface cannot activate a budget policy or enable general model routing.
-Client parameters never supply filesystem, owner, registration or token identity.
+Connection consent is separate from reviewed setup policy activation. Client
+parameters never supply filesystem, owner, registration or token identity.
 """
+from copy import deepcopy
 from pathlib import Path
 import re
 import threading
@@ -174,6 +175,109 @@ def _catalog(service, context):
         return catalog
 
 
+def _load_catalog(service, context, revision):
+    catalog = _catalog(service, context)
+    result = catalog.load(revision)
+    # A renderer catalog ID is never authority. Keep the exact server-returned
+    # identifier beside this context; require() revalidates its account and TTL.
+    with _services_lock:
+        service._setup_catalog_evidence = deepcopy(result)
+    return result
+
+
+def _installation_authority():
+    from tui_gateway import server
+    return server._subscription_installation_authority()
+
+
+def _current_context(transport, home, expected_id=None):
+    from eidolon_cli.organization_metadata import _inspect
+    from eidolon_cli.organization_owner_policy import _connection
+    from eidolon_cli.organization_team_setup import _current
+    from tui_gateway.organization_credential_transport import owner_home
+    home = Path(home).resolve()
+    if owner_home(transport) != home:
+        raise BoundaryError()
+    with _connection(home) as conn:
+        descriptor = _inspect(conn)
+        if descriptor['state'] != 'ready':
+            raise BoundaryError()
+        org = descriptor['metadata']['organizationId']
+        if expected_id is not None and expected_id != org:
+            raise BoundaryError()
+        _, _, _, revision = _current(conn, home, org)
+    authority = _installation_authority()
+    context = _context(transport, {'expectedOrganizationId': org, 'sourceRevision': revision},
+                       authority, require_fresh=True)
+    return context, _service(transport, context, authority)
+
+
+def subscription_preflight(transport, home, candidate, *, inference=False):
+    """Capture exact evidence before publication/SQLite writer acquisition.
+
+    Only explicit inference may discover an account catalog here. Policy review
+    requires the model evidence already obtained by the owner's Models action.
+    No implicit OAuth, credential refresh or general-runtime route is possible.
+    """
+    from eidolon_cli.organization_setup_subscription_policy import SubscriptionPreflight
+    context, service = _current_context(transport, home)
+    state = service.status()
+    revision = state['connectionRevision']
+    if state['connectionState'] != 'active' or state['cleanupPending']:
+        raise BoundaryError()
+    descriptor = service.current_descriptor(revision)
+    binding = descriptor['binding']
+    account = service._store._binding_digest(binding)
+    if (candidate['connectionId'] != account
+            or candidate['authorizationEpoch'] != descriptor['authorizationEpoch']):
+        raise BoundaryError()
+    catalog = _catalog(service, context)
+    if inference:
+        evidence = _load_catalog(service, context, revision)
+    else:
+        with _services_lock:
+            evidence = deepcopy(getattr(service, '_setup_catalog_evidence', None))
+        if evidence is None:
+            raise BoundaryError()
+    evidence = catalog.require(evidence['catalogId'], candidate['modelSlug'], revision)
+    if (evidence['connectionId'] != account
+            or evidence['authorizationEpoch'] != descriptor['authorizationEpoch']
+            or evidence['sourceRevision'] != context.source_digest):
+        raise BoundaryError()
+    lease = service.lease_access_current(revision) if inference else None
+    cancelled = service._lease_cancel
+    generation_guard = context.lease_generation_guard
+
+    def cheap_guard():
+        # Capture only the Event and registry-only closure. Accounting workers
+        # must not retain the service or its token-bearing lease collection.
+        return not cancelled.is_set() and generation_guard() is True
+
+    def release():
+        if lease is not None:
+            service.release_lease(lease)
+
+    try:
+        # This guard is registry/Event-only. The authoritative writer may use it
+        # with the nonblocking store attestation, never current_descriptor().
+        if cheap_guard() is not True:
+            raise BoundaryError()
+        return SubscriptionPreflight(binding=binding, store=service._store,
+            revision=revision, epoch=descriptor['authorizationEpoch'],
+            account_digest=account, model_slug=candidate['modelSlug'],
+            catalog_evidence=deepcopy(evidence), owner_generation=context.owner_generation,
+            cheap_guard=cheap_guard, lease=lease, release=release)
+    except BaseException:
+        release()
+        raise
+
+
+def turnover_subscription_context(transport, home, expected_id):
+    """After commit, replace stale source-scoped auth/catalog state, without I/O to a provider."""
+    context, _ = _current_context(transport, home, expected_id)
+    return {'sourceRevision': context.source_digest, 'catalogState': 'not_requested'}
+
+
 def _after_operation(service, context, result):
     # Only independently revalidated current refresh completion can chain one
     # discovery GET. A historical receipt never becomes catalog authority.
@@ -190,14 +294,14 @@ def _after_operation(service, context, result):
     catalog = _catalog(service, context)
     catalog.invalidate()
     try:
-        models = catalog.load(revision)
+        models = _load_catalog(service, context, revision)
         return {**result, 'catalog': models, 'catalogState': 'ready'}
     except (OSError, RuntimeError, ValueError, TypeError):
         return {**result, 'catalog': None, 'catalogState': 'unavailable'}
 
 
 def dispatch(operation, params, transport, authority):
-    """Backend-only entry point; production registration is a later review gate."""
+    """Closed owner-authorized operations; no inference or policy activation."""
     _parameters(operation, params)
     fresh = operation in {'begin', 'models'} or (
         operation == 'prepareOperation' and params['kind'] == 'refresh') or (
@@ -211,7 +315,7 @@ def dispatch(operation, params, transport, authority):
     if operation == 'begin':
         return service.begin(params['expectedRevision'])
     if operation == 'models':
-        return _catalog(service, context).load(params['expectedRevision'])
+        return _load_catalog(service, context, params['expectedRevision'])
     _catalog(service, context).invalidate()
     if operation == 'prepareOperation':
         return service.prepare_operation(params['kind'], params['expectedRevision'])
@@ -232,6 +336,7 @@ def _method(name, operation):
     @_registry.method('organization.' + name)
     def handler(rid, params):
         try:
+            from tui_gateway.methods_organization_setup_subscription import dispatch
             result = dispatch(operation, params, current_transport(), _subscription_installation_authority())
             return _ok(rid, result)
         except (OSError, RuntimeError, ValueError, TypeError):
@@ -254,3 +359,4 @@ _method('setupSubscriptionModels', 'models')
 
 def register(server):
     _registry.install(server)
+

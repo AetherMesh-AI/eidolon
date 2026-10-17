@@ -2581,3 +2581,85 @@ def test_targeted_directory_fsync_failures_preserve_exact_local_recovery(sample,
     monkeypatch.setattr(store, '_archive_sync', archive_sync)
     result = store.reconcile_transition(binding, **guarded())
     assert result['state'] == ('prepared' if action == 'prepare' else 'local_retired')
+
+
+def test_sender_attestation_minted_from_authenticated_lease(sample):
+    import pickle
+    store, binding, _ = sample
+    connect_grant(sample)
+    generation = object()
+    lease = new_lease(sample, owner_generation=generation)
+    proof = lease.attestation
+    assert proof.account_binding_digest == store._binding_digest(binding)
+    assert proof.authorization_epoch == state(store)['authorizationEpoch']
+    assert proof.store_revision == 1 and proof.owner_generation is generation
+    assert 'verified-account' not in repr(proof)
+    with pytest.raises(TypeError):
+        pickle.dumps(proof)
+    calls = []
+    assert lease.run_nonblocking(lambda token, cancel: calls.append(token) or 'completed') == 'completed'
+    assert calls == ['synthetic-access-only'] and not lease._token
+    with pytest.raises(StoreError, match='lease_used'):
+        lease.run_nonblocking(lambda *_: 'second')
+
+
+@pytest.mark.parametrize('stage', ['before', 'after'])
+def test_sender_nonblocking_store_contention_never_exposes_text(sample, stage):
+    store, _, _ = sample
+    connect_grant(sample)
+    lease = new_lease(sample)
+    held, release = threading.Event(), threading.Event()
+    def hold():
+        with store._locked():
+            held.set()
+            assert release.wait(10)
+    holder = threading.Thread(target=hold)
+    terminal_recorded = []
+    def callback(token, cancel):
+        terminal_recorded.append('text-free completed accounting')
+        holder.start()
+        assert held.wait(5)
+        return 'private proposal must be suppressed'
+    if stage == 'before':
+        holder.start()
+        assert held.wait(5)
+    try:
+        with pytest.raises(StoreError):
+            lease.run_nonblocking(callback)
+        assert terminal_recorded == ([] if stage == 'before' else ['text-free completed accounting'])
+        assert not lease._token
+    finally:
+        release.set()
+        holder.join(5)
+    assert not holder.is_alive()
+
+
+def test_sender_nonblocking_never_calls_blocking_is_set(sample, monkeypatch):
+    connect_grant(sample)
+    lease = new_lease(sample)
+    def forbidden():
+        raise AssertionError('Blocking Event-like lease check is forbidden in sender')
+    monkeypatch.setattr(lease, 'is_set', forbidden)
+    assert lease.run_nonblocking(lambda *_: 'ok') == 'ok'
+
+
+def test_store_only_sender_attestation_uses_exact_current_binding_without_secret_read(sample):
+    store, binding, vault = sample
+    connect_grant(sample)
+    generation = object()
+    lease = new_lease(sample, owner_generation=generation)
+    proof = lease.attestation
+    calls = list(vault.calls)
+    args = dict(expected_revision=proof.store_revision, expected_epoch=proof.authorization_epoch,
+                expected_account_digest=proof.account_binding_digest, lease_generation_guard=lambda: True)
+    result = store.attest_subscription_binding_nonblocking(binding, **args)
+    assert result == {'store_revision': proof.store_revision,
+                      'authorization_epoch': proof.authorization_epoch,
+                      'account_binding_digest': proof.account_binding_digest}
+    assert vault.calls == calls
+    for key, value in (('expected_revision', 2), ('expected_epoch', str(uuid.uuid4())),
+                       ('expected_account_digest', 'f' * 64), ('lease_generation_guard', lambda: False)):
+        with pytest.raises(StoreError):
+            store.attest_subscription_binding_nonblocking(binding, **dict(args, **{key: value}))
+    assert vault.calls == calls
+    lease.close()

@@ -1,7 +1,5 @@
 """Synthetic owner/adapter proof. No browser, native vault or network operations."""
-from pathlib import Path
 from types import SimpleNamespace
-import ast
 import sys
 import threading
 import uuid
@@ -127,18 +125,28 @@ def test_dispatch_calls_only_requested_service_method(monkeypatch):
     assert calls == [('begin', 0)]
 
 
-def test_authority_capture_precedes_dotenv_and_rpc_remains_unregistered():
-    # Parse only: importing the server can initialize unrelated application state.
-    source = (Path(__file__).resolve().parents[2] / 'tui_gateway' / 'server.py').read_text()
-    tree = ast.parse(source)
-    capture = source.index('_setup_subscription_authority = HostAuthority.capture(')
-    dotenv = source.index('load_hermes_dotenv(hermes_home=')
-    assert capture < dotenv
-    assert 'get_default_hermes_root, get_process_eidolon_home)' in source
-    assert not any(isinstance(node, ast.ImportFrom)
-                   and node.module == 'tui_gateway.methods_organization_setup_subscription'
-                   for node in ast.walk(tree))
-    assert 'methods_organization_setup_subscription.register(' not in source
+def test_registered_rpc_uses_adapter_dispatch_and_rejects_client_authority(monkeypatch):
+    from types import ModuleType
+    from tui_gateway.transport import bind_transport, reset_transport, current_transport
+    fake_server = ModuleType('synthetic_server')
+    fake_server._methods = {}
+    fake_server.current_transport = current_transport
+    fake_server._subscription_installation_authority = lambda: object()
+    fake_server._ok = lambda rid, value: {'id': rid, 'result': value}
+    fake_server._err = lambda rid, code, message, data=None: {'id': rid, 'error': {'code': code}}
+    # The server already has its own dispatch. Registration must call the
+    # adapter explicitly instead of resolving this unrelated facade symbol.
+    fake_server.dispatch = lambda *args: pytest.fail('called generic RPC dispatch recursively')
+    methods.register(fake_server)
+    monkeypatch.setattr(methods, '_context', lambda *args, **kwargs: object())
+    monkeypatch.setattr(methods, '_service', lambda *args: SimpleNamespace(status=lambda: {'stage': 'idle'}))
+    token = bind_transport(Transport())
+    try:
+        handler = fake_server._methods['organization.setupSubscriptionStatus']
+        assert handler(1, params())['result'] == {'stage': 'idle'}
+        assert handler(2, params(accessToken='forbidden'))['error']['code'] == 5077
+    finally:
+        reset_transport(token)
 
 
 def test_stable_authority_lock_and_reentrant_lifecycle_refusal(tmp_path, monkeypatch):

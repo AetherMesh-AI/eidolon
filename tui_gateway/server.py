@@ -182,6 +182,13 @@ _LONG_HANDLERS = frozenset({
     "organization.credentials.replacementTargets", "organization.credentials.prepareReplacement",
     "organization.credentials.replacementStatus", "organization.credentials.cancelReplacement",
     "organization.teamSetup", "organization.previewTeam", "organization.createTeam", "organization.generateTeam", "organization.improveTeamInput",
+    "organization.setupSubscriptionPolicy", "organization.previewSetupSubscriptionPolicy",
+    "organization.applySetupSubscriptionPolicy", "organization.setupSubscriptionStatus",
+    "organization.beginSetupSubscription", "organization.cancelSetupSubscription",
+    "organization.prepareSetupSubscriptionOperation", "organization.executeSetupSubscriptionOperation",
+    "organization.reconcileSetupSubscriptionOperation", "organization.cancelSetupSubscriptionOperation",
+    "organization.recoverSetupSubscriptionOperation", "organization.setupSubscriptionModels",
+    "organization.setupBudgetPolicy", "organization.previewSetupBudget", "organization.applySetupBudget",
     "organization.sharedAllowance", "organization.previewSharedAllowance", "organization.configureSharedAllowance",
     "organization.previewSharedAllowanceObservation", "organization.recordSharedAllowanceObservation",
     "billing.state", "subscription.state", "subscription.preview", "subscription.change",
@@ -3234,6 +3241,7 @@ from . import (  # noqa: E402
     methods_organization_milestones as _methods_organization_milestones,
     methods_organization_goals as _methods_organization_goals,
     methods_organization_team_setup as _methods_organization_team_setup,
+    methods_organization_setup_subscription as _methods_organization_setup_subscription,
     methods_organization_owner_policy as _methods_organization_owner_policy,
     methods_organization_folder_setup as _methods_organization_folder_setup,
     methods_organization_prepared_validation as _methods_organization_prepared_validation,
@@ -3253,7 +3261,8 @@ for _m in (
     _methods_bot_relay, _prompt_turn, _billing_view, _methods_projects, _methods_session_foreign,
     _methods_session_control, _methods_subagents, _methods_organization, _methods_organization_owner_chat, _methods_organization_intake,
     _methods_organization_workspaces, _methods_organization_metadata, _methods_organization_milestones, _methods_organization_goals, _methods_organization_observation, _methods_organization_owner_policy, _methods_organization_folder_setup, _methods_organization_prepared_validation,
-    _methods_organization_shared_allowance, _methods_organization_team_setup, _methods_organization_credentials,
+    _methods_organization_shared_allowance, _methods_organization_team_setup,
+    _methods_organization_setup_subscription, _methods_organization_credentials,
     _methods_organization_credential_handoff):
     _m.register(sys.modules[__name__])
 del _m

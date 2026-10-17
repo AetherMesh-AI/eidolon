@@ -379,6 +379,21 @@ def _parse_grant(secret, binding):
     return payload
 
 
+@dataclass(frozen=True, repr=False)
+class LeaseAttestation:
+    """Store-minted nonsecret binding; not a durable or transferable send grant."""
+    account_binding_digest: str
+    authorization_epoch: str
+    store_revision: int
+    owner_generation: object
+
+    def __repr__(self):
+        return '<LeaseAttestation server-private>'
+
+    def __reduce__(self):
+        raise TypeError('Server-private lease attestation cannot be serialized')
+
+
 class TokenLease:
     """Server-private, access-token-only, one-admission capability.
 
@@ -403,6 +418,13 @@ class TokenLease:
         self._mutex = threading.Lock()
         self._revoked = threading.Event()
         self._used = False
+        self._attestation = None
+
+    @property
+    def attestation(self):
+        if type(self._attestation) is not LeaseAttestation:
+            raise StoreError('invalid_binding')
+        return self._attestation
 
     def __repr__(self):
         return '<TokenLease server-private>'
@@ -499,6 +521,41 @@ class TokenLease:
                     result.close()
                 raise StoreError('invalid_lease_result')
             with self._store._locked() as exists:
+                if not exists:
+                    raise StoreError('connection_unavailable')
+                self._check_locked()
+            return result
+        finally:
+            self.close()
+
+    @_guarded
+    def run_nonblocking(self, request):
+        """Sender-only variant: contention denies; original run is unchanged."""
+        with self._mutex:
+            if self._used:
+                raise StoreError('lease_used')
+            self._used = True
+        try:
+            with self._store._locked(nonblocking=True) as exists:
+                if not exists:
+                    raise StoreError('connection_unavailable')
+                self._check_locked()
+                with self._mutex:
+                    if not self._token:
+                        raise StoreError('lease_cancelled')
+                    token = self._token.decode('ascii')
+            # This explicit handoff runs with NO store lock. Last-moment checks
+            # reduce, but cannot eliminate, the post-admission cancellation race.
+            if not self.try_send_allowed():
+                raise StoreError('lease_cancelled')
+            result = request(token, self)
+            if inspect.isawaitable(result) or inspect.isgenerator(result) or inspect.isasyncgen(result):
+                # A coroutine/generator would defer work past token ownership and
+                # late-reply fences. Adapters must return completed response data.
+                if inspect.iscoroutine(result) or inspect.isgenerator(result):
+                    result.close()
+                raise StoreError('invalid_lease_result')
+            with self._store._locked(nonblocking=True) as exists:
                 if not exists:
                     raise StoreError('connection_unavailable')
                 self._check_locked()
@@ -1231,6 +1288,30 @@ class SubscriptionStore:
             lease.close()
 
     @_guarded
+    def attest_subscription_binding_nonblocking(self, binding, *, expected_revision,
+            expected_epoch, expected_account_digest, lease_generation_guard):
+        """Store-only fence for captured preflight evidence under a ledger writer.
+
+        The guard is registry/Event-only. No service/catalog/SQLite lookup and no
+        refresh or lease issuance occurs here. Contention fails closed.
+        """
+        if (type(binding) is not TrustedBinding or not callable(lease_generation_guard)
+                or expected_account_digest != self._binding_digest(binding)):
+            raise StoreError('invalid_binding')
+        _canonical_epoch(expected_epoch)
+        with self._locked(nonblocking=True) as exists:
+            if not exists:
+                raise StoreError('connection_unavailable')
+            state = self._fence(binding, expected_revision)
+            if (state.get('version') != 2 or state.get('authorizationEpoch') != expected_epoch
+                    or state.get('cleanup') or state.get('candidate') != {'state': 'idle'}):
+                raise StoreError('stale_revision')
+            if lease_generation_guard() is not True:
+                raise StoreError('owner_generation_changed')
+            return {'account_binding_digest': expected_account_digest,
+                    'authorization_epoch': expected_epoch, 'store_revision': expected_revision}
+
+    @_guarded
     def lease_access_token(self, binding, revision, *, owner_generation, owner_guard, cancel):
         """Explicit server-private handoff; not a consume callback retaining bytes.
 
@@ -1264,6 +1345,8 @@ class SubscriptionStore:
                 raise StoreError('grant_expired')
             lease = TokenLease(self, binding, revision, owner_generation, owner_guard,
                                cancel, payload['expiresAt'], payload['accessToken'], self._lease_scope())
+            lease._attestation = LeaseAttestation(self._binding_digest(binding),
+                payload['authorizationEpoch'], revision, owner_generation)
             with _LEASES_LOCK:
                 _LEASES.setdefault(lease._scope, weakref.WeakSet()).add(lease)
             return lease
