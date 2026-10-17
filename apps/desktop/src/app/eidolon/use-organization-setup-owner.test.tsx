@@ -73,6 +73,60 @@ beforeEach(() => {
   $gatewaySwapTarget.set(null)
   $gatewaySwitching.set(false)
   $sourceSwitchIntent.set(0)
+  $organizationObservationSwitching.set(false)
+})
+
+it.each(['owner', 'generation'])('requires fresh proof and then restores supported setup after a %s change', async change => {
+  const response = deferred<unknown>()
+  const gateway = { request: vi.fn().mockResolvedValue(descriptor), connectionState: 'open', generation: 1 }
+  $gateway.set(gateway as never)
+
+  if (change === 'owner') {
+    $gatewayState.set('closed')
+  }
+
+  const view = renderHook(useOrganizationSetupOwner)
+
+  if (change === 'owner') {
+    expect(view.result.current).toBe(false)
+    expect(gateway.request).not.toHaveBeenCalled()
+  } else {
+    await waitFor(() => expect(view.result.current).toBe(true))
+  }
+
+  const nextProfile = change === 'owner' ? 'another-served-home' : profile
+
+  const nextDescriptor = {
+    ...descriptor,
+    scope: { ...descriptor.scope, profile: nextProfile },
+    isolation: { ...descriptor.isolation, profile: nextProfile }
+  }
+
+  const nextGateway = change === 'owner' ? { ...gateway, request: vi.fn() } : gateway
+  nextGateway.request.mockReturnValue(response.promise)
+
+  await act(async () => {
+    if (change === 'owner') {
+      $gateway.set(nextGateway as never)
+      $connection.set({ ...$connection.get()!, profile: nextProfile })
+      $activeGatewayProfile.set(nextProfile)
+      $activeGatewayRoute.set(nextProfile)
+      $sourceSwitchIntent.set($sourceSwitchIntent.get() + 1)
+      $organizationObservationEpoch.set($organizationObservationEpoch.get() + 1)
+      $gatewayState.set('open')
+    } else {
+      gateway.generation++
+      $gatewayTransportRevision.set($gatewayTransportRevision.get() + 1)
+    }
+  })
+
+  expect(view.result.current).toBe(false)
+  await act(async () => response.resolve(nextDescriptor))
+  await waitFor(() => expect(view.result.current).toBe(true))
+  expect(nextGateway.request.mock.calls.map(call => call[0])).toEqual(
+    change === 'owner' ? ['organization.descriptor'] : ['organization.descriptor', 'organization.descriptor']
+  )
+  view.unmount()
 })
 
 it('requires current strict identity rather than a profile name or pending, foreign, legacy or remote proof, and re-verifies on remount', async () => {

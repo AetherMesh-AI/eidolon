@@ -29,17 +29,20 @@ export function useOrganizationSetupOwner() {
   const switching = useStore($gatewaySwitching)
   const pending = useStore($pendingConnectionId)
   const swap = useStore($gatewaySwapTarget)
-  useStore($gatewayTransportRevision)
-  useStore($localOwnerProofRevision)
-  useStore($activeGatewayRoute)
-  useStore($organizationObservationEpoch)
-  useStore($organizationObservationSwitching)
+  const transportRevision = useStore($gatewayTransportRevision)
+  const proofRevision = useStore($localOwnerProofRevision)
+  const route = useStore($activeGatewayRoute)
+  const observationEpoch = useStore($organizationObservationEpoch)
+  const observationSwitching = useStore($organizationObservationSwitching)
 
-  const { key, ownerKey, eligible: ownerEligible } = readOrganizationMetadataScope()
-  const eligible = ownerEligible && state === 'open' && !switching && !pending && !swap
-  const generation = gateway ? gatewayTransportGeneration(gateway) : undefined
+  // Store reads and same-object reconnects are invisible to the React Compiler.
+  // Keep every authority revision in the snapshot, even when its scalar key is unchanged.
+  const scope = useMemo(readOrganizationMetadataScope, [gateway, connection, registry, profile, intent, state, switching, pending, swap, transportRevision, proofRevision, route, observationEpoch, observationSwitching])
+  const eligible = scope.eligible && state === 'open' && !switching && !pending && !swap
 
   const source = useMemo(() => {
+    const generation = gateway ? gatewayTransportGeneration(gateway) : undefined
+
     const current = () => {
       const live = readOrganizationMetadataScope()
 
@@ -60,8 +63,8 @@ export function useOrganizationSetupOwner() {
         !$gatewaySwapTarget.get() &&
         gatewayTransportGeneration(gateway) === generation &&
         live.eligible &&
-        live.key === key &&
-        live.ownerKey === ownerKey &&
+        live.key === scope.key &&
+        live.ownerKey === scope.ownerKey &&
         connection?.mode === 'local' &&
         !connection.sharedPrimary &&
         !connection.sharedRemote &&
@@ -71,7 +74,7 @@ export function useOrganizationSetupOwner() {
     }
 
     return { gateway, profile, current }
-  }, [gateway, connection, registry, profile, intent, eligible, generation, key, ownerKey])
+  }, [gateway, connection, registry, profile, intent, eligible, scope])
 
   const [verified, setVerified] = useState<typeof source | null>(null)
   useEffect(() => {
