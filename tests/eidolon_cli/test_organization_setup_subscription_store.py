@@ -400,35 +400,185 @@ def test_world_writable_nonsticky_ancestor_refused(sample):
         store.status()
 
 
-@pytest.mark.parametrize('tags,expected', [([], None), ([2], None), ([1], 'unsafe_filesystem'),
-                                          ([2, 1], 'unsafe_filesystem'), ([99], 'unsafe_filesystem')])
-def test_darwin_acl_boundary_with_synthetic_c_api(monkeypatch, tags, expected):
+@pytest.fixture
+def darwin_acl_api(monkeypatch):
+    """Pure synthetic C-API surface; no native library, ACL or vault calls."""
     import ctypes
     import errno
+    import stat
+    from contextlib import contextmanager
     from types import SimpleNamespace
-    entries = iter(tags)
-    current = [None]
-    freed = []
-    def get_entry(acl, index, pointer):
+    config = {'tags': [], 'present': 32, 'init': 77, 'stat_result': 0,
+              'query_result': 0, 'get_result': 0, 'acl': 123, 'valid_result': 0,
+              'stat_mismatch': False, 'entry_error': False}
+    calls = []
+    before = SimpleNamespace(st_dev=1, st_ino=2, st_mode=stat.S_IFDIR | 0o700,
+                             st_uid=501, st_gid=20, st_nlink=1, st_ctime_ns=3_000_000_004)
+    @contextmanager
+    def descriptor(path):
+        calls.append(('open', str(path)))
         try:
-            current[0] = next(entries)
-            return 0
-        except StopIteration:
+            yield 7, before
+        finally:
+            calls.append(('close', 7))
+    def native_stat(fd, pointer, fsec):
+        calls.append(('stat', fd, fsec))
+        result = pointer._obj
+        for key in ('st_dev', 'st_ino', 'st_mode', 'st_uid', 'st_gid', 'st_nlink'):
+            setattr(result, key, getattr(before, key))
+        result.st_ctimespec.tv_sec, result.st_ctimespec.tv_nsec = 3, 4
+        if config['stat_mismatch']:
+            result.st_ino += 1
+        return config['stat_result']
+    def query(fsec, property_id, pointer):
+        calls.append(('query', property_id))
+        pointer._obj.value = config['present']
+        return config['query_result']
+    def get(fsec, property_id, pointer):
+        calls.append(('get', property_id))
+        pointer._obj.value = config['acl']
+        return config['get_result']
+    position = [-1]
+    def entry(acl, index, pointer):
+        position[0] = 0 if index == 0 else position[0] + 1
+        if config['entry_error']:
+            ctypes.set_errno(errno.EIO)
+            return -1
+        if position[0] >= len(config['tags']):
             ctypes.set_errno(errno.EINVAL)
             return -1
-    def get_tag(entry, pointer):
-        pointer._obj.value = current[0]
         return 0
-    api = SimpleNamespace(acl_get_link_np=lambda path, kind: 123, acl_valid=lambda acl: 0,
-                          acl_get_entry=get_entry, acl_get_tag_type=get_tag,
-                          acl_free=lambda acl: freed.append(acl))
+    def tag(entry, pointer):
+        pointer._obj.value = config['tags'][position[0]]
+        return 0
+    api = SimpleNamespace(
+        filesec_init=lambda: config['init'],
+        filesec_free=lambda fsec: calls.append(('free_fsec', fsec)),
+        filesec_query_property=query, filesec_get_property=get,
+        acl_valid=lambda acl: config['valid_result'], acl_get_entry=entry,
+        acl_get_tag_type=tag, acl_free=lambda acl: calls.append(('free_acl', acl.value)),
+        fstatx_np=native_stat,
+    )
+    setattr(api, 'fstatx_np$INODE64', native_stat)
     monkeypatch.setattr(module.ctypes, 'CDLL', lambda *args, **kwargs: api)
+    monkeypatch.setattr(module.platform, 'machine', lambda: 'arm64')
+    monkeypatch.setattr(module, '_checked_acl_descriptor', descriptor)
+    return config, calls, api
+
+
+@pytest.mark.parametrize('tags,expected', [([], None), ([2], None), ([1], 'unsafe_filesystem'),
+                                          ([2, 1], 'unsafe_filesystem'), ([99], 'unsafe_filesystem')])
+def test_darwin_acl_boundary_with_synthetic_c_api(darwin_acl_api, tags, expected):
+    config, calls, _ = darwin_acl_api
+    config['tags'] = tags
     if expected:
         with pytest.raises(StoreError, match=expected):
             module._check_darwin_acl(Path('/synthetic-only'))
     else:
         module._check_darwin_acl(Path('/synthetic-only'))
-    assert freed == [123]
+    assert ('free_acl', 123) in calls
+    assert ('free_fsec', 77) in calls
+    assert calls[-1] == ('close', 7)
+
+
+def test_darwin_acl_explicit_absence_requires_successful_inspection(darwin_acl_api):
+    config, calls, _ = darwin_acl_api
+    config['present'] = 0
+    module._check_darwin_acl(Path('/synthetic-only'))
+    assert ('stat', 7, 77) in calls and ('query', 5) in calls
+    assert not any(call[0] in {'get', 'free_acl'} for call in calls)
+    assert calls[-2:] == [('free_fsec', 77), ('close', 7)]
+
+
+@pytest.mark.parametrize('change', [
+    {'stat_result': -1, 'present': 0}, {'query_result': -1, 'present': 0},
+    {'present': -1}, {'get_result': -1, 'acl': None}, {'acl': None}, {'acl': 1},
+    {'valid_result': -1}, {'init': None}, {'entry_error': True},
+    {'stat_mismatch': True, 'present': 0},
+])
+def test_darwin_acl_absence_never_masks_errors_or_identity_mismatch(darwin_acl_api, change):
+    config, calls, _ = darwin_acl_api
+    config.update(change)
+    with pytest.raises(StoreError):
+        module._check_darwin_acl(Path('/synthetic-only'))
+    assert calls[-1] == ('close', 7)
+    assert (('free_fsec', 77) in calls) == bool(config['init'])
+    if config['stat_result'] or config['stat_mismatch']:
+        assert ('query', 5) not in calls
+
+
+@pytest.mark.parametrize('architecture,symbol', [('arm64', 'fstatx_np'), ('x86_64', 'fstatx_np$INODE64')])
+def test_darwin_acl_exact_supported_symbol_without_fallback(darwin_acl_api, monkeypatch, architecture, symbol):
+    config, calls, api = darwin_acl_api
+    config['present'] = 0
+    monkeypatch.setattr(module.platform, 'machine', lambda: architecture)
+    module._check_darwin_acl(Path('/synthetic-only'))
+    calls.clear()
+    delattr(api, symbol)
+    with pytest.raises(StoreError, match='filesystem_protection_unavailable'):
+        module._check_darwin_acl(Path('/synthetic-only'))
+    assert calls == []
+
+
+@pytest.mark.parametrize('unsupported', ['architecture', 'pointer_size', 'stat_size', 'stat_alignment'])
+def test_darwin_acl_unsupported_abi_fails_before_open(darwin_acl_api, monkeypatch, unsupported):
+    _, calls, _ = darwin_acl_api
+    real_sizeof, real_alignment = module.ctypes.sizeof, module.ctypes.alignment
+    if unsupported == 'architecture':
+        monkeypatch.setattr(module.platform, 'machine', lambda: 'unknown')
+    elif unsupported == 'pointer_size':
+        monkeypatch.setattr(module.ctypes, 'sizeof', lambda value: 4 if value is module.ctypes.c_void_p else real_sizeof(value))
+    elif unsupported == 'stat_size':
+        monkeypatch.setattr(module.ctypes, 'sizeof', lambda value: 128 if value is module._DarwinStat64 else real_sizeof(value))
+    else:
+        monkeypatch.setattr(module.ctypes, 'alignment', lambda value: 4 if value is module._DarwinStat64 else real_alignment(value))
+    with pytest.raises(StoreError, match='filesystem_protection_unavailable'):
+        module._check_darwin_acl(Path('/synthetic-only'))
+    assert calls == []
+
+
+@pytest.mark.parametrize('when', ['before', 'after'])
+@pytest.mark.parametrize('field', ['st_dev', 'st_ino', 'st_mode', 'st_uid', 'st_gid', 'st_nlink', 'st_ctime_ns'])
+def test_acl_descriptor_rejects_identity_or_metadata_changes(tmp_path, monkeypatch, when, field):
+    if os.name != 'posix':
+        pytest.skip('Descriptor proof requires POSIX nofollow support')
+    from types import SimpleNamespace
+    path = tmp_path / 'synthetic-file'
+    path.write_bytes(b'')
+    real_fstat = os.fstat
+    calls = []
+    def fstat(fd):
+        value = real_fstat(fd)
+        calls.append(fd)
+        if len(calls) == (1 if when == 'before' else 2):
+            result = SimpleNamespace(**{key: getattr(value, key) for key in (
+                'st_dev', 'st_ino', 'st_mode', 'st_uid', 'st_gid', 'st_nlink', 'st_ctime_ns')})
+            setattr(result, field, getattr(result, field) + 1)
+            return result
+        return value
+    with monkeypatch.context() as patch:
+        patch.setattr(module.os, 'fstat', fstat)
+        with pytest.raises(StoreError, match='unsafe_filesystem'):
+            with module._checked_acl_descriptor(path):
+                assert when == 'after'
+    with pytest.raises(OSError):
+        real_fstat(calls[-1])  # Descriptor was closed on refusal.
+
+
+def test_acl_descriptor_rejects_symlink_and_post_read_path_replacement(tmp_path):
+    if os.name != 'posix':
+        pytest.skip('Descriptor proof requires POSIX nofollow support')
+    path = tmp_path / 'synthetic-file'
+    path.write_bytes(b'')
+    link = tmp_path / 'synthetic-link'
+    link.symlink_to(path)
+    with pytest.raises(StoreError, match='unsafe_filesystem'):
+        with module._checked_acl_descriptor(link):
+            pytest.fail('symlink')
+    with pytest.raises(StoreError, match='unsafe_filesystem'):
+        with module._checked_acl_descriptor(path):
+            path.rename(tmp_path / 'original')
+            path.write_bytes(b'')
 
 
 @pytest.mark.parametrize('phase', ['connected', 'refreshed', 'disconnected'])
