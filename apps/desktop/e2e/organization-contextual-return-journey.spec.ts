@@ -100,7 +100,7 @@ async function rememberDeparture(link: Locator) {
       const root = element.closest('.eid-workspace')!
       const selectors = ['.eid-home-panel-body', '.eid-messages-layout > .eid-responsive-detail-list', '.eid-messages-layout > .eid-responsive-detail-content', '.eid-message-context']
       const panels = selectors.flatMap(selector => Array.from(root.querySelectorAll<HTMLElement>(selector)).map(panel => ({ selector, label: panel.getAttribute('aria-label') ?? '', top: panel.scrollTop })))
-      document.documentElement.dataset.contextDeparture = JSON.stringify({ top: root.scrollTop, panels })
+      document.documentElement.dataset.contextDeparture = JSON.stringify({ origin: location.href, top: root.scrollTop, panels })
     }, { once: true })
   })
 }
@@ -108,10 +108,10 @@ async function rememberDeparture(link: Locator) {
 async function visitAndReturn(link: Locator, label: string) {
   const current = fixture!
   const { page } = current
-  const origin = page.url()
   await rememberDeparture(link)
   await link.click()
-  const position = await page.evaluate(() => JSON.parse(document.documentElement.dataset.contextDeparture!)) as { top: number; panels: { selector: string; label: string; top: number }[] }
+  const position = await page.evaluate(() => JSON.parse(document.documentElement.dataset.contextDeparture!)) as { origin: string; top: number; panels: { selector: string; label: string; top: number }[] }
+  const { origin } = position
   await expect(page.getByRole('heading', { level: 1, name: title, exact: true })).toBeInViewport()
   await captureGallery(current, `${label}-objective-entry`, page.locator('.eid-workspace').last())
   await page.locator('a.eid-back').click()
