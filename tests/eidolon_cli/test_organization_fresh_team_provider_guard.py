@@ -7,8 +7,11 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shutil
 import socket
 import sqlite3
+import subprocess
+from types import SimpleNamespace
 
 import httpx
 import psutil
@@ -30,6 +33,17 @@ def run_synchronous_mock_coroutine(coroutine):
     raise AssertionError('Synthetic transport unexpectedly attempted asynchronous I/O')
 
 
+def real_sender_reservation(body):
+    from eidolon_cli.organization_executor import _ToolFreeBoundary
+    reservations = []
+    sender = SimpleNamespace(provider='openai-api', model=body['model'], api_mode='chat_completions',
+        _organization_prompt=body['messages'][-1]['content'], _organization_input_limit=13952,
+        _organization_output_limit=8000, _organization_reserve=lambda **values: reservations.append(values))
+    _ToolFreeBoundary._organization_reserve_call(sender, body)
+    assert len(reservations) == 1
+    return reservations[0]
+
+
 def test_identity_guard_matches_reviewed_creation_guard():
     source = (HELPER.parent / 'organization-creation.spec.ts').read_text()
     original = source.split('const providerSendGuard = String.raw`', 1)[1].split('\n`', 1)[0]
@@ -38,6 +52,65 @@ def test_identity_guard_matches_reviewed_creation_guard():
         for node in ast.parse(text).body if isinstance(node, ast.FunctionDef) and node.name in names}
     assert functions(HELPER.read_text()) == functions(original)
     assert set(functions(original)) == names
+
+
+def test_electron_bootstrap_guards_first_renderer_and_only_fulfills_exact_font():
+    node = shutil.which('node')
+    if not node:
+        pytest.skip('Node is needed to validate the native Electron fixture bootstrap')
+    source = (HELPER.parent / 'organization-fresh-team-setup.spec.ts').read_text()
+    bootstrap = source.split('const electronNetworkGuard = String.raw`', 1)[1].split('\n`', 1)[0]
+    font = 'https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&display=swap'
+    assert font in (ROOT / 'apps/desktop/src/themes/presets.ts').read_text()
+    # No Electron or network modules are available in this independent VM.
+    # Every request must terminate in a local Response or the counted loopback
+    # stub; any undeclared import or external forwarding fails the regression.
+    script = r'''
+const assert = require('node:assert/strict')
+const vm = require('node:vm')
+const fs = require('node:fs')
+const events = {}, records = [], forwarded = []
+let handler, before
+const session = { protocol: { handle(scheme, fn) { assert.equal(scheme, 'https'); handler = fn } },
+  webRequest: { onBeforeRequest(filter, fn) { assert.deepEqual(Array.from(filter.urls), ['http://*/*','https://*/*','ws://*/*','wss://*/*']); before = fn } } }
+const electron = { app: { on(name, fn) { events[name] = fn } },
+  net: { fetch(request, options) {
+    assert.ok(['127.0.0.1','[::1]'].includes(new URL(request.url).hostname))
+    assert.equal(options.bypassCustomProtocolHandlers, true)
+    assert.equal(options.redirect, 'error')
+    forwarded.push(request.url); return new Response('loopback stub')
+  } } }
+vm.runInNewContext(fs.readFileSync(0, 'utf8'), { Response, URL, WeakSet,
+  process: { env: { EIDOLON_FRESH_TEAM_GUARD_DIR: '/synthetic' } },
+  require(name) {
+    if (name === 'electron') return electron
+    if (name === 'node:fs') return { appendFileSync(path, value) { records.push({path, value: JSON.parse(value)}) } }
+    if (name === 'node:path') return require('node:path')
+    throw Error('Undeclared bootstrap import: ' + name)
+  } })
+assert.throws(() => events['web-contents-created']({}, { id: 0, session }), /before external-request guard/)
+events['session-created'](session)
+events['web-contents-created']({}, { id: 1, session })
+const font = process.argv[1]
+function permitted(url, method = 'GET') {
+  let answer; before({url, method}, value => { answer = value }); return !answer.cancel
+}
+for (const url of ['https://example.invalid/', font + '&unexpected=1', 'http://localhost/', 'ws://api.openai.com/']) {
+  assert.equal(permitted(url), false)
+  assert.equal(handler({url, method:'GET'}).status, 403)
+}
+assert.equal(permitted(font, 'POST'), false)
+assert.equal(handler({url:font, method:'POST'}).status, 403)
+assert.equal(permitted(font), true)
+assert.equal(handler({url:font, method:'GET'}).status, 200)
+assert.equal(permitted('http://127.0.0.1:1234/'), true)
+assert.equal(handler({url:'https://127.0.0.1:1234/', method:'GET'}).status, 200)
+assert.equal(forwarded.length, 1)
+assert.equal(records.filter(row => row.path.includes('browser-attempts')).length, 10)
+assert.equal(records.filter(row => row.path.includes('browser-fonts')).length, 1)
+assert.equal(records.filter(row => row.path.includes('browser-windows')).at(-1).value.guardedBeforeCreation, true)
+'''
+    subprocess.run([node, '-e', script, font], input=bootstrap, text=True, check=True, timeout=10)
 
 
 @pytest.fixture
@@ -64,6 +137,8 @@ def guarded(tmp_path, monkeypatch):
         monkeypatch.setattr(socket, name, no_physical)
     monkeypatch.setattr(httpx.HTTPTransport, 'handle_request', no_physical)
     monkeypatch.setattr(httpx.AsyncHTTPTransport, 'handle_async_request', no_physical)
+    import eidolon_cli.banner as banner
+    monkeypatch.setattr(banner, 'check_for_updates', banner.check_for_updates)
     spec = importlib.util.spec_from_file_location('fresh_team_guard', HELPER)
     guard = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(guard)
@@ -89,22 +164,24 @@ def guarded(tmp_path, monkeypatch):
     permit = evidence / 'permit.json'
     permit.write_text(json.dumps(expected))
     path = home / 'organization' / 'state.db'
+    body = {'model': expected['model'], 'stream': False, 'max_tokens': 8000, 'messages': [
+        {'role': 'system', 'content': 'EIDOLON_STARTER_TEAM_V1'},
+        {'role': 'user', 'content': json.dumps(inputs)}]}
+    reserved = real_sender_reservation(body)
     with closing(sqlite3.connect(path)) as conn, conn:
         conn.execute('CREATE TABLE organization_team_generations (idempotency_key TEXT, organization_id TEXT, '
             'input_hash TEXT, source_revision TEXT, status TEXT, dispatched INTEGER, reserved_tokens INTEGER, reserved_cost TEXT)')
         digest = hashlib.sha256(json.dumps({'operation': 'generateTeam', 'input': request},
             sort_keys=True, separators=(',', ':'), allow_nan=False).encode()).hexdigest()
         conn.execute('INSERT INTO organization_team_generations VALUES (?,?,?,?,?,?,?,?)',
-            ('generation-one', 'org-one', digest, 'revision-one', 'running', 1, 24000, None))
+            ('generation-one', 'org-one', digest, 'revision-one', 'running', 1,
+             reserved['input_limit'] + reserved['output_limit'], None))
         for table in ('organization_team_setup', 'objectives', 'requests', 'organization_model_calls'):
             conn.execute('CREATE TABLE ' + table + '(id TEXT)')
     # Live listener verification is exercised by the native proof; this unit
     # seam avoids binding a socket in restricted local executors.
     monkeypatch.setattr(guard, '_fixture_live_identity', lambda pid: {'pid': pid,
         'create_time': expected['create_time'], 'alive': True, 'listeners': [['127.0.0.1', 12345]]})
-    body = {'model': expected['model'], 'stream': False, 'messages': [
-        {'role': 'system', 'content': 'EIDOLON_STARTER_TEAM_V1'},
-        {'role': 'user', 'content': json.dumps(inputs)}]}
     def make_request(**changes):
         return httpx.Request(changes.pop('method', 'POST'), changes.pop('url', guard.CANONICAL_URL),
             headers={'Authorization': changes.pop('authorization', 'Bearer ' + expected['key'])},
@@ -126,7 +203,12 @@ def test_only_reserved_synthetic_completion_and_no_repeat(guarded, asynchronous)
     sent = [json.loads(line) for line in guard.SENDS.read_text().splitlines()]
     assert len(sent) == 1
     assert sent[0]['reservation']['dispatched'] == 1
-    assert sent[0]['reservation']['reserved_tokens'] == 24000
+    reserved = real_sender_reservation(json.loads(request.content))
+    tokens = reserved['input_limit'] + reserved['output_limit']
+    assert tokens < 24000
+    assert sent[0]['reservation']['reserved_tokens'] == tokens
+    assert sent[0]['wireAccounting']['reservedTokens'] == tokens
+    assert sent[0]['wireAccounting']['outputLimit'] == reserved['output_limit'] == 8000
     assert sent[0]['keySha256'] == hashlib.sha256(expected['key'].encode()).hexdigest()
     assert sent[0]['physicalNetworkSend'] is False
     with pytest.raises(AssertionError, match='denied'):
@@ -135,9 +217,53 @@ def test_only_reserved_synthetic_completion_and_no_repeat(guarded, asynchronous)
     assert len(guard.ATTEMPTS.read_text().splitlines()) == 1
 
 
+def test_sdk_serialization_preserves_real_sender_wire_reservation(guarded):
+    from openai import OpenAI
+    guard, expected, _, _, _, physical = guarded
+    # Match production's Unicode owner JSON before the SDK serializes its body.
+    options = {'model': expected['model'], 'stream': False, 'max_tokens': 8000,
+        'response_format': {'type': 'json_object'}, 'messages': [
+            {'role': 'system', 'content': 'EIDOLON_STARTER_TEAM_V1'},
+            {'role': 'user', 'content': json.dumps(expected['inputs'], ensure_ascii=False)}]}
+    admitted = real_sender_reservation(options)
+    captured = []
+    def capture(request):
+        assert str(request.url) == guard.CANONICAL_URL
+        assert request.method == 'POST'
+        body = json.loads(request.content)
+        assert '\\u00e9' not in body['messages'][-1]['content']
+        assert 'café' in body['messages'][-1]['content']
+        captured.append(guard._request_reservation(body))
+        return httpx.Response(200, request=request, json={
+            'id': 'synthetic-sdk', 'object': 'chat.completion', 'created': 1,
+            'model': expected['model'], 'choices': [{'index': 0, 'finish_reason': 'stop',
+                'message': {'role': 'assistant', 'content': '{}'}}]})
+    with httpx.Client(transport=httpx.MockTransport(capture), trust_env=False) as client:
+        with OpenAI(api_key=expected['key'], base_url='https://api.openai.com/v1',
+                    http_client=client, max_retries=0) as sdk:
+            sdk.chat.completions.create(**options)
+    assert len(captured) == 1
+    assert captured[0]['reservedTokens'] == admitted['input_limit'] + admitted['output_limit']
+    assert captured[0]['outputLimit'] == admitted['output_limit'] == 8000
+    assert captured[0]['reservedTokens'] < 24000
+    assert physical == []
+
+
+def test_update_availability_is_locally_scripted_before_cli_boot(guarded):
+    import eidolon_cli.banner as banner
+    guard, *_ = guarded
+    assert banner.check_for_updates is guard._isolated_update_check
+    assert banner.check_for_updates(passive=True) == 0
+    assert banner.check_for_updates() == 0
+    rows = [json.loads(line) for line in (guard.GUARD_ROOT / ('background-' + str(guard.PID) + '.jsonl')).read_text().splitlines()]
+    assert [row['passive'] for row in rows] == [True, False]
+    assert all(row['physicalNetworkSend'] is False for row in rows)
+
+
 @pytest.mark.parametrize('change', ['missing-permit', 'foreign-home', 'foreign-owner', 'closed', 'pid',
     'restart', 'ledger-home', 'unconfigured-model', 'foreign-key', 'wrong-model', 'tools', 'wrong-inputs',
-    'missing-reservation', 'unreserved', 'wrong-key', 'wrong-revision', 'wrong-hash', 'premature-team', 'hidden-work'])
+    'missing-reservation', 'unreserved', 'wrong-key', 'wrong-revision', 'wrong-hash', 'premature-team', 'hidden-work',
+    'ceiling-not-charge', 'wrong-output-policy'])
 def test_invalid_send_fails_before_any_response_or_network(guarded, change):
     guard, expected, permit, path, make_request, physical = guarded
     request = make_request()
@@ -157,6 +283,8 @@ def test_invalid_send_fails_before_any_response_or_network(guarded, change):
         request = make_request(authorization='Bearer synthetic-fresh-team-key-other-never-real')
     elif change == 'wrong-model':
         request = make_request(model='other-model')
+    elif change == 'wrong-output-policy':
+        request = make_request(max_tokens=7999)
     elif change == 'tools':
         request = make_request(tools=[{'type': 'function'}])
     elif change == 'wrong-inputs':
@@ -168,6 +296,7 @@ def test_invalid_send_fails_before_any_response_or_network(guarded, change):
             'wrong-key': "UPDATE organization_team_generations SET idempotency_key='other'",
             'wrong-revision': "UPDATE organization_team_generations SET source_revision='other'",
             'wrong-hash': "UPDATE organization_team_generations SET input_hash='other'",
+            'ceiling-not-charge': 'UPDATE organization_team_generations SET reserved_tokens=24000',
             'premature-team': "INSERT INTO organization_team_setup VALUES ('other')",
             'hidden-work': "INSERT INTO requests VALUES ('other')"}[change]
         with closing(sqlite3.connect(path)) as conn, conn:

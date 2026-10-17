@@ -40,6 +40,52 @@ const models = ['synthetic-studio-one', 'synthetic-studio-two']
 const keys = ['synthetic-fresh-team-key-one-never-real', 'synthetic-fresh-team-key-two-never-real']
 const names = ['Isolated Studio One', 'Isolated Studio Two']
 
+// launchDesktop loads this sandbox file with -r before the real main module.
+// No first-window/page.route gap: each session is guarded before it can load
+// renderer resources. The one source-declared cosmetic CSS URL is fulfilled
+// locally; screenshots use its declared system-font fallbacks, without downloads.
+const electronNetworkGuard = String.raw`
+const { app, net } = require('electron')
+const { appendFileSync } = require('node:fs')
+const { join } = require('node:path')
+const evidence = process.env.EIDOLON_FRESH_TEAM_GUARD_DIR
+const fontUrl = 'https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&display=swap'
+const installed = new WeakSet()
+const record = (name, value) => appendFileSync(join(evidence, name + '-main.jsonl'), JSON.stringify(value) + '\n')
+const local = url => ['127.0.0.1', '[::1]'].includes(new URL(url).hostname)
+const deny = url => record('browser-attempts', { url, physicalNetworkSend: false })
+function install(session) {
+  if (installed.has(session)) return
+  session.protocol.handle('https', request => {
+    if (request.method === 'GET' && request.url === fontUrl) {
+      record('browser-fonts', { url: request.url, physicalNetworkSend: false,
+        fulfillment: 'empty-local-css', typography: 'source-declared system-font fallbacks' })
+      return new Response('/* Synthetic fixture: use declared system-font fallbacks. */', {
+        headers: { 'content-type': 'text/css' }
+      })
+    }
+    if (local(request.url)) return net.fetch(request, { bypassCustomProtocolHandlers: true, redirect: 'error' })
+    deny(request.url)
+    return new Response('Fixture denied external request', { status: 403 })
+  })
+  session.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*'] }, (details, callback) => {
+    if (local(details.url) || (details.method === 'GET' && details.url === fontUrl)) {
+      callback({})
+      return
+    }
+    deny(details.url)
+    callback({ cancel: true })
+  })
+  installed.add(session)
+  record('browser-installed', { stage: 'session-created', httpsHandler: true, externalRequestGuard: true })
+}
+app.on('session-created', install)
+app.on('web-contents-created', (_event, contents) => {
+  record('browser-windows', { id: contents.id, guardedBeforeCreation: installed.has(contents.session) })
+  if (!installed.has(contents.session)) throw new Error('Renderer created before external-request guard')
+})
+`
+
 const teams = names.map((_, index) => ({
   executive: {
     name: `Ash ${index + 1}`,
@@ -213,7 +259,6 @@ test('two fresh isolated organizations configure their own models and explicitly
   const receipts: Receipt[] = []
   const rpc: Array<{ method: string; params: Record<string, unknown>; profile?: string; result?: unknown }> = []
   const verified: object[] = []
-  const browserAttempts: string[] = []
   const snapshots: Snapshot[] = []
   let armed: { guard: Guard; observed: Descriptor; inputs: Inputs; index: number } | undefined
 
@@ -229,11 +274,12 @@ test('two fresh isolated organizations configure their own models and explicitly
       )
 
   const sends = () => records('sends-')
+  const browserAttempts = () => records('browser-attempts-')
 
   const assertQuiet = (count: number) => {
     expect(sends()).toHaveLength(count)
     expect(records('attempts-')).toEqual([])
-    expect(browserAttempts).toEqual([])
+    expect(browserAttempts()).toEqual([])
     expect(mock?.receivedPrompts).toEqual([])
   }
 
@@ -282,7 +328,7 @@ for entry in json.loads((guard.ROOT_HOME/'spawn-ledger.json').read_text()):
  path=guard.GUARD_ROOT/('installed-'+str(entry['pid'])+'.json')
  if not path.exists():continue
  marker=json.loads(path.read_text())
- if marker.get('socket') is not True or marker.get('dns') is not True:continue
+ if marker.get('socket') is not True or marker.get('dns') is not True or marker.get('updateAvailability') is not True:continue
  if guard._fixture_identity_matches(marker,entry,guard._fixture_live_identity(entry['pid']),expected):
   matches.append({**expected,'pid':entry['pid'],'create_time':entry['create_time']})
 print(json.dumps(matches))
@@ -318,20 +364,14 @@ print(json.dumps(matches))
     )
     writeMockProviderConfig(sandbox.hermesHome, mock.url, undefined, seedIsolatedModelCatalog(sandbox.hermesHome))
     writeEnvFile(sandbox.hermesHome)
-    launch = await launchDesktop(env)
+    const bootstrap = path.join(sandbox.root, 'electron-network-guard.cjs')
+    writeFileSync(bootstrap, electronNetworkGuard)
+    launch = await launchDesktop(env, path.relative(import.meta.dirname, bootstrap))
     const fixture: MockBackendFixture = { ...launch, sandbox, mock, mockUrl: mock.url, cleanup: async () => {} }
     const { page } = launch
-    await page.route(/^https?:/, route => {
-      const url = new URL(route.request().url())
-
-      if (url.hostname === '127.0.0.1' || url.hostname === '[::1]') {
-        return route.continue()
-      }
-
-      browserAttempts.push(url.origin + url.pathname)
-
-      return route.abort('blockedbyclient')
-    })
+    expect(records('browser-installed-').length).toBeGreaterThan(0)
+    expect(records('browser-windows-').length).toBeGreaterThan(0)
+    expect(records('browser-windows-').every(row => row.guardedBeforeCreation === true)).toBe(true)
     let descriptorSequence = 0
     const lastDescriptor = new Map<string, number>()
     await page.routeWebSocket(/.*/, socket => {
@@ -481,7 +521,11 @@ print(json.dumps(matches))
       await expect(creation.getByRole('button', { name: 'Switch to this organization', exact: true })).toBeEnabled()
       expect(receipts).toHaveLength(index + 1)
       await creation.getByRole('button', { name: 'Switch to this organization', exact: true }).click()
-      await expect(creation.getByText('Selected organization verified.', { exact: true })).toBeVisible()
+      // Matches the product cold-boot budget in src/lib/with-timeout.ts. This
+      // still requires the exact verified status, followed by the live guard.
+      await expect(creation.getByText('Selected organization verified.', { exact: true })).toBeVisible({
+        timeout: 45_000
+      })
       const receipt = receipts[index]
       const home = path.join(sandbox.hermesHome, 'profiles', receipt.profile)
       const fresh = snapshot(home)
@@ -597,8 +641,7 @@ print(json.dumps(matches))
       expect(after.generations[0]).toMatchObject({
         organization_id: receipt.organizationId,
         status: 'completed',
-        dispatched: 1,
-        reserved_tokens: 24000
+        dispatched: 1
       })
       expect(JSON.parse(after.generations[0].result_json).team.executive.name).toBe(teams[index].executive.name)
       expect(after.teams).toHaveLength(1)
@@ -612,6 +655,21 @@ print(json.dumps(matches))
       expect(after.budget).toEqual(before.budget)
       expect(after.operationTable).toBe(false)
       const sent = sends()[index]
+
+      const accounting = sent.wireAccounting as {
+        wireInputBound: number
+        contextReserve: number
+        outputLimit: number
+        reservedTokens: number
+      }
+
+      expect(accounting.outputLimit).toBe(8000)
+      expect(accounting.contextReserve).toBe(2048)
+      expect(accounting.reservedTokens).toBe(
+        accounting.wireInputBound + accounting.contextReserve + accounting.outputLimit
+      )
+      expect(accounting.reservedTokens).toBeLessThanOrEqual(24000)
+      expect(after.generations[0].reserved_tokens).toBe(accounting.reservedTokens)
       expect(sent).toMatchObject({
         home: realpathSync(home),
         profile: receipt.profile,
@@ -671,7 +729,7 @@ print(json.dumps(matches))
       await directory.getByRole('option').filter({ hasText: names[index] }).click()
       await directory.getByRole('button', { name: 'Use selected organization', exact: true }).click()
       await directory.getByRole('button', { name: 'Confirm organization selection', exact: true }).click()
-      await expect(directory.getByRole('status')).toHaveText('Selected organization verified.')
+      await expect(directory.getByRole('status')).toHaveText('Selected organization verified.', { timeout: 45_000 })
       await directory.getByRole('button', { name: 'Close', exact: true }).click()
       await page.reload()
       await waitForAppReady(fixture)
@@ -704,7 +762,11 @@ print(json.dumps(matches))
         snapshots,
         rpc,
         externalAttempts: records('attempts-'),
-        browserAttempts,
+        browserAttempts: browserAttempts(),
+        localFontFulfillments: records('browser-fonts-'),
+        backgroundAvailability: records('background-'),
+        browserInstallation: records('browser-installed-'),
+        browserWindows: records('browser-windows-'),
         realProviderCalls: 0,
         syntheticTransportCompletions: 2,
         chargedSetupSends: 2
@@ -715,7 +777,19 @@ print(json.dumps(matches))
     try {
       await test.info().attach('fresh-team-provider-guard', {
         contentType: 'application/json',
-        body: JSON.stringify({ verified, sends: sends(), attempts: records('attempts-'), browserAttempts })
+        body: JSON.stringify({
+          verified,
+          receipts,
+          rpc,
+          descriptors: [...descriptors],
+          sends: sends(),
+          attempts: records('attempts-'),
+          browserAttempts: browserAttempts(),
+          localFontFulfillments: records('browser-fonts-'),
+          backgroundAvailability: records('background-'),
+          browserInstallation: records('browser-installed-'),
+          browserWindows: records('browser-windows-')
+        })
       })
     } finally {
       try {

@@ -96,6 +96,22 @@ def _fixture_live_identity(pid):
   return {}
 
 
+def _request_reservation(body):
+    from eidolon_cli.organization_evidence import CONTEXT_RESERVE_TOKENS, wire_input_bound
+    caps = [body[key] for key in ('max_tokens', 'max_completion_tokens', 'max_output_tokens') if key in body]
+    # This real setup path explicitly supplies OUTPUT_TOKENS=8000. The input
+    # charge is exact conservative wire framing plus context reserve, rather
+    # than the 24000-token admission ceiling.
+    if not caps or any(type(cap) is not int or cap != 8000 for cap in caps):
+        raise ValueError('setup-output-policy')
+    bound = wire_input_bound(body)
+    total = bound + CONTEXT_RESERVE_TOKENS + max(caps)
+    if total > 24000:
+        raise ValueError('setup-token-ceiling')
+    return {'wireInputBound': bound, 'contextReserve': CONTEXT_RESERVE_TOKENS,
+            'outputLimit': max(caps), 'reservedTokens': total}
+
+
 def _synthetic_response(request):
     """Only a verified, explicitly armed, already-reserved setup call is mocked."""
     if str(request.url) != CANONICAL_URL or request.method != 'POST':
@@ -137,6 +153,7 @@ def _synthetic_response(request):
         owner_text = [item['content'] for item in messages if item.get('role') == 'user']
         if len(owner_text) != 1 or json.loads(owner_text[0]) != expected['inputs']:
             raise ValueError('original-inputs')
+        accounting = _request_reservation(body)
         with closing(sqlite3.connect((home / 'organization' / 'state.db').as_uri() + '?mode=ro', uri=True)) as conn:
             conn.row_factory = sqlite3.Row
             rows = [dict(row) for row in conn.execute('SELECT * FROM organization_team_generations')]
@@ -144,7 +161,7 @@ def _synthetic_response(request):
                 raise ValueError('reservation-count')
             row = rows[0]
             if (row['organization_id'] != expected['organizationId'] or row['status'] != 'running'
-                    or row['dispatched'] != 1 or row['reserved_tokens'] != 24000
+                    or row['dispatched'] != 1 or row['reserved_tokens'] != accounting['reservedTokens']
                     or row['idempotency_key'] != expected['request']['idempotencyKey']
                     or row['source_revision'] != expected['request']['sourceRevision']):
                 raise ValueError('durable-reservation')
@@ -170,6 +187,7 @@ def _synthetic_response(request):
         'keySha256': hashlib.sha256(key.encode()).hexdigest(), 'inputs': json.loads(owner_text[0]),
         'reservation': {key: row[key] for key in ('idempotency_key', 'organization_id', 'status',
                                                 'dispatched', 'reserved_tokens', 'reserved_cost')},
+        'wireAccounting': accounting,
         'physicalNetworkSend': False,
     })
     return httpx.Response(200, request=request, json={
@@ -267,8 +285,24 @@ socket.gethostbyname = _guarded_gethostbyname
 socket.gethostbyname_ex = _guarded_gethostbyname_ex
 socket.gethostbyaddr = _guarded_gethostbyname_ex
 socket.getnameinfo = _guarded_getnameinfo
+# Same read-only availability seam as organization-switch-fixture.ts. It must
+# precede CLI boot: the real checker can spawn git as well as use urllib, so a
+# Python socket guard alone cannot isolate that unrelated background service.
+import eidolon_cli.banner as _banner
+
+
+def _isolated_update_check(*args, **kwargs):
+    _record(GUARD_ROOT / ('background-' + str(PID) + '.jsonl'), {
+        'pid': PID, 'kind': 'update-availability', 'physicalNetworkSend': False,
+        'passive': kwargs.get('passive', False), 'behind': 0,
+    })
+    return 0
+
+
+_banner.check_for_updates = _isolated_update_check
 _marker = GUARD_ROOT / ('installed-' + str(PID) + '.json')
 _pending = _marker.with_suffix('.pending')
 _pending.write_text(json.dumps({'bootstrapHome': str(Path(os.environ['HERMES_HOME']).resolve()),
-    'pid': PID, 'create_time': STARTED, 'sync': True, 'async': True, 'socket': True, 'dns': True}))
+    'pid': PID, 'create_time': STARTED, 'sync': True, 'async': True, 'socket': True, 'dns': True,
+    'updateAvailability': True}))
 _pending.replace(_marker)
