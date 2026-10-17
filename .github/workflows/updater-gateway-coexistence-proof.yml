@@ -28,7 +28,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: b9256f5fa0904c36e6b5263ef569c6f4f08cef49
+          ref: 43a84a77f094084ce8eb8dc2e99fdd679fb9d065
           persist-credentials: false
           fetch-depth: 1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -36,7 +36,7 @@ jobs:
           python-version: '3.12'
       - name: Verify exact source
         run: |
-          test "$(git rev-parse HEAD)" = b9256f5fa0904c36e6b5263ef569c6f4f08cef49
+          test "$(git rev-parse HEAD)" = 43a84a77f094084ce8eb8dc2e99fdd679fb9d065
           test "$(git rev-parse HEAD^{tree})" = 719349cb69ed9fb7bbc2e6aeabb1ffabc8e08e3b
       - name: Record host architecture
         run: |
