@@ -293,6 +293,13 @@ def _(rid, params: dict) -> dict:
     """Save an API key for ``slug``; return its refreshed provider row (model.options shape + ``authenticated``)."""
     from eidolon_cli.auth import PROVIDER_REGISTRY
     from eidolon_cli.config import is_managed
+    from eidolon_cli.profile_isolation import read_isolation
+    from eidolon_cli.profiles import get_profile_dir, validate_profile_name
+    target = params.get('profile')
+    if target is not None:
+        validate_profile_name(target)
+    if read_isolation(Path(_eidolon_home)) is not None or (target and read_isolation(get_profile_dir(target)) is not None):
+        return _err(rid, 4006, 'Use this workspace’s profile-scoped Keys settings to save its OpenAI API key')
     slug, api_key = (params.get("slug") or "").strip(), (params.get("api_key") or "").strip()
     if not slug or not api_key:
         return _err(rid, 4001, "slug and api_key are required")

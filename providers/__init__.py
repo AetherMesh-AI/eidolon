@@ -72,6 +72,9 @@ def get_provider_profile(name: str) -> ProviderProfile | None:
 
     Returns None if the provider has no profile (falls back to generic).
     """
+    from eidolon_cli.profile_isolation import read_isolation
+    if read_isolation() is not None:
+        return None
     if not _discovered:
         _discover_providers()
     canonical = _ALIASES.get(name, name)
@@ -86,6 +89,9 @@ def get_provider_profile(name: str) -> ProviderProfile | None:
 def list_providers() -> list[ProviderProfile]:
     """Return all registered provider profiles (one per canonical name)."""
     global _PROVIDER_LIST_CACHE
+    from eidolon_cli.profile_isolation import read_isolation
+    if read_isolation() is not None:
+        return []
     if not _discovered:
         _discover_providers()
     if _PROVIDER_LIST_CACHE is not None:
@@ -337,6 +343,9 @@ def _discover_providers() -> None:
     Each step imports its plugins, which call ``register_provider()`` at
     module-level. Later steps win on name collision.
     """
+    from eidolon_cli.profile_isolation import read_isolation
+    if read_isolation() is not None:
+        return
     global _discovered
     if _discovered:
         return

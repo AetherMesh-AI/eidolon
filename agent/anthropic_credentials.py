@@ -251,6 +251,9 @@ def read_claude_code_credentials() -> Optional[Dict[str, Any]]:
     """Read refreshable Claude Code OAuth credentials (Keychain and/or file). When both exist: prefer the only
     non-expired one (Claude Code 2.1.x refreshes one source but not the other), else the later ``expiresAt`` so a
     refresh uses the freshest refreshToken. ~/.claude.json primaryApiKey is deliberately excluded."""
+    from eidolon_cli.profile_isolation import read_isolation
+    if read_isolation() is not None:
+        return None
     kc_creds = _read_claude_code_credentials_from_keychain()
     file_creds = _read_claude_code_credentials_from_file()
     if not (kc_creds and file_creds):
@@ -495,6 +498,9 @@ def _get_hermes_oauth_file() -> Path:
 def _root_hermes_oauth_file() -> Optional[Path]:
     """Global-root ``.anthropic_oauth.json`` inside a named profile (None in classic mode); used to commit a
     rotation of a grant the profile borrowed via the pool's root fallback."""
+    from eidolon_cli.profile_isolation import read_isolation
+    if read_isolation() is not None:
+        return None
     try:
         from eidolon_constants import get_default_hermes_root
         root = get_default_hermes_root()
