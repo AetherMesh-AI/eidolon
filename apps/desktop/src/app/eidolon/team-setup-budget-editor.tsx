@@ -549,7 +549,7 @@ export function TeamSetupBudgetEditor(props: TeamSetupBudgetEditorProps) {
                   <bdi>{preview.configuration[field]}</bdi>
                 </p>
               ))}
-              <p className="eid-team-note">{copy.remaining}</p>
+              <p className="eid-team-note">{copy.currentRemaining}</p>
               <SetupBudgetRemaining
                 generate={preview.usage.remaining.generationCalls}
                 improve={preview.usage.remaining.improveCalls}

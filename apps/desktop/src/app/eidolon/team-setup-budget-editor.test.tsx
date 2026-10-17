@@ -423,7 +423,7 @@ it('keeps charges, remaining calls and errors visible while technical details st
   expect((total as HTMLInputElement).value).toBe('9')
   await suggestAndReview()
   const preview = screen.getByRole('region', { name: copy.review })
-  expect(within(preview).getByText(copy.remaining)).toBeTruthy()
+  expect(within(preview).getByText(copy.currentRemaining)).toBeTruthy()
   expect(within(preview).getByText(copy.retainedSummary)).toBeTruthy()
   vi.mocked(h.client.applyBudget).mockRejectedValueOnce(new Error('lost acknowledgement'))
   fireEvent.click(screen.getByRole('button', { name: copy.apply }))

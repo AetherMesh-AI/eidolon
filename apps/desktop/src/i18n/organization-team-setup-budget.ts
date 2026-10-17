@@ -1,6 +1,14 @@
 import type { Locale } from './types'
 
 const messages = {
+  currentRemaining: [
+    'Current calls left',
+    '現在の残り呼び出し数',
+    '当前剩余调用次数',
+    '目前剩餘呼叫次數',
+    'الاستدعاءات المتبقية حالياً',
+    'Сейчас осталось вызовов'
+  ],
   retainedSummary: [
     'Used calls and pending charges still count. Lower limits do not refund usage.',
     '使用済みの呼び出しと未確定の料金も引き続き計上されます。上限を下げても使用分は戻りません。',
