@@ -670,7 +670,9 @@ def _setup_logging(agent):
     # agent.log (INFO+) + errors.log (WARNING+); idempotent so per-message gateway agents
     # don't duplicate handlers.
     from eidolon_logging import setup_logging, setup_verbose_logging
-    setup_logging(hermes_home=_ra()._eidolon_home)
+    from pathlib import Path
+    pinned = getattr(agent, '_isolated_workspace_home', None)
+    setup_logging(hermes_home=Path(pinned) if pinned else _ra()._eidolon_home)
 
     if agent.verbose_logging:
         setup_verbose_logging()
@@ -937,7 +939,8 @@ def _init_openai_client(agent, api_key, base_url, fallback_model, _provider_time
     agent.base_url = client_kwargs.get("base_url", agent.base_url)
     try:
         from agent.ssl_guard import verify_ca_bundle
-        verify_ca_bundle()
+        if getattr(agent, '_isolated_workspace_home', None) is None:
+            verify_ca_bundle()
         agent.client = agent._create_openai_client(client_kwargs, reason="agent_init", shared=True)
         if not agent.quiet_mode:
             print(f"🤖 AI Agent initialized with model: {agent.model}")
@@ -1049,6 +1052,11 @@ def _init_fallback_chain(agent, fallback_model):
 def _load_tools(agent, enabled_toolsets, disabled_toolsets):
     # A multiplexed gateway may have switched HERMES_HOME since model_tools was imported;
     # make sure this profile's plugins are discovered before the tool snapshot.
+    if getattr(agent, '_isolated_workspace_home', None) is not None:
+        agent.tools, agent.valid_tool_names = [], set()
+        agent._tool_snapshot_generation = 0
+        agent._kanban_worker_guidance = ''
+        return
     try:
         from eidolon_cli.plugins import discover_plugins
         discover_plugins()
@@ -1339,6 +1347,8 @@ def _apply_agent_section(agent, _agent_cfg):
         "environment_probe", "bot_mode_protocol",
     ):
         setattr(agent, f"_{_key}", bool(_agent_section.get(_key, True)))
+    if getattr(agent, '_isolated_workspace_home', None) is not None:
+        agent._environment_probe = False
     # Warm the probe (~0.5s of subprocesses) off-thread so the first prompt build finds it cached.
     if agent._environment_probe:
         with suppress(Exception):
@@ -2239,6 +2249,10 @@ def init_agent(
       skip_context_files: skip SOUL.md/.hermes.md/AGENTS.md/CLAUDE.md/.cursorrules injection;
         load_soul_identity keeps ~/.hermes/SOUL.md as identity regardless.
     """
+    from eidolon_cli.profile_isolation import initialize_agent
+    initialize_agent(agent, platform=platform, provider=provider, model=model, api_key=api_key,
+                     base_url=base_url, api_mode=api_mode, enabled_toolsets=enabled_toolsets,
+                     fallback_model=fallback_model)
     _install_safe_stdio()
 
     _params = locals()

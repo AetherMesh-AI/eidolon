@@ -8,7 +8,7 @@ import type {
   ModelOptionsResponse
 } from '@/types/eidolon'
 
-import { capabilityScoped, hermesApi, type ProfileScope, profileScoped } from './client'
+import { capabilityScoped, hermesApi, type ProfileScope, profileScoped, scopedHermesApi } from './client'
 import { STARTUP_REQUEST_TIMEOUT_MS } from './request-timeouts'
 
 export function getGlobalModelInfo(profile?: null | string): Promise<ModelInfoResponse> {
@@ -20,7 +20,7 @@ export function getGlobalModelInfo(profile?: null | string): Promise<ModelInfoRe
 }
 
 export function getUsageAnalytics(days = 30, profile?: ProfileScope): Promise<AnalyticsResponse> {
-  return window.hermesDesktop.api<AnalyticsResponse>({
+  return scopedHermesApi<AnalyticsResponse>({
     ...capabilityScoped(profile),
     path: `/api/analytics/usage?days=${Math.max(1, Math.floor(days))}`
   })

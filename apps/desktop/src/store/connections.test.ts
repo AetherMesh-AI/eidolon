@@ -1035,3 +1035,21 @@ it('retains a published route when refresh fails and reports the failure phase',
   refreshActiveProfile.mockRejectedValueOnce(new Error('refresh unavailable'))
   expect(await selectConnectionWithOutcome('homelab')).toMatchObject({ status: 'committed', published: true, resetStarted: true, phase: 'refresh', observedRoute: { connectionId: 'homelab', profile: 'default' } })
 })
+
+it('a supplied organization verifier is not bypassed by an already-active or unguarded pending route', async () => {
+  setConnectionsRegistry(registry)
+  $connection.set({ connectionId: 'local', profile: 'default', mode: 'local', registryScoped: true })
+  const verify = vi.fn()
+  const active = await selectConnectionWithOutcome('local', { profile: 'default', verify })
+  expect(active.status).toBe('committed')
+  expect(ensureGatewayAgent.mock.lastCall?.[2]).toMatchObject({ verify })
+
+  const oldDial = deferred<void>()
+  openGatewayAgent.mockReturnValueOnce(oldDial.promise)
+  const unguarded = selectConnectionWithOutcome('homelab', { profile: 'research' })
+  const guarded = await selectConnectionWithOutcome('homelab', { profile: 'research', verify })
+  expect(guarded.status).toBe('committed')
+  expect(ensureGatewayAgent.mock.lastCall?.[2]).toMatchObject({ verify })
+  oldDial.resolve()
+  expect((await unguarded).status).toBe('superseded')
+})

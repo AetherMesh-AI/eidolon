@@ -104,6 +104,9 @@ def hydrate_profile_secret_sources(hermes_home: str | os.PathLike) -> dict[str, 
 
 def _hydrate_profile_secret_sources(home: Path) -> dict[str, str]:
     """Locked implementation for :func:`hydrate_profile_secret_sources`."""
+    from eidolon_cli.profile_isolation import read_isolation
+    if read_isolation(home) is not None:
+        return {}
     home_key = str(home.resolve())
     if home_key in _APPLIED_HOMES:
         return get_secret_source_values(home)
@@ -319,6 +322,9 @@ def load_hermes_dotenv(
     """Load Eidolon env files: ``~/.eidolon/.env`` overrides stale shell exports; project ``.env`` is a dev
     fallback that only fills gaps when the user env exists (and overrides shell vars when it does not)."""
     home_path = Path(hermes_home or os.getenv("HERMES_HOME", Path.home() / ".eidolon"))
+    from eidolon_cli.profile_isolation import read_isolation
+    if read_isolation(home_path) is not None:
+        return []
 
     # Multiplex gateway: while a routed profile-home override is active, copying that profile's .env
     # into os.environ would expose its credentials to sibling turns and every spawned child. Unscoped

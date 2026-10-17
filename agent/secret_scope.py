@@ -138,6 +138,10 @@ def get_secret(name: str, default: Optional[str] = None) -> Optional[str]:
     """
     if _is_global_env(name):
         return _environ_or(name, default)
+    from eidolon_cli.profile_isolation import read_isolation, profile_secrets
+    if read_isolation() is not None:
+        from eidolon_constants import get_eidolon_home
+        return profile_secrets(get_eidolon_home()).get(name, default)
     scope = _SECRET_SCOPE.get()
     if scope is not None:
         val = scope.get(name)
@@ -208,6 +212,9 @@ def build_profile_secret_scope(hermes_home: Path) -> Dict[str, str]:
     """Build a profile's secret mapping from ``<home>/.env`` plus its external
     secret sources. Global vars are NOT copied in — ``get_secret`` reads those
     from ``os.environ`` — so the scope holds only profile secrets."""
+    from eidolon_cli.profile_isolation import read_isolation, profile_secrets
+    if read_isolation(hermes_home) is not None:
+        return profile_secrets(hermes_home)
     secrets = load_env_file(Path(hermes_home) / ".env")
     try:
         from eidolon_cli.env_loader import get_secret_source_values

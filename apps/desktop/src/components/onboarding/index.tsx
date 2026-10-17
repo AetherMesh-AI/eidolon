@@ -62,6 +62,8 @@ import { $gatewayState } from '@/store/session'
 import { $sourceSwitchIntent, currentSourceSwitchIntent } from '@/store/source-switch-intent'
 
 interface DesktopOnboardingOverlayProps {
+  /** Live verified workspace setup owns automatic presentation, not runtime readiness. */
+  organizationSetupOwned?: boolean
   enabled: boolean
   onCompleted?: () => void
   profile: string
@@ -194,6 +196,7 @@ function useApiKeyCatalog(): ApiKeyOption[] {
 const ONBOARDING_EXIT_MS = 1180
 
 export function DesktopOnboardingOverlay({
+  organizationSetupOwned = false,
   enabled,
   onCompleted,
   profile,
@@ -296,6 +299,12 @@ export function DesktopOnboardingOverlay({
       clearPendingProviderOAuth()
     }
   }, [ctx, onboarding.flow.status, onboarding.manual, onboarding.providers])
+
+  // Strict workspaces have a separate supported Keys/model path. Keep readiness
+  // honest and explicit onboarding available, but do not cover that setup path.
+  if (organizationSetupOwned && !onboarding.manual) {
+    return null
+  }
 
   // Mount from frame 1 so we replace the boot overlay seamlessly. The
   // configured field stays null until the runtime check resolves; only then

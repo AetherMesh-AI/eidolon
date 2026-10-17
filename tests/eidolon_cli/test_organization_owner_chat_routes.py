@@ -16,6 +16,53 @@ def fixture_route():
     return config, runtime
 
 
+def test_legacy_readiness_keeps_generic_api_mode_policy(tmp_path, monkeypatch):
+    from eidolon_cli.organization_owner_chat_executor import readiness_reason
+    from eidolon_cli import profile_isolation, runtime_provider
+    monkeypatch.setenv('HERMES_HOME', str(tmp_path))
+    def forbidden(*args, **kwargs):
+        pytest.fail('Legacy passive readiness must not resolve credentials')
+    monkeypatch.setattr(runtime_provider, 'resolve_runtime_provider', forbidden)
+    assert profile_isolation.isolated_route() is None
+    # No strict marker means the ordinary API provider retains its Responses
+    # default, and owner chat still requires an explicitly supported wire mode.
+    cfg = {'model': {'provider': 'openai-api', 'default': 'synthetic-model'}}
+    assert readiness_reason({}, config=cfg) is not None
+    cfg['model']['api_mode'] = 'chat_completions'
+    assert readiness_reason({}, config=cfg) is None
+    assert readiness_reason({}, config={'model': {'provider': 'anthropic', 'default': 'synthetic-model'}}) is not None
+
+
+def test_strict_readiness_uses_only_explicit_recipient_and_inspects_route_options(monkeypatch):
+    from eidolon_cli import config, profile_isolation, runtime_provider
+    from eidolon_cli.organization_owner_chat_executor import readiness_reason
+    calls = []
+    route = {'provider': 'openai-api', 'requested_provider': 'openai-api', 'model': 'actual-model',
+        'base_url': 'https://api.openai.com/v1', 'api_mode': 'chat_completions', 'request_overrides': None}
+    def actual_route(**kwargs):
+        calls.append(kwargs)
+        return deepcopy(route)
+    def forbidden(*args, **kwargs):
+        pytest.fail('Strict readiness must not fall through to generic config or credential resolution')
+    monkeypatch.setattr(profile_isolation, 'isolated_route', actual_route)
+    monkeypatch.setattr(config, 'load_config_readonly', forbidden)
+    monkeypatch.setattr(runtime_provider, 'resolve_runtime_provider', forbidden)
+    supplied = {'model': {'provider': 'foreign', 'default': 'forged'}}
+    assert readiness_reason({}, config=supplied) is None
+    assert calls.pop() == {'requested': None, 'target_model': None}
+    assert readiness_reason({'provider': 'openai-api', 'model': 'recipient-model'}, config=supplied) is None
+    assert calls.pop() == {'requested': 'openai-api', 'target_model': 'recipient-model'}
+    route['request_overrides'] = {'extra_body': {'tools': [{'type': 'web_search'}]}}
+    assert 'tools' in readiness_reason({}, config=supplied)
+    route['request_overrides'] = None
+    route['model'] = 'search-api-preview'
+    assert 'search-enabled' in readiness_reason({}, config=supplied)
+    def broken_route(**kwargs):
+        raise RuntimeError('private-fixture-path-or-key')
+    monkeypatch.setattr(profile_isolation, 'isolated_route', broken_route)
+    assert readiness_reason({}, config=supplied) == 'The isolated workspace route could not be verified.'
+
+
 def test_named_selection_proves_identity_endpoint_and_source_and_exact_pool_scope():
     config, route = fixture_route()
     assert require_provider_route('mock', route, config) == 'mock'

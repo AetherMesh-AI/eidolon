@@ -4,6 +4,7 @@ import type { DesktopConnectionsRegistry } from '@/global'
 import { persistStringRecord, storedStringRecord } from '@/lib/storage'
 import { BACKEND_BOOT_WAIT_TIMEOUT_MS, isTimeoutError, withTimeout } from '@/lib/with-timeout'
 import { $connectionsRegistry } from '@/store/connection-registry-state'
+import type { GatewayActivationVerifier } from '@/store/gateway'
 import {
   beginGatewaySwitch,
   endGatewaySwitch,
@@ -11,6 +12,7 @@ import {
   isCurrentGatewaySwitch,
   recoverActiveSourceAfterFailedGatewaySwitch
 } from '@/store/gateway-switch'
+import { finishLegacyOrganizationDeparture, readOrganizationBootSelection, stageLegacyOrganizationDeparture } from '@/store/organization-selection'
 import {
   $activeGatewayProfile,
   $newChatProfile,
@@ -56,6 +58,7 @@ export const $hasMultipleConnections = computed(
 const $lastProfileByConnection = atom<Record<string, string>>(storedStringRecord(LAST_PROFILE_STORAGE_KEY))
 let pendingTarget: null | string = null
 let pendingIntent: null | SourceSwitchIntent = null
+let pendingVerifier: GatewayActivationVerifier | undefined
 let restoreAttempted = false
 let switchRevision = 0
 
@@ -99,6 +102,7 @@ export function _resetConnectionsForTests(): void {
   $lastProfileByConnection.set({})
   pendingTarget = null
   pendingIntent = null
+  pendingVerifier = undefined
   restoreAttempted = false
   switchRevision = 0
   $pendingConnectionId.set(null)
@@ -200,7 +204,7 @@ function waitForInitialConnection(): Promise<void> {
 export async function initializeConnectionsRegistry(): Promise<DesktopConnectionsRegistry | null> {
   const registry = await refreshConnectionsRegistry()
 
-  if (!registry || restoreAttempted) {
+  if (!registry || restoreAttempted || readOrganizationBootSelection().kind !== 'none') {
     return registry
   }
 
@@ -276,6 +280,7 @@ export async function initializeConnectionsRegistry(): Promise<DesktopConnection
  * the barrier and repaints the source that is still active.
  */
 export interface SelectConnectionOptions {
+  verify?: GatewayActivationVerifier
   /** Land on this profile of the target source instead of the one last used
    *  there. The fleet profile rail passes the exact square the user clicked. */
   profile?: null | string
@@ -343,7 +348,7 @@ async function performConnectionSwitch(connectionId: string, options: SelectConn
     return active?.connectionId === connectionId && normalizeProfileKey(active.profile) === targetProfile
   }
 
-  if (pendingTarget === targetKey && pendingIntent !== null && isCurrentSourceSwitchIntent(pendingIntent)) {
+  if (pendingTarget === targetKey && pendingVerifier === options.verify && pendingIntent !== null && isCurrentSourceSwitchIntent(pendingIntent)) {
     return { status: 'unchanged', reason: 'pending', requested: { connectionId, profile: targetProfile }, observedRoute: observedRoute(), resetStarted: false, published: false }
   }
 
@@ -370,7 +375,8 @@ async function performConnectionSwitch(connectionId: string, options: SelectConn
     currentConnectionId !== connectionId ||
     currentProfile !== targetProfile
 
-  if (!switching) {
+  if (!switching && !options.verify) {
+    finishLegacyOrganizationDeparture(stageLegacyOrganizationDeparture(connectionId, targetProfile))
     const error = await rememberConnection(connectionId, sourceStillCurrent)
 
     if (error) {warning = { phase: 'bookkeeping', error }}
@@ -378,7 +384,8 @@ async function performConnectionSwitch(connectionId: string, options: SelectConn
     return finish('already_active')
   }
 
-  if (pendingTarget === null && currentConnectionId === connectionId && currentProfile === targetProfile) {
+  if (!options.verify && pendingTarget === null && currentConnectionId === connectionId && currentProfile === targetProfile) {
+    finishLegacyOrganizationDeparture(stageLegacyOrganizationDeparture(connectionId, targetProfile))
     $showAllProfiles.set(false)
     $newChatProfile.set(targetProfile)
     // A connection switch is a new-chat intent on THAT source: keep the
@@ -397,6 +404,7 @@ async function performConnectionSwitch(connectionId: string, options: SelectConn
   const revision = ++switchRevision
   pendingTarget = targetKey
   pendingIntent = intent
+  pendingVerifier = options.verify
   $pendingConnectionId.set(connectionId)
   // Set by the commit hook once THIS switch has wiped — i.e. it owns the
   // barrier and, if the commit then fails, owes the still-active source a
@@ -409,11 +417,13 @@ async function performConnectionSwitch(connectionId: string, options: SelectConn
     // Phase 1 — open the target's socket; the active route is untouched.
     // Always use the explicit registry route. `local` must mean This device,
     // and a registry primary can differ from a legacy per-profile override.
-    await withTimeout(
-      openGatewayAgent(connectionId, targetProfile),
-      SWITCH_DIAL_TIMEOUT_MS,
-      `Timed out connecting to "${targetConnection.label}".`
-    )
+    if (!options.verify) {
+      await withTimeout(
+        openGatewayAgent(connectionId, targetProfile),
+        SWITCH_DIAL_TIMEOUT_MS,
+        `Timed out connecting to "${targetConnection.label}".`
+      )
+    }
 
     // A newer click owns the switch from here on. The superseded dial never
     // activates, so the user doesn't flip through it on the way to the source
@@ -439,6 +449,7 @@ async function performConnectionSwitch(connectionId: string, options: SelectConn
       try {
         const activation = ensureGatewayAgent(connectionId, targetProfile, {
           signal: activationController.signal,
+          ...(options.verify ? { verify: options.verify } : {}),
           intent,
           onPublished: () => {published = true},
           beforeActivate: () => {
@@ -553,6 +564,7 @@ async function performConnectionSwitch(connectionId: string, options: SelectConn
     if (revision === switchRevision) {
       pendingTarget = null
       pendingIntent = null
+      pendingVerifier = undefined
       $pendingConnectionId.set(null)
     }
   }

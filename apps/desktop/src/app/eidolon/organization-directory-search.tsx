@@ -25,6 +25,7 @@ export interface OrganizationDirectoryCopy {
   unsupported: string
   choose?: string
   inspectionOnly?: string
+  rememberFailed?: string
 }
 
 /** Highlighting is inspection. Only a separate confirmation may admit selection. */
@@ -35,7 +36,11 @@ export function OrganizationDirectorySearch({
   copy,
   isCurrent,
   onClose,
-  onReturnFocus
+  onReturnFocus,
+  onCreate,
+  createLabel,
+  onModelSetup,
+  modelSetupLabel
 }: {
   directory: OrganizationDirectory
   activation?: ReturnType<typeof createOrganizationDirectoryActivation>
@@ -44,6 +49,10 @@ export function OrganizationDirectorySearch({
   isCurrent: () => boolean
   onClose: () => void
   onReturnFocus: () => void
+  onCreate?: () => void
+  createLabel?: string
+  onModelSetup?: () => void
+  modelSetupLabel?: string
 }) {
   const view = useSyncExternalStore(directory.subscribe, directory.getSnapshot)
   const [query, setQuery] = useState('')
@@ -203,9 +212,12 @@ export function OrganizationDirectorySearch({
                 {copy.choose}
               </Button>
             )}
+            {onCreate && createLabel && <Button disabled={!isCurrent()} onClick={onCreate} variant="outline">{createLabel}</Button>}
+            {onModelSetup && modelSetupLabel && <Button disabled={!isCurrent()} onClick={onModelSetup} variant="outline">{modelSetupLabel}</Button>}
             {!activation && copy.inspectionOnly && <p>{copy.inspectionOnly}</p>}
             {!results.length && <p role="status">{copy.empty}</p>}
             {view.error && <p role="status">{copy.unavailable}</p>}
+            {view.storageError && copy.rememberFailed && <p role="status">{copy.rememberFailed}</p>}
             <Button
               disabled={view.refreshing || !isCurrent()}
               onClick={() => {

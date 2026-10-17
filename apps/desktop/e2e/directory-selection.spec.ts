@@ -1,4 +1,4 @@
-/** Only the explicit organization-directory-acceptance renderer build enables this door. */
+/** Production selection verifies a dedicated destination before changing the current owner. */
 import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 
@@ -11,7 +11,11 @@ test('confirms actual directory selections, cancels without switching and expose
   const { app, page, mock } = dedicated.fixture
   const captures: string[] = []
   const header = page.locator('.eid-workspace-header')
-  const trigger = header.getByRole('button', { name: /^(?:Unnamed organization|Directory A|Directory B) · Organizations$/ })
+
+  const trigger = header.getByRole('button', {
+    name: /^(?:Unnamed organization|Directory A|Directory B) · Organizations$/
+  })
+
   const dialog = page.getByRole('dialog', { name: 'Organizations', exact: true })
 
   const capture = async (name: string) => {
@@ -66,7 +70,9 @@ test('confirms actual directory selections, cancels without switching and expose
     await expect(refreshButton).toBeEnabled()
     await page.keyboard.press('Escape')
     await expect(trigger).toBeFocused()
-    await expect(trigger).toHaveAccessibleName(`${expectedName === 'Not configured' ? 'Unnamed organization' : expectedName} · Organizations`)
+    await expect(trigger).toHaveAccessibleName(
+      `${expectedName === 'Not configured' ? 'Unnamed organization' : expectedName} · Organizations`
+    )
   }
 
   const initialize = async (name: string, profile: string) => {
@@ -133,6 +139,11 @@ test('confirms actual directory selections, cancels without switching and expose
 
     expect(dedicated.ledger(0)).toBe(beforeA)
     expect(dedicated.ledger(1)).toBe(beforeB)
+    await page.getByRole('button', { name: 'New objective', exact: true }).click()
+    const retainedDraft = 'Keep this original organization draft after refused selection'
+    await page.getByRole('textbox', { name: 'Objective', exact: true }).fill(retainedDraft)
+    await page.getByRole('combobox', { name: 'Delivery scope', exact: true }).selectOption('managed_artifact')
+    const originalRoute = page.url()
     // Replace only the synthetic destination identity after caching its original ID.
     execFileSync('python3', [
       '-c',
@@ -144,11 +155,14 @@ with sqlite3.connect(sys.argv[1]) as c:
     const replacedB = dedicated.ledger(1)
     await prepare(profileB)
     await dialog.getByRole('button', { name: 'Confirm organization selection', exact: true }).click()
-    await expect(dialog.getByRole('status')).toHaveText(
-      'The selected organization could not be verified. The connection may have changed. Check the current organization before continuing.'
-    )
-    await expectProfile(profileB)
-    await capture('directory-destination-identity-unverified')
+    await expect(dialog.getByRole('status')).toHaveText('The connection did not change. Selection was not completed.')
+    await expectProfile(profileA)
+    await capture('directory-destination-identity-refused-before-selection')
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+    await expect(page.getByRole('textbox', { name: 'Objective', exact: true })).toHaveValue(retainedDraft)
+    await expect(page.getByRole('combobox', { name: 'Delivery scope', exact: true })).toHaveValue('managed_artifact')
+    expect(page.url()).toBe(originalRoute)
+    expect(dedicated.ledger(0)).toBe(beforeA)
     expect(dedicated.ledger(1)).toBe(replacedB)
     expect(dedicated.starts(0)).toBe(0)
     expect(dedicated.starts(1)).toBe(0)
@@ -158,8 +172,7 @@ with sqlite3.connect(sys.argv[1]) as c:
       body: JSON.stringify({
         sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
         sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim(),
-        buildMode: 'organization-directory-acceptance',
-        productionActivationEnabled: false,
+        productionActivationEnabled: true,
         switchingDoor: 'actual Organizations directory with explicit confirmation',
         topology: 'two dedicated local profiles on This device',
         routes: dedicated.routes,
@@ -168,7 +181,8 @@ with sqlite3.connect(sys.argv[1]) as c:
         bothDirectionsVerified: true,
         unconfiguredOutcome: 'selected-unconfigured',
         unconfiguredSelectionPreservedLedger: true,
-        destinationIdentityMismatch: 'committed-unverified',
+        destinationIdentityMismatch: 'refused-before-reset-and-activation',
+        originalOwnerDraftAndRoutePreserved: true,
         ledgersUnchangedBySelection: true,
         schedulerStartsA: dedicated.starts(0),
         schedulerStartsB: dedicated.starts(1),
