@@ -10,6 +10,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import tarfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,6 +24,50 @@ from eidolon_cli.profiles_project_export import (
 from eidolon_constants import clear_named_profile_deleted, mark_named_profile_deleted, named_profile_is_deleted
 
 logger = logging.getLogger(__name__)
+
+# Live setup grant envelopes and activation handles are machine/profile-bound, never
+# portable. Installation identity and pending attempts must not move to another host
+# either. Budget and usage receipts elsewhere remain inert, exportable audit data.
+_SETUP_SUBSCRIPTION_PRIVATE_ROOT = ".setup-subscription-private"
+_SETUP_SUBSCRIPTION_RESERVED_ROOTS = frozenset({
+    _SETUP_SUBSCRIPTION_PRIVATE_ROOT, ".setup-subscription-installation",
+})
+
+
+def _is_setup_subscription_private_path(path: str | Path) -> bool:
+    """Match reserved components on POSIX and Windows, regardless of this host OS.
+
+    Also reject Win32 trailing-dot/space aliases and alternate data stream names.
+    Match at any depth: backups can wrap multiple profiles or external directories.
+    """
+    return any(
+        part.split(":", 1)[0].rstrip(" .").casefold() in _SETUP_SUBSCRIPTION_RESERVED_ROOTS
+        for part in str(path).replace("\\", "/").split("/")
+    )
+
+
+def _setup_subscription_copy_excluded(path: Path) -> bool:
+    """Exclude lexical private paths and symlink aliases into the live store."""
+    if _is_setup_subscription_private_path(path):
+        return True
+    try:
+        return _is_setup_subscription_private_path(path.resolve())
+    except (OSError, RuntimeError, ValueError):
+        # Never copy an unresolved alias that could conceal private state.
+        return True
+
+
+def _validate_setup_subscription_profile_archive(archive: Path) -> None:
+    """Preflight the entire archive before safe_extract_targz writes any member."""
+    with tarfile.open(archive, "r:gz") as tf:
+        for member in tf.getmembers():
+            normalize_archive_parts(member.name)
+            if _is_setup_subscription_private_path(member.name):
+                raise ValueError("Profile archive contains private setup subscription state")
+            # safe_extract_targz already forbids links; reject here before *any* write.
+            if not (member.isfile() or member.isdir()):
+                raise ValueError(f"Unsupported archive member type: {member.name}")
+
 
 _PROFILE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 _WARNED_MISSING_ALLOWLIST_ENTRIES: set[tuple[str, ...]] = set()
@@ -89,7 +134,8 @@ def _clone_all_copytree_ignore(source_dir: Path):
             at_root = False
         return [
             entry for entry in names
-            if entry == "__pycache__"
+            if _setup_subscription_copy_excluded(Path(directory) / entry)
+            or entry == "__pycache__"
             or entry.endswith((".pyc", ".pyo", ".sock", ".tmp"))
             or (at_root and entry in root_exclude)
         ]
@@ -767,9 +813,11 @@ def _clone_file(source_dir: Path, profile_dir: Path, relpath: str) -> None:
     """Copy one profile-relative file if it exists. ``.env`` is tightened to owner-only:
     ``copy2`` preserves source mode bits, so a loose source (umask 0o644) would leak."""
     src = source_dir / relpath
-    if not src.exists():
+    if _setup_subscription_copy_excluded(src) or not src.exists():
         return
     dst = profile_dir / relpath
+    if _setup_subscription_copy_excluded(dst):
+        return
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dst)
     if relpath == ".env":
@@ -809,8 +857,14 @@ def _bootstrap_profile_dir(profile_dir: Path, source_dir: Optional[Path]) -> Non
     for relpath in _CLONE_CONFIG_FILES:
         _clone_file(source_dir, profile_dir, relpath)
     source_skills = source_dir / "skills"
-    if source_skills.is_dir():
-        shutil.copytree(source_skills, profile_dir / "skills", symlinks=True, dirs_exist_ok=True)
+    if not _setup_subscription_copy_excluded(source_skills) and source_skills.is_dir():
+        shutil.copytree(
+            source_skills, profile_dir / "skills", symlinks=True, dirs_exist_ok=True,
+            ignore=lambda directory, names: [
+                name for name in names
+                if _setup_subscription_copy_excluded(Path(directory) / name)
+            ],
+        )
     for relpath in _CLONE_SUBDIR_FILES:
         _clone_file(source_dir, profile_dir, relpath)
 
@@ -1453,7 +1507,8 @@ def _default_export_ignore(root_dir: Path):
         # Universal exclusions (any depth) plus npm lockfiles that can appear at root.
         ignored: set = {
             entry for entry in contents
-            if entry == "__pycache__"
+            if _setup_subscription_copy_excluded(Path(directory) / entry)
+            or entry == "__pycache__"
             or entry.endswith((".sock", ".tmp"))
             or entry in {"package.json", "package-lock.json"}
         }
@@ -1523,7 +1578,10 @@ def export_profile(name: str, output_path: str, extra_files: Optional[Dict[str, 
     # copy under a temp dir named after the canonical id: root allow-list for default,
     # credential exclusion for named profiles.
     def _ignore_credentials(directory: str, contents: list) -> set:
-        ignored = _EXPORT_CREDENTIAL_FILES & set(contents)
+        ignored = (_EXPORT_CREDENTIAL_FILES & set(contents)) | {
+            entry for entry in contents
+            if _setup_subscription_copy_excluded(Path(directory) / entry)
+        }
         if Path(directory) == profile_dir:
             ignored |= PROJECTS_PRIVATE_EXPORT_ROOTS & set(contents)
         return ignored
@@ -1534,9 +1592,16 @@ def export_profile(name: str, output_path: str, extra_files: Optional[Dict[str, 
         shutil.copytree(profile_dir, staged, symlinks=True, ignore=ignore)
         for rel, content in (extra_files or {}).items():
             parts = normalize_archive_parts(rel)
+            if _is_setup_subscription_private_path(rel):
+                raise ValueError("Cannot export private setup subscription state")
             if parts[0] in PROJECTS_PRIVATE_EXPORT_ROOTS or parts[0] == PROJECTS_EXPORT_FILENAME:
                 raise ValueError("Organization project exports are generated from the registry, not extra files")
             target = staged.joinpath(*parts)
+            if _setup_subscription_copy_excluded(target) or any(
+                staged.joinpath(*parts[:depth]).is_symlink()
+                for depth in range(1, len(parts) + 1)
+            ):
+                raise ValueError("Cannot export extra files through symbolic links")
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content, encoding="utf-8")
         stage_project_registry(profile_dir, staged)
@@ -1550,6 +1615,7 @@ def import_profile(archive_path: str, name: Optional[str] = None) -> Path:
     archive = Path(archive_path)
     if not archive.exists():
         raise FileNotFoundError(f"Archive not found: {archive}")
+    _validate_setup_subscription_profile_archive(archive)
     top_dirs = archive_root_dirs(archive)
     archive_root = top_dirs.pop() if len(top_dirs) == 1 else None
     inferred_name = name or archive_root
