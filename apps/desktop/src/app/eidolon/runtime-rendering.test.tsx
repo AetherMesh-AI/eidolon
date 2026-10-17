@@ -2,6 +2,8 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { describe, expect, it, vi } from 'vitest'
 
+import { observationCopy } from '@/i18n/organization-observation'
+
 import { Activity } from './activity'
 import { Organization } from './organization'
 import { OrganizationRail } from './rail'
@@ -148,11 +150,29 @@ describe('runtime organization rendering', () => {
     expect(panel.getByRole('link', { name: 'Open objective' }).getAttribute('href')).toBe('/objectives/objective-1')
   })
 
-  it('does not offer prototype planning as the source of empty runtime activity', () => {
+  it('does not offer prototype planning as the source of confirmed-empty runtime activity', () => {
     const snapshot = runtimeSnapshot()
     snapshot.activity = []
+    snapshot.connection = { state: 'ready', scope: 'runtime-activity', lastUpdatedAt: '2026-10-04T00:03:00Z' }
     render(<MemoryRouter><Activity snapshot={snapshot} /></MemoryRouter>)
+    expect(screen.getByRole('heading', { name: 'No organization events yet' })).toBeTruthy()
     expect(screen.getByText('Events appear when the gateway records organization activity.')).toBeTruthy()
+    expect(screen.getByText('0 events')).toBeTruthy()
+    expect(screen.queryByText(observationCopy.en.unavailable)).toBeNull()
+    expect(screen.queryByText(/local planning event/)).toBeNull()
+  })
+
+  it.each([undefined, 'error'] as const)('does not report empty activity before a successful runtime observation (%s)', state => {
+    const snapshot = runtimeSnapshot()
+    snapshot.activity = []
+    snapshot.connection = state ? { state, scope: 'runtime-activity' } : undefined
+    render(<MemoryRouter><Activity snapshot={snapshot} /></MemoryRouter>)
+    const status = within(screen.getByRole('status'))
+    expect(status.getByRole('heading', { name: observationCopy.en.unavailable })).toBeTruthy()
+    expect(status.getByText(observationCopy.en.unknown)).toBeTruthy()
+    expect(screen.queryByRole('heading', { name: 'No organization events yet' })).toBeNull()
+    expect(screen.queryByText('Events appear when the gateway records organization activity.')).toBeNull()
+    expect(screen.queryByText('0 events')).toBeNull()
     expect(screen.queryByText(/local planning event/)).toBeNull()
   })
 
