@@ -14,12 +14,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          ref: 420d1b87338da0906a3490887a9a16823103839b
+          ref: 8be49db233e34052330fe10afd3fdb23ee28d869
       - name: Verify exact reviewed source
         run: |
-          test "$(git rev-parse HEAD)" = "420d1b87338da0906a3490887a9a16823103839b"
-          test "$(git rev-parse HEAD^{tree})" = "f926fce264fe2fb7d9688f4ddf66955c3b7d412b"
-          printf '%s\n' '{"source":"420d1b87338da0906a3490887a9a16823103839b","tree":"f926fce264fe2fb7d9688f4ddf66955c3b7d412b"}' > setup-budget-source.json
+          test "$(git rev-parse HEAD)" = "8be49db233e34052330fe10afd3fdb23ee28d869"
+          test "$(git rev-parse HEAD^{tree})" = "e0cdf54c0400bad4b60aa69a2c0aba3e9cddb02e"
+          printf '%s\n' '{"source":"8be49db233e34052330fe10afd3fdb23ee28d869","tree":"e0cdf54c0400bad4b60aa69a2c0aba3e9cddb02e"}' > setup-budget-source.json
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
@@ -57,7 +57,7 @@ jobs:
         env:
           EIDOLON_REQUIRE_PROJECT_SANDBOX: '1'
           PLAYWRIGHT_JSON_OUTPUT_NAME: setup-budget-report/results.json
-        run: xvfb-run -a npx playwright test e2e/organization-team-setup-budget.spec.ts --workers=1 --retries=0 --output setup-budget-test-results --reporter list,json
+        run: xvfb-run -a npx playwright test e2e/organization-team-input-review.spec.ts e2e/organization-team-setup-budget.spec.ts --workers=1 --retries=0 --output setup-budget-test-results --reporter list,json
       - name: Retain focused organization screenshots
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -77,5 +77,4 @@ jobs:
             setup-budget-source.json
           retention-days: 7
           if-no-files-found: warn
-
 

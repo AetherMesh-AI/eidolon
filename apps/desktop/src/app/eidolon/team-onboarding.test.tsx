@@ -8,6 +8,7 @@ import { teamOnboardingCopy } from '@/i18n/organization-team-onboarding'
 import type { Locale } from '@/i18n/types'
 import { $desktopOnboarding, closeManualOnboarding } from '@/store/onboarding'
 
+import { queueHomeKeyboardReveal } from './home-keyboard-focus'
 import { TeamOnboardingDialog, TeamOnboardingEntry } from './team-onboarding'
 import type { TeamOnboardingClient, TeamPreview, TeamSetup } from './team-onboarding-client'
 import type { RuntimeOrganizationAdapter } from './types'
@@ -587,9 +588,9 @@ it('ignores a model-return check after the dialog is dismissed', async () => {
   }
 })
 
-function keyboardRevealHarness(top = 40, height = 64) {
+function keyboardRevealHarness(top = 40, height = 64, label = 'Work to delegate') {
   const h = harness()
-  const field = screen.getByLabelText('Work to delegate') as HTMLTextAreaElement
+  const field = screen.getByLabelText(label) as HTMLTextAreaElement
   const body = field.closest<HTMLElement>('.eid-team-body')!
   const shell = screen.getByRole('dialog')
   field.value = 'My retained description'
@@ -653,6 +654,51 @@ it.each([
     }
   }
 )
+
+it.each([
+  { label: 'Work to delegate', fieldTop: 100, contextTop: 10, expected: 463 },
+  { label: 'What success looks like', fieldTop: 100, contextTop: 10, expected: 463 },
+  { label: 'Work to delegate', fieldTop: 100, contextTop: -60, expected: 500 },
+  { label: 'Work to delegate', fieldTop: 40, contextTop: -100, expected: 486 }
+])('reveals the $label context only when its union fits ($contextTop)', ({ label, fieldTop, contextTop, expected }) => {
+  const h = keyboardRevealHarness(fieldTop, 64, label)
+  const heading = h.field.parentElement!.querySelector<HTMLElement>('.eid-team-input-heading')!
+  const help = h.field.parentElement!.querySelector<HTMLElement>('.eid-team-note')!
+  vi.spyOn(heading, 'getBoundingClientRect').mockReturnValue({ top: contextTop, bottom: contextTop + 24, height: 24 } as DOMRect)
+  vi.spyOn(help, 'getBoundingClientRect').mockReturnValue({ top: contextTop + 30, bottom: fieldTop - 6, height: fieldTop - 36 - contextTop } as DOMRect)
+
+  try {
+    h.start()
+    h.finish()
+    expect(h.body.scrollTop).toBe(expected)
+    expect(h.shell.scrollTop).toBe(17)
+    expect(globalThis.document.activeElement).toBe(h.field)
+    expect(h.field.value).toBe('My retained description')
+    // The callback is one-shot even if a completed frame is invoked again.
+    h.finish()
+    expect(h.body.scrollTop).toBe(expected)
+  } finally {
+    h.cleanup()
+  }
+})
+
+it('keeps ordinary Home reveal control-only without a context resolver', () => {
+  const h = keyboardRevealHarness(100)
+  h.body.classList.add('eid-workspace')
+  const heading = h.field.parentElement!.querySelector<HTMLElement>('.eid-team-input-heading')!
+  vi.spyOn(heading, 'getBoundingClientRect').mockReturnValue({ top: 10, bottom: 34, height: 24 } as DOMRect)
+  const cancel = queueHomeKeyboardReveal(h.body)
+
+  try {
+    h.field.focus()
+    h.finish()
+    expect(h.body.scrollTop).toBe(500)
+    expect(globalThis.document.activeElement).toBe(h.field)
+  } finally {
+    cancel()
+    h.cleanup()
+  }
+})
 
 it.each(['pointerdown', 'keydown', 'wheel', 'input', 'touchstart'])(
   'retires Team keyboard reveal after later %s',

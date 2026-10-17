@@ -30,6 +30,15 @@ import { SetupBudgetRemaining, TeamSetupBudgetEditor } from './team-setup-budget
 import type { RuntimeOrganizationAdapter } from './types'
 import { readOrganizationMetadataScope, useOrganizationMetadata } from './use-organization-metadata'
 
+function teamInputKeyboardContext(active: HTMLElement): HTMLElement[] {
+  if (!active.matches('.eid-team-input > textarea')) {return []}
+  const field = active.parentElement
+  const heading = field?.querySelector<HTMLElement>(':scope > .eid-team-input-heading')
+  const help = field?.querySelector<HTMLElement>(':scope > .eid-team-note')
+
+  return heading && help ? [heading, help] : []
+}
+
 function readTeamScope() {
   const scope = readOrganizationMetadataScope()
   const gateway = $gateway.get()
@@ -750,7 +759,11 @@ export function TeamOnboardingDialog(props: TeamOnboardingDialogProps) {
             cancelKeyboardReveal.current?.()
 
             if (event.key === 'Tab' && props.client.current()) {
-              cancelKeyboardReveal.current = queueKeyboardReveal(event.currentTarget, event.currentTarget)
+              cancelKeyboardReveal.current = queueKeyboardReveal(
+                event.currentTarget,
+                event.currentTarget,
+                teamInputKeyboardContext
+              )
             }
           }}
         >
