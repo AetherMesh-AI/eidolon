@@ -13,6 +13,7 @@ import { acknowledgeExpectedErrorBanner, expect, test } from './test'
 const root = path.resolve(import.meta.dirname, '../../..')
 const python = path.join(root, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python')
 let fixture: MockBackendFixture | undefined
+
 const team = {
   executive: { name: 'Ash', purpose: 'Coordinate the studio', responsibilities: ['Delegate and review outcomes'] },
   members: [
@@ -38,6 +39,7 @@ const team = {
     }
   ]
 }
+
 const labels = {
   en: {
     setup: 'Set up organization',
@@ -92,6 +94,7 @@ const labels = {
     unsupported: 'اشتراك Codex المحدد غير مدعوم بعد لإعداد الفريق بالذكاء الاصطناعي.'
   }
 }
+
 test.setTimeout(180_000)
 test.afterEach(async () => {
   await fixture?.cleanup()
@@ -101,6 +104,7 @@ test.afterEach(async () => {
 function run(f: MockBackendFixture, script: string) {
   return execFileSync(python, ['-c', script], { cwd: root, env: buildAppEnv(f.sandbox), encoding: 'utf8' })
 }
+
 function retained(f: MockBackendFixture) {
   return JSON.parse(
     run(
@@ -120,6 +124,7 @@ with sqlite3.connect(p.as_uri()+'?mode=ro',uri=True) as c:
     savedTeams: number
   }
 }
+
 async function openSetup(f: MockBackendFixture, locale: keyof typeof labels = 'en') {
   const text = labels[locale]
   await f.page.locator('.eid-team-entry').getByRole('button', { name: text.setup, exact: true }).click()
@@ -129,26 +134,33 @@ async function openSetup(f: MockBackendFixture, locale: keyof typeof labels = 'e
   await identity.getByRole('button', { name: text.save, exact: true }).click()
   const dialog = f.page.getByRole('dialog', { name: text.title, exact: true })
   await expect(dialog).toBeVisible()
+
   return dialog
 }
+
 interface CapturePoint {
   name: string
   target: Locator
   context?: Locator[]
 }
+
 async function tabTo(f: MockBackendFixture, dialog: Locator, target: Locator) {
   const anchor = dialog.locator('footer').getByRole('button').first()
   await expect(anchor).toBeInViewport({ ratio: 1 })
   await anchor.focus()
   let steps = 0
+
   while (!(await target.evaluate(element => element === document.activeElement)) && steps < 80) {
     await f.page.keyboard.press('Tab')
     steps++
   }
+
   await expect(target, 'reachable by Tab from the visible dialog footer').toBeFocused()
   await expect(target, 'native keyboard scrolling reveals the full control').toBeInViewport({ ratio: 1 })
+
   return steps
 }
+
 async function captures(
   f: MockBackendFixture,
   dialog: Locator,
@@ -157,6 +169,7 @@ async function captures(
   assertDraft: () => Promise<void>
 ) {
   const evidence: object[] = []
+
   for (const [width, height, zoom] of [
     [1280, 900, 1],
     [1280, 900, 2],
@@ -181,19 +194,64 @@ async function captures(
     await expect
       .poll(() => f.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.getZoomFactor()))
       .toBe(zoom)
+
     for (const { name, target, context = [] } of [
       { name: 'close', target: dialog.locator('[data-slot=dialog-close-button]') },
       ...points
     ]) {
       const tabSteps = await tabTo(f, dialog, target)
-      // Measure the ring only after real Tab navigation proved reachability and native scrolling.
+      // Allow the production one-shot reveal to finish, without helper focus or scrolling.
+      await f.page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())))
+
+      const immediate = await target.evaluate(element => {
+        const style = getComputedStyle(element)
+        const rect = element.getBoundingClientRect()
+        const outset = parseFloat(style.outlineWidth) + parseFloat(style.outlineOffset)
+        const ring = { left: rect.left - outset, top: rect.top - outset, right: rect.right + outset, bottom: rect.bottom + outset }
+        const clipping: string[] = []
+
+        if (ring.left < 0 || ring.top < 0 || ring.right > innerWidth || ring.bottom > innerHeight) {clipping.push('viewport')}
+
+        for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+          const css = getComputedStyle(parent), bounds = parent.getBoundingClientRect()
+          const clips = (value: string) => ['auto', 'scroll', 'hidden', 'clip'].includes(value)
+
+          if ((clips(css.overflowX) && (ring.left < bounds.left + parent.clientLeft - 0.5 || ring.right > bounds.left + parent.clientLeft + parent.clientWidth + 0.5)) ||
+              (clips(css.overflowY) && (ring.top < bounds.top + parent.clientTop - 0.5 || ring.bottom > bounds.top + parent.clientTop + parent.clientHeight + 0.5))) {
+            clipping.push(parent.className)
+          }
+        }
+
+        return { ring, clipping, visible: element.matches(':focus-visible'), width: parseFloat(style.outlineWidth), offset: parseFloat(style.outlineOffset) }
+      })
+
+      const initialContext = await Promise.all(context.map(description => description.boundingBox()))
+      await test.info().attach(`${prefix}-${name}-${width}-${zoom}-initial-tab`, {
+        contentType: 'application/json', body: JSON.stringify({ steps: tabSteps, ...immediate, context: initialContext })
+      })
+      expect(immediate.clipping, 'original Tab reveals the complete focused outline').toEqual([])
+      expect(immediate.visible).toBe(true)
+      expect(immediate.width).toBe(3)
+      expect(immediate.offset).toBe(3)
+
+      for (const description of context) {
+        await expect(description, 'original Tab reveals full adjacent wording before helper traversal').toBeInViewport({ ratio: 1 })
+      }
+
+      // Retain the round-trip checks too; Shift+Tab must preserve the same context.
       const focus = await verifyKeyboardFocus(f.page, target, `${prefix}-${name}-${width}-${zoom}`)
+      const roundTripContext = await Promise.all(context.map(description => description.boundingBox()))
+      await test.info().attach(`${prefix}-${name}-${width}-${zoom}-round-trip`, {
+        contentType: 'application/json', body: JSON.stringify({ ...focus, context: roundTripContext })
+      })
       await assertDraft()
+
       for (const description of context) {
         await expect(description).toBeVisible()
         await expect(description, 'adjacent wording remains readable with its control').toBeInViewport({ ratio: 1 })
         expect(await description.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
       }
+
       expect(await dialog.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
       await f.page.evaluate(async () => {
         await document.fonts.ready
@@ -234,12 +292,14 @@ async function captures(
         ratio: devicePixelRatio,
         dir: document.documentElement.dir
       }))
+
       const bytes = Buffer.from(
         await f.app.evaluate(async ({ BrowserWindow }) =>
           (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64')
         ),
         'base64'
       )
+
       expect([bytes.readUInt32BE(16), bytes.readUInt32BE(20)]).toEqual([
         Math.round(viewport.width * viewport.ratio),
         Math.round(viewport.height * viewport.ratio)
@@ -253,6 +313,9 @@ async function captures(
         zoom,
         viewport,
         focus,
+        immediate,
+        initialContext,
+        roundTripContext,
         header,
         tabSteps,
         captureMethod: 'electron.capturePage',
@@ -260,6 +323,7 @@ async function captures(
       })
     }
   }
+
   writeFileSync(test.info().outputPath(`${prefix}-evidence.json`), JSON.stringify(evidence, null, 2))
 }
 
@@ -273,6 +337,7 @@ for (const locale of ['en'] as const) {
         starterTeamReply: JSON.stringify(team),
         starterTeamInputReply: raw => {
           const input = JSON.parse(raw) as { field: string }
+
           return JSON.stringify({
             suggestion:
               input.field === 'jobs'
@@ -415,14 +480,18 @@ test('deliberate regeneration has one new durable send and exact recovery preser
         method: string
         params: Record<string, unknown>
       }
+
       if (request.method === 'organization.generateTeam') {
         requests.push(request.params)
-        if (loseReply) pending.add(request.id)
+
+        if (loseReply) {pending.add(request.id)}
       }
+
       server.send(message)
     })
     server.onMessage(message => {
       const response = JSON.parse(message.toString()) as { id: string | number; result?: unknown }
+
       if (pending.has(response.id) && response.result) {
         pending.delete(response.id)
         loseReply = false
@@ -437,8 +506,10 @@ test('deliberate regeneration has one new durable send and exact recovery preser
             }
           })
         )
+
         return
       }
+
       socket.send(message)
     })
   })
@@ -462,8 +533,10 @@ test('deliberate regeneration has one new durable send and exact recovery preser
   expect(requests[0].idempotencyKey).not.toBe(requests[1].idempotencyKey)
   await dialog.getByLabel('Name', { exact: true }).first().fill('My newer executive name')
   await dialog.getByRole('button', { name: 'Check regeneration', exact: true }).click()
+
   const preserved =
     'The recovered proposal used an earlier draft. Your newer edits are unchanged. Review this team, or request a new proposal if setup allowance remains.'
+
   await expect(dialog.getByRole('alert')).toHaveText(preserved)
   await expect(dialog.getByLabel('Name', { exact: true }).first()).toHaveValue('My newer executive name')
   expect(requests).toHaveLength(3)
@@ -534,7 +607,10 @@ p.write_text(yaml.safe_dump(config))
         {
           name: 'jobs',
           target: jobs,
-          context: [dialog.locator('.eid-team-input').first().locator('.eid-team-note').first()]
+          context: [
+            dialog.locator('.eid-team-input').first().locator('.eid-team-input-heading'),
+            dialog.locator('.eid-team-input').first().locator('.eid-team-note').first()
+          ]
         }
       ],
       `codex-subscription-form-${locale}`,
