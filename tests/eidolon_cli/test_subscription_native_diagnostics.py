@@ -225,3 +225,53 @@ def test_boundary_trace_covers_existing_threads_and_restores(tmp_path, monkeypat
     rows = read_trace(tmp_path)
     assert any(row.get('existingThreadsCovered') is True for row in rows)
     assert any(row.get('stage') == 'lease_send_gate' and row['event'] == 'returned_false' for row in rows)
+
+
+
+@pytest.mark.parametrize('stage', ['gateway_rpc', 'team_rpc'])
+def test_boundary_trace_flushes_registered_rebound_handlers_before_cleanup(tmp_path, monkeypatch, stage):
+    """Match production HandlerRegistry's exact code despite replaced globals."""
+    import sys
+    from types import FunctionType, ModuleType
+    from tui_gateway.method_ctx import HandlerRegistry
+
+    module = ModuleType(__name__ + '.synthetic_split')
+    exec('def _method():\n'
+         ' def handler(rid, params):\n'
+         '  try:\n'
+         '   raise ValueError("synthetic-private-error-never-export")\n'
+         '  except ValueError:\n'
+         '   return {"ok": False}\n'
+         ' return handler\n', vars(module))
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    handler = module._method()
+    monkeypatch.setattr(BoundaryDiagnostics, '_STAGES', {
+        module.__name__: {handler.__qualname__: stage}})
+    registry = HandlerRegistry()
+    registry.method('synthetic')(handler)
+    server = ModuleType('tui_gateway.server')
+    server._methods = {}
+    monkeypatch.setitem(sys.modules, server.__name__, server)
+    registry.install(server)
+    rebound = server._methods['synthetic']
+    assert rebound.__code__ is handler.__code__
+    assert rebound.__globals__ is vars(server)
+    diagnostics = BoundaryDiagnostics(tmp_path)
+    diagnostics.install()
+    try:
+        assert diagnostics.enabled
+        results = []
+        worker = threading.Thread(target=lambda: results.append(rebound(None, None)))
+        worker.start()
+        worker.join(5)
+        assert not worker.is_alive() and results == [{'ok': False}]
+        # Native afterEach reads while the gateway still runs, before close().
+        rows = read_trace(tmp_path)
+        assert any(row['stage'] == stage and row.get('errorClass') == 'ValueError' for row in rows)
+        assert 'synthetic-private-error-never-export' not in json.dumps(rows)
+        before = diagnostics.count
+        impostor = FunctionType(handler.__code__, {'__name__': 'tui_gateway.server'})
+        assert impostor(None, None) == {'ok': False}
+        assert diagnostics.count == before  # Same name/code, wrong globals: ignored.
+    finally:
+        diagnostics.close()

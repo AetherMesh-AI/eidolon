@@ -85,7 +85,24 @@ function boundaryDiagnostic(rows: Row[]) {
     'admission_send_gate',
     'acl_descriptor',
     'darwin_acl',
-    'filesystem_check'
+    'filesystem_check',
+    'subscription_preflight',
+    'subscription_release',
+    'prepare_send',
+    'complete_subscription',
+    'admission_create',
+    'infer_subscription',
+    'accounting_wait',
+    'accounting_worker',
+    'failed_job',
+    'dispatch_job',
+    'outcome_job',
+    'auth_release',
+    'lease_close',
+    'attempt_validation',
+    'usage_validation',
+    'observation_validation',
+    'result_validation'
   ])
 
   const events = new Set(['enter', 'exception', 'returned_false', 'overflow', 'installed', 'existing_trace'])

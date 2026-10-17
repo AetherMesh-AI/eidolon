@@ -125,7 +125,9 @@ class BoundaryDiagnostics:
             '_method.<locals>.handler': 'gateway_rpc',
             'dispatch': 'gateway_dispatch', '_context': 'gateway_context', '_service': 'gateway_service',
             '_durable_scope': 'owner_scope', '_context.<locals>.guard': 'owner_guard',
-            '_context.<locals>.setup_guard': 'setup_guard'},
+            '_context.<locals>.setup_guard': 'setup_guard',
+            'subscription_preflight': 'subscription_preflight',
+            'subscription_preflight.<locals>.release': 'subscription_release'},
         'tui_gateway.methods_organization_team_setup': {'_team_method.<locals>.handler': 'team_rpc'},
         'eidolon_cli.organization_setup_subscription_catalog': {
             'SubscriptionCatalog.load': 'catalog_load', 'SubscriptionCatalog._guard': 'catalog_guard',
@@ -134,7 +136,8 @@ class BoundaryDiagnostics:
             'SubscriptionAuthService.status': 'auth_status', 'SubscriptionAuthService._guard': 'auth_guard',
             'SubscriptionAuthService.current_descriptor': 'auth_descriptor',
             'SubscriptionAuthService.lease_access_current': 'auth_lease',
-            'SubscriptionAuthService._lease_guard': 'auth_lease_guard'},
+            'SubscriptionAuthService._lease_guard': 'auth_lease_guard',
+            'SubscriptionAuthService.release_lease': 'auth_release'},
         'eidolon_cli.organization_setup_subscription_store': {
             'SubscriptionStore._locked': 'store_lock', 'SubscriptionStore.status': 'store_status',
             '_checked_acl_descriptor': 'acl_descriptor', '_check_darwin_acl': 'darwin_acl',
@@ -144,16 +147,28 @@ class BoundaryDiagnostics:
             'SubscriptionStore._fence': 'store_fence', 'SubscriptionStore.lease_access_token': 'store_lease',
             'TokenLease._check_locked': 'lease_fence', 'TokenLease.run': 'lease_run',
             'TokenLease.run_nonblocking': 'lease_run_nonblocking',
-            'TokenLease.try_send_allowed': 'lease_send_gate'},
+            'TokenLease.try_send_allowed': 'lease_send_gate', 'TokenLease.close': 'lease_close'},
         'eidolon_cli.organization_setup_subscription_http': {
             'request': 'catalog_http', 'request.<locals>.GuardedConnection.send': 'catalog_http_send'},
-        'eidolon_cli.organization_setup_subscription_transport': {'send_once': 'inference_transport'},
+        'eidolon_cli.organization_setup_subscription_transport': {
+            'send_once': 'inference_transport', 'prepare_subscription_send': 'prepare_send'},
+        'eidolon_cli.organization_team_generation': {'complete_subscription': 'complete_subscription'},
+        'eidolon_cli.organization_setup_subscription_usage': {
+            'AttemptBindingV1.__post_init__': 'attempt_validation',
+            'UsageObservationV1.__post_init__': 'usage_validation',
+            'TransportObservationV1.__post_init__': 'observation_validation',
+            'TransportResult.__post_init__': 'result_validation'},
         'eidolon_cli.organization_setup_subscription_admission': {
-            '_Admission.try_send_allowed': 'admission_send_gate'},
+            '_Admission.try_send_allowed': 'admission_send_gate',
+            '_Admission.__init__': 'admission_create', 'infer_subscription': 'infer_subscription',
+            '_persist': 'accounting_wait', '_persist.<locals>.run': 'accounting_worker',
+            '_failed_job': 'failed_job', '_dispatch_job': 'dispatch_job', '_outcome_job': 'outcome_job'},
     }
     _ENTRIES = {'gateway_dispatch', 'catalog_load', 'auth_status', 'auth_descriptor', 'auth_lease',
                 'store_status', 'store_grant', 'store_lease', 'lease_run', 'lease_run_nonblocking',
-                'catalog_http', 'catalog_http_send', 'inference_transport'}
+                'catalog_http', 'catalog_http_send', 'inference_transport', 'infer_subscription',
+                'prepare_send', 'complete_subscription', 'subscription_preflight', 'subscription_release',
+                'admission_create', 'accounting_wait', 'accounting_worker', 'failed_job', 'dispatch_job', 'outcome_job'}
     _ERRORS = {'builtins': {'BlockingIOError', 'OSError', 'ValueError', 'TypeError', 'AssertionError',
                               'KeyError', 'FileNotFoundError', 'TimeoutError'},
         'sqlite3': {'OperationalError'},
@@ -186,6 +201,10 @@ class BoundaryDiagnostics:
         self.flush_lock = threading.Lock()
         self.lanes, self.holders = {}, {}
         self.codes = {}
+        self.code_sources = {}
+        for module, stages in self._STAGES.items():
+            for qualname, label in stages.items():
+                self.code_sources.setdefault(qualname, []).append((module, label))
         self.count = 0
         self.rows = deque(maxlen=512)
         self.enabled = False
@@ -194,33 +213,41 @@ class BoundaryDiagnostics:
 
     def stage(self, frame):
         code = frame.f_code
-        module_name = frame.f_globals.get('__name__')
-        label = self._STAGES.get(module_name, {}).get(code.co_qualname)
-        if label is None:
+        sources = self.code_sources.get(code.co_qualname)
+        if sources is None:
             return None
-        if code in self.codes:
-            return self.codes[code]
-        # Match the exact loaded function (including nested code and wrappers),
-        # not merely a same-named frame. Imports may occur after installation.
-        module = sys.modules.get(module_name)
-        target = vars(module).get(code.co_qualname.split('.')[0]) if module else None
-        if isinstance(target, type):
-            target = vars(target).get(code.co_qualname.split('.')[1])
-        candidates = []
-        for _ in range(8):
-            if not isinstance(target, FunctionType):
-                break
-            candidates.append(target.__code__)
-            target = vars(target).get('__wrapped__')
-        for _ in range(128):
-            if not candidates:
-                break
-            candidate = candidates.pop()
-            if candidate is code:
-                if len(self.codes) < 128:
-                    self.codes[code] = label
-                return label
-            candidates.extend(value for value in candidate.co_consts if isinstance(value, CodeType))
+        # HandlerRegistry rebinds split-module functions onto server globals.
+        # Resolve only exact loaded code objects from the closed source list;
+        # the frame's globals/name are not proof of the code's source module.
+        for module_name, label in sources:
+            module = sys.modules.get(module_name)
+            if module is None:
+                continue
+            if frame.f_globals is not vars(module):
+                server = sys.modules.get('tui_gateway.server')
+                if (label not in {'gateway_rpc', 'team_rpc'} or server is None
+                        or frame.f_globals is not vars(server)):
+                    continue
+            if code in self.codes:
+                return self.codes[code]
+            target = vars(module).get(code.co_qualname.split('.')[0])
+            if isinstance(target, type):
+                target = vars(target).get(code.co_qualname.split('.')[1])
+            candidates = []
+            for _ in range(8):
+                if not isinstance(target, FunctionType):
+                    break
+                candidates.append(target.__code__)
+                target = vars(target).get('__wrapped__')
+            for _ in range(128):
+                if not candidates:
+                    break
+                candidate = candidates.pop()
+                if candidate is code:
+                    if len(self.codes) < 128:
+                        self.codes[code] = label
+                    return label
+                candidates.extend(value for value in candidate.co_consts if isinstance(value, CodeType))
         return None
 
     def emit(self, value):
