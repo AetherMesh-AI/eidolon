@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { MarkdownPreview, SourceView } from './preview-file'
+import { MarkdownPreview, PreviewModeSwitcher, SourceView } from './preview-file'
 
 // Behavior tests for the .md file preview renderer: input markdown goes
 // through normalizeFilePreviewMath -> Streamdown (+ KaTeX math plugin) and must
@@ -81,5 +81,44 @@ describe('SourceView reading direction', () => {
     expect(dataTransfer.setData).toHaveBeenCalledWith('text/plain', `${filePath}:2-3`)
     expect(dataTransfer.effectAllowed).toBe('copy')
     expect(range.toString()).toBe(text)
+  })
+})
+
+
+describe('PreviewModeSwitcher controls', () => {
+  afterEach(cleanup)
+
+  it('keeps mode selection and trailing actions independent in RTL chrome', () => {
+    const onSelect = vi.fn()
+    const onCancel = vi.fn()
+    const onSave = vi.fn()
+
+    const { container } = render(
+      <div dir="rtl">
+        <PreviewModeSwitcher
+          active="source"
+          modes={['rendered', 'source', 'diff']}
+          onSelect={onSelect}
+          trailing={<><button onClick={onCancel}>Cancel</button><button disabled onClick={onSave}>Save</button></>}
+        />
+      </div>
+    )
+
+    const source = screen.getByRole('button', { name: /^source$/i })
+    const cancel = screen.getByRole('button', { name: 'Cancel', exact: true })
+    expect(source.closest('[dir]')?.getAttribute('dir')).toBe('rtl')
+    expect(cancel.closest('[dir]')?.getAttribute('dir')).toBe('rtl')
+    source.focus()
+    expect(container.ownerDocument.activeElement).toBe(source)
+    fireEvent.click(source)
+    expect(onSelect).toHaveBeenCalledWith('source')
+    cancel.focus()
+    expect(container.ownerDocument.activeElement).toBe(cancel)
+    fireEvent.click(cancel)
+    expect(onCancel).toHaveBeenCalledOnce()
+    expect(onSelect).toHaveBeenCalledOnce()
+    fireEvent.click(screen.getByRole('button', { name: 'Save', exact: true }))
+    expect(onSave).not.toHaveBeenCalled()
+    expect(screen.getAllByRole('button')).toHaveLength(5)
   })
 })

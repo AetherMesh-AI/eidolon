@@ -320,6 +320,58 @@ for (const mode of ['dark', 'light'] as const) {
 
       expect(readFileSync(sample.path, 'utf8')).toBe(sample.text)
     }
+
+    // Separate from the source identity/copy matrix: edit/cancel remounts SourceView.
+    const sample = samples[0]
+    await page.locator(`[data-tree-tab=${JSON.stringify(`preview-tile:file:${sample.path}`)}]`).click()
+    const sourceButton = root.getByRole('button', { name: 'المصدر', exact: true })
+    const renderedButton = root.getByRole('button', { name: 'المعاينة', exact: true })
+    const editButton = root.getByRole('button', { name: 'تحرير', exact: true })
+    const header = root.locator('.preview-mode-switcher:visible')
+    await expect(sourceButton).toBeVisible()
+    await sourceButton.click()
+
+    for (const size of sizes.slice(1)) {
+      await resizeGallery(current, size.width, size.height, size.zoom)
+
+      for (const [name, button] of [['Source', sourceButton], ['Rendered', renderedButton], ['Edit', editButton]] as const) {
+        current.focusChecks.push(await verifyKeyboardFocus(page, button, `preview-${name}-ar-${mode}-${size.width}-${size.zoom * 100}`))
+      }
+    }
+
+    const readHeader = await header.boundingBox()
+    await editButton.click()
+    const editor = root.locator('.cm-content[contenteditable="true"]:visible')
+    await expect(editor).toBeVisible()
+    const originalEditor = await editor.elementHandle()
+    const unsavedDraft = `${sample.text}\n// disposable unsaved focus check: مرحبا`
+    await editor.fill(unsavedDraft)
+    const save = root.getByRole('button', { name: 'حفظ', exact: true })
+    const cancel = root.getByRole('button', { name: 'إلغاء', exact: true })
+    await expect(save).toBeEnabled()
+    const editHeader = await header.boundingBox()
+    expect(editHeader!.y + editHeader!.height).toBe(readHeader!.y + readHeader!.height)
+
+    for (const size of sizes.slice(1)) {
+      const label = `source-edit-focus-ar-${mode}-${size.width}-${size.zoom * 100}`
+      await resizeGallery(current, size.width, size.height, size.zoom)
+      expect(await editor.evaluate((element, original) => element === original, originalEditor)).toBe(true)
+      await editor.focus()
+      await page.keyboard.press('Control+a')
+      await app.evaluate(({ clipboard }, sentinel) => clipboard.writeText(sentinel), `${label}: awaiting draft copy`)
+      await page.keyboard.press('Control+c')
+      await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toBe(unsavedDraft)
+      await page.keyboard.press('Control+Home')
+      current.focusChecks.push(await verifyKeyboardFocus(page, cancel, `${label} Cancel`))
+      current.focusChecks.push(await verifyKeyboardFocus(page, save, `${label} Save`, 'previous'))
+      await captureGallery(current, label, root)
+      expect(readFileSync(sample.path, 'utf8')).toBe(sample.text)
+    }
+
+    await cancel.click()
+    await expect(editor).toHaveCount(0)
+    await expect.poll(async () => (await root.locator('.preview-source-code:visible').allTextContents()).join('\n')).toBe(sample.text)
+    expect(readFileSync(sample.path, 'utf8')).toBe(sample.text)
   })
 }
 
