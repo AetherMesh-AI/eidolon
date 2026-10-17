@@ -1,17 +1,19 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router'
+import { Link, useLocation } from 'react-router'
 
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n/context'
 import { modelRoutingCopy } from '@/i18n/organization-model-routing'
+import { observationCopy } from '@/i18n/organization-observation'
 import type { OrganizationRosterCopy } from '@/i18n/organization-roster'
 import type { OrganizationWorkCopy } from '@/i18n/organization-work'
 
 import { AgentContext } from './agent-context'
 import { AgentAvatar } from './avatar'
 import { Inspector } from './inspector'
-import { OrganizationMilestones } from './organization-milestones'
+import { observationState } from './observation-state'
 import { OrganizationGoals } from './organization-goals'
+import { OrganizationMilestones } from './organization-milestones'
 import { OwnerPolicyEntry } from './organization-owner-policy'
 import { OrganizationConversations } from './runtime-conversations'
 import { OrganizationManagementForm } from './runtime-management-form'
@@ -22,6 +24,7 @@ import { OrganizationProjectSetupForm } from './runtime-project-setup'
 import { inheritsProfileModel } from './runtime-setup'
 import { TaskCoordination, taskCoordinationLabel } from './task-coordination'
 import type { OrganizationAgent, OrganizationSnapshot, RuntimeOrganizationAdapter } from './types'
+import { contextualObjectiveHref, useWorkspaceRouteState } from './workspace-navigation'
 
 function currentAssignment(
   snapshot: OrganizationSnapshot,
@@ -77,7 +80,16 @@ export function Organization({
     Employee: roster.worker
   }
 
-  const [selected, setSelected] = useState<{ id: string; scope: string | undefined } | null>(null)
+  const location = useLocation()
+  const scope = snapshot.connection?.ownerScope ?? snapshot.connection?.scope
+  const routeState = useWorkspaceRouteState('roster', scope)
+  const rowIdentity = (item: OrganizationAgent) => JSON.stringify(['organization', scope, item.id, item.identityId ?? ''])
+
+  const setSelected = (selected: { id: string; scope: string | undefined } | null) => {
+    const item = selected ? snapshot.agents.find(value => value.id === selected.id) : undefined
+    routeState.write({ Member: item?.id ?? null, Identity: item ? item.identityId ?? '' : null })
+  }
+
   const [chatting, setChatting] = useState(false)
   const [managing, setManaging] = useState(false)
   const [projectScope, setProjectScope] = useState<string | null>(null)
@@ -85,25 +97,26 @@ export function Organization({
   useEffect(() => {
     setProjectScope(null)
   }, [snapshot.connection?.scope])
-  const [mode, setMode] = useState('List')
-  const [query, setQuery] = useState('')
+  const mode = routeState.read('Layout') === 'Grid' ? 'Grid' : 'List'
+  const setMode = (value: string) => routeState.write({ Layout: value })
+  const query = routeState.read('Query')
+  const setQuery = (value: string) => routeState.write({ Query: value })
   const runtime = snapshot.source === 'runtime'
-
-  const agent =
-    selected?.scope === snapshot.connection?.scope ? snapshot.agents.find(item => item.id === selected?.id) : undefined
-
-  useEffect(() => {
-    if (!agent) {
-      setSelected(null)
-      setChatting(false)
-    }
-  }, [agent])
+  const observation = observationState(snapshot, snapshot.agents.length)
+  const stateCopy = observationCopy[locale]
+  const retained = observation === 'retained'
 
   const agents = snapshot.agents.filter(item =>
     `${item.name} ${item.role} ${roles[item.role] || ''} ${item.purpose || ''} ${item.team || ''} ${item.provider || ''} ${item.model || ''} ${item.modelAssignment ? `${routingCopy[item.modelAssignment.mode]} ${item.modelAssignment.routeIds.join(' ')}` : ''} ${item.lifecycle || ''} ${item.tools?.join(' ') || ''} ${item.requestTypes?.join(' ') || ''} ${item.responsibilities.join(' ')} ${item.capabilities.join(' ')}`
       .toLowerCase()
       .includes(query.toLowerCase())
   )
+
+  const agent = agents.find(item => item.id === routeState.read('Member') && (item.identityId ?? '') === routeState.read('Identity'))
+
+  useEffect(() => {
+    if (!agent) { setChatting(false) }
+  }, [agent])
 
   const assignedTasks = agent
     ? snapshot.tasks.filter(
@@ -211,11 +224,13 @@ export function Organization({
           ))}
         </div>
       </div>
+      {retained && <p className="eid-note" role="status">{stateCopy.stale}</p>}
       <div aria-label={`${mode} of organization`} className={`eid-organization eid-organization-${mode.toLowerCase()}`}>
         {agents.map(item => (
           <button
             aria-label={`Inspect ${item.name}`}
             className={`eid-agent eid-agent-${item.status}`}
+            data-inspector-origin={rowIdentity(item)}
             key={item.id}
             onClick={() => {
               setChatting(false)
@@ -250,16 +265,18 @@ export function Organization({
           </button>
         ))}
       </div>
-      {!agents.length && (
+      {observation === 'loading' || observation === 'unavailable' ? (
+        <div className="eid-empty" role="status"><h2>{stateCopy[observation]}</h2><p>{stateCopy.unknown}</p></div>
+      ) : !agents.length && (
         <div className="eid-empty">
-          <h2>{query ? surface.noMatches : surface.noAgents}</h2>
-          <p>
+          <h2>{retained ? (query ? stateCopy.noMatches : stateCopy.empty) : query ? surface.noMatches : surface.noAgents}</h2>
+          {(!retained || query) && <p>
             {query
               ? surface.trySearch
               : runtime
                 ? surface.noAgentsRuntime
                 : 'Load the explicitly fictional example to explore the map, or inspect existing runtime configuration.'}
-          </p>
+          </p>}
         </div>
       )}
       <div className="eid-inline">
@@ -281,9 +298,11 @@ export function Organization({
       )}
       {agent && (
         <Inspector
-          key={`${snapshot.connection?.scope}:${agent.id}`}
+          focusReturnTarget={() => Array.from(globalThis.document.querySelectorAll<HTMLElement>('[data-inspector-origin]')).find(row => row.dataset.inspectorOrigin === rowIdentity(agent)) ?? null}
+          key={`${scope}:${agent.id}:${agent.identityId ?? ""}`}
           kind="agent"
           onClose={() => setSelected(null)}
+          restorationScope={scope ? { owner: scope, route: location.pathname + location.search } : undefined}
           title={agent.name}
         >
           {runtime && (
@@ -352,7 +371,7 @@ export function Organization({
               {runtime ? (
                 <p>{currentAssignment(snapshot, agent, roster, t.organizationWork)}</p>
               ) : agent.objectiveId ? (
-                <Link to={`/objectives/${agent.objectiveId}`}>
+                <Link to={contextualObjectiveHref(agent.objectiveId, location.pathname, location.search, scope)}>
                   {snapshot.objectives.find(item => item.id === agent.objectiveId)?.title || 'Open objective'}
                 </Link>
               ) : (
@@ -365,7 +384,7 @@ export function Organization({
                     <ul>
                       {assignedTasks.map(item => (
                         <li key={item.id}>
-                          <Link to={`/objectives/${item.objectiveId}`}>{item.title}</Link> ·{' '}
+                          <Link to={contextualObjectiveHref(item.objectiveId, location.pathname, location.search, scope)}>{item.title}</Link> ·{' '}
                           {item.reviewerId === agent.id
                             ? 'Review assignment'
                             : item.managingAgentId === agent.id

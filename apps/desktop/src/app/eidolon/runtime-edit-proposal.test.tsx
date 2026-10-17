@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -154,7 +155,9 @@ describe('reviewed managed workspace edit evidence', () => {
 
     // Configuration now lives in System health details; wait on this route's own ready content.
     await screen.findByRole('heading', { name: 'Update the approved notes' })
-    fireEvent.click(screen.getByRole('tab', { name: 'Artifacts' }))
+    const artifactsTab = screen.getByRole('tab', { name: 'Artifacts' })
+    await userEvent.setup().click(artifactsTab)
+    expect(artifactsTab.getAttribute('aria-selected')).toBe('true')
     fireEvent.click(await screen.findByRole('button', { name: /Retained edit proposal/ }))
     const panel = within(screen.getByRole('complementary', { name: 'Artifact details' }))
     expect(

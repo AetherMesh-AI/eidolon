@@ -1,16 +1,17 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { createRef, type RefObject } from 'react'
 import { Link, MemoryRouter, useLocation, useNavigate } from 'react-router'
 import { afterEach, expect, it, vi } from 'vitest'
 
 import { useWorkspaceScroll } from './workspace'
-import { createWorkspaceScrollMemory, objectiveHref, objectiveReturnTarget } from './workspace-navigation'
+import { createWorkspaceScrollMemory, objectiveHref, objectiveReturnTarget, type WorkspaceFocusRestoration } from './workspace-navigation'
 
 afterEach(() => { cleanup(); vi.useRealTimers() })
 
-function View({ owner, revision = 0, loaded = true }: { owner: string; revision?: number; loaded?: boolean }) {
+function View({ owner, revision = 0, loaded = true, claim }: { owner: string; revision?: number; loaded?: boolean; claim?: RefObject<WorkspaceFocusRestoration | null> }) {
   const location = useLocation()
   const navigate = useNavigate()
-  const root = useWorkspaceScroll(location, owner)
+  const root = useWorkspaceScroll(location, owner, claim)
   const detail = location.pathname.startsWith('/objectives/')
 
   return <><input aria-label="Header search" /><main data-testid="workspace" ref={root}>
@@ -241,4 +242,48 @@ it('removes the pending deadline on unmount without a late restore', async () =>
   expect(vi.getTimerCount()).toBe(0)
   await act(async () => vi.advanceTimersByTime(1500))
   expect(root.scrollTop).toBe(0)
+})
+
+it.each(['/activity?activityOwner=one&activityEvent=event', '/organization?rosterOwner=one&rosterMember=member&rosterLayout=Grid'])('restores shared workspace scroll on contextual return to %s', origin => {
+  render(<MemoryRouter initialEntries={[origin]}><View owner="one" /></MemoryRouter>)
+  const root = screen.getByTestId('workspace')
+  root.scrollTop = 180
+  fireEvent.scroll(root)
+  fireEvent.click(screen.getByRole('link', { name: 'Open objective' }))
+  expect(root.scrollTop).toBe(0)
+  fireEvent.click(screen.getByRole('link', { name: 'Back' }))
+  expect(root.scrollTop).toBe(180)
+  expect(globalThis.document.activeElement).toBe(screen.getByRole('link', { name: 'Open objective' }))
+})
+
+it.each(['input', 'deadline', 'owner', 'unmount'] as const)('retires the pending focus claim on %s', reason => {
+  vi.useFakeTimers()
+  const claim = createRef<WorkspaceFocusRestoration>()
+  const origin = '/activity?activityOwner=one&activityEvent=event'
+  const view = render(<MemoryRouter initialEntries={[origin]}><View claim={claim} owner="one" /></MemoryRouter>)
+  fireEvent.click(screen.getByRole('link', { name: 'Open objective' }))
+  view.rerender(<MemoryRouter><View claim={claim} loaded={false} owner="one" /></MemoryRouter>)
+  fireEvent.click(screen.getByRole('link', { name: 'Back' }))
+  expect(claim.current?.pending).toEqual({ owner: 'one', route: origin })
+
+  if (reason === 'input') { fireEvent.keyDown(screen.getByTestId('workspace'), { key: 'Tab' }) }
+
+  if (reason === 'deadline') { act(() => { vi.advanceTimersByTime(1500) }) }
+
+  if (reason === 'owner') { view.rerender(<MemoryRouter><View claim={claim} loaded={false} owner="two" /></MemoryRouter>) }
+
+  if (reason === 'unmount') { view.unmount() }
+  expect(claim.current?.pending ?? null).toBeNull()
+
+  if (reason === 'owner' || reason === 'unmount') { expect(claim.current).toBeNull() }
+  else { expect(claim.current?.origin).toEqual({ owner: 'one', route: origin }) }
+})
+
+it('clears the focus claim after successful restoration', () => {
+  const claim = createRef<WorkspaceFocusRestoration>()
+  render(<MemoryRouter initialEntries={['/activity']}><View claim={claim} owner="one" /></MemoryRouter>)
+  fireEvent.click(screen.getByRole('link', { name: 'Open objective' }))
+  fireEvent.click(screen.getByRole('link', { name: 'Back' }))
+  expect(globalThis.document.activeElement).toBe(screen.getByRole('link', { name: 'Open objective' }))
+  expect(claim.current?.pending ?? null).toBeNull()
 })

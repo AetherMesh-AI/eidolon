@@ -272,7 +272,7 @@ export function Home({ adapter, snapshot, starterEntry }: { adapter: Organizatio
               <h3 dir="auto">{item.title}</h3>
               <p dir="auto">{item.summary}</p>
               <div className="eid-home-record-time"><LocalizedTime value={item.updatedAt} /></div>
-              <footer className="eid-home-record-actions"><Link className="eid-home-action" to={`/objectives/${encodeURIComponent(item.objectiveId)}`}>
+              <footer className="eid-home-record-actions"><Link className="eid-home-action" to={objectiveHref(item.objectiveId, pathname + search, ownerScope)}>
                 {copy.viewObjective} →
               </Link></footer>
             </article>
