@@ -370,7 +370,9 @@ export function CodeEditor({
   }, [disabled])
 
   if (!framed) {
-    return <div className={cn('h-full min-h-0 overflow-hidden', className)} ref={hostRef} />
+    // Source syntax and its gutter stay LTR inside RTL chrome. Framed prose
+    // below deliberately keeps the surrounding document's reading direction.
+    return <div className={cn('h-full min-h-0 overflow-hidden', className)} dir="ltr" ref={hostRef} />
   }
 
   // Border on the shell only — inner body matches preview-file / DetailPane:

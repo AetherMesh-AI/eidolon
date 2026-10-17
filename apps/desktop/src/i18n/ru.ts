@@ -3421,6 +3421,8 @@ export const ru = defineLocale({
     openInBrowser: 'Открыть в браузере',
     linkHint: '⌘/Ctrl-клик — панель предпросмотра',
     sourceLineTitle: 'Клик — выбрать · Shift-клик — расширить · перетащите в композер',
+    copySource: 'Копировать исходный текст',
+    copyLoadedSource: 'Копировать только загруженный исходный текст',
     source: 'ИСТОЧНИК',
     renderedPreview: 'ПРЕДПРОСМОТР',
     diff: 'DIFF',

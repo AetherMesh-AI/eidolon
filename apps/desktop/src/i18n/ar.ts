@@ -2561,6 +2561,8 @@ export const ar = defineLocale({
     popOut: 'إخراج',
     linkHint: '⌘/Ctrl-نقر لجزء المعاينة',
     sourceLineTitle: 'انقر للتحديد · shift-نقر للتوسيع · اسحب إلى المُنشئ',
+    copySource: 'نسخ المصدر',
+    copyLoadedSource: 'نسخ الجزء المحمّل فقط',
     source: 'المصدر',
     renderedPreview: 'المعاينة',
     diff: 'الفرق',

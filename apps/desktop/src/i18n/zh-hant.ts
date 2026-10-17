@@ -2992,6 +2992,8 @@ export const zhHant = defineLocale({
     popOut: '彈出',
     linkHint: '⌘/Ctrl+點擊在預覽窗格開啟',
     sourceLineTitle: '點擊選取 · shift 點擊擴展 · 拖曳至輸入框',
+    copySource: '複製原始碼',
+    copyLoadedSource: '僅複製已載入的原始碼',
     source: '原始碼',
     renderedPreview: '預覽',
     diff: '差異',
