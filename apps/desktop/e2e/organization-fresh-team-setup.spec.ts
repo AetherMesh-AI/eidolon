@@ -260,6 +260,7 @@ test('two fresh isolated organizations configure their own models and explicitly
   const rpc: Array<{ method: string; params: Record<string, unknown>; profile?: string; result?: unknown }> = []
   const verified: object[] = []
   const snapshots: Snapshot[] = []
+  const catalogSeeds: object[] = []
   let armed: { guard: Guard; observed: Descriptor; inputs: Inputs; index: number } | undefined
 
   const records = (prefix: string): Array<Record<string, unknown>> =>
@@ -520,14 +521,61 @@ print(json.dumps(matches))
       await creation.getByRole('button', { name: 'Create organization', exact: true }).click()
       await expect(creation.getByRole('button', { name: 'Switch to this organization', exact: true })).toBeEnabled()
       expect(receipts).toHaveLength(index + 1)
+      const receipt = receipts[index]
+      const home = path.join(sandbox.hermesHome, 'profiles', receipt.profile)
+      // These two synthetic read-catalog caches must exist before this fresh
+      // gateway starts. They do not configure a provider, model or credential.
+      const configPath = path.join(home, 'config.yaml')
+      const configBefore = readFileSync(configPath)
+      const envBefore = readFileSync(path.join(home, '.env'))
+      const isolationBefore = readFileSync(path.join(home, '.organization-isolation.json'))
+      const config = JSON.parse(configBefore.toString()) as Record<string, unknown>
+      const catalogFixturePath = path.join(import.meta.dirname, 'isolated-model-catalog.json')
+      const catalogFixtureBytes = readFileSync(catalogFixturePath)
+
+      const catalogFixture = JSON.parse(catalogFixtureBytes.toString()) as {
+        config: { model_catalog: { excluded_providers: string[] } }
+      }
+
+      expect(Object.keys(catalogFixture.config)).toEqual(['model_catalog'])
+      expect(config).not.toHaveProperty('model_catalog')
+      expect(config.model).toEqual({ provider: '', default: '' })
+      expect(envBefore.toString()).toBe('')
+      expect(seedIsolatedModelCatalog(home)).toBe(
+        `\nmodel_catalog: ${JSON.stringify(catalogFixture.config.model_catalog)}\n`
+      )
+      writeFileSync(configPath, JSON.stringify({ ...config, ...catalogFixture.config }) + '\n')
+      const configAfter = JSON.parse(readFileSync(configPath, 'utf8')) as Record<string, unknown>
+      expect(configAfter.model_catalog).toEqual(catalogFixture.config.model_catalog)
+      const { model_catalog: seededCatalog, ...unchangedConfig } = configAfter
+      expect(seededCatalog).toBeDefined()
+      expect(unchangedConfig).toEqual(config)
+      expect(readFileSync(path.join(home, '.env'))).toEqual(envBefore)
+      expect(readFileSync(path.join(home, '.organization-isolation.json'))).toEqual(isolationBefore)
+      catalogSeeds.push({
+        home: realpathSync(home),
+        profile: receipt.profile,
+        checkpoint: 'after-durable-create-before-explicit-switch',
+        fixture: 'apps/desktop/e2e/isolated-model-catalog.json',
+        fixtureSha256: createHash('sha256').update(catalogFixtureBytes).digest('hex'),
+        configBeforeSha256: createHash('sha256').update(configBefore).digest('hex'),
+        configAfterSha256: createHash('sha256').update(readFileSync(configPath)).digest('hex'),
+        unchangedNonCatalogConfiguration: true,
+        unchangedEnv: true,
+        unchangedIsolation: true,
+        caches: ['models_dev_cache.json', 'cache/model_catalog.json'].map(relativePath => ({
+          path: path.join(home, relativePath),
+          sha256: createHash('sha256')
+            .update(readFileSync(path.join(home, relativePath)))
+            .digest('hex')
+        }))
+      })
       await creation.getByRole('button', { name: 'Switch to this organization', exact: true }).click()
       // Matches the product cold-boot budget in src/lib/with-timeout.ts. This
       // still requires the exact verified status, followed by the live guard.
       await expect(creation.getByText('Selected organization verified.', { exact: true })).toBeVisible({
         timeout: 45_000
       })
-      const receipt = receipts[index]
-      const home = path.join(sandbox.hermesHome, 'profiles', receipt.profile)
       const fresh = snapshot(home)
       expect(fresh.generations).toEqual([])
       expect(fresh.teams).toEqual([])
@@ -757,6 +805,7 @@ print(json.dumps(matches))
       contentType: 'application/json',
       body: JSON.stringify({
         receipts,
+        catalogSeeds,
         verified,
         sends: sends(),
         snapshots,
@@ -780,6 +829,7 @@ print(json.dumps(matches))
         body: JSON.stringify({
           verified,
           receipts,
+          catalogSeeds,
           rpc,
           descriptors: [...descriptors],
           sends: sends(),
