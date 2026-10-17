@@ -63,17 +63,57 @@ def generate_team(home, params, *, cancel=None):
     jobs = _input(params.get('jobs'), 'Jobs', 4000)
     goals = _input(params.get('goals'), 'Goals', 4000)
     naming = _input(params.get('namingStyle'), 'Naming style', 500, required=False)
-    digest = _hash(params)
+    from eidolon_cli.organization_team_generation import generate
+    return _infer(home, params, key, 'generateTeam',
+        lambda reserve: generate(home, jobs, goals, naming, reserve_model_call=reserve, cancel=cancel),
+        lambda conn, proposal: _preview(conn, home, {**params, 'team': proposal})[0])
+
+
+def improve_team_input(home, params, *, cancel=None):
+    _uuid(params.get('expectedOrganizationId'), 'expectedOrganizationId')
+    key = _text(params.get('idempotencyKey'), 'Idempotency key', 128)
+    field = params.get('field')
+    if field not in ('jobs', 'goals'):
+        raise ValueError('Field must be jobs or goals')
+    jobs = _input(params.get('jobs'), 'Jobs', 4000, required=field == 'jobs')
+    goals = _input(params.get('goals'), 'Goals', 4000, required=field == 'goals')
+    naming = _input(params.get('namingStyle'), 'Naming style', 500, required=False)
+    from eidolon_cli.organization_team_generation import improve, validate_improvement
+
+    def finish(conn, suggestion):
+        identity, _, settings, revision = _current(conn, home, params['expectedOrganizationId'])
+        if revision != params.get('sourceRevision') or not _fresh(conn, settings):
+            raise OwnerPolicyError('source_conflict')
+        return {'capabilityVersion': 1, 'organizationId': identity['organizationId'],
+                'sourceRevision': revision, 'field': field, **validate_improvement(suggestion)}
+
+    return _infer(home, params, key, 'improveTeamInput',
+        lambda reserve: improve(home, field, jobs, goals, naming, reserve_model_call=reserve, cancel=cancel),
+        finish)
+
+
+def _infer(home, params, key, operation, invoke, finish):
+    from eidolon_cli.organization_team_setup import _generation_allowance
+    # Old generation receipts remain replayable, but new receipts bind their
+    # operation so an improvement can never be replayed as a generated team.
+    digest = _hash({'operation': operation, 'input': params})
+    accepted_digests = {digest}
+    if operation == 'generateTeam':
+        accepted_digests.add(_hash(params))
     reservation_params = {**params, 'idempotencyKey': key}
-    from eidolon_cli.organization_team_generation import generate, TeamProposalRejected
+    from eidolon_cli.organization_team_generation import TeamInputRejected, TeamProposalRejected
     with _connection(home, write=True) as conn:
         _, _, settings, revision = _current(conn, home, params['expectedOrganizationId'])
         prior = conn.execute('SELECT * FROM organization_team_generations WHERE idempotency_key=?', (key,)).fetchone()
         if prior:
-            if prior['organization_id'] != params['expectedOrganizationId'] or prior['input_hash'] != digest:
+            if prior['organization_id'] != params['expectedOrganizationId'] or prior['input_hash'] not in accepted_digests:
                 raise OwnerPolicyError('idempotency_conflict')
             if prior['status'] == 'completed':
-                return json.loads(prior['result_json'])
+                if operation == 'improveTeamInput' and (
+                        params.get('sourceRevision') != revision or not _fresh(conn, settings)):
+                    raise OwnerPolicyError('source_conflict')
+                return {**json.loads(prior['result_json']),
+                        'generationAllowance': _generation_allowance(conn, settings)}
             raise OwnerPolicyError('generation_' + prior['status'])
         if params.get('sourceRevision') != revision or not _fresh(conn, settings):
             raise OwnerPolicyError('source_conflict')
@@ -85,20 +125,20 @@ def generate_team(home, params, *, cancel=None):
             (key, params['expectedOrganizationId'], digest, revision, 'running', time.time()))
     received = False
     try:
-        team = generate(home, jobs, goals, naming,
-            reserve_model_call=lambda **values: _reserve(home, reservation_params, **values), cancel=cancel)
+        response = invoke(lambda **values: _reserve(home, reservation_params, **values))
         received = True
-        # Both parsed output and any edits must pass the identical owner validator.
         with _connection(home, write=True) as conn:
             row = conn.execute('SELECT dispatched FROM organization_team_generations WHERE idempotency_key=?', (key,)).fetchone()
             if not row or not row['dispatched']:
                 raise ValueError('Team generation did not reserve a physical provider send')
-            result = _preview(conn, home, {**params, 'team': team})[0]
+            result = finish(conn, response)
+            _, _, settings, _ = _current(conn, home, params['expectedOrganizationId'])
+            result['generationAllowance'] = _generation_allowance(conn, settings, completing_key=key)
             conn.execute("UPDATE organization_team_generations SET status='completed',result_json=? WHERE idempotency_key=?",
                          (json.dumps(result), key))
         return result
     except BaseException as exc:
-        known_response = received or isinstance(exc, TeamProposalRejected)
+        known_response = received or isinstance(exc, (TeamProposalRejected, TeamInputRejected))
         with _connection(home, write=True) as conn:
             conn.execute("UPDATE organization_team_generations SET status=CASE WHEN dispatched=1 AND ?=0 THEN 'uncertain' ELSE 'failed' END WHERE idempotency_key=?", (known_response, key))
         raise

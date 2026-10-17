@@ -37,6 +37,7 @@ const readiness = {
 
 const setup: TeamSetup = {
   capabilityVersion: 1,
+  inputImprovementVersion: 1,
   state: 'available',
   organizationId: 'organization',
   sourceRevision: 'revision',
@@ -61,6 +62,14 @@ function harness(initialSetup = setup, locale: Locale = 'en') {
     current: () => true,
     setup: vi.fn().mockResolvedValue(setup),
     generate: vi.fn().mockResolvedValue(preview),
+    improve: vi.fn().mockResolvedValue({
+      capabilityVersion: 1,
+      organizationId: 'organization',
+      sourceRevision: 'revision',
+      field: 'jobs',
+      suggestion: 'Research product changes weekly and summarize sources.',
+      assumptions: ['A weekly cadence is suggested.']
+    }),
     preview: vi.fn().mockResolvedValue(preview),
     create: vi.fn().mockResolvedValue({ state: 'created', readiness }),
     dispose: vi.fn()
@@ -70,29 +79,38 @@ function harness(initialSetup = setup, locale: Locale = 'en') {
     onCreated = vi.fn(),
     onReturnFocus = vi.fn()
 
-  const view = render(
+  const element = (currentSetup = initialSetup, currentProfile = 'default', currentClient = client) => (
     <MemoryRouter>
       <I18nProvider configClient={null} initialLocale={locale}>
         <TeamOnboardingDialog
-          client={client}
+          client={currentClient}
           onClose={onClose}
           onCreated={onCreated}
           onReturnFocus={onReturnFocus}
-          profile="default"
-          setup={initialSetup}
+          profile={currentProfile}
+          setup={currentSetup}
         />
       </I18nProvider>
     </MemoryRouter>
   )
 
-  return { client, onClose, onCreated, view }
+  const view = render(element())
+
+  return {
+    client,
+    onClose,
+    onCreated,
+    view,
+    rerender: (nextSetup = initialSetup, nextProfile = 'default', nextClient = client) =>
+      view.rerender(element(nextSetup, nextProfile, nextClient))
+  }
 }
 
 it('requires explicit generation and explicit creation; edits revoke the validated preview', async () => {
   const h = harness()
   expect(h.client.generate).not.toHaveBeenCalled()
-  fireEvent.change(screen.getByLabelText('Jobs to handle'), { target: { value: 'Research' } })
-  fireEvent.change(screen.getByLabelText('Goals and outcomes'), { target: { value: 'Reliable evidence' } })
+  fireEvent.change(screen.getByLabelText('Work to delegate'), { target: { value: 'Research' } })
+  fireEvent.change(screen.getByLabelText('What success looks like'), { target: { value: 'Reliable evidence' } })
   fireEvent.click(screen.getByRole('button', { name: /Generate team/ }))
   await screen.findByRole('button', { name: 'Create team' })
   expect(h.client.create).not.toHaveBeenCalled()
@@ -117,8 +135,8 @@ it('cancel during generation ignores its late response and never creates a team'
         finish = resolve
       })
   )
-  fireEvent.change(screen.getByLabelText('Jobs to handle'), { target: { value: 'Research' } })
-  fireEvent.change(screen.getByLabelText('Goals and outcomes'), { target: { value: 'Evidence' } })
+  fireEvent.change(screen.getByLabelText('Work to delegate'), { target: { value: 'Research' } })
+  fireEvent.change(screen.getByLabelText('What success looks like'), { target: { value: 'Evidence' } })
   fireEvent.click(screen.getByRole('button', { name: /Generate team/ }))
   fireEvent.click(screen.getByRole('button', { name: /Generate team/ }))
   expect(h.client.generate).toHaveBeenCalledTimes(1)
@@ -144,11 +162,247 @@ it('keeps manual setup usable with blocked model readiness', async () => {
   expect(h.client.generate).not.toHaveBeenCalled()
   expect(h.client.create).not.toHaveBeenCalled()
 })
+it.each([
+  ['subscription_generation_unsupported', /selected Codex subscription/],
+  ['codex_app_server', /selected Codex app-server/],
+  ['generation_route_unsupported', /selected model route/]
+])('explains %s while keeping the owner’s work editable without inference', (reason, explanation) => {
+  const h = harness({ ...setup, readiness: { ...readiness, status: 'blocked', blockers: [reason as string] } })
+  expect(screen.getByRole('status').textContent).toMatch(explanation as RegExp)
+  expect(screen.queryByText(teamOnboardingCopy.en.modelRequired)).toBeNull()
+  const jobs = screen.getByLabelText(teamOnboardingCopy.en.jobs)
+  const goals = screen.getByLabelText(teamOnboardingCopy.en.goals)
+  expect(jobs).toHaveProperty('disabled', false)
+  expect(goals).toHaveProperty('disabled', false)
+  expect(
+    screen.getByRole('textbox', { name: teamOnboardingCopy.en.jobs, description: /tasks or responsibilities/ })
+  ).toBe(jobs)
+  expect(screen.getByRole('textbox', { name: teamOnboardingCopy.en.goals, description: /successful result/ })).toBe(
+    goals
+  )
+  expect(
+    screen.getByRole('textbox', { name: teamOnboardingCopy.en.namingStyle, description: /optional/i })
+  ).toBeTruthy()
+  fireEvent.change(jobs, { target: { value: 'Research weekly product changes' } })
+  expect(jobs).toHaveProperty('value', 'Research weekly product changes')
+  expect(screen.getByRole('button', { name: /Generate team/ })).toHaveProperty('disabled', true)
+  expect(screen.getByRole('button', { name: teamOnboardingCopy.en.improveJobs })).toHaveProperty('disabled', true)
+  expect(screen.getByRole('button', { name: teamOnboardingCopy.en.improveJobs }).getAttribute('aria-describedby')).toBe(
+    screen.getByRole('status').id
+  )
+  expect(h.client.improve).not.toHaveBeenCalled()
+  expect(h.client.generate).not.toHaveBeenCalled()
+  expect(h.client.create).not.toHaveBeenCalled()
+})
+
+it('reviews full-context improvements without replacing originals until Apply, and preserves text on Discard', async () => {
+  const h = harness()
+  const copy = teamOnboardingCopy.en
+  const jobs = screen.getByRole('textbox', { name: copy.jobs })
+  const goals = screen.getByRole('textbox', { name: copy.goals })
+  expect(screen.getByRole('button', { name: copy.improveJobs })).toHaveProperty('disabled', true)
+  fireEvent.change(jobs, { target: { value: 'Research products' } })
+  fireEvent.change(goals, { target: { value: 'Reliable evidence' } })
+  fireEvent.change(screen.getByRole('textbox', { name: copy.namingStyle }), { target: { value: 'Astronomy names' } })
+  fireEvent.click(screen.getByRole('button', { name: copy.improveJobs }))
+  await screen.findByRole('region', { name: copy.reviewSuggestion })
+  expect(h.client.improve).toHaveBeenCalledWith(
+    setup,
+    expect.objectContaining({
+      field: 'jobs',
+      jobs: 'Research products',
+      goals: 'Reliable evidence',
+      namingStyle: 'Astronomy names'
+    })
+  )
+  expect(jobs).toHaveProperty('value', 'Research products')
+  expect(screen.getByText('A weekly cadence is suggested.')).toBeTruthy()
+  expect(screen.getByRole('button', { name: /Generate team/ })).toHaveProperty('disabled', true)
+  fireEvent.change(screen.getByRole('textbox', { name: copy.suggestion }), {
+    target: { value: 'Research product changes monthly.' }
+  })
+  screen.getByRole('button', { name: copy.applySuggestion }).focus()
+  fireEvent.click(screen.getByRole('button', { name: copy.applySuggestion }))
+  expect(jobs.ownerDocument.activeElement).toBe(jobs)
+  expect(jobs).toHaveProperty('value', 'Research product changes monthly.')
+  expect(goals).toHaveProperty('value', 'Reliable evidence')
+  expect(screen.queryByRole('region', { name: copy.reviewSuggestion })).toBeNull()
+  vi.mocked(h.client.improve).mockResolvedValueOnce({
+    capabilityVersion: 1,
+    organizationId: 'organization',
+    sourceRevision: 'revision',
+    field: 'goals',
+    suggestion: 'Source-linked summaries ready for review.',
+    assumptions: []
+  })
+  fireEvent.click(screen.getByRole('button', { name: copy.improveGoals }))
+  await screen.findByRole('region', { name: copy.reviewSuggestion })
+  expect(screen.getByText(copy.noAssumptions)).toBeTruthy()
+  screen.getByRole('button', { name: copy.discardSuggestion }).focus()
+  fireEvent.click(screen.getByRole('button', { name: copy.discardSuggestion }))
+  expect(goals.ownerDocument.activeElement).toBe(goals)
+  expect(goals).toHaveProperty('value', 'Reliable evidence')
+  expect(jobs).toHaveProperty('value', 'Research product changes monthly.')
+  expect(h.client.generate).not.toHaveBeenCalled()
+  expect(h.client.create).not.toHaveBeenCalled()
+})
+
+it('reconciles Improve retries and suppresses responses after changed text, owner or dismissal', async () => {
+  const h = harness()
+  const copy = teamOnboardingCopy.en
+  fireEvent.change(screen.getByLabelText(copy.jobs), { target: { value: 'Research' } })
+  vi.mocked(h.client.improve).mockRejectedValueOnce(new Error('timeout'))
+  fireEvent.click(screen.getByRole('button', { name: copy.improveJobs }))
+  fireEvent.click(screen.getByRole('button', { name: copy.improveJobs }))
+  await screen.findByRole('alert')
+  expect(h.client.improve).toHaveBeenCalledTimes(1)
+  let finish!: (value: Awaited<ReturnType<TeamOnboardingClient['improve']>>) => void
+  vi.mocked(h.client.improve).mockImplementation(
+    () =>
+      new Promise(resolve => {
+        finish = resolve
+      })
+  )
+  fireEvent.click(screen.getByRole('button', { name: copy.improveJobs }))
+  expect(vi.mocked(h.client.improve).mock.calls[0][1].idempotencyKey).toBe(
+    vi.mocked(h.client.improve).mock.calls[1][1].idempotencyKey
+  )
+
+  const result = {
+    capabilityVersion: 1 as const,
+    organizationId: 'organization',
+    sourceRevision: 'revision',
+    field: 'jobs' as const,
+    suggestion: 'Old wording',
+    assumptions: []
+  }
+
+  // An input event queued before the pending fieldset became disabled must also retire its result.
+  fireEvent.change(screen.getByLabelText(copy.goals), { target: { value: 'Newer context' } })
+  await act(async () => finish(result))
+  expect(screen.queryByRole('region', { name: copy.reviewSuggestion })).toBeNull()
+  expect(screen.getByLabelText(copy.jobs)).toHaveProperty('value', 'Research')
+  expect(screen.getByLabelText(copy.goals)).toHaveProperty('value', 'Newer context')
+  fireEvent.click(screen.getByRole('button', { name: copy.improveJobs }))
+  h.client.current = () => false
+  await act(async () => finish(result))
+  expect(screen.queryByRole('region', { name: copy.reviewSuggestion })).toBeNull()
+  h.client.current = () => true
+  fireEvent.click(screen.getByRole('button', { name: copy.improveJobs }))
+  fireEvent.click(screen.getByRole('button', { name: copy.cancel }))
+  h.view.unmount()
+  await act(async () => finish(result))
+  expect(h.onClose).toHaveBeenCalledTimes(1)
+  expect(h.client.generate).not.toHaveBeenCalled()
+  expect(h.onCreated).not.toHaveBeenCalled()
+})
+
+it('leaves legacy-runtime descriptions editable without advertising unsupported Improve calls', () => {
+  const h = harness({ ...setup, inputImprovementVersion: undefined })
+  fireEvent.change(screen.getByLabelText(teamOnboardingCopy.en.jobs), { target: { value: 'Research' } })
+  expect(screen.getByRole('button', { name: teamOnboardingCopy.en.improveJobs })).toHaveProperty('disabled', true)
+  expect(screen.getByText(teamOnboardingCopy.en.improveUnavailable)).toBeTruthy()
+  expect(h.client.improve).not.toHaveBeenCalled()
+})
+
+it('uses a new intent only for deliberate Regenerate and retains the proposal through recovery', async () => {
+  const available = { status: 'available' as const, remainingCalls: 2 }
+  const h = harness({ ...setup, generationAllowance: available })
+  const copy = teamOnboardingCopy.en
+  vi.mocked(h.client.generate).mockResolvedValueOnce({ ...preview, generationAllowance: available })
+  fireEvent.change(screen.getByLabelText(copy.jobs), { target: { value: 'Research' } })
+  fireEvent.change(screen.getByLabelText(copy.goals), { target: { value: 'Evidence' } })
+  fireEvent.click(screen.getByRole('button', { name: copy.generate }))
+  await screen.findByRole('button', { name: copy.create })
+  expect(screen.getByText(copy.reviewCoverage)).toBeTruthy()
+  expect(screen.getByText(copy.regenerateHelp)).toBeTruthy()
+  let fail!: (error: Error) => void
+  vi.mocked(h.client.generate).mockImplementationOnce(
+    () =>
+      new Promise((_resolve, reject) => {
+        fail = reject
+      })
+  )
+  vi.mocked(h.client.setup).mockResolvedValueOnce({
+    ...setup,
+    generationAllowance: { status: 'uncertain', remainingCalls: 1 }
+  })
+  fireEvent.click(screen.getByRole('button', { name: copy.regenerate }))
+  fireEvent.click(screen.getByRole('button', { name: copy.retryRegeneration }))
+  expect(h.client.generate).toHaveBeenCalledTimes(2)
+  expect(screen.getAllByLabelText(copy.name)[0]).toHaveProperty('value', 'Lead')
+  expect(screen.getByRole('button', { name: copy.create })).toHaveProperty('disabled', true)
+  await act(async () => fail(new Error('timeout')))
+  await screen.findByText(copy.allowanceUncertain)
+  expect(screen.getAllByLabelText(copy.name)[0]).toHaveProperty('value', 'Lead')
+
+  const replacement = {
+    ...preview,
+    team: { ...team, executive: { ...team.executive, name: 'New lead' } },
+    generationAllowance: { status: 'exhausted' as const, remainingCalls: 0 }
+  }
+
+  vi.mocked(h.client.generate).mockResolvedValueOnce(replacement)
+  fireEvent.click(screen.getByRole('button', { name: copy.retryRegeneration }))
+  await waitFor(() => expect(screen.getAllByLabelText(copy.name)[0]).toHaveProperty('value', 'New lead'))
+  const calls = vi.mocked(h.client.generate).mock.calls
+  expect(calls[1][1].idempotencyKey).not.toBe(calls[0][1].idempotencyKey)
+  expect(calls[2]).toEqual(calls[1])
+  expect(screen.getByRole('button', { name: copy.regenerate })).toHaveProperty('disabled', true)
+  expect(screen.getByText(copy.allowanceExhausted)).toBeTruthy()
+  expect(h.client.create).not.toHaveBeenCalled()
+})
+
+it.each(['exhausted', 'running', 'uncertain', 'blocked'] as const)(
+  'blocks new Improve and Generate calls when authoritative allowance is %s while preserving manual setup',
+  status => {
+    const h = harness({ ...setup, generationAllowance: { status, remainingCalls: status === 'exhausted' ? 0 : 1 } })
+    const copy = teamOnboardingCopy.en
+    fireEvent.change(screen.getByLabelText(copy.jobs), { target: { value: 'Research' } })
+    fireEvent.change(screen.getByLabelText(copy.goals), { target: { value: 'Evidence' } })
+    expect(screen.getByRole('button', { name: copy.improveJobs })).toHaveProperty('disabled', true)
+    expect(screen.getByRole('button', { name: copy.generate })).toHaveProperty('disabled', true)
+    fireEvent.click(screen.getByText(copy.manual))
+    expect(screen.getByRole('button', { name: copy.manualStart })).toHaveProperty('disabled', false)
+    expect(h.client.improve).not.toHaveBeenCalled()
+    expect(h.client.generate).not.toHaveBeenCalled()
+  }
+)
+
+it('preserves newer team edits and refreshes verified allowance when an earlier regeneration is recovered', async () => {
+  const available = { status: 'available' as const, remainingCalls: 2 }
+  const h = harness({ ...setup, generationAllowance: available })
+  const copy = teamOnboardingCopy.en
+  vi.mocked(h.client.generate).mockResolvedValueOnce({ ...preview, generationAllowance: available })
+  fireEvent.change(screen.getByLabelText(copy.jobs), { target: { value: 'Research' } })
+  fireEvent.change(screen.getByLabelText(copy.goals), { target: { value: 'Evidence' } })
+  fireEvent.click(screen.getByRole('button', { name: copy.generate }))
+  await screen.findByRole('button', { name: copy.create })
+  vi.mocked(h.client.generate).mockRejectedValueOnce(new Error('acknowledgement lost'))
+  vi.mocked(h.client.setup).mockRejectedValueOnce(new Error('read unavailable'))
+  fireEvent.click(screen.getByRole('button', { name: copy.regenerate }))
+  await screen.findByText(copy.allowanceBlocked)
+  fireEvent.change(screen.getAllByLabelText(copy.name)[0], { target: { value: 'My newer edit' } })
+  vi.mocked(h.client.generate).mockResolvedValueOnce({
+    ...preview,
+    team: { ...team, executive: { ...team.executive, name: 'Recovered older proposal' } },
+    generationAllowance: { status: 'available', remainingCalls: 1 }
+  })
+  fireEvent.click(screen.getByRole('button', { name: copy.retryRegeneration }))
+  await screen.findByText(copy.previousDraftPreserved)
+  expect(screen.getAllByLabelText(copy.name)[0]).toHaveProperty('value', 'My newer edit')
+  expect(screen.queryByRole('button', { name: copy.create })).toBeNull()
+  expect(screen.queryByText(copy.allowanceBlocked)).toBeNull()
+  expect(screen.getByRole('button', { name: copy.regenerate })).toHaveProperty('disabled', false)
+  const calls = vi.mocked(h.client.generate).mock.calls
+  expect(calls[2]).toEqual(calls[1])
+  expect(h.client.create).not.toHaveBeenCalled()
+})
 it('retries uncertain generation with the same idempotency key', async () => {
   const h = harness()
   vi.mocked(h.client.generate).mockRejectedValueOnce(new Error('timeout'))
-  fireEvent.change(screen.getByLabelText('Jobs to handle'), { target: { value: 'Research' } })
-  fireEvent.change(screen.getByLabelText('Goals and outcomes'), { target: { value: 'Evidence' } })
+  fireEvent.change(screen.getByLabelText('Work to delegate'), { target: { value: 'Research' } })
+  fireEvent.change(screen.getByLabelText('What success looks like'), { target: { value: 'Evidence' } })
   fireEvent.click(screen.getByRole('button', { name: /Generate team/ }))
   await screen.findByRole('alert')
   fireEvent.click(screen.getByRole('button', { name: /Generate team/ }))
@@ -248,15 +502,15 @@ it('returns from model setup to the same draft and rechecks readiness exactly on
   const h = harness()
 
   try {
-    fireEvent.change(screen.getByLabelText('Jobs to handle'), { target: { value: 'Keep my work description' } })
-    fireEvent.change(screen.getByLabelText('Goals and outcomes'), { target: { value: 'Keep my outcome' } })
+    fireEvent.change(screen.getByLabelText('Work to delegate'), { target: { value: 'Keep my work description' } })
+    fireEvent.change(screen.getByLabelText('What success looks like'), { target: { value: 'Keep my outcome' } })
     fireEvent.click(screen.getByRole('button', { name: 'Model settings' }))
     expect(screen.queryByRole('dialog', { name: 'Build your starter team' })).toBeNull()
     act(() => closeManualOnboarding())
     await screen.findByRole('dialog', { name: 'Build your starter team' })
     await waitFor(() => expect(h.client.setup).toHaveBeenCalledTimes(1))
-    expect(screen.getByLabelText('Jobs to handle')).toHaveProperty('value', 'Keep my work description')
-    expect(screen.getByLabelText('Goals and outcomes')).toHaveProperty('value', 'Keep my outcome')
+    expect(screen.getByLabelText('Work to delegate')).toHaveProperty('value', 'Keep my work description')
+    expect(screen.getByLabelText('What success looks like')).toHaveProperty('value', 'Keep my outcome')
     expect(h.client.generate).not.toHaveBeenCalled()
     expect(h.client.create).not.toHaveBeenCalled()
     expect(h.onClose).not.toHaveBeenCalled()
@@ -329,5 +583,129 @@ it('ignores a model-return check after the dialog is dismissed', async () => {
   } finally {
     h.view.unmount()
     act(() => $desktopOnboarding.set(original))
+  }
+})
+
+function keyboardRevealHarness(top = 40, height = 64) {
+  const h = harness()
+  const field = screen.getByLabelText('Work to delegate') as HTMLTextAreaElement
+  const body = field.closest<HTMLElement>('.eid-team-body')!
+  const shell = screen.getByRole('dialog')
+  field.value = 'My retained description'
+  field.style.outlineWidth = '3px'
+  field.style.outlineOffset = '3px'
+  Object.defineProperty(body, 'clientHeight', { value: 200 })
+  body.scrollTop = 500
+  shell.scrollTop = 17
+  vi.spyOn(body, 'getBoundingClientRect').mockReturnValue({ top: 47 } as DOMRect)
+  vi.spyOn(field, 'getBoundingClientRect').mockReturnValue({ top, bottom: top + height, height } as DOMRect)
+  let frame: FrameRequestCallback | undefined
+
+  const requestFrame = vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => {
+    frame = callback
+
+    return 1
+  })
+
+  const cancelFrame = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {})
+
+  return {
+    ...h,
+    field,
+    body,
+    shell,
+    start: () => {
+      fireEvent.keyDown(body, { key: 'Tab' })
+      field.focus()
+    },
+    finish: () => {
+      expect(frame).toBeDefined()
+      frame!(0)
+    },
+    cleanup: () => {
+      h.view.unmount()
+      requestFrame.mockRestore()
+      cancelFrame.mockRestore()
+    }
+  }
+}
+
+it.each([
+  { top: 40, height: 64, expected: 486 },
+  { top: 240, height: 64, expected: 564 },
+  { top: 100, height: 64, expected: 500 },
+  { top: 40, height: 300, expected: 500 }
+])(
+  'reveals only the current Tab-focused control inside its team scroller ($top, $height)',
+  ({ top, height, expected }) => {
+    const h = keyboardRevealHarness(top, height)
+
+    try {
+      h.start()
+      h.finish()
+      expect(h.body.scrollTop).toBe(expected)
+      expect(h.shell.scrollTop).toBe(17)
+      expect(globalThis.document.activeElement).toBe(h.field)
+      expect(h.field.value).toBe('My retained description')
+    } finally {
+      h.cleanup()
+    }
+  }
+)
+
+it.each(['pointerdown', 'keydown', 'wheel', 'input', 'touchstart'])(
+  'retires Team keyboard reveal after later %s',
+  type => {
+    const h = keyboardRevealHarness()
+
+    try {
+      h.start()
+      globalThis.document.dispatchEvent(new Event(type))
+      h.finish()
+      expect(h.body.scrollTop).toBe(500)
+    } finally {
+      h.cleanup()
+    }
+  }
+)
+
+it.each(['owner', 'profile', 'client', 'close', 'unmount', 'new focus'])(
+  'retires Team keyboard reveal after %s changes',
+  change => {
+    const h = keyboardRevealHarness()
+
+    try {
+      h.start()
+
+      if (change === 'owner') {h.rerender({ ...setup, organizationId: 'new-owner' })}
+
+      if (change === 'profile') {h.rerender(setup, 'new-profile')}
+
+      if (change === 'client') {h.rerender(setup, 'default', { ...h.client })}
+
+      if (change === 'close') {fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))}
+
+      if (change === 'unmount') {h.view.unmount()}
+
+      if (change === 'new focus') {screen.getByLabelText('What success looks like').focus()}
+      h.finish()
+      expect(h.body.scrollTop).toBe(500)
+      expect(h.shell.scrollTop).toBe(17)
+    } finally {
+      h.cleanup()
+    }
+  }
+)
+
+it('does not schedule Team reveal for programmatic focus or a non-Tab key', () => {
+  const h = keyboardRevealHarness()
+
+  try {
+    h.field.focus()
+    fireEvent.keyDown(h.field, { key: 'ArrowDown' })
+    expect(window.requestAnimationFrame).not.toHaveBeenCalled()
+    expect(h.body.scrollTop).toBe(500)
+  } finally {
+    h.cleanup()
   }
 })

@@ -29,6 +29,8 @@ export interface MockServerOptions {
 
   /** Explicit JSON fixture for the tool-free starter-team proposal path only. */
   starterTeamReply?: string
+  /** Explicit JSON fixture for bounded, tool-free starter form improvement. */
+  starterTeamInputReply?: (prompt: string) => string
   /** Pause the matching stream after its first token for session-switch E2E coverage. */
   holdFirstStreamForPrompt?: string
 /** Pause the first completion whose request JSON contains this text. */
@@ -497,6 +499,11 @@ export function startMockServer(options: MockServerOptions = {}): Promise<MockSe
           if (options.starterTeamReply && messages.some(message =>
             message?.role === 'system' && typeof message.content === 'string' && message.content.includes('EIDOLON_STARTER_TEAM_V1'))) {
             nonStreamingTextResponse(res, model, options.starterTeamReply)
+            return
+          }
+          if (options.starterTeamInputReply && messages.some(message =>
+            message?.role === 'system' && typeof message.content === 'string' && message.content.includes('EIDOLON_TEAM_INPUT_IMPROVEMENT_V1'))) {
+            nonStreamingTextResponse(res, model, options.starterTeamInputReply(userText))
             return
           }
           const isInterimTrigger = userText.includes('E2E_INTERIM_TRIGGER')

@@ -15,10 +15,10 @@ from eidolon_cli import organization_team_generation as generation
 from eidolon_cli import organization_team_setup as team
 from eidolon_constants import get_eidolon_home
 from tests.eidolon_cli.test_organization_team_setup import profile, params, confirmed, dump
-from tests.eidolon_cli.test_organization_team_admission import request, fake_provider
+from tests.eidolon_cli.test_organization_team_admission import request, fake_provider, improvement_request
 
 
-METHODS = ('teamSetup', 'previewTeam', 'generateTeam', 'createTeam')
+METHODS = ('teamSetup', 'previewTeam', 'generateTeam', 'createTeam', 'improveTeamInput')
 
 
 def call(method, params, transport=None):
@@ -43,6 +43,8 @@ def endpoint_params(profile, method):
         return params(profile)
     if method == 'generateTeam':
         return request(profile)
+    if method == 'improveTeamInput':
+        return improvement_request(profile)
     return confirmed(profile)
 
 
@@ -140,3 +142,48 @@ def test_metadata_then_snapshot_initializes_fresh_team_without_starting_work(tmp
         assert all(not service.running for service in services._services.values())
     finally:
         services.stop_services()
+
+
+def test_improvement_rpc_is_served_scoped_off_loop_and_returns_only_review_text(served, monkeypatch):
+    entered, finish = threading.Event(), threading.Event()
+    seen = []
+    def improve(home, field, jobs, goals, naming, *, reserve_model_call, cancel):
+        seen.append((home, get_eidolon_home(), field, jobs, goals, naming, cancel.is_set()))
+        reserve_model_call(provider='fixture', model='fixture', input_limit=100, output_limit=100)
+        entered.set()
+        assert finish.wait(10)
+        return {'suggestion': 'Write evidence-backed reports.', 'assumptions': ['Reports should cite sources.']}
+    monkeypatch.setattr(generation, 'improve', improve)
+    value = improvement_request(served)
+    responses = Queue()
+    transport = SimpleNamespace(closed=False, write=responses.put)
+    req = {'jsonrpc': '2.0', 'id': 19, 'method': 'organization.improveTeamInput', 'params': value}
+    assert server.dispatch(req, transport=transport) is None
+    try:
+        assert entered.wait(10)
+    finally:
+        finish.set()
+    response = responses.get(timeout=15)
+    assert 'error' not in response, response
+    result = response['result']
+    assert result == {'capabilityVersion': 1, 'organizationId': value['expectedOrganizationId'],
+        'sourceRevision': value['sourceRevision'], 'field': 'jobs',
+        'suggestion': 'Write evidence-backed reports.', 'assumptions': ['Reports should cite sources.'],
+        'generationAllowance': {'status': 'available', 'remainingCalls': 2},
+        'scope': {'kind': 'served-profile', 'profile': 'default'}}
+    assert call('improveTeamInput', value) == response
+    assert seen == [(served.home, served.home, 'jobs', value['jobs'], '', '', False)]
+
+
+@pytest.mark.parametrize('change', ['disconnect', 'served-home'])
+def test_improvement_cannot_publish_into_changed_transport_scope(served, monkeypatch, tmp_path, change):
+    transport = SimpleNamespace(closed=False)
+    def improve(home, field, jobs, goals, naming, *, reserve_model_call, cancel):
+        reserve_model_call(provider='fixture', model='fixture', input_limit=100, output_limit=100)
+        if change == 'disconnect':
+            transport.closed = True
+        else:
+            monkeypatch.setattr(server, '_eidolon_home', tmp_path / 'other')
+        return {'suggestion': 'Suggested wording', 'assumptions': []}
+    monkeypatch.setattr(generation, 'improve', improve)
+    assert call('improveTeamInput', improvement_request(served), transport)['error']['code'] == 4001

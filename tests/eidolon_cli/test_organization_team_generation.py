@@ -132,3 +132,49 @@ def test_real_http_failure_is_not_retried(loopback_provider):
     with pytest.raises(OrganizationExecutionError):
         generation.generate(home, 'Build tools', '', '', reserve_model_call=lambda **k: reservations.append(k))
     assert len(received) == len(reservations) == 1
+
+
+@pytest.mark.parametrize('raw', [
+    '{}', '[]', '```json\n{}\n```',
+    '{"suggestion":"first","suggestion":"second","assumptions":[]}',
+    '{"suggestion":"text","assumptions":[NaN]}',
+    '{"suggestion":"text","assumptions":[1e999]}',
+    json.dumps({'suggestion': 'text', 'assumptions': [], 'team': {}}),
+    json.dumps({'suggestion': ' ', 'assumptions': []}),
+    json.dumps({'suggestion': 'text', 'assumptions': ['']}),
+    json.dumps({'suggestion': 'text', 'assumptions': ['x'] * 6}),
+    json.dumps({'suggestion': 'text', 'assumptions': ['x' * 301]}),
+    pytest.param(json.dumps({'suggestion': 'x' * 4001, 'assumptions': []}), id='oversized-suggestion'),
+    pytest.param(' ' * 64001, id='oversized-response'),
+])
+def test_improvement_requires_bounded_exact_json(raw):
+    with pytest.raises(generation.TeamInputRejected):
+        generation.parse_improvement(raw)
+
+
+def test_real_http_improvement_only_receives_current_form_without_tools(loopback_provider):
+    home, received, mode = loopback_provider
+    suggestion = {'suggestion': 'Research useful tools and write a concise report.',
+                  'assumptions': ['The owner wants a written deliverable.']}
+    mode['output'] = json.dumps(suggestion)
+    reservations = []
+    assert generation.improve(home, 'jobs', 'Research tools', '', 'Short names',
+        reserve_model_call=lambda **values: reservations.append(values)) == suggestion
+    assert len(received) == len(reservations) == 1
+    wire = received[0]
+    assert not wire.get('tools') and not wire.get('functions')
+    assert wire.get('max_tokens', wire.get('max_completion_tokens')) <= generation.OUTPUT_TOKENS
+    assert 'PRIVATE SOUL' not in json.dumps(wire)
+    messages = wire['messages']
+    assert [message['role'] for message in messages] == ['system', 'user']
+    assert messages[0]['content'] == generation.IMPROVE_SYSTEM.strip()
+    assert json.loads(messages[-1]['content']) == {
+        'field': 'jobs', 'jobs': 'Research tools', 'goals': '', 'namingStyle': 'Short names'}
+
+
+@pytest.mark.parametrize('field,jobs,goals', [('jobs', '', 'Goal'), ('goals', 'Job', ''), ('namingStyle', 'Job', 'Goal')])
+def test_improvement_rejects_missing_selected_input_before_any_send(tmp_path, monkeypatch, field, jobs, goals):
+    calls, _ = fixture_agent(monkeypatch)
+    with pytest.raises(ValueError):
+        generation.improve(tmp_path, field, jobs, goals, '', reserve_model_call=lambda **k: pytest.fail('send'))
+    assert not calls
