@@ -125,11 +125,16 @@ export function useWorkspaceScroll(location: ReturnType<typeof useLocation>, own
       Array.from(root.querySelectorAll<HTMLElement>(selector)).map(panel => ({ panel, key: `${selector}:${panel.getAttribute('aria-label') ?? ''}` }))
     )
 
+    // Initial responsive measurement can change wrapping after the parent layout
+    // effect. Restore only after that measured layout is committed.
+    const layoutReady = () => !Array.from(root.querySelectorAll('.eid-responsive-detail[data-layout-ready="false"]'))
+      .some(layout => !layout.closest('[hidden], [inert]'))
+
     if (prior?.pathname !== location.pathname || prior?.owner !== owner) {
       root.scrollTop = 0
       root.scrollLeft = 0
       panels().forEach(({ panel, key }) => {
-        const saved = position?.panels.find(item => item.key === key)
+        const saved = layoutReady() ? position?.panels.find(item => item.key === key) : undefined
         panel.scrollTop = saved?.top ?? 0
         panel.scrollLeft = saved?.left ?? 0
       })
@@ -156,7 +161,7 @@ export function useWorkspaceScroll(location: ReturnType<typeof useLocation>, own
     }
 
     const restore = (allowShorter = false) => {
-      if (!restorationPending || !position || !allowShorter && root.scrollHeight + 1 < position.contentHeight) { return }
+      if (!restorationPending || !position || !layoutReady() || !allowShorter && root.scrollHeight + 1 < position.contentHeight) { return }
 
       const link = position.focusHref ? Array.from(root.querySelectorAll<HTMLAnchorElement>('a[href]'))
         .find(item => item.getAttribute('href') === position.focusHref &&
@@ -177,7 +182,7 @@ export function useWorkspaceScroll(location: ReturnType<typeof useLocation>, own
     if (position) {
       // Wait for an asynchronously loaded origin once; user input cancels it.
       restoreObserver = new MutationObserver(() => restore())
-      restoreObserver.observe(root, { childList: true, characterData: true, subtree: true })
+      restoreObserver.observe(root, { childList: true, characterData: true, subtree: true, attributes: true, attributeFilter: ['data-layout-ready'] })
 
       if (typeof ResizeObserver !== 'undefined') {
         restoreResizeObserver = new ResizeObserver(() => restore())

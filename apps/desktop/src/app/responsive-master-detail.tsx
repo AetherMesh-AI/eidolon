@@ -36,6 +36,7 @@ export function ResponsiveMasterDetail({
   const backRef = useRef<HTMLButtonElement>(null)
   const originRef = useRef<HTMLElement | null>(null)
   const [compact, setCompact] = useState(false)
+  const [layoutReady, setLayoutReady] = useState(() => typeof ResizeObserver === 'undefined')
   const { gridRef: rootRef, splitStyle, dragging, startSplitDrag } = useMasterDetailSplit(resizeId, !compact)
   const [list, ...detail] = Children.toArray(children)
 
@@ -63,6 +64,7 @@ export function ResponsiveMasterDetail({
       }
 
       setCompact(narrow)
+      setLayoutReady(true)
       onCompactChange?.(narrow)
     })
 
@@ -102,6 +104,7 @@ export function ResponsiveMasterDetail({
     <div
       className={cn('eid-responsive-detail', className)}
       data-compact={compact}
+      data-layout-ready={layoutReady}
       data-variant={variant}
       ref={rootRef}
       style={splitStyle}

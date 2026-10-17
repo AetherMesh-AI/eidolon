@@ -3,6 +3,8 @@ import { createRef, type RefObject } from 'react'
 import { Link, MemoryRouter, useLocation, useNavigate } from 'react-router'
 import { afterEach, expect, it, vi } from 'vitest'
 
+import { ResponsiveMasterDetail } from '../responsive-master-detail'
+
 import { useWorkspaceScroll } from './workspace'
 import { createWorkspaceScrollMemory, objectiveHref, objectiveReturnTarget, type WorkspaceFocusRestoration } from './workspace-navigation'
 
@@ -320,4 +322,66 @@ it('waits for the exact marked origin rather than focusing its earlier same-href
   expect(globalThis.document.activeElement).not.toBe(screen.getByRole('link', { name: 'Linked work' }))
   await act(async () => view.rerender(<MemoryRouter><DuplicateOrigins /></MemoryRouter>))
   expect(globalThis.document.activeElement).toBe(screen.getByRole('link', { name: 'History record' }))
+})
+
+function ResponsiveOrigin() {
+  const location = useLocation()
+  const root = useWorkspaceScroll(location, 'one')
+
+  return <main data-testid="workspace" ref={root}>
+    <div hidden><div className="eid-responsive-detail" data-layout-ready="false" /></div>
+    <div inert><div className="eid-responsive-detail" data-layout-ready="false" /></div>
+    {location.pathname.startsWith('/objectives/')
+    ? <Link state={{ workspaceReturnOwner: 'one' }} to={objectiveReturnTarget(new URLSearchParams(location.search), 'one')}>Return</Link>
+    : <ResponsiveMasterDetail className="eid-messages-layout" detailOpen onDetailOpenChange={() => {}}>
+      <div>Members</div>
+      <Link to={objectiveHref('research', '/messages', 'one')}>History origin</Link>
+    </ResponsiveMasterDetail>}</main>
+}
+
+it.each(['restore', 'outside focus', 'deadline'])('waits for the initial responsive layout commit: %s', async scenario => {
+  if (scenario === 'deadline') { vi.useFakeTimers() }
+  const observers = new Map<Element, Set<ResizeObserverCallback>>()
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(private callback: ResizeObserverCallback) {}
+    observe(element: Element) { observers.set(element, new Set([...(observers.get(element) ?? []), this.callback])) }
+    disconnect() {}
+  })
+
+  const measure = async () => {
+    const layout = globalThis.document.querySelector('.eid-messages-layout')!
+    await act(async () => { for (const callback of observers.get(layout) ?? []) { callback([{ contentRect: { width: 500 } } as ResizeObserverEntry], {} as ResizeObserver) } })
+  }
+
+  try {
+    render(<MemoryRouter initialEntries={['/messages']}><ResponsiveOrigin /></MemoryRouter>)
+    await measure()
+    const panel = () => globalThis.document.querySelector<HTMLElement>('.eid-responsive-detail-content')!
+    panel().scrollTop = 1221.5
+    fireEvent.click(screen.getByRole('link', { name: 'History origin' }))
+    fireEvent.click(screen.getByRole('link', { name: 'Return' }))
+    expect(globalThis.document.querySelector('.eid-messages-layout')?.getAttribute('data-compact')).toBe('false')
+    expect(globalThis.document.activeElement).not.toBe(screen.getByRole('link', { name: 'History origin' }))
+    expect(panel().scrollTop).toBe(0)
+    const outside = globalThis.document.createElement('input')
+    globalThis.document.body.append(outside)
+
+    if (scenario === 'outside focus') { outside.focus() }
+
+    if (scenario === 'deadline') { await act(async () => vi.advanceTimersByTime(1500)); expect(panel().scrollTop).toBe(0) }
+    await measure()
+
+    if (scenario !== 'restore') {
+      expect(panel().scrollTop).toBe(0)
+      expect(globalThis.document.activeElement).not.toBe(screen.getByRole('link', { name: 'History origin' }))
+      outside.remove()
+
+      return
+    }
+
+    outside.remove()
+    expect(globalThis.document.querySelector('.eid-messages-layout')?.getAttribute('data-compact')).toBe('true')
+    expect(panel().scrollTop).toBe(1221.5)
+    expect(globalThis.document.activeElement).toBe(screen.getByRole('link', { name: 'History origin' }))
+  } finally { cleanup(); vi.unstubAllGlobals() }
 })
