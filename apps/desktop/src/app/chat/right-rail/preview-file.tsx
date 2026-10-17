@@ -19,6 +19,7 @@ import { FileDiffPanel } from '@/components/chat/diff-lines'
 import { chunkTextLines, useFixedRowWindow } from '@/components/chat/fixed-row-window'
 import { LazyShiki as ShikiHighlighter } from '@/components/chat/shiki-highlighter'
 import { PageLoader } from '@/components/page-loader'
+import { CopyButton } from '@/components/ui/copy-button'
 import { Tip } from '@/components/ui/tooltip'
 import { translateNow, useI18n } from '@/i18n'
 import {
@@ -159,6 +160,8 @@ interface LocalPreviewState {
   language?: string
   loading: boolean
   text?: string
+  /** File/connection/reload identity that produced this decoded text. */
+  textOwnerKey?: string
   truncated?: boolean
 }
 
@@ -461,7 +464,7 @@ export function PreviewModeSwitcher({
   return (
     // Fixed height so the header is byte-identical between read and edit modes —
     // swapping the trailing controls must never move the body below it.
-    <div className="flex h-7 shrink-0 items-center justify-end gap-3 border-b border-border/40 px-3">
+    <div className="preview-mode-switcher flex h-9 shrink-0 items-center justify-end gap-3 border-b border-border/40 px-3">
       {showModes &&
         modes.map(mode => (
           <button
@@ -533,6 +536,21 @@ function startLineDrag(event: ReactDragEvent<HTMLElement>, filePath: string, { e
   event.dataTransfer.setData(HERMES_PATHS_MIME, JSON.stringify([{ line: start, lineEnd, path: filePath }]))
   event.dataTransfer.setData('text/plain', label)
   event.dataTransfer.effectAllowed = 'copy'
+}
+
+function SourceCodeFallback({ code }: { code: string }) {
+  return (
+    <pre className="shiki" data-source-fallback>
+      <code>
+        {code.split('\n').map((line, index) => (
+          <Fragment key={index}>
+            {index > 0 && '\n'}
+            <span className="line">{line}</span>
+          </Fragment>
+        ))}
+      </code>
+    </pre>
+  )
 }
 
 /** Windowed, Shiki-highlighted source. The gutter's line selection produces a
@@ -618,41 +636,56 @@ export function SourceView({ filePath, language, text }: { filePath?: string; la
   }, [filePath, selection])
 
   return (
-    <div className="h-full overflow-auto" onScroll={onScroll} ref={scrollerRef}>
+    <div className="h-full overflow-auto" dir="ltr" onScroll={onScroll} ref={scrollerRef}>
       <div className="grid min-w-max grid-cols-[auto_minmax(0,1fr)] font-mono text-[0.7rem] leading-relaxed">
         {beforeRows > 0 && <div aria-hidden className="col-span-2" style={{ height: beforeRows * SOURCE_LINE_PX }} />}
-        {visibleChunks.map(chunk => (
-          <Fragment key={chunk.start}>
-            <div className="select-none text-right text-muted-foreground/55">
-              {chunk.lines.map((_lineText, offset) => {
-                const line = chunk.start + offset + 1
-                const selected = inSelection(line)
+        {visibleChunks.map(chunk => {
+          const code = chunk !== lastChunk ? `${chunk.text}\n` : chunk.text
+          const effectiveLanguage = language || 'text'
 
-                return (
-                  <div
-                    className={cn(
-                      'h-5 w-9 pr-2 leading-5 tabular-nums transition-colors',
-                      filePath && 'cursor-pointer',
-                      selected
-                        ? 'bg-amber-200/45 text-amber-900 dark:bg-amber-300/20 dark:text-amber-100'
-                        : filePath && 'hover:text-foreground'
-                    )}
-                    draggable={Boolean(filePath)}
-                    key={line}
-                    onClick={event => handleLineClick(event, line)}
-                    onDragStart={event => handleDragStart(event, line)}
-                    title={filePath ? t.preview.sourceLineTitle : undefined}
-                  >
-                    {line}
-                  </div>
-                )
-              })}
-            </div>
-            <div className="preview-source-code min-w-0 [&_pre]:m-0" data-selectable-text="true">
-              <ShikiHighlighter code={chunk.text} language={language || 'text'} theme={SHIKI_THEME} />
-            </div>
-          </Fragment>
-        ))}
+          return (
+            <Fragment key={chunk.start}>
+              <div className="select-none text-right text-muted-foreground/55">
+                {chunk.lines.map((_lineText, offset) => {
+                  const line = chunk.start + offset + 1
+                  const selected = inSelection(line)
+
+                  return (
+                    <div
+                      className={cn(
+                        'h-5 w-9 pr-2 leading-5 tabular-nums transition-colors',
+                        filePath && 'cursor-pointer',
+                        selected
+                          ? 'bg-amber-200/45 text-amber-900 dark:bg-amber-300/20 dark:text-amber-100'
+                          : filePath && 'hover:text-foreground'
+                      )}
+                      draggable={Boolean(filePath)}
+                      key={line}
+                      onClick={event => handleLineClick(event, line)}
+                      onDragStart={event => handleDragStart(event, line)}
+                      title={filePath ? t.preview.sourceLineTitle : undefined}
+                    >
+                      {line}
+                    </div>
+                  )
+                })}
+              </div>
+              <div
+                className="preview-source-code min-w-0 [&_pre]:m-0"
+                data-selectable-text="true"
+                data-source-continuation={chunk !== lastChunk ? 'true' : undefined}
+              >
+                <ShikiHighlighter
+                  code={code}
+                  fallback={<SourceCodeFallback code={code} />}
+                  key={JSON.stringify([effectiveLanguage, code])}
+                  language={effectiveLanguage}
+                  theme={SHIKI_THEME}
+                />
+              </div>
+            </Fragment>
+          )
+        })}
         {afterRows > 0 && <div aria-hidden className="col-span-2" style={{ height: afterRows * SOURCE_LINE_PX }} />}
       </div>
     </div>
@@ -691,6 +724,7 @@ export function LocalFilePreview({ reloadKey, target }: { reloadKey: number; tar
   const connection = useStore($connection)
   const fsCacheKey = desktopFsCacheKey(connection)
   const filePath = filePathForTarget(target)
+  const textOwnerKey = JSON.stringify([fsCacheKey, filePath, reloadKey, selfReload])
   const isImage = target.previewKind === 'image'
   const isPdf = target.previewKind === 'pdf'
 
@@ -755,6 +789,7 @@ export function LocalFilePreview({ reloadKey, target }: { reloadKey: number; tar
             language: result.language || target.language || 'text',
             loading: false,
             text: shouldBlock ? undefined : result.text,
+            textOwnerKey,
             truncated: result.truncated
           })
 
@@ -767,7 +802,7 @@ export function LocalFilePreview({ reloadKey, target }: { reloadKey: number; tar
               const diff = root ? await desktopFileDiff(root, filePath) : ''
 
               if (active && diff.trim()) {
-                setState(prev => (prev.text === result.text ? { ...prev, diff } : prev))
+                setState(prev => (prev.textOwnerKey === textOwnerKey && prev.text === result.text ? { ...prev, diff } : prev))
               }
             } catch {
               // No diff available; the preview just shows source.
@@ -799,6 +834,7 @@ export function LocalFilePreview({ reloadKey, target }: { reloadKey: number; tar
     isText,
     reloadKey,
     selfReload,
+    textOwnerKey,
     target.dataUrl,
     target.language
   ])
@@ -837,6 +873,12 @@ export function LocalFilePreview({ reloadKey, target }: { reloadKey: number; tar
   // or files we only loaded the first 512 KB of (saving would drop the tail).
   const canEdit =
     isText && !isImage && !blockedByTarget && state.text !== undefined && !state.truncated && !state.binary
+  // Copy the loaded decoded source, including a disclosed truncated prefix,
+  // never the mounted/highlighted DOM or a previous file/connection's payload.
+  const canCopySource =
+    (target.previewKind === 'text' || target.previewKind === 'html') &&
+    !target.binary && !state.binary && !blockedByTarget && !state.loading && !state.error &&
+    state.textOwnerKey === textOwnerKey && Boolean(state.text)
 
   // Per-keystroke: update the draft ref (no render) and only set `dirty` when it
   // actually changes — React bails on an identical value, so a long typing run
@@ -1115,17 +1157,32 @@ export function LocalFilePreview({ reloadKey, target }: { reloadKey: number; tar
           modes={modes}
           onSelect={setUserMode}
           trailing={
-            canEdit ? (
-              <Tip label={`${t.preview.edit} (e)`}>
-                <button
-                  className="flex items-center gap-1 text-[0.625rem] font-bold text-muted-foreground underline-offset-4 transition-colors hover:text-foreground"
-                  onClick={beginEdit}
-                  type="button"
-                >
-                  <Pencil className="size-3" />
-                  {t.preview.edit}
-                </button>
-              </Tip>
+            canCopySource || canEdit ? (
+              <>
+                {canCopySource && (
+                  <CopyButton
+                    appearance="inline"
+                    className="h-5 px-1 opacity-70 hover:opacity-100 focus-visible:opacity-100"
+                    iconClassName="size-3"
+                    key={textOwnerKey}
+                    label={state.truncated ? t.preview.copyLoadedSource : t.preview.copySource}
+                    showLabel={false}
+                    text={() => desktopFsCacheKey() === fsCacheKey && state.textOwnerKey === textOwnerKey ? state.text! : ''}
+                  />
+                )}
+                {canEdit && (
+                  <Tip label={`${t.preview.edit} (e)`}>
+                    <button
+                      className="flex items-center gap-1 text-[0.625rem] font-bold text-muted-foreground underline-offset-4 transition-colors hover:text-foreground"
+                      onClick={beginEdit}
+                      type="button"
+                    >
+                      <Pencil className="size-3" />
+                      {t.preview.edit}
+                    </button>
+                  </Tip>
+                )}
+              </>
             ) : null
           }
         />

@@ -3632,6 +3632,8 @@ export const zh: Translations = {
     popOut: '弹出',
     linkHint: '⌘/Ctrl+点击在预览面板打开',
     sourceLineTitle: '点击选择 · shift 点击扩展 · 拖到输入框',
+    copySource: '复制源码',
+    copyLoadedSource: '仅复制已加载的源码',
     source: '源码',
     renderedPreview: '预览',
     diff: '差异',

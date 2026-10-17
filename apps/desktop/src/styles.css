@@ -1959,10 +1959,21 @@ body.guest-pointer-lock :is(webview, iframe) {
   opacity: 1;
 }
 
-/* Shiki surfaces in the inline file diff + source preview: strip the theme's
-   own background/margins, and lay each `.line` on its own grid row so the
-   inter-line `\n` text nodes can't double-space full-width rows. Empty lines
-   carry a non-breaking space so blank rows keep their height. */
+/* Shared read/edit headers reserve the complete keyboard outline, including
+   at compact font sizes. Selection underlines remain a separate state. */
+.preview-mode-switcher {
+  min-height: 34px;
+}
+
+.preview-mode-switcher button:focus-visible {
+  outline: 3px solid var(--ui-accent);
+  outline-offset: 3px;
+  transition-property: color, background-color, border-color, box-shadow;
+}
+
+/* Shiki surfaces in the inline file diff + source preview share transparent
+   backgrounds. Diff rows use grid items; source keeps native preformatted
+   text flow so selection/copy preserves literal blank lines. */
 [data-slot='file-diff-panel'] .shiki,
 [data-slot='file-diff-panel'] .shiki code,
 .preview-source-code .shiki,
@@ -1971,13 +1982,11 @@ body.guest-pointer-lock :is(webview, iframe) {
   background: transparent !important;
 }
 
-[data-slot='file-diff-panel'] .shiki code,
-.preview-source-code .shiki code {
+[data-slot='file-diff-panel'] .shiki code {
   display: grid;
 }
 
-[data-slot='file-diff-panel'] .shiki code .line:empty::before,
-.preview-source-code .shiki code .line:empty::before {
+[data-slot='file-diff-panel'] .shiki code .line:empty::before {
   content: '\00a0';
 }
 
@@ -1987,18 +1996,32 @@ body.guest-pointer-lock :is(webview, iframe) {
   white-space: pre;
 }
 
-/* Source rows are a fixed editor-height box so source⇄diff toggling never
-   shifts and the gutter stays aligned. */
+/* Literal newlines own source rows. The paired gutter owns the chunk's full
+   height, including trailing/entirely empty lines, without copyable filler. */
 .preview-source-code .shiki code {
-  min-width: max-content;
-}
-
-.preview-source-code .shiki code .line {
   display: block;
-  height: 1.25rem;
+  min-width: max-content;
   padding: 0 0.625rem;
   line-height: 1.25rem;
   white-space: pre;
+}
+
+.preview-source-code .shiki code .line {
+  display: inline;
+}
+
+/* A real, text-free box keeps terminal blank lines in native selections. */
+.preview-source-code .shiki code .line:empty {
+  display: inline-block;
+  width: 0;
+  height: 1.25rem;
+  vertical-align: top;
+}
+
+/* A continuation LF belongs to the source, but its extra Shiki placeholder
+   is not another row. The following chunk owns that row's real line box. */
+.preview-source-code[data-source-continuation='true'] .shiki code .line:last-child:empty {
+  display: none;
 }
 
 /* The github-dark token palette reads candy-bright at our small code size.

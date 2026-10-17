@@ -3101,6 +3101,8 @@ export const ja = defineLocale({
     popOut: 'ポップアウト',
     linkHint: '⌘/Ctrl+クリックでプレビューペイン',
     sourceLineTitle: 'クリックして選択 · Shift クリックで拡張 · コンポーザーにドラッグ',
+    copySource: 'ソースをコピー',
+    copyLoadedSource: '読み込んだソースのみコピー',
     source: 'ソース',
     renderedPreview: 'プレビュー',
     diff: '差分',
