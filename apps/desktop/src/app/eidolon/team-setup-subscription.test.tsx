@@ -232,6 +232,26 @@ it('requires consent, account model choice and an acknowledged review, then pres
   )
 })
 
+it('keeps the model label independent of catalog options and the selected model', async () => {
+  const test = rig()
+  render(<test.Harness />)
+  await inspect()
+  await connect()
+  const model = screen.getByRole('combobox', { name: copy.model }) as HTMLSelectElement
+  const label = model.labels?.[0]
+
+  expect(label?.textContent).toBe(copy.model)
+  expect(label?.htmlFor).toBe(model.id)
+  expect(label?.control).toBe(model)
+  expect(screen.getByLabelText(copy.model, { exact: true })).toBe(model)
+  fireEvent.change(model, { target: { value: '' } })
+  expect(label?.textContent).toBe(copy.model)
+  expect(screen.getByRole('combobox', { name: copy.model })).toBe(model)
+  fireEvent.change(model, { target: { value: subscriptionPolicy.modelSlug } })
+  expect(label?.textContent).toBe(copy.model)
+  expect(screen.getByLabelText(copy.model, { exact: true })).toBe(model)
+})
+
 it('keeps pending consent cancellable and uncertain policy blocked without retrying a request', async () => {
   const test = rig()
   test.setPending()
