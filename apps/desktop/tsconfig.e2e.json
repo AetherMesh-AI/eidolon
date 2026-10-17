@@ -10,6 +10,7 @@
   "include": [
     "e2e",
     "playwright.config.ts",
+    "src/api/request-timeouts.ts",
     "src/themes/presets.ts",
     "src/themes/eidolon.ts",
     "src/themes/types.ts",

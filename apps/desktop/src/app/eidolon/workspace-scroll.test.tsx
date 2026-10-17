@@ -287,3 +287,37 @@ it('clears the focus claim after successful restoration', () => {
   expect(globalThis.document.activeElement).toBe(screen.getByRole('link', { name: 'Open objective' }))
   expect(claim.current?.pending ?? null).toBeNull()
 })
+
+function DuplicateOrigins({ owner = 'one', record = 'request-a', present = true }: { owner?: string; record?: string; present?: boolean }) {
+  const location = useLocation()
+  const root = useWorkspaceScroll(location, owner)
+  const href = objectiveHref('shared', '/messages', owner)
+
+  return <><input aria-label="Outside control" /><main ref={root}>{location.pathname === '/messages' ? <>
+    <Link data-workspace-origin={JSON.stringify([owner, 'linked'])} to={href}>Linked work</Link>
+    {present && <Link data-workspace-origin={JSON.stringify([owner, record])} to={href}>History record</Link>}
+  </> : <Link state={{ workspaceReturnOwner: owner }} to="/messages">Return</Link>}</main></>
+}
+
+it.each(['missing', 'replaced', 'owner'] as const)('never falls back to a duplicate href when the marked origin is %s', change => {
+  vi.useFakeTimers()
+  const view = render(<MemoryRouter initialEntries={['/messages']}><DuplicateOrigins /></MemoryRouter>)
+  fireEvent.click(screen.getByRole('link', { name: 'History record' }))
+  view.rerender(<MemoryRouter><DuplicateOrigins owner={change === 'owner' ? 'two' : 'one'} present={change !== 'missing'} record={change === 'replaced' ? 'request-b' : 'request-a'} /></MemoryRouter>)
+  fireEvent.click(screen.getByRole('link', { name: 'Return' }))
+  act(() => vi.advanceTimersByTime(1500))
+  expect(globalThis.document.activeElement).not.toBe(screen.getByRole('link', { name: 'Linked work' }))
+  const replacement = screen.queryByRole('link', { name: 'History record' })
+
+  if (replacement) { expect(globalThis.document.activeElement).not.toBe(replacement) }
+})
+
+it('waits for the exact marked origin rather than focusing its earlier same-href sibling', async () => {
+  const view = render(<MemoryRouter initialEntries={['/messages']}><DuplicateOrigins /></MemoryRouter>)
+  fireEvent.click(screen.getByRole('link', { name: 'History record' }))
+  view.rerender(<MemoryRouter><DuplicateOrigins present={false} /></MemoryRouter>)
+  fireEvent.click(screen.getByRole('link', { name: 'Return' }))
+  expect(globalThis.document.activeElement).not.toBe(screen.getByRole('link', { name: 'Linked work' }))
+  await act(async () => view.rerender(<MemoryRouter><DuplicateOrigins /></MemoryRouter>))
+  expect(globalThis.document.activeElement).toBe(screen.getByRole('link', { name: 'History record' }))
+})

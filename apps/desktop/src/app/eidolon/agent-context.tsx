@@ -67,7 +67,7 @@ export function AgentContext({ agent, snapshot }: AgentContextProps) {
       <p className="eid-note">{copy.historyNote}</p>
       {context?.recentHistory ? context.recentHistory.length ? <ol className="eid-list">{context.recentHistory.map(entry => <li key={entry.requestId}>
         {snapshot.objectives.some(objective => objective.id === entry.objectiveId)
-          ? <Link dir="auto" to={objectiveHref(entry.objectiveId, pathname + search, ownerScope)}>{entry.objectiveTitle || entry.objectiveId}</Link>
+          ? <Link data-workspace-origin={JSON.stringify(['identity-history', ownerScope, agent.id, agent.identityId ?? '', entry.requestId, entry.objectiveId])} dir="auto" to={objectiveHref(entry.objectiveId, pathname + search, ownerScope)}>{entry.objectiveTitle || entry.objectiveId}</Link>
           : <strong dir="auto">{entry.objectiveTitle || entry.objectiveId}</strong>}
         <p className="eid-result-text" dir="auto">{entry.summary}</p>
         <details>

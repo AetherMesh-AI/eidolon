@@ -6,6 +6,7 @@ import { AgentContext, AgentContextDisclosure } from './agent-context'
 import { Messages } from './messages'
 import { ownerChatSnapshot } from './runtime-owner-chat.test-support'
 import type { RuntimeOrganizationAdapter } from './types'
+import { useWorkspaceScroll } from './workspace'
 import { objectiveReturnTarget } from './workspace-navigation'
 
 afterEach(cleanup)
@@ -134,4 +135,32 @@ it.each(['/messages?member=worker&owner=unverified', '/settings'])('keeps canoni
   render(<MemoryRouter initialEntries={[origin]}><AgentContext agent={snapshot.agents[0]} snapshot={snapshot} /></MemoryRouter>)
   expect(screen.getByRole('link', { name: 'Retained objective' }).getAttribute('href')).toBe(`/objectives/${encodeURIComponent(snapshot.objectives[0].id)}`)
   expect(screen.queryByRole('link', { name: 'Omitted objective' })).toBeNull()
+})
+
+it('returns focus to the exact history record when linked work has the same objective href', () => {
+  const snapshot = historyFixture()
+  const member = snapshot.agents[0]
+  const owner = snapshot.connection!.ownerScope!
+  snapshot.objectives[0].ownerId = member.id
+  member.context!.recentHistory!.unshift({ ...member.context!.recentHistory![0], requestId: 'other-request', summary: 'Another result for the same objective' })
+
+  const params = new URLSearchParams({ member: member.id, identity: member.identityId!, owner,
+    contextOwner: owner, contextMember: member.id, contextIdentity: member.identityId! })
+
+  function Surface() {
+    const location = useLocation()
+    const root = useWorkspaceScroll(location, owner)
+
+    return <main ref={root}>{location.pathname === '/messages' ? <Messages snapshot={snapshot} /> :
+      <Link state={{ workspaceReturnOwner: owner }} to={objectiveReturnTarget(new URLSearchParams(location.search), owner)}>Return</Link>}</main>
+  }
+
+  render(<MemoryRouter initialEntries={['/messages?' + params]}><Surface /></MemoryRouter>)
+  const history = () => within(within(screen.getByRole('region', { name: 'Recent identity history' })).getByText('Recorded result').closest('li')!).getByRole('link', { name: 'Retained objective' })
+  const links = screen.getAllByRole('link', { name: 'Retained objective' })
+  expect(links).toHaveLength(3)
+  expect(links[0].getAttribute('href')).toBe(history().getAttribute('href'))
+  fireEvent.click(history())
+  fireEvent.click(screen.getByRole('link', { name: 'Return' }))
+  expect(globalThis.document.activeElement).toBe(history())
 })

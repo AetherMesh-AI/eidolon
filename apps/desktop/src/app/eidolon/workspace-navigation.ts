@@ -39,6 +39,8 @@ export interface WorkspaceScrollPosition {
   contentHeight: number
   panels: { key: string; top: number; left: number }[]
   focusHref: string | null
+  /** Explicit record identity disambiguates multiple links to the same objective. */
+  focusOrigin?: string | null
 }
 
 /** Window-local presentation memory. Owner changes discard positions, never transfer them. */

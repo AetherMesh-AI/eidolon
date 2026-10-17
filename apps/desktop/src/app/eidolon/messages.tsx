@@ -146,7 +146,7 @@ export function Messages({
           <section aria-label={messages.linkedWork}>
             <h3>{messages.linkedWork}</h3>
             <p className="eid-note">{messages.linkedWorkNote}</p>
-            {objectives.length ? <ul>{objectives.map(objective => <li key={objective.id}><Link dir="auto" to={objectiveHref(objective.id, `${location.pathname}${location.search}`, scope)}>{objective.title}</Link></li>)}</ul> : <p>{messages.noLinkedWork}</p>}
+            {objectives.length ? <ul>{objectives.map(objective => <li key={objective.id}><Link data-workspace-origin={JSON.stringify(['member-work', scope, agent.id, agent.identityId ?? '', objective.id])} dir="auto" to={objectiveHref(objective.id, `${location.pathname}${location.search}`, scope)}>{objective.title}</Link></li>)}</ul> : <p>{messages.noLinkedWork}</p>}
           </section>
           <AgentContextDisclosure agent={agent} snapshot={snapshot} summary={messages.retainedContext} />
         </section>}

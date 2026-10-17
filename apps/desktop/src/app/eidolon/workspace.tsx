@@ -159,7 +159,8 @@ export function useWorkspaceScroll(location: ReturnType<typeof useLocation>, own
       if (!restorationPending || !position || !allowShorter && root.scrollHeight + 1 < position.contentHeight) { return }
 
       const link = position.focusHref ? Array.from(root.querySelectorAll<HTMLAnchorElement>('a[href]'))
-        .find(item => item.getAttribute('href') === position.focusHref) : undefined
+        .find(item => item.getAttribute('href') === position.focusHref &&
+          (!position.focusOrigin || item.getAttribute('data-workspace-origin') === position.focusOrigin)) : undefined
 
       if (position.focusHref && !link || position.panels.some(saved => !panels().some(item => item.key === saved.key))) { return }
       root.scrollTop = position.top
@@ -191,19 +192,25 @@ export function useWorkspaceScroll(location: ReturnType<typeof useLocation>, own
 
     previous.current = { pathname: location.pathname, search: location.search, owner }
     let focusHref = position?.focusHref ?? null
+    let focusOrigin = position?.focusOrigin ?? null
 
     const save = () => memory.current.save(owner, route, {
       top: root.scrollTop,
       left: root.scrollLeft,
       contentHeight: root.scrollHeight,
       panels: panels().map(({ panel, key }) => ({ key, top: panel.scrollTop, left: panel.scrollLeft })),
-      focusHref
+      focusHref,
+      focusOrigin
     })
 
     const captureLink = (event: MouseEvent) => {
       const link = event.target instanceof Element ? event.target.closest('a[href]') : null
 
-      if (link && root.contains(link)) { focusHref = link.getAttribute('href'); save() }
+      if (link && root.contains(link)) {
+        focusHref = link.getAttribute('href')
+        focusOrigin = link.getAttribute('data-workspace-origin')
+        save()
+      }
     }
 
     const document = root.ownerDocument

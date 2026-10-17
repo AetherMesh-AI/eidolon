@@ -12,8 +12,7 @@ export {
   profileScopeKey,
   PROMPT_SUBMIT_REQUEST_TIMEOUT_MS,
   setApiRequestConnection,
-  setApiRequestProfile,
-  STARTUP_REQUEST_TIMEOUT_MS
+  setApiRequestProfile
 } from './api/client'
 export type { ProfileScope } from './api/client'
 export * from './api/config'
