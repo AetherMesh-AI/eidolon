@@ -1998,6 +1998,14 @@ body.guest-pointer-lock :is(webview, iframe) {
   display: inline;
 }
 
+/* A real, text-free box keeps terminal blank lines in native selections. */
+.preview-source-code .shiki code .line:empty {
+  display: inline-block;
+  width: 0;
+  height: 1.25rem;
+  vertical-align: top;
+}
+
 /* The github-dark token palette reads candy-bright at our small code size.
    `github-dark-dimmed` only dims the *background* (which we strip), so soften
    the token *foregrounds* directly — a small saturation + brightness pullback,

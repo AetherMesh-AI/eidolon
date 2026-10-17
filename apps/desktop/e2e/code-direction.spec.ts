@@ -59,7 +59,10 @@ async function selectSourceRange(chunks: Locator, from: number, to: number) {
             while (node) {
               const length = node.textContent!.length
 
-              if (offset <= length) {return { node, offset }}
+              if (offset <= length) {
+                return { node, offset }
+              }
+
               offset -= length
               node = walker.nextNode()
             }
@@ -103,7 +106,7 @@ test.afterEach(async () => {
           ipc,
           rpc: fixture.capabilityMethods,
           geometryContext: test.info().title.startsWith('Arabic file source')
-            ? 'Restored sandbox file in one tabbed zone; actual Arabic Source control, 200% and 400px. Full and partial copy across two mounted chunks, blank lines and terminal newlines; unmounted rows are outside this proof.'
+            ? 'Restored sandbox file in one tabbed zone; actual Arabic Source control, 200% and 400px. Full and partial copy of mixed, terminal-only and entirely blank highlighted source, including mounted chunk boundaries; unmounted rows and plain-text highlight fallback are outside this proof.'
             : 'MCP capability pane; 100%, 200% and 400px. Appearance navigation remounts the route.'
         },
         null,
@@ -128,7 +131,6 @@ for (const mode of ['dark', 'light'] as const) {
     }))
 
     const { page, app, sandbox } = current
-    const filePath = join(sandbox.root, 'synthetic-direction.md')
 
     const source = [
       `# مصدر تجريبي\n\n\`\`\`json\n${draft}\n\`\`\``,
@@ -137,7 +139,13 @@ for (const mode of ['dark', 'light'] as const) {
       ''
     ].join('\n')
 
-    writeFileSync(filePath, source)
+    const samples = [
+      { name: 'mixed', text: source },
+      { name: 'terminal', text: '\n' },
+      { name: 'blank-chunks', text: '\n'.repeat(200) }
+    ].map(sample => ({ ...sample, path: join(sandbox.root, `synthetic-${sample.name}.md`) }))
+
+    for (const sample of samples) {writeFileSync(sample.path, sample.text)}
     await setGalleryAppearance(current, mode, mode === 'dark' ? 'داكن' : 'فاتح')
     // Settings fronts the workspace and hides its tab strip. Return to chat
     // before seeding the layout, and wait for its normal navigation persistence
@@ -153,26 +161,26 @@ for (const mode of ['dark', 'light'] as const) {
       .toBe('/')
     // Restore a supported preview tab in an isolated, single-zone layout.
     // The real native file reader, mode switcher and SourceView own rendering.
-    const paneId = `preview-tile:file:${filePath}`
+    const paneId = `preview-tile:file:${samples[0].path}`
     await page.evaluate(
-      ({ filePath, paneId }) => {
-        const id = `file:${filePath}`
+      ({ samples, paneId }) => {
+        const id = `file:${samples[0].path}`
         localStorage.setItem(
           'hermes.desktop.previewTabs.v2',
-          JSON.stringify([
-            {
-              id,
+          JSON.stringify(
+            samples.map(sample => ({
+              id: `file:${sample.path}`,
               target: {
                 kind: 'file',
-                label: 'synthetic-direction.md',
-                path: filePath,
-                source: filePath,
-                url: filePath,
+                label: `synthetic-${sample.name}.md`,
+                path: sample.path,
+                source: sample.path,
+                url: sample.path,
                 previewKind: 'text',
                 language: 'markdown'
               }
-            }
-          ])
+            }))
+          )
         )
         localStorage.setItem('hermes.desktop.rightRailActiveTab', id)
         localStorage.setItem(
@@ -180,87 +188,138 @@ for (const mode of ['dark', 'light'] as const) {
           JSON.stringify({
             type: 'group',
             id: 'code-direction-source',
-            panes: ['workspace', paneId, 'sessions', 'review', 'files', 'terminal'],
+            panes: [
+              'workspace',
+              ...samples.map(sample => `preview-tile:file:${sample.path}`),
+              'sessions',
+              'review',
+              'files',
+              'terminal'
+            ],
             active: paneId,
             tabStrip: 'always'
           })
         )
       },
-      { filePath, paneId }
+      { samples: samples.map(({ name, path }) => ({ name, path })), paneId }
     )
     await page.reload()
     await waitForAppReady(current, 60_000, '[data-tree-group="code-direction-source"]')
     await expect.poll(() => page.evaluate(() => location.hash)).toBe('#/')
     // Fresh-draft startup fronts chat once; let it settle before selecting the file.
     await expect(page.locator('textarea:visible, [contenteditable="true"]:visible').first()).toBeVisible()
-    const fileTab = page.locator(`[data-tree-tab=${JSON.stringify(paneId)}]`)
-    await expect(fileTab).toBeVisible()
-    await fileTab.click()
     const root = page.locator('[data-tree-group="code-direction-source"]')
-    const sourceButton = root.getByRole('button', { name: 'المصدر', exact: true })
-    await expect(sourceButton).toBeVisible({ timeout: 30_000 })
-    await sourceButton.click()
-    const chunks = root.locator('.preview-source-code')
-    await expect(chunks).toHaveCount(2)
-    await expect(chunks.locator('pre.shiki')).toHaveCount(2)
-    const code = chunks.first()
-    await expect.poll(async () => (await chunks.allTextContents()).join('\n')).toBe(source)
-    const originalCode = await code.elementHandle()
-    const scroller = code.locator('xpath=ancestor::*[@dir="ltr"][1]')
 
-    for (const size of sizes.slice(1)) {
-      const label = `source-direction-ar-${mode}-${size.width}-${size.zoom * 100}`
-      await resizeGallery(current, size.width, size.height, size.zoom)
-      expect(await code.evaluate((element, original) => element === original, originalCode)).toBe(true)
-      await expect(sourceButton).toHaveCSS('direction', 'rtl')
-      await expect(code).toHaveCSS('direction', 'ltr')
-      await expect(scroller).toHaveCSS('direction', 'ltr')
-      await expect.poll(async () => (await chunks.allTextContents()).join('\n')).toBe(source)
-      await scroller.evaluate(element => {
-        element.scrollLeft = 0
-        element.scrollTop = 0
-      })
+    for (const sample of samples) {
+      const fileTab = page.locator(`[data-tree-tab=${JSON.stringify(`preview-tile:file:${sample.path}`)}]`)
+      await expect(fileTab).toBeVisible()
+      await fileTab.click()
+      const sourceButton = root.getByRole('button', { name: 'المصدر', exact: true })
+      await expect(sourceButton).toBeVisible({ timeout: 30_000 })
+      await sourceButton.click()
+      const chunks = root.locator('.preview-source-code:visible')
+      const chunkCount = Math.ceil(sample.text.split('\n').length / 200)
+      await expect(chunks).toHaveCount(chunkCount)
+      await expect(chunks.locator('pre.shiki')).toHaveCount(chunkCount)
+      const code = chunks.first()
+      await expect.poll(async () => (await chunks.allTextContents()).join('\n')).toBe(sample.text)
+      const originalCode = await code.elementHandle()
+      const scroller = code.locator('xpath=ancestor::*[@dir="ltr"][1]')
 
-      const geometry = await code.evaluate(element => ({
-        codeLeft: element.getBoundingClientRect().left,
-        gutterRight: element.previousElementSibling!.getBoundingClientRect().right
-      }))
+      for (const size of sizes.slice(1)) {
+        const label = `source-direction-${sample.name}-ar-${mode}-${size.width}-${size.zoom * 100}`
+        await resizeGallery(current, size.width, size.height, size.zoom)
+        expect(await code.evaluate((element, original) => element === original, originalCode)).toBe(true)
+        await expect(sourceButton).toHaveCSS('direction', 'rtl')
+        await expect(code).toHaveCSS('direction', 'ltr')
+        await expect(scroller).toHaveCSS('direction', 'ltr')
+        await expect.poll(async () => (await chunks.allTextContents()).join('\n')).toBe(sample.text)
+        await scroller.evaluate(element => {
+          element.scrollLeft = 0
+          element.scrollTop = 0
+        })
 
-      expect(geometry.gutterRight).toBeLessThanOrEqual(geometry.codeLeft + 1)
-      const lastRow = await chunks.first().locator('.line').last().boundingBox()
-      const nextRow = await chunks.nth(1).locator('.line').first().boundingBox()
-      expect(Math.abs(nextRow!.y - lastRow!.y - 20)).toBeLessThanOrEqual(1)
-      await code.click({ position: { x: 5, y: 5 } })
-      await selectSourceRange(chunks, 0, source.length)
-      await app.evaluate(({ clipboard }, sentinel) => clipboard.writeText(sentinel), `${label}: awaiting native copy`)
-      await page.keyboard.press('Control+c')
-      await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toBe(source)
-      const chunkBoundary = source.split('\n').slice(0, 200).join('\n').length
+        const geometry = await code.evaluate(element => ({
+          codeLeft: element.getBoundingClientRect().left,
+          gutterRight: element.previousElementSibling!.getBoundingClientRect().right
+        }))
 
-      for (const [from, to] of [
-        [2, source.indexOf('{') + 1],
-        [chunkBoundary - 5, chunkBoundary + 8]
-      ]) {
-        await selectSourceRange(chunks, from, to)
-        await app.evaluate(({ clipboard }, sentinel) => clipboard.writeText(sentinel), `${label}: partial ${from}`)
-        await page.keyboard.press('Control+c')
-        await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toBe(source.slice(from, to))
+        expect(geometry.gutterRight).toBeLessThanOrEqual(geometry.codeLeft + 1)
+
+        if (chunkCount > 1) {
+          const lastRow = await chunks
+            .first()
+            .locator('.line')
+            .last()
+            .evaluate(element => element.getBoundingClientRect().y)
+
+          const nextRow = await chunks
+            .nth(1)
+            .locator('.line')
+            .first()
+            .evaluate(element => element.getBoundingClientRect().y)
+
+          expect(Math.abs(nextRow - lastRow - 20)).toBeLessThanOrEqual(1)
+        }
+
+        const finalLine = await chunks
+          .last()
+          .locator('.line')
+          .last()
+          .evaluate(element => {
+            const { y, width, height } = element.getBoundingClientRect()
+
+            return { y, width, height }
+          })
+
+        expect(finalLine.width).toBe(0)
+        expect(finalLine.height).toBe(20)
+
+        const lastGutter = await chunks
+          .last()
+          .evaluate(element => element.previousElementSibling!.getBoundingClientRect().bottom)
+
+        expect(Math.abs(lastGutter - finalLine.y - 20)).toBeLessThanOrEqual(1)
+
+        await code.click({ position: { x: 5, y: 5 } })
+        const chunkBoundary = sample.text.split('\n').slice(0, 200).join('\n').length
+
+        const ranges = [
+          [0, sample.text.length],
+          [Math.max(0, sample.text.length - 2), sample.text.length]
+        ]
+
+        if (sample.name === 'mixed') {ranges.push([2, sample.text.indexOf('{') + 1])}
+
+        if (chunkCount > 1) {ranges.push([chunkBoundary - 2, Math.min(sample.text.length, chunkBoundary + 2)])}
+
+        for (const [from, to] of ranges) {
+          await selectSourceRange(chunks, from, to)
+          await app.evaluate(({ clipboard }, sentinel) => clipboard.writeText(sentinel), `${label}: copy ${from}-${to}`)
+          await page.keyboard.press('Control+c')
+          await expect
+            .poll(() => app.evaluate(({ clipboard }) => clipboard.readText()))
+            .toBe(sample.text.slice(from, to))
+        }
+
+        if (sample.name === 'mixed') {
+          await scroller.evaluate(element => {
+            element.scrollLeft = element.scrollWidth
+          })
+          expect(await scroller.evaluate(element => element.scrollLeft)).toBeGreaterThan(0)
+        }
+
+        await scroller.evaluate(element => {
+          element.scrollLeft = 0
+          element.scrollTop = 0
+        })
+        await code.evaluate(element => element.ownerDocument.getSelection()?.removeAllRanges())
+        current.focusChecks.push(await verifyKeyboardFocus(page, sourceButton, `${label} Source`))
+        await captureGallery(current, label, root)
       }
 
-      await scroller.evaluate(element => {
-        element.scrollLeft = element.scrollWidth
-      })
-      expect(await scroller.evaluate(element => element.scrollLeft)).toBeGreaterThan(0)
-      await scroller.evaluate(element => {
-        element.scrollLeft = 0
-        element.scrollTop = 0
-      })
-      await code.evaluate(element => element.ownerDocument.getSelection()?.removeAllRanges())
-      current.focusChecks.push(await verifyKeyboardFocus(page, sourceButton, `${label} Source`))
-      await captureGallery(current, label, root)
+      expect(readFileSync(sample.path, 'utf8')).toBe(sample.text)
     }
-
-    expect(readFileSync(filePath, 'utf8')).toBe(source)
   })
 }
 
