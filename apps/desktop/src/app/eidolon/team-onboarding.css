@@ -12,6 +12,15 @@
   width: min(44rem, calc(100vw - 2rem));
   overflow: hidden;
 }
+.eid-team-dialog [data-slot='dialog-title'] {
+  padding-inline-end: 2.75rem;
+}
+.eid-team-dialog [data-slot='dialog-close-button'] {
+  right: auto;
+  inset-inline-end: 0.625rem;
+  min-inline-size: 2.25rem;
+  min-block-size: 2.25rem;
+}
 .eid-team-body {
   min-height: 0;
   overflow-y: auto;

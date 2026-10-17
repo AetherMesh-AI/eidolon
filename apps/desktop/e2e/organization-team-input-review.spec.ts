@@ -199,6 +199,35 @@ async function captures(
         await document.fonts.ready
         await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
       })
+      let header
+
+      if (name === 'close') {
+        const titleText = await dialog.locator('[data-slot=dialog-title]').evaluate(element => {
+          const range = document.createRange()
+          range.selectNodeContents(element)
+
+          return Array.from(range.getClientRects(), rect => ({
+            left: rect.left,
+            top: rect.top,
+            right: rect.right,
+            bottom: rect.bottom
+          }))
+        })
+
+        const closeTarget = await target.boundingBox()
+        expect(closeTarget?.width).toBeGreaterThanOrEqual(36)
+        expect(closeTarget?.height).toBeGreaterThanOrEqual(36)
+        expect(titleText.length).toBeGreaterThan(0)
+        expect(
+          titleText.filter(rect =>
+            rect.left < focus.ring.right && rect.right > focus.ring.left &&
+            rect.top < focus.ring.bottom && rect.bottom > focus.ring.top
+          ),
+          'the complete close focus ring does not cover the rendered title'
+        ).toEqual([])
+        header = { titleText, closeTarget }
+      }
+
       const viewport = await f.page.evaluate(() => ({
         width: innerWidth,
         height: innerHeight,
@@ -224,6 +253,7 @@ async function captures(
         zoom,
         viewport,
         focus,
+        header,
         tabSteps,
         captureMethod: 'electron.capturePage',
         sha256: createHash('sha256').update(bytes).digest('hex')
