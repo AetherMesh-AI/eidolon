@@ -9,19 +9,50 @@ from types import SimpleNamespace
 import pytest
 
 from tests.eidolon_cli.test_organization_workspaces import (
-    origin, params, status_params, create, files, scope,
+    origin, params, status_params, create, files, scope, deny_external_network,
 )
 from eidolon_cli import profile_isolation as isolation
 
 
 @pytest.fixture
 def served(origin, monkeypatch):
-    def no_network(*args, **kwargs):
-        raise AssertionError('Synthetic workspace tests must never contact a provider')
-    monkeypatch.setattr(socket.socket, 'connect', no_network)
+    deny_external_network(monkeypatch)
     import tui_gateway.server as server
     monkeypatch.setattr(server, '_eidolon_home', origin.home)
     return server, origin
+
+
+def test_network_guard_permits_interpreter_socketpair_round_trips(served):
+    for make_pair in (socket.socketpair, socket._fallback_socketpair):
+        left, right = make_pair()
+        try:
+            left.settimeout(2)
+            right.settimeout(2)
+            left.sendall(b'local-pair')
+            assert right.recv(10) == b'local-pair'
+            right.sendall(b'reply')
+            assert left.recv(5) == b'reply'
+        finally:
+            left.close()
+            right.close()
+
+
+def test_network_guard_denies_external_loopback_and_socketpair_impostor(served):
+    with socket.socket() as listener, socket.socket() as client:
+        listener.bind(('127.0.0.1', 0))
+        listener.listen()
+        for address in (('192.0.2.1', 443), ('api.openai.com', 443),
+                        ('127.0.0.1', 443), listener.getsockname()):
+            for connect in (client.connect, client.connect_ex):
+                with pytest.raises(AssertionError, match='must never contact a provider'):
+                    connect(address)
+
+        def _fallback_socketpair():
+            lsock, csock = listener, client
+            csock.connect(lsock.getsockname())
+
+        with pytest.raises(AssertionError, match='must never contact a provider'):
+            _fallback_socketpair()
 
 
 def call(server, method, params, transport=None):

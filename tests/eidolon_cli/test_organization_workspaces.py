@@ -1,5 +1,5 @@
 """Real profile/storage/provider boundaries; fake homes, keys and HTTP only."""
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from concurrent.futures import ThreadPoolExecutor
 import errno
 import hashlib
@@ -7,7 +7,9 @@ import json
 import os
 from pathlib import Path
 import shutil
+import socket
 import sqlite3
+import sys
 from types import SimpleNamespace
 import uuid
 
@@ -26,6 +28,35 @@ def scope(home):
         yield
     finally:
         reset_eidolon_home_override(token)
+
+
+def deny_external_network(monkeypatch):
+    """Allow only the stdlib's own socketpair handshake, never provider sockets."""
+    connect = socket.socket.connect
+    fallback_code = getattr(getattr(socket, '_fallback_socketpair', None), '__code__', None)
+
+    def denied(*args, **kwargs):
+        raise AssertionError('Synthetic workspace tests must never contact a provider')
+
+    def guarded_connect(sock, address):
+        caller = sys._getframe(1)
+        try:
+            if fallback_code is not None and caller.f_code is fallback_code:
+                listener = caller.f_locals.get('lsock')
+                if (caller.f_locals.get('csock') is sock
+                        and isinstance(listener, socket.socket)
+                        and sock.family == listener.family
+                        and sock.family in (socket.AF_INET, socket.AF_INET6)
+                        and sock.type == listener.type == socket.SOCK_STREAM
+                        and address == listener.getsockname()[:2]
+                        and address[0] in ('127.0.0.1', '::1')):
+                    return connect(sock, address)
+        finally:
+            del caller
+        return denied()
+
+    monkeypatch.setattr(socket.socket, 'connect', guarded_connect)
+    monkeypatch.setattr(socket.socket, 'connect_ex', denied)
 
 
 @pytest.fixture
@@ -102,9 +133,11 @@ def test_fresh_independent_ledgers_no_inheritance_and_exact_replay(origin):
         assert (home / '.env').read_text() == ''
         assert json.loads((home / 'config.yaml').read_text())['model'] == {'provider': '', 'default': ''}
         assert not (home / 'auth.json').exists()
-        with sqlite3.connect(home / 'organization' / 'state.db') as conn:
+        with closing(sqlite3.connect(home / 'organization' / 'state.db')) as conn:
             assert conn.execute('SELECT count(*) FROM objectives').fetchone()[0] == 0
             assert conn.execute('SELECT count(*) FROM requests').fetchone()[0] == 0
+        with pytest.raises(sqlite3.ProgrammingError, match='closed'):
+            conn.execute('SELECT 1')
     assert all(files(origin.home)[path] == digest for path, digest in source.items())
     assert not (origin.home / 'active_profile').exists()
 
@@ -616,7 +649,6 @@ def test_strict_logging_refuses_symlink_before_open(origin):
 def test_warmed_request_client_cannot_send_from_another_home_or_stale_key(origin, monkeypatch):
     import httpx
     import openai
-    import socket
     import threading
     import time
     from eidolon_cli import organization_executor as executor
@@ -626,9 +658,7 @@ def test_warmed_request_client_cannot_send_from_another_home_or_stale_key(origin
     configure(home_a)
     configure(home_b, 'owned-b-synthetic-key')
     sent = []
-    def forbid_network(*args, **kwargs):
-        raise AssertionError('Real network is forbidden')
-    monkeypatch.setattr(socket.socket, 'connect', forbid_network)
+    deny_external_network(monkeypatch)
     original = httpx.Client
     class Client(original):
         def __init__(self, **kwargs):
@@ -656,7 +686,6 @@ def test_warmed_request_client_cannot_send_from_another_home_or_stale_key(origin
 def test_real_organization_agent_uses_only_owned_route_without_tools_or_probe(origin, monkeypatch, http_status):
     import httpx
     import openai
-    import socket
     import threading
     from eidolon_cli.config import save_config
     from eidolon_cli import organization_executor as executor
@@ -677,9 +706,7 @@ def test_real_organization_agent_uses_only_owned_route_without_tools_or_probe(or
         save_config({'model': {'provider': 'openai-api', 'default': 'workspace-test-model',
                               'streaming': False, 'context_length': 128000},
                      'agent': {'environment_probe': True}, 'compression': {'enabled': False}})
-    def forbidden(*args, **kwargs):
-        raise AssertionError('No real network or environment probe is permitted')
-    monkeypatch.setattr(socket.socket, 'connect', forbidden)
+    deny_external_network(monkeypatch)
     probes = []
     monkeypatch.setattr(env_probe, 'warm_environment_probe_async', lambda: probes.append('probe'))
     sent = []
