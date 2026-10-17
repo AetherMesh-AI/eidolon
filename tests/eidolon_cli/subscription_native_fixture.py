@@ -11,8 +11,10 @@ import http.client
 import io
 import ipaddress
 import json
+import os
 from pathlib import Path
 import sqlite3
+import stat
 import sys
 import socket
 import threading
@@ -140,6 +142,7 @@ class BoundaryDiagnostics:
             'SubscriptionAuthService.release_lease': 'auth_release'},
         'eidolon_cli.organization_setup_subscription_store': {
             'SubscriptionStore._locked': 'store_lock', 'SubscriptionStore.status': 'store_status',
+            '_file_identity': 'filesystem_identity',
             '_checked_acl_descriptor': 'acl_descriptor', '_check_darwin_acl': 'darwin_acl',
             'SubscriptionStore._check': 'filesystem_check',
             'SubscriptionStore.connection_descriptor': 'store_descriptor',
@@ -195,8 +198,9 @@ class BoundaryDiagnostics:
         'revision_conflict', 'revision_exhausted', 'revision_exists', 'ticket_conflict', 'ticket_retired',
         'ticket_sequence_exhausted', 'transition_pending', 'typed_grant_requires_handoff', 'value_too_large'})
 
-    def __init__(self, evidence):
+    def __init__(self, evidence, *, home=None):
         self.path = Path(evidence) / 'subscription-boundaries.jsonl'
+        self.home = home if type(home) is type(Path()) else None
         self.lock = threading.Lock()
         self.flush_lock = threading.Lock()
         self.lanes, self.holders = {}, {}
@@ -250,6 +254,51 @@ class BoundaryDiagnostics:
                 candidates.extend(value for value in candidate.co_consts if isinstance(value, CodeType))
         return None
 
+    def identity_scope(self, path):
+        # Synthetic fixture home is already captured. No filesystem lookups or
+        # coercion of arbitrary objects; only concrete Path's lexical operations.
+        if self.home is None or type(path) is not type(self.home):
+            return 'other'
+        private = self.home / '.setup-subscription-private'
+        if path == private or path.is_relative_to(private):
+            return 'private_store'
+        if path == self.home:
+            return 'profile'
+        if path in self.home.parents:
+            return 'ancestor'
+        return 'other'
+
+    def observe_identity(self, frame, value, lane):
+        parent = frame.f_back
+        sites = {('acl_descriptor', 148): 'initial_fd',
+                 ('acl_descriptor', 151): 'final_fd',
+                 ('acl_descriptor', 152): 'final_path',
+                 ('darwin_acl', 203): 'native_acl'}
+        site = sites.get((self.stage(parent), parent.f_lineno)) if parent else None
+        if (site is None or not lane or type(value) is not tuple or len(value) != 7
+                or not all(type(part) is int for part in value)):
+            return
+        # Renewed diagnostic scope: exactly two locals from this verified caller.
+        # Exact stat_result prevents arbitrary getters; all comparison data dies
+        # in this callback. No filesystem call, path coercion or tuple retention.
+        before = parent.f_locals.get('before')
+        if type(before) is not os.stat_result:
+            return
+        baseline = (before.st_dev, before.st_ino, before.st_mode, before.st_uid,
+                    before.st_gid, before.st_nlink, before.st_ctime_ns)
+        if not all(type(part) is int for part in baseline):
+            return
+        changed = tuple(a != b for a, b in zip(value, baseline))
+        if not any(changed):
+            return  # The right-hand operand and unchanged snapshots emit nothing.
+        kind = ('directory' if stat.S_ISDIR(value[2]) and stat.S_ISDIR(baseline[2]) else
+                'regular_file' if stat.S_ISREG(value[2]) and stat.S_ISREG(baseline[2]) else 'other')
+        scope = self.identity_scope(parent.f_locals.get('path'))
+        self.emit({'lane': lane, 'stage': 'filesystem_identity', 'line': parent.f_lineno,
+            'event': 'identity_mismatch', 'identity': {'comparison': site, 'targetKind': kind,
+                'targetScope': scope, 'changedFields': dict(zip(
+                    ('device', 'inode', 'mode', 'owner', 'group', 'links', 'changeTime'), changed))}})
+
     def emit(self, value):
         # Critical-frame callbacks touch bounded memory only, never the filesystem.
         with self.lock:
@@ -290,6 +339,8 @@ class BoundaryDiagnostics:
                 self.lanes[lane_key] = len(self.lanes) + 1
             lane = self.lanes.get(lane_key, 0)
         value = {'lane': lane, 'stage': stage, 'line': frame.f_lineno}
+        if stage == 'filesystem_identity' and event == 'return':
+            self.observe_identity(frame, arg, lane)
         # Generator return(True) is the acquired-lock yield; final return(None)
         # occurs after its finally releases flock. Only fixed caller labels live
         # in memory, never a retained frame, local value, path or identifier.
@@ -371,7 +422,7 @@ class SyntheticEdges:
         self.key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
         self.lock = threading.Lock()
         self.restores = []
-        self.boundary_diagnostics = BoundaryDiagnostics(self.evidence) if self.evidence else None
+        self.boundary_diagnostics = BoundaryDiagnostics(self.evidence, home=self.home) if self.evidence else None
 
     def record(self, kind, **detail):
         value = {'kind': kind, 'physicalNetworkSend': False, **detail}

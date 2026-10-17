@@ -86,6 +86,7 @@ function boundaryDiagnostic(rows: Row[]) {
     'acl_descriptor',
     'darwin_acl',
     'filesystem_check',
+    'filesystem_identity',
     'subscription_preflight',
     'subscription_release',
     'prepare_send',
@@ -105,7 +106,15 @@ function boundaryDiagnostic(rows: Row[]) {
     'result_validation'
   ])
 
-  const events = new Set(['enter', 'exception', 'returned_false', 'overflow', 'installed', 'existing_trace'])
+  const events = new Set([
+    'enter',
+    'exception',
+    'returned_false',
+    'overflow',
+    'installed',
+    'existing_trace',
+    'identity_mismatch'
+  ])
 
   const classes = new Set([
     'BlockingIOError',
@@ -205,7 +214,30 @@ function boundaryDiagnostic(rows: Row[]) {
   return rows.slice(-128).map(value => {
     const row = value && typeof value === 'object' && !Array.isArray(value) ? value : {}
 
+    const identity =
+      row.identity && typeof row.identity === 'object' && !Array.isArray(row.identity) ? (row.identity as Row) : {}
+
+    const changes =
+      identity.changedFields && typeof identity.changedFields === 'object' && !Array.isArray(identity.changedFields)
+        ? (identity.changedFields as Row)
+        : {}
+
     return {
+      ...(row.event === 'identity_mismatch'
+        ? {
+            identity: {
+              comparison: known(identity.comparison, new Set(['initial_fd', 'native_acl', 'final_fd', 'final_path'])),
+              targetKind: known(identity.targetKind, new Set(['directory', 'regular_file', 'other'])),
+              targetScope: known(identity.targetScope, new Set(['private_store', 'profile', 'ancestor', 'other'])),
+              changedFields: Object.fromEntries(
+                ['device', 'inode', 'mode', 'owner', 'group', 'links', 'changeTime'].map(field => [
+                  field,
+                  changes[field] === true
+                ])
+              )
+            }
+          }
+        : {}),
       sequence: count(row.sequence, 2 ** 31 - 1),
       stage: known(row.stage, stages),
       event: known(row.event, events),

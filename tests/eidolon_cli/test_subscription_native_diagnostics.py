@@ -235,43 +235,168 @@ def test_boundary_trace_flushes_registered_rebound_handlers_before_cleanup(tmp_p
     from types import FunctionType, ModuleType
     from tui_gateway.method_ctx import HandlerRegistry
 
-    module = ModuleType(__name__ + '.synthetic_split')
-    exec('def _method():\n'
-         ' def handler(rid, params):\n'
-         '  try:\n'
-         '   raise ValueError("synthetic-private-error-never-export")\n'
-         '  except ValueError:\n'
-         '   return {"ok": False}\n'
-         ' return handler\n', vars(module))
-    monkeypatch.setitem(sys.modules, module.__name__, module)
-    handler = module._method()
-    monkeypatch.setattr(BoundaryDiagnostics, '_STAGES', {
-        module.__name__: {handler.__qualname__: stage}})
-    registry = HandlerRegistry()
-    registry.method('synthetic')(handler)
-    server = ModuleType('tui_gateway.server')
-    server._methods = {}
-    monkeypatch.setitem(sys.modules, server.__name__, server)
-    registry.install(server)
-    rebound = server._methods['synthetic']
-    assert rebound.__code__ is handler.__code__
-    assert rebound.__globals__ is vars(server)
-    diagnostics = BoundaryDiagnostics(tmp_path)
+    previous_server = sys.modules.get('tui_gateway.server')
+    # Restore the module before any autouse fixture finalizer can inspect it.
+    with monkeypatch.context() as patch:
+        module = ModuleType(__name__ + '.synthetic_split')
+        exec('def _method():\n'
+             ' def handler(rid, params):\n'
+             '  try:\n'
+             '   raise ValueError("synthetic-private-error-never-export")\n'
+             '  except ValueError:\n'
+             '   return {"ok": False}\n'
+             ' return handler\n', vars(module))
+        patch.setitem(sys.modules, module.__name__, module)
+        handler = module._method()
+        patch.setattr(BoundaryDiagnostics, '_STAGES', {
+            module.__name__: {handler.__qualname__: stage}})
+        registry = HandlerRegistry()
+        registry.method('synthetic')(handler)
+        server = ModuleType('tui_gateway.server')
+        server._methods = {}
+        patch.setitem(sys.modules, server.__name__, server)
+        registry.install(server)
+        rebound = server._methods['synthetic']
+        assert rebound.__code__ is handler.__code__
+        assert rebound.__globals__ is vars(server)
+        diagnostics = BoundaryDiagnostics(tmp_path)
+        diagnostics.install()
+        try:
+            assert diagnostics.enabled
+            results = []
+            worker = threading.Thread(target=lambda: results.append(rebound(None, None)))
+            worker.start()
+            worker.join(5)
+            assert not worker.is_alive() and results == [{'ok': False}]
+            # Native afterEach reads while the gateway still runs, before close().
+            rows = read_trace(tmp_path)
+            assert any(row['stage'] == stage and row.get('errorClass') == 'ValueError' for row in rows)
+            assert 'synthetic-private-error-never-export' not in json.dumps(rows)
+            before = diagnostics.count
+            impostor = FunctionType(handler.__code__, {'__name__': 'tui_gateway.server'})
+            assert impostor(None, None) == {'ok': False}
+            assert diagnostics.count == before  # Same name/code, wrong globals: ignored.
+        finally:
+            diagnostics.close()
+    assert sys.modules.get('tui_gateway.server') is previous_server
+
+
+@pytest.mark.parametrize('child_kind', ['file', 'directory'])
+@pytest.mark.skipif(importlib.util.find_spec('fcntl') is None,
+                    reason='Real POSIX directory metadata probe requires fcntl platform')
+def test_identity_diagnostic_observes_real_sibling_change_without_weakening_guard(tmp_path, monkeypatch, child_kind):
+    import os
+    from eidolon_cli import organization_setup_subscription_store as store
+
+    ancestor = tmp_path / 'synthetic-private-ancestor-name'
+    home = ancestor / 'profile'
+    home.mkdir(parents=True, mode=0o700)
+    evidence = tmp_path / 'evidence'
+    evidence.mkdir()
+    original = os.open
+    diagnostics = BoundaryDiagnostics(evidence, home=home)
+    before = ancestor.lstat()
+
+    def open_with_sibling(path, flags, *args, **kwargs):
+        if path == ancestor:
+            sibling = ancestor / 'synthetic-private-sibling-name'
+            if child_kind == 'directory':
+                sibling.mkdir(mode=0o700)
+            else:
+                sibling.write_bytes(b'synthetic')
+        return original(path, flags, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, 'open', open_with_sibling)
+        diagnostics.install()
+        try:
+            with pytest.raises(store.StoreError) as error:
+                with store._checked_acl_descriptor(ancestor):
+                    pytest.fail('A mismatched descriptor must never be yielded')
+            assert error.value.reason == 'unsafe_filesystem'
+        finally:
+            diagnostics.close()
+    after = ancestor.lstat()
+    changed_fields = dict(zip(
+        ('device', 'inode', 'mode', 'owner', 'group', 'links', 'changeTime'),
+        (a != b for a, b in zip(store._file_identity(before), store._file_identity(after)))))
+    assert not any(changed_fields[name] for name in ('device', 'inode', 'mode', 'owner', 'group'))
+    assert any(changed_fields.values())
+    rows = read_trace(evidence)
+    identities = [row['identity'] for row in rows if row['event'] == 'identity_mismatch']
+    assert len(identities) == 1
+    assert identities[0] == {
+        'comparison': 'initial_fd', 'targetKind': 'directory', 'targetScope': 'ancestor',
+        'changedFields': changed_fields}
+    assert 'synthetic-private-' not in json.dumps(rows)
+
+
+def test_identity_observer_rejects_wrong_types_sites_and_arbitrary_local_objects(tmp_path):
+    import os
+    from eidolon_cli import organization_setup_subscription_store as store
+
+    accesses = []
+
+    class Uninspectable:
+        def __getattribute__(self, name):
+            accesses.append(name)
+            raise AssertionError('Arbitrary local objects must not be inspected')
+
+    home = tmp_path / 'synthetic-private-path'
+    home.mkdir(mode=0o700)
+    before = home.lstat()
+    original = store._file_identity(before)
+    assert type(before) is os.stat_result and all(type(value) is int for value in original)
+    parent = SimpleNamespace(f_code=store._checked_acl_descriptor.__wrapped__.__code__,
+        f_globals=vars(store), f_lineno=148, f_locals={'before': before, 'path': home})
+    frame = SimpleNamespace(f_code=store._file_identity.__code__, f_globals=vars(store),
+                            f_lineno=137, f_back=parent)
+    diagnostics = BoundaryDiagnostics(tmp_path, home=home)
     diagnostics.install()
     try:
-        assert diagnostics.enabled
-        results = []
-        worker = threading.Thread(target=lambda: results.append(rebound(None, None)))
-        worker.start()
-        worker.join(5)
-        assert not worker.is_alive() and results == [{'ok': False}]
-        # Native afterEach reads while the gateway still runs, before close().
-        rows = read_trace(tmp_path)
-        assert any(row['stage'] == stage and row.get('errorClass') == 'ValueError' for row in rows)
-        assert 'synthetic-private-error-never-export' not in json.dumps(rows)
-        before = diagnostics.count
-        impostor = FunctionType(handler.__code__, {'__name__': 'tui_gateway.server'})
-        assert impostor(None, None) == {'ok': False}
-        assert diagnostics.count == before  # Same name/code, wrong globals: ignored.
+        fields = ['device', 'inode', 'mode', 'owner', 'group', 'links', 'changeTime']
+        for index, field in enumerate(fields):
+            changed = list(original)
+            changed[index] += 1
+            # Exercise the actual observer dispatch, code checks and serialization.
+            diagnostics.trace(frame, 'return', tuple(changed))
+            identity = diagnostics.rows[-1]['identity']
+            assert identity['comparison'] == 'initial_fd'
+            assert identity['targetScope'] == 'profile'
+            assert identity['changedFields'] == {name: name == field for name in fields}
+        count = diagnostics.count
+        diagnostics.trace(frame, 'return', original)  # No stale prior operand is retained.
+        diagnostics.trace(frame, 'return', (*original[:6], Uninspectable()))
+        parent.f_locals = {'before': Uninspectable(), 'path': Uninspectable()}
+        diagnostics.trace(frame, 'return', tuple(changed))
+        parent.f_lineno = 147
+        parent.f_locals = Uninspectable()
+        diagnostics.trace(frame, 'return', tuple(changed))
+        parent.f_code = (lambda: None).__code__
+        parent.f_lineno = 148
+        diagnostics.trace(frame, 'return', tuple(changed))
+        assert diagnostics.count == count
+        parent.f_code = store._checked_acl_descriptor.__wrapped__.__code__
+        parent.f_locals = {'before': before, 'path': Uninspectable()}
+        diagnostics.trace(frame, 'return', tuple(changed))
+        assert diagnostics.rows[-1]['identity']['targetScope'] == 'other'
+        parent.f_locals = {'before': before, 'path': home}
+        for code, line, comparison in [
+                (store._checked_acl_descriptor.__wrapped__.__code__, 151, 'final_fd'),
+                (store._checked_acl_descriptor.__wrapped__.__code__, 152, 'final_path'),
+                (store._check_darwin_acl.__code__, 203, 'native_acl')]:
+            parent.f_code, parent.f_lineno = code, line
+            diagnostics.trace(frame, 'return', tuple(changed))
+            assert diagnostics.rows[-1]['identity']['comparison'] == comparison
+        assert not hasattr(diagnostics, 'identity_pairs')
+        # Scope classification is lexical and uses concrete Path objects only.
+        assert diagnostics.identity_scope(home / '.setup-subscription-private' / 'entry') == 'private_store'
+        assert diagnostics.identity_scope(home.parent) == 'ancestor'
+        assert diagnostics.identity_scope(home.parent / 'unrelated') == 'other'
+        assert diagnostics.identity_scope(Uninspectable()) == 'other'
+        assert accesses == []
     finally:
         diagnostics.close()
+    encoded = json.dumps(read_trace(tmp_path))
+    assert 'synthetic-private-' not in encoded
+    assert str(home) not in encoded
