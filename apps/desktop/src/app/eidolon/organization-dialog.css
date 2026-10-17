@@ -1,5 +1,7 @@
 /* These dialogs portal outside the workspace's scoped keyboard treatment. */
 .eid-organization-dialog {
+  /* The shared shell has duration-200: never interpolate viewport-driven geometry. */
+  transition-property: color, background-color, border-color, box-shadow, opacity;
   inline-size: min(32rem, calc(100vw - 2rem));
   max-inline-size: calc(100vw - 2rem);
   max-block-size: calc(100dvh - 2rem);

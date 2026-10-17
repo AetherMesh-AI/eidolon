@@ -162,7 +162,31 @@ def test_registered_native_subscription_full_journey(native):
     assert ok(transport, 'improveTeamInput', first) == improved
     assert sum(event['kind'] == 'responses' for event in edges.events) == 1
     assert snapshot(home)['teams'] == []
-    generated = ok(transport, 'generateTeam', inference(native, 'synthetic-generate'))
+    # The native UI applies the first suggestion, then improves the other field.
+    # Exercise that exact second-call boundary for fresh and legacy-empty homes.
+    second = inference(native, 'synthetic-improve-goals', field='goals')
+    second['jobs'] = SUGGESTIONS['jobs'] + ' Keep scope small.'
+    second_improved = ok(transport, 'improveTeamInput', second)
+    assert second_improved['suggestion'] == SUGGESTIONS['goals']
+    assert second_improved['field'] == 'goals'
+    assert second_improved['sourceRevision'] == second['sourceRevision']
+    allowance = second_improved['generationAllowance']
+    assert allowance['status'] == 'available'
+    assert allowance['remainingCalls'] == 5 - len(before['generations'])
+    assert allowance['remainingByOperation'] == {'improveTeamInput': 2, 'generateTeam': 3}
+    usage = allowance['setupUsage']
+    assert usage['tokenStatus'] == 'observed'
+    assert (usage['inputTokens'], usage['outputTokens'], usage['totalTokens']) == (20, 40, 60)
+    assert usage['costStatus'] == 'unknown' and usage['costUsd'] is None
+    assert usage['subscriptionCalls'] == 2
+    assert ok(transport, 'improveTeamInput', second) == second_improved
+    after_improve = snapshot(home)
+    assert after_improve['teams'] == []
+    assert len(after_improve['outcomes']) == len(after_improve['dispatches']) == 2
+    assert sum(event['kind'] == 'responses' for event in edges.events) == 2
+    generated_input = inference(native, 'synthetic-generate')
+    generated_input['jobs'] = second['jobs']
+    generated = ok(transport, 'generateTeam', generated_input)
     assert generated['team'] == TEAM
     assert snapshot(home)['teams'] == []
     edited = deepcopy(generated['team'])
@@ -183,12 +207,13 @@ def test_registered_native_subscription_full_journey(native):
     assert not any(final['counts'].values())
     assert any(row['name'] == 'Ash Reviewed' for row in final['agents'])
     sends = [event for event in edges.events if event['kind'] == 'responses']
-    assert [event['operation'] for event in sends] == ['improve_jobs', 'generate']
+    assert [event['operation'] for event in sends] == ['improve_jobs', 'improve_goals', 'generate']
     assert all(event['durableDispatch'] for event in sends)
     assert [event for event in edges.events if event['kind'].startswith('denied')] == []
     assert len(final['outcomes']) == len(final['dispatches']) == len(sends)
     observations = json.dumps(final['outcomes'])
-    assert ACCESS not in observations and SUGGESTIONS['jobs'] not in observations and 'resp_synthetic' not in observations
+    assert ACCESS not in observations and all(text not in observations for text in SUGGESTIONS.values())
+    assert 'resp_synthetic' not in observations
     if before['generations']:
         assert next(row for row in final['generations'] if row['idempotency_key'] == 'synthetic-legacy') == before['generations'][0]
     # Tokens exist only in encrypted envelopes; never plaintext at rest.

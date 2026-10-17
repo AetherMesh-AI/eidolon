@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+
 /** Native owner UI → production registered gateway → synthetic Responses → explicit Create. */
 import type { Locator } from '@playwright/test'
 
@@ -16,17 +19,31 @@ const goals = 'Deliver reviewed studio work'
 
 test.setTimeout(240_000)
 test.afterEach(async () => {
-  await fixture?.cleanup()
-  fixture = undefined
+  try {
+    if (fixture && test.info().status !== test.info().expectedStatus) {
+      await test.info().attach('subscription-failure-diagnostic', {
+        contentType: 'application/json', body: JSON.stringify(fixture.diagnostic(), null, 2)
+      })
+    }
+  } finally {
+    try {
+      await fixture?.cleanup()
+    } finally {
+      fixture = undefined
+    }
+  }
 })
 
 async function openSetup(legacy: boolean) {
   const { page } = fixture!
+
   const navigation = page
     .getByRole('complementary', { name: 'Eidolon navigation' })
     .getByRole('navigation', { name: 'Primary', exact: true })
+
   await navigation.getByRole('link', { name: 'Home', exact: true }).click()
   const entry = page.locator('.eid-team-entry')
+
   if (legacy) {
     await entry.getByRole('button', { name: 'Generate team · Recommended', exact: true }).click()
   } else {
@@ -37,12 +54,14 @@ async function openSetup(legacy: boolean) {
     await identity.getByRole('button', { name: 'Save names', exact: true }).click()
     await expect(identity).toHaveCount(0)
   }
+
   const dialog = page.getByRole('dialog', { name: 'Build your starter team', exact: true })
   await expect(dialog).toBeVisible()
   await dialog.getByRole('button', { name: 'Check configuration', exact: true }).click()
   await dialog.getByLabel('Work to delegate', { exact: true }).fill(jobs)
   await dialog.getByLabel('What success looks like', { exact: true }).fill(goals)
   await dialog.getByLabel('Team naming style (optional)', { exact: true }).fill('Ash, Ember and Flint')
+
   return dialog
 }
 
@@ -52,10 +71,12 @@ async function activate(dialog: Locator, legacy: boolean) {
   expect(before.generations).toHaveLength(legacy ? 1 : 0)
   fixture!.assertQuiet(0)
   await connection.getByRole('button', { name: 'Set up ChatGPT', exact: true }).click()
+
   const consent = connection.getByRole('checkbox', {
     name: 'Allow this dedicated connection to be stored locally',
     exact: true
   })
+
   await expect(consent).not.toBeChecked()
   const begin = connection.getByRole('button', { name: 'Continue with ChatGPT', exact: true })
   await expect(begin).toBeDisabled()
@@ -99,6 +120,7 @@ async function activate(dialog: Locator, legacy: boolean) {
   await load.click()
   await expect(dialog.getByRole('button', { name: 'Improve work description', exact: true })).toBeEnabled()
   expect(fixture!.events().filter(row => row.kind === 'models')).toHaveLength(2)
+
   return before
 }
 
@@ -133,8 +155,8 @@ test.describe('host-native subscription setup', () => {
       await expect(dialog.getByLabel('Name', { exact: true }).first()).toHaveValue('Ash', { timeout: 30_000 })
       fixture.assertQuiet(3)
       expect(fixture.snapshot().teams).toEqual([])
-      await expect(dialog.getByRole('button', { name: 'Create team', exact: true })).toHaveCount(0)
       await dialog.getByLabel('Name', { exact: true }).first().fill('Ash Reviewed')
+      await expect(dialog.getByRole('button', { name: 'Create team', exact: true })).toHaveCount(0)
       await dialog.getByRole('button', { name: 'Review changes', exact: true }).click()
       await expect(dialog.getByRole('button', { name: 'Create team', exact: true })).toBeEnabled()
       expect(fixture.snapshot().teams).toEqual([])
@@ -150,8 +172,10 @@ test.describe('host-native subscription setup', () => {
       expect(after.outcomes).toHaveLength(3)
       expect(after.dispatches).toHaveLength(3)
       expect(Object.values(after.counts).every(count => count === 0)).toBe(true)
+
       if (legacy)
-        expect(after.generations.find(row => row.idempotency_key === 'synthetic-legacy')).toEqual(before.generations[0])
+        {expect(after.generations.find(row => row.idempotency_key === 'synthetic-legacy')).toEqual(before.generations[0])}
+
       expect(
         fixture
           .events()
@@ -169,14 +193,54 @@ test.describe('host-native subscription setup', () => {
         .getByRole('dialog', { name: 'Team saved', exact: true })
         .getByRole('button', { name: 'Cancel', exact: true })
         .click()
+
       const navigation = fixture.page
         .getByRole('complementary', { name: 'Eidolon navigation' })
         .getByRole('navigation', { name: 'Primary', exact: true })
+
       await navigation.getByRole('link', { name: 'Organization', exact: true }).click()
       await expect(fixture.page.getByText('Ash Reviewed', { exact: true }).first()).toBeVisible()
       await expect(fixture.page.getByText('Ember', { exact: true }).first()).toBeVisible()
       await expect(fixture.page.getByText('Flint', { exact: true }).first()).toBeVisible()
       fixture.assertQuiet(3)
+      // The saved team removes setup entry. Lifecycle management remains in
+      // Settings and must not turn a configured organization into a fresh one.
+      const headPath = path.join(fixture.sandbox.hermesHome, '.setup-subscription-private', 'current.json')
+      const beforeHead = JSON.parse(readFileSync(headPath, 'utf8')).body
+      expect(beforeHead.phase).toBe('active')
+      const eventsBeforeSettings = fixture.events()
+      await fixture.page.getByRole('complementary', { name: 'Eidolon navigation' })
+        .getByRole('link', { name: 'Settings', exact: true }).click()
+      const settings = fixture.page.locator('.eid-settings-page')
+      await settings.getByRole('button', { name: 'Organization', exact: true }).click()
+      const management = settings.getByRole('region', { name: 'ChatGPT setup connection', exact: true })
+      await expect(management.getByText('Setup connection saved', { exact: true })).toBeVisible()
+      await expect(management.getByText('Reconnect is unavailable after the team is created or organization work has begun. You can still check, recover or disconnect this setup-only connection here.', { exact: true })).toBeVisible()
+      await expect(management.getByRole('link', { name: 'Open team setup on Home', exact: true })).toHaveCount(0)
+      await expect(management.getByRole('checkbox')).toHaveCount(0)
+      await expect(management.getByRole('combobox')).toHaveCount(0)
+
+      for (const name of ['Continue with ChatGPT', 'Load account models', 'Review setup policy', 'Apply reviewed policy', 'Generate team · Recommended', 'Improve work description']) {
+        await expect(management.getByRole('button', { name, exact: true })).toHaveCount(0)
+      }
+
+      expect(fixture.events()).toEqual(eventsBeforeSettings)
+      expect(fixture.snapshot()).toEqual(after)
+      fixture.assertQuiet(3)
+      await management.getByRole('button', { name: 'Disconnect setup connection', exact: true }).click()
+      await expect(management.getByText('Setup connection disconnected locally', { exact: true })).toBeVisible()
+      await expect(management.getByText('Local access is retired. Remote revocation is not confirmed; usage already in progress may continue.', { exact: true })).toBeVisible()
+      const retiredHead = JSON.parse(readFileSync(headPath, 'utf8')).body
+      expect(retiredHead.phase).toBe('disconnected')
+      expect(retiredHead.target).toBeNull()
+      expect(retiredHead.revision).toBeGreaterThan(beforeHead.revision)
+      const afterDisconnect = fixture.snapshot()
+      expect(afterDisconnect).toEqual(after)
+      expect(fixture.hasPrivateStore()).toBe(true)
+      expect(fixture.events().filter(row => ['consent', 'oauth-exchange', 'models', 'responses'].includes(row.kind)))
+        .toEqual(eventsBeforeSettings.filter(row => ['consent', 'oauth-exchange', 'models', 'responses'].includes(row.kind)))
+      fixture.assertQuiet(3)
+      await test.info().attach('subscription-settings-disconnected', { contentType: 'image/png', body: await management.screenshot() })
       await test.info().attach('subscription-native-proof', {
         contentType: 'application/json',
         body: JSON.stringify({
@@ -185,7 +249,9 @@ test.describe('host-native subscription setup', () => {
           events: fixture.events(),
           installed: fixture.installed(),
           before,
-          after
+          after,
+          afterDisconnect,
+          localRetirement: { phase: retiredHead.phase, revision: retiredHead.revision, hasTarget: retiredHead.target !== null }
         })
       })
     })

@@ -252,6 +252,122 @@ it('keeps the model label independent of catalog options and the selected model'
   expect(screen.getByLabelText(copy.model, { exact: true })).toBe(model)
 })
 
+it.each(['admitted', 'uncertain'])(
+  'allows explicit local disconnect after reopening a refresh in %s state without retrying it',
+  async stage => {
+    const test = rig(),
+      original = test.request.getMockImplementation()!
+
+    const ticket = {
+      version: 1,
+      sequence: '1',
+      nonce: 'b'.repeat(64),
+      kind: 'refresh',
+      bindingDigest: 'c'.repeat(64),
+      authorizationEpoch: subscriptionPolicy.authorizationEpoch,
+      priorStoreRevision: 7,
+      sourceRevision: subscriptionSetup.sourceRevision
+    }
+
+    let connection = {
+      ...subscriptionStatus,
+      connectionRevision: 7,
+      connectionState: 'refreshing',
+      cleanupPending: false,
+      operation: { state: stage, ticket: ticket as typeof ticket | null, revision: 7, verification: 'metadata_only' }
+    }
+
+    const retired = {
+      state: 'local_retired',
+      ticket: null,
+      revision: 8,
+      verification: 'verified_current',
+      receipt: { kind: 'local', revision: 8, localRetired: true, remoteRevocation: 'unconfirmed' }
+    }
+
+    test.request.mockImplementation(async (method, params) => {
+      if (method === 'organization.setupSubscriptionStatus') {
+        return structuredClone(connection) as never
+      }
+
+      if (method === 'organization.recoverSetupSubscriptionOperation') {
+        return { ...connection.operation, verification: 'verified_current' } as never
+      }
+
+      if (method === 'organization.prepareSetupSubscriptionOperation') {
+        expect(params).toEqual({
+          expectedOrganizationId: subscriptionSetup.organizationId,
+          sourceRevision: subscriptionSetup.sourceRevision,
+          kind: 'revoke',
+          expectedRevision: 7,
+          confirmed: true
+        })
+        connection = {
+          ...connection,
+          connectionState: 'disconnected',
+          connectionRevision: 8,
+          operation: { state: 'none', ticket: null, revision: 8, verification: 'metadata_only' }
+        }
+
+        return retired as never
+      }
+
+      return original(method, params)
+    })
+    render(<test.Harness />)
+    fireEvent.click(screen.getByRole('button', { name: copy.inspect }))
+    await waitFor(() =>
+      expect(
+        test.request.mock.calls.filter(([method]) => method === 'organization.setupSubscriptionStatus')
+      ).toHaveLength(1)
+    )
+    expect(screen.queryByRole('button', { name: copy.refresh })).toBeNull()
+    expect(screen.queryByRole('button', { name: copy.loadModels })).toBeNull()
+    expect(screen.queryByLabelText(copy.consentCheck)).toBeNull()
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: copy.recover }) as HTMLButtonElement).disabled).toBe(false)
+    )
+    fireEvent.click(screen.getByRole('button', { name: copy.recover }))
+    await waitFor(() =>
+      expect(
+        test.request.mock.calls.filter(([method]) => method === 'organization.setupSubscriptionStatus')
+      ).toHaveLength(2)
+    )
+    expect(connection.connectionState).toBe('refreshing')
+    expect(
+      test.request.mock.calls.some(([method]) => method === 'organization.prepareSetupSubscriptionOperation')
+    ).toBe(false)
+    expect(
+      test.request.mock.calls.some(([method]) => method === 'organization.reconcileSetupSubscriptionOperation')
+    ).toBe(false)
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: copy.disconnect }) as HTMLButtonElement).disabled).toBe(false)
+    )
+    fireEvent.click(screen.getByRole('button', { name: copy.disconnect }))
+    await screen.findByLabelText(copy.consentCheck)
+    expect((screen.getByLabelText(copy.consentCheck) as HTMLInputElement).checked).toBe(false)
+    expect((screen.getByRole('button', { name: copy.continue }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.queryByRole('button', { name: copy.disconnect })).toBeNull()
+    expect(screen.queryByRole('button', { name: copy.refresh })).toBeNull()
+    expect(screen.getByText(copy.disconnectHelp)).toBeTruthy()
+    expect(
+      test.request.mock.calls.filter(([method]) => method === 'organization.prepareSetupSubscriptionOperation')
+    ).toHaveLength(1)
+    expect(
+      test.request.mock.calls.some(([method]) => method === 'organization.executeSetupSubscriptionOperation')
+    ).toBe(false)
+    expect(
+      test.request.mock.calls.some(([method]) =>
+        [
+          'organization.beginSetupSubscription',
+          'organization.setupSubscriptionModels',
+          'organization.generateTeam'
+        ].includes(method)
+      )
+    ).toBe(false)
+  }
+)
+
 it('keeps pending consent cancellable and uncertain policy blocked without retrying a request', async () => {
   const test = rig()
   test.setPending()

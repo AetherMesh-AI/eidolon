@@ -142,9 +142,11 @@ def _service(transport, context, authority):
         if previous is not None and previous[0] == key:
             return previous[1]
     # Cancellation may take attempt/store locks; never call it under registry lock.
+    # Retire only the captured service: another caller may already have published
+    # its replacement in this same owner generation. Generation-wide retirement
+    # belongs exclusively to owner lifecycle cancellation.
     if previous is not None:
-        from eidolon_cli.organization_setup_subscription_auth import cancel_transport
-        cancel_transport(transport, generation=previous[0][-1])
+        previous[1]._retire()
     candidate = SubscriptionAuthService(SubscriptionStore(context.profile_home),
         PendingAttempts(authority, context.profile_home), context)
     with _services_lock:

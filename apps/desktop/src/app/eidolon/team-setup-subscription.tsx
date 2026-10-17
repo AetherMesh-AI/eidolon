@@ -253,14 +253,14 @@ export function TeamSetupSubscription(props: TeamSetupSubscriptionProps) {
             <p className="eid-team-note">{copy.disconnectHelp}</p>
             <div className="eid-team-actions">
               {connected && (
-                <>
-                  <Button disabled={disabled} onClick={() => state.operate('refresh')} size="sm" variant="secondary">
-                    {copy.refresh}
-                  </Button>
-                  <Button disabled={disabled} onClick={() => state.operate('revoke')} size="sm" variant="secondary">
-                    {copy.disconnect}
-                  </Button>
-                </>
+                <Button disabled={disabled} onClick={() => state.operate('refresh')} size="sm" variant="secondary">
+                  {copy.refresh}
+                </Button>
+              )}
+              {(connected || state.status?.connectionState === 'refreshing') && (
+                <Button disabled={disabled} onClick={() => state.operate('revoke')} size="sm" variant="secondary">
+                  {copy.disconnect}
+                </Button>
               )}
               <Button disabled={disabled} onClick={state.recover} size="sm" variant="text">
                 {copy.recover}

@@ -256,6 +256,98 @@ def test_retired_cache_cleanup_cannot_drop_new_generation():
     assert transport not in methods._services
 
 
+def test_concurrent_source_turnover_retires_only_captured_service(tmp_path, monkeypatch):
+    from contextlib import nullcontext
+    from eidolon_cli import organization_setup_subscription_auth as auth
+    from eidolon_cli.organization_setup_subscription_host import HostAuthority
+    from eidolon_cli.organization_setup_subscription_store import TokenLease
+
+    transport, generation = Transport(), object()
+    authority = HostAuthority.capture(lambda: tmp_path, lambda: tmp_path)
+    source = 'a' * 64
+
+    def context(digest):
+        return auth.OwnerContext(str(tmp_path), str(uuid.UUID(int=1)), str(uuid.UUID(int=2)),
+            digest, generation, transport, lambda: source == digest,
+            publication_authority=nullcontext, setup_guard=lambda: True,
+            lease_generation_guard=lambda: True)
+
+    def track_lease(service):
+        # Exercise real lease cancellation with an inert synthetic value; no
+        # store admission, credential lookup, browser or provider request occurs.
+        return service._track_lease(TokenLease(service._store, None, 1, generation,
+            service._lease_guard, service._lease_cancel, 2**53,
+            'synthetic-test-access', str(tmp_path)))
+
+    previous = methods._service(transport, context(source), authority)
+    old_lease = track_lease(previous)
+    source = 'b' * 64
+    replacement_context = context(source)
+    captured = threading.Barrier(2)
+    published = threading.Event()
+    first_read = threading.local()
+    registry_lock = methods._services_lock
+    results, failures, leases = {}, {}, {}
+
+    class InterleavingLock:
+        def __enter__(self):
+            registry_lock.acquire()
+
+        def __exit__(self, *exc):
+            registry_lock.release()
+            thread = threading.current_thread()
+            if thread not in (winner, delayed) or getattr(first_read, 'complete', False):
+                return
+            first_read.complete = True
+            # Both callers capture the same old cache before either retires it.
+            captured.wait(3)
+            if thread is delayed:
+                assert published.wait(3)
+
+    def replace(label):
+        try:
+            service = methods._service(transport, replacement_context, authority)
+            results[label] = service
+            leases[label] = track_lease(service)
+        except BaseException as error:
+            failures[label] = error
+        finally:
+            if label == 'winner':
+                published.set()
+
+    winner = threading.Thread(target=replace, args=('winner',))
+    delayed = threading.Thread(target=replace, args=('delayed',))
+    monkeypatch.setattr(methods, '_services_lock', InterleavingLock())
+    winner.start()
+    delayed.start()
+    try:
+        winner.join(5)
+        delayed.join(5)
+    finally:
+        published.set()
+        captured.abort()
+        winner.join(5)
+        delayed.join(5)
+    assert not winner.is_alive() and not delayed.is_alive()
+    assert set(results) == {'winner'}
+    assert set(failures) == {'delayed'}
+    assert isinstance(failures['delayed'], methods.BoundaryError)
+    assert previous._retired and old_lease.network_cancelled()
+    assert not previous._leases and not old_lease._token
+    replacement = results['winner']
+    assert methods._services[transport][1] is replacement
+    assert methods._service(transport, replacement_context, authority) is replacement
+    assert not replacement._retired and replacement._lease_guard()
+    replacement._guard()
+    assert not leases['winner'].network_cancelled()
+    assert leases['winner']._token
+
+    # Actual owner-generation retirement still cancels the replacement and lease.
+    auth.cancel_transport(transport, generation=generation)
+    assert replacement._retired and leases['winner'].network_cancelled()
+    assert not replacement._leases and not leases['winner']._token
+
+
 @pytest.mark.parametrize('operation,extra,requires_fresh', [
     ('status', {}, False), ('cancel', {'attemptId': 'attempt'}, False),
     ('prepareOperation', {'kind': 'revoke', 'expectedRevision': 1, 'confirmed': True}, False),
