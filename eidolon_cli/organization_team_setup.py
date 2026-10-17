@@ -146,10 +146,14 @@ def _generation_allowance(conn, settings, *, completing_key=None):
     from eidolon_cli.organization_team_budget import budget_view
     view = budget_view(conn, settings, completing_key=completing_key)
     result = {'status': view['status'], 'remainingCalls': view['remaining']['totalCalls']}
-    if view['policyVersion'] == 2:
-        result.update(policyVersion=2, remainingByOperation={
+    if view['policyVersion'] in (2, 3):
+        result.update(policyVersion=view['policyVersion'], remainingByOperation={
             'improveTeamInput': view['remaining']['improveCalls'],
             'generateTeam': view['remaining']['generationCalls']})
+    if view['policyVersion'] == 3:
+        result.update(mode='subscription_calls', setupUsage=view['setupUsage'],
+                      requestTimeoutSeconds=view['requestTimeoutSeconds'],
+                      hardTokenGuarantee=False, hardUsdGuarantee=False)
     return result
 
 
@@ -175,15 +179,34 @@ def _current(conn, home, expected_id):
     return identity, policy, settings, revision
 
 
-def team_setup(home, expected_id):
+def _subscription_capability(home, transport):
+    """Passive availability only; does not open a vault or discover models."""
+    import sys
+    from pathlib import Path
+    from tui_gateway.organization_credential_transport import owner_home, owner_generation
+    if sys.platform != 'darwin':
+        return 'unsupported_platform'
+    if owner_home(transport) != Path(home).resolve() or owner_generation(transport) is None:
+        return 'local_owner_required'
+    return 'available'
+
+
+def team_setup(home, expected_id, *, subscription_transport=None):
     _uuid(expected_id, 'expectedOrganizationId')
-    base = {'capabilityVersion': 1, 'inputImprovementVersion': 1, 'setupBudgetVersion': 2, 'presets': presets(), 'readiness': _readiness(home), 'supportAgents': []}
+    base = {'capabilityVersion': 1, 'inputImprovementVersion': 1, 'setupBudgetVersion': 2,
+            'setupSubscriptionVersion': 1,
+            'setupSubscriptionState': _subscription_capability(home, subscription_transport), 'presets': presets(), 'readiness': _readiness(home), 'supportAgents': []}
     try:
         with _connection(home) as conn:
             identity, policy, settings, revision = _current(conn, home, expected_id)
-            return {**base, 'state': 'available' if _fresh(conn, settings) else 'configured',
-                    'organizationId': identity['organizationId'], 'sourceRevision': revision,
-                    'supportAgents': _support(conn), 'generationAllowance': _generation_allowance(conn, settings)}
+            result = {**base, 'state': 'available' if _fresh(conn, settings) else 'configured',
+                      'organizationId': identity['organizationId'], 'sourceRevision': revision,
+                      'supportAgents': _support(conn), 'generationAllowance': _generation_allowance(conn, settings)}
+        if result['state'] == 'available' and result['generationAllowance'].get('policyVersion') == 3:
+            from tui_gateway.methods_organization_setup_subscription import subscription_setup_readiness
+            result['readiness'] = {**base['readiness'], **subscription_setup_readiness(
+                subscription_transport, home, expected_id, revision)}
+        return result
     except OwnerPolicyError as exc:
         if exc.reason not in {'unconfigured', 'identity_required', 'execution_not_initialized', 'unsupported'}:
             raise
@@ -263,14 +286,14 @@ def create_team(home, params):
         return result
 
 
-def generate_team(home, params, *, cancel=None):
+def generate_team(home, params, *, cancel=None, subscription_transport=None):
     from eidolon_cli.organization_team_admission import generate_team as run
-    return run(home, params, cancel=cancel)
+    return run(home, params, cancel=cancel, subscription_transport=subscription_transport)
 
 
-def improve_team_input(home, params, *, cancel=None):
+def improve_team_input(home, params, *, cancel=None, subscription_transport=None):
     from eidolon_cli.organization_team_admission import improve_team_input as run
-    return run(home, params, cancel=cancel)
+    return run(home, params, cancel=cancel, subscription_transport=subscription_transport)
 
 
 def setup_budget_policy(home, expected_id):
@@ -286,3 +309,4 @@ def preview_setup_budget(home, params):
 def apply_setup_budget(home, params):
     from eidolon_cli.organization_team_budget import apply_budget
     return apply_budget(home, params)
+

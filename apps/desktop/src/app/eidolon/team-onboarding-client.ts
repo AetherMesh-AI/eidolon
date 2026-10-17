@@ -1,6 +1,16 @@
 import type { MetadataScope } from './organization-metadata-client'
-import { validateSetupBudgetApplied, validateSetupBudgetPolicy, validateSetupBudgetPreview, validateSetupBudgetState } from './team-setup-budget-client'
+import {
+  validateSetupBudgetApplied,
+  validateSetupBudgetPolicy,
+  validateSetupBudgetPreview,
+  validateSetupBudgetState
+} from './team-setup-budget-client'
 import type { SetupBudgetPolicy, SetupBudgetPreview, SetupBudgetState } from './team-setup-budget-client'
+import {
+  createSetupSubscriptionClient,
+  type SubscriptionUsage,
+  validateSubscriptionUsage
+} from './team-setup-subscription-client'
 
 export interface TeamMember {
   id: string
@@ -24,7 +34,12 @@ export interface TeamReadiness {
   backgroundEnabled: boolean
 }
 export interface TeamGenerationAllowance {
-  policyVersion?: 2
+  policyVersion?: 2 | 3
+  setupUsage?: SubscriptionUsage
+  mode?: 'subscription_calls'
+  requestTimeoutSeconds?: number
+  hardTokenGuarantee?: false
+  hardUsdGuarantee?: false
   remainingByOperation?: { improveTeamInput: number; generateTeam: number }
   status: 'available' | 'exhausted' | 'running' | 'uncertain' | 'blocked'
   remainingCalls: number
@@ -33,6 +48,8 @@ export interface TeamSetup {
   generationAllowance?: TeamGenerationAllowance
   inputImprovementVersion?: 1
   setupBudgetVersion?: 2
+  setupSubscriptionVersion?: 1
+  setupSubscriptionState?: 'available' | 'unsupported_platform' | 'local_owner_required'
   capabilityVersion: 1
   state: 'available' | 'configured' | 'unconfigured' | 'unsupported'
   organizationId?: string
@@ -72,26 +89,61 @@ export interface TeamReceipt {
 }
 
 function validateGenerationAllowance(value: unknown) {
-  if (value === undefined) {return}
+  if (value === undefined) {
+    return
+  }
 
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {throw new Error('invalid_allowance')}
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('invalid_allowance')
+  }
+
   const allowance = value as Record<string, unknown>
 
   if (
     typeof allowance.status !== 'string' ||
     !['available', 'exhausted', 'running', 'uncertain', 'blocked'].includes(allowance.status) ||
     !Number.isInteger(allowance.remainingCalls) ||
-    Number(allowance.remainingCalls) < 0 || Number(allowance.remainingCalls) > (allowance.policyVersion === 2 ? 1000 : 3) ||
+    Number(allowance.remainingCalls) < 0 ||
+    Number(allowance.remainingCalls) > ([2, 3].includes(allowance.policyVersion as number) ? 1000 : 3) ||
     (allowance.status === 'available' && allowance.remainingCalls === 0)
-  ) {throw new Error('invalid_allowance')}
+  ) {
+    throw new Error('invalid_allowance')
+  }
+
+  if (allowance.policyVersion === 3) {
+    if (
+      allowance.mode !== 'subscription_calls' ||
+      allowance.hardTokenGuarantee !== false ||
+      allowance.hardUsdGuarantee !== false ||
+      !Number.isInteger(allowance.requestTimeoutSeconds) ||
+      Number(allowance.requestTimeoutSeconds) < 1 ||
+      Number(allowance.requestTimeoutSeconds) > 120 ||
+      allowance.setupUsage === undefined
+    ) {
+      throw new Error('invalid_allowance')
+    }
+  }
+
+  if (allowance.setupUsage !== undefined) {
+    validateSubscriptionUsage(allowance.setupUsage)
+  }
 
   if ('policyVersion' in allowance || 'remainingByOperation' in allowance) {
     const operations = allowance.remainingByOperation as Record<string, unknown> | undefined
 
-    if (allowance.policyVersion !== 2 || !operations || typeof operations !== 'object' || Array.isArray(operations) ||
+    if (
+      ![2, 3].includes(allowance.policyVersion as number) ||
+      !operations ||
+      typeof operations !== 'object' ||
+      Array.isArray(operations) ||
       Object.keys(operations).sort().join(',') !== 'generateTeam,improveTeamInput' ||
-      !['generateTeam', 'improveTeamInput'].every(key => Number.isInteger(operations[key]) &&
-        Number(operations[key]) >= 0 && Number(operations[key]) <= Number(allowance.remainingCalls))) {
+      !['generateTeam', 'improveTeamInput'].every(
+        key =>
+          Number.isInteger(operations[key]) &&
+          Number(operations[key]) >= 0 &&
+          Number(operations[key]) <= Number(allowance.remainingCalls)
+      )
+    ) {
       throw new Error('invalid_allowance')
     }
   }
@@ -121,37 +173,61 @@ export function createTeamOnboardingClient(
   }
 
   const stop = subscribe(() => {
-    if (!current()) {invalid = true}
+    if (!current()) {
+      invalid = true
+    }
   })
 
   async function request<T>(method: string, params: Record<string, unknown>): Promise<T> {
-    if (!current()) {throw new Error('stale')}
+    if (!current()) {
+      throw new Error('stale')
+    }
 
-    if (busy) {throw new Error('busy')}
+    if (busy) {
+      throw new Error('busy')
+    }
+
     busy = true
 
     try {
       const response = await origin.request<T>(method, params)
 
-      if (!current()) {throw new Error('stale')}
+      if (!current()) {
+        throw new Error('stale')
+      }
 
       if (response && typeof response === 'object' && 'generationAllowance' in response) {
         validateGenerationAllowance(response.generationAllowance)
       }
 
       return response
+    } catch (failure) {
+      // Rejections can carry recovery metadata too. Never deliver a departed
+      // owner's response into a new scope, including on the error path.
+      if (!current()) {
+        throw new Error('stale')
+      }
+
+      throw failure
     } finally {
       busy = false
     }
   }
 
   return {
+    ...createSetupSubscriptionClient(request),
     current,
     setup: (organizationId: string | null) =>
       request<TeamSetup>('organization.teamSetup', { expectedOrganizationId: organizationId }),
     budget: async (setup: TeamSetup): Promise<SetupBudgetState> => {
-      if (setup.setupBudgetVersion !== 2 || !setup.organizationId) {throw new Error('unsupported')}
-      const value = await request<unknown>('organization.setupBudgetPolicy', { expectedOrganizationId: setup.organizationId })
+      if (setup.setupBudgetVersion !== 2 || !setup.organizationId) {
+        throw new Error('unsupported')
+      }
+
+      const value = await request<unknown>('organization.setupBudgetPolicy', {
+        expectedOrganizationId: setup.organizationId
+      })
+
       validateSetupBudgetState(value, setup.organizationId)
 
       return value
@@ -160,8 +236,10 @@ export function createTeamOnboardingClient(
       validateSetupBudgetPolicy(configuration)
 
       const value = await request<unknown>('organization.previewSetupBudget', {
-        expectedOrganizationId: state.organizationId, expectedGeneration: state.policyGeneration,
-        sourceRevision: state.sourceRevision, configuration
+        expectedOrganizationId: state.organizationId,
+        expectedGeneration: state.policyGeneration,
+        sourceRevision: state.sourceRevision,
+        configuration
       })
 
       validateSetupBudgetPreview(value, state, configuration)
@@ -170,9 +248,13 @@ export function createTeamOnboardingClient(
     },
     applyBudget: async (preview: SetupBudgetPreview, idempotencyKey: string) => {
       const value = await request<unknown>('organization.applySetupBudget', {
-        expectedOrganizationId: preview.organizationId, expectedGeneration: preview.policyGeneration,
-        sourceRevision: preview.sourceRevision, configuration: preview.configuration,
-        previewVersion: preview.previewVersion, idempotencyKey, confirmed: true
+        expectedOrganizationId: preview.organizationId,
+        expectedGeneration: preview.policyGeneration,
+        sourceRevision: preview.sourceRevision,
+        configuration: preview.configuration,
+        previewVersion: preview.previewVersion,
+        idempotencyKey,
+        confirmed: true
       })
 
       validateSetupBudgetApplied(value, preview, idempotencyKey)
@@ -189,7 +271,10 @@ export function createTeamOnboardingClient(
       setup: TeamSetup,
       input: { field: 'jobs' | 'goals'; jobs: string; goals: string; namingStyle: string; idempotencyKey: string }
     ): Promise<TeamInputSuggestion> => {
-      if (setup.inputImprovementVersion !== 1) {throw new Error('unsupported')}
+      if (setup.inputImprovementVersion !== 1) {
+        throw new Error('unsupported')
+      }
+
       const organizationId = setup.organizationId
       const sourceRevision = setup.sourceRevision
       const field = input.field
@@ -200,7 +285,10 @@ export function createTeamOnboardingClient(
         ...input
       })
 
-      if (!value || typeof value !== 'object' || Array.isArray(value)) {throw new Error('invalid_suggestion')}
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        throw new Error('invalid_suggestion')
+      }
+
       const result = value as Record<string, unknown>
 
       const validText = (text: unknown, maximum: number): text is string =>
