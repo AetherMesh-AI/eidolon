@@ -281,11 +281,12 @@ def test_boundary_trace_flushes_registered_rebound_handlers_before_cleanup(tmp_p
     assert sys.modules.get('tui_gateway.server') is previous_server
 
 
-@pytest.mark.parametrize('child_kind', ['file', 'directory'])
+@pytest.mark.parametrize('change_kind', ['permissions', 'directory'])
 @pytest.mark.skipif(importlib.util.find_spec('fcntl') is None,
                     reason='Real POSIX directory metadata probe requires fcntl platform')
-def test_identity_diagnostic_observes_real_sibling_change_without_weakening_guard(tmp_path, monkeypatch, child_kind):
+def test_identity_diagnostic_observes_real_metadata_change_without_weakening_guard(tmp_path, monkeypatch, change_kind):
     import os
+    import stat
     from eidolon_cli import organization_setup_subscription_store as store
 
     ancestor = tmp_path / 'synthetic-private-ancestor-name'
@@ -297,17 +298,23 @@ def test_identity_diagnostic_observes_real_sibling_change_without_weakening_guar
     diagnostics = BoundaryDiagnostics(evidence, home=home)
     before = ancestor.lstat()
 
-    def open_with_sibling(path, flags, *args, **kwargs):
+    def open_with_metadata_change(path, flags, *args, **kwargs):
         if path == ancestor:
-            sibling = ancestor / 'synthetic-private-sibling-name'
-            if child_kind == 'directory':
+            if change_kind == 'directory':
+                sibling = ancestor / 'synthetic-private-sibling-name'
                 sibling.mkdir(mode=0o700)
+                assert ancestor.lstat().st_nlink != before.st_nlink
             else:
-                sibling.write_bytes(b'synthetic')
+                # A regular-file sibling can leave every identity field unchanged
+                # within one filesystem clock tick. Change a mode bit instead;
+                # ctime-only observation is covered independently below.
+                mode = stat.S_IMODE(before.st_mode) ^ stat.S_IXGRP
+                ancestor.chmod(mode)
+                assert stat.S_IMODE(ancestor.lstat().st_mode) == mode
         return original(path, flags, *args, **kwargs)
 
     with monkeypatch.context() as patch:
-        patch.setattr(os, 'open', open_with_sibling)
+        patch.setattr(os, 'open', open_with_metadata_change)
         diagnostics.install()
         try:
             with pytest.raises(store.StoreError) as error:
@@ -320,8 +327,9 @@ def test_identity_diagnostic_observes_real_sibling_change_without_weakening_guar
     changed_fields = dict(zip(
         ('device', 'inode', 'mode', 'owner', 'group', 'links', 'changeTime'),
         (a != b for a, b in zip(store._file_identity(before), store._file_identity(after)))))
-    assert not any(changed_fields[name] for name in ('device', 'inode', 'mode', 'owner', 'group'))
-    assert any(changed_fields.values())
+    assert not any(changed_fields[name] for name in ('device', 'inode', 'owner', 'group'))
+    assert changed_fields['mode'] is (change_kind == 'permissions')
+    assert changed_fields['links'] is (change_kind == 'directory')
     rows = read_trace(evidence)
     identities = [row['identity'] for row in rows if row['event'] == 'identity_mismatch']
     assert len(identities) == 1

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { expect, it, vi } from 'vitest'
 
@@ -41,6 +41,8 @@ function harness(
     readiness: { ...subscriptionSetup.readiness, blockers: ['subscription_generation_unsupported'] }
   }
 ) {
+  let current = true
+
   let setup = structuredClone(initial),
     connection = structuredClone(subscriptionStatus),
     policyState = structuredClone(subscriptionPolicyState)
@@ -66,7 +68,7 @@ function harness(
   })
 
   const client = {
-    current: () => true,
+    current: () => current,
     setup: vi.fn(async () => setup),
     subscriptionStatus: vi.fn(async () => connection),
     subscriptionPolicy: vi.fn(async () => policyState),
@@ -134,7 +136,8 @@ function harness(
   } as unknown as TeamOnboardingClient
 
   const onCreated = vi.fn()
-  render(
+
+  const view = render(
     <MemoryRouter>
       <I18nProvider configClient={null} initialLocale="en">
         <TeamOnboardingDialog
@@ -149,7 +152,17 @@ function harness(
     </MemoryRouter>
   )
 
-  return { client, onCreated }
+  return {
+    client,
+    onCreated,
+    view,
+    updateSetup: (next: TeamSetup) => {
+      setup = next
+    },
+    depart: () => {
+      current = false
+    }
+  }
 }
 
 it('uses the existing review/Create path after explicit subscription consent, policy and Improve review', async () => {
@@ -234,4 +247,359 @@ it('keeps manual setup available on an unsupported subscription host', async () 
   expect(screen.getByRole('button', { name: teamCopy.validate })).toHaveProperty('disabled', false)
   expect(h.client.beginSubscription).not.toHaveBeenCalled()
   expect(h.client.generate).not.toHaveBeenCalled()
+})
+
+const readySubscription = (): TeamSetup => ({
+  ...subscriptionSetup,
+  readiness: {
+    ...subscriptionSetup.readiness,
+    status: 'unchecked',
+    blockers: []
+  },
+  generationAllowance: {
+    policyVersion: 3,
+    status: 'available',
+    remainingCalls: 5,
+    remainingByOperation: { improveTeamInput: 3, generateTeam: 2 },
+    setupUsage: unknownUsage
+  }
+})
+
+function recoveryFailure(setup: TeamSetup, input: { idempotencyKey: string; field?: 'jobs' | 'goals' }) {
+  return {
+    code: 5076,
+    message: 'Subscription setup is unavailable',
+    data: {
+      reason: 'rejected',
+      recovery: {
+        version: 1,
+        disposition: 'retry_unsent',
+        idempotencyKey: input.idempotencyKey,
+        operation: input.field ? `improve_${input.field}` : 'generate',
+        sourceRevision: setup.sourceRevision
+      }
+    }
+  }
+}
+
+function enterInputs() {
+  fireEvent.change(screen.getByLabelText(teamCopy.jobs), {
+    target: { value: 'Research changes' }
+  })
+  fireEvent.change(screen.getByLabelText(teamCopy.goals), {
+    target: { value: 'Reliable weekly summary' }
+  })
+}
+
+it.each(['jobs', 'goals', 'generate', 'regenerate'] as const)(
+  'keeps the %s failed key through checks and creates one new request only on explicit unsent retry',
+  async kind => {
+    const h = harness(readySubscription())
+    enterInputs()
+    const method = kind === 'jobs' || kind === 'goals' ? vi.mocked(h.client.improve) : vi.mocked(h.client.generate)
+
+    const label =
+      kind === 'jobs'
+        ? teamCopy.improveJobs
+        : kind === 'goals'
+          ? teamCopy.improveGoals
+          : kind === 'regenerate'
+            ? teamCopy.regenerate
+            : teamCopy.generate
+
+    if (kind === 'regenerate') {
+      fireEvent.click(screen.getByRole('button', { name: teamCopy.generate }))
+      await screen.findByRole('button', { name: teamCopy.create })
+    }
+
+    const before = method.mock.calls.length
+    method.mockImplementationOnce(async (setup, input) => {
+      throw recoveryFailure(setup, input)
+    })
+    fireEvent.click(screen.getByRole('button', { name: label }))
+    const retry = await screen.findByRole('button', { name: 'Retry unsent request' })
+    await waitFor(() => expect(retry).toHaveProperty('disabled', false))
+    const first = method.mock.calls[before]!
+    expect(method).toHaveBeenCalledTimes(before + 1)
+    expect(h.client.create).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: teamCopy.checkConfiguration }))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Retry unsent request' })).toHaveProperty('disabled', false)
+    )
+    expect(method).toHaveBeenCalledTimes(before + 1)
+
+    // Ordinary operation retry still addresses the failed old attempt.
+    method.mockImplementationOnce(async (setup, input) => {
+      throw recoveryFailure(setup, input)
+    })
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: kind === 'regenerate' ? teamCopy.retryRegeneration : label
+      })
+    )
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Retry unsent request' })).toHaveProperty('disabled', false)
+    )
+    expect(method.mock.calls[before + 1]![1]).toEqual(first[1])
+
+    const explicit = screen.getByRole('button', { name: 'Retry unsent request' })
+    fireEvent.click(explicit)
+    fireEvent.click(explicit)
+    await waitFor(() => expect(method).toHaveBeenCalledTimes(before + 3))
+    const replacement = method.mock.calls[before + 2]!
+    expect(replacement[1].idempotencyKey).not.toBe(first[1].idempotencyKey)
+    expect({
+      ...replacement[1],
+      idempotencyKey: first[1].idempotencyKey
+    }).toEqual(first[1])
+    expect(replacement[0].organizationId).toBe(first[0].organizationId)
+    expect(replacement[0].sourceRevision).toBe(first[0].sourceRevision)
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Retry unsent request' })).toBeNull())
+    expect(h.client.create).not.toHaveBeenCalled()
+  }
+)
+
+it.each([
+  'missing',
+  'wrong_key',
+  'wrong_source',
+  'wrong_operation',
+  'unknown_disposition',
+  'extra_field',
+  'wrong_code'
+])('never rotates a failed intent or offers recovery for %s evidence', async kind => {
+  const h = harness(readySubscription())
+  enterInputs()
+  vi.mocked(h.client.improve).mockImplementation(async (setup, input) => {
+    const failure = recoveryFailure(setup, input)
+
+    if (kind === 'missing') {
+      delete (failure.data as { recovery?: unknown }).recovery
+    }
+
+    if (kind === 'wrong_key') {
+      failure.data.recovery.idempotencyKey = 'different-key'
+    }
+
+    if (kind === 'wrong_source') {
+      failure.data.recovery.sourceRevision = 'f'.repeat(64)
+    }
+
+    if (kind === 'wrong_operation') {
+      failure.data.recovery.operation = 'generate'
+    }
+
+    if (kind === 'unknown_disposition') {
+      failure.data.recovery.disposition = 'automatic_retry'
+    }
+
+    if (kind === 'extra_field') {
+      Object.assign(failure.data.recovery, { dispatched: false })
+    }
+
+    if (kind === 'wrong_code') {
+      failure.code = -32602
+    }
+
+    throw failure
+  })
+  fireEvent.click(screen.getByRole('button', { name: teamCopy.improveJobs }))
+  await screen.findByText(teamCopy.error)
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: teamCopy.improveJobs })).toHaveProperty('disabled', false)
+  )
+  expect(screen.queryByRole('button', { name: 'Retry unsent request' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: teamCopy.checkConfiguration }))
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: teamCopy.improveJobs })).toHaveProperty('disabled', false)
+  )
+  fireEvent.click(screen.getByRole('button', { name: teamCopy.improveJobs }))
+  await waitFor(() => expect(h.client.improve).toHaveBeenCalledTimes(2))
+  expect(vi.mocked(h.client.improve).mock.calls[1]![1]).toEqual(vi.mocked(h.client.improve).mock.calls[0]![1])
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: teamCopy.improveJobs })).toHaveProperty('disabled', false)
+  )
+  expect(screen.queryByRole('button', { name: 'Retry unsent request' })).toBeNull()
+})
+
+it.each(['input', 'source', 'organization', 'scope', 'running', 'uncertain', 'exhausted', 'api', 'bucket'])(
+  'retires an unsent recovery offer after %s changes without sending',
+  async kind => {
+    const initial = readySubscription()
+    const h = harness(initial)
+    enterInputs()
+    vi.mocked(h.client.improve).mockImplementationOnce(async (setup, input) => {
+      throw recoveryFailure(setup, input)
+    })
+    fireEvent.click(screen.getByRole('button', { name: teamCopy.improveJobs }))
+
+    const priorButton = await screen.findByRole('button', {
+      name: 'Retry unsent request'
+    })
+
+    await waitFor(() => expect(priorButton).toHaveProperty('disabled', false))
+
+    if (kind === 'input') {
+      fireEvent.change(screen.getByLabelText(teamCopy.goals), {
+        target: { value: 'Changed goal' }
+      })
+    } else if (kind === 'scope') {
+      h.depart()
+      fireEvent.click(priorButton)
+    } else {
+      const next = structuredClone(initial)
+
+      if (kind === 'source') {
+        next.sourceRevision = 'f'.repeat(64)
+      }
+
+      if (kind === 'organization') {
+        next.organizationId = 'other-organization'
+      }
+
+      if (['running', 'uncertain', 'exhausted'].includes(kind)) {
+        next.generationAllowance!.status = kind as 'running' | 'uncertain' | 'exhausted'
+      }
+
+      if (kind === 'api') {
+        next.generationAllowance = { status: 'available', remainingCalls: 3 }
+      }
+
+      if (kind === 'bucket') {
+        next.generationAllowance!.remainingByOperation!.improveTeamInput = 0
+      }
+
+      h.updateSetup(next)
+      fireEvent.click(screen.getByRole('button', { name: teamCopy.checkConfiguration }))
+    }
+
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Retry unsent request' })).toBeNull())
+    fireEvent.click(priorButton)
+    expect(h.client.improve).toHaveBeenCalledTimes(1)
+    expect(h.client.generate).not.toHaveBeenCalled()
+  }
+)
+
+it.each(['input', 'scope', 'close'])(
+  'fences a late failed response after %s without publishing recovery or sending again',
+  async kind => {
+    const h = harness(readySubscription())
+    enterInputs()
+    let reject!: (value: unknown) => void
+    vi.mocked(h.client.improve).mockImplementationOnce(
+      () =>
+        new Promise((_resolve, failure) => {
+          reject = failure
+        })
+    )
+    fireEvent.click(screen.getByRole('button', { name: teamCopy.improveJobs }))
+    const [setup, input] = vi.mocked(h.client.improve).mock.calls[0]!
+
+    if (kind === 'input') {
+      fireEvent.change(screen.getByLabelText(teamCopy.jobs), {
+        target: { value: 'New input' }
+      })
+    }
+
+    if (kind === 'scope') {
+      h.depart()
+    }
+
+    if (kind === 'close') {
+      h.view.unmount()
+    }
+
+    await act(async () => {
+      reject(recoveryFailure(setup, input))
+    })
+    expect(screen.queryByRole('button', { name: 'Retry unsent request' })).toBeNull()
+    expect(h.client.improve).toHaveBeenCalledTimes(1)
+    expect(h.client.generate).not.toHaveBeenCalled()
+  }
+)
+
+it('does not reuse an old recovery offer after a generic failure or recover it from a passive check', async () => {
+  const h = harness(readySubscription())
+  enterInputs()
+  const improve = vi.mocked(h.client.improve)
+  improve.mockImplementationOnce(async (setup, input) => {
+    throw recoveryFailure(setup, input)
+  })
+  fireEvent.click(screen.getByRole('button', { name: teamCopy.improveJobs }))
+  await screen.findByRole('button', { name: 'Retry unsent request' })
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: teamCopy.improveJobs })).toHaveProperty('disabled', false)
+  )
+  const first = improve.mock.calls[0]![1]
+  improve.mockRejectedValueOnce(new Error('lost response'))
+  fireEvent.click(screen.getByRole('button', { name: teamCopy.improveJobs }))
+  await waitFor(() => expect(improve).toHaveBeenCalledTimes(2))
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: teamCopy.checkConfiguration })).toHaveProperty('disabled', false)
+  )
+  fireEvent.click(screen.getByRole('button', { name: teamCopy.checkConfiguration }))
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: teamCopy.improveJobs })).toHaveProperty('disabled', false)
+  )
+  expect(screen.queryByRole('button', { name: 'Retry unsent request' })).toBeNull()
+  expect(improve.mock.calls[1]![1]).toEqual(first)
+  improve.mockImplementationOnce(async (setup, input) => {
+    throw recoveryFailure(setup, input)
+  })
+  fireEvent.click(screen.getByRole('button', { name: teamCopy.improveJobs }))
+  const retry = await screen.findByRole('button', { name: 'Retry unsent request' })
+  await waitFor(() => expect(retry).toHaveProperty('disabled', false))
+  expect(improve.mock.calls[2]![1]).toEqual(first)
+  fireEvent.click(retry)
+  await waitFor(() => expect(improve).toHaveBeenCalledTimes(4))
+  expect(improve.mock.calls[3]![1].idempotencyKey).not.toBe(first.idempotencyKey)
+  expect(h.client.create).not.toHaveBeenCalled()
+})
+
+it.each([
+  ['generate', 'input'],
+  ['generate', 'source'],
+  ['regenerate', 'draft'],
+  ['regenerate', 'source']
+])('retires %s recovery when the %s changes and preserves the edited draft', async (kind, change) => {
+  const initial = readySubscription()
+  const h = harness(initial)
+  enterInputs()
+
+  if (kind === 'regenerate') {
+    fireEvent.click(screen.getByRole('button', { name: teamCopy.generate }))
+    await screen.findByRole('button', { name: teamCopy.create })
+  }
+
+  const generate = vi.mocked(h.client.generate)
+  const before = generate.mock.calls.length
+  generate.mockImplementationOnce(async (setup, input) => {
+    throw recoveryFailure(setup, input)
+  })
+  fireEvent.click(screen.getByRole('button', { name: kind === 'generate' ? teamCopy.generate : teamCopy.regenerate }))
+  const retry = await screen.findByRole('button', { name: 'Retry unsent request' })
+  await waitFor(() => expect(retry).toHaveProperty('disabled', false))
+
+  if (change === 'input') {
+    fireEvent.change(screen.getByLabelText(teamCopy.jobs), { target: { value: 'New jobs' } })
+  }
+
+  if (change === 'draft') {
+    fireEvent.change(screen.getByLabelText(teamCopy.name), { target: { value: 'Owner-edited executive' } })
+  }
+
+  if (change === 'source') {
+    h.updateSetup({ ...initial, sourceRevision: 'f'.repeat(64) })
+    fireEvent.click(screen.getByRole('button', { name: teamCopy.checkConfiguration }))
+  }
+
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Retry unsent request' })).toBeNull())
+  fireEvent.click(retry)
+  expect(generate).toHaveBeenCalledTimes(before + 1)
+
+  if (change === 'draft') {
+    expect(screen.getByLabelText(teamCopy.name)).toHaveProperty('value', 'Owner-edited executive')
+  }
+
+  expect(h.client.create).not.toHaveBeenCalled()
 })

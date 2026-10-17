@@ -626,7 +626,8 @@ class SubscriptionAuthService:
                 self._guard(attempt)
                 attempt.verified_binding, attempt.verified_scopes = binding, scopes
                 publication_started = True
-                with self._host.publication_guard(attempt.attempt_id) as publication:
+                with self._host.publication_guard(attempt.attempt_id,
+                        binding_digest=self._store._binding_digest(binding)) as publication:
                     self._attempt_generation_guard(attempt)
                     revision = self._store.connect_grant(binding, access_token=tokens['access_token'],
                         refresh_token=tokens['refresh_token'], id_token=tokens['id_token'],
@@ -681,7 +682,8 @@ class SubscriptionAuthService:
                         stage = {'pending': 'reauthorization_required',
                                  'exchange_admitted': 'reauthorization_required',
                                  'publishing': 'reconciliation_required',
-                                 'published': 'completed', 'cancelled': 'cancelled'}[record.stage]
+                                 'published': 'completed', 'cancelled': 'cancelled',
+                                 'locally_retired': 'locally_retired'}[record.stage]
                         if record.expires_at <= self._clock() and record.stage in {'pending', 'exchange_admitted'}:
                             stage = 'expired'
                     result.update(attemptId=record.attempt_id, stage=stage, expiresAt=record.expires_at)
@@ -984,13 +986,67 @@ class SubscriptionAuthService:
     @_safe
     def recover_operation_current(self):
         with self._lock, self._authority():
+            record = self._host.inspect()
+            if record is not None and record.stage in {'publishing', 'locally_retired'}:
+                return self._recover_authorization_locked(record)
             binding = self._operation_binding()
             result = self._store.reconcile_transition(binding,
                 owner_guard=self._lease_guard, cancel=self._lease_cancel)
             result = self._operation_result(binding, result)
             result['cleanupPending'] = _cleanup_pending(self._store.status())
             self._guard()
+            if (record is not None and record.stage == 'published' and self._attempt is not None
+                    and self._attempt.attempt_id == record.attempt_id
+                    and self._attempt.stage == 'publication_uncertain' and not self._attempt.cancel.is_set()):
+                # A durable terminal host record wins over a lost live acknowledgment.
+                # It must not divert later lifecycle recovery into fresh-setup checks.
+                self._attempt.stage = 'connected'
             return result
+
+    def _recover_authorization_locked(self, record):
+        self._fresh_guard()
+        self._record_scope(record)
+        binding = self._operation_binding()
+        digest = self._store._binding_digest(binding)
+        expected = record.publication_binding_digest
+        legacy_binding_digest = None
+        attempt = self._attempt
+        if expected is None:
+            # Old records have no durable account association. Only the exact
+            # live verified attempt can reconcile them; restart stays blocked.
+            if (attempt is None or attempt.attempt_id != record.attempt_id
+                    or attempt.stage != 'publication_uncertain' or attempt.cancel.is_set()
+                    or attempt.verified_binding != binding):
+                raise AuthError('stale_attempt')
+            legacy_binding_digest = expected = digest
+        if digest != expected:
+            raise AuthError('stale_attempt')
+        with self._host.reconciliation_guard(record.attempt_id, allow_local_retirement=True,
+                legacy_binding_digest=legacy_binding_digest) as publication:
+            from dataclasses import replace
+            if publication.record != replace(record, publication_binding_digest=expected):
+                raise AuthError('stale_attempt')
+            self._authorization_recovery_guard(record, attempt)
+            result = self._store.reconcile_auth_publication(binding,
+                auth_attempt_id=record.attempt_id, prior_store_revision=record.expected_store_revision,
+                owner_guard=self._lease_guard, cancel=self._lease_cancel)
+            self._authorization_recovery_guard(record, attempt)
+            if result['state'] == 'local_retired':
+                publication.retire(result['revision'])
+            else:
+                publication.commit(result['revision'])
+        self._fresh_guard()
+        if self._attempt is not None and self._attempt.attempt_id == record.attempt_id:
+            self._attempt.stage = 'locally_retired' if result['state'] == 'local_retired' else 'connected'
+        result = self._operation_result(binding, result, catalog=False)
+        result['cleanupPending'] = False
+        return result
+
+    def _authorization_recovery_guard(self, record, attempt):
+        self._attempt_generation_guard()
+        if (self._attempt is not attempt or attempt is not None
+                and (attempt.attempt_id != record.attempt_id or attempt.cancel.is_set())):
+            raise AuthError('stale_attempt')
 
     @_safe
     def reconcile_current(self):

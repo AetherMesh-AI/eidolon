@@ -1,5 +1,55 @@
 import type { TeamSetup } from './team-onboarding-client'
 
+export interface SubscriptionRecovery {
+  version: 1
+  disposition: 'retry_unsent'
+  idempotencyKey: string
+  operation: 'improve_jobs' | 'improve_goals' | 'generate'
+  sourceRevision: string
+}
+
+/** An advisory about one old attempt, never authority for the next request. */
+export function readSubscriptionRecovery(
+  failure: unknown,
+  expected: Pick<SubscriptionRecovery, 'idempotencyKey' | 'operation' | 'sourceRevision'>
+): SubscriptionRecovery | null {
+  const error = failure as {
+    code?: unknown
+    data?: { recovery?: unknown }
+  } | null
+
+  const value = error?.data?.recovery
+
+  if (error?.code !== 5076 || !value || typeof value !== 'object' || Array.isArray(value)) {
+    return null
+  }
+
+  const recovery = value as Record<string, unknown>
+
+  if (
+    Object.keys(recovery).sort().join(',') !== 'disposition,idempotencyKey,operation,sourceRevision,version' ||
+    recovery.version !== 1 ||
+    recovery.disposition !== 'retry_unsent' ||
+    !text(recovery.idempotencyKey) ||
+    !hash(recovery.sourceRevision) ||
+    typeof recovery.operation !== 'string' ||
+    !['improve_jobs', 'improve_goals', 'generate'].includes(recovery.operation) ||
+    recovery.idempotencyKey !== expected.idempotencyKey ||
+    recovery.operation !== expected.operation ||
+    recovery.sourceRevision !== expected.sourceRevision
+  ) {
+    return null
+  }
+
+  return {
+    version: 1,
+    disposition: 'retry_unsent',
+    idempotencyKey: expected.idempotencyKey,
+    operation: expected.operation,
+    sourceRevision: expected.sourceRevision
+  }
+}
+
 export interface SubscriptionPolicy {
   version: 3
   mode: 'subscription_calls'

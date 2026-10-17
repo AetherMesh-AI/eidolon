@@ -201,6 +201,14 @@ export function createTeamOnboardingClient(
       }
 
       return response
+    } catch (failure) {
+      // Rejections can carry recovery metadata too. Never deliver a departed
+      // owner's response into a new scope, including on the error path.
+      if (!current()) {
+        throw new Error('stale')
+      }
+
+      throw failure
     } finally {
       busy = false
     }

@@ -127,8 +127,17 @@ export function TeamSetupSubscription(props: TeamSetupSubscriptionProps) {
             )}
           </div>
           {state.connectionPending && <p role="status">{copy.pending}</p>}
+          {state.status?.stage === 'locally_retired' && <p role="status">{copy.locallyRetired}</p>}
           {connected && !state.catalog && <p role="status">{copy.stored}</p>}
-          {absent && !state.connectionPending && (
+          {state.authorizationRecoveryRequired && (
+            <>
+              <p role="status">{copy.authorizationRecoveryRequired}</p>
+              <Button disabled={disabled} onClick={state.recover} size="sm" variant="secondary">
+                {copy.recover}
+              </Button>
+            </>
+          )}
+          {absent && !state.connectionPending && !state.authorizationRecoveryRequired && (
             <>
               <p className="eid-team-note" id={`${id}-consent`}>
                 {copy.consent}
@@ -251,6 +260,7 @@ export function TeamSetupSubscription(props: TeamSetupSubscriptionProps) {
           <details>
             <summary>{budget.details}</summary>
             <p className="eid-team-note">{copy.disconnectHelp}</p>
+            <p className="eid-team-note">{copy.recoverHelp}</p>
             <div className="eid-team-actions">
               {connected && (
                 <Button disabled={disabled} onClick={() => state.operate('refresh')} size="sm" variant="secondary">
@@ -262,9 +272,11 @@ export function TeamSetupSubscription(props: TeamSetupSubscriptionProps) {
                   {copy.disconnect}
                 </Button>
               )}
-              <Button disabled={disabled} onClick={state.recover} size="sm" variant="text">
-                {copy.recover}
-              </Button>
+              {!state.authorizationRecoveryRequired && (
+                <Button disabled={disabled} onClick={state.recover} size="sm" variant="text">
+                  {copy.recover}
+                </Button>
+              )}
             </div>
           </details>
         </>

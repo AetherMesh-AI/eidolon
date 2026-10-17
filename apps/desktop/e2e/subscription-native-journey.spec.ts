@@ -309,6 +309,166 @@ test.describe('host-native subscription setup', () => {
     })
   }
 
+  test('known unsent inference recovers through one explicit retry without losing debt', async () => {
+    allowErrorBanners()
+    fixture = await setupNativeSubscription({ legacy: true, recoveryFault: 'sqlite_dispatch_once' })
+    const dialog = await openSetup(true)
+    const before = await activate(dialog, true)
+    const improve = dialog.getByRole('button', { name: 'Improve work description', exact: true })
+    await completeInference(improve, 'improveTeamInput', 'unavailable')
+    const retry = dialog.getByRole('button', { name: 'Retry unsent request', exact: true })
+    await expect(retry).toBeVisible({ timeout: 20_000 })
+    await expect(dialog.getByRole('button', { name: 'Check configuration', exact: true })).toBeEnabled({
+      timeout: 20_000
+    })
+    await expect(retry).toBeEnabled()
+    await expect(dialog.getByLabel('Work to delegate', { exact: true })).toHaveValue(jobs)
+    await expect(dialog.getByLabel('What success looks like', { exact: true })).toHaveValue(goals)
+    const faults = fixture.events().filter(row => row.kind === 'recovery-fault')
+    expect(faults).toHaveLength(1)
+    expect(faults[0]).toMatchObject({ fault: 'sqlite_dispatch_once', triggered: true, restored: true })
+    const failed = fixture.snapshot()
+    const unsent = failed.generations.filter(row => row.idempotency_key !== 'synthetic-legacy')
+    expect(unsent).toHaveLength(1)
+    expect(unsent[0]).toMatchObject({ status: 'failed', dispatched: 0, result_json: null })
+    expect(failed.dispatches).toEqual([])
+    expect(failed.outcomes).toEqual([])
+    expect(failed.teams).toEqual([])
+    expect(failed.generations.find(row => row.idempotency_key === 'synthetic-legacy')).toEqual(before.generations[0])
+    fixture.assertQuiet(0)
+    const retained = await fixture.performOperation('improveTeamInput', () => improve.click())
+    expect(retained).toMatchObject({
+      method: 'organization.improveTeamInput',
+      phase: 'error',
+      code: 5076,
+      reason: 'generation_failed'
+    })
+    await expect(retry).toBeEnabled({ timeout: 20_000 })
+    expect(fixture.snapshot()).toEqual(failed)
+    fixture.assertQuiet(0)
+    await completeInference(retry, 'improveTeamInput')
+    await expect(
+      dialog
+        .getByRole('region', { name: 'Review suggested wording', exact: true })
+        .getByLabel('Suggested text', { exact: true })
+    ).toHaveValue(suggestedJobs)
+    await expect(retry).toHaveCount(0)
+    const after = fixture.snapshot()
+    expect(after.generations).toHaveLength(3)
+    expect(after.generations.find(row => row.idempotency_key === unsent[0].idempotency_key)).toEqual(unsent[0])
+    expect(after.generations.find(row => row.idempotency_key === 'synthetic-legacy')).toEqual(before.generations[0])
+    const completed = after.generations.filter(row => row.status === 'completed')
+    expect(completed).toHaveLength(1)
+    expect(completed[0].idempotency_key).not.toBe(unsent[0].idempotency_key)
+    expect(completed[0].dispatched).toBe(1)
+    expect(after.dispatches).toHaveLength(1)
+    expect(after.outcomes).toHaveLength(1)
+    expect(after.model).toEqual(before.model)
+    expect(after.executionPolicy).toEqual(failed.executionPolicy)
+    expect(after.subscriptionPolicy).toEqual(failed.subscriptionPolicy)
+    expect(after.teams).toEqual([])
+    expect(Object.values(after.counts).every(count => count === 0)).toBe(true)
+    fixture.assertQuiet(1)
+    // The now-completed explicit intent is replayed, never sent again.
+    await completeInference(improve, 'improveTeamInput')
+    expect(fixture.snapshot()).toEqual(after)
+    fixture.assertQuiet(1)
+    await test.info().attach('subscription-unsent-recovered', {
+      contentType: 'image/png',
+      body: await dialog.screenshot()
+    })
+    await test.info().attach('subscription-unsent-recovery-proof', {
+      contentType: 'application/json',
+      body: JSON.stringify({ before, failed, after, events: fixture.events() })
+    })
+  })
+
+  test('initial publication refusal recovers locally before explicit new consent', async () => {
+    allowErrorBanners()
+    fixture = await setupNativeSubscription({ recoveryFault: 'acl_publication_once' })
+    const dialog = await openSetup(false)
+    const before = fixture.snapshot()
+    const connection = dialog.getByRole('region', { name: 'ChatGPT plan for setup', exact: true })
+    await connection.getByRole('button', { name: 'Set up ChatGPT', exact: true }).click()
+
+    const consent = connection.getByRole('checkbox', {
+      name: 'Allow this dedicated connection to be stored locally',
+      exact: true
+    })
+
+    await consent.check()
+    await connection.getByRole('button', { name: 'Continue with ChatGPT', exact: true }).click()
+
+    const blocked = connection.getByText(
+      'Setup cannot proceed with the current policy or uncertain request. Check status; no request will be resent automatically.',
+      { exact: true }
+    )
+
+    // The explicit action plus setup/status/policy each use a 15s RPC envelope.
+    await expect(blocked).toBeVisible({ timeout: 65_000 })
+    const faults = fixture.events().filter(row => row.kind === 'recovery-fault')
+    expect(faults).toHaveLength(1)
+    expect(faults[0]).toMatchObject({
+      fault: 'acl_publication_once',
+      triggered: true,
+      restored: true,
+      nativePutCount: 1
+    })
+    expect(fixture.events().filter(row => row.kind === 'oauth-exchange')).toHaveLength(1)
+    expect(fixture.events().filter(row => row.kind === 'models')).toHaveLength(0)
+    expect(fixture.snapshot()).toEqual(before)
+    fixture.assertQuiet(0)
+    await expect(connection.getByRole('button', { name: 'Continue with ChatGPT', exact: true })).toHaveCount(0)
+    await expect(consent).toHaveCount(0)
+    const recover = connection.getByRole('button', { name: 'Reconcile saved operation', exact: true })
+    await expect(recover).toBeEnabled()
+    await recover.click()
+    // Recover plus its setup/status/policy reads: four 15s envelopes + 5s UI.
+    await expect(
+      connection.getByText(
+        'The saved authorization attempt was retired locally. Remote revocation is unconfirmed. Connect again only when you choose to.',
+        { exact: true }
+      )
+    ).toBeVisible({ timeout: 65_000 })
+    await expect(blocked).toHaveCount(0)
+    await expect(connection.getByRole('button', { name: 'Check connection', exact: true })).toBeEnabled()
+    const checkpoints = fixture.events().filter(row => row.kind === 'recovery-checkpoint')
+    expect(checkpoints).toHaveLength(1)
+    expect(checkpoints[0]).toMatchObject({
+      fault: 'acl_publication_once',
+      triggered: true,
+      restored: true,
+      nativePutCount: 1,
+      nativeDeleteCount: 1
+    })
+    expect(fixture.events().filter(row => row.kind === 'oauth-exchange')).toHaveLength(1)
+    expect(fixture.events().filter(row => row.kind === 'models')).toHaveLength(0)
+    expect(fixture.snapshot()).toEqual(before)
+    fixture.assertQuiet(0)
+    await expect(consent).not.toBeChecked()
+    const begin = connection.getByRole('button', { name: 'Continue with ChatGPT', exact: true })
+    await expect(begin).toBeDisabled()
+    await consent.check()
+    await begin.click()
+    const load = connection.getByRole('button', { name: 'Load account models', exact: true })
+    await expect(load).toBeEnabled({ timeout: 65_000 })
+    expect(fixture.events().filter(row => row.kind === 'consent')).toHaveLength(2)
+    expect(fixture.events().filter(row => row.kind === 'oauth-exchange')).toHaveLength(2)
+    await load.click()
+    await connection.getByLabel('Setup model', { exact: true }).selectOption(subscriptionModel)
+    expect(fixture.events().filter(row => row.kind === 'models')).toHaveLength(1)
+    expect(fixture.snapshot()).toEqual(before)
+    fixture.assertQuiet(0)
+    await test.info().attach('subscription-publication-recovered', {
+      contentType: 'image/png',
+      body: await connection.screenshot()
+    })
+    await test.info().attach('subscription-publication-recovery-proof', {
+      contentType: 'application/json',
+      body: JSON.stringify({ before, after: fixture.snapshot(), events: fixture.events() })
+    })
+  })
+
   test('uncertain synthetic inference blocks a new intent without retry or refund', async () => {
     allowErrorBanners()
     fixture = await setupNativeSubscription({ uncertain: true })

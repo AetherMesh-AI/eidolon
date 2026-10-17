@@ -674,7 +674,13 @@ function python(code: string, home: string, args: string[] = []) {
   })
 }
 
-export async function setupNativeSubscription(options: { legacy?: boolean; uncertain?: boolean } = {}) {
+export async function setupNativeSubscription(
+  options: {
+    legacy?: boolean
+    uncertain?: boolean
+    recoveryFault?: 'sqlite_dispatch_once' | 'acl_publication_once'
+  } = {}
+) {
   const sandbox = createSandbox('subscription-native')
   // The production protected-store rejects symlink ancestors, including /var on macOS.
   sandbox.root = realpathSync(sandbox.root)
@@ -750,7 +756,7 @@ export async function setupNativeSubscription(options: { legacy?: boolean; uncer
       [path.join(import.meta.dirname, 'fresh-team-provider-guard.py'), '--seed-metadata', sandbox.hermesHome],
       { cwd: root, encoding: 'utf8' }
     )
-    const bootstrap = `import os,sys,runpy\nsys.path.insert(0,${JSON.stringify(root)})\ntry:\n runpy.run_path(${JSON.stringify(path.join(import.meta.dirname, 'fresh-team-provider-guard.py'))})\n from tests.eidolon_cli.subscription_native_fixture import SyntheticEdges\n subscription_fixture = SyntheticEdges(os.environ['HERMES_HOME'], evidence=${JSON.stringify(evidence)}, mode=${JSON.stringify(options.uncertain ? 'uncertain' : 'complete')}).install()\nexcept BaseException:\n raise SystemExit('Synthetic subscription guard could not install')\n`
+    const bootstrap = `import os,sys,runpy\nsys.path.insert(0,${JSON.stringify(root)})\ntry:\n runpy.run_path(${JSON.stringify(path.join(import.meta.dirname, 'fresh-team-provider-guard.py'))})\n from tests.eidolon_cli.subscription_native_fixture import SyntheticEdges\n subscription_fixture = SyntheticEdges(os.environ['HERMES_HOME'], evidence=${JSON.stringify(evidence)}, mode=${JSON.stringify(options.uncertain ? 'uncertain' : 'complete')}, recovery_fault=${options.recoveryFault ? JSON.stringify(options.recoveryFault) : 'None'}).install()\nexcept BaseException:\n raise SystemExit('Synthetic subscription guard could not install')\n`
     writeFileSync(path.join(observer, 'sitecustomize.py'), bootstrap)
 
     const env = buildAppEnv(sandbox, {
@@ -818,6 +824,8 @@ export async function setupNativeSubscription(options: { legacy?: boolean; uncer
               'jwks',
               'models',
               'responses',
+              'recovery-fault',
+              'recovery-checkpoint',
               'denied-tls',
               'denied-network'
             ].map(kind => [kind, rows.filter(row => row.kind === kind).length])

@@ -1202,6 +1202,73 @@ class SubscriptionStore:
                 raise StoreError('auth_attempt_mismatch')
             return state['revision']
 
+    @_guarded
+    def reconcile_auth_publication(self, binding, *, auth_attempt_id, prior_store_revision,
+                                   owner_guard, cancel):
+        """Resolve only this host-fenced local publication; never exchange or put.
+
+        The coordinator supplies a durable publishing binding digest and holds
+        the exact host attempt lock through this proof and its terminal save.
+        Local retirement retains authenticated history and remote uncertainty.
+        """
+        _grant_attempt(auth_attempt_id, prior_store_revision)
+        with self._locked() as exists:
+            if not exists:
+                raise StoreError('auth_attempt_mismatch')
+            self._check_guard(owner_guard, cancel)
+            anchor = self._anchor(binding)['body']
+            raw = json.loads(self._read('current.json', MAX_HEAD_BYTES), object_pairs_hook=_pairs)
+            if (raw == anchor['initialHead']
+                    or self._digest_value('bootstrap', raw) == anchor['bootstrapCurrentDigest']):
+                # Only the authenticated initialization preimage is recoverable.
+                # Do not mistake unrelated/missing later heads for a fresh store.
+                body = anchor['initialHead']['body']
+                if body['binding'] != asdict(binding):
+                    raise StoreError('auth_attempt_mismatch')
+                if raw != anchor['initialHead']:
+                    self._bootstrap_eligible_for_anchor(binding, raw)
+            else:
+                body = self._authority(binding, allow_pending=True)['body']
+            if not ((body['phase'] == 'disconnected' and body['revision'] == prior_store_revision)
+                    or (body['phase'] == 'active' and body['revision'] == prior_store_revision + 1)):
+                raise StoreError('auth_attempt_mismatch')
+            if body['candidate']['state'] != 'idle' and body['candidate']['purpose'] != 'consent':
+                raise StoreError('auth_attempt_mismatch')
+            def exact_grant(head):
+                payload = self._grant_payload(head)
+                if (head['body']['binding'] != asdict(binding)
+                        or payload['consent']['authAttemptId'] != auth_attempt_id
+                        or payload['consent']['priorStoreRevision'] != prior_store_revision
+                        or payload['tokenRevision'] != prior_store_revision + 1
+                        or payload['rotation'] is not None):
+                    raise StoreError('auth_attempt_mismatch')
+
+            # Reject an unrelated active grant before cleanup or finishing a
+            # pending commit. Its authenticated metadata alone is not consent.
+            if body['phase'] == 'active':
+                exact_grant(self._authority(binding, allow_pending=True))
+            pending_path = self.directory / 'ticket-pending.json'
+            if pending_path.exists() or pending_path.is_symlink():
+                pending = self._read_capsule('ticket-pending.json', 'pending')
+                plan = self._validate_pending(pending, body)
+                if plan['state'] == 'transition' and plan['newHead']['body']['phase'] == 'active':
+                    exact_grant(plan['newHead'])
+            self._reconcile_transition_locked(binding)
+            head = self._authority(binding)
+            body = head['body']
+            if body['candidate']['state'] != 'idle' or body['cleanup']:
+                raise StoreError('storage_recovery_required')
+            if body['phase'] == 'active' and body['revision'] == prior_store_revision + 1:
+                exact_grant(head)
+                result = self._result(head)
+            elif (body['phase'] == 'disconnected' and body['revision'] == prior_store_revision
+                    and body['target'] is None):
+                result = self._result(head, local=True)
+            else:
+                raise StoreError('auth_attempt_mismatch')
+            self._check_guard(owner_guard, cancel)
+            return result
+
     @staticmethod
     def _binding_digest(binding):
         return hashlib.sha256(_json(asdict(binding))).hexdigest()

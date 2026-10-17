@@ -1,11 +1,13 @@
 """Synthetic TLS/native-vault edges for the real, host-native subscription path.
 
-No production constructor, owner gate, store, listener, auth verifier, catalog,
-policy, admission or sender is replaced. Never install outside disposable tests.
+Production guards, owner admission and send decisions are not replaced. Optional
+recovery faults hold a real writer or change one owned directory's mode so the
+unchanged production guard refuses it. Never install outside disposable tests.
 The private RSA key and vault values are synthetic and live only in this process.
 """
 from collections import deque
 from contextlib import closing
+from functools import wraps
 import hashlib
 import http.client
 import io
@@ -98,11 +100,14 @@ class Vault:
     def __init__(self):
         self.values = {}
         self.lock = threading.Lock()
+        self.put_count = 0
+        self.delete_count = 0
 
     def put(self, binding, value):
         from eidolon_cli.organization_credential_native import binding_reference
         reference = binding_reference(binding)
         with self.lock:
+            self.put_count += 1
             self.values[reference] = value
         return reference
 
@@ -117,6 +122,7 @@ class Vault:
         from eidolon_cli.organization_credential_native import binding_reference
         assert reference == binding_reference(binding)
         with self.lock:
+            self.delete_count += 1
             self.values.pop(reference, None)
 
 
@@ -454,8 +460,148 @@ class BoundaryDiagnostics:
         self.flush()
 
 
+class RecoveryFaults:
+    """One real local refusal, confined to this disposable profile's operation.
+
+    No result, stat value, ACL decision, admission or send gate is replaced.
+    Counters remain in memory while production critical frames are active.
+    """
+    def __init__(self, home, kind):
+        if kind not in {'sqlite_dispatch_once', 'acl_publication_once'}:
+            raise ValueError('Unknown synthetic recovery fault')
+        self.home = Path(home).resolve(strict=True)
+        info = self.home.lstat()
+        if not stat.S_ISDIR(info.st_mode) or (
+                (os.name == 'posix' or kind == 'acl_publication_once')
+                and stat.S_IMODE(info.st_mode) != 0o700):
+            raise ValueError('Synthetic recovery home must be a private directory')
+        self.identity = (info.st_dev, info.st_ino)
+        self.kind = kind
+        self.triggered = 0
+        self.restored = 0
+        self._local = threading.local()
+        self._restore_fd = None
+        self._lock = threading.Lock()
+        self._claimed = False
+        self.operation_thread = None
+
+    def _home_store(self, value, store_type):
+        return type(value) is store_type and value.profile == self.home
+
+    def _restore_mode(self):
+        if self._restore_fd is not None:
+            fd, self._restore_fd = self._restore_fd, None
+            try:
+                os.fchmod(fd, 0o700)
+                assert stat.S_IMODE(os.fstat(fd).st_mode) == 0o700
+                self.restored += 1
+            finally:
+                os.close(fd)
+
+    def _call_locked(self, function, prepared):
+        # A real writer blocks the unchanged dispatch worker's BEGIN IMMEDIATE.
+        # Its release precedes infer_subscription's actual failed-job cleanup.
+        with closing(sqlite3.connect(self.home / 'organization' / 'state.db', timeout=0)) as writer:
+            writer.execute('BEGIN IMMEDIATE')
+            self.triggered += 1
+            try:
+                return function(prepared)
+            finally:
+                writer.rollback()
+                self.restored += 1
+
+    def install(self, patch):
+        from eidolon_cli import organization_setup_subscription_store as store
+        from eidolon_cli import organization_setup_subscription_admission as admission
+        from eidolon_cli import organization_setup_subscription_transport as transport
+        from eidolon_cli import organization_team_generation as generation
+        if self.kind == 'sqlite_dispatch_once':
+            original = generation.complete_subscription
+
+            @wraps(original)
+            def complete(prepared):
+                selected = (type(prepared) is transport.PreparedSubscriptionSend
+                    and type(prepared._admission) is admission._Admission
+                    and prepared._admission.home == self.home)
+                with self._lock:
+                    inject = selected and not self._claimed
+                    if inject:
+                        self._claimed = True
+                        self.operation_thread = threading.get_ident()
+                if not inject:
+                    return original(prepared)
+                return self._call_locked(original, prepared)
+
+            patch(generation, 'complete_subscription', complete)
+            return
+
+        original_connect = store.SubscriptionStore._connect_ticket_grant
+        original_decrypt = store.SubscriptionStore._decrypt
+        original_open = os.open
+        descriptor_code = store._checked_acl_descriptor.__wrapped__.__code__
+
+        @wraps(original_connect)
+        def connect(instance, binding, secret, state):
+            selected = (self._home_store(instance, store.SubscriptionStore)
+                and type(state) is dict and state.get('phase') == 'disconnected'
+                and state.get('revision') == 0 and self.triggered == 0)
+            previous = getattr(self._local, 'consent_store', None)
+            if selected:
+                self._local.consent_store = instance
+            try:
+                return original_connect(instance, binding, secret, state)
+            finally:
+                self._local.consent_store = previous
+
+        @wraps(original_decrypt)
+        def decrypt(instance, state):
+            selected = (self._home_store(instance, store.SubscriptionStore)
+                and getattr(self._local, 'consent_store', None) is instance)
+            previous = getattr(self._local, 'decrypt_store', None)
+            if selected:
+                self._local.decrypt_store = instance
+            try:
+                return original_decrypt(instance, state)
+            finally:
+                if selected:
+                    self._restore_mode()
+                self._local.decrypt_store = previous
+
+        @wraps(original_open)
+        def opened(path, flags, *args, **kwargs):
+            fd = original_open(path, flags, *args, **kwargs)
+            selected = (type(path) in {str, type(self.home)} and path in {self.home, str(self.home)}
+                and getattr(self._local, 'decrypt_store', None) is not None
+                and sys._getframe(1).f_code is descriptor_code)
+            if not selected:
+                return fd
+            with self._lock:
+                if self.triggered:
+                    return fd
+                try:
+                    info, current = os.fstat(fd), self.home.lstat()
+                    assert (info.st_dev, info.st_ino) == self.identity
+                    assert store._file_identity(info) == store._file_identity(current)
+                    assert stat.S_IMODE(info.st_mode) == 0o700
+                    self._restore_fd = os.dup(fd)
+                    os.fchmod(self._restore_fd, 0o500)
+                    self.triggered += 1
+                except BaseException:
+                    self._restore_mode()
+                    os.close(fd)
+                    raise
+            return fd
+
+        patch(store.SubscriptionStore, '_connect_ticket_grant', connect)
+        patch(store.SubscriptionStore, '_decrypt', decrypt)
+        patch(os, 'open', opened)
+
+    def close(self):
+        self._restore_mode()
+
+
 class SyntheticEdges:
-    def __init__(self, home, *, evidence=None, mode='complete'):
+    def __init__(self, home, *, evidence=None, mode='complete', recovery_fault=None):
         self.home = Path(home).resolve(strict=True)
         self.evidence = Path(evidence) if evidence else None
         self.mode = mode
@@ -465,6 +611,8 @@ class SyntheticEdges:
         self.key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
         self.lock = threading.Lock()
         self.restores = []
+        self.recovery_fault = RecoveryFaults(self.home, recovery_fault) if recovery_fault else None
+        self._fault_reported = False
         self.boundary_diagnostics = BoundaryDiagnostics(self.evidence, home=self.home) if self.evidence else None
 
     def record(self, kind, **detail):
@@ -474,6 +622,18 @@ class SyntheticEdges:
             if self.evidence:
                 with (self.evidence / 'subscription-events.jsonl').open('a') as stream:
                     stream.write(json.dumps(value, sort_keys=True) + '\n')
+
+    def report_recovery_fault(self, *, checkpoint=False):
+        fault = self.recovery_fault
+        if fault is None or (not checkpoint and (self._fault_reported or fault.triggered != 1)):
+            return
+        assert all(type(value) is int and 0 <= value <= 1000
+                   for value in (self.vault.put_count, self.vault.delete_count))
+        self.record('recovery-checkpoint' if checkpoint else 'recovery-fault',
+            fault=fault.kind, triggered=fault.triggered == 1, restored=fault.restored == 1,
+            nativePutCount=self.vault.put_count, nativeDeleteCount=self.vault.delete_count)
+        if not checkpoint:
+            self._fault_reported = True
 
     def record_denial(self, kind, operation, destination):
         # Function names locate cold-import/background callers without recording
@@ -504,6 +664,36 @@ class SyntheticEdges:
             connection.sock = SyntheticSocket(edges, connection.host)
         self.patch(http.client.HTTPSConnection, 'connect', connect)
         self.install_network_guards()
+        if self.recovery_fault is not None:
+            self.recovery_fault.install(self.patch)
+            if self.recovery_fault.kind == 'sqlite_dispatch_once':
+                from eidolon_cli import organization_setup_subscription_admission as admission
+                original_infer = admission.infer_subscription
+
+                @wraps(original_infer)
+                def infer(*args, **kwargs):
+                    try:
+                        return original_infer(*args, **kwargs)
+                    finally:
+                        # The real infer finally released the lease and finished
+                        # failed-job handling before this evidence write.
+                        if self.recovery_fault.operation_thread == threading.get_ident():
+                            self.report_recovery_fault()
+
+                self.patch(admission, 'infer_subscription', infer)
+            else:
+                from eidolon_cli.organization_setup_subscription_auth import SubscriptionAuthService
+                original_recover = SubscriptionAuthService.recover_operation_current
+
+                @wraps(original_recover)
+                def recover(service):
+                    result = original_recover(service)
+                    # The real service/store/publication contexts have exited.
+                    if service._store.profile == self.home:
+                        self.report_recovery_fault(checkpoint=True)
+                    return result
+
+                self.patch(SubscriptionAuthService, 'recover_operation_current', recover)
         if self.boundary_diagnostics is not None:
             self.boundary_diagnostics.install()
         self.record('installed', nativeStoreMode='production', platform=__import__('sys').platform)
@@ -571,11 +761,17 @@ class SyntheticEdges:
             self.patch(socket.socket, 'sendmsg', sendmsg)
 
     def close(self):
-        if self.boundary_diagnostics is not None:
-            self.boundary_diagnostics.close()
-        for obj, name, original in reversed(self.restores):
-            setattr(obj, name, original)
-        self.restores.clear()
+        try:
+            if self.recovery_fault is not None:
+                self.recovery_fault.close()
+        finally:
+            try:
+                if self.boundary_diagnostics is not None:
+                    self.boundary_diagnostics.close()
+            finally:
+                for obj, name, original in reversed(self.restores):
+                    setattr(obj, name, original)
+                self.restores.clear()
 
     def browser_open(self, url):
         from eidolon_cli.organization_setup_subscription_auth import AUTHORIZE, RESOURCE
@@ -601,6 +797,7 @@ class SyntheticEdges:
             assert response.status == 200 and response.read() == b'Return to Eidolon.'
         finally:
             connection.close()
+        self.report_recovery_fault()
         return True
 
     def oauth(self, path, body):
@@ -637,7 +834,20 @@ class SyntheticEdges:
         evidence = snapshot(self.home)
         rows = [row for row in evidence['generations'] if row['status'] == 'running']
         assert len(rows) == 1 and rows[0]['dispatched'] == 1
-        assert len(evidence['dispatches']) == len(evidence['attempts'])
+        attempts = {row['idempotency_key']: row for row in evidence['attempts']}
+        markers = {row['idempotency_key']: row for row in evidence['dispatches']}
+        assert len(attempts) == len(evidence['attempts'])
+        assert len(markers) == len(evidence['dispatches'])
+        assert set(markers) == {row['idempotency_key'] for row in evidence['generations']
+                                if row['dispatched'] and row['idempotency_key'] in attempts}
+        assert rows[0]['idempotency_key'] in markers
+        for key, marker in markers.items():
+            attempt = attempts[key]
+            binding = json.loads(attempt['binding_json'])
+            assert marker['binding_digest'] == attempt['binding_digest']
+            assert marker['dispatch_nonce_digest'] == attempt['dispatch_nonce_digest']
+            assert marker['request_sha256'] == binding['request_sha256']
+        assert markers[rows[0]['idempotency_key']]['request_sha256'] == hashlib.sha256(body).hexdigest()
         assert not evidence['teams'] and not any(evidence['counts'].values())
         self.record('responses', operation='improve_' + field if field else 'generate',
                     requestSha256=hashlib.sha256(body).hexdigest(),

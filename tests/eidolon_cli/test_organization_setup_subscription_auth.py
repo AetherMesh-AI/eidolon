@@ -57,11 +57,12 @@ class FakeHost:
         self.record.stage = 'cancelled'
         self.events.append('cancelled')
     @contextmanager
-    def publication_guard(self, attempt_id):
+    def publication_guard(self, attempt_id, *, binding_digest=None):
         assert self.record.attempt_id == attempt_id and self.record.stage == 'exchange_admitted'
         self.locked = True
         self.events.append('publishing')
         self.record.stage = 'publishing'
+        self.record.publication_binding_digest = binding_digest
         def commit(revision):
             assert revision == self.record.expected_store_revision + 1
             self.events.append('committed')
@@ -89,6 +90,8 @@ class FakeHost:
 
 
 class FakeStore:
+    from eidolon_cli.organization_setup_subscription_store import SubscriptionStore
+    _binding_digest = staticmethod(SubscriptionStore._binding_digest)
     def __init__(self):
         self.writes = []
         self.binding = None

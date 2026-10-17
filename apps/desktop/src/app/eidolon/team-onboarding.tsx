@@ -1,7 +1,7 @@
 import './team-onboarding.css'
 
 import { useStore } from '@nanostores/react'
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 
 import { Button } from '@/components/ui/button'
@@ -29,6 +29,7 @@ import { TeamOnboardingEditor } from './team-onboarding-editor'
 import { type TeamInputReview, TeamOnboardingInputs, type TeamSetupInputs } from './team-onboarding-inputs'
 import { SetupBudgetRemaining, TeamSetupBudgetEditor } from './team-setup-budget-editor'
 import { TeamSetupSubscription } from './team-setup-subscription'
+import { readSubscriptionRecovery, type SubscriptionRecovery } from './team-setup-subscription-client'
 import type { RuntimeOrganizationAdapter } from './types'
 import { readOrganizationMetadataScope, useOrganizationMetadata } from './use-organization-metadata'
 
@@ -266,6 +267,13 @@ interface TeamGenerationIntent {
   revision: number
 }
 
+interface TeamUnsentRequest extends Pick<SubscriptionRecovery, 'idempotencyKey' | 'operation' | 'sourceRevision'> {
+  organizationId: string
+  fingerprint: string
+  revision: number
+  replace: boolean
+}
+
 interface TeamOnboardingDialogProps {
   client: TeamOnboardingClient
   setup: TeamSetup
@@ -275,10 +283,47 @@ interface TeamOnboardingDialogProps {
   onReturnFocus: () => void
 }
 
+function recoveryAllowance(next: TeamSetup, request: TeamUnsentRequest) {
+  return (
+    next.state === 'available' &&
+    next.setupSubscriptionState === 'available' &&
+    next.setupSubscriptionVersion === 1 &&
+    next.organizationId === request.organizationId &&
+    next.sourceRevision === request.sourceRevision &&
+    next.readiness.status !== 'blocked' &&
+    next.generationAllowance?.policyVersion === 3 &&
+    next.generationAllowance.status === 'available' &&
+    (next.generationAllowance.remainingByOperation?.[
+      request.operation === 'generate' ? 'generateTeam' : 'improveTeamInput'
+    ] ?? 0) > 0
+  )
+}
+
 function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreated }: TeamOnboardingDialogProps) {
   const { locale } = useI18n()
   const copy = teamOnboardingCopy[locale]
   const [setup, setSetup] = useState(initialSetup)
+  const latestSetup = useRef(initialSetup)
+  const [unsentRequest, setUnsentRequest] = useState<TeamUnsentRequest | null>(null)
+  const recoveryOffer = useRef<TeamUnsentRequest | null>(null)
+
+  const clearRecovery = useCallback(() => {
+    recoveryOffer.current = null
+    setUnsentRequest(null)
+  }, [])
+
+  const refreshSetup = useCallback(
+    (next: TeamSetup) => {
+      if (recoveryOffer.current && !recoveryAllowance(next, recoveryOffer.current)) {
+        clearRecovery()
+      }
+
+      latestSetup.current = next
+      setSetup(next)
+    },
+    [clearRecovery]
+  )
+
   const providerSetup = useStore($desktopOnboarding)
   const returningFromProvider = useRef(false)
   const [inputs, setInputs] = useState<TeamSetupInputs>({ jobs: '', goals: '', namingStyle: '' })
@@ -320,7 +365,34 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
     }
   }, [])
 
-  const act = async (kind: NonNullable<typeof pending>, action: () => Promise<void>) => {
+  const recoveryCurrent = (request: TeamUnsentRequest) => {
+    if (!alive.current || !client.current() || !recoveryAllowance(latestSetup.current, request)) {
+      return false
+    }
+
+    if (request.operation === 'generate') {
+      const retained = request.replace ? regenerationIntent.current : generationIntent.current
+
+      return (
+        retained?.key === request.idempotencyKey &&
+        JSON.stringify(retained.inputs) === request.fingerprint &&
+        retained.setup.organizationId === request.organizationId &&
+        retained.setup.sourceRevision === request.sourceRevision &&
+        request.revision === draftRevision.current
+      )
+    }
+
+    const field = request.operation === 'improve_jobs' ? 'jobs' : 'goals'
+    const retained = improvementIntents.current[field]
+
+    return (
+      retained?.key === request.idempotencyKey &&
+      retained.fingerprint === request.fingerprint &&
+      request.revision === inputRevision.current
+    )
+  }
+
+  const act = async (kind: NonNullable<typeof pending>, action: () => Promise<void>, request?: TeamUnsentRequest) => {
     if (busy.current || !client.current()) {
       if (!client.current()) {
         setError(copy.stale)
@@ -339,12 +411,17 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
     } catch (failure) {
       if (alive.current && token === operation.current) {
         setError(
-          failure instanceof Error && failure.message === 'stale'
+          !client.current() || (failure instanceof Error && failure.message === 'stale')
             ? copy.stale
             : kind === 'check'
               ? copy.checkFailed
               : copy.error
         )
+
+        if (request && readSubscriptionRecovery(failure, request) && recoveryCurrent(request)) {
+          recoveryOffer.current = request
+          setUnsentRequest(request)
+        }
 
         if (['generate', 'regenerate', 'improve'].includes(kind) && client.current()) {
           setAllowanceUnverified(true)
@@ -353,7 +430,7 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
             const result = await client.setup(setup.organizationId ?? null)
 
             if (alive.current && token === operation.current && client.current()) {
-              setSetup(result)
+              refreshSetup(result)
               setAllowanceUnverified(false)
             }
           } catch {
@@ -379,7 +456,10 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
       setTeam(result.team)
 
       if (result.generationAllowance) {
-        setSetup(current => ({ ...current, generationAllowance: result.generationAllowance }))
+        refreshSetup({
+          ...latestSetup.current,
+          generationAllowance: result.generationAllowance
+        })
         setAllowanceUnverified(false)
       }
 
@@ -388,6 +468,7 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
   }
 
   const update = (value: TeamDraft) => {
+    clearRecovery()
     draftRevision.current++
     setTeam(value)
     setPreview(null)
@@ -395,6 +476,7 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
   }
 
   const changeInput = (field: keyof TeamSetupInputs, value: string) => {
+    clearRecovery()
     inputRevision.current++
     draftRevision.current++
     setInputs(current => ({ ...current, [field]: value }))
@@ -436,19 +518,35 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
     }
 
     const idempotencyKey = improvementIntents.current[field]!.key
+    clearRecovery()
     setSuggestion(null)
-    void act('improve', async () => {
-      const result = await client.improve(setup, { ...inputs, field, idempotencyKey })
+    void act(
+      'improve',
+      async () => {
+        const result = await client.improve(setup, { ...inputs, field, idempotencyKey })
 
-      if (alive.current && client.current() && revision === inputRevision.current) {
-        setSuggestion({ ...result, original: inputs[field], revision })
+        if (alive.current && client.current() && revision === inputRevision.current) {
+          setSuggestion({ ...result, original: inputs[field], revision })
 
-        if (result.generationAllowance) {
-          setSetup(current => ({ ...current, generationAllowance: result.generationAllowance }))
-          setAllowanceUnverified(false)
+          if (result.generationAllowance) {
+            refreshSetup({
+              ...latestSetup.current,
+              generationAllowance: result.generationAllowance
+            })
+            setAllowanceUnverified(false)
+          }
         }
+      },
+      {
+        idempotencyKey,
+        operation: field === 'jobs' ? 'improve_jobs' : 'improve_goals',
+        sourceRevision: setup.sourceRevision ?? '',
+        organizationId: setup.organizationId ?? '',
+        fingerprint,
+        revision,
+        replace: false
       }
-    })
+    )
   }
 
   const generate = (replace = false) => {
@@ -482,31 +580,82 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
           revision: draftRevision.current
         })
 
-    void act(replace ? 'regenerate' : 'generate', async () => {
-      const result = await client.generate(request.setup, { ...request.inputs, idempotencyKey: request.key })
+    clearRecovery()
+    void act(
+      replace ? 'regenerate' : 'generate',
+      async () => {
+        const result = await client.generate(request.setup, {
+          ...request.inputs,
+          idempotencyKey: request.key
+        })
 
-      if (alive.current && client.current()) {
-        if (request.revision !== draftRevision.current) {
-          if (result.generationAllowance) {
-            setSetup(current => ({ ...current, generationAllowance: result.generationAllowance }))
-            setAllowanceUnverified(false)
+        if (alive.current && client.current()) {
+          if (request.revision !== draftRevision.current) {
+            if (result.generationAllowance) {
+              refreshSetup({
+                ...latestSetup.current,
+                generationAllowance: result.generationAllowance
+              })
+              setAllowanceUnverified(false)
+            }
+
+            if (replace) {
+              regenerationIntent.current = null
+            }
+
+            setError(copy.previousDraftPreserved)
+
+            return
           }
 
-          if (replace) {
-            regenerationIntent.current = null
-          }
-
-          setError(copy.previousDraftPreserved)
-
-          return
+          applyPreview(result)
+          setHasGenerated(true)
+          generationIntent.current = request
+          regenerationIntent.current = null
         }
-
-        applyPreview(result)
-        setHasGenerated(true)
-        generationIntent.current = request
-        regenerationIntent.current = null
+      },
+      {
+        idempotencyKey: request.key,
+        operation: 'generate',
+        sourceRevision: request.setup.sourceRevision ?? '',
+        organizationId: request.setup.organizationId ?? '',
+        fingerprint: JSON.stringify(request.inputs),
+        revision: request.revision,
+        replace
       }
-    })
+    )
+  }
+
+  const retryUnsent = () => {
+    const request = recoveryOffer.current
+
+    if (!request || busy.current || budgetUnverified || allowanceUnverified) {
+      return
+    }
+
+    if (!recoveryCurrent(request)) {
+      clearRecovery()
+
+      return
+    }
+
+    // Consume synchronously before creating a fresh intent. Ordinary retry and
+    // configuration checks keep the old key; only this explicit action rotates it.
+    clearRecovery()
+    const key = crypto.randomUUID()
+
+    if (request.operation === 'generate') {
+      const retained = request.replace ? regenerationIntent : generationIntent
+      retained.current = { ...retained.current!, key }
+      generate(request.replace)
+    } else {
+      const field = request.operation === 'improve_jobs' ? 'jobs' : 'goals'
+      improvementIntents.current[field] = {
+        fingerprint: request.fingerprint,
+        key
+      }
+      improve(field)
+    }
   }
 
   const applySuggestion = () => {
@@ -534,6 +683,7 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
       return
     }
 
+    recoveryOffer.current = null
     alive.current = false
     operation.current++
     onClose()
@@ -569,7 +719,7 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
       .setup(setup.organizationId ?? null)
       .then(result => {
         if (alive.current && token === operation.current && client.current()) {
-          setSetup(result)
+          refreshSetup(result)
           setAllowanceUnverified(false)
         }
       })
@@ -584,7 +734,7 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
           setPending(null)
         }
       })
-  }, [providerSetup.manual, client, setup.organizationId, copy.checkFailed, copy.stale])
+  }, [providerSetup.manual, client, setup.organizationId, copy.checkFailed, copy.stale, refreshSetup])
   const modelBlocked = setup.readiness.status === 'blocked'
 
   return {
@@ -597,6 +747,8 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
     receipt,
     pending,
     error,
+    canRetryUnsent: !!unsentRequest && recoveryCurrent(unsentRequest) && !budgetUnverified && !allowanceUnverified,
+    retryUnsent,
     unresolvedCreate,
     hasGenerated,
     allowanceUnverified,
@@ -626,6 +778,7 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
       setPending(value ? 'budget' : null)
     },
     invalidateBudget: () => {
+      clearRecovery()
       setBudgetUnverified(true)
       setPreview(null)
       setSuggestion(null)
@@ -637,15 +790,15 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
     },
     refreshBudgetSetup: (result: TeamSetup) => {
       setBudgetUnverified(false)
-      setSetup(result)
+      refreshSetup(result)
       setAllowanceUnverified(false)
     },
     check: () =>
       void act('check', async () => {
         const result = await client.setup(setup.organizationId ?? null)
 
-        if (alive.current) {
-          setSetup(result)
+        if (alive.current && client.current()) {
+          refreshSetup(result)
           setAllowanceUnverified(false)
         }
       }),
@@ -687,6 +840,8 @@ export function TeamOnboardingDialog(props: TeamOnboardingDialogProps) {
     receipt,
     pending,
     error,
+    canRetryUnsent,
+    retryUnsent,
     unresolvedCreate,
     hasGenerated,
     allowanceUnverified,
@@ -956,6 +1111,22 @@ export function TeamOnboardingDialog(props: TeamOnboardingDialogProps) {
           )}
           {(receipt?.readiness ?? preview?.readiness)?.warnings?.includes('new_member_routes_unassigned') && (
             <p className="eid-team-note">{copy.inheritedRoutes}</p>
+          )}
+          {canRetryUnsent && !receipt && (
+            <div>
+              <p className="eid-team-note" id={`${readinessId}-retry-unsent`}>
+                {subscriptionCopy.retryUnsentHelp}
+              </p>
+              <Button
+                aria-describedby={`${readinessId}-retry-unsent`}
+                disabled={!!pending || unresolvedCreate}
+                onClick={retryUnsent}
+                size="sm"
+                variant="secondary"
+              >
+                {subscriptionCopy.retryUnsent}
+              </Button>
+            </div>
           )}
           {pending && pending !== 'budget' && (
             <Loader

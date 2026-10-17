@@ -1,5 +1,6 @@
 """Host-native registered RPC → protected store/auth → single synthetic TLS send."""
 from copy import deepcopy
+from dataclasses import asdict
 import json
 from pathlib import Path
 from queue import Queue
@@ -47,9 +48,11 @@ def native(tmp_path, monkeypatch, request):
     # Gateway import starts a passive update daemon. Opt out through the real
     # config before importing it, so unrelated git/HTTP probes cannot race guards.
     (home / 'config.yaml').write_text('updates:\n  check: false\n', encoding='utf-8')
-    identity = seed_profile(home, legacy=getattr(request, 'param', False))
+    options = getattr(request, 'param', False)
+    options = options if type(options) is dict else {'legacy': options}
+    identity = seed_profile(home, legacy=options.get('legacy', False))
     transport = Transport()
-    edges = SyntheticEdges(home).install()
+    edges = SyntheticEdges(home, recovery_fault=options.get('recovery_fault')).install()
     try:
         from tui_gateway import server
         from eidolon_cli import banner
@@ -244,6 +247,98 @@ def test_native_uncertain_result_blocks_replay_and_new_intent(native):
     setup = ok(transport, 'teamSetup', {'expectedOrganizationId': value['expectedOrganizationId']})
     assert setup['generationAllowance']['status'] == 'uncertain'
     assert setup['generationAllowance']['setupUsage']['costUsd'] is None
+
+
+@pytest.mark.macos_only
+@pytest.mark.parametrize('native', [{'legacy': True, 'recovery_fault': 'sqlite_dispatch_once'}], indirect=True)
+def test_native_undispatched_failure_recovers_only_on_explicit_retry(native):
+    home, _, transport, edges = native
+    before = activate(native)
+    first = inference(native, 'synthetic-unsent', field='jobs')
+    refused = call(transport, 'improveTeamInput', first)
+    assert refused['error']['code'] == 5076
+    recovery = {'version': 1, 'disposition': 'retry_unsent',
+        'idempotencyKey': first['idempotencyKey'], 'operation': 'improve_jobs',
+        'sourceRevision': first['sourceRevision']}
+    assert refused['error']['data']['recovery'] == recovery
+    assert edges.recovery_fault.triggered == edges.recovery_fault.restored == 1
+    failed = snapshot(home)
+    old = next(row for row in failed['generations'] if row['idempotency_key'] == first['idempotencyKey'])
+    assert old['status'] == 'failed' and old['dispatched'] == 0 and old['result_json'] is None
+    assert failed['dispatches'] == failed['outcomes'] == []
+    assert not any(event['kind'] == 'responses' for event in edges.events)
+    # Passive check and retained-key retry prove the failure; neither creates
+    # another intent. Only the next explicit request uses the recovery offer.
+    setup = ok(transport, 'teamSetup', {'expectedOrganizationId': first['expectedOrganizationId']})
+    assert setup['generationAllowance']['remainingCalls'] == 6
+    assert call(transport, 'improveTeamInput', first)['error']['data']['recovery'] == recovery
+    assert snapshot(home) == failed
+    second = {**first, 'idempotencyKey': 'synthetic-explicit-unsent-retry'}
+    improved = ok(transport, 'improveTeamInput', second)
+    assert improved['suggestion'] == SUGGESTIONS['jobs']
+    assert improved['generationAllowance']['remainingCalls'] == 5
+    assert improved['generationAllowance']['setupUsage']['subscriptionCalls'] == 1
+    after = snapshot(home)
+    assert len(after['generations']) == 3
+    assert next(row for row in after['generations'] if row['idempotency_key'] == first['idempotencyKey']) == old
+    assert next(row for row in after['generations'] if row['idempotency_key'] == 'synthetic-legacy') == before['generations'][0]
+    assert len(after['dispatches']) == len(after['outcomes']) == 1
+    assert after['teams'] == [] and not any(after['counts'].values())
+    assert ok(transport, 'improveTeamInput', second) == improved
+    assert call(transport, 'improveTeamInput', first)['error']['code'] == 5076
+    assert snapshot(home) == after
+    assert sum(event['kind'] == 'responses' for event in edges.events) == 1
+    assert not any(event['kind'].startswith('denied') for event in edges.events)
+
+
+@pytest.mark.macos_only
+@pytest.mark.parametrize('native', [{'recovery_fault': 'acl_publication_once'}], indirect=True)
+def test_native_initial_publication_failure_recovers_before_new_consent(native):
+    home, _, transport, edges = native
+    value = scoped(native)
+    before = snapshot(home)
+    consent = {**value, 'expectedRevision': 0, 'confirmed': True, 'consentVersion': 1}
+    assert ok(transport, 'beginSetupSubscription', consent)['stage'] == 'publication_uncertain'
+    assert edges.recovery_fault.triggered == edges.recovery_fault.restored == 1
+    initial = ok(transport, 'setupSubscriptionStatus', value)
+    assert initial['connectionState'] == 'disconnected' and initial['cleanupPending'] is True
+    from tui_gateway import methods_organization_setup_subscription as subscription
+    host = subscription._services[transport][1]._host
+    pending_attempt = host.inspect()
+    assert pending_attempt.stage == 'publishing'
+    exchanges = sum(event['kind'] == 'oauth-exchange' for event in edges.events)
+    puts = edges.vault.put_count
+    assert exchanges == puts == 1
+    recovered = ok(transport, 'recoverSetupSubscriptionOperation', {**value, 'confirmed': True})
+    assert recovered['state'] == 'local_retired'
+    assert recovered['receipt']['remoteRevocation'] == 'unconfirmed'
+    current = ok(transport, 'setupSubscriptionStatus', value)
+    assert current['connectionState'] == 'disconnected' and current['cleanupPending'] is False
+    assert current['stage'] == 'locally_retired'
+    retired_attempt = host.inspect()
+    assert retired_attempt.stage == 'locally_retired'
+    assert retired_attempt.attempt_id == pending_attempt.attempt_id
+    assert edges.vault.put_count == puts and edges.vault.values == {}
+    assert sum(event['kind'] == 'oauth-exchange' for event in edges.events) == exchanges
+    assert not any(event['kind'] in {'models', 'responses'} for event in edges.events)
+    assert snapshot(home) == before
+    # No restart, expiry advance, exchange replay or implicit reconnect.
+    fresh = ok(transport, 'beginSetupSubscription', {**consent, 'expectedRevision': current['connectionRevision']})
+    assert fresh['stage'] == 'connected'
+    new_attempt = host.inspect()
+    assert new_attempt.attempt_id != retired_attempt.attempt_id
+    archive = host._io.directory / 'ticket-archive' / (host._name + '.' + retired_attempt.attempt_id + '.retired')
+    archived = archive.read_bytes()
+    assert json.loads(archived) == asdict(retired_attempt)
+    connected = ok(transport, 'setupSubscriptionStatus', value)
+    models = ok(transport, 'setupSubscriptionModels', {**value, 'expectedRevision': connected['connectionRevision']})
+    assert models['models'] == [{'slug': MODEL, 'displayName': 'Synthetic subscription model'}]
+    assert edges.vault.put_count == puts + 1
+    assert sum(event['kind'] == 'oauth-exchange' for event in edges.events) == exchanges + 1
+    assert sum(event['kind'] == 'models' for event in edges.events) == 1
+    assert archive.read_bytes() == archived
+    assert not any(event['kind'] == 'responses' or event['kind'].startswith('denied') for event in edges.events)
+    assert snapshot(home) == before
 
 
 def unsupported(native):

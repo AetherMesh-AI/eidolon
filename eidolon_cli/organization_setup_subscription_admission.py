@@ -307,6 +307,77 @@ def _failed_job(home, binding, nonce_digest, attempted):
     return True
 
 
+def retry_unsent_disposition(home, params, operation, *, transport):
+    """Read-only proof for a separate explicit action, never a send capability.
+
+    A failed row cannot become dispatchable again: _dispatch_job requires running
+    in the same SQLite write serialization. Preserve every old row and charge.
+    Any unavailable proof omits the offer without changing the original error.
+    """
+    evidence = None
+    try:
+        from eidolon_cli.organization_team_budget import read_policy
+        from eidolon_cli.organization_team_setup import _current, _fresh
+        from eidolon_cli.organization_setup_subscription_policy import (
+            validate_subscription_ledger, require_subscription_receipt, _runtime_owner,
+        )
+        from eidolon_cli.organization_team_generation import subscription_request
+        from tui_gateway.methods_organization_setup_subscription import subscription_preflight
+        from tui_gateway.organization_credential_transport import owner_publication
+        fields = {'expectedOrganizationId', 'sourceRevision', 'jobs', 'goals',
+                  'namingStyle', 'idempotencyKey'}
+        if operation == 'improveTeamInput':
+            fields.add('field')
+        elif operation != 'generateTeam':
+            return None
+        if type(params) is not dict or set(params) != fields:
+            return None
+        generation = _runtime_owner(home, transport)
+        with _connection(home) as conn:
+            candidate = read_policy(conn)
+        if (candidate or {}).get('version') != 3:
+            return None
+        evidence = subscription_preflight(transport, home, candidate, inference=False)
+        if evidence.owner_generation is not generation:
+            return None
+        key = params['idempotencyKey']
+        with owner_publication(transport, home, generation), _connection(home) as conn:
+            identity, _, settings, revision = _current(conn, home, params['expectedOrganizationId'])
+            if revision != params['sourceRevision'] or not _fresh(conn, settings):
+                return None
+            validate_subscription_ledger(conn)
+            row = conn.execute('SELECT * FROM organization_team_generations WHERE idempotency_key=?', (key,)).fetchone()
+            attempt = conn.execute('SELECT * FROM organization_setup_subscription_attempts WHERE idempotency_key=?', (key,)).fetchone()
+            if (row is None or attempt is None or row['status'] != 'failed' or row['dispatched'] != 0
+                    or conn.execute("SELECT 1 FROM organization_team_generations WHERE status IN ('running','uncertain')").fetchone()
+                    or conn.execute('SELECT 1 FROM organization_setup_subscription_dispatches WHERE idempotency_key=?', (key,)).fetchone()
+                    or conn.execute('SELECT 1 FROM organization_setup_subscription_outcomes WHERE idempotency_key=?', (key,)).fetchone()):
+                return None
+            binding = AttemptBindingV1(**json.loads(attempt['binding_json']))
+            request = subscription_request(operation, params['jobs'], params['goals'], params['namingStyle'],
+                model_slug=evidence.model_slug, field=params.get('field'))
+            receipt = require_subscription_receipt(conn, candidate)
+            if (binding.idempotency_key != key or binding.input_hash != _hash({'operation': operation, 'input': params})
+                    or binding.operation != request.operation or binding.request_sha256 != request.request_sha256
+                    or binding.owner_id != identity['owner']['ownerId']
+                    or binding.review_digest != receipt['previewDigest']
+                    or binding.account_binding_digest != evidence.account_digest
+                    or binding.authorization_epoch != evidence.epoch
+                    or binding.store_revision != evidence.revision):
+                return None
+            _snapshot(conn, home, transport, evidence, binding)
+            return {'version': 1, 'disposition': 'retry_unsent', 'idempotencyKey': key,
+                    'operation': binding.operation, 'sourceRevision': binding.source_revision}
+    except Exception:
+        return None
+    finally:
+        if evidence is not None:
+            try:
+                evidence.release()
+            except Exception:
+                pass  # Proof cleanup must never replace the original safe error.
+
+
 def infer_subscription(home, params, key, operation, finish, *, transport, cancel=None):
     from eidolon_cli.organization_team_budget import read_policy, record_operation
     from eidolon_cli.organization_team_setup import _current, _fresh, _generation_allowance

@@ -203,7 +203,8 @@ def test_metadata_allowlist_and_fixed_errors(host):
     attempt = begin(manager)
     data = json.loads((root / INSTALLATION_NAME / (authority.profile_hash + '.json')).read_text())
     assert set(data) == {'attempt_id', 'organization_id', 'owner_id',
-                         'expected_store_revision', 'source_digest', 'expires_at', 'stage'}
+                         'expected_store_revision', 'source_digest', 'expires_at', 'stage',
+                         'publication_binding_digest'}
     with pytest.raises(HostError) as error:
         manager.admit_exchange('secret-code-verifier')
     assert 'secret-code-verifier' not in str(error.value)

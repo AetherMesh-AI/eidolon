@@ -529,3 +529,69 @@ it('forgets a resolved operation ticket so recovery checks current durable state
     test.request.mock.calls.filter(([method]) => method === 'organization.executeSetupSubscriptionOperation')
   ).toHaveLength(1)
 })
+
+it.each(['publication_uncertain', 'reconciliation_required'])(
+  'reconciles %s locally before offering explicit consent without claiming remote revocation',
+  async stage => {
+    const test = rig()
+    const original = test.request.getMockImplementation()!
+    let recovered = false
+    test.request.mockImplementation(async (method, params) => {
+      if (method === 'organization.setupSubscriptionStatus') {
+        return {
+          ...subscriptionStatus,
+          attemptId: 'saved-attempt',
+          stage: recovered ? 'locally_retired' : stage,
+          connectionRevision: 7,
+          connectionState: recovered ? 'disconnected' : 'absent',
+          cleanupPending: !recovered
+        } as never
+      }
+
+      if (method === 'organization.recoverSetupSubscriptionOperation') {
+        recovered = true
+
+        return {
+          state: 'local_retired',
+          ticket: null,
+          revision: 7,
+          verification: 'verified_current',
+          receipt: {
+            kind: 'local',
+            revision: 7,
+            localRetired: true,
+            remoteRevocation: 'unconfirmed'
+          }
+        } as never
+      }
+
+      return original(method, params)
+    })
+    render(<test.Harness />)
+    fireEvent.click(screen.getByRole('button', { name: copy.inspect }))
+    await waitFor(() => expect(screen.getByRole('button', { name: copy.recover })).toHaveProperty('disabled', false))
+    const recover = screen.getByRole('button', { name: copy.recover })
+    expect(screen.getByText(copy.recoverHelp)).toBeTruthy()
+    expect(screen.getByText(copy.authorizationRecoveryRequired)).toBeTruthy()
+    expect(screen.queryByLabelText(copy.consentCheck)).toBeNull()
+    expect(screen.queryByRole('button', { name: copy.continue })).toBeNull()
+    fireEvent.click(recover)
+    await screen.findByText(copy.locallyRetired)
+    expect(screen.getByLabelText(copy.consentCheck)).toHaveProperty('checked', false)
+    expect(screen.getByRole('button', { name: copy.continue })).toHaveProperty('disabled', true)
+    expect(
+      test.request.mock.calls.filter(([method]) => method === 'organization.recoverSetupSubscriptionOperation')
+    ).toHaveLength(1)
+    expect(
+      test.request.mock.calls.some(([method]) =>
+        [
+          'organization.beginSetupSubscription',
+          'organization.improveTeamInput',
+          'organization.generateTeam',
+          'organization.executeSetupSubscriptionOperation',
+          'organization.prepareSetupSubscriptionOperation'
+        ].includes(method)
+      )
+    ).toBe(false)
+  }
+)

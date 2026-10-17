@@ -3,6 +3,7 @@ import { expect, it, vi } from 'vitest'
 import { createTeamOnboardingClient } from './team-onboarding-client'
 import {
   createSetupSubscriptionClient,
+  readSubscriptionRecovery,
   validateSubscriptionPreview,
   validateSubscriptionUsage
 } from './team-setup-subscription-client'
@@ -214,4 +215,89 @@ it('accepts a complete v3 allowance and rejects incomplete or hard-cap claims on
     result = { ...subscriptionSetup, generationAllowance: { ...generationAllowance, ...change } } as typeof result
     await expect(client.setup(subscriptionSetup.organizationId!)).rejects.toThrow('invalid_allowance')
   }
+})
+
+it('accepts only the closed unsent-recovery contract for the exact original request', () => {
+  const expected = {
+    idempotencyKey: 'same-intent',
+    operation: 'improve_jobs' as const,
+    sourceRevision: 'a'.repeat(64)
+  }
+
+  const recovery = { version: 1, disposition: 'retry_unsent', ...expected }
+
+  const failure = (value: unknown) => ({
+    code: 5076,
+    data: { recovery: value }
+  })
+
+  expect(readSubscriptionRecovery(failure(recovery), expected)).toEqual(recovery)
+
+  const invalid = [
+    null,
+    [],
+    {},
+    { ...recovery, version: 2 },
+    { ...recovery, version: true },
+    { ...recovery, operation: 'generate' },
+    { ...recovery, idempotencyKey: 'another' },
+    { ...recovery, sourceRevision: 'b'.repeat(64) },
+    { ...recovery, disposition: 'retry' },
+    { ...recovery, safe: true }
+  ]
+
+  for (const value of invalid) {
+    expect(readSubscriptionRecovery(failure(value), expected)).toBeNull()
+  }
+
+  expect(readSubscriptionRecovery({ code: '5076', data: { recovery } }, expected)).toBeNull()
+  expect(readSubscriptionRecovery(new Error('unavailable'), expected)).toBeNull()
+})
+
+it('fences rejected subscription responses when their authenticated scope is no longer current', async () => {
+  let reject!: (value: unknown) => void
+  let ownerKey = 'owner-a'
+
+  const request = vi.fn(
+    () =>
+      new Promise<never>((_resolve, failure) => {
+        reject = failure
+      })
+  )
+
+  const client = createTeamOnboardingClient(
+    () => ({
+      key: 'socket',
+      ownerKey,
+      profile: 'default',
+      eligible: true,
+      request
+    }),
+    () => () => {}
+  )
+
+  const pending = client.improve(subscriptionSetup, {
+    field: 'jobs',
+    jobs: 'Research',
+    goals: '',
+    namingStyle: '',
+    idempotencyKey: 'attempt'
+  })
+
+  ownerKey = 'owner-b'
+  reject({
+    code: 5076,
+    data: {
+      recovery: {
+        version: 1,
+        disposition: 'retry_unsent',
+        idempotencyKey: 'attempt',
+        operation: 'improve_jobs',
+        sourceRevision: subscriptionSetup.sourceRevision
+      }
+    }
+  })
+  await expect(pending).rejects.toThrow('stale')
+  expect(request).toHaveBeenCalledTimes(1)
+  client.dispose()
 })

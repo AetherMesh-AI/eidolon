@@ -227,6 +227,7 @@ export function useTeamSetupSubscription({
     errorReason,
     saved,
     connectionPending,
+    authorizationRecoveryRequired: ['publication_uncertain', 'reconciliation_required'].includes(status?.stage ?? ''),
     canReview:
       !!candidate() && !!policy && policy.sourceRevision === setup.sourceRevision && policy.state === 'available',
     setConsent,

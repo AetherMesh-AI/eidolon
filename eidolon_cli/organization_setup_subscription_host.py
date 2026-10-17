@@ -3,7 +3,7 @@
 Capture authority in the process launcher BEFORE dotenv. This module never reads
 an environment variable. The caller supplies already authenticated owner intent;
 this module is not an owner authorization gate. Only explicit Begin creates an
-installation identity. There is no crash recovery or remote request retry.
+installation identity. Local publication recovery never retries remote requests.
 
 No HTTP is permitted inside publication_guard: it is only the local store commit
 boundary, with lock order attempt then store. Exchange admission releases its
@@ -100,6 +100,7 @@ class PendingAttempt:
     source_digest: str
     expires_at: int
     stage: str = 'pending'
+    publication_binding_digest: str | None = None
 
     def __post_init__(self):
         for value in (self.attempt_id, self.organization_id, self.owner_id):
@@ -109,7 +110,13 @@ class PendingAttempt:
                 or type(self.source_digest) is not str
                 or re.fullmatch('[0-9a-f]{64}', self.source_digest) is None
                 or type(self.expires_at) is not int or not 0 < self.expires_at < 2**53
-                or self.stage not in {'pending', 'exchange_admitted', 'publishing', 'published', 'cancelled'}):
+                or self.stage not in {'pending', 'exchange_admitted', 'publishing', 'published', 'cancelled', 'locally_retired'}):
+            raise HostError('invalid_attempt')
+        digest = self.publication_binding_digest
+        if digest is not None and (type(digest) is not str or re.fullmatch('[0-9a-f]{64}', digest) is None
+                or self.stage not in {'publishing', 'published', 'locally_retired'}):
+            raise HostError('invalid_attempt')
+        if self.stage == 'locally_retired' and digest is None:
             raise HostError('invalid_attempt')
 
 
@@ -262,7 +269,8 @@ class PendingAttempts:
                 raise HostError('recovery_required')
             return None
         value = self._io._read_json(self._name)
-        if type(value) is not dict or set(value) != set(PendingAttempt.__dataclass_fields__):
+        fields = set(PendingAttempt.__dataclass_fields__)
+        if type(value) is not dict or set(value) not in (fields, fields - {'publication_binding_digest'}):
             raise HostError('recovery_required')
         return PendingAttempt(**value)
 
@@ -293,6 +301,23 @@ class PendingAttempts:
             self._installation()
             return self._read_attempt()
 
+    def _archive_local_retirement(self, record):
+        """Retain remote-unknown evidence before replacement; never grant authority.
+
+        Each record is bounded by PendingAttempt's closed schema. Reuse the
+        immutable archive publisher: exclusive link, byte-equal retry, fsync.
+        No inventory, retention cap, pruning, or old-archive replay is involved.
+        """
+        if record.stage != 'locally_retired':
+            return
+        name = self._name + '.' + record.attempt_id + '.retired'
+        data = _json(asdict(record))
+        self._io._archive_directory(create=True)
+        self._io._sync_directory()  # Also repair a lost archive-directory mkdir acknowledgment.
+        self._io._archive_put(name, data)
+        if self._io._archive_read(name, len(data)) != data:
+            raise HostError('recovery_required')
+
     @_guard
     def begin(self, *, attempt_id, organization_id, owner_id,
               expected_store_revision, source_digest, expires_at):
@@ -308,8 +333,9 @@ class PendingAttempts:
             if previous is not None:
                 if previous.attempt_id == attempt_id:
                     raise HostError('stale_attempt')
-                if previous.expires_at > now and previous.stage not in {'published', 'cancelled'}:
+                if previous.expires_at > now and previous.stage not in {'published', 'cancelled', 'locally_retired'}:
                     raise HostError('attempt_pending')
+                self._archive_local_retirement(previous)
             if previous is None:
                 self._io._write(self._name + '.seen', b'1')
             self._save(record)
@@ -336,14 +362,14 @@ class PendingAttempts:
                 raise HostError('stale_attempt')
             self._installation()
             record = self._exact(attempt_id, live=False)
-            if record.stage in {'published', 'publishing'}:
+            if record.stage in {'published', 'publishing', 'locally_retired'}:
                 raise HostError('stale_attempt')
             record = replace(record, stage='cancelled')
             self._save(record)
             return record
 
     @contextmanager
-    def publication_guard(self, attempt_id):
+    def publication_guard(self, attempt_id, *, binding_digest=None):
         """Hold attempt authority through local CAS publication; NEVER do HTTP.
 
         The caller MUST use yielded record.expected_store_revision for store.connect,
@@ -358,7 +384,7 @@ class PendingAttempts:
             record = self._exact(attempt_id)
             if record.stage != 'exchange_admitted':
                 raise HostError('stale_attempt')
-            record = replace(record, stage='publishing')
+            record = replace(record, stage='publishing', publication_binding_digest=binding_digest)
             self._save(record)
             publication = Publication(record)
             yield publication
@@ -368,36 +394,46 @@ class PendingAttempts:
 
 
     @contextmanager
-    def reconciliation_guard(self, attempt_id):
+    def reconciliation_guard(self, attempt_id, *, allow_local_retirement=False, legacy_binding_digest=None):
         """Fence exact uncertain local publication, even after attempt expiry.
 
         Caller MUST verify record owner, organization and source digest against
         current trusted authority, authenticate the exact attempt and prior
         revision with store.reconcile_auth_attempt, and commit only its returned
         revision. No HTTP, new publication or exchange replay is permitted here.
-        Only publishing/published stages qualify. Replaying a published marker
-        reconciles a possible post-rename fsync failure; it never republishes a
-        grant. Failure leaves the prior durable attempt stage unchanged.
+        Normal reconciliation accepts publishing/published. Explicit local
+        recovery also revalidates locally_retired and may acknowledge exact
+        cleanup at the prior revision. Its digest comes only from the durable
+        record or the identical live, verified legacy attempt. The terminal
+        save preserves that digest. No branch republishes a grant, and failure
+        leaves the prior durable attempt stage unchanged.
         """
         with self._locked() as exists:
             if not exists:
                 raise HostError('stale_attempt')
             self._installation()
             record = self._exact(attempt_id, live=False)
-            if record.stage not in {'publishing', 'published'}:
+            allowed = {'publishing', 'published'} | ({'locally_retired'} if allow_local_retirement else set())
+            if record.stage not in allowed:
                 raise HostError('stale_attempt')
-            publication = Publication(record)
+            if legacy_binding_digest is not None:
+                if record.publication_binding_digest is not None or not allow_local_retirement:
+                    raise HostError('stale_attempt')
+                record = replace(record, publication_binding_digest=legacy_binding_digest)
+            publication = Publication(record, allow_local_retirement=allow_local_retirement)
             yield publication
             if not publication._committed:
                 raise HostError('recovery_required')
-            self._save(replace(record, stage='published'))
+            self._save(replace(record, stage=publication._stage))
 
 
 class Publication:
     """Explicit local store-success acknowledgment; never accepts a guessed revision."""
-    def __init__(self, record):
+    def __init__(self, record, *, allow_local_retirement=False):
         self.record = record
         self._committed = False
+        self._stage = None
+        self._allow_local_retirement = allow_local_retirement
 
     def __repr__(self):
         return '<Publication>'
@@ -406,4 +442,17 @@ class Publication:
         if (self._committed or type(result) is not int
                 or result != self.record.expected_store_revision + 1):
             raise HostError('stale_attempt')
+        if self.record.stage == 'locally_retired':
+            raise HostError('stale_attempt')
         self._committed = True
+        self._stage = 'published'
+
+    def retire(self, result):
+        """Acknowledge exact local cleanup only; remote grant remains unconfirmed."""
+        if (not self._allow_local_retirement or self._committed
+                or self.record.stage not in {'publishing', 'locally_retired'}
+                or self.record.publication_binding_digest is None
+                or type(result) is not int or result != self.record.expected_store_revision):
+            raise HostError('stale_attempt')
+        self._committed = True
+        self._stage = 'locally_retired'

@@ -4,10 +4,25 @@ from .method_ctx import HandlerRegistry
 _registry = HandlerRegistry()
 
 
+def _failure_data(home, params, operation, transport, reason):
+    data = {'reason': reason}
+    if operation in {'generate_team', 'improve_team_input'}:
+        try:
+            from eidolon_cli.organization_setup_subscription_admission import retry_unsent_disposition
+            recovery = retry_unsent_disposition(home, params,
+                'generateTeam' if operation == 'generate_team' else 'improveTeamInput', transport=transport)
+            if recovery is not None:
+                data['recovery'] = recovery
+        except Exception:
+            pass  # Optional proof never changes the original fixed failure.
+    return data
+
+
 def _team_method(name, operation, fields):
     @_registry.method('organization.' + name)
     def handler(rid, params):
         from pathlib import Path
+        from tui_gateway.methods_organization_team_setup import _failure_data
         from eidolon_cli import organization_team_setup as setup
         from eidolon_cli.organization_team_admission import SetupSubscriptionExecutionError
         from eidolon_cli.organization_owner_policy import OwnerPolicyError
@@ -65,9 +80,9 @@ def _team_method(name, operation, fields):
         except ValueError as exc:
             return _err(rid, -32602, str(exc))
         except (OwnerPolicyError, MetadataError) as exc:
-            return _err(rid, 5076, str(exc), {'reason': exc.reason})
+            return _err(rid, 5076, str(exc), _failure_data(home, params, operation, transport, exc.reason))
         except SetupSubscriptionExecutionError as exc:
-            return _err(rid, 5076, 'Team setup is unavailable', {'reason': exc.reason})
+            return _err(rid, 5076, 'Team setup is unavailable', _failure_data(home, params, operation, transport, exc.reason))
         except (OSError, RuntimeError):
             return _err(rid, 5076, 'Team setup is unavailable', {'reason': 'unavailable'})
     return handler

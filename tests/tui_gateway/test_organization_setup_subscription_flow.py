@@ -251,8 +251,8 @@ def test_subscription_rpc_classification_follows_real_ledger_cleanup(
     monkeypatch.setattr(admission, '_failed_job', record_failure)
     original_error = server._err
     def after_cleanup(rid, code, message, data=None):
-        if data == {'reason': reason}:
-            assert cleanup == ['persisted', 'released']
+        if data is not None and data.get('reason') == reason:
+            assert cleanup[:2] == ['persisted', 'released']
             with _connection(ledger.home) as conn:
                 assert conn.execute('SELECT status FROM organization_team_generations').fetchone()['status'] == 'failed'
         return original_error(rid, code, message, data)
@@ -260,10 +260,15 @@ def test_subscription_rpc_classification_follows_real_ledger_cleanup(
     value = request(ledger, improve=improve)
     method = 'improveTeamInput' if improve else 'generateTeam'
     result = call(method, value, ledger.transport)
+    expected_data = {'reason': reason}
+    if outcome == 'refused':
+        expected_data['recovery'] = {'version': 1, 'disposition': 'retry_unsent',
+            'idempotencyKey': value['idempotencyKey'], 'operation': 'improve_jobs' if improve else 'generate',
+            'sourceRevision': value['sourceRevision']}
     assert result['error'] == {'code': 5076, 'message': 'Team setup is unavailable',
-                               'data': {'reason': reason}}
+                               'data': expected_data}
     row = state(ledger)[0]
     assert row['dispatched'] == int(outcome != 'refused') and row['result_json'] is None
     assert len(connects) == 1 and bool(socket.sent) is (outcome != 'refused')
     assert call(method, value, ledger.transport)['error']['code'] == 5076
-    assert len(connects) == 1 and cleanup == ['persisted', 'released']
+    assert len(connects) == 1 and cleanup == ['persisted', 'released', 'released', 'released']
