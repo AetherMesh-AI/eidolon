@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router'
 
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n/context'
+import { observationCopy } from '@/i18n/organization-observation'
 import { requestIntakeCopy } from '@/i18n/organization-request-intake'
 import { CheckCircle2, FileText } from '@/lib/icons'
 
@@ -13,6 +14,7 @@ import { queueHomeKeyboardReveal } from './home-keyboard-focus'
 import { LocalizedTime } from './localized-time'
 import { objectivePhaseLabel } from './objective-phase'
 import { TaskCounts } from './objective-progress'
+import { observationState } from './observation-state'
 import { RuntimeSetup } from './runtime-setup'
 import { OrganizationScenery } from './scenery'
 import type { Objective, OrganizationAdapter, OrganizationRequest, OrganizationSnapshot } from './types'
@@ -138,6 +140,9 @@ export function Home({ adapter, snapshot, starterEntry }: { adapter: Organizatio
   const { t, locale } = useI18n()
   const copy = t.organizationHome
   const data = homeData(snapshot)
+  const observation = observationState(snapshot, snapshot.objectives.length + snapshot.activity.length + (snapshot.requests?.length ?? 0) + (snapshot.outcomes?.items.length ?? 0))
+  const stateCopy = observationCopy[locale]
+  const emptyLabel = (current: string) => observation === 'current' ? current : observation === 'retained' ? stateCopy.empty : stateCopy.unknown
   const { hash, search, pathname } = useLocation()
   const cancelKeyboardReveal = useRef<(() => void) | undefined>(undefined)
   const ownerScope = snapshot.connection?.ownerScope ?? snapshot.connection?.scope
@@ -225,9 +230,8 @@ export function Home({ adapter, snapshot, starterEntry }: { adapter: Organizatio
           </div>
         )}
       </header>
-      {snapshot.connection && snapshot.connection.state !== 'ready' && (
-        <p role="status">{snapshot.connection.state === 'connecting' ? copy.connecting : copy.lastKnown}</p>
-      )}
+      {observation === 'retained' && <p role="status">{stateCopy.stale}</p>}
+      {(observation === 'loading' || observation === 'unavailable') && <div role="status"><h2>{stateCopy[observation]}</h2><p>{stateCopy.unknown}</p></div>}
       <div className="eid-home-grid">
         <section aria-label={copy.happening} className="eid-home-panel">
           <header>
@@ -240,7 +244,7 @@ export function Home({ adapter, snapshot, starterEntry }: { adapter: Organizatio
               .slice(0, 2)
               .map((objective, index) => <HomeObjective compact={index > 0} key={objective.id} objective={objective} snapshot={snapshot} />)
           ) : (
-            <p className="eid-home-empty">{copy.noWork}</p>
+            <p className="eid-home-empty">{emptyLabel(copy.noWork)}</p>
           )}
           </div>
           <Link className="eid-home-action" to="/objectives">
@@ -255,7 +259,7 @@ export function Home({ adapter, snapshot, starterEntry }: { adapter: Organizatio
           <div aria-label={copy.needsYou} className="eid-home-panel-body" role="group" tabIndex={0}>
           {data.requests.slice(0, 3).map(request => <HomeRequest key={request.id} request={request} snapshot={snapshot} />)}
           {!data.requests.length && (
-            <p className="eid-home-empty">{snapshot.requests ? copy.noNeeds : copy.requestsUnavailable}</p>
+            <p className="eid-home-empty">{snapshot.requests ? emptyLabel(copy.noNeeds) : copy.requestsUnavailable}</p>
           )}
           </div>
           <Link className="eid-home-action" to="/requests">
@@ -280,7 +284,7 @@ export function Home({ adapter, snapshot, starterEntry }: { adapter: Organizatio
             </article>
           ))}
           {!data.deliverables.length && (
-            <p className="eid-home-empty">{snapshot.outcomes ? copy.noReady : copy.outcomesUnavailable}</p>
+            <p className="eid-home-empty">{snapshot.outcomes ? emptyLabel(copy.noReady) : copy.outcomesUnavailable}</p>
           )}
           </div>
           <Link className="eid-home-action" to="/artifacts?source=organization">
@@ -313,7 +317,7 @@ export function Home({ adapter, snapshot, starterEntry }: { adapter: Organizatio
             )
           })}
         </ol>
-        {!data.activity.length && <p>{copy.noActivity}</p>}
+        {!data.activity.length && <p>{emptyLabel(copy.noActivity)}</p>}
       </section>
       {adapter.mode === 'runtime' && intake}
     </div>

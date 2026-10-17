@@ -7,9 +7,11 @@ import { ResponsiveMasterDetail } from '@/app/responsive-master-detail'
 import { Button } from '@/components/ui/button'
 import { SearchField } from '@/components/ui/search-field'
 import { useI18n } from '@/i18n/context'
+import { observationCopy } from '@/i18n/organization-observation'
 
 import { AgentContextDisclosure } from './agent-context'
 import { AgentAvatar } from './avatar'
+import { observationState } from './observation-state'
 import { OrganizationOwnerChat } from './runtime-owner-chat'
 import { OrganizationScenery } from './scenery'
 import type { OrganizationAgent, OrganizationSnapshot, RuntimeOrganizationAdapter } from './types'
@@ -39,9 +41,12 @@ export function Messages({
   adapter?: RuntimeOrganizationAdapter
   snapshot: OrganizationSnapshot
 }) {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const copy = t.organizationHome
   const messages = copy.memberMessages
+  const observation = observationState(snapshot, snapshot.agents.length)
+  const stateCopy = observationCopy[locale]
+  const retained = observation === 'retained'
   const [params, setParams] = useSearchParams()
   const location = useLocation()
   const executiveEntry = params.get('recipient') === 'executive'
@@ -88,6 +93,7 @@ export function Messages({
           <header className="eid-message-directory-heading">
             <h1>{executiveEntry ? copy.messageOrganization : copy.messages}</h1>
           </header>
+          {retained && <p role="status">{stateCopy.stale}</p>}
           <SearchField aria-label={messages.search} containerClassName="eid-message-search opacity-100" onChange={setQuery} placeholder={messages.search} value={query} />
           <nav aria-label={copy.chooseAgent}>
             {matches.map(item => (
@@ -110,10 +116,12 @@ export function Messages({
               </Button>
             ))}
           </nav>
-          {!!agents.length && !matches.length && <p role="status">{messages.noMatches}</p>}
-          {!agents.length && <div className="eid-message-empty">
-            <h2>{messages.noRecipients}</h2>
-            <p>{executiveEntry ? copy.noMessageExecutive : copy.noAgents}</p>
+          {!!agents.length && !matches.length && <p role="status">{retained ? stateCopy.noMatches : messages.noMatches}</p>}
+          {observation === 'loading' || observation === 'unavailable' ? <div className="eid-message-empty" role="status">
+            <h2>{stateCopy[observation]}</h2><p>{stateCopy.unknown}</p>
+          </div> : !agents.length && <div className="eid-message-empty">
+            <h2>{retained ? stateCopy.empty : messages.noRecipients}</h2>
+            {!retained && <p>{executiveEntry ? copy.noMessageExecutive : copy.noAgents}</p>}
             <Link to="/organization">{copy.reviewMessageRoster}</Link>
           </div>}
           <details className="eid-message-directory-details"><summary>{messages.directoryDetails}</summary><p>{executiveEntry ? copy.executiveMessageNote : copy.messagesNote}</p><p>{messages.directoryNote}</p></details>
@@ -146,7 +154,7 @@ export function Messages({
           <section aria-label={messages.linkedWork}>
             <h3>{messages.linkedWork}</h3>
             <p className="eid-note">{messages.linkedWorkNote}</p>
-            {objectives.length ? <ul>{objectives.map(objective => <li key={objective.id}><Link data-workspace-origin={JSON.stringify(['member-work', scope, agent.id, agent.identityId ?? '', objective.id])} dir="auto" to={objectiveHref(objective.id, `${location.pathname}${location.search}`, scope)}>{objective.title}</Link></li>)}</ul> : <p>{messages.noLinkedWork}</p>}
+            {objectives.length ? <ul>{objectives.map(objective => <li key={objective.id}><Link data-workspace-origin={JSON.stringify(['member-work', scope, agent.id, agent.identityId ?? '', objective.id])} dir="auto" to={objectiveHref(objective.id, `${location.pathname}${location.search}`, scope)}>{objective.title}</Link></li>)}</ul> : <p>{retained ? stateCopy.empty : messages.noLinkedWork}</p>}
           </section>
           <AgentContextDisclosure agent={agent} snapshot={snapshot} summary={messages.retainedContext} />
         </section>}
