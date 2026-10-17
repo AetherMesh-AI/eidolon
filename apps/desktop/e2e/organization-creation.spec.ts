@@ -39,11 +39,11 @@ const copy = {
 
 // Loaded only by this native fixture's Python children, before any SDK client.
 const providerSendGuard = String.raw`
-import ipaddress,json,os,sys
+import ipaddress,json,math,os
 from pathlib import Path
-import httpx
+import httpx,psutil
 guard_root=Path(os.environ['EIDOLON_NATIVE_PROVIDER_GUARD_DIR'])
-home=str(Path(os.environ['HERMES_HOME']).resolve())
+bootstrap_home=str(Path(os.environ['HERMES_HOME']).resolve())
 attempts=guard_root/('attempts-'+str(os.getpid())+'.jsonl')
 def _fixture_check_request(request):
  try:
@@ -52,7 +52,7 @@ def _fixture_check_request(request):
   allowed=False
  if not allowed:
   with attempts.open('a') as record:
-   record.write(json.dumps({'home':home,'pid':os.getpid(),'host':request.url.host})+'\n')
+   record.write(json.dumps({'home':str(Path(os.environ['HERMES_HOME']).resolve()),'pid':os.getpid(),'host':request.url.host})+'\n')
   raise AssertionError('Fixture denied non-loopback HTTPX send')
 original_sync=httpx.HTTPTransport.handle_request
 original_async=httpx.AsyncHTTPTransport.handle_async_request
@@ -64,19 +64,68 @@ async def guarded_async(self,request):
  return await original_async(self,request)
 httpx.HTTPTransport.handle_request=guarded_sync
 httpx.AsyncHTTPTransport.handle_async_request=guarded_async
-if 'serve' in sys.argv:
- marker=guard_root/('installed-'+str(os.getpid())+'.json')
- pending=marker.with_suffix('.pending')
- pending.write_text(json.dumps({
-  'home':home,'pid':os.getpid(),'sync':True,'async':True,'argv':sys.argv
- }))
- pending.replace(marker)
+# This runs before the CLI applies --profile. Serving identity is joined later
+# to the post-bind ledger and the descriptor's actual open WebSocket endpoint.
+marker=guard_root/('installed-'+str(os.getpid())+'.json')
+pending=marker.with_suffix('.pending')
+pending.write_text(json.dumps({
+ 'bootstrapHome':bootstrap_home,'pid':os.getpid(),
+ 'create_time':psutil.Process().create_time(),'sync':True,'async':True
+}))
+pending.replace(marker)
+
+def _fixture_identity_matches(marker,entry,live,expected):
+ try:
+  host=expected['host'];port=expected['port'];profile=expected['profile']
+  if expected['open'] is not True or not ipaddress.ip_address(host).is_loopback:
+   return False
+  if type(port) is not int or not 0 < port < 65536:
+   return False
+  descriptor=expected['descriptor']
+  if descriptor.get('capabilityVersion') != 1 or descriptor.get('scope') != {'kind':'served-profile','profile':profile}:
+   return False
+  if expected.get('organizationId'):
+   identity={'organizationId':expected['organizationId'],'ownerId':expected['ownerId']}
+   isolation=descriptor.get('isolation',{})
+   if descriptor.get('state') != 'ready' or isolation.get('profile') != profile:
+    return False
+   if any(isolation.get(key) != value for key,value in identity.items()):
+    return False
+   if isolation.get('isolationVersion') != 1 or isolation.get('credentialMode') != 'profile-local-openai-api' or isolation.get('executionMode') != 'tool-free-organization' or isolation.get('supportedProviders') != ['openai-api']:
+    return False
+   metadata=descriptor.get('metadata',{})
+   if metadata.get('organizationId') != identity['organizationId'] or metadata.get('owner',{}).get('ownerId') != identity['ownerId']:
+    return False
+  pid=marker['pid'];started=marker['create_time']
+  times=[started,entry.get('create_time'),live.get('create_time')]
+  if type(pid) is not int or pid <= 0 or any(type(value) not in (int,float) or not math.isfinite(value) or value <= 0 for value in times):
+   return False
+  if marker.get('sync') is not True or marker.get('async') is not True:
+   return False
+  if entry.get('pid') != pid or live.get('pid') != pid or entry.get('create_time') != started or live.get('create_time') != started or live.get('alive') is not True:
+   return False
+  # ledger.profile is optional browser-route metadata, not --profile identity.
+  if entry.get('purpose') != 'serve' or entry.get('home') != expected['home'] or entry.get('profile') not in ('',profile):
+   return False
+  return entry.get('host') == host and entry.get('port') == port and [host,port] in live.get('listeners',[])
+ except (KeyError,TypeError,ValueError,AttributeError):
+  return False
+
+def _fixture_live_identity(pid):
+ try:
+  process=psutil.Process(pid)
+  started=process.create_time()
+  listeners=[[item.laddr.ip,item.laddr.port] for item in process.net_connections(kind='tcp') if item.status == psutil.CONN_LISTEN]
+  alive=process.is_running() and psutil.Process(pid).create_time() == started
+  return {'pid':pid,'create_time':started,'alive':alive,'listeners':listeners}
+ except (psutil.Error,OSError,ValueError):
+  return {}
 `
 
 // This regression has an independent socket backstop: a broken guard cannot
 // turn the canonical-URL denial check into an actual external request.
 const providerGuardRegression = String.raw`
-import asyncio,json,os,socket
+import asyncio,copy,json,os,socket
 import httpx,sitecustomize
 loop=asyncio.new_event_loop()
 physical=[]
@@ -111,9 +160,32 @@ for url in ['http://127.0.0.1/','http://[::1]/']:
 assert physical==[]
 assert len(sitecustomize.attempts.read_text().splitlines())==6
 marker=json.loads((sitecustomize.guard_root/('installed-'+str(os.getpid())+'.json')).read_text())
-assert marker['home']==sitecustomize.home and marker['pid']==os.getpid() and marker['sync'] and marker['async']
-print(json.dumps({'syncDenied':3,'asyncDenied':3,'physicalSocketAttempts':0,'numericLoopbackAllowed':2,'installation':marker}))
+assert marker['bootstrapHome']==sitecustomize.bootstrap_home and marker['pid']==os.getpid() and marker['sync'] and marker['async']
+assert marker['create_time']==sitecustomize.psutil.Process().create_time()
+expected={'open':True,'host':'127.0.0.1','port':12345,'home':'/fixture/profiles/fresh','profile':'fresh','organizationId':'org','ownerId':'owner','descriptor':{
+ 'capabilityVersion':1,'state':'ready','scope':{'kind':'served-profile','profile':'fresh'},
+ 'metadata':{'organizationId':'org','owner':{'ownerId':'owner'}},
+ 'isolation':{'organizationId':'org','ownerId':'owner','profile':'fresh','isolationVersion':1,'credentialMode':'profile-local-openai-api','executionMode':'tool-free-organization','supportedProviders':['openai-api']}
+}}
+entry={'pid':marker['pid'],'create_time':marker['create_time'],'purpose':'serve','home':expected['home'],'profile':'','host':expected['host'],'port':expected['port']}
+live={'pid':marker['pid'],'create_time':marker['create_time'],'alive':True,'listeners':[[expected['host'],expected['port']]]}
+assert sitecustomize._fixture_identity_matches(marker,entry,live,expected)
+cases=[('marker','create_time',None),('marker','create_time',float('nan')),('marker','create_time',0),('marker','async',False),('entry','pid',marker['pid']+1),('entry','create_time',marker['create_time']+1),('entry','create_time',None),('entry','home','/fixture'),('entry','profile','foreign'),('entry','host','127.0.0.2'),('entry','port',12346),('entry','purpose','gateway'),('live','create_time',marker['create_time']+1),('live','create_time',None),('live','alive',False),('live','listeners',[]),('expected','open',False),('expected','host','localhost'),('expected','profile','foreign'),('expected','organizationId','foreign'),('expected','ownerId','foreign')]
+for target,key,value in cases:
+ records=copy.deepcopy({'marker':marker,'entry':entry,'live':live,'expected':expected})
+ records[target][key]=value
+ assert not sitecustomize._fixture_identity_matches(**records),(target,key)
+with socket.socket() as listener:
+ listener.bind(('127.0.0.1',0));listener.listen()
+ expected['port']=entry['port']=listener.getsockname()[1]
+ assert sitecustomize._fixture_identity_matches(marker,entry,sitecustomize._fixture_live_identity(os.getpid()),expected)
+assert not sitecustomize._fixture_identity_matches(marker,entry,sitecustomize._fixture_live_identity(os.getpid()),expected)
+assert physical==[]
+print(json.dumps({'syncDenied':3,'asyncDenied':3,'physicalSocketAttempts':0,'numericLoopbackAllowed':2,'identityRefusals':len(cases),'emptyDisplayRouteAcceptedWithExactServedHome':True,'liveListenerVerifiedAndRevoked':True,'installation':marker}))
 `
+
+type WorkspaceReceipt = { profile: string; organizationId: string; ownerId: string }
+type ObservedDescriptor = { open: boolean; host: string; port: number; descriptor?: unknown }
 
 async function setupCreationFixture() {
   const sandbox = createSandbox('fresh-organization')
@@ -121,6 +193,8 @@ async function setupCreationFixture() {
   const observer = join(sandbox.root, 'python-provider-guard')
   const guardRoot = join(sandbox.root, 'provider-guard-evidence')
   const regressionRoot = join(sandbox.root, 'provider-guard-regression')
+  const descriptors = new Map<string, ObservedDescriptor>()
+  const verifiedGuards: object[] = []
   let launch: Awaited<ReturnType<typeof launchDesktop>> | undefined
 
   const cleanup = async () => {
@@ -166,37 +240,64 @@ async function setupCreationFixture() {
             .map(line => JSON.parse(line))
         )
 
-    const requireGuard = async (home: string) => {
+    const requireGuard = async (home: string, receipt?: WorkspaceReceipt, checkpoint = 'initial') => {
+      const profile = receipt?.profile ?? 'default'
+      let verified: object | undefined
+
       await expect
-        .poll(() =>
-          readdirSync(guardRoot)
-            .filter(name => name.startsWith('installed-') && name.endsWith('.json'))
-            .some(name => {
-              const marker = JSON.parse(readFileSync(join(guardRoot, name), 'utf8'))
+        .poll(() => {
+          const observed = descriptors.get(profile)
 
-              if (
-                marker.home !== realpathSync(home) ||
-                !marker.sync ||
-                !marker.async ||
-                !marker.argv.includes('serve')
-              ) {
-                return false
-              }
+          if (!observed?.open || !observed.descriptor) {
+            return false
+          }
 
-              try {
-                process.kill(marker.pid, 0)
+          const expected = { ...observed, home: realpathSync(home), profile, ...receipt }
 
-                return true
-              } catch {
-                return false
-              }
-            })
-        )
+          const matches = JSON.parse(
+            execFileSync(
+              switchPython,
+              [
+                '-c',
+                String.raw`
+import json,sys
+from pathlib import Path
+import sitecustomize
+root=Path(sys.argv[1]);ledger=Path(sys.argv[2]);expected=json.loads(sys.argv[3]);matches=[]
+entries=json.loads(ledger.read_text()) if ledger.exists() else []
+for entry in entries:
+ if not isinstance(entry,dict) or type(entry.get('pid')) is not int or entry.get('home') != expected['home']:
+  continue
+ path=root/('installed-'+str(entry['pid'])+'.json')
+ if not path.exists():
+  continue
+ marker=json.loads(path.read_text());live=sitecustomize._fixture_live_identity(entry['pid'])
+ if sitecustomize._fixture_identity_matches(marker,entry,live,expected):
+  matches.append({'pid':entry['pid'],'create_time':entry['create_time'],'servedHome':entry['home'],'profile':expected['profile'],'host':entry['host'],'port':entry['port'],'descriptor':expected['descriptor'],'sync':marker['sync'],'async':marker['async'],'bootstrapHome':marker['bootstrapHome']})
+print(json.dumps(matches))
+`,
+                guardRoot,
+                join(sandbox.hermesHome, 'spawn-ledger.json'),
+                JSON.stringify(expected)
+              ],
+              { env, encoding: 'utf8', timeout: 5_000 }
+            )
+          ) as object[]
+
+          if (matches.length !== 1 || !observed.open || descriptors.get(profile) !== observed) {
+            return false
+          }
+
+          verified = { checkpoint, ...matches[0] }
+
+          return true
+        })
         .toBe(true)
+      verifiedGuards.push(verified!)
       expect(attempts()).toEqual([])
     }
 
-    return { fixture, requireGuard, attempts, guardRoot }
+    return { fixture, requireGuard, attempts, guardRoot, descriptors, verifiedGuards }
   } catch (error) {
     await cleanup()
     throw error
@@ -413,11 +514,13 @@ async function captureDialogKeyboard(
 
 test('creates two fresh organizations, reconciles a lost reply and keeps switching, setup and deep links owner-scoped', async () => {
   test.setTimeout(300_000)
-  const { fixture, requireGuard, attempts, guardRoot } = await setupCreationFixture()
+  const { fixture, requireGuard, attempts, guardRoot, descriptors, verifiedGuards } = await setupCreationFixture()
   const { page, sandbox, mock } = fixture
   const creates: Record<string, unknown>[] = []
-  const receipts: Array<{ profile: string; organizationId: string; ownerId: string }> = []
+  const receipts: WorkspaceReceipt[] = []
   const methods: string[] = []
+  let descriptorSequence = 0
+  const descriptorSequences = new Map<string, number>()
   let dropNext = false
   let unsupported = false
   const header = page.locator('.eid-workspace-header')
@@ -467,6 +570,29 @@ print(json.dumps({'metadata':dict(c.execute('select * from organization_metadata
     await page.routeWebSocket(/.*/, socket => {
       const server = socket.connectToServer()
       const writes = new Set<string | number>()
+      const descriptorReads = new Map<string | number, number>()
+      const endpoint = new URL(socket.url())
+      let open = true
+      let observed: ObservedDescriptor | undefined
+
+      socket.onClose((code, reason) => {
+        open = false
+
+        if (observed) {
+          observed.open = false
+        }
+
+        return server.close({ code, reason })
+      })
+      server.onClose((code, reason) => {
+        open = false
+
+        if (observed) {
+          observed.open = false
+        }
+
+        return socket.close({ code, reason })
+      })
       let dropped: string | number | undefined
       socket.onMessage(message => {
         const request = JSON.parse(message.toString()) as {
@@ -477,6 +603,10 @@ print(json.dumps({'metadata':dict(c.execute('select * from organization_metadata
 
         if (request.method) {
           methods.push(request.method)
+        }
+
+        if (request.method === 'organization.descriptor' && request.id !== undefined) {
+          descriptorReads.set(request.id, ++descriptorSequence)
         }
 
         if (request.method === 'organization.workspaceCreation' && unsupported) {
@@ -506,7 +636,36 @@ print(json.dumps({'metadata':dict(c.execute('select * from organization_metadata
       server.onMessage(message => {
         const response = JSON.parse(message.toString()) as {
           id?: string | number
-          result?: { profile: string; organizationId: string; ownerId: string }
+          result?: WorkspaceReceipt & { scope?: { kind?: string; profile?: string } }
+        }
+
+        const sequence = response.id === undefined ? undefined : descriptorReads.get(response.id)
+
+        if (response.id !== undefined && sequence !== undefined) {
+          descriptorReads.delete(response.id)
+          const profile = response.result?.scope?.profile
+
+          if (
+            open &&
+            response.result?.scope?.kind === 'served-profile' &&
+            profile &&
+            sequence > (descriptorSequences.get(profile) ?? 0)
+          ) {
+            const previous = descriptors.get(profile)
+
+            if (previous) {
+              previous.open = false
+            }
+
+            observed = {
+              open: true,
+              host: endpoint.hostname.replace(/^\[|\]$/g, ''),
+              port: Number(endpoint.port),
+              descriptor: response.result
+            }
+            descriptorSequences.set(profile, sequence)
+            descriptors.set(profile, observed)
+          }
         }
 
         if (response.id !== undefined && writes.has(response.id) && response.result) {
@@ -624,9 +783,9 @@ print(json.dumps({'metadata':dict(c.execute('select * from organization_metadata
 
       const keyInput = page.getByPlaceholder(/^Paste OpenAI(?: API)? key$/)
       await expect(keyInput).toBeVisible()
-      await requireGuard(home)
+      await requireGuard(home, receipts[index], 'before-key-entry')
       await keyInput.fill(ownKey)
-      await requireGuard(home)
+      await requireGuard(home, receipts[index], 'before-key-save')
       await keyInput.locator('..').getByRole('button', { name: 'Save', exact: true }).click()
       await expect.poll(() => readFileSync(join(home, '.env'), 'utf8')).toContain(ownKey)
       expect(attempts()).toEqual([])
@@ -727,7 +886,8 @@ print(json.dumps({'metadata':dict(c.execute('select * from organization_metadata
           installed: readdirSync(guardRoot)
             .filter(name => name.endsWith('.json'))
             .map(name => JSON.parse(readFileSync(join(guardRoot, name), 'utf8'))),
-          attempts: attempts()
+          attempts: attempts(),
+          verified: verifiedGuards
         })
       })
     } finally {
