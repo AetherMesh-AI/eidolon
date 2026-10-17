@@ -36,6 +36,11 @@ it.each(['creation', 'model'] as const)(
       const close = screen.getByRole('button', { name: 'Close' })
       fireEvent.change(field, { target: { value: 'Retained explicit draft' } })
       expect(dialog.classList.contains('eid-organization-dialog')).toBe(true)
+      // The shared shell supplies duration-200. Its default transition-property
+      // must not interpolate viewport-driven position or size while tabbing.
+      expect(getComputedStyle(dialog).transitionProperty).toBe(
+        'color, background-color, border-color, box-shadow, opacity'
+      )
       const body = dialog.querySelector('.eid-organization-dialog-body')!
       const scroller = field.closest('.eid-organization-dialog-scroll')!
       expect(getComputedStyle(body).overflow).toBe('hidden')
