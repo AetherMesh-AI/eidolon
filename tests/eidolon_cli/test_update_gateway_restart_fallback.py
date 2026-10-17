@@ -22,34 +22,43 @@ import eidolon_cli.gateway as gateway
 _ARGV = ["python", "-m", "eidolon_cli.main", "gateway", "run"]
 
 
-def _stub_argv(monkeypatch, argv):
+def _stub_argv(monkeypatch, tmp_path, argv):
+    from types import SimpleNamespace
+    import eidolon_cli.process_identity as identity
+    import eidolon_cli.profiles as profiles
+
+    home = str(tmp_path / "fitness")
+    monkeypatch.setattr(identity, "owned_gateway_identity", lambda pid: (pid, 100.0) if pid == 4242 else None)
+    monkeypatch.setattr(profiles, "list_profiles", lambda: [SimpleNamespace(name="fitness", path=home)])
+    monkeypatch.setattr(identity, "owned_gateway_home", lambda pid, **kw: home if pid == 4242 else None)
     monkeypatch.setattr(gateway, "_capture_gateway_argv", lambda _pid: argv)
 
 
-def test_profile_relaunch_wins_and_skips_the_cmdline_replay(monkeypatch):
+def test_profile_relaunch_wins_and_skips_the_cmdline_replay(monkeypatch, tmp_path):
     """The existing path is unchanged: a profile relaunch short-circuits."""
-    _stub_argv(monkeypatch, list(_ARGV))
+    _stub_argv(monkeypatch, tmp_path, list(_ARGV))
     monkeypatch.setattr(
-        gateway, "launch_detached_profile_gateway_restart", lambda *_a: True
+        gateway, "launch_detached_profile_gateway_restart", lambda *_a, **_kw: True
     )
     monkeypatch.setattr(
         gateway,
         "launch_detached_gateway_restart_by_cmdline",
-        lambda *_a: pytest.fail("cmdline replay must not run when the profile path works"),
+        lambda *_a, **_kw: pytest.fail("cmdline replay must not run when the profile path works"),
     )
 
     assert gateway._prepare_profile_gateway_update_restart("fitness", 4242) == "detached"
 
 
-def test_falls_back_to_cmdline_replay_when_profile_relaunch_fails(monkeypatch):
+def test_falls_back_to_cmdline_replay_when_profile_relaunch_fails(monkeypatch, tmp_path):
     """The #88654 fix: an unarmable profile relaunch still gets the gateway back."""
-    _stub_argv(monkeypatch, list(_ARGV))
+    _stub_argv(monkeypatch, tmp_path, list(_ARGV))
     monkeypatch.setattr(
-        gateway, "launch_detached_profile_gateway_restart", lambda *_a: False
+        gateway, "launch_detached_profile_gateway_restart", lambda *_a, **_kw: False
     )
     seen = []
 
-    def _by_cmdline(pid, argv):
+    def _by_cmdline(pid, argv, *, expected_identity):
+        assert expected_identity == (4242, 100.0)
         seen.append((pid, argv))
         return True
 
@@ -67,51 +76,51 @@ def test_falls_back_to_cmdline_replay_when_profile_relaunch_fails(monkeypatch):
     assert seen == [(4242, _ARGV)]
 
 
-def test_returns_none_when_there_is_no_argv_to_replay(monkeypatch):
+def test_returns_none_when_there_is_no_argv_to_replay(monkeypatch, tmp_path):
     """No captured argv means no honest way to relaunch; caller must be told."""
-    _stub_argv(monkeypatch, [])
+    _stub_argv(monkeypatch, tmp_path, [])
     monkeypatch.setattr(
-        gateway, "launch_detached_profile_gateway_restart", lambda *_a: False
+        gateway, "launch_detached_profile_gateway_restart", lambda *_a, **_kw: False
     )
     monkeypatch.setattr(
         gateway,
         "launch_detached_gateway_restart_by_cmdline",
-        lambda *_a: pytest.fail("must not replay an empty argv"),
+        lambda *_a, **_kw: pytest.fail("must not replay an empty argv"),
     )
 
     assert gateway._prepare_profile_gateway_update_restart("fitness", 4242) is None
 
 
-def test_returns_none_when_both_relaunch_paths_fail(monkeypatch):
+def test_returns_none_when_both_relaunch_paths_fail(monkeypatch, tmp_path):
     """Both mechanisms failing is still reported as None, not a false success."""
-    _stub_argv(monkeypatch, list(_ARGV))
+    _stub_argv(monkeypatch, tmp_path, list(_ARGV))
     monkeypatch.setattr(
-        gateway, "launch_detached_profile_gateway_restart", lambda *_a: False
+        gateway, "launch_detached_profile_gateway_restart", lambda *_a, **_kw: False
     )
     monkeypatch.setattr(
-        gateway, "launch_detached_gateway_restart_by_cmdline", lambda *_a: False
+        gateway, "launch_detached_gateway_restart_by_cmdline", lambda *_a, **_kw: False
     )
 
     assert gateway._prepare_profile_gateway_update_restart("fitness", 4242) is None
 
 
-def test_external_supervisor_still_short_circuits_before_any_replay(monkeypatch):
+def test_external_supervisor_still_short_circuits_before_any_replay(monkeypatch, tmp_path):
     """Guardrail: the supervisor hand-back must not gain a replay behind it.
 
     Replaying the argv for an externally supervised gateway would escape the
     manager and race its replacement process, which is the exact hazard the
     supervisor branch exists to avoid.
     """
-    _stub_argv(monkeypatch, _ARGV + ["--external-supervisor"])
+    _stub_argv(monkeypatch, tmp_path, _ARGV + ["--external-supervisor"])
     monkeypatch.setattr(
         gateway,
         "launch_detached_profile_gateway_restart",
-        lambda *_a: pytest.fail("detached watcher must not be launched"),
+        lambda *_a, **_kw: pytest.fail("detached watcher must not be launched"),
     )
     monkeypatch.setattr(
         gateway,
         "launch_detached_gateway_restart_by_cmdline",
-        lambda *_a: pytest.fail("cmdline replay must not be launched"),
+        lambda *_a, **_kw: pytest.fail("cmdline replay must not be launched"),
     )
 
     assert (

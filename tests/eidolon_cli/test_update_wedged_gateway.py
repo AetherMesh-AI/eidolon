@@ -202,7 +202,7 @@ def _launchd_harness(monkeypatch, tmp_path, pid):
     monkeypatch.setattr(gateway_cli, "_get_restart_drain_timeout", lambda: 180.0)
     monkeypatch.setattr("gateway.status.get_running_pid", lambda *a, **k: pid)
     monkeypatch.setattr(
-        gateway_cli, "_request_gateway_self_restart", lambda pid: False
+        gateway_cli, "_request_gateway_self_restart", lambda pid, **kwargs: False
     )
     real_probe = gateway_cli.probe_gateway_loop_liveness
 
@@ -227,7 +227,7 @@ def _launchd_harness(monkeypatch, tmp_path, pid):
     monkeypatch.setattr(
         gateway_cli,
         "_graceful_restart_via_sigusr1",
-        lambda pid, timeout: events.append(("drain", pid, timeout)) or True,
+        lambda pid, timeout, **kwargs: events.append(("drain", pid, timeout)) or True,
     )
     monkeypatch.setattr(
         gateway_cli,
@@ -333,6 +333,8 @@ class TestProbeGatewayLoopLiveness:
         )
 
 
+# These liveness contracts exercise explicit restart behavior; updater ownership
+# and captured-incarnation refusal are covered by test_update_gateway_signal_identity.
 class TestEscalateWedgedGateway:
     def test_sigterm_grace_suffices_without_sigkill(self, monkeypatch):
         """If SIGTERM lands (signal-handler thread alive), no SIGKILL is sent."""
@@ -346,7 +348,7 @@ class TestEscalateWedgedGateway:
             gateway_cli, "_wait_for_pid_exit", lambda pid, timeout: True
         )
 
-        assert gateway_cli._escalate_wedged_gateway(4242) is True
+        assert gateway_cli._escalate_wedged_gateway(4242, for_update=False) is True
         assert signals == [("term", 4242)]
 
     def test_escalates_to_sigkill_when_sigterm_ignored(self, monkeypatch):
@@ -365,7 +367,7 @@ class TestEscalateWedgedGateway:
         )
         monkeypatch.setattr(gateway_cli, "_wait_for_pid_exit", fake_wait)
 
-        assert gateway_cli._escalate_wedged_gateway(4242) is True
+        assert gateway_cli._escalate_wedged_gateway(4242, for_update=False) is True
         assert signals == [("term", 4242), ("kill", 4242)]
 
     def test_total_wait_budget_is_bounded_well_under_drain(self, monkeypatch):
@@ -378,7 +380,7 @@ class TestEscalateWedgedGateway:
             lambda pid, timeout: waits.append(timeout) or False,
         )
 
-        assert gateway_cli._escalate_wedged_gateway(4242) is False
+        assert gateway_cli._escalate_wedged_gateway(4242, for_update=False) is False
         assert sum(waits) < 30.0
 
     def test_process_already_gone_is_success(self, monkeypatch):
@@ -390,7 +392,7 @@ class TestEscalateWedgedGateway:
             gateway_cli, "_wait_for_pid_exit", lambda pid, timeout: True
         )
 
-        assert gateway_cli._escalate_wedged_gateway(4242) is True
+        assert gateway_cli._escalate_wedged_gateway(4242, for_update=False) is True
 
     def test_sigkill_permission_error_does_not_raise(self, monkeypatch):
         calls = []
@@ -405,7 +407,7 @@ class TestEscalateWedgedGateway:
             gateway_cli, "_wait_for_pid_exit", lambda pid, timeout: False
         )
 
-        assert gateway_cli._escalate_wedged_gateway(4242) is False
+        assert gateway_cli._escalate_wedged_gateway(4242, for_update=False) is False
         assert calls == [False, True]
 
 
@@ -421,7 +423,7 @@ class TestLaunchdRestartWedgedIntegration:
         monkeypatch.setattr(gateway_cli, "_get_restart_exit_wait_budget", lambda: 195.0)
         monkeypatch.setattr("gateway.status.get_running_pid", lambda *a, **k: 4242)
         monkeypatch.setattr(
-            gateway_cli, "_request_gateway_self_restart", lambda pid: False
+            gateway_cli, "_request_gateway_self_restart", lambda pid, **kwargs: False
         )
         monkeypatch.setattr(
             gateway_cli,
@@ -442,7 +444,7 @@ class TestLaunchdRestartWedgedIntegration:
         monkeypatch.setattr(
             gateway_cli,
             "_graceful_restart_via_sigusr1",
-            lambda pid, timeout: events.append(("drain", pid, timeout)) or True,
+            lambda pid, timeout, **kwargs: events.append(("drain", pid, timeout)) or True,
         )
         # KeepAlive revival observed instantly — avoids the real 15s poll
         # (mocked subprocess.run returns empty stdout, so the PID probe
@@ -466,7 +468,7 @@ class TestLaunchdRestartWedgedIntegration:
 
     def test_wedged_gateway_skips_drain_and_escalates(self, monkeypatch):
         events = self._setup(monkeypatch, gateway_cli.GATEWAY_LOOP_WEDGED)
-        gateway_cli.launchd_restart()
+        gateway_cli.launchd_restart(for_update=False)
         assert "escalate" in events
         # The 180s drain wait must never run for a wedged loop.
         assert not any(isinstance(e, tuple) and e[0] == "drain" for e in events)
@@ -475,14 +477,14 @@ class TestLaunchdRestartWedgedIntegration:
         """A busy-but-alive gateway (fresh heartbeat) must NOT be escalated —
         that would bypass the in-flight cron drain floor (#86684)."""
         events = self._setup(monkeypatch, gateway_cli.GATEWAY_LOOP_ALIVE)
-        gateway_cli.launchd_restart()
+        gateway_cli.launchd_restart(for_update=False)
         assert "escalate" not in events
         assert ("drain", 4242, 195.0) in events
 
     def test_unknown_liveness_keeps_full_drain_budget(self, monkeypatch):
         """Ambiguity (no heartbeat) must never trigger escalation."""
         events = self._setup(monkeypatch, gateway_cli.GATEWAY_LOOP_UNKNOWN)
-        gateway_cli.launchd_restart()
+        gateway_cli.launchd_restart(for_update=False)
         assert "escalate" not in events
         assert ("drain", 4242, 195.0) in events
 
@@ -590,7 +592,7 @@ class TestLoopTickWitness:
                 "gateway.status.get_running_pid", lambda *a, **k: pid
             )
             monkeypatch.setattr(
-                gateway_cli, "_request_gateway_self_restart", lambda pid: False
+                gateway_cli, "_request_gateway_self_restart", lambda pid, **kwargs: False
             )
             monkeypatch.setattr(
                 gateway_cli,
@@ -609,7 +611,7 @@ class TestLoopTickWitness:
             monkeypatch.setattr(
                 gateway_cli,
                 "_graceful_restart_via_sigusr1",
-                lambda pid, timeout: events.append(("drain", pid, timeout)) or True,
+                lambda pid, timeout, **kwargs: events.append(("drain", pid, timeout)) or True,
             )
             monkeypatch.setattr(
                 gateway_cli,
@@ -638,7 +640,7 @@ class TestLoopTickWitness:
             monkeypatch.setattr(
                 "gateway.shutdown_watchdog._process_eidolon_home", lambda: tmp_path
             )
-            gateway_cli.launchd_restart()
+            gateway_cli.launchd_restart(for_update=False)
             assert "escalate" not in events
             drains = [e for e in events if isinstance(e, tuple) and e[0] == "drain"]
             assert drains, events
@@ -931,7 +933,7 @@ class TestLoopTickWitness:
             assert verdict == gateway_cli.GATEWAY_LOOP_ALIVE, verdict
 
             events = _launchd_harness(monkeypatch, tmp_path, pid)
-            gateway_cli.launchd_restart()
+            gateway_cli.launchd_restart(for_update=False)
             assert "escalate" not in events
             drains = [e for e in events if isinstance(e, tuple) and e[0] == "drain"]
             assert drains, events

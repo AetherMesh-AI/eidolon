@@ -7,6 +7,17 @@ import pytest
 import eidolon_cli.gateway as gateway
 
 
+@pytest.fixture
+def owned_work_gateway(monkeypatch, tmp_path):
+    import eidolon_cli.process_identity as identity
+    import eidolon_cli.profiles as profiles
+
+    home = str(tmp_path / "work")
+    monkeypatch.setattr(identity, "owned_gateway_identity", lambda pid: (1234, 100.0) if pid == 1234 else None)
+    monkeypatch.setattr(identity, "owned_gateway_home", lambda pid, **kw: home if pid == 1234 else None)
+    monkeypatch.setattr(profiles, "list_profiles", lambda: [SimpleNamespace(name="work", path=home)])
+
+
 def _clear_native_supervisor_markers(monkeypatch):
     monkeypatch.delenv("INVOCATION_ID", raising=False)
     monkeypatch.delenv("HERMES_S6_SUPERVISED_CHILD", raising=False)
@@ -41,7 +52,7 @@ def test_gateway_run_external_supervisor_flag_marks_process(monkeypatch):
     assert observed == ["1"]
 
 
-def test_update_hands_external_supervisor_gateway_back_without_watcher(monkeypatch):
+def test_update_hands_external_supervisor_gateway_back_without_watcher(monkeypatch, owned_work_gateway):
     monkeypatch.setattr(
         gateway,
         "_capture_gateway_argv",
@@ -57,7 +68,7 @@ def test_update_hands_external_supervisor_gateway_back_without_watcher(monkeypat
     monkeypatch.setattr(
         gateway,
         "launch_detached_profile_gateway_restart",
-        lambda *_args: pytest.fail("detached watcher must not be launched"),
+        lambda *_args, **_kw: pytest.fail("detached watcher must not be launched"),
     )
 
     assert gateway._prepare_profile_gateway_update_restart("work", 1234) == (
@@ -65,7 +76,7 @@ def test_update_hands_external_supervisor_gateway_back_without_watcher(monkeypat
     )
 
 
-def test_update_hands_generated_launchd_inner_argv_back_without_watcher(monkeypatch):
+def test_update_hands_generated_launchd_inner_argv_back_without_watcher(monkeypatch, owned_work_gateway):
     """New launchd ProgramArguments put --external-supervisor on the grandchild."""
     monkeypatch.setattr(
         gateway,
@@ -85,7 +96,7 @@ def test_update_hands_generated_launchd_inner_argv_back_without_watcher(monkeypa
     monkeypatch.setattr(
         gateway,
         "launch_detached_profile_gateway_restart",
-        lambda *_args: pytest.fail("detached watcher must not be launched"),
+        lambda *_args, **_kw: pytest.fail("detached watcher must not be launched"),
     )
 
     assert gateway._prepare_profile_gateway_update_restart("work", 1234) == (
@@ -93,7 +104,7 @@ def test_update_hands_generated_launchd_inner_argv_back_without_watcher(monkeypa
     )
 
 
-def test_update_follows_wrapper_upgrade_of_stale_plist_argv(monkeypatch):
+def test_update_follows_wrapper_upgrade_of_stale_plist_argv(monkeypatch, owned_work_gateway):
     """stderr_timestamp upgrades stale inner argv so update sees the flag."""
     from eidolon_cli.stderr_timestamp import _prepare_child_command
 
@@ -114,7 +125,7 @@ def test_update_follows_wrapper_upgrade_of_stale_plist_argv(monkeypatch):
     monkeypatch.setattr(
         gateway,
         "launch_detached_profile_gateway_restart",
-        lambda *_args: pytest.fail("detached watcher must not be launched"),
+        lambda *_args, **_kw: pytest.fail("detached watcher must not be launched"),
     )
 
     assert gateway._prepare_profile_gateway_update_restart("work", 1234) == (
@@ -122,7 +133,7 @@ def test_update_follows_wrapper_upgrade_of_stale_plist_argv(monkeypatch):
     )
 
 
-def test_update_still_uses_detached_watcher_without_supervisor_flag(monkeypatch):
+def test_update_still_uses_detached_watcher_without_supervisor_flag(monkeypatch, owned_work_gateway):
     monkeypatch.setattr(
         gateway,
         "_capture_gateway_argv",
@@ -139,7 +150,7 @@ def test_update_still_uses_detached_watcher_without_supervisor_flag(monkeypatch)
     monkeypatch.setattr(
         gateway,
         "launch_detached_profile_gateway_restart",
-        lambda profile, pid: launched.append((profile, pid)) or True,
+        lambda profile, pid, *, expected_identity: launched.append((profile, pid)) or expected_identity == (1234, 100.0),
     )
 
     assert gateway._prepare_profile_gateway_update_restart("work", 1234) == "detached"

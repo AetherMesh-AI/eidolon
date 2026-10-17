@@ -82,7 +82,7 @@ class TestSelfRestartFireAndForget:
                 "that wait is the #100179 deadlock"
             ),
         ):
-            ok = gw._request_gateway_self_restart(os.getpid())
+            ok = gw._request_gateway_self_restart(os.getpid(), for_update=False)
 
         assert ok is True
         assert sent == [(os.getpid(), _signal.SIGUSR1)]
@@ -99,7 +99,7 @@ class TestSelfRestartFireAndForget:
             gw, "_wait_for_pid_exit",
             side_effect=lambda pid, t: waited.append((pid, t)) or True,
         ):
-            ok = gw._graceful_restart_via_sigusr1(4242, drain_timeout=7.0)
+            ok = gw._graceful_restart_via_sigusr1(4242, drain_timeout=7.0, for_update=False)
 
         assert ok is True
         assert waited == [(4242, 7.0)], "drain path must still wait for exit"

@@ -250,27 +250,53 @@ def _is_pid_ancestor_of_current_process(target_pid: int) -> bool:
     return False
 
 
-def _request_gateway_self_restart(pid: int) -> bool:
+def _request_gateway_self_restart(pid: int, *, identity_check=None, expected_start_time=None, for_update: bool = True) -> bool:
     """Ask a running gateway ancestor to restart itself asynchronously."""
+    if for_update and identity_check is None:
+        from eidolon_cli.process_identity import owned_gateway_identity
+        identity = owned_gateway_identity(pid)
+        if identity is None:
+            return False
+        expected_start_time = identity[1]
+        identity_check = lambda: owned_gateway_identity(pid) == identity
+
     if not hasattr(signal, "SIGUSR1") or not _is_pid_ancestor_of_current_process(pid):
         return False
     try:
+        if identity_check is not None:
+            from gateway.status import get_process_start_time
+            if (expected_start_time is None or not identity_check()
+                    or get_process_start_time(pid) != expected_start_time):
+                return False
         os.kill(pid, signal.SIGUSR1)  # windows-footgun: ok — POSIX signal, guarded by hasattr(signal, 'SIGUSR1') above
     except (ProcessLookupError, PermissionError, OSError):
         return False
     return True
 
 
-def _graceful_restart_via_sigusr1(pid: int, drain_timeout: float) -> bool:
+def _graceful_restart_via_sigusr1(pid: int, drain_timeout: float, *, identity_check=None, expected_start_time=None, for_update: bool = True) -> bool:
     """SIGUSR1 (drain-aware restart) a gateway PID and wait for exit; False if unsent or it outlived the timeout.
 
     gateway/run.py maps SIGUSR1 to ``request_restart(via_service=True)``: refuse new turns, drain,
     ``stop()``, exit; the supervisor relaunches. ``drain_timeout`` must cover after-turn wait + drain
     — pass ``resolve_restart_exit_wait_budget(...)``.
     """
+    if for_update and identity_check is None:
+        from eidolon_cli.process_identity import owned_gateway_identity
+        identity = owned_gateway_identity(pid)
+        if identity is None:
+            return False
+        expected_start_time = identity[1]
+        identity_check = lambda: owned_gateway_identity(pid) == identity
+
     if not hasattr(signal, "SIGUSR1") or pid <= 0:
         return False
     try:
+        if identity_check is not None:
+            from gateway.status import get_process_start_time
+            if (expected_start_time is None or not identity_check()
+                    or get_process_start_time(pid) != expected_start_time):
+                return False
         os.kill(pid, signal.SIGUSR1)  # windows-footgun: ok — POSIX signal, guarded by hasattr(signal, 'SIGUSR1') above
     except ProcessLookupError:
         return True
@@ -497,22 +523,36 @@ def probe_gateway_loop_liveness(
     return GATEWAY_LOOP_UNKNOWN  # Armed but unreachable socket: ambiguity — never kill on it.
 
 
-def _escalate_wedged_gateway(pid: int, *, term_grace: float = 5.0, kill_wait: float = 5.0) -> bool:
+def _escalate_wedged_gateway(pid: int, *, term_grace: float = 5.0, kill_wait: float = 5.0, identity_check=None, expected_start_time=None, for_update: bool = True) -> bool:
     """Bounded stop (SIGTERM, ``term_grace``, SIGKILL, ``kill_wait``) for a provably dead loop; True once gone.
     Callers MUST have classified ``GATEWAY_LOOP_WEDGED`` first: escalating a merely busy gateway
     bypasses the cron drain floor and SIGKILLs live work.
 
     See #86684.
     """
+    if for_update and identity_check is None:
+        from eidolon_cli.process_identity import owned_gateway_identity
+        identity = owned_gateway_identity(pid)
+        if identity is None:
+            return False
+        expected_start_time = identity[1]
+        identity_check = lambda: owned_gateway_identity(pid) == identity
+
     from gateway.status import get_process_start_time
-    expected_start_time = get_process_start_time(pid)
+    if identity_check is None:
+        expected_start_time = get_process_start_time(pid)
     try:
-        terminate_pid(pid, force=False)
+        if identity_check is not None and (expected_start_time is None or not identity_check()):
+            return False
+        term_guard = {"expected_start_time": expected_start_time} if identity_check is not None else {}
+        terminate_pid(pid, force=False, **term_guard)
     except (ProcessLookupError, PermissionError, OSError):
         return _wait_for_pid_exit(pid, 1.0)
     if _wait_for_pid_exit(pid, max(float(term_grace), 0.0)):
         return True
     try:
+        if identity_check is not None and not identity_check():
+            return False
         terminate_pid(pid, force=True, expected_start_time=expected_start_time)
         print(f"⚠ Gateway PID {pid} unresponsive to SIGTERM; sent SIGKILL")
     except (ProcessLookupError, PermissionError, OSError):
@@ -721,7 +761,7 @@ def _filter_venv_launcher_stubs(pids: list[int]) -> list[int]:
     return [p for p in pids if p not in drop]
 
 
-def find_gateway_pids(exclude_pids: set | None = None, all_profiles: bool = False) -> list:
+def _find_gateway_candidate_pids(exclude_pids: set | None = None, all_profiles: bool = False) -> list:
     """Find running gateway PIDs for the current profile, or every profile with ``all_profiles`` (``eidolon update``)."""
     _exclude = set(exclude_pids or set())
     pids: list[int] = []
@@ -740,6 +780,27 @@ def find_gateway_pids(exclude_pids: set | None = None, all_profiles: bool = Fals
     for pid in _scan_gateway_pids(_exclude, all_profiles=all_profiles, include_restart_managers=include_restart_managers):
         _append_unique_pid(pids, pid, _exclude)
     return pids
+
+
+def find_gateway_process_identities(exclude_pids: set | None = None) -> dict[int, tuple[float, int]]:
+    """All profiles means this installation's homes, with discovery identity retained."""
+    from eidolon_cli.process_identity import owned_gateway_identity
+    owned = {}
+    for pid in _find_gateway_candidate_pids(exclude_pids=exclude_pids, all_profiles=True):
+        identity = owned_gateway_identity(pid)
+        if identity is not None:
+            owned[pid] = identity
+        else:
+            logging.getLogger(__name__).warning(
+                "Leaving gateway PID %s untouched: this installation's ownership is unverified", pid)
+    return owned
+
+
+def find_gateway_pids(exclude_pids: set | None = None, all_profiles: bool = False) -> list:
+    """Compatibility PID view. Destructive fleet callers retain the identity map instead."""
+    if all_profiles:
+        return list(find_gateway_process_identities(exclude_pids=exclude_pids))
+    return _find_gateway_candidate_pids(exclude_pids=exclude_pids, all_profiles=False)
 
 
 def find_profile_gateway_processes(exclude_pids: set | None = None, *, strict: bool = False) -> list[ProfileGatewayProcess]:
@@ -909,7 +970,7 @@ def _capture_gateway_argv(pid: int) -> list[str] | None:
     return argv
 
 
-def _prepare_profile_gateway_update_restart(profile: str, pid: int) -> str | None:
+def _prepare_profile_gateway_update_restart(profile: str, pid: int, *, expected_identity=None) -> str | None:
     """Choose who relaunches a profile gateway after ``eidolon update``: ``--external-supervisor`` gateways
     exit back to their manager (a detached watcher would race its replacement); otherwise arm the
     profile-derived detached watcher, falling back to replaying the captured command line.
@@ -921,32 +982,101 @@ def _prepare_profile_gateway_update_restart(profile: str, pid: int) -> str | Non
     the process and (before #88654) silently left it running pre-update modules against post-update code on
     disk. ``argv`` is already captured above, so the fallback costs nothing extra.
     """
+    from eidolon_cli.process_identity import owned_gateway_identity
+    # Older already-loaded fleet frames do not supply a receipt. Capture own
+    # authority once at entry; repaired callers retain their discovery receipt.
+    identity = expected_identity if expected_identity is not None else owned_gateway_identity(pid)
+    def still_owned():
+        return identity is not None and owned_gateway_identity(pid) == identity
+    if not still_owned():
+        return None
+    try:
+        from eidolon_cli.process_identity import owned_gateway_home
+        from eidolon_constants import get_default_hermes_root
+        from eidolon_cli.profiles import list_profiles
+        homes = {item.name: str(Path(item.path).resolve()) for item in list_profiles()}
+        homes.setdefault("default", str(Path(get_default_hermes_root()).resolve()))
+        live_home = owned_gateway_home(pid, expected_identity=identity)
+        if live_home is None or homes.get(profile) != live_home:
+            return None
+    except Exception:
+        return None
     argv = _capture_gateway_argv(pid)
+    if not still_owned():
+        return None
     if argv and "--external-supervisor" in argv:
         return "external-supervisor"
-    if launch_detached_profile_gateway_restart(profile, pid):
+    if still_owned() and launch_detached_profile_gateway_restart(profile, pid, expected_identity=identity):
         return "detached"
-    if argv and launch_detached_gateway_restart_by_cmdline(pid, list(argv)):
+    if argv and still_owned() and launch_detached_gateway_restart_by_cmdline(pid, list(argv), expected_identity=identity):
         return "detached-cmdline"
     return None
 
 
-def launch_detached_gateway_restart_by_cmdline(old_pid: int, run_argv: list[str]) -> bool:
+def launch_detached_gateway_restart_by_cmdline(old_pid: int, run_argv: list[str], *, expected_identity=None) -> bool:
     """Relaunch a gateway with no profile→PID-file mapping by replaying its captured argv after exit."""
-    return old_pid > 0 and bool(run_argv) and _spawn_gateway_restart_watcher(old_pid, list(run_argv))
+    return old_pid > 0 and bool(run_argv) and _spawn_gateway_restart_watcher(old_pid, list(run_argv), expected_identity=expected_identity)
 
 
-def launch_detached_profile_gateway_restart(profile: str, old_pid: int) -> bool:
+def launch_detached_profile_gateway_restart(profile: str, old_pid: int, *, expected_identity=None) -> bool:
     """Relaunch a manually-run profile gateway after its current PID exits."""
-    return old_pid > 0 and _spawn_gateway_restart_watcher(old_pid, _gateway_run_args_for_profile(profile))
+    return old_pid > 0 and _spawn_gateway_restart_watcher(old_pid, _gateway_run_args_for_profile(profile),
+        expected_identity=expected_identity, profile=profile)
 
 
-def _spawn_gateway_restart_watcher(old_pid: int, run_argv: list[str]) -> bool:
+def _wait_for_gateway_restart_incarnation_exit(pid: int, identity, *, timeout: float = 120) -> bool:
+    """Only proved absence authorizes respawn; reuse, denial and timeout do not."""
+    try:
+        import psutil
+        from gateway.status import get_process_start_time
+        deadline = time.monotonic() + max(timeout, 0)
+        while True:
+            try:
+                proc = psutil.Process(pid)
+                if proc.create_time() != identity[0] or get_process_start_time(pid) != identity[1]:
+                    return False
+            except psutil.NoSuchProcess:
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.2)
+    except Exception:
+        return False
+
+
+def _spawn_gateway_restart_watcher(old_pid: int, run_argv: list[str], *, expected_identity=None, profile=None) -> bool:
     """Spawn the detached watcher that respawns ``run_argv`` once ``old_pid`` exits. Watcher and respawn
     both need platform-appropriate detach: POSIX setsid; on Windows ``start_new_session`` does NOT detach
     (the watcher would die with the CLI console), so ``windows_detach_popen_kwargs()`` supplies flags."""
     if old_pid <= 0 or not run_argv:
         return False
+    from eidolon_cli.process_identity import owned_gateway_identity
+    identity = expected_identity if expected_identity is not None else owned_gateway_identity(old_pid)
+    if identity is None or owned_gateway_identity(old_pid) != identity:
+        return False
+    try:
+        import psutil
+        from eidolon_cli.process_identity import owned_gateway_home
+        from eidolon_constants import get_default_hermes_root
+        from eidolon_cli.profiles import list_profiles
+        proc = psutil.Process(old_pid)
+        home = owned_gateway_home(old_pid, expected_identity=identity)
+        profiles = {item.name: str(Path(item.path).resolve()) for item in list_profiles()}
+        profiles.setdefault("default", str(Path(get_default_hermes_root()).resolve()))
+        if not home or not Path(home).is_absolute() or str(Path(home).resolve()) not in profiles.values():
+            return False
+        home = str(Path(home).resolve())
+        if profile is not None:
+            if profiles.get(profile) != home:
+                return False
+        elif list(run_argv) != proc.cmdline():
+            return False
+        if owned_gateway_identity(old_pid) != identity:
+            return False
+    except Exception:
+        return False
+    # Never let a delayed watcher replace another gateway that won the startup race.
+    run_argv = [arg for arg in run_argv if arg != "--replace"]
     from eidolon_cli._subprocess_compat import windows_detach_flags_without_breakaway, windows_detach_popen_kwargs
 
     # Windows: ``run_argv`` leads with the venv's console ``python.exe`` — the interpreter we want:
@@ -956,7 +1086,7 @@ def _spawn_gateway_restart_watcher(old_pid: int, run_argv: list[str]) -> bool:
     # VIRTUAL_ENV, PYTHONPATH) so the respawn doesn't depend on the watcher's cwd. No-op on POSIX.
     respawn_cwd = ""
     # See gateway_windows.windowless_gateway_restart_spec. See #54220, #56747.
-    respawn_env_overlay: dict[str, str] = {}
+    respawn_env_overlay: dict[str, str] = {"HERMES_HOME": home}
     if sys.platform == "win32":
         try:
             from eidolon_cli.gateway_windows import windowless_gateway_restart_spec
@@ -965,6 +1095,7 @@ def _spawn_gateway_restart_watcher(old_pid: int, run_argv: list[str]) -> bool:
             # Fall back to the original argv: a visible window beats a failed respawn.
             respawn_cwd = ""
             respawn_env_overlay = {}
+    respawn_env_overlay["HERMES_HOME"] = home
 
     # cwd/env overlay are embedded as JSON literals in the watcher source (no extra argv plumbing).
     watcher = textwrap.dedent(
@@ -981,13 +1112,10 @@ def _spawn_gateway_restart_watcher(old_pid: int, run_argv: list[str]) -> bool:
         cmd = sys.argv[2:]
         _respawn_cwd = {respawn_cwd_literal}
         _respawn_env_overlay = {respawn_env_literal}
-        deadline = time.monotonic() + 120
-        while time.monotonic() < deadline:
-            # ``os.kill(pid, 0)`` is not a no-op on Windows — use the cross-platform existence check.
-            from gateway.status import _pid_exists
-            if not _pid_exists(pid):
-                break
-            time.sleep(0.2)
+        os.environ["HERMES_HOME"] = _respawn_env_overlay["HERMES_HOME"]
+        from eidolon_cli.gateway import _wait_for_gateway_restart_incarnation_exit
+        if not _wait_for_gateway_restart_incarnation_exit(pid, {identity_literal}, timeout=120):
+            sys.exit(1)
 
         # Route the respawned gateway's stray stdout/stderr to the same sidecar log _spawn_detached
         # uses: with DEVNULL a gateway killed moments after respawn (parent Job Object teardown when
@@ -1041,7 +1169,7 @@ def _spawn_gateway_restart_watcher(old_pid: int, run_argv: list[str]) -> bool:
                 except OSError:
                     pass
         """
-    ).strip().format(respawn_cwd_literal=json.dumps(respawn_cwd), respawn_env_literal=json.dumps(respawn_env_overlay))
+    ).strip().format(respawn_cwd_literal=json.dumps(respawn_cwd), respawn_env_literal=json.dumps(respawn_env_overlay), identity_literal=repr(identity))
 
     watcher_argv = [sys.executable, "-c", watcher, str(old_pid), *run_argv]
     devnull = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
@@ -1529,7 +1657,10 @@ def kill_gateway_processes(force: bool = False, exclude_pids: set | None = None,
     """Kill running gateway processes (force-kill if ``force``); ``exclude_pids`` skips e.g. just-
     restarted service PIDs. Returns count killed."""
     killed = 0
-    for pid in find_gateway_pids(exclude_pids=exclude_pids, all_profiles=all_profiles):
+    from eidolon_cli.process_identity import owned_gateway_identity
+    identities = find_gateway_process_identities(exclude_pids=exclude_pids) if all_profiles else {}
+    candidates = list(identities) if all_profiles else find_gateway_pids(exclude_pids=exclude_pids)
+    for pid in candidates:
         try:
             expected_start_time = None
             if force:
@@ -1542,6 +1673,11 @@ def kill_gateway_processes(force: bool = False, exclude_pids: set | None = None,
                     continue
                 from gateway.status import get_process_start_time
                 expected_start_time = get_process_start_time(pid)
+            if all_profiles and owned_gateway_identity(pid) != identities[pid]:
+                logging.getLogger(__name__).warning("Leaving gateway PID %s untouched: ownership changed", pid)
+                continue
+            if all_profiles:
+                expected_start_time = identities[pid][1]
             terminate_pid(pid, force=force, expected_start_time=expected_start_time)
             killed += 1
         except ProcessLookupError:
@@ -2545,6 +2681,119 @@ def launchd_gateway_labels_for_install() -> list[str]:
     return root_label + sorted(profile_labels)
 
 
+def _update_service_definition_details(name: str, *, manager: str, system: bool = False):
+    """Read explicit own launch fields; never generate a definition or adopt its home."""
+    import plistlib
+    from eidolon_constants import (get_default_hermes_root, reset_eidolon_home_override,
+                                  set_eidolon_home_override)
+    from eidolon_cli.profiles import list_profiles
+    try:
+        root = Path(get_default_hermes_root()).resolve()
+        for profile in list_profiles():
+            home = Path(profile.path).resolve()
+            if home != root and home.parent != root / "profiles":
+                continue
+            token = set_eidolon_home_override(str(home))
+            try:
+                if manager == "launchd" and get_launchd_label() == name:
+                    import xml.etree.ElementTree as ET
+                    definition_path = get_launchd_plist_path()
+                    raw = definition_path.read_bytes()
+                    for dictionary in ET.fromstring(raw).iter("dict"):
+                        keys = [child.text for child in dictionary if child.tag == "key"]
+                        if len(keys) != len(set(keys)):
+                            return None
+                    data = plistlib.loads(raw)
+                    args = data.get("ProgramArguments")
+                    expected = _timestamped_stderr_gateway_command(home / "logs" / "gateway.error.log",
+                                                                  external_supervisor=True)
+                    if data.get("Label") != name or args != expected or data.get("Program"):
+                        return None
+                    env = data.get("EnvironmentVariables", {})
+                    cwd = data.get("WorkingDirectory", "")
+                elif manager == "systemd" and get_service_name() == name:
+                    definition_path = get_systemd_unit_path(system=system)
+                    lines = definition_path.read_text(encoding="utf-8").splitlines()
+                    fields, env = {}, {}
+                    for line in lines:
+                        key, sep, value = line.strip().partition("=")
+                        if sep and key in {"EnvironmentFile", "PassEnvironment", "UnsetEnvironment"}:
+                            return None
+                        if not sep or key not in {"ExecStart", "WorkingDirectory", "Environment"}:
+                            continue
+                        if key == "Environment":
+                            for item in shlex.split(value):
+                                env_key, eq, env_value = item.partition("=")
+                                if not eq or env_key in env:
+                                    return None
+                                env[env_key] = env_value
+                        elif key in fields:
+                            return None
+                        else:
+                            fields[key] = value
+                    args = shlex.split(fields.get("ExecStart", ""))
+                    expected = [get_python_path(), "-m", "eidolon_cli.main", *_profile_arg().split(), "gateway", "run"]
+                    if args != expected:
+                        return None
+                    cwd = fields.get("WorkingDirectory", "")
+                else:
+                    continue
+                # A shared system interpreter plus module-name text cannot prove checkout ownership.
+                executable = Path(args[0]).absolute()
+                allowed_venvs = {(PROJECT_ROOT / part).absolute() for part in ("venv", ".venv")}
+                if executable.parent.parent not in allowed_venvs:
+                    return None
+                if (not all(isinstance(value, str) and value and Path(value).is_absolute()
+                            for value in (env.get("VIRTUAL_ENV"), env.get("HERMES_HOME"), cwd))
+                        or any(key in env for key in ("PYTHONPATH", "PYTHONHOME", "LD_PRELOAD", "LD_LIBRARY_PATH"))
+                        or any(key.startswith("DYLD_") for key in env)):
+                    return None
+                venv = Path(env.get("VIRTUAL_ENV", "")).absolute()
+                if venv != executable.parent.parent or Path(env.get("HERMES_HOME", "")).resolve() != home:
+                    return None
+                if Path(cwd).resolve() not in {home, PROJECT_ROOT.resolve()}:
+                    return None
+                return {"args": args, "home": str(home), "venv": str(venv), "cwd": str(Path(cwd).resolve()),
+                        "definition_path": str(definition_path.resolve())}
+            finally:
+                reset_eidolon_home_override(token)
+    except Exception:
+        return None
+    return None
+
+
+def update_service_definition_is_current(name: str, *, manager: str, system: bool = False) -> bool:
+    return _update_service_definition_details(name, manager=manager, system=system) is not None
+
+
+def update_service_process_is_owned(pid: int, name: str, *, manager: str, system: bool = False) -> bool:
+    """Accept a live registered runtime or the exact own launchd wrapper, never a name alone."""
+    try:
+        details = _update_service_definition_details(name, manager=manager, system=system)
+        if details is None:
+            return False
+        import psutil
+        proc = psutil.Process(pid)
+        created = proc.create_time()
+        env = proc.environ()
+        if (any(env.get(key) for key in ("PYTHONPATH", "PYTHONHOME", "LD_PRELOAD", "LD_LIBRARY_PATH"))
+                or any(key.startswith("DYLD_") and value for key, value in env.items())
+                or proc.cmdline() != details["args"] or Path(proc.exe()).resolve() != Path(details["args"][0]).resolve()
+                or Path(proc.cwd()).resolve() != Path(details["cwd"])
+                or Path(env.get("HERMES_HOME", "")).resolve() != Path(details["home"])
+                or Path(env.get("VIRTUAL_ENV", "")).absolute() != Path(details["venv"])):
+            return False
+        return psutil.Process(pid).create_time() == created
+    except Exception:
+        return False
+
+
+def update_launchd_restart_is_owned(label: str) -> bool:
+    """A loaded service must prove both effective configuration and process identity."""
+    from eidolon_cli.gateway_update_ownership import _update_launchd_service_identity
+    return _update_launchd_service_identity(label) is not None
+
+
 def _detect_venv_dir() -> Path | None:
     """Active virtualenv dir: ``sys.prefix``, then ``VIRTUAL_ENV`` (uv sets it without changing
     sys.prefix), then .venv/venv under PROJECT_ROOT; None if none found."""
@@ -3208,7 +3457,7 @@ def systemd_restart(system: bool = False):
             f"⚠ Gateway PID {pid} event loop is unresponsive — "
             "skipping graceful drain and forcing a bounded stop..."
         )
-        _escalate_wedged_gateway(pid)
+        _escalate_wedged_gateway(pid, for_update=False)
         svc = get_service_name()
         _run_systemctl(["reset-failed", svc], system=system, check=False, timeout=30)
         _run_systemctl(["restart", svc], system=system, check=False, timeout=90)
@@ -3245,7 +3494,7 @@ def _systemd_graceful_restart_action(system: bool, pid: int) -> str | None:
         f"⏳ {scope_label} service restarting gracefully (PID {pid}) — "
         f"waiting up to {wait_budget:.0f}s for in-flight turns + drain..."
     )
-    if not _graceful_restart_via_sigusr1(pid, wait_budget):
+    if not _graceful_restart_via_sigusr1(pid, wait_budget, for_update=False):
         print(f"⚠ Graceful restart did not complete within {int(wait_budget)}s; forcing a service restart...")
         return "restart"
 
@@ -4010,8 +4259,14 @@ def _wait_for_gateway_exit(timeout: float = 10.0, force_after: float | None = 5.
     return True
 
 
-def _launchd_kickstart(label: str, domain: str) -> None:
+def _launchd_kickstart(label: str, domain: str, *, for_update: bool = True) -> None:
     """``launchctl kickstart -k domain/label``; raises so callers own per-label failure accounting."""
+    if for_update:
+        from eidolon_cli.gateway_update_ownership import _update_launchd_service_identity
+        identity = _update_launchd_service_identity(label)
+        if (identity is None or not any(item[0] == domain for item in identity)
+                or _update_launchd_service_identity(label) != identity):
+            raise RuntimeError(f"Leaving {label} untouched: installation ownership is unverified")
     subprocess.run(["launchctl", "kickstart", "-k", f"{domain}/{label}"], check=True, timeout=90, **_CAPTURE_TEXT)
 
 
@@ -4030,21 +4285,37 @@ def _wait_for_launchd_service_pid(
         time.sleep(0.5)
 
 
-def launchd_restart():
+def launchd_restart(*, for_update: bool = True):
     label = get_launchd_label()
     domain = _launchd_domain()
     target = f"{domain}/{label}"
     from gateway.status import get_running_pid
+    from eidolon_cli.gateway_update_ownership import _update_launchd_service_identity
+    service_identity = _update_launchd_service_identity(label) if for_update else None
+    if for_update and service_identity is None:
+        raise RuntimeError(f"Leaving {label} untouched: installation ownership is unverified")
     try:
         pid = get_running_pid()
-        if pid is not None and _request_gateway_self_restart(pid):
+        guard = {"for_update": for_update}
+        if for_update and pid is not None:
+            from eidolon_cli.process_identity import owned_gateway_identity
+            identity = owned_gateway_identity(pid)
+            if identity is None:
+                print(f"⚠ Not signalling gateway PID {pid}: installation ownership is unverified")
+                raise RuntimeError(f"Leaving {label} untouched: live process ownership is unverified")
+            else:
+                target_pid = pid
+                guard = {"expected_start_time": identity[1],
+                         "identity_check": lambda: (owned_gateway_identity(target_pid) == identity
+                            and _update_launchd_service_identity(label) == service_identity)}
+        if pid is not None and _request_gateway_self_restart(pid, **guard):
             _launchd_ok("✓ Service restart requested")
             return
         if pid is not None and probe_gateway_loop_liveness(pid) == GATEWAY_LOOP_WEDGED:
             # Event loop provably dead: it can't process a graceful shutdown, so a full drain wait
             # only stalls the restart (and `eidolon update`). Bounded SIGTERM → SIGKILL, ~10s.
             print(f"⚠ Gateway PID {pid} event loop is unresponsive — " "skipping drain and forcing a bounded stop...")
-            _escalate_wedged_gateway(pid)
+            _escalate_wedged_gateway(pid, **guard)
             pid = None
         if pid is not None:
             # Graceful in-band restart via SIGUSR1 (mirrors systemd); the budget covers both the idle wait
@@ -4052,7 +4323,7 @@ def launchd_restart():
             # surfaces with no other feedback (desktop updater) read silence as "update stuck".
             wait_budget = _get_restart_exit_wait_budget()
             print(f"→ Stopping gateway (PID {pid}) — draining in-flight runs (up to {wait_budget:.0f}s)...")
-            if _graceful_restart_via_sigusr1(pid, wait_budget):
+            if _graceful_restart_via_sigusr1(pid, wait_budget, **guard):
                 # KeepAlive revives a planned exit, so do NOT kickstart (-k would kill the replacement) —
                 # but a clean exit doesn't prove supervision, so verify a replacement PID appears first.
                 if _wait_for_launchd_service_pid(label, pid, timeout=15.0, domain=domain):
@@ -4061,16 +4332,22 @@ def launchd_restart():
                 print("⚠ launchd did not revive the gateway after its graceful exit — forcing restart")
             else:
                 print(f"⚠ Gateway drain timed out after {wait_budget:.0f}s — forcing launchd restart")
+        if for_update and _update_launchd_service_identity(label) != service_identity:
+            raise RuntimeError(f"Leaving {label} untouched: installation ownership changed")
         subprocess.run(["launchctl", "kickstart", "-k", target], check=True, timeout=90)
         _launchd_ok("✓ Service restarted")
     except subprocess.CalledProcessError as e:
         if not _launchd_error_indicates_unloaded(e):
             _launchd_degrade_or_raise(e, "launchctl kickstart")
             return
+        if for_update:
+            raise RuntimeError(f"Leaving {label} untouched: loaded service authority was lost") from e
         # Job not loaded — bootstrap and start fresh
         print("↻ launchd job was unloaded; reloading")
         try:
             # After a drain the job is usually still registered (bootstrap would hit EIO): boot it out first.
+            if for_update and _update_launchd_service_identity(label) != service_identity:
+                raise RuntimeError(f"Leaving {label} untouched: installation ownership changed")
             subprocess.run(["launchctl", "bootout", target], check=False, timeout=90)
             plist_path = str(get_launchd_plist_path())
             subprocess.run(["launchctl", "bootstrap", _launchd_domain(), plist_path], check=True, timeout=30)
@@ -5414,7 +5691,8 @@ def _service_call(backend: str, verb: str, system: bool | None = False) -> None:
     if backend == "windows":
         return getattr(_gw_windows(), verb)()
     if backend == "launchd":
-        return globals()[f"launchd_{verb}"]()
+        kwargs = {"for_update": False} if verb == "restart" else {}
+        return globals()[f"launchd_{verb}"](**kwargs)
     fn = globals()[f"systemd_{verb}"]
     return fn() if system is None else fn(system=system)
 

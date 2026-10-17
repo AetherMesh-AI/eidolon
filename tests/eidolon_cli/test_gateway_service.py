@@ -827,7 +827,7 @@ class TestGatewaySystemServiceRouting:
         monkeypatch.setattr(
             gateway_cli,
             "_graceful_restart_via_sigusr1",
-            lambda pid, timeout: calls.append(("graceful", pid, timeout)) or True,
+            lambda pid, timeout, **guard: calls.append(("graceful", pid, timeout)) or True,
         )
 
         # Once SIGUSR1 makes the gateway exit with the planned restart code,
@@ -866,7 +866,7 @@ class TestGatewaySystemServiceRouting:
         monkeypatch.setattr(gateway_cli, "refresh_systemd_unit_if_needed", lambda system=False: None)
         monkeypatch.setattr(gateway_cli, "_get_restart_exit_wait_budget", lambda: 27.0)
         monkeypatch.setattr("gateway.status.get_running_pid", lambda: 654)
-        monkeypatch.setattr(gateway_cli, "_graceful_restart_via_sigusr1", lambda pid, timeout: True)
+        monkeypatch.setattr(gateway_cli, "_graceful_restart_via_sigusr1", lambda pid, timeout, **guard: True)
         waits = iter((False, True))
         monkeypatch.setattr(
             gateway_cli,
@@ -900,7 +900,7 @@ class TestGatewaySystemServiceRouting:
         monkeypatch.setattr(gateway_cli, "refresh_systemd_unit_if_needed", lambda system=False: None)
         monkeypatch.setattr(gateway_cli, "_get_restart_exit_wait_budget", lambda: 27.0)
         monkeypatch.setattr("gateway.status.get_running_pid", lambda: 654)
-        monkeypatch.setattr(gateway_cli, "_graceful_restart_via_sigusr1", lambda pid, timeout: True)
+        monkeypatch.setattr(gateway_cli, "_graceful_restart_via_sigusr1", lambda pid, timeout, **guard: True)
         monkeypatch.setattr(
             gateway_cli,
             "_wait_for_systemd_service_restart",
@@ -927,7 +927,7 @@ class TestGatewaySystemServiceRouting:
         monkeypatch.setattr(gateway_cli, "refresh_systemd_unit_if_needed", lambda system=False: None)
         monkeypatch.setattr(gateway_cli, "_get_restart_exit_wait_budget", lambda: 27.0)
         monkeypatch.setattr("gateway.status.get_running_pid", lambda: 654)
-        monkeypatch.setattr(gateway_cli, "_graceful_restart_via_sigusr1", lambda pid, timeout: True)
+        monkeypatch.setattr(gateway_cli, "_graceful_restart_via_sigusr1", lambda pid, timeout, **guard: True)
 
         def failed_replacement_wait(
             system=False, previous_pid=None, replacement_observed=None
@@ -957,7 +957,7 @@ class TestGatewaySystemServiceRouting:
         monkeypatch.setattr(gateway_cli, "refresh_systemd_unit_if_needed", lambda system=False: None)
         monkeypatch.setattr(gateway_cli, "_get_restart_exit_wait_budget", lambda: 27.0)
         monkeypatch.setattr("gateway.status.get_running_pid", lambda: 654)
-        monkeypatch.setattr(gateway_cli, "_graceful_restart_via_sigusr1", lambda pid, timeout: True)
+        monkeypatch.setattr(gateway_cli, "_graceful_restart_via_sigusr1", lambda pid, timeout, **guard: True)
         monkeypatch.setattr(
             gateway_cli,
             "_wait_for_systemd_service_restart",
@@ -1031,7 +1031,7 @@ class TestGatewaySystemServiceRouting:
         monkeypatch.setattr(gateway_cli, "get_launchd_label", lambda: "ai.eidolon.gateway")
         monkeypatch.setattr(gateway_cli, "_launchd_domain", lambda: "gui/501")
         monkeypatch.setattr("gateway.status.get_running_pid", lambda *a, **k: 654)
-        monkeypatch.setattr(gateway_cli, "_request_gateway_self_restart", lambda pid: False)
+        monkeypatch.setattr(gateway_cli, "_request_gateway_self_restart", lambda pid, **guard: False)
         monkeypatch.setattr(
             gateway_cli,
             "probe_gateway_loop_liveness",
@@ -1044,7 +1044,7 @@ class TestGatewaySystemServiceRouting:
         monkeypatch.setattr(
             gateway_cli,
             "_graceful_restart_via_sigusr1",
-            lambda pid, timeout: calls.append(("graceful", pid, timeout)) or True,
+            lambda pid, timeout, **guard: calls.append(("graceful", pid, timeout)) or True,
         )
         monkeypatch.setattr(
             gateway_cli,
@@ -1069,7 +1069,7 @@ class TestGatewaySystemServiceRouting:
             or True,
         )
 
-        gateway_cli.launchd_restart()
+        gateway_cli.launchd_restart(for_update=False)
 
         assert ("graceful", 654, 27.0) in calls
         # A bare SIGTERM would strand the gateway on the unplanned-shutdown path.
@@ -1098,7 +1098,7 @@ class TestGatewaySystemServiceRouting:
         monkeypatch.setattr(gateway_cli, "get_launchd_label", lambda: "ai.eidolon.gateway")
         monkeypatch.setattr(gateway_cli, "_launchd_domain", lambda: "gui/501")
         monkeypatch.setattr("gateway.status.get_running_pid", lambda *a, **k: 654)
-        monkeypatch.setattr(gateway_cli, "_request_gateway_self_restart", lambda pid: False)
+        monkeypatch.setattr(gateway_cli, "_request_gateway_self_restart", lambda pid, **guard: False)
         monkeypatch.setattr(
             gateway_cli,
             "probe_gateway_loop_liveness",
@@ -1106,7 +1106,7 @@ class TestGatewaySystemServiceRouting:
         )
         monkeypatch.setattr(gateway_cli, "_get_restart_exit_wait_budget", lambda: 27.0)
         monkeypatch.setattr(
-            gateway_cli, "_graceful_restart_via_sigusr1", lambda pid, timeout: True
+            gateway_cli, "_graceful_restart_via_sigusr1", lambda pid, timeout, **guard: True
         )
         monkeypatch.setattr(
             gateway_cli,
@@ -1122,7 +1122,7 @@ class TestGatewaySystemServiceRouting:
         )
         monkeypatch.setattr(gateway_cli, "_clear_launchd_unsupported_marker", lambda: None)
 
-        gateway_cli.launchd_restart()
+        gateway_cli.launchd_restart(for_update=False)
 
         # No replacement observed → must escalate to kickstart -k.
         assert any(call[0] == "kickstart" for call in calls)
@@ -1147,13 +1147,13 @@ class TestGatewaySystemServiceRouting:
         plist_path.write_text("plist\n", encoding="utf-8")
 
         monkeypatch.setattr(gateway_cli, "get_launchd_plist_path", lambda: plist_path)
-        monkeypatch.setattr(
-            gateway_cli,
-            "launchd_restart",
-            lambda: (_ for _ in ()).throw(
-                gateway_cli.subprocess.CalledProcessError(5, ["launchctl", "kickstart", "-k", "gui/501/ai.eidolon.gateway"])
-            ),
-        )
+        def failed_restart(*, for_update):
+            assert for_update is False
+            raise gateway_cli.subprocess.CalledProcessError(
+                5, ["launchctl", "kickstart", "-k", "gui/501/ai.eidolon.gateway"]
+            )
+
+        monkeypatch.setattr(gateway_cli, "launchd_restart", failed_restart)
 
         run_calls = []
         monkeypatch.setattr(gateway_cli, "run_gateway", lambda verbose=0, quiet=False, replace=False: run_calls.append((verbose, quiet, replace)))
