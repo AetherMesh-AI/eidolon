@@ -157,7 +157,7 @@ def test_registered_native_subscription_full_journey(native):
     sends = [event for event in edges.events if event['kind'] == 'responses']
     assert [event['operation'] for event in sends] == ['improve_jobs', 'generate']
     assert all(event['durableDispatch'] for event in sends)
-    assert not any(event['kind'].startswith('denied') for event in edges.events)
+    assert [event for event in edges.events if event['kind'].startswith('denied')] == []
     assert len(final['outcomes']) == len(final['dispatches']) == len(sends)
     observations = json.dumps(final['outcomes'])
     assert ACCESS not in observations and SUGGESTIONS['jobs'] not in observations and 'resp_synthetic' not in observations
@@ -187,7 +187,7 @@ def test_native_uncertain_result_blocks_replay_and_new_intent(native):
     assert 'error' in call(transport, 'generateTeam', inference(native, 'synthetic-new-intent'))
     assert sum(event['kind'] == 'responses' for event in edges.events) == 1
     assert snapshot(home) == state
-    assert not any(event['kind'].startswith('denied') for event in edges.events)
+    assert [event for event in edges.events if event['kind'].startswith('denied')] == []
     setup = ok(transport, 'teamSetup', {'expectedOrganizationId': value['expectedOrganizationId']})
     assert setup['generationAllowance']['status'] == 'uncertain'
     assert setup['generationAllowance']['setupUsage']['costUsd'] is None
@@ -200,7 +200,8 @@ def unsupported(native):
     assert setup['setupSubscriptionState'] == 'unsupported_platform'
     assert setup['state'] == 'available'
     # No override of sys.platform, no synthetic=True store and no native vault write.
-    assert snapshot(home) == before and edges.vault.values == {} and len(edges.events) == 1
+    assert snapshot(home) == before and edges.vault.values == {}
+    assert len(edges.events) == 1, edges.events
 
 
 @pytest.mark.linux_only

@@ -15,6 +15,7 @@ import sqlite3
 import socket
 import threading
 import time
+import traceback
 from urllib.parse import parse_qs, urlencode, urlsplit
 import uuid
 import webbrowser
@@ -134,6 +135,18 @@ class SyntheticEdges:
                 with (self.evidence / 'subscription-events.jsonl').open('a') as stream:
                     stream.write(json.dumps(value, sort_keys=True) + '\n')
 
+    def record_denial(self, kind, operation, destination):
+        # Function names locate cold-import/background callers without recording
+        # arguments, source text, URLs, headers, tokens or user profile paths.
+        frames = traceback.extract_stack(limit=16)[:-1]
+        public_hosts = {'raw.githubusercontent.com', 'models.dev', 'huggingface.co',
+                        'openaipublic.blob.core.windows.net'}
+        self.record(kind, operation=operation,
+                    knownPublicHost=destination if destination in public_hosts else '<redacted>',
+                    destinationHash=hashlib.sha256(str(destination).encode()).hexdigest(),
+                    stack=[{'file': Path(frame.filename).name, 'function': frame.name[:120],
+                            'line': frame.lineno} for frame in frames])
+
     def patch(self, obj, name, value):
         self.restores.append((obj, name, getattr(obj, name)))
         setattr(obj, name, value)
@@ -146,7 +159,7 @@ class SyntheticEdges:
         edges = self
         def connect(connection):
             if connection.host not in {'auth.openai.com', 'api.openai.com'}:
-                edges.record('denied-tls')
+                edges.record_denial('denied-tls', 'HTTPSConnection.connect', connection.host)
                 raise AssertionError('Unexpected external TLS endpoint')
             connection.sock = SyntheticSocket(edges, connection.host)
         self.patch(http.client.HTTPSConnection, 'connect', connect)
@@ -165,39 +178,39 @@ class SyntheticEdges:
             except (ValueError, TypeError, UnicodeError):
                 return False
 
-        def deny():
-            self.record('denied-network')
+        def deny(operation, destination):
+            self.record_denial('denied-network', operation, destination)
             raise AssertionError('Synthetic fixture denied non-loopback network')
 
-        def check(sock, address):
-            if sock.family != socket.AF_UNIX and (not isinstance(address, tuple) or not loopback(address[0])):
-                deny()
+        def check(sock, address, operation):
+            if sock.family != getattr(socket, 'AF_UNIX', None) and (not isinstance(address, tuple) or not loopback(address[0])):
+                deny(operation, address[0] if isinstance(address, tuple) else address)
 
         original_connect, original_connect_ex = socket.socket.connect, socket.socket.connect_ex
         original_sendto, original_getaddrinfo = socket.socket.sendto, socket.getaddrinfo
         def connect(sock, address):
-            check(sock, address)
+            check(sock, address, 'socket.connect')
             return original_connect(sock, address)
         def connect_ex(sock, address):
-            check(sock, address)
+            check(sock, address, 'socket.connect_ex')
             return original_connect_ex(sock, address)
         def sendto(sock, data, *args):
-            check(sock, args[-1])
+            check(sock, args[-1], 'socket.sendto')
             return original_sendto(sock, data, *args)
         def getaddrinfo(host, *args, **kwargs):
             if host is not None and not loopback(host):
-                deny()
+                deny('getaddrinfo', host)
             return original_getaddrinfo(host, *args, **kwargs)
         def gethostbyname(host):
             if not loopback(host):
-                deny()
+                deny('gethostbyname', host)
             return host.decode('ascii') if isinstance(host, bytes) else host
         def gethostbyname_ex(host):
             address = gethostbyname(host)
             return address, [], [address]
         def getnameinfo(address, flags):
             if not isinstance(address, tuple) or not loopback(address[0]):
-                deny()
+                deny('getnameinfo', address[0] if isinstance(address, tuple) else address)
             return str(address[0]), str(address[1])
         self.patch(socket.socket, 'connect', connect)
         self.patch(socket.socket, 'connect_ex', connect_ex)
@@ -211,7 +224,7 @@ class SyntheticEdges:
             original_sendmsg = socket.socket.sendmsg
             def sendmsg(sock, buffers, ancdata=(), flags=0, address=None):
                 if address is not None:
-                    check(sock, address)
+                    check(sock, address, 'socket.sendmsg')
                 return original_sendmsg(sock, buffers, ancdata, flags, address)
             self.patch(socket.socket, 'sendmsg', sendmsg)
 

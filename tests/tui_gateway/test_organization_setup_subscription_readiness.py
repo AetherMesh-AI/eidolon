@@ -20,7 +20,9 @@ def rpc(ledger, method='teamSetup', extra=None):
     ledger.transport.write = replies.put
     response = server.dispatch({'jsonrpc': '2.0', 'id': 83, 'method': 'organization.' + method,
         'params': {'expectedOrganizationId': ledger.identity['organizationId'], **(extra or {})}}, transport=ledger.transport)
-    return (response if response is not None else replies.get(timeout=15))['result']
+    response = response if response is not None else replies.get(timeout=15)
+    assert 'error' not in response, response
+    return response['result']
 
 
 @pytest.mark.macos_only
@@ -40,6 +42,7 @@ def test_v3_models_discovery_unblocks_setup_without_waiving_execution(ledger, mo
     context = gateway._context(ledger.transport,
         {'expectedOrganizationId': ledger.identity['organizationId'], 'sourceRevision': revision}, object())
     state = {'revision': 1, 'active': True, 'models': 0}
+    expires_at = time.time() + 3600
     class Lease:
         def run(self, callback):
             return callback('synthetic-access', self)
@@ -51,7 +54,7 @@ def test_v3_models_discovery_unblocks_setup_without_waiving_execution(ledger, mo
         status=lambda: {'connectionRevision': state['revision'],
             'connectionState': 'active' if state['active'] else 'disconnected', 'cleanupPending': False},
         current_descriptor=lambda revision: {'binding': ledger.evidence.binding, 'revision': revision,
-            'authorizationEpoch': ledger.evidence.epoch, 'expiresAt': time.time() + 3600},
+            'authorizationEpoch': ledger.evidence.epoch, 'expiresAt': expires_at},
         lease_access_current=lambda revision: Lease(), release_lease=lambda lease: lease.close(),
         _lease_guard=context.lease_generation_guard)
     def models(*args, **kwargs):
