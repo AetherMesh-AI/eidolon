@@ -1,7 +1,7 @@
 import { isGatewayReauthRequired, JsonRpcGatewayError, resolveGatewayWsUrl } from '@aethermesh/shared'
 import { useEffect, useRef } from 'react'
 
-import { restoreOrganizationSelection } from '@/app/eidolon/organization-selection-runtime'
+import { organizationRegistryRouteSignature, restoreOrganizationSelection } from '@/app/eidolon/organization-selection-runtime'
 import { shouldApplyPostBootProgressError } from '@/components/boot-failure-reauth'
 import { HermesGateway } from '@/eidolon'
 import type { HermesConnection } from '@/global'
@@ -1092,7 +1092,7 @@ export function useGatewayBoot({
       const generation = restoredGateway ? gatewayTransportGeneration(restoredGateway) : undefined
       const intent = currentSourceSwitchIntent()
       const savedRecord = JSON.stringify(readOrganizationBootSelection())
-      const registryRoute = () => JSON.stringify($connectionsRegistry.get()?.connections.find(item => item.id === restoredConnection?.connectionId))
+      const registryRoute = () => organizationRegistryRouteSignature($connectionsRegistry.get()?.connections.find(item => item.id === restoredConnection?.connectionId))
       const route = registryRoute()
       const ownsRestored = () => current() && isCurrentSourceSwitchIntent(intent) &&
         activeGateway() === restoredGateway && Boolean(restoredConnection && matchesOrganizationPresentation($connection.get(), restoredConnection)) &&

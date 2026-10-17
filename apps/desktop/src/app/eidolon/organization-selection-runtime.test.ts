@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 import { getHermesConfigRecord } from '@/api/config'
-import type { HermesConnection } from '@/global'
+import type { DesktopRegistryConnection, HermesConnection } from '@/global'
 import { $connectionsRegistry, _resetConnectionsForTests, initializeConnectionsRegistry, selectConnectionWithOutcome, setConnectionsRegistry } from '@/store/connections'
 import { $gateway, activeGateway, closeSecondaryGateways, configureGatewayRegistry, disposeSecondariesForConnection, requestGatewayForAgent, setPrimaryGateway } from '@/store/gateway'
 import { registerGatewaySwitchLifecycle } from '@/store/gateway-switch'
@@ -208,6 +208,23 @@ it('clears the remembered owner only after an explicit legacy departure succeeds
   expect($connection.get()?.profile).toBe('legacy-two')
 })
 
+it.each([[false, false], [true, false], [false, true], [true, true]])('selects a verified unconfigured profile without recovery (remembered owner: %s, inventory enriched: %s)', async (remembered, enriched) => {
+  if (remembered) {
+    remember()
+    await restoreOrganizationSelection(() => true)
+  }
+  if (enriched) {
+    vi.mocked(bridge.connections!.setLastUsed!).mockResolvedValue({ ok: true, registry: {
+      ...registry(), lastUsed: 'local', connections: registry().connections.map(route => ({ ...route, installId: 'display-only-probed-installation' }))
+    } })
+  }
+  state.descriptorReply = async profile => ({ capabilityVersion: 1, state: 'unconfigured', scope: { kind: 'served-profile', profile }, metadata: null })
+  const result = await selectRuntimeOrganizationConnection('local', 'empty-profile', organizationActivationVerifier(() => {}))
+  expect({ result, profile: $connection.get()?.profile, gatewayMatches: Object.is($gateway.get(), sockets.at(-1)), recovery: $organizationSelectionRecovery.get(), saved: storage().read() }).toMatchObject({
+    result: { status: 'committed', published: true }, profile: 'empty-profile', gatewayMatches: true, recovery: null, saved: { kind: 'none' }
+  })
+})
+
 it('allows explicit retry of a pending owner but never automatic replay', async () => {
   storage().stage(identity())
   readOrganizationBootSelection()
@@ -216,6 +233,50 @@ it('allows explicit retry of a pending owner but never automatic replay', async 
   await restoreOrganizationSelection(() => true, true)
   expect($connection.get()?.profile).toBe('org-one')
   expect(storage().read()).toMatchObject({ kind: 'record', record: { phase: 'resumable' } })
+})
+
+it.each(['installId', 'key-order'] as const)('promotes a verified owner through %s inventory bookkeeping', async change => {
+  const route = registry().connections[0]
+  const updated = change === 'installId' ? { ...route, installId: 'display-only-probed-installation' } : Object.fromEntries(Object.entries(route).reverse()) as unknown as DesktopRegistryConnection
+  vi.mocked(bridge.connections!.setLastUsed!).mockResolvedValue({ ok: true, registry: { ...registry(), connections: [updated] } })
+  const result = await selectRuntimeOrganizationConnection('local', 'org-one', organizationActivationVerifier(() => {}))
+  expect(result).toMatchObject({ status: 'committed', published: true })
+  expect(storage().read()).toMatchObject({ kind: 'record', record: { phase: 'resumable', identity: identity() } })
+  expect($organizationSelectionRecovery.get()).toBeNull()
+  await expect(getHermesConfigRecord()).resolves.toMatchObject({ current: 'org-one' })
+})
+
+it.each([
+  ['removed', null], ['id', { id: 'other' }], ['kind', { kind: 'remote' }], ['label', { label: 'Changed' }],
+  ['url', { url: 'https://changed.example' }], ['authMode', { authMode: 'oauth' }], ['org', { org: 'changed' }],
+  ['host', { host: 'changed.example' }], ['user', { user: 'changed' }], ['port', { port: 22 }],
+  ['keyPath', { keyPath: '/synthetic/changed' }], ['remoteHermesPath', { remoteHermesPath: '/synthetic/changed' }],
+  ['remoteProfile', { remoteProfile: 'changed' }], ['tokenSet', { tokenSet: true }],
+  ['tokenPreview', { tokenPreview: 'synthetic-preview' }], ['headerNames', { headerNames: ['X-Synthetic-Auth'] }],
+  ['unknown', { futureAuthRevision: 2 }]
+] as const)('refuses promotion and owned REST after %s changes during bookkeeping', async (_field, delta) => {
+  const connections = delta ? [{ ...registry().connections[0], ...delta } as DesktopRegistryConnection] : []
+  vi.mocked(bridge.connections!.setLastUsed!).mockResolvedValue({ ok: true, registry: { ...registry(), connections } })
+  const result = await selectRuntimeOrganizationConnection('local', 'org-one', organizationActivationVerifier(() => {}))
+  expect(result).toMatchObject({ status: 'committed', published: true })
+  expect(storage().read()).toMatchObject({ kind: 'record', record: { phase: 'pending', identity: identity() } })
+  expect($organizationSelectionRecovery.get()).toMatchObject({ reason: 'pending' })
+  vi.mocked(bridge.api!).mockClear()
+  await expect(getHermesConfigRecord()).rejects.toThrow('verified selected owner')
+  expect(bridge.api).not.toHaveBeenCalled()
+})
+
+it('still rejects a replaced registry object before reset even when only its display hint changes', async () => {
+  const original = $connection.get()
+  const proof = deferred<unknown>()
+  state.descriptorReply = () => proof.promise
+  const selecting = selectRuntimeOrganizationConnection('local', 'org-one', organizationActivationVerifier(() => {}))
+  await vi.waitFor(() => expect(sockets.at(-1)?.request).toHaveBeenCalled())
+  setConnectionsRegistry({ ...registry(), connections: [{ ...registry().connections[0], installId: 'display-only-probed-installation' }] })
+  proof.resolve(descriptor())
+  expect(await selecting).toMatchObject({ status: 'unchanged', resetStarted: false, published: false })
+  expect($connection.get()).toBe(original)
+  expect(storage().read()).toEqual({ kind: 'none' })
 })
 
 
