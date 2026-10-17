@@ -1,0 +1,55 @@
+name: Windows retention diagnostic
+on:
+  push:
+    branches: [proof/dialog-windows-diagnostic-20261017]
+permissions:
+  contents: read
+env:
+  CI: 'true'
+  HERMES_TEST_FILE_RETRIES: '0'
+  OPENAI_API_KEY: ''
+  OPENROUTER_API_KEY: ''
+  NOUS_API_KEY: ''
+jobs:
+  retention:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: Install locked runtime and test dependencies
+        run: |
+          python -m pip install uv==0.12.23
+          uv sync --locked --python 3.12 --extra dev
+          uv pip install --no-deps pytest-timeout==2.4.0 exceptiongroup==1.3.0 'https://files.pythonhosted.org/packages/6e/c2/61d3e0f47e2b74ef40a68b9e6ad5984f6241a942f7cd3bbfbdbd03861ea9/tomli-2.2.1-py3-none-any.whl#sha256=cb55c73c5f4408779d0cf3eef9f762b9c9f147a77de7b258bef0a5628adc85cc'
+      - name: Record source and run unchanged retention contract
+        run: |
+          mkdir -p retention-diagnostic
+          git rev-parse HEAD HEAD:tests HEAD:eidolon_cli HEAD:scripts > retention-diagnostic/source.txt
+          set +e
+          scripts/run_tests.sh tests/eidolon_cli/test_organization_artifact_retention.py -j 3 --file-timeout-override tests/eidolon_cli/test_organization_artifact_retention.py=600 -- -vv -s -p scripts.ci.organization_timing --organization-timing-dir=organization-timing -o faulthandler_timeout=30 > retention-diagnostic/stdout.txt 2> retention-diagnostic/stderr.txt
+          result=$?
+          echo "$result" > retention-diagnostic/exit-code.txt
+          tail -n 60 retention-diagnostic/stdout.txt
+          tail -n 60 retention-diagnostic/stderr.txt
+          exit "$result"
+      - name: Retain sanitized timing and stacks
+        if: always()
+        run: .venv/Scripts/python.exe -m scripts.ci.organization_timing organization-timing > retention-diagnostic/timings.txt
+      - name: Upload diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: retention-diagnostic-${{ github.run_id }}
+          path: |
+            retention-diagnostic/
+            organization-timing/sanitized/
+          retention-days: 7
+          if-no-files-found: error
