@@ -277,7 +277,8 @@ def _prepare_stage(directory, operation, record):
         if checkpoint[0]:
             raise WorkspaceError('staging_database_busy')
     for candidate in (path, stage / 'config.yaml', stage / '.env'):
-        with candidate.open('rb') as handle:
+        # Windows fsync/_commit requires write access; r+b preserves existing bytes.
+        with local_path(candidate).open('r+b') as handle:
             os.fsync(handle.fileno())
     marker.update(state='ready', organizationId=metadata['organizationId'], ownerId=metadata['owner']['ownerId'])
     _write_json(stage / MARKER, marker)

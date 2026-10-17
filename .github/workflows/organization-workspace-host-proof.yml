@@ -25,7 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: d406ed2ed895e2f5ca50cdb1c9cc9ebca7315c7c
+          ref: e3187339798c0bdf32b09786aa1f16f3b4d3e39f
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
@@ -37,8 +37,8 @@ jobs:
           uv pip install --no-deps pytest-timeout==2.4.0 exceptiongroup==1.3.0 'https://files.pythonhosted.org/packages/6e/c2/61d3e0f47e2b74ef40a68b9e6ad5984f6241a942f7cd3bbfbdbd03861ea9/tomli-2.2.1-py3-none-any.whl#sha256=cb55c73c5f4408779d0cf3eef9f762b9c9f147a77de7b258bef0a5628adc85cc'
       - name: Verify exact reviewed source
         run: |
-          test "$(git rev-parse HEAD)" = "d406ed2ed895e2f5ca50cdb1c9cc9ebca7315c7c"
-          test "$(git rev-parse HEAD^{tree})" = "be5fcc4e50f4428bffeb7f910a15f7ea274b4a3d"
+          test "$(git rev-parse HEAD)" = "e3187339798c0bdf32b09786aa1f16f3b4d3e39f"
+          test "$(git rev-parse HEAD^{tree})" = "1a9584844c4a502f26d77d7078d6e55808594df5"
           git rev-parse HEAD HEAD^{tree} > organization-workspace-source.txt
       - name: Run new workspace boundary contracts without retry
         run: |

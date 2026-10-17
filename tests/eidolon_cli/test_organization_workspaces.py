@@ -1,6 +1,7 @@
 """Real profile/storage/provider boundaries; fake homes, keys and HTTP only."""
 from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor
+import errno
 import hashlib
 import json
 import os
@@ -193,6 +194,75 @@ def test_partial_stage_failure_is_not_enumerable_and_resumes(origin, monkeypatch
     monkeypatch.setattr(OrganizationStore, '__init__', original)
     home, result = create(origin)
     assert isolation.verify_isolation(home)['organizationId'] == result['organizationId']
+
+
+def test_stage_flush_uses_writable_handles_without_changing_file_contents(origin, monkeypatch):
+    original_open, original_fsync = Path.open, os.fsync
+    handles, flushed = {}, set()
+
+    def tracked_open(path, *args, **kwargs):
+        candidate = (path.parent.name == 'stage' and path.name in {'config.yaml', '.env'}
+                     or path.parent.name == 'organization' and path.parent.parent.name == 'stage'
+                     and path.name == 'state.db')
+        if candidate and path.exists():
+            with original_open(path, 'rb') as before:
+                content = before.read()
+            handle = original_open(path, *args, **kwargs)
+            handles[handle.fileno()] = (path, handle, content)
+            return handle
+        return original_open(path, *args, **kwargs)
+
+    def writable_fsync(fd):
+        tracked = handles.get(fd)
+        if tracked is not None and not tracked[1].closed:
+            path, handle, content = tracked
+            if not handle.writable():
+                raise OSError(errno.EBADF, 'durable flush requires a writable handle')
+            with original_open(path, 'rb') as after:
+                assert after.read() == content
+            flushed.add(path.name)
+        return original_fsync(fd)
+
+    monkeypatch.setattr(Path, 'open', tracked_open)
+    monkeypatch.setattr(os, 'fsync', writable_fsync)
+    home, result = create(origin)
+    assert flushed == {'state.db', 'config.yaml', '.env'}
+    assert isolation.verify_isolation(home)['organizationId'] == result['organizationId']
+
+
+def test_stage_flush_failure_stays_unpublished_and_replays_original_identity(origin, monkeypatch):
+    original_open, original_fsync = Path.open, os.fsync
+    handles = {}
+
+    def tracked_open(path, *args, **kwargs):
+        handle = original_open(path, *args, **kwargs)
+        if path.name == 'state.db' and path.parent.parent.name == 'stage':
+            handles[handle.fileno()] = handle
+        return handle
+
+    def failed_fsync(fd):
+        handle = handles.get(fd)
+        if handle is not None and not handle.closed:
+            raise OSError(errno.EIO, 'synthetic durable flush failure')
+        return original_fsync(fd)
+
+    monkeypatch.setattr(Path, 'open', tracked_open)
+    monkeypatch.setattr(os, 'fsync', failed_fsync)
+    with pytest.raises(OSError, match='synthetic durable flush failure'):
+        create(origin)
+    assert not (origin.home / 'profiles').exists()
+    assert workspaces.workspace_creation_status(origin.home, status_params(params(origin)))['state'] == 'pending'
+    operation = next((origin.home / isolation.WORKSPACES / 'operations').iterdir())
+    record = json.loads((operation / 'operation.json').read_text())
+    assert record['result'] is None
+    assert isolation.read_isolation(operation / 'stage')['state'] == 'staging'
+    metadata = workspaces.read_descriptor(operation / 'stage' / 'organization' / 'state.db')['metadata']
+    monkeypatch.setattr(os, 'fsync', original_fsync)
+    home, recovered = create(origin)
+    assert recovered['profile'] == record['profile']
+    assert recovered['organizationId'] == metadata['organizationId']
+    assert recovered['ownerId'] == metadata['owner']['ownerId']
+    assert [p.name for p in home.parent.iterdir()] == [recovered['profile']]
 
 
 def test_ready_unpublished_stage_and_standalone_copy_cannot_execute(origin, monkeypatch):
