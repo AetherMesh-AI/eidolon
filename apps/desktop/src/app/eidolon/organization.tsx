@@ -26,6 +26,8 @@ import { TaskCoordination, taskCoordinationLabel } from './task-coordination'
 import type { OrganizationAgent, OrganizationSnapshot, RuntimeOrganizationAdapter } from './types'
 import { contextualObjectiveHref, useWorkspaceRouteState } from './workspace-navigation'
 
+const inspectorSelection = ['Member', 'Identity'] as const
+
 function currentAssignment(
   snapshot: OrganizationSnapshot,
   agent: OrganizationAgent,
@@ -82,7 +84,7 @@ export function Organization({
 
   const location = useLocation()
   const scope = snapshot.connection?.ownerScope ?? snapshot.connection?.scope
-  const routeState = useWorkspaceRouteState('roster', scope)
+  const routeState = useWorkspaceRouteState('roster', scope, inspectorSelection)
   const rowIdentity = (item: OrganizationAgent) => JSON.stringify(['organization', scope, item.id, item.identityId ?? ''])
 
   const setSelected = (selected: { id: string; scope: string | undefined } | null) => {

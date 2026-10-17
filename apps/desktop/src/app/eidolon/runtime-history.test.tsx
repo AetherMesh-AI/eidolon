@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { Link, MemoryRouter } from 'react-router'
 import { expect, it, vi } from 'vitest'
 
@@ -225,7 +226,7 @@ it('browses bounded literal history pages and reopens archived evidence without 
   await screen.findByRole('heading', { name: 'Retained archived' })
   expect(test.adapter.getSnapshot()).toBe(live)
   expect(screen.getByText('Accepted result archived')).toBeTruthy()
-  fireEvent.click(screen.getByRole('tab', { name: 'Artifacts' }))
+  await userEvent.click(screen.getByRole('tab', { name: 'Artifacts' }))
   fireEvent.click(screen.getByRole('button', { name: /Original artifact/ }))
   await screen.findByText('Original immutable full evidence')
   expect(screen.getByText('original-digest')).toBeTruthy()

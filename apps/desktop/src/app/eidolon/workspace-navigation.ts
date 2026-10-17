@@ -1,4 +1,4 @@
-import { createContext, type RefObject, useState } from 'react'
+import { createContext, type RefObject, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router'
 
 /** Presentation-only routes. Never accept an arbitrary URL as a return target. */
@@ -72,10 +72,26 @@ export function createWorkspaceScrollMemory() {
 }
 
 /** Presentation-only, owner-scoped route state. Never restores mutations or drafts. */
-export function useWorkspaceRouteState(namespace: string, owner: string | undefined) {
+export function useWorkspaceRouteState(namespace: string, owner: string | undefined, discardSelection?: readonly string[]) {
   const [params, setParams] = useSearchParams()
   const [local, setLocal] = useState<Record<string, string>>({})
   const ownerKey = `${namespace}Owner`
+
+  // Inspector selection expires across owners; opt-in leaves durable disclosure/filter state intact.
+  useEffect(() => {
+    const staleOwner = params.get(ownerKey)
+
+    if (!owner || !staleOwner || staleOwner === owner || !discardSelection?.some(key => params.has(`${namespace}${key}`))) { return }
+
+    setParams(current => {
+      if (current.get(ownerKey) !== staleOwner) { return current }
+      const next = new URLSearchParams(current)
+
+      for (const key of discardSelection) { next.delete(`${namespace}${key}`) }
+
+      return next
+    }, { replace: true })
+  }, [discardSelection, namespace, owner, ownerKey, params, setParams])
 
   const read = (key: string) => owner
     ? params.get(ownerKey) === owner ? params.get(`${namespace}${key}`) ?? '' : ''

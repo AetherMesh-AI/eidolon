@@ -144,6 +144,8 @@ it('reuses an uncertain admission after the composer is unmounted and reopened',
 it.each(['/objectives/objective', '/requests'])('preserves an owner response through reconnects but isolates a new owner on %s', async path => {
   const initial = snapshot('Pending question')
   initial.requests = [{ id: 'question', objectiveId: 'objective', type: 'request.question', team: 'research', priority: 3, status: 'pending_intervention', attempts: 1, createdAt: '2026-10-04T00:00:00Z', allowedResolutions: [{ action: 'answer_request', label: 'Answer request', requiresText: true, requiresEvidence: false }] }]
+  initial.tasks = [{ id: 'task-evidence', objectiveId: 'objective', title: 'Recorded work', ownerId: 'manager', status: 'completed', dependsOn: [], evidence: [{ id: 'proof', kind: 'artifact', content: 'Preview' }] }]
+  const evidenceRead = deferred<OrganizationArtifact>()
   let scope = { key: 'socket-a', ownerKey: 'owner-a', connected: true }
 
   let scopeChanged = () => {}
@@ -153,20 +155,35 @@ it.each(['/objectives/objective', '/requests'])('preserves an owner response thr
     subscribeScope(listener) { scopeChanged = listener;
 
  return () => {} },
-    request: async <T,>() => initial as T
+    request: async <T,>(method: string) => (method === 'organization.evidence' ? await evidenceRead.promise : initial) as T
   })
 
   const view = open(adapter, path)
   fireEvent.click(await screen.findByRole('button', { name: 'Inspect request: Question' }))
-  fireEvent.change(screen.getByRole('textbox', { name: 'Response' }), { target: { value: 'Retain this answer for this owner' } })
+  const response = screen.getByRole('textbox', { name: 'Response' })
+  fireEvent.change(response, { target: { value: 'Retain this answer for this owner' } })
+
+  if (path.startsWith('/objectives/')) {
+    fireEvent.click(screen.getByRole('button', { name: 'Inspect objective' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Inspect task: Recorded work' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Read full evidence' }))
+    expect(screen.getByRole('complementary', { name: 'Artifact details' })).toBeTruthy()
+  }
+
   act(() => { scope = { ...scope, key: 'socket-b', connected: false }; scopeChanged() })
   expect(screen.getByRole('textbox', { name: 'Response' })).toHaveProperty('value', 'Retain this answer for this owner')
   expect(screen.getByRole('textbox', { name: 'Response' })).toHaveProperty('disabled', true)
+  expect(screen.getByRole('textbox', { name: 'Response' })).toBe(response)
+  expect(screen.queryByRole('complementary', { name: 'Artifact details' })).toBeNull()
+  expect(screen.queryByRole('complementary', { name: 'Objective details' })).toBeNull()
+  await act(async () => { evidenceRead.resolve({ id: 'proof', content: 'Late former socket evidence', sha256: 'old', summary: 'Old preview', createdAt: '2026-10-04T00:00:00Z', objectiveId: 'objective', taskId: 'task-evidence' }); await Promise.resolve() })
+  expect(screen.queryByText('Late former socket evidence')).toBeNull()
   act(() => { scope = { ...scope, connected: true }; scopeChanged() })
   await waitFor(() => expect(screen.getByRole('textbox', { name: 'Response' })).toHaveProperty('disabled', false))
   expect(screen.getByRole('textbox', { name: 'Response' })).toHaveProperty('value', 'Retain this answer for this owner')
   act(() => { scope = { key: 'socket-c', ownerKey: 'owner-b', connected: true }; scopeChanged() })
   fireEvent.click(await screen.findByRole('button', { name: 'Inspect request: Question' }))
   expect(screen.getByRole('textbox', { name: 'Response' })).toHaveProperty('value', '')
+  expect(screen.getByRole('textbox', { name: 'Response' })).not.toBe(response)
   view.unmount()
 })

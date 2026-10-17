@@ -90,7 +90,7 @@ type ObjectiveTab = typeof objectiveTabs[number]
 export function RuntimeObjectiveDetail(props: RuntimeObjectiveDetailProps) {
   const { objective, snapshot } = props
 
-  return <ScopedRuntimeObjectiveDetail key={JSON.stringify([snapshot.connection?.scope, snapshot.connection?.ownerScope, objective.id])} {...props} />
+  return <ScopedRuntimeObjectiveDetail key={JSON.stringify([snapshot.connection?.ownerScope ?? snapshot.connection?.scope, objective.id])} {...props} />
 }
 
 function ScopedRuntimeObjectiveDetail({ objective, adapter, snapshot, historyControls }: RuntimeObjectiveDetailProps) {
@@ -99,13 +99,14 @@ function ScopedRuntimeObjectiveDetail({ objective, adapter, snapshot, historyCon
   const [params] = useSearchParams()
   const returnTo = objectiveReturnTarget(params, snapshot.connection?.ownerScope ?? snapshot.connection?.scope)
   const returnLabels: Record<string, string> = { '/home': t.organizationHome.home, '/work': t.organizationHome.work, '/messages': t.organizationHome.messages, '/requests': copy.needsYou, '/objectives': copy.objectives, '/artifacts': t.organizationHome.deliverables, '/activity': t.organizationHome.activity, '/organization': t.organizationSurfaces.organization }
-  const [tab, setTab] = useState<ObjectiveTab>('work')
-  const [visitedTabs, setVisitedTabs] = useState<Set<ObjectiveTab>>(() => new Set(['work']))
+  const scope = snapshot.connection?.scope
+  const [paneState, setPaneState] = useState<{ scope: typeof scope; tab: ObjectiveTab; visited: Set<ObjectiveTab> }>(() => ({ scope, tab: 'work', visited: new Set(['work']) }))
+  const tab = paneState.scope === scope ? paneState.tab : 'work'
+  const visitedTabs = paneState.scope === scope ? paneState.visited : new Set<ObjectiveTab>(['work'])
 
   const selectTab = (value: string) => {
     const next = value as ObjectiveTab
-    setTab(next)
-    setVisitedTabs(current => current.has(next) ? current : new Set([...current, next]))
+    setPaneState({ scope, tab: next, visited: visitedTabs.has(next) ? visitedTabs : new Set([...visitedTabs, next]) })
   }
 
   const [inspecting, setInspecting] = useState(false)
@@ -113,6 +114,13 @@ function ScopedRuntimeObjectiveDetail({ objective, adapter, snapshot, historyCon
   const openEvidence = (id: string) => setEvidence({ id, origin: captureInspectorOrigin(globalThis.document.activeElement, { replaceInspector: true }) })
   const requestsRef = useRef<HTMLDivElement>(null)
   const workRef = useRef<HTMLDivElement>(null)
+
+  // Reconnect retires previews and panes without unmounting the owner's response draft.
+  if (paneState.scope !== scope) {
+    setPaneState({ scope, tab: 'work', visited: new Set(['work']) })
+    setInspecting(false)
+    setEvidence(null)
+  }
 
   const reveal = (element: HTMLDivElement | null) => {
     element?.scrollIntoView({ block: 'start' })
@@ -130,7 +138,7 @@ function ScopedRuntimeObjectiveDetail({ objective, adapter, snapshot, historyCon
     <ObjectiveProgress controls={<>
       <RuntimeDispatch adapter={adapter} key={`dispatch:${snapshot.connection?.scope}:${snapshot.connection?.ownerScope}:${objective.id}`} objective={objective} snapshot={snapshot} />
       <RuntimePriority adapter={adapter} key={`${snapshot.connection?.scope}:${snapshot.connection?.ownerScope}:${objective.id}`} objective={objective} snapshot={snapshot} />
-    </>} objective={objective} onReviewRequests={() => reveal(requestsRef.current)} onReviewWork={() => { setTab('work'); reveal(workRef.current) }} snapshot={snapshot} />
+    </>} objective={objective} onReviewRequests={() => reveal(requestsRef.current)} onReviewWork={() => { selectTab('work'); reveal(workRef.current) }} snapshot={snapshot} />
     {inspecting && <Inspector kind="objective" onClose={() => setInspecting(false)} title={objective.title}><MetadataSummary objective={objective} /><RuntimeWorkPackages objective={objective} snapshot={snapshot} /><dl>
       <dt>{t.organizationSurfaces.objectives.status}</dt><dd><Status status={objective.status} /></dd>
       <dt>{t.organizationSurfaces.objectiveRecord.owner}</dt><dd dir="auto">{owner?.name || objective.ownerId || t.organizationHome.unassigned}</dd>
@@ -150,7 +158,7 @@ function ScopedRuntimeObjectiveDetail({ objective, adapter, snapshot, historyCon
     <RuntimeRequests adapter={adapter} objective={objective} snapshot={snapshot} />
     </div>
     <div aria-label={t.organizationHome.detail.workDetails} ref={workRef} role="region" tabIndex={-1}>
-    <Tabs.Root activationMode="manual" dir={locale === 'ar' ? 'rtl' : 'ltr'} onValueChange={selectTab} value={tab}>
+    <Tabs.Root activationMode="manual" dir={locale === 'ar' ? 'rtl' : 'ltr'} key={scope} onValueChange={selectTab} value={tab}>
     <Tabs.List aria-label={t.organizationHome.detail.views} className="eid-tabs">{objectiveTabs.map(name => <Tabs.Trigger key={name} value={name}>{copy[name]}</Tabs.Trigger>)}</Tabs.List>
     {objectiveTabs.map(name => <Tabs.Content forceMount hidden={tab !== name} inert={tab !== name} key={name} value={name}>
       {visitedTabs.has(name) && <>
