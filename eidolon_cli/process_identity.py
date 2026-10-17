@@ -161,6 +161,108 @@ def owned_process_start_time(pid: int, purpose: str) -> Optional[float]:
     return None
 
 
+def owned_gateway_start_time(pid: int, *, purposes=("gateway",)) -> Optional[float]:
+    """Destructive fleet authority: this checkout, an enumerated home, exact incarnation.
+
+    A Hermes-compatible argv is discovery, never ownership. Unknown/legacy records
+    without independently verifiable identity are left alone, including on macOS.
+    Read fresh before each signal; callers retain the first returned incarnation.
+    """
+    try:
+        import math
+        import psutil
+        from eidolon_constants import get_default_hermes_root
+        from eidolon_cli.profiles import list_profiles
+
+        root = Path(get_default_hermes_root()).resolve()
+        homes = {root}
+        for profile in list_profiles():
+            home = Path(profile.path).resolve()
+            # A linked profile outside this installation is not fleet authority.
+            if home == root or home.parent == root / "profiles":
+                homes.add(home)
+        for entry in _read_ledger(_ledger_path()) or []:
+            if (entry.get("pid") != pid or entry.get("install") != install_id()
+                    or entry.get("purpose") not in purposes):
+                continue
+            recorded = entry.get("create_time")
+            if (not isinstance(recorded, (int, float)) or isinstance(recorded, bool)
+                    or not math.isfinite(recorded) or recorded <= 0):
+                continue
+            proc = psutil.Process(pid)
+            if proc.create_time() != recorded:
+                continue
+            target_home = entry.get("home") or proc.environ().get("HERMES_HOME")
+            if (not isinstance(target_home, str) or not Path(target_home).is_absolute()
+                    or Path(target_home).resolve() not in homes):
+                continue
+            # Recheck after environment/profile inspection; never bless a reused PID.
+            if psutil.Process(pid).create_time() == recorded:
+                return recorded
+    except Exception:
+        pass
+    return None
+
+
+def owned_gateway_identity(pid: int, *, purposes=("gateway",)) -> Optional[tuple[float, int]]:
+    """Capture one immutable ledger/native incarnation pair, never a mixed pair."""
+    try:
+        from gateway.status import get_process_start_time
+
+        created = owned_gateway_start_time(pid, purposes=purposes)
+        if created is None:
+            return None
+        marker = get_process_start_time(pid)
+        if (not isinstance(marker, int) or isinstance(marker, bool) or marker <= 0
+                or owned_gateway_start_time(pid, purposes=purposes) != created):
+            return None
+        return created, marker
+    except Exception:
+        return None
+
+
+def owned_gateway_home(pid: int, *, expected_identity=None) -> Optional[str]:
+    """Resolve the home bound to this owned incarnation, including default launches.
+
+    Default CLI launches need not export HERMES_HOME. A verified ledger home is
+    authoritative when the environment is absent/unreadable; contradictory live
+    environment evidence is never ignored.
+    """
+    try:
+        import psutil
+        from eidolon_constants import get_default_hermes_root
+        from eidolon_cli.profiles import list_profiles
+        identity = expected_identity if expected_identity is not None else owned_gateway_identity(pid)
+        if identity is None or owned_gateway_identity(pid) != identity:
+            return None
+        root = Path(get_default_hermes_root()).resolve()
+        homes = {root}
+        for profile in list_profiles():
+            home = Path(profile.path).resolve()
+            if home == root or home.parent == root / "profiles":
+                homes.add(home)
+        try:
+            live_home = psutil.Process(pid).environ().get("HERMES_HOME")
+        except psutil.AccessDenied:
+            live_home = None
+        for entry in _read_ledger(_ledger_path()) or []:
+            if (entry.get("pid") != pid or entry.get("install") != install_id()
+                    or entry.get("purpose") != "gateway" or entry.get("create_time") != identity[0]):
+                continue
+            home = entry.get("home") or live_home
+            if not isinstance(home, str) or not Path(home).is_absolute():
+                continue
+            home = Path(home).resolve()
+            if home not in homes:
+                continue
+            if live_home is not None and (not Path(live_home).is_absolute() or Path(live_home).resolve() != home):
+                return None
+            return str(home) if owned_gateway_identity(pid) == identity else None
+    except Exception:
+        return None
+    return None
+
+
 def _ledger_path() -> Path:
     """Machine-root ledger path (shared by every profile of this install)."""
     try:

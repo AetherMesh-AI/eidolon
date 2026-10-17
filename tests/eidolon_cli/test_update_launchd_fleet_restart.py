@@ -267,6 +267,17 @@ def _fleet(monkeypatch, tmp_path, *, current, labels, located,
     if plist_exists:
         plist.write_text("<plist/>")
 
+    import eidolon_cli.process_identity as process_identity
+    import eidolon_cli.gateway_update_ownership as service_ownership
+
+    identities = {value[1]: (value[1], 100.0) for value in located.values()
+                  if isinstance(value, tuple) and value[0] and value[1]}
+    def owned_service(label):
+        value = located.get(label)
+        return ((value[0], value[1], 100.0, ("eidolon", "gateway", "run"), str(tmp_path)),) if isinstance(value, tuple) and value[0] and value[1] else None
+    monkeypatch.setattr(process_identity, "owned_gateway_identity", lambda pid: identities.get(pid))
+    monkeypatch.setattr(service_ownership, "_update_launchd_service_identity", owned_service)
+
     def fake_locate(label):
         rec.locates.append(label)
         value = located[label]
@@ -290,13 +301,18 @@ def _fleet(monkeypatch, tmp_path, *, current, labels, located,
     monkeypatch.setattr(gw, "launchd_gateway_labels_for_install", lambda: list(labels))
     monkeypatch.setattr(gw, "_locate_launchd_gateway_service", fake_locate)
     monkeypatch.setattr(gw, "_launchd_service_registered", fake_registered)
-    monkeypatch.setattr(
-        gw,
-        "_graceful_restart_via_sigusr1",
-        lambda pid, drain_timeout: (rec.drains.append(pid), (drain_results or {}).get(pid, False))[1],
-    )
+    def fake_drain(pid, drain_timeout, *, expected_start_time, identity_check):
+        assert expected_start_time == identities[pid][1]
+        assert identity_check()
+        rec.drains.append(pid)
+        return (drain_results or {}).get(pid, False)
 
-    def fake_kickstart(label, domain):
+    monkeypatch.setattr(gw, "_graceful_restart_via_sigusr1", fake_drain)
+
+    def fake_kickstart(label, domain, *, for_update):
+        assert for_update is True
+        if not owned_service(label):
+            raise RuntimeError("installation ownership is unverified")
         err = (kick_errors or {}).get(label)
         if err is not None:
             raise err
@@ -309,9 +325,13 @@ def _fleet(monkeypatch, tmp_path, *, current, labels, located,
         return (wait_results or {}).get(label, True)
 
     monkeypatch.setattr(gw, "_wait_for_launchd_service_pid", fake_wait)
-    monkeypatch.setattr(
-        gw, "launchd_restart", lambda: rec.current_restarts.append(current)
-    )
+    def fake_current_restart(*, for_update):
+        assert for_update is True
+        if not owned_service(current):
+            raise RuntimeError("installation ownership is unverified")
+        rec.current_restarts.append(current)
+
+    monkeypatch.setattr(gw, "launchd_restart", fake_current_restart)
 
     # The current profile is now verified the same way siblings are: a
     # successful launchd_restart() only counts once launchd reports it is
@@ -396,14 +416,14 @@ class TestRestartMacosLaunchdGateways:
         assert restarted == ["ai.eidolon.gateway-a"]
         assert failed == []
 
-    def test_current_profile_registered_but_unlocatable_still_restarts(
+    def test_current_profile_registered_but_unlocatable_is_not_restarted(
         self, monkeypatch, tmp_path
     ):
-        """macOS-26 quirk: a label can be `launchctl list`-registered while
-        both explicit gui/user `launchctl print` probes fail (domain doesn't
-        support service management). The gate must use the registered
-        predicate and hand off to launchd_restart(), which owns the
-        domain-unsupported fallback — locate is for siblings only."""
+        """A registration alone does not authorize an updater restart.
+
+        The current-profile helper delegates with the updater guard enabled,
+        which must reject an unknown loaded service identity.
+        """
         current = "ai.eidolon.gateway"
         rec = _fleet(
             monkeypatch,
@@ -418,10 +438,10 @@ class TestRestartMacosLaunchdGateways:
 
         _restart_macos_launchd_gateways(restarted, failed, drain_budget=0.0)
 
-        assert rec.current_restarts == [current]
+        assert rec.current_restarts == []
         assert current not in rec.locates
-        assert restarted == [current]
-        assert failed == []
+        assert restarted == []
+        assert failed == [current]
 
     def test_unbootstrapped_sibling_is_skipped_not_failed(
         self, monkeypatch, tmp_path
@@ -445,11 +465,10 @@ class TestRestartMacosLaunchdGateways:
         assert restarted == ["ai.eidolon.gateway"]
         assert failed == []
 
-    def test_loaded_but_not_running_sibling_is_kickstarted(
+    def test_loaded_but_not_running_sibling_is_left_for_manual_recovery(
         self, monkeypatch, tmp_path
     ):
-        """A bootstrapped service with no live process still holds the old
-        code path for its next launch trigger — kickstart it (no drain)."""
+        """Without a live incarnation, updater authority cannot be established."""
         rec = _fleet(
             monkeypatch,
             tmp_path,
@@ -466,9 +485,9 @@ class TestRestartMacosLaunchdGateways:
         _restart_macos_launchd_gateways(restarted, failed, drain_budget=0.0)
 
         assert rec.drains == []
-        assert rec.kickstarts == [f"gui/{UID}/ai.eidolon.gateway-dormant"]
-        assert restarted == ["ai.eidolon.gateway", "ai.eidolon.gateway-dormant"]
-        assert failed == []
+        assert rec.kickstarts == []
+        assert restarted == ["ai.eidolon.gateway"]
+        assert failed == ["ai.eidolon.gateway-dormant"]
 
     def test_graceful_drain_with_keepalive_respawn_skips_kickstart(
         self, monkeypatch, tmp_path

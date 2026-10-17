@@ -21,6 +21,11 @@ def test_pending_marker_requires_complete_systemd_recovery(monkeypatch, tmp_path
     ticks = iter(range(1000))
     monkeypatch.setattr(fleet._time, "monotonic", lambda: next(ticks))
     recovered = []
+    from eidolon_cli import gateway_update_ownership as ownership
+    identities = {name: (pid, 100.0, (("MainPID", str(pid)),)) for name, pid in
+                  (("eidolon-gateway-one", 41), ("eidolon-gateway-two", 42))}
+    monkeypatch.setattr(ownership, "_update_systemd_service_identity",
+                        lambda scope, name: identities.get(name) if scope == ["systemctl", "--user"] else None)
 
     def systemctl(cmd, **kw):
         if "list-units" in cmd:
@@ -64,10 +69,16 @@ def test_pending_launchd_requires_complete_supervision(monkeypatch, tmp_path, fa
     monkeypatch.setattr(gateway, "get_launchd_plist_path", lambda: tmp_path / f"{current}.plist")
     monkeypatch.setattr(gateway, "launchd_gateway_labels_for_install", lambda: [current, sibling])
     monkeypatch.setattr(fleet, "_restart_launchd_gateway_after_update", lambda **kw: ([], []))
-    monkeypatch.setattr(gateway, "_locate_launchd_gateway_service", lambda _: (None, None) if failure == "unloaded" else ("gui/501", None))
+    monkeypatch.setattr(gateway, "_locate_launchd_gateway_service", lambda _: (None, None) if failure == "unloaded" else ("gui/501", 41))
     monkeypatch.setattr(gateway, "_wait_for_launchd_service_pid", lambda *a, **kw: None if failure == "inactive" else 42)
 
-    def kickstart(*args):
+    from eidolon_cli import gateway_update_ownership as ownership, process_identity
+    monkeypatch.setattr(process_identity, "owned_gateway_identity", lambda pid: (41, 100.0) if pid == 41 else None)
+    monkeypatch.setattr(ownership, "_update_launchd_service_identity", lambda label: (("gui/501", 41, 100.0, ("eidolon", "gateway", "run"), str(tmp_path)),) if label == sibling and failure != "unloaded" else None)
+    monkeypatch.setattr(gateway, "_graceful_restart_via_sigusr1", lambda *a, **kw: False)
+
+    def kickstart(*args, for_update):
+        assert for_update is True
         if failure == "restart":
             raise subprocess.CalledProcessError(1, "launchctl")
 

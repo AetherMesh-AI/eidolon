@@ -407,13 +407,33 @@ def _systemd_restart_timeout(scope_cmd: list, svc_name: str, *, start_only: bool
     return min(sum(budgets.values()) + 15.0, _SYSTEMCTL_RESTART_TIMEOUT_MAX)
 
 
-def _systemctl_reset_and_restart(manage_cmd: list, svc_name: str, *, scope_cmd: list | None = None):
+def _update_systemd_restart_is_owned(scope_cmd: list, svc_name: str) -> bool:
+    """Require both effective manager configuration and a live own incarnation."""
+    from eidolon_cli.gateway_update_ownership import _update_systemd_service_identity
+    return _update_systemd_service_identity(scope_cmd, svc_name) is not None
+
+
+def _systemctl_reset_and_restart(manage_cmd: list, svc_name: str, *, scope_cmd: list | None = None,
+                                 expected_service_identity=None):
     """``reset-failed`` then ``restart``: a unit parked in failed state by systemd's own
     auto-restart can wedge a plain ``restart`` against RestartSec backoff and stay dead."""
-    # Property reads need no manage-units privileges: narrow sudoers may permit
-    # restart/reset-failed but deny show. Keep the same user/system manager scope.
-    timeout = _systemd_restart_timeout(scope_cmd if scope_cmd is not None else manage_cmd, svc_name)
+    from eidolon_cli.gateway_update_ownership import _update_systemd_service_identity
+    from types import SimpleNamespace
+    read_cmd = scope_cmd if scope_cmd is not None else manage_cmd
+    identity = (expected_service_identity if expected_service_identity is not None
+                else _update_systemd_service_identity(read_cmd, svc_name))
+    def refused():
+        message = f"Leaving {svc_name} untouched: installation ownership is unverified or changed"
+        print(f"  ⚠ {message}")
+        return SimpleNamespace(returncode=1, stderr=message)
+    if identity is None:
+        return refused()
+    timeout = _systemd_restart_timeout(read_cmd, svc_name)
+    if _update_systemd_service_identity(read_cmd, svc_name) != identity:
+        return refused()
     _systemctl(manage_cmd + ["reset-failed", svc_name], timeout=10)
+    if _update_systemd_service_identity(read_cmd, svc_name) != identity:
+        return refused()
     return _systemctl(manage_cmd + ["restart", svc_name], timeout=timeout)
 
 
@@ -520,7 +540,7 @@ def _restart_launchd_gateway_after_update(*, supervision_verify: bool = True) ->
         if not get_launchd_plist_path().exists():
             return [], []  # not a launchd install — nothing to do or warn
         try:
-            launchd_restart()
+            launchd_restart(for_update=True)
         except subprocess.CalledProcessError as e:
             stderr = (getattr(e, "stderr", "") or "").strip()
             print(
@@ -529,7 +549,7 @@ def _restart_launchd_gateway_after_update(*, supervision_verify: bool = True) ->
                 "Recover manually: eidolon gateway restart"
             )
             return [], [current_label]
-    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+    except (FileNotFoundError, subprocess.TimeoutExpired, RuntimeError) as e:
         # A plist exists, so a gateway is SUPPOSED to be supervised; a broken/wedged
         # launchctl is not proof nothing needs restarting. Count it, tell the operator.
         print(
@@ -576,7 +596,7 @@ def _restart_macos_launchd_gateways(
     """
     from eidolon_cli.gateway import (
         get_launchd_label, get_launchd_plist_path, launchd_gateway_labels_for_install, _graceful_restart_via_sigusr1, _launchd_kickstart,
-        _locate_launchd_gateway_service, _wait_for_launchd_service_pid,
+        _locate_launchd_gateway_service, _wait_for_launchd_service_pid, update_launchd_restart_is_owned,
     )
     if require_supervision:
         listing = subprocess.run(["launchctl", "list"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10)
@@ -602,15 +622,24 @@ def _restart_macos_launchd_gateways(
             graceful_ok = False
             if old_pid is not None and old_pid > 0:
                 print(f"  → {label}: draining (up to {int(drain_budget)}s)...")
-                graceful_ok = _graceful_restart_via_sigusr1(old_pid, drain_timeout=drain_budget)
+                from eidolon_cli.process_identity import owned_gateway_identity
+                identity = owned_gateway_identity(old_pid)
+                if identity is not None:
+                    graceful_ok = _graceful_restart_via_sigusr1(
+                        old_pid, drain_timeout=drain_budget, expected_start_time=identity[1],
+                        identity_check=lambda: owned_gateway_identity(old_pid) == identity)
+                elif not update_launchd_restart_is_owned(label):
+                    print(f"  ⚠ Leaving {label} untouched: installation ownership is unverified")
+                    failed_or_stale_units.append(label)
+                    continue
             if graceful_ok and _wait_for_launchd_service_pid(label, old_pid=old_pid, timeout=10.0, domain=domain):
                 # KeepAlive already respawned it on new code — a kickstart would kill it.
                 restarted_services.append(label)
                 continue
             try:
-                _launchd_kickstart(label, domain)
-            except subprocess.CalledProcessError as e:
-                stderr = (getattr(e, "stderr", "") or "").strip()
+                _launchd_kickstart(label, domain, for_update=True)
+            except (subprocess.CalledProcessError, RuntimeError) as e:
+                stderr = (getattr(e, "stderr", "") or str(e)).strip()
                 failed_or_stale_units.append(label)
                 print(
                     f"  ⚠ Failed to restart {label}: {stderr}\n"
@@ -722,7 +751,7 @@ def _warn_gateway_restart_phase_aborted(exc: BaseException, pids) -> None:
     print("    eidolon gateway status")
 
 
-def _drain_or_signal_gateway_for_update(pid: int, drain_budget: float, label: str) -> bool:
+def _drain_or_signal_gateway_for_update(pid: int, drain_budget: float, label: str, *, identity_check=None, expected_start_time=None) -> bool:
     """Three-way triage (shared by systemd and bare-process paths) for handing a
     running gateway over to new code. Returns True when signalled/stopped.
 
@@ -741,19 +770,22 @@ def _drain_or_signal_gateway_for_update(pid: int, drain_budget: float, label: st
         GATEWAY_LOOP_WEDGED, _escalate_wedged_gateway, _graceful_restart_via_sigusr1,
         _is_pid_ancestor_of_current_process, _request_gateway_self_restart, probe_gateway_loop_liveness,
     )
+    guard = {"identity_check": identity_check, "expected_start_time": expected_start_time} if identity_check is not None else {}
+    if identity_check is not None and not identity_check():
+        return False
     if _is_pid_ancestor_of_current_process(pid):
         print(
             f"  → {label}: update is running inside this gateway's "
             "process tree — signalling restart and letting the gateway "
             "drain itself (avoids the cron-update deadlock, #100179)"
         )
-        return _request_gateway_self_restart(pid)
+        return _request_gateway_self_restart(pid, **guard)
     if probe_gateway_loop_liveness(pid) == GATEWAY_LOOP_WEDGED:
         print(f"  ⚠ {label}: gateway event loop is unresponsive — skipping drain, forcing a bounded stop...")
-        _escalate_wedged_gateway(pid)
-        return True
+        stopped = _escalate_wedged_gateway(pid, **guard)
+        return stopped if identity_check is not None else True
     print(f"  → {label}: draining (up to {int(drain_budget)}s)...")
-    return _graceful_restart_via_sigusr1(pid, drain_timeout=drain_budget)
+    return _graceful_restart_via_sigusr1(pid, drain_timeout=drain_budget, **guard)
 
 
 def _resolve_manage_cmd(cache: dict, scope_: str, scope_cmd_: list, svc_name_: str):
@@ -775,7 +807,7 @@ def _resolve_manage_cmd(cache: dict, scope_: str, scope_cmd_: list, svc_name_: s
             sudo_ok = subprocess.run(["sudo", "-n", "true"], capture_output=True, timeout=5).returncode == 0
             if not sudo_ok:
                 # Blanket sudo refused — a targeted NOPASSWD sudoers entry may still work.
-                sudo_ok = subprocess.run(
+                sudo_ok = _update_systemd_restart_is_owned(scope_cmd_, svc_name_) and subprocess.run(
                     sudo_cmd + ["reset-failed", svc_name_], capture_output=True, timeout=5
                 ).returncode == 0
         except (FileNotFoundError, subprocess.TimeoutExpired):
@@ -796,6 +828,12 @@ def _restart_one_systemd_gateway_unit(
     check = _systemctl(scope_cmd + ["is-active", svc_name], timeout=5)
     if check.stdout.strip() != "active":
         return
+    from eidolon_cli.gateway_update_ownership import _update_systemd_service_identity
+    initial_service_identity = _update_systemd_service_identity(scope_cmd, svc_name)
+    if initial_service_identity is None:
+        failed_or_stale_units.append(svc_name)
+        print(f"  ⚠ Leaving {svc_name} untouched: installation ownership is unverified")
+        return
 
     # None ⇒ no non-interactive privilege path; avoid manage-units verbs
     # entirely or polkit prompts inside the captured subprocess.
@@ -812,22 +850,36 @@ def _restart_one_systemd_gateway_unit(
             _main_pid = 0
 
     # Three-way triage (ancestor / wedged / graceful drain).
-    _graceful_ok = _main_pid > 0 and _drain_or_signal_gateway_for_update(_main_pid, drain_budget, svc_name)
+    from eidolon_cli.process_identity import owned_gateway_identity
+    identity = owned_gateway_identity(_main_pid) if _main_pid > 0 else None
+    _graceful_ok = identity is not None and _drain_or_signal_gateway_for_update(
+        _main_pid, drain_budget, svc_name, expected_start_time=identity[1],
+        identity_check=lambda: (owned_gateway_identity(_main_pid) == identity
+            and _update_systemd_service_identity(scope_cmd, svc_name) == initial_service_identity))
+    if _main_pid > 0 and identity is None:
+        failed_or_stale_units.append(svc_name)
+        print(f"  ⚠ Leaving {svc_name} untouched: installation ownership is unverified")
+        return
 
     if _graceful_ok:
         # ``Restart=always`` respawns only after RestartSec (60s in our unit; dead time for a
         # voluntary restart). ``reset-failed`` + ``start`` skips it (~1-3s); if RestartSec already
         # elapsed, ``start`` is a no-op and we fall through to the poll. Needs manage-units
         # privileges; without them auto-restart still fires after RestartSec.
-        if _manage_cmd is not None:
+        from eidolon_cli.gateway_update_ownership import _update_systemd_service_identity
+        service_identity = _update_systemd_service_identity(scope_cmd, svc_name)
+        if _manage_cmd is not None and service_identity is not None:
             _systemctl(_manage_cmd + ["reset-failed", svc_name], timeout=10)
-            _systemctl(
-                _manage_cmd + ["start", svc_name],
-                timeout=_systemd_restart_timeout(scope_cmd, svc_name, start_only=True),
-            )
-            if _wait_for_service_active(scope_cmd, svc_name, timeout=10.0):
+            start_timeout = _systemd_restart_timeout(scope_cmd, svc_name, start_only=True)
+            if _update_systemd_service_identity(scope_cmd, svc_name) == service_identity:
+                _systemctl(_manage_cmd + ["start", svc_name], timeout=start_timeout)
+            if (_wait_for_service_active(scope_cmd, svc_name, timeout=10.0)
+                    and _update_systemd_restart_is_owned(scope_cmd, svc_name)):
                 restarted_services.append(svc_name)
                 return
+        # A successfully drained process may now have MainPID=0. Do not use
+        # its disk definition as authority to start a potentially cached foreign
+        # command; preserve passive recovery through the existing restart policy.
         # Passive poll: auto-restart fires after RestartSec regardless of
         # privileges — primary when _manage_cmd is None, fallback otherwise.
         _restart_sec = _service_restart_sec(scope_cmd, svc_name, default=0.0)
@@ -837,7 +889,8 @@ def _restart_one_systemd_gateway_unit(
                 f"auto-restart (~{int(_restart_sec)}s; "
                 "no root for an immediate restart)..."
             )
-        if _wait_for_service_active(scope_cmd, svc_name, timeout=max(10.0, _restart_sec + 10.0)):
+        if (_wait_for_service_active(scope_cmd, svc_name, timeout=max(10.0, _restart_sec + 10.0))
+                and _update_systemd_restart_is_owned(scope_cmd, svc_name)):
             restarted_services.append(svc_name)
             return
         # Exited but not respawned (older unit without Restart=on-failure /
@@ -859,7 +912,8 @@ def _restart_one_systemd_gateway_unit(
 
     # Blunt restart — only when the graceful path failed (no SIGUSR1 wiring, drain over
     # budget, restart-policy mismatch). Mirrors `eidolon gateway restart` (`systemd_restart()`).
-    restart = _systemctl_reset_and_restart(_manage_cmd, svc_name, scope_cmd=scope_cmd)
+    restart = _systemctl_reset_and_restart(_manage_cmd, svc_name, scope_cmd=scope_cmd,
+                                            expected_service_identity=initial_service_identity)
     if restart.returncode != 0:
         failed_or_stale_units.append(svc_name)
         print(f"  ⚠ Failed to restart {svc_name}: {restart.stderr.strip()}")
@@ -871,7 +925,8 @@ def _restart_one_systemd_gateway_unit(
     # Retry once — transient startup failures (stale module cache,
     # import race) often clear; reset-failed so the retry isn't blocked.
     print(f"  ⚠ {svc_name} died after restart, retrying...")
-    _systemctl_reset_and_restart(_manage_cmd, svc_name, scope_cmd=scope_cmd)
+    _systemctl_reset_and_restart(_manage_cmd, svc_name, scope_cmd=scope_cmd,
+                                            expected_service_identity=initial_service_identity)
     if _wait_for_service_active(scope_cmd, svc_name, timeout=10.0):
         restarted_services.append(svc_name)
         print(f"  ✓ {svc_name} recovered on retry")
@@ -959,6 +1014,7 @@ class _GatewayRestartOutcome:
     #: the summary tells the user to restart them by hand, so the fleet probe must not expect
     #: a row for them.
     stopped_unmapped_pids: set = field(default_factory=set)
+    gateway_start_times: dict = field(default_factory=dict)
 
     def fleet_probe_signals(self) -> tuple:
         """``(pre_restart_pids, killed_pids)`` with the unmapped stops removed — the signals that
@@ -985,14 +1041,25 @@ def _restart_manual_gateways(out: _GatewayRestartOutcome, _drain_budget) -> None
 
     Mutates ``out`` in place; raises so the caller's abort recovery fires.
     """
-    import signal as _signal
     from eidolon_cli.gateway import (
-        find_gateway_pids, find_profile_gateway_processes, _prepare_profile_gateway_update_restart, _get_service_pids,
+        find_gateway_process_identities, find_profile_gateway_processes, _prepare_profile_gateway_update_restart, _get_service_pids,
         _wait_for_gateway_exit,
     )
     # Exclude just-restarted service PIDs so we don't kill what systemd/launchd spawned.
     service_pids = _get_service_pids(all_profiles=True)
-    manual_pids = find_gateway_pids(exclude_pids=service_pids, all_profiles=True)
+    identities = find_gateway_process_identities(exclude_pids=service_pids)
+    manual_pids = list(identities)
+    from eidolon_cli.process_identity import owned_gateway_identity
+    from gateway.status import terminate_pid
+    out.gateway_start_times.update({pid: identities[pid] for pid in manual_pids})
+
+    def still_owned(pid):
+        if owned_gateway_identity(pid) == identities[pid]:
+            return True
+        print(f"  ⚠ Leaving gateway PID {pid} untouched: installation identity changed or is unavailable")
+        out.incomplete = True
+        return False
+
     profile_processes = {
         proc.pid: proc
         for proc in find_profile_gateway_processes(exclude_pids=service_pids)
@@ -1006,7 +1073,9 @@ def _restart_manual_gateways(out: _GatewayRestartOutcome, _drain_budget) -> None
     # which is the contract already used for gateways with no profile mapping.
     unrestartable_pids = set()
     for pid, proc in profile_processes.items():
-        restart_mode = _prepare_profile_gateway_update_restart(proc.profile, pid)
+        if not still_owned(pid):
+            continue
+        restart_mode = _prepare_profile_gateway_update_restart(proc.profile, pid, expected_identity=identities[pid])
         if restart_mode is None:
             # A bare ``continue`` here left it serving stale modules with no signal.
             print(
@@ -1019,9 +1088,13 @@ def _restart_manual_gateways(out: _GatewayRestartOutcome, _drain_budget) -> None
         # SIGUSR1 drain first, SIGTERM fallback if unsupported/over budget — the watcher
         # relaunches either way. The helper announces its choice first because a silent
         # full-budget wait reads as a hung update.
-        if not _drain_or_signal_gateway_for_update(pid, _drain_budget, proc.profile):
+        if not _drain_or_signal_gateway_for_update(
+                pid, _drain_budget, proc.profile, identity_check=lambda pid=pid: still_owned(pid),
+                expected_start_time=identities[pid][1]):
             with suppress(ProcessLookupError, PermissionError):
-                os.kill(pid, _signal.SIGTERM)
+                if not still_owned(pid):
+                    continue
+                terminate_pid(pid, expected_start_time=identities[pid][1])
         # Wait ≤5s for exit: Telegram keeps the old getUpdates session ~30s; a new gateway
         # inside that window gets a 409 (_handle_polling_conflict retries, but a brief
         # wait avoids it on fast machines).
@@ -1036,7 +1109,9 @@ def _restart_manual_gateways(out: _GatewayRestartOutcome, _drain_budget) -> None
         if pid in profile_processes and pid not in unrestartable_pids:
             continue
         with suppress(ProcessLookupError, PermissionError):
-            os.kill(pid, _signal.SIGTERM)
+            if not still_owned(pid):
+                continue
+            terminate_pid(pid, expected_start_time=identities[pid][1])
             out.killed_pids.add(pid)
             out.stopped_unmapped_pids.add(pid)
 
@@ -1057,7 +1132,7 @@ def _restart_manual_gateways(out: _GatewayRestartOutcome, _drain_budget) -> None
                 print("    (or: eidolon -p <profile> gateway run  for each profile)")
 
 
-def _force_kill_stuck_gateways(killed_pids) -> None:
+def _force_kill_stuck_gateways(killed_pids, *, expected_start_times=None) -> None:
     """Survivor sweep: gateways ignoring SIGTERM (stuck drain, blocked I/O, zombie) never
     exit, so the watcher never respawns and ImportErrors persist. Give graceful paths a
     moment, then SIGKILL remaining pre-update PIDs."""
@@ -1074,11 +1149,16 @@ def _force_kill_stuck_gateways(killed_pids) -> None:
         if _stuck:
             print()
             print(f"  ⚠ {len(_stuck)} gateway process(es) ignored SIGTERM — force-killing")
-            from gateway.status import get_process_start_time, terminate_pid
+            from gateway.status import terminate_pid
+            from eidolon_cli.process_identity import owned_gateway_identity
             for pid in _stuck:
                 with suppress(ProcessLookupError, PermissionError, OSError):
+                    expected = (expected_start_times or {}).get(pid)
+                    if expected is None or owned_gateway_identity(pid) != expected:
+                        print(f"  ⚠ Leaving gateway PID {pid} untouched: original ownership is unverified")
+                        continue
                     # taskkill /T /F on Windows (no SIGKILL there), SIGKILL on POSIX.
-                    terminate_pid(pid, force=True, expected_start_time=get_process_start_time(pid))
+                    terminate_pid(pid, force=True, expected_start_time=expected[1])
             # Let the OS reap so watchers see the exit and respawn.
             _time.sleep(1.5)
 
@@ -1230,7 +1310,7 @@ def _restart_gateway_fleet_after_update(_pre_update_plan, gateway_mode: bool):
                 _write_gateway_update_exit_code(False)
         _warn_incomplete_gateway_fleet_restart(out.failed_or_stale_units)
         out.record_receipt()
-        _force_kill_stuck_gateways(out.killed_pids)
+        _force_kill_stuck_gateways(out.killed_pids, expected_start_times=out.gateway_start_times)
 
     except Exception as e:
         _recover_after_restart_phase_abort(

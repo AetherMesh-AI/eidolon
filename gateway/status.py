@@ -222,17 +222,18 @@ def terminate_pid(
     process, the kill is refused on every platform — a mismatched fingerprint always means the PID was
     recycled. See #89614.
     """
-    if force and (_IS_WINDOWS or expected_start_time is not None):
+    if expected_start_time is not None or (force and _IS_WINDOWS):
+        action = "force-kill" if force else "signal"
         if expected_start_time is None:
             raise OSError(f"refusing to force-kill PID {pid} without a process start-time guard")
         current_start_time = _get_process_start_time(pid)
         if current_start_time is None:
-            raise OSError(f"refusing to force-kill PID {pid}; process start time is unavailable")
+            raise OSError(f"refusing to {action} PID {pid}; process start time is unavailable")
         try:
             if not _start_times_agree(current_start_time, expected_start_time):
-                raise OSError(f"refusing to force-kill PID {pid}; process identity changed")
+                raise OSError(f"refusing to {action} PID {pid}; process identity changed")
         except (TypeError, ValueError) as exc:
-            raise OSError(f"refusing to force-kill PID {pid}; malformed start time") from exc
+            raise OSError(f"refusing to {action} PID {pid}; malformed start time") from exc
     if not (force and _IS_WINDOWS):
         os.kill(pid, signal.SIGTERM if not force else getattr(signal, "SIGKILL", signal.SIGTERM))
         return

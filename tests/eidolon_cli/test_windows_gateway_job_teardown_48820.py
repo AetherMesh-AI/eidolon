@@ -40,6 +40,17 @@ from eidolon_cli.update_cmd import _resume_windows_gateways_after_update
 def _captured_watcher_source(monkeypatch) -> str:
     """Spawn the watcher with a mocked Popen and return the inlined -c source."""
     captured = {}
+    from types import SimpleNamespace
+    import psutil
+    from eidolon_cli import process_identity, profiles
+    from eidolon_constants import get_eidolon_home
+
+    home = str(get_eidolon_home())
+    run_argv = ["python", "-m", "eidolon_cli.main", "gateway", "run"]
+    monkeypatch.setattr(process_identity, "owned_gateway_identity", lambda pid: (999999, 100.0) if pid == 999999 else None)
+    monkeypatch.setattr(process_identity, "owned_gateway_home", lambda pid, **kw: home if pid == 999999 else None)
+    monkeypatch.setattr(profiles, "list_profiles", lambda: [SimpleNamespace(name="default", path=home)])
+    monkeypatch.setattr(psutil, "Process", lambda pid: SimpleNamespace(cmdline=lambda: list(run_argv)))
 
     def fake_popen(argv, **kwargs):
         captured["argv"] = argv

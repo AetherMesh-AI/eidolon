@@ -1,19 +1,9 @@
-"""Regression for #74973 — `eidolon update` must not leave the gateway down.
+"""Updater restart delegation and launchd PID discovery regressions.
 
-On macOS the update's launchd branch guarded the restart behind
-``launchctl list <label>`` exiting 0. A job that has been *booted out* of
-launchd exits non-zero there, so the whole restart branch was skipped — with
-no ``else`` and no message. The update printed ``✓ Update complete!`` and
-exited 0 while the gateway was stopped *and* deregistered, which ``KeepAlive``
-cannot recover because the job definition is gone. Messaging adapters and
-cron stayed dark until someone manually ran ``eidolon gateway restart``.
-
-``launchctl list`` is also not a reliable loaded/unloaded classifier: it is
-session-scoped and can exit non-zero while the job is alive in its gui/user
-domain (PR #75021 review). The fix therefore does not classify at all — when
-the plist exists it always calls ``launchd_restart()``, which drains a live
-PID, kickstarts with ``-k``, and falls back to bootout/bootstrap/kickstart
-when the job is genuinely unloaded.
+The helper must delegate to launchd_restart with the updater ownership guard
+rather than trusting session-scoped `launchctl list` as authority. These
+routing tests stub that guarded helper; loaded-service ownership and refusal
+of genuinely unloaded services are exercised by the ownership contract tests.
 """
 
 from __future__ import annotations
@@ -45,7 +35,8 @@ def launchd(monkeypatch):
     monkeypatch.setattr(gateway_mod, "get_launchd_label", lambda: "ai.eidolon.gateway", raising=False)
     monkeypatch.setattr(gateway_mod, "get_launchd_plist_path", lambda: state["plist"], raising=False)
 
-    def fake_restart():
+    def fake_restart(*, for_update):
+        assert for_update is True
         if state["restart_exc"] is not None:
             raise state["restart_exc"]
         calls.append("restart")
@@ -61,17 +52,8 @@ def launchd(monkeypatch):
 
 
 class TestLaunchdRestartAfterUpdate:
-    def test_plist_present_always_restarts_without_classifying(self, launchd, capsys):
-        """The restart must not be gated on `launchctl list`.
-
-        `list` can exit non-zero while the job is alive in its domain
-        (`launchctl print gui/<uid>/<label>` reports state=running with a
-        PID). Routing that state to a plain start would leave the old-code
-        process running, because `kickstart` without `-k` does not terminate
-        a running service. The helper therefore performs no list-based
-        classification at all — `launchd_restart()` handles every
-        plist-present state.
-        """
+    def test_plist_present_delegates_to_guarded_restart_without_list_classifying(self, launchd, capsys):
+        """Delegate authority checks instead of trusting `launchctl list`."""
         calls, state, subprocess_calls = launchd
 
         assert update_cmd._restart_launchd_gateway_after_update(supervision_verify=False) == (["ai.eidolon.gateway"], [])

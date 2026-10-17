@@ -297,7 +297,7 @@ def _restart_running_gateway(any_messaging: bool, supports_systemd: bool) -> Non
         if supports_systemd:
             systemd_restart()
         elif _platform.system() == "Darwin":
-            launchd_restart()
+            launchd_restart(for_update=False)
         elif _platform.system() == "Windows":
             from eidolon_cli import gateway_windows
             gateway_windows.restart()
