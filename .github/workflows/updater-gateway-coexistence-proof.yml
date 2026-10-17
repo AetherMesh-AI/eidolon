@@ -28,16 +28,16 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: c9a6d4d5b1c55fa688b94ff329ebe32b3b145a08
+          ref: b9256f5fa0904c36e6b5263ef569c6f4f08cef49
           persist-credentials: false
-          fetch-depth: 3
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v6
+          fetch-depth: 1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
       - name: Verify exact source
         run: |
-          test "$(git rev-parse HEAD)" = c9a6d4d5b1c55fa688b94ff329ebe32b3b145a08
-          test "$(git rev-parse HEAD^{tree})" = 8cbf09d7388e6349bf6ebe7c0d2de92352c8d6ed
+          test "$(git rev-parse HEAD)" = b9256f5fa0904c36e6b5263ef569c6f4f08cef49
+          test "$(git rev-parse HEAD^{tree})" = 719349cb69ed9fb7bbc2e6aeabb1ffabc8e08e3b
       - name: Record host architecture
         run: |
           uname -m
@@ -53,49 +53,10 @@ jobs:
           scripts/run_tests.sh -j 2 tests/test_update_gateway_install_isolation.py tests/test_update_gateway_signal_identity.py tests/test_update_gateway_coexistence_live.py tests/test_update_gateway_service_authority.py tests/eidolon_cli/test_process_identity.py tests/eidolon_cli/test_gateway.py tests/eidolon_cli/test_gateway_restart_loop.py tests/eidolon_cli/test_update_wedged_gateway.py tests/eidolon_cli/test_update_fleet_restart_pending.py tests/eidolon_cli/test_update_fleet_restart_timeout.py tests/eidolon_cli/test_update_launchd_fleet_restart.py tests/eidolon_cli/test_update_launchd_unloaded_gateway.py tests/eidolon_cli/test_update_gateway_restart_fallback.py tests/gateway/test_status.py tests/eidolon_cli/test_gateway_service.py tests/test_89315_replace_ownership_guard.py tests/eidolon_cli/test_gateway_external_supervisor.py tests/eidolon_cli/test_pending_supervisor_recovery.py tests/eidolon_cli/test_update_cron_deadlock_guard.py tests/eidolon_cli/test_update_launchd_restart_verification.py tests/eidolon_cli/test_windows_gateway_job_teardown_48820.py 2>&1 | tee gateway-tests.log
       - name: Verify first-upgrade manual selector boundary
         run: |
+          git fetch --no-tags --depth=1 origin c00c29cf4e071e5844eeda20b2719bcfd31aa2c3
           git show c00c29cf4e071e5844eeda20b2719bcfd31aa2c3:eidolon_cli/update_cmd_fleet.py > "$RUNNER_TEMP/baseline-fleet.py"
-          cat > "$RUNNER_TEMP/legacy-selector-proof.py" <<'PYPROOF'
-          """One-off legacy-frame selector proof; pass an exact baseline fleet file."""
-          import contextlib
-          import importlib.util
-          from pathlib import Path
-          import signal
-          import sys
-          import types
-          from unittest.mock import patch
-          
-          import eidolon_cli.gateway as gateway
-          import eidolon_cli.process_identity as identity
-          
-          path = Path(sys.argv[1])
-          spec = importlib.util.spec_from_file_location('legacy_update_cmd_fleet_proof', path)
-          legacy = importlib.util.module_from_spec(spec)
-          sys.modules[spec.name] = legacy
-          spec.loader.exec_module(legacy)
-          calls = []
-          out = types.SimpleNamespace(killed_pids=set(), stopped_unmapped_pids=set(),
-              restarted_services=[], relaunched_profiles=[], externally_supervised_profiles=[])
-          with contextlib.ExitStack() as stack:
-              fixtures = {
-                  '_get_service_pids': lambda **kw: set(),
-                  'supports_systemd_services': lambda: False,
-                  '_scan_gateway_pids': lambda *a, **kw: [501, 502],
-                  'find_profile_gateway_processes': lambda **kw: [],
-                  '_prepare_profile_gateway_update_restart': lambda *a, **kw: None,
-                  '_wait_for_gateway_exit': lambda **kw: None,
-              }
-              for name, value in fixtures.items():
-                  stack.enter_context(patch.object(gateway, name, value))
-              stack.enter_context(patch.object(identity, 'owned_gateway_identity',
-                  lambda pid: (10., 1000) if pid == 501 else None))
-              stack.enter_context(patch.object(legacy, 'os', types.SimpleNamespace(kill=lambda *args: calls.append(args))))
-              legacy._restart_manual_gateways(out, 45)
-          assert calls == [(501, signal.SIGTERM)], calls
-          assert out.killed_pids == {501}, out.killed_pids
-          print('PASS: genuine baseline fleet module uses repaired selector; only owned PID reaches its signal spy.')
-          print('Scope: foreign-install exclusion in old manual sweep, not new identity propagation in old frames.')
-          PYPROOF
-          HERMES_HOME="$(mktemp -d)" PYTHONPATH="$PWD" .venv/bin/python "$RUNNER_TEMP/legacy-selector-proof.py" "$RUNNER_TEMP/baseline-fleet.py" 2>&1 | tee legacy-selector.log
+          test "$(git hash-object "$RUNNER_TEMP/baseline-fleet.py")" = a6eeb39fe0641bfc1849b75fda5a6053fb3115c8
+          HERMES_HOME="$(mktemp -d)" PYTHONPATH="$PWD" .venv/bin/python scripts/ci/prove_gateway_legacy_selector.py "$RUNNER_TEMP/baseline-fleet.py" 2>&1 | tee legacy-selector.log
       - name: Retain bounded test log
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
