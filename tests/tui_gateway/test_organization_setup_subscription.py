@@ -250,10 +250,10 @@ def test_retired_cache_cleanup_cannot_drop_new_generation():
 
 @pytest.mark.parametrize('operation,extra,requires_fresh', [
     ('status', {}, False), ('cancel', {'attemptId': 'attempt'}, False),
-    ('disconnect', {'expectedRevision': 1, 'confirmed': True}, False),
+    ('prepareOperation', {'kind': 'revoke', 'expectedRevision': 1, 'confirmed': True}, False),
     ('begin', {'expectedRevision': 0, 'confirmed': True, 'consentVersion': 1}, True),
 ])
-def test_only_begin_requires_fresh_setup(monkeypatch, operation, extra, requires_fresh):
+def test_authentication_requires_fresh_but_local_lifecycle_does_not(monkeypatch, operation, extra, requires_fresh):
     seen = []
     def context(*args, require_fresh):
         seen.append(require_fresh)
@@ -261,7 +261,7 @@ def test_only_begin_requires_fresh_setup(monkeypatch, operation, extra, requires
             raise methods.BoundaryError()
         return object()
     service = SimpleNamespace(status=lambda: {}, cancel=lambda attempt: {},
-                              disconnect_current=lambda revision: {})
+                              prepare_operation=lambda kind, revision: {})
     monkeypatch.setattr(methods, '_context', context)
     monkeypatch.setattr(methods, '_service', lambda *args: service)
     if requires_fresh:
@@ -300,3 +300,193 @@ def test_status_context_preserves_separate_future_begin_eligibility(tmp_path, mo
     fresh = False
     assert context.owner_guard() is True
     assert context.setup_guard() is False
+
+
+def test_lease_guard_never_enters_sqlite(tmp_path, monkeypatch):
+    transport = Transport()
+    generation = object()
+    monkeypatch.setitem(credentials._owners, transport, (tmp_path.resolve(), generation))
+    monkeypatch.setattr(methods, '_durable_scope', lambda *a: (params()['expectedOrganizationId'], 'owner', 'revision'))
+    context = methods._context(transport, params(), object())
+    monkeypatch.setattr(methods, '_durable_scope', lambda *a: pytest.fail('store guard entered SQLite'))
+    assert context.lease_generation_guard() is True
+    monkeypatch.setitem(credentials._owners, transport, (tmp_path.resolve(), object()))
+    assert context.lease_generation_guard() is False
+
+
+def ticket(**changes):
+    return {'version': 1, 'sequence': '1', 'nonce': 'b' * 64, 'kind': 'refresh',
+            'bindingDigest': 'c' * 64, 'authorizationEpoch': '00000000-0000-4000-8000-000000000008',
+            'priorStoreRevision': 2, 'sourceRevision': 'a' * 64, **changes}
+
+
+@pytest.mark.parametrize('operation,extra', [
+    ('prepareOperation', {'kind': 'refresh', 'expectedRevision': 2, 'confirmed': True}),
+    ('models', {'expectedRevision': 2}),
+    ('executeOperation', {'ticket': ticket()}),
+    ('reconcileOperation', {'ticket': ticket()}),
+    ('cancelOperation', {'ticket': ticket()}),
+    ('recoverOperation', {'confirmed': True}),
+])
+def test_session_requests_reject_injected_authority(operation, extra):
+    methods._parameters(operation, params(sourceRevision='a' * 64, **extra))
+    with pytest.raises(methods.BoundaryError):
+        methods._parameters(operation, params(sourceRevision='a' * 64, **extra,
+                                             endpoint='https://foreign.invalid'))
+
+
+@pytest.mark.parametrize('change', [
+    {'sequence': '0'}, {'sequence': '01'}, {'sequence': str(2**63)}, {'sequence': 1},
+    {'nonce': 'bad'}, {'kind': 'other'}, {'kind': []}, {'version': True},
+    {'priorStoreRevision': True}, {'priorStoreRevision': 0},
+    {'sourceRevision': 'd' * 64}, {'bindingDigest': 'BAD'},
+    {'authorizationEpoch': 'bad'}, {'accessToken': 'synthetic'},
+])
+def test_ticket_shape_is_closed_before_owner_or_service_lookup(monkeypatch, change):
+    monkeypatch.setattr(methods, '_context', lambda *a, **k: pytest.fail('owner lookup reached'))
+    with pytest.raises(methods.BoundaryError):
+        methods.dispatch('executeOperation', params(sourceRevision='a' * 64,
+            ticket=ticket(**change)), Transport(), object())
+
+
+@pytest.mark.parametrize('operation', ['refresh', 'disconnect', 'reconcileRefresh'])
+def test_old_uuid_mutation_surface_is_rejected(operation):
+    with pytest.raises(methods.BoundaryError):
+        methods._parameters(operation, params(operationId=str(uuid.UUID(int=7))))
+
+
+def completed():
+    return {'state': 'completed', 'ticket': ticket(), 'revision': 3,
+            'verification': 'verified_current', 'catalogRevision': 3,
+            'receipt': {'kind': 'refresh', 'revision': 3, 'localRetired': False,
+                        'remoteRevocation': 'not_applicable'}}
+
+
+def test_explicit_execute_one_catalog_read_and_retained_receipt(monkeypatch):
+    calls = []
+    result = completed()
+    service = SimpleNamespace(execute_operation=lambda value: calls.append(('execute', value)) or result)
+    catalog = SimpleNamespace(invalidate=lambda: calls.append('invalidate'),
+        load=lambda revision: calls.append(('models', revision)) or {'models': []})
+    monkeypatch.setattr(methods, '_context', lambda *a, **k: object())
+    monkeypatch.setattr(methods, '_service', lambda *a: service)
+    monkeypatch.setattr(methods, '_catalog', lambda *a: catalog)
+    response = methods.dispatch('executeOperation', params(sourceRevision='a' * 64,
+        ticket=ticket()), Transport(), object())
+    assert response['receipt'] == result['receipt'] and response['catalogState'] == 'ready'
+    assert calls.count(('execute', ticket())) == 1
+    assert calls.count(('models', 3)) == 1
+    catalog.load = lambda revision: (_ for _ in ()).throw(ValueError('synthetic'))
+    response = methods._after_operation(service, object(), result)
+    assert response == {**result, 'catalog': None, 'catalogState': 'unavailable'}
+    assert calls.count(('execute', ticket())) == 1
+
+
+@pytest.mark.parametrize('operation', ['reconcileOperation', 'recoverOperation'])
+def test_explicit_local_recovery_chains_only_current_catalog(monkeypatch, operation):
+    calls = []
+    service = SimpleNamespace(
+        reconcile_operation=lambda value: calls.append('reconcile') or completed(),
+        recover_operation_current=lambda: calls.append('recover') or completed())
+    catalog = SimpleNamespace(invalidate=lambda: None,
+        load=lambda revision: calls.append(('models', revision)) or {'models': []})
+    monkeypatch.setattr(methods, '_context', lambda *a, **k: object())
+    monkeypatch.setattr(methods, '_service', lambda *a: service)
+    monkeypatch.setattr(methods, '_catalog', lambda *a: catalog)
+    fields = {'ticket': ticket()} if operation == 'reconcileOperation' else {'confirmed': True}
+    response = methods.dispatch(operation, params(sourceRevision='a' * 64, **fields), Transport(), object())
+    assert response['catalogState'] == 'ready' and calls[-1] == ('models', 3)
+    assert len(calls) == 2
+
+
+@pytest.mark.parametrize('state', ['admitted', 'uncertain', 'local_retired', 'prepared', 'completed'])
+def test_no_catalog_without_current_completion_evidence(monkeypatch, state):
+    monkeypatch.setattr(methods, '_catalog', lambda *a: pytest.fail('catalog accessed'))
+    result = {**completed(), 'state': state, 'catalogRevision': None}
+    assert methods._after_operation(object(), object(), result)['catalogState'] == 'not_requested'
+
+
+def test_prepare_is_not_execute_and_disconnect_fallback_stops_chain(monkeypatch):
+    calls = []
+    fallback = {'state': 'local_retired', 'ticket': None, 'catalogRevision': None,
+                'receipt': {'kind': 'local', 'revision': 3, 'localRetired': True,
+                            'remoteRevocation': 'unconfirmed'}}
+    service = SimpleNamespace(prepare_operation=lambda kind, rev: calls.append((kind, rev)) or fallback)
+    monkeypatch.setattr(methods, '_context', lambda *a, **k: object())
+    monkeypatch.setattr(methods, '_service', lambda *a: service)
+    monkeypatch.setattr(methods, '_catalog', lambda *a: SimpleNamespace(invalidate=lambda: None))
+    response = methods.dispatch('prepareOperation', params(kind='revoke', expectedRevision=2,
+        confirmed=True), Transport(), object())
+    assert response == fallback and calls == [('revoke', 2)]
+
+
+@pytest.mark.parametrize('operation,kind,fresh', [
+    ('prepareOperation', 'refresh', True), ('prepareOperation', 'revoke', False),
+    ('executeOperation', 'refresh', True), ('executeOperation', 'revoke', False),
+    ('reconcileOperation', 'refresh', False), ('cancelOperation', 'refresh', False),
+])
+def test_ticket_refresh_freshness_and_post_setup_lifecycle(monkeypatch, operation, kind, fresh):
+    seen = []
+    result = {'state': 'uncertain', 'catalogRevision': None}
+    def context(*args, require_fresh):
+        seen.append(require_fresh)
+        if require_fresh:
+            raise methods.BoundaryError()
+        return object()
+    service = SimpleNamespace(prepare_operation=lambda *a: result,
+        execute_operation=lambda *a: result, reconcile_operation=lambda *a: result,
+        cancel_operation=lambda *a: result)
+    monkeypatch.setattr(methods, '_context', context)
+    monkeypatch.setattr(methods, '_service', lambda *a: service)
+    monkeypatch.setattr(methods, '_catalog', lambda *a: SimpleNamespace(invalidate=lambda: None))
+    fields = ({'kind': kind, 'expectedRevision': 2, 'confirmed': True}
+              if operation == 'prepareOperation' else {'ticket': ticket(kind=kind)})
+    if fresh:
+        with pytest.raises(methods.BoundaryError):
+            methods.dispatch(operation, params(sourceRevision='a' * 64, **fields), Transport(), object())
+    else:
+        assert methods.dispatch(operation, params(sourceRevision='a' * 64, **fields),
+                                Transport(), object())['state'] == 'uncertain'
+    assert seen == [fresh]
+
+
+@pytest.mark.parametrize('change', [
+    {'state': 'admitted'}, {'state': 'uncertain'}, {'state': 'local_retired'},
+    {'verification': 'metadata_only'}, {'catalogRevision': True},
+    {'receipt': {'kind': 'revoke', 'revision': 3}},
+    {'receipt': {'kind': 'refresh', 'revision': 4}},
+])
+def test_invalid_catalog_authority_never_fetches(monkeypatch, change):
+    monkeypatch.setattr(methods, '_catalog', lambda *a: pytest.fail('catalog reached'))
+    with pytest.raises(methods.BoundaryError):
+        methods._after_operation(object(), object(), {**completed(), **change})
+
+
+@pytest.mark.parametrize('operation', ['cancelOperation', 'reconcileOperation'])
+def test_historical_source_ticket_allows_only_local_bookkeeping(monkeypatch, operation):
+    seen = []
+    result = {'state': 'completed', 'catalogRevision': None}
+    service = SimpleNamespace(cancel_operation=lambda value: seen.append(value) or result,
+        reconcile_operation=lambda value: seen.append(value) or result)
+    monkeypatch.setattr(methods, '_context', lambda *a, **k: object())
+    monkeypatch.setattr(methods, '_service', lambda *a: service)
+    monkeypatch.setattr(methods, '_catalog', lambda *a: SimpleNamespace(invalidate=lambda: None))
+    response = methods.dispatch(operation, params(sourceRevision='d' * 64, ticket=ticket()),
+                                Transport(), object())
+    assert response['state'] == 'completed' and seen == [ticket()]
+    assert response.get('catalog') is None
+    with pytest.raises(methods.BoundaryError):
+        methods.dispatch('executeOperation', params(sourceRevision='d' * 64, ticket=ticket()),
+                         Transport(), object())
+    assert seen == [ticket()]
+
+
+def test_historical_completion_cannot_request_catalog_even_if_service_mislabels(monkeypatch):
+    service = SimpleNamespace(reconcile_operation=lambda value: completed())
+    monkeypatch.setattr(methods, '_context', lambda *a, **k: object())
+    monkeypatch.setattr(methods, '_service', lambda *a: service)
+    monkeypatch.setattr(methods, '_catalog', lambda *a: SimpleNamespace(
+        invalidate=lambda: None, load=lambda *a: pytest.fail('historical catalog read')))
+    with pytest.raises(methods.BoundaryError):
+        methods.dispatch('reconcileOperation', params(sourceRevision='d' * 64,
+            ticket=ticket()), Transport(), object())

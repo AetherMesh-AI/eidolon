@@ -5,6 +5,7 @@ import base64
 import hashlib
 import json
 import os
+import sqlite3
 import threading
 import time
 from types import SimpleNamespace
@@ -93,8 +94,17 @@ class FakeStore:
         self.binding = None
         self.revision, self.phase = 0, 'absent'
         self.uncertain = False
+        self.cleanup_pending = False
+        self.history = {'issuedThrough': '0', 'retiredThrough': '0', 'state': 'available'}
+        self.ticket = None
+        self.operation_stage = 'none'
     def status(self):
-        return {'revision': self.revision, 'state': self.phase}
+        return {'revision': self.revision, 'state': self.phase, 'cleanup_pending': self.cleanup_pending}
+    def history_status(self):
+        return dict(self.history)
+    def ticket_status(self):
+        return {'state': self.operation_stage, 'ticket': self.ticket, 'revision': self.revision,
+                'verification': 'metadata_only'}
     def returning_binding(self):
         return self.binding
     def connect_grant(self, binding, **kwargs):
@@ -113,6 +123,30 @@ class FakeStore:
         self.phase = 'disconnected'
         self.revision += 1
         return self.status()
+    def prepare_ticket(self, binding, revision, *, kind, source_revision, owner_guard, cancel):
+        assert binding == self.binding and revision == self.revision
+        self.ticket = {'version': 1, 'sequence': '1', 'nonce': 'b' * 64, 'kind': kind,
+                       'bindingDigest': 'c' * 64, 'authorizationEpoch': str(uuid.uuid4()),
+                       'priorStoreRevision': revision, 'sourceRevision': source_revision}
+        self.operation_stage = 'prepared'
+        return dict(self.ticket)
+    def reconcile_ticket(self, binding, *, ticket, owner_guard, cancel):
+        assert binding == self.binding and ticket == self.ticket
+        receipt = ({'kind': 'revoke', 'revision': self.revision, 'localRetired': True,
+                    'remoteRevocation': 'unconfirmed'} if self.operation_stage == 'completed' else None)
+        return {'state': self.operation_stage, 'ticket': dict(ticket), 'receipt': receipt,
+                'revision': self.revision, 'verification': 'verified_current'}
+    def disconnect_grant(self, binding, *, expected_revision, ticket, owner_guard, cancel):
+        assert binding == self.binding and owner_guard() is True and not cancel.is_set()
+        self.disconnect(expected_revision=expected_revision)
+        self.operation_stage = 'completed'
+        return {'kind': 'revoke', 'revision': self.revision, 'localRetired': True,
+                'remoteRevocation': 'unconfirmed'}, None
+    def local_disconnect(self, binding, *, expected_revision, owner_guard, cancel):
+        assert binding == self.binding and owner_guard() is True and not cancel.is_set()
+        self.disconnect(expected_revision=expected_revision)
+        return {'kind': 'local', 'revision': self.revision, 'localRetired': True,
+                'remoteRevocation': 'unconfirmed'}
     def reconcile_auth_attempt(self, binding, **kwargs):
         assert binding == self.binding
         assert kwargs['auth_attempt_id'] == self.writes[-1]['auth_attempt_id']
@@ -154,7 +188,9 @@ def rig(monkeypatch):
         return True
     service = module.SubscriptionAuthService(store, host, context, synthetic=True,
         browser_open=browser, http=http, clock=lambda: now[0])
-    service._verifier.verify = lambda token, client, nonce: 'synthetic-account'
+    service._verifier.verify_initial = lambda token, client, nonce, access: {
+        'subject': 'synthetic-account', 'audience': client, 'nonce': nonce,
+        'authTime': None, 'authorizedParty': None}
     return SimpleNamespace(service=service, host=host, store=store, opened=opened,
         calls=calls, tokens=tokens, now=now, owner_live=owner_live, setup_live=setup_live, authority=authority)
 
@@ -255,7 +291,7 @@ def test_returning_exact_client_and_account(rig):
     attempt, _ = begin(rig)
     callback(attempt)
     binding = rig.store.binding
-    rig.service.disconnect_current(rig.store.revision)
+    rig.service.execute_operation(rig.service.prepare_operation('revoke', rig.store.revision)['ticket'])
     next_attempt, _ = begin(rig)
     query = parse_qs(urlsplit(rig.opened[-1]).query)
     assert query['client_id'] == [binding.issued_client_id]
@@ -268,10 +304,10 @@ def test_returning_exact_client_and_account(rig):
 def test_returning_identity_substitution_fails(rig, mismatch):
     attempt, _ = begin(rig)
     callback(attempt)
-    rig.service.disconnect_current(rig.store.revision)
+    rig.service.execute_operation(rig.service.prepare_operation('revoke', rig.store.revision)['ticket'])
     attempt, _ = begin(rig)
     if mismatch == 'account':
-        rig.service._verifier.verify = lambda *args: 'other-account'
+        rig.service._verifier.verify_initial = lambda *args: {'subject': 'other-account'}
         callback(attempt)
     else:
         callback(attempt, client_id='oaiapp_other')
@@ -367,7 +403,7 @@ def signing_key():
 
 def signed(signing_key, **changes):
     claims = {'iss': module.ISSUER, 'aud': 'oaiapp_synthetic', 'exp': int(time.time()) + 600,
-              'sub': 'synthetic-account', 'nonce': 'synthetic-nonce'}
+              'sub': 'synthetic-account', 'nonce': 'synthetic-nonce', 'iat': int(time.time())}
     claims.update(changes)
     return jwt.encode(claims, signing_key, algorithm='RS256', headers={'kid': 'synthetic-key'})
 
@@ -411,7 +447,7 @@ def test_wrong_signature_rejected(signing_key):
 def test_jwt_header_urls_never_followed(signing_key):
     verify, calls, _ = verifier(signing_key)
     token = jwt.encode({'iss': module.ISSUER, 'aud': 'oaiapp_synthetic',
-        'exp': int(time.time()) + 300, 'sub': 'synthetic-account', 'nonce': 'synthetic-nonce'},
+        'exp': int(time.time()) + 300, 'sub': 'synthetic-account', 'nonce': 'synthetic-nonce', 'iat': int(time.time())},
         signing_key, algorithm='RS256', headers={'kid': 'synthetic-key', 'jku': 'https://attacker.invalid'})
     assert verify.verify(token, 'oaiapp_synthetic', 'synthetic-nonce') == 'synthetic-account'
     assert calls == [module.JWKS]
@@ -543,33 +579,76 @@ def test_restart_can_cancel_exact_pending_attempt(rig):
     assert not rig.calls
 
 
-@pytest.mark.skipif(os.name != 'posix', reason='Real synthetic store uses POSIX private-file checks')
-@pytest.mark.parametrize('uncertain', [False, True])
-def test_real_host_store_signed_auth_and_exact_reconciliation(tmp_path, monkeypatch, signing_key, uncertain):
+@pytest.fixture
+def synthetic_vault():
     from eidolon_cli.organization_credential_native import binding_reference
-    from eidolon_cli.organization_setup_subscription_host import HostAuthority, PendingAttempts
-    from eidolon_cli.organization_setup_subscription_store import SubscriptionStore, StoreError
 
     class SyntheticVault:
         def __init__(self):
             self.values = {}
+            self.reads = 0
         def put(self, binding, key):
             reference = binding_reference(binding)
             self.values[reference] = key
             return reference
         def consume(self, reference, binding, consumer):
+            self.reads += 1
             assert reference == binding_reference(binding)
             consumer(self.values[reference])
         def delete(self, reference, binding):
             assert reference == binding_reference(binding)
             self.values.pop(reference, None)
 
+    return SyntheticVault()
+
+
+@pytest.mark.skipif(os.name != 'posix', reason='Real synthetic store uses POSIX private-file checks')
+@pytest.mark.parametrize('uncertain', [False, True])
+def test_real_host_store_signed_auth_and_exact_reconciliation(tmp_path, monkeypatch, signing_key, uncertain, request, synthetic_vault):
+    from eidolon_cli.organization_setup_subscription_host import HostAuthority, PendingAttempts
+    from eidolon_cli.organization_setup_subscription_store import SubscriptionStore, StoreError
+
     root = tmp_path / 'profile'
     root.mkdir(mode=0o700)
     authority = HostAuthority.capture(lambda: root, lambda: root)
     host = PendingAttempts(authority, synthetic=True)
-    store = SubscriptionStore(root, backend=SyntheticVault())
-    context = module.OwnerContext(str(root), ORG, OWNER, 'a' * 64, object(), object(), lambda: True)
+    store = SubscriptionStore(root, backend=synthetic_vault)
+    held = {'host': 0, 'store': 0, 'authority': False}
+    guard_calls = []
+    database = sqlite3.connect(':memory:')
+    request.addfinalizer(database.close)
+    def instrument_lock(kind, original):
+        @contextmanager
+        def locked(*args, **kwargs):
+            with original(*args, **kwargs) as value:
+                held[kind] += 1
+                try:
+                    yield value
+                finally:
+                    held[kind] -= 1
+        return locked
+    monkeypatch.setattr(host, '_locked', instrument_lock('host', host._locked))
+    monkeypatch.setattr(store, '_locked', instrument_lock('store', store._locked))
+    def durable_guard():
+        # An actual synthetic SQLite query is admitted only above both locks.
+        assert not held['host'] and not held['store']
+        guard_calls.append('database')
+        return database.execute('SELECT 1').fetchone() == (1,)
+    def cheap_guard():
+        if held['host'] or held['store']:
+            assert held['authority']
+        guard_calls.append('cheap-under-host' if held['host'] else 'cheap')
+        return True
+    @contextmanager
+    def owner_publication():
+        assert not held['host'] and not held['store'] and not held['authority']
+        held['authority'] = True
+        try:
+            yield
+        finally:
+            held['authority'] = False
+    context = module.OwnerContext(str(root), ORG, OWNER, 'a' * 64, object(), object(),
+        durable_guard, owner_publication, durable_guard, cheap_guard)
     opened, exchanges = [], []
     monkeypatch.setattr(module, 'LoopbackListener', FakeListener)
     entry = json.loads(jwt.algorithms.RSAAlgorithm.to_jwk(signing_key.public_key()))
@@ -596,18 +675,23 @@ def test_real_host_store_signed_auth_and_exact_reconciliation(tmp_path, monkeypa
         injected = []
         def uncertain_write(name, data, **kwargs):
             original_write(name, data, **kwargs)
+            document = json.loads(data) if name == 'current.json' else {}
             if (name == 'current.json' and kwargs.get('replace')
-                    and json.loads(data).get('phase') == 'active' and not injected):
+                    and document.get('body', document).get('phase') == 'active' and not injected):
                 injected.append(True)
                 raise StoreError('publication_uncertain')
         monkeypatch.setattr(store, '_write', uncertain_write)
     service.begin(0)
     attempt = service._attempt
     assert callback(attempt)
+    assert guard_calls.count('cheap-under-host') == 1
     if uncertain:
         assert service.status()['stage'] == 'publication_uncertain'
         assert host.inspect().stage == 'publishing'
+        prior_database_checks = guard_calls.count('database')
         assert service.reconcile_current() == 1
+        assert guard_calls.count('database') > prior_database_checks
+        assert guard_calls.count('cheap-under-host') == 2
     assert service.status()['stage'] == 'connected'
     assert host.inspect().stage == 'published'
     binding, revision = store.connection_descriptor()
@@ -740,7 +824,7 @@ def test_setup_end_blocks_callback_but_not_cancel_or_disconnect(rig):
     assert not rig.calls and not rig.store.writes
     assert rig.service.status()['stage'] == 'failed'
     assert rig.service.cancel(attempt.attempt_id)['stage'] == 'cancelled'
-    assert rig.service.disconnect_current(0)['state'] == 'disconnected'
+    assert rig.service.prepare_operation('revoke', 0)['state'] == 'local_retired'
 
 
 def test_setup_end_after_exchange_blocks_publication(rig):
@@ -752,3 +836,288 @@ def test_setup_end_after_exchange_blocks_publication(rig):
     callback(attempt)
     assert not rig.store.writes
     assert rig.service.status()['stage'] == 'failed'
+
+
+def test_source_change_during_initial_local_publication_is_not_connected(rig):
+    attempt, _ = begin(rig)
+    original = rig.store.connect_grant
+    def connect(*args, **kwargs):
+        revision = original(*args, **kwargs)
+        rig.setup_live[0] = False
+        return revision
+    rig.store.connect_grant = connect
+    assert callback(attempt)
+    assert rig.host.record.stage == 'published' and rig.store.revision == 1
+    assert rig.service.status()['stage'] == 'publication_uncertain'
+    assert attempt.verified_binding == rig.store.binding and len(rig.calls) == 1
+    rig.setup_live[0] = True
+    assert rig.service.reconcile_current() == 1
+    assert rig.service.status()['stage'] == 'connected' and len(rig.calls) == 1
+
+
+def test_source_change_during_reconciliation_preserves_exact_evidence(rig):
+    attempt, _ = begin(rig)
+    rig.store.uncertain = True
+    assert callback(attempt)
+    assert attempt.stage == 'publication_uncertain'
+    original = rig.store.reconcile_auth_attempt
+    def reconcile(*args, **kwargs):
+        revision = original(*args, **kwargs)
+        rig.setup_live[0] = False
+        return revision
+    rig.store.reconcile_auth_attempt = reconcile
+    with pytest.raises(module.AuthError, match='setup_unavailable'):
+        rig.service.reconcile_current()
+    assert attempt.stage == 'publication_uncertain' and rig.host.record.stage == 'published'
+    assert len(rig.calls) == len(rig.store.writes) == 1
+    rig.setup_live[0] = True
+    rig.store.reconcile_auth_attempt = original
+    assert rig.service.reconcile_current() == 1
+    assert len(rig.calls) == 1
+
+
+@pytest.mark.parametrize('history', [
+    {'issuedThrough': None, 'retiredThrough': None, 'state': 'recovery_required'},
+    {'issuedThrough': None, 'retiredThrough': None, 'state': 'legacy'},
+    {'issuedThrough': '0', 'retiredThrough': '1', 'state': 'available'},
+    {'issuedThrough': '0', 'retiredThrough': '0', 'state': 'available', 'secret': 'synthetic-secret'},
+])
+def test_invalid_ticket_authority_blocks_begin_before_browser(rig, history):
+    rig.store.history = history
+    with pytest.raises(module.AuthError, match='storage_recovery_required'):
+        begin(rig)
+    assert not rig.opened and not rig.calls and not rig.host.events
+
+
+def test_passive_ticket_status_is_only_metadata_hint(rig):
+    status = rig.service.status()
+    assert status['operation'] == {'state': 'none', 'ticket': None, 'revision': 0,
+                                    'verification': 'metadata_only'}
+    assert not rig.calls and not rig.opened and not rig.store.writes
+
+
+def test_large_issuance_counter_does_not_block_fresh_consent(rig):
+    rig.store.history = {'issuedThrough': '1000000', 'retiredThrough': '1000000', 'state': 'available'}
+    assert begin(rig)[1]['stage'] == 'pending'
+    assert len(rig.opened) == 1 and not rig.calls
+
+
+@pytest.mark.parametrize('reason', ['ticket_conflict', 'ticket_retired', 'transition_pending',
+                                    'storage_recovery_required', 'ticket_sequence_exhausted'])
+def test_ticket_store_errors_keep_only_fixed_public_reason(rig, reason):
+    from eidolon_cli.organization_setup_subscription_store import StoreError
+    def unavailable():
+        raise StoreError(reason)
+    rig.store.status = unavailable
+    with pytest.raises(module.AuthError, match=reason):
+        rig.service.status()
+
+
+def restarted_source(rig):
+    return module.SubscriptionAuthService(rig.store, rig.host,
+        replace(rig.service._owner, source_digest='b' * 64), synthetic=True,
+        browser_open=lambda url: pytest.fail('Restart status/cancel must not launch browser'),
+        http=lambda *args: pytest.fail('Restart status/cancel must not send HTTP'))
+
+
+@pytest.mark.parametrize('phase', ['pending', 'exchange_admitted'])
+def test_restarted_changed_source_status_and_exact_local_oauth_cancel(rig, phase):
+    attempt, _ = begin(rig)
+    rig.host.record.stage = phase
+    restarted = restarted_source(rig)
+    status = restarted.status()
+    assert status['stage'] == 'stale_source' and status['attemptId'] == attempt.attempt_id
+    assert status['canCancel'] is True and status['operation']['verification'] == 'metadata_only'
+    assert restarted.cancel(attempt.attempt_id)['stage'] == 'cancelled'
+    assert rig.host.record.stage == 'cancelled' and not rig.calls
+
+
+@pytest.mark.parametrize('phase', ['publishing', 'published'])
+def test_stale_source_published_attempt_cannot_be_cancelled(rig, phase):
+    attempt, _ = begin(rig)
+    rig.host.record.stage = phase
+    restarted = restarted_source(rig)
+    status = restarted.status()
+    assert status['stage'] == 'stale_source' and status['canCancel'] is False
+    with pytest.raises(module.AuthError, match='stale_attempt'):
+        restarted.cancel(attempt.attempt_id)
+    assert rig.host.record.stage == phase and not rig.calls
+
+
+@pytest.mark.parametrize('field', ['organization_id', 'owner_id'])
+def test_stale_source_status_and_cancel_still_refuse_foreign_scope(rig, field):
+    attempt, _ = begin(rig)
+    setattr(rig.host.record, field, str(uuid.uuid4()))
+    restarted = restarted_source(rig)
+    with pytest.raises(module.AuthError, match='stale_attempt'):
+        restarted.status()
+    with pytest.raises(module.AuthError, match='stale_attempt'):
+        restarted.cancel(attempt.attempt_id)
+    assert rig.host.record.stage == 'pending' and not rig.calls
+
+
+@pytest.mark.parametrize('uncertain', [False, True])
+def test_oauth_cancel_never_discards_in_memory_published_proof(rig, uncertain):
+    attempt, _ = begin(rig)
+    rig.store.uncertain = uncertain
+    assert callback(attempt)
+    before = attempt.stage
+    with pytest.raises(module.AuthError, match='stale_attempt'):
+        rig.service.cancel(attempt.attempt_id)
+    assert attempt.stage == before and attempt.verified_binding == rig.store.binding
+    assert len(rig.calls) == 1
+
+
+@pytest.fixture
+def real_ticket_service(tmp_path, synthetic_vault):
+    if os.name != 'posix':
+        pytest.skip('Real store fixture requires POSIX private-file checks')
+    from eidolon_cli.organization_setup_subscription_store import SubscriptionStore
+    root = tmp_path / 'ticket-profile'
+    root.mkdir(mode=0o700)
+    binding = TrustedBinding(str(uuid.uuid4()), str(root), str(uuid.uuid4()), str(uuid.uuid4()),
+                             str(uuid.uuid4()), 'oaiapp_synthetic', 'synthetic-account')
+    store = SubscriptionStore(root, backend=synthetic_vault)
+    evidence = {'subject': binding.account_id, 'audience': binding.issued_client_id,
+                'nonce': 'synthetic-nonce', 'authTime': None, 'authorizedParty': None}
+    assert store.connect_grant(binding, access_token='synthetic-access',
+        refresh_token='synthetic-refresh', id_token='synthetic-id', expires_at=int(time.time()) + 3600,
+        granted_scopes=frozenset(module.SCOPES.split()), auth_attempt_id=str(uuid.uuid4()),
+        identity_evidence=evidence, expected_revision=0) == 1
+    owner = module.OwnerContext(str(root), binding.organization_id, binding.owner_id,
+        'a' * 64, object(), object(), lambda: True, setup_guard=lambda: True,
+        lease_generation_guard=lambda: True)
+    host = SimpleNamespace(installation_id=lambda: binding.host_id, inspect=lambda: None)
+    calls = []
+    def forbidden_http(*args, **kwargs):
+        calls.append(True)
+        pytest.fail('Local ticket integration must never make HTTP calls')
+    service = module.SubscriptionAuthService(store, host, owner, synthetic=True, http=forbidden_http)
+    return SimpleNamespace(store=store, binding=binding, owner=owner, host=host,
+                           service=service, vault=synthetic_vault, calls=calls, http=forbidden_http)
+
+
+def read_ticket_document(rig, name):
+    return json.loads((rig.store.directory / name).read_bytes())
+
+
+def test_real_store_old_source_prepared_ticket_status_reconcile_and_cancel(real_ticket_service):
+    from eidolon_cli.organization_setup_subscription_store import StoreError
+    rig = real_ticket_service
+    ticket = rig.service.prepare_operation('refresh', 1)['ticket']
+    restarted = module.SubscriptionAuthService(rig.store, rig.host,
+        replace(rig.owner, source_digest='b' * 64), synthetic=True, http=rig.http)
+    reads = rig.vault.reads
+    hint = restarted.status()['operation']
+    assert hint['ticket'] == ticket and hint['verification'] == 'metadata_only'
+    assert rig.vault.reads == reads
+    with pytest.raises(module.AuthError, match='stale_attempt'):
+        restarted.execute_operation(ticket)
+    result = restarted.reconcile_operation(ticket)
+    assert result['state'] == 'prepared' and result['catalogRevision'] is None
+    cancelled = restarted.cancel_operation(ticket)
+    assert cancelled['state'] == 'none' and cancelled['ticket'] is None
+    assert cancelled['catalogRevision'] is None
+    head = read_ticket_document(rig, 'current.json')['body']
+    assert head['phase'] == 'active' and head['revision'] == 1
+    assert head['issuedThrough'] == head['retiredThrough'] == ticket['sequence']
+    assert head['ticketWindow'] is None
+    name = 'window-' + rig.store._ticket_fingerprint(ticket) + '.json'
+    archive = read_ticket_document(rig, 'ticket-archive/' + name)['value']
+    assert archive['window']['ticket'] == ticket and archive['disposition'] == 'cancelled'
+    with pytest.raises(StoreError, match='ticket_retired'):
+        rig.store.reconcile_ticket(rig.binding, ticket=ticket,
+            owner_guard=lambda: True, cancel=threading.Event())
+    assert not rig.calls
+
+
+@pytest.mark.parametrize('stage', ['admitted', 'uncertain'])
+@pytest.mark.parametrize('old_source', [False, True])
+def test_real_store_stranded_refresh_local_disconnect_preserves_evidence(real_ticket_service, stage, old_source):
+    from eidolon_cli import organization_setup_subscription_store as storage
+    rig = real_ticket_service
+    ticket = rig.service.prepare_operation('refresh', 1)['ticket']
+    lease = rig.store.admit_refresh(rig.binding, 1, ticket=ticket,
+        owner_generation=rig.owner.owner_generation, owner_guard=lambda: True, cancel=threading.Event())
+    if stage == 'uncertain':
+        # Synthetic persisted ambiguity fixture; production exposes no endpoint
+        # to manufacture this state. Preserve a valid head and matching slot.
+        with rig.store._locked():
+            head = rig.store._authority(rig.binding)
+            head = rig.store._next_head(head,
+                ticketWindow=dict(head['body']['ticketWindow'], stage='uncertain'))
+            rig.store._write('current.json', storage._json(head), replace=True)
+            rig.store._write('ticket-pending.json', storage._json(rig.store._empty_pending(head)), replace=True)
+    before = read_ticket_document(rig, 'current.json')['body']
+    service = (module.SubscriptionAuthService(rig.store, rig.host,
+        replace(rig.owner, source_digest='b' * 64), synthetic=True, http=rig.http)
+        if old_source else rig.service)
+    recovered = service.reconcile_operation(ticket)
+    assert recovered['state'] == stage and recovered['catalogRevision'] is None
+    with pytest.raises(module.AuthError, match='ticket_conflict'):
+        service.cancel_operation(ticket)
+    assert not lease.network_cancelled()
+    if old_source:
+        with pytest.raises(module.AuthError, match='stale_attempt'):
+            service.execute_operation(ticket)
+    result = service.prepare_operation('revoke', 1)
+    assert result == {'state': 'local_retired', 'ticket': None,
+        'receipt': {'kind': 'local', 'revision': 2, 'localRetired': True, 'remoteRevocation': 'unconfirmed'},
+        'revision': 2, 'verification': 'verified_current', 'catalogRevision': None}
+    head = read_ticket_document(rig, 'current.json')
+    assert head['body']['phase'] == 'disconnected' and head['body']['target'] is None
+    assert head['body']['revision'] == 2 and head['body']['ticketWindow'] is None
+    assert head['body']['issuedThrough'] == head['body']['retiredThrough'] == ticket['sequence']
+    barrier = read_ticket_document(rig, 'ticket-barrier.json')['body']
+    pending = read_ticket_document(rig, 'ticket-pending.json')['body']
+    assert barrier['state'] == 'clear'
+    assert pending['state'] == 'empty' and pending['headDigest'] == head['digest']
+    name = 'window-' + rig.store._ticket_fingerprint(ticket) + '.json'
+    archive = read_ticket_document(rig, 'ticket-archive/' + name)['value']
+    assert archive['window'] == before['ticketWindow']
+    assert archive['window']['ticket'] == ticket and archive['window']['stage'] == stage
+    assert archive['phase'] == 'refreshing' and archive['target'] == before['target']
+    assert archive['disposition'] == 'local_retired'
+    assert lease.network_cancelled()
+    with pytest.raises(storage.StoreError):
+        rig.store.lease_access_token(rig.binding, 1, owner_generation=rig.owner.owner_generation,
+            owner_guard=lambda: True, cancel=threading.Event())
+    with pytest.raises(module.AuthError, match='ticket_retired'):
+        service.reconcile_operation(ticket)
+    assert not rig.calls
+
+
+@pytest.mark.parametrize('value', [None, 0, 1, 'false', [], {}])
+def test_status_rejects_non_boolean_cleanup_pending(rig, value):
+    rig.store.cleanup_pending = value
+    with pytest.raises(module.AuthError, match='storage_recovery_required'):
+        rig.service.status()
+    assert not rig.calls and not rig.opened and not rig.store.writes
+
+
+def test_pending_cleanup_status_is_passive_and_begin_is_blocked(rig, monkeypatch):
+    rig.store.cleanup_pending = True
+    rig.store.history = {'issuedThrough': None, 'retiredThrough': None, 'state': 'recovery_required'}
+    def forbidden(*args, **kwargs):
+        raise AssertionError('Passive status or blocked Begin performed I/O')
+    monkeypatch.setattr(module, 'LoopbackListener', forbidden)
+    rig.store.connect_grant = rig.store.reconcile_auth_attempt = forbidden
+    status = rig.service.status()
+    assert status['cleanupPending'] is True
+    assert status['operation']['verification'] == 'metadata_only'
+    with pytest.raises(module.AuthError, match='storage_recovery_required'):
+        begin(rig)
+    assert not rig.opened and not rig.calls and not rig.host.events and not rig.store.writes
+
+
+@pytest.mark.parametrize('pending', [True, None, 0, 1, 'false', [], {}])
+def test_begin_refuses_pending_or_malformed_cleanup_even_with_available_history(rig, monkeypatch, pending):
+    rig.store.cleanup_pending = pending
+    assert rig.store.history['state'] == 'available'
+    def forbidden(*args, **kwargs):
+        raise AssertionError('Blocked Begin performed listener, browser, or native write')
+    monkeypatch.setattr(module, 'LoopbackListener', forbidden)
+    rig.store.connect_grant = rig.store.reconcile_auth_attempt = forbidden
+    with pytest.raises(module.AuthError, match='storage_recovery_required'):
+        begin(rig)
+    assert not rig.host.events and not rig.opened and not rig.calls and not rig.store.writes

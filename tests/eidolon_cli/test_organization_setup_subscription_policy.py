@@ -11,7 +11,7 @@ from eidolon_cli import organization_setup_subscription_policy as policy
 def candidate():
     return {'version': 3, 'mode': 'subscription_calls', 'improveCallLimit': 4,
             'generationCallLimit': 3, 'totalCallLimit': 7, 'requestTimeoutSeconds': 120,
-            'connectionId': 'synthetic-connection', 'connectionRevision': 1,
+            'connectionId': 'synthetic-connection', 'authorizationEpoch': '00000000-0000-4000-8000-000000000003',
             'modelSlug': 'synthetic-model'}
 
 
@@ -111,7 +111,7 @@ def test_attempt_status_fails_closed(snapshot, candidate, status):
     ('totalCallLimit', float('inf')), ('improveCallLimit', True), ('totalCallLimit', -1),
     ('generationCallLimit', 1001), ('requestTimeoutSeconds', 0),
     ('requestTimeoutSeconds', 121), ('requestTimeoutSeconds', 3600),
-    ('connectionRevision', False), ('modelSlug', ''), ('connectionId', ' secret '),
+    ('authorizationEpoch', False), ('modelSlug', ''), ('connectionId', ' secret '),
     ('max_output_tokens', 20)])
 def test_candidate_is_closed_and_bounded(candidate, field, value):
     candidate[field] = value
@@ -149,7 +149,7 @@ def test_changed_debt_or_candidate_invalidates_review(snapshot, candidate, capab
     with pytest.raises(policy.SubscriptionPolicyError, match='preview_conflict'):
         review(snapshot, candidate, capability, reviewed_digest=digest)
     digest = policy.preview_digest(policy.build_preview(snapshot, candidate))
-    candidate['connectionRevision'] += 1
+    candidate['authorizationEpoch'] = '00000000-0000-4000-8000-000000000004'
     with pytest.raises(policy.SubscriptionPolicyError, match='preview_conflict'):
         review(snapshot, candidate, capability, reviewed_digest=digest)
 
@@ -210,3 +210,10 @@ def test_dispatched_legacy_unknown_cost_stays_unknown_and_counted(snapshot, cand
     assert result['retainedAttempts'][0]['reservedCost'] is None
     assert result['retainedAttempts'][0]['reservedTokens'] == 4000
     assert result['retainedCallCounts']['total'] == 1
+
+
+def test_old_rotating_revision_candidate_is_not_reinterpreted(candidate):
+    candidate.pop('authorizationEpoch')
+    candidate['connectionRevision'] = 1
+    with pytest.raises(policy.SubscriptionPolicyError):
+        policy.validate_candidate(candidate)

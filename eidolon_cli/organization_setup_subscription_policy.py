@@ -26,7 +26,7 @@ ACKNOWLEDGEMENT = {
 }
 _CALL_FIELDS = ('improveCallLimit', 'generationCallLimit', 'totalCallLimit')
 _CANDIDATE_FIELDS = {'version', 'mode', *_CALL_FIELDS, 'requestTimeoutSeconds',
-                     'connectionId', 'connectionRevision', 'modelSlug'}
+                     'connectionId', 'authorizationEpoch', 'modelSlug'}
 _EXECUTION_FIELDS = {'max_model_calls', 'max_total_tokens', 'max_context_tokens',
                      'max_output_tokens', 'max_cost_usd', 'model_costs',
                      'objective_timeout_seconds'}
@@ -122,7 +122,7 @@ def validate_candidate(raw):
     if max(raw['improveCallLimit'], raw['generationCallLimit']) > raw['totalCallLimit']:
         _fail('call_limit_invalid')
     _integer(raw['requestTimeoutSeconds'], 1, 120, 'timeout_invalid')
-    _integer(raw['connectionRevision'], 1, 2**63 - 1, 'connection_revision_invalid')
+    _uuid(raw['authorizationEpoch'])
     for field in ('connectionId', 'modelSlug'):
         _text(raw[field], 256, 'connection_or_model_invalid')
     return _copy(raw)
