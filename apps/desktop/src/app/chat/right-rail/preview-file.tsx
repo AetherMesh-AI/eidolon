@@ -618,7 +618,7 @@ export function SourceView({ filePath, language, text }: { filePath?: string; la
   }, [filePath, selection])
 
   return (
-    <div className="h-full overflow-auto" onScroll={onScroll} ref={scrollerRef}>
+    <div className="h-full overflow-auto" dir="ltr" onScroll={onScroll} ref={scrollerRef}>
       <div className="grid min-w-max grid-cols-[auto_minmax(0,1fr)] font-mono text-[0.7rem] leading-relaxed">
         {beforeRows > 0 && <div aria-hidden className="col-span-2" style={{ height: beforeRows * SOURCE_LINE_PX }} />}
         {visibleChunks.map(chunk => (
