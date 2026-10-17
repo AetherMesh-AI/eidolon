@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import type { HermesGateway } from '@/eidolon'
 import { $gateway, setPrimaryGateway } from '@/store/gateway'
 import * as notifications from '@/store/notifications'
@@ -315,4 +316,39 @@ it('gives manual provider setup keyboard ownership and dismisses only that overl
   expect($desktopOnboarding.get().manual).toBe(false)
   expect(screen.queryByRole('dialog')).toBeNull()
   view.unmount()
+})
+
+
+it('relinquishes an already mounted automatic overlay to verified workspace setup without marking readiness or suppressing explicit onboarding', async () => {
+  setProviders([])
+  $gatewayState.set('open')
+  const request = vi.fn(async (method: string) => (method === 'setup.status' ? { provider_configured: false } : { ok: false, error: 'Separate workspace setup required' }) as never)
+  const selected = vi.fn()
+  const user = userEvent.setup()
+
+  const renderSetup = (owned: boolean) => <>
+    <Dialog open><DialogContent><DialogTitle>Created workspace receipt</DialogTitle><input aria-label="Workspace model draft" defaultValue="retained model" /><button onClick={selected}>Open its Keys</button></DialogContent></Dialog>
+    <DesktopOnboardingOverlay enabled organizationSetupOwned={owned} profile="default" requestGateway={request} />
+  </>
+
+  const view = render(renderSetup(false))
+  await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(2))
+  expect(screen.queryAllByRole('dialog', { hidden: true })).toHaveLength(2)
+  expect($desktopOnboarding.get().configured).toBe(false)
+  view.rerender(renderSetup(true))
+  await vi.waitFor(() => expect(screen.queryAllByRole('dialog', { hidden: true })).toHaveLength(1))
+  await user.tab()
+  expect(screen.getByRole('dialog', { name: 'Created workspace receipt' }).contains(window.document.activeElement)).toBe(true)
+  await user.click(screen.getByRole('button', { name: 'Open its Keys' }))
+  expect(selected).toHaveBeenCalledOnce()
+  expect((screen.getByLabelText('Workspace model draft') as HTMLInputElement).value).toBe('retained model')
+  expect($desktopOnboarding.get().configured).toBe(false)
+  expect(localStorage.getItem('hermes-desktop-onboarded-v1')).not.toBe('1')
+  await act(async () => { startManualOnboarding(null, 'default') })
+  expect(screen.queryAllByRole('dialog', { hidden: true })).toHaveLength(2)
+  expect($desktopOnboarding.get().manual).toBe(true)
+  await act(async () => { closeManualOnboarding() })
+  expect(screen.queryAllByRole('dialog', { hidden: true })).toHaveLength(1)
+  view.rerender(renderSetup(false))
+  expect(screen.queryAllByRole('dialog', { hidden: true })).toHaveLength(2)
 })
