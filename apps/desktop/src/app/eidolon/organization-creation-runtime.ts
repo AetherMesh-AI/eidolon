@@ -1,7 +1,6 @@
 import { saveHermesConfigRecord } from '@/eidolon'
 import { $connectionsRegistry } from '@/store/connections'
 import { $gateway, type GatewayActivationVerifier, gatewayTransportGeneration } from '@/store/gateway'
-import { selectOrganizationConnection } from '@/store/organization-switch'
 import { $connection } from '@/store/session'
 
 import { createOrganizationCreationClient, createOrganizationModelSetupClient } from './organization-creation-client'
@@ -12,6 +11,7 @@ import {
   subscribeOrganizationDirectorySource
 } from './organization-directory-runtime'
 import type { MetadataDescriptor } from './organization-metadata-client'
+import { persistedOrganizationVerifier, selectRuntimeOrganizationConnection } from './organization-selection-runtime'
 
 /** The passed gateway is the dedicated socket that will be committed, never a routing helper. */
 export function organizationActivationVerifier(verify: (value: unknown) => void): GatewayActivationVerifier {
@@ -28,29 +28,7 @@ export function organizationActivationVerifier(verify: (value: unknown) => void)
     $connectionsRegistry.get() === registry &&
     gatewayTransportGeneration(originGateway) === generation
 
-  return async (gateway, _connection, signal) => {
-    if (!current() || signal.aborted) {
-      throw new Error('Organization source changed')
-    }
-
-    const descriptor = await gateway.request('organization.descriptor', {}, 15_000, signal)
-
-    if (!current() || signal.aborted) {
-      throw new Error('Organization source changed')
-    }
-
-    verify(descriptor)
-
-    return () => {
-      if (!current() || signal.aborted) {
-        return false
-      }
-
-      verify(descriptor)
-
-      return true
-    }
-  }
+  return persistedOrganizationVerifier(() => Boolean(current()), verify)
 }
 
 export function directoryActivationVerifier(entry: OrganizationDirectoryEntry): GatewayActivationVerifier {
@@ -128,7 +106,7 @@ function creationEnvironment(runtime: ReturnType<typeof createRuntimeOrganizatio
       removeItem: (key: string) => localStorage.removeItem(key)
     },
     activate: (connectionId: string, profile: string, verify: (value: unknown) => void) =>
-      selectOrganizationConnection(connectionId, profile, organizationActivationVerifier(verify))
+      selectRuntimeOrganizationConnection(connectionId, profile, organizationActivationVerifier(verify))
   }
 }
 

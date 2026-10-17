@@ -570,8 +570,14 @@ test('creates two fresh organizations, reconciles a lost reply and keeps switchi
   const creates: Record<string, unknown>[] = []
   const receipts: WorkspaceReceipt[] = []
   const methods: string[] = []
+  let socketSequence = 0
   let descriptorSequence = 0
   const descriptorSequences = new Map<string, number>()
+  const descriptorTransports = new WeakMap<ObservedDescriptor, {
+    socketSequence: number
+    descriptorSequence: number
+    readConfig: () => { received: boolean; model?: unknown; error?: unknown }
+  }>()
   let dropNext = false
   let unsupported = false
   const header = page.locator('.eid-workspace-header')
@@ -620,8 +626,14 @@ print(json.dumps({'metadata':dict(c.execute('select * from organization_metadata
   try {
     await page.routeWebSocket(/.*/, socket => {
       const server = socket.connectToServer()
+      const connectionSequence = ++socketSequence
       const writes = new Set<string | number>()
       const descriptorReads = new Map<string | number, number>()
+      const diagnosticReads = new Map<string, {
+        observed: ObservedDescriptor
+        profile: string
+        evidence: { received: boolean; model?: unknown; error?: unknown }
+      }>()
       const endpoint = new URL(socket.url())
       let open = true
       let observed: ObservedDescriptor | undefined
@@ -687,7 +699,29 @@ print(json.dumps({'metadata':dict(c.execute('select * from organization_metadata
       server.onMessage(message => {
         const response = JSON.parse(message.toString()) as {
           id?: string | number
-          result?: WorkspaceReceipt & { scope?: { kind?: string; profile?: string } }
+          result?: WorkspaceReceipt & {
+            scope?: { kind?: string; profile?: string }
+            config?: { model?: { provider?: unknown; default?: unknown } }
+          }
+          error?: unknown
+        }
+
+        const diagnostic = typeof response.id === 'string' ? diagnosticReads.get(response.id) : undefined
+
+        if (diagnostic) {
+          diagnosticReads.delete(response.id as string)
+
+          if (open && diagnostic.observed.open && descriptors.get(diagnostic.profile) === diagnostic.observed) {
+            diagnostic.evidence.received = true
+            diagnostic.evidence.error = response.error
+            diagnostic.evidence.model = response.result?.config?.model && {
+              provider: response.result.config.model.provider,
+              default: response.result.config.model.default
+            }
+          }
+
+          // This fixture-only read uses the existing socket; it is not app hydration.
+          return
         }
 
         const sequence = response.id === undefined ? undefined : descriptorReads.get(response.id)
@@ -716,6 +750,20 @@ print(json.dumps({'metadata':dict(c.execute('select * from organization_metadata
             }
             descriptorSequences.set(profile, sequence)
             descriptors.set(profile, observed)
+            const captured = observed
+            descriptorTransports.set(captured, {
+              socketSequence: connectionSequence,
+              descriptorSequence: sequence,
+              readConfig: () => {
+                expect(open && captured.open && descriptors.get(profile) === captured).toBe(true)
+                const id = `fixture-restored-config-${connectionSequence}-${sequence}`
+                const evidence: { received: boolean; model?: unknown; error?: unknown } = { received: false }
+                diagnosticReads.set(id, { observed: captured, profile, evidence })
+                server.send(JSON.stringify({ jsonrpc: '2.0', id, method: 'config.get', params: { key: 'full' } }))
+
+                return evidence
+              }
+            })
           }
         }
 
@@ -903,9 +951,77 @@ print(json.dumps({'metadata':dict(c.execute('select * from organization_metadata
       location.hash = '/messages'
     })
     await expect(trigger).toHaveAccessibleName(`${names[1]} · Organizations`)
+    const beforeReload = { socketSequence, descriptorSequence }
     await page.reload()
-    await waitForAppReady(fixture)
+    await waitForAppReady(fixture, 60_000, '.eid-messages-view')
+    await expect(page).toHaveURL(/#\/messages$/)
+    await expect(page.locator('.eid-messages-view').getByRole('heading', { name: 'Messages', exact: true })).toBeVisible()
+    await expect(page.locator('.eid-messages-view')).toHaveAttribute('data-member-selected', 'false')
     await expect(trigger).toHaveAccessibleName(`${names[1]} · Organizations`)
+    await expect.poll(() => {
+      const observed = descriptors.get(receipts[1].profile)
+      const transport = observed && descriptorTransports.get(observed)
+
+      return Boolean(observed?.open && transport &&
+        transport.socketSequence > beforeReload.socketSequence &&
+        transport.descriptorSequence > beforeReload.descriptorSequence)
+    }, { timeout: 15_000 }).toBe(true)
+    const restored = descriptors.get(receipts[1].profile)!
+    const restoredTransport = descriptorTransports.get(restored)!
+    expect(restoredTransport.socketSequence).toBeGreaterThan(beforeReload.socketSequence)
+    expect(restoredTransport.descriptorSequence).toBeGreaterThan(beforeReload.descriptorSequence)
+    expect(restored.descriptor).toMatchObject({
+      capabilityVersion: 1,
+      state: 'ready',
+      scope: { kind: 'served-profile', profile: receipts[1].profile },
+      metadata: {
+        organizationId: receipts[1].organizationId,
+        displayName: names[1],
+        owner: { ownerId: receipts[1].ownerId }
+      },
+      isolation: {
+        profile: receipts[1].profile,
+        organizationId: receipts[1].organizationId,
+        ownerId: receipts[1].ownerId,
+        isolationVersion: 1,
+        credentialMode: 'profile-local-openai-api',
+        executionMode: 'tool-free-organization',
+        supportedProviders: ['openai-api']
+      }
+    })
+    // Config normally hydrates over REST. Read the saved model through this exact
+    // post-reload socket, without resolving another endpoint or changing the UI.
+    const restoredConfig = restoredTransport.readConfig()
+    await expect.poll(() => restoredConfig.received, { timeout: 15_000 }).toBe(true)
+    expect(restoredConfig.error).toBeUndefined()
+    expect(restoredConfig.model).toEqual({ provider: 'openai-api', default: before[1].config.model.default })
+    expect(restored.open && descriptors.get(receipts[1].profile) === restored).toBe(true)
+    await requireGuard(join(sandbox.hermesHome, 'profiles', receipts[1].profile), receipts[1], 'after-reload')
+    expect(restored.open && descriptors.get(receipts[1].profile) === restored).toBe(true)
+    await expect(trigger).toHaveAccessibleName(`${names[1]} · Organizations`)
+    await test.info().attach('fresh-organization-cold-restore', {
+      contentType: 'application/json',
+      body: JSON.stringify({
+        beforeReload,
+        socketSequence: restoredTransport.socketSequence,
+        descriptorSequence: restoredTransport.descriptorSequence,
+        profile: receipts[1].profile,
+        organizationId: receipts[1].organizationId,
+        ownerId: receipts[1].ownerId,
+        host: restored.host,
+        port: restored.port,
+        selectedOrganization: await trigger.getAttribute('aria-label'),
+        route: new URL(page.url()).hash,
+        diagnostic: {
+          kind: 'read-only-existing-socket-diagnostic',
+          method: 'config.get',
+          params: { key: 'full' },
+          responseReceived: restoredConfig.received,
+          model: restoredConfig.model
+        },
+        sameObservedSocketStillOpen: restored.open && descriptors.get(receipts[1].profile) === restored
+      })
+    })
     await page.goBack()
     await expect(trigger).toHaveAccessibleName(`${names[1]} · Organizations`)
     expect(receipts.map(receipt => stored(receipt.profile))).toEqual(before)

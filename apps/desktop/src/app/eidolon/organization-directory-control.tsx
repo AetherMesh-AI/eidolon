@@ -23,6 +23,7 @@ import {
 } from './organization-directory-runtime'
 import { OrganizationDirectorySearch } from './organization-directory-search'
 import { OrganizationModelSetup } from './organization-model-setup'
+import { selectRuntimeOrganizationConnection } from './organization-selection-runtime'
 import { readOrganizationMetadataScope } from './use-organization-metadata'
 
 export function OrganizationDirectoryControl({
@@ -120,6 +121,7 @@ export function OrganizationDirectoryControl({
             runtimeRef.current = {
               ...next,
               activation: createOrganizationDirectoryActivation({
+        select: selectRuntimeOrganizationConnection,
                 ...next,
                 enabled: () => true,
                 verifyDestination: directoryActivationVerifier

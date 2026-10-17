@@ -150,7 +150,7 @@ it('recovers its own observation-epoch change after refused proof and retries th
 
   vi.mocked(selectConnectionWithOutcome).mockImplementationOnce(async (_id, options) => {
     const gateway = { request: vi.fn().mockResolvedValue(targetDescriptor), connectionState: 'open', generation: 2 }
-    const connection = { ...$connection.get()!, profile, baseUrl: 'http://127.0.0.1:7171' }
+    const connection = { ...$connection.get()!, registryScoped: true, profile, baseUrl: 'http://127.0.0.1:7171' }
     const final = await options!.verify!(gateway as never, connection as never, new AbortController().signal)
     expect(final && final()).toBe(true)
     $gateway.set(gateway as never)

@@ -1,6 +1,7 @@
 import { isGatewayReauthRequired, JsonRpcGatewayError, resolveGatewayWsUrl } from '@aethermesh/shared'
 import { useEffect, useRef } from 'react'
 
+import { restoreOrganizationSelection } from '@/app/eidolon/organization-selection-runtime'
 import { shouldApplyPostBootProgressError } from '@/components/boot-failure-reauth'
 import { HermesGateway } from '@/eidolon'
 import type { HermesConnection } from '@/global'
@@ -18,6 +19,7 @@ import {
   setDesktopBootStep
 } from '@/store/boot'
 import { resetBackgroundPollingGuard } from '@/store/composer-status'
+import { $connectionsRegistry } from '@/store/connections'
 import {
   $gateway,
   activeGateway,
@@ -29,6 +31,7 @@ import {
   ensureActiveGatewayOpen,
   ensureGatewayForProfile,
   gatewayActivationEpoch,
+  gatewayTransportGeneration,
   isActivePrimary,
   liveSecondaryConnectionIds,
   primaryGatewayOAuthSessionIdentity,
@@ -51,6 +54,7 @@ import {
 } from '@/store/gateway-switch'
 import { checkLocalRuntimeUpdate, watchLocalRuntimeJobs } from '@/store/local-runtime-jobs'
 import { notify, notifyError } from '@/store/notifications'
+import { installOrganizationSelectionRecovery, matchesOrganizationPresentation, organizationWindowPresentation, readOrganizationBootSelection, refuseOrganizationAutomaticChange, showOrganizationSelectionRecovery } from '@/store/organization-selection'
 import { loadPoolLimits } from '@/store/pool-limits'
 import {
   $activeGatewayProfile,
@@ -184,6 +188,8 @@ export function useGatewayBoot({
   useEffect(() => {
     let cancelled = false
     const desktop = window.hermesDesktop
+    const restoreSavedOrganization = readOrganizationBootSelection().kind !== 'none'
+    let restoreAttempt = 0
 
     const publish = (next: HermesConnection | null) => {
       callbacksRef.current.onConnectionReady(next)
@@ -307,7 +313,7 @@ export function useGatewayBoot({
     }
 
     const attemptReconnect = async (manual?: { profile: string; activationEpoch: number }) => {
-      if (cancelled || reconnecting || gatewayOpen() || $gatewaySwitching.get()) {
+      if (readOrganizationBootSelection().kind !== 'none' || cancelled || reconnecting || gatewayOpen() || $gatewaySwitching.get()) {
         return
       }
 
@@ -346,6 +352,7 @@ export function useGatewayBoot({
           return
         }
 
+        if (restoreSavedOrganization) { setPrimaryGateway(gateway, normalizeProfileKey(conn.profile)) }
         setPrimaryGatewayConnection(conn)
 
         // Only publish the primary descriptor when the primary is active.
@@ -607,6 +614,14 @@ export function useGatewayBoot({
     // Soft gateway-mode apply: main tore down the primary without reloading.
     // Wipe session lists so skeletons retrigger, then re-dial in place.
     const softSwitch = async () => {
+      const saved = readOrganizationBootSelection()
+      if (saved.kind !== 'none') {
+        showOrganizationSelectionRecovery(saved.kind === 'record' ? (saved.record.phase === 'pending' ? 'pending' : 'unavailable') : saved.kind, saved.kind === 'record' ? saved.record.identity : null)
+
+        return
+      }
+      const selected = $connection.get()
+      if (selected && refuseOrganizationAutomaticChange(selected.connectionId ?? null, selected.profile ?? 'default')) { return }
       if (cancelled) {
         return
       }
@@ -654,6 +669,7 @@ export function useGatewayBoot({
           return
         }
 
+        if (restoreSavedOrganization) { setPrimaryGateway(gateway, normalizeProfileKey(conn.profile)) }
         publish(conn)
         setPrimaryGatewayConnection(conn)
 
@@ -769,7 +785,7 @@ export function useGatewayBoot({
     // is undefined there, so this folds to `null` and the whole survivor module
     // dead-code-eliminates out of the bundle.
     const survivor = import.meta.hot ? takeGatewaySurvivor() : null
-    const adoptedFromHmr = Boolean(survivor && !survivorIsStale(survivor))
+    const adoptedFromHmr = !restoreSavedOrganization && Boolean(survivor && !survivorIsStale(survivor))
 
     if (survivor && !adoptedFromHmr) {
       // Parked socket died between edits (e.g. backend restart) — release it.
@@ -782,8 +798,9 @@ export function useGatewayBoot({
 
     const gateway = adoptedFromHmr ? survivor!.gateway : new HermesGateway()
 
-    callbacksRef.current.onGatewayReady(gateway)
-    setPrimaryGateway(gateway, survivor?.profile ?? normalizeProfileKey($activeGatewayProfile.get()))
+    // A saved owner has no request-facing primary while its registry/socket proof is pending.
+    callbacksRef.current.onGatewayReady(restoreSavedOrganization ? null : gateway)
+    setPrimaryGateway(restoreSavedOrganization ? null : gateway, survivor?.profile ?? normalizeProfileKey($activeGatewayProfile.get()))
     // Secondary (background-profile) sockets funnel into the same handler.
     // Record each event's source scope first: registry-tagged events feed the
     // (connectionId, profile) keep-set so two sources exposing the same
@@ -1043,7 +1060,7 @@ export function useGatewayBoot({
       const current = $connection.get()
 
       if (current) {
-        publish({ ...current, ...payload })
+        publish(organizationWindowPresentation(current, payload))
       }
     })
 
@@ -1064,7 +1081,40 @@ export function useGatewayBoot({
       })
     })
 
+    async function restoreSavedOwner(explicitRetry = false) {
+      const attempt = ++restoreAttempt
+      const current = () => !cancelled && attempt === restoreAttempt
+      await restoreOrganizationSelection(current, explicitRetry)
+
+      if (!current()) { return }
+      const restoredGateway = activeGateway()
+      const restoredConnection = $connection.get()
+      const generation = restoredGateway ? gatewayTransportGeneration(restoredGateway) : undefined
+      const intent = currentSourceSwitchIntent()
+      const savedRecord = JSON.stringify(readOrganizationBootSelection())
+      const registryRoute = () => JSON.stringify($connectionsRegistry.get()?.connections.find(item => item.id === restoredConnection?.connectionId))
+      const route = registryRoute()
+      const ownsRestored = () => current() && isCurrentSourceSwitchIntent(intent) &&
+        activeGateway() === restoredGateway && Boolean(restoredConnection && matchesOrganizationPresentation($connection.get(), restoredConnection)) &&
+        savedRecord === JSON.stringify(readOrganizationBootSelection()) && route === registryRoute() &&
+        restoredGateway?.connectionState === 'open' && gatewayTransportGeneration(restoredGateway) === generation
+      callbacksRef.current.onGatewayReady(restoredGateway)
+      await callbacksRef.current.refreshHermesConfig(true, ownsRestored).catch(() => undefined)
+      if (!ownsRestored()) { return }
+      setSessionsLoading(false)
+      completeDesktopBoot()
+      bootCompleted = true
+    }
+    const offOrganizationRecovery = installOrganizationSelectionRecovery(() => restoreSavedOwner(true))
+
     async function boot() {
+      if (restoreSavedOrganization) {
+        try { await restoreSavedOwner() } catch {
+          if (!cancelled) { setSessionsLoading(false) }
+        }
+
+        return
+      }
       try {
         // A profile-pinned helper window (the HUD) dials its target profile's
         // backend directly — ensureBackend spawns/reuses it from the pool.
@@ -1232,6 +1282,8 @@ export function useGatewayBoot({
 
     return () => {
       cancelled = true
+      restoreAttempt++
+      offOrganizationRecovery()
       offSwitchLifecycle()
       endGatewaySwitch()
       clearReconnectTimer()

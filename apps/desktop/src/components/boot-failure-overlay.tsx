@@ -1,17 +1,26 @@
+import '@/app/eidolon/organization-dialog.css'
+
 import { useStore } from '@nanostores/react'
-import { type ComponentProps, lazy, type ReactNode, Suspense, useEffect, useState } from 'react'
+import { type ComponentProps, lazy, type ReactNode, Suspense, useEffect, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
-import { ErrorIcon } from '@/components/ui/error-state'
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
+import { ErrorIcon, ErrorState } from '@/components/ui/error-state'
 import { Loader } from '@/components/ui/loader'
 import { LogView } from '@/components/ui/log-view'
 import type { DesktopConnectionConfig } from '@/global'
 import { useI18n } from '@/i18n'
+import { getOrganizationSelectionCopy } from '@/i18n/organization-selection'
 import { openExternalLink } from '@/lib/external-link'
 import { ChevronLeft, ExternalLink, FileText, Loader2, LogIn, RefreshCw, SlidersHorizontal, Wrench } from '@/lib/icons'
 import { $desktopBoot } from '@/store/boot'
 import { notify, notifyError } from '@/store/notifications'
 import { $desktopOnboarding } from '@/store/onboarding'
+import {
+  $organizationSelectionRecovery,
+  openStartupWorkspace,
+  retryOrganizationSelection
+} from '@/store/organization-selection'
 
 import type { RemoteReauth } from './boot-failure-reauth'
 import {
@@ -44,6 +53,90 @@ type RecoveryView = 'connect' | 'recovery'
 // renders dead — "gateway offline", no composer, only a toast — with no way
 // to retry, repair the install, switch the gateway, or find the logs.
 export function BootFailureOverlay() {
+  const recovery = useStore($organizationSelectionRecovery)
+
+  // Mount only one owner: legacy effects must not probe or repair a gateway
+  // while an unverified organization selection blocks startup.
+  return recovery ? <OrganizationSelectionRecovery recovery={recovery} /> : <LegacyBootFailureOverlay />
+}
+
+interface OrganizationSelectionRecoveryProps {
+  recovery: NonNullable<ReturnType<typeof $organizationSelectionRecovery.get>>
+}
+
+function OrganizationSelectionRecovery({ recovery }: OrganizationSelectionRecoveryProps) {
+  const { locale } = useI18n()
+  const copy = getOrganizationSelectionCopy(locale)
+  const [busy, setBusy] = useState<'retry' | 'startup' | null>(null)
+  const [failed, setFailed] = useState(false)
+  const actionPending = useRef(false)
+  const canRetry = recovery.canRetry && recovery.reason !== 'invalid'
+
+  const runAction = async (action: 'retry' | 'startup') => {
+    if (actionPending.current || (action === 'retry' && !canRetry)) {
+      return
+    }
+
+    actionPending.current = true
+    setBusy(action)
+    setFailed(false)
+
+    try {
+      await (action === 'retry' ? retryOrganizationSelection() : openStartupWorkspace())
+    } catch {
+      setFailed(true)
+    } finally {
+      actionPending.current = false
+      setBusy(null)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-(--z-setup) bg-(--ui-chat-surface-background)" data-glass-opaque="">
+      <Dialog open>
+        <DialogContent
+          aria-busy={Boolean(busy)}
+          aria-modal="true"
+          bodyClassName="eid-organization-dialog-body"
+          className="eid-organization-dialog z-(--z-setup)"
+          onEscapeKeyDown={event => event.preventDefault()}
+          onInteractOutside={event => event.preventDefault()}
+          showCloseButton={false}
+        >
+          <div className="eid-organization-dialog-scroll">
+          <ErrorState
+            description={<DialogDescription>{copy.description}</DialogDescription>}
+            title={<DialogTitle>{copy.title}</DialogTitle>}
+          >
+            <p className="text-sm text-(--ui-text-secondary)">{copy.reasons[recovery.reason]}</p>
+            <p className="text-sm text-(--ui-text-secondary)">{canRetry ? copy.retryHint : copy.retryUnavailable}</p>
+            {recovery.profile ? (
+              <p className="text-xs text-(--ui-text-tertiary)">
+                {copy.profileReference}{' '}
+                <code className="break-all">“<bdi>{recovery.profile}</bdi>”</code>
+              </p>
+            ) : null}
+            {failed ? <p className="text-sm text-destructive" role="alert">{copy.actionFailed}</p> : null}
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button className="max-w-full whitespace-normal" disabled={Boolean(busy) || !canRetry} onClick={() => void runAction('retry')}>
+                {busy === 'retry' ? <Loader2 aria-hidden="true" className="animate-spin" /> : <RefreshCw aria-hidden="true" />}
+                {copy.retry}
+              </Button>
+              <Button className="max-w-full whitespace-normal" disabled={Boolean(busy)} onClick={() => void runAction('startup')} variant="secondary">
+                {busy === 'startup' ? <Loader2 aria-hidden="true" className="animate-spin" /> : null}
+                {copy.openStartup}
+              </Button>
+            </div>
+            <p className="text-xs text-(--ui-text-tertiary)">{copy.startupHint}</p>
+          </ErrorState>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+function LegacyBootFailureOverlay() {
   const boot = useStore($desktopBoot)
   const onboarding = useStore($desktopOnboarding)
   const { t } = useI18n()
