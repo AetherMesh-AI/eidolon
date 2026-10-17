@@ -4,7 +4,11 @@ export function queueHomeKeyboardReveal(intake: HTMLElement): () => void {
 }
 
 /** One-shot completion of native Tab scrolling, including the control's outline. */
-export function queueKeyboardReveal(intake: HTMLElement, scroller?: HTMLElement): () => void {
+export function queueKeyboardReveal(
+  intake: HTMLElement,
+  scroller?: HTMLElement,
+  contextFor?: (active: HTMLElement) => readonly HTMLElement[]
+): () => void {
   const document = intake.ownerDocument
   const window = document.defaultView
 
@@ -62,8 +66,29 @@ export function queueKeyboardReveal(intake: HTMLElement, scroller?: HTMLElement)
     // Oversized editors retain native caret navigation rather than oscillating.
     if (box.height + outline * 2 > workspace.clientHeight) {return}
 
-    const delta = box.top - outline < top ? box.top - outline - top :
-      box.bottom + outline > bottom ? box.bottom + outline - bottom : 0
+    let revealTop = box.top - outline
+    let revealBottom = box.bottom + outline
+    let contextTop = revealTop
+    let contextBottom = revealBottom
+
+    for (const context of contextFor?.(active) ?? []) {
+      if (!context.isConnected || !intake.contains(context) || !workspace.contains(context)) {continue}
+      const bounds = context.getBoundingClientRect()
+
+      if (bounds.height <= 0) {continue}
+      // Match the outline's clearance for native scrollTop rounding at fractional edges.
+      contextTop = Math.min(contextTop, bounds.top - 1)
+      contextBottom = Math.max(contextBottom, bounds.bottom + 1)
+    }
+
+    // Context is opt-in; oversized descriptions must not displace the focused ring.
+    if (contextBottom - contextTop <= workspace.clientHeight) {
+      revealTop = contextTop
+      revealBottom = contextBottom
+    }
+
+    const delta = revealTop < top ? revealTop - top :
+      revealBottom > bottom ? revealBottom - bottom : 0
 
     if (delta) {workspace.scrollTop += delta}
   })

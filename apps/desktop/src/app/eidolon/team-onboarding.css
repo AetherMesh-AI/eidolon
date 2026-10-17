@@ -168,3 +168,35 @@
   border: 1px solid var(--ui-stroke-secondary);
   border-radius: 50%;
 }
+
+.eid-team-budget > summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.eid-team-budget-body {
+  display: grid;
+  gap: 0.75rem;
+  padding-block: 0.75rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.eid-team-budget-values {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+}
+.eid-team-budget-values > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+}
+.eid-team-budget-values dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.eid-team-budget-review,
+.eid-team-budget-receipt {
+  display: grid;
+  gap: 0.5rem;
+}

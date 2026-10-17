@@ -1,4 +1,6 @@
 import type { MetadataScope } from './organization-metadata-client'
+import { validateSetupBudgetApplied, validateSetupBudgetPolicy, validateSetupBudgetPreview, validateSetupBudgetState } from './team-setup-budget-client'
+import type { SetupBudgetPolicy, SetupBudgetPreview, SetupBudgetState } from './team-setup-budget-client'
 
 export interface TeamMember {
   id: string
@@ -22,12 +24,15 @@ export interface TeamReadiness {
   backgroundEnabled: boolean
 }
 export interface TeamGenerationAllowance {
+  policyVersion?: 2
+  remainingByOperation?: { improveTeamInput: number; generateTeam: number }
   status: 'available' | 'exhausted' | 'running' | 'uncertain' | 'blocked'
   remainingCalls: number
 }
 export interface TeamSetup {
   generationAllowance?: TeamGenerationAllowance
   inputImprovementVersion?: 1
+  setupBudgetVersion?: 2
   capabilityVersion: 1
   state: 'available' | 'configured' | 'unconfigured' | 'unsupported'
   organizationId?: string
@@ -76,9 +81,20 @@ function validateGenerationAllowance(value: unknown) {
     typeof allowance.status !== 'string' ||
     !['available', 'exhausted', 'running', 'uncertain', 'blocked'].includes(allowance.status) ||
     !Number.isInteger(allowance.remainingCalls) ||
-    Number(allowance.remainingCalls) < 0 || Number(allowance.remainingCalls) > 3 ||
+    Number(allowance.remainingCalls) < 0 || Number(allowance.remainingCalls) > (allowance.policyVersion === 2 ? 1000 : 3) ||
     (allowance.status === 'available' && allowance.remainingCalls === 0)
   ) {throw new Error('invalid_allowance')}
+
+  if ('policyVersion' in allowance || 'remainingByOperation' in allowance) {
+    const operations = allowance.remainingByOperation as Record<string, unknown> | undefined
+
+    if (allowance.policyVersion !== 2 || !operations || typeof operations !== 'object' || Array.isArray(operations) ||
+      Object.keys(operations).sort().join(',') !== 'generateTeam,improveTeamInput' ||
+      !['generateTeam', 'improveTeamInput'].every(key => Number.isInteger(operations[key]) &&
+        Number(operations[key]) >= 0 && Number(operations[key]) <= Number(allowance.remainingCalls))) {
+      throw new Error('invalid_allowance')
+    }
+  }
 }
 
 /** One captured authenticated socket; stale results never authorize a later write. */
@@ -133,6 +149,36 @@ export function createTeamOnboardingClient(
     current,
     setup: (organizationId: string | null) =>
       request<TeamSetup>('organization.teamSetup', { expectedOrganizationId: organizationId }),
+    budget: async (setup: TeamSetup): Promise<SetupBudgetState> => {
+      if (setup.setupBudgetVersion !== 2 || !setup.organizationId) {throw new Error('unsupported')}
+      const value = await request<unknown>('organization.setupBudgetPolicy', { expectedOrganizationId: setup.organizationId })
+      validateSetupBudgetState(value, setup.organizationId)
+
+      return value
+    },
+    previewBudget: async (state: SetupBudgetState, configuration: SetupBudgetPolicy): Promise<SetupBudgetPreview> => {
+      validateSetupBudgetPolicy(configuration)
+
+      const value = await request<unknown>('organization.previewSetupBudget', {
+        expectedOrganizationId: state.organizationId, expectedGeneration: state.policyGeneration,
+        sourceRevision: state.sourceRevision, configuration
+      })
+
+      validateSetupBudgetPreview(value, state, configuration)
+
+      return value
+    },
+    applyBudget: async (preview: SetupBudgetPreview, idempotencyKey: string) => {
+      const value = await request<unknown>('organization.applySetupBudget', {
+        expectedOrganizationId: preview.organizationId, expectedGeneration: preview.policyGeneration,
+        sourceRevision: preview.sourceRevision, configuration: preview.configuration,
+        previewVersion: preview.previewVersion, idempotencyKey, confirmed: true
+      })
+
+      validateSetupBudgetApplied(value, preview, idempotencyKey)
+
+      return value
+    },
     generate: (setup: TeamSetup, input: { jobs: string; goals: string; namingStyle: string; idempotencyKey: string }) =>
       request<TeamPreview>('organization.generateTeam', {
         expectedOrganizationId: setup.organizationId,

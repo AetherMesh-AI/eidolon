@@ -124,6 +124,44 @@ describe('owner folder revocation client', () => {
     expect(h.mutations()[1]).toEqual(h.mutations()[0])
   })
 
+  it('requires a fresh read and owner confirmation after a capacity refusal with unchanged policy and outcomes', async () => {
+    const h = harness()
+    h.access.grants[0].revoked = true; h.access.paused = true
+    await h.client.read()
+    h.request.mockRejectedValueOnce(Object.assign(new Error('execution_still_stopping'), { code: 5074, data: { reason: 'execution_still_stopping' } }))
+    await expect(h.client.review('root0', true, false)).rejects.toEqual(new FolderAccessError('conflict'))
+    expect(h.client.pending()).toBeNull()
+    expect(h.access.grants[0]).toMatchObject({ revoked: true, reviewed: false })
+    expect(h.access.paused).toBe(true)
+    await expect(h.client.retry()).rejects.toEqual(new FolderAccessError('pending'))
+    await expect(h.client.review('root0', true, false)).rejects.toEqual(new FolderAccessError('confirm'))
+    await h.client.read()
+    await expect(h.client.review('root0', false, false)).rejects.toEqual(new FolderAccessError('confirm'))
+    expect(h.mutations()).toHaveLength(1)
+    await expect(h.client.review('root0', true, false)).resolves.toBe('review')
+    expect(h.mutations()).toHaveLength(2)
+    expect(h.mutations()[1]).toEqual(h.mutations()[0])
+    expect(h.mutations()[1][1]).toMatchObject({ expectedGeneration: 3, reviewVersion: 'b'.repeat(64) })
+    expect(h.key).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    { code: 5074, data: { reason: 'unrecognized' } },
+    { code: 5000, data: { reason: 'execution_still_stopping' } },
+    {}
+  ])('does not infer a definite review rejection from an error message: %j', async details => {
+    const h = harness()
+    h.access.grants[0].revoked = true; h.access.paused = true
+    await h.client.read()
+    h.request.mockRejectedValueOnce(Object.assign(new Error('execution_still_stopping'), details))
+    await expect(h.client.review('root0', true, false)).rejects.toThrow('execution_still_stopping')
+    expect(h.client.pending()?.action).toBe('review')
+    await h.client.read()
+    await expect(h.client.review('root0', true, false)).rejects.toEqual(new FolderAccessError('pending'))
+    expect(h.mutations()).toHaveLength(1)
+    expect(h.access.grants[0]).toMatchObject({ revoked: true, reviewed: false })
+  })
+
   it.each(['key', 'ownerKey', 'profile', 'organizationId', 'ownerId', 'eligible'] as const)('fences a changed %s before writes and never rebinds', async field => {
     const h = harness(); await h.client.read()
     Object.assign(h.scope, { [field]: field === 'eligible' ? false : 'other' })

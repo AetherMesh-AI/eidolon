@@ -26,8 +26,18 @@ import {
 } from './team-onboarding-client'
 import { TeamOnboardingEditor } from './team-onboarding-editor'
 import { type TeamInputReview, TeamOnboardingInputs, type TeamSetupInputs } from './team-onboarding-inputs'
+import { SetupBudgetRemaining, TeamSetupBudgetEditor } from './team-setup-budget-editor'
 import type { RuntimeOrganizationAdapter } from './types'
 import { readOrganizationMetadataScope, useOrganizationMetadata } from './use-organization-metadata'
+
+function teamInputKeyboardContext(active: HTMLElement): HTMLElement[] {
+  if (!active.matches('.eid-team-input > textarea')) {return []}
+  const field = active.parentElement
+  const heading = field?.querySelector<HTMLElement>(':scope > .eid-team-input-heading')
+  const help = field?.querySelector<HTMLElement>(':scope > .eid-team-note')
+
+  return heading && help ? [heading, help] : []
+}
 
 function readTeamScope() {
   const scope = readOrganizationMetadataScope()
@@ -279,14 +289,15 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
   const [preview, setPreview] = useState<TeamPreview | null>(null)
   const [receipt, setReceipt] = useState<TeamReceipt | null>(null)
 
-  const [pending, setPending] = useState<'generate' | 'regenerate' | 'improve' | 'preview' | 'create' | 'check' | null>(
-    null
-  )
+  const [pending, setPending] = useState<
+    'generate' | 'regenerate' | 'improve' | 'preview' | 'create' | 'check' | 'budget' | null
+  >(null)
 
   const [error, setError] = useState('')
   const [unresolvedCreate, setUnresolvedCreate] = useState(false)
   const [hasGenerated, setHasGenerated] = useState(false)
   const [allowanceUnverified, setAllowanceUnverified] = useState(false)
+  const [budgetUnverified, setBudgetUnverified] = useState(false)
   const regenerationIntent = useRef<TeamGenerationIntent | null>(null)
   const operation = useRef(0)
   const busy = useRef(false)
@@ -386,14 +397,20 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
     generationIntent.current = null
   }
 
-  const allowanceBlocked =
-    allowanceUnverified || (!!setup.generationAllowance && setup.generationAllowance.status !== 'available')
+  const allowanceBlocked = (operation: 'improveTeamInput' | 'generateTeam') =>
+    budgetUnverified ||
+    allowanceUnverified ||
+    (!!setup.generationAllowance &&
+      (setup.generationAllowance.status !== 'available' ||
+        (setup.generationAllowance.remainingByOperation?.[operation] ?? setup.generationAllowance.remainingCalls) ===
+          0))
 
   const improvementFingerprint = (field: 'jobs' | 'goals') =>
     JSON.stringify({ ...inputs, sourceRevision: setup.sourceRevision, field })
 
   const canImprove = (field: 'jobs' | 'goals') =>
-    !allowanceBlocked || improvementIntents.current[field]?.fingerprint === improvementFingerprint(field)
+    !allowanceBlocked('improveTeamInput') ||
+    improvementIntents.current[field]?.fingerprint === improvementFingerprint(field)
 
   const improve = (field: 'jobs' | 'goals') => {
     if (
@@ -435,7 +452,7 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
     }
 
     if (replace && !regenerationIntent.current) {
-      if (allowanceUnverified || setup.generationAllowance?.status !== 'available') {
+      if (allowanceBlocked('generateTeam') || !setup.generationAllowance) {
         return
       }
 
@@ -447,7 +464,7 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
       }
     }
 
-    if (!replace && allowanceBlocked && !generationIntent.current) {
+    if (!replace && allowanceBlocked('generateTeam') && !generationIntent.current) {
       return
     }
 
@@ -571,13 +588,14 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
     providerSetup,
     inputs,
     team,
-    preview,
+    preview: preview?.sourceRevision === setup.sourceRevision ? preview : null,
     receipt,
     pending,
     error,
     unresolvedCreate,
     hasGenerated,
     allowanceUnverified,
+    budgetUnverified,
     modelBlocked,
     close,
     update,
@@ -585,11 +603,11 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
     improve,
     generate,
     applySuggestion,
-    canGenerate: !allowanceBlocked || !!generationIntent.current,
+    canGenerate: !allowanceBlocked('generateTeam') || !!generationIntent.current,
     canImprove: { jobs: canImprove('jobs'), goals: canImprove('goals') },
     canRegenerate:
       !modelBlocked &&
-      (!!regenerationIntent.current || (!allowanceUnverified && setup.generationAllowance?.status === 'available')),
+      (!!regenerationIntent.current || (!allowanceBlocked('generateTeam') && !!setup.generationAllowance)),
     regenerationPending: !!regenerationIntent.current,
     suggestion: suggestion?.sourceRevision === setup.sourceRevision ? suggestion : null,
     discardSuggestion: () => setSuggestion(null),
@@ -597,6 +615,25 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
     back: () => {
       setTeam(null)
       setPreview(null)
+    },
+    setBudgetBusy: (value: boolean) => {
+      busy.current = value
+      setPending(value ? 'budget' : null)
+    },
+    invalidateBudget: () => {
+      setBudgetUnverified(true)
+      setPreview(null)
+      setSuggestion(null)
+      intent.current = null
+      generationIntent.current = null
+      regenerationIntent.current = null
+      improvementIntents.current = {}
+      setAllowanceUnverified(true)
+    },
+    refreshBudgetSetup: (result: TeamSetup) => {
+      setBudgetUnverified(false)
+      setSetup(result)
+      setAllowanceUnverified(false)
     },
     check: () =>
       void act('check', async () => {
@@ -608,12 +645,12 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
         }
       }),
     validate: () => {
-      if (team) {
+      if (team && !budgetUnverified) {
         void act('preview', async () => applyPreview(await client.preview(setup, team)))
       }
     },
     create: () => {
-      if (preview) {
+      if (preview && preview.sourceRevision === setup.sourceRevision && !budgetUnverified) {
         void act('create', async () => {
           setUnresolvedCreate(true)
           intent.current ??= { version: preview.previewVersion, key: crypto.randomUUID() }
@@ -646,6 +683,7 @@ export function TeamOnboardingDialog(props: TeamOnboardingDialogProps) {
     unresolvedCreate,
     hasGenerated,
     allowanceUnverified,
+    budgetUnverified,
     modelBlocked,
     close: closeDraft,
     update,
@@ -660,6 +698,9 @@ export function TeamOnboardingDialog(props: TeamOnboardingDialogProps) {
     suggestion,
     discardSuggestion,
     editSuggestion,
+    setBudgetBusy,
+    invalidateBudget,
+    refreshBudgetSetup,
     back,
     check,
     validate,
@@ -718,7 +759,11 @@ export function TeamOnboardingDialog(props: TeamOnboardingDialogProps) {
             cancelKeyboardReveal.current?.()
 
             if (event.key === 'Tab' && props.client.current()) {
-              cancelKeyboardReveal.current = queueKeyboardReveal(event.currentTarget, event.currentTarget)
+              cancelKeyboardReveal.current = queueKeyboardReveal(
+                event.currentTarget,
+                event.currentTarget,
+                teamInputKeyboardContext
+              )
             }
           }}
         >
@@ -766,6 +811,21 @@ export function TeamOnboardingDialog(props: TeamOnboardingDialogProps) {
                   </p>
                 )}
               </div>
+              {setup.generationAllowance?.remainingByOperation && !allowanceUnverified && (
+                <SetupBudgetRemaining
+                  generate={setup.generationAllowance.remainingByOperation.generateTeam}
+                  improve={setup.generationAllowance.remainingByOperation.improveTeamInput}
+                  total={setup.generationAllowance.remainingCalls}
+                />
+              )}
+              <TeamSetupBudgetEditor
+                client={props.client}
+                disabled={(!!pending && pending !== 'budget') || unresolvedCreate}
+                onBusyChange={setBudgetBusy}
+                onInvalidate={invalidateBudget}
+                onRefreshed={refreshBudgetSetup}
+                setup={setup}
+              />
               {!team ? (
                 <>
                   <TeamOnboardingInputs
@@ -863,7 +923,7 @@ export function TeamOnboardingDialog(props: TeamOnboardingDialogProps) {
           {(receipt?.readiness ?? preview?.readiness)?.warnings?.includes('new_member_routes_unassigned') && (
             <p className="eid-team-note">{copy.inheritedRoutes}</p>
           )}
-          {pending && (
+          {pending && pending !== 'budget' && (
             <Loader
               label={
                 pending === 'improve'
@@ -888,11 +948,11 @@ export function TeamOnboardingDialog(props: TeamOnboardingDialogProps) {
                 {copy.back}
               </Button>
               {!preview ? (
-                <Button disabled={!!pending || unresolvedCreate} onClick={validate}>
+                <Button disabled={!!pending || unresolvedCreate || budgetUnverified} onClick={validate}>
                   {copy.validate}
                 </Button>
               ) : (
-                <Button disabled={!!pending} onClick={create}>
+                <Button disabled={!!pending || budgetUnverified} onClick={create}>
                   {copy.create}
                 </Button>
               )}
