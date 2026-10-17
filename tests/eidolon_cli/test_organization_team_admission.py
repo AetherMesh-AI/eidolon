@@ -397,3 +397,96 @@ def test_improvement_and_generation_share_real_budget_ledger(installation, monke
     with pytest.raises(ValueError):
         admission.generate_team(root.home, request(root, 'second'))
     assert len(improved) == 1 and not generated
+
+
+def activate_split_budget(profile, *, improve=4, generate=3, total=7):
+    from eidolon_cli import organization_team_budget as budget
+    state = budget.budget_policy(profile.home, profile.identity['organizationId'])
+    value = {'expectedOrganizationId': state['organizationId'],
+             'expectedGeneration': state['policyGeneration'], 'sourceRevision': state['sourceRevision'],
+             'configuration': {'version': 2, 'mode': 'bounded_api', 'improveCallLimit': improve,
+                               'generationCallLimit': generate, 'totalCallLimit': total}}
+    preview = budget.preview_budget(profile.home, value)
+    return budget.apply_budget(profile.home, {**value, 'previewVersion': preview['previewVersion'],
+        'idempotencyKey': 'split-budget', 'confirmed': True})
+
+
+def test_split_setup_buckets_share_aggregate_and_replay_never_sends(profile, monkeypatch):
+    improved, generated = fake_improver(monkeypatch), fake_provider(monkeypatch)
+    activate_split_budget(profile)
+    for index in range(4):
+        value = improvement_request(profile, f'improve-{index}')
+        admission.improve_team_input(profile.home, value)
+    with pytest.raises(OwnerPolicyError, match='setup_budget_exhausted'):
+        admission.improve_team_input(profile.home, improvement_request(profile, 'improve-excess'))
+    for index in range(3):
+        value = request(profile, f'generate-{index}')
+        result = admission.generate_team(profile.home, value)
+        assert admission.generate_team(profile.home, value) == result
+    assert len(improved) == 4 and len(generated) == 3
+    allowance = team.team_setup(profile.home, profile.identity['organizationId'])['generationAllowance']
+    assert allowance == {'policyVersion': 2, 'status': 'exhausted', 'remainingCalls': 0,
+                         'remainingByOperation': {'improveTeamInput': 0, 'generateTeam': 0}}
+    with pytest.raises(OwnerPolicyError, match='setup_budget_exhausted'):
+        admission.generate_team(profile.home, request(profile, 'generate-excess'))
+    assert len(generated) == 3
+
+
+def test_split_activation_retains_legacy_debt_once_and_stales_old_inputs(profile, monkeypatch):
+    generated, improved = fake_provider(monkeypatch), fake_improver(monkeypatch)
+    for index in range(3):
+        admission.generate_team(profile.home, request(profile, f'legacy-{index}'))
+    stale = improvement_request(profile, 'stale')
+    activate_split_budget(profile)
+    with pytest.raises(OwnerPolicyError, match='source_conflict'):
+        admission.improve_team_input(profile.home, stale)
+    for index in range(4):
+        admission.improve_team_input(profile.home, improvement_request(profile, f'new-{index}'))
+    from eidolon_cli.organization_team_budget import operation_counts
+    with sqlite3.connect(profile.path) as conn:
+        conn.row_factory = sqlite3.Row
+        assert operation_counts(conn) == {'legacy': 3, 'improveTeamInput': 4, 'generateTeam': 0, 'total': 7}
+    with pytest.raises(OwnerPolicyError, match='setup_budget_exhausted'):
+        admission.generate_team(profile.home, request(profile, 'new-excess'))
+    assert len(generated) == 3 and len(improved) == 4
+
+
+def test_active_split_budget_cannot_bypass_real_shared_allowance(installation, monkeypatch):
+    root = installation
+    configure(root, calls=1, tokens=1000)
+    root.path, root.identity = root.store.path, root.metadata
+    activate_split_budget(root)
+    sends = fake_provider(monkeypatch)
+    admission.generate_team(root.home, request(root, 'first-shared'))
+    assert json.loads(rows(root)[0]['shared_receipt'])['payload']['kind'] == 'team_setup'
+    with pytest.raises(ValueError):
+        admission.generate_team(root.home, request(root, 'second-shared'))
+    assert len(sends) == 1
+    assert sum(row['dispatched'] for row in rows(root)) == 1
+    assert team.team_setup(root.home, root.identity['organizationId'])['generationAllowance']['remainingCalls'] == 6
+
+
+def test_active_split_unknown_shared_send_keeps_charge_and_blocks_policy_change(installation, monkeypatch):
+    root = installation
+    configure(root, calls=3, tokens=1000)
+    root.path, root.identity = root.store.path, root.metadata
+    activate_split_budget(root)
+    def unknown():
+        raise TimeoutError('synthetic response lost after dispatch')
+    sends = fake_provider(monkeypatch, outcome=unknown)
+    with pytest.raises(TimeoutError):
+        admission.generate_team(root.home, request(root, 'unknown-shared'))
+    row = rows(root)[0]
+    assert row['status'] == 'uncertain' and row['dispatched'] == 1 and row['reserved_tokens'] == 200
+    assert json.loads(row['shared_receipt'])['payload']['kind'] == 'team_setup'
+    from eidolon_cli import organization_team_budget as budget
+    current = budget.budget_policy(root.home, root.identity['organizationId'])
+    assert current['setupBudget']['status'] == 'uncertain'
+    assert current['setupBudget']['remaining']['totalCalls'] == 6
+    with pytest.raises(OwnerPolicyError, match='in_progress_or_uncertain'):
+        budget.preview_budget(root.home, {'expectedOrganizationId': current['organizationId'],
+            'sourceRevision': current['sourceRevision'], 'expectedGeneration': current['policyGeneration'],
+            'configuration': {**current['configuration'], 'totalCallLimit': 8}})
+    with pytest.raises(OwnerPolicyError, match='in_progress_or_uncertain'):
+        admission.generate_team(root.home, request(root, 'no-new-send'))
+    assert len(sends) == 1

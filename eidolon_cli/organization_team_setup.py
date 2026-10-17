@@ -143,33 +143,14 @@ def _readiness(home):
 
 def _generation_allowance(conn, settings, *, completing_key=None):
     """Passive local setup allowance; exact route/shared admission still wins."""
-    from decimal import Decimal, InvalidOperation
-    rows = conn.execute('SELECT idempotency_key,status,dispatched,reserved_tokens,reserved_cost '
-                        'FROM organization_team_generations').fetchall()
-    sent = [row for row in rows if row['dispatched']]
-    remaining = max(0, min(3, settings.max_model_calls) - len(sent))
-    status = 'available'
-    pending = [row['status'] for row in rows if row['idempotency_key'] != completing_key]
-    if 'uncertain' in pending:
-        status = 'uncertain'
-    elif 'running' in pending:
-        status = 'running'
-    elif not remaining:
-        status = 'exhausted'
-    elif any(type(row['reserved_tokens']) is not int or row['reserved_tokens'] < 0 for row in sent):
-        status = 'blocked'
-    elif sum(row['reserved_tokens'] for row in sent) >= min(120000, settings.max_total_tokens):
-        status = 'exhausted'
-    elif settings.max_cost_usd is not None:
-        try:
-            costs = [Decimal(row['reserved_cost']) for row in sent]
-            if any(not value.is_finite() or value < 0 for value in costs):
-                status = 'blocked'
-            elif sum(costs, Decimal(0)) >= Decimal(settings.max_cost_usd):
-                status = 'exhausted'
-        except (TypeError, ValueError, InvalidOperation):
-            status = 'blocked'
-    return {'status': status, 'remainingCalls': remaining}
+    from eidolon_cli.organization_team_budget import budget_view
+    view = budget_view(conn, settings, completing_key=completing_key)
+    result = {'status': view['status'], 'remainingCalls': view['remaining']['totalCalls']}
+    if view['policyVersion'] == 2:
+        result.update(policyVersion=2, remainingByOperation={
+            'improveTeamInput': view['remaining']['improveCalls'],
+            'generateTeam': view['remaining']['generationCalls']})
+    return result
 
 
 def _support(conn):
@@ -187,12 +168,16 @@ def _current(conn, home, expected_id):
     # Bind previews to existing identities, not just the configuration bytes.
     agents = [dict(row) for row in conn.execute('SELECT * FROM agents ORDER BY id')]
     revision = _hash([revision, identity, policy['generation'], agents])
+    from eidolon_cli.organization_team_budget import read_policy
+    setup_policy = read_policy(conn)
+    if setup_policy is not None:
+        revision = _hash([revision, setup_policy])
     return identity, policy, settings, revision
 
 
 def team_setup(home, expected_id):
     _uuid(expected_id, 'expectedOrganizationId')
-    base = {'capabilityVersion': 1, 'inputImprovementVersion': 1, 'presets': presets(), 'readiness': _readiness(home), 'supportAgents': []}
+    base = {'capabilityVersion': 1, 'inputImprovementVersion': 1, 'setupBudgetVersion': 2, 'presets': presets(), 'readiness': _readiness(home), 'supportAgents': []}
     try:
         with _connection(home) as conn:
             identity, policy, settings, revision = _current(conn, home, expected_id)
@@ -286,3 +271,18 @@ def generate_team(home, params, *, cancel=None):
 def improve_team_input(home, params, *, cancel=None):
     from eidolon_cli.organization_team_admission import improve_team_input as run
     return run(home, params, cancel=cancel)
+
+
+def setup_budget_policy(home, expected_id):
+    from eidolon_cli.organization_team_budget import budget_policy
+    return budget_policy(home, expected_id)
+
+
+def preview_setup_budget(home, params):
+    from eidolon_cli.organization_team_budget import preview_budget
+    return preview_budget(home, params)
+
+
+def apply_setup_budget(home, params):
+    from eidolon_cli.organization_team_budget import apply_budget
+    return apply_budget(home, params)

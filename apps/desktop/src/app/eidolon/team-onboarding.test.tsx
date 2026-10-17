@@ -3,6 +3,7 @@ import { MemoryRouter } from 'react-router'
 import { expect, it, vi } from 'vitest'
 
 import { I18nProvider, useI18n } from '@/i18n/context'
+import { ownerPolicyCopy } from '@/i18n/organization-owner-policy'
 import { teamOnboardingCopy } from '@/i18n/organization-team-onboarding'
 import type { Locale } from '@/i18n/types'
 import { $desktopOnboarding, closeManualOnboarding } from '@/store/onboarding'
@@ -677,17 +678,30 @@ it.each(['owner', 'profile', 'client', 'close', 'unmount', 'new focus'])(
     try {
       h.start()
 
-      if (change === 'owner') {h.rerender({ ...setup, organizationId: 'new-owner' })}
+      if (change === 'owner') {
+        h.rerender({ ...setup, organizationId: 'new-owner' })
+      }
 
-      if (change === 'profile') {h.rerender(setup, 'new-profile')}
+      if (change === 'profile') {
+        h.rerender(setup, 'new-profile')
+      }
 
-      if (change === 'client') {h.rerender(setup, 'default', { ...h.client })}
+      if (change === 'client') {
+        h.rerender(setup, 'default', { ...h.client })
+      }
 
-      if (change === 'close') {fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))}
+      if (change === 'close') {
+        fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+      }
 
-      if (change === 'unmount') {h.view.unmount()}
+      if (change === 'unmount') {
+        h.view.unmount()
+      }
 
-      if (change === 'new focus') {screen.getByLabelText('What success looks like').focus()}
+      if (change === 'new focus') {
+        screen.getByLabelText('What success looks like').focus()
+      }
+
       h.finish()
       expect(h.body.scrollTop).toBe(500)
       expect(h.shell.scrollTop).toBe(17)
@@ -709,3 +723,165 @@ it('does not schedule Team reveal for programmatic focus or a non-Tab key', () =
     h.cleanup()
   }
 })
+
+it.each([
+  { improveTeamInput: 0, generateTeam: 2 },
+  { improveTeamInput: 2, generateTeam: 0 }
+])('uses separate operation counters even when aggregate allowance remains: %j', async operations => {
+  const allowance = {
+    policyVersion: 2 as const,
+    status: 'available' as const,
+    remainingCalls: 2,
+    remainingByOperation: operations
+  }
+
+  const h = harness({ ...setup, generationAllowance: allowance })
+  const copy = teamOnboardingCopy.en
+  fireEvent.change(screen.getByLabelText(copy.jobs), { target: { value: 'Research' } })
+  fireEvent.change(screen.getByLabelText(copy.goals), { target: { value: 'Evidence' } })
+  expect(screen.getByRole('button', { name: copy.improveJobs })).toHaveProperty(
+    'disabled',
+    operations.improveTeamInput === 0
+  )
+  expect(screen.getByRole('button', { name: copy.improveGoals })).toHaveProperty(
+    'disabled',
+    operations.improveTeamInput === 0
+  )
+  expect(screen.getByRole('button', { name: copy.generate })).toHaveProperty('disabled', operations.generateTeam === 0)
+
+  if (operations.generateTeam) {
+    vi.mocked(h.client.generate).mockResolvedValueOnce({
+      ...preview,
+      generationAllowance: { ...allowance, remainingByOperation: { improveTeamInput: 1, generateTeam: 0 } }
+    })
+    fireEvent.click(screen.getByRole('button', { name: copy.generate }))
+    await screen.findByRole('button', { name: copy.create })
+    expect(screen.getByRole('button', { name: copy.regenerate })).toHaveProperty('disabled', true)
+  }
+
+  expect(h.client.improve).not.toHaveBeenCalled()
+})
+
+it.each(['saved', 'uncertain'] as const)(
+  'reconciles %s budget apply while preserving text and fencing old team authority',
+  async outcome => {
+    const current = { ...setup, setupBudgetVersion: 2 as const }
+    const h = harness(current)
+    const copy = teamOnboardingCopy.en
+
+    const budget = {
+      version: 2 as const,
+      mode: 'bounded_api' as const,
+      improveCallLimit: 4,
+      generationCallLimit: 3,
+      totalCallLimit: 7
+    }
+
+    const budgetView = {
+      capabilityVersion: 1,
+      state: 'ready',
+      organizationId: 'organization',
+      ownerId: 'owner',
+      policyGeneration: 1,
+      sourceRevision: 'a'.repeat(64),
+      configuration: null,
+      suggestedConfiguration: budget,
+      managed: false,
+      available: true,
+      latestReceipt: null,
+      setupBudget: {
+        policyVersion: 1,
+        policy: null,
+        usage: { legacy: 1, improveTeamInput: 0, generateTeam: 0, total: 1 },
+        limits: { improveCalls: 3, generationCalls: 3, totalCalls: 3, totalTokens: 12000, maxCostUsd: null },
+        remaining: { improveCalls: 2, generationCalls: 2, totalCalls: 2 },
+        status: 'available',
+        reservedTokens: 4000,
+        reservedCostUsd: null
+      }
+    }
+
+    const proposed = {
+      ...budgetView,
+      configuration: budget,
+      usage: budgetView.setupBudget,
+      previewVersion: 'b'.repeat(64),
+      changes: [{ field: 'setup_budget', before: null, after: budget }],
+      warnings: []
+    }
+
+    h.client.budget = vi.fn().mockResolvedValue(budgetView)
+    h.client.previewBudget = vi.fn().mockResolvedValue(proposed)
+    h.client.applyBudget = vi.fn().mockResolvedValue({
+      capabilityVersion: 1,
+      receipt: {
+        idempotencyKey: 'saved',
+        organizationId: 'organization',
+        ownerId: 'owner',
+        action: 'setupBudget',
+        policyGeneration: 2,
+        sourceRevision: proposed.sourceRevision,
+        previewVersion: proposed.previewVersion,
+        configuration: budget
+      }
+    })
+    vi.mocked(h.client.setup).mockResolvedValue(current)
+    fireEvent.change(screen.getByLabelText(copy.jobs), { target: { value: 'My retained job text' } })
+    fireEvent.change(screen.getByLabelText(copy.goals), { target: { value: 'My retained outcomes' } })
+    fireEvent.click(screen.getByRole('button', { name: copy.generate }))
+    await screen.findByRole('button', { name: copy.create })
+    fireEvent.change(screen.getAllByLabelText(copy.name)[0], { target: { value: 'Owner-edited lead' } })
+    vi.mocked(h.client.preview).mockResolvedValueOnce({
+      ...preview,
+      team: { ...team, executive: { ...team.executive, name: 'Owner-edited lead' } }
+    })
+    fireEvent.click(screen.getByRole('button', { name: copy.validate }))
+    await screen.findByRole('button', { name: copy.create })
+    fireEvent.click(screen.getByText('Setup budget'))
+    await screen.findByText('Current effective limits')
+    fireEvent.click(screen.getByRole('button', { name: 'Use suggested limits in draft' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Review setup budget' }))
+    await screen.findByRole('button', { name: 'Apply setup budget' })
+    const afterSetup = { ...current, sourceRevision: 'after-budget' }
+    vi.mocked(h.client.setup).mockResolvedValue(afterSetup)
+
+    if (outcome === 'uncertain') {
+      vi.mocked(h.client.applyBudget).mockRejectedValueOnce(new Error('timeout'))
+    }
+
+    fireEvent.click(screen.getByRole('button', { name: 'Apply setup budget' }))
+
+    if (outcome === 'uncertain') {
+      await screen.findByText(ownerPolicyCopy.en.uncertain)
+      expect(screen.getByRole('button', { name: copy.validate })).toHaveProperty('disabled', true)
+      fireEvent.click(screen.getByRole('button', { name: copy.checkConfiguration }))
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: copy.checkConfiguration })).toHaveProperty('disabled', false)
+      )
+      expect(screen.getByRole('button', { name: copy.validate })).toHaveProperty('disabled', true)
+      expect(screen.queryByRole('button', { name: copy.create })).toBeNull()
+      fireEvent.click(screen.getByRole('button', { name: copy.back }))
+      expect(screen.getByRole('button', { name: copy.improveJobs })).toHaveProperty('disabled', true)
+      expect(screen.getByRole('button', { name: copy.generate })).toHaveProperty('disabled', true)
+      fireEvent.click(screen.getByRole('button', { name: 'Check original budget change' }))
+      await screen.findByRole('region', { name: 'Saved budget receipt' })
+      await waitFor(() => expect(screen.getByRole('button', { name: copy.generate })).toHaveProperty('disabled', false))
+      expect(vi.mocked(h.client.applyBudget).mock.calls[1]).toEqual(vi.mocked(h.client.applyBudget).mock.calls[0])
+      expect(screen.getByLabelText(copy.jobs)).toHaveProperty('value', 'My retained job text')
+      expect(h.client.generate).toHaveBeenCalledTimes(1)
+      expect(h.client.create).not.toHaveBeenCalled()
+
+      return
+    }
+
+    await screen.findByRole('region', { name: 'Saved budget receipt' })
+    await waitFor(() => expect(screen.getByRole('button', { name: copy.validate })).toHaveProperty('disabled', false))
+    expect(screen.queryByRole('button', { name: copy.create })).toBeNull()
+    expect(screen.getAllByLabelText(copy.name)[0]).toHaveProperty('value', 'Owner-edited lead')
+    expect(h.client.create).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: copy.back }))
+    expect(screen.getByLabelText(copy.jobs)).toHaveProperty('value', 'My retained job text')
+    expect(screen.getByLabelText(copy.goals)).toHaveProperty('value', 'My retained outcomes')
+    expect(h.client.generate).toHaveBeenCalledTimes(1)
+  }
+)

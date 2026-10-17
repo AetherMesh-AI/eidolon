@@ -36,7 +36,7 @@ def _team_method(name, operation, fields):
                         result = getattr(setup, operation)(home, params, cancel=TransportCancellation())
                     else:
                         result = getattr(setup, operation)(home,
-                            params['expectedOrganizationId'] if operation == 'team_setup' else params)
+                            params['expectedOrganizationId'] if operation in {'team_setup', 'setup_budget_policy'} else params)
                     if operation == 'improve_team_input' and (
                             getattr(transport, 'closed', False)
                             or Path(_eidolon_home).resolve() != home
@@ -62,6 +62,10 @@ _team_method('previewTeam', 'preview_team', {'sourceRevision', 'team'})
 _team_method('createTeam', 'create_team', {'sourceRevision', 'team', 'previewVersion', 'idempotencyKey', 'confirmed'})
 _team_method('generateTeam', 'generate_team', {'sourceRevision', 'jobs', 'goals', 'namingStyle', 'idempotencyKey'})
 _team_method('improveTeamInput', 'improve_team_input', {'sourceRevision', 'field', 'jobs', 'goals', 'namingStyle', 'idempotencyKey'})
+
+_team_method('setupBudgetPolicy', 'setup_budget_policy', set())
+_team_method('previewSetupBudget', 'preview_setup_budget', {'sourceRevision', 'expectedGeneration', 'configuration'})
+_team_method('applySetupBudget', 'apply_setup_budget', {'sourceRevision', 'expectedGeneration', 'configuration', 'previewVersion', 'idempotencyKey', 'confirmed'})
 
 
 def register(server):

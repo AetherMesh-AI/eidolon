@@ -34,9 +34,9 @@ def managed_fields(*, write_locks=True):
     # Authority must observe administrator edits even if stat metadata was reused.
     managed_scope.invalidate_managed_cache()
     if write_locks and managed_install_system(get_eidolon_home()) is not None:
-        return set(EDITABLE_FIELDS)
+        return set(EDITABLE_FIELDS) | {'setup_budget'}
     keys = managed_scope.managed_config_keys()
-    return {field for field in EDITABLE_FIELDS
+    return {field for field in (*EDITABLE_FIELDS, 'setup_budget')
             if any(key == 'organization' or key == f'organization.{field}'
                    or key.startswith(f'organization.{field}.') for key in keys)}
 
@@ -59,7 +59,7 @@ def resolve_owner_overrides(conn, base):
     from eidolon_cli import managed_scope
     from eidolon_cli.config_primitives import _expand_env_vars
     managed = _expand_env_vars(managed_scope.load_managed_config()).get('organization', {})
-    enforced = {key: value for key, value in managed.items() if key in locked} if isinstance(managed, dict) else {}
+    enforced = {key: value for key, value in managed.items() if key in locked and key != 'setup_budget'} if isinstance(managed, dict) else {}
     routing = conn.execute('SELECT configuration FROM organization_model_routing_config WHERE id=1').fetchone()
     patch = {}
     if routing is not None:
@@ -71,8 +71,14 @@ def resolve_owner_overrides(conn, base):
         row = conn.execute('SELECT configuration FROM organization_owner_budget_policy WHERE id=1').fetchone()
         if row is not None:
             saved = json.loads(row[0])
-            if not isinstance(saved, dict) or set(saved) - set(BUDGET_FIELDS):
+            if not isinstance(saved, dict) or set(saved) - (set(BUDGET_FIELDS) | {'setup_budget'}):
                 raise ValueError('Persisted budget policy contains unsupported settings')
-            patch.update({key: value for key, value in saved.items() if key not in locked})
+            if 'setup_budget' in saved:
+                from eidolon_cli.organization_team_budget import validate_policy
+                validate_policy(saved['setup_budget'])
+            # Setup policy is a separate ledger authority, never a settings or
+            # YAML default. Older runtimes reject this unknown persisted key.
+            patch.update({key: value for key, value in saved.items()
+                          if key != 'setup_budget' and key not in locked})
     patch.update(enforced)
     return validated_patch(base, patch) if patch else base
