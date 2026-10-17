@@ -105,7 +105,7 @@ describe('PreviewModeSwitcher controls', () => {
     )
 
     const source = screen.getByRole('button', { name: /^source$/i })
-    const cancel = screen.getByRole('button', { name: 'Cancel', exact: true })
+    const cancel = screen.getByRole('button', { name: 'Cancel' })
     expect(source.closest('[dir]')?.getAttribute('dir')).toBe('rtl')
     expect(cancel.closest('[dir]')?.getAttribute('dir')).toBe('rtl')
     source.focus()
@@ -117,7 +117,7 @@ describe('PreviewModeSwitcher controls', () => {
     fireEvent.click(cancel)
     expect(onCancel).toHaveBeenCalledOnce()
     expect(onSelect).toHaveBeenCalledOnce()
-    fireEvent.click(screen.getByRole('button', { name: 'Save', exact: true }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     expect(onSave).not.toHaveBeenCalled()
     expect(screen.getAllByRole('button')).toHaveLength(5)
   })
