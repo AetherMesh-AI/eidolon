@@ -10,6 +10,7 @@ def _team_method(name, operation, fields):
         from pathlib import Path
         from eidolon_cli import organization_team_setup as setup
         from eidolon_cli.organization_owner_policy import OwnerPolicyError
+        from eidolon_cli.organization_setup_subscription_policy import SubscriptionPolicyError
         from eidolon_cli.organization_metadata import MetadataError
         from eidolon_cli.profiles import get_active_profile_name
         from eidolon_constants import set_eidolon_home_override, reset_eidolon_home_override
@@ -33,7 +34,17 @@ def _team_method(name, operation, fields):
                         class TransportCancellation:
                             def is_set(self):
                                 return bool(getattr(transport, 'closed', False))
-                        result = getattr(setup, operation)(home, params, cancel=TransportCancellation())
+                        result = getattr(setup, operation)(home, params, cancel=TransportCancellation(),
+                            subscription_transport=transport)
+                    elif operation == 'team_setup':
+                        result = setup.team_setup(home, params['expectedOrganizationId'],
+                                                  subscription_transport=transport)
+                    elif operation in {'readiness_subscription_policy', 'preview_subscription_policy',
+                                       'apply_subscription_policy'}:
+                        from eidolon_cli import organization_setup_subscription_policy as subscription
+                        result = getattr(subscription, operation)(home,
+                            params['expectedOrganizationId'] if operation == 'readiness_subscription_policy' else params,
+                            transport)
                     else:
                         result = getattr(setup, operation)(home,
                             params['expectedOrganizationId'] if operation in {'team_setup', 'setup_budget_policy'} else params)
@@ -48,6 +59,8 @@ def _team_method(name, operation, fields):
             finally:
                 reset_eidolon_home_override(token)
             return _ok(rid, {**result, 'scope': {'kind': 'served-profile', 'profile': profile}})
+        except SubscriptionPolicyError as exc:
+            return _err(rid, 5077, 'Setup subscription policy is unavailable', {'reason': str(exc)})
         except ValueError as exc:
             return _err(rid, -32602, str(exc))
         except (OwnerPolicyError, MetadataError) as exc:
@@ -63,6 +76,13 @@ _team_method('createTeam', 'create_team', {'sourceRevision', 'team', 'previewVer
 _team_method('generateTeam', 'generate_team', {'sourceRevision', 'jobs', 'goals', 'namingStyle', 'idempotencyKey'})
 _team_method('improveTeamInput', 'improve_team_input', {'sourceRevision', 'field', 'jobs', 'goals', 'namingStyle', 'idempotencyKey'})
 
+_team_method('setupSubscriptionPolicy', 'readiness_subscription_policy', set())
+_team_method('previewSetupSubscriptionPolicy', 'preview_subscription_policy',
+             {'sourceRevision', 'expectedGeneration', 'configuration'})
+_team_method('applySetupSubscriptionPolicy', 'apply_subscription_policy',
+             {'sourceRevision', 'expectedGeneration', 'configuration', 'previewVersion',
+              'idempotencyKey', 'confirmed', 'acknowledgement'})
+
 _team_method('setupBudgetPolicy', 'setup_budget_policy', set())
 _team_method('previewSetupBudget', 'preview_setup_budget', {'sourceRevision', 'expectedGeneration', 'configuration'})
 _team_method('applySetupBudget', 'apply_setup_budget', {'sourceRevision', 'expectedGeneration', 'configuration', 'previewVersion', 'idempotencyKey', 'confirmed'})
@@ -70,3 +90,4 @@ _team_method('applySetupBudget', 'apply_setup_budget', {'sourceRevision', 'expec
 
 def register(server):
     _registry.install(server)
+

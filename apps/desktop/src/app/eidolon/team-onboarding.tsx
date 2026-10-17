@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import { Loader } from '@/components/ui/loader'
 import { useI18n } from '@/i18n/context'
 import { teamOnboardingCopy, type TeamOnboardingCopy } from '@/i18n/organization-team-onboarding'
+import { setupSubscriptionCopy } from '@/i18n/organization-team-setup-subscription'
 import { $gateway } from '@/store/gateway'
 import { $desktopOnboarding, startManualOnboarding } from '@/store/onboarding'
 
@@ -27,11 +28,15 @@ import {
 import { TeamOnboardingEditor } from './team-onboarding-editor'
 import { type TeamInputReview, TeamOnboardingInputs, type TeamSetupInputs } from './team-onboarding-inputs'
 import { SetupBudgetRemaining, TeamSetupBudgetEditor } from './team-setup-budget-editor'
+import { TeamSetupSubscription } from './team-setup-subscription'
 import type { RuntimeOrganizationAdapter } from './types'
 import { readOrganizationMetadataScope, useOrganizationMetadata } from './use-organization-metadata'
 
 function teamInputKeyboardContext(active: HTMLElement): HTMLElement[] {
-  if (!active.matches('.eid-team-input > textarea')) {return []}
+  if (!active.matches('.eid-team-input > textarea')) {
+    return []
+  }
+
   const field = active.parentElement
   const heading = field?.querySelector<HTMLElement>(':scope > .eid-team-input-heading')
   const help = field?.querySelector<HTMLElement>(':scope > .eid-team-note')
@@ -669,6 +674,8 @@ function useTeamOnboardingDraft({ client, setup: initialSetup, onClose, onCreate
 
 export function TeamOnboardingDialog(props: TeamOnboardingDialogProps) {
   const { profile, onReturnFocus } = props
+  const { locale } = useI18n()
+  const subscriptionCopy = setupSubscriptionCopy[locale]
 
   const {
     copy,
@@ -706,6 +713,11 @@ export function TeamOnboardingDialog(props: TeamOnboardingDialogProps) {
     validate,
     create
   } = useTeamOnboardingDraft(props)
+
+  const subscriptionSelected =
+    setup.setupSubscriptionVersion === 1 &&
+    (setup.generationAllowance?.policyVersion === 3 ||
+      setup.readiness.blockers.includes('subscription_generation_unsupported'))
 
   const readinessId = useId()
   const cancelKeyboardReveal = useRef<(() => void) | undefined>(undefined)
@@ -793,16 +805,24 @@ export function TeamOnboardingDialog(props: TeamOnboardingDialogProps) {
                 </Button>
               </div>
               <div id={readinessId} role="status">
-                <p>{readinessMessage(setup.readiness, copy)}</p>
+                <p>
+                  {subscriptionSelected
+                    ? modelBlocked
+                      ? setup.generationAllowance?.policyVersion === 3
+                        ? subscriptionCopy.blocked
+                        : subscriptionCopy.intro
+                      : subscriptionCopy.readyForSetup
+                    : readinessMessage(setup.readiness, copy)}
+                </p>
                 {(setup.generationAllowance || allowanceUnverified) && (
                   <p className="eid-team-note">
                     {allowanceUnverified
                       ? copy.allowanceBlocked
                       : {
-                          available: copy.allowanceAvailable.replace(
-                            '{count}',
-                            String(setup.generationAllowance!.remainingCalls)
-                          ),
+                          available: (setup.generationAllowance?.policyVersion === 3
+                            ? subscriptionCopy.allowanceAvailable
+                            : copy.allowanceAvailable
+                          ).replace('{count}', String(setup.generationAllowance!.remainingCalls)),
                           exhausted: copy.allowanceExhausted,
                           running: copy.allowanceRunning,
                           uncertain: copy.allowanceUncertain,
@@ -818,14 +838,25 @@ export function TeamOnboardingDialog(props: TeamOnboardingDialogProps) {
                   total={setup.generationAllowance.remainingCalls}
                 />
               )}
-              <TeamSetupBudgetEditor
-                client={props.client}
-                disabled={(!!pending && pending !== 'budget') || unresolvedCreate}
-                onBusyChange={setBudgetBusy}
-                onInvalidate={invalidateBudget}
-                onRefreshed={refreshBudgetSetup}
-                setup={setup}
-              />
+              {subscriptionSelected ? (
+                <TeamSetupSubscription
+                  client={props.client}
+                  disabled={(!!pending && pending !== 'budget') || unresolvedCreate}
+                  onBusyChange={setBudgetBusy}
+                  onInvalidate={invalidateBudget}
+                  onRefreshed={refreshBudgetSetup}
+                  setup={setup}
+                />
+              ) : (
+                <TeamSetupBudgetEditor
+                  client={props.client}
+                  disabled={(!!pending && pending !== 'budget') || unresolvedCreate}
+                  onBusyChange={setBudgetBusy}
+                  onInvalidate={invalidateBudget}
+                  onRefreshed={refreshBudgetSetup}
+                  setup={setup}
+                />
+              )}
               {!team ? (
                 <>
                   <TeamOnboardingInputs

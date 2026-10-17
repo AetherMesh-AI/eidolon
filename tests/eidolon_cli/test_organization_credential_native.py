@@ -47,6 +47,13 @@ print('verified')
             'reference': reference, 'binding': asdict(item)}), capture_output=True, text=True, timeout=20)
         assert result.returncode == 0 and result.stdout.strip() == 'verified'
         assert value.decode() not in result.stdout + result.stderr
+        with pytest.raises(CredentialError, match='scope_denied'):
+            backend.delete(reference, replace(item, organization_id='foreign'))
+        backend.delete(reference, item)
+        backend.delete(reference, item)
+        created = False
+        with pytest.raises(CredentialError, match='value_missing'):
+            backend.consume(reference, item, observed.append)
     finally:
         if created:
             api = _WindowsCredentials().api
@@ -104,6 +111,12 @@ def test_macos_isolated_keychain_roundtrip_locking_and_scope(tmp_path):
         api.check(api.sec.SecKeychainUnlock(keychain, len(password.value), password, True))
         backend.consume(reference, item, observed.append)
         assert observed == [value, value]
+        with pytest.raises(CredentialError, match='scope_denied'):
+            backend.delete(reference, replace(item, organization_id='foreign'))
+        backend.delete(reference, item)
+        backend.delete(reference, item)
+        with pytest.raises(CredentialError):
+            backend.consume(reference, item, observed.append)
     finally:
         # Only the exact new temporary keychain from this test is deleted.
         api.check(api.sec.SecKeychainDelete(keychain))
@@ -121,3 +134,67 @@ def test_linux_is_explicitly_unavailable_without_environment_fallback(tmp_path, 
     with pytest.raises(CredentialError, match='backend_unavailable'):
         backend.put(binding(), b'SYNTHETIC')
     assert not (tmp_path / 'empty').exists()
+
+
+def test_windows_exact_delete_is_idempotent_and_never_hides_other_errors():
+    from types import SimpleNamespace
+    from eidolon_cli.organization_credential_native import _WindowsCredentials
+    calls = []
+    api = object.__new__(_WindowsCredentials)
+    api.api = SimpleNamespace(CredDeleteW=lambda *args: calls.append(args) or False)
+    api.ctypes = SimpleNamespace(get_last_error=lambda: 1168)
+    api.delete('synthetic.exact.target')
+    assert calls == [('synthetic.exact.target', 1, 0)]
+    api.ctypes = SimpleNamespace(get_last_error=lambda: 5)
+    with pytest.raises(CredentialError, match='backend_delete_failed'):
+        api.delete('synthetic.exact.target')
+
+
+def test_native_delete_rejects_foreign_binding_before_native_access(monkeypatch):
+    import eidolon_cli.organization_credential_native as native
+    from eidolon_cli.organization_credential_keychain import MacKeychainBackend
+    item = binding()
+    reference = native.binding_reference(item)
+    def forbidden():
+        pytest.fail('Foreign binding must not touch any native API')
+    monkeypatch.setattr(native, '_WindowsCredentials', forbidden)
+    windows = native.WindowsCredentialBackend(namespace='synthetic-delete')
+    mac = MacKeychainBackend(namespace='synthetic-delete')
+    monkeypatch.setattr(mac, '_require', forbidden)
+    for backend in (windows, mac):
+        with pytest.raises(CredentialError, match='scope_denied'):
+            backend.delete(reference, replace(item, organization_id='foreign'))
+
+
+def test_mac_delete_uses_exact_query_and_only_missing_is_success(monkeypatch):
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+    from eidolon_cli.organization_credential_keychain import MacKeychainBackend
+    from eidolon_cli.organization_credential_native import binding_reference
+    calls = []
+    @contextmanager
+    def keychain(path):
+        assert path == 'synthetic-only'
+        yield 'synthetic-keychain'
+    @contextmanager
+    def query(**kwargs):
+        calls.append(kwargs)
+        yield 'exact-query'
+    errors = []
+    api = SimpleNamespace(keychain=keychain, query=query,
+        sec=SimpleNamespace(SecItemDelete=lambda q: -25300), check=errors.append)
+    backend = MacKeychainBackend(namespace='synthetic-delete', keychain_path='synthetic-only')
+    monkeypatch.setattr(backend, '_require', lambda: api)
+    item = binding()
+    reference = binding_reference(item)
+    backend.delete(reference, item)
+    assert calls == [{'service': backend.service, 'account': reference,
+                      'keychain': 'synthetic-keychain', 'deleting': True}]
+    assert errors == []
+    api.sec.SecItemDelete = lambda q: -25308
+    def check(result):
+        assert result == -25308
+        raise CredentialError('backend_locked')
+    api.check = check
+    with pytest.raises(CredentialError, match='backend_locked'):
+        backend.delete(reference, item)
