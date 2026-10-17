@@ -2,8 +2,9 @@ import type { GatewayEvent } from '@aethermesh/shared'
 import { act, cleanup, render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { getHermesConfigRecord } from '@/api/config'
 import { createOrganizationScopeReader } from '@/app/eidolon/runtime-provider'
-import type { DesktopConnectionsRegistry } from '@/global'
+import type { DesktopConnectionsRegistry, HermesWindowState } from '@/global'
 import { createClientSessionState } from '@/lib/chat-runtime'
 import { $desktopBoot } from '@/store/boot'
 import {
@@ -34,6 +35,7 @@ import {
   recoverActiveSourceAfterFailedGatewaySwitch
 } from '@/store/gateway-switch'
 import { notifyError } from '@/store/notifications'
+import { $organizationSelectionRecovery, _resetOrganizationSelectionForTests, createOrganizationSelectionStorage, retryOrganizationSelection } from '@/store/organization-selection'
 import { $activeGatewayProfile, $freshSessionRequest, $profiles, ensureGatewayProfile } from '@/store/profile'
 import {
   $activeSessionId,
@@ -55,6 +57,7 @@ import { deferred } from '../../../test/deferred'
 
 import { takeGatewaySurvivor } from './gateway-hmr-survivor'
 import { primaryRuntimeConnectionId, useGatewayBoot } from './use-gateway-boot'
+import { useGatewayRequest } from './use-gateway-request'
 
 vi.mock(import('@/store/notifications'), async importOriginal => ({
   ...(await importOriginal()),
@@ -99,6 +102,8 @@ class FakeWebSocket {
   // errors (a dead remote). Mirrors a VPS going away after the first connect.
   static mode: 'open' | 'fail' | 'hold' = 'open'
   static instances: FakeWebSocket[] = []
+  static organizationDescriptor: null | ((url: string) => unknown | Promise<unknown>) = null
+  frames: Array<{ id?: unknown; method?: string; params?: unknown }> = []
   // Ping behavior: 'pong' answers with a healthy pong frame; 'silent' swallows
   // the request (the half-open-socket simulation — connection looks OPEN but
   // every RPC hangs until its per-call timeout); 'method-not-found' answers
@@ -152,6 +157,14 @@ class FakeWebSocket {
     try {
       frame = JSON.parse(data) as { id?: unknown; method?: string }
     } catch {
+      return
+    }
+
+    this.frames.push(frame)
+    if (frame.method === 'organization.descriptor' && FakeWebSocket.organizationDescriptor) {
+      void Promise.resolve(FakeWebSocket.organizationDescriptor(this.url)).then(result => {
+        this.emit('message', { data: JSON.stringify({ jsonrpc: '2.0', id: frame.id, result }) })
+      })
       return
     }
 
@@ -269,7 +282,7 @@ function fakeDesktop() {
       }
     }),
     revalidateConnection: vi.fn(async () => ({ ok: true, rebuilt: false })),
-    onWindowStateChanged: vi.fn(() => () => undefined),
+    onWindowStateChanged: vi.fn((_callback: (payload: HermesWindowState) => void) => () => undefined),
     touchBackend: vi.fn(async () => undefined),
     profile: { get: vi.fn(async () => ({ profile: 'default' })) }
   }
@@ -301,6 +314,9 @@ function Harness({
 const originalWebSocket = globalThis.WebSocket
 
 beforeEach(() => {
+  _resetOrganizationSelectionForTests()
+  localStorage.removeItem('eidolon.organization.explicitSelection.v1')
+  FakeWebSocket.organizationDescriptor = null
   // Drop any parked gateway left by a prior file/case (globalThis slot).
   const leftover = takeGatewaySurvivor()
 
@@ -2196,4 +2212,207 @@ it('retires a matching OAuth account socket and held lookup, without retiring an
   await flushAsync()
   expect($activeGatewayProfile.get()).toBe('default')
   expect($connection.get()?.oauthSessionIdentity).not.toBe('account-b')
+})
+
+
+describe('verified organization cold restoration', () => {
+  const owner = { connectionId: 'local', profile: 'org-cold', organizationId: '11111111-1111-4111-8111-111111111111', ownerId: '22222222-2222-4222-8222-222222222222', isolationVersion: null }
+  const record = () => {
+    const saved = createOrganizationSelectionStorage(localStorage)
+    saved.promote(saved.stage(owner))
+  }
+  const metadata = () => ({ capabilityVersion: 1, state: 'ready', scope: { kind: 'served-profile', profile: owner.profile }, metadata: { organizationId: owner.organizationId, owner: { ownerId: owner.ownerId } } })
+  const setup = () => {
+    record()
+    const desktop = fakeDesktop()
+    const registry: DesktopConnectionsRegistry = { version: 2, primary: 'local', secureTokenStorage: true,
+      connections: [{ id: 'local', kind: 'local', label: 'This device', tokenSet: false, tokenPreview: null }] }
+    const conn = { ...primaryConn, mode: 'local', connectionId: 'local', profile: owner.profile, registryScoped: true, baseUrl: 'http://127.0.0.1:6161', wsUrl: 'ws://127.0.0.1:6161/ws' }
+    const bridge = { ...desktop,
+      connections: { ...desktop.connections, list: vi.fn(async () => registry), setLastUsed: vi.fn(async () => ({ registry })) },
+      getConnectionFor: vi.fn(async () => conn),
+      getGatewayWsUrlFor: vi.fn(async () => conn.wsUrl),
+      api: vi.fn(async ({ path }: { path: string }) => path === '/api/profiles' ? { profiles: [] } : { current: owner.profile })
+    }
+    window.hermesDesktop = bridge as never
+    FakeWebSocket.organizationDescriptor = metadata
+
+    return { bridge, registry, conn }
+  }
+
+  it('withholds ambient RPC/default lookup while listing and proving, then publishes the saved owner once', async () => {
+    const { bridge, registry } = setup()
+    const listing = deferred<DesktopConnectionsRegistry>()
+    const proof = deferred<unknown>()
+    bridge.connections.list.mockReturnValue(listing.promise)
+    FakeWebSocket.organizationDescriptor = () => proof.promise
+    let ambient: ReturnType<typeof useGatewayRequest>['requestGateway'] | undefined
+    const config = vi.fn(async () => undefined)
+    function RestoreHarness() {
+      const request = useGatewayRequest()
+      ambient = request.requestGateway
+      useGatewayBoot({ beforeConnectionSwitch: () => {}, handleGatewayEvent: () => {},
+        onConnectionReady: value => { request.connectionRef.current = value },
+        onGatewayReady: value => { request.gatewayRef.current = value }, refreshHermesConfig: config, refreshSessions: async () => {} })
+      return null
+    }
+    render(<RestoreHarness />)
+    await act(async () => { await vi.advanceTimersByTimeAsync(1) })
+    expect(bridge.getConnection).not.toHaveBeenCalled()
+    await expect(ambient!('config.get')).rejects.toThrow('unavailable')
+    connectionApplied?.()
+    expect(bridge.getConnection).not.toHaveBeenCalled()
+    expect($connection.get()).toBeNull()
+    await act(async () => { listing.resolve(registry); await vi.advanceTimersByTimeAsync(10) })
+    await expect(ambient!('config.get')).rejects.toThrow('unavailable')
+    expect(config).not.toHaveBeenCalled()
+    expect($connection.get()).toBeNull()
+    await act(async () => { proof.resolve(metadata()); await vi.advanceTimersByTimeAsync(10) })
+    expect($connection.get()?.profile).toBe(owner.profile)
+    expect($desktopBoot.get().running).toBe(false)
+    expect(config).toHaveBeenCalledTimes(1)
+    expect(bridge.getConnection).not.toHaveBeenCalled()
+  })
+
+  it('uses a fresh RPC client on Retry so old session watermarks never reach an unverified replacement owner', async () => {
+    setup()
+    render(<Harness />)
+    await act(async () => { await vi.advanceTimersByTimeAsync(20) })
+    const first = FakeWebSocket.instances.at(-1)!
+    const firstGateway = activeGateway()!
+    first.event({ type: 'message.delta', session_id: 'old-owner-session', seq: 19 })
+    expect(firstGateway.getSeqWatermarks()).toEqual({ 'old-owner-session': 19 })
+    await act(async () => { first.drop(); await vi.advanceTimersByTimeAsync(1) })
+    expect(activeGateway()).toBeNull()
+    expect($organizationSelectionRecovery.get()?.canRetry).toBe(true)
+    FakeWebSocket.organizationDescriptor = () => ({ ...metadata(), metadata: { organizationId: owner.organizationId, owner: { ownerId: '33333333-3333-4333-8333-333333333333' } } })
+    let error: unknown
+    await act(async () => { const retry = retryOrganizationSelection().catch(value => { error = value }); await vi.advanceTimersByTimeAsync(20); await retry })
+    const replacement = FakeWebSocket.instances.at(-1)!
+    expect(replacement).not.toBe(first)
+    expect(replacement.frames.map(frame => frame.method)).toEqual(['organization.descriptor'])
+    expect(error).toBeTruthy()
+    expect(activeGateway()).toBeNull()
+    expect($connection.get()?.profile).toBe(owner.profile)
+  })
+
+  it('restores ordinary Settings apply and primary reconnect after an explicit legacy departure clears the owner record', async () => {
+    const { bridge, conn } = setup()
+    bridge.getConnectionFor.mockImplementation(async (...args: unknown[]) => {
+      const profile = (args[0] as { profile: string }).profile
+      return { ...conn, profile, wsUrl: `ws://127.0.0.1:6161/${profile}` }
+    })
+    render(<Harness />)
+    await act(async () => { await vi.advanceTimersByTimeAsync(20) })
+    await act(async () => { const switching = selectConnection('local', { profile: 'legacy-two' }); await vi.advanceTimersByTimeAsync(20); await switching })
+    expect(localStorage.getItem('eidolon.organization.explicitSelection.v1')).toBeNull()
+    await act(async () => { connectionApplied?.(); await vi.advanceTimersByTimeAsync(30) })
+    expect(bridge.getConnection).toHaveBeenCalled()
+    expect(isActivePrimary()).toBe(true)
+    const primary = FakeWebSocket.instances.at(-1)!
+    await act(async () => { primary.drop(); powerResume?.(); await vi.advanceTimersByTimeAsync(1000) })
+    expect(activeGateway()?.connectionState).toBe('open')
+    expect(isActivePrimary()).toBe(true)
+  })
+
+  it('keeps new REST reads usable across native window presentation events while revoking earlier replies and foreign replacements', async () => {
+    const { bridge } = setup()
+    render(<Harness />)
+    await act(async () => { await vi.advanceTimersByTimeAsync(20) })
+    const windowState = bridge.onWindowStateChanged.mock.calls[0][0]
+    const oldReply = deferred<unknown>()
+    bridge.api.mockImplementationOnce(() => oldReply.promise as never)
+    const oldRead = getHermesConfigRecord().catch(error => error)
+    const proved = $connection.get()!
+    for (const payload of [{ isMinimized: true }, { isFullscreen: true }, { isVisible: true }]) {
+      act(() => { windowState(payload as HermesWindowState) })
+      await expect(getHermesConfigRecord()).resolves.toMatchObject({ current: owner.profile })
+    }
+    oldReply.resolve({ current: 'old-response' })
+    expect(await oldRead).toBeInstanceOf(Error)
+    const visible = $connection.get()!
+    act(() => { windowState({ isVisible: true, token: 'foreign-token', baseUrl: 'http://wrong.example' } as unknown as HermesWindowState) })
+    expect($connection.get()?.token).toBe(proved.token)
+    expect($connection.get()?.baseUrl).toBe(proved.baseUrl)
+    await expect(getHermesConfigRecord()).resolves.toMatchObject({ current: owner.profile })
+    for (const replacement of [{ ...visible }, { ...visible, token: 'changed' }, { ...visible, baseUrl: 'http://wrong.example' }]) {
+      act(() => { $connection.set(replacement) })
+      await expect(getHermesConfigRecord()).rejects.toThrow('verified selected owner')
+    }
+  })
+
+  it('completes proved-owner boot after a presentation event revokes an in-flight config read without painting its result', async () => {
+    const { bridge } = setup()
+    const reply = deferred<unknown>()
+    bridge.api.mockImplementation(({ path }) => path === '/api/config' ? reply.promise as never : Promise.resolve({ current: owner.profile }))
+    let painted = false
+    const refresh = async (_force?: boolean, current?: () => boolean) => {
+      await getHermesConfigRecord()
+      if (current?.()) { painted = true }
+    }
+    render(<Harness refreshHermesConfig={refresh} />)
+    await act(async () => { await vi.advanceTimersByTimeAsync(20) })
+    expect($desktopBoot.get().running).toBe(true)
+    expect(bridge.api).toHaveBeenCalledWith(expect.objectContaining({ path: '/api/config' }))
+    act(() => { bridge.onWindowStateChanged.mock.calls[0][0]({ isVisible: true } as HermesWindowState) })
+    await act(async () => { reply.resolve({ current: 'stale-response' }); await vi.advanceTimersByTimeAsync(1) })
+    expect(painted).toBe(false)
+    expect($connection.get()?.profile).toBe(owner.profile)
+    expect($desktopBoot.get().running).toBe(false)
+    bridge.api.mockResolvedValue({ current: owner.profile })
+    await expect(getHermesConfigRecord()).resolves.toMatchObject({ current: owner.profile })
+  })
+
+  it('promotes the verified owner through repeated native window events during post-commit bookkeeping', async () => {
+    const { bridge, registry } = setup()
+    const bookkeeping = deferred<{ registry: DesktopConnectionsRegistry }>()
+    bridge.connections.setLastUsed.mockReturnValue(bookkeeping.promise)
+    render(<Harness />)
+    await act(async () => { await vi.advanceTimersByTimeAsync(20) })
+    expect($connection.get()?.profile).toBe(owner.profile)
+    const windowState = bridge.onWindowStateChanged.mock.calls[0][0]
+    act(() => { windowState({ isVisible: true } as HermesWindowState); windowState({ isFullscreen: true } as HermesWindowState) })
+    await act(async () => { bookkeeping.resolve({ registry }); await vi.advanceTimersByTimeAsync(10) })
+    expect(createOrganizationSelectionStorage(localStorage).read()).toMatchObject({ kind: 'record', record: { phase: 'resumable', identity: owner } })
+    expect($organizationSelectionRecovery.get()).toBeNull()
+    expect($desktopBoot.get().running).toBe(false)
+    await expect(getHermesConfigRecord()).resolves.toMatchObject({ current: owner.profile })
+  })
+
+  it.each(['installId', 'key-order', 'material', 'removed'] as const)('fences trailing config refresh against %s registry changes', async change => {
+    const { registry } = setup()
+    const held = deferred<void>()
+    let shouldPublish: (() => boolean) | undefined
+    const refresh = vi.fn(async (_force?: boolean, current?: () => boolean) => { shouldPublish = current; await held.promise })
+    render(<Harness refreshHermesConfig={refresh} />)
+    await act(async () => { await vi.advanceTimersByTimeAsync(20) })
+    expect(refresh).toHaveBeenCalledTimes(1)
+    expect(shouldPublish?.()).toBe(true)
+    const route = registry.connections[0]
+    const changed = change === 'installId' ? { ...route, installId: 'display-only-probed-installation' } :
+      change === 'key-order' ? Object.fromEntries(Object.entries(route).reverse()) as typeof route : { ...route, tokenPreview: 'synthetic-changed' }
+    act(() => { setConnectionsRegistry({ ...registry, connections: change === 'removed' ? [] : [changed] }) })
+    const allowed = change === 'installId' || change === 'key-order'
+    expect(shouldPublish?.()).toBe(allowed)
+    await act(async () => { held.resolve(); await vi.advanceTimersByTimeAsync(1) })
+    expect($desktopBoot.get().running).toBe(!allowed)
+    expect($connection.get()?.profile).toBe(owner.profile)
+    if (allowed) { await expect(getHermesConfigRecord()).resolves.toMatchObject({ current: owner.profile }) }
+    else { await expect(getHermesConfigRecord()).rejects.toThrow('verified selected owner') }
+  })
+
+  it('revokes a trailing configuration refresh when another source intent supersedes the restored owner', async () => {
+    setup()
+    const held = deferred<void>()
+    let shouldPublish: (() => boolean) | undefined
+    const refresh = vi.fn(async (_force?: boolean, current?: () => boolean) => { shouldPublish = current; await held.promise })
+    render(<Harness refreshHermesConfig={refresh} />)
+    await act(async () => { await vi.advanceTimersByTimeAsync(20) })
+    expect(shouldPublish?.()).toBe(true)
+    beginSourceSwitchIntent()
+    expect(shouldPublish?.()).toBe(false)
+    await act(async () => { held.resolve(); await vi.advanceTimersByTimeAsync(1) })
+    expect($desktopBoot.get().phase).not.toBe('renderer.ready')
+  })
+
 })

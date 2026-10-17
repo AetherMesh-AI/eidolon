@@ -2710,6 +2710,9 @@ def _seed_custom_pool(pool_key: str, entries: List[PooledCredential]) -> Tuple[b
 
 
 def load_pool(provider: str) -> CredentialPool:
+    from eidolon_cli.profile_isolation import read_isolation
+    if read_isolation() is not None:
+        return CredentialPool((provider or '').strip().lower(), [])
     provider = (provider or "").strip().lower()
     if provider in SINGLE_USE_REFRESH_POOL_PROVIDERS:
         # One-time heal for installs that forked this grant across profiles

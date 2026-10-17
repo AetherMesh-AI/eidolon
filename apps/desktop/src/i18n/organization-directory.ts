@@ -8,7 +8,8 @@ export const organizationDirectoryCopy: Record<
 > = {
   en: {
     heading: 'Organizations',
-    description: 'Inspect names verified in this window. Refresh reads only the current organization.',
+    description: 'Previously verified organizations saved on this device. Refresh reads only the current organization.',
+    rememberFailed: 'Organizations could not be remembered on this device. Current entries remain available in this window.',
     search: 'Search organizations',
     refresh: 'Refresh current organization',
     empty: 'No verified organizations match',
@@ -23,7 +24,8 @@ export const organizationDirectoryCopy: Record<
   },
   ja: {
     heading: '組織一覧',
-    description: 'このウィンドウで確認済みの名前を表示します。更新は現在の組織のみを読み取ります。',
+    description: 'このデバイスに保存された確認済みの組織を表示します。更新は現在の組織のみを読み取ります。',
+    rememberFailed: 'このデバイスに組織を保存できませんでした。現在の一覧はこのウィンドウで引き続き利用できます。',
     search: '組織を検索',
     refresh: '現在の組織を更新',
     empty: '一致する確認済みの組織はありません',
@@ -38,7 +40,8 @@ export const organizationDirectoryCopy: Record<
   },
   zh: {
     heading: '组织列表',
-    description: '查看此窗口已验证的名称。刷新仅读取当前组织。',
+    description: '查看保存在此设备上、之前已验证的组织。刷新仅读取当前组织。',
+    rememberFailed: '无法在此设备上记住组织。当前条目仍可在此窗口中使用。',
     search: '搜索组织',
     refresh: '刷新当前组织',
     empty: '没有匹配的已验证组织',
@@ -53,7 +56,8 @@ export const organizationDirectoryCopy: Record<
   },
   'zh-hant': {
     heading: '組織清單',
-    description: '查看此視窗已驗證的名稱。重新整理僅讀取目前組織。',
+    description: '查看儲存在此裝置上、先前已驗證的組織。重新整理僅讀取目前組織。',
+    rememberFailed: '無法在此裝置上記住組織。目前項目仍可在此視窗中使用。',
     search: '搜尋組織',
     refresh: '重新整理目前組織',
     empty: '沒有相符的已驗證組織',
@@ -68,7 +72,8 @@ export const organizationDirectoryCopy: Record<
   },
   ar: {
     heading: 'المؤسسات',
-    description: 'اعرض الأسماء التي تم التحقق منها في هذه النافذة. يقرأ التحديث المؤسسة الحالية فقط.',
+    description: 'المؤسسات التي تم التحقق منها سابقًا والمحفوظة على هذا الجهاز. يقرأ التحديث المؤسسة الحالية فقط.',
+    rememberFailed: 'تعذر حفظ المؤسسات على هذا الجهاز. تظل العناصر الحالية متاحة في هذه النافذة.',
     search: 'البحث عن المؤسسات',
     refresh: 'تحديث المؤسسة الحالية',
     empty: 'لا توجد مؤسسات متحقق منها مطابقة',
@@ -83,7 +88,8 @@ export const organizationDirectoryCopy: Record<
   },
   ru: {
     heading: 'Организации',
-    description: 'Имена, проверенные в этом окне. Обновление читает только текущую организацию.',
+    description: 'Ранее проверенные организации, сохранённые на этом устройстве. Обновление читает только текущую организацию.',
+    rememberFailed: 'Не удалось сохранить организации на этом устройстве. Текущий список остаётся доступным в этом окне.',
     search: 'Поиск организаций',
     refresh: 'Обновить текущую организацию',
     empty: 'Нет подходящих проверенных организаций',

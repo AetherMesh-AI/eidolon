@@ -1,0 +1,45 @@
+/* These dialogs portal outside the workspace's scoped keyboard treatment. */
+.eid-organization-dialog {
+  inline-size: min(32rem, calc(100vw - 2rem));
+  max-inline-size: calc(100vw - 2rem);
+  max-block-size: calc(100dvh - 2rem);
+}
+.eid-organization-dialog [data-slot='dialog-title'] {
+  padding-inline-end: 2.75rem;
+  overflow-wrap: anywhere;
+}
+.eid-organization-dialog [data-slot='dialog-close-button'] {
+  right: auto;
+  inset-inline-end: 0.625rem;
+  min-inline-size: 2.25rem;
+  min-block-size: 2.25rem;
+}
+.eid-organization-dialog-body {
+  display: flex;
+  flex-direction: column;
+  min-block-size: 0;
+  min-inline-size: 0;
+  overflow: hidden;
+  padding: 1rem;
+}
+.eid-organization-dialog-body > :is([data-slot='dialog-title'], [data-slot='dialog-description']) {
+  flex-shrink: 0;
+}
+.eid-organization-dialog-scroll {
+  display: grid;
+  gap: 0.75rem;
+  min-block-size: 0;
+  min-inline-size: 0;
+  overflow-y: auto;
+  padding: 7px;
+  scroll-padding: 7px;
+  overscroll-behavior: contain;
+}
+.eid-organization-dialog :is(button, a, input, textarea, select, summary) {
+  scroll-margin: 7px;
+  transition-property: color, background-color, border-color, box-shadow;
+}
+.eid-organization-dialog :is(button, a, input, textarea, select, summary):focus-visible {
+  outline: 3px solid var(--ui-accent);
+  outline-offset: 3px;
+}

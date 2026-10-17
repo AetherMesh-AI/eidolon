@@ -1,3 +1,4 @@
+import { type DirectoryStorage, readDirectoryRecords, writeDirectoryRecords } from './organization-directory-storage'
 import {
   createOrganizationMetadataClient,
   type MetadataDescriptor,
@@ -11,6 +12,7 @@ export interface DirectoryConnection {
   endpoint: string | null
 }
 export interface DirectorySource {
+  ready?: boolean
   connections: readonly DirectoryConnection[]
   current: { connectionId: string; endpoint: string | null; scope: MetadataScope } | null
 }
@@ -31,16 +33,17 @@ export interface OrganizationDirectoryView {
   entries: readonly OrganizationDirectoryEntry[]
   refreshing: boolean
   error: 'unavailable' | 'unsupported' | 'invalid' | 'storage' | null
+  storageError?: boolean
 }
 
 const routeKey = (connectionId: string, profile: string) => JSON.stringify([connectionId, profile])
 const endpoint = (value: string | null) => (value === null ? null : (organizationEndpointIdentity(value) ?? undefined))
 
-/** Display-only, window-local cache. It has no activation, persistence or enumeration capability. */
+/** Display-only cache of verified descriptors. It never enumerates profiles or grants access. */
 export function createOrganizationDirectory(
   readSource: () => DirectorySource,
   subscribeSource: (changed: () => void) => () => void,
-  options: { limit?: number; now?: () => number } = {}
+  options: { limit?: number; now?: () => number; storage?: DirectoryStorage } = {}
 ) {
   const limit = Math.max(1, Math.min(100, Math.floor(options.limit ?? 100) || 100))
   const now = options.now ?? Date.now
@@ -51,6 +54,21 @@ export function createOrganizationDirectory(
   let epoch = 0
   let sequence = 0
   let disposed = false
+
+  if (options.storage) {
+    try {
+      for (const record of readDirectoryRecords(options.storage, limit)) { records.set(record.key, record) }
+    } catch { view = { ...view, storageError: true } }
+  }
+
+  const remember = () => {
+    if (!options.storage) { return }
+
+    try {
+      writeDirectoryRecords(options.storage, [...records.values()])
+      view = { ...view, storageError: false }
+    } catch { view = { ...view, storageError: true } }
+  }
 
   const publish = (notify = true) => {
     view = { ...view, entries: [...records.values()] }
@@ -73,6 +91,7 @@ export function createOrganizationDirectory(
       current?.scope.ownerKey,
       current?.scope.profile,
       current?.scope.eligible,
+      source.ready,
       source.connections.map(item => [item.id, endpoint(item.endpoint)]).sort()
     ])
 
@@ -89,17 +108,22 @@ export function createOrganizationDirectory(
       }
     }
 
-    for (const [key, record] of records) {
+    let pruned = false
+
+    for (const [key, record] of source.ready === false ? [] : records) {
       const connection = source.connections.find(item => item.id === record.connectionId)
 
       if (!connection || endpoint(connection.endpoint) !== record.endpointIdentity) {
         records.delete(key)
         changed = true
+        pruned = true
       } else if (record.connectionLabel !== connection.label) {
         records.set(key, { ...record, connectionLabel: connection.label })
         changed = true
       }
     }
+
+    if (pruned) { remember() }
 
     if (changed) {
       publish(notify)
@@ -141,6 +165,7 @@ export function createOrganizationDirectory(
       const identity = endpoint(current?.endpoint ?? null)
 
       if (
+        source.ready === false ||
         !current?.scope.eligible ||
         !connection ||
         identity === undefined ||
@@ -212,6 +237,7 @@ export function createOrganizationDirectory(
         records.delete(records.keys().next().value!)
       }
 
+      remember()
       publish()
 
       return 'verified'

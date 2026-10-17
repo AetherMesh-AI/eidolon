@@ -14,6 +14,7 @@ import { type CSSProperties, lazy, type ReactNode, Suspense, useCallback, useEff
 import { useLocation, useNavigate } from 'react-router'
 
 import { graftRefreshedTailOntoBackfill } from '@/app/chat/transcript-backfill'
+import { useOrganizationSetupOwner } from '@/app/eidolon/use-organization-setup-owner'
 import { formatRefValue } from '@/components/assistant-ui/directive-text'
 import { BootFailureOverlay } from '@/components/boot-failure-overlay'
 import { ConfirmHost } from '@/components/confirm-host'
@@ -235,6 +236,7 @@ function ContribWiringContent({ children }: { children: ReactNode }) {
   const sessions = useStore($sessions)
   const activeConnectionId = useStore($activeConnectionId)
   const activeGatewayProfile = useStore($activeGatewayProfile)
+  const organizationSetupOwned = useOrganizationSetupOwner()
   const profileScope = useStore($profileScope)
   const boot = useStore($desktopBoot)
 
@@ -1190,6 +1192,7 @@ function ContribWiringContent({ children }: { children: ReactNode }) {
             void refreshCurrentModel()
             void queryClient.invalidateQueries({ queryKey: ['model-options'] })
           }}
+          organizationSetupOwned={organizationSetupOwned}
           profile={activeGatewayProfile}
           requestGateway={requestGateway}
         />

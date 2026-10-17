@@ -188,6 +188,8 @@ jobs:
             tests/tui_gateway/test_organization_outcomes.py
           )
           projects_config_tests=(
+            tests/eidolon_cli/test_organization_workspaces.py
+            tests/tui_gateway/test_organization_workspaces.py
             tests/eidolon_cli/test_organization_project_registry.py
             tests/eidolon_cli/test_organization_milestones.py
             tests/eidolon_cli/test_organization_goal_allowances.py

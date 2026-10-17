@@ -825,6 +825,11 @@ def resolve_runtime_provider(*, requested: Optional[str] = None, explicit_api_ke
       8. OpenRouter / bare-custom fallback
     target_model overrides model_cfg["default"] when computing provider-specific api_mode (e.g.
     OpenCode Zen/Go where different models route through different API surfaces)."""
+    from eidolon_cli.profile_isolation import isolated_runtime
+    isolated = isolated_runtime(requested=requested, explicit_api_key=explicit_api_key,
+                                explicit_base_url=explicit_base_url, target_model=target_model)
+    if isolated is not None:
+        return isolated
     requested_provider = resolve_requested_provider(requested)
     _raise_if_provider_disabled(requested_provider)
     return next(r for r in _ladder_rungs(requested_provider, explicit_api_key, explicit_base_url, target_model) if r)

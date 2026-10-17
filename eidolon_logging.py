@@ -178,6 +178,8 @@ def setup_logging(
     """
     global _logging_initialized
     home = hermes_home or get_eidolon_home()
+    from eidolon_cli.profile_isolation import validate_log_path
+    validate_log_path(home / 'logs' / 'agent.log')
     log_dir = mkdir_under_eidolon_home(home / "logs")
     cfg_level, cfg_max_size, cfg_backup = _read_logging_config()
     level_name = (log_level or cfg_level or "INFO").upper()
@@ -312,6 +314,9 @@ class _ManagedRotatingFileHandler(RotatingFileHandler):
             self._reopen_stream(st)
 
     def emit(self, record: logging.LogRecord) -> None:
+        from eidolon_cli.profile_isolation import allow_log_record
+        if not allow_log_record(Path(self.baseFilename), getattr(record, 'hermes_home', None)):
+            return
         # The kernel caches inode metadata, so this stat is sub-microsecond on a hot file.
         if self.stream is not None or os.path.exists(self.baseFilename):
             self._reopen_if_externally_rotated()
@@ -328,6 +333,8 @@ class _ManagedRotatingFileHandler(RotatingFileHandler):
             super().handleError(record)
 
     def _open(self):
+        from eidolon_cli.profile_isolation import validate_log_path
+        validate_log_path(Path(self.baseFilename))
         stream = super()._open()
         self._chmod_if_managed()
         return stream
@@ -344,6 +351,8 @@ def _new_file_handler(
     path: Path, *, level: int, max_bytes: int, backup_count: int, formatter
 ) -> "_ManagedRotatingFileHandler":
     """Create the ``logs/`` directory and a configured ``_ManagedRotatingFileHandler``."""
+    from eidolon_cli.profile_isolation import validate_log_path
+    validate_log_path(path)
     mkdir_under_eidolon_home(path.parent)
     handler = _ManagedRotatingFileHandler(
         str(path), maxBytes=max_bytes, backupCount=backup_count, encoding="utf-8"

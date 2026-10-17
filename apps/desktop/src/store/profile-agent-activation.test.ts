@@ -438,3 +438,27 @@ describe('ensureGatewayAgent commit hook (beforeActivate) — the Sessions switc
     expect($connection.get()?.profile).toBe('writer')
   })
 })
+
+it('guarded activation publishes only the proven opened connection without a parallel descriptor lookup', async () => {
+  const exact = localConn({ connectionId: 'local', profile: 'org-proof', baseUrl: 'http://127.0.0.1:6161' })
+  getConnectionFor.mockResolvedValue(localConn({ baseUrl: 'http://127.0.0.1:7777' }))
+  const beforeActivate = vi.fn(() => true)
+  const verify = vi.fn()
+  ensureGatewayForAgent.mockImplementationOnce(async (_connection, _profile, options?: {
+    beforeActivate?: () => boolean
+    onVerifiedConnection?: (connection: HermesConnection) => void
+    verify?: unknown
+  }) => {
+    expect(options?.verify).toBe(verify)
+    expect(beforeActivate).not.toHaveBeenCalled()
+
+    if (!options?.beforeActivate?.()) { return false }
+    options.onVerifiedConnection?.(exact)
+
+    return true
+  })
+  await ensureGatewayAgent('local', 'org-proof', { verify, beforeActivate })
+  expect($connection.get()).toBe(exact)
+  expect($activeGatewayProfile.get()).toBe('org-proof')
+  expect(getConnectionFor).not.toHaveBeenCalled()
+})

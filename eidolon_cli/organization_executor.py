@@ -819,6 +819,8 @@ class _ToolFreeBoundary:
     """No-tool default, with an explicit scoped executor at send/dispatch boundaries."""
 
     def _organization_check(self, options: dict | None = None) -> None:
+        from eidolon_cli.profile_isolation import validate_agent_send
+        validate_agent_send(self)
         if self._organization_cancel.is_set() or time.monotonic() >= self._organization_deadline:
             raise InterruptedError("Organization execution cancelled or timed out.")
         if self._organization_intervention:
@@ -1007,6 +1009,8 @@ class _ToolFreeBoundary:
 
 
 def _create_agent(kwargs: dict, cancel: threading.Event, deadline: float, tool_execution=None, *, boundary=_ToolFreeBoundary, route_snapshot=None):
+    from eidolon_cli.profile_isolation import require_tool_free_execution
+    require_tool_free_execution(execution=tool_execution)
     from run_agent import AIAgent
 
     class OrganizationAgent(boundary, AIAgent):
@@ -1118,6 +1122,8 @@ A transport ignoring cancellation remains in the scheduler's occupied slot.
     done = threading.Event()
     timed_out = threading.Event()
     try:
+        from eidolon_cli.profile_isolation import require_tool_free_execution
+        require_tool_free_execution(kind=kind, context=context)
         timeout = context.get("timeoutSeconds", 180)
         if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not math.isfinite(timeout) or not 0 < timeout <= 600:
             raise OrganizationExecutionError("timeoutSeconds must be greater than 0 and at most 600.")
