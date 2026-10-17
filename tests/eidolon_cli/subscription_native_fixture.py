@@ -161,7 +161,14 @@ class BoundaryDiagnostics:
             'UsageObservationV1.__post_init__': 'usage_validation',
             'TransportObservationV1.__post_init__': 'observation_validation',
             'TransportResult.__post_init__': 'result_validation'},
+        'eidolon_cli.organization_store': {
+            'OrganizationStore._write': 'organization_write',
+            'OrganizationStore.recover_expired': 'scheduler_recover',
+            'OrganizationStore.claim_next': 'scheduler_claim'},
+        'eidolon_cli.organization_goal_continuation': {
+            'OrganizationGoalContinuationStore.advance_goal_continuation': 'scheduler_continue'},
         'eidolon_cli.organization_setup_subscription_admission': {
+            '_ledger_connection': 'ledger_connection',
             '_Admission.try_send_allowed': 'admission_send_gate',
             '_Admission.__init__': 'admission_create', 'infer_subscription': 'infer_subscription',
             '_persist': 'accounting_wait', '_persist.<locals>.run': 'accounting_worker',
@@ -175,6 +182,7 @@ class BoundaryDiagnostics:
     _ERRORS = {'builtins': {'BlockingIOError', 'OSError', 'ValueError', 'TypeError', 'AssertionError',
                               'KeyError', 'FileNotFoundError', 'TimeoutError'},
         'sqlite3': {'OperationalError'},
+        'eidolon_cli.organization_executor': {'OrganizationExecutionError'},
         'eidolon_cli.organization_owner_policy': {'OwnerPolicyError'},
         'tui_gateway.methods_organization_setup_subscription': {'BoundaryError'},
         'eidolon_cli.organization_setup_subscription_catalog': {'CatalogError'},
@@ -203,7 +211,7 @@ class BoundaryDiagnostics:
         self.home = home if type(home) is type(Path()) else None
         self.lock = threading.Lock()
         self.flush_lock = threading.Lock()
-        self.lanes, self.holders = {}, {}
+        self.lanes, self.holders, self.ledger_holders = {}, {}, {}
         self.codes = {}
         self.code_sources = {}
         for module, stages in self._STAGES.items():
@@ -299,6 +307,18 @@ class BoundaryDiagnostics:
                 'targetScope': scope, 'changedFields': dict(zip(
                     ('device', 'inode', 'mode', 'owner', 'group', 'links', 'changeTime'), changed))}})
 
+    @staticmethod
+    def sqlite_primary_code(error):
+        if type(error) is not sqlite3.OperationalError:
+            return 'other'
+        attributes = vars(error)
+        code = attributes.get('sqlite_errorcode') if type(attributes) is dict else None
+        if type(code) is not int or not 0 <= code <= 2**31 - 1:
+            return 'other'
+        return {sqlite3.SQLITE_BUSY: 'SQLITE_BUSY', sqlite3.SQLITE_LOCKED: 'SQLITE_LOCKED',
+                sqlite3.SQLITE_CANTOPEN: 'SQLITE_CANTOPEN', sqlite3.SQLITE_READONLY: 'SQLITE_READONLY',
+                sqlite3.SQLITE_IOERR: 'SQLITE_IOERR', sqlite3.SQLITE_FULL: 'SQLITE_FULL'}.get(code & 255, 'other')
+
     def emit(self, value):
         # Critical-frame callbacks touch bounded memory only, never the filesystem.
         with self.lock:
@@ -361,6 +381,24 @@ class BoundaryDiagnostics:
             elif arg is None:
                 with self.lock:
                     self.holders.pop(lane_key, None)
+        # This exact generator yields only after its BEGIN IMMEDIATE succeeds.
+        # Keep only lane/caller enums; never retain or inspect the connection.
+        if stage == 'organization_write' and event == 'return':
+            if type(arg) is sqlite3.Connection and lane:
+                parent, owner = frame.f_back, 'other'
+                for _ in range(10):
+                    if parent is None:
+                        break
+                    label = self.stage(parent)
+                    if label in {'scheduler_recover', 'scheduler_claim', 'scheduler_continue'}:
+                        owner = label
+                        break
+                    parent = parent.f_back
+                with self.lock:
+                    self.ledger_holders[lane_key] = {'lane': lane, 'stage': owner}
+            elif arg is None:
+                with self.lock:
+                    self.ledger_holders.pop(lane_key, None)
         if event == 'return' and stage in {'gateway_rpc', 'team_rpc'}:
             self.flush()
         if event == 'call' and stage in self._ENTRIES:
@@ -372,15 +410,20 @@ class BoundaryDiagnostics:
                 return self.trace
             recognized = (kind.__name__ in self._ERRORS.get(kind.__module__, set())
                 and vars(sys.modules[kind.__module__]).get(kind.__name__) is kind)
-            reason = vars(error).get('reason') if recognized else None
+            attributes = vars(error) if recognized else {}
+            if type(attributes) is not dict:
+                attributes = {}
+            reason = attributes.get('reason')
             if reason is None and recognized and kind.__name__ == 'TransportError':
-                reason = vars(error).get('code')
+                reason = attributes.get('code')
             with self.lock:
                 holders = list(self.holders.values())[:8]
+                ledger_holders = list(self.ledger_holders.values())[:8]
             self.emit({**value, 'event': 'exception',
                 'errorClass': kind.__name__ if recognized else 'other',
                 'reason': reason if type(reason) is str and reason in self._REASONS else 'other',
-                'holders': holders})
+                'sqlitePrimaryCode': self.sqlite_primary_code(error),
+                'holders': holders, 'ledgerHolders': ledger_holders})
         elif event == 'return' and arg is False:
             with self.lock:
                 holders = list(self.holders.values())[:8]

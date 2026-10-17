@@ -98,6 +98,11 @@ function boundaryDiagnostic(rows: Row[]) {
     'failed_job',
     'dispatch_job',
     'outcome_job',
+    'ledger_connection',
+    'organization_write',
+    'scheduler_recover',
+    'scheduler_claim',
+    'scheduler_continue',
     'auth_release',
     'lease_close',
     'attempt_validation',
@@ -126,6 +131,7 @@ function boundaryDiagnostic(rows: Row[]) {
     'FileNotFoundError',
     'TimeoutError',
     'OperationalError',
+    'OrganizationExecutionError',
     'OwnerPolicyError',
     'BoundaryError',
     'CatalogError',
@@ -245,6 +251,20 @@ function boundaryDiagnostic(rows: Row[]) {
       line: count(row.line, 10000),
       errorClass: known(row.errorClass, classes),
       reason: known(row.reason, reasons),
+      sqlitePrimaryCode: known(
+        row.sqlitePrimaryCode,
+        new Set(['SQLITE_BUSY', 'SQLITE_LOCKED', 'SQLITE_CANTOPEN', 'SQLITE_READONLY', 'SQLITE_IOERR', 'SQLITE_FULL'])
+      ),
+      ledgerHolders: Array.isArray(row.ledgerHolders)
+        ? row.ledgerHolders.slice(0, 8).map(value => {
+            const holder = value && typeof value === 'object' && !Array.isArray(value) ? (value as Row) : {}
+
+            return {
+              lane: count(holder.lane, 32),
+              stage: known(holder.stage, new Set(['scheduler_recover', 'scheduler_claim', 'scheduler_continue']))
+            }
+          })
+        : [],
       existingThreadsCovered: row.existingThreadsCovered === true,
       holders: Array.isArray(row.holders)
         ? row.holders.slice(0, 8).map(value => {
@@ -285,6 +305,7 @@ async function observeSubscriptionRpc(page: Page) {
 
   const reasons = new Set([
     'unavailable',
+    'rejected',
     'setup_subscription_unavailable',
     'source_conflict',
     'identity_conflict',

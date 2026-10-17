@@ -11,6 +11,8 @@ from tui_gateway import organization_credential_transport as credentials
 from eidolon_cli import organization_team_setup as team
 from eidolon_cli.organization_setup_subscription_host import HostAuthority
 from tests.eidolon_cli.test_organization_team_setup import profile, dump  # noqa: F401
+from tests.eidolon_cli.test_organization_setup_subscription_admission import activated  # noqa: F401
+from tests.eidolon_cli.test_organization_setup_subscription_policy_integration import ledger  # noqa: F401
 
 
 class Transport:
@@ -148,3 +150,118 @@ def test_policy_rpc_keeps_stable_safe_blocker_reason(served, monkeypatch):
         {'expectedOrganizationId': profile.identity['organizationId']}, transport)
     assert result['error']['code'] == 5077
     assert result['error']['data']['reason'] == 'unsupported_managed_scope'
+
+
+@pytest.mark.parametrize('method, operation', [
+    ('improveTeamInput', 'improve_jobs'), ('generateTeam', 'generate'),
+])
+@pytest.mark.parametrize('outcome, reason', [
+    ('unknown', 'unavailable'), ('completed', 'rejected'), ('failed', 'rejected'),
+    ('incomplete', 'rejected'), ('malformed', 'rejected'), ('exception', 'unavailable'),
+])
+def test_subscription_execution_errors_preserve_parameter_and_api_contracts(
+        served, monkeypatch, method, operation, outcome, reason):
+    from eidolon_cli import organization_setup_subscription_admission as admission
+    from eidolon_cli import organization_setup_subscription_transport as sender
+    from eidolon_cli import organization_team_budget as budget
+    from eidolon_cli import organization_team_generation as generation
+    from eidolon_cli.organization_executor import OrganizationExecutionError
+
+    profile, transport = served
+    value = {**scoped(profile), 'jobs': 'Reports', 'goals': 'Clarity',
+             'namingStyle': '', 'idempotencyKey': 'execution-error'}
+    if method == 'improveTeamInput':
+        value['field'] = 'jobs'
+    before, calls = dump(profile), []
+    prepared = SimpleNamespace(request=SimpleNamespace(operation=operation))
+
+    def send(actual):
+        assert actual is prepared
+        calls.append('send')
+        if outcome == 'exception':
+            raise OrganizationExecutionError('synthetic-private token and response text')
+        return SimpleNamespace(text='synthetic-private response text' if outcome == 'malformed' else None,
+                               observation=SimpleNamespace(terminal_kind=outcome))
+
+    def infer(home, params, key, requested_operation, finish, *, transport, cancel):
+        assert home == profile.home and requested_operation == method
+        try:
+            return generation.complete_subscription(prepared)
+        finally:
+            calls.append('cleanup')
+
+    read_policy = budget.read_policy
+    monkeypatch.setattr(budget, 'read_policy', lambda conn: {'version': 3})
+    monkeypatch.setattr(admission, 'infer_subscription', infer)
+    monkeypatch.setattr(sender, 'send_once', send)
+    for malformed in ({**value, 'jobs': []}, {**value, 'expectedOrganizationId': 'invalid'},
+                      {**value, 'mode': 'subscription_calls'}):
+        assert call(method, malformed, transport)['error']['code'] == -32602
+    assert calls == [] and dump(profile) == before
+    result = call(method, value, transport)
+    assert result['error'] == {'code': 5076, 'message': 'Team setup is unavailable',
+                               'data': {'reason': reason}}
+    assert calls == ['send', 'cleanup'] and dump(profile) == before
+
+    # The same existing API-route exception keeps its original wire contract.
+    monkeypatch.setattr(budget, 'read_policy', read_policy)
+    api_calls = []
+    def api_failure(*args, **kwargs):
+        api_calls.append('call')
+        raise OrganizationExecutionError('Existing API execution failure')
+    monkeypatch.setattr(generation, 'improve' if method == 'improveTeamInput' else 'generate', api_failure)
+    assert call(method, value, transport)['error'] == {
+        'code': -32602, 'message': 'Existing API execution failure'}
+    assert api_calls == ['call'] and calls == ['send', 'cleanup']
+
+
+@pytest.mark.macos_only
+@pytest.mark.parametrize('improve', [True, False])
+@pytest.mark.parametrize('outcome, reason', [('refused', 'unavailable'), ('invalid_output', 'rejected')])
+def test_subscription_rpc_classification_follows_real_ledger_cleanup(
+        activated, monkeypatch, improve, outcome, reason):
+    from dataclasses import replace
+    from eidolon_cli import organization_setup_subscription_admission as admission
+    from tests.eidolon_cli.test_organization_setup_subscription_admission import request, state
+    from tests.eidolon_cli.test_organization_setup_subscription_transport import install, wire, event, response
+
+    ledger = activated
+    monkeypatch.setattr(server, '_eidolon_home', ledger.home)
+    ledger.transport.responses = Queue()
+    ledger.transport.write = ledger.transport.responses.put
+    socket, connects = install(monkeypatch, wire(event(response=response('synthetic-private invalid output'))))
+    if outcome == 'refused':
+        monkeypatch.setattr(admission, '_dispatch_job', lambda *args: False)
+    cleanup = []
+    preflight = methods.subscription_preflight
+    def tracked_preflight(*args, **kwargs):
+        evidence = preflight(*args, **kwargs)
+        def release():
+            evidence.release()
+            cleanup.append('released')
+        return replace(evidence, release=release)
+    monkeypatch.setattr(methods, 'subscription_preflight', tracked_preflight)
+    failed_job = admission._failed_job
+    def record_failure(*args):
+        result = failed_job(*args)
+        assert result is True
+        cleanup.append('persisted')
+        return result
+    monkeypatch.setattr(admission, '_failed_job', record_failure)
+    original_error = server._err
+    def after_cleanup(rid, code, message, data=None):
+        if data == {'reason': reason}:
+            assert cleanup == ['persisted', 'released']
+            assert state(ledger)[0]['status'] == 'failed'
+        return original_error(rid, code, message, data)
+    monkeypatch.setattr(server, '_err', after_cleanup)
+    value = request(ledger, improve=improve)
+    method = 'improveTeamInput' if improve else 'generateTeam'
+    result = call(method, value, ledger.transport)
+    assert result['error'] == {'code': 5076, 'message': 'Team setup is unavailable',
+                               'data': {'reason': reason}}
+    row = state(ledger)[0]
+    assert row['dispatched'] == int(outcome != 'refused') and row['result_json'] is None
+    assert len(connects) == 1 and bool(socket.sent) is (outcome != 'refused')
+    assert call(method, value, ledger.transport)['error']['code'] == 5076
+    assert len(connects) == 1 and cleanup == ['persisted', 'released']

@@ -9,6 +9,7 @@ def _team_method(name, operation, fields):
     def handler(rid, params):
         from pathlib import Path
         from eidolon_cli import organization_team_setup as setup
+        from eidolon_cli.organization_team_admission import SetupSubscriptionExecutionError
         from eidolon_cli.organization_owner_policy import OwnerPolicyError
         from eidolon_cli.organization_setup_subscription_policy import SubscriptionPolicyError
         from eidolon_cli.organization_metadata import MetadataError
@@ -65,6 +66,8 @@ def _team_method(name, operation, fields):
             return _err(rid, -32602, str(exc))
         except (OwnerPolicyError, MetadataError) as exc:
             return _err(rid, 5076, str(exc), {'reason': exc.reason})
+        except SetupSubscriptionExecutionError as exc:
+            return _err(rid, 5076, 'Team setup is unavailable', {'reason': exc.reason})
         except (OSError, RuntimeError):
             return _err(rid, 5076, 'Team setup is unavailable', {'reason': 'unavailable'})
     return handler

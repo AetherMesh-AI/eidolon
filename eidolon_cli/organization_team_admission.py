@@ -9,6 +9,14 @@ from eidolon_cli.organization_roster import _text
 from eidolon_cli.organization_team_setup import _current, _fresh, _preview
 
 
+class SetupSubscriptionExecutionError(RuntimeError):
+    """Subscription execution failed after its existing accounting cleanup."""
+
+    def __init__(self, reason):
+        self.reason = reason
+        super().__init__('Team setup is unavailable')
+
+
 def _reserve(home, params, *, provider, model, input_limit, output_limit, selected_provider=None, operation='generateTeam'):
     if (type(input_limit) is not int or type(output_limit) is not int
             or not 0 < input_limit <= 32768 or not 0 < output_limit <= 8000):
@@ -112,8 +120,14 @@ def _infer(home, params, key, operation, invoke, finish, *, subscription_transpo
         setup_policy = read_policy(conn)
     if (setup_policy or {}).get('version') == 3:
         from eidolon_cli.organization_setup_subscription_admission import infer_subscription
-        return infer_subscription(home, params, key, operation, finish,
-                                  transport=subscription_transport, cancel=cancel)
+        from eidolon_cli.organization_executor import OrganizationExecutionError
+        from eidolon_cli.organization_team_generation import TeamInputRejected, TeamProposalRejected
+        try:
+            return infer_subscription(home, params, key, operation, finish,
+                                      transport=subscription_transport, cancel=cancel)
+        except OrganizationExecutionError as exc:
+            reason = 'rejected' if isinstance(exc, (TeamInputRejected, TeamProposalRejected)) else 'unavailable'
+            raise SetupSubscriptionExecutionError(reason) from None
     # Old generation receipts remain replayable, but new receipts bind their
     # operation so an improvement can never be replayed as a generated team.
     digest = _hash({'operation': operation, 'input': params})

@@ -400,3 +400,165 @@ def test_identity_observer_rejects_wrong_types_sites_and_arbitrary_local_objects
     encoded = json.dumps(read_trace(tmp_path))
     assert 'synthetic-private-' not in encoded
     assert str(home) not in encoded
+
+
+def test_real_ledger_writer_blocks_dispatch_before_body_and_records_safe_primary_code(tmp_path, monkeypatch):
+    from contextlib import contextmanager
+    import time
+    from eidolon_cli import organization_setup_subscription_admission as admission
+    from eidolon_cli.organization_store import OrganizationStore
+    from tui_gateway import organization_credential_transport as credential
+
+    home = tmp_path / 'synthetic-private-profile'
+    (home / 'organization').mkdir(parents=True)
+    evidence = tmp_path / 'evidence'
+    evidence.mkdir()
+    store = OrganizationStore.__new__(OrganizationStore)
+    store.path, store.settings = home / 'organization' / 'state.db', object()
+    diagnostics = BoundaryDiagnostics(evidence, home=home)
+    results, body_calls, failures = [], [], []
+
+    @contextmanager
+    def publication(*_):
+        yield
+
+    def unexpected_body(*_args, **_kwargs):
+        body_calls.append(True)
+        raise AssertionError('Dispatch body must not run before ledger acquisition')
+
+    def dispatch():
+        try:
+            results.append(admission._dispatch_job(home, object(), SimpleNamespace(owner_generation=object()),
+                None, None, threading.Event(), time.monotonic() + 5))
+        except BaseException as error:
+            failures.append(error)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(credential, 'owner_publication', publication)
+        patch.setattr(admission, '_exact_attempt', unexpected_body)
+        diagnostics.install()
+        try:
+            # Actual OrganizationStore._write is the same transaction helper used
+            # by the idle scheduler. Its yielded connection proves acquisition.
+            with store._write():
+                assert len(diagnostics.ledger_holders) == 1
+                worker = threading.Thread(target=dispatch)
+                worker.start()
+                worker.join(5)
+                assert not worker.is_alive()
+                assert results == [False] and not body_calls and not failures
+            assert diagnostics.ledger_holders == {}
+            with admission._ledger_connection(home, write=True):
+                pass  # The real competing writer was released, without a retry.
+        finally:
+            diagnostics.close()
+    rows = read_trace(evidence)
+    errors = [row for row in rows if row.get('stage') == 'ledger_connection'
+              and row.get('errorClass') == 'OperationalError']
+    assert len(errors) == 1 and errors[0]['sqlitePrimaryCode'] == 'SQLITE_BUSY'
+    assert errors[0]['line'] == 194  # BEGIN IMMEDIATE, before the context yields.
+    assert len(errors[0]['ledgerHolders']) == 1
+    assert errors[0]['ledgerHolders'][0]['lane'] != errors[0]['lane']
+    assert any(row['stage'] == 'dispatch_job' and row['event'] == 'returned_false' for row in rows)
+    assert 'synthetic-private-' not in json.dumps(rows)
+
+
+def test_sqlite_error_diagnostics_use_exact_class_and_closed_primary_codes(tmp_path, monkeypatch):
+    import sqlite3
+    accesses = []
+    secret = 'synthetic-private-error-name-and-message'
+
+    class UnknownError(sqlite3.OperationalError):
+        def __getattribute__(self, name):
+            if name in {'sqlite_errorcode', 'sqlite_errorname', 'reason'}:
+                accesses.append(name)
+                raise AssertionError('Unapproved exception attributes must not be inspected')
+            return super().__getattribute__(name)
+
+    class AttributeMap(dict):
+        def get(self, *args, **kwargs):
+            accesses.append('get')
+            raise AssertionError('Attribute dictionaries must not execute overridden getters')
+
+    def observed(error):
+        raise error
+
+    monkeypatch.setattr(BoundaryDiagnostics, '_STAGES', {__name__: {observed.__qualname__: 'ledger_connection'}})
+    diagnostics = BoundaryDiagnostics(tmp_path)
+    diagnostics.install()
+    expected = []
+    try:
+        for code, label in [
+                (sqlite3.SQLITE_BUSY | (2 << 8), 'SQLITE_BUSY'),
+                (sqlite3.SQLITE_LOCKED, 'SQLITE_LOCKED'),
+                (sqlite3.SQLITE_CANTOPEN, 'SQLITE_CANTOPEN'),
+                (sqlite3.SQLITE_READONLY, 'SQLITE_READONLY'),
+                (sqlite3.SQLITE_IOERR, 'SQLITE_IOERR'),
+                (sqlite3.SQLITE_FULL, 'SQLITE_FULL'),
+                (sqlite3.SQLITE_NOMEM, 'other'),
+                (secret, 'other'), (True, 'other'), (-251, 'other'), (2**40, 'other')]:
+            error = sqlite3.OperationalError(secret)
+            error.sqlite_errorcode, error.sqlite_errorname = code, secret
+            with pytest.raises(sqlite3.OperationalError):
+                observed(error)
+            expected.append(label)
+        error = sqlite3.OperationalError(secret)
+        error.__dict__ = AttributeMap(sqlite_errorcode=sqlite3.SQLITE_BUSY, reason=secret)
+        with pytest.raises(sqlite3.OperationalError):
+            observed(error)
+        expected.append('other')
+        with pytest.raises(UnknownError):
+            observed(UnknownError(secret))
+        expected.append('other')
+        assert accesses == []
+    finally:
+        diagnostics.close()
+    rows = [row for row in read_trace(tmp_path) if row['event'] == 'exception']
+    assert [row['sqlitePrimaryCode'] for row in rows] == expected
+    assert rows[-1]['errorClass'] == 'other'
+    assert secret not in json.dumps(rows)
+
+
+def test_ledger_holder_observer_requires_acquired_exact_code_and_clears_on_exit(tmp_path, monkeypatch):
+    from contextlib import contextmanager, closing
+    import sqlite3
+    from eidolon_cli import organization_store as module
+
+    store = module.OrganizationStore.__new__(module.OrganizationStore)
+    store.path, store.settings = tmp_path / 'synthetic-private-ledger.db', object()
+    diagnostics = BoundaryDiagnostics(tmp_path)
+    diagnostics.install()
+    try:
+        with store._write():
+            assert len(diagnostics.ledger_holders) == 1
+        assert diagnostics.ledger_holders == {}
+        with pytest.raises(RuntimeError):
+            with store._write():
+                assert len(diagnostics.ledger_holders) == 1
+                raise RuntimeError('synthetic-private-error')
+        assert diagnostics.ledger_holders == {}
+
+        @contextmanager
+        def already_in_transaction():
+            with closing(sqlite3.connect(store.path, isolation_level=None)) as connection:
+                connection.execute('BEGIN IMMEDIATE')
+                yield connection
+
+        with monkeypatch.context() as patch:
+            patch.setattr(store, '_connect', already_in_transaction)
+            with pytest.raises(sqlite3.OperationalError):
+                with store._write():
+                    pytest.fail('The second BEGIN must fail before yield')
+        assert diagnostics.ledger_holders == {}
+        frame = SimpleNamespace(f_code=module.OrganizationStore._write.__wrapped__.__code__,
+            f_globals=vars(module), f_lineno=199, f_back=None)
+        diagnostics.trace(frame, 'return', object())
+        assert diagnostics.ledger_holders == {}
+        frame.f_code = (lambda: None).__code__
+        with closing(sqlite3.connect(store.path)) as connection:
+            diagnostics.trace(frame, 'return', connection)
+        assert diagnostics.ledger_holders == {}
+    finally:
+        diagnostics.close()
+    encoded = json.dumps(read_trace(tmp_path))
+    assert 'synthetic-private-' not in encoded

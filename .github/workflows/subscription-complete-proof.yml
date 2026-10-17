@@ -30,7 +30,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: a15a3bd63f500df3b186ede6cb16ee5c63cf4d94
+          ref: 402b61c83881a50a6b9bd505adee905f6f38dcaa
           path: source
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -43,8 +43,8 @@ jobs:
           python-version: '3.12'
       - name: Verify exact source and old runtime
         run: |
-          test "$(git rev-parse HEAD)" = a15a3bd63f500df3b186ede6cb16ee5c63cf4d94
-          test "$(git rev-parse HEAD^{tree})" = c940e821f8ef7f3e24a49edcf21427b8daab12fb
+          test "$(git rev-parse HEAD)" = 402b61c83881a50a6b9bd505adee905f6f38dcaa
+          test "$(git rev-parse HEAD^{tree})" = b850973633d24761b20e45a684984546e6faba8d
           test "$(git -C ../old-runtime rev-parse HEAD)" = 43a84a77f094084ce8eb8dc2e99fdd679fb9d065
           test "$(git -C ../old-runtime rev-parse HEAD^{tree})" = 719349cb69ed9fb7bbc2e6aeabb1ffabc8e08e3b
           python -c "import platform; print(platform.system(), platform.machine())"
@@ -75,7 +75,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  # Insert this job under jobs: after replacing a15a3bd63f500df3b186ede6cb16ee5c63cf4d94 and c940e821f8ef7f3e24a49edcf21427b8daab12fb with
+  # Insert this job under jobs: after replacing 402b61c83881a50a6b9bd505adee905f6f38dcaa and b850973633d24761b20e45a684984546e6faba8d with
   # the immutable source commit and its root tree. No workflow/branch publication.
   # Native display strategy: launch Electron directly on the hosted macOS session.
   # https://www.electronjs.org/docs/latest/tutorial/testing-on-headless-ci
@@ -95,13 +95,13 @@ jobs:
       OPENROUTER_API_KEY: ''
       NOUS_API_KEY: ''
       ANTHROPIC_API_KEY: ''
-      SUBSCRIPTION_PROOF_SHA: 'a15a3bd63f500df3b186ede6cb16ee5c63cf4d94'
-      SUBSCRIPTION_PROOF_TREE: 'c940e821f8ef7f3e24a49edcf21427b8daab12fb'
+      SUBSCRIPTION_PROOF_SHA: '402b61c83881a50a6b9bd505adee905f6f38dcaa'
+      SUBSCRIPTION_PROOF_TREE: 'b850973633d24761b20e45a684984546e6faba8d'
       PYTHONDONTWRITEBYTECODE: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: a15a3bd63f500df3b186ede6cb16ee5c63cf4d94
+          ref: 402b61c83881a50a6b9bd505adee905f6f38dcaa
           persist-credentials: false
       - name: Verify immutable source and actual macOS host
         run: |
