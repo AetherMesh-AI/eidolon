@@ -41,8 +41,8 @@
 .eidolon p { color: var(--text-secondary); }
 .eidolon small { display: block; color: var(--text-secondary); font-size: 11px; }
 .eid-workspace { height: 100%; min-height: 0; overflow: auto; }
-.eid-workspace:has(.eid-runtime-requests, .eid-activity-filters) { scroll-padding: 7px; }
-:is(.eid-runtime-requests, .eid-activity-filters) :is(button, a, input, textarea, select, summary) { scroll-margin: 7px; }
+.eid-workspace:has(.eid-runtime-status, .eid-runtime-requests, .eid-activity-filters) { scroll-padding: 7px; }
+:is(.eid-runtime-status, .eid-runtime-requests, .eid-activity-filters) :is(button, a, input, textarea, select, summary) { scroll-margin: 7px; }
 .eid-page { max-width: 1120px; margin: auto; padding: 28px clamp(20px, 3vw, 44px) 48px; }
 .eid-page-header { display: flex; justify-content: space-between; align-items: start; gap: 24px; margin-bottom: 24px; }
 .eid-eyebrow { font-size: 10px; letter-spacing: .16em; text-transform: uppercase; margin: 0 0 10px; }
@@ -470,6 +470,8 @@
 
 /* Messages uses the reference's full-height directory/conversation/context split. */
 .eid-page:has(> .eid-messages-view) { max-width: none; height: 100%; padding: 0; }
+/* The full-bleed Messages page still reserves the shared Retry button's outline. */
+.eid-page:has(> .eid-messages-view) > .eid-runtime-status { padding: 8px 18px 16px; }
 .eid-messages-view { height: 100%; min-height: 0; }
 .eid-messages-view .eid-messages-layout { height: 100%; grid-template-columns: minmax(220px, 1.06fr) minmax(340px, 2.12fr) minmax(220px, 1fr); gap: 0; align-items: stretch; }
 .eid-messages-view .eid-messages-layout[data-member-selected=false] { grid-template-columns: minmax(220px, 1.06fr) minmax(340px, 3.12fr); }
