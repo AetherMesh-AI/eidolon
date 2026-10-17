@@ -14,12 +14,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          ref: 70bcea133ab8b1061c81d5a82b70c69069aceb80
+          ref: 70a6e31c48503e85e59a5b6d8e6a88efbdb5b311
       - name: Verify exact reviewed source
         run: |
-          test "$(git rev-parse HEAD)" = "70bcea133ab8b1061c81d5a82b70c69069aceb80"
-          test "$(git rev-parse HEAD^{tree})" = "6d32e90186e5cd54ae395545e58ab65e73fb0881"
-          printf '%s\n' '{"source":"70bcea133ab8b1061c81d5a82b70c69069aceb80","tree":"6d32e90186e5cd54ae395545e58ab65e73fb0881"}' > organization-creation-source.json
+          test "$(git rev-parse HEAD)" = "70a6e31c48503e85e59a5b6d8e6a88efbdb5b311"
+          test "$(git rev-parse HEAD^{tree})" = "6f82fe01eea31623f7bfc203935f7fb5e79243ca"
+          printf '%s\n' '{"source":"70a6e31c48503e85e59a5b6d8e6a88efbdb5b311","tree":"6f82fe01eea31623f7bfc203935f7fb5e79243ca"}' > organization-creation-source.json
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
@@ -47,7 +47,7 @@ jobs:
           npx tsc -p tsconfig.e2e.json --noEmit
       - name: Verify focused organization creation components
         working-directory: apps/desktop
-        run: npx vitest run src/app/eidolon/organization-directory*.test.ts src/app/eidolon/organization-directory*.test.tsx src/app/eidolon/organization-creation*.test.ts src/app/eidolon/organization-creation*.test.tsx src/app/eidolon/organization-model-setup.test.tsx src/app/eidolon/organization-dialog.test.tsx src/store/gateway-verified-activation.test.ts src/store/profile-agent-activation.test.ts src/store/connections.test.ts --project ui --maxWorkers 1
+        run: npx vitest run src/app/eidolon/organization-directory*.test.ts src/app/eidolon/organization-directory*.test.tsx src/app/eidolon/organization-creation*.test.ts src/app/eidolon/organization-creation*.test.tsx src/app/eidolon/organization-model-setup.test.tsx src/app/eidolon/organization-dialog.test.tsx src/store/gateway-verified-activation.test.ts src/store/profile-agent-activation.test.ts src/store/connections.test.ts src/app/gateway/hooks/use-gateway-boot.test.tsx src/app/eidolon/organization-selection-runtime.test.ts src/store/organization-selection.test.ts src/components/boot-failure-overlay.test.tsx src/app/eidolon/use-organization-setup-owner.test.tsx src/api/organization-selection-guard.test.ts src/eidolon-capability-scope.test.ts src/eidolon-parity.test.ts src/eidolon-profile-scope.test.ts src/eidolon.test.ts src/api/system.test.ts --project ui --maxWorkers 1
       - name: Build desktop
         id: desktop-build
         working-directory: apps/desktop

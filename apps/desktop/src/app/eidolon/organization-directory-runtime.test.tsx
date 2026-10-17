@@ -230,15 +230,16 @@ it('makes creation discoverable and fails closed on an unsupported runtime witho
 })
 
 it('proves the passed socket and drops descriptor replies when the original owner transport or registry changes', async () => {
+  $connectionsRegistry.set({ ...$connectionsRegistry.get()!, connections: [{ id: 'a', kind: 'local', label: 'This device', tokenSet: false, tokenPreview: null }] })
   for (const change of ['none', 'socket', 'generation', 'registry', 'connection', 'closed']) {
     const original = { request, generation: 1, connectionState: 'open' }
     $gateway.set(original as never)
     const proof = deferred<unknown>()
-    const target = { request: vi.fn().mockReturnValue(proof.promise) }
+    const target = { request: vi.fn().mockReturnValue(proof.promise), connectionState: 'open', generation: 1 }
     const verified = vi.fn()
     const verify = organizationActivationVerifier(verified)
     const signal = new AbortController().signal
-    const checking = verify(target as never, {} as never, signal)
+    const checking = verify(target as never, { connectionId: 'a', profile: 'default', mode: 'local', registryScoped: true } as never, signal)
 
     if (change === 'socket') { $gateway.set({ request, connectionState: 'open' } as never) }
 

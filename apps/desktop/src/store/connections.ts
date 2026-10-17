@@ -12,6 +12,7 @@ import {
   isCurrentGatewaySwitch,
   recoverActiveSourceAfterFailedGatewaySwitch
 } from '@/store/gateway-switch'
+import { finishLegacyOrganizationDeparture, readOrganizationBootSelection, stageLegacyOrganizationDeparture } from '@/store/organization-selection'
 import {
   $activeGatewayProfile,
   $newChatProfile,
@@ -203,7 +204,7 @@ function waitForInitialConnection(): Promise<void> {
 export async function initializeConnectionsRegistry(): Promise<DesktopConnectionsRegistry | null> {
   const registry = await refreshConnectionsRegistry()
 
-  if (!registry || restoreAttempted) {
+  if (!registry || restoreAttempted || readOrganizationBootSelection().kind !== 'none') {
     return registry
   }
 
@@ -375,6 +376,7 @@ async function performConnectionSwitch(connectionId: string, options: SelectConn
     currentProfile !== targetProfile
 
   if (!switching && !options.verify) {
+    finishLegacyOrganizationDeparture(stageLegacyOrganizationDeparture(connectionId, targetProfile))
     const error = await rememberConnection(connectionId, sourceStillCurrent)
 
     if (error) {warning = { phase: 'bookkeeping', error }}
@@ -383,6 +385,7 @@ async function performConnectionSwitch(connectionId: string, options: SelectConn
   }
 
   if (!options.verify && pendingTarget === null && currentConnectionId === connectionId && currentProfile === targetProfile) {
+    finishLegacyOrganizationDeparture(stageLegacyOrganizationDeparture(connectionId, targetProfile))
     $showAllProfiles.set(false)
     $newChatProfile.set(targetProfile)
     // A connection switch is a new-chat intent on THAT source: keep the

@@ -83,8 +83,32 @@ export function connectionScoped(): { connectionId?: string } {
  *  pin — `'local'` included — so a pin always overrides the ambient tag spread
  *  underneath it. (It used to omit the key for 'local', which made the pin
  *  unable to beat the ambient tag; helpers then had to bypass this wrapper.) */
+type ApiAuthority = { request: HermesApiRequest; current: () => boolean }
+let organizationApiGuard: ((request: HermesApiRequest, ambientProfile: string | null) => ApiAuthority | null) | null = null
+
+/** Registered synchronously by the selection store, before mounted queries run. */
+export function registerOrganizationApiGuard(guard: NonNullable<typeof organizationApiGuard>): void {
+  organizationApiGuard = guard
+}
+
 export function hermesApi<T>(request: HermesApiRequest): Promise<T> {
-  return window.hermesDesktop.api<T>({ ...connectionScoped(), ...request })
+  return scopedHermesApi<T>({ ...connectionScoped(), ...request })
+}
+
+/** Preserve an already capability-scoped payload while enforcing the same owner guard. */
+export function scopedHermesApi<T>(request: HermesApiRequest): Promise<T> {
+  let authority: ApiAuthority | null
+
+  try { authority = organizationApiGuard?.(request, _apiProfile) ?? null } catch (error) { return Promise.reject(error) }
+  const result = window.hermesDesktop.api<T>(authority?.request ?? request)
+
+  if (!authority) { return result }
+
+  return result.then(value => {
+    if (!authority.current()) { throw new Error('Organization API owner changed') }
+
+    return value
+  })
 }
 
 // ── Capability scope: (connection, profile) routing for the Capabilities

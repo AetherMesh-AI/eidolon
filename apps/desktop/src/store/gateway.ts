@@ -6,8 +6,10 @@ import type { HermesConnection } from '@/global'
 import { reconnectBackoffDelayMs } from '@/lib/reconnect-backoff'
 import { RECONNECT_ATTEMPT_TIMEOUT_MS, withTimeout } from '@/lib/with-timeout'
 import { markNativeNotifyBaseline } from '@/store/notify-baseline'
+import { isOrganizationRouteProtected, refuseOrganizationAutomaticChange, refuseOrganizationAutomaticScopeChange } from '@/store/organization-selection'
 import { setConnection, setGatewayState } from '@/store/session'
 import { stampSecondaryProfileOwner } from '@/store/session-event-provenance'
+import { currentSourceSwitchIntent, isCurrentSourceSwitchIntent } from '@/store/source-switch-intent'
 
 // ── Multi-profile gateway routing ──────────────────────────────────────────
 // Concurrent sessions across profiles need concurrent sockets: the renderer's
@@ -86,6 +88,7 @@ interface RegistryConfig {
 
 // ── Secondary (pool) backends ──────────────────────────────────────────────
 interface Secondary {
+  organizationVerifiedGeneration?: number
   transportGeneration?: number
   /** Scope key from registryBackendScopeKey(connectionId, profile). */
   scope: string
@@ -453,6 +456,7 @@ function isPrimaryRegistryRoute(connectionId: null | string, profile: string): b
   const id = String(connectionId ?? '').trim()
 
   return (
+    !isOrganizationRouteProtected(id, normKey(profile)) &&
     normKey(profile) === g.primaryProfile &&
     Boolean(id) &&
     Boolean(g.primaryConnectionId) &&
@@ -475,7 +479,7 @@ async function isAttachedSharedRemote(
   const id = String(connectionId ?? '').trim()
   const key = normKey(profile)
 
-  if (!id || !g.primaryConnectionId || id !== g.primaryConnectionId) {
+  if (isOrganizationRouteProtected(id, key) || !id || !g.primaryConnectionId || id !== g.primaryConnectionId) {
     return false
   }
 
@@ -545,7 +549,10 @@ export function activeGateway(): HermesGateway | null {
   // requests) to the WRONG backend whenever the scope's entry is gone —
   // teardown sites keep the invariant "activeKey always resolves" by
   // re-pointing the active key at the primary when they evict it.
-  return g.secondaries.get(g.activeKey)?.gateway ?? null
+  const entry = g.secondaries.get(g.activeKey)
+
+  return entry && (!isOrganizationRouteProtected(entry.connectionId, entry.profile) ||
+    Number.isFinite(entry.organizationVerifiedGeneration) && entry.organizationVerifiedGeneration === entry.transportGeneration) ? entry.gateway : null
 }
 
 /** Provenance of the physical primary, never the foreground secondary. */
@@ -732,7 +739,10 @@ function assertOAuthSourceRevision(connectionId: string | null, revision: number
   }
 }
 
-async function openSecondary(entry: Secondary, spawnPriority: SpawnPriority = 'background', authority = captureOAuthRequestAuthority()): Promise<void> {
+async function openSecondary(entry: Secondary, spawnPriority: SpawnPriority = 'background', authority = captureOAuthRequestAuthority(), verifiedSelection = false): Promise<void> {
+  if (!verifiedSelection && refuseOrganizationAutomaticChange(entry.connectionId, entry.profile)) {
+    throw new Error('Organization reconnect requires verified selection')
+  }
   const desktop = window.hermesDesktop
 
   if (!desktop) {
@@ -873,7 +883,7 @@ async function openSecondary(entry: Secondary, spawnPriority: SpawnPriority = 'b
       return
     }
 
-    if (g.activeKey === entry.scope) {
+    if (g.activeKey === entry.scope && !isOrganizationRouteProtected(entry.connectionId, entry.profile)) {
       publishActiveConnection(conn)
     }
 
@@ -894,7 +904,7 @@ async function openSecondary(entry: Secondary, spawnPriority: SpawnPriority = 'b
 }
 
 function scheduleReconnect(entry: Secondary): void {
-  if (entry.reconnecting || entry.reconnectTimer !== null || !entry.wantOpen) {
+  if (isOrganizationRouteProtected(entry.connectionId, entry.profile) || entry.reconnecting || entry.reconnectTimer !== null || !entry.wantOpen) {
     return
   }
 
@@ -909,6 +919,7 @@ function scheduleReconnect(entry: Secondary): void {
 }
 
 async function reconnectSecondary(entry: Secondary): Promise<void> {
+  if (refuseOrganizationAutomaticChange(entry.connectionId, entry.profile)) { return }
   if (entry.reconnecting || !entry.wantOpen || isOpen(entry.gateway)) {
     return
   }
@@ -1000,6 +1011,7 @@ function createSecondary(profile: string, connectionId: null | string = null): S
   // the recorder must not promote an arbitrary wire `profile` field instead.
   entry.offEvent = gateway.onEvent(event => {
     if (g.secondaries.get(scope) !== entry) {return}
+    if (isOrganizationRouteProtected(entry.connectionId, entry.profile) && entry.organizationVerifiedGeneration !== entry.transportGeneration) {return}
     rememberRuntimeProducer(event, {
       gateway, generation: entry.transportGeneration ?? 0, profile,
       connectionId: connectionId ?? entry.connection?.connectionId?.trim() ?? null, entry
@@ -1012,7 +1024,17 @@ function createSecondary(profile: string, connectionId: null | string = null): S
   })
   entry.offState = gateway.onState(state => {
     if (g.secondaries.get(scope) !== entry) {return}
-    reportGatewayState(scope, state)
+    const protectedRoute = isOrganizationRouteProtected(entry.connectionId, entry.profile)
+
+    if (protectedRoute) {
+      const hadProof = Number.isFinite(entry.organizationVerifiedGeneration)
+      entry.organizationVerifiedGeneration = undefined
+      if (scope === g.activeKey) { g.$gateway.set(null) }
+      reportGatewayState(scope, 'closed')
+      if (hadProof && (state === 'closed' || state === 'error')) { refuseOrganizationAutomaticChange(entry.connectionId, entry.profile) }
+    } else {
+      reportGatewayState(scope, state)
+    }
 
     if (state === 'open') {
       entry.transportGeneration = nextTransportGeneration()
@@ -1024,7 +1046,7 @@ function createSecondary(profile: string, connectionId: null | string = null): S
       // route is still retained/active enough to reconnect.
       releaseTurnLeasesForScope(scope)
 
-      if (entry.wantOpen) {
+      if (entry.wantOpen && !protectedRoute) {
         scheduleReconnect(entry)
       }
     }
@@ -1121,6 +1143,16 @@ export async function requestGatewayWithRuntimeBinding<T>(gateway: HermesGateway
   const authority = captureOAuthRequestAuthority()
   assertGatewayOAuthAuthority(gateway, authority)
   const producer = captureRuntimeTransport(gateway, profile, scopeProfile)
+  const entry = producer?.entry
+  const protectedRequest = entry && isOrganizationRouteProtected(entry.connectionId, entry.profile)
+  const verifiedGeneration = entry?.organizationVerifiedGeneration
+  const requestIntent = currentSourceSwitchIntent()
+  const protectedCurrent = () => !protectedRequest || Boolean(entry &&
+    isCurrentSourceSwitchIntent(requestIntent) && g.secondaries.get(entry.scope) === entry && isOpen(gateway) &&
+    Number.isFinite(verifiedGeneration) && entry.organizationVerifiedGeneration === verifiedGeneration &&
+    entry.transportGeneration === verifiedGeneration && entry.openedConnection === entry.connection)
+
+  if (!protectedCurrent()) { throw new Error('Organization request requires a verified transport') }
 
   if (producer && RUNTIME_SESSION_METHODS.has(method)) {
     const bound = typeof params.session_id === 'string' ? g.runtimeProducers?.get(params.session_id.trim())?.get(producer.generation) : undefined
@@ -1143,6 +1175,7 @@ export async function requestGatewayWithRuntimeBinding<T>(gateway: HermesGateway
     : gateway.request<T>(method, requestParams, timeoutMs, signal))
 
   assertGatewayOAuthAuthority(gateway, authority)
+  if (!protectedCurrent()) { throw new Error('Organization transport changed before the response settled') }
 
   if (RUNTIME_RESPONSE_METHODS.has(method) && result && typeof result === 'object' &&
       'session_id' in result && typeof result.session_id === 'string' && result.session_id.trim()) {
@@ -1259,6 +1292,10 @@ async function gatewayForProfile(
 ): Promise<{ gateway: HermesGateway | null; key: string; release: () => void; scopeProfile: boolean }> {
   const key = normKey(profile)
   const noRelease = () => undefined
+
+  if (isOrganizationRouteProtected(g.primaryConnectionId || 'local', key)) {
+    throw new Error('Organization requests require an explicit verified registry route')
+  }
 
   if (key === g.primaryProfile && !g.secondaries.has(key)) {
     return { gateway: g.primaryGateway, key, release: noRelease, scopeProfile: false }
@@ -1824,6 +1861,11 @@ export async function openGatewayForAgent(
 ): Promise<void> {
   const scope = registryBackendScopeKey(connectionId, profile)
 
+  if (isOrganizationRouteProtected(connectionId, profile) && (g.activeKey !== scope || !activeGateway() || !isOpen(activeGateway()))) {
+    refuseOrganizationAutomaticChange(connectionId, profile)
+    throw new Error('Organization activation requires live verification')
+  }
+
   if (scope === normKey(profile) || isPrimaryRegistryRoute(connectionId, profile)) {
     return openGatewayForProfile(profile, { spawnPriority })
   }
@@ -1892,7 +1934,15 @@ async function activateVerifiedAgent(connectionId: null | string, profile: strin
   const activationEpoch = beginGatewayActivation()
   const revision = oauthSourceRevision(connectionId)
   const authority = captureOAuthRequestAuthority()
-  const entry = g.secondaries.get(scope) ?? createSecondary(profile, connectionId)
+  let entry = g.secondaries.get(scope)
+  // Reusing a closed RPC client would replay old session watermarks on connect,
+  // before the replacement owner can be verified. A fresh client has no replay state.
+  if (entry && isOrganizationRouteProtected(connectionId, profile) && !isOpen(entry.gateway)) {
+    disposeSecondary(entry)
+    g.secondaries.delete(scope)
+    entry = undefined
+  }
+  entry ??= createSecondary(profile, connectionId)
   entry.retained = true
   entry.wantOpen = true
   entry.activationLeaseUntil = Date.now() + ACTIVATION_LEASE_MS
@@ -1902,7 +1952,7 @@ async function activateVerifiedAgent(connectionId: null | string, profile: strin
 
     if (!isOpen(entry.gateway)) {
       clearTimer(entry)
-      await withTimeout(openSecondary(entry, 'foreground'), RECONNECT_ATTEMPT_TIMEOUT_MS,
+      await withTimeout(openSecondary(entry, 'foreground', authority, true), RECONNECT_ATTEMPT_TIMEOUT_MS,
         'Timed out connecting to the destination organization', error => controller.abort(error))
     }
 
@@ -1945,7 +1995,9 @@ async function activateVerifiedAgent(connectionId: null | string, profile: strin
     // Reset listeners are synchronous, so they must not invalidate the proof either.
     const commitCurrent = () => valid() && (!sourceCurrent || sourceCurrent())
 
-    if (!commitCurrent() || (beforeActivate && !beforeActivate()) || !commitCurrent() || !applyActive(scope, activationEpoch)) { return false }
+    if (!commitCurrent() || (beforeActivate && !beforeActivate()) || !commitCurrent()) { return false }
+    entry.organizationVerifiedGeneration = generation
+    if (!applyActive(scope, activationEpoch)) { return false }
     publishActiveConnection(connection)
     onVerifiedConnection?.(connection)
     onPublished?.()
@@ -1968,6 +2020,11 @@ export async function ensureGatewayForAgent(
   if (options.verify) { return activateVerifiedAgent(connectionId, profile, options) }
   const { signal, onPublished } = options
   const scope = registryBackendScopeKey(connectionId, profile)
+
+  if (isOrganizationRouteProtected(connectionId, profile) && (g.activeKey !== scope || !activeGateway() || !isOpen(activeGateway()))) {
+    refuseOrganizationAutomaticChange(connectionId, profile)
+    throw new Error('Organization activation requires live verification')
+  }
 
   if (scope === normKey(profile) || isPrimaryRegistryRoute(connectionId, profile)) {
     if (signal?.aborted) {
@@ -2051,6 +2108,12 @@ export async function ensureGatewayForAgent(
 // primary is a no-op fast path. Background sockets are never closed here.
 export async function ensureGatewayForProfile(profile: string): Promise<void> {
   const key = normKey(profile)
+  const connectionId = g.primaryConnectionId || 'local'
+  if (isOrganizationRouteProtected(connectionId, key)) {
+    if (g.activeKey === registryBackendScopeKey(connectionId, key) && isOpen(activeGateway())) { return }
+    refuseOrganizationAutomaticChange(connectionId, key)
+    throw new Error('Organization activation requires an explicit verified registry route')
+  }
   const activationEpoch = beginGatewayActivation()
 
   if (key === g.primaryProfile) {
@@ -2235,6 +2298,12 @@ function disposeSecondary(entry: Secondary, retiredReplayAuthority?: string): vo
 // evicted registry scope and every call silently hit the primary backend.
 function restoreActiveToPrimaryIfEvicted(): void {
   if (g.activeKey !== PRIMARY_SCOPE && !g.secondaries.has(g.activeKey)) {
+    if (refuseOrganizationAutomaticScopeChange(g.activeKey)) {
+      g.$gateway.set(null)
+      setGatewayState('closed')
+
+      return
+    }
     setActive(PRIMARY_SCOPE)
   }
 }
@@ -2405,7 +2474,7 @@ export function retireLocalProfileGateways(profile: string): void {
 
   restoreActiveToPrimaryIfEvicted()
 
-  if (activeInvalidated) {
+  if (activeInvalidated && !refuseOrganizationAutomaticScopeChange(g.activeKey)) {
     g.config?.onActiveConnectionInvalidated?.(g.primaryProfile, gatewayActivationEpoch())
   }
 }
@@ -2455,7 +2524,10 @@ export function retireOAuthSession(identity: string, connectionIds: string[] = [
     g.secondaries.delete(key)
   }
 
-  if (activeInvalidated) {
+  if (activeInvalidated && refuseOrganizationAutomaticScopeChange(g.activeKey)) {
+    g.$gateway.set(null)
+    setGatewayState('closed')
+  } else if (activeInvalidated) {
     setActive(PRIMARY_SCOPE)
     g.config?.onActiveConnectionInvalidated?.(g.primaryProfile, gatewayActivationEpoch())
   }
@@ -2477,6 +2549,14 @@ export function disposeSecondariesForConnection(connectionId: string, opts: { re
     const wasActive = key === g.activeKey
     activeInvalidated ||= wasActive
 
+    if (refuseOrganizationAutomaticChange(entry.connectionId, entry.profile)) {
+      disposeSecondary(entry)
+      g.secondaries.delete(key)
+      if (wasActive) { g.$gateway.set(null); setGatewayState('closed') }
+
+      continue
+    }
+
     if (opts.redial && (entry.activeRequests > 0 || relayRetained(entry) || foregroundPinned(entry))) {
       entry.pendingConnectionRedial = true
 
@@ -2495,7 +2575,7 @@ export function disposeSecondariesForConnection(connectionId: string, opts: { re
     }
   }
 
-  if (activeInvalidated && !opts.redial) {
+  if (activeInvalidated && !opts.redial && !refuseOrganizationAutomaticScopeChange(g.activeKey)) {
     setActive(PRIMARY_SCOPE)
     g.config?.onActiveConnectionInvalidated?.(g.primaryProfile, gatewayActivationEpoch())
   }

@@ -27,9 +27,10 @@ import {
   openSecondaryCount
 } from '@/store/gateway'
 import { notifyError } from '@/store/notifications'
+import { finishLegacyOrganizationDeparture, ownsPendingOrganizationSelection, showOrganizationSelectionRecovery, stageLegacyOrganizationDeparture } from '@/store/organization-selection'
 import { $poolLimits } from '@/store/pool-limits'
 import { notifyRemoteOverrideAuthFailure } from '@/store/profile-remote-override'
-import { clearComposerSelectionOwner, setComposerSelectionOwner, setConnection } from '@/store/session'
+import { $connection, clearComposerSelectionOwner, setComposerSelectionOwner, setConnection } from '@/store/session'
 import type { SessionOwnerRoute } from '@/store/session-request-router'
 import { beginSourceSwitchIntent, type SourceSwitchIntent } from '@/store/source-switch-intent'
 import { resetStarmapGraph } from '@/store/starmap'
@@ -236,8 +237,15 @@ export async function switchProfile(name: string): Promise<void> {
   }
 
   beginSourceSwitchIntent()
+  const departure = stageLegacyOrganizationDeparture($connection.get()?.connectionId ?? null, name)
   setActiveProfile(name)
-  await window.hermesDesktop.profile.set(name)
+  try {
+    await window.hermesDesktop.profile.set(name)
+    finishLegacyOrganizationDeparture(departure)
+  } catch (error) {
+    if (departure && ownsPendingOrganizationSelection(departure)) { showOrganizationSelectionRecovery('pending') }
+    throw error
+  }
 }
 
 // ── Swap-minimal gateway routing ──────────────────────────────────────────
@@ -535,7 +543,15 @@ export async function ensureGatewayProfile(profile: string | null | undefined, i
     // syncConnectionToActiveProfile await left a window where $gateway
     // already targeted the new backend while $connection still described the
     // previous one, and remote-aware paths announced the wrong mode (#46651).
-    const [connection] = await Promise.all([resolveConnectionForProfile(target), ensureGatewayForProfile(target)])
+    const departure = stageLegacyOrganizationDeparture($connection.get()?.connectionId ?? null, target)
+    let connection: HermesConnection | null
+
+    try {
+      ;[connection] = await Promise.all([resolveConnectionForProfile(target), ensureGatewayForProfile(target)])
+    } catch (error) {
+      if (departure && ownsPendingOrganizationSelection(departure)) { showOrganizationSelectionRecovery('pending') }
+      throw error
+    }
 
     // ONE publication frame. batch() defers Nanostores' notifications to the
     // end of the callback, so the profile pointer and the connection
@@ -550,6 +566,7 @@ export async function ensureGatewayProfile(profile: string | null | undefined, i
 
       $activeGatewayProfile.set(target)
     })
+    finishLegacyOrganizationDeparture(departure)
   })()
 
   // A failed switch must NOT fall back to the primary socket silently: that
@@ -728,7 +745,11 @@ export async function ensureGatewayAgent(
       return
     }
 
+    const departure = stageLegacyOrganizationDeparture(connection, target)
+
     if (beforeActivate && !beforeActivate()) {
+      if (departure) { showOrganizationSelectionRecovery('pending') }
+
       return
     }
 
@@ -738,7 +759,15 @@ export async function ensureGatewayAgent(
       ? ensureGatewayForAgent(connection, target, { signal, ...(onPublished ? { onPublished } : {}) })
       : ensureGatewayForAgent(connection, target)
 
-    const [descriptor, activated] = await Promise.all([resolveConnectionForAgent(connection, target), activation])
+    let descriptor: HermesConnection | null
+    let activated: boolean
+
+    try {
+      ;[descriptor, activated] = await Promise.all([resolveConnectionForAgent(connection, target), activation])
+    } catch (error) {
+      if (departure && ownsPendingOrganizationSelection(departure)) { showOrganizationSelectionRecovery('pending') }
+      throw error
+    }
 
     if (signal?.aborted) {
       return
@@ -769,6 +798,7 @@ export async function ensureGatewayAgent(
       $activeGatewayProfile.set(target)
     })
     onPublished?.()
+    finishLegacyOrganizationDeparture(departure)
   })()
 
   // Cancellation releases the mutex immediately; activationWork remains
