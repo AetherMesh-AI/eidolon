@@ -143,13 +143,15 @@ done
 # HERMES_RUN_SLOW_PET_TESTS / HERMES_E2E_BROWSER opt-ins already forwarded.
 # EIDOLON_REQUIRE_PROJECT_SANDBOX requires real native isolation in project CI;
 # dropping it would let an unsupported-host receipt masquerade as runtime proof.
+# EIDOLON_OLD_RUNTIME_PATH points to an immutable public source checkout for
+# cold/live downgrade refusal tests; it carries no credential material.
 # Keep this an explicit allowlist (no HERMES_TEST_* glob) so the "no
 # credential can leak" property stays auditable at a glance.
 TEST_ENV=()
 for _test_var in HERMES_TEST_IMAGE HERMES_TEST_WORKERS HERMES_TEST_PATHS \
   HERMES_TEST_FILE_TIMEOUT HERMES_TEST_FILE_RETRIES HERMES_TEST_SLICE \
   EIDOLON_REQUIRE_PROJECT_SANDBOX EIDOLON_REQUIRE_NODE_SANDBOX EIDOLON_TEST_TYPESCRIPT_BUNDLE \
-  EIDOLON_REQUIRE_WORKSPACE_SANDBOX EIDOLON_TEST_WORKSPACE_BUNDLE; do
+  EIDOLON_REQUIRE_WORKSPACE_SANDBOX EIDOLON_TEST_WORKSPACE_BUNDLE EIDOLON_OLD_RUNTIME_PATH; do
   if [ -n "${!_test_var:-}" ]; then
     TEST_ENV+=("$_test_var=${!_test_var}")
   fi

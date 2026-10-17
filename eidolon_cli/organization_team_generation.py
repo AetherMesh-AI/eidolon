@@ -129,6 +129,39 @@ def parse_improvement(raw):
     return validate_improvement(value)
 
 
+def subscription_request(operation, jobs, goals, naming_style, *, model_slug, field=None):
+    """Build the dedicated, tool-free request before durable subscription admission."""
+    from eidolon_cli.organization_setup_subscription_transport import build_setup_text_request
+    fields = {'jobs': jobs, 'goals': goals, 'namingStyle': naming_style}
+    if operation == 'generateTeam' and field is None:
+        kind = 'generate'
+    elif operation == 'improveTeamInput' and field in ('jobs', 'goals'):
+        kind = 'improve_' + field
+        fields['field'] = field
+    else:
+        raise ValueError('Unsupported setup subscription operation')
+    return build_setup_text_request(kind, json.dumps(fields, ensure_ascii=False), model_slug)
+
+
+def complete_subscription(prepared):
+    """Parse one dedicated send only after accounting and current delivery fences.
+
+    The transport persists terminal accounting before returning. Proposal parsing
+    cannot erase it, repair malformed output, or make a second provider request.
+    """
+    from eidolon_cli.organization_setup_subscription_transport import send_once
+    operation = prepared.request.operation
+    parse = parse_proposal if operation == 'generate' else parse_improvement
+    rejected = TeamProposalRejected if operation == 'generate' else TeamInputRejected
+    result = send_once(prepared)
+    if result.text is None:
+        if result.observation.terminal_kind in {'completed', 'failed', 'incomplete'}:
+            raise rejected('The setup response is not available for review; no changes were applied.')
+        raise OrganizationExecutionError(
+            'The setup request did not produce a reviewable response. Its recorded outcome must be checked before another request.')
+    return parse(result.text)
+
+
 def improve(home, field, jobs, goals, naming_style, *, reserve_model_call, cancel=None):
     """Suggest one form field using the same bounded, tool-free physical sender."""
     if not callable(reserve_model_call):
@@ -248,3 +281,4 @@ def _complete(content, system, parse, reserve_model_call, cancel):
             watcher.join(timeout=0.2)
         if agent is not None:
             agent.close()
+
