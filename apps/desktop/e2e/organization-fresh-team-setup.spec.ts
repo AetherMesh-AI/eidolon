@@ -301,7 +301,7 @@ test('two fresh isolated organizations configure their own models and explicitly
   const verified: object[] = []
   const snapshots: Snapshot[] = []
   const catalogSeeds: object[] = []
-  let armed: { guard: Guard; observed: Descriptor; inputs: Inputs; index: number } | undefined
+  let armed: { guard: Guard; observed: Descriptor; inputs: Inputs; index: number; sourceRevision: string } | undefined
 
   const records = (prefix: string): Array<Record<string, unknown>> =>
     (existsSync(evidence) ? readdirSync(evidence) : [])
@@ -482,6 +482,7 @@ print(json.dumps(matches))
             ).toBe(true)
             expect(request.params).toMatchObject({
               expectedOrganizationId: armed!.guard.organizationId,
+              sourceRevision: armed!.sourceRevision,
               ...armed!.inputs
             })
             writeFileSync(
@@ -638,7 +639,10 @@ print(json.dumps(matches))
       assertQuiet(index)
       await page.goBack()
       await navigation.getByRole('link', { name: 'Home', exact: true }).click()
-      await page.locator('.eid-team-entry').getByRole('button', { name: 'Set up organization', exact: true }).click()
+      await page
+        .locator('.eid-team-entry')
+        .getByRole('button', { name: 'Generate team · Recommended', exact: true })
+        .click()
       const unconfigured = page.getByRole('dialog', { name: 'Build your starter team', exact: true })
       await unconfigured.getByLabel('Work to delegate', { exact: true }).fill('A valid synthetic work description')
       await unconfigured.getByLabel('What success looks like', { exact: true }).fill('A reviewed synthetic result')
@@ -658,7 +662,10 @@ print(json.dumps(matches))
       expect(snapshot(home).model).toMatchObject({ provider: 'openai-api', default: models[index] })
       assertQuiet(index)
       await navigation.getByRole('link', { name: 'Home', exact: true }).click()
-      await page.locator('.eid-team-entry').getByRole('button', { name: 'Set up organization', exact: true }).click()
+      await page
+        .locator('.eid-team-entry')
+        .getByRole('button', { name: 'Generate team · Recommended', exact: true })
+        .click()
       const dialog = page.getByRole('dialog', { name: 'Build your starter team', exact: true })
 
       const inputs = {
@@ -672,14 +679,35 @@ print(json.dumps(matches))
       await dialog.getByLabel('Team naming style (optional)', { exact: true }).fill(inputs.namingStyle)
       await expect(dialog).toContainText('Setup model calls remaining: 3.')
       const generate = dialog.getByRole('button', { name: 'Generate team · Recommended', exact: true })
+      // Directory model Save does not refresh this mounted entry's setup snapshot.
+      // Use the visible passive check before asking it to generate.
+      const passiveCheckStart = rpc.length
+      await dialog.getByRole('button', { name: 'Check configuration', exact: true }).click()
       await expect(generate).toBeEnabled()
+      const refreshedChecks = rpc.slice(passiveCheckStart).filter(item => item.method === 'organization.teamSetup')
+      expect(refreshedChecks).toHaveLength(1)
+      expect(refreshedChecks[0]).toMatchObject({
+        profile: receipt.profile,
+        params: { expectedOrganizationId: receipt.organizationId },
+        result: { state: 'available', organizationId: receipt.organizationId, readiness: { status: 'unchecked' } }
+      })
+      const refreshedSetup = refreshedChecks[0].result as { sourceRevision: string }
+      expect(refreshedSetup.sourceRevision).toEqual(expect.any(String))
+      expect(refreshedSetup.sourceRevision.length).toBeGreaterThan(0)
+      assertQuiet(index)
 
       if (index === 0) {
         await capture(fixture, dialog, generate, 'fresh-team-original-inputs')
       }
 
       const guard = await requireGuard(home, receipt, 'before-generate')
-      armed = { guard, observed: descriptors.get(receipt.profile)!, inputs, index }
+      armed = {
+        guard,
+        observed: descriptors.get(receipt.profile)!,
+        inputs,
+        index,
+        sourceRevision: refreshedSetup.sourceRevision
+      }
       const before = snapshot(home)
       assertQuiet(index)
       await generate.click()
