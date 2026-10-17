@@ -11,7 +11,6 @@ from tests.eidolon_cli.subscription_native_fixture import (
     ACCESS, MODEL, SUGGESTIONS, TEAM, SyntheticEdges, seed_profile, snapshot,
 )
 from tui_gateway import organization_credential_transport as credentials
-import tui_gateway.server as server
 
 
 class Transport:
@@ -25,6 +24,8 @@ class Transport:
 
 
 def call(transport, method, params):
+    from tui_gateway import server
+
     result = server.dispatch({'jsonrpc': '2.0', 'id': 71,
         'method': 'organization.' + method, 'params': params}, transport=transport)
     return result if result is not None else transport.responses.get(timeout=30)
@@ -43,18 +44,45 @@ def native(tmp_path, monkeypatch, request):
     monkeypatch.setenv('HERMES_HOME', str(home))
     monkeypatch.setenv('HOME', str(tmp_path))
     monkeypatch.setattr(Path, 'home', lambda: tmp_path)
-    (home / 'config.yaml').write_text('{}', encoding='utf-8')
+    # Gateway import starts a passive update daemon. Opt out through the real
+    # config before importing it, so unrelated git/HTTP probes cannot race guards.
+    (home / 'config.yaml').write_text('updates:\n  check: false\n', encoding='utf-8')
     identity = seed_profile(home, legacy=getattr(request, 'param', False))
-    monkeypatch.setattr(server, '_eidolon_home', home)
-    monkeypatch.setattr(server, '_setup_subscription_authority', HostAuthority.capture(lambda: home, lambda: home))
     transport = Transport()
-    credentials.register_owner(transport, home)
     edges = SyntheticEdges(home).install()
     try:
+        from tui_gateway import server
+        from eidolon_cli import banner
+
+        # Finish the real daemon under this profile before teardown can change
+        # HERMES_HOME; no network prewarming or synthetic update result is used.
+        assert banner._update_check_done.wait(timeout=10), 'Passive update check did not finish'
+        monkeypatch.setattr(server, '_eidolon_home', home)
+        monkeypatch.setattr(server, '_setup_subscription_authority', HostAuthority.capture(lambda: home, lambda: home))
+        credentials.register_owner(transport, home)
         yield home, identity, transport, edges
     finally:
         credentials.retire_owner(transport)
         edges.close()
+
+
+def test_synthetic_profile_disables_passive_update_checks(native, monkeypatch):
+    """The supported opt-out finishes the real daemon without reaching probes."""
+    import threading
+    from eidolon_cli import banner
+    from eidolon_cli.config import load_config
+
+    home, _, _, edges = native
+    assert load_config()['updates']['check'] is False
+    probes = []
+    monkeypatch.setattr(banner, '_check_via_rev', lambda revision: probes.append(revision))
+    monkeypatch.setattr(banner, '_check_via_local_git', lambda directory: probes.append(directory))
+    monkeypatch.setattr(banner, '_update_check_done', threading.Event())
+    banner.prefetch_update_check()
+    assert banner._update_check_done.wait(timeout=10), 'Passive update check did not finish'
+    assert probes == []
+    assert not (home / '.update_check').exists()
+    assert [event for event in edges.events if event['kind'].startswith('denied')] == []
 
 
 def scoped(native):
